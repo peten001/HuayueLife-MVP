@@ -1,0 +1,351 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MerchantType {
+  RESTAURANT
+  MILK_TEA
+  FRUIT
+  FLOWER
+  CAKE
+}
+
+enum MerchantStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  DISABLED
+}
+
+enum StaffRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum StaffStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProductType {
+  FOOD
+  DRINK
+  FRUIT
+  FLOWER
+  CAKE
+}
+
+enum ProductStatus {
+  DRAFT
+  ON_SALE
+  SOLD_OUT
+  OFF_SALE
+}
+
+enum TableStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OrderType {
+  DINE_IN
+  PICKUP
+  DELIVERY
+}
+
+enum CartStatus {
+  ACTIVE
+  CHECKED_OUT
+  ABANDONED
+}
+
+enum OrderStatus {
+  PENDING_ACCEPTANCE
+  ACCEPTED
+  PREPARING
+  READY
+  DELIVERING
+  COMPLETED
+  CANCELLED
+}
+
+enum SettlementStatus {
+  UNSETTLED
+  SETTLED
+}
+
+enum OperatorType {
+  USER
+  MERCHANT_STAFF
+  SYSTEM
+}
+
+model User {
+  id          BigInt     @id @default(autoincrement())
+  openid      String     @unique @db.VarChar(64)
+  unionid     String?    @unique @db.VarChar(64)
+  nickname    String?    @db.VarChar(64)
+  avatarUrl   String?    @map("avatar_url") @db.VarChar(500)
+  phone       String?    @db.VarChar(32)
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?  @map("last_login_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  carts              Cart[]
+  orders             Order[]
+  operatedStatusLogs OrderStatusLog[] @relation("UserStatusLogOperator")
+
+  @@map("users")
+}
+
+model Merchant {
+  id                       BigInt         @id @default(autoincrement())
+  nameZh                   String         @map("name_zh") @db.VarChar(120)
+  nameVi                   String?        @map("name_vi") @db.VarChar(120)
+  merchantType             MerchantType   @default(RESTAURANT) @map("merchant_type")
+  logoUrl                  String?        @map("logo_url") @db.VarChar(500)
+  coverUrl                 String?        @map("cover_url") @db.VarChar(500)
+  contactName              String         @map("contact_name") @db.VarChar(64)
+  contactPhone             String         @map("contact_phone") @db.VarChar(32)
+  province                 String         @db.VarChar(80)
+  city                     String         @db.VarChar(80)
+  district                 String?        @db.VarChar(80)
+  addressDetail            String         @map("address_detail") @db.VarChar(255)
+  latitude                 Decimal        @db.Decimal(10, 7)
+  longitude                Decimal        @db.Decimal(10, 7)
+  businessHours            Json           @map("business_hours")
+  notice                   String?        @db.Text
+  minimumDeliveryAmountVnd BigInt         @default(0) @map("minimum_delivery_amount_vnd")
+  deliveryFeeVnd           BigInt         @default(0) @map("delivery_fee_vnd")
+  deliveryRadiusKm         Decimal        @default(0) @map("delivery_radius_km") @db.Decimal(5, 2)
+  dineInEnabled            Boolean        @default(true) @map("dine_in_enabled")
+  pickupEnabled            Boolean        @default(true) @map("pickup_enabled")
+  deliveryEnabled          Boolean        @default(false) @map("delivery_enabled")
+  status                   MerchantStatus @default(DRAFT)
+  createdAt                DateTime       @default(now()) @map("created_at")
+  updatedAt                DateTime       @updatedAt @map("updated_at")
+
+  staff      MerchantStaff[]
+  categories Category[]
+  products   Product[]
+  tables     DiningTable[]
+  carts      Cart[]
+  orders     Order[]
+
+  @@index([status])
+  @@index([province, city, status])
+  @@index([latitude, longitude])
+  @@map("merchants")
+}
+
+model MerchantStaff {
+  id           BigInt      @id @default(autoincrement())
+  merchantId   BigInt      @map("merchant_id")
+  username     String      @db.VarChar(64)
+  passwordHash String      @map("password_hash") @db.VarChar(255)
+  displayName  String      @map("display_name") @db.VarChar(64)
+  role         StaffRole   @default(STAFF)
+  status       StaffStatus @default(ACTIVE)
+  lastLoginAt  DateTime?   @map("last_login_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  merchant           Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  operatedStatusLogs OrderStatusLog[] @relation("StaffStatusLogOperator")
+
+  @@unique([merchantId, username])
+  @@index([merchantId, status])
+  @@map("merchant_staff")
+}
+
+model Category {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  nameZh     String   @map("name_zh") @db.VarChar(80)
+  nameVi     String?  @map("name_vi") @db.VarChar(80)
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([merchantId, isActive, sortOrder])
+  @@map("categories")
+}
+
+model Product {
+  id          BigInt        @id @default(autoincrement())
+  merchantId  BigInt        @map("merchant_id")
+  categoryId  BigInt        @map("category_id")
+  nameZh      String        @map("name_zh") @db.VarChar(120)
+  nameVi      String?       @map("name_vi") @db.VarChar(120)
+  productType ProductType   @default(FOOD) @map("product_type")
+  description String?       @db.Text
+  imageUrl    String?       @map("image_url") @db.VarChar(500)
+  priceVnd    BigInt        @map("price_vnd")
+  sortOrder   Int           @default(0) @map("sort_order")
+  status      ProductStatus @default(DRAFT)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  merchant   Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  category   Category    @relation(fields: [categoryId], references: [id])
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([merchantId, categoryId, status, sortOrder])
+  @@map("products")
+}
+
+model DiningTable {
+  id         BigInt      @id @default(autoincrement())
+  merchantId BigInt      @map("merchant_id")
+  tableNo    String      @map("table_no") @db.VarChar(32)
+  tableName  String?     @map("table_name") @db.VarChar(64)
+  qrToken    String      @unique @map("qr_token") @db.VarChar(64)
+  qrVersion  Int         @default(1) @map("qr_version")
+  status     TableStatus @default(ACTIVE)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  carts    Cart[]
+  orders   Order[]
+
+  @@unique([merchantId, tableNo])
+  @@index([merchantId, status])
+  @@map("dining_tables")
+}
+
+model Cart {
+  id         BigInt     @id @default(autoincrement())
+  userId     BigInt     @map("user_id")
+  merchantId BigInt     @map("merchant_id")
+  tableId    BigInt?    @map("table_id")
+  orderType  OrderType  @map("order_type")
+  status     CartStatus @default(ACTIVE)
+  expiresAt  DateTime   @map("expires_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  table    DiningTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items    CartItem[]
+
+  @@index([userId, merchantId, orderType, status])
+  @@index([expiresAt])
+  @@map("carts")
+}
+
+model CartItem {
+  id        BigInt   @id @default(autoincrement())
+  cartId    BigInt   @map("cart_id")
+  productId BigInt   @map("product_id")
+  quantity  Int
+  remark    String   @default("") @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId, remark])
+  @@map("cart_items")
+}
+
+model Order {
+  id                BigInt           @id @default(autoincrement())
+  orderNo           String           @unique @map("order_no") @db.VarChar(32)
+  idempotencyKey    String           @map("idempotency_key") @db.VarChar(64)
+  userId            BigInt           @map("user_id")
+  merchantId        BigInt           @map("merchant_id")
+  tableId           BigInt?          @map("table_id")
+  tableNoSnapshot   String?          @map("table_no_snapshot") @db.VarChar(32)
+  orderType         OrderType        @map("order_type")
+  status            OrderStatus      @default(PENDING_ACCEPTANCE)
+  contactName       String?          @map("contact_name") @db.VarChar(64)
+  contactPhone      String?          @map("contact_phone") @db.VarChar(32)
+  deliveryAddress   String?          @map("delivery_address") @db.VarChar(255)
+  deliveryLatitude  Decimal?         @map("delivery_latitude") @db.Decimal(10, 7)
+  deliveryLongitude Decimal?         @map("delivery_longitude") @db.Decimal(10, 7)
+  customerRemark    String?          @map("customer_remark") @db.VarChar(500)
+  itemAmountVnd     BigInt           @map("item_amount_vnd")
+  deliveryFeeVnd    BigInt           @default(0) @map("delivery_fee_vnd")
+  totalAmountVnd    BigInt           @map("total_amount_vnd")
+  settlementStatus  SettlementStatus @default(UNSETTLED) @map("settlement_status")
+  acceptedAt        DateTime?        @map("accepted_at")
+  readyAt           DateTime?        @map("ready_at")
+  completedAt       DateTime?        @map("completed_at")
+  cancelledAt       DateTime?        @map("cancelled_at")
+  cancelReason      String?          @map("cancel_reason") @db.VarChar(255)
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  user       User             @relation(fields: [userId], references: [id])
+  merchant   Merchant         @relation(fields: [merchantId], references: [id])
+  table      DiningTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items      OrderItem[]
+  statusLogs OrderStatusLog[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([merchantId, status, createdAt])
+  @@index([userId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    BigInt   @id @default(autoincrement())
+  orderId               BigInt   @map("order_id")
+  productId             BigInt?  @map("product_id")
+  productNameZhSnapshot String   @map("product_name_zh_snapshot") @db.VarChar(120)
+  imageUrlSnapshot      String?  @map("image_url_snapshot") @db.VarChar(500)
+  unitPriceVnd          BigInt   @map("unit_price_vnd")
+  quantity              Int
+  subtotalVnd           BigInt   @map("subtotal_vnd")
+  remark                String?  @db.VarChar(200)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusLog {
+  id              BigInt       @id @default(autoincrement())
+  orderId         BigInt       @map("order_id")
+  fromStatus      OrderStatus? @map("from_status")
+  toStatus        OrderStatus  @map("to_status")
+  operatorType    OperatorType @map("operator_type")
+  operatorUserId  BigInt?      @map("operator_user_id")
+  operatorStaffId BigInt?      @map("operator_staff_id")
+  remark          String?      @db.VarChar(255)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  operatorUser  User?          @relation("UserStatusLogOperator", fields: [operatorUserId], references: [id], onDelete: SetNull)
+  operatorStaff MerchantStaff? @relation("StaffStatusLogOperator", fields: [operatorStaffId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@index([operatorUserId])
+  @@index([operatorStaffId])
+  @@map("order_status_logs")
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+coverage/
+.DS_Store
+*.log
+*.tsbuildinfo
+.cache/
+.vite/
+.idea/
+.vscode/
+apps/miniapp/unpackage/
+apps/miniapp/dist/
