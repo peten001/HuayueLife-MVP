@@ -4,7 +4,6 @@ import {
   IsNumberString,
   IsOptional,
   IsString,
-  IsUrl,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -36,7 +35,7 @@ export class CreateProductDto {
   description?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   @MaxLength(500)
   imageUrl?: string;
 

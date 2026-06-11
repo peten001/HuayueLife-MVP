@@ -11,5 +11,6 @@ coverage/
 .vite/
 .idea/
 .vscode/
+apps/api/uploads/
 apps/miniapp/unpackage/
 apps/miniapp/dist/

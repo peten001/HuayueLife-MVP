@@ -10,6 +10,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
+import { resolveMediaUrl } from '@/utils/media';
 import type { OrderType, Product } from '@/types/api';
 
 const cartStore = useCartStore();
@@ -67,7 +68,13 @@ async function add() {
     </view>
     <text v-if="error" class="error">{{ error }}</text>
     <template v-else-if="product">
-      <image v-if="product.imageUrl" class="image" :src="product.imageUrl" mode="aspectFill" />
+      <image
+        v-if="resolveMediaUrl(product.imageUrl)"
+        class="image"
+        :src="resolveMediaUrl(product.imageUrl)"
+        mode="aspectFill"
+      />
+      <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
       <view class="card">
         <text class="name">{{ productName(product, locale) }}</text>
         <text v-if="product.nameVi" class="vi">{{ product.nameVi }}</text>
@@ -91,6 +98,7 @@ async function add() {
 .page { min-height: 100vh; padding: 24rpx; background: #f6f3ef; }
 .context { padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #fff; background: #9f2e26; }
 .image { width: 100%; height: 520rpx; border-radius: 24rpx; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 28rpx; }
 .card { padding: 28rpx; margin: 20rpx 0; border-radius: 20rpx; background: #fff; }
 .name { display: block; font-size: 40rpx; font-weight: 800; }
 .vi { display: block; margin-top: 6rpx; color: #888; }

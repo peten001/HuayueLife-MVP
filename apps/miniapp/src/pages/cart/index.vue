@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue';
 import { formatNumberCurrency, orderTypeLabel, productName, useI18n, usePageTitle } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
+import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
 const { locale, t } = useI18n();
@@ -65,7 +66,13 @@ function checkout() {
     </view>
     <view v-if="!cartStore.cart?.items.length" class="empty">{{ t('cartEmpty') }}</view>
     <view v-for="item in cartStore.cart?.items" :key="item.id" class="item">
-      <image v-if="item.product.imageUrl" class="image" :src="item.product.imageUrl" mode="aspectFill" />
+      <image
+        v-if="resolveMediaUrl(item.product.imageUrl)"
+        class="image"
+        :src="resolveMediaUrl(item.product.imageUrl)"
+        mode="aspectFill"
+      />
+      <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
       <view class="body">
         <text class="name">{{ productName(item.product, locale) }}</text>
         <text class="price">{{ formatNumberCurrency(item.product.priceVnd) }}</text>
@@ -93,6 +100,7 @@ function checkout() {
 .merchant { display: block; margin-bottom: 8rpx; font-size: 32rpx; font-weight: 700; }
 .item { display: flex; gap: 20rpx; padding: 22rpx; margin-bottom: 16rpx; border-radius: 18rpx; background: #fff; }
 .image { width: 140rpx; height: 120rpx; flex: none; border-radius: 12rpx; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 22rpx; text-align: center; }
 .body { min-width: 0; flex: 1; }
 .name, .price { display: block; }
 .name { font-weight: 700; }

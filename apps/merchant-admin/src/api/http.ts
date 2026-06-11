@@ -50,6 +50,11 @@ export function errorMessage(error: unknown) {
     ) {
       return t('permissionDenied');
     }
+    if (message === 'Image file is required') return t('imageFileRequired');
+    if (message === 'Invalid image type') return t('invalidImageType');
+    if (message === 'Image file exceeds 5MB') return t('imageTooLarge');
+    if (message === 'Failed to save uploaded image') return t('imageUploadFailed');
+    if (message === 'File too large') return t('imageTooLarge');
     if (Array.isArray(message)) return message.join('; ');
     if (message) return message;
     if (error.code === 'ECONNABORTED') return t('requestTimeout');

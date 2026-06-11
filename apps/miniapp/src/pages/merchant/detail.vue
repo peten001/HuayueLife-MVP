@@ -9,6 +9,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import type { MerchantDetail } from '@/types/api';
+import { resolveMediaUrl } from '@/utils/media';
 
 const merchant = ref<MerchantDetail | null>(null);
 const error = ref('');
@@ -36,7 +37,13 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   <view class="page">
     <text v-if="error" class="error">{{ error }}</text>
     <template v-else-if="merchant">
-      <image v-if="merchant.coverUrl" class="cover" :src="merchant.coverUrl" mode="aspectFill" />
+      <image
+        v-if="resolveMediaUrl(merchant.coverUrl)"
+        class="cover"
+        :src="resolveMediaUrl(merchant.coverUrl)"
+        mode="aspectFill"
+      />
+      <view v-else class="cover placeholder">{{ t('imagePlaceholder') }}</view>
       <view class="card">
         <view class="headline">
           <text class="title">{{ merchantName(merchant, locale) }}</text>
@@ -72,6 +79,7 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
 <style scoped>
 .page { min-height: 100vh; padding: 24rpx; background: #f6f3ef; }
 .cover { width: 100%; height: 360rpx; border-radius: 24rpx; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 28rpx; }
 .card { padding: 28rpx; margin: 20rpx 0; border-radius: 20rpx; background: #fff; }
 .headline { display: flex; justify-content: space-between; gap: 20rpx; }
 .title { font-size: 40rpx; font-weight: 800; }

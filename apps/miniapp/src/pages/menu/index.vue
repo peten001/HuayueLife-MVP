@@ -12,6 +12,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
+import { resolveMediaUrl } from '@/utils/media';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
 
 const cartStore = useCartStore();
@@ -108,7 +109,13 @@ async function add(product: Product) {
               class="product"
               @click="openProduct(product)"
             >
-              <image v-if="product.imageUrl" class="image" :src="product.imageUrl" mode="aspectFill" />
+              <image
+                v-if="resolveMediaUrl(product.imageUrl)"
+                class="image"
+                :src="resolveMediaUrl(product.imageUrl)"
+                mode="aspectFill"
+              />
+              <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
               <view class="product-body">
                 <text class="product-name">{{ productName(product, locale) }}</text>
                 <text class="description">{{ product.description || t('productDescriptionFallback') }}</text>
@@ -142,6 +149,7 @@ async function add(product: Product) {
 .category-title { display: block; margin-bottom: 18rpx; font-size: 30rpx; font-weight: 700; }
 .product { display: flex; gap: 18rpx; padding: 20rpx 0; border-bottom: 1rpx solid #eee; }
 .image { width: 150rpx; height: 130rpx; flex: none; border-radius: 14rpx; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 22rpx; }
 .product-body { min-width: 0; flex: 1; }
 .product-name { display: block; font-weight: 700; }
 .description { display: -webkit-box; margin: 10rpx 0; overflow: hidden; color: #888; font-size: 22rpx; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

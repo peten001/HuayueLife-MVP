@@ -14,6 +14,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
+import { resolveMediaUrl } from '@/utils/media';
 import type { OrderStatus, OrderType, UserOrder } from '@/types/api';
 
 const auth = useAuthStore();
@@ -148,7 +149,12 @@ function serviceInfo() {
       <view class="card">
         <view class="card-title">{{ t('itemDetails') }}</view>
         <view v-for="item in order.items" :key="item.id" class="item">
-          <image v-if="item.imageUrlSnapshot" :src="item.imageUrlSnapshot" mode="aspectFill" />
+          <image
+            v-if="resolveMediaUrl(item.imageUrlSnapshot)"
+            :src="resolveMediaUrl(item.imageUrlSnapshot)"
+            mode="aspectFill"
+          />
+          <view v-else class="item-image placeholder">{{ t('imagePlaceholder') }}</view>
           <view class="item-main">
             <text>{{ item.productNameZhSnapshot }}</text>
             <text v-if="item.remark" class="remark">{{ t('orderNote') }}：{{ item.remark }}</text>
@@ -196,7 +202,8 @@ function serviceInfo() {
 .info-row > text:first-child { color: #8b837e; white-space: nowrap; }
 .info-row > text:last-child { text-align: right; white-space: pre-line; }
 .item { display: grid; grid-template-columns: 80rpx 1fr auto auto; align-items: center; gap: 14rpx; padding: 20rpx 0; border-bottom: 1rpx solid #eee9e5; font-size: 24rpx; }
-.item image { width: 80rpx; height: 80rpx; border-radius: 10rpx; background: #eee; }
+.item image, .item-image { width: 80rpx; height: 80rpx; border-radius: 10rpx; background: #eee; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 18rpx; text-align: center; }
 .item-main { display: grid; gap: 6rpx; }
 .remark { color: #9a7161; font-size: 21rpx; }
 .amount-row { padding-top: 14rpx; }

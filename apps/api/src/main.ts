@@ -1,5 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import * as express from 'express';
+import { join } from 'node:path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -9,6 +11,9 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 3001);
 
   app.setGlobalPrefix('api/v1');
+  const uploadsRoot = join(process.cwd(), 'uploads');
+  app.use('/api/v1/uploads', express.static(uploadsRoot));
+  app.use('/uploads', express.static(uploadsRoot));
   app.enableCors({
     origin: true,
     credentials: true,

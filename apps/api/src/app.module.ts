@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MerchantProfileModule } from './modules/merchant-profile/merchant-profile.module';
 import { MerchantStaffModule } from './modules/merchant-staff/merchant-staff.module';
 import { MerchantOrdersModule } from './modules/merchant-orders/merchant-orders.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PublicMerchantsModule } from './modules/public-merchants/public-merchants.module';
@@ -43,6 +44,7 @@ import { TablesModule } from './modules/tables/tables.module';
     MerchantProfileModule,
     MerchantStaffModule,
     MerchantOrdersModule,
+    UploadsModule,
     CategoriesModule,
     CartModule,
     ProductsModule,

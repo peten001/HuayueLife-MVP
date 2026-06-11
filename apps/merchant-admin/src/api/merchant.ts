@@ -91,6 +91,16 @@ export async function updateProduct(id: string, payload: Record<string, unknown>
   return response.data.data;
 }
 
+export async function uploadProductImage(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await http.post<ApiResponse<{ url: string }>>(
+    '/uploads/image',
+    formData,
+  );
+  return response.data.data;
+}
+
 export async function updateProductStatus(id: string, status: ProductStatus) {
   await http.patch(`/merchant/products/${id}/status`, { status });
 }
