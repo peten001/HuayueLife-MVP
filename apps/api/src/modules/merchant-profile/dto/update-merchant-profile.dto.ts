@@ -9,6 +9,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateMerchantProfileDto {
@@ -74,8 +75,10 @@ export class UpdateMerchantProfileDto {
   @Max(180)
   longitude?: number;
 
-  @IsOptional()
-  @IsObject()
+  @ValidateIf((_, value) => value !== undefined)
+  @IsObject({
+    message: 'businessHours must be an object and cannot be null or an array',
+  })
   businessHours?: Record<string, string[]>;
 
   @IsOptional()
@@ -83,18 +86,30 @@ export class UpdateMerchantProfileDto {
   @MaxLength(2000)
   notice?: string;
 
-  @IsOptional()
-  @IsInt()
+  @ValidateIf((_, value) => value !== undefined)
+  @IsInt({
+    message:
+      'minimumDeliveryAmountVnd must be a non-negative integer and cannot be null or empty',
+  })
   @Min(0)
   minimumDeliveryAmountVnd?: number;
 
-  @IsOptional()
-  @IsInt()
+  @ValidateIf((_, value) => value !== undefined)
+  @IsInt({
+    message:
+      'deliveryFeeVnd must be a non-negative integer and cannot be null or empty',
+  })
   @Min(0)
   deliveryFeeVnd?: number;
 
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    {
+      message:
+        'deliveryRadiusKm must be a number and cannot be null or empty',
+    },
+  )
   @Min(0)
   @Max(100)
   deliveryRadiusKm?: number;

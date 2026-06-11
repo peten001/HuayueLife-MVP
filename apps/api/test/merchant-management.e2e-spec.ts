@@ -124,6 +124,59 @@ describe('Merchant management isolation', () => {
       .expect(400);
   });
 
+  it('rejects null and empty merchant business settings', async () => {
+    const invalidPayloads = [
+      {
+        payload: { businessHours: null },
+        message: 'businessHours must be an object',
+      },
+      {
+        payload: { businessHours: [] },
+        message: 'businessHours must be an object',
+      },
+      {
+        payload: { deliveryRadiusKm: null },
+        message: 'deliveryRadiusKm must be a number',
+      },
+      {
+        payload: { deliveryRadiusKm: '' },
+        message: 'deliveryRadiusKm must be a number',
+      },
+    ];
+
+    for (const { payload, message } of invalidPayloads) {
+      const response = await request(app.getHttpServer())
+        .patch('/api/v1/merchant/profile')
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .send(payload)
+        .expect(400);
+
+      expect(response.body.message).toEqual(
+        expect.arrayContaining([expect.stringContaining(message)]),
+      );
+    }
+  });
+
+  it('saves an all-day 00:00-24:00 business schedule', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/merchant/profile')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        minimumDeliveryAmountVnd: 0,
+        deliveryFeeVnd: 0,
+        deliveryRadiusKm: 5,
+        businessHours: { monday: ['00:00-24:00'] },
+      })
+      .expect(200);
+
+    const merchant = await prisma.merchant.findUnique({
+      where: { id: merchantOneId },
+    });
+    expect(merchant?.businessHours).toEqual({
+      monday: ['00:00-24:00'],
+    });
+  });
+
   it('isolates categories and soft-disables them with their products', async () => {
     const category = await createCategory(tokenOne, '甲店分类');
 

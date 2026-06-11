@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
+import { useI18n } from '@/i18n';
 import { getProfile, updateProfile } from '@/api/merchant';
 
 const form = reactive({
@@ -13,6 +14,7 @@ const form = reactive({
   deliveryRadiusKm: 0,
   businessHoursText: '{}',
 });
+const { t } = useI18n();
 const message = ref('');
 
 onMounted(async () => {
@@ -33,8 +35,34 @@ onMounted(async () => {
 });
 
 async function save() {
+  message.value = '';
+
+  if (
+    typeof form.deliveryRadiusKm !== 'number' ||
+    !Number.isFinite(form.deliveryRadiusKm)
+  ) {
+    message.value = t('invalidDeliveryRadius');
+    return;
+  }
+
+  let businessHours: unknown;
   try {
-    const businessHours = JSON.parse(form.businessHoursText);
+    businessHours = JSON.parse(form.businessHoursText);
+  } catch {
+    message.value = t('invalidBusinessHoursJson');
+    return;
+  }
+
+  if (
+    businessHours === null ||
+    typeof businessHours !== 'object' ||
+    Array.isArray(businessHours)
+  ) {
+    message.value = t('invalidBusinessHoursObject');
+    return;
+  }
+
+  try {
     await updateProfile({
       dineInEnabled: form.dineInEnabled,
       pickupEnabled: form.pickupEnabled,
@@ -44,7 +72,7 @@ async function save() {
       deliveryRadiusKm: form.deliveryRadiusKm,
       businessHours,
     });
-    message.value = '营业设置已保存';
+    message.value = t('settingsSaved');
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -52,22 +80,22 @@ async function save() {
 </script>
 
 <template>
-  <PageHeader title="营业设置" description="V1 支持堂食、自取和商家自行配送" />
+  <PageHeader :title="t('businessSettings')" :description="t('businessDescription')" />
   <form class="card form-grid" @submit.prevent="save">
-    <label class="check"><input v-model="form.dineInEnabled" type="checkbox" />堂食</label>
-    <label class="check"><input v-model="form.pickupEnabled" type="checkbox" />到店自取</label>
-    <label class="check"><input v-model="form.deliveryEnabled" type="checkbox" />商家配送</label>
+    <label class="check"><input v-model="form.dineInEnabled" type="checkbox" />{{ t('dineIn') }}</label>
+    <label class="check"><input v-model="form.pickupEnabled" type="checkbox" />{{ t('pickup') }}</label>
+    <label class="check"><input v-model="form.deliveryEnabled" type="checkbox" />{{ t('delivery') }}</label>
     <span />
-    <label>配送起送价（VND）<input v-model.number="form.minimumDeliveryAmountVnd" type="number" min="0" /></label>
-    <label>配送费（VND）<input v-model.number="form.deliveryFeeVnd" type="number" min="0" /></label>
-    <label>配送半径（公里）<input v-model.number="form.deliveryRadiusKm" type="number" min="0" max="100" step="0.1" /></label>
+    <label>{{ t('minimumDeliveryAmount') }}<input v-model.number="form.minimumDeliveryAmountVnd" type="number" min="0" /></label>
+    <label>{{ t('deliveryFeeVnd') }}<input v-model.number="form.deliveryFeeVnd" type="number" min="0" /></label>
+    <label>{{ t('deliveryRadius') }}<input v-model.number="form.deliveryRadiusKm" type="number" min="0" max="100" step="0.1" /></label>
     <label class="span-2">
-      营业时间 JSON
+      {{ t('businessHoursJson') }}
       <textarea v-model="form.businessHoursText" rows="14" spellcheck="false" />
     </label>
     <div class="form-actions span-2">
       <span class="message">{{ message }}</span>
-      <button>保存设置</button>
+      <button>{{ t('saveSettings') }}</button>
     </div>
   </form>
 </template>

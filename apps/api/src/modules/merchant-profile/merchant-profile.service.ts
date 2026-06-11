@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { UpdateMerchantProfileDto } from './dto/update-merchant-profile.dto';
@@ -19,8 +23,9 @@ export class MerchantProfileService {
 
   async updateProfile(merchantId: bigint, dto: UpdateMerchantProfileDto) {
     await this.getProfile(merchantId);
+    validateRequiredUpdateValues(dto);
 
-    const data: Prisma.MerchantUpdateInput = {
+    const data = stripUndefined({
       ...dto,
       minimumDeliveryAmountVnd:
         dto.minimumDeliveryAmountVnd === undefined
@@ -32,11 +37,45 @@ export class MerchantProfileService {
         dto.businessHours === undefined
           ? undefined
           : (dto.businessHours as Prisma.InputJsonValue),
-    };
+    }) as Prisma.MerchantUpdateInput;
 
     return this.prisma.merchant.update({
       where: { id: merchantId },
       data,
     });
   }
+}
+
+function validateRequiredUpdateValues(dto: UpdateMerchantProfileDto) {
+  if (
+    dto.businessHours !== undefined &&
+    (dto.businessHours === null ||
+      typeof dto.businessHours !== 'object' ||
+      Array.isArray(dto.businessHours))
+  ) {
+    throw new BadRequestException(
+      'businessHours must be an object and cannot be null or an array',
+    );
+  }
+
+  assertNumber(dto.minimumDeliveryAmountVnd, 'minimumDeliveryAmountVnd');
+  assertNumber(dto.deliveryFeeVnd, 'deliveryFeeVnd');
+  assertNumber(dto.deliveryRadiusKm, 'deliveryRadiusKm');
+}
+
+function assertNumber(value: number | undefined, field: string) {
+  if (
+    value !== undefined &&
+    (value === null || typeof value !== 'number' || !Number.isFinite(value))
+  ) {
+    throw new BadRequestException(
+      `${field} must be a number and cannot be null or empty`,
+    );
+  }
+}
+
+function stripUndefined<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  ) as Partial<T>;
 }
