@@ -29,6 +29,9 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   if (!merchant.value) return;
   uni.navigateTo({
     url: `/pages/menu/index?merchantId=${merchant.value.id}&orderType=${orderType}`,
+    fail() {
+      uni.showToast({ title: t('navigationFailed'), icon: 'none' });
+    },
   });
 }
 </script>
@@ -59,15 +62,17 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
       <view class="actions">
         <button
           v-if="merchant.supportedOrderTypes.includes('PICKUP')"
+          type="button"
           class="primary"
-          @click="openMenu('PICKUP')"
+          @tap="openMenu('PICKUP')"
         >
           {{ t('pickup') }}
         </button>
         <button
           v-if="merchant.supportedOrderTypes.includes('DELIVERY')"
+          type="button"
           class="primary delivery"
-          @click="openMenu('DELIVERY')"
+          @tap="openMenu('DELIVERY')"
         >
           {{ t('delivery') }}
         </button>
