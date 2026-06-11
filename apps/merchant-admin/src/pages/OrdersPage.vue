@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { getMerchantOrders } from '@/api/orders';
 import { errorMessage } from '@/api/http';
@@ -9,6 +9,7 @@ import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 import {
   enableOrderSound,
+  disableOrderSound,
   isOrderSoundEnabled,
   notifyNewPendingOrders,
 } from '@/utils/order-notification';
@@ -18,6 +19,8 @@ const { t } = useI18n();
 const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const soundEnabled = ref(isOrderSoundEnabled());
+const newPendingOrderIds = ref<string[]>([]);
+const highlightedOrderIds = ref<string[]>([]);
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
@@ -28,15 +31,28 @@ const filters = reactive<{
   date: todayInVietnam(),
 });
 let timer: number | undefined;
+let bannerTimer: number | undefined;
+let highlightTimer: number | undefined;
+let isActive = true;
+
+const hasNewOrderAlert = computed(() => newPendingOrderIds.value.length > 0);
 
 async function load() {
   try {
-    rows.value = await getMerchantOrders(filters);
-    notifyNewPendingOrders(
-      rows.value
-        .filter((order) => order.status === 'PENDING_ACCEPTANCE')
-        .map((order) => order.id),
-    );
+    const nextRows = await getMerchantOrders(filters);
+    rows.value = nextRows;
+    void getMerchantOrders({
+      status: 'PENDING_ACCEPTANCE',
+      date: filters.date,
+    })
+      .then((pendingRows) => {
+        if (!isActive) return;
+        const newIds = notifyNewPendingOrders(
+          pendingRows.map((order) => order.id),
+        );
+        handleNewOrders(newIds);
+      })
+      .catch(() => undefined);
     message.value = '';
   } catch (error) {
     message.value = errorMessage(error);
@@ -46,6 +62,38 @@ async function load() {
 async function enableSound() {
   await enableOrderSound();
   soundEnabled.value = true;
+}
+
+function disableSound() {
+  disableOrderSound();
+  soundEnabled.value = false;
+}
+
+function toggleSound() {
+  if (soundEnabled.value) {
+    disableSound();
+  } else {
+    void enableSound();
+  }
+}
+
+function handleNewOrders(newIds: string[]) {
+  if (!newIds.length) return;
+  newPendingOrderIds.value = [...new Set([...newPendingOrderIds.value, ...newIds])];
+  highlightedOrderIds.value = [...new Set([...highlightedOrderIds.value, ...newIds])];
+  if (bannerTimer) window.clearTimeout(bannerTimer);
+  bannerTimer = window.setTimeout(() => {
+    newPendingOrderIds.value = [];
+  }, 15000);
+  if (highlightTimer) window.clearTimeout(highlightTimer);
+  highlightTimer = window.setTimeout(() => {
+    highlightedOrderIds.value = [];
+  }, 30000);
+}
+
+function showPendingOnly() {
+  filters.status = 'PENDING_ACCEPTANCE';
+  void load();
 }
 
 function orderTypeLabel(type: OrderType) {
@@ -75,7 +123,12 @@ onMounted(async () => {
   await load();
   timer = window.setInterval(load, 5000);
 });
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => {
+  isActive = false;
+  window.clearInterval(timer);
+  if (bannerTimer) window.clearTimeout(bannerTimer);
+  if (highlightTimer) window.clearTimeout(highlightTimer);
+});
 
 function todayInVietnam() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -89,11 +142,18 @@ function todayInVietnam() {
 
 <template>
   <PageHeader :title="t('orders')" :description="t('ordersDescription')">
-    <button v-if="!soundEnabled" class="secondary" @click="enableSound">
-      {{ t('enableSound') }}
+    <button class="secondary" @click="toggleSound">
+      {{ soundEnabled ? t('disableSoundReminder') : t('enableSoundReminder') }}
     </button>
-    <span v-else class="sound-enabled">{{ t('soundEnabled') }}</span>
   </PageHeader>
+
+  <div v-if="hasNewOrderAlert" class="card order-alert">
+    <div>
+      <strong>{{ t('newOrderAlert') }}</strong>
+      <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
+    </div>
+    <button type="button" class="secondary" @click="showPendingOnly">{{ t('viewOrders') }}</button>
+  </div>
 
   <form class="card order-filters" @submit.prevent="load">
     <label>{{ t('date') }}<input v-model="filters.date" type="date" /></label>
@@ -132,7 +192,15 @@ function todayInVietnam() {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="order in rows" :key="order.id">
+        <tr
+          v-for="order in rows"
+          :key="order.id"
+          :class="{
+            'new-order-row':
+              order.status === 'PENDING_ACCEPTANCE' &&
+              highlightedOrderIds.includes(order.id),
+          }"
+        >
           <td>{{ order.orderNo }}<small>{{ t('itemCount', { count: order.items.length }) }}</small></td>
           <td>{{ orderTypeLabel(order.orderType) }}</td>
           <td>{{ serviceInfo(order) }}</td>
@@ -149,3 +217,29 @@ function todayInVietnam() {
     </table>
   </div>
 </template>
+
+<style scoped>
+.order-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  border-left: 4px solid #b83228;
+  background: #fff7f5;
+}
+
+.order-alert p {
+  margin: 4px 0 0;
+  color: #7b4b46;
+}
+
+.new-order-row {
+  background: #fff7f5;
+  box-shadow: inset 4px 0 0 #b83228;
+}
+
+.new-order-row td {
+  background: transparent;
+}
+</style>

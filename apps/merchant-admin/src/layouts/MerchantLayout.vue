@@ -6,6 +6,7 @@ import {
   clearToken,
   getMerchantStaff,
 } from '@/utils/storage';
+import { pendingOrderCount } from '@/utils/order-notification';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
@@ -52,6 +53,9 @@ async function logout() {
       <nav>
         <RouterLink v-for="[path, labelKey] in nav" :key="path" :to="path">
           {{ t(labelKey) }}
+          <span v-if="path === '/orders' && pendingOrderCount" class="nav-badge">
+            {{ pendingOrderCount }}
+          </span>
         </RouterLink>
       </nav>
       <button class="secondary logout" @click="logout">{{ t('logout') }}</button>

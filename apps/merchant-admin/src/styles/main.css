@@ -143,6 +143,22 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .status-timeline p { margin: 5px 0; color: #59616b; }
 .status-timeline small { color: #858c94; }
 .order-pending_acceptance { color: #a82f2f; background: #fde9e7; }
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #fff;
+  background: #b83228;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
 .order-accepted { color: #285f94; background: #e7f1fb; }
 .order-preparing { color: #8a5610; background: #fff0d9; }
 .order-ready { color: #17693c; background: #e5f5ec; }
