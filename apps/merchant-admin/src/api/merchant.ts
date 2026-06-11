@@ -4,15 +4,34 @@ import type {
   Category,
   DiningTable,
   MerchantProfile,
+  MerchantStaffAccount,
+  MerchantStaffListItem,
+  MerchantStaffRole,
   Product,
   ProductStatus,
 } from '@/types/api';
 
 export async function login(username: string, password: string) {
-  const response = await http.post<ApiResponse<{ accessToken: string }>>(
+  const response = await http.post<ApiResponse<{
+    accessToken: string;
+    staff: MerchantStaffAccount;
+  }>>(
     '/merchant/auth/login',
     { username, password },
   );
+  return response.data.data;
+}
+
+export async function getMerchantMe() {
+  const response = await http.get<ApiResponse<{
+    user: {
+      sub: string;
+      accountType: 'MERCHANT_STAFF';
+      merchantId?: string;
+      role?: 'OWNER' | 'MANAGER' | 'STAFF';
+      username?: string;
+    };
+  }>>('/merchant/me');
   return response.data.data;
 }
 
@@ -128,4 +147,52 @@ export async function downloadTableQr(table: DiningTable) {
   anchor.download = `table-${table.tableNo}.png`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+export async function getStaffList() {
+  const response = await http.get<ApiResponse<MerchantStaffListItem[]>>(
+    '/merchant/staff',
+  );
+  return response.data.data;
+}
+
+export async function createStaff(payload: {
+  username: string;
+  displayName: string;
+  password: string;
+  role: Exclude<MerchantStaffRole, 'OWNER'>;
+}) {
+  const response = await http.post<ApiResponse<MerchantStaffListItem>>(
+    '/merchant/staff',
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updateStaff(
+  id: string,
+  payload: {
+    displayName?: string;
+    role?: Exclude<MerchantStaffRole, 'OWNER'>;
+  },
+) {
+  const response = await http.patch<ApiResponse<MerchantStaffListItem>>(
+    `/merchant/staff/${id}`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function disableStaff(id: string) {
+  const response = await http.post<ApiResponse<MerchantStaffListItem>>(
+    `/merchant/staff/${id}/disable`,
+  );
+  return response.data.data;
+}
+
+export async function resetStaffPassword(id: string) {
+  const response = await http.post<ApiResponse<{ newPassword: string }>>(
+    `/merchant/staff/${id}/reset-password`,
+  );
+  return response.data.data;
 }

@@ -5,7 +5,7 @@ import { errorMessage } from '@/api/http';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import { useI18n } from '@/i18n';
 import { login } from '@/api/merchant';
-import { setToken } from '@/utils/storage';
+import { setMerchantStaff, setToken } from '@/utils/storage';
 
 const router = useRouter();
 const { t } = useI18n();
@@ -20,7 +20,8 @@ async function submit() {
   try {
     const result = await login(username.value, password.value);
     setToken(result.accessToken);
-    await router.push('/');
+    setMerchantStaff(result.staff);
+    await router.push(result.staff.role === 'OWNER' ? '/dashboard' : '/orders');
   } catch (caught) {
     error.value = errorMessage(caught);
   } finally {

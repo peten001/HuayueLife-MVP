@@ -1,7 +1,11 @@
 import axios from 'axios';
 import router from '@/router';
 import { useI18n } from '@/i18n';
-import { clearToken, getToken } from '@/utils/storage';
+import {
+  clearMerchantStaff,
+  clearToken,
+  getToken,
+} from '@/utils/storage';
 
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api/v1',
@@ -21,6 +25,7 @@ http.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       clearToken();
+      clearMerchantStaff();
       await router.push('/login');
     }
     return Promise.reject(error);
@@ -38,6 +43,12 @@ export function errorMessage(error: unknown) {
       message === 'Merchant identity is missing'
     ) {
       return t('sessionExpired');
+    }
+    if (
+      message === 'Insufficient merchant role' ||
+      message === 'Merchant staff account required'
+    ) {
+      return t('permissionDenied');
     }
     if (Array.isArray(message)) return message.join('; ');
     if (message) return message;

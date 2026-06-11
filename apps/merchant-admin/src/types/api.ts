@@ -6,6 +6,30 @@ export interface ApiResponse<T> {
   timestamp: string;
 }
 
+export type MerchantStaffRole = 'OWNER' | 'MANAGER' | 'STAFF';
+
+export interface MerchantStaffAccount {
+  id: string;
+  displayName: string;
+  role: MerchantStaffRole;
+  merchant: {
+    id: string;
+    nameZh: string;
+    status: string;
+  };
+}
+
+export interface MerchantStaffListItem {
+  id: string;
+  username: string;
+  displayName: string;
+  role: MerchantStaffRole;
+  status: 'ACTIVE' | 'DISABLED';
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MerchantProfile {
   id: string;
   nameZh: string;
