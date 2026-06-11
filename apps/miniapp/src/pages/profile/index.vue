@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app';
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
+const { t } = useI18n();
+
+usePageTitle(() => t('profileTitle'));
 
 onShow(() => {
   void auth.ensureLogin();
@@ -17,32 +22,33 @@ function openOrders() {
   <view class="page">
     <view class="profile-card">
       <image v-if="auth.user?.avatarUrl" :src="auth.user.avatarUrl" mode="aspectFill" />
-      <view v-else class="avatar">{{ (auth.user?.nickname || '微').slice(0, 1) }}</view>
+      <view v-else class="avatar">{{ (auth.user?.nickname || 'U').slice(0, 1) }}</view>
       <view>
-        <text class="name">{{ auth.user?.nickname || '微信用户' }}</text>
-        <text class="phone">{{ auth.user?.phone || '暂未绑定联系电话' }}</text>
+        <text class="name">{{ auth.user?.nickname || t('meNicknameFallback') }}</text>
+        <text class="phone">{{ auth.user?.phone || t('mePhoneFallback') }}</text>
       </view>
     </view>
 
     <view class="menu-card">
+      <LanguageSwitcher />
       <button @click="openOrders">
-        <text>我的订单</text>
+        <text>{{ t('myOrders') }}</text>
         <text>›</text>
       </button>
       <view class="row">
-        <text>服务区域</text>
-        <text>北宁 / 北江</text>
+        <text>{{ t('serviceArea') }}</text>
+        <text>{{ t('cityBacNinh') }} / {{ t('cityBacGiang') }}</text>
       </view>
       <view class="row">
-        <text>付款方式</text>
-        <text>线下向商家付款</text>
+        <text>{{ t('paymentMethod') }}</text>
+        <text>{{ t('offlinePayment') }}</text>
       </view>
     </view>
 
     <view class="about">
-      <text class="about-title">关于华越优选</text>
-      <text>面向北宁、北江华人餐厅的扫码点餐服务。</text>
-      <text>平台暂不提供在线支付和骑手配送。</text>
+      <text class="about-title">{{ t('aboutTitle') }}</text>
+      <text>{{ t('aboutLine1') }}</text>
+      <text>{{ t('aboutLine2') }}</text>
     </view>
   </view>
 </template>

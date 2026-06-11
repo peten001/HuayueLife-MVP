@@ -2,16 +2,25 @@
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { getMerchant } from '@/api/catalog';
+import {
+  merchantName,
+  orderTypeLabel,
+  useI18n,
+  usePageTitle,
+} from '@/i18n';
 import type { MerchantDetail } from '@/types/api';
 
 const merchant = ref<MerchantDetail | null>(null);
 const error = ref('');
+const { locale, t } = useI18n();
+
+usePageTitle(() => t('merchantDetailTitle'));
 
 onLoad(async (options) => {
   try {
     merchant.value = await getMerchant(String(options?.id ?? ''));
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : '商家加载失败';
+    error.value = caught instanceof Error ? caught.message : t('merchantLoadFailed');
   }
 });
 
@@ -30,14 +39,14 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
       <image v-if="merchant.coverUrl" class="cover" :src="merchant.coverUrl" mode="aspectFill" />
       <view class="card">
         <view class="headline">
-          <text class="title">{{ merchant.nameZh }}</text>
-          <text :class="merchant.isOpen ? 'open' : 'closed'">{{ merchant.isOpen ? '营业中' : '休息中' }}</text>
+          <text class="title">{{ merchantName(merchant, locale) }}</text>
+          <text :class="merchant.isOpen ? 'open' : 'closed'">{{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}</text>
         </view>
         <text class="address">{{ merchant.addressDetail }}</text>
-        <text class="phone">电话：{{ merchant.contactPhone }}</text>
+        <text class="phone">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
         <text v-if="merchant.notice" class="notice">{{ merchant.notice }}</text>
         <view class="tags">
-          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">{{ type }}</text>
+          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">{{ orderTypeLabel(type, locale) }}</text>
         </view>
       </view>
       <view class="actions">
@@ -46,14 +55,14 @@ function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
           class="primary"
           @click="openMenu('PICKUP')"
         >
-          到店自取
+          {{ t('pickup') }}
         </button>
         <button
           v-if="merchant.supportedOrderTypes.includes('DELIVERY')"
           class="primary delivery"
           @click="openMenu('DELIVERY')"
         >
-          商家配送
+          {{ t('delivery') }}
         </button>
       </view>
     </template>

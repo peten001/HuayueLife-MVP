@@ -2,8 +2,16 @@
 import { computed, ref } from 'vue';
 import { onHide, onShow } from '@dcloudio/uni-app';
 import { getOrders } from '@/api/orders';
+import {
+  locale,
+  merchantName,
+  orderStatusLabel,
+  orderTypeLabel,
+  useI18n,
+  usePageTitle,
+} from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
-import type { OrderStatus, OrderType, UserOrder } from '@/types/api';
+import type { UserOrder } from '@/types/api';
 
 type Filter = 'ALL' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 
@@ -13,12 +21,16 @@ const filter = ref<Filter>('ALL');
 const loading = ref(false);
 const message = ref('');
 let timer: ReturnType<typeof setInterval> | undefined;
-const filterOptions: Array<{ value: Filter; label: string }> = [
-  { value: 'ALL', label: '全部' },
-  { value: 'ACTIVE', label: '进行中' },
-  { value: 'COMPLETED', label: '已完成' },
-  { value: 'CANCELLED', label: '已取消' },
-];
+const { t } = useI18n();
+
+usePageTitle(() => t('ordersTitle'));
+
+const filterOptions = computed<Array<{ value: Filter; label: string }>>(() => [
+  { value: 'ALL', label: t('all') },
+  { value: 'ACTIVE', label: t('active') },
+  { value: 'COMPLETED', label: t('completed') },
+  { value: 'CANCELLED', label: t('cancelled') },
+]);
 
 const filteredOrders = computed(() =>
   orders.value.filter((order) => {
@@ -38,7 +50,7 @@ async function load(showLoading = false) {
     orders.value = await getOrders();
     message.value = '';
   } catch (caught) {
-    message.value = caught instanceof Error ? caught.message : '订单加载失败';
+    message.value = caught instanceof Error ? caught.message : t('orderLoadError');
   } finally {
     loading.value = false;
   }
@@ -46,24 +58,6 @@ async function load(showLoading = false) {
 
 function openOrder(id: string) {
   uni.navigateTo({ url: `/pages/order/detail?id=${id}` });
-}
-
-function statusLabel(status: OrderStatus) {
-  return {
-    PENDING_ACCEPTANCE: '待商家接单',
-    ACCEPTED: '商家已接单',
-    PREPARING: '制作中',
-    READY: '制作完成',
-    DELIVERING: '商家配送中',
-    COMPLETED: '已完成',
-    CANCELLED: '已取消',
-  }[status];
-}
-
-function typeLabel(type: OrderType) {
-  return { DINE_IN: '堂食', PICKUP: '到店自取', DELIVERY: '商家配送' }[
-    type
-  ];
 }
 
 onShow(() => {
@@ -91,8 +85,8 @@ onHide(() => {
     </view>
 
     <text v-if="message" class="message">{{ message }}</text>
-    <view v-if="loading" class="empty">加载中...</view>
-    <view v-else-if="!filteredOrders.length" class="empty">暂无相关订单</view>
+    <view v-if="loading" class="empty">{{ t('loading') }}</view>
+    <view v-else-if="!filteredOrders.length" class="empty">{{ t('noOrders') }}</view>
 
     <view
       v-for="order in filteredOrders"
@@ -102,21 +96,21 @@ onHide(() => {
     >
       <view class="card-head">
         <view>
-          <text class="merchant">{{ order.merchant.nameZh }}</text>
+          <text class="merchant">{{ merchantName(order.merchant, locale) }}</text>
           <text class="order-no">{{ order.orderNo }}</text>
         </view>
         <text :class="['status', `status-${order.status.toLowerCase()}`]">
-          {{ statusLabel(order.status) }}
+          {{ orderStatusLabel(order.status, locale) }}
         </text>
       </view>
       <view class="items">
         <text v-for="item in order.items.slice(0, 3)" :key="item.id">
           {{ item.productNameZhSnapshot }} × {{ item.quantity }}
         </text>
-        <text v-if="order.items.length > 3">等 {{ order.items.length }} 项</text>
+        <text v-if="order.items.length > 3">{{ t('orderItemsMore', { count: order.items.length - 3 }) }}</text>
       </view>
       <view class="card-foot">
-        <text>{{ typeLabel(order.orderType) }} · {{ new Date(order.createdAt).toLocaleString() }}</text>
+        <text>{{ orderTypeLabel(order.orderType, locale) }} · {{ new Date(order.createdAt).toLocaleString() }}</text>
         <text class="amount">{{ Number(order.totalAmountVnd).toLocaleString() }} ₫</text>
       </view>
     </view>

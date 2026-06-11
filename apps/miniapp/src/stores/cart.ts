@@ -6,6 +6,7 @@ import {
   getCart,
   updateCartItem,
 } from '@/api/cart';
+import { useI18n } from '@/i18n';
 import type { Cart, CartContext } from '@/types/api';
 import { useAuthStore } from './auth';
 
@@ -19,6 +20,7 @@ export const useCartStore = defineStore('cart', {
   }),
   actions: {
     async openContext(next: CartContext) {
+      const { t } = useI18n();
       const current = this.context;
       if (current && !this.cart) {
         await this.load();
@@ -51,7 +53,8 @@ export const useCartStore = defineStore('cart', {
       }
     },
     async add(productId: string, quantity = 1, remark = '') {
-      if (!this.context) throw new Error('缺少购物车上下文');
+      const { t } = useI18n();
+      if (!this.context) throw new Error(t('missingCartContext'));
       await useAuthStore().ensureLogin();
       this.cart = await addCartItem(this.context, productId, quantity, remark);
     },
@@ -78,11 +81,12 @@ export const useCartStore = defineStore('cart', {
 });
 
 function confirmSwitch() {
+  const { t } = useI18n();
   return new Promise<boolean>((resolve) => {
     uni.showModal({
-      title: '切换点餐场景',
-      content: '切换商家、桌台或订单类型会清空当前购物车，是否继续？',
-      confirmText: '清空并切换',
+      title: t('switchSceneTitle'),
+      content: t('switchSceneContent'),
+      confirmText: t('switchSceneConfirm'),
       success: (result) => resolve(result.confirm),
       fail: () => resolve(false),
     });

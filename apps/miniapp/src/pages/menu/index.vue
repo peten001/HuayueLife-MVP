@@ -3,6 +3,14 @@ import { computed, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
+import {
+  categoryName,
+  locale,
+  merchantName,
+  productName,
+  useI18n,
+  usePageTitle,
+} from '@/i18n';
 import { useCartStore } from '@/stores/cart';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
 
@@ -16,6 +24,9 @@ const tableToken = ref('');
 const activeCategory = ref('');
 const error = ref('');
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
+const { t } = useI18n();
+
+usePageTitle(() => t('menuTitle'));
 
 onLoad(async (options) => {
   merchantId.value = String(options?.merchantId ?? '');
@@ -28,7 +39,7 @@ onLoad(async (options) => {
     activeCategory.value = menu.value.categories[0]?.id ?? '';
     const opened = await cartStore.openContext({
       merchantId: merchantId.value,
-      merchantName: menu.value.merchant.nameZh,
+      merchantName: merchantName(menu.value.merchant, locale.value),
       orderType: orderType.value,
       tableToken: tableToken.value || undefined,
       tableNo: tableNo.value || undefined,
@@ -36,7 +47,7 @@ onLoad(async (options) => {
     });
     if (!opened) uni.navigateBack();
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : '菜单加载失败';
+    error.value = caught instanceof Error ? caught.message : t('menuLoadFailed');
   }
 });
 
@@ -55,10 +66,10 @@ async function add(product: Product) {
   if (product.status === 'SOLD_OUT') return;
   try {
     await cartStore.add(product.id);
-    uni.showToast({ title: '已加入购物车', icon: 'success' });
+    uni.showToast({ title: t('addToCartSuccess'), icon: 'success' });
   } catch (caught) {
     uni.showToast({
-      title: caught instanceof Error ? caught.message : '添加失败',
+      title: caught instanceof Error ? caught.message : t('addToCartFailed'),
       icon: 'none',
     });
   }
@@ -69,11 +80,11 @@ async function add(product: Product) {
   <view class="page">
     <view v-if="menu" class="context">
       <view>
-        <text class="merchant">{{ menu.merchant.nameZh }}</text>
-        <text v-if="hasTable" class="table">桌号：{{ tableName || tableNo }}</text>
-        <text v-else class="table">浏览菜单</text>
+        <text class="merchant">{{ merchantName(menu.merchant, locale) }}</text>
+        <text v-if="hasTable" class="table">{{ t('tableLabel', { table: tableName || tableNo }) }}</text>
+        <text v-else class="table">{{ t('browseOnly') }}</text>
       </view>
-      <text :class="menu.merchant.isOpen ? 'open' : 'closed'">{{ menu.merchant.isOpen ? '营业中' : '休息中' }}</text>
+      <text :class="menu.merchant.isOpen ? 'open' : 'closed'">{{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}</text>
     </view>
     <text v-if="error" class="error">{{ error }}</text>
     <view v-else-if="menu" class="menu-layout">
@@ -84,13 +95,13 @@ async function add(product: Product) {
           :class="['category', activeCategory === category.id ? 'active' : '']"
           @click="activeCategory = category.id"
         >
-          {{ category.nameZh }}
+          {{ categoryName(category, locale) }}
         </view>
       </scroll-view>
       <scroll-view class="products" scroll-y>
         <template v-for="category in menu.categories" :key="category.id">
           <view v-if="activeCategory === category.id">
-            <text class="category-title">{{ category.nameZh }}</text>
+            <text class="category-title">{{ categoryName(category, locale) }}</text>
             <view
               v-for="product in category.products"
               :key="product.id"
@@ -99,11 +110,11 @@ async function add(product: Product) {
             >
               <image v-if="product.imageUrl" class="image" :src="product.imageUrl" mode="aspectFill" />
               <view class="product-body">
-                <text class="product-name">{{ product.nameZh }}</text>
-                <text class="description">{{ product.description || '餐厅菜品' }}</text>
+                <text class="product-name">{{ productName(product, locale) }}</text>
+                <text class="description">{{ product.description || t('productDescriptionFallback') }}</text>
                 <view class="price-row">
                   <text class="price">{{ Number(product.priceVnd).toLocaleString() }} ₫</text>
-                  <text v-if="product.status === 'SOLD_OUT'" class="sold-out">已售罄</text>
+                  <text v-if="product.status === 'SOLD_OUT'" class="sold-out">{{ t('soldOut') }}</text>
                   <button v-else class="add" @click.stop="add(product)">+</button>
                 </view>
               </view>

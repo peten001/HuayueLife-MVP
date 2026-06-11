@@ -2,9 +2,13 @@
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { resolveQr } from '@/api/catalog';
+import { merchantName, useI18n, usePageTitle } from '@/i18n';
 
-const status = ref('正在识别桌台...');
+const status = ref('');
 const error = ref('');
+const { locale, t } = useI18n();
+
+usePageTitle(() => t('scanOrderTitle'));
 
 function goBack() {
   uni.navigateBack();
@@ -13,12 +17,16 @@ function goBack() {
 onLoad(async (options) => {
   const token = String(options?.token ?? '');
   if (!token) {
-    error.value = '二维码缺少桌台凭证';
+    error.value = t('qrMissingToken');
     return;
   }
+  status.value = t('scanning');
   try {
     const result = await resolveQr(token);
-    status.value = `已识别 ${result.merchant.nameZh} · ${result.table.tableName || result.table.tableNo}`;
+    status.value = t('qrIdentified', {
+      merchant: merchantName(result.merchant, locale.value),
+      table: result.table.tableName || result.table.tableNo,
+    });
     const url =
       `/pages/menu/index?merchantId=${result.merchant.id}` +
       `&orderType=${result.orderType}` +
@@ -27,7 +35,7 @@ onLoad(async (options) => {
       `&tableToken=${encodeURIComponent(result.tableToken)}`;
     setTimeout(() => uni.redirectTo({ url }), 300);
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : '二维码解析失败';
+    error.value = caught instanceof Error ? caught.message : t('qrParseFailed');
   }
 });
 </script>
@@ -35,12 +43,12 @@ onLoad(async (options) => {
 <template>
   <view class="page">
     <view v-if="error" class="result error">
-      <text class="title">无法进入点餐</text>
+      <text class="title">{{ t('enterOrderFailed') }}</text>
       <text>{{ error }}</text>
-      <button @click="goBack">返回重试</button>
+      <button @click="goBack">{{ t('goBackRetry') }}</button>
     </view>
     <view v-else class="result">
-      <text class="title">扫码点餐</text>
+      <text class="title">{{ t('scanOrderTitle') }}</text>
       <text>{{ status }}</text>
     </view>
   </view>

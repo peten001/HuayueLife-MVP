@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { createOrder, previewOrder, type OrderRequest } from '@/api/cart';
+import { translateApiError, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import type { CreatedOrder, OrderPreview } from '@/types/api';
@@ -13,6 +14,7 @@ const submitting = ref(false);
 const message = ref('');
 const locationLabel = ref('');
 const idempotencyKey = `order_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+const { locale, t } = useI18n();
 const form = reactive({
   contactName: '',
   contactPhone: '',
@@ -24,10 +26,15 @@ const form = reactive({
 
 const context = computed(() => cartStore.context);
 const orderTypeLabel = computed(() => {
-  if (context.value?.orderType === 'DINE_IN') return '堂食';
-  if (context.value?.orderType === 'PICKUP') return '到店自取';
-  return '商家配送';
+  if (!context.value) return '';
+  return context.value.orderType === 'DINE_IN'
+    ? t('dineIn')
+    : context.value.orderType === 'PICKUP'
+      ? t('pickup')
+      : t('delivery');
 });
+
+usePageTitle(() => t('checkoutTitle'));
 
 onMounted(async () => {
   try {
@@ -37,12 +44,12 @@ onMounted(async () => {
     form.contactPhone = authStore.user?.phone ?? '';
     if (context.value?.orderType === 'DINE_IN') await refreshPreview();
   } catch (caught) {
-    message.value = caught instanceof Error ? caught.message : '加载失败';
+    message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
   }
 });
 
 function payload(): OrderRequest {
-  if (!context.value) throw new Error('缺少订单上下文');
+  if (!context.value) throw new Error(t('missingCartContext'));
   return {
     merchantId: context.value.merchantId,
     orderType: context.value.orderType,
@@ -63,7 +70,7 @@ async function refreshPreview() {
     preview.value = await previewOrder(payload());
   } catch (caught) {
     preview.value = null;
-    message.value = caught instanceof Error ? caught.message : '订单校验失败';
+    message.value = caught instanceof Error ? translateApiError(caught.message) : t('orderValidationFailed');
   } finally {
     loading.value = false;
   }
@@ -77,10 +84,10 @@ async function chooseLocation() {
     form.deliveryAddress = result.address || result.name;
     form.deliveryLatitude = result.latitude;
     form.deliveryLongitude = result.longitude;
-    locationLabel.value = '已获取定位，可校验配送范围';
+    locationLabel.value = t('locationConfirmed');
     await refreshPreview();
   } catch {
-    locationLabel.value = '未使用定位，将由商家电话确认地址';
+    locationLabel.value = t('locationUnconfirmed');
   }
 }
 
@@ -93,7 +100,7 @@ async function submit() {
     cartStore.resetAfterOrder();
     showSuccess(order);
   } catch (caught) {
-    message.value = caught instanceof Error ? caught.message : '提交订单失败';
+    message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
   } finally {
     submitting.value = false;
   }
@@ -101,8 +108,8 @@ async function submit() {
 
 function showSuccess(order: CreatedOrder) {
   uni.showModal({
-    title: '订单已提交',
-    content: `订单号：${order.orderNo}\n请等待商家接单`,
+    title: t('orderSuccessTitle'),
+    content: `${t('orderNumber', { orderNo: order.orderNo })}\n${t('waitingMerchantAccept')}`,
     showCancel: false,
     success: () =>
       uni.redirectTo({ url: `/pages/order/detail?id=${order.id}` }),
@@ -116,39 +123,39 @@ function showSuccess(order: CreatedOrder) {
     <view v-if="context" class="context">
       <text class="merchant">{{ context.merchantName }}</text>
       <text>{{ orderTypeLabel }}</text>
-      <text v-if="context.orderType === 'DINE_IN'">桌号：{{ context.tableName || context.tableNo }}</text>
+      <text v-if="context.orderType === 'DINE_IN'">{{ t('tableLabel', { table: context.tableName || context.tableNo || '' }) }}</text>
     </view>
 
     <view v-if="context?.orderType !== 'DINE_IN'" class="card form">
-      <label>联系人<input v-model="form.contactName" placeholder="请输入联系人" /></label>
-      <label>联系电话<input v-model="form.contactPhone" type="number" placeholder="请输入联系电话" /></label>
+      <label>{{ t('contact') }}<input v-model="form.contactName" :placeholder="t('contactPlaceholder')" /></label>
+      <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" type="number" :placeholder="t('phonePlaceholder')" /></label>
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form">
-      <label>配送地址<textarea v-model="form.deliveryAddress" placeholder="请输入详细配送地址" rows="3" /></label>
-      <button class="location" @click="chooseLocation">可选：使用当前位置</button>
-      <text class="hint">{{ locationLabel || '不定位时，商家将通过电话确认配送地址' }}</text>
+      <label>{{ t('deliveryAddress') }}<textarea v-model="form.deliveryAddress" :placeholder="t('deliveryAddressPlaceholder')" rows="3" /></label>
+      <button class="location" @click="chooseLocation">{{ t('useCurrentLocation') }}</button>
+      <text class="hint">{{ locationLabel || t('locationUnconfirmed') }}</text>
     </view>
 
     <view class="card form">
-      <label>订单备注<textarea v-model="form.customerRemark" placeholder="口味、餐具等备注" rows="3" /></label>
+      <label>{{ t('orderRemark') }}<textarea v-model="form.customerRemark" :placeholder="t('orderRemarkPlaceholder')" rows="3" /></label>
       <button class="secondary" :disabled="loading" @click="refreshPreview">
-        {{ loading ? '校验中...' : '重新校验订单' }}
+        {{ loading ? t('orderChecking') : t('orderRecheck') }}
       </button>
     </view>
 
     <view v-if="preview" class="card totals">
-      <text>菜品金额：{{ Number(preview.itemAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="context?.orderType === 'DELIVERY'">配送费：{{ Number(preview.deliveryFeeVnd).toLocaleString() }} ₫</text>
-      <text class="total">合计：{{ Number(preview.totalAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="preview.requiresPhoneConfirmation" class="warning">配送范围未通过定位校验，商家将电话确认</text>
+      <text>{{ t('subtotal') }}：{{ Number(preview.itemAmountVnd).toLocaleString() }} ₫</text>
+      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：{{ Number(preview.deliveryFeeVnd).toLocaleString() }} ₫</text>
+      <text class="total">{{ t('totalAmount') }}：{{ Number(preview.totalAmountVnd).toLocaleString() }} ₫</text>
+      <text v-if="preview.requiresPhoneConfirmation" class="warning">{{ t('deliveryRangeWarning') }}</text>
     </view>
 
     <text v-if="message" class="error">{{ message }}</text>
     <button class="submit" :disabled="submitting" @click="submit">
-      {{ submitting ? '提交中...' : '提交订单' }}
+      {{ submitting ? t('submitting') : t('submitOrder') }}
     </button>
-    <text class="offline">请按商家线下方式付款</text>
+    <text class="offline">{{ t('payOfflineHint') }}</text>
   </view>
 </template>
 

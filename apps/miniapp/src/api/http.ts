@@ -1,4 +1,5 @@
 import type { ApiResponse } from '@/types/api';
+import { translateApiError } from '@/i18n';
 import { clearToken, getToken } from '@/utils/storage';
 
 const API_BASE_URL =
@@ -29,13 +30,14 @@ export async function request<T>(
         reject(new Error(formatMessage(body?.message)));
       },
       fail(error) {
-        reject(new Error(error.errMsg || '网络请求失败'));
+        reject(new Error(formatMessage(error.errMsg || '网络请求失败')));
       },
     });
   });
 }
 
 function formatMessage(message: unknown) {
-  if (Array.isArray(message)) return message.join('；');
-  return typeof message === 'string' ? message : '请求失败';
+  if (Array.isArray(message)) return translateApiError(message.join('；'));
+  if (typeof message === 'string') return translateApiError(message);
+  return translateApiError('请求失败');
 }

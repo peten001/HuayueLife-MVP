@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
+import { cityOptions, localeLabel, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import type { MerchantSummary } from '@/types/api';
 
 const auth = useAuthStore();
-const cities = ['北宁', '北江'];
+const { locale, t } = useI18n();
+const cities = computed(() => cityOptions(locale.value));
 const cityIndex = ref(0);
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
 const locationMode = ref<'GPS' | 'CITY'>('CITY');
 const message = ref('');
+
+usePageTitle(() => t('homeTitle'));
 
 onMounted(async () => {
   auth.ensureLogin().catch(() => undefined);
@@ -39,7 +43,7 @@ async function loadByLocation() {
     locationMode.value = result.locationMode;
   } catch {
     await loadByCity();
-    message.value = '未获得定位，已按所选城市展示餐厅';
+    message.value = t('noLocation');
   } finally {
     loading.value = false;
   }
@@ -47,7 +51,7 @@ async function loadByLocation() {
 
 async function loadByCity() {
   const result = await getNearbyMerchants({
-    city: cities[cityIndex.value],
+    city: cities.value[cityIndex.value]?.value,
     page: 1,
   });
   merchants.value = result.items;
@@ -59,7 +63,7 @@ async function changeCity(event: { detail: { value: string } }) {
   loading.value = true;
   try {
     await loadByCity();
-    message.value = `当前按${cities[cityIndex.value]}展示`;
+    message.value = t('currentByCity', { city: cities.value[cityIndex.value]?.label });
   } finally {
     loading.value = false;
   }
@@ -75,7 +79,7 @@ function scan() {
     success(result) {
       const token = extractToken(result.result);
       if (!token) {
-        uni.showToast({ title: '无法识别桌台二维码', icon: 'none' });
+        uni.showToast({ title: t('qrMissingToken'), icon: 'none' });
         return;
       }
       uni.navigateTo({
@@ -96,29 +100,31 @@ function extractToken(value: string) {
   <view class="page">
     <view class="hero">
       <view>
-        <text class="eyebrow">北宁 / 北江华人餐厅</text>
-        <text class="title">华越优选</text>
+        <text class="eyebrow">{{ localeLabel(locale) }}</text>
+        <text class="title">{{ t('appName') }}</text>
       </view>
-      <picker :range="cities" :value="cityIndex" @change="changeCity">
-        <view class="city">{{ cities[cityIndex] }} ▾</view>
+      <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
+        <view class="city">{{ cities[cityIndex]?.label }} ▾</view>
       </picker>
     </view>
 
     <button class="scan-button" @click="scan">
-      <text class="scan-title">扫码点餐</text>
-      <text class="scan-copy">扫描桌面二维码进入餐厅菜单</text>
+      <text class="scan-title">{{ t('scanOrder') }}</text>
+      <text class="scan-copy">{{ t('scanSubtitle') }}</text>
     </button>
 
     <view class="section-head">
       <view>
-        <text class="section-title">附近商家</text>
-        <text class="mode">{{ locationMode === 'GPS' ? '按距离排序' : '按城市展示' }}</text>
+        <text class="section-title">{{ t('nearbyMerchants') }}</text>
+        <text class="mode">
+          {{ locationMode === 'GPS' ? t('locationByDistance') : t('locationByCity') }}
+        </text>
       </view>
-      <button class="location-button" @click="loadByLocation">重新定位</button>
+      <button class="location-button" @click="loadByLocation">{{ t('relocate') }}</button>
     </view>
     <text v-if="message" class="message">{{ message }}</text>
-    <view v-if="loading" class="empty">加载中...</view>
-    <view v-else-if="!merchants.length" class="empty">当前区域暂无可用餐厅</view>
+    <view v-if="loading" class="empty">{{ t('loading') }}</view>
+    <view v-else-if="!merchants.length" class="empty">{{ t('noMerchants') }}</view>
     <MerchantCard
       v-for="merchant in merchants"
       :key="merchant.id"

@@ -2,6 +2,17 @@
 import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow } from '@dcloudio/uni-app';
 import { cancelOrder, confirmReceived, getOrder } from '@/api/orders';
+import {
+  locale,
+  merchantName,
+  operatorLabel,
+  orderStatusLabel,
+  orderTypeLabel,
+  settlementLabel,
+  translateApiError,
+  useI18n,
+  usePageTitle,
+} from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import type { OrderStatus, OrderType, UserOrder } from '@/types/api';
 
@@ -12,6 +23,7 @@ const loading = ref(false);
 const operating = ref(false);
 const message = ref('');
 let timer: ReturnType<typeof setInterval> | undefined;
+const { t } = useI18n();
 
 const canCancel = computed(
   () => order.value?.status === 'PENDING_ACCEPTANCE',
@@ -20,6 +32,10 @@ const canConfirmReceived = computed(
   () =>
     order.value?.orderType === 'DELIVERY' &&
     order.value.status === 'DELIVERING',
+);
+
+usePageTitle(() =>
+  order.value ? `${t('orderDetailTitle')} ${order.value.orderNo}` : t('orderDetailTitle'),
 );
 
 onLoad((options) => {
@@ -38,7 +54,7 @@ onHide(() => {
 
 async function load(showLoading = false) {
   if (!orderId.value) {
-    message.value = '缺少订单编号';
+    message.value = t('missingOrderNo');
     return;
   }
   if (showLoading) loading.value = true;
@@ -47,7 +63,7 @@ async function load(showLoading = false) {
     order.value = await getOrder(orderId.value);
     message.value = '';
   } catch (caught) {
-    message.value = caught instanceof Error ? caught.message : '订单加载失败';
+    message.value = caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
   } finally {
     loading.value = false;
   }
@@ -56,16 +72,16 @@ async function load(showLoading = false) {
 function cancel() {
   if (!order.value) return;
   uni.showModal({
-    title: '取消订单',
-    content: '仅待商家接单的订单可以取消，确认取消？',
+    title: t('cancelOrderTitle'),
+    content: t('cancelOrderConfirm'),
     success: async (result) => {
       if (!result.confirm || !order.value) return;
       try {
         operating.value = true;
         order.value = await cancelOrder(order.value.id);
-        uni.showToast({ title: '订单已取消', icon: 'success' });
+        uni.showToast({ title: t('orderCancelled'), icon: 'success' });
       } catch (caught) {
-        message.value = caught instanceof Error ? caught.message : '取消失败';
+        message.value = caught instanceof Error ? translateApiError(caught.message) : t('cancelFailed');
         await load();
       } finally {
         operating.value = false;
@@ -77,17 +93,17 @@ function cancel() {
 function receive() {
   if (!order.value) return;
   uni.showModal({
-    title: '确认收货',
-    content: '确认已经收到商家配送的餐品？',
+    title: t('confirmReceivedTitle'),
+    content: t('confirmReceivedContent'),
     success: async (result) => {
       if (!result.confirm || !order.value) return;
       try {
         operating.value = true;
         order.value = await confirmReceived(order.value.id);
-        uni.showToast({ title: '订单已完成', icon: 'success' });
+        uni.showToast({ title: t('orderCompleted'), icon: 'success' });
       } catch (caught) {
         message.value =
-          caught instanceof Error ? caught.message : '确认收货失败';
+          caught instanceof Error ? translateApiError(caught.message) : t('confirmReceivedFailed');
         await load();
       } finally {
         operating.value = false;
@@ -96,28 +112,10 @@ function receive() {
   });
 }
 
-function statusLabel(status: OrderStatus) {
-  return {
-    PENDING_ACCEPTANCE: '等待商家接单',
-    ACCEPTED: '商家已接单',
-    PREPARING: '商家正在制作',
-    READY: '餐品制作完成',
-    DELIVERING: '商家配送中',
-    COMPLETED: '订单已完成',
-    CANCELLED: '订单已取消',
-  }[status];
-}
-
-function typeLabel(type: OrderType) {
-  return { DINE_IN: '堂食', PICKUP: '到店自取', DELIVERY: '商家配送' }[
-    type
-  ];
-}
-
 function serviceInfo() {
   if (!order.value) return '';
   if (order.value.orderType === 'DINE_IN') {
-    return `桌号：${order.value.tableNoSnapshot || order.value.table?.tableNo || '-'}`;
+    return t('tableLabel', { table: order.value.tableNoSnapshot || order.value.table?.tableNo || '-' });
   }
   if (order.value.orderType === 'PICKUP') {
     return `${order.value.contactName || ''} ${order.value.contactPhone || ''}`;
@@ -128,58 +126,58 @@ function serviceInfo() {
 
 <template>
   <view class="page">
-    <view v-if="loading && !order" class="empty">加载中...</view>
+    <view v-if="loading && !order" class="empty">{{ t('loading') }}</view>
     <text v-if="message" class="message">{{ message }}</text>
 
     <template v-if="order">
       <view class="status-card">
-        <text class="status">{{ statusLabel(order.status) }}</text>
-        <text class="status-copy">订单状态每 5 秒自动更新</text>
+        <text class="status">{{ orderStatusLabel(order.status, locale) }}</text>
+        <text class="status-copy">{{ t('orderStatusUpdated') }}</text>
       </view>
 
       <view class="card">
-        <view class="card-title">{{ order.merchant.nameZh }}</view>
-        <view class="info-row"><text>订单号</text><text>{{ order.orderNo }}</text></view>
-        <view class="info-row"><text>订单类型</text><text>{{ typeLabel(order.orderType) }}</text></view>
-        <view class="info-row service"><text>用餐信息</text><text>{{ serviceInfo() }}</text></view>
-        <view class="info-row"><text>下单时间</text><text>{{ new Date(order.createdAt).toLocaleString() }}</text></view>
-        <view v-if="order.customerRemark" class="info-row"><text>订单备注</text><text>{{ order.customerRemark }}</text></view>
-        <view v-if="order.cancelReason" class="info-row"><text>取消原因</text><text>{{ order.cancelReason }}</text></view>
+        <view class="card-title">{{ merchantName(order.merchant, locale) }}</view>
+        <view class="info-row"><text>{{ t('orderNo') }}</text><text>{{ order.orderNo }}</text></view>
+        <view class="info-row"><text>{{ t('orderType') }}</text><text>{{ orderTypeLabel(order.orderType, locale) }}</text></view>
+        <view class="info-row service"><text>{{ t('diningInfo') }}</text><text>{{ serviceInfo() }}</text></view>
+        <view class="info-row"><text>{{ t('orderTime') }}</text><text>{{ new Date(order.createdAt).toLocaleString() }}</text></view>
+        <view v-if="order.customerRemark" class="info-row"><text>{{ t('orderNote') }}</text><text>{{ order.customerRemark }}</text></view>
+        <view v-if="order.cancelReason" class="info-row"><text>{{ t('cancelReason') }}</text><text>{{ order.cancelReason }}</text></view>
       </view>
 
       <view class="card">
-        <view class="card-title">菜品明细</view>
+        <view class="card-title">{{ t('itemDetails') }}</view>
         <view v-for="item in order.items" :key="item.id" class="item">
           <image v-if="item.imageUrlSnapshot" :src="item.imageUrlSnapshot" mode="aspectFill" />
           <view class="item-main">
             <text>{{ item.productNameZhSnapshot }}</text>
-            <text v-if="item.remark" class="remark">备注：{{ item.remark }}</text>
+            <text v-if="item.remark" class="remark">{{ t('orderNote') }}：{{ item.remark }}</text>
           </view>
           <text>× {{ item.quantity }}</text>
           <text>{{ Number(item.subtotalVnd).toLocaleString() }} ₫</text>
         </view>
-        <view class="amount-row"><text>菜品金额</text><text>{{ Number(order.itemAmountVnd).toLocaleString() }} ₫</text></view>
-        <view v-if="order.orderType === 'DELIVERY'" class="amount-row"><text>配送费</text><text>{{ Number(order.deliveryFeeVnd).toLocaleString() }} ₫</text></view>
-        <view class="amount-row total"><text>合计</text><text>{{ Number(order.totalAmountVnd).toLocaleString() }} ₫</text></view>
-        <text class="settlement">{{ order.settlementStatus === 'SETTLED' ? '商家已标记收款' : '请按商家线下方式付款' }}</text>
+        <view class="amount-row"><text>{{ t('subtotal') }}</text><text>{{ Number(order.itemAmountVnd).toLocaleString() }} ₫</text></view>
+        <view v-if="order.orderType === 'DELIVERY'" class="amount-row"><text>{{ t('deliveryFee') }}</text><text>{{ Number(order.deliveryFeeVnd).toLocaleString() }} ₫</text></view>
+        <view class="amount-row total"><text>{{ t('totalAmount') }}</text><text>{{ Number(order.totalAmountVnd).toLocaleString() }} ₫</text></view>
+        <text class="settlement">{{ settlementLabel(order.settlementStatus, locale) }}</text>
       </view>
 
       <view v-if="order.statusLogs?.length" class="card">
-        <view class="card-title">状态记录</view>
+        <view class="card-title">{{ t('statusRecord') }}</view>
         <view v-for="log in order.statusLogs" :key="log.id" class="log">
           <view class="dot" />
           <view>
-            <text>{{ statusLabel(log.toStatus) }}</text>
+            <text>{{ orderStatusLabel(log.toStatus, locale) }}</text>
             <text class="log-copy">{{ log.remark || '' }} · {{ new Date(log.createdAt).toLocaleString() }}</text>
           </view>
         </view>
       </view>
 
       <button v-if="canCancel" class="action danger" :disabled="operating" @click="cancel">
-        取消订单
+        {{ t('cancelOrder') }}
       </button>
       <button v-if="canConfirmReceived" class="action" :disabled="operating" @click="receive">
-        确认收货
+        {{ t('confirmReceived') }}
       </button>
     </template>
   </view>

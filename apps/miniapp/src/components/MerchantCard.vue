@@ -1,38 +1,37 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { merchantName, orderTypeLabel, useI18n } from '@/i18n';
 import type { MerchantSummary } from '@/types/api';
 
-defineProps<{ merchant: MerchantSummary }>();
+const props = defineProps<{ merchant: MerchantSummary }>();
 defineEmits<{ select: [merchant: MerchantSummary] }>();
 
-const labels = {
-  DINE_IN: '堂食',
-  PICKUP: '自取',
-  DELIVERY: '配送',
-};
+const { locale, t } = useI18n();
+const title = computed(() => merchantName(props.merchant));
 </script>
 
 <template>
-  <view class="merchant-card" @click="$emit('select', merchant)">
+  <view class="merchant-card" @click="$emit('select', props.merchant)">
     <image
-      v-if="merchant.coverUrl"
+      v-if="props.merchant.coverUrl"
       class="cover"
-      :src="merchant.coverUrl"
+      :src="props.merchant.coverUrl"
       mode="aspectFill"
     />
-    <view v-else class="cover placeholder">餐厅</view>
+    <view v-else class="cover placeholder">{{ t('restaurant') }}</view>
     <view class="body">
       <view class="row">
-        <text class="name">{{ merchant.nameZh }}</text>
-        <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
-          {{ merchant.isOpen ? '营业中' : '休息中' }}
+        <text class="name">{{ title }}</text>
+        <text :class="['status', props.merchant.isOpen ? 'open' : 'closed']">
+          {{ props.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
         </text>
       </view>
-      <text class="address">{{ merchant.addressDetail }}</text>
+      <text class="address">{{ props.merchant.addressDetail }}</text>
       <view class="row meta">
-        <text v-if="merchant.distanceKm !== null">{{ merchant.distanceKm }} km</text>
+        <text v-if="props.merchant.distanceKm !== null">{{ props.merchant.distanceKm }} km</text>
         <view class="tags">
-          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">
-            {{ labels[type] }}
+          <text v-for="type in props.merchant.supportedOrderTypes" :key="type" class="tag">
+            {{ orderTypeLabel(type, locale) }}
           </text>
         </view>
       </view>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
 
 const cartStore = useCartStore();
+const { t } = useI18n();
 const amount = computed(() => Number(cartStore.cart?.itemAmountVnd ?? 0));
 
 function openCart() {
@@ -16,7 +18,7 @@ function openCart() {
       <text class="count">{{ cartStore.cart?.totalQuantity ?? 0 }}</text>
       <text class="amount">{{ amount.toLocaleString() }} ₫</text>
     </view>
-    <button>查看购物车</button>
+    <button>{{ t('viewCart') }}</button>
   </view>
 </template>
 

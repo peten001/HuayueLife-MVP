@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
+import { formatNumberCurrency, orderTypeLabel, productName, useI18n, usePageTitle } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
 
 const cartStore = useCartStore();
+const { locale, t } = useI18n();
 const amount = computed(() => Number(cartStore.cart?.itemAmountVnd ?? 0));
+
+usePageTitle(() => t('cartTitle'));
 
 onMounted(() => cartStore.load());
 
@@ -12,7 +16,18 @@ async function change(itemId: string, quantity: number) {
     await cartStore.setQuantity(itemId, quantity);
   } catch (caught) {
     uni.showToast({
-      title: caught instanceof Error ? caught.message : '修改失败',
+      title: caught instanceof Error ? caught.message : t('updateFailed'),
+      icon: 'none',
+    });
+  }
+}
+
+async function remove(itemId: string) {
+  try {
+    await cartStore.remove(itemId);
+  } catch (caught) {
+    uni.showToast({
+      title: caught instanceof Error ? caught.message : t('updateFailed'),
       icon: 'none',
     });
   }
@@ -21,8 +36,8 @@ async function change(itemId: string, quantity: number) {
 async function clear() {
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
-      title: '清空购物车',
-      content: '确认清空当前购物车？',
+      title: t('emptyCartTitle'),
+      content: t('emptyCartConfirm'),
       success: (result) => resolve(result.confirm),
       fail: () => resolve(false),
     });
@@ -43,32 +58,30 @@ function checkout() {
       <text>
         {{
           cartStore.context.orderType === 'DINE_IN'
-            ? `堂食 · ${cartStore.context.tableName || cartStore.context.tableNo}`
-            : cartStore.context.orderType === 'PICKUP'
-              ? '到店自取'
-              : '商家配送'
+            ? t('contextDineIn', { table: cartStore.context.tableName || cartStore.context.tableNo || '' })
+            : orderTypeLabel(cartStore.context.orderType, locale)
         }}
       </text>
     </view>
-    <view v-if="!cartStore.cart?.items.length" class="empty">购物车为空</view>
+    <view v-if="!cartStore.cart?.items.length" class="empty">{{ t('cartEmpty') }}</view>
     <view v-for="item in cartStore.cart?.items" :key="item.id" class="item">
       <image v-if="item.product.imageUrl" class="image" :src="item.product.imageUrl" mode="aspectFill" />
       <view class="body">
-        <text class="name">{{ item.product.nameZh }}</text>
-        <text class="price">{{ Number(item.product.priceVnd).toLocaleString() }} ₫</text>
+        <text class="name">{{ productName(item.product, locale) }}</text>
+        <text class="price">{{ formatNumberCurrency(item.product.priceVnd) }}</text>
         <view class="stepper">
           <button @click="change(item.id, item.quantity - 1)">-</button>
           <text>{{ item.quantity }}</text>
           <button @click="change(item.id, item.quantity + 1)">+</button>
-          <button class="delete" @click="cartStore.remove(item.id)">删除</button>
+          <button class="delete" @click="remove(item.id)">{{ t('delete') }}</button>
         </view>
       </view>
     </view>
     <view v-if="cartStore.cart?.items.length" class="footer">
-      <button class="clear" @click="clear">清空</button>
+      <button class="clear" @click="clear">{{ t('clearCart') }}</button>
       <view class="total">
-        <text>合计 {{ amount.toLocaleString() }} ₫</text>
-        <button class="submit" @click="checkout">去确认订单</button>
+        <text>{{ t('cartTotal', { amount: amount.toLocaleString() }) }}</text>
+        <button class="submit" @click="checkout">{{ t('checkout') }}</button>
       </view>
     </view>
   </view>

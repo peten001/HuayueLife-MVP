@@ -2,6 +2,13 @@
 import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { getProduct } from '@/api/catalog';
+import {
+  formatNumberCurrency,
+  merchantName,
+  productName,
+  useI18n,
+  usePageTitle,
+} from '@/i18n';
 import { useCartStore } from '@/stores/cart';
 import type { OrderType, Product } from '@/types/api';
 
@@ -10,6 +17,9 @@ const product = ref<Product | null>(null);
 const tableLabel = ref('');
 const quantity = ref(1);
 const error = ref('');
+const { locale, t } = useI18n();
+
+usePageTitle(() => t('productDetailTitle'));
 
 onLoad(async (options) => {
   const tableName = decodeURIComponent(String(options?.tableName ?? ''));
@@ -19,7 +29,9 @@ onLoad(async (options) => {
     product.value = await getProduct(String(options?.id ?? ''));
     const opened = await cartStore.openContext({
       merchantId: String(options?.merchantId ?? product.value.merchant?.id ?? ''),
-      merchantName: product.value.merchant?.nameZh ?? '',
+      merchantName: product.value.merchant
+        ? merchantName(product.value.merchant, locale.value)
+        : '',
       orderType: String(options?.orderType ?? 'PICKUP') as OrderType,
       tableToken: String(options?.tableToken ?? '') || undefined,
       tableNo: tableNo || undefined,
@@ -30,7 +42,7 @@ onLoad(async (options) => {
       uni.navigateBack();
     }
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : '菜品加载失败';
+    error.value = caught instanceof Error ? caught.message : t('productLoadFailed');
   }
 });
 
@@ -38,10 +50,10 @@ async function add() {
   if (!product.value || product.value.status === 'SOLD_OUT') return;
   try {
     await cartStore.add(product.value.id, quantity.value);
-    uni.showToast({ title: '已加入购物车', icon: 'success' });
+    uni.showToast({ title: t('addToCartSuccess'), icon: 'success' });
   } catch (caught) {
     uni.showToast({
-      title: caught instanceof Error ? caught.message : '添加失败',
+      title: caught instanceof Error ? caught.message : t('addToCartFailed'),
       icon: 'none',
     });
   }
@@ -50,16 +62,18 @@ async function add() {
 
 <template>
   <view class="page">
-    <view v-if="tableLabel && product" class="context">{{ product.merchant?.nameZh }} · 桌号 {{ tableLabel }}</view>
+    <view v-if="tableLabel && product" class="context">
+      {{ product.merchant ? merchantName(product.merchant, locale) : '' }} · {{ t('tableLabel', { table: tableLabel }) }}
+    </view>
     <text v-if="error" class="error">{{ error }}</text>
     <template v-else-if="product">
       <image v-if="product.imageUrl" class="image" :src="product.imageUrl" mode="aspectFill" />
       <view class="card">
-        <text class="name">{{ product.nameZh }}</text>
+        <text class="name">{{ productName(product, locale) }}</text>
         <text v-if="product.nameVi" class="vi">{{ product.nameVi }}</text>
-        <text class="description">{{ product.description || '暂无菜品描述' }}</text>
-        <text class="price">{{ Number(product.priceVnd).toLocaleString() }} ₫</text>
-        <text v-if="product.status === 'SOLD_OUT'" class="sold-out">当前已售罄</text>
+        <text class="description">{{ product.description || t('noProductDescription') }}</text>
+        <text class="price">{{ formatNumberCurrency(product.priceVnd) }}</text>
+        <text v-if="product.status === 'SOLD_OUT'" class="sold-out">{{ t('soldOutCurrent') }}</text>
       </view>
       <view class="quantity">
         <button @click="quantity = Math.max(1, quantity - 1)">-</button>
@@ -67,7 +81,7 @@ async function add() {
         <button @click="quantity = Math.min(99, quantity + 1)">+</button>
       </view>
       <button :disabled="product.status === 'SOLD_OUT'" @click="add">
-        {{ product.status === 'SOLD_OUT' ? '已售罄' : '加入购物车' }}
+        {{ product.status === 'SOLD_OUT' ? t('soldOut') : t('addToCart') }}
       </button>
     </template>
   </view>
