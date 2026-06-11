@@ -1,0 +1,128 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MerchantId } from '../../common/decorators/merchant-id.decorator';
+import { IdParamDto } from '../../common/dto/id-param.dto';
+import { MerchantStaffGuard } from '../../common/guards/account-type.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AuthUser } from '../../common/types/auth-user.type';
+import { ListMerchantOrdersQueryDto } from './dto/list-merchant-orders-query.dto';
+import { RejectOrderDto } from './dto/reject-order.dto';
+import { MerchantOrdersService } from './merchant-orders.service';
+
+@Controller('merchant/orders')
+@UseGuards(JwtAuthGuard, MerchantStaffGuard)
+export class MerchantOrdersController {
+  constructor(private readonly service: MerchantOrdersService) {}
+
+  @Get()
+  list(
+    @MerchantId() merchantId: bigint,
+    @Query() query: ListMerchantOrdersQueryDto,
+  ) {
+    return this.service.list(merchantId, query);
+  }
+
+  @Get(':id')
+  get(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.service.get(merchantId, BigInt(params.id));
+  }
+
+  @Post(':id/accept')
+  accept(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'ACCEPT',
+    );
+  }
+
+  @Post(':id/reject')
+  reject(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: RejectOrderDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'REJECT',
+      dto.reason,
+    );
+  }
+
+  @Post(':id/start-preparing')
+  startPreparing(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'START_PREPARING',
+    );
+  }
+
+  @Post(':id/ready')
+  ready(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'READY',
+    );
+  }
+
+  @Post(':id/start-delivery')
+  startDelivery(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'START_DELIVERY',
+    );
+  }
+
+  @Post(':id/complete')
+  complete(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'COMPLETE',
+    );
+  }
+
+  @Post(':id/settle')
+  settle(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.service.settle(merchantId, BigInt(params.id));
+  }
+}

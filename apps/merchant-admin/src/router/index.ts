@@ -6,6 +6,9 @@ import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
 import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
+import DashboardPage from '@/pages/DashboardPage.vue';
+import OrdersPage from '@/pages/OrdersPage.vue';
+import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import { getToken } from '@/utils/storage';
 
 const router = createRouter({
@@ -17,7 +20,10 @@ const router = createRouter({
       component: MerchantLayout,
       meta: { auth: true },
       children: [
-        { path: '', redirect: '/merchant/profile' },
+        { path: '', redirect: '/dashboard' },
+        { path: 'dashboard', component: DashboardPage },
+        { path: 'orders', component: OrdersPage },
+        { path: 'orders/:id', component: OrderDetailPage },
         { path: 'merchant/profile', component: MerchantProfilePage },
         { path: 'merchant/business-settings', component: BusinessSettingsPage },
         { path: 'menu/categories', component: CategoriesPage },

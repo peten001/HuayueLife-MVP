@@ -72,6 +72,14 @@ export interface QrResolveResponse {
 }
 
 export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
+export type OrderStatus =
+  | 'PENDING_ACCEPTANCE'
+  | 'ACCEPTED'
+  | 'PREPARING'
+  | 'READY'
+  | 'DELIVERING'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export interface CartItem {
   id: string;
@@ -125,4 +133,58 @@ export interface CreatedOrder {
   status: 'PENDING_ACCEPTANCE';
   orderType: OrderType;
   totalAmountVnd: string;
+}
+
+export interface UserOrderItem {
+  id: string;
+  productNameZhSnapshot: string;
+  imageUrlSnapshot?: string;
+  unitPriceVnd: string;
+  quantity: number;
+  subtotalVnd: string;
+  remark?: string;
+}
+
+export interface UserOrderStatusLog {
+  id: string;
+  fromStatus?: OrderStatus;
+  toStatus: OrderStatus;
+  operatorType: 'USER' | 'MERCHANT_STAFF' | 'SYSTEM';
+  remark?: string;
+  createdAt: string;
+}
+
+export interface UserOrder {
+  id: string;
+  orderNo: string;
+  orderType: OrderType;
+  status: OrderStatus;
+  tableNoSnapshot?: string;
+  contactName?: string;
+  contactPhone?: string;
+  deliveryAddress?: string;
+  customerRemark?: string;
+  itemAmountVnd: string;
+  deliveryFeeVnd: string;
+  totalAmountVnd: string;
+  settlementStatus: 'UNSETTLED' | 'SETTLED';
+  cancelReason?: string;
+  acceptedAt?: string;
+  readyAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  merchant: {
+    id: string;
+    nameZh: string;
+    logoUrl?: string;
+  };
+  table?: {
+    id: string;
+    tableNo: string;
+    tableName?: string;
+  };
+  items: UserOrderItem[];
+  statusLogs?: UserOrderStatusLog[];
 }

@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 
 const router = useRouter();
 const nav = [
+  ['/dashboard', '经营看板'],
+  ['/orders', '订单管理'],
   ['/merchant/profile', '商家资料'],
   ['/merchant/business-settings', '营业设置'],
   ['/menu/categories', '分类管理'],

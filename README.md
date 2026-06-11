@@ -11,6 +11,13 @@
 
 设计文档见：[docs/MVP-DESIGN.md](docs/MVP-DESIGN.md)。
 
+上线准备：
+
+- [微信小程序配置](docs/WECHAT-MINIAPP-SETUP.md)
+- [生产部署说明](docs/DEPLOYMENT.md)
+- [商家操作手册](docs/MERCHANT-GUIDE.md)
+- [上线检查表](docs/LAUNCH-CHECKLIST.md)
+
 ## 本地启动
 
 ```bash

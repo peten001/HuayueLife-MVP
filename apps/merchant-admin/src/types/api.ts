@@ -65,3 +65,75 @@ export interface DiningTable {
   qrVersion: number;
   status: 'ACTIVE' | 'DISABLED';
 }
+
+export type OrderStatus =
+  | 'PENDING_ACCEPTANCE'
+  | 'ACCEPTED'
+  | 'PREPARING'
+  | 'READY'
+  | 'DELIVERING'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
+export type SettlementStatus = 'UNSETTLED' | 'SETTLED';
+
+export interface OrderItem {
+  id: string;
+  productNameZhSnapshot: string;
+  imageUrlSnapshot?: string;
+  unitPriceVnd: string;
+  quantity: number;
+  subtotalVnd: string;
+  remark?: string;
+}
+
+export interface OrderStatusLog {
+  id: string;
+  fromStatus?: OrderStatus;
+  toStatus: OrderStatus;
+  operatorType: 'USER' | 'MERCHANT_STAFF' | 'SYSTEM';
+  operatorStaffId?: string;
+  operatorStaff?: {
+    id: string;
+    displayName: string;
+  };
+  remark?: string;
+  createdAt: string;
+}
+
+export interface MerchantOrder {
+  id: string;
+  orderNo: string;
+  merchantId: string;
+  tableNoSnapshot?: string;
+  orderType: OrderType;
+  status: OrderStatus;
+  contactName?: string;
+  contactPhone?: string;
+  deliveryAddress?: string;
+  customerRemark?: string;
+  itemAmountVnd: string;
+  deliveryFeeVnd: string;
+  totalAmountVnd: string;
+  settlementStatus: SettlementStatus;
+  cancelReason?: string;
+  acceptedAt?: string;
+  readyAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  table?: {
+    id: string;
+    tableNo: string;
+    tableName?: string;
+  };
+  user?: {
+    id: string;
+    nickname?: string;
+    phone?: string;
+  };
+  items: OrderItem[];
+  statusLogs?: OrderStatusLog[];
+}

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -16,6 +17,25 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly cartService: CartService,
   ) {}
+
+  list(userId: bigint) {
+    return this.prisma.order.findMany({
+      where: { userId },
+      include: this.orderListInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  async get(userId: bigint, id: bigint) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, userId },
+      include: this.orderDetailInclude,
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return order;
+  }
 
   async preview(userId: bigint, dto: OrderRequestDto) {
     return this.prisma.$transaction((tx) =>
@@ -101,6 +121,92 @@ export class OrdersService {
       }
       throw error;
     }
+  }
+
+  cancel(userId: bigint, id: bigint) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, userId },
+        select: { id: true, status: true },
+      });
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+      if (order.status !== 'PENDING_ACCEPTANCE') {
+        throw new ConflictException('商家接单后不能取消订单');
+      }
+
+      const now = new Date();
+      const updated = await tx.order.updateMany({
+        where: { id, userId, status: 'PENDING_ACCEPTANCE' },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: now,
+          cancelReason: '用户取消订单',
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException('订单状态已变化，请刷新后重试');
+      }
+
+      await tx.orderStatusLog.create({
+        data: {
+          orderId: id,
+          fromStatus: 'PENDING_ACCEPTANCE',
+          toStatus: 'CANCELLED',
+          operatorType: 'USER',
+          operatorUserId: userId,
+          remark: '用户取消订单',
+        },
+      });
+      return this.requireOwnedOrder(tx, userId, id);
+    });
+  }
+
+  confirmReceived(userId: bigint, id: bigint) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, userId },
+        select: { id: true, status: true, orderType: true },
+      });
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+      if (order.orderType !== 'DELIVERY') {
+        throw new ConflictException('仅商家配送订单可以确认收货');
+      }
+      if (order.status !== 'DELIVERING') {
+        throw new ConflictException('订单配送中才能确认收货');
+      }
+
+      const updated = await tx.order.updateMany({
+        where: {
+          id,
+          userId,
+          orderType: 'DELIVERY',
+          status: 'DELIVERING',
+        },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException('订单状态已变化，请刷新后重试');
+      }
+
+      await tx.orderStatusLog.create({
+        data: {
+          orderId: id,
+          fromStatus: 'DELIVERING',
+          toStatus: 'COMPLETED',
+          operatorType: 'USER',
+          operatorUserId: userId,
+          remark: '用户确认收货',
+        },
+      });
+      return this.requireOwnedOrder(tx, userId, id);
+    });
   }
 
   private async validateAndPrice(
@@ -228,6 +334,17 @@ export class OrdersService {
     });
   }
 
+  private requireOwnedOrder(
+    tx: Prisma.TransactionClient,
+    userId: bigint,
+    id: bigint,
+  ) {
+    return tx.order.findFirstOrThrow({
+      where: { id, userId },
+      include: this.orderDetailInclude,
+    });
+  }
+
   private validateIdempotencyKey(value: string) {
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(value)) {
       throw new BadRequestException(
@@ -244,16 +361,22 @@ export class OrdersService {
     return `HY${timestamp}${randomBytes(4).toString('hex').toUpperCase()}`;
   }
 
-  private readonly orderInclude = {
+  private readonly orderListInclude = {
     merchant: {
-      select: { id: true, nameZh: true },
+      select: { id: true, nameZh: true, logoUrl: true },
     },
     table: {
       select: { id: true, tableNo: true, tableName: true },
     },
     items: true,
+  };
+
+  private readonly orderDetailInclude = {
+    ...this.orderListInclude,
     statusLogs: {
       orderBy: { createdAt: 'asc' as const },
     },
   };
+
+  private readonly orderInclude = this.orderDetailInclude;
 }

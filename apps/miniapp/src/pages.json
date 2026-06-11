@@ -7,6 +7,18 @@
       }
     },
     {
+      "path": "pages/orders/index",
+      "style": {
+        "navigationBarTitleText": "我的订单"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
       "path": "pages/merchant/detail",
       "style": {
         "navigationBarTitleText": "商家详情"
@@ -41,8 +53,34 @@
       "style": {
         "navigationBarTitleText": "确认订单"
       }
+    },
+    {
+      "path": "pages/order/detail",
+      "style": {
+        "navigationBarTitleText": "订单详情"
+      }
     }
   ],
+  "tabBar": {
+    "color": "#7d756f",
+    "selectedColor": "#b83228",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/orders/index",
+        "text": "订单"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "华越优选",

@@ -104,7 +104,8 @@ function showSuccess(order: CreatedOrder) {
     title: '订单已提交',
     content: `订单号：${order.orderNo}\n请等待商家接单`,
     showCancel: false,
-    success: () => uni.reLaunch({ url: '/pages/home/index' }),
+    success: () =>
+      uni.redirectTo({ url: `/pages/order/detail?id=${order.id}` }),
   });
 }
 
