@@ -105,15 +105,24 @@ export async function disableTable(id: string) {
   await http.delete(`/merchant/tables/${id}`);
 }
 
+export async function enableTable(id: string) {
+  await http.post(`/merchant/tables/${id}/enable`);
+}
+
 export async function rotateTableQr(id: string) {
   await http.post(`/merchant/tables/${id}/rotate-qr`);
 }
 
-export async function downloadTableQr(table: DiningTable) {
-  const response = await http.get(`/merchant/tables/${table.id}/qr-image`, {
+export async function getTableQrBlob(id: string) {
+  const response = await http.get(`/merchant/tables/${id}/qr-image`, {
     responseType: 'blob',
   });
-  const url = URL.createObjectURL(response.data);
+  return response.data as Blob;
+}
+
+export async function downloadTableQr(table: DiningTable) {
+  const blob = await getTableQrBlob(table.id);
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = `table-${table.tableNo}.png`;

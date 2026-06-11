@@ -369,19 +369,41 @@ describe('Merchant management isolation', () => {
   });
 
   it('rotates random QR tokens, invalidates the old token, and returns PNG', async () => {
-    const created = await request(app.getHttpServer())
-      .post('/api/v1/merchant/tables')
-      .set('Authorization', `Bearer ${tokenOne}`)
-      .send({ tableNo: `T-${suffix}`, tableName: '测试桌台' })
-      .expect(201);
-    const table = created.body.data;
+    const table = await createTable(tokenOne, `T-${suffix}`, '测试桌台');
     expect(table.qrToken).toMatch(/^[a-f0-9]{64}$/);
     expect(table.qrToken).not.toBe(table.id);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/merchant/tables/${table.id}/enable`)
+      .set('Authorization', `Bearer ${tokenTwo}`)
+      .expect(404);
 
     await request(app.getHttpServer())
       .get(`/api/v1/merchant/tables/${table.id}/qr-image`)
       .set('Authorization', `Bearer ${tokenTwo}`)
       .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/merchant/tables/${table.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ token: table.qrToken })
+      .expect(410);
+
+    const enabled = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/tables/${table.id}/enable`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(201);
+    expect(enabled.body.data.status).toBe('ACTIVE');
+
+    const resolved = await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ token: table.qrToken })
+      .expect(200);
+    expect(resolved.body.data.orderType).toBe('DINE_IN');
+    expect(resolved.body.data.table.tableNo).toBe(table.tableNo);
 
     const rotated = await request(app.getHttpServer())
       .post(`/api/v1/merchant/tables/${table.id}/rotate-qr`)
@@ -392,6 +414,17 @@ describe('Merchant management isolation', () => {
     expect(
       await prisma.diningTable.findUnique({ where: { qrToken: table.qrToken } }),
     ).toBeNull();
+
+    await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ token: table.qrToken })
+      .expect(404);
+
+    const newResolved = await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ token: rotated.body.data.qrToken })
+      .expect(200);
+    expect(newResolved.body.data.table.tableNo).toBe(table.tableNo);
 
     const image = await request(app.getHttpServer())
       .get(`/api/v1/merchant/tables/${table.id}/qr-image`)
@@ -405,15 +438,10 @@ describe('Merchant management isolation', () => {
       .expect('Content-Type', /image\/png/)
       .expect(200);
     expect(Buffer.from(image.body).subarray(1, 4).toString()).toBe('PNG');
-
-    await request(app.getHttpServer())
-      .delete(`/api/v1/merchant/tables/${table.id}`)
-      .set('Authorization', `Bearer ${tokenOne}`)
-      .expect(200);
     const stored = await prisma.diningTable.findUnique({
       where: { id: BigInt(table.id) },
     });
-    expect(stored?.status).toBe('DISABLED');
+    expect(stored?.status).toBe('ACTIVE');
   });
 
   async function login(username: string) {
@@ -435,6 +463,24 @@ describe('Merchant management isolation', () => {
       .send({ nameZh, nameVi })
       .expect(201);
     return response.body.data as { id: string };
+  }
+
+  async function createTable(
+    token: string,
+    tableNo: string,
+    tableName?: string,
+  ) {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/merchant/tables')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tableNo, tableName })
+      .expect(201);
+    return response.body.data as {
+      id: string;
+      tableNo: string;
+      tableName?: string;
+      qrToken: string;
+    };
   }
 });
 

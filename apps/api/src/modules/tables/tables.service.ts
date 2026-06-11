@@ -47,6 +47,14 @@ export class TablesService {
     });
   }
 
+  async enable(merchantId: bigint, id: bigint) {
+    await this.requireOwnedTable(merchantId, id);
+    return this.prisma.diningTable.update({
+      where: { id },
+      data: { status: 'ACTIVE' },
+    });
+  }
+
   async rotateQr(merchantId: bigint, id: bigint) {
     await this.requireOwnedTable(merchantId, id);
     return this.prisma.diningTable.update({

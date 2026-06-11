@@ -47,6 +47,11 @@ export class TablesController {
     return this.service.disable(merchantId, BigInt(params.id));
   }
 
+  @Post(':id/enable')
+  enable(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.service.enable(merchantId, BigInt(params.id));
+  }
+
   @Post(':id/rotate-qr')
   rotateQr(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.service.rotateQr(merchantId, BigInt(params.id));
