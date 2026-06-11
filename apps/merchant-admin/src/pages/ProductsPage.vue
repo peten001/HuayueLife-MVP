@@ -38,6 +38,7 @@ async function load() {
 function edit(row: Product) {
   Object.assign(form, {
     ...row,
+    nameVi: row.nameVi ?? '',
     priceVnd: Number(row.priceVnd),
   });
 }
@@ -59,8 +60,8 @@ async function save() {
   try {
     const payload = {
       categoryId: form.categoryId,
-      nameZh: form.nameZh,
-      nameVi: form.nameVi || undefined,
+      nameZh: form.nameZh.trim(),
+      nameVi: form.nameVi.trim(),
       description: form.description || undefined,
       imageUrl: form.imageUrl || undefined,
       priceVnd: form.priceVnd,
@@ -121,8 +122,14 @@ function productStatusLabel(status: ProductStatus) {
   <PageHeader :title="t('products')" :description="t('productsDescription')" />
   <form class="card form-grid" @submit.prevent="save">
     <label>{{ t('category') }}<select v-model="form.categoryId" required><option v-for="item in categories.filter((c) => c.isActive)" :key="item.id" :value="item.id">{{ categoryName(item) }}</option></select></label>
-    <label>{{ t('chineseProductName') }}<input v-model="form.nameZh" required /></label>
-    <label>{{ t('vietnameseProductName') }}<input v-model="form.nameVi" /></label>
+    <label>
+      {{ t('chineseProductName') }} <span class="required">{{ t('required') }}</span>
+      <input v-model="form.nameZh" required />
+    </label>
+    <label>
+      {{ t('vietnameseProductName') }} <span class="required">{{ t('required') }}</span>
+      <input v-model="form.nameVi" required />
+    </label>
     <label>{{ t('priceVnd') }}<input v-model.number="form.priceVnd" type="number" min="0" required /></label>
     <label>{{ t('sortOrder') }}<input v-model.number="form.sortOrder" type="number" min="0" /></label>
     <label>{{ t('imageUrl') }}<input v-model="form.imageUrl" type="url" /></label>
@@ -153,3 +160,10 @@ function productStatusLabel(status: ProductStatus) {
     </table>
   </div>
 </template>
+
+<style scoped>
+.required {
+  color: #b83228;
+  font-size: 12px;
+}
+</style>

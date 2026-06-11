@@ -1,14 +1,22 @@
-import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+
+function trimString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : value;
+}
 
 export class CreateCategoryDto {
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
   nameZh: string;
 
-  @IsOptional()
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
-  nameVi?: string;
+  nameVi: string;
 
   @IsOptional()
   @IsInt()

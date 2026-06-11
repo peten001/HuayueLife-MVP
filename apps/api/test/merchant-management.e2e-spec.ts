@@ -87,6 +87,7 @@ describe('Merchant management isolation', () => {
       .send({
         merchantId: merchantTwoId.toString(),
         nameZh: '非法注入分类',
+        nameVi: 'Phân loại bất hợp pháp',
       })
       .expect(400);
   });
@@ -157,6 +158,118 @@ describe('Merchant management isolation', () => {
     }
   });
 
+  it('requires bilingual names for categories and products', async () => {
+    const categoryResponse = await request(app.getHttpServer())
+      .post('/api/v1/merchant/categories')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        nameZh: '双语分类',
+        nameVi: ' ',
+      })
+      .expect(400);
+    expect(categoryResponse.body.message).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('nameVi should not be empty'),
+      ]),
+    );
+
+    const createdCategory = await createCategory(tokenOne, '双语测试分类', 'Danh mục kiểm tra');
+
+    const updateCategoryResponse = await request(app.getHttpServer())
+      .patch(`/api/v1/merchant/categories/${createdCategory.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        nameVi: '',
+      })
+      .expect(400);
+    expect(updateCategoryResponse.body.message).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('nameVi should not be empty'),
+      ]),
+    );
+
+    const productMissingVi = await request(app.getHttpServer())
+      .post('/api/v1/merchant/products')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        categoryId: createdCategory.id,
+        nameZh: '双语菜品',
+        priceVnd: 30000,
+      })
+      .expect(400);
+    expect(productMissingVi.body.message).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('nameVi should not be empty'),
+      ]),
+    );
+
+    const createdProduct = await request(app.getHttpServer())
+      .post('/api/v1/merchant/products')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        categoryId: createdCategory.id,
+        nameZh: '双语菜品',
+        nameVi: 'Món song ngữ',
+        priceVnd: 30000,
+      })
+      .expect(201);
+
+    const updateProductResponse = await request(app.getHttpServer())
+      .patch(`/api/v1/merchant/products/${createdProduct.body.data.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({
+        nameVi: '   ',
+      })
+      .expect(400);
+    expect(updateProductResponse.body.message).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('nameVi should not be empty'),
+      ]),
+    );
+  });
+
+  it('backfills empty Vietnamese category and product names from Chinese names', async () => {
+    const legacyCategory = await prisma.category.create({
+      data: {
+        merchantId: merchantOneId,
+        nameZh: '旧分类回填',
+        sortOrder: 99,
+      },
+    });
+    const legacyProduct = await prisma.product.create({
+      data: {
+        merchantId: merchantOneId,
+        categoryId: legacyCategory.id,
+        nameZh: '旧菜品回填',
+        priceVnd: 12000n,
+        productType: 'FOOD',
+        status: 'DRAFT',
+      },
+    });
+
+    await prisma.$executeRaw`
+      UPDATE categories
+      SET name_vi = name_zh
+      WHERE merchant_id = ${merchantOneId}
+        AND (name_vi IS NULL OR name_vi = '')
+    `;
+    await prisma.$executeRaw`
+      UPDATE products
+      SET name_vi = name_zh
+      WHERE merchant_id = ${merchantOneId}
+        AND (name_vi IS NULL OR name_vi = '')
+    `;
+
+    const category = await prisma.category.findUnique({
+      where: { id: legacyCategory.id },
+    });
+    const product = await prisma.product.findUnique({
+      where: { id: legacyProduct.id },
+    });
+    expect(category?.nameVi).toBe(category?.nameZh);
+    expect(product?.nameVi).toBe(product?.nameZh);
+  });
+
   it('saves an all-day 00:00-24:00 business schedule', async () => {
     await request(app.getHttpServer())
       .patch('/api/v1/merchant/profile')
@@ -178,7 +291,7 @@ describe('Merchant management isolation', () => {
   });
 
   it('isolates categories and soft-disables them with their products', async () => {
-    const category = await createCategory(tokenOne, '甲店分类');
+    const category = await createCategory(tokenOne, '甲店分类', 'Danh mục A');
 
     const secondList = await request(app.getHttpServer())
       .get('/api/v1/merchant/categories')
@@ -189,7 +302,7 @@ describe('Merchant management isolation', () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/merchant/categories/${category.id}`)
       .set('Authorization', `Bearer ${tokenTwo}`)
-      .send({ nameZh: '越权修改' })
+      .send({ nameZh: '越权修改', nameVi: 'Sửa trái phép' })
       .expect(404);
 
     const productResponse = await request(app.getHttpServer())
@@ -198,6 +311,7 @@ describe('Merchant management isolation', () => {
       .send({
         categoryId: category.id,
         nameZh: '隔离测试菜品',
+        nameVi: 'Món kiểm tra cô lập',
         priceVnd: 50000,
       })
       .expect(201);
@@ -219,13 +333,14 @@ describe('Merchant management isolation', () => {
   });
 
   it('rejects non-FOOD product input and soft-deletes products', async () => {
-    const category = await createCategory(tokenOne, '食品分类');
+    const category = await createCategory(tokenOne, '食品分类', 'Danh mục thực phẩm');
     await request(app.getHttpServer())
       .post('/api/v1/merchant/products')
       .set('Authorization', `Bearer ${tokenOne}`)
       .send({
         categoryId: category.id,
         nameZh: '不允许的饮品类型',
+        nameVi: 'Loại đồ uống không cho phép',
         productType: 'DRINK',
         priceVnd: 30000,
       })
@@ -237,6 +352,7 @@ describe('Merchant management isolation', () => {
       .send({
         categoryId: category.id,
         nameZh: '允许的餐食',
+        nameVi: 'Món ăn hợp lệ',
         priceVnd: 30000,
       })
       .expect(201);
@@ -308,11 +424,15 @@ describe('Merchant management isolation', () => {
     return response.body.data.accessToken as string;
   }
 
-  async function createCategory(token: string, nameZh: string) {
+  async function createCategory(
+    token: string,
+    nameZh: string,
+    nameVi = nameZh,
+  ) {
     const response = await request(app.getHttpServer())
       .post('/api/v1/merchant/categories')
       .set('Authorization', `Bearer ${token}`)
-      .send({ nameZh })
+      .send({ nameZh, nameVi })
       .expect(201);
     return response.body.data as { id: string };
   }

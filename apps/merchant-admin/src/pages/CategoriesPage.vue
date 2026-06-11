@@ -21,7 +21,10 @@ async function load() {
 }
 
 function edit(row: Category) {
-  Object.assign(form, row);
+  Object.assign(form, {
+    ...row,
+    nameVi: row.nameVi ?? '',
+  });
 }
 
 function reset() {
@@ -31,8 +34,8 @@ function reset() {
 async function save() {
   try {
     const payload = {
-      nameZh: form.nameZh,
-      nameVi: form.nameVi || undefined,
+      nameZh: form.nameZh.trim(),
+      nameVi: form.nameVi.trim(),
       sortOrder: form.sortOrder,
     };
     if (form.id) await updateCategory(form.id, payload);
@@ -57,8 +60,14 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
 <template>
   <PageHeader :title="t('categories')" :description="t('categoriesDescription')" />
   <form class="card inline-form" @submit.prevent="save">
-    <input v-model="form.nameZh" :placeholder="t('chineseCategoryName')" required />
-    <input v-model="form.nameVi" :placeholder="t('vietnameseCategoryName')" />
+    <label>
+      {{ t('chineseCategoryName') }} <span class="required">{{ t('required') }}</span>
+      <input v-model="form.nameZh" :placeholder="t('chineseCategoryName')" required />
+    </label>
+    <label>
+      {{ t('vietnameseCategoryName') }} <span class="required">{{ t('required') }}</span>
+      <input v-model="form.nameVi" :placeholder="t('vietnameseCategoryName')" required />
+    </label>
     <input v-model.number="form.sortOrder" type="number" min="0" :placeholder="t('sortOrder')" />
     <button>{{ form.id ? t('saveChanges') : t('addCategory') }}</button>
     <button v-if="form.id" type="button" class="secondary" @click="reset">{{ t('cancel') }}</button>
@@ -82,3 +91,10 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
     </table>
   </div>
 </template>
+
+<style scoped>
+.required {
+  color: #b83228;
+  font-size: 12px;
+}
+</style>

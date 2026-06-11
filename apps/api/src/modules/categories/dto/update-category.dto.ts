@@ -1,22 +1,30 @@
 import {
   IsBoolean,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+function trimString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : value;
+}
 
 export class UpdateCategoryDto {
-  @IsOptional()
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
-  nameZh?: string;
+  nameZh: string;
 
-  @IsOptional()
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
-  nameVi?: string;
+  nameVi: string;
 
   @IsOptional()
   @IsInt()

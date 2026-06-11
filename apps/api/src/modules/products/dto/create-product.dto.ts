@@ -1,5 +1,6 @@
 import {
   IsInt,
+  IsNotEmpty,
   IsNumberString,
   IsOptional,
   IsString,
@@ -7,19 +8,27 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+function trimString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : value;
+}
 
 export class CreateProductDto {
   @IsNumberString({ no_symbols: true })
   categoryId: string;
 
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(120)
   nameZh: string;
 
-  @IsOptional()
+  @Transform(({ value }) => trimString(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(120)
-  nameVi?: string;
+  nameVi: string;
 
   @IsOptional()
   @IsString()
