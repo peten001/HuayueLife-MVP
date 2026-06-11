@@ -72,5 +72,6 @@ TabBar 固定为：
 
 ## 6. 上线前限制
 
-当前开发环境支持 mock code 登录。`NODE_ENV=production` 时，真实微信 `code2Session` 交换尚未实现，正式提交微信审核前必须完成该服务端接入并验证 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。
-
+开发环境支持 mock code 登录。`NODE_ENV=production` 时，API 会使用
+`WECHAT_APP_ID` 和 `WECHAT_APP_SECRET` 调用微信 `code2Session`，并拒绝
+mock code。正式提交微信审核前必须使用真实 AppID 在体验版完成登录验证。

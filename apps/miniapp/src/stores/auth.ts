@@ -8,11 +8,13 @@ export const useAuthStore = defineStore('auth', {
     user: null as UserProfile | null,
     ready: false,
     loading: false,
+    loginError: '',
   }),
   actions: {
     async ensureLogin() {
       if (this.loading) return;
       this.loading = true;
+      this.loginError = '';
       try {
         if (getToken()) {
           try {
@@ -29,6 +31,11 @@ export const useAuthStore = defineStore('auth', {
         const result = await wechatLogin(loginResult.code);
         setToken(result.accessToken);
         this.user = result.user;
+      } catch (caught) {
+        const detail =
+          caught instanceof Error ? caught.message : '请检查网络后重试';
+        this.loginError = `微信登录失败：${detail}`;
+        throw new Error(this.loginError);
       } finally {
         this.loading = false;
         this.ready = true;

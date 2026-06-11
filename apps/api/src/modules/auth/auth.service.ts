@@ -1,8 +1,10 @@
 import {
+  BadGatewayException,
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
-  NotImplementedException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +16,19 @@ import { AuthUser } from '../../common/types/auth-user.type';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
 
+interface WechatCodeSessionResponse {
+  openid?: unknown;
+  session_key?: unknown;
+  unionid?: unknown;
+  errcode?: unknown;
+  errmsg?: unknown;
+}
+
+interface WechatIdentity {
+  openid: string;
+  unionid?: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -23,15 +38,17 @@ export class AuthService {
   ) {}
 
   async loginWithWechat(dto: WechatLoginDto) {
-    const openid = this.resolveDevelopmentOpenid(dto.code);
+    const identity = await this.resolveWechatIdentity(dto.code);
     const user = await this.prisma.user.upsert({
-      where: { openid },
+      where: { openid: identity.openid },
       update: {
+        unionid: identity.unionid,
         nickname: dto.nickname,
         lastLoginAt: new Date(),
       },
       create: {
-        openid,
+        openid: identity.openid,
+        unionid: identity.unionid,
         nickname: dto.nickname ?? '微信用户',
         lastLoginAt: new Date(),
       },
@@ -130,13 +147,80 @@ export class AuthService {
     return profile;
   }
 
-  private resolveDevelopmentOpenid(code: string): string {
-    if (this.configService.get<string>('NODE_ENV') === 'production') {
-      throw new NotImplementedException(
-        'Production WeChat code exchange is not configured',
-      );
+  private async resolveWechatIdentity(code: string): Promise<WechatIdentity> {
+    if (this.configService.get<string>('NODE_ENV') !== 'production') {
+      return {
+        openid: `mock_${createHash('sha256')
+          .update(code)
+          .digest('hex')
+          .slice(0, 48)}`,
+      };
     }
 
-    return `mock_${createHash('sha256').update(code).digest('hex').slice(0, 48)}`;
+    if (/^mock[_-]/i.test(code)) {
+      throw new BadRequestException('生产环境不允许使用 mock 微信登录 code');
+    }
+
+    const appId = this.configService.get<string>('WECHAT_APP_ID')?.trim();
+    const appSecret = this.configService
+      .get<string>('WECHAT_APP_SECRET')
+      ?.trim();
+    if (!appId || !appSecret) {
+      throw new ServiceUnavailableException('微信登录服务尚未配置');
+    }
+
+    const query = new URLSearchParams({
+      appid: appId,
+      secret: appSecret,
+      js_code: code,
+      grant_type: 'authorization_code',
+    });
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.weixin.qq.com/sns/jscode2session?${query.toString()}`,
+        {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+    } catch {
+      throw new BadGatewayException('微信登录服务暂时不可用');
+    }
+    if (!response.ok) {
+      throw new BadGatewayException('微信登录服务返回异常');
+    }
+
+    let result: WechatCodeSessionResponse;
+    try {
+      result = (await response.json()) as WechatCodeSessionResponse;
+    } catch {
+      throw new BadGatewayException('微信登录服务返回无效数据');
+    }
+
+    if (typeof result.errcode === 'number' && result.errcode !== 0) {
+      throw new UnauthorizedException('微信登录 code 无效或已过期');
+    }
+    if (
+      typeof result.openid !== 'string' ||
+      !result.openid.trim() ||
+      typeof result.session_key !== 'string' ||
+      !result.session_key.trim()
+    ) {
+      throw new BadGatewayException('微信登录响应缺少必要字段');
+    }
+    if (
+      result.unionid !== undefined &&
+      (typeof result.unionid !== 'string' || !result.unionid.trim())
+    ) {
+      throw new BadGatewayException('微信登录响应 unionid 无效');
+    }
+
+    return {
+      openid: result.openid,
+      unionid:
+        typeof result.unionid === 'string' ? result.unionid : undefined,
+    };
   }
 }

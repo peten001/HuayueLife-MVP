@@ -130,7 +130,7 @@ mysql -h MYSQL_HOST -u RESTORE_USER -p huayue_life_mvp_restore \
 
 V1.0 alpha 可以用于本地和受控试点联调。正式微信审核及公网生产上线前，必须完成：
 
-- 服务端真实微信 `code2Session` 登录。
+- 使用真实 AppID 在体验版验证服务端 `code2Session` 登录。
 - 真实 AppID、合法域名和隐私保护指引。
 - HTTPS 证书和公网健康检查。
 - 生产密钥替换。
