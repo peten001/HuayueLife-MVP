@@ -15,6 +15,7 @@
 
 - [微信小程序配置](docs/WECHAT-MINIAPP-SETUP.md)
 - [生产部署说明](docs/DEPLOYMENT.md)
+- [生产环境配置检查清单](docs/PRODUCTION-CONFIG-CHECKLIST.md)
 - [商家操作手册](docs/MERCHANT-GUIDE.md)
 - [上线检查表](docs/LAUNCH-CHECKLIST.md)
 

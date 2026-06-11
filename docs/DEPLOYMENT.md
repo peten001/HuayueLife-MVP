@@ -2,7 +2,9 @@
 
 ## 1. API 环境变量
 
-以 `apps/api/.env.example` 为模板：
+开发环境以 `apps/api/.env.example` 为模板；生产环境使用
+`apps/api/.env.production.example`。逐项检查见
+`docs/PRODUCTION-CONFIG-CHECKLIST.md`。
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
