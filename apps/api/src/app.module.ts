@@ -12,6 +12,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { CartModule } from './modules/cart/cart.module';
 import { HealthModule } from './modules/health/health.module';
 import { MerchantProfileModule } from './modules/merchant-profile/merchant-profile.module';
+import { MerchantStaffModule } from './modules/merchant-staff/merchant-staff.module';
 import { MerchantOrdersModule } from './modules/merchant-orders/merchant-orders.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -40,6 +41,7 @@ import { TablesModule } from './modules/tables/tables.module';
     AuthModule,
     HealthModule,
     MerchantProfileModule,
+    MerchantStaffModule,
     MerchantOrdersModule,
     CategoriesModule,
     CartModule,

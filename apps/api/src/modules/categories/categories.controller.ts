@@ -8,16 +8,19 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { StaffRole } from '@prisma/client';
 import { MerchantId } from '../../common/decorators/merchant-id.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
-import { MerchantStaffGuard } from '../../common/guards/account-type.guard';
+import { MerchantRoles } from '../../common/decorators/merchant-roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Controller('merchant/categories')
-@UseGuards(JwtAuthGuard, MerchantStaffGuard)
+@UseGuards(JwtAuthGuard, MerchantRoleGuard)
+@MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
 export class CategoriesController {
   constructor(private readonly service: CategoriesService) {}
 
@@ -27,6 +30,7 @@ export class CategoriesController {
   }
 
   @Post()
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
   create(
     @MerchantId() merchantId: bigint,
     @Body() dto: CreateCategoryDto,
@@ -35,6 +39,7 @@ export class CategoriesController {
   }
 
   @Patch(':id')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
   update(
     @MerchantId() merchantId: bigint,
     @Param() params: IdParamDto,
@@ -44,6 +49,7 @@ export class CategoriesController {
   }
 
   @Delete(':id')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
   disable(
     @MerchantId() merchantId: bigint,
     @Param() params: IdParamDto,

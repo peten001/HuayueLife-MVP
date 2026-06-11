@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { StaffRole } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MerchantRoles } from '../../common/decorators/merchant-roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { MerchantStaffGuard } from '../../common/guards/account-type.guard';
+import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { AuthService } from './auth.service';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
@@ -28,7 +30,8 @@ export class AuthController {
   }
 
   @Get('merchant/me')
-  @UseGuards(JwtAuthGuard, MerchantStaffGuard)
+  @UseGuards(JwtAuthGuard, MerchantRoleGuard)
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
   getMerchantMe(@CurrentUser() user: AuthUser) {
     return { user };
   }
