@@ -4,6 +4,7 @@ import { getMerchantOrders } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
+import { useI18n } from '@/i18n';
 import type { MerchantOrder } from '@/types/api';
 import {
   enableOrderSound,
@@ -12,6 +13,7 @@ import {
 } from '@/utils/order-notification';
 
 const orders = ref<MerchantOrder[]>([]);
+const { t } = useI18n();
 const message = ref('');
 const soundEnabled = ref(isOrderSoundEnabled());
 let timer: number | undefined;
@@ -69,37 +71,37 @@ function todayInVietnam() {
 </script>
 
 <template>
-  <PageHeader title="经营看板" description="今日数据每 5 秒自动刷新">
+  <PageHeader :title="t('dashboard')" :description="t('dashboardDescription')">
     <button v-if="!soundEnabled" class="secondary" @click="enableSound">
-      开启新订单声音提醒
+      {{ t('enableNewOrderSound') }}
     </button>
-    <span v-else class="sound-enabled">声音提醒已开启</span>
+    <span v-else class="sound-enabled">{{ t('soundEnabled') }}</span>
   </PageHeader>
 
   <p class="message">{{ message }}</p>
   <section class="stat-grid">
     <div class="card stat-card">
-      <span>今日订单数</span>
+      <span>{{ t('todayOrders') }}</span>
       <strong>{{ orders.length }}</strong>
     </div>
     <div class="card stat-card urgent">
-      <span>待接单</span>
+      <span>{{ t('pendingAcceptance') }}</span>
       <strong>{{ pending.length }}</strong>
     </div>
     <div class="card stat-card">
-      <span>今日营业额 · 已收款</span>
+      <span>{{ t('settledRevenue') }}</span>
       <strong>{{ money(settledRevenue) }}</strong>
     </div>
     <div class="card stat-card">
-      <span>今日营业额 · 未收款</span>
+      <span>{{ t('unsettledRevenue') }}</span>
       <strong>{{ money(unsettledRevenue) }}</strong>
     </div>
   </section>
 
   <section class="card dashboard-orders">
     <div class="section-heading">
-      <h2>待接单订单</h2>
-      <RouterLink to="/orders?status=PENDING_ACCEPTANCE">查看全部订单</RouterLink>
+      <h2>{{ t('pendingOrders') }}</h2>
+      <RouterLink to="/orders?status=PENDING_ACCEPTANCE">{{ t('viewAllOrders') }}</RouterLink>
     </div>
     <div v-if="pending.length" class="order-card-grid">
       <RouterLink
@@ -112,13 +114,13 @@ function todayInVietnam() {
           <strong>{{ order.orderNo }}</strong>
           <OrderStatusBadge :status="order.status" />
         </div>
-        <p>{{ order.items.map((item) => `${item.productNameZhSnapshot} × ${item.quantity}`).join('、') || '暂无菜品明细' }}</p>
+        <p>{{ order.items.map((item) => `${item.productNameZhSnapshot} × ${item.quantity}`).join('、') || t('noItemDetails') }}</p>
         <footer>
           <span>{{ new Date(order.createdAt).toLocaleTimeString() }}</span>
           <b>{{ money(order.totalAmountVnd) }}</b>
         </footer>
       </RouterLink>
     </div>
-    <p v-else class="empty">当前没有待接单订单</p>
+    <p v-else class="empty">{{ t('noPendingOrders') }}</p>
   </section>
 </template>

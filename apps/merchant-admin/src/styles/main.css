@@ -42,6 +42,12 @@ h1 { margin: 0; font-size: 26px; }
   background: #20242b;
 }
 .brand { margin-bottom: 28px; color: white; font-size: 18px; font-weight: 700; }
+.language-switcher { display: flex; align-items: center; gap: 8px; color: inherit; }
+.language-switcher span { white-space: nowrap; }
+.language-switcher select { min-width: 120px; padding: 7px 9px; }
+.sidebar .language-switcher { margin: -12px 0 20px; color: #cbd1d8; }
+.sidebar .language-switcher select { border-color: #4c535d; color: white; background: #2d323a; }
+.login-card > .language-switcher { justify-self: end; }
 .sidebar nav { display: grid; gap: 6px; }
 .sidebar a { padding: 11px 12px; color: #cbd1d8; text-decoration: none; border-radius: 8px; }
 .sidebar a.router-link-active { color: white; background: #c43b2f; }

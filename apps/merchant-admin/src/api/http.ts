@@ -1,5 +1,6 @@
 import axios from 'axios';
 import router from '@/router';
+import { useI18n } from '@/i18n';
 import { clearToken, getToken } from '@/utils/storage';
 
 export const http = axios.create({
@@ -27,9 +28,24 @@ http.interceptors.response.use(
 );
 
 export function errorMessage(error: unknown) {
+  const { t } = useI18n();
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
-    return Array.isArray(message) ? message.join('；') : message ?? error.message;
+    if (message === 'Invalid credentials') return t('invalidCredentials');
+    if (
+      message === 'Missing bearer token' ||
+      message === 'Invalid or expired token' ||
+      message === 'Merchant identity is missing'
+    ) {
+      return t('sessionExpired');
+    }
+    if (Array.isArray(message)) return message.join('; ');
+    if (message) return message;
+    if (error.code === 'ECONNABORTED') return t('requestTimeout');
+    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      return t('networkError');
+    }
+    return error.message || t('operationFailed');
   }
-  return error instanceof Error ? error.message : '操作失败';
+  return error instanceof Error ? error.message : t('operationFailed');
 }

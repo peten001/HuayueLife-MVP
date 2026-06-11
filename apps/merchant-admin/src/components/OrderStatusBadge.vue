@@ -1,21 +1,23 @@
 <script setup lang="ts">
+import { useI18n, type TranslationKey } from '@/i18n';
 import type { OrderStatus } from '@/types/api';
 
 defineProps<{ status: OrderStatus }>();
 
-const labels: Record<OrderStatus, string> = {
-  PENDING_ACCEPTANCE: '待接单',
-  ACCEPTED: '已接单',
-  PREPARING: '制作中',
-  READY: '制作完成',
-  DELIVERING: '商家配送中',
-  COMPLETED: '已完成',
-  CANCELLED: '已取消',
+const { t } = useI18n();
+const labels: Record<OrderStatus, TranslationKey> = {
+  PENDING_ACCEPTANCE: 'pendingAcceptance',
+  ACCEPTED: 'accepted',
+  PREPARING: 'preparing',
+  READY: 'ready',
+  DELIVERING: 'delivering',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
 };
 </script>
 
 <template>
   <span :class="['badge', `order-${status.toLowerCase()}`]">
-    {{ labels[status] }}
+    {{ t(labels[status]) }}
   </span>
 </template>

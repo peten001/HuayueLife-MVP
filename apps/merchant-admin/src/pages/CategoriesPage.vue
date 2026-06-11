@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
+import { useI18n } from '@/i18n';
 import {
   createCategory,
   disableCategory,
@@ -11,6 +12,7 @@ import {
 import type { Category } from '@/types/api';
 
 const rows = ref<Category[]>([]);
+const { t } = useI18n();
 const form = reactive({ id: '', nameZh: '', nameVi: '', sortOrder: 0 });
 const message = ref('');
 
@@ -37,14 +39,14 @@ async function save() {
     else await createCategory(payload);
     reset();
     await load();
-    message.value = '分类已保存';
+    message.value = t('categorySaved');
   } catch (error) {
     message.value = errorMessage(error);
   }
 }
 
 async function disable(row: Category) {
-  if (!confirm(`停用分类“${row.nameZh}”？分类下菜品也会下架。`)) return;
+  if (!confirm(t('disableCategoryConfirm', { name: row.nameZh }))) return;
   await disableCategory(row.id);
   await load();
 }
@@ -53,27 +55,27 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
 </script>
 
 <template>
-  <PageHeader title="分类管理" description="删除操作只停用分类，不删除历史数据" />
+  <PageHeader :title="t('categories')" :description="t('categoriesDescription')" />
   <form class="card inline-form" @submit.prevent="save">
-    <input v-model="form.nameZh" placeholder="中文分类名" required />
-    <input v-model="form.nameVi" placeholder="越南语分类名" />
-    <input v-model.number="form.sortOrder" type="number" min="0" placeholder="排序" />
-    <button>{{ form.id ? '保存修改' : '新增分类' }}</button>
-    <button v-if="form.id" type="button" class="secondary" @click="reset">取消</button>
+    <input v-model="form.nameZh" :placeholder="t('chineseCategoryName')" required />
+    <input v-model="form.nameVi" :placeholder="t('vietnameseCategoryName')" />
+    <input v-model.number="form.sortOrder" type="number" min="0" :placeholder="t('sortOrder')" />
+    <button>{{ form.id ? t('saveChanges') : t('addCategory') }}</button>
+    <button v-if="form.id" type="button" class="secondary" @click="reset">{{ t('cancel') }}</button>
   </form>
   <p class="message">{{ message }}</p>
   <div class="card table-wrap">
     <table>
-      <thead><tr><th>分类</th><th>排序</th><th>菜品数</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>{{ t('category') }}</th><th>{{ t('sortOrder') }}</th><th>{{ t('productCount') }}</th><th>{{ t('status') }}</th><th>{{ t('actions') }}</th></tr></thead>
       <tbody>
         <tr v-for="row in rows" :key="row.id">
           <td>{{ row.nameZh }}<small>{{ row.nameVi }}</small></td>
           <td>{{ row.sortOrder }}</td>
           <td>{{ row._count?.products ?? 0 }}</td>
-          <td><span :class="['badge', row.isActive ? 'success' : 'muted']">{{ row.isActive ? '启用' : '停用' }}</span></td>
+          <td><span :class="['badge', row.isActive ? 'success' : 'muted']">{{ row.isActive ? t('enabled') : t('disable') }}</span></td>
           <td class="actions">
-            <button class="small secondary" @click="edit(row)">编辑</button>
-            <button v-if="row.isActive" class="small danger" @click="disable(row)">停用</button>
+            <button class="small secondary" @click="edit(row)">{{ t('edit') }}</button>
+            <button v-if="row.isActive" class="small danger" @click="disable(row)">{{ t('disable') }}</button>
           </td>
         </tr>
       </tbody>

@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
+import { useI18n } from '@/i18n';
 import {
   createTable,
   disableTable,
@@ -13,6 +14,7 @@ import {
 import type { DiningTable } from '@/types/api';
 
 const rows = ref<DiningTable[]>([]);
+const { t } = useI18n();
 const form = reactive({ id: '', tableNo: '', tableName: '' });
 const message = ref('');
 
@@ -41,13 +43,13 @@ async function save() {
 }
 
 async function rotate(row: DiningTable) {
-  if (!confirm(`换新 ${row.tableNo} 的二维码？旧二维码将立即失效。`)) return;
+  if (!confirm(t('rotateQrConfirm', { tableNo: row.tableNo }))) return;
   await rotateTableQr(row.id);
   await load();
 }
 
 async function disable(row: DiningTable) {
-  if (!confirm(`停用桌台 ${row.tableNo}？`)) return;
+  if (!confirm(t('disableTableConfirm', { tableNo: row.tableNo }))) return;
   await disableTable(row.id);
   await load();
 }
@@ -56,28 +58,28 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
 </script>
 
 <template>
-  <PageHeader title="桌台管理" description="二维码使用随机令牌，换码后旧码立即失效" />
+  <PageHeader :title="t('tables')" :description="t('tablesDescription')" />
   <form class="card inline-form" @submit.prevent="save">
-    <input v-model="form.tableNo" placeholder="桌号，如 A01" required />
-    <input v-model="form.tableName" placeholder="显示名称，如一楼 A01" />
-    <button>{{ form.id ? '保存修改' : '新增桌台' }}</button>
-    <button v-if="form.id" type="button" class="secondary" @click="reset">取消</button>
+    <input v-model="form.tableNo" :placeholder="t('tableNoPlaceholder')" required />
+    <input v-model="form.tableName" :placeholder="t('tableNamePlaceholder')" />
+    <button>{{ form.id ? t('saveChanges') : t('addTable') }}</button>
+    <button v-if="form.id" type="button" class="secondary" @click="reset">{{ t('cancel') }}</button>
   </form>
   <p class="message">{{ message }}</p>
   <div class="card table-wrap">
     <table>
-      <thead><tr><th>桌号</th><th>名称</th><th>二维码版本</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>{{ t('tableNo') }}</th><th>{{ t('name') }}</th><th>{{ t('qrVersion') }}</th><th>{{ t('status') }}</th><th>{{ t('actions') }}</th></tr></thead>
       <tbody>
         <tr v-for="row in rows" :key="row.id">
           <td>{{ row.tableNo }}</td>
           <td>{{ row.tableName || '-' }}</td>
           <td>v{{ row.qrVersion }}</td>
-          <td><span :class="['badge', row.status === 'ACTIVE' ? 'success' : 'muted']">{{ row.status === 'ACTIVE' ? '启用' : '停用' }}</span></td>
+          <td><span :class="['badge', row.status === 'ACTIVE' ? 'success' : 'muted']">{{ row.status === 'ACTIVE' ? t('enabled') : t('disable') }}</span></td>
           <td class="actions">
-            <button class="small secondary" @click="edit(row)">编辑</button>
-            <button class="small" @click="downloadTableQr(row)">下载二维码</button>
-            <button class="small warning" @click="rotate(row)">换码</button>
-            <button v-if="row.status === 'ACTIVE'" class="small danger" @click="disable(row)">停用</button>
+            <button class="small secondary" @click="edit(row)">{{ t('edit') }}</button>
+            <button class="small" @click="downloadTableQr(row)">{{ t('downloadQr') }}</button>
+            <button class="small warning" @click="rotate(row)">{{ t('rotateQr') }}</button>
+            <button v-if="row.status === 'ACTIVE'" class="small danger" @click="disable(row)">{{ t('disable') }}</button>
           </td>
         </tr>
       </tbody>

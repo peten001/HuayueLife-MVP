@@ -5,6 +5,7 @@ import { getMerchantOrders } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
+import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 import {
   enableOrderSound,
@@ -13,6 +14,7 @@ import {
 } from '@/utils/order-notification';
 
 const route = useRoute();
+const { t } = useI18n();
 const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const soundEnabled = ref(isOrderSoundEnabled());
@@ -47,15 +49,22 @@ async function enableSound() {
 }
 
 function orderTypeLabel(type: OrderType) {
-  return { DINE_IN: '堂食', PICKUP: '到店自取', DELIVERY: '商家配送' }[type];
+  const labels: Record<OrderType, TranslationKey> = {
+    DINE_IN: 'dineIn',
+    PICKUP: 'pickup',
+    DELIVERY: 'delivery',
+  };
+  return t(labels[type]);
 }
 
 function serviceInfo(order: MerchantOrder) {
   if (order.orderType === 'DINE_IN') {
-    return `桌号 ${order.tableNoSnapshot || order.table?.tableNo || '-'}`;
+    return t('tableNumberValue', {
+      value: order.tableNoSnapshot || order.table?.tableNo || '-',
+    });
   }
-  if (order.orderType === 'PICKUP') return order.contactPhone || '到店自取';
-  return order.deliveryAddress || '商家配送';
+  if (order.orderType === 'PICKUP') return order.contactPhone || t('pickup');
+  return order.deliveryAddress || t('delivery');
 }
 
 function money(value: string) {
@@ -79,38 +88,38 @@ function todayInVietnam() {
 </script>
 
 <template>
-  <PageHeader title="订单管理" description="订单列表每 5 秒自动刷新">
+  <PageHeader :title="t('orders')" :description="t('ordersDescription')">
     <button v-if="!soundEnabled" class="secondary" @click="enableSound">
-      开启声音提醒
+      {{ t('enableSound') }}
     </button>
-    <span v-else class="sound-enabled">声音提醒已开启</span>
+    <span v-else class="sound-enabled">{{ t('soundEnabled') }}</span>
   </PageHeader>
 
   <form class="card order-filters" @submit.prevent="load">
-    <label>日期<input v-model="filters.date" type="date" /></label>
+    <label>{{ t('date') }}<input v-model="filters.date" type="date" /></label>
     <label>
-      状态
+      {{ t('status') }}
       <select v-model="filters.status">
-        <option value="">全部状态</option>
-        <option value="PENDING_ACCEPTANCE">待接单</option>
-        <option value="ACCEPTED">已接单</option>
-        <option value="PREPARING">制作中</option>
-        <option value="READY">制作完成</option>
-        <option value="DELIVERING">商家配送中</option>
-        <option value="COMPLETED">已完成</option>
-        <option value="CANCELLED">已取消</option>
+        <option value="">{{ t('allStatuses') }}</option>
+        <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
+        <option value="ACCEPTED">{{ t('accepted') }}</option>
+        <option value="PREPARING">{{ t('preparing') }}</option>
+        <option value="READY">{{ t('ready') }}</option>
+        <option value="DELIVERING">{{ t('delivering') }}</option>
+        <option value="COMPLETED">{{ t('completed') }}</option>
+        <option value="CANCELLED">{{ t('cancelled') }}</option>
       </select>
     </label>
     <label>
-      订单类型
+      {{ t('orderType') }}
       <select v-model="filters.orderType">
-        <option value="">全部类型</option>
-        <option value="DINE_IN">堂食</option>
-        <option value="PICKUP">到店自取</option>
-        <option value="DELIVERY">商家配送</option>
+        <option value="">{{ t('allTypes') }}</option>
+        <option value="DINE_IN">{{ t('dineIn') }}</option>
+        <option value="PICKUP">{{ t('pickup') }}</option>
+        <option value="DELIVERY">{{ t('delivery') }}</option>
       </select>
     </label>
-    <button>查询</button>
+    <button>{{ t('query') }}</button>
   </form>
 
   <p class="message">{{ message }}</p>
@@ -118,23 +127,23 @@ function todayInVietnam() {
     <table class="orders-table">
       <thead>
         <tr>
-          <th>订单</th><th>类型</th><th>用餐/配送信息</th><th>金额</th>
-          <th>收款</th><th>状态</th><th>下单时间</th><th>操作</th>
+          <th>{{ t('order') }}</th><th>{{ t('type') }}</th><th>{{ t('serviceInfo') }}</th><th>{{ t('amount') }}</th>
+          <th>{{ t('settlement') }}</th><th>{{ t('status') }}</th><th>{{ t('orderTime') }}</th><th>{{ t('actions') }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="order in rows" :key="order.id">
-          <td>{{ order.orderNo }}<small>{{ order.items.length }} 项菜品</small></td>
+          <td>{{ order.orderNo }}<small>{{ t('itemCount', { count: order.items.length }) }}</small></td>
           <td>{{ orderTypeLabel(order.orderType) }}</td>
           <td>{{ serviceInfo(order) }}</td>
           <td>{{ money(order.totalAmountVnd) }}</td>
-          <td>{{ order.settlementStatus === 'SETTLED' ? '已收款' : '未收款' }}</td>
+          <td>{{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}</td>
           <td><OrderStatusBadge :status="order.status" /></td>
           <td>{{ new Date(order.createdAt).toLocaleString() }}</td>
-          <td><RouterLink class="text-link" :to="`/orders/${order.id}`">查看详情</RouterLink></td>
+          <td><RouterLink class="text-link" :to="`/orders/${order.id}`">{{ t('viewDetails') }}</RouterLink></td>
         </tr>
         <tr v-if="!rows.length">
-          <td colspan="8" class="empty">没有符合条件的订单</td>
+          <td colspan="8" class="empty">{{ t('noMatchingOrders') }}</td>
         </tr>
       </tbody>
     </table>

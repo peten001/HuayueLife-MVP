@@ -5,9 +5,11 @@ import { getMerchantOrder, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
-import type { MerchantOrder, OrderStatus } from '@/types/api';
+import { useI18n, type TranslationKey } from '@/i18n';
+import type { MerchantOrder, OrderStatus, OrderStatusLog } from '@/types/api';
 
 const route = useRoute();
+const { t } = useI18n();
 const order = ref<MerchantOrder>();
 const message = ref('');
 const operating = ref(false);
@@ -15,30 +17,30 @@ let timer: number | undefined;
 
 const actions = computed(() => {
   if (!order.value) return [];
-  const rows: Array<{ action: Action; label: string; className?: string }> = [];
+  const rows: Array<{ action: Action; label: TranslationKey; className?: string }> = [];
   if (order.value.status === 'PENDING_ACCEPTANCE') {
-    rows.push({ action: 'accept', label: '接单' });
-    rows.push({ action: 'reject', label: '拒单', className: 'danger' });
+    rows.push({ action: 'accept', label: 'acceptOrder' });
+    rows.push({ action: 'reject', label: 'rejectOrder', className: 'danger' });
   }
   if (order.value.status === 'ACCEPTED') {
-    rows.push({ action: 'start-preparing', label: '开始制作' });
-    rows.push({ action: 'reject', label: '取消订单', className: 'danger' });
+    rows.push({ action: 'start-preparing', label: 'startPreparing' });
+    rows.push({ action: 'reject', label: 'cancelOrder', className: 'danger' });
   }
   if (order.value.status === 'PREPARING') {
-    rows.push({ action: 'ready', label: '标记制作完成' });
+    rows.push({ action: 'ready', label: 'markReady' });
   }
   if (order.value.status === 'READY') {
     rows.push(
       order.value.orderType === 'DELIVERY'
-        ? { action: 'start-delivery', label: '开始商家配送' }
-        : { action: 'complete', label: '完成订单' },
+        ? { action: 'start-delivery', label: 'startDelivery' }
+        : { action: 'complete', label: 'completeOrder' },
     );
   }
   if (
     order.value.status === 'DELIVERING' &&
     order.value.orderType === 'DELIVERY'
   ) {
-    rows.push({ action: 'complete', label: '完成配送订单' });
+    rows.push({ action: 'complete', label: 'completeDeliveryOrder' });
   }
   return rows;
 });
@@ -56,14 +58,14 @@ async function execute(action: Action) {
   if (!order.value || operating.value) return;
   let payload: Record<string, unknown> | undefined;
   if (action === 'reject') {
-    const reason = window.prompt('请输入拒单或取消原因（可选）');
+    const reason = window.prompt(t('rejectReasonPrompt'));
     if (reason === null) return;
     payload = { reason: reason || undefined };
   }
   try {
     operating.value = true;
     order.value = await runOrderAction(order.value.id, action, payload);
-    message.value = '订单已更新';
+    message.value = t('orderUpdated');
   } catch (error) {
     message.value = errorMessage(error);
     await load();
@@ -73,13 +75,13 @@ async function execute(action: Action) {
 }
 
 async function settle() {
-  if (!order.value || !confirm('确认标记为已收款？此操作不改变订单状态。')) {
+  if (!order.value || !confirm(t('settleConfirm'))) {
     return;
   }
   try {
     operating.value = true;
     order.value = await runOrderAction(order.value.id, 'settle');
-    message.value = '已标记为已收款';
+    message.value = t('markedSettled');
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -89,22 +91,35 @@ async function settle() {
 
 function typeLabel() {
   if (!order.value) return '';
-  return { DINE_IN: '堂食', PICKUP: '到店自取', DELIVERY: '商家配送' }[
-    order.value.orderType
-  ];
+  const labels: Record<MerchantOrder['orderType'], TranslationKey> = {
+    DINE_IN: 'dineIn',
+    PICKUP: 'pickup',
+    DELIVERY: 'delivery',
+  };
+  return t(labels[order.value.orderType]);
 }
 
 function statusLabel(status?: OrderStatus) {
-  if (!status) return '创建订单';
-  return {
-    PENDING_ACCEPTANCE: '待接单',
-    ACCEPTED: '已接单',
-    PREPARING: '制作中',
-    READY: '制作完成',
-    DELIVERING: '商家配送中',
-    COMPLETED: '已完成',
-    CANCELLED: '已取消',
-  }[status];
+  if (!status) return t('createOrder');
+  const labels: Record<OrderStatus, TranslationKey> = {
+    PENDING_ACCEPTANCE: 'pendingAcceptance',
+    ACCEPTED: 'accepted',
+    PREPARING: 'preparing',
+    READY: 'ready',
+    DELIVERING: 'delivering',
+    COMPLETED: 'completed',
+    CANCELLED: 'cancelled',
+  };
+  return t(labels[status]);
+}
+
+function operatorLabel(type: OrderStatusLog['operatorType']) {
+  const labels: Record<typeof type, TranslationKey> = {
+    USER: 'user',
+    MERCHANT_STAFF: 'merchantStaff',
+    SYSTEM: 'system',
+  };
+  return t(labels[type]);
 }
 
 function money(value: string) {
@@ -128,10 +143,10 @@ type Action =
 
 <template>
   <PageHeader
-    :title="order ? `订单 ${order.orderNo}` : '订单详情'"
-    description="详情每 5 秒自动刷新"
+    :title="order ? t('orderTitle', { orderNo: order.orderNo }) : t('orderDetail')"
+    :description="t('detailDescription')"
   >
-    <RouterLink class="text-link" to="/orders">返回订单列表</RouterLink>
+    <RouterLink class="text-link" to="/orders">{{ t('backToOrders') }}</RouterLink>
   </PageHeader>
   <p class="message">{{ message }}</p>
 
@@ -140,7 +155,7 @@ type Action =
       <div>
         <OrderStatusBadge :status="order.status" />
         <span :class="['badge', order.settlementStatus === 'SETTLED' ? 'success' : 'warning-badge']">
-          {{ order.settlementStatus === 'SETTLED' ? '已收款' : '未收款' }}
+          {{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}
         </span>
       </div>
       <div class="actions">
@@ -151,7 +166,7 @@ type Action =
           :disabled="operating"
           @click="execute(item.action)"
         >
-          {{ item.label }}
+          {{ t(item.label) }}
         </button>
         <button
           v-if="order.settlementStatus === 'UNSETTLED'"
@@ -159,43 +174,43 @@ type Action =
           :disabled="operating"
           @click="settle"
         >
-          标记已收款
+          {{ t('markSettled') }}
         </button>
       </div>
     </section>
 
     <section class="detail-grid">
       <div class="card">
-        <h2>订单信息</h2>
+        <h2>{{ t('orderInfo') }}</h2>
         <dl class="detail-list">
-          <dt>订单类型</dt><dd>{{ typeLabel() }}</dd>
-          <dt>下单时间</dt><dd>{{ new Date(order.createdAt).toLocaleString() }}</dd>
-          <dt v-if="order.orderType === 'DINE_IN'">桌号</dt>
+          <dt>{{ t('orderType') }}</dt><dd>{{ typeLabel() }}</dd>
+          <dt>{{ t('orderTime') }}</dt><dd>{{ new Date(order.createdAt).toLocaleString() }}</dd>
+          <dt v-if="order.orderType === 'DINE_IN'">{{ t('tableNumber') }}</dt>
           <dd v-if="order.orderType === 'DINE_IN'">{{ order.tableNoSnapshot || order.table?.tableNo || '-' }}</dd>
-          <dt v-if="order.orderType !== 'DINE_IN'">联系人</dt>
+          <dt v-if="order.orderType !== 'DINE_IN'">{{ t('contact') }}</dt>
           <dd v-if="order.orderType !== 'DINE_IN'">{{ order.contactName }} · {{ order.contactPhone }}</dd>
-          <dt v-if="order.orderType === 'DELIVERY'">配送地址</dt>
+          <dt v-if="order.orderType === 'DELIVERY'">{{ t('deliveryAddress') }}</dt>
           <dd v-if="order.orderType === 'DELIVERY'">{{ order.deliveryAddress }}</dd>
-          <dt>用户备注</dt><dd>{{ order.customerRemark || '无' }}</dd>
-          <dt v-if="order.cancelReason">取消原因</dt><dd v-if="order.cancelReason">{{ order.cancelReason }}</dd>
+          <dt>{{ t('customerRemark') }}</dt><dd>{{ order.customerRemark || t('none') }}</dd>
+          <dt v-if="order.cancelReason">{{ t('cancelReason') }}</dt><dd v-if="order.cancelReason">{{ order.cancelReason }}</dd>
         </dl>
       </div>
 
       <div class="card">
-        <h2>金额</h2>
+        <h2>{{ t('amount') }}</h2>
         <dl class="detail-list">
-          <dt>菜品金额</dt><dd>{{ money(order.itemAmountVnd) }}</dd>
-          <dt>配送费</dt><dd>{{ money(order.deliveryFeeVnd) }}</dd>
-          <dt>订单总额</dt><dd><strong>{{ money(order.totalAmountVnd) }}</strong></dd>
+          <dt>{{ t('itemAmount') }}</dt><dd>{{ money(order.itemAmountVnd) }}</dd>
+          <dt>{{ t('deliveryFee') }}</dt><dd>{{ money(order.deliveryFeeVnd) }}</dd>
+          <dt>{{ t('totalAmount') }}</dt><dd><strong>{{ money(order.totalAmountVnd) }}</strong></dd>
         </dl>
       </div>
     </section>
 
     <section class="card">
-      <h2>菜品明细</h2>
+      <h2>{{ t('itemDetails') }}</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>菜品</th><th>单价</th><th>数量</th><th>小计</th><th>备注</th></tr></thead>
+          <thead><tr><th>{{ t('product') }}</th><th>{{ t('unitPrice') }}</th><th>{{ t('quantity') }}</th><th>{{ t('subtotal') }}</th><th>{{ t('remark') }}</th></tr></thead>
           <tbody>
             <tr v-for="item in order.items" :key="item.id">
               <td>{{ item.productNameZhSnapshot }}</td>
@@ -210,7 +225,7 @@ type Action =
     </section>
 
     <section class="card status-log-card">
-      <h2>状态日志</h2>
+      <h2>{{ t('statusLog') }}</h2>
       <ol class="status-timeline">
         <li v-for="log in order.statusLogs" :key="log.id">
           <span class="timeline-dot" />
@@ -219,7 +234,7 @@ type Action =
             <p>{{ log.remark || '-' }}</p>
             <small>
               {{ new Date(log.createdAt).toLocaleString() }}
-              · {{ log.operatorStaff?.displayName || (log.operatorType === 'USER' ? '用户' : log.operatorType) }}
+              · {{ log.operatorStaff?.displayName || operatorLabel(log.operatorType) }}
             </small>
           </div>
         </li>
