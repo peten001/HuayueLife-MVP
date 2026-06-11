@@ -116,7 +116,7 @@ function statusLabel(status?: OrderStatus) {
 function operatorLabel(type: OrderStatusLog['operatorType']) {
   const labels: Record<typeof type, TranslationKey> = {
     USER: 'user',
-    MERCHANT_STAFF: 'merchantStaff',
+    MERCHANT_STAFF: 'merchantStaffOperator',
     SYSTEM: 'system',
   };
   return t(labels[type]);

@@ -24,7 +24,7 @@ const navByRole: Record<
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
     ['/tables', 'tables'],
-    ['/staff', 'merchantStaff'],
+    ['/staff', 'staffManagement'],
   ],
   MANAGER: [
     ['/orders', 'orders'],

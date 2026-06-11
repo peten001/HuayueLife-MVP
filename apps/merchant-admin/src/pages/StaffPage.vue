@@ -158,7 +158,7 @@ async function copyPassword() {
 </script>
 
 <template>
-  <PageHeader :title="t('merchantStaff')" :description="t('staffDescription')">
+  <PageHeader :title="t('staffManagement')">
     <button @click="openCreate">{{ t('addStaff') }}</button>
   </PageHeader>
 
