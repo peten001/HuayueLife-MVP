@@ -23,6 +23,23 @@ function sameContext(a: CartContext | null, b: CartContext) {
   );
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '';
+}
+
+function isStaleContextError(error: unknown) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes('商家当前不可用') ||
+    message.includes('merchant not found') ||
+    message.includes('merchant unavailable') ||
+    message.includes('商家不存在') ||
+    message.includes('商家已删除')
+  );
+}
+
 export const useCartStore = defineStore('cart', {
   state: () => ({
     context: (uni.getStorageSync(CONTEXT_KEY) || null) as CartContext | null,
@@ -31,16 +48,35 @@ export const useCartStore = defineStore('cart', {
   }),
   actions: {
     async ensureLoaded() {
+      const currentContext = this.context;
       console.log('[cart] ensureLoaded', {
-        currentContext: this.context,
+        currentContext,
         cart: this.cart,
         itemsLength: this.cart?.items?.length ?? 0,
       });
-      if (this.context && !this.cart) {
-        console.log('[cart] ensureLoaded loading current cart', {
+      if (!currentContext) {
+        console.log('[cart] ensureLoaded done', {
           currentContext: this.context,
+          cart: this.cart,
+          itemsLength: this.cart?.items?.length ?? 0,
+        });
+        return;
+      }
+      try {
+        console.log('[cart] ensureLoaded loading current cart', {
+          currentContext,
         });
         await this.load();
+      } catch (error) {
+        if (isStaleContextError(error)) {
+          this.clearStaleContext('ensureLoaded-current-context-invalid', error);
+          return;
+        }
+        console.error('[cart] ensureLoaded failed', {
+          currentContext,
+          error,
+        });
+        throw error;
       }
       console.log('[cart] ensureLoaded done', {
         currentContext: this.context,
@@ -90,16 +126,18 @@ export const useCartStore = defineStore('cart', {
         return 'failed';
       }
 
-      if (!current) {
+      const activeCurrent = this.context;
+
+      if (!activeCurrent) {
         console.log('[cart] switchContext no current context', {
           nextContext: next,
         });
         return this.activateContext(next, 'switched');
       }
 
-      if (sameContext(current, next)) {
+      if (sameContext(activeCurrent, next)) {
         console.log('[cart] switchContext same context', {
-          currentContext: current,
+          currentContext: activeCurrent,
           nextContext: next,
         });
         if (!this.cart) {
@@ -210,6 +248,18 @@ export const useCartStore = defineStore('cart', {
     },
     async clear() {
       await this.clearCart();
+    },
+    clearStaleContext(reason: string, error?: unknown) {
+      const context = this.context;
+      console.warn('[cart] stale context cleared', {
+        context,
+        reason,
+        error,
+      });
+      this.cart = null;
+      this.context = null;
+      this.loading = false;
+      uni.removeStorageSync(CONTEXT_KEY);
     },
     resetAfterOrder() {
       this.cart = null;
