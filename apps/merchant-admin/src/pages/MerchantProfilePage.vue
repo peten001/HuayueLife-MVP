@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import axios from 'axios';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
@@ -69,7 +70,6 @@ onMounted(async () => {
     const nextProfile = await getProfile();
     profile.value = nextProfile;
     assignForm(nextProfile);
-    void refreshLocation(true);
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -79,15 +79,18 @@ async function save() {
   loading.value = true;
   message.value = '';
   try {
-    await updateProfile(buildPayload());
+    const payload = buildPayload();
+    if (!payload.nameZh?.trim()) {
+      message.value = t('merchantNameRequired');
+      return;
+    }
+    await updateProfile(payload);
     message.value = t('profileSaved');
     const nextProfile = await getProfile();
     profile.value = nextProfile;
     assignForm(nextProfile);
   } catch (error) {
-    message.value = isProfileValidationError(error)
-      ? t('profileSaveFailed')
-      : errorMessage(error);
+    message.value = resolveProfileSaveError(error);
   } finally {
     loading.value = false;
   }
@@ -231,8 +234,6 @@ function buildPayload(): UpdateMerchantProfilePayload {
     logoUrl: trimOrUndefined(form.logoUrl),
     coverUrl: trimOrUndefined(form.coverUrl),
     notice: trimOrUndefined(form.notice),
-    latitude: parseOptionalNumber(form.latitude),
-    longitude: parseOptionalNumber(form.longitude),
   };
 
   return payload;
@@ -246,25 +247,67 @@ function parseNumber(value: string | number | null | undefined) {
   return Number.isFinite(next) ? next : null;
 }
 
-function parseOptionalNumber(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return undefined;
-  }
-  const next = Number(value);
-  return Number.isFinite(next) ? next : undefined;
-}
-
 function trimOrUndefined(value: string | null | undefined) {
   const next = value?.trim();
   return next ? next : undefined;
 }
 
-function isProfileValidationError(error: unknown) {
-  if (!error || typeof error !== 'object' || !('response' in error)) {
-    return false;
+function resolveProfileSaveError(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return errorMessage(error);
   }
-  const response = (error as { response?: { status?: number } }).response;
-  return response?.status === 400;
+
+  const payload = buildPayload();
+  const response = error.response;
+  const body = response?.data;
+  const rawMessages = normalizeValidationMessages(body?.message);
+
+  console.error('[merchant-profile] save failed', {
+    payload,
+    status: response?.status,
+    body,
+    validationMessages: rawMessages,
+  });
+
+  const friendlyMessages = rawMessages
+    .map((item) => mapValidationMessage(item))
+    .filter((item): item is string => Boolean(item));
+
+  if (friendlyMessages.length) {
+    return Array.from(new Set(friendlyMessages)).join('；');
+  }
+
+  if (response?.status === 400) {
+    return t('profileSaveFailed');
+  }
+
+  return errorMessage(error);
+}
+
+function normalizeValidationMessages(message: unknown) {
+  if (Array.isArray(message)) {
+    return message.map((item) => String(item));
+  }
+  if (typeof message === 'string') {
+    return [message];
+  }
+  return [];
+}
+
+function mapValidationMessage(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes('namezh')) return t('merchantNameRequired');
+  if (lower.includes('province')) return t('provinceRequired');
+  if (lower.includes('city')) return t('cityRequired');
+  if (lower.includes('district')) return t('districtRequired');
+  if (lower.includes('addressdetail')) return t('addressDetailRequired');
+  if (lower.includes('logourl')) return t('logoRequired');
+  if (lower.includes('coverurl')) return t('coverRequired');
+  if (lower.includes('businesshours')) return t('businessHoursRequired');
+  if (lower.includes('latitude') || lower.includes('longitude')) {
+    return t('locationManagedBySystem');
+  }
+  return '';
 }
 </script>
 
@@ -298,12 +341,12 @@ function isProfileValidationError(error: unknown) {
   <form class="card form-grid" @submit.prevent="save">
     <label>{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
     <label>{{ t('vietnameseName') }}<input v-model="form.nameVi" maxlength="120" /></label>
-    <label>{{ t('contactName') }}<input v-model="form.contactName" required /></label>
-    <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" required /></label>
-    <label>{{ t('province') }}<input v-model="form.province" required /></label>
-    <label>{{ t('city') }}<input v-model="form.city" required /></label>
+    <label>{{ t('contactName') }}<input v-model="form.contactName" /></label>
+    <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" /></label>
+    <label>{{ t('province') }}<input v-model="form.province" /></label>
+    <label>{{ t('city') }}<input v-model="form.city" /></label>
     <label>{{ t('district') }}<input v-model="form.district" /></label>
-    <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" required /></label>
+    <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" /></label>
     <div class="span-2 actions-line">
       <button type="button" class="secondary" @click="refreshLocation()">
         {{ t('reposition') }}
