@@ -15,7 +15,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "ts-node --transpile-only prisma/seed.ts"
+    "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "import:demo-merchant": "ts-node --transpile-only scripts/import-demo-merchant.ts",
+    "import:demo-merchant:dry-run": "ts-node --transpile-only scripts/import-demo-merchant.ts --dry-run"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.8",
