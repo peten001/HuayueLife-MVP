@@ -30,6 +30,8 @@ type PlatformMerchantListItem = {
   ownerUsername: string;
   ownerMustChangePassword: boolean;
   ownerStatus: StaffStatus;
+  profileCompletion: number;
+  missingProfileFields: string[];
 };
 
 const DEFAULT_BUSINESS_HOURS = {
@@ -262,6 +264,7 @@ export class PlatformMerchantsService {
 
   private toListItem(merchant: MerchantWithOwner): PlatformMerchantListItem {
     const owner = merchant.staff.find((item) => item.role === StaffRole.OWNER);
+    const profile = this.computeProfileCompletion(merchant);
     return {
       id: merchant.id.toString(),
       nameZh: merchant.nameZh,
@@ -272,6 +275,55 @@ export class PlatformMerchantsService {
       ownerUsername: owner?.username ?? '',
       ownerMustChangePassword: owner?.mustChangePassword ?? false,
       ownerStatus: owner?.status ?? StaffStatus.DISABLED,
+      profileCompletion: profile.completion,
+      missingProfileFields: profile.missingFields,
     };
+  }
+
+  private computeProfileCompletion(merchant: Merchant) {
+    const total = 6;
+    const missingFields: string[] = [];
+
+    if (!merchant.nameZh?.trim() || merchant.nameZh.startsWith('新商户-')) {
+      missingFields.push('merchantName');
+    }
+    if (!merchant.logoUrl?.trim()) {
+      missingFields.push('logoUrl');
+    }
+    if (!merchant.coverUrl?.trim()) {
+      missingFields.push('coverUrl');
+    }
+    if (
+      !merchant.province?.trim() ||
+      merchant.province === '待完善' ||
+      !merchant.city?.trim() ||
+      merchant.city === '待完善' ||
+      !merchant.addressDetail?.trim() ||
+      merchant.addressDetail === '待完善'
+    ) {
+      missingFields.push('addressDetail');
+    }
+    if (!this.hasBusinessHours(merchant.businessHours)) {
+      missingFields.push('businessHoursSection');
+    }
+    if (!merchant.contactPhone?.trim()) {
+      missingFields.push('contactPhone');
+    }
+
+    const completion = Math.max(0, Math.min(100, Math.round(((total - missingFields.length) / total) * 100)));
+    return { completion, missingFields };
+  }
+
+  private hasBusinessHours(value: Merchant['businessHours']) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const hours = value as Record<string, unknown>;
+    return Object.values(hours).some(
+      (items) =>
+        Array.isArray(items) &&
+        items.some((item) => typeof item === 'string' && item.trim().length > 0),
+    );
   }
 }

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -28,16 +29,18 @@ export class UploadsController {
     }),
   )
   uploadProductImage(
+    @Query('kind') kind?: 'product' | 'merchant-logo' | 'merchant-cover',
     @UploadedFile()
     file?: {
       buffer: Buffer;
       mimetype: string;
       originalname: string;
+      size?: number;
     },
   ) {
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
-    return this.service.saveProductImage(file);
+    return this.service.saveImage(kind ?? 'product', file);
   }
 }

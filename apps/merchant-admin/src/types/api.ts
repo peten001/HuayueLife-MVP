@@ -71,6 +71,8 @@ export interface PlatformMerchantListItem {
   ownerUsername: string;
   ownerMustChangePassword: boolean;
   ownerStatus: 'ACTIVE' | 'DISABLED';
+  profileCompletion: number;
+  missingProfileFields: string[];
 }
 
 export interface Category {

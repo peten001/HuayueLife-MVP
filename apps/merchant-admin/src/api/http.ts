@@ -52,7 +52,9 @@ export function errorMessage(error: unknown) {
     }
     if (message === 'Image file is required') return t('imageFileRequired');
     if (message === 'Invalid image type') return t('invalidImageType');
-    if (message === 'Image file exceeds 5MB') return t('imageTooLarge');
+    if (typeof message === 'string' && message.startsWith('Image file exceeds ')) {
+      return t('imageTooLarge');
+    }
     if (message === 'Failed to save uploaded image') return t('imageUploadFailed');
     if (message === 'File too large') return t('imageTooLarge');
     if (Array.isArray(message)) return message.join('; ');

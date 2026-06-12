@@ -109,11 +109,23 @@ export async function updateProduct(id: string, payload: Record<string, unknown>
 }
 
 export async function uploadProductImage(file: File) {
+  return uploadMerchantImage(file, 'product');
+}
+
+export async function uploadMerchantImage(
+  file: File,
+  kind: 'product' | 'merchant-logo' | 'merchant-cover',
+) {
   const formData = new FormData();
   formData.append('file', file);
   const response = await http.post<ApiResponse<{ url: string }>>(
     '/uploads/image',
     formData,
+    {
+      params: {
+        kind,
+      },
+    },
   );
   return response.data.data;
 }

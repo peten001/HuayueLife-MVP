@@ -5,7 +5,7 @@ import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import { changeMerchantPassword } from '@/api/merchant';
 import { useI18n } from '@/i18n';
-import { clearMerchantStaff, clearToken } from '@/utils/storage';
+import { getMerchantStaff, setMerchantStaff } from '@/utils/storage';
 
 const router = useRouter();
 const { t } = useI18n();
@@ -22,10 +22,12 @@ async function submit() {
   message.value = '';
   try {
     await changeMerchantPassword(form);
-    message.value = t('passwordChangedRelogin');
-    clearToken();
-    clearMerchantStaff();
-    await router.push('/login');
+    const staff = getMerchantStaff();
+    if (staff) {
+      setMerchantStaff({ ...staff, mustChangePassword: false });
+    }
+    message.value = t('passwordChangedCompleteProfile');
+    await router.push('/merchant/profile?welcome=1');
   } catch (error) {
     message.value = errorMessage(error);
   } finally {

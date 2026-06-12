@@ -7,6 +7,7 @@ type UploadedImage = {
   buffer: Buffer;
   mimetype: string;
   originalname: string;
+  size?: number;
 };
 
 const MIME_EXTENSION_MAP: Record<string, string> = {
@@ -15,11 +16,32 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
   'image/webp': '.webp',
 };
 
+const UPLOAD_CONFIG = {
+  product: {
+    dir: ['uploads', 'products'],
+    prefix: 'product',
+    maxSize: 5 * 1024 * 1024,
+    urlBase: '/uploads/products',
+  },
+  'merchant-logo': {
+    dir: ['uploads', 'merchants'],
+    prefix: 'logo',
+    maxSize: 2 * 1024 * 1024,
+    urlBase: '/uploads/merchants',
+  },
+  'merchant-cover': {
+    dir: ['uploads', 'merchants'],
+    prefix: 'cover',
+    maxSize: 5 * 1024 * 1024,
+    urlBase: '/uploads/merchants',
+  },
+} as const;
+
+type UploadKind = keyof typeof UPLOAD_CONFIG;
+
 @Injectable()
 export class UploadsService {
-  private readonly productDir = join(process.cwd(), 'uploads', 'products');
-
-  async saveProductImage(file: UploadedImage) {
+  async saveImage(kind: UploadKind, file: UploadedImage) {
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
@@ -29,10 +51,22 @@ export class UploadsService {
       throw new BadRequestException('Invalid image type');
     }
 
-    const fileName = `${randomUUID()}${extension}`;
-    await mkdir(this.productDir, { recursive: true });
-    await writeFile(join(this.productDir, fileName), file.buffer);
+    const config = UPLOAD_CONFIG[kind];
+    if (!config) {
+      throw new BadRequestException('Invalid upload kind');
+    }
 
-    return { url: `/uploads/products/${fileName}` };
+    const fileSize = file.size ?? file.buffer.byteLength;
+    if (fileSize > config.maxSize) {
+      const maxMb = config.maxSize / (1024 * 1024);
+      throw new BadRequestException(`Image file exceeds ${maxMb}MB`);
+    }
+
+    const fileName = `${config.prefix}-${randomUUID()}${extension}`;
+    const targetDir = join(process.cwd(), ...config.dir);
+    await mkdir(targetDir, { recursive: true });
+    await writeFile(join(targetDir, fileName), file.buffer);
+
+    return { url: `${config.urlBase}/${fileName}` };
   }
 }

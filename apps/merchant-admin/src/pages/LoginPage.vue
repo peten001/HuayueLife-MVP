@@ -9,7 +9,7 @@ import { setMerchantStaff, setToken } from '@/utils/storage';
 
 const router = useRouter();
 const { t } = useI18n();
-const username = ref('owner');
+const username = ref('');
 const password = ref('');
 const error = ref('');
 const loading = ref(false);
@@ -39,8 +39,8 @@ async function submit() {
     <form class="card login-card" @submit.prevent="submit">
       <LanguageSwitcher />
       <h1>{{ t('loginTitle') }}</h1>
-      <label>{{ t('username') }}<input v-model="username" required /></label>
-      <label>{{ t('password') }}<input v-model="password" type="password" required minlength="8" /></label>
+      <label>{{ t('username') }}<input v-model="username" :placeholder="t('phonePlaceholder')" inputmode="tel" autocomplete="username" required /></label>
+      <label>{{ t('password') }}<input v-model="password" :placeholder="t('passwordPlaceholder')" type="password" required minlength="8" /></label>
       <p v-if="error" class="error">{{ error }}</p>
       <button :disabled="loading">{{ loading ? t('loggingIn') : t('login') }}</button>
     </form>

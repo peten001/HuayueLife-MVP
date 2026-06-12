@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { getProfile } from '@/api/merchant';
 import { getMerchantOrders } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
-import { useI18n } from '@/i18n';
+import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder } from '@/types/api';
+import {
+  computeProfileCompletion,
+  type ProfileMissingField,
+} from '@/utils/profile-completion';
 import {
   enableOrderSound,
   disableOrderSound,
@@ -14,6 +19,9 @@ import {
 } from '@/utils/order-notification';
 
 const orders = ref<MerchantOrder[]>([]);
+const profileCompletion = ref(0);
+const missingProfileFields = ref<ProfileMissingField[]>([]);
+const profileLoaded = ref(false);
 const { t } = useI18n();
 const message = ref('');
 const soundEnabled = ref(isOrderSoundEnabled());
@@ -57,6 +65,24 @@ async function load() {
   }
 }
 
+async function loadProfileCompletion() {
+  try {
+    const profile = await getProfile();
+    const summary = computeProfileCompletion(profile);
+    profileCompletion.value = summary.completion;
+    missingProfileFields.value = summary.missingFields;
+    profileLoaded.value = true;
+  } catch {
+    profileCompletion.value = 0;
+    missingProfileFields.value = [];
+    profileLoaded.value = false;
+  }
+}
+
+function profileFieldLabel(field: ProfileMissingField) {
+  return t(field as TranslationKey);
+}
+
 async function enableSound() {
   await enableOrderSound();
   soundEnabled.value = true;
@@ -94,7 +120,7 @@ function money(value: number | string) {
 }
 
 onMounted(async () => {
-  await load();
+  await Promise.all([load(), loadProfileCompletion()]);
   timer = window.setInterval(load, 5000);
 });
 onBeforeUnmount(() => {
@@ -127,6 +153,20 @@ function todayInVietnam() {
     </div>
     <RouterLink class="secondary alert-link" to="/orders?status=PENDING_ACCEPTANCE">
       {{ t('viewOrders') }}
+    </RouterLink>
+  </div>
+
+  <div v-if="profileLoaded && profileCompletion < 100" class="card profile-alert">
+    <div>
+      <strong>{{ t('profileCompletion') }}：{{ profileCompletion }}%</strong>
+      <p>{{ t('pleaseCompleteProfile') }}</p>
+      <small v-if="missingProfileFields.length">
+        {{ t('profileMissingFields') }}：
+        {{ missingProfileFields.map((field) => profileFieldLabel(field)).join('、') }}
+      </small>
+    </div>
+    <RouterLink class="secondary alert-link" to="/merchant/profile">
+      {{ t('merchantProfile') }}
     </RouterLink>
   </div>
 
@@ -186,6 +226,21 @@ function todayInVietnam() {
   margin-bottom: 16px;
   border-left: 4px solid #b83228;
   background: #fff7f5;
+}
+
+.profile-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  border-left: 4px solid #3a6ea5;
+  background: #f7fbff;
+}
+
+.profile-alert p {
+  margin: 4px 0 0;
+  color: #4b627a;
 }
 
 .order-alert p {
