@@ -5,6 +5,7 @@ import { translateApiError, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import type { CreatedOrder, OrderPreview } from '@/types/api';
+import { getLastContactInfo, setLastContactInfo } from '@/utils/storage';
 
 const authStore = useAuthStore();
 const cartStore = useCartStore();
@@ -13,6 +14,7 @@ const loading = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const locationLabel = ref('');
+const contactCacheHint = ref(false);
 const idempotencyKey = `order_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 const { locale, t } = useI18n();
 const form = reactive({
@@ -40,8 +42,13 @@ onMounted(async () => {
   try {
     await authStore.ensureLogin();
     await cartStore.load();
-    form.contactName = authStore.user?.nickname ?? '';
-    form.contactPhone = authStore.user?.phone ?? '';
+    const cachedContact = getLastContactInfo();
+    form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
+    form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';
+    form.deliveryAddress = cachedContact?.deliveryAddress?.trim() || '';
+    contactCacheHint.value = Boolean(
+      cachedContact?.contactName || cachedContact?.contactPhone || cachedContact?.deliveryAddress,
+    );
     if (context.value?.orderType === 'DINE_IN') await refreshPreview();
   } catch (caught) {
     message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
@@ -97,6 +104,11 @@ async function submit() {
   try {
     preview.value = await previewOrder(payload());
     const order = await createOrder(payload(), idempotencyKey);
+    setLastContactInfo({
+      contactName: form.contactName.trim(),
+      contactPhone: form.contactPhone.trim(),
+      deliveryAddress: form.deliveryAddress.trim(),
+    });
     cartStore.resetAfterOrder();
     showSuccess(order);
   } catch (caught) {
@@ -129,6 +141,7 @@ function showSuccess(order: CreatedOrder) {
     <view v-if="context?.orderType !== 'DINE_IN'" class="card form">
       <label>{{ t('contact') }}<input v-model="form.contactName" :placeholder="t('contactPlaceholder')" /></label>
       <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" type="number" :placeholder="t('phonePlaceholder')" /></label>
+      <text v-if="contactCacheHint" class="hint">{{ t('contactCacheHint') }}</text>
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form">

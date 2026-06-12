@@ -16,6 +16,23 @@ onShow(() => {
 function openOrders() {
   uni.switchTab({ url: '/pages/orders/index' });
 }
+
+async function authorizeNickname() {
+  try {
+    const result = await auth.authorizeWechatNickname();
+    if (result === 'updated') {
+      uni.showToast({ title: t('wechatNicknameAuthSuccess'), icon: 'none' });
+      return;
+    }
+    if (result === 'cancelled') return;
+    uni.showToast({ title: t('wechatNicknameAuthFailedSimple'), icon: 'none' });
+  } catch (caught) {
+    uni.showToast({
+      title: caught instanceof Error ? caught.message : t('wechatNicknameAuthFailedSimple'),
+      icon: 'none',
+    });
+  }
+}
 </script>
 
 <template>
@@ -26,6 +43,13 @@ function openOrders() {
       <view>
         <text class="name">{{ auth.user?.nickname || t('meNicknameFallback') }}</text>
         <text class="phone">{{ auth.user?.phone || t('mePhoneFallback') }}</text>
+        <button
+          v-if="!auth.user?.nickname || auth.user.nickname === t('meNicknameFallback')"
+          class="nickname-btn"
+          @click="authorizeNickname"
+        >
+          {{ t('wechatNicknameAuth') }}
+        </button>
       </view>
     </view>
 
@@ -60,6 +84,7 @@ function openOrders() {
 .avatar { display: flex; align-items: center; justify-content: center; color: #9f2e26; background: #fff; font-size: 42rpx; font-weight: 700; }
 .name { display: block; font-size: 36rpx; font-weight: 800; }
 .phone { display: block; margin-top: 8rpx; opacity: .82; font-size: 23rpx; }
+.nickname-btn { margin-top: 16rpx; color: #9f2e26; font-size: 22rpx; background: #fff; }
 .menu-card { overflow: hidden; margin-top: 24rpx; border-radius: 20rpx; background: #fff; }
 .menu-card button, .row { display: flex; align-items: center; justify-content: space-between; padding: 26rpx; border-bottom: 1rpx solid #eee9e5; background: #fff; font-size: 27rpx; text-align: left; }
 .menu-card button::after { border: 0; }
