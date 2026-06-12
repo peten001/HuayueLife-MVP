@@ -19,6 +19,12 @@
       }
     },
     {
+      "path": "pages/profile/edit",
+      "style": {
+        "navigationBarTitleText": "资料完善"
+      }
+    },
+    {
       "path": "pages/merchant/detail",
       "style": {
         "navigationBarTitleText": "商家详情"
