@@ -39,6 +39,11 @@ const form = reactive({
   notice: '',
 });
 
+const provinceOptions = computed(() => [
+  { value: 'Bac Giang', label: t('provinceBacGiang') },
+  { value: 'Bac Ninh', label: t('provinceBacNinh') },
+]);
+
 const completion = computed(() =>
   profile.value
     ? computeProfileCompletion(profile.value)
@@ -49,6 +54,9 @@ const profileChecklist = computed(() => {
     'merchantName',
     'logoUrl',
     'coverUrl',
+    'province',
+    'city',
+    'district',
     'addressDetail',
     'businessHoursSection',
     'contactPhone',
@@ -164,37 +172,6 @@ function clearCover() {
   if (coverInput.value) coverInput.value.value = '';
 }
 
-async function refreshLocation(silent = false) {
-  if (!navigator.geolocation) {
-    if (!silent) message.value = t('locationUpdateFailed');
-    return;
-  }
-
-  await new Promise<void>((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        form.latitude = position.coords.latitude;
-        form.longitude = position.coords.longitude;
-        if (!silent) {
-          message.value = t('locationUpdated');
-        }
-        resolve();
-      },
-      () => {
-        if (!silent) {
-          message.value = t('locationUpdateFailed');
-        }
-        resolve();
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 0,
-      },
-    );
-  });
-}
-
 function completionText(field: ProfileMissingField) {
   return t(field as TranslationKey);
 }
@@ -214,7 +191,7 @@ function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
   form.nameVi = nextProfile.nameVi ?? '';
   form.contactName = nextProfile.contactName ?? '';
   form.contactPhone = nextProfile.contactPhone ?? '';
-  form.province = nextProfile.province ?? '';
+  form.province = normalizeProvince(nextProfile.province);
   form.city = nextProfile.city ?? '';
   form.district = nextProfile.district ?? '';
   form.addressDetail = nextProfile.addressDetail ?? '';
@@ -254,6 +231,25 @@ function parseNumber(value: string | number | null | undefined) {
 function trimOrUndefined(value: string | null | undefined) {
   const next = value?.trim();
   return next ? next : undefined;
+}
+
+function normalizeProvince(value?: string | null) {
+  const next = value?.trim();
+  if (!next) return '';
+
+  const normalized = next.toLowerCase().replace(/\s+/g, ' ');
+  const provinceMap: Record<string, 'Bac Giang' | 'Bac Ninh'> = {
+    '北江': 'Bac Giang',
+    'bắc giang': 'Bac Giang',
+    'bac giang': 'Bac Giang',
+    'bac giang province': 'Bac Giang',
+    '北宁': 'Bac Ninh',
+    'bắc ninh': 'Bac Ninh',
+    'bac ninh': 'Bac Ninh',
+    'bac ninh province': 'Bac Ninh',
+  };
+
+  return provinceMap[normalized] ?? '';
 }
 
 function resolveProfileSaveError(error: unknown) {
@@ -347,18 +343,17 @@ function mapValidationMessage(message: string) {
     <label>{{ t('vietnameseName') }}<input v-model="form.nameVi" maxlength="120" /></label>
     <label>{{ t('contactName') }}<input v-model="form.contactName" /></label>
     <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" /></label>
-    <label>{{ t('province') }}<input v-model="form.province" /></label>
+    <label>{{ t('province') }}
+      <select v-model="form.province">
+        <option value="">{{ t('provincePlaceholder') }}</option>
+        <option v-for="item in provinceOptions" :key="item.value" :value="item.value">
+          {{ item.label }}
+        </option>
+      </select>
+    </label>
     <label>{{ t('city') }}<input v-model="form.city" /></label>
     <label>{{ t('district') }}<input v-model="form.district" /></label>
     <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" /></label>
-    <div class="span-2 actions-line">
-      <button type="button" class="secondary" @click="refreshLocation()">
-        {{ t('reposition') }}
-      </button>
-      <small class="hint">{{ t('locationUpdated') }}</small>
-    </div>
-    <input v-model.number="form.latitude" type="hidden" />
-    <input v-model.number="form.longitude" type="hidden" />
     <div class="span-2 image-block">
       <div class="section-heading">
         <h3>{{ t('uploadLogo') }}</h3>

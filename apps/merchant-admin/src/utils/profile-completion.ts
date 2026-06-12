@@ -4,6 +4,9 @@ export type ProfileMissingField =
   | 'merchantName'
   | 'logoUrl'
   | 'coverUrl'
+  | 'province'
+  | 'city'
+  | 'district'
   | 'addressDetail'
   | 'businessHoursSection'
   | 'contactPhone';
@@ -21,12 +24,13 @@ export function computeProfileCompletion(
     | 'coverUrl'
     | 'province'
     | 'city'
+    | 'district'
     | 'addressDetail'
     | 'businessHours'
     | 'contactPhone'
   >,
 ): ProfileCompletionResult {
-  const total = 6;
+  const total = 9;
   const missingFields: ProfileMissingField[] = [];
 
   if (!profile.nameZh?.trim() || profile.nameZh.startsWith('新商户-')) {
@@ -38,14 +42,16 @@ export function computeProfileCompletion(
   if (!profile.coverUrl?.trim()) {
     missingFields.push('coverUrl');
   }
-  if (
-    !profile.province?.trim() ||
-    profile.province === '待完善' ||
-    !profile.city?.trim() ||
-    profile.city === '待完善' ||
-    !profile.addressDetail?.trim() ||
-    profile.addressDetail === '待完善'
-  ) {
+  if (!profile.province?.trim() || profile.province === '待完善') {
+    missingFields.push('province');
+  }
+  if (!profile.city?.trim() || profile.city === '待完善') {
+    missingFields.push('city');
+  }
+  if (!profile.district?.trim() || profile.district === '待完善') {
+    missingFields.push('district');
+  }
+  if (!profile.addressDetail?.trim() || profile.addressDetail === '待完善') {
     missingFields.push('addressDetail');
   }
   if (!hasBusinessHours(profile.businessHours)) {

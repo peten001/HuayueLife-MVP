@@ -281,7 +281,7 @@ export class PlatformMerchantsService {
   }
 
   private computeProfileCompletion(merchant: Merchant) {
-    const total = 6;
+    const total = 9;
     const missingFields: string[] = [];
 
     if (!merchant.nameZh?.trim() || merchant.nameZh.startsWith('新商户-')) {
@@ -293,14 +293,16 @@ export class PlatformMerchantsService {
     if (!merchant.coverUrl?.trim()) {
       missingFields.push('coverUrl');
     }
-    if (
-      !merchant.province?.trim() ||
-      merchant.province === '待完善' ||
-      !merchant.city?.trim() ||
-      merchant.city === '待完善' ||
-      !merchant.addressDetail?.trim() ||
-      merchant.addressDetail === '待完善'
-    ) {
+    if (!merchant.province?.trim() || merchant.province === '待完善') {
+      missingFields.push('province');
+    }
+    if (!merchant.city?.trim() || merchant.city === '待完善') {
+      missingFields.push('city');
+    }
+    if (!merchant.district?.trim() || merchant.district === '待完善') {
+      missingFields.push('district');
+    }
+    if (!merchant.addressDetail?.trim() || merchant.addressDetail === '待完善') {
       missingFields.push('addressDetail');
     }
     if (!this.hasBusinessHours(merchant.businessHours)) {
