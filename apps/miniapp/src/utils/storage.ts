@@ -1,11 +1,17 @@
 const TOKEN_KEY = 'huayue_user_token';
 const LOCALE_KEY = 'huayue_locale';
 const CONTACT_KEY = 'huayue_last_contact';
+const USER_PROFILE_KEY = 'huayue_local_user_profile';
 
 export interface LastContactInfo {
   contactName?: string;
   contactPhone?: string;
   deliveryAddress?: string;
+}
+
+export interface LocalUserProfile {
+  nickname?: string;
+  avatarUrl?: string;
 }
 
 export const getToken = () => uni.getStorageSync(TOKEN_KEY) as string | undefined;
@@ -28,3 +34,14 @@ export const setLastContactInfo = (contact: LastContactInfo) =>
   uni.setStorageSync(CONTACT_KEY, contact);
 
 export const clearLastContactInfo = () => uni.removeStorageSync(CONTACT_KEY);
+
+export const getLocalUserProfile = () =>
+  (uni.getStorageSync(USER_PROFILE_KEY) || null) as LocalUserProfile | null;
+
+export const setLocalUserProfile = (profile: LocalUserProfile) =>
+  uni.setStorageSync(USER_PROFILE_KEY, {
+    ...(getLocalUserProfile() ?? {}),
+    ...profile,
+  });
+
+export const clearLocalUserProfile = () => uni.removeStorageSync(USER_PROFILE_KEY);

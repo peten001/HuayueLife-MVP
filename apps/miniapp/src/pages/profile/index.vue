@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, reactive, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import { useI18n, usePageTitle } from '@/i18n';
@@ -6,31 +7,72 @@ import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
 const { t } = useI18n();
+const saving = ref(false);
+const draft = reactive({
+  nickname: '',
+  avatarUrl: '',
+});
+
+const displayAvatar = computed(() => draft.avatarUrl || auth.user?.avatarUrl || '');
+const displayNickname = computed(() => draft.nickname || auth.user?.nickname || t('meNicknameFallback'));
 
 usePageTitle(() => t('profileTitle'));
 
+function syncDraftFromUser() {
+  draft.nickname =
+    auth.user?.nickname && auth.user.nickname !== t('meNicknameFallback') ? auth.user.nickname : '';
+  draft.avatarUrl = auth.user?.avatarUrl || '';
+}
+
 onShow(() => {
-  void auth.ensureLogin();
+  void auth.ensureLogin().finally(() => {
+    syncDraftFromUser();
+  });
 });
 
 function openOrders() {
   uni.switchTab({ url: '/pages/orders/index' });
 }
 
-async function authorizeNickname() {
+function onNicknameInput(event: { detail?: { value?: string } }) {
+  draft.nickname = event.detail?.value ?? '';
+}
+
+function onChooseAvatar(event: { detail?: { avatarUrl?: string } }) {
+  draft.avatarUrl = event.detail?.avatarUrl ?? '';
+  auth.applyLocalUserProfile({ avatarUrl: draft.avatarUrl });
+}
+
+async function saveProfile() {
+  const nickname = draft.nickname.trim();
+  const avatarUrl = draft.avatarUrl.trim();
+
+  if (!nickname && !avatarUrl) {
+    uni.showToast({ title: t('wechatProfileSavedLocal'), icon: 'none' });
+    return;
+  }
+
+  saving.value = true;
   try {
-    const result = await auth.authorizeWechatNickname();
-    if (result === 'updated') {
-      uni.showToast({ title: t('wechatNicknameAuthSuccess'), icon: 'none' });
-      return;
-    }
-    if (result === 'cancelled') return;
-    uni.showToast({ title: t('wechatNicknameAuthFailedSimple'), icon: 'none' });
-  } catch (caught) {
-    uni.showToast({
-      title: caught instanceof Error ? caught.message : t('wechatNicknameAuthFailedSimple'),
-      icon: 'none',
+    auth.applyLocalUserProfile({
+      nickname: nickname || undefined,
+      avatarUrl: avatarUrl || undefined,
     });
+
+    if (nickname) {
+      try {
+        await auth.syncWechatNickname(nickname);
+        uni.showToast({ title: t('wechatProfileSaved'), icon: 'none' });
+        return;
+      } catch {
+        uni.showToast({ title: t('wechatProfileSavedLocal'), icon: 'none' });
+        return;
+      }
+    }
+
+    uni.showToast({ title: t('wechatProfileSavedLocal'), icon: 'none' });
+  } finally {
+    saving.value = false;
   }
 }
 </script>
@@ -38,17 +80,32 @@ async function authorizeNickname() {
 <template>
   <view class="page">
     <view class="profile-card">
-      <image v-if="auth.user?.avatarUrl" :src="auth.user.avatarUrl" mode="aspectFill" />
-      <view v-else class="avatar">{{ (auth.user?.nickname || 'U').slice(0, 1) }}</view>
-      <view>
-        <text class="name">{{ auth.user?.nickname || t('meNicknameFallback') }}</text>
-        <text class="phone">{{ auth.user?.phone || t('mePhoneFallback') }}</text>
-        <button
-          v-if="!auth.user?.nickname || auth.user.nickname === t('meNicknameFallback')"
-          class="nickname-btn"
-          @click="authorizeNickname"
-        >
-          {{ t('wechatNicknameAuth') }}
+      <button class="avatar-picker" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
+        <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
+        <view v-else class="avatar">{{ displayNickname.slice(0, 1) }}</view>
+        <text class="avatar-tip">{{ t('chooseAvatar') }}</text>
+      </button>
+
+      <view class="profile-form">
+        <view class="field">
+          <text class="field-label">{{ t('nickname') }}</text>
+          <input
+            type="nickname"
+            :value="draft.nickname"
+            :placeholder="t('nicknamePlaceholder')"
+            @input="onNicknameInput"
+          />
+        </view>
+
+        <view class="field">
+          <text class="field-label">{{ t('phone') }}</text>
+          <text class="field-value">{{ auth.user?.phone || t('mePhoneFallback') }}</text>
+        </view>
+
+        <text class="hint">{{ t('wechatAvatarLocalHint') }}</text>
+
+        <button class="save-btn" :loading="saving" @click="saveProfile">
+          {{ t('saveProfile') }}
         </button>
       </view>
     </view>
@@ -79,12 +136,19 @@ async function authorizeNickname() {
 
 <style scoped>
 .page { min-height: 100vh; padding: 32rpx 24rpx; background: #f6f3ef; }
-.profile-card { display: flex; align-items: center; gap: 22rpx; padding: 34rpx 28rpx; border-radius: 24rpx; color: #fff; background: linear-gradient(135deg, #9f2e26, #d45a3d); }
-.profile-card image, .avatar { width: 104rpx; height: 104rpx; border-radius: 50%; }
-.avatar { display: flex; align-items: center; justify-content: center; color: #9f2e26; background: #fff; font-size: 42rpx; font-weight: 700; }
-.name { display: block; font-size: 36rpx; font-weight: 800; }
-.phone { display: block; margin-top: 8rpx; opacity: .82; font-size: 23rpx; }
-.nickname-btn { margin-top: 16rpx; color: #9f2e26; font-size: 22rpx; background: #fff; }
+.profile-card { display: grid; gap: 24rpx; padding: 28rpx; border-radius: 24rpx; color: #fff; background: linear-gradient(135deg, #9f2e26, #d45a3d); }
+.avatar-picker { display: grid; justify-items: center; gap: 10rpx; padding: 0; background: transparent; }
+.avatar-picker::after { border: 0; }
+.avatar-picker image, .avatar { width: 124rpx; height: 124rpx; border-radius: 50%; }
+.avatar { display: flex; align-items: center; justify-content: center; color: #9f2e26; background: #fff; font-size: 48rpx; font-weight: 700; }
+.avatar-tip { color: rgba(255,255,255,.9); font-size: 22rpx; }
+.profile-form { display: grid; gap: 18rpx; }
+.field { display: grid; gap: 10rpx; }
+.field-label { color: rgba(255,255,255,.9); font-size: 24rpx; }
+input { padding: 18rpx; border-radius: 14rpx; color: #292521; background: #fff; }
+.field-value { color: rgba(255,255,255,.9); font-size: 26rpx; }
+.hint { color: rgba(255,255,255,.82); font-size: 21rpx; }
+.save-btn { color: #9f2e26; background: #fff; font-weight: 700; }
 .menu-card { overflow: hidden; margin-top: 24rpx; border-radius: 20rpx; background: #fff; }
 .menu-card button, .row { display: flex; align-items: center; justify-content: space-between; padding: 26rpx; border-bottom: 1rpx solid #eee9e5; background: #fff; font-size: 27rpx; text-align: left; }
 .menu-card button::after { border: 0; }

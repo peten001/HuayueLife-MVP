@@ -2,18 +2,23 @@ import { defineStore } from 'pinia';
 import { getMe, wechatLogin } from '@/api/auth';
 import { translateApiError, useI18n } from '@/i18n';
 import type { UserProfile } from '@/types/api';
-import { clearToken, getToken, setToken } from '@/utils/storage';
+import {
+  clearToken,
+  getLocalUserProfile,
+  getToken,
+  setLocalUserProfile,
+  setToken,
+} from '@/utils/storage';
 
-type WechatNicknameAuthResult = 'updated' | 'cancelled' | 'failed';
-
-function isUserCancelledError(error: unknown) {
-  const message =
-    error instanceof Error
-      ? `${error.message} ${(error as Error & { errMsg?: string }).errMsg || ''}`
-      : typeof error === 'string'
-        ? error
-        : '';
-  return /cancel|denied|deny|拒绝|取消/i.test(message);
+function mergeCachedUserProfile(user: UserProfile | null): UserProfile | null {
+  if (!user) return null;
+  const cached = getLocalUserProfile();
+  if (!cached) return user;
+  return {
+    ...user,
+    nickname: cached.nickname?.trim() || user.nickname,
+    avatarUrl: cached.avatarUrl?.trim() || user.avatarUrl,
+  };
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -32,7 +37,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         if (getToken()) {
           try {
-            this.user = await getMe();
+            this.user = mergeCachedUserProfile(await getMe());
             return;
           } catch {
             clearToken();
@@ -44,7 +49,7 @@ export const useAuthStore = defineStore('auth', {
         if (!loginResult.code) throw new Error(t('wechatLoginNoCode'));
         const result = await wechatLogin(loginResult.code);
         setToken(result.accessToken);
-        this.user = result.user;
+        this.user = mergeCachedUserProfile(result.user);
       } catch (caught) {
         const detail =
           caught instanceof Error
@@ -57,40 +62,30 @@ export const useAuthStore = defineStore('auth', {
         this.ready = true;
       }
     },
-    async authorizeWechatNickname(): Promise<WechatNicknameAuthResult> {
+    applyLocalUserProfile(profile: { nickname?: string; avatarUrl?: string }) {
+      setLocalUserProfile(profile);
+      if (this.user) {
+        this.user = mergeCachedUserProfile({
+          ...this.user,
+          ...profile,
+        });
+      }
+    },
+    async syncWechatNickname(nickname: string) {
       const { t } = useI18n();
       if (this.loading) return 'failed';
       this.loading = true;
       try {
-        const getUserProfile = (uni as typeof uni & {
-          getUserProfile?: (options: {
-            desc: string;
-            success: (result: { userInfo?: { nickName?: string } }) => void;
-            fail: (error: unknown) => void;
-          }) => void;
-        }).getUserProfile;
-        if (typeof getUserProfile !== 'function') {
-          throw new Error(t('wechatNicknameUnsupported'));
-        }
-        const profile = await new Promise<{ userInfo?: { nickName?: string } }>((resolve, reject) => {
-          getUserProfile({
-            desc: t('wechatNicknameAuthDesc'),
-            success: resolve,
-            fail: reject,
-          });
-        });
-        const nickname = profile.userInfo?.nickName?.trim();
-        if (!nickname) throw new Error(t('wechatNicknameEmpty'));
         const loginResult = await new Promise<UniApp.LoginRes>((resolve, reject) => {
           uni.login({ provider: 'weixin', success: resolve, fail: reject });
         });
         if (!loginResult.code) throw new Error(t('wechatLoginNoCode'));
         const result = await wechatLogin(loginResult.code, nickname);
         setToken(result.accessToken);
-        this.user = result.user;
-        return 'updated';
+        setLocalUserProfile({ nickname });
+        this.user = mergeCachedUserProfile(result.user);
+        return 'updated' as const;
       } catch (caught) {
-        if (isUserCancelledError(caught)) return 'cancelled';
         const detail =
           caught instanceof Error
             ? translateApiError(caught.message)
