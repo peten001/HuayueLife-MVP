@@ -50,6 +50,12 @@ export function errorMessage(error: unknown) {
     ) {
       return t('permissionDenied');
     }
+    if (typeof message === 'string' && message.includes('logoUrl')) {
+      return t('logoRequired');
+    }
+    if (typeof message === 'string' && message.includes('coverUrl')) {
+      return t('coverRequired');
+    }
     if (message === 'Image file is required') return t('imageFileRequired');
     if (message === 'Invalid image type') return t('invalidImageType');
     if (typeof message === 'string' && message.startsWith('Image file exceeds ')) {

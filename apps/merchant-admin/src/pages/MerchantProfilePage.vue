@@ -79,6 +79,10 @@ async function save() {
   loading.value = true;
   message.value = '';
   try {
+    if (uploadingLogo.value || uploadingCover.value) {
+      message.value = t('uploadingImage');
+      return;
+    }
     const payload = buildPayload();
     if (!payload.nameZh?.trim()) {
       message.value = t('merchantNameRequired');

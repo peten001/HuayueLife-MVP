@@ -24,12 +24,12 @@ export class UpdateMerchantProfileDto {
   nameVi?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   @MaxLength(500)
   logoUrl?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   @MaxLength(500)
   coverUrl?: string;
 
