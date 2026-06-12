@@ -24,6 +24,7 @@ const tableName = ref('');
 const tableToken = ref('');
 const activeCategory = ref('');
 const error = ref('');
+const notice = ref('');
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
 const { t } = useI18n();
 
@@ -36,19 +37,30 @@ onLoad(async (options) => {
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
   try {
-    menu.value = await getMenu(merchantId.value);
-    activeCategory.value = menu.value.categories[0]?.id ?? '';
-    const opened = await cartStore.openContext({
+    const loadedMenu = await getMenu(merchantId.value);
+    const result = await cartStore.switchContext({
       merchantId: merchantId.value,
-      merchantName: merchantName(menu.value.merchant, locale.value),
+      merchantName: merchantName(loadedMenu.merchant, locale.value),
       orderType: orderType.value,
       tableToken: tableToken.value || undefined,
       tableNo: tableNo.value || undefined,
       tableName: tableName.value || undefined,
     });
-    if (!opened) uni.navigateBack();
+    if (result === 'cancelled') {
+      notice.value = t('cartContextSwitchCancelled');
+      return;
+    }
+    if (result === 'failed') {
+      error.value = t('cartContextSwitchError');
+      return;
+    }
+    menu.value = loadedMenu;
+    activeCategory.value = loadedMenu.categories[0]?.id ?? '';
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : t('menuLoadFailed');
+    console.error('[menu] switchContext error', caught);
+    const message = caught instanceof Error ? caught.message : t('cartContextSwitchError');
+    uni.showToast({ title: message, icon: 'none' });
+    error.value = message;
   }
 });
 
@@ -87,6 +99,7 @@ async function add(product: Product) {
       </view>
       <text :class="menu.merchant.isOpen ? 'open' : 'closed'">{{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}</text>
     </view>
+    <text v-if="notice" class="notice">{{ notice }}</text>
     <text v-if="error" class="error">{{ error }}</text>
     <view v-else-if="menu" class="menu-layout">
       <scroll-view class="categories" scroll-y>
@@ -141,6 +154,7 @@ async function add(product: Product) {
 .table { display: block; margin-top: 5rpx; opacity: .86; font-size: 23rpx; }
 .open { color: #dff7e8; }
 .closed, .error { color: #ffd2cd; }
+.notice { display: block; padding: 18rpx 28rpx; color: #8a5f00; background: #fff4d6; }
 .menu-layout { display: grid; grid-template-columns: 190rpx 1fr; height: calc(100vh - 190rpx); }
 .categories { height: 100%; background: #eee8e3; }
 .category { padding: 28rpx 18rpx; color: #666; font-size: 25rpx; }

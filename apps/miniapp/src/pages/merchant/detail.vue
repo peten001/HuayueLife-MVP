@@ -8,9 +8,11 @@ import {
   useI18n,
   usePageTitle,
 } from '@/i18n';
+import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
 
+const cartStore = useCartStore();
 const merchant = ref<MerchantDetail | null>(null);
 const error = ref('');
 const { locale, t } = useI18n();
@@ -25,13 +27,129 @@ onLoad(async (options) => {
   }
 });
 
-function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
+async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   if (!merchant.value) return;
-  uni.navigateTo({
-    url: `/pages/menu/index?merchantId=${merchant.value.id}&orderType=${orderType}`,
-    fail() {
-      uni.showToast({ title: t('navigationFailed'), icon: 'none' });
-    },
+  const merchantId = merchant.value.id;
+  const url = `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}`;
+  const nextContext = {
+    merchantId,
+    merchantName: merchantName(merchant.value, locale.value),
+    orderType,
+  };
+  console.log('[merchant/detail] tap open menu', {
+    merchantId,
+    orderType,
+    currentContext: cartStore.context,
+    cart: cartStore.cart,
+    hasItems: cartStore.hasItems(),
+    needsContextSwitch: cartStore.needsContextSwitch(nextContext),
+    nextContext,
+    url,
+  });
+  try {
+    console.log('[merchant/detail] before ensureLoaded', {
+      merchantId,
+      orderType,
+      currentContext: cartStore.context,
+      cart: cartStore.cart,
+      hasItems: cartStore.hasItems(),
+      needsSwitch: cartStore.needsContextSwitch(nextContext),
+    });
+    await cartStore.ensureLoaded();
+    console.log('[merchant/detail] after ensureLoaded', {
+      currentContext: cartStore.context,
+      cart: cartStore.cart,
+      hasItems: cartStore.hasItems(),
+      needsSwitch: cartStore.needsContextSwitch(nextContext),
+    });
+    const needsSwitch = cartStore.needsContextSwitch(nextContext);
+    const hasItems = cartStore.hasItems();
+    console.log('[merchant/detail] switch decision', {
+      merchantId,
+      orderType,
+      currentContext: cartStore.context,
+      cart: cartStore.cart,
+      hasItems,
+      needsSwitch,
+      nextContext,
+    });
+    if (needsSwitch && hasItems) {
+      console.log('[merchant/detail] show confirm modal', {
+        merchantId,
+        orderType,
+      });
+      const confirmed = await confirmSwitch();
+      console.log('[merchant/detail] confirm result', {
+        merchantId,
+        orderType,
+        confirmed,
+      });
+      if (!confirmed) {
+        return;
+      }
+      try {
+        await cartStore.clearCart();
+      } catch (error) {
+        console.error('[merchant/detail] clearCart failed', {
+          merchantId,
+          orderType,
+          currentContext: cartStore.context,
+          nextContext,
+          error,
+        });
+        uni.showToast({ title: t('cartContextSwitchError'), icon: 'none' });
+        return;
+      }
+    }
+    const result = await cartStore.switchContext(nextContext);
+    console.log('[merchant/detail] switchContext result', {
+      merchantId,
+      orderType,
+      result,
+      currentContext: cartStore.context,
+      nextContext,
+    });
+    if (result === 'failed') {
+      console.error('[merchant/detail] switch context failed', {
+        merchantId,
+        orderType,
+        currentContext: cartStore.context,
+        nextContext,
+      });
+      uni.showToast({ title: t('cartContextSwitchError'), icon: 'none' });
+      return;
+    }
+    uni.navigateTo({
+      url,
+      fail(error) {
+        console.log('[merchant/detail] navigateTo failed', error);
+        uni.showToast({ title: t('navigationFailed'), icon: 'none' });
+      },
+    });
+  } catch (error) {
+    console.error('[merchant/detail] openMenu failed', error);
+    uni.showToast({ title: t('cartContextSwitchError'), icon: 'none' });
+  }
+}
+
+function confirmSwitch() {
+  return new Promise<boolean>((resolve, reject) => {
+    try {
+      uni.showModal({
+        title: t('switchSceneTitle'),
+        content: t('switchSceneContent'),
+        confirmText: t('switchSceneConfirm'),
+        cancelText: t('switchSceneCancel'),
+        success: (result) => resolve(result.confirm),
+        fail: (error) => {
+          console.error('[merchant/detail] confirmSwitch failed', error);
+          reject(error);
+        },
+      });
+    } catch (error) {
+      console.error('[merchant/detail] confirmSwitch threw', error);
+      reject(error);
+    }
   });
 }
 </script>

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import {
   addCartItem,
-  clearCart,
+  clearCart as clearCartApi,
   deleteCartItem,
   getCart,
   updateCartItem,
@@ -12,6 +12,17 @@ import { useAuthStore } from './auth';
 
 const CONTEXT_KEY = 'huayue_cart_context';
 
+export type ContextSwitchResult = 'ready' | 'switched' | 'cancelled' | 'failed';
+
+function sameContext(a: CartContext | null, b: CartContext) {
+  if (!a) return false;
+  return (
+    a.merchantId === b.merchantId &&
+    a.orderType === b.orderType &&
+    (a.tableToken ?? '') === (b.tableToken ?? '')
+  );
+}
+
 export const useCartStore = defineStore('cart', {
   state: () => ({
     context: (uni.getStorageSync(CONTEXT_KEY) || null) as CartContext | null,
@@ -19,35 +30,150 @@ export const useCartStore = defineStore('cart', {
     loading: false,
   }),
   actions: {
-    async openContext(next: CartContext) {
-      const { t } = useI18n();
-      const current = this.context;
-      if (current && !this.cart) {
+    async ensureLoaded() {
+      console.log('[cart] ensureLoaded', {
+        currentContext: this.context,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+      });
+      if (this.context && !this.cart) {
+        console.log('[cart] ensureLoaded loading current cart', {
+          currentContext: this.context,
+        });
         await this.load();
       }
-      const changed =
-        current &&
-        (current.merchantId !== next.merchantId ||
-          current.orderType !== next.orderType ||
-          (current.tableToken ?? '') !== (next.tableToken ?? ''));
-
-      if (changed && (this.cart?.totalQuantity ?? 0) > 0) {
-        const confirmed = await confirmSwitch();
-        if (!confirmed) return false;
-        await clearCart(current);
+      console.log('[cart] ensureLoaded done', {
+        currentContext: this.context,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+      });
+    },
+    hasItems() {
+      const result = (this.cart?.totalQuantity ?? 0) > 0;
+      console.log('[cart] hasItems', {
+        currentContext: this.context,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+        totalQuantity: this.cart?.totalQuantity ?? 0,
+        result,
+      });
+      return result;
+    },
+    needsContextSwitch(next: CartContext) {
+      const result = Boolean(this.context && !sameContext(this.context, next));
+      console.log('[cart] needsContextSwitch', {
+        currentContext: this.context,
+        nextContext: next,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+        result,
+      });
+      return result;
+    },
+    async switchContext(next: CartContext): Promise<ContextSwitchResult> {
+      const current = this.context;
+      console.log('[cart] switchContext start', {
+        currentContext: current,
+        nextContext: next,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+      });
+      try {
+        await this.ensureLoaded();
+      } catch (error) {
+        console.error('[cart] switchContext failed', {
+          reason: 'load-current-cart-failed',
+          current,
+          next,
+          error,
+        });
+        return 'failed';
       }
 
+      if (!current) {
+        console.log('[cart] switchContext no current context', {
+          nextContext: next,
+        });
+        return this.activateContext(next, 'switched');
+      }
+
+      if (sameContext(current, next)) {
+        console.log('[cart] switchContext same context', {
+          currentContext: current,
+          nextContext: next,
+        });
+        if (!this.cart) {
+          try {
+            await this.load();
+          } catch (error) {
+            console.error('[cart] switchContext failed', {
+              reason: 'load-current-cart-failed',
+              current,
+              next,
+              error,
+            });
+            return 'failed';
+          }
+        }
+        return 'ready';
+      }
+
+      if (this.hasItems()) {
+        console.error('[cart] switchContext failed', {
+          reason: 'context-switch-with-items',
+          current,
+          next,
+          totalQuantity: this.cart?.totalQuantity ?? 0,
+        });
+        return 'failed';
+      }
+
+      console.log('[cart] switchContext activate next', {
+        currentContext: current,
+        nextContext: next,
+      });
+      return this.activateContext(next, 'switched');
+    },
+    async activateContext(next: CartContext, result: 'ready' | 'switched') {
+      console.log('[cart] activateContext', {
+        nextContext: next,
+        result,
+        previousContext: this.context,
+      });
       this.context = next;
       uni.setStorageSync(CONTEXT_KEY, next);
-      await this.load();
-      return true;
+      try {
+        await this.load();
+        console.log('[cart] activateContext loaded', {
+          nextContext: next,
+          cart: this.cart,
+          itemsLength: this.cart?.items?.length ?? 0,
+        });
+        return result;
+      } catch (error) {
+        console.error('[cart] switchContext failed', {
+          reason: 'load-next-cart-failed',
+          next,
+          error,
+        });
+        return 'failed';
+      }
     },
     async load() {
+      console.log('[cart] load start', {
+        context: this.context,
+      });
       if (!this.context) return;
       await useAuthStore().ensureLogin();
       this.loading = true;
       try {
         this.cart = await getCart(this.context);
+        console.log('[cart] load success', {
+          context: this.context,
+          cart: this.cart,
+          itemsLength: this.cart?.items?.length ?? 0,
+          totalQuantity: this.cart?.totalQuantity ?? 0,
+        });
       } finally {
         this.loading = false;
       }
@@ -68,9 +194,22 @@ export const useCartStore = defineStore('cart', {
     async remove(itemId: string) {
       this.cart = await deleteCartItem(itemId);
     },
-    async clear() {
+    async clearCart() {
+      console.log('[cart] clearCart', {
+        context: this.context,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+      });
       if (!this.context) return;
-      this.cart = await clearCart(this.context);
+      this.cart = await clearCartApi(this.context);
+      console.log('[cart] clearCart done', {
+        context: this.context,
+        cart: this.cart,
+        itemsLength: this.cart?.items?.length ?? 0,
+      });
+    },
+    async clear() {
+      await this.clearCart();
     },
     resetAfterOrder() {
       this.cart = null;
@@ -79,16 +218,3 @@ export const useCartStore = defineStore('cart', {
     },
   },
 });
-
-function confirmSwitch() {
-  const { t } = useI18n();
-  return new Promise<boolean>((resolve) => {
-    uni.showModal({
-      title: t('switchSceneTitle'),
-      content: t('switchSceneContent'),
-      confirmText: t('switchSceneConfirm'),
-      success: (result) => resolve(result.confirm),
-      fail: () => resolve(false),
-    });
-  });
-}

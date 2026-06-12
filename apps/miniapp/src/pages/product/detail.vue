@@ -18,6 +18,7 @@ const product = ref<Product | null>(null);
 const tableLabel = ref('');
 const quantity = ref(1);
 const error = ref('');
+const notice = ref('');
 const { locale, t } = useI18n();
 
 usePageTitle(() => t('productDetailTitle'));
@@ -27,23 +28,31 @@ onLoad(async (options) => {
   const tableNo = decodeURIComponent(String(options?.tableNo ?? ''));
   tableLabel.value = tableName || tableNo;
   try {
-    product.value = await getProduct(String(options?.id ?? ''));
-    const opened = await cartStore.openContext({
-      merchantId: String(options?.merchantId ?? product.value.merchant?.id ?? ''),
-      merchantName: product.value.merchant
-        ? merchantName(product.value.merchant, locale.value)
+    const loadedProduct = await getProduct(String(options?.id ?? ''));
+    const result = await cartStore.switchContext({
+      merchantId: String(options?.merchantId ?? loadedProduct.merchant?.id ?? ''),
+      merchantName: loadedProduct.merchant
+        ? merchantName(loadedProduct.merchant, locale.value)
         : '',
       orderType: String(options?.orderType ?? 'PICKUP') as OrderType,
       tableToken: String(options?.tableToken ?? '') || undefined,
       tableNo: tableNo || undefined,
       tableName: tableName || undefined,
     });
-    if (!opened) {
-      product.value = null;
-      uni.navigateBack();
+    if (result === 'cancelled') {
+      notice.value = t('cartContextSwitchCancelled');
+      return;
     }
+    if (result === 'failed') {
+      error.value = t('cartContextSwitchError');
+      uni.showToast({ title: error.value, icon: 'none' });
+      return;
+    }
+    product.value = loadedProduct;
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : t('productLoadFailed');
+    console.error('[product] switchContext error', caught);
+    error.value = caught instanceof Error ? caught.message : t('cartContextSwitchError');
+    uni.showToast({ title: error.value, icon: 'none' });
   }
 });
 
@@ -63,6 +72,7 @@ async function add() {
 
 <template>
   <view class="page">
+    <text v-if="notice" class="notice">{{ notice }}</text>
     <view v-if="tableLabel && product" class="context">
       {{ product.merchant ? merchantName(product.merchant, locale) : '' }} · {{ t('tableLabel', { table: tableLabel }) }}
     </view>
@@ -97,6 +107,7 @@ async function add() {
 <style scoped>
 .page { min-height: 100vh; padding: 24rpx; background: #f6f3ef; }
 .context { padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #fff; background: #9f2e26; }
+.notice { display: block; padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #8a5f00; background: #fff4d6; }
 .image { width: 100%; height: 520rpx; border-radius: 24rpx; }
 .placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 28rpx; }
 .card { padding: 28rpx; margin: 20rpx 0; border-radius: 20rpx; background: #fff; }
