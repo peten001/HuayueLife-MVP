@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import MerchantLayout from '@/layouts/MerchantLayout.vue';
+import PlatformLayout from '@/layouts/PlatformLayout.vue';
 import LoginPage from '@/pages/LoginPage.vue';
+import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
 import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
+import MerchantChangePasswordPage from '@/pages/MerchantChangePasswordPage.vue';
 import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
 import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
@@ -10,19 +13,33 @@ import DashboardPage from '@/pages/DashboardPage.vue';
 import OrdersPage from '@/pages/OrdersPage.vue';
 import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import StaffPage from '@/pages/StaffPage.vue';
+import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
 import { getMerchantMe } from '@/api/merchant';
-import { getMerchantStaff, getToken, setMerchantStaff } from '@/utils/storage';
+import {
+  getMerchantStaff,
+  getToken as getMerchantToken,
+  getPlatformToken,
+  setMerchantStaff,
+} from '@/utils/storage';
 import type { MerchantStaffRole } from '@/types/api';
 
 type RouteRole = MerchantStaffRole;
+type RouteArea = 'merchant' | 'platform';
 
-async function resolveStaffRole(): Promise<RouteRole | null> {
+interface RouteMeta {
+  auth?: boolean;
+  guest?: boolean;
+  area?: RouteArea;
+  roles?: RouteRole[];
+}
+
+async function resolveMerchantSession() {
   const stored = getMerchantStaff();
-  if (stored?.role) {
-    return stored.role;
+  if (stored?.role && stored?.mustChangePassword !== undefined) {
+    return stored;
   }
-  if (!getToken()) {
+  if (!getMerchantToken()) {
     return null;
   }
   try {
@@ -30,31 +47,48 @@ async function resolveStaffRole(): Promise<RouteRole | null> {
     const user = body.user;
     const role = user?.role;
     if (!role) return null;
-    setMerchantStaff({
+    const session = {
       id: user?.sub ?? '',
       displayName: user?.username ?? '',
       role,
+      mustChangePassword: Boolean(user?.mustChangePassword),
       merchant: {
         id: user?.merchantId ?? '',
-        nameZh: '',
-        status: '',
+        nameZh: user?.merchant?.nameZh ?? '',
+        status: user?.merchant?.status ?? '',
       },
-    });
-    return role;
+    };
+    setMerchantStaff(session);
+    return session;
   } catch {
     return null;
   }
 }
 
+async function resolveMerchantRole(): Promise<RouteRole | null> {
+  const session = await resolveMerchantSession();
+  return session?.role ?? null;
+}
+
+async function resolveMerchantPasswordFlag(): Promise<boolean> {
+  const session = await resolveMerchantSession();
+  return Boolean(session?.mustChangePassword);
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/login', component: LoginPage, meta: { guest: true } },
-    { path: '/forbidden', component: ForbiddenPage, meta: { auth: true } },
+    { path: '/login', component: LoginPage, meta: { guest: true, area: 'merchant' } },
+    {
+      path: '/platform/login',
+      component: PlatformLoginPage,
+      meta: { guest: true, area: 'platform' },
+    },
+    { path: '/forbidden', component: ForbiddenPage, meta: { auth: true, area: 'merchant' } },
     {
       path: '/',
       component: MerchantLayout,
-      meta: { auth: true },
+      meta: { auth: true, area: 'merchant' },
       children: [
         { path: '', redirect: '/dashboard' },
         {
@@ -76,6 +110,11 @@ const router = createRouter({
           path: 'merchant/profile',
           component: MerchantProfilePage,
           meta: { roles: ['OWNER'] },
+        },
+        {
+          path: 'merchant/profile/change-password',
+          component: MerchantChangePasswordPage,
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
           path: 'merchant/business-settings',
@@ -104,27 +143,58 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/platform',
+      component: PlatformLayout,
+      meta: { auth: true, area: 'platform' },
+      children: [
+        { path: '', redirect: '/platform/merchants' },
+        {
+          path: 'merchants',
+          component: PlatformMerchantsPage,
+        },
+      ],
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 });
 
 router.beforeEach(async (to) => {
-  const authenticated = Boolean(getToken());
-  if (to.meta.auth && !authenticated) return '/login';
-  if (to.meta.guest && authenticated) return '/';
-  if (to.meta.auth) {
-    const requiredRoles = to.meta.roles as RouteRole[] | undefined;
-    if (requiredRoles?.length) {
-      const role = await resolveStaffRole();
+  const meta = to.meta as RouteMeta;
+  if (meta.area === 'merchant') {
+    const authenticated = Boolean(getMerchantToken());
+    if (to.path === '/login') {
+      if (!authenticated) return true;
+      const mustChangePassword = await resolveMerchantPasswordFlag();
+      if (mustChangePassword) return '/merchant/profile/change-password';
+      const role = await resolveMerchantRole();
       if (!role) return '/login';
-      if (!requiredRoles.includes(role)) {
+      return role === 'OWNER' ? '/dashboard' : '/orders';
+    }
+    if (meta.auth && !authenticated) return '/login';
+    if (meta.auth) {
+      const role = await resolveMerchantRole();
+      if (!role) return '/login';
+      if (meta.roles?.length && !meta.roles.includes(role)) {
         return '/forbidden';
       }
-      if (to.path === '/' && role !== 'OWNER') {
-        return '/orders';
+      const mustChangePassword = await resolveMerchantPasswordFlag();
+      if (mustChangePassword && to.path !== '/merchant/profile/change-password') {
+        return '/merchant/profile/change-password';
       }
     }
+    return true;
   }
+
+  if (meta.area === 'platform') {
+    const authenticated = Boolean(getPlatformToken());
+    if (to.path === '/platform/login') {
+      return authenticated ? '/platform/merchants' : true;
+    }
+    if (meta.auth && !authenticated) return '/platform/login';
+    return true;
+  }
+
   return true;
 });
 

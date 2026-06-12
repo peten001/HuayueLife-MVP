@@ -46,7 +46,11 @@ async function save() {
 </script>
 
 <template>
-  <PageHeader :title="t('merchantProfile')" :description="t('profileDescription')" />
+  <PageHeader :title="t('merchantProfile')" :description="t('profileDescription')">
+    <RouterLink class="text-link" to="/merchant/profile/change-password">
+      {{ t('changePassword') }}
+    </RouterLink>
+  </PageHeader>
   <form class="card form-grid" @submit.prevent="save">
     <label>{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
     <label>{{ t('vietnameseName') }}<input v-model="form.nameVi" maxlength="120" /></label>

@@ -30,8 +30,25 @@ export async function getMerchantMe() {
       merchantId?: string;
       role?: 'OWNER' | 'MANAGER' | 'STAFF';
       username?: string;
+      mustChangePassword?: boolean;
+      merchant?: {
+        id: string;
+        nameZh: string;
+        status: string;
+      };
     };
   }>>('/merchant/me');
+  return response.data.data;
+}
+
+export async function changeMerchantPassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  const response = await http.post<ApiResponse<{
+    mustChangePassword: boolean;
+  }>>('/merchant/profile/change-password', payload);
   return response.data.data;
 }
 

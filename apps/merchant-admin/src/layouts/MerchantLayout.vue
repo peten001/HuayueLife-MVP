@@ -21,6 +21,7 @@ const navByRole: Record<
     ['/dashboard', 'dashboard'],
     ['/orders', 'orders'],
     ['/merchant/profile', 'merchantProfile'],
+    ['/merchant/profile/change-password', 'changePassword'],
     ['/merchant/business-settings', 'businessSettings'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
@@ -29,11 +30,15 @@ const navByRole: Record<
   ],
   MANAGER: [
     ['/orders', 'orders'],
+    ['/merchant/profile/change-password', 'changePassword'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
     ['/tables', 'tables'],
   ],
-  STAFF: [['/orders', 'orders']],
+  STAFF: [
+    ['/orders', 'orders'],
+    ['/merchant/profile/change-password', 'changePassword'],
+  ],
 };
 
 const nav = navByRole[staff?.role ?? 'STAFF'];

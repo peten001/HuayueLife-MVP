@@ -12,6 +12,7 @@ export interface MerchantStaffAccount {
   id: string;
   displayName: string;
   role: MerchantStaffRole;
+  mustChangePassword?: boolean;
   merchant: {
     id: string;
     nameZh: string;
@@ -53,7 +54,23 @@ export interface MerchantProfile {
   dineInEnabled: boolean;
   pickupEnabled: boolean;
   deliveryEnabled: boolean;
-  status: string;
+  status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
+}
+
+export interface PlatformAdminAccount {
+  username: string;
+}
+
+export interface PlatformMerchantListItem {
+  id: string;
+  nameZh: string;
+  contactPhone: string;
+  status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
+  createdAt: string;
+  updatedAt: string;
+  ownerUsername: string;
+  ownerMustChangePassword: boolean;
+  ownerStatus: 'ACTIVE' | 'DISABLED';
 }
 
 export interface Category {

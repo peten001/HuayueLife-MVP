@@ -1,5 +1,7 @@
 const TOKEN_KEY = 'huayue_merchant_token';
 const STAFF_KEY = 'huayue_merchant_staff';
+const PLATFORM_TOKEN_KEY = 'huayue_platform_token';
+const PLATFORM_ADMIN_KEY = 'huayue_platform_admin';
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
@@ -13,6 +15,7 @@ export function getMerchantStaff() {
       id: string;
       displayName: string;
       role: 'OWNER' | 'MANAGER' | 'STAFF';
+      mustChangePassword?: boolean;
       merchant: {
         id: string;
         nameZh: string;
@@ -29,6 +32,7 @@ export function setMerchantStaff(
     id: string;
     displayName: string;
     role: 'OWNER' | 'MANAGER' | 'STAFF';
+    mustChangePassword?: boolean;
     merchant: {
       id: string;
       nameZh: string;
@@ -45,4 +49,34 @@ export function setMerchantStaff(
 
 export function clearMerchantStaff() {
   localStorage.removeItem(STAFF_KEY);
+}
+
+export const getPlatformToken = () => localStorage.getItem(PLATFORM_TOKEN_KEY);
+export const setPlatformToken = (token: string) =>
+  localStorage.setItem(PLATFORM_TOKEN_KEY, token);
+export const clearPlatformToken = () =>
+  localStorage.removeItem(PLATFORM_TOKEN_KEY);
+
+export function getPlatformAdmin() {
+  const raw = localStorage.getItem(PLATFORM_ADMIN_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as {
+      username: string;
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function setPlatformAdmin(admin: { username: string } | null) {
+  if (!admin) {
+    localStorage.removeItem(PLATFORM_ADMIN_KEY);
+    return;
+  }
+  localStorage.setItem(PLATFORM_ADMIN_KEY, JSON.stringify(admin));
+}
+
+export function clearPlatformAdmin() {
+  localStorage.removeItem(PLATFORM_ADMIN_KEY);
 }
