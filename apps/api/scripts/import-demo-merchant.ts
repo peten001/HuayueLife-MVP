@@ -65,7 +65,7 @@ const demoMerchant = {
 };
 
 const demoOwner = {
-  username: '1234',
+  username: '18817291836',
   password: '12345678',
   displayName: '川味小馆老板',
   role: StaffRole.OWNER,
