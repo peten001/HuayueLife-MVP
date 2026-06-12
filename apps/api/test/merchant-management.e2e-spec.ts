@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import request = require('supertest');
@@ -16,12 +16,16 @@ describe('Merchant management isolation', () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
+    process.env.WECHAT_APP_ID = 'wx2e951e5e94eae8c4';
+    process.env.PUBLIC_QR_BASE_URL = 'https://api.huayueyouxuan.com';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    app.setGlobalPrefix('api/v1', {
+      exclude: [{ path: 't/:token', method: RequestMethod.GET }],
+    });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -442,6 +446,44 @@ describe('Merchant management isolation', () => {
       where: { id: BigInt(table.id) },
     });
     expect(stored?.status).toBe('ACTIVE');
+  });
+
+  it('serves the public short-link bridge and respects table status changes', async () => {
+    const table = await createTable(tokenOne, `S-${suffix}`, '短链桌台');
+
+    const activeBridge = await request(app.getHttpServer())
+      .get(`/t/${table.qrToken}`)
+      .expect(200);
+    expect(activeBridge.headers['content-type']).toMatch(/text\/html/);
+    expect(activeBridge.text).toContain('weixin://dl/business/');
+    expect(activeBridge.text).toContain('pages/scan/resolve');
+    expect(activeBridge.text).toContain(table.qrToken);
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/merchant/tables/${table.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/t/${table.qrToken}`)
+      .expect(410);
+
+    const restored = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/tables/${table.id}/enable`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(201);
+    expect(restored.body.data.status).toBe('ACTIVE');
+
+    const rotated = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/tables/${table.id}/rotate-qr`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/t/${table.qrToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/t/${rotated.body.data.qrToken}`)
+      .expect(200);
   });
 
   async function login(username: string) {

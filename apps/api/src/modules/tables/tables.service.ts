@@ -68,11 +68,7 @@ export class TablesService {
 
   async qrImage(merchantId: bigint, id: bigint) {
     const table = await this.requireOwnedTable(merchantId, id);
-    const entryUrl =
-      this.config.get<string>('MINIAPP_QR_ENTRY_URL') ??
-      'https://example.invalid/scan';
-    const separator = entryUrl.includes('?') ? '&' : '?';
-    const content = `${entryUrl}${separator}token=${encodeURIComponent(table.qrToken)}`;
+    const content = this.buildQrContent(table.qrToken);
     const image = await QRCode.toBuffer(content, {
       type: 'png',
       width: 800,
@@ -80,6 +76,19 @@ export class TablesService {
       errorCorrectionLevel: 'M',
     });
     return { table, image };
+  }
+
+  buildQrContent(token: string) {
+    const publicBaseUrl = this.config.get<string>('PUBLIC_QR_BASE_URL')?.trim();
+    if (publicBaseUrl) {
+      const normalizedBase = publicBaseUrl.replace(/\/+$/, '');
+      return `${normalizedBase}/t/${encodeURIComponent(token)}`;
+    }
+    const entryUrl =
+      this.config.get<string>('MINIAPP_QR_ENTRY_URL') ??
+      'https://example.invalid/scan';
+    const separator = entryUrl.includes('?') ? '&' : '?';
+    return `${entryUrl}${separator}token=${encodeURIComponent(token)}`;
   }
 
   private async requireOwnedTable(merchantId: bigint, id: bigint) {
