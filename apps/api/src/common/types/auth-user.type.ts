@@ -1,4 +1,4 @@
-export type AccountType = 'USER' | 'MERCHANT_STAFF';
+export type AccountType = 'USER' | 'MERCHANT_STAFF' | 'PLATFORM_ADMIN';
 
 export interface AuthUser {
   sub: string;

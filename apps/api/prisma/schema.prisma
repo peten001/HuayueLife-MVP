@@ -21,10 +21,10 @@ enum MerchantType {
 }
 
 enum MerchantStatus {
-  DRAFT
+  PENDING
   ACTIVE
-  CLOSED
   DISABLED
+  DELETED
 }
 
 enum StaffRole {
@@ -133,7 +133,7 @@ model Merchant {
   dineInEnabled            Boolean        @default(true) @map("dine_in_enabled")
   pickupEnabled            Boolean        @default(true) @map("pickup_enabled")
   deliveryEnabled          Boolean        @default(false) @map("delivery_enabled")
-  status                   MerchantStatus @default(DRAFT)
+  status                   MerchantStatus @default(ACTIVE)
   createdAt                DateTime       @default(now()) @map("created_at")
   updatedAt                DateTime       @updatedAt @map("updated_at")
 
@@ -155,6 +155,7 @@ model MerchantStaff {
   merchantId   BigInt      @map("merchant_id")
   username     String      @db.VarChar(64)
   passwordHash String      @map("password_hash") @db.VarChar(255)
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   displayName  String      @map("display_name") @db.VarChar(64)
   role         StaffRole   @default(STAFF)
   status       StaffStatus @default(ACTIVE)

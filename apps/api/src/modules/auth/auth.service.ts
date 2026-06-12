@@ -13,6 +13,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthUser } from '../../common/types/auth-user.type';
+import { ChangeMerchantPasswordDto } from './dto/change-merchant-password.dto';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
 
@@ -77,9 +78,7 @@ export class AuthService {
         username: dto.username,
         status: 'ACTIVE',
         merchant: {
-          status: {
-            in: ['ACTIVE', 'CLOSED'],
-          },
+          status: 'ACTIVE',
         },
       },
       include: {
@@ -117,6 +116,7 @@ export class AuthService {
         id: staff.id,
         displayName: staff.displayName,
         role: staff.role,
+        mustChangePassword: staff.mustChangePassword,
         merchant: {
           id: staff.merchant.id,
           nameZh: staff.merchant.nameZh,
@@ -124,6 +124,81 @@ export class AuthService {
         },
       },
     };
+  }
+
+  async getMerchantProfile(user: AuthUser) {
+    if (user.accountType !== 'MERCHANT_STAFF') {
+      throw new ForbiddenException('Merchant staff account required');
+    }
+    const staff = await this.prisma.merchantStaff.findUnique({
+      where: { id: BigInt(user.sub) },
+      include: {
+        merchant: {
+          select: {
+            id: true,
+            nameZh: true,
+            status: true,
+          },
+        },
+      },
+    });
+    if (!staff) {
+      throw new NotFoundException('Merchant staff not found');
+    }
+    return {
+      user: {
+        sub: staff.id.toString(),
+        accountType: 'MERCHANT_STAFF' as const,
+        merchantId: staff.merchantId.toString(),
+        role: staff.role,
+        username: staff.username,
+        mustChangePassword: staff.mustChangePassword,
+        merchant: {
+          id: staff.merchant.id,
+          nameZh: staff.merchant.nameZh,
+          status: staff.merchant.status,
+        },
+      },
+    };
+  }
+
+  async changeMerchantPassword(user: AuthUser, dto: ChangeMerchantPasswordDto) {
+    if (user.accountType !== 'MERCHANT_STAFF') {
+      throw new ForbiddenException('Merchant staff account required');
+    }
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    const staff = await this.prisma.merchantStaff.findUnique({
+      where: { id: BigInt(user.sub) },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+    if (!staff) {
+      throw new NotFoundException('Merchant staff not found');
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      dto.currentPassword,
+      staff.passwordHash,
+    );
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+    await this.prisma.merchantStaff.update({
+      where: { id: staff.id },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+      },
+    });
+
+    return { mustChangePassword: false };
   }
 
   async getUserProfile(user: AuthUser) {

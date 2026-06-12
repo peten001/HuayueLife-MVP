@@ -5,6 +5,7 @@ import { MerchantRoles } from '../../common/decorators/merchant-roles.decorator'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
+import { ChangeMerchantPasswordDto } from './dto/change-merchant-password.dto';
 import { AuthService } from './auth.service';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
@@ -33,6 +34,16 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, MerchantRoleGuard)
   @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
   getMerchantMe(@CurrentUser() user: AuthUser) {
-    return { user };
+    return this.authService.getMerchantProfile(user);
+  }
+
+  @Post('merchant/profile/change-password')
+  @UseGuards(JwtAuthGuard, MerchantRoleGuard)
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
+  changeMerchantPassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangeMerchantPasswordDto,
+  ) {
+    return this.authService.changeMerchantPassword(user, dto);
   }
 }

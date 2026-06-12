@@ -47,6 +47,7 @@ export class MerchantStaffService {
         displayName: dto.displayName,
         passwordHash,
         role: dto.role,
+        mustChangePassword: true,
       },
       select: this.staffSelect,
     });
@@ -111,7 +112,7 @@ export class MerchantStaffService {
 
     await this.prisma.merchantStaff.update({
       where: { id },
-      data: { passwordHash },
+      data: { passwordHash, mustChangePassword: true },
     });
 
     return { newPassword };
