@@ -61,7 +61,7 @@ h1 { margin: 0; font-size: 26px; }
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .inline-form { display: flex; align-items: end; gap: 12px; margin-bottom: 16px; }
 .inline-form input { max-width: 280px; }
-.message { min-height: 20px; color: #a82f2f; }
+.message { min-height: 20px; color: #a82f2f; white-space: pre-line; }
 .hint { margin: 0; color: #707781; line-height: 1.6; }
 .error { color: #a82f2f; }
 .table-wrap { overflow-x: auto; }

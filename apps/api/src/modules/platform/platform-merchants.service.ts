@@ -72,26 +72,26 @@ export class PlatformMerchantsService {
   }
 
   async create(dto: CreatePlatformMerchantDto) {
-    const nameZh = dto.nameZh.trim();
-    const contactPhone = dto.contactPhone.trim();
+    const phone = dto.phone.trim();
     const existingOwner = await this.prisma.merchantStaff.findFirst({
-      where: { username: contactPhone },
+      where: { username: phone },
       select: { id: true },
     });
     if (existingOwner) {
-      throw new ConflictException('手机号已被其他商户账号使用');
+      throw new ConflictException('该手机号已存在');
     }
 
+    const generatedName = `新商户-${phone}`;
     const passwordHash = await bcrypt.hash('12345678', 12);
     const merchant = await this.prisma.merchant.create({
       data: {
-        nameZh,
+        nameZh: generatedName,
         nameVi: null,
         merchantType: 'RESTAURANT',
         logoUrl: null,
         coverUrl: null,
-        contactName: nameZh,
-        contactPhone,
+        contactName: phone,
+        contactPhone: phone,
         province: '待完善',
         city: '待完善',
         district: null,
@@ -109,8 +109,8 @@ export class PlatformMerchantsService {
         status: MerchantStatus.ACTIVE,
         staff: {
           create: {
-            username: contactPhone,
-            displayName: `${nameZh}老板`,
+            username: phone,
+            displayName: `${generatedName}老板`,
             passwordHash,
             role: StaffRole.OWNER,
             status: StaffStatus.ACTIVE,

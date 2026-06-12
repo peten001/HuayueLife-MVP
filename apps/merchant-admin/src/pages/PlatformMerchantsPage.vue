@@ -68,11 +68,9 @@ async function submit() {
   message.value = '';
   try {
     if (dialogMode.value === 'create') {
-      await createPlatformMerchant({
-        nameZh: form.nameZh,
-        contactPhone: form.contactPhone,
-      });
-      message.value = t('merchantCreated');
+      const phone = form.contactPhone.trim();
+      await createPlatformMerchant({ phone });
+      message.value = `${t('merchantCreated')}\n${t('username')}：${phone}\n${t('password')}：12345678\n${t('mustChangePassword')}`;
     } else {
       await updatePlatformMerchant(editingId.value, {
         nameZh: form.nameZh,
@@ -153,7 +151,7 @@ function statusLabel(status: PlatformMerchantListItem['status']) {
   <div v-if="dialogVisible" class="modal-backdrop" @click.self="closeDialog">
     <form class="card modal-card form-grid" @submit.prevent="submit">
       <h2>{{ isEditing ? t('editMerchant') : t('createMerchant') }}</h2>
-      <label class="span-2">{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
+      <label v-if="isEditing" class="span-2">{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
       <label class="span-2">{{ t('contactPhone') }}<input v-model="form.contactPhone" required maxlength="32" /></label>
       <p class="span-2 hint">{{ t('defaultPasswordHint') }}</p>
       <div class="form-actions span-2">
