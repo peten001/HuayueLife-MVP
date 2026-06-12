@@ -57,6 +57,29 @@ export interface MerchantProfile {
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
 }
 
+export interface UpdateMerchantProfilePayload {
+  nameZh?: string;
+  nameVi?: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  contactName?: string;
+  contactPhone?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  addressDetail?: string;
+  latitude?: number;
+  longitude?: number;
+  businessHours?: Record<string, string[]>;
+  notice?: string;
+  minimumDeliveryAmountVnd?: number;
+  deliveryFeeVnd?: number;
+  deliveryRadiusKm?: number;
+  dineInEnabled?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+}
+
 export interface PlatformAdminAccount {
   username: string;
 }

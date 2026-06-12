@@ -10,6 +10,7 @@ import {
   computeProfileCompletion,
   type ProfileMissingField,
 } from '@/utils/profile-completion';
+import type { UpdateMerchantProfilePayload } from '@/types/api';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -30,8 +31,8 @@ const form = reactive({
   city: '',
   district: '',
   addressDetail: '',
-  latitude: 0,
-  longitude: 0,
+  latitude: null as number | null,
+  longitude: null as number | null,
   logoUrl: '',
   coverUrl: '',
   notice: '',
@@ -67,7 +68,7 @@ onMounted(async () => {
   try {
     const nextProfile = await getProfile();
     profile.value = nextProfile;
-    Object.assign(form, nextProfile);
+    assignForm(nextProfile);
     void refreshLocation(true);
   } catch (error) {
     message.value = errorMessage(error);
@@ -76,18 +77,17 @@ onMounted(async () => {
 
 async function save() {
   loading.value = true;
+  message.value = '';
   try {
-    await updateProfile({
-      ...form,
-      logoUrl: form.logoUrl || undefined,
-      coverUrl: form.coverUrl || undefined,
-    });
+    await updateProfile(buildPayload());
     message.value = t('profileSaved');
     const nextProfile = await getProfile();
     profile.value = nextProfile;
-    Object.assign(form, nextProfile);
+    assignForm(nextProfile);
   } catch (error) {
-    message.value = errorMessage(error);
+    message.value = isProfileValidationError(error)
+      ? t('profileSaveFailed')
+      : errorMessage(error);
   } finally {
     loading.value = false;
   }
@@ -200,6 +200,71 @@ function validateImage(file: File, maxSize: number) {
     return t('imageTooLarge');
   }
   return '';
+}
+
+function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
+  form.nameZh = nextProfile.nameZh ?? '';
+  form.nameVi = nextProfile.nameVi ?? '';
+  form.contactName = nextProfile.contactName ?? '';
+  form.contactPhone = nextProfile.contactPhone ?? '';
+  form.province = nextProfile.province ?? '';
+  form.city = nextProfile.city ?? '';
+  form.district = nextProfile.district ?? '';
+  form.addressDetail = nextProfile.addressDetail ?? '';
+  form.latitude = parseNumber(nextProfile.latitude);
+  form.longitude = parseNumber(nextProfile.longitude);
+  form.logoUrl = nextProfile.logoUrl ?? '';
+  form.coverUrl = nextProfile.coverUrl ?? '';
+  form.notice = nextProfile.notice ?? '';
+}
+
+function buildPayload(): UpdateMerchantProfilePayload {
+  const payload: UpdateMerchantProfilePayload = {
+    nameZh: trimOrUndefined(form.nameZh),
+    nameVi: trimOrUndefined(form.nameVi),
+    contactName: trimOrUndefined(form.contactName),
+    contactPhone: trimOrUndefined(form.contactPhone),
+    province: trimOrUndefined(form.province),
+    city: trimOrUndefined(form.city),
+    district: trimOrUndefined(form.district),
+    addressDetail: trimOrUndefined(form.addressDetail),
+    logoUrl: trimOrUndefined(form.logoUrl),
+    coverUrl: trimOrUndefined(form.coverUrl),
+    notice: trimOrUndefined(form.notice),
+    latitude: parseOptionalNumber(form.latitude),
+    longitude: parseOptionalNumber(form.longitude),
+  };
+
+  return payload;
+}
+
+function parseNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+}
+
+function parseOptionalNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const next = Number(value);
+  return Number.isFinite(next) ? next : undefined;
+}
+
+function trimOrUndefined(value: string | null | undefined) {
+  const next = value?.trim();
+  return next ? next : undefined;
+}
+
+function isProfileValidationError(error: unknown) {
+  if (!error || typeof error !== 'object' || !('response' in error)) {
+    return false;
+  }
+  const response = (error as { response?: { status?: number } }).response;
+  return response?.status === 400;
 }
 </script>
 

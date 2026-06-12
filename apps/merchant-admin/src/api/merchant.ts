@@ -9,6 +9,7 @@ import type {
   MerchantStaffRole,
   Product,
   ProductStatus,
+  UpdateMerchantProfilePayload,
 } from '@/types/api';
 
 export async function login(username: string, password: string) {
@@ -57,7 +58,7 @@ export async function getProfile() {
   return response.data.data;
 }
 
-export async function updateProfile(payload: Record<string, unknown>) {
+export async function updateProfile(payload: UpdateMerchantProfilePayload) {
   const response = await http.patch<ApiResponse<MerchantProfile>>(
     '/merchant/profile',
     payload,
