@@ -106,7 +106,7 @@ function scan() {
     success(result) {
       const q = String(result.path || result.result || '').trim();
       if (!q) {
-        uni.showToast({ title: t('qrMissingToken'), icon: 'none' });
+        uni.showToast({ title: t('scanUseWechatCamera'), icon: 'none' });
         return;
       }
       uni.navigateTo({

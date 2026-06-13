@@ -88,13 +88,13 @@ async function printQr(row: DiningTable) {
   <title>${escapeHtml(t('qrPrintPreview'))}</title>
   <style>
     body { margin: 0; font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; background: #fff; color: #111; }
-    .sheet { box-sizing: border-box; width: 100%; min-height: 100vh; padding: 40px 32px; display: grid; place-items: center; }
-    .card { width: 100%; max-width: 560px; border: 1px solid #ddd; border-radius: 18px; padding: 28px; text-align: center; }
-    .merchant { font-size: 34px; font-weight: 800; margin-bottom: 8px; }
-    .table-no { font-size: 30px; font-weight: 700; margin-bottom: 16px; }
-    .qr { width: 440px; max-width: 100%; height: 440px; object-fit: contain; display: block; margin: 0 auto 18px; }
+    .sheet { box-sizing: border-box; width: 100%; min-height: 100vh; padding: 36px 24px; display: grid; place-items: center; }
+    .card { width: 100%; max-width: 620px; border: 1px solid #ddd; border-radius: 18px; padding: 24px 20px 28px; text-align: center; }
+    .merchant { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+    .table-no { font-size: 36px; font-weight: 800; margin-bottom: 18px; }
+    .qr { width: 520px; max-width: 100%; height: 520px; object-fit: contain; display: block; margin: 0 auto 18px; }
     .line { font-size: 24px; line-height: 1.5; margin-top: 8px; }
-    .hint { font-size: 28px; font-weight: 800; margin-top: 14px; }
+    .hint { font-size: 30px; font-weight: 800; margin-top: 14px; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .sheet { padding: 0; }
