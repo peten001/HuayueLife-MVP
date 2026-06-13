@@ -1,72 +1,80 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
 import { cityOptions, localeLabel, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
+import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
 
 const auth = useAuthStore();
+const locationStore = useLocationStore();
 const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
-const cityIndex = ref(0);
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
-const locationMode = ref<'GPS' | 'CITY'>('CITY');
-const message = ref('');
+
+const cityIndex = computed({
+  get: () => {
+    const index = cities.value.findIndex((city) => city.value === locationStore.city);
+    return index >= 0 ? index : 0;
+  },
+  set: (value: number) => {
+    const city = cities.value[value]?.value;
+    if (city === 'Bac Giang' || city === 'Bac Ninh') {
+      locationStore.setCity(city);
+    }
+  },
+});
+
+const currentCityLabel = computed(
+  () => cities.value.find((city) => city.value === locationStore.city)?.label || locationStore.city,
+);
 
 usePageTitle(() => t('homeTitle'));
 
-onMounted(async () => {
-  auth.ensureLogin().catch(() => undefined);
-  await loadByLocation();
+onShow(() => {
+  void refreshHome(false);
 });
 
-async function loadByLocation() {
+async function refreshHome(forceRelocate: boolean) {
+  auth.ensureLogin().catch(() => undefined);
   loading.value = true;
-  message.value = '';
   try {
-    const location = await new Promise<UniApp.GetLocationSuccess>((resolve, reject) => {
-      uni.getLocation({
-        type: 'wgs84',
-        success: resolve,
-        fail: reject,
-      });
-    });
-    const result = await getNearbyMerchants({
-      lat: location.latitude,
-      lng: location.longitude,
-      radiusKm: 10,
-      page: 1,
-    });
-    merchants.value = result.items;
-    locationMode.value = result.locationMode;
-  } catch {
-    await loadByCity();
-    message.value = t('noLocation');
+    const city = forceRelocate
+      ? await locationStore.relocate()
+      : await locationStore.bootstrapCity();
+    try {
+      await loadByCity(city);
+    } catch {
+      merchants.value = [];
+    }
   } finally {
     loading.value = false;
   }
 }
 
-async function loadByCity() {
+async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
   const result = await getNearbyMerchants({
-    city: cities.value[cityIndex.value]?.value,
+    city,
     page: 1,
   });
   merchants.value = result.items;
-  locationMode.value = 'CITY';
 }
 
 async function changeCity(event: { detail: { value: string } }) {
-  cityIndex.value = Number(event.detail.value);
   loading.value = true;
   try {
-    await loadByCity();
-    message.value = t('currentByCity', { city: cities.value[cityIndex.value]?.label });
+    cityIndex.value = Number(event.detail.value);
+    await loadByCity(locationStore.city);
   } finally {
     loading.value = false;
   }
+}
+
+async function relocate() {
+  await refreshHome(true);
 }
 
 function openMerchant(merchant: MerchantSummary) {
@@ -116,13 +124,11 @@ function extractToken(value: string) {
     <view class="section-head">
       <view>
         <text class="section-title">{{ t('nearbyMerchants') }}</text>
-        <text class="mode">
-          {{ locationMode === 'GPS' ? t('locationByDistance') : t('locationByCity') }}
-        </text>
+        <text class="mode">{{ t('currentCity') }}：{{ currentCityLabel }}</text>
       </view>
-      <button class="location-button" @click="loadByLocation">{{ t('relocate') }}</button>
+      <button class="location-button" @click="relocate">{{ t('relocate') }}</button>
     </view>
-    <text v-if="message" class="message">{{ message }}</text>
+
     <view v-if="loading" class="empty">{{ t('loading') }}</view>
     <view v-else-if="!merchants.length" class="empty">{{ t('noMerchants') }}</view>
     <MerchantCard
@@ -147,6 +153,5 @@ function extractToken(value: string) {
 .section-title { display: block; font-size: 34rpx; font-weight: 700; }
 .mode { display: block; margin-top: 4rpx; color: #8a817c; font-size: 22rpx; }
 .location-button { padding: 10rpx 18rpx; border: 1rpx solid #d8cec8; border-radius: 999rpx; background: transparent; font-size: 22rpx; line-height: 1.5; }
-.message { display: block; margin-bottom: 16rpx; color: #9b6a54; font-size: 23rpx; }
 .empty { padding: 80rpx 0; color: #888; text-align: center; }
 </style>
