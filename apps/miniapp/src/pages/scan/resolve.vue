@@ -15,14 +15,14 @@ function goBack() {
 }
 
 onLoad(async (options) => {
-  const token = String(options?.token ?? '');
-  if (!token) {
+  const resolved = resolveScanInput(options);
+  if (!resolved) {
     error.value = t('qrMissingToken');
     return;
   }
   status.value = t('scanning');
   try {
-    const result = await resolveQr(token);
+    const result = await resolveQr(resolved);
     status.value = t('qrIdentified', {
       merchant: merchantName(result.merchant, locale.value),
       table: result.table.tableName || result.table.tableNo,
@@ -38,6 +38,48 @@ onLoad(async (options) => {
     error.value = caught instanceof Error ? caught.message : t('qrParseFailed');
   }
 });
+
+function resolveScanInput(options?: Record<string, unknown>) {
+  const token = normalizeToken(String(options?.token ?? ''));
+  if (token) return { token };
+
+  const scene = normalizeScene(String(options?.scene ?? ''));
+  if (scene) return { scene };
+
+  const q = decodeMaybe(String(options?.q ?? ''));
+  if (!q) return null;
+  const qToken = extractFromText(q, 'token');
+  if (qToken) return { token: qToken };
+  const qScene = extractFromText(q, 'scene');
+  if (qScene) return { scene: qScene };
+  if (normalizeToken(q)) return { token: q };
+  if (normalizeScene(q)) return { scene: q };
+  return { q };
+}
+
+function extractFromText(value: string, key: 'token' | 'scene') {
+  const matched = value.match(new RegExp(`[?&]${key}=([^&#]+)`));
+  if (!matched) return '';
+  const decoded = decodeMaybe(matched[1]);
+  return key === 'token' ? normalizeToken(decoded) : normalizeScene(decoded);
+}
+
+function normalizeToken(value: string) {
+  return /^[a-f0-9]{64}$/i.test(value) ? value : '';
+}
+
+function normalizeScene(value: string) {
+  return /^t\d+v\d+$/.test(value) ? value : '';
+}
+
+function decodeMaybe(value: string) {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 </script>
 
 <template>

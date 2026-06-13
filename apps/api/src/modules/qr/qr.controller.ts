@@ -8,6 +8,6 @@ export class QrController {
 
   @Get('resolve')
   resolve(@Query() query: ResolveQrQueryDto) {
-    return this.service.resolve(query.token);
+    return this.service.resolve(query);
   }
 }

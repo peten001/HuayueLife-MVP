@@ -115,7 +115,7 @@ async function printQr(row: DiningTable) {
       <div class="merchant">${escapeHtml(merchantName)}</div>
       <div class="meta">${lines}</div>
       <img class="qr" src="${dataUrl}" alt="QR" />
-      <div class="hint">${escapeHtml('微信扫码点餐')}</div>
+      <div class="hint">${escapeHtml(t('qrPrintWechat'))}</div>
       <div class="line">${escapeHtml(t('qrPrintVietnamese'))}</div>
       <div class="line">${escapeHtml(t('qrPrintEnglish'))}</div>
     </div>

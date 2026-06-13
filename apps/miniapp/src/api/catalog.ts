@@ -36,5 +36,14 @@ export const getMenu = (merchantId: string) =>
 export const getProduct = (id: string) =>
   request<Product>(`/products/${id}`);
 
-export const resolveQr = (token: string) =>
-  request<QrResolveResponse>(`/qr/resolve?token=${encodeURIComponent(token)}`);
+export const resolveQr = (params: {
+  token?: string;
+  scene?: string;
+  q?: string;
+}) => {
+  const query = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== '')
+    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+    .join('&');
+  return request<QrResolveResponse>(`/qr/resolve?${query}`);
+};

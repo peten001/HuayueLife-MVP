@@ -12,7 +12,7 @@ export class QrBridgeController {
 
   @Get('t/:token')
   async bridge(@Param('token') token: string, @Res() response: Response) {
-    const resolved = await this.service.resolve(token);
+    const resolved = await this.service.resolve({ token });
     const appId = this.config.get<string>('WECHAT_APP_ID')?.trim() ?? '';
     const fallbackUrl =
       this.config.get<string>('MINIAPP_QR_ENTRY_URL')?.trim() ??

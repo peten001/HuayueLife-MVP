@@ -104,22 +104,16 @@ function scan() {
   uni.scanCode({
     scanType: ['qrCode'],
     success(result) {
-      const token = extractToken(result.result);
-      if (!token) {
+      const q = String(result.path || result.result || '').trim();
+      if (!q) {
         uni.showToast({ title: t('qrMissingToken'), icon: 'none' });
         return;
       }
       uni.navigateTo({
-        url: `/pages/scan/resolve?token=${encodeURIComponent(token)}`,
+        url: `/pages/scan/resolve?q=${encodeURIComponent(q)}`,
       });
     },
   });
-}
-
-function extractToken(value: string) {
-  if (/^[a-f0-9]{64}$/.test(value)) return value;
-  const matched = value.match(/[?&]token=([a-f0-9]{64})/);
-  return matched?.[1] ?? '';
 }
 </script>
 

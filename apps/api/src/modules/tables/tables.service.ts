@@ -1,13 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
-import * as QRCode from 'qrcode';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateTableDto } from './dto/create-table.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
 
+type WechatAccessTokenCache = {
+  token: string;
+  expiresAt: number;
+};
+
 @Injectable()
 export class TablesService {
+  private accessTokenCache: WechatAccessTokenCache | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -68,27 +78,90 @@ export class TablesService {
 
   async qrImage(merchantId: bigint, id: bigint) {
     const table = await this.requireOwnedTable(merchantId, id);
-    const content = this.buildQrContent(table.qrToken);
-    const image = await QRCode.toBuffer(content, {
-      type: 'png',
-      width: 800,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-    });
+    const image = await this.buildWechatMiniProgramCode(table);
     return { table, image };
   }
 
-  buildQrContent(token: string) {
-    const publicBaseUrl = this.config.get<string>('PUBLIC_QR_BASE_URL')?.trim();
-    if (publicBaseUrl) {
-      const normalizedBase = publicBaseUrl.replace(/\/+$/, '');
-      return `${normalizedBase}/t/${encodeURIComponent(token)}`;
+  buildScene(table: { id: bigint; qrVersion: number }) {
+    return `t${table.id.toString()}v${table.qrVersion}`;
+  }
+
+  private async buildWechatMiniProgramCode(table: {
+    id: bigint;
+    qrVersion: number;
+  }) {
+    const appId = this.config.get<string>('WECHAT_APP_ID')?.trim();
+    const appSecret = this.config.get<string>('WECHAT_APP_SECRET')?.trim();
+    if (!appId || !appSecret) {
+      throw new BadGatewayException('微信小程序配置缺失');
     }
-    const entryUrl =
-      this.config.get<string>('MINIAPP_QR_ENTRY_URL') ??
-      'https://example.invalid/scan';
-    const separator = entryUrl.includes('?') ? '&' : '?';
-    return `${entryUrl}${separator}token=${encodeURIComponent(token)}`;
+
+    const accessToken = await this.getWechatAccessToken(appId, appSecret);
+    const scene = this.buildScene(table);
+    const response = await fetch(
+      `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${encodeURIComponent(accessToken)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          scene,
+          page: 'pages/scan/resolve',
+          check_path: true,
+          env_version: 'release',
+          is_hyaline: false,
+        }),
+      },
+    );
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!response.ok || contentType.includes('application/json')) {
+      const message = await this.readWechatError(response);
+      throw new BadGatewayException(message || '微信小程序码生成失败');
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private async getWechatAccessToken(appId: string, appSecret: string) {
+    const cached = this.accessTokenCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token;
+    }
+
+    const response = await fetch(
+      'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=' +
+        encodeURIComponent(appId) +
+        '&secret=' +
+        encodeURIComponent(appSecret),
+    );
+    const payload = (await response.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      errcode?: number;
+      errmsg?: string;
+    };
+    if (!response.ok || !payload.access_token) {
+      throw new BadGatewayException(
+        payload.errmsg || '微信 access_token 获取失败',
+      );
+    }
+
+    const expiresIn = Math.max(0, Number(payload.expires_in ?? 7200));
+    this.accessTokenCache = {
+      token: payload.access_token,
+      expiresAt: Date.now() + (expiresIn - 300) * 1000,
+    };
+    return payload.access_token;
+  }
+
+  private async readWechatError(response: Response) {
+    const text = await response.text();
+    try {
+      const payload = JSON.parse(text) as { errmsg?: string; errcode?: number };
+      return payload.errmsg || text;
+    } catch {
+      return text;
+    }
   }
 
   private async requireOwnedTable(merchantId: bigint, id: bigint) {
