@@ -55,13 +55,24 @@ async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
   const seq = ++requestSeq.value;
   loading.value = true;
   merchants.value = [];
+  console.log('[home] city changed', city);
   try {
     const result = await getNearbyMerchants({
       city,
       page: 1,
     });
+    console.log('[home] api result', {
+      city,
+      ids: result.items.map((item) => item.id),
+      names: result.items.map((item) => item.nameZh),
+    });
     if (seq !== requestSeq.value) return;
     merchants.value = result.items;
+    console.log('[home] merchants set', {
+      currentCity: locationStore.city,
+      ids: merchants.value.map((item) => item.id),
+      names: merchants.value.map((item) => item.nameZh),
+    });
   } catch {
     if (seq === requestSeq.value) {
       merchants.value = [];
@@ -137,14 +148,16 @@ function extractToken(value: string) {
       <button class="location-button" @click="relocate">{{ t('relocate') }}</button>
     </view>
 
-    <view v-if="loading" class="empty">{{ t('loading') }}</view>
-    <view v-else-if="!merchants.length" class="empty">{{ t('noMerchants') }}</view>
-    <MerchantCard
-      v-for="merchant in merchants"
-      :key="merchant.id"
-      :merchant="merchant"
-      @select="openMerchant"
-    />
+    <view class="merchant-panel" :key="locationStore.city">
+      <view v-if="loading" class="empty">{{ t('loading') }}</view>
+      <view v-else-if="!merchants.length" class="empty">{{ t('noMerchants') }}</view>
+      <MerchantCard
+        v-for="merchant in merchants"
+        :key="merchant.id"
+        :merchant="merchant"
+        @select="openMerchant"
+      />
+    </view>
   </view>
 </template>
 
@@ -162,4 +175,5 @@ function extractToken(value: string) {
 .mode { display: block; margin-top: 4rpx; color: #8a817c; font-size: 22rpx; }
 .location-button { padding: 10rpx 18rpx; border: 1rpx solid #d8cec8; border-radius: 999rpx; background: transparent; font-size: 22rpx; line-height: 1.5; }
 .empty { padding: 80rpx 0; color: #888; text-align: center; }
+.merchant-panel { display: block; }
 </style>
