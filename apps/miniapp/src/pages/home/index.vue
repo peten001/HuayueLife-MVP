@@ -14,6 +14,7 @@ const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
+const requestSeq = ref(0);
 
 const cityIndex = computed({
   get: () => {
@@ -40,36 +41,43 @@ onShow(() => {
 
 async function refreshHome(forceRelocate: boolean) {
   auth.ensureLogin().catch(() => undefined);
-  loading.value = true;
   try {
     const city = forceRelocate
       ? await locationStore.relocate()
       : await locationStore.bootstrapCity();
-    try {
-      await loadByCity(city);
-    } catch {
-      merchants.value = [];
-    }
-  } finally {
-    loading.value = false;
+    await loadByCity(city);
+  } catch {
+    merchants.value = [];
   }
 }
 
 async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
-  const result = await getNearbyMerchants({
-    city,
-    page: 1,
-  });
-  merchants.value = result.items;
+  const seq = ++requestSeq.value;
+  loading.value = true;
+  merchants.value = [];
+  try {
+    const result = await getNearbyMerchants({
+      city,
+      page: 1,
+    });
+    if (seq !== requestSeq.value) return;
+    merchants.value = result.items;
+  } catch {
+    if (seq === requestSeq.value) {
+      merchants.value = [];
+    }
+  } finally {
+    if (seq === requestSeq.value) {
+      loading.value = false;
+    }
+  }
 }
 
 async function changeCity(event: { detail: { value: string } }) {
-  loading.value = true;
-  try {
-    cityIndex.value = Number(event.detail.value);
-    await loadByCity(locationStore.city);
-  } finally {
-    loading.value = false;
+  const city = cities.value[Number(event.detail.value)]?.value;
+  if (city === 'Bac Giang' || city === 'Bac Ninh') {
+    locationStore.setCity(city);
+    await loadByCity(city);
   }
 }
 
