@@ -92,6 +92,7 @@ export class TablesService {
   }) {
     const appId = this.config.get<string>('WECHAT_APP_ID')?.trim();
     const appSecret = this.config.get<string>('WECHAT_APP_SECRET')?.trim();
+    const envVersion = this.config.get<string>('WECHAT_MINIAPP_ENV_VERSION')?.trim() || 'trial';
     if (!appId || !appSecret) {
       throw new BadGatewayException('微信小程序配置缺失');
     }
@@ -107,6 +108,7 @@ export class TablesService {
           scene,
           page: 'pages/scan/resolve',
           check_path: false,
+          env_version: envVersion,
           is_hyaline: false,
         }),
       },

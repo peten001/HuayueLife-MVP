@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import { useI18n } from '@/i18n';
+import { resolveMediaUrl } from '@/utils/media';
 import {
   enableTable,
   createTable,
@@ -77,6 +78,7 @@ async function printQr(row: DiningTable) {
     }
 
     const merchantName = displayMerchantName();
+    const merchantLogo = resolveMediaUrl(profile.value?.logoUrl);
     const tableName = row.tableName?.trim() || '';
     const lines = [
       row.tableNo ? `${t('qrPrintTableNo')}: ${row.tableNo}` : '',
@@ -99,6 +101,7 @@ async function printQr(row: DiningTable) {
     .card { width: 100%; max-width: 560px; border: 1px solid #ddd; border-radius: 18px; padding: 28px; text-align: center; }
     .merchant { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
     .meta { font-size: 20px; line-height: 1.6; margin-bottom: 18px; }
+    .brand { width: 96px; height: 96px; object-fit: contain; display: block; margin: 0 auto 12px; }
     .qr { width: 360px; max-width: 100%; height: 360px; object-fit: contain; display: block; margin: 0 auto 18px; }
     .line { font-size: 22px; line-height: 1.5; margin-top: 8px; }
     .hint { font-size: 24px; font-weight: 700; margin-top: 14px; }
@@ -114,6 +117,7 @@ async function printQr(row: DiningTable) {
     <div class="card">
       <div class="merchant">${escapeHtml(merchantName)}</div>
       <div class="meta">${lines}</div>
+      ${merchantLogo ? `<img class="brand" src="${escapeHtml(merchantLogo)}" alt="Logo" />` : ''}
       <img class="qr" src="${dataUrl}" alt="QR" />
       <div class="hint">${escapeHtml(t('qrPrintWechat'))}</div>
       <div class="line">${escapeHtml(t('qrPrintVietnamese'))}</div>
