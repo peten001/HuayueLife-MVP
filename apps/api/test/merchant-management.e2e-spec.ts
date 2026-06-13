@@ -122,6 +122,14 @@ describe('Merchant management isolation', () => {
     expect(first?.deliveryFeeVnd).toBe(15000n);
     expect(second?.contactPhone).toBe('0900000000');
 
+    const profileResponse = await request(app.getHttpServer())
+      .get('/api/v1/merchant/profile')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+    expect(profileResponse.body.data.deliveryRadiusKm).toBe('6.5');
+    expect(profileResponse.body.data.minimumDeliveryAmountVnd).toBe('120000');
+    expect(profileResponse.body.data.deliveryFeeVnd).toBe('15000');
+
     await request(app.getHttpServer())
       .patch('/api/v1/merchant/profile')
       .set('Authorization', `Bearer ${tokenOne}`)
@@ -446,6 +454,25 @@ describe('Merchant management isolation', () => {
       where: { id: BigInt(table.id) },
     });
     expect(stored?.status).toBe('ACTIVE');
+  });
+
+  it('returns QR images even when the table number contains Chinese characters', async () => {
+    const table = await createTable(tokenOne, '大厅01号桌', '测试中文桌号');
+
+    const image = await request(app.getHttpServer())
+      .get(`/api/v1/merchant/tables/${table.id}/qr-image`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect('Content-Type', /image\/png/)
+      .expect('Content-Disposition', new RegExp(`table-${table.id}\\.png`))
+      .expect(200);
+
+    expect(Buffer.from(image.body).subarray(1, 4).toString()).toBe('PNG');
   });
 
   it('serves the public short-link bridge and respects table status changes', async () => {

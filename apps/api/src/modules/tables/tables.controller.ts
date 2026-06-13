@@ -76,9 +76,10 @@ export class TablesController {
       merchantId,
       BigInt(params.id),
     );
+    const fileName = `table-${table.id}.png`;
     response.set({
       'Content-Type': 'image/png',
-      'Content-Disposition': `attachment; filename="table-${table.tableNo}.png"`,
+      'Content-Disposition': `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     });
     response.send(image);
   }

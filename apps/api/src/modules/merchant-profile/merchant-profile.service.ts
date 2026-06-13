@@ -18,7 +18,7 @@ export class MerchantProfileService {
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
-    return merchant;
+    return this.serializeMerchantProfile(merchant);
   }
 
   async updateProfile(merchantId: bigint, dto: UpdateMerchantProfileDto) {
@@ -42,7 +42,22 @@ export class MerchantProfileService {
     return this.prisma.merchant.update({
       where: { id: merchantId },
       data,
-    });
+    }).then((merchant) => this.serializeMerchantProfile(merchant));
+  }
+
+  private serializeMerchantProfile(merchant: any) {
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    return {
+      ...merchant,
+      latitude: merchant.latitude.toString(),
+      longitude: merchant.longitude.toString(),
+      minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
+      deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
+      deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+    };
   }
 }
 
