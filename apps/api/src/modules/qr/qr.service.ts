@@ -129,12 +129,12 @@ export class QrService {
   }
 
   private normalizeToken(token?: string) {
-    const value = token?.trim();
+    const value = this.decodeMaybe(token);
     return value && this.matchToken(value);
   }
 
   private normalizeScene(scene?: string) {
-    const value = scene?.trim();
+    const value = this.decodeMaybe(scene);
     return value && this.matchScene(value);
   }
 

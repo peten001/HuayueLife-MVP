@@ -15,9 +15,10 @@ function goBack() {
 }
 
 onLoad(async (options) => {
+  console.log('[scan resolve] onLoad options', options);
   const resolved = resolveScanInput(options);
   if (!resolved) {
-    error.value = t('qrMissingToken');
+    error.value = t('qrMissingTableInfo');
     return;
   }
   status.value = t('scanning');
@@ -46,15 +47,29 @@ function resolveScanInput(options?: Record<string, unknown>) {
   const scene = normalizeScene(String(options?.scene ?? ''));
   if (scene) return { scene };
 
-  const q = decodeMaybe(String(options?.q ?? ''));
-  if (!q) return null;
-  const qToken = extractFromText(q, 'token');
-  if (qToken) return { token: qToken };
-  const qScene = extractFromText(q, 'scene');
-  if (qScene) return { scene: qScene };
-  if (normalizeToken(q)) return { token: q };
-  if (normalizeScene(q)) return { scene: q };
-  return { q };
+  const candidates = [
+    String(options?.path ?? ''),
+    String(options?.result ?? ''),
+    String(options?.rawData ?? ''),
+    String(options?.q ?? ''),
+  ]
+    .map(decodeMaybe)
+    .filter(Boolean);
+  for (const value of candidates) {
+    const parsed = parseScanValue(value);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function parseScanValue(value: string) {
+  const token = extractFromText(value, 'token');
+  if (token) return { token };
+  const scene = extractFromText(value, 'scene');
+  if (scene) return { scene };
+  if (normalizeToken(value)) return { token: value };
+  if (normalizeScene(value)) return { scene: value };
+  return null;
 }
 
 function extractFromText(value: string, key: 'token' | 'scene') {
@@ -65,11 +80,13 @@ function extractFromText(value: string, key: 'token' | 'scene') {
 }
 
 function normalizeToken(value: string) {
-  return /^[a-f0-9]{64}$/i.test(value) ? value : '';
+  const decoded = decodeMaybe(value);
+  return /^[a-f0-9]{64}$/i.test(decoded) ? decoded : '';
 }
 
 function normalizeScene(value: string) {
-  return /^t\d+v\d+$/.test(value) ? value : '';
+  const decoded = decodeMaybe(value);
+  return /^t\d+v\d+$/.test(decoded) ? decoded : '';
 }
 
 function decodeMaybe(value: string) {
