@@ -106,8 +106,7 @@ export class TablesService {
         body: JSON.stringify({
           scene,
           page: 'pages/scan/resolve',
-          check_path: true,
-          env_version: 'release',
+          check_path: false,
           is_hyaline: false,
         }),
       },
