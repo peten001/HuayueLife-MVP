@@ -156,32 +156,47 @@ function confirmSwitch() {
 
 <template>
   <view class="page">
-    <text v-if="error" class="error">{{ error }}</text>
+    <view v-if="error" class="error">{{ error }}</view>
     <template v-else-if="merchant">
-      <image
-        v-if="resolveMediaUrl(merchant.coverUrl)"
-        class="cover"
-        :src="resolveMediaUrl(merchant.coverUrl)"
-        mode="aspectFill"
-      />
-      <view v-else class="cover placeholder">{{ t('imagePlaceholder') }}</view>
+      <view class="cover-wrap">
+        <image
+          v-if="resolveMediaUrl(merchant.coverUrl)"
+          class="cover"
+          :src="resolveMediaUrl(merchant.coverUrl)"
+          mode="aspectFill"
+        />
+        <view v-else class="cover placeholder">
+          <view class="placeholder-mark">鲜</view>
+          <text>{{ t('imagePlaceholder') }}</text>
+        </view>
+      </view>
       <view class="card">
         <view class="headline">
           <text class="title">{{ merchantName(merchant, locale) }}</text>
-          <text :class="merchant.isOpen ? 'open' : 'closed'">{{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}</text>
+          <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
+            {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+          </text>
         </view>
-        <text class="address">{{ merchant.addressDetail }}</text>
-        <text class="phone">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
-        <text v-if="merchant.notice" class="notice">{{ merchant.notice }}</text>
+        <view class="info-line">
+          <text class="info-icon">址</text>
+          <text>{{ merchant.addressDetail }}</text>
+        </view>
+        <view class="info-line">
+          <text class="info-icon">电</text>
+          <text>{{ t('phone') }}：{{ merchant.contactPhone }}</text>
+        </view>
+        <view v-if="merchant.notice" class="notice">{{ merchant.notice }}</view>
         <view class="tags">
-          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">{{ orderTypeLabel(type, locale) }}</text>
+          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">
+            {{ orderTypeLabel(type, locale) }}
+          </text>
         </view>
       </view>
       <view class="actions">
         <button
           v-if="merchant.supportedOrderTypes.includes('PICKUP')"
           type="button"
-          class="primary"
+          class="primary pickup"
           @tap="openMenu('PICKUP')"
         >
           {{ t('pickup') }}
@@ -200,20 +215,178 @@ function confirmSwitch() {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 24rpx; background: #f6f3ef; }
-.cover { width: 100%; height: 360rpx; border-radius: 24rpx; }
-.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 28rpx; }
-.card { padding: 28rpx; margin: 20rpx 0; border-radius: 20rpx; background: #fff; }
-.headline { display: flex; justify-content: space-between; gap: 20rpx; }
-.title { font-size: 40rpx; font-weight: 800; }
-.open { color: #16854a; }
-.closed, .error { color: #a83228; }
-.address, .phone, .notice { display: block; margin-top: 18rpx; color: #666; }
-.notice { padding: 18rpx; border-radius: 12rpx; background: #fff5eb; }
-.tags { display: flex; gap: 10rpx; margin-top: 20rpx; }
-.tag { padding: 6rpx 12rpx; border-radius: 8rpx; color: #a83228; background: #fff0ed; font-size: 22rpx; }
-.primary { color: #fff; background: #c43b2f; }
-.actions { display: flex; gap: 16rpx; }
-.actions button { flex: 1; }
-.delivery { background: #9b5a2e; }
+.page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
+  color: #1f2d24;
+  background: #f6faf7;
+  box-sizing: border-box;
+}
+
+.error {
+  padding: 22rpx 24rpx;
+  border-radius: 20rpx;
+  color: #8a5a00;
+  background: #fff3dd;
+  font-size: 23rpx;
+}
+
+.cover-wrap {
+  overflow: hidden;
+  border-radius: 30rpx;
+  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
+}
+
+.cover {
+  width: 100%;
+  height: 380rpx;
+  display: block;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14rpx;
+  color: #2e7d32;
+  background: linear-gradient(135deg, #eaf7ee, #bde5c2);
+  font-size: 23rpx;
+}
+
+.placeholder-mark {
+  display: grid;
+  width: 116rpx;
+  height: 116rpx;
+  place-items: center;
+  border: 10rpx solid rgb(255 255 255 / 70%);
+  border-radius: 50%;
+  color: #2e7d32;
+  background: #ffcf83;
+  font-size: 42rpx;
+  font-weight: 800;
+  box-sizing: border-box;
+}
+
+.card {
+  padding: 30rpx 28rpx;
+  margin: 22rpx 0;
+  border-radius: 28rpx;
+  background: #fff;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+}
+
+.headline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.title {
+  min-width: 0;
+  color: #1f2d24;
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
+.status {
+  flex: none;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.open {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.closed {
+  color: #a66400;
+  background: #fff1dc;
+}
+
+.info-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 13rpx;
+  margin-top: 20rpx;
+  color: #666;
+  font-size: 24rpx;
+  line-height: 1.55;
+}
+
+.info-icon {
+  display: grid;
+  width: 42rpx;
+  height: 42rpx;
+  flex: none;
+  place-items: center;
+  border-radius: 13rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+.notice {
+  padding: 18rpx 20rpx;
+  margin-top: 20rpx;
+  border-radius: 18rpx;
+  color: #7b5a16;
+  background: #fff8e1;
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 22rpx;
+}
+
+.tag {
+  padding: 7rpx 13rpx;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 21rpx;
+}
+
+.actions {
+  display: flex;
+  gap: 18rpx;
+}
+
+.actions button {
+  height: 92rpx;
+  min-height: 92rpx;
+  flex: 1;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 2rpx solid transparent;
+  border-radius: 24rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 88rpx;
+  box-sizing: border-box;
+}
+
+.actions button::after {
+  border: 0;
+}
+
+.primary {
+  color: #fff;
+  background: #2e7d32;
+}
+
+.delivery {
+  border: 2rpx solid #43a047;
+  color: #2e7d32;
+  background: #fff;
+}
 </style>

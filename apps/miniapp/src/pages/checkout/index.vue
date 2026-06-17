@@ -139,8 +139,25 @@ function showSuccess(order: CreatedOrder) {
     </view>
 
     <view v-if="context?.orderType !== 'DINE_IN'" class="card form">
-      <label>{{ t('contact') }}<input v-model="form.contactName" :placeholder="t('contactPlaceholder')" /></label>
-      <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" type="number" :placeholder="t('phonePlaceholder')" /></label>
+      <label>
+        {{ t('contact') }}
+        <input
+          v-model="form.contactName"
+          class="contact-input"
+          :placeholder="t('contactPlaceholder')"
+          placeholder-style="color: #999999;"
+        />
+      </label>
+      <label>
+        {{ t('contactPhone') }}
+        <input
+          v-model="form.contactPhone"
+          class="contact-input"
+          type="number"
+          :placeholder="t('phonePlaceholder')"
+          placeholder-style="color: #999999;"
+        />
+      </label>
       <text v-if="contactCacheHint" class="hint">{{ t('contactCacheHint') }}</text>
     </view>
 
@@ -173,19 +190,152 @@ function showSuccess(order: CreatedOrder) {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 24rpx 24rpx 60rpx; background: #f6f3ef; }
-.context, .card { padding: 24rpx; margin-bottom: 18rpx; border-radius: 18rpx; background: #fff; }
-.context { display: grid; gap: 8rpx; color: #fff; background: #9f2e26; }
-.merchant { font-size: 32rpx; font-weight: 700; }
-.form { display: grid; gap: 20rpx; }
-label { display: grid; gap: 10rpx; color: #555; }
-input, textarea { padding: 18rpx; border: 1rpx solid #ddd; border-radius: 12rpx; background: #fafafa; }
-.location { color: #9f2e26; background: #fff0ed; }
-.secondary { color: #555; background: #eee; }
-.hint, .offline { display: block; color: #888; font-size: 22rpx; text-align: center; }
-.totals { display: grid; gap: 12rpx; }
-.total { color: #b83228; font-size: 32rpx; font-weight: 800; }
-.warning, .error { display: block; margin: 16rpx 0; color: #a83228; }
-.submit { width: 100%; margin-top: 20rpx; color: #fff; background: #c43b2f; }
-.offline { margin-top: 16rpx; }
+.page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(60rpx + env(safe-area-inset-bottom));
+  color: #1f2d24;
+  background: #f6faf7;
+  box-sizing: border-box;
+}
+
+.context,
+.card {
+  padding: 30rpx;
+  margin-bottom: 20rpx;
+  border-radius: 28rpx;
+  background: #fff;
+}
+
+.card {
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+}
+
+.context {
+  display: grid;
+  gap: 8rpx;
+  color: rgb(255 255 255 / 86%);
+  background: linear-gradient(135deg, #43a047, #2e7d32);
+  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 15%);
+}
+
+.merchant {
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.form {
+  display: grid;
+  gap: 28rpx;
+}
+
+label {
+  display: grid;
+  gap: 14rpx;
+  color: #1f2d24;
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+textarea {
+  padding: 19rpx 20rpx;
+  border: 2rpx solid #eeeeee;
+  border-radius: 18rpx;
+  color: #1f2d24;
+  background: #f8fbf8;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.contact-input {
+  width: 100%;
+  height: 92rpx;
+  min-height: 92rpx;
+  padding: 0 24rpx;
+  border: 1rpx solid #eeeeee;
+  border-radius: 18rpx;
+  color: #1f2d24;
+  background: #fff;
+  font-size: 31rpx;
+  font-weight: 400;
+  line-height: 92rpx;
+  box-sizing: border-box;
+}
+
+.contact-input:focus,
+textarea:focus {
+  border-color: #43a047;
+}
+
+.location,
+.secondary {
+  margin: 0;
+  border: 0;
+  border-radius: 20rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.location::after,
+.secondary::after,
+.submit::after {
+  border: 0;
+}
+
+.hint,
+.offline {
+  display: block;
+  color: #8a958d;
+  font-size: 22rpx;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.totals {
+  display: grid;
+  gap: 14rpx;
+  color: #5f6b62;
+  font-size: 24rpx;
+}
+
+.total {
+  color: #2e7d32;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.warning,
+.error {
+  display: block;
+  padding: 17rpx 20rpx;
+  margin: 16rpx 0;
+  border-radius: 18rpx;
+  color: #8a5a00;
+  background: #fff3dd;
+  font-size: 22rpx;
+  line-height: 1.55;
+}
+
+.submit {
+  width: 100%;
+  min-height: 92rpx;
+  margin-top: 20rpx;
+  border: 0;
+  border-radius: 26rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.submit[disabled] {
+  color: #fff;
+  background: #9dbda1;
+}
+
+.offline {
+  margin-top: 16rpx;
+}
 </style>

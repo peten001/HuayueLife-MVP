@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
-import { cityOptions, localeLabel, useI18n, usePageTitle } from '@/i18n';
+import { cityOptions, merchantName, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
@@ -15,6 +15,7 @@ const cities = computed(() => cityOptions(locale.value));
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
 const requestSeq = ref(0);
+const searchKeyword = ref('');
 
 const cityIndex = computed({
   get: () => {
@@ -32,6 +33,24 @@ const cityIndex = computed({
 const currentCityLabel = computed(
   () => cities.value.find((city) => city.value === locationStore.city)?.label || locationStore.city,
 );
+
+const foodCategories = computed(() => [
+  { mark: '热', label: t('homeCategoryPopular'), tone: 'green' },
+  { mark: '餐', label: t('homeCategoryChinese'), tone: 'orange' },
+  { mark: '粉', label: t('homeCategoryNoodles'), tone: 'mint' },
+  { mark: '饮', label: t('homeCategoryDrinks'), tone: 'yellow' },
+]);
+
+const filteredMerchants = computed(() => {
+  const keyword = searchKeyword.value.trim().toLocaleLowerCase();
+  if (!keyword) return merchants.value;
+
+  return merchants.value.filter((merchant) =>
+    [merchantName(merchant, locale.value), merchant.nameZh, merchant.nameVi, merchant.addressDetail]
+      .filter(Boolean)
+      .some((value) => String(value).toLocaleLowerCase().includes(keyword)),
+  );
+});
 
 usePageTitle(() => t('homeTitle'));
 
@@ -100,43 +119,99 @@ function openMerchant(merchant: MerchantSummary) {
   uni.navigateTo({ url: `/pages/merchant/detail?id=${merchant.id}` });
 }
 
-function scan() {
-  uni.scanCode({
-    scanType: ['qrCode'],
-    success(result) {
-      const q = String(result.path || result.result || '').trim();
-      if (!q) {
-        uni.showToast({ title: t('scanUseWechatCamera'), icon: 'none' });
-        return;
-      }
-      uni.navigateTo({
-        url: `/pages/scan/resolve?q=${encodeURIComponent(q)}`,
-      });
-    },
+function showTableOrderingTip() {
+  uni.showModal({
+    title: t('homeTableOrderTitle'),
+    content: t('homeTableOrderModal'),
+    showCancel: false,
+    confirmText: t('gotIt'),
+  });
+}
+
+function scrollToNearby() {
+  uni.pageScrollTo({
+    selector: '#nearby-restaurants',
+    duration: 280,
   });
 }
 </script>
 
 <template>
   <view class="page">
-    <view class="hero">
+    <view class="topbar">
       <view>
-        <text class="eyebrow">{{ localeLabel(locale) }}</text>
+        <text class="eyebrow">{{ t('currentCity') }}</text>
         <text class="title">{{ t('appName') }}</text>
       </view>
       <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
-        <view class="city">{{ cities[cityIndex]?.label }} ▾</view>
+        <view class="city">
+          <text class="location-dot"></text>
+          <text>{{ cities[cityIndex]?.label }}</text>
+          <text class="city-arrow">⌄</text>
+        </view>
       </picker>
     </view>
 
-    <button class="scan-button" @click="scan">
-      <text class="scan-title">{{ t('scanOrder') }}</text>
-      <text class="scan-copy">{{ t('scanSubtitle') }}</text>
-    </button>
+    <view class="search-box">
+      <text class="search-icon"></text>
+      <input
+        v-model="searchKeyword"
+        class="search-input"
+        :placeholder="t('homeSearchPlaceholder')"
+        confirm-type="search"
+      />
+      <text v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">×</text>
+    </view>
 
-    <view class="section-head">
+    <view class="banner">
+      <view class="banner-content">
+        <text class="banner-kicker">{{ t('homeBannerKicker') }}</text>
+        <text class="banner-title">{{ t('homeBannerTitle') }}</text>
+        <text class="banner-copy">{{ t('homeBannerSubtitle') }}</text>
+        <button class="banner-action" @click="scrollToNearby">
+          {{ t('homeBannerAction') }}
+        </button>
+      </view>
+      <view class="food-visual" aria-hidden="true">
+        <view class="leaf leaf-one"></view>
+        <view class="leaf leaf-two"></view>
+        <view class="plate">
+          <text class="food-mark">鲜</text>
+        </view>
+        <view class="steam steam-one"></view>
+        <view class="steam steam-two"></view>
+      </view>
+    </view>
+
+    <view class="table-tip" @click="showTableOrderingTip">
+      <view class="tip-icon">
+        <text>桌</text>
+      </view>
+      <view class="tip-content">
+        <text class="tip-title">{{ t('homeTableOrderTitle') }}</text>
+        <text class="tip-copy">{{ t('homeTableOrderHint') }}</text>
+      </view>
+      <text class="tip-arrow">›</text>
+    </view>
+
+    <view class="category-section">
+      <view class="section-heading">
+        <text class="section-title">{{ t('homeFoodCategories') }}</text>
+        <text class="section-caption">{{ t('homeCategoryCaption') }}</text>
+      </view>
+      <view class="category-grid">
+        <view v-for="category in foodCategories" :key="category.label" class="category-item">
+          <view :class="['category-icon', `category-${category.tone}`]">
+            <text>{{ category.mark }}</text>
+          </view>
+          <text class="category-label">{{ category.label }}</text>
+        </view>
+      </view>
+    </view>
+
+    <view id="nearby-restaurants" class="section-head">
       <view>
-        <text class="section-title">{{ t('nearbyMerchants') }}</text>
+        <text class="section-title">{{ t('homeNearbyRestaurants') }}</text>
         <text class="mode">{{ t('currentCity') }}：{{ currentCityLabel }}</text>
       </view>
       <button class="location-button" @click="relocate">{{ t('relocate') }}</button>
@@ -144,9 +219,16 @@ function scan() {
 
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
-      <view v-else-if="!merchants.length" class="empty">{{ t('noMerchants') }}</view>
+      <view v-else-if="!merchants.length" class="empty">
+        <text class="empty-title">{{ t('noMerchants') }}</text>
+        <text class="empty-copy">{{ t('homeEmptyHint') }}</text>
+      </view>
+      <view v-else-if="!filteredMerchants.length" class="empty">
+        <text class="empty-title">{{ t('homeSearchEmpty') }}</text>
+        <text class="empty-copy">{{ t('homeSearchEmptyHint') }}</text>
+      </view>
       <MerchantCard
-        v-for="merchant in merchants"
+        v-for="merchant in filteredMerchants"
         :key="merchant.id"
         :merchant="merchant"
         @select="openMerchant"
@@ -156,18 +238,483 @@ function scan() {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 32rpx 28rpx 60rpx; background: #f6f3ef; }
-.hero { display: flex; align-items: center; justify-content: space-between; margin: 18rpx 0 34rpx; }
-.eyebrow { display: block; color: #9b6a54; font-size: 22rpx; letter-spacing: 2rpx; }
-.title { display: block; margin-top: 8rpx; font-size: 48rpx; font-weight: 800; }
-.city { padding: 14rpx 20rpx; border-radius: 999rpx; background: #fff; font-size: 26rpx; }
-.scan-button { display: flex; align-items: flex-start; flex-direction: column; padding: 30rpx; margin-bottom: 36rpx; border: 0; border-radius: 24rpx; color: #fff; background: linear-gradient(135deg, #b83228, #d45a3d); text-align: left; }
-.scan-title { font-size: 36rpx; font-weight: 700; }
-.scan-copy { margin-top: 8rpx; opacity: .85; font-size: 24rpx; }
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18rpx; }
-.section-title { display: block; font-size: 34rpx; font-weight: 700; }
-.mode { display: block; margin-top: 4rpx; color: #8a817c; font-size: 22rpx; }
-.location-button { padding: 10rpx 18rpx; border: 1rpx solid #d8cec8; border-radius: 999rpx; background: transparent; font-size: 22rpx; line-height: 1.5; }
-.empty { padding: 80rpx 0; color: #888; text-align: center; }
-.merchant-panel { display: block; }
+.page {
+  min-height: 100vh;
+  padding: 28rpx 28rpx calc(64rpx + env(safe-area-inset-bottom));
+  color: #1f2d24;
+  background: #f6faf7;
+  box-sizing: border-box;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 12rpx 0 28rpx;
+}
+
+.eyebrow {
+  display: block;
+  color: #66746b;
+  font-size: 22rpx;
+}
+
+.title {
+  display: block;
+  margin-top: 6rpx;
+  color: #1f2d24;
+  font-size: 42rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}
+
+.city {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #fff;
+  box-shadow: 0 8rpx 24rpx rgb(46 125 50 / 8%);
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.location-dot {
+  width: 13rpx;
+  height: 13rpx;
+  border: 5rpx solid #43a047;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.city-arrow {
+  color: #7f9184;
+  font-size: 24rpx;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  height: 88rpx;
+  padding: 0 24rpx;
+  margin-bottom: 24rpx;
+  border: 2rpx solid #f0f0f0;
+  border-radius: 24rpx;
+  background: #fff;
+  box-shadow: 0 10rpx 28rpx rgb(46 125 50 / 6%);
+  box-sizing: border-box;
+}
+
+.search-icon {
+  position: relative;
+  width: 24rpx;
+  height: 24rpx;
+  flex: none;
+  border: 4rpx solid #43a047;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.search-icon::after {
+  position: absolute;
+  right: -9rpx;
+  bottom: -7rpx;
+  width: 12rpx;
+  height: 4rpx;
+  border-radius: 4rpx;
+  background: #43a047;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.search-input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  color: #1f2d24;
+  font-size: 27rpx;
+}
+
+.search-clear {
+  display: grid;
+  width: 38rpx;
+  height: 38rpx;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #aab5ac;
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.banner {
+  position: relative;
+  display: flex;
+  min-height: 330rpx;
+  overflow: hidden;
+  padding: 36rpx 32rpx;
+  margin-bottom: 22rpx;
+  border-radius: 34rpx;
+  color: #fff;
+  background: #43a047;
+  box-shadow: 0 18rpx 42rpx rgb(46 125 50 / 16%);
+  box-sizing: border-box;
+}
+
+.banner-content {
+  position: relative;
+  z-index: 2;
+  width: 62%;
+}
+
+.banner-kicker {
+  display: inline-block;
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.banner-title {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 40rpx;
+  font-weight: 800;
+  line-height: 1.22;
+}
+
+.banner-copy {
+  display: block;
+  margin-top: 10rpx;
+  color: rgb(255 255 255 / 84%);
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
+.banner-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 62rpx;
+  padding: 0 24rpx;
+  margin: 24rpx 0 0;
+  border: 0;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #fff;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 62rpx;
+}
+
+.banner-action::after,
+.location-button::after {
+  border: 0;
+}
+
+.food-visual {
+  position: absolute;
+  right: -26rpx;
+  bottom: -24rpx;
+  width: 270rpx;
+  height: 270rpx;
+}
+
+.plate {
+  position: absolute;
+  right: 18rpx;
+  bottom: 22rpx;
+  display: grid;
+  width: 202rpx;
+  height: 202rpx;
+  place-items: center;
+  border: 18rpx solid rgb(255 255 255 / 72%);
+  border-radius: 50%;
+  background: #ffb74d;
+  box-shadow: inset 0 0 0 12rpx rgb(255 255 255 / 30%);
+  box-sizing: border-box;
+}
+
+.food-mark {
+  display: grid;
+  width: 110rpx;
+  height: 110rpx;
+  place-items: center;
+  border-radius: 50%;
+  color: #2e7d32;
+  background: #fff8e7;
+  font-size: 46rpx;
+  font-weight: 800;
+}
+
+.leaf {
+  position: absolute;
+  z-index: 1;
+  width: 46rpx;
+  height: 86rpx;
+  border-radius: 100% 0 100% 0;
+  background: #8bd28f;
+}
+
+.leaf-one {
+  right: 184rpx;
+  bottom: 54rpx;
+  transform: rotate(-34deg);
+}
+
+.leaf-two {
+  right: 30rpx;
+  bottom: 190rpx;
+  transform: rotate(46deg);
+}
+
+.steam {
+  position: absolute;
+  z-index: 2;
+  top: 8rpx;
+  width: 30rpx;
+  height: 72rpx;
+  border-left: 6rpx solid rgb(255 255 255 / 60%);
+  border-radius: 50%;
+}
+
+.steam-one {
+  right: 112rpx;
+  transform: rotate(12deg);
+}
+
+.steam-two {
+  right: 72rpx;
+  top: 24rpx;
+  transform: rotate(-10deg);
+}
+
+.table-tip {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 22rpx 24rpx;
+  margin-bottom: 34rpx;
+  border-radius: 24rpx;
+  background: #eaf7ee;
+}
+
+.tip-icon {
+  display: grid;
+  width: 68rpx;
+  height: 68rpx;
+  flex: none;
+  place-items: center;
+  border-radius: 20rpx;
+  color: #fff;
+  background: #43a047;
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.tip-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.tip-title {
+  display: block;
+  color: #2e7d32;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.tip-copy {
+  display: block;
+  margin-top: 5rpx;
+  color: #58705e;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.tip-arrow {
+  flex: none;
+  color: #66a66b;
+  font-size: 42rpx;
+  font-weight: 300;
+}
+
+.category-section {
+  padding: 26rpx 24rpx;
+  margin-bottom: 36rpx;
+  border-radius: 28rpx;
+  background: #fff;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+}
+
+.section-heading,
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.section-heading {
+  margin-bottom: 24rpx;
+}
+
+.section-head {
+  scroll-margin-top: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.section-title {
+  display: block;
+  color: #1f2d24;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.section-caption {
+  color: #8a968d;
+  font-size: 21rpx;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14rpx;
+}
+
+.category-item {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.category-icon {
+  display: grid;
+  width: 86rpx;
+  height: 86rpx;
+  place-items: center;
+  border-radius: 28rpx;
+  font-size: 31rpx;
+  font-weight: 800;
+}
+
+.category-green {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.category-orange {
+  color: #a65a00;
+  background: #fff1dc;
+}
+
+.category-mint {
+  color: #27836e;
+  background: #e6f7f1;
+}
+
+.category-yellow {
+  color: #8c6b00;
+  background: #fff7cf;
+}
+
+.category-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: #48544b;
+  font-size: 22rpx;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode {
+  display: block;
+  margin-top: 6rpx;
+  color: #7c8980;
+  font-size: 22rpx;
+}
+
+.location-button {
+  flex: none;
+  padding: 10rpx 18rpx;
+  border: 0;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  padding: 90rpx 30rpx;
+  border-radius: 28rpx;
+  color: #7d8b81;
+  background: #fff;
+  text-align: center;
+}
+
+.empty-title {
+  color: #445149;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.empty-copy {
+  margin-top: 10rpx;
+  color: #929d95;
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+
+.merchant-panel {
+  display: block;
+}
+
+:deep(.merchant-card) {
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+  border-radius: 26rpx;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+}
+
+:deep(.merchant-card .cover) {
+  width: 190rpx;
+  height: 164rpx;
+  border-radius: 20rpx;
+}
+
+:deep(.merchant-card .placeholder) {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+:deep(.merchant-card .name) {
+  color: #1f2d24;
+}
+
+:deep(.merchant-card .address) {
+  color: #707b73;
+}
+
+:deep(.merchant-card .open) {
+  color: #2e7d32;
+}
+
+:deep(.merchant-card .tag) {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
 </style>

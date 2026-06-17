@@ -68,8 +68,8 @@
     }
   ],
   "tabBar": {
-    "color": "#7d756f",
-    "selectedColor": "#b83228",
+    "color": "#999999",
+    "selectedColor": "#43A047",
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
@@ -91,6 +91,6 @@
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "华越优选",
     "navigationBarBackgroundColor": "#ffffff",
-    "backgroundColor": "#f6f3ef"
+    "backgroundColor": "#F6FAF7"
   }
 }

@@ -7,6 +7,7 @@ import {
   categoryName,
   locale,
   merchantName,
+  orderTypeLabel,
   productName,
   useI18n,
   usePageTitle,
@@ -27,6 +28,9 @@ const error = ref('');
 const notice = ref('');
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
 const { t } = useI18n();
+const currentCategory = computed(
+  () => menu.value?.categories.find((category) => category.id === activeCategory.value) ?? null,
+);
 
 usePageTitle(() => t('menuTitle'));
 
@@ -91,16 +95,34 @@ async function add(product: Product) {
 
 <template>
   <view class="page">
-    <view v-if="menu" class="context">
-      <view>
-        <text class="merchant">{{ merchantName(menu.merchant, locale) }}</text>
-        <text v-if="hasTable" class="table">{{ t('tableLabel', { table: tableName || tableNo }) }}</text>
-        <text v-else class="table">{{ t('browseOnly') }}</text>
+    <view v-if="menu" class="merchant-card">
+      <view class="merchant-visual">
+        <view class="visual-circle visual-circle-large"></view>
+        <view class="visual-circle visual-circle-small"></view>
+        <view class="dish-mark">鲜</view>
       </view>
-      <text :class="menu.merchant.isOpen ? 'open' : 'closed'">{{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}</text>
+      <view class="merchant-content">
+        <view class="merchant-head">
+          <text class="merchant">{{ merchantName(menu.merchant, locale) }}</text>
+          <text :class="['status', menu.merchant.isOpen ? 'open' : 'closed']">
+            {{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+          </text>
+        </view>
+        <view class="service-tags">
+          <text class="service-tag">{{ orderTypeLabel(orderType, locale) }}</text>
+          <text v-if="hasTable" class="service-tag table-tag">
+            {{ t('currentTable') }}：{{ tableName || tableNo }}
+          </text>
+        </view>
+        <view v-if="hasTable" class="table-notice">
+          <text class="table-notice-icon">桌</text>
+          <text>{{ t('tableOrderingActive', { table: tableName || tableNo }) }}</text>
+        </view>
+        <text v-else class="browse-note">{{ t('browseOnly') }}</text>
+      </view>
     </view>
-    <text v-if="notice" class="notice">{{ notice }}</text>
-    <text v-if="error" class="error">{{ error }}</text>
+    <view v-if="notice" class="notice">{{ notice }}</view>
+    <view v-if="error" class="error">{{ error }}</view>
     <view v-else-if="menu" class="menu-layout">
       <scroll-view class="categories" scroll-y>
         <view
@@ -113,15 +135,25 @@ async function add(product: Product) {
         </view>
       </scroll-view>
       <scroll-view class="products" scroll-y>
-        <template v-for="category in menu.categories" :key="category.id">
-          <view v-if="activeCategory === category.id">
-            <text class="category-title">{{ categoryName(category, locale) }}</text>
-            <view
-              v-for="product in category.products"
-              :key="product.id"
-              class="product"
-              @click="openProduct(product)"
-            >
+        <view v-if="currentCategory" class="product-list">
+          <view class="category-heading">
+            <text class="category-title">{{ categoryName(currentCategory, locale) }}</text>
+            <text class="category-count">
+              {{ t('dishCount', { count: currentCategory.products.length }) }}
+            </text>
+          </view>
+          <view v-if="!currentCategory.products.length" class="empty">
+            <view class="empty-icon">菜</view>
+            <text class="empty-title">{{ t('noDishes') }}</text>
+            <text class="empty-copy">{{ t('tryAgainLater') }}</text>
+          </view>
+          <view
+            v-for="product in currentCategory.products"
+            :key="product.id"
+            :class="['product', product.status === 'SOLD_OUT' ? 'product-sold-out' : '']"
+            @click="openProduct(product)"
+          >
+            <view class="image-wrap">
               <image
                 v-if="resolveMediaUrl(product.imageUrl)"
                 class="image"
@@ -129,18 +161,38 @@ async function add(product: Product) {
                 mode="aspectFill"
               />
               <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
-              <view class="product-body">
-                <text class="product-name">{{ productName(product, locale) }}</text>
-                <text class="description">{{ product.description || t('productDescriptionFallback') }}</text>
-                <view class="price-row">
-                  <text class="price">{{ Number(product.priceVnd).toLocaleString() }} ₫</text>
-                  <text v-if="product.status === 'SOLD_OUT'" class="sold-out">{{ t('soldOut') }}</text>
-                  <button v-else class="add" @click.stop="add(product)">+</button>
-                </view>
+              <text v-if="product.status === 'SOLD_OUT'" class="sold-out-badge">
+                {{ t('soldOut') }}
+              </text>
+            </view>
+            <view class="product-body">
+              <text class="product-name">{{ productName(product, locale) }}</text>
+              <text class="description">
+                {{ product.description || t('productDescriptionFallback') }}
+              </text>
+              <view class="price-row">
+                <text class="price">
+                  <text class="currency">₫</text>
+                  {{ Number(product.priceVnd).toLocaleString() }}
+                </text>
+                <button
+                  v-if="product.status !== 'SOLD_OUT'"
+                  class="add"
+                  :aria-label="t('addToCart')"
+                  @click.stop="add(product)"
+                >
+                  +
+                </button>
+                <text v-else class="sold-out">{{ t('soldOut') }}</text>
               </view>
             </view>
           </view>
-        </template>
+        </view>
+        <view v-else class="empty product-list">
+          <view class="empty-icon">菜</view>
+          <text class="empty-title">{{ t('noDishes') }}</text>
+          <text class="empty-copy">{{ t('tryAgainLater') }}</text>
+        </view>
       </scroll-view>
     </view>
     <CartBar v-if="menu" />
@@ -148,27 +200,404 @@ async function add(product: Product) {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: #f6f3ef; }
-.context { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: 22rpx 28rpx; color: #fff; background: #9f2e26; }
-.merchant { display: block; font-size: 32rpx; font-weight: 700; }
-.table { display: block; margin-top: 5rpx; opacity: .86; font-size: 23rpx; }
-.open { color: #dff7e8; }
-.closed, .error { color: #ffd2cd; }
-.notice { display: block; padding: 18rpx 28rpx; color: #8a5f00; background: #fff4d6; }
-.menu-layout { display: grid; grid-template-columns: 190rpx 1fr; height: calc(100vh - 190rpx); }
-.categories { height: 100%; background: #eee8e3; }
-.category { padding: 28rpx 18rpx; color: #666; font-size: 25rpx; }
-.category.active { color: #a83228; background: #fff; font-weight: 700; }
-.products { height: 100%; padding: 24rpx; background: #fff; box-sizing: border-box; }
-.category-title { display: block; margin-bottom: 18rpx; font-size: 30rpx; font-weight: 700; }
-.product { display: flex; gap: 18rpx; padding: 20rpx 0; border-bottom: 1rpx solid #eee; }
-.image { width: 150rpx; height: 130rpx; flex: none; border-radius: 14rpx; }
-.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 22rpx; }
-.product-body { min-width: 0; flex: 1; }
-.product-name { display: block; font-weight: 700; }
-.description { display: -webkit-box; margin: 10rpx 0; overflow: hidden; color: #888; font-size: 22rpx; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.price-row { display: flex; justify-content: space-between; }
-.price { color: #b83228; font-weight: 700; }
-.sold-out { color: #999; font-size: 22rpx; }
-.add { width: 48rpx; height: 48rpx; padding: 0; border-radius: 50%; color: #fff; background: #c43b2f; font-size: 32rpx; line-height: 48rpx; }
+.page {
+  display: flex;
+  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
+  padding: 24rpx 24rpx calc(220rpx + env(safe-area-inset-bottom));
+  color: #1f2d24;
+  background: #f6faf7;
+  box-sizing: border-box;
+}
+
+.merchant-card {
+  flex: none;
+  overflow: hidden;
+  margin-bottom: 20rpx;
+  border-radius: 30rpx;
+  background: #fff;
+  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 8%);
+}
+
+.merchant-visual {
+  position: relative;
+  height: 154rpx;
+  overflow: hidden;
+  background: linear-gradient(135deg, #43a047, #77c47b);
+}
+
+.visual-circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 13%);
+}
+
+.visual-circle-large {
+  top: -70rpx;
+  right: -20rpx;
+  width: 230rpx;
+  height: 230rpx;
+}
+
+.visual-circle-small {
+  bottom: -42rpx;
+  left: 70rpx;
+  width: 124rpx;
+  height: 124rpx;
+}
+
+.dish-mark {
+  position: absolute;
+  right: 42rpx;
+  bottom: 20rpx;
+  display: grid;
+  width: 106rpx;
+  height: 106rpx;
+  place-items: center;
+  border: 9rpx solid rgb(255 255 255 / 72%);
+  border-radius: 50%;
+  color: #2e7d32;
+  background: #ffcf83;
+  box-shadow: inset 0 0 0 9rpx rgb(255 255 255 / 35%);
+  font-size: 37rpx;
+  font-weight: 800;
+  box-sizing: border-box;
+}
+
+.merchant-content {
+  padding: 24rpx 26rpx 26rpx;
+}
+
+.merchant-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.merchant {
+  min-width: 0;
+  color: #1f2d24;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.status {
+  flex: none;
+  padding: 7rpx 13rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.open {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.closed {
+  color: #a66400;
+  background: #fff1dc;
+}
+
+.service-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.service-tag {
+  padding: 7rpx 13rpx;
+  border-radius: 999rpx;
+  color: #566159;
+  background: #f6faf7;
+  font-size: 21rpx;
+}
+
+.table-tag {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.table-notice {
+  display: flex;
+  align-items: center;
+  gap: 13rpx;
+  padding: 15rpx 17rpx;
+  margin-top: 18rpx;
+  border-radius: 18rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.table-notice-icon {
+  display: grid;
+  width: 43rpx;
+  height: 43rpx;
+  flex: none;
+  place-items: center;
+  border-radius: 13rpx;
+  color: #fff;
+  background: #43a047;
+  font-size: 18rpx;
+}
+
+.browse-note {
+  display: block;
+  margin-top: 15rpx;
+  color: #7d8980;
+  font-size: 22rpx;
+}
+
+.notice,
+.error {
+  flex: none;
+  display: block;
+  padding: 18rpx 22rpx;
+  margin-bottom: 18rpx;
+  border-radius: 18rpx;
+  font-size: 22rpx;
+}
+
+.notice {
+  color: #8a5a00;
+  background: #fff3dd;
+}
+
+.error {
+  color: #8a5a00;
+  background: #fff3dd;
+}
+
+.menu-layout {
+  display: grid;
+  grid-template-columns: 172rpx minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 28rpx;
+  background: #fff;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+}
+
+.categories {
+  height: 100%;
+  min-height: 0;
+  background: #f6faf7;
+}
+
+.category {
+  position: relative;
+  padding: 27rpx 18rpx 27rpx 24rpx;
+  color: #666;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.category.active {
+  color: #2e7d32;
+  background: #fff;
+  font-weight: 800;
+}
+
+.category.active::before {
+  position: absolute;
+  top: 23rpx;
+  bottom: 23rpx;
+  left: 0;
+  width: 7rpx;
+  border-radius: 0 8rpx 8rpx 0;
+  background: #43a047;
+  content: '';
+}
+
+.products {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 24rpx 20rpx 0;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.product-list {
+  padding-bottom: 40rpx;
+  box-sizing: border-box;
+}
+
+.category-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.category-title {
+  color: #1f2d24;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.category-count {
+  color: #919b93;
+  font-size: 20rpx;
+}
+
+.product {
+  display: flex;
+  gap: 16rpx;
+  padding: 18rpx;
+  margin-bottom: 16rpx;
+  border-radius: 22rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 24rpx rgb(46 125 50 / 7%);
+}
+
+.product-sold-out {
+  opacity: .7;
+}
+
+.image-wrap {
+  position: relative;
+  width: 142rpx;
+  height: 128rpx;
+  flex: none;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  border-radius: 18rpx;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6d7c71;
+  background: #eaf7ee;
+  font-size: 21rpx;
+  text-align: center;
+}
+
+.sold-out-badge {
+  position: absolute;
+  right: 8rpx;
+  bottom: 8rpx;
+  padding: 5rpx 9rpx;
+  border-radius: 999rpx;
+  color: #666;
+  background: rgb(255 255 255 / 92%);
+  font-size: 18rpx;
+}
+
+.product-body {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.product-name {
+  display: block;
+  overflow: hidden;
+  color: #1f2d24;
+  font-size: 27rpx;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description {
+  display: -webkit-box;
+  margin: 8rpx 0;
+  overflow: hidden;
+  color: #818b83;
+  font-size: 21rpx;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: auto;
+}
+
+.price {
+  color: #1f2d24;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.currency {
+  margin-right: 3rpx;
+  color: #ff8a00;
+  font-size: 20rpx;
+}
+
+.sold-out {
+  color: #888;
+  font-size: 21rpx;
+}
+
+.add {
+  width: 52rpx;
+  height: 52rpx;
+  min-height: 52rpx;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: #43a047;
+  font-size: 34rpx;
+  font-weight: 500;
+  line-height: 52rpx;
+}
+
+.add::after {
+  border: 0;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  padding: 100rpx 20rpx;
+  text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  width: 86rpx;
+  height: 86rpx;
+  place-items: center;
+  margin-bottom: 20rpx;
+  border-radius: 28rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 31rpx;
+  font-weight: 800;
+}
+
+.empty-title {
+  color: #1f2d24;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.empty-copy {
+  margin-top: 9rpx;
+  color: #8b958d;
+  font-size: 21rpx;
+}
 </style>

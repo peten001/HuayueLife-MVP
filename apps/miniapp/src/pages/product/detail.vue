@@ -97,7 +97,7 @@ async function add() {
         <text>{{ quantity }}</text>
         <button @click="quantity = Math.min(99, quantity + 1)">+</button>
       </view>
-      <button :disabled="product.status === 'SOLD_OUT'" @click="add">
+      <button class="add-cart" :disabled="product.status === 'SOLD_OUT'" @click="add">
         {{ product.status === 'SOLD_OUT' ? t('soldOut') : t('addToCart') }}
       </button>
     </template>
@@ -105,19 +105,20 @@ async function add() {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 24rpx; background: #f6f3ef; }
-.context { padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #fff; background: #9f2e26; }
+.page { min-height: 100vh; padding: 24rpx; background: #f6faf7; }
+.context { padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 18rpx; color: #fff; background: #43a047; }
 .notice { display: block; padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #8a5f00; background: #fff4d6; }
 .image { width: 100%; height: 520rpx; border-radius: 24rpx; }
-.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 28rpx; }
-.card { padding: 28rpx; margin: 20rpx 0; border-radius: 20rpx; background: #fff; }
-.name { display: block; font-size: 40rpx; font-weight: 800; }
-.vi { display: block; margin-top: 6rpx; color: #888; }
-.description { display: block; margin: 26rpx 0; color: #666; line-height: 1.7; }
-.price { color: #b83228; font-size: 36rpx; font-weight: 800; }
-.sold-out, .error { display: block; margin-top: 16rpx; color: #a83228; }
+.placeholder { display: flex; align-items: center; justify-content: center; color: #6f8073; background: #e8f3ea; font-size: 28rpx; }
+.card { padding: 28rpx; margin: 20rpx 0; border-radius: 24rpx; background: #fff; box-shadow: 0 12rpx 36rpx rgba(31, 45, 36, 0.08); }
+.name { display: block; color: #1f2d24; font-size: 40rpx; font-weight: 800; }
+.vi { display: block; margin-top: 6rpx; color: #5f6f64; }
+.description { display: block; margin: 26rpx 0; color: #52645a; line-height: 1.7; }
+.price { color: #1f2d24; font-size: 36rpx; font-weight: 800; }
+.sold-out, .error { display: block; margin-top: 16rpx; color: #ff8a00; }
 .quantity { display: flex; align-items: center; justify-content: center; gap: 28rpx; margin-bottom: 20rpx; }
-.quantity button { width: 64rpx; padding: 6rpx; color: #333; background: #eee; }
-button { color: #fff; background: #c43b2f; }
-button[disabled] { color: #777; background: #ddd; }
+.quantity text { color: #1f2d24; font-weight: 700; }
+.quantity button { width: 64rpx; padding: 6rpx; color: #2e7d32; background: #e8f5e9; border: 2rpx solid #43a047; }
+.add-cart { color: #fff; background: #2e7d32; }
+.add-cart[disabled] { color: #7b8a80; background: #dfe7e1; }
 </style>

@@ -1,0 +1,16 @@
+[mcp_servers.shadcn]
+command = "npx"
+args = ["-y", "shadcn@latest", "mcp"]
+cwd = "/Users/peter/Desktop/HuayueLife-MVP"
+startup_timeout_sec = 60
+
+[mcp_servers.shadcn.env]
+npm_config_cache = "/private/tmp/huayue-life-mvp-npm-cache"
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+startup_timeout_sec = 60
+
+[mcp_servers.context7.env]
+npm_config_cache = "/private/tmp/huayue-life-mvp-npm-cache"

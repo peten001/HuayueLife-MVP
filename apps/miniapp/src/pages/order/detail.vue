@@ -34,6 +34,11 @@ const canConfirmReceived = computed(
     order.value?.orderType === 'DELIVERY' &&
     order.value.status === 'DELIVERING',
 );
+const statusTone = computed(() => {
+  if (order.value?.status === 'COMPLETED') return 'completed';
+  if (order.value?.status === 'CANCELLED') return 'cancelled';
+  return 'active';
+});
 
 usePageTitle(() =>
   order.value ? `${t('orderDetailTitle')} ${order.value.orderNo}` : t('orderDetailTitle'),
@@ -128,10 +133,10 @@ function serviceInfo() {
 <template>
   <view class="page">
     <view v-if="loading && !order" class="empty">{{ t('loading') }}</view>
-    <text v-if="message" class="message">{{ message }}</text>
+    <view v-if="message" class="message">{{ message }}</view>
 
     <template v-if="order">
-      <view class="status-card">
+      <view :class="['status-card', `status-${statusTone}`]">
         <text class="status">{{ orderStatusLabel(order.status, locale) }}</text>
         <text class="status-copy">{{ t('orderStatusUpdated') }}</text>
       </view>
@@ -190,28 +195,205 @@ function serviceInfo() {
 </template>
 
 <style scoped>
-.page { min-height: 100vh; padding: 24rpx 24rpx 60rpx; background: #f6f3ef; }
-.empty { padding: 120rpx 0; color: #888; text-align: center; }
-.message { display: block; margin-bottom: 18rpx; color: #a83228; }
-.status-card { display: grid; gap: 10rpx; padding: 30rpx 26rpx; margin-bottom: 18rpx; border-radius: 20rpx; color: #fff; background: linear-gradient(135deg, #a82f27, #d25d42); }
-.status { font-size: 38rpx; font-weight: 800; }
-.status-copy { opacity: .82; font-size: 22rpx; }
-.card { padding: 24rpx; margin-bottom: 18rpx; border-radius: 20rpx; background: #fff; }
-.card-title { padding-bottom: 18rpx; border-bottom: 1rpx solid #eee9e5; font-size: 30rpx; font-weight: 700; }
-.info-row, .amount-row { display: flex; justify-content: space-between; gap: 24rpx; padding-top: 18rpx; color: #4f4945; font-size: 25rpx; }
-.info-row > text:first-child { color: #8b837e; white-space: nowrap; }
-.info-row > text:last-child { text-align: right; white-space: pre-line; }
-.item { display: grid; grid-template-columns: 80rpx 1fr auto auto; align-items: center; gap: 14rpx; padding: 20rpx 0; border-bottom: 1rpx solid #eee9e5; font-size: 24rpx; }
-.item image, .item-image { width: 80rpx; height: 80rpx; border-radius: 10rpx; background: #eee; }
-.placeholder { display: flex; align-items: center; justify-content: center; color: #9d8f84; background: #f1e8df; font-size: 18rpx; text-align: center; }
-.item-main { display: grid; gap: 6rpx; }
-.remark { color: #9a7161; font-size: 21rpx; }
-.amount-row { padding-top: 14rpx; }
-.amount-row.total { margin-top: 8rpx; color: #b83228; font-size: 30rpx; font-weight: 800; }
-.settlement { display: block; margin-top: 16rpx; color: #8b837e; font-size: 22rpx; text-align: right; }
-.log { position: relative; display: grid; grid-template-columns: 20rpx 1fr; gap: 10rpx; padding-top: 20rpx; }
-.dot { width: 12rpx; height: 12rpx; margin-top: 9rpx; border-radius: 50%; background: #b83228; }
-.log-copy { display: block; margin-top: 5rpx; color: #918984; font-size: 21rpx; }
-.action { width: 100%; margin-top: 20rpx; color: #fff; background: #b83228; }
-.action.danger { color: #a83228; background: #fff; border: 1rpx solid #d8a39f; }
+.page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(60rpx + env(safe-area-inset-bottom));
+  color: #1f2d24;
+  background: #f6faf7;
+  box-sizing: border-box;
+}
+
+.empty {
+  padding: 120rpx 0;
+  color: #7d8980;
+  text-align: center;
+}
+
+.message {
+  display: block;
+  padding: 18rpx 22rpx;
+  margin-bottom: 18rpx;
+  border-radius: 18rpx;
+  color: #8a5a00;
+  background: #fff3dd;
+  font-size: 22rpx;
+}
+
+.status-card {
+  display: grid;
+  gap: 10rpx;
+  padding: 32rpx 28rpx;
+  margin-bottom: 20rpx;
+  border-radius: 28rpx;
+  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 10%);
+}
+
+.status-active {
+  color: #fff;
+  background: linear-gradient(135deg, #43a047, #2e7d32);
+}
+
+.status-completed {
+  color: #2e7d32;
+  background: linear-gradient(135deg, #eaf7ee, #d8efdc);
+}
+
+.status-cancelled {
+  color: #666;
+  background: #eeeeee;
+  box-shadow: none;
+}
+
+.status {
+  font-size: 38rpx;
+  font-weight: 800;
+}
+
+.status-copy {
+  opacity: .82;
+  font-size: 22rpx;
+}
+
+.card {
+  padding: 26rpx;
+  margin-bottom: 20rpx;
+  border-radius: 28rpx;
+  background: #fff;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+}
+
+.card-title {
+  padding-bottom: 18rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+  color: #1f2d24;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.info-row,
+.amount-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding-top: 19rpx;
+  color: #1f2d24;
+  font-size: 24rpx;
+}
+
+.info-row > text:first-child {
+  color: #666;
+  white-space: nowrap;
+}
+
+.info-row > text:last-child {
+  text-align: right;
+  white-space: pre-line;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 86rpx minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+  color: #1f2d24;
+  font-size: 23rpx;
+}
+
+.item image,
+.item-image {
+  width: 86rpx;
+  height: 86rpx;
+  border-radius: 15rpx;
+  background: #eaf7ee;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #718077;
+  font-size: 18rpx;
+  text-align: center;
+}
+
+.item-main {
+  min-width: 0;
+  display: grid;
+  gap: 6rpx;
+}
+
+.remark {
+  color: #8a795a;
+  font-size: 20rpx;
+}
+
+.amount-row {
+  padding-top: 15rpx;
+}
+
+.amount-row.total {
+  margin-top: 8rpx;
+  color: #2e7d32;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.settlement {
+  display: block;
+  margin-top: 16rpx;
+  color: #7d8980;
+  font-size: 22rpx;
+  text-align: right;
+}
+
+.log {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22rpx 1fr;
+  gap: 11rpx;
+  padding-top: 22rpx;
+  color: #2e7d32;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.dot {
+  width: 13rpx;
+  height: 13rpx;
+  margin-top: 9rpx;
+  border-radius: 50%;
+  background: #43a047;
+  box-shadow: 0 0 0 7rpx #eaf7ee;
+}
+
+.log-copy {
+  display: block;
+  margin-top: 6rpx;
+  color: #8a958d;
+  font-size: 20rpx;
+  font-weight: 400;
+}
+
+.action {
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 20rpx;
+  border: 0;
+  border-radius: 24rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-weight: 700;
+}
+
+.action::after {
+  border: 0;
+}
+
+.action.danger {
+  border: 2rpx solid #e8bcbc;
+  color: #b65f5f;
+  background: #fff;
+}
 </style>
