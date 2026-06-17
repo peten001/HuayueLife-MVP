@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -17,6 +18,9 @@ export class CreateMerchantStaffDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)
+  @Matches(/^\+?\d{8,15}$/, {
+    message: '请输入正确的手机号',
+  })
   username: string;
 
   @Transform(({ value }) => trimString(value))

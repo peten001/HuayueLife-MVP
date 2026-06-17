@@ -28,6 +28,7 @@ const showForm = ref(false);
 const editing = ref(false);
 const resetPasswordValue = ref('');
 const selectedStaff = ref<MerchantStaffListItem | null>(null);
+const phonePattern = /^\+?\d{8,15}$/;
 
 const form = reactive<StaffForm>({
   id: '',
@@ -94,6 +95,10 @@ function closeForm() {
 
 async function submit() {
   message.value = '';
+  if (!editing.value && !phonePattern.test(form.username.trim())) {
+    message.value = t('invalidStaffPhone');
+    return;
+  }
   try {
     if (!editing.value) {
       await createStaff({
@@ -174,8 +179,16 @@ async function copyPassword() {
     <h3>{{ editing ? t('editStaff') : t('addStaff') }}</h3>
     <div class="form-grid">
       <label>
-        {{ t('username') }}
-        <input v-model="form.username" :disabled="editing" required maxlength="64" />
+        {{ t('loginPhone') }}
+        <input
+          v-model="form.username"
+          :disabled="editing"
+          :placeholder="t('staffPhonePlaceholder')"
+          required
+          maxlength="15"
+          pattern="^\+?\d{8,15}$"
+          inputmode="tel"
+        />
       </label>
       <label>
         {{ t('displayName') }}
