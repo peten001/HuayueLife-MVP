@@ -1,0 +1,16 @@
+{
+  "name": "华越优选商家后台",
+  "short_name": "商家后台",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#5BAE63",
+  "background_color": "#5BAE63",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
