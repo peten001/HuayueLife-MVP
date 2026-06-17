@@ -19,6 +19,8 @@ const profileLoaded = ref(false);
 const { locale, t } = useI18n();
 const message = ref('');
 const operatingId = ref('');
+const refreshCountdown = ref(10);
+const isRefreshing = ref(false);
 let timer: number | undefined;
 
 const pending = computed(() =>
@@ -179,12 +181,64 @@ function mobileQuickTone(path: string) {
   return mobileQuickLinkClasses[path] ?? 'mobile-quick-neutral';
 }
 
-async function load() {
+const dashboardRefreshText = computed(() => {
+  if (isRefreshing.value) {
+    return locale.value === 'vi'
+      ? 'Đang làm mới...'
+      : locale.value === 'en'
+        ? 'Refreshing...'
+        : '刷新中...';
+  }
+  if (locale.value === 'vi') {
+    return `Đơn sẽ tự làm mới sau ${refreshCountdown.value} giây`;
+  }
+  if (locale.value === 'en') {
+    return `Orders will refresh automatically in ${refreshCountdown.value} second${refreshCountdown.value === 1 ? '' : 's'}`;
+  }
+  return `订单将在 ${refreshCountdown.value} 秒后自动刷新`;
+});
+
+function clearRefreshTimer() {
+  if (timer !== undefined) {
+    window.clearInterval(timer);
+    timer = undefined;
+  }
+}
+
+function startRefreshTimer() {
+  clearRefreshTimer();
+  refreshCountdown.value = 10;
+  timer = window.setInterval(() => {
+    if (isRefreshing.value) return;
+    if (refreshCountdown.value <= 1) {
+      void refreshOrders();
+      return;
+    }
+    refreshCountdown.value -= 1;
+  }, 1000);
+}
+
+async function refreshOrders() {
+  if (isRefreshing.value) return;
+  isRefreshing.value = true;
+  try {
+    await load({ resetCountdown: true });
+  } finally {
+    isRefreshing.value = false;
+    refreshCountdown.value = 10;
+  }
+}
+
+async function load(options: { resetCountdown?: boolean } = {}) {
   try {
     orders.value = await getMerchantOrders({ date: todayInVietnam() });
     message.value = '';
   } catch (error) {
     message.value = errorMessage(error);
+  } finally {
+    if (options.resetCountdown) {
+      refreshCountdown.value = 10;
+    }
   }
 }
 
@@ -257,7 +311,7 @@ async function execute(order: MerchantOrder) {
     operatingId.value = order.id;
     await runOrderAction(order.id, next.action);
     message.value = t('orderUpdated');
-    await load();
+    await load({ resetCountdown: true });
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -266,10 +320,10 @@ async function execute(order: MerchantOrder) {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadProfileCompletion()]);
-  timer = window.setInterval(load, 10000);
+  await Promise.all([load({ resetCountdown: true }), loadProfileCompletion()]);
+  startRefreshTimer();
 });
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => clearRefreshTimer());
 
 function todayInVietnam() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -297,7 +351,7 @@ type Action =
             <span class="eyebrow">{{ t('merchantWorkbench') }}</span>
             <h1>{{ merchantName || t('brand') }}</h1>
             <p>{{ todayStatusText }}</p>
-            <small>{{ t('ordersDescription') }}</small>
+            <small>{{ dashboardRefreshText }}</small>
           </div>
           <div class="welcome-side">
             <div class="welcome-summary">
@@ -434,7 +488,7 @@ type Action =
           <span class="mobile-store-eyebrow">今日状态</span>
           <strong>{{ merchantName || t('brand') }}</strong>
           <p>{{ todayStatusText }}</p>
-          <small>{{ t('ordersDescription') }}</small>
+          <small>{{ dashboardRefreshText }}</small>
         </div>
         <div class="mobile-store-side">
           <span class="mobile-store-badge">
@@ -504,7 +558,7 @@ type Action =
 
         <div v-else class="mobile-empty-state">
           <strong>{{ t('noPendingOrders') }}</strong>
-          <span>{{ operations.emptyHint }}</span>
+          <span>{{ dashboardRefreshText }}</span>
         </div>
       </section>
 

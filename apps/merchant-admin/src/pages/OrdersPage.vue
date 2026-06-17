@@ -99,6 +99,10 @@ function showPendingOnly() {
   void load();
 }
 
+function applyFilters() {
+  void load();
+}
+
 onMounted(async () => {
   await load();
   timer = window.setInterval(load, 10000);
@@ -123,7 +127,7 @@ type Action =
 </script>
 
 <template>
-  <PageHeader :title="t('orders')" :description="t('ordersDescription')" />
+  <PageHeader :title="t('orders')" />
 
   <div v-if="pendingCount" class="card order-alert">
     <div>
@@ -133,7 +137,7 @@ type Action =
     <button type="button" class="secondary" @click="showPendingOnly">{{ t('viewOrders') }}</button>
   </div>
 
-  <form class="card order-filters" @submit.prevent="load">
+  <form class="card order-filters" @submit.prevent="applyFilters">
     <label>{{ t('date') }}<input v-model="filters.date" type="date" /></label>
     <label>
       {{ t('status') }}
