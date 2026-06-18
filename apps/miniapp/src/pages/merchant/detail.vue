@@ -161,34 +161,7 @@ function merchantLocation() {
   return { latitude, longitude };
 }
 
-function googleMapsLink() {
-  if (!merchant.value) return '';
-  const location = merchantLocation();
-  if (location) {
-    return `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
-  }
-  const address = merchant.value.addressDetail.trim();
-  const name = merchantName(merchant.value, locale.value).trim();
-  const query = [name, address].filter(Boolean).join(' ');
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
-
-function copyGoogleMapsLink() {
-  const link = googleMapsLink();
-  if (!link) return;
-  uni.setClipboardData({
-    data: link,
-    success() {
-      uni.showToast({ title: t('googleMapsLinkCopied'), icon: 'none' });
-    },
-    fail(error) {
-      console.warn('[merchant/detail] copy google maps link failed', error);
-      uni.showToast({ title: t('googleMapsLinkCopyFailed'), icon: 'none' });
-    },
-  });
-}
-
-function openMiniappMap() {
+function handleAddressTap() {
   if (!merchant.value) return;
   const location = merchantLocation();
   if (!location) {
@@ -203,20 +176,6 @@ function openMiniappMap() {
     fail(error) {
       console.warn('[merchant/detail] openLocation failed', error);
       uni.showToast({ title: t('miniappMapOpenFailed'), icon: 'none' });
-    },
-  });
-}
-
-function handleAddressTap() {
-  if (!merchant.value) return;
-  uni.showActionSheet({
-    itemList: [t('copyGoogleMapsLink'), t('openMiniappMap')],
-    success(result) {
-      if (result.tapIndex === 0) {
-        copyGoogleMapsLink();
-      } else if (result.tapIndex === 1) {
-        openMiniappMap();
-      }
     },
   });
 }
@@ -263,7 +222,7 @@ function handlePhoneTap() {
         <view class="info-line info-action" @tap="handleAddressTap">
           <text class="info-icon">址</text>
           <text class="info-text">{{ merchant.addressDetail }}</text>
-          <text class="info-link">{{ t('googleMapsNavigation') }}</text>
+          <text class="info-link">{{ t('mapNavigation') }}</text>
         </view>
         <view class="info-line info-action" @tap="handlePhoneTap">
           <text class="info-icon">电</text>
