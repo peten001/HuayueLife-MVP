@@ -5,6 +5,14 @@ import { getMerchantOrders, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
+import {
+  enableOrderSound,
+  isRecentNewPendingOrder,
+  notifyNewPendingOrders,
+  orderSoundEnabled,
+  recentNewPendingOrderIds,
+  toggleOrderSound,
+} from '@/utils/order-notification';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
@@ -176,6 +184,11 @@ const mobileQuickLinkClasses: Record<string, string> = {
   '/orders': 'mobile-quick-neutral',
 };
 const mobileActiveOrders = computed(() => activeOrders.value.slice(0, 4));
+const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
+const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
+const soundButtonLabel = computed(() =>
+  orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
+);
 
 function mobileQuickTone(path: string) {
   return mobileQuickLinkClasses[path] ?? 'mobile-quick-neutral';
@@ -231,7 +244,13 @@ async function refreshOrders() {
 
 async function load(options: { resetCountdown?: boolean } = {}) {
   try {
-    orders.value = await getMerchantOrders({ date: todayInVietnam() });
+    const loadedOrders = await getMerchantOrders({ date: todayInVietnam() });
+    orders.value = loadedOrders;
+    notifyNewPendingOrders(
+      loadedOrders
+        .filter((order) => order.status === 'PENDING_ACCEPTANCE')
+        .map((order) => order.id),
+    );
     message.value = '';
   } catch (error) {
     message.value = errorMessage(error);
@@ -334,6 +353,14 @@ function todayInVietnam() {
   }).format(new Date());
 }
 
+async function handleSoundToggle() {
+  if (!orderSoundEnabled.value) {
+    await enableOrderSound();
+    return;
+  }
+  toggleOrderSound();
+}
+
 type Action =
   | 'accept'
   | 'start-preparing'
@@ -358,9 +385,19 @@ type Action =
               <span>{{ operations.pendingSummary }}</span>
               <strong>{{ pending.length + inProgress.length }}</strong>
             </div>
-            <RouterLink class="primary-link" to="/orders?status=PENDING_ACCEPTANCE">
-              {{ t('orderWorkbench') }}
-            </RouterLink>
+            <div class="welcome-actions">
+              <button
+                type="button"
+                class="sound-toggle"
+                :class="{ active: orderSoundEnabled }"
+                @click="handleSoundToggle"
+              >
+                {{ soundButtonLabel }}
+              </button>
+              <RouterLink class="primary-link" to="/orders?status=PENDING_ACCEPTANCE">
+                {{ t('orderWorkbench') }}
+              </RouterLink>
+            </div>
           </div>
         </section>
 
@@ -394,6 +431,16 @@ type Action =
         </RouterLink>
       </div>
 
+      <section v-if="hasNewPendingOrders" class="new-order-banner desktop-only">
+        <div>
+          <strong>有新订单，请及时接单</strong>
+          <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
+        </div>
+        <RouterLink class="secondary alert-link" to="/orders?status=PENDING_ACCEPTANCE">
+          {{ t('viewOrders') }}
+        </RouterLink>
+      </section>
+
       <p class="message">{{ message }}</p>
 
       <section class="panel quick-panel">
@@ -419,10 +466,20 @@ type Action =
           </div>
 
           <div v-if="activeOrders.length" class="order-card-grid">
-            <article v-for="order in activeOrders" :key="order.id" class="dashboard-order-card">
+            <article
+              v-for="order in activeOrders"
+              :key="order.id"
+              :class="['dashboard-order-card', { 'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }]"
+            >
               <header>
                 <div>
                   <span class="service-pill">{{ orderTypeLabel(order) }} · {{ serviceInfo(order) }}</span>
+                  <span
+                    v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
+                    class="new-order-badge"
+                  >
+                    新订单
+                  </span>
                   <strong>#{{ order.orderNo }}</strong>
                 </div>
                 <OrderStatusBadge :status="order.status" />
@@ -495,7 +552,25 @@ type Action =
             {{ pending.length ? '待处理' : inProgress.length ? '制作中' : '正常接单' }}
           </span>
           <span class="mobile-store-count">{{ pending.length + inProgress.length }}</span>
+          <button
+            type="button"
+            class="sound-toggle mobile-sound-toggle"
+            :class="{ active: orderSoundEnabled }"
+            @click="handleSoundToggle"
+          >
+            {{ soundButtonLabel }}
+          </button>
         </div>
+      </section>
+
+      <section v-if="hasNewPendingOrders" class="mobile-new-order-banner">
+        <div>
+          <strong>有新订单，请及时接单</strong>
+          <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
+        </div>
+        <RouterLink class="secondary alert-link" to="/orders?status=PENDING_ACCEPTANCE">
+          {{ t('viewOrders') }}
+        </RouterLink>
       </section>
 
       <section class="mobile-metric-grid" :aria-label="operations.snapshot">
@@ -523,10 +598,20 @@ type Action =
         </div>
 
         <div v-if="mobileActiveOrders.length" class="mobile-order-list">
-          <article v-for="order in mobileActiveOrders" :key="order.id" class="mobile-order-card">
+          <article
+            v-for="order in mobileActiveOrders"
+            :key="order.id"
+            :class="['mobile-order-card', { 'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }]"
+          >
             <header class="mobile-order-head">
               <div>
                 <span class="service-pill">{{ orderTypeLabel(order) }} · {{ serviceInfo(order) }}</span>
+                <span
+                  v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
+                  class="new-order-badge"
+                >
+                  新订单
+                </span>
                 <strong>#{{ order.orderNo }}</strong>
               </div>
               <OrderStatusBadge :status="order.status" />
@@ -675,10 +760,61 @@ type Action =
   background: #256b2a;
 }
 
+.sound-toggle {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  font-weight: 700;
+}
+
+.sound-toggle.active {
+  border-color: #2e7d32;
+  color: #2e7d32;
+  background: #fff;
+}
+
+.mobile-sound-toggle {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+}
+
 .welcome-side {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.new-order-banner,
+.mobile-new-order-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid #f5e6c8;
+  border-left: 4px solid #ffb74d;
+  border-radius: 16px;
+  background: #fffaf2;
+  box-shadow: 0 8px 20px rgb(31 45 36 / 5%);
+}
+
+.new-order-banner strong,
+.mobile-new-order-banner strong {
+  color: #1f2d24;
+  font-size: 16px;
+}
+
+.new-order-banner p,
+.mobile-new-order-banner p {
+  margin: 4px 0 0;
+  color: #8a5a00;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .welcome-summary {
@@ -891,6 +1027,12 @@ type Action =
   box-shadow: 0 8px 20px rgb(31 45 36 / 5%);
 }
 
+.dashboard-order-card.new-order-card {
+  border-color: #ffcc80;
+  background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+  box-shadow: 0 0 0 1px rgb(255 183 77 / 26%), 0 10px 26px rgb(31 45 36 / 8%);
+}
+
 .dashboard-order-card header,
 .dashboard-order-card footer,
 .card-actions {
@@ -948,6 +1090,18 @@ type Action =
 .card-link.secondary {
   color: #2e7d32;
   background: #eaf7ee;
+}
+
+.new-order-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #a95d00;
+  background: #fff1dc;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .summary-panel {
@@ -1052,6 +1206,14 @@ type Action =
   display: grid;
   justify-items: end;
   gap: 8px;
+}
+
+.mobile-store-side .mobile-sound-toggle {
+  justify-self: stretch;
+}
+
+.mobile-store-side .mobile-sound-toggle.active {
+  color: #2e7d32;
 }
 
 .mobile-store-badge {
@@ -1168,6 +1330,11 @@ type Action =
   display: grid;
   gap: 10px;
   padding: 14px;
+}
+
+.mobile-order-card.new-order-card {
+  border-color: #ffcc80;
+  box-shadow: 0 0 0 1px rgb(255 183 77 / 26%), 0 10px 24px rgb(31 45 36 / 8%);
 }
 
 .mobile-order-head {
@@ -1339,6 +1506,20 @@ type Action =
 
   .mobile-store-count {
     font-size: 24px;
+  }
+
+  .new-order-banner,
+  .mobile-new-order-banner {
+    padding: 12px 13px;
+  }
+
+  .new-order-banner strong,
+  .mobile-new-order-banner strong {
+    font-size: 15px;
+  }
+
+  .mobile-sound-toggle {
+    min-height: 30px;
   }
 }
 </style>

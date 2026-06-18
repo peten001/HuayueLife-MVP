@@ -1,13 +1,27 @@
 import { computed, ref } from 'vue';
 
-const STORAGE_KEY = 'huayue_merchant_order_sound_enabled';
+const SOUND_KEY = 'huayue_merchant_order_sound_enabled';
+const PENDING_SNAPSHOT_KEY = 'huayue_merchant_pending_snapshot';
+const RECENT_NEW_KEY = 'huayue_merchant_recent_new_orders';
+const RECENT_NEW_TTL_MS = 60_000;
+const MAX_STORED_IDS = 100;
+
+interface RecentNewOrderRecord {
+  id: string;
+  expiresAt: number;
+}
 
 const soundEnabled = ref(readSoundPreference());
-const pendingOrderIds = ref<string[]>([]);
+const pendingOrderIds = ref<string[]>(readPendingSnapshot());
+const recentNewOrderRecords = ref<RecentNewOrderRecord[]>(readRecentNewRecords());
 const initialized = ref(false);
-let knownPendingIds = new Set<string>();
+let knownPendingIds = new Set<string>(pendingOrderIds.value);
 
 export const pendingOrderCount = computed(() => pendingOrderIds.value.length);
+export const orderSoundEnabled = computed(() => soundEnabled.value);
+export const recentNewPendingOrderIds = computed(() =>
+  recentNewOrderRecords.value.map((record) => record.id),
+);
 
 export function isOrderSoundEnabled() {
   return soundEnabled.value;
@@ -15,7 +29,7 @@ export function isOrderSoundEnabled() {
 
 export async function enableOrderSound() {
   setOrderSoundEnabled(true);
-  await beep(0.05);
+  await speakOrderNotification('声音提醒已开启');
 }
 
 export function disableOrderSound() {
@@ -26,22 +40,130 @@ export function toggleOrderSound() {
   setOrderSoundEnabled(!soundEnabled.value);
 }
 
+export function isRecentNewPendingOrder(id: string) {
+  return recentNewPendingOrderIds.value.includes(id);
+}
+
 export function notifyNewPendingOrders(ids: string[]) {
+  pruneRecentNewOrders();
+
   const current = unique(ids);
   const currentSet = new Set(current);
-  const newIds = initialized.value
-    ? current.filter((id) => !knownPendingIds.has(id))
-    : [];
+  const firstLoad = !initialized.value;
+  const newIds = firstLoad
+    ? []
+    : current.filter((id) => !knownPendingIds.has(id));
+
   pendingOrderIds.value = current;
   knownPendingIds = currentSet;
   initialized.value = true;
-  if (soundEnabled.value && newIds.length) {
-    void beep(0.25);
+  persistPendingSnapshot(current);
+
+  if (newIds.length) {
+    pushRecentNewOrders(newIds);
+    if (soundEnabled.value) {
+      void speakOrderNotification('你有新的订单啦');
+    }
+  } else {
+    pruneRecentNewOrders();
   }
+
   return newIds;
 }
 
-async function beep(duration: number) {
+function pushRecentNewOrders(ids: string[]) {
+  const now = Date.now();
+  const current = recentNewOrderRecords.value.filter(
+    (record) => record.expiresAt > now && !ids.includes(record.id),
+  );
+  const merged = [
+    ...ids.map((id) => ({ id, expiresAt: now + RECENT_NEW_TTL_MS })),
+    ...current,
+  ];
+  recentNewOrderRecords.value = dedupeRecentRecords(merged).slice(0, MAX_STORED_IDS);
+  persistRecentNewOrders(recentNewOrderRecords.value);
+}
+
+function pruneRecentNewOrders() {
+  const now = Date.now();
+  const pruned = recentNewOrderRecords.value.filter(
+    (record) => record.expiresAt > now,
+  );
+  if (pruned.length === recentNewOrderRecords.value.length) return;
+  recentNewOrderRecords.value = pruned;
+  persistRecentNewOrders(pruned);
+}
+
+function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
+  const map = new Map<string, RecentNewOrderRecord>();
+  for (const record of records) {
+    if (!record.id) continue;
+    const current = map.get(record.id);
+    if (!current || current.expiresAt < record.expiresAt) {
+      map.set(record.id, record);
+    }
+  }
+  return [...map.values()].sort((left, right) => right.expiresAt - left.expiresAt);
+}
+
+async function speakOrderNotification(text: string) {
+  if (typeof window === 'undefined') return;
+  const speech = window.speechSynthesis;
+  if (speech && typeof window.SpeechSynthesisUtterance !== 'undefined') {
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.volume = 1;
+    utterance.rate = 1;
+    utterance.pitch = 1.1;
+    const voice = await resolveChineseVoice();
+    if (voice) utterance.voice = voice;
+    speech.cancel();
+    speech.speak(utterance);
+    return;
+  }
+  playFallbackBeep();
+}
+
+async function resolveChineseVoice() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+  const voices = await loadVoices();
+  if (!voices.length) return null;
+  const zhVoices = voices.filter((voice) => /zh/i.test(voice.lang || voice.name));
+  if (!zhVoices.length) return voices[0] ?? null;
+  const femaleKeywords = ['female', 'xiaoxiao', 'tingting', 'meijia', 'sinji', 'li-mu', '女声'];
+  const preferred = zhVoices.find((voice) =>
+    femaleKeywords.some((keyword) =>
+      `${voice.name} ${voice.lang}`.toLowerCase().includes(keyword.toLowerCase()),
+    ),
+  );
+  return preferred ?? zhVoices[0] ?? voices[0] ?? null;
+}
+
+function loadVoices() {
+  return new Promise<SpeechSynthesisVoice[]>((resolve) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      resolve([]);
+      return;
+    }
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length) {
+      resolve(voices);
+      return;
+    }
+    const handler = () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', handler);
+      resolve(window.speechSynthesis.getVoices());
+    };
+    window.speechSynthesis.addEventListener('voiceschanged', handler);
+    window.setTimeout(() => {
+      window.speechSynthesis.removeEventListener('voiceschanged', handler);
+      resolve(window.speechSynthesis.getVoices());
+    }, 1000);
+  });
+}
+
+function playFallbackBeep() {
+  if (typeof window === 'undefined') return;
   const AudioContextClass =
     window.AudioContext ||
     (
@@ -59,7 +181,7 @@ async function beep(duration: number) {
   oscillator.connect(gain);
   gain.connect(context.destination);
   oscillator.start();
-  oscillator.stop(context.currentTime + duration);
+  oscillator.stop(context.currentTime + 0.25);
   oscillator.addEventListener('ended', () => void context.close());
 }
 
@@ -74,14 +196,46 @@ function setOrderSoundEnabled(value: boolean) {
 
 function readSoundPreference() {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(STORAGE_KEY) === '1';
+  return window.localStorage.getItem(SOUND_KEY) === '1';
 }
 
 function persistSoundPreference(value: boolean) {
   if (typeof window === 'undefined') return;
   if (value) {
-    window.localStorage.setItem(STORAGE_KEY, '1');
+    window.localStorage.setItem(SOUND_KEY, '1');
   } else {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(SOUND_KEY);
   }
+}
+
+function readPendingSnapshot() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = window.localStorage.getItem(PENDING_SNAPSHOT_KEY);
+    return value ? (JSON.parse(value) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPendingSnapshot(ids: string[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PENDING_SNAPSHOT_KEY, JSON.stringify(ids.slice(0, MAX_STORED_IDS)));
+}
+
+function readRecentNewRecords() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = window.localStorage.getItem(RECENT_NEW_KEY);
+    const parsed = value ? (JSON.parse(value) as RecentNewOrderRecord[]) : [];
+    const now = Date.now();
+    return dedupeRecentRecords(parsed).filter((record) => record.expiresAt > now);
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentNewOrders(records: RecentNewOrderRecord[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(RECENT_NEW_KEY, JSON.stringify(records.slice(0, MAX_STORED_IDS)));
 }

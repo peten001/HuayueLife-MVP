@@ -6,6 +6,14 @@ import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
+import {
+  enableOrderSound,
+  isRecentNewPendingOrder,
+  notifyNewPendingOrders,
+  orderSoundEnabled,
+  recentNewPendingOrderIds,
+  toggleOrderSound,
+} from '@/utils/order-notification';
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 
 const route = useRoute();
@@ -27,10 +35,29 @@ let timer: number | undefined;
 const pendingCount = computed(
   () => rows.value.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
 );
+const displayRows = computed(() =>
+  [...rows.value].sort((left, right) => {
+    const leftPending = left.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
+    const rightPending = right.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
+    if (leftPending !== rightPending) return rightPending - leftPending;
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  }),
+);
+const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
+const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
+const soundButtonLabel = computed(() =>
+  orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
+);
 
 async function load() {
   try {
-    rows.value = await getMerchantOrders(filters);
+    const loadedRows = await getMerchantOrders(filters);
+    rows.value = loadedRows;
+    notifyNewPendingOrders(
+      loadedRows
+        .filter((order) => order.status === 'PENDING_ACCEPTANCE')
+        .map((order) => order.id),
+    );
     message.value = '';
   } catch (error) {
     message.value = errorMessage(error);
@@ -103,6 +130,14 @@ function applyFilters() {
   void load();
 }
 
+async function handleSoundToggle() {
+  if (!orderSoundEnabled.value) {
+    await enableOrderSound();
+    return;
+  }
+  toggleOrderSound();
+}
+
 onMounted(async () => {
   await load();
   timer = window.setInterval(load, 10000);
@@ -128,6 +163,16 @@ type Action =
 
 <template>
   <PageHeader :title="t('orders')" />
+
+  <div v-if="hasNewPendingOrders" class="order-alert order-alert-new">
+    <div>
+      <strong>有新订单，请及时接单</strong>
+      <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
+    </div>
+    <button type="button" class="sound-toggle" :class="{ active: orderSoundEnabled }" @click="handleSoundToggle">
+      {{ soundButtonLabel }}
+    </button>
+  </div>
 
   <div v-if="pendingCount" class="card order-alert">
     <div>
@@ -167,10 +212,20 @@ type Action =
   <p class="message">{{ message }}</p>
 
   <div class="mobile-order-list">
-    <article v-for="order in rows" :key="order.id" class="mobile-order-card">
+    <article
+      v-for="order in displayRows"
+      :key="order.id"
+      :class="['mobile-order-card', { 'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }]"
+    >
       <header>
         <div>
           <span class="service-pill">{{ orderTypeLabel(order.orderType) }} · {{ serviceInfo(order) }}</span>
+          <span
+            v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
+            class="new-order-badge"
+          >
+            新订单
+          </span>
           <strong>#{{ order.orderNo }}</strong>
         </div>
         <OrderStatusBadge :status="order.status" />
@@ -210,7 +265,11 @@ type Action =
         </tr>
       </thead>
       <tbody>
-        <tr v-for="order in rows" :key="order.id">
+        <tr
+          v-for="order in displayRows"
+          :key="order.id"
+          :class="{ 'new-order-row': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }"
+        >
           <td>{{ order.orderNo }}<small>{{ t('itemCount', { count: order.items.length }) }}</small></td>
           <td>{{ orderTypeLabel(order.orderType) }}</td>
           <td>{{ serviceInfo(order) }}</td>
@@ -251,9 +310,38 @@ type Action =
   background: #fffaf2;
 }
 
+.order-alert-new {
+  border-left-color: #ff8a00;
+  background: linear-gradient(180deg, #fff8eb 0%, #fffaf2 100%);
+  box-shadow: 0 8px 20px rgb(31 45 36 / 5%);
+}
+
 .order-alert p {
   margin: 4px 0 0;
   color: #666666;
+}
+
+.order-alert-new strong {
+  color: #1f2d24;
+}
+
+.order-alert-new p {
+  color: #8a5a00;
+}
+
+.sound-toggle {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid #e4efe6;
+  border-radius: 12px;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-weight: 700;
+}
+
+.sound-toggle.active {
+  color: #fff;
+  background: #2e7d32;
 }
 
 .order-filters,
@@ -280,6 +368,11 @@ type Action =
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 12px 28px rgb(31 45 36 / 7%);
+}
+
+.mobile-order-card.new-order-card {
+  border-color: #ffcc80;
+  box-shadow: 0 0 0 1px rgb(255 183 77 / 24%), 0 12px 26px rgb(31 45 36 / 8%);
 }
 
 .mobile-order-card header,
@@ -359,6 +452,22 @@ type Action =
   font-weight: 700;
 }
 
+.new-order-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #a95d00;
+  background: #fff1dc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.new-order-row {
+  background: #fffaf2;
+}
+
 @media (max-width: 760px) {
   .desktop-orders {
     display: none;
@@ -381,6 +490,16 @@ type Action =
   .card-actions button,
   .card-link {
     width: 100%;
+  }
+
+  .order-alert,
+  .order-alert-new {
+    align-items: flex-start;
+  }
+
+  .sound-toggle {
+    min-height: 34px;
+    padding: 7px 12px;
   }
 }
 </style>
