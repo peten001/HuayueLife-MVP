@@ -70,7 +70,11 @@ const foodCategories = computed(() => [
 const cityFilteredMerchants = computed(() => {
   const city = normalizedCity.value;
   const list = merchants.value.filter((merchant) => merchantMatchesCity(merchant, city));
-  console.log('[home] merchants after city filter', list.length);
+  if (!list.length && merchants.value.length) {
+    console.warn('[home] city filter empty, fallback to raw merchants');
+    return merchants.value;
+  }
+  console.log('[home] merchants after city filter', list.length, list.map((item) => item.nameZh));
   return list;
 });
 
@@ -94,7 +98,8 @@ const filteredMerchants = computed(() => {
           .filter(Boolean)
           .some((value) => String(value).toLocaleLowerCase().includes(keyword)),
       );
-  console.log('[home] merchant names', list.map((item) => item.nameZh));
+  console.log('[home] merchants after search filter', list.length, list.map((item) => item.nameZh));
+  console.log('[home] final merchant names', list.map((item) => item.nameZh));
   return list;
 });
 
@@ -111,6 +116,7 @@ async function refreshHome(forceRelocate: boolean) {
       ? await locationStore.relocate()
       : await locationStore.bootstrapCity();
     console.log('[home] locate result', locateResult);
+    console.log('[home] selected city', locationStore.city);
     const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value;
     console.log('[home] resolved city', resolvedCity);
     await loadByCity(resolvedCity);
@@ -126,14 +132,26 @@ async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
   console.log('[home] merchant query', query);
   try {
     const result = await getNearbyMerchants(query);
-    console.log('[home] merchants raw count', result.items.length);
-    const cityFiltered = result.items.filter((merchant) =>
+    const rawList = result.items ?? [];
+    console.log('[home] raw merchants', rawList);
+    console.log('[home] merchants raw count', rawList.length);
+    console.log('[home] city filter input names', rawList.map((item) => ({
+      name: item.nameZh,
+      city: item.city,
+      province: item.province,
+      district: item.district,
+      address: item.addressDetail,
+      status: item.status,
+      isActive: item.isOpen,
+      enabled: item.isOpen,
+    })));
+    const cityFiltered = rawList.filter((merchant) =>
       merchantMatchesCity(merchant, city),
     );
-    console.log('[home] merchants after city filter', cityFiltered.length);
+    console.log('[home] merchants after city filter', cityFiltered.length, cityFiltered.map((item) => item.nameZh));
     console.log('[home] merchant names', cityFiltered.map((item) => item.nameZh));
     if (seq !== requestSeq.value) return;
-    merchants.value = cityFiltered;
+    merchants.value = cityFiltered.length ? cityFiltered : rawList;
   } catch {
     console.log('[home] loadByCity failed, keep current merchants');
   } finally {
@@ -155,6 +173,7 @@ async function openNearbyMerchants() {
   try {
     const locateResult = await locationStore.relocate();
     console.log('[home] locate result', locateResult);
+    console.log('[home] selected city', locationStore.city);
     const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value || 'Bac Giang';
     console.log('[home] resolved city', resolvedCity);
     await loadByCity(resolvedCity);
@@ -222,6 +241,7 @@ function merchantMatchesCity(merchant: MerchantSummary, city: 'Bac Giang' | 'Bac
   ]
     .filter(Boolean)
     .map((value) => normalizeCityText(String(value)));
+  if (!haystack.length) return true;
   return aliases.some((alias) => haystack.some((value) => value.includes(alias)));
 }
 

@@ -46,7 +46,7 @@ export class PublicMerchantsService {
       merchantType: 'RESTAURANT',
     };
 
-    where.OR = cityWhereConditions(resolvedCity);
+    const cityWhere = cityWhereConditions(resolvedCity);
 
     console.log('[public-merchants] nearby query', {
       city: query.city,
@@ -55,18 +55,31 @@ export class PublicMerchantsService {
       resolvedCity,
     });
 
-    const merchants = await this.prisma.merchant.findMany({
-      where,
-      include: {
-        categories: {
-          where: { isActive: true },
-          select: {
-            nameZh: true,
-            nameVi: true,
-          },
+    const include = {
+      categories: {
+        where: { isActive: true },
+        select: {
+          nameZh: true,
+          nameVi: true,
         },
       },
+    } satisfies Prisma.MerchantInclude;
+
+    let merchants = await this.prisma.merchant.findMany({
+      where: { ...where, OR: cityWhere },
+      include,
     });
+    console.log('[public-merchants] city query count', merchants.length);
+    if (!merchants.length) {
+      console.warn('[public-merchants] city query empty, fallback to active merchants', {
+        resolvedCity,
+      });
+      merchants = await this.prisma.merchant.findMany({
+        where,
+        include,
+      });
+      console.log('[public-merchants] fallback active count', merchants.length);
+    }
     const results = merchants
       .map((merchant) => this.toMerchantSummary(merchant))
       .sort((a, b) => {
