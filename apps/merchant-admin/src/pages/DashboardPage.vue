@@ -14,7 +14,7 @@ import {
   recentNewPendingOrderIds,
   toggleOrderSound,
 } from '@/utils/order-notification';
-import { startAutoWakeLock, stopAutoWakeLock } from '@/utils/wake-lock';
+import { ensureWakeLock, startAutoWakeLock, stopAutoWakeLock } from '@/utils/wake-lock';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
@@ -32,6 +32,7 @@ const operatingId = ref('');
 const refreshCountdown = ref(10);
 const isRefreshing = ref(false);
 let timer: number | undefined;
+let orderGestureWakeLockRequested = false;
 
 const pending = computed(() =>
   orders.value.filter((order) => order.status === 'PENDING_ACCEPTANCE'),
@@ -344,6 +345,10 @@ function primaryAction(order: MerchantOrder) {
 async function execute(order: MerchantOrder) {
   const next = primaryAction(order);
   if (!next || operatingId.value) return;
+  if (orderSoundEnabled.value && !orderGestureWakeLockRequested) {
+    orderGestureWakeLockRequested = true;
+    void ensureWakeLock('order-action');
+  }
   try {
     operatingId.value = order.id;
     await runOrderAction(order.id, next.action);
@@ -378,7 +383,9 @@ function todayInVietnam() {
 
 async function handleSoundToggle() {
   if (!orderSoundEnabled.value) {
-    await enableOrderSound();
+    const enableSoundTask = enableOrderSound();
+    void ensureWakeLock('sound-enabled');
+    await enableSoundTask;
     return;
   }
   toggleOrderSound();

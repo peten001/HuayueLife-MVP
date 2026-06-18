@@ -1,6 +1,7 @@
 let wakeLock: WakeLockSentinel | null = null;
 let visibilityListenerAttached = false;
 let autoModeStarted = false;
+const AUTO_REASONS = new Set(['auto-start', 'visibilitychange', 'release']);
 
 function isSupported() {
   return typeof navigator !== 'undefined' && 'wakeLock' in navigator;
@@ -11,15 +12,16 @@ function attachVisibilityListener() {
   visibilityListenerAttached = true;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && autoModeStarted) {
-      void requestScreenWakeLock();
+      void ensureWakeLock('visibilitychange');
     }
   });
 }
 
 export async function startAutoWakeLock() {
+  console.log('[wake-lock] auto start');
   autoModeStarted = true;
   attachVisibilityListener();
-  await requestScreenWakeLock();
+  await ensureWakeLock('auto-start');
 }
 
 export async function stopAutoWakeLock() {
@@ -27,35 +29,42 @@ export async function stopAutoWakeLock() {
   await releaseScreenWakeLock();
 }
 
-async function requestScreenWakeLock() {
+export async function requestWakeLockOnce(reason?: string) {
+  return ensureWakeLock(reason);
+}
+
+export async function ensureWakeLock(reason?: string) {
   attachVisibilityListener();
+  if (reason && !AUTO_REASONS.has(reason)) {
+    console.log('[wake-lock] request from user gesture', reason);
+  }
   if (!isSupported()) {
-    console.warn('[wake-lock] browser does not support screen wake lock');
+    console.warn('[wake-lock] unsupported');
     return false;
   }
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
     return false;
   }
+  if (wakeLock) {
+    return true;
+  }
 
   try {
-    if (wakeLock) {
-      await wakeLock.release().catch(() => undefined);
-      wakeLock = null;
-    }
-
     const sentinel = await navigator.wakeLock.request('screen');
     wakeLock = sentinel;
+    console.log('[wake-lock] active', reason);
     sentinel.addEventListener('release', () => {
       if (wakeLock === sentinel) {
         wakeLock = null;
       }
+      console.log('[wake-lock] released');
       if (autoModeStarted && document.visibilityState === 'visible') {
-        void requestScreenWakeLock();
+        void ensureWakeLock('release');
       }
     });
     return true;
   } catch (error) {
-    console.warn('[wake-lock] request failed', error);
+    console.warn('[wake-lock] request failed', reason, error);
     return false;
   }
 }
