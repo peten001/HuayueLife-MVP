@@ -1,72 +1,36 @@
-import { computed, ref } from 'vue';
-
-const STORAGE_KEY = 'huayue_merchant_screen_wake_lock_enabled';
-
-const isSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
-
-const preferredEnabled = ref(readPreference());
-const active = ref(false);
-const supported = ref(isSupported);
-
 let wakeLock: WakeLockSentinel | null = null;
-let listenersAttached = false;
+let visibilityListenerAttached = false;
+let autoModeStarted = false;
 
-export const screenWakeLockSupported = computed(() => supported.value);
-export const screenWakeLockEnabled = computed(() => preferredEnabled.value);
-export const screenWakeLockActive = computed(() => active.value);
-export const screenWakeLockLabel = computed(() => {
-  if (!supported.value) return '当前浏览器不支持屏幕常亮';
-  return preferredEnabled.value ? '屏幕常亮已开启' : '保持屏幕常亮';
-});
-
-export async function restoreScreenWakeLock() {
-  attachListeners();
-  if (!preferredEnabled.value) return false;
-  return requestScreenWakeLock();
+function isSupported() {
+  return typeof navigator !== 'undefined' && 'wakeLock' in navigator;
 }
 
-export async function enableScreenWakeLock() {
-  attachListeners();
-  preferredEnabled.value = true;
-  persistPreference(true);
-  return requestScreenWakeLock();
+function attachVisibilityListener() {
+  if (visibilityListenerAttached || typeof document === 'undefined') return;
+  visibilityListenerAttached = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && autoModeStarted) {
+      void requestScreenWakeLock();
+    }
+  });
 }
 
-export async function disableScreenWakeLock() {
-  attachListeners();
-  preferredEnabled.value = false;
-  persistPreference(false);
+export async function startAutoWakeLock() {
+  autoModeStarted = true;
+  attachVisibilityListener();
+  await requestScreenWakeLock();
+}
+
+export async function stopAutoWakeLock() {
+  autoModeStarted = false;
   await releaseScreenWakeLock();
 }
 
-export async function toggleScreenWakeLock() {
-  if (!supported.value) return false;
-  if (preferredEnabled.value) {
-    await disableScreenWakeLock();
-    return false;
-  }
-  return enableScreenWakeLock();
-}
-
-function attachListeners() {
-  if (listenersAttached || typeof document === 'undefined') return;
-  listenersAttached = true;
-
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible' && preferredEnabled.value) {
-      void requestScreenWakeLock();
-    }
-  };
-
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  window.addEventListener('focus', handleVisibilityChange);
-}
-
 async function requestScreenWakeLock() {
-  attachListeners();
-  if (!supported.value || typeof navigator === 'undefined' || !navigator.wakeLock) {
-    active.value = false;
-    supported.value = false;
+  attachVisibilityListener();
+  if (!isSupported()) {
+    console.warn('[wake-lock] browser does not support screen wake lock');
     return false;
   }
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -75,56 +39,34 @@ async function requestScreenWakeLock() {
 
   try {
     if (wakeLock) {
-      try {
-        await wakeLock.release();
-      } catch {
-        // ignore stale release errors
-      }
+      await wakeLock.release().catch(() => undefined);
       wakeLock = null;
     }
 
     const sentinel = await navigator.wakeLock.request('screen');
     wakeLock = sentinel;
-    active.value = true;
-    supported.value = true;
     sentinel.addEventListener('release', () => {
       if (wakeLock === sentinel) {
         wakeLock = null;
-        active.value = false;
+      }
+      if (autoModeStarted && document.visibilityState === 'visible') {
+        void requestScreenWakeLock();
       }
     });
     return true;
-  } catch {
-    active.value = false;
+  } catch (error) {
+    console.warn('[wake-lock] request failed', error);
     return false;
   }
 }
 
 async function releaseScreenWakeLock() {
-  if (!wakeLock) {
-    active.value = false;
-    return;
-  }
+  if (!wakeLock) return;
   try {
     await wakeLock.release();
-  } catch {
-    // ignore release errors
+  } catch (error) {
+    console.warn('[wake-lock] release failed', error);
   } finally {
     wakeLock = null;
-    active.value = false;
-  }
-}
-
-function readPreference() {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(STORAGE_KEY) === '1';
-}
-
-function persistPreference(value: boolean) {
-  if (typeof window === 'undefined') return;
-  if (value) {
-    window.localStorage.setItem(STORAGE_KEY, '1');
-  } else {
-    window.localStorage.removeItem(STORAGE_KEY);
   }
 }

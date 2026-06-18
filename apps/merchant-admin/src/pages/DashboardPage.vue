@@ -14,12 +14,7 @@ import {
   recentNewPendingOrderIds,
   toggleOrderSound,
 } from '@/utils/order-notification';
-import {
-  restoreScreenWakeLock,
-  screenWakeLockEnabled,
-  screenWakeLockSupported,
-  toggleScreenWakeLock,
-} from '@/utils/wake-lock';
+import { startAutoWakeLock, stopAutoWakeLock } from '@/utils/wake-lock';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
@@ -213,14 +208,6 @@ const newOrderLinkTarget = computed(() =>
 const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
 );
-const wakeLockButtonLabel = computed(() =>
-  screenWakeLockSupported.value
-    ? screenWakeLockEnabled.value
-      ? t('screenWakeLockEnabled')
-      : t('screenWakeLock')
-    : t('screenWakeLockUnsupported'),
-);
-
 function mobileQuickTone(path: string) {
   return mobileQuickLinkClasses[path] ?? 'mobile-quick-neutral';
 }
@@ -373,9 +360,12 @@ async function execute(order: MerchantOrder) {
 onMounted(async () => {
   await Promise.all([load({ resetCountdown: true }), loadProfileCompletion()]);
   startRefreshTimer();
-  await restoreScreenWakeLock();
+  await startAutoWakeLock();
 });
-onBeforeUnmount(() => clearRefreshTimer());
+onBeforeUnmount(() => {
+  clearRefreshTimer();
+  void stopAutoWakeLock();
+});
 
 function todayInVietnam() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -392,10 +382,6 @@ async function handleSoundToggle() {
     return;
   }
   toggleOrderSound();
-}
-
-async function handleWakeLockToggle() {
-  await toggleScreenWakeLock();
 }
 
 type Action =
@@ -430,14 +416,6 @@ type Action =
                 @click="handleSoundToggle"
               >
                 {{ soundButtonLabel }}
-              </button>
-              <button
-                type="button"
-                class="sound-toggle wake-lock-toggle"
-                :class="{ active: screenWakeLockEnabled && screenWakeLockSupported }"
-                @click="handleWakeLockToggle"
-              >
-                {{ wakeLockButtonLabel }}
               </button>
               <RouterLink class="primary-link" to="/orders?status=PENDING_ACCEPTANCE">
                 {{ t('orderWorkbench') }}
@@ -605,14 +583,6 @@ type Action =
               @click="handleSoundToggle"
             >
               {{ soundButtonLabel }}
-            </button>
-            <button
-              type="button"
-              class="sound-toggle mobile-sound-toggle wake-lock-toggle"
-            :class="{ active: screenWakeLockEnabled && screenWakeLockSupported }"
-              @click="handleWakeLockToggle"
-            >
-              {{ wakeLockButtonLabel }}
             </button>
           </div>
         </div>
@@ -836,10 +806,6 @@ type Action =
   padding: 6px 10px;
   border-color: rgba(255, 255, 255, 0.42);
   font-size: 12px;
-}
-
-.wake-lock-toggle {
-  margin-left: 0;
 }
 
 .welcome-side {
@@ -1275,25 +1241,11 @@ type Action =
   gap: 8px;
 }
 
-.mobile-store-actions {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-}
-
 .mobile-store-side .mobile-sound-toggle {
   justify-self: stretch;
 }
 
 .mobile-store-side .mobile-sound-toggle.active {
-  color: #2e7d32;
-}
-
-.mobile-store-side .wake-lock-toggle {
-  justify-self: stretch;
-}
-
-.mobile-store-side .wake-lock-toggle.active {
   color: #2e7d32;
 }
 
