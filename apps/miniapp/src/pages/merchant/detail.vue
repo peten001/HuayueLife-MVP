@@ -152,6 +152,89 @@ function confirmSwitch() {
     }
   });
 }
+
+function merchantLocation() {
+  if (!merchant.value) return null;
+  const latitude = Number(merchant.value.latitude);
+  const longitude = Number(merchant.value.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+}
+
+function googleMapsLink() {
+  if (!merchant.value) return '';
+  const location = merchantLocation();
+  if (location) {
+    return `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+  }
+  const address = merchant.value.addressDetail.trim();
+  const name = merchantName(merchant.value, locale.value).trim();
+  const query = [name, address].filter(Boolean).join(' ');
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+function copyGoogleMapsLink() {
+  const link = googleMapsLink();
+  if (!link) return;
+  uni.setClipboardData({
+    data: link,
+    success() {
+      uni.showToast({ title: t('googleMapsLinkCopied'), icon: 'none' });
+    },
+    fail(error) {
+      console.warn('[merchant/detail] copy google maps link failed', error);
+      uni.showToast({ title: t('googleMapsLinkCopyFailed'), icon: 'none' });
+    },
+  });
+}
+
+function openMiniappMap() {
+  if (!merchant.value) return;
+  const location = merchantLocation();
+  if (!location) {
+    uni.showToast({ title: t('merchantLocationMissing'), icon: 'none' });
+    return;
+  }
+  uni.openLocation({
+    ...location,
+    name: merchantName(merchant.value, locale.value),
+    address: merchant.value.addressDetail,
+    scale: 16,
+    fail(error) {
+      console.warn('[merchant/detail] openLocation failed', error);
+      uni.showToast({ title: t('miniappMapOpenFailed'), icon: 'none' });
+    },
+  });
+}
+
+function handleAddressTap() {
+  if (!merchant.value) return;
+  uni.showActionSheet({
+    itemList: [t('copyGoogleMapsLink'), t('openMiniappMap')],
+    success(result) {
+      if (result.tapIndex === 0) {
+        copyGoogleMapsLink();
+      } else if (result.tapIndex === 1) {
+        openMiniappMap();
+      }
+    },
+  });
+}
+
+function handlePhoneTap() {
+  const phoneNumber = merchant.value?.contactPhone?.replace(/\s+/g, '') ?? '';
+  if (!phoneNumber) {
+    uni.showToast({ title: t('merchantPhoneMissing'), icon: 'none' });
+    return;
+  }
+  uni.makePhoneCall({
+    phoneNumber,
+    fail(error) {
+      console.warn('[merchant/detail] makePhoneCall failed', error);
+      uni.showToast({ title: t('merchantPhoneCallFailed'), icon: 'none' });
+    },
+  });
+}
 </script>
 
 <template>
@@ -177,13 +260,15 @@ function confirmSwitch() {
             {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
           </text>
         </view>
-        <view class="info-line">
+        <view class="info-line info-action" @tap="handleAddressTap">
           <text class="info-icon">址</text>
-          <text>{{ merchant.addressDetail }}</text>
+          <text class="info-text">{{ merchant.addressDetail }}</text>
+          <text class="info-link">{{ t('googleMapsNavigation') }}</text>
         </view>
-        <view class="info-line">
+        <view class="info-line info-action" @tap="handlePhoneTap">
           <text class="info-icon">电</text>
-          <text>{{ t('phone') }}：{{ merchant.contactPhone }}</text>
+          <text class="info-text">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
+          <text class="info-link">{{ t('callMerchant') }}</text>
         </view>
         <view v-if="merchant.notice" class="notice">{{ merchant.notice }}</view>
         <view class="tags">
@@ -316,6 +401,25 @@ function confirmSwitch() {
   color: #666;
   font-size: 24rpx;
   line-height: 1.55;
+}
+
+.info-action {
+  align-items: center;
+}
+
+.info-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.info-link {
+  flex: none;
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 21rpx;
+  font-weight: 700;
 }
 
 .info-icon {
