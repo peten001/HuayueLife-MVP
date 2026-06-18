@@ -1,32 +1,55 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onShow as onPageShow } from '@dcloudio/uni-app';
 import { createOrder, previewOrder, type OrderRequest } from '@/api/cart';
+import { getMerchant } from '@/api/catalog';
 import { translateApiError, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
-import type { CreatedOrder, OrderPreview } from '@/types/api';
+import { useLocationStore } from '@/stores/location';
+import type { CreatedOrder, MerchantDetail, OrderPreview } from '@/types/api';
 import { getLastContactInfo, setLastContactInfo } from '@/utils/storage';
 
 const authStore = useAuthStore();
 const cartStore = useCartStore();
+const locationStore = useLocationStore();
 const preview = ref<OrderPreview | null>(null);
 const loading = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const locationLabel = ref('');
 const contactCacheHint = ref(false);
+const merchantDetail = ref<MerchantDetail | null>(null);
 const idempotencyKey = `order_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
-const { locale, t } = useI18n();
+let bootstrapPromise: Promise<void> | null = null;
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
+const phonePattern = /^\+?\d{8,15}$/;
+const { t } = useI18n();
 const form = reactive({
   contactName: '',
   contactPhone: '',
   deliveryAddress: '',
-  deliveryLatitude: undefined as number | undefined,
-  deliveryLongitude: undefined as number | undefined,
+  deliveryLatitude: null as number | null,
+  deliveryLongitude: null as number | null,
   customerRemark: '',
 });
 
 const context = computed(() => cartStore.context);
+const subtotalAmountVnd = computed(() => preview.value?.itemAmountVnd ?? cartStore.cart?.itemAmountVnd ?? '0');
+const deliveryFeeDisplayText = computed(() => {
+  if (context.value?.orderType !== 'DELIVERY') return '';
+  if (preview.value && !preview.value.requiresPhoneConfirmation) {
+    return formatCurrencyAmount(preview.value.deliveryFeeVnd);
+  }
+  return '商家确认';
+});
+const totalAmountDisplayText = computed(() => {
+  if (context.value?.orderType === 'DELIVERY' && (!preview.value || preview.value.requiresPhoneConfirmation)) {
+    return formatCurrencyAmount(subtotalAmountVnd.value);
+  }
+  if (preview.value?.totalAmountVnd) return formatCurrencyAmount(preview.value.totalAmountVnd);
+  return formatCurrencyAmount(subtotalAmountVnd.value);
+});
 const orderTypeLabel = computed(() => {
   if (!context.value) return '';
   return context.value.orderType === 'DINE_IN'
@@ -38,43 +61,97 @@ const orderTypeLabel = computed(() => {
 
 usePageTitle(() => t('checkoutTitle'));
 
-onMounted(async () => {
-  try {
-    await authStore.ensureLogin();
-    await cartStore.load();
-    const cachedContact = getLastContactInfo();
-    form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
-    form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';
-    form.deliveryAddress = cachedContact?.deliveryAddress?.trim() || '';
-    contactCacheHint.value = Boolean(
-      cachedContact?.contactName || cachedContact?.contactPhone || cachedContact?.deliveryAddress,
-    );
-    if (context.value?.orderType === 'DINE_IN') await refreshPreview();
-  } catch (caught) {
-    message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
-  }
+onMounted(() => {
+  void bootstrapCheckout();
 });
 
-function payload(): OrderRequest {
+onBeforeUnmount(() => {
+  clearPreviewTimer();
+});
+
+onPageShow(() => {
+  void bootstrapCheckout();
+});
+
+watch(
+  [
+    () => context.value?.merchantId,
+    () => context.value?.orderType,
+    () => cartStore.cart?.id,
+    () => form.deliveryAddress,
+    () => form.deliveryLatitude,
+    () => form.deliveryLongitude,
+  ],
+  () => {
+    schedulePreview();
+  },
+  { flush: 'post' },
+);
+
+function buildOrderRequest(): OrderRequest {
   if (!context.value) throw new Error(t('missingCartContext'));
-  return {
+  const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
+  const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
+  const deliveryAddress = form.deliveryAddress.trim();
+  const contactPhone = form.contactPhone.trim();
+  const contactName = form.contactName.trim();
+  const customerRemark = form.customerRemark.trim();
+  if (!phonePattern.test(contactPhone)) {
+    throw new Error('请填写正确的联系电话');
+  }
+  const request: OrderRequest = {
     merchantId: context.value.merchantId,
     orderType: context.value.orderType,
-    tableToken: context.value.tableToken,
-    contactName: form.contactName || undefined,
-    contactPhone: form.contactPhone || undefined,
-    deliveryAddress: form.deliveryAddress || undefined,
-    deliveryLatitude: form.deliveryLatitude,
-    deliveryLongitude: form.deliveryLongitude,
-    customerRemark: form.customerRemark || undefined,
+    contactPhone,
   };
+  if (context.value.orderType === 'DINE_IN' && context.value.tableToken?.trim()) {
+    request.tableToken = context.value.tableToken.trim();
+  }
+  if (contactName) {
+    request.contactName = contactName;
+  }
+  if (deliveryAddress) {
+    request.deliveryAddress = deliveryAddress;
+  }
+  if (deliveryLatitude !== null && deliveryLongitude !== null) {
+    request.deliveryLatitude = deliveryLatitude;
+    request.deliveryLongitude = deliveryLongitude;
+  }
+  if (customerRemark) {
+    request.customerRemark = customerRemark;
+  }
+  return request;
 }
 
 async function refreshPreview() {
+  const contactPhone = form.contactPhone.trim();
+  if (!phonePattern.test(contactPhone)) {
+    message.value = '请填写正确的联系电话';
+    preview.value = null;
+    return;
+  }
+  if (context.value?.orderType === 'DELIVERY' && !canPreviewDelivery()) {
+    preview.value = null;
+    return;
+  }
   loading.value = true;
   message.value = '';
   try {
-    preview.value = await previewOrder(payload());
+    const nextPayload = buildOrderRequest();
+    console.log('[checkout] preview payload', nextPayload);
+    const nextPreview = await previewOrder(nextPayload);
+    preview.value = nextPreview;
+    if (context.value?.orderType === 'DELIVERY' && hasValidDeliveryLocation()) {
+      const rangeState = getDeliveryRangeState(
+        normalizeCoordinate(form.deliveryLatitude),
+        normalizeCoordinate(form.deliveryLongitude),
+      );
+      if (rangeState === 'outside') {
+        locationLabel.value = '当前地址超出商家配送范围，请重新选择地址';
+      } else if (rangeState === 'within') {
+        locationLabel.value = '当前位置在商家配送范围内';
+      }
+    }
   } catch (caught) {
     preview.value = null;
     message.value = caught instanceof Error ? translateApiError(caught.message) : t('orderValidationFailed');
@@ -88,34 +165,397 @@ async function chooseLocation() {
     const result = await new Promise<UniApp.ChooseLocationSuccess>((resolve, reject) => {
       uni.chooseLocation({ success: resolve, fail: reject });
     });
-    form.deliveryAddress = result.address || result.name;
-    form.deliveryLatitude = result.latitude;
-    form.deliveryLongitude = result.longitude;
-    locationLabel.value = t('locationConfirmed');
-    await refreshPreview();
+    console.log('[checkout] chooseLocation result', result);
+    const latitude = Number(result.latitude);
+    const longitude = Number(result.longitude);
+    console.log('[checkout] lat lng parsed', latitude, longitude, typeof latitude, typeof longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      uni.showToast({ title: '定位信息无效，请重新选择配送位置', icon: 'none' });
+      locationLabel.value = t('locationUnconfirmed');
+      preview.value = null;
+      return;
+    }
+    const currentAddressBeforeSet = form.deliveryAddress;
+    const mapAddressText = resolveMapAddressText(result);
+    const fallbackRegionText = getFallbackRegionText();
+    const selectedAddressText = mapAddressText || fallbackRegionText;
+    console.log('[checkout] mapAddressText', mapAddressText);
+    console.log('[checkout] fallbackRegionText', fallbackRegionText);
+    console.log('[checkout] final selectedAddressText', selectedAddressText);
+    console.log('[checkout] deliveryAddress before set', currentAddressBeforeSet);
+    form.deliveryLatitude = latitude;
+    form.deliveryLongitude = longitude;
+    if (selectedAddressText) {
+      form.deliveryAddress = selectedAddressText;
+    }
+    console.log('[checkout] deliveryAddress after set', form.deliveryAddress);
+    console.log('[checkout] form location after set', form.deliveryLatitude, form.deliveryLongitude, typeof form.deliveryLatitude, typeof form.deliveryLongitude);
+    if (mapAddressText) {
+      locationLabel.value = '已选择配送位置，可补充门牌/楼栋';
+    } else if (fallbackRegionText) {
+      locationLabel.value = '已获取当前位置，请补充门牌/楼栋等详细信息';
+    } else {
+      locationLabel.value = '已获取当前位置，请补充详细配送地址';
+    }
+    setLastContactInfo({
+      contactName: form.contactName.trim(),
+      contactPhone: form.contactPhone.trim(),
+      deliveryAddress: form.deliveryAddress.trim(),
+      deliveryLatitude: form.deliveryLatitude ?? undefined,
+      deliveryLongitude: form.deliveryLongitude ?? undefined,
+    });
+    schedulePreview();
   } catch {
     locationLabel.value = t('locationUnconfirmed');
   }
 }
 
 async function submit() {
+  if (submitting.value) {
+    console.log('[checkout] submit blocked reason', 'already submitting');
+    return;
+  }
+  if (!cartStore.cart?.items?.length) {
+    console.log('[checkout] submit blocked reason', 'cart empty');
+    message.value = '购物车为空';
+    return;
+  }
+  if (!context.value?.merchantId) {
+    console.log('[checkout] submit blocked reason', 'missing merchantId');
+    message.value = '商家信息异常';
+    return;
+  }
+
+  const contactPhone = form.contactPhone.trim();
+  if (!phonePattern.test(contactPhone)) {
+    console.log('[checkout] submit blocked reason', 'invalid contactPhone');
+    message.value = '请填写正确的联系电话';
+    return;
+  }
+
+  const deliveryWarning = getDeliverySubmissionWarning();
+  if (deliveryWarning) {
+    const confirmed = await confirmContinue(deliveryWarning);
+    if (!confirmed) {
+      console.log('[checkout] submit blocked reason', 'user cancelled delivery confirm');
+      return;
+    }
+  }
+
+  await doSubmit();
+}
+
+async function doSubmit() {
+  if (submitting.value) return;
   submitting.value = true;
   message.value = '';
   try {
-    preview.value = await previewOrder(payload());
-    const order = await createOrder(payload(), idempotencyKey);
+    const orderRequest = buildOrderRequest();
+    console.log('[checkout] submit payload', JSON.stringify(orderRequest));
+
+    try {
+      console.log('[checkout] preview before submit start');
+      const nextPreview = await previewOrder(orderRequest);
+      console.log('[checkout] preview before submit success', nextPreview);
+      const previousPreview = preview.value;
+      if (shouldComparePreview(previousPreview, nextPreview)) {
+        if (isPreviewChanged(previousPreview!, nextPreview)) {
+          preview.value = nextPreview;
+          console.log('[checkout] submit blocked reason', 'amount changed');
+          await new Promise<void>((resolve) => {
+            uni.showModal({
+              title: '提示',
+              content: '订单金额已更新，请确认后再次提交',
+              showCancel: false,
+              success: () => resolve(),
+              fail: () => resolve(),
+            });
+          });
+          return;
+        }
+      }
+      preview.value = nextPreview;
+    } catch (error) {
+      console.log('[checkout] preview before submit error', error);
+      console.log('[checkout] preview failed but continue submit');
+    }
+
+    console.log('[checkout] create order start');
+    const order = await createOrder(orderRequest, idempotencyKey);
+    console.log('[checkout] create order success', order);
     setLastContactInfo({
       contactName: form.contactName.trim(),
       contactPhone: form.contactPhone.trim(),
       deliveryAddress: form.deliveryAddress.trim(),
+      deliveryLatitude: normalizeCoordinate(form.deliveryLatitude) ?? undefined,
+      deliveryLongitude: normalizeCoordinate(form.deliveryLongitude) ?? undefined,
     });
     cartStore.resetAfterOrder();
     showSuccess(order);
   } catch (caught) {
+    console.log('[checkout] create order raw error', serializeError(caught));
+    console.log('[checkout] create order error response', extractErrorResponse(caught));
+    console.log('[checkout] create order error', caught);
     message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
   } finally {
     submitting.value = false;
   }
+}
+
+async function bootstrapCheckout() {
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = (async () => {
+    try {
+      await authStore.ensureLogin();
+      await cartStore.load();
+      const cachedContact = getLastContactInfo();
+      form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
+      form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';
+      form.deliveryAddress = cachedContact?.deliveryAddress?.trim() || '';
+      form.deliveryLatitude = normalizeCoordinate(cachedContact?.deliveryLatitude);
+      form.deliveryLongitude = normalizeCoordinate(cachedContact?.deliveryLongitude);
+      contactCacheHint.value = Boolean(
+        cachedContact?.contactName ||
+          cachedContact?.contactPhone ||
+          cachedContact?.deliveryAddress,
+      );
+      locationLabel.value =
+        getInitialLocationLabel(
+          form.deliveryAddress.trim(),
+          form.deliveryLatitude ?? null,
+          form.deliveryLongitude ?? null,
+        );
+
+      if (context.value?.orderType === 'DELIVERY' && context.value.merchantId) {
+        try {
+          merchantDetail.value = await getMerchant(context.value.merchantId);
+        } catch {
+          merchantDetail.value = null;
+        }
+      } else {
+        merchantDetail.value = null;
+      }
+
+      if (!context.value) return;
+      schedulePreview();
+    } catch (caught) {
+      message.value = caught instanceof Error ? translateApiError(caught.message) : t('requestFailed');
+    } finally {
+      bootstrapPromise = null;
+    }
+  })();
+  return bootstrapPromise;
+}
+
+function hasValidDeliveryLocation() {
+  return (
+    normalizeCoordinate(form.deliveryLatitude) !== null &&
+    normalizeCoordinate(form.deliveryLongitude) !== null
+  );
+}
+
+function schedulePreview() {
+  clearPreviewTimer();
+  if (!context.value || !cartStore.cart) return;
+  const contactPhone = form.contactPhone.trim();
+  if (!phonePattern.test(contactPhone)) {
+    if (contactPhone) {
+      message.value = '请填写正确的联系电话';
+      preview.value = null;
+    }
+    return;
+  }
+  if (context.value.orderType === 'DELIVERY' && !canPreviewDelivery()) {
+    preview.value = null;
+    return;
+  }
+  previewTimer = setTimeout(() => {
+    previewTimer = null;
+    void refreshPreview();
+  }, 300);
+}
+
+function clearPreviewTimer() {
+  if (!previewTimer) return;
+  clearTimeout(previewTimer);
+  previewTimer = null;
+}
+
+function resolveMapAddressText(result: UniApp.ChooseLocationSuccess) {
+  const location = result as unknown as Record<string, unknown>;
+  const formattedAddress = stringField(location.formattedAddress);
+  if (formattedAddress) return formattedAddress;
+
+  const address = stringField(location.address);
+  const addressName = stringField(location.addressName);
+  const name = stringField(location.name);
+  if (address && name && !address.includes(name)) return `${address} ${name}`.trim();
+  if (address) return address;
+  if (addressName && name && !addressName.includes(name)) return `${addressName} ${name}`.trim();
+  if (addressName) return addressName;
+  if (name) return name;
+  return '';
+}
+
+function getFallbackRegionText() {
+  const currentCityLabel =
+    locationStore.city === 'Bac Ninh'
+      ? t('cityBacNinh')
+      : locationStore.city === 'Bac Giang'
+        ? t('cityBacGiang')
+        : '';
+  const merchantProvince = stringField(merchantDetail.value?.province);
+  const merchantDistrict = stringField(merchantDetail.value?.district);
+  const parts = [currentCityLabel, merchantProvince, merchantDistrict].filter(Boolean);
+  return parts.join(' ');
+}
+
+function canPreviewDelivery() {
+  if (context.value?.orderType !== 'DELIVERY') return true;
+  const deliveryAddress = form.deliveryAddress.trim();
+  const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
+  const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
+  return (
+    Boolean(deliveryAddress) &&
+    deliveryLatitude !== null &&
+    deliveryLongitude !== null
+  );
+}
+
+function getDeliverySubmissionWarning() {
+  if (context.value?.orderType !== 'DELIVERY') return '';
+
+  const deliveryAddress = form.deliveryAddress.trim();
+  const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
+  const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
+  const hasAddress = Boolean(deliveryAddress);
+  const hasLocation = deliveryLatitude !== null && deliveryLongitude !== null;
+
+  if (!hasAddress && !hasLocation) {
+    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+  }
+  if (!hasAddress) {
+    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+  }
+  if (!hasLocation) {
+    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+  }
+  if (getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'outside') {
+    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+  }
+  return '';
+}
+
+function confirmContinue(content: string) {
+  return new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: '提示',
+      content,
+      cancelText: '取消',
+      confirmText: '继续提交',
+      success: (result) => resolve(Boolean(result.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+}
+function getInitialLocationLabel(deliveryAddress: string, latitude: number | null, longitude: number | null) {
+  if (latitude !== null && longitude !== null) {
+    const rangeState = getDeliveryRangeState(latitude, longitude);
+    if (rangeState === 'outside') return '当前地址超出商家配送范围，请重新选择地址';
+    if (rangeState === 'within') return '当前位置在商家配送范围内';
+    if (deliveryAddress) return '已获取当前位置，请补充详细配送地址';
+    return '请选择配送位置用于校验配送范围';
+  }
+  if (deliveryAddress) return '请使用当前位置校验配送范围';
+  return '请选择配送位置用于校验配送范围';
+}
+
+function getDeliveryRangeState(latitude: number | null, longitude: number | null) {
+  if (latitude === null || longitude === null) return 'unknown' as const;
+
+  const radiusKm = normalizeCoordinate(merchantDetail.value?.deliveryRadiusKm);
+  const merchantLatitude = normalizeCoordinate(merchantDetail.value?.latitude);
+  const merchantLongitude = normalizeCoordinate(merchantDetail.value?.longitude);
+  if (
+    radiusKm === null ||
+    radiusKm <= 0 ||
+    merchantLatitude === null ||
+    merchantLongitude === null
+  ) {
+    return 'unknown' as const;
+  }
+
+  const distance = haversineDistanceKm(
+    merchantLatitude,
+    merchantLongitude,
+    latitude,
+    longitude,
+  );
+  return distance > radiusKm ? ('outside' as const) : ('within' as const);
+}
+
+function isPreviewChanged(previous: OrderPreview, next: OrderPreview) {
+  return (
+    previous.itemAmountVnd !== next.itemAmountVnd ||
+    previous.deliveryFeeVnd !== next.deliveryFeeVnd ||
+    previous.totalAmountVnd !== next.totalAmountVnd
+  );
+}
+
+function shouldComparePreview(
+  previous: OrderPreview | null,
+  next: OrderPreview,
+) {
+  if (!previous) return false;
+  if (previous.requiresPhoneConfirmation || next.requiresPhoneConfirmation) {
+    return false;
+  }
+  return true;
+}
+
+function stringField(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function serializeError(error: unknown) {
+  try {
+    return JSON.stringify(error, Object.getOwnPropertyNames(error as object));
+  } catch {
+    return String(error);
+  }
+}
+
+function extractErrorResponse(error: unknown) {
+  const value = error as { response?: unknown; data?: unknown } | null;
+  return value?.response ?? value?.data ?? error;
+}
+
+function formatCurrencyAmount(value: string | number | bigint) {
+  return `${Number(value).toLocaleString()} ₫`;
+}
+
+function normalizeCoordinate(value: number | string | undefined | null) {
+  if (value === undefined || value === null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function haversineDistanceKm(
+  latitudeOne: number,
+  longitudeOne: number,
+  latitudeTwo: number,
+  longitudeTwo: number,
+) {
+  const earthRadiusKm = 6371;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const deltaLat = toRadians(latitudeTwo - latitudeOne);
+  const deltaLng = toRadians(longitudeTwo - longitudeOne);
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(latitudeOne)) *
+      Math.cos(toRadians(latitudeTwo)) *
+      Math.sin(deltaLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
 function showSuccess(order: CreatedOrder) {
@@ -153,32 +593,40 @@ function showSuccess(order: CreatedOrder) {
         <input
           v-model="form.contactPhone"
           class="contact-input"
-          type="number"
+          type="text"
           :placeholder="t('phonePlaceholder')"
           placeholder-style="color: #999999;"
+          maxlength="16"
         />
       </label>
       <text v-if="contactCacheHint" class="hint">{{ t('contactCacheHint') }}</text>
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form">
-      <label>{{ t('deliveryAddress') }}<textarea v-model="form.deliveryAddress" :placeholder="t('deliveryAddressPlaceholder')" rows="3" /></label>
-      <button class="location" @click="chooseLocation">{{ t('useCurrentLocation') }}</button>
-      <text class="hint">{{ locationLabel || t('locationUnconfirmed') }}</text>
+      <label>{{ t('deliveryAddress') }}<textarea v-model="form.deliveryAddress" placeholder="请输入配送地址，如园区/公司/宿舍/门牌" rows="3" /></label>
+      <button class="location" @click="chooseLocation">选择配送位置</button>
+      <text class="hint">{{ locationLabel || '地址不完整时，商家会电话联系你确认' }}</text>
     </view>
 
     <view class="card form">
       <label>{{ t('orderRemark') }}<textarea v-model="form.customerRemark" :placeholder="t('orderRemarkPlaceholder')" rows="3" /></label>
-      <button class="secondary" :disabled="loading" @click="refreshPreview">
-        {{ loading ? t('orderChecking') : t('orderRecheck') }}
-      </button>
     </view>
 
     <view v-if="preview" class="card totals">
-      <text>{{ t('subtotal') }}：{{ Number(preview.itemAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：{{ Number(preview.deliveryFeeVnd).toLocaleString() }} ₫</text>
-      <text class="total">{{ t('totalAmount') }}：{{ Number(preview.totalAmountVnd).toLocaleString() }} ₫</text>
+      <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
+      <text v-if="context?.orderType === 'DELIVERY'">
+        {{ t('deliveryFee') }}：{{ deliveryFeeDisplayText }}
+      </text>
+      <text class="total">
+        {{ t('totalAmount') }}：{{ totalAmountDisplayText }}
+      </text>
       <text v-if="preview.requiresPhoneConfirmation" class="warning">{{ t('deliveryRangeWarning') }}</text>
+    </view>
+
+    <view v-else-if="cartStore.cart" class="card totals">
+      <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
+      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：商家确认</text>
+      <text class="total">{{ t('totalAmount') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
     </view>
 
     <text v-if="message" class="error">{{ message }}</text>

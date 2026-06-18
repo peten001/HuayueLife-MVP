@@ -67,11 +67,50 @@ export interface OrderRequest {
 }
 
 export const previewOrder = (data: OrderRequest) =>
-  request<OrderPreview>('/orders/preview', { method: 'POST', data });
+  {
+    const body = normalizeOrderRequest(data);
+    console.log('[orders api] preview request body', JSON.stringify(body));
+    return request<OrderPreview>('/orders/preview', {
+      method: 'POST',
+      data: body,
+    });
+  };
 
 export const createOrder = (data: OrderRequest, idempotencyKey: string) =>
-  request<CreatedOrder>('/orders', {
-    method: 'POST',
-    data,
-    header: { 'Idempotency-Key': idempotencyKey },
-  });
+  {
+    const body = normalizeOrderRequest(data);
+    console.log('[orders api] createOrder request body', JSON.stringify(body));
+    console.log(
+      '[orders api] delivery lat lng type',
+      body.deliveryLatitude,
+      typeof body.deliveryLatitude,
+      body.deliveryLongitude,
+      typeof body.deliveryLongitude,
+    );
+    return request<CreatedOrder>('/orders', {
+      method: 'POST',
+      data: body,
+      header: { 'Idempotency-Key': idempotencyKey },
+    });
+  };
+
+function normalizeOrderRequest(data: OrderRequest): OrderRequest {
+  const body: OrderRequest = { ...data };
+  if (!body.tableToken?.trim()) delete body.tableToken;
+  if (!body.contactName?.trim()) delete body.contactName;
+  if (!body.deliveryAddress?.trim()) delete body.deliveryAddress;
+  const deliveryLatitude = Number(body.deliveryLatitude);
+  const deliveryLongitude = Number(body.deliveryLongitude);
+  if (Number.isFinite(deliveryLatitude)) {
+    body.deliveryLatitude = deliveryLatitude;
+  } else {
+    delete body.deliveryLatitude;
+  }
+  if (Number.isFinite(deliveryLongitude)) {
+    body.deliveryLongitude = deliveryLongitude;
+  } else {
+    delete body.deliveryLongitude;
+  }
+  if (!body.customerRemark?.trim()) delete body.customerRemark;
+  return body;
+}

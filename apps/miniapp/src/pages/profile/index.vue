@@ -15,7 +15,7 @@ onPageShow(() => {
 });
 
 const displayNickname = computed(() => auth.user?.nickname || t('meNicknameFallback'));
-const displayPhone = computed(() => auth.user?.phone || t('mePhoneFallback'));
+const displayPhone = computed(() => auth.user?.phone?.trim() || t('mePhoneFallback'));
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 
 function openOrders() {
@@ -36,7 +36,7 @@ function openProfileEdit() {
       </view>
       <view class="profile-info">
         <text class="name">{{ displayNickname }}</text>
-        <text class="phone">{{ displayPhone }}</text>
+        <text class="phone-link" @click="openProfileEdit">{{ displayPhone }}</text>
       </view>
       <button class="edit-button" @click="openProfileEdit">{{ t('editProfile') }}</button>
     </view>
@@ -156,6 +156,15 @@ function openProfileEdit() {
   display: block;
   color: #6d7970;
   font-size: 23rpx;
+}
+
+.phone-link {
+  display: block;
+  color: #2e7d32;
+  font-size: 23rpx;
+  text-align: left;
+  line-height: 1.5;
+  text-decoration: underline;
 }
 
 .edit-button {

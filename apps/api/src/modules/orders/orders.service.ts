@@ -243,8 +243,8 @@ export class OrdersService {
     if (!loaded?.items.length) throw new BadRequestException('购物车为空');
 
     if (dto.orderType !== 'DINE_IN') {
-      if (!dto.contactName?.trim() || !dto.contactPhone?.trim()) {
-        throw new BadRequestException('请填写联系人和联系电话');
+      if (!dto.contactPhone?.trim()) {
+        throw new BadRequestException('请填写联系电话');
       }
     }
 
@@ -269,37 +269,14 @@ export class OrdersService {
       (sum, item) => sum + item.subtotalVnd,
       0n,
     );
-    let deliveryFeeVnd = 0n;
-    let deliveryRangeVerified = false;
-
-    if (dto.orderType === 'DELIVERY') {
-      if (!dto.deliveryAddress?.trim()) {
-        throw new BadRequestException('请填写配送地址');
-      }
-      if (itemAmountVnd < merchant.minimumDeliveryAmountVnd) {
-        throw new BadRequestException(
-          `未达到配送起送价 ${merchant.minimumDeliveryAmountVnd.toString()} VND`,
-        );
-      }
-      const hasLatitude = dto.deliveryLatitude !== undefined;
-      const hasLongitude = dto.deliveryLongitude !== undefined;
-      if (hasLatitude !== hasLongitude) {
-        throw new BadRequestException('配送经纬度必须同时提供');
-      }
-      if (hasLatitude && hasLongitude) {
-        const deliveryDistanceKm = distanceKm(
-          Number(merchant.latitude),
-          Number(merchant.longitude),
-          dto.deliveryLatitude!,
-          dto.deliveryLongitude!,
-        );
-        if (deliveryDistanceKm > Number(merchant.deliveryRadiusKm)) {
-          throw new BadRequestException('配送地址超出商家配送范围');
-        }
-        deliveryRangeVerified = true;
-      }
-      deliveryFeeVnd = merchant.deliveryFeeVnd;
-    }
+    const deliveryPricing = this.resolveDeliveryPricing(merchant, dto);
+    console.log('[orders] delivery range check', {
+      orderType: dto.orderType,
+      distanceKm: deliveryPricing.distanceKm,
+      deliveryRadiusKm: deliveryPricing.deliveryRadiusKm,
+      outOfRange: deliveryPricing.outOfRange,
+      allowCreate: true,
+    });
 
     return {
       cartId: loaded.id,
@@ -317,11 +294,63 @@ export class OrdersService {
       orderType: dto.orderType,
       items,
       itemAmountVnd,
-      deliveryFeeVnd,
-      totalAmountVnd: itemAmountVnd + deliveryFeeVnd,
-      deliveryRangeVerified,
+      deliveryFeeVnd: deliveryPricing.deliveryFeeVnd,
+      totalAmountVnd: itemAmountVnd + deliveryPricing.deliveryFeeVnd,
+      deliveryRangeVerified: deliveryPricing.deliveryRangeVerified,
       requiresPhoneConfirmation:
-        dto.orderType === 'DELIVERY' && !deliveryRangeVerified,
+        dto.orderType === 'DELIVERY' &&
+        !deliveryPricing.deliveryRangeVerified,
+    };
+  }
+
+  private resolveDeliveryPricing(
+    merchant: {
+      latitude: Prisma.Decimal | number | string;
+      longitude: Prisma.Decimal | number | string;
+      deliveryRadiusKm: Prisma.Decimal | number | string;
+      deliveryFeeVnd: bigint;
+    },
+    dto: OrderRequestDto,
+  ) {
+    const deliveryLatitude =
+      dto.deliveryLatitude === undefined ? null : Number(dto.deliveryLatitude);
+    const deliveryLongitude =
+      dto.deliveryLongitude === undefined ? null : Number(dto.deliveryLongitude);
+    const deliveryRadiusKm = Number(merchant.deliveryRadiusKm);
+    const merchantLatitude = Number(merchant.latitude);
+    const merchantLongitude = Number(merchant.longitude);
+
+    if (
+      !Number.isFinite(deliveryLatitude) ||
+      !Number.isFinite(deliveryLongitude) ||
+      !Number.isFinite(merchantLatitude) ||
+      !Number.isFinite(merchantLongitude) ||
+      !Number.isFinite(deliveryRadiusKm)
+    ) {
+      return {
+        deliveryFeeVnd: 0n,
+        deliveryRangeVerified: false,
+        outOfRange: false,
+        distanceKm: null as number | null,
+        deliveryRadiusKm: Number.isFinite(deliveryRadiusKm)
+          ? deliveryRadiusKm
+          : null,
+      };
+    }
+
+    const deliveryDistanceKm = distanceKm(
+      merchantLatitude,
+      merchantLongitude,
+      deliveryLatitude as number,
+      deliveryLongitude as number,
+    );
+    const inRange = deliveryDistanceKm <= deliveryRadiusKm;
+    return {
+      deliveryFeeVnd: inRange ? merchant.deliveryFeeVnd : 0n,
+      deliveryRangeVerified: inRange,
+      outOfRange: !inRange,
+      distanceKm: deliveryDistanceKm,
+      deliveryRadiusKm,
     };
   }
 

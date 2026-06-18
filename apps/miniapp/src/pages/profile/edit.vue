@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
-import { useI18n, usePageTitle } from '@/i18n';
+import { translateApiError, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getLocalUserProfile } from '@/utils/storage';
 
@@ -11,16 +11,19 @@ const saving = ref(false);
 const draft = reactive({
   nickname: '',
   avatarUrl: '',
+  phone: '',
 });
 
 usePageTitle(() => t('profileEditTitle'));
 
 const displayAvatar = computed(() => draft.avatarUrl || auth.user?.avatarUrl || '');
+const phonePattern = /^\+?\d{8,15}$/;
 
 function syncDraft() {
   const cached = getLocalUserProfile();
   draft.nickname = cached?.nickname?.trim() || auth.user?.nickname || '';
   draft.avatarUrl = cached?.avatarUrl?.trim() || auth.user?.avatarUrl || '';
+  draft.phone = cached?.phone?.trim() || auth.user?.phone?.trim() || '';
 }
 
 onPageShow(() => {
@@ -38,25 +41,37 @@ function onNicknameInput(event: Event) {
   draft.nickname = inputEvent.detail?.value || '';
 }
 
+function onPhoneInput(event: Event) {
+  const inputEvent = event as unknown as { detail?: { value?: string } };
+  draft.phone = inputEvent.detail?.value || '';
+}
+
 async function saveProfile() {
   const nickname = draft.nickname.trim();
   const avatarUrl = draft.avatarUrl.trim();
+  const phone = draft.phone.trim();
+  const currentPhone = auth.user?.phone?.trim() || '';
+  const nextPhone = phone || currentPhone || undefined;
+
+  if (phone && !phonePattern.test(phone)) {
+    uni.showToast({ title: t('profilePhoneInvalid'), icon: 'none' });
+    return;
+  }
 
   saving.value = true;
   try {
-    auth.applyLocalUserProfile({
+    await auth.updateProfile({
       nickname,
       avatarUrl: avatarUrl || undefined,
+      phone: nextPhone,
     });
-    if (nickname) {
-      try {
-        await auth.syncWechatNickname(nickname);
-      } catch {
-        // Nickname stays available locally even when sync fails.
-      }
-    }
     uni.showToast({ title: t('wechatProfileSaved'), icon: 'none' });
     uni.navigateBack();
+  } catch (caught) {
+    uni.showToast({
+      title: caught instanceof Error ? translateApiError(caught.message) : t('requestFailed'),
+      icon: 'none',
+    });
   } finally {
     saving.value = false;
   }
@@ -82,6 +97,17 @@ async function saveProfile() {
           :value="draft.nickname"
           :placeholder="t('nicknamePlaceholder')"
           @input="onNicknameInput"
+        />
+      </view>
+
+      <view class="field">
+        <text class="field-label">{{ t('phone') }}</text>
+        <input
+          type="text"
+          :value="draft.phone"
+          :placeholder="t('phonePlaceholder')"
+          maxlength="16"
+          @input="onPhoneInput"
         />
       </view>
 
@@ -175,6 +201,10 @@ input {
   border-radius: 18rpx;
   color: #1f2d24;
   background: #f8fbf8;
+}
+
+input::placeholder {
+  color: #9ba7a0;
 }
 
 .hint {

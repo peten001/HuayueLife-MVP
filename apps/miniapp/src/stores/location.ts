@@ -14,6 +14,8 @@ export const useLocationStore = defineStore('location', {
   state: () => ({
     city: 'Bac Giang' as CityCode,
     source: 'DEFAULT' as CitySource,
+    latitude: null as number | null,
+    longitude: null as number | null,
     bootstrapped: false,
     loading: false,
   }),
@@ -31,9 +33,13 @@ export const useLocationStore = defineStore('location', {
               fail: reject,
             });
           });
+          this.latitude = position.latitude;
+          this.longitude = position.longitude;
           this.city = guessCityByLocation(position.latitude, position.longitude);
           this.source = 'GPS';
         } catch {
+          this.latitude = null;
+          this.longitude = null;
           this.city = 'Bac Giang';
           this.source = 'DEFAULT';
         }
@@ -45,6 +51,8 @@ export const useLocationStore = defineStore('location', {
     },
     setCity(city: CityCode) {
       this.city = city;
+      this.latitude = null;
+      this.longitude = null;
       this.source = 'MANUAL';
       this.bootstrapped = true;
     },

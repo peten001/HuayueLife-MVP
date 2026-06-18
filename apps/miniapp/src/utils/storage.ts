@@ -7,11 +7,14 @@ export interface LastContactInfo {
   contactName?: string;
   contactPhone?: string;
   deliveryAddress?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
 }
 
 export interface LocalUserProfile {
   nickname?: string;
   avatarUrl?: string;
+  phone?: string;
 }
 
 export const getToken = () => uni.getStorageSync(TOKEN_KEY) as string | undefined;

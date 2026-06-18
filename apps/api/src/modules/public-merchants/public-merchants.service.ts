@@ -1,19 +1,34 @@
 import {
-  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Merchant, Prisma } from '@prisma/client';
+import { Category, Merchant, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
+import { isMerchantOpen } from '../../common/utils/merchant-hours';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 
 const PAGE_SIZE = 20;
-const CITY_ALIASES: Record<string, string> = {
-  北宁: 'Bac Ninh',
-  北江: 'Bac Giang',
-  'Bac Ninh': 'Bac Ninh',
-  'Bac Giang': 'Bac Giang',
+const CITY_VARIANTS: Record<'Bac Giang' | 'Bac Ninh', string[]> = {
+  'Bac Giang': [
+    'Bac Giang',
+    'Bắc Giang',
+    'bac giang',
+    'bacgiang',
+    'Bac Giang Province',
+    'Bắc Giang Province',
+    '北江',
+    '北江省',
+  ],
+  'Bac Ninh': [
+    'Bac Ninh',
+    'Bắc Ninh',
+    'bac ninh',
+    'bacninh',
+    'Bac Ninh Province',
+    'Bắc Ninh Province',
+    '北宁',
+    '北宁省',
+  ],
 };
 
 @Injectable()
@@ -21,66 +36,41 @@ export class PublicMerchantsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async nearby(query: NearbyMerchantsQueryDto) {
-    const hasLocation = query.lat !== undefined && query.lng !== undefined;
-    if ((query.lat === undefined) !== (query.lng === undefined)) {
-      throw new BadRequestException('lat and lng must be provided together');
-    }
-    if (!hasLocation && !query.city) {
-      throw new BadRequestException(
-        'city is required when location is unavailable',
-      );
-    }
+    const resolvedCity =
+      resolveCity(query.city) ??
+      inferCityByLocation(query.lat, query.lng) ??
+      'Bac Giang';
 
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
       merchantType: 'RESTAURANT',
     };
 
-    if (hasLocation) {
-      const latitudeDelta = query.radiusKm / 111.32;
-      const longitudeDelta =
-        query.radiusKm /
-        (111.32 * Math.max(Math.cos((query.lat! * Math.PI) / 180), 0.01));
-      where.latitude = {
-        gte: query.lat! - latitudeDelta,
-        lte: query.lat! + latitudeDelta,
-      };
-      where.longitude = {
-        gte: query.lng! - longitudeDelta,
-        lte: query.lng! + longitudeDelta,
-      };
-    } else {
-      where.OR = [
-        { city: CITY_ALIASES[query.city!] },
-        { province: CITY_ALIASES[query.city!] },
-      ];
-    }
+    where.OR = cityWhereConditions(resolvedCity);
 
-    const merchants = await this.prisma.merchant.findMany({ where });
+    console.log('[public-merchants] nearby query', {
+      city: query.city,
+      lat: query.lat,
+      lng: query.lng,
+      resolvedCity,
+    });
+
+    const merchants = await this.prisma.merchant.findMany({
+      where,
+      include: {
+        categories: {
+          where: { isActive: true },
+          select: {
+            nameZh: true,
+            nameVi: true,
+          },
+        },
+      },
+    });
     const results = merchants
-      .map((merchant) =>
-        this.toMerchantSummary(
-          merchant,
-          hasLocation
-            ? distanceKm(
-                query.lat!,
-                query.lng!,
-                Number(merchant.latitude),
-                Number(merchant.longitude),
-              )
-            : null,
-        ),
-      )
-      .filter(
-        (merchant) =>
-          merchant.distanceKm === null ||
-          merchant.distanceKm <= query.radiusKm,
-      )
+      .map((merchant) => this.toMerchantSummary(merchant))
       .sort((a, b) => {
         if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
-        if (a.distanceKm !== null && b.distanceKm !== null) {
-          return a.distanceKm - b.distanceKm;
-        }
         return a.nameZh.localeCompare(b.nameZh, 'zh-CN');
       });
 
@@ -90,17 +80,23 @@ export class PublicMerchantsService {
       page: query.page,
       pageSize: PAGE_SIZE,
       total: results.length,
-      locationMode: hasLocation ? 'GPS' : 'CITY',
+      locationMode: 'CITY',
     };
   }
 
   async detail(id: bigint) {
     const merchant = await this.requirePublicMerchant(id);
-    return {
-      ...merchant,
-      isOpen: isMerchantOpen(merchant),
-      supportedOrderTypes: supportedOrderTypes(merchant),
-    };
+    const categories = await this.prisma.category.findMany({
+      where: {
+        merchantId: id,
+        isActive: true,
+      },
+      select: {
+        nameZh: true,
+        nameVi: true,
+      },
+    });
+    return this.serializeMerchant(merchant, categories, null);
   }
 
   async menu(id: bigint) {
@@ -172,8 +168,19 @@ export class PublicMerchantsService {
     return merchant;
   }
 
-  private toMerchantSummary(merchant: Merchant, distance: number | null) {
+  private toMerchantSummary(
+    merchant: Merchant & { categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>> },
+  ) {
+    return this.serializeMerchant(merchant, merchant.categories ?? [], null);
+  }
+
+  private serializeMerchant(
+    merchant: Merchant,
+    categories: Array<Pick<Category, 'nameZh' | 'nameVi'>>,
+    distance: number | null,
+  ) {
     return {
+      ...merchant,
       id: merchant.id,
       nameZh: merchant.nameZh,
       nameVi: merchant.nameVi,
@@ -183,8 +190,16 @@ export class PublicMerchantsService {
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
       isOpen: isMerchantOpen(merchant),
       supportedOrderTypes: supportedOrderTypes(merchant),
-      minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd,
-      deliveryFeeVnd: merchant.deliveryFeeVnd,
+      minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
+      deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
+      latitude: merchant.latitude.toString(),
+      longitude: merchant.longitude.toString(),
+      deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      categoryNames: categories.flatMap((category) =>
+        [category.nameZh, category.nameVi].filter(
+          (value): value is string => Boolean(value),
+        ),
+      ),
     };
   }
 }
@@ -195,4 +210,41 @@ function supportedOrderTypes(merchant: Merchant) {
     merchant.pickupEnabled ? 'PICKUP' : null,
     merchant.deliveryEnabled ? 'DELIVERY' : null,
   ].filter(Boolean);
+}
+
+function resolveCity(city?: string) {
+  const normalized = normalizeCityText(city);
+  if (!normalized) return null;
+  if (normalized.includes('bacgiang') || normalized.includes('北江')) return 'Bac Giang';
+  if (normalized.includes('bacninh') || normalized.includes('北宁')) return 'Bac Ninh';
+  return null;
+}
+
+function inferCityByLocation(lat?: number, lng?: number) {
+  if (lat === undefined || lng === undefined) return null;
+  if (lat >= 21.2) return 'Bac Giang';
+  if (lat <= 21.18) return 'Bac Ninh';
+  if (lng >= 106.08) return 'Bac Giang';
+  return 'Bac Ninh';
+}
+
+function cityWhereConditions(city: 'Bac Giang' | 'Bac Ninh'): Prisma.MerchantWhereInput[] {
+  const variants = CITY_VARIANTS[city];
+  return variants.flatMap((variant) => [
+    { city: { contains: variant, mode: 'insensitive' } },
+    { province: { contains: variant, mode: 'insensitive' } },
+    { district: { contains: variant, mode: 'insensitive' } },
+    { addressDetail: { contains: variant, mode: 'insensitive' } },
+    { nameZh: { contains: variant, mode: 'insensitive' } },
+    { nameVi: { contains: variant, mode: 'insensitive' } },
+  ]);
+}
+
+function normalizeCityText(value?: string) {
+  return (value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }

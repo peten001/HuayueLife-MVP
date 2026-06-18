@@ -25,6 +25,10 @@ export interface MerchantSummary {
   supportedOrderTypes: Array<'DINE_IN' | 'PICKUP' | 'DELIVERY'>;
   minimumDeliveryAmountVnd: string;
   deliveryFeeVnd: string;
+  latitude: string;
+  longitude: string;
+  deliveryRadiusKm: string;
+  categoryNames?: string[];
 }
 
 export interface MerchantDetail extends MerchantSummary {

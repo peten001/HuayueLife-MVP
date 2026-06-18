@@ -27,10 +27,28 @@ export async function request<T>(
           return;
         }
         if (response.statusCode === 401) clearToken();
-        reject(new Error(formatMessage(body?.message)));
+        const error = new Error(formatMessage(body?.message)) as Error & {
+          statusCode?: number;
+          response?: unknown;
+          responseBody?: unknown;
+        };
+        error.statusCode = response.statusCode;
+        error.response = response;
+        error.responseBody = body;
+        reject(error);
       },
       fail(error) {
-        reject(new Error(formatMessage(error.errMsg || '网络请求失败')));
+        const requestError = new Error(
+          formatMessage(error.errMsg || '网络请求失败'),
+        ) as Error & {
+          statusCode?: number;
+          response?: unknown;
+          responseBody?: unknown;
+          originalError?: unknown;
+        };
+        requestError.response = error;
+        requestError.originalError = error;
+        reject(requestError);
       },
     });
   });

@@ -15,6 +15,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { ChangeMerchantPasswordDto } from './dto/change-merchant-password.dto';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
 
 interface WechatCodeSessionResponse {
@@ -222,6 +223,37 @@ export class AuthService {
     return profile;
   }
 
+  async updateUserProfile(user: AuthUser, dto: UpdateMeDto) {
+    if (user.accountType !== 'USER') {
+      throw new ForbiddenException('User account required');
+    }
+
+    const data = stripUndefined({
+      nickname: trimOrUndefined(dto.nickname),
+      avatarUrl: trimOrUndefined(dto.avatarUrl),
+      phone: trimOrUndefined(dto.phone),
+    });
+
+    if (Object.keys(data).length === 0) {
+      return this.getUserProfile(user);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: BigInt(user.sub) },
+      data,
+      select: {
+        id: true,
+        nickname: true,
+        avatarUrl: true,
+        phone: true,
+        status: true,
+        lastLoginAt: true,
+      },
+    });
+
+    return updated;
+  }
+
   private async resolveWechatIdentity(code: string): Promise<WechatIdentity> {
     if (this.configService.get<string>('NODE_ENV') !== 'production') {
       return {
@@ -298,4 +330,15 @@ export class AuthService {
         typeof result.unionid === 'string' ? result.unionid : undefined,
     };
   }
+}
+
+function trimOrUndefined(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function stripUndefined<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  ) as Partial<T>;
 }

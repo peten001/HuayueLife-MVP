@@ -1,6 +1,17 @@
 import type { UserProfile } from '@/types/api';
 import { request } from './http';
 
+export function updateMe(data: {
+  nickname?: string;
+  avatarUrl?: string;
+  phone?: string;
+}) {
+  return request<UserProfile>('/auth/me', {
+    method: 'PATCH',
+    data,
+  });
+}
+
 export function wechatLogin(code: string, nickname?: string) {
   return request<{ accessToken: string; user: UserProfile }>(
     '/auth/wechat/login',
@@ -12,5 +23,5 @@ export function wechatLogin(code: string, nickname?: string) {
 }
 
 export function getMe() {
-  return request<UserProfile>('/me');
+  return request<UserProfile>('/auth/me');
 }

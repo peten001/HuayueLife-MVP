@@ -16,10 +16,12 @@ const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
 const requestSeq = ref(0);
 const searchKeyword = ref('');
+const selectedCategory = ref('');
+const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
 
 const cityIndex = computed({
   get: () => {
-    const index = cities.value.findIndex((city) => city.value === locationStore.city);
+    const index = cities.value.findIndex((city) => city.value === normalizedCity.value);
     return index >= 0 ? index : 0;
   },
   set: (value: number) => {
@@ -31,25 +33,69 @@ const cityIndex = computed({
 });
 
 const currentCityLabel = computed(
-  () => cities.value.find((city) => city.value === locationStore.city)?.label || locationStore.city,
+  () => cities.value.find((city) => city.value === normalizedCity.value)?.label || normalizedCity.value,
 );
 
 const foodCategories = computed(() => [
-  { mark: '热', label: t('homeCategoryPopular'), tone: 'green' },
-  { mark: '餐', label: t('homeCategoryChinese'), tone: 'orange' },
-  { mark: '粉', label: t('homeCategoryNoodles'), tone: 'mint' },
-  { mark: '饮', label: t('homeCategoryDrinks'), tone: 'yellow' },
+  {
+    key: 'popular',
+    mark: '热',
+    label: t('homeCategoryPopular'),
+    tone: 'green',
+    keywords: ['招牌', '热', '特色', '经典', '推荐', 'đặc trưng', 'dac trung', 'phổ biến', 'pho bien', 'gợi ý', 'goi y'],
+  },
+  {
+    key: 'chinese',
+    mark: '餐',
+    label: t('homeCategoryChinese'),
+    tone: 'orange',
+    keywords: ['主食', '中式', '川菜', '湘菜', '炒饭', '米饭', '正餐', 'món chính', 'mon chinh', 'cơm', 'com', 'món hoa', 'mon hoa'],
+  },
+  {
+    key: 'noodles',
+    mark: '粉',
+    label: t('homeCategoryNoodles'),
+    tone: 'mint',
+    keywords: ['粉', '面', '小吃', '米线', '汤面', '抄手', '馄饨', 'bún', 'bun', 'mì', 'mi', 'ăn vặt', 'an vat'],
+  },
+  {
+    key: 'drinks',
+    mark: '饮',
+    label: t('homeCategoryDrinks'),
+    tone: 'yellow',
+    keywords: ['饮', '茶', '甜', '奶', '冰', '饮品', '甜品', 'trà', 'tra', 'nước', 'nuoc', 'tráng miệng', 'trang mieng'],
+  },
 ]);
+
+const cityFilteredMerchants = computed(() => {
+  const city = normalizedCity.value;
+  const list = merchants.value.filter((merchant) => merchantMatchesCity(merchant, city));
+  console.log('[home] merchants after city filter', list.length);
+  return list;
+});
+
+const categoryFilteredMerchants = computed(() => {
+  const category = foodCategories.value.find((item) => item.key === selectedCategory.value);
+  const list = category
+    ? cityFilteredMerchants.value.filter((merchant) =>
+        merchantMatchesCategory(merchant, category.keywords),
+      )
+    : cityFilteredMerchants.value;
+  console.log('[home] merchants after category filter', list.length);
+  return list;
+});
 
 const filteredMerchants = computed(() => {
   const keyword = searchKeyword.value.trim().toLocaleLowerCase();
-  if (!keyword) return merchants.value;
-
-  return merchants.value.filter((merchant) =>
-    [merchantName(merchant, locale.value), merchant.nameZh, merchant.nameVi, merchant.addressDetail]
-      .filter(Boolean)
-      .some((value) => String(value).toLocaleLowerCase().includes(keyword)),
-  );
+  const list = !keyword
+    ? categoryFilteredMerchants.value
+    : categoryFilteredMerchants.value.filter((merchant) =>
+        [merchantName(merchant, locale.value), merchant.nameZh, merchant.nameVi, merchant.addressDetail]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase().includes(keyword)),
+      );
+  console.log('[home] merchant names', list.map((item) => item.nameZh));
+  return list;
 });
 
 usePageTitle(() => t('homeTitle'));
@@ -61,41 +107,35 @@ onShow(() => {
 async function refreshHome(forceRelocate: boolean) {
   auth.ensureLogin().catch(() => undefined);
   try {
-    const city = forceRelocate
+    const locateResult = forceRelocate
       ? await locationStore.relocate()
       : await locationStore.bootstrapCity();
-    await loadByCity(city);
+    console.log('[home] locate result', locateResult);
+    const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value;
+    console.log('[home] resolved city', resolvedCity);
+    await loadByCity(resolvedCity);
   } catch {
-    merchants.value = [];
+    await loadByCity(normalizedCity.value);
   }
 }
 
 async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
   const seq = ++requestSeq.value;
   loading.value = true;
-  merchants.value = [];
-  console.log('[home] city changed', city);
+  const query = { city, page: 1 };
+  console.log('[home] merchant query', query);
   try {
-    const result = await getNearbyMerchants({
-      city,
-      page: 1,
-    });
-    console.log('[home] api result', {
-      city,
-      ids: result.items.map((item) => item.id),
-      names: result.items.map((item) => item.nameZh),
-    });
+    const result = await getNearbyMerchants(query);
+    console.log('[home] merchants raw count', result.items.length);
+    const cityFiltered = result.items.filter((merchant) =>
+      merchantMatchesCity(merchant, city),
+    );
+    console.log('[home] merchants after city filter', cityFiltered.length);
+    console.log('[home] merchant names', cityFiltered.map((item) => item.nameZh));
     if (seq !== requestSeq.value) return;
-    merchants.value = result.items;
-    console.log('[home] merchants set', {
-      currentCity: locationStore.city,
-      ids: merchants.value.map((item) => item.id),
-      names: merchants.value.map((item) => item.nameZh),
-    });
+    merchants.value = cityFiltered;
   } catch {
-    if (seq === requestSeq.value) {
-      merchants.value = [];
-    }
+    console.log('[home] loadByCity failed, keep current merchants');
   } finally {
     if (seq === requestSeq.value) {
       loading.value = false;
@@ -111,8 +151,25 @@ async function changeCity(event: { detail: { value: string } }) {
   }
 }
 
-async function relocate() {
-  await refreshHome(true);
+async function openNearbyMerchants() {
+  try {
+    const locateResult = await locationStore.relocate();
+    console.log('[home] locate result', locateResult);
+    const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value || 'Bac Giang';
+    console.log('[home] resolved city', resolvedCity);
+    await loadByCity(resolvedCity);
+    uni.pageScrollTo({
+      selector: '#nearby-restaurants',
+      duration: 280,
+    });
+  } catch {
+    uni.showModal({
+      title: t('homeNearbyRestaurants'),
+      content: t('locationPermissionRequired'),
+      showCancel: false,
+      confirmText: t('gotIt'),
+    });
+  }
 }
 
 function openMerchant(merchant: MerchantSummary) {
@@ -128,12 +185,66 @@ function showTableOrderingTip() {
   });
 }
 
-function scrollToNearby() {
-  uni.pageScrollTo({
-    selector: '#nearby-restaurants',
-    duration: 280,
-  });
+function toggleCategory(categoryKey: string) {
+  selectedCategory.value =
+    selectedCategory.value === categoryKey ? '' : categoryKey;
 }
+
+function merchantMatchesCategory(
+  merchant: MerchantSummary,
+  keywords: string[],
+) {
+  const haystack = [
+    merchantName(merchant, locale.value),
+    merchant.nameZh,
+    merchant.nameVi,
+    merchant.addressDetail,
+    ...(merchant.categoryNames ?? []),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLocaleLowerCase());
+
+  return keywords.some((keyword) =>
+    haystack.some((value) => value.includes(keyword.toLocaleLowerCase())),
+  );
+}
+
+function merchantMatchesCity(merchant: MerchantSummary, city: 'Bac Giang' | 'Bac Ninh') {
+  const cityKey = normalizeCityText(city);
+  const aliases = cityAliases[cityKey] ?? [cityKey];
+  const haystack = [
+    merchant.city,
+    merchant.province,
+    merchant.district,
+    merchant.addressDetail,
+    merchant.nameZh,
+    merchant.nameVi,
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeCityText(String(value)));
+  return aliases.some((alias) => haystack.some((value) => value.includes(alias)));
+}
+
+function resolveCityCode(value: unknown) {
+  const normalized = normalizeCityText(String(value ?? ''));
+  if (normalized.includes('bacgiang') || normalized.includes('北江')) return 'Bac Giang';
+  if (normalized.includes('bacninh') || normalized.includes('北宁')) return 'Bac Ninh';
+  return '';
+}
+
+function normalizeCityText(value: string) {
+  return value
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+const cityAliases: Record<string, string[]> = {
+  bacgiang: ['bacgiang', 'bacgiangprovince', '北江', '北江省'],
+  bacninh: ['bacninh', 'bacninhprovince', '北宁', '北宁市'],
+};
 </script>
 
 <template>
@@ -168,7 +279,7 @@ function scrollToNearby() {
         <text class="banner-kicker">{{ t('homeBannerKicker') }}</text>
         <text class="banner-title">{{ t('homeBannerTitle') }}</text>
         <text class="banner-copy">{{ t('homeBannerSubtitle') }}</text>
-        <button class="banner-action" @click="scrollToNearby">
+        <button class="banner-action" @click="openNearbyMerchants">
           {{ t('homeBannerAction') }}
         </button>
       </view>
@@ -200,7 +311,12 @@ function scrollToNearby() {
         <text class="section-caption">{{ t('homeCategoryCaption') }}</text>
       </view>
       <view class="category-grid">
-        <view v-for="category in foodCategories" :key="category.label" class="category-item">
+        <view
+          v-for="category in foodCategories"
+          :key="category.key"
+          :class="['category-item', selectedCategory === category.key ? 'active' : '']"
+          @click="toggleCategory(category.key)"
+        >
           <view :class="['category-icon', `category-${category.tone}`]">
             <text>{{ category.mark }}</text>
           </view>
@@ -214,16 +330,20 @@ function scrollToNearby() {
         <text class="section-title">{{ t('homeNearbyRestaurants') }}</text>
         <text class="mode">{{ t('currentCity') }}：{{ currentCityLabel }}</text>
       </view>
-      <button class="location-button" @click="relocate">{{ t('relocate') }}</button>
+      <button class="location-button" @click="openNearbyMerchants">{{ t('relocate') }}</button>
     </view>
 
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
-      <view v-else-if="!merchants.length" class="empty">
+      <view v-else-if="!cityFilteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('noMerchants') }}</text>
         <text class="empty-copy">{{ t('homeEmptyHint') }}</text>
       </view>
-      <view v-else-if="!filteredMerchants.length" class="empty">
+      <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
+        <text class="empty-title">当前分类暂无商家</text>
+        <text class="empty-copy">切换到全部或其他分类继续浏览</text>
+      </view>
+      <view v-else-if="searchKeyword && !filteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('homeSearchEmpty') }}</text>
         <text class="empty-copy">{{ t('homeSearchEmptyHint') }}</text>
       </view>
@@ -594,6 +714,19 @@ function scrollToNearby() {
   flex-direction: column;
   gap: 12rpx;
   min-width: 0;
+  padding: 10rpx 0 12rpx;
+  border-radius: 24rpx;
+  transition: all 0.2s ease;
+}
+
+.category-item.active {
+  background: #f8fbf8;
+  box-shadow: inset 0 0 0 2rpx #d6ebdd;
+}
+
+.category-item.active .category-icon {
+  transform: translateY(-2rpx);
+  box-shadow: 0 8rpx 20rpx rgb(46 125 50 / 10%);
 }
 
 .category-icon {
@@ -634,6 +767,11 @@ function scrollToNearby() {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.category-item.active .category-label {
+  color: #2e7d32;
+  font-weight: 700;
 }
 
 .mode {

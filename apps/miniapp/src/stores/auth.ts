@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { getMe, wechatLogin } from '@/api/auth';
+import { getMe, updateMe, wechatLogin } from '@/api/auth';
 import { translateApiError, useI18n } from '@/i18n';
 import type { UserProfile } from '@/types/api';
 import {
@@ -18,6 +18,7 @@ function mergeCachedUserProfile(user: UserProfile | null): UserProfile | null {
     ...user,
     nickname: cached.nickname?.trim() || user.nickname,
     avatarUrl: cached.avatarUrl?.trim() || user.avatarUrl,
+    phone: cached.phone?.trim() || user.phone,
   };
 }
 
@@ -62,7 +63,11 @@ export const useAuthStore = defineStore('auth', {
         this.ready = true;
       }
     },
-    applyLocalUserProfile(profile: { nickname?: string; avatarUrl?: string }) {
+    applyLocalUserProfile(profile: {
+      nickname?: string;
+      avatarUrl?: string;
+      phone?: string;
+    }) {
       setLocalUserProfile(profile);
       if (this.user) {
         this.user = mergeCachedUserProfile({
@@ -70,6 +75,16 @@ export const useAuthStore = defineStore('auth', {
           ...profile,
         });
       }
+    },
+    async updateProfile(profile: {
+      nickname?: string;
+      avatarUrl?: string;
+      phone?: string;
+    }) {
+      const result = await updateMe(profile);
+      setLocalUserProfile(profile);
+      this.user = mergeCachedUserProfile(result);
+      return this.user;
     },
     async syncWechatNickname(nickname: string) {
       const { t } = useI18n();
