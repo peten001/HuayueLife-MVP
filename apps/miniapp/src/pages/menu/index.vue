@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
 import {
@@ -15,6 +15,7 @@ import {
 import { useCartStore } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
+import type { CartContext } from '@/types/api';
 
 const cartStore = useCartStore();
 const menu = ref<MenuResponse | null>(null);
@@ -42,31 +43,105 @@ onLoad(async (options) => {
   tableToken.value = String(options?.tableToken ?? '');
   try {
     const loadedMenu = await getMenu(merchantId.value);
-    const result = await cartStore.switchContext({
-      merchantId: merchantId.value,
-      merchantName: merchantName(loadedMenu.merchant, locale.value),
-      orderType: orderType.value,
-      tableToken: tableToken.value || undefined,
-      tableNo: tableNo.value || undefined,
-      tableName: tableName.value || undefined,
-    });
-    if (result === 'cancelled') {
-      notice.value = t('cartContextSwitchCancelled');
-      return;
-    }
-    if (result === 'failed') {
-      error.value = t('cartContextSwitchError');
-      return;
-    }
+    await ensureMenuContext(loadedMenu);
     menu.value = loadedMenu;
     activeCategory.value = loadedMenu.categories[0]?.id ?? '';
   } catch (caught) {
-    console.error('[menu] switchContext error', caught);
+    console.error('[menu] ensure cart context failed', caught);
     const message = caught instanceof Error ? caught.message : t('cartContextSwitchError');
     uni.showToast({ title: message, icon: 'none' });
     error.value = message;
   }
 });
+
+onShow(() => {
+  if (!menu.value || !merchantId.value) return;
+  void ensureMenuContext(menu.value);
+});
+
+async function ensureMenuContext(loadedMenu: MenuResponse) {
+  const nextContext = buildContext(loadedMenu);
+  console.log('[menu] ensure cart context start', {
+    params: {
+      merchantId: merchantId.value,
+      orderType: orderType.value,
+      tableToken: tableToken.value,
+      tableNo: tableNo.value,
+      tableName: tableName.value,
+    },
+    currentContext: cartStore.context,
+    nextContext,
+    hasItems: cartStore.hasItems(),
+  });
+
+  if (!cartStore.context || !cartStore.needsContextSwitch(nextContext)) {
+    const result = await cartStore.switchContext(nextContext);
+    if (result === 'failed') {
+      throw new Error(t('cartContextSwitchError'));
+    }
+    console.log('[menu] ensure cart context success', cartStore.context);
+    error.value = '';
+    return result;
+  }
+
+  if (cartStore.hasItems()) {
+    const confirmed = await confirmContextSwitch(nextContext);
+    console.log('[cart] user confirmed switch', confirmed);
+    if (!confirmed) {
+      notice.value = t('cartContextSwitchCancelled');
+      console.log('[menu] ensure cart context failed', {
+        reason: 'user cancelled switch',
+        currentContext: cartStore.context,
+        nextContext,
+      });
+      return 'cancelled';
+    }
+    console.log('[cart] clear cart before switch');
+    try {
+      await cartStore.clearCart();
+    } catch (error) {
+      console.error('[menu] clear cart before switch failed', error);
+      throw error instanceof Error ? error : new Error(t('cartContextSwitchError'));
+    }
+  }
+
+  const result = await cartStore.switchContext(nextContext);
+  if (result === 'failed') {
+    throw new Error(t('cartContextSwitchError'));
+  }
+  console.log('[menu] ensure cart context success', cartStore.context);
+  error.value = '';
+  notice.value = '';
+  return result;
+}
+
+function buildContext(loadedMenu: MenuResponse): CartContext {
+  return {
+    merchantId: merchantId.value,
+    merchantName: merchantName(loadedMenu.merchant, locale.value),
+    orderType: orderType.value,
+    tableToken: tableToken.value || undefined,
+    tableNo: tableNo.value || undefined,
+    tableName: tableName.value || undefined,
+  };
+}
+
+function confirmContextSwitch(nextContext: CartContext) {
+  const sameMerchant = cartStore.context?.merchantId === nextContext.merchantId;
+  const content = sameMerchant
+    ? '当前购物车已有菜品，是否切换到新的桌台？\n切换后当前购物车将清空。'
+    : '切换商家会清空当前购物车，是否继续？';
+  return new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: '提示',
+      content,
+      cancelText: '取消',
+      confirmText: sameMerchant ? '切换桌台' : '继续切换',
+      success: (result) => resolve(Boolean(result.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+}
 
 function openProduct(product: Product) {
   const tableQuery = hasTable.value
