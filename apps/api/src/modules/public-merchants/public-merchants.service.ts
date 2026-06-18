@@ -36,24 +36,18 @@ export class PublicMerchantsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async nearby(query: NearbyMerchantsQueryDto) {
+    console.log('[public-merchants] nearby query', query);
     const resolvedCity =
       resolveCity(query.city) ??
       inferCityByLocation(query.lat, query.lng) ??
       'Bac Giang';
+    console.log('[public-merchants] nearby city', query.city);
+    console.log('[public-merchants] normalized city', resolvedCity);
 
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
       merchantType: 'RESTAURANT',
     };
-
-    const cityWhere = cityWhereConditions(resolvedCity);
-
-    console.log('[public-merchants] nearby query', {
-      city: query.city,
-      lat: query.lat,
-      lng: query.lng,
-      resolvedCity,
-    });
 
     const include = {
       categories: {
@@ -65,27 +59,38 @@ export class PublicMerchantsService {
       },
     } satisfies Prisma.MerchantInclude;
 
-    let merchants = await this.prisma.merchant.findMany({
-      where: { ...where, OR: cityWhere },
-      include,
-    });
-    console.log('[public-merchants] city query count', merchants.length);
-    if (!merchants.length) {
-      console.warn('[public-merchants] city query empty, fallback to active merchants', {
-        resolvedCity,
-      });
+    let merchants: Array<Merchant & { categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>> }>;
+    try {
       merchants = await this.prisma.merchant.findMany({
         where,
         include,
       });
-      console.log('[public-merchants] fallback active count', merchants.length);
+    } catch (error) {
+      console.error('[public-merchants] nearby error', error);
+      merchants = [];
     }
-    const results = merchants
+
+    console.log('[public-merchants] raw merchants count', merchants.length);
+
+    const cityMatched = merchants.filter((merchant) =>
+      merchantMatchesCity(merchant, resolvedCity),
+    );
+    console.log('[public-merchants] city matched count', cityMatched.length);
+
+    const effectiveMerchants = cityMatched.length ? cityMatched : merchants;
+    if (!cityMatched.length && merchants.length) {
+      console.warn('[public-merchants] city query empty, fallback to active merchants', {
+        resolvedCity,
+      });
+    }
+
+    const results = effectiveMerchants
       .map((merchant) => this.toMerchantSummary(merchant))
       .sort((a, b) => {
         if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
         return a.nameZh.localeCompare(b.nameZh, 'zh-CN');
       });
+    console.log('[public-merchants] nearby result count', results.length);
 
     const start = (query.page - 1) * PAGE_SIZE;
     return {
@@ -241,20 +246,30 @@ function inferCityByLocation(lat?: number, lng?: number) {
   return 'Bac Ninh';
 }
 
-function cityWhereConditions(city: 'Bac Giang' | 'Bac Ninh'): Prisma.MerchantWhereInput[] {
-  const variants = CITY_VARIANTS[city];
-  return variants.flatMap((variant) => [
-    { city: { contains: variant, mode: 'insensitive' } },
-    { province: { contains: variant, mode: 'insensitive' } },
-    { district: { contains: variant, mode: 'insensitive' } },
-    { addressDetail: { contains: variant, mode: 'insensitive' } },
-    { nameZh: { contains: variant, mode: 'insensitive' } },
-    { nameVi: { contains: variant, mode: 'insensitive' } },
-  ]);
+function merchantMatchesCity(
+  merchant: Merchant,
+  city: 'Bac Giang' | 'Bac Ninh',
+) {
+  const cityKey = normalizeCityText(city);
+  const aliases = CITY_VARIANTS[city] ?? [cityKey];
+  const haystack = [
+    merchant.city,
+    merchant.province,
+    merchant.district,
+    merchant.addressDetail,
+    merchant.nameZh,
+    merchant.nameVi,
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeCityText(String(value)));
+  if (!haystack.length) return true;
+  return aliases.some((alias) =>
+    haystack.some((value) => value.includes(normalizeCityText(alias))),
+  );
 }
 
 function normalizeCityText(value?: string) {
-  return (value || '')
+  return String(value || '')
     .trim()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')

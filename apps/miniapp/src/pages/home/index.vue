@@ -152,8 +152,19 @@ async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
     console.log('[home] merchant names', cityFiltered.map((item) => item.nameZh));
     if (seq !== requestSeq.value) return;
     merchants.value = cityFiltered.length ? cityFiltered : rawList;
-  } catch {
-    console.log('[home] loadByCity failed, keep current merchants');
+  } catch (error) {
+    console.warn('[home] loadByCity failed, fallback to list merchants', error);
+    try {
+      const fallbackResult = await getNearbyMerchants({ page: 1 });
+      const fallbackList = fallbackResult.items ?? [];
+      console.log('[home] fallback merchants count', fallbackList.length);
+      if (seq !== requestSeq.value) return;
+      merchants.value = fallbackList;
+    } catch (fallbackError) {
+      console.warn('[home] fallback merchants request failed', fallbackError);
+      if (seq !== requestSeq.value) return;
+      console.log('[home] loadByCity failed, keep current merchants');
+    }
   } finally {
     if (seq === requestSeq.value) {
       loading.value = false;
