@@ -1,5 +1,5 @@
 import { OrderType } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsEnum,
   IsNumber,
@@ -42,15 +42,19 @@ export class OrderRequestDto {
   deliveryAddress?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 7 })
+  @Transform(({ value }) =>
+    value === '' || value === null || value === undefined ? undefined : Number(value),
+  )
+  @IsNumber()
   @Min(-90)
   @Max(90)
   deliveryLatitude?: number;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 7 })
+  @Transform(({ value }) =>
+    value === '' || value === null || value === undefined ? undefined : Number(value),
+  )
+  @IsNumber()
   @Min(-180)
   @Max(180)
   deliveryLongitude?: number;

@@ -251,6 +251,24 @@ async function doSubmit() {
   message.value = '';
   try {
     const orderRequest = buildOrderRequest();
+    const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
+    const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
+    const deliveryInRange =
+      context.value?.orderType === 'DELIVERY' &&
+      deliveryLatitude !== null &&
+      deliveryLongitude !== null
+        ? getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'within'
+        : null;
+    const deliveryWarning = getDeliverySubmissionWarning();
+    console.log('[checkout] delivery range status before submit', {
+      deliveryAddress: form.deliveryAddress,
+      deliveryLatitude: form.deliveryLatitude,
+      deliveryLongitude: form.deliveryLongitude,
+      deliveryInRange,
+      deliveryWarning,
+      deliveryFee: preview.value?.deliveryFeeVnd ?? null,
+      totalAmount: preview.value?.totalAmountVnd ?? null,
+    });
     console.log('[checkout] submit payload', JSON.stringify(orderRequest));
 
     try {
