@@ -146,8 +146,8 @@ async function refreshPreview() {
         normalizeCoordinate(form.deliveryLatitude),
         normalizeCoordinate(form.deliveryLongitude),
       );
-      if (rangeState === 'outside') {
-        locationLabel.value = '当前地址超出商家配送范围，请重新选择地址';
+    if (rangeState === 'outside') {
+      locationLabel.value = t('deliveryRangeExceeded');
       } else if (rangeState === 'within') {
         locationLabel.value = '当前位置在商家配送范围内';
       }
@@ -459,7 +459,7 @@ function getDeliverySubmissionWarning() {
     return '地址不完整时，商家会电话联系你确认，是否继续提交？';
   }
   if (getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'outside') {
-    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+    return `${t('deliveryRangeExceeded')}，是否继续提交？`;
   }
   return '';
 }
