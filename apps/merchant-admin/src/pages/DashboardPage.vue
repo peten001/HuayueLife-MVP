@@ -6,6 +6,7 @@ import { errorMessage } from '@/api/http';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
+  clearNewPendingOrder,
   enableOrderSound,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
@@ -13,6 +14,12 @@ import {
   recentNewPendingOrderIds,
   toggleOrderSound,
 } from '@/utils/order-notification';
+import {
+  restoreScreenWakeLock,
+  screenWakeLockEnabled,
+  screenWakeLockSupported,
+  toggleScreenWakeLock,
+} from '@/utils/wake-lock';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
@@ -186,8 +193,32 @@ const mobileQuickLinkClasses: Record<string, string> = {
 const mobileActiveOrders = computed(() => activeOrders.value.slice(0, 4));
 const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
 const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
+const latestNewPendingOrderId = computed(() => newPendingOrderIds.value[0] ?? '');
+const newOrderLinkTarget = computed(() =>
+  latestNewPendingOrderId.value
+    ? {
+        path: '/orders',
+        query: {
+          status: 'PENDING_ACCEPTANCE' as const,
+          highlightOrderId: latestNewPendingOrderId.value,
+        },
+      }
+    : {
+        path: '/orders',
+        query: {
+          status: 'PENDING_ACCEPTANCE' as const,
+        },
+      },
+);
 const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
+);
+const wakeLockButtonLabel = computed(() =>
+  screenWakeLockSupported.value
+    ? screenWakeLockEnabled.value
+      ? t('screenWakeLockEnabled')
+      : t('screenWakeLock')
+    : t('screenWakeLockUnsupported'),
 );
 
 function mobileQuickTone(path: string) {
@@ -329,6 +360,7 @@ async function execute(order: MerchantOrder) {
   try {
     operatingId.value = order.id;
     await runOrderAction(order.id, next.action);
+    clearNewPendingOrder(order.id);
     message.value = t('orderUpdated');
     await load({ resetCountdown: true });
   } catch (error) {
@@ -341,6 +373,7 @@ async function execute(order: MerchantOrder) {
 onMounted(async () => {
   await Promise.all([load({ resetCountdown: true }), loadProfileCompletion()]);
   startRefreshTimer();
+  await restoreScreenWakeLock();
 });
 onBeforeUnmount(() => clearRefreshTimer());
 
@@ -359,6 +392,10 @@ async function handleSoundToggle() {
     return;
   }
   toggleOrderSound();
+}
+
+async function handleWakeLockToggle() {
+  await toggleScreenWakeLock();
 }
 
 type Action =
@@ -393,6 +430,14 @@ type Action =
                 @click="handleSoundToggle"
               >
                 {{ soundButtonLabel }}
+              </button>
+              <button
+                type="button"
+                class="sound-toggle wake-lock-toggle"
+                :class="{ active: screenWakeLockEnabled && screenWakeLockSupported }"
+                @click="handleWakeLockToggle"
+              >
+                {{ wakeLockButtonLabel }}
               </button>
               <RouterLink class="primary-link" to="/orders?status=PENDING_ACCEPTANCE">
                 {{ t('orderWorkbench') }}
@@ -436,7 +481,7 @@ type Action =
           <strong>有新订单，请及时接单</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
-        <RouterLink class="secondary alert-link" to="/orders?status=PENDING_ACCEPTANCE">
+        <RouterLink class="secondary alert-link" :to="newOrderLinkTarget">
           {{ t('viewOrders') }}
         </RouterLink>
       </section>
@@ -552,14 +597,24 @@ type Action =
             {{ pending.length ? '待处理' : inProgress.length ? '制作中' : '正常接单' }}
           </span>
           <span class="mobile-store-count">{{ pending.length + inProgress.length }}</span>
-          <button
-            type="button"
-            class="sound-toggle mobile-sound-toggle"
-            :class="{ active: orderSoundEnabled }"
-            @click="handleSoundToggle"
-          >
-            {{ soundButtonLabel }}
-          </button>
+          <div class="mobile-store-actions">
+            <button
+              type="button"
+              class="sound-toggle mobile-sound-toggle"
+              :class="{ active: orderSoundEnabled }"
+              @click="handleSoundToggle"
+            >
+              {{ soundButtonLabel }}
+            </button>
+            <button
+              type="button"
+              class="sound-toggle mobile-sound-toggle wake-lock-toggle"
+            :class="{ active: screenWakeLockEnabled && screenWakeLockSupported }"
+              @click="handleWakeLockToggle"
+            >
+              {{ wakeLockButtonLabel }}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -568,7 +623,7 @@ type Action =
           <strong>有新订单，请及时接单</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
-        <RouterLink class="secondary alert-link" to="/orders?status=PENDING_ACCEPTANCE">
+        <RouterLink class="secondary alert-link" :to="newOrderLinkTarget">
           {{ t('viewOrders') }}
         </RouterLink>
       </section>
@@ -783,10 +838,22 @@ type Action =
   font-size: 12px;
 }
 
+.wake-lock-toggle {
+  margin-left: 0;
+}
+
 .welcome-side {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.welcome-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .new-order-banner,
@@ -1208,11 +1275,25 @@ type Action =
   gap: 8px;
 }
 
+.mobile-store-actions {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
 .mobile-store-side .mobile-sound-toggle {
   justify-self: stretch;
 }
 
 .mobile-store-side .mobile-sound-toggle.active {
+  color: #2e7d32;
+}
+
+.mobile-store-side .wake-lock-toggle {
+  justify-self: stretch;
+}
+
+.mobile-store-side .wake-lock-toggle.active {
   color: #2e7d32;
 }
 
@@ -1335,6 +1416,12 @@ type Action =
 .mobile-order-card.new-order-card {
   border-color: #ffcc80;
   box-shadow: 0 0 0 1px rgb(255 183 77 / 26%), 0 10px 24px rgb(31 45 36 / 8%);
+}
+
+.mobile-order-card.highlighted-order-card,
+.dashboard-order-card.highlighted-order-card {
+  border-color: #ff8a00;
+  box-shadow: 0 0 0 1px rgb(255 138 0 / 28%), 0 14px 30px rgb(31 45 36 / 10%);
 }
 
 .mobile-order-head {

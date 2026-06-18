@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { getMerchantOrders, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
+  clearNewPendingOrder,
   enableOrderSound,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
@@ -17,10 +18,12 @@ import {
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
 const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const operatingId = ref('');
+const highlightedOrderId = ref('');
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
@@ -31,6 +34,10 @@ const filters = reactive<{
   date: todayInVietnam(),
 });
 let timer: number | undefined;
+let highlightTimer: number | undefined;
+const requestedHighlightOrderId = computed(() =>
+  normalizeQueryValue(route.query.highlightOrderId),
+);
 
 const pendingCount = computed(
   () => rows.value.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
@@ -59,9 +66,59 @@ async function load() {
         .map((order) => order.id),
     );
     message.value = '';
+    if (await focusHighlightedOrder()) {
+      await clearHighlightQuery();
+    }
   } catch (error) {
     message.value = errorMessage(error);
   }
+}
+
+function clearHighlightedOrder() {
+  highlightedOrderId.value = '';
+  if (highlightTimer !== undefined) {
+    window.clearTimeout(highlightTimer);
+    highlightTimer = undefined;
+  }
+}
+
+function normalizeQueryValue(value: unknown) {
+  if (Array.isArray(value)) return String(value[0] ?? '');
+  return String(value ?? '');
+}
+
+function markHighlightedOrder(orderId: string) {
+  if (!orderId) return;
+  highlightedOrderId.value = orderId;
+  if (highlightTimer !== undefined) {
+    window.clearTimeout(highlightTimer);
+  }
+  highlightTimer = window.setTimeout(() => {
+    if (highlightedOrderId.value === orderId) {
+      clearHighlightedOrder();
+    }
+  }, 60_000);
+}
+
+async function focusHighlightedOrder() {
+  const orderId = highlightedOrderId.value || requestedHighlightOrderId.value;
+  if (!orderId) return false;
+  await nextTick();
+  const selector = window.matchMedia('(max-width: 760px)').matches
+    ? `.mobile-order-card[data-order-id="${orderId}"]`
+    : `tr[data-order-id="${orderId}"]`;
+  const target = document.querySelector(selector) as HTMLElement | null;
+  if (!target) return false;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return true;
+}
+
+async function clearHighlightQuery() {
+  if (!requestedHighlightOrderId.value) return;
+  const { highlightOrderId, ...rest } = route.query;
+  await router.replace({
+    query: rest,
+  });
 }
 
 function orderTypeLabel(type: OrderType) {
@@ -112,6 +169,13 @@ async function execute(order: MerchantOrder) {
   try {
     operatingId.value = order.id;
     await runOrderAction(order.id, next.action);
+    clearNewPendingOrder(order.id);
+    if (highlightedOrderId.value === order.id) {
+      clearHighlightedOrder();
+    }
+    if (requestedHighlightOrderId.value === order.id) {
+      await clearHighlightQuery();
+    }
     message.value = t('orderUpdated');
     await load();
   } catch (error) {
@@ -138,11 +202,29 @@ async function handleSoundToggle() {
   toggleOrderSound();
 }
 
+watch(
+  requestedHighlightOrderId,
+  async (orderId) => {
+    if (!orderId) return;
+    markHighlightedOrder(orderId);
+    if (await focusHighlightedOrder()) {
+      await clearHighlightQuery();
+    }
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   await load();
   timer = window.setInterval(load, 10000);
 });
 onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => {
+  if (highlightTimer !== undefined) {
+    window.clearTimeout(highlightTimer);
+    highlightTimer = undefined;
+  }
+});
 
 function todayInVietnam() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -215,7 +297,14 @@ type Action =
     <article
       v-for="order in displayRows"
       :key="order.id"
-      :class="['mobile-order-card', { 'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }]"
+      :data-order-id="order.id"
+      :class="[
+        'mobile-order-card',
+        {
+          'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
+          'highlighted-order-card': highlightedOrderId === order.id,
+        },
+      ]"
     >
       <header>
         <div>
@@ -268,7 +357,11 @@ type Action =
         <tr
           v-for="order in displayRows"
           :key="order.id"
-          :class="{ 'new-order-row': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id) }"
+          :data-order-id="order.id"
+          :class="{
+            'new-order-row': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
+            'highlighted-order-row': highlightedOrderId === order.id,
+          }"
         >
           <td>{{ order.orderNo }}<small>{{ t('itemCount', { count: order.items.length }) }}</small></td>
           <td>{{ orderTypeLabel(order.orderType) }}</td>
@@ -375,6 +468,13 @@ type Action =
   box-shadow: 0 0 0 1px rgb(255 183 77 / 24%), 0 12px 26px rgb(31 45 36 / 8%);
 }
 
+.mobile-order-card.highlighted-order-card,
+.new-order-row.highlighted-order-row {
+  border-color: #ff8a00;
+  box-shadow: 0 0 0 1px rgb(255 138 0 / 28%), 0 12px 26px rgb(31 45 36 / 10%);
+  background: #fff4df;
+}
+
 .mobile-order-card header,
 .mobile-order-card footer,
 .card-actions {
@@ -466,6 +566,10 @@ type Action =
 
 .new-order-row {
   background: #fffaf2;
+}
+
+.highlighted-order-row {
+  background: #fff4df;
 }
 
 @media (max-width: 760px) {

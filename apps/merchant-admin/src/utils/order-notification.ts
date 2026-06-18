@@ -44,6 +44,23 @@ export function isRecentNewPendingOrder(id: string) {
   return recentNewPendingOrderIds.value.includes(id);
 }
 
+export function clearNewPendingOrder(id: string) {
+  clearNewPendingOrders([id]);
+}
+
+export function clearNewPendingOrders(ids: string[]) {
+  const targetIds = unique(ids);
+  if (!targetIds.length) return;
+  const targetSet = new Set(targetIds);
+  const nextPending = pendingOrderIds.value.filter((id) => !targetSet.has(id));
+  pendingOrderIds.value = nextPending;
+  knownPendingIds = new Set(nextPending);
+  persistPendingSnapshot(nextPending);
+  const nextRecent = recentNewOrderRecords.value.filter((record) => !targetSet.has(record.id));
+  recentNewOrderRecords.value = nextRecent;
+  persistRecentNewOrders(nextRecent);
+}
+
 export function notifyNewPendingOrders(ids: string[]) {
   pruneRecentNewOrders();
 
@@ -68,6 +85,8 @@ export function notifyNewPendingOrders(ids: string[]) {
     pruneRecentNewOrders();
   }
 
+  syncRecentNewOrders(currentSet);
+
   return newIds;
 }
 
@@ -89,6 +108,13 @@ function pruneRecentNewOrders() {
   const pruned = recentNewOrderRecords.value.filter(
     (record) => record.expiresAt > now,
   );
+  if (pruned.length === recentNewOrderRecords.value.length) return;
+  recentNewOrderRecords.value = pruned;
+  persistRecentNewOrders(pruned);
+}
+
+function syncRecentNewOrders(currentSet: Set<string>) {
+  const pruned = recentNewOrderRecords.value.filter((record) => currentSet.has(record.id));
   if (pruned.length === recentNewOrderRecords.value.length) return;
   recentNewOrderRecords.value = pruned;
   persistRecentNewOrders(pruned);
