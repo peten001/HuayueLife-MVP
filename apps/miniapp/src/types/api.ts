@@ -28,6 +28,8 @@ export interface MerchantSummary {
   latitude: string;
   longitude: string;
   deliveryRadiusKm: string;
+  homepageCategoryKeys?: string[];
+  manualPopular?: boolean;
   categoryNames?: string[];
 }
 

@@ -37,11 +37,17 @@ const form = reactive({
   logoUrl: '',
   coverUrl: '',
   notice: '',
+  homepageCategoryKeys: [] as string[],
 });
 
 const provinceOptions = computed(() => [
   { value: 'Bac Giang', label: t('provinceBacGiang') },
   { value: 'Bac Ninh', label: t('provinceBacNinh') },
+]);
+const homepageCategoryOptions = computed(() => [
+  { value: 'chinese', label: t('homepageCategoryChinese') },
+  { value: 'noodles', label: t('homepageCategoryNoodles') },
+  { value: 'drinks', label: t('homepageCategoryDrinks') },
 ]);
 
 const completion = computed(() =>
@@ -200,6 +206,7 @@ function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
   form.logoUrl = nextProfile.logoUrl ?? '';
   form.coverUrl = nextProfile.coverUrl ?? '';
   form.notice = nextProfile.notice ?? '';
+  form.homepageCategoryKeys = [...(nextProfile.homepageCategoryKeys ?? [])];
 }
 
 function buildPayload(): UpdateMerchantProfilePayload {
@@ -215,9 +222,18 @@ function buildPayload(): UpdateMerchantProfilePayload {
     logoUrl: trimOrUndefined(form.logoUrl),
     coverUrl: trimOrUndefined(form.coverUrl),
     notice: trimOrUndefined(form.notice),
+    homepageCategoryKeys: [...form.homepageCategoryKeys],
   };
 
   return payload;
+}
+
+function toggleHomepageCategory(value: string) {
+  if (form.homepageCategoryKeys.includes(value)) {
+    form.homepageCategoryKeys = form.homepageCategoryKeys.filter((item) => item !== value);
+    return;
+  }
+  form.homepageCategoryKeys = [...form.homepageCategoryKeys, value];
 }
 
 function parseNumber(value: string | number | null | undefined) {
@@ -405,6 +421,26 @@ function mapValidationMessage(message: string) {
       <small class="hint">{{ uploadingCover ? t('uploadingImage') : t('coverUploadHint') }}</small>
     </div>
     <label class="span-2">{{ t('merchantNotice') }}<textarea v-model="form.notice" rows="4" /></label>
+    <section class="span-2 homepage-categories">
+      <div>
+        <strong>{{ t('homepageCategories') }}</strong>
+        <p class="hint">{{ t('homepageCategoriesHint') }}</p>
+      </div>
+      <div class="category-options">
+        <label
+          v-for="item in homepageCategoryOptions"
+          :key="item.value"
+          class="check-option"
+        >
+          <input
+            type="checkbox"
+            :checked="form.homepageCategoryKeys.includes(item.value)"
+            @change="toggleHomepageCategory(item.value)"
+          />
+          <span>{{ item.label }}</span>
+        </label>
+      </div>
+    </section>
     <div class="form-actions span-2">
       <span class="message">{{ message }}</span>
       <button :disabled="loading">{{ loading ? t('saving') : t('saveProfile') }}</button>
@@ -459,6 +495,27 @@ function mapValidationMessage(message: string) {
 .image-actions {
   display: flex;
   gap: 8px;
+}
+
+.homepage-categories {
+  display: grid;
+  gap: 12px;
+}
+
+.category-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d8e6dc;
+  border-radius: 10px;
+  background: #f7fbf8;
 }
 
 .hidden-file {

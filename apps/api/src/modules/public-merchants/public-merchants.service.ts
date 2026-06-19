@@ -213,12 +213,33 @@ export class PublicMerchantsService {
       latitude: merchant.latitude.toString(),
       longitude: merchant.longitude.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      homepageCategoryKeys: parseHomepageCategoryKeys(
+        merchant.homepageCategoryKeys,
+      ),
+      manualPopular: Boolean(merchant.manualPopular),
       categoryNames: categories.flatMap((category) =>
         [category.nameZh, category.nameVi].filter(
           (value): value is string => Boolean(value),
         ),
       ),
     };
+  }
+}
+
+const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
+
+function parseHomepageCategoryKeys(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
+      : [];
+  } catch {
+    return [];
   }
 }
 

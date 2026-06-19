@@ -133,6 +133,8 @@ model Merchant {
   dineInEnabled            Boolean        @default(true) @map("dine_in_enabled")
   pickupEnabled            Boolean        @default(true) @map("pickup_enabled")
   deliveryEnabled          Boolean        @default(false) @map("delivery_enabled")
+  homepageCategoryKeys     String         @default("[]") @map("homepage_category_keys") @db.VarChar(255)
+  manualPopular            Boolean        @default(false) @map("manual_popular")
   status                   MerchantStatus @default(ACTIVE)
   createdAt                DateTime       @default(now()) @map("created_at")
   updatedAt                DateTime       @updatedAt @map("updated_at")

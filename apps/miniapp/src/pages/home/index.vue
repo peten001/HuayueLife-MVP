@@ -42,28 +42,24 @@ const foodCategories = computed(() => [
     mark: '热',
     label: t('homeCategoryPopular'),
     tone: 'green',
-    keywords: ['招牌', '热', '特色', '经典', '推荐', 'đặc trưng', 'dac trung', 'phổ biến', 'pho bien', 'gợi ý', 'goi y'],
   },
   {
     key: 'chinese',
     mark: '餐',
     label: t('homeCategoryChinese'),
     tone: 'orange',
-    keywords: ['主食', '中式', '川菜', '湘菜', '炒饭', '米饭', '正餐', 'món chính', 'mon chinh', 'cơm', 'com', 'món hoa', 'mon hoa'],
   },
   {
     key: 'noodles',
     mark: '粉',
     label: t('homeCategoryNoodles'),
     tone: 'mint',
-    keywords: ['粉', '面', '小吃', '米线', '汤面', '抄手', '馄饨', 'bún', 'bun', 'mì', 'mi', 'ăn vặt', 'an vat'],
   },
   {
     key: 'drinks',
     mark: '饮',
     label: t('homeCategoryDrinks'),
     tone: 'yellow',
-    keywords: ['饮', '茶', '甜', '奶', '冰', '饮品', '甜品', 'trà', 'tra', 'nước', 'nuoc', 'tráng miệng', 'trang mieng'],
   },
 ]);
 
@@ -82,7 +78,7 @@ const categoryFilteredMerchants = computed(() => {
   const category = foodCategories.value.find((item) => item.key === selectedCategory.value);
   const list = category
     ? cityFilteredMerchants.value.filter((merchant) =>
-        merchantMatchesCategory(merchant, category.keywords),
+        merchantMatchesCategory(merchant, category.key),
       )
     : cityFilteredMerchants.value;
   console.log('[home] merchants after category filter', list.length);
@@ -222,21 +218,16 @@ function toggleCategory(categoryKey: string) {
 
 function merchantMatchesCategory(
   merchant: MerchantSummary,
-  keywords: string[],
+  categoryKey: string,
 ) {
-  const haystack = [
-    merchantName(merchant, locale.value),
-    merchant.nameZh,
-    merchant.nameVi,
-    merchant.addressDetail,
-    ...(merchant.categoryNames ?? []),
-  ]
-    .filter(Boolean)
-    .map((value) => String(value).toLocaleLowerCase());
+  if (categoryKey === 'popular') {
+    return isPopularMerchant(merchant);
+  }
+  return (merchant.homepageCategoryKeys ?? []).includes(categoryKey);
+}
 
-  return keywords.some((keyword) =>
-    haystack.some((value) => value.includes(keyword.toLocaleLowerCase())),
-  );
+function isPopularMerchant(merchant: MerchantSummary) {
+  return Boolean(merchant.manualPopular);
 }
 
 function merchantMatchesCity(merchant: MerchantSummary, city: 'Bac Giang' | 'Bac Ninh') {

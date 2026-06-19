@@ -61,6 +61,8 @@ const demoMerchant = {
   dineInEnabled: true,
   pickupEnabled: true,
   deliveryEnabled: true,
+  homepageCategoryKeys: JSON.stringify(['chinese']),
+  manualPopular: true,
   status: MerchantStatus.ACTIVE,
 };
 
@@ -249,6 +251,8 @@ async function upsertMerchant(existingMerchant: Awaited<ReturnType<typeof findDe
     dineInEnabled: demoMerchant.dineInEnabled,
     pickupEnabled: demoMerchant.pickupEnabled,
     deliveryEnabled: demoMerchant.deliveryEnabled,
+    homepageCategoryKeys: demoMerchant.homepageCategoryKeys,
+    manualPopular: demoMerchant.manualPopular,
     status: demoMerchant.status,
     coverUrl: `/uploads/merchants/${merchantImageFiles.coverUrl}`,
     logoUrl: `/uploads/merchants/${merchantImageFiles.logoUrl}`,

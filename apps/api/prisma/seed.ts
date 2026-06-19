@@ -35,6 +35,8 @@ async function main() {
     dineInEnabled: true,
     pickupEnabled: true,
     deliveryEnabled: true,
+    homepageCategoryKeys: JSON.stringify(['chinese']),
+    manualPopular: true,
     status: 'ACTIVE' as const,
   };
 

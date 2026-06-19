@@ -54,6 +54,8 @@ export interface MerchantProfile {
   dineInEnabled: boolean;
   pickupEnabled: boolean;
   deliveryEnabled: boolean;
+  homepageCategoryKeys: string[];
+  manualPopular: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
 }
 
@@ -78,6 +80,7 @@ export interface UpdateMerchantProfilePayload {
   dineInEnabled?: boolean;
   pickupEnabled?: boolean;
   deliveryEnabled?: boolean;
+  homepageCategoryKeys?: string[];
 }
 
 export interface PlatformAdminAccount {
@@ -88,6 +91,8 @@ export interface PlatformMerchantListItem {
   id: string;
   nameZh: string;
   contactPhone: string;
+  homepageCategoryKeys: string[];
+  manualPopular: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
   createdAt: string;
   updatedAt: string;

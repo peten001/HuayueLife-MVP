@@ -25,8 +25,13 @@ export class MerchantProfileService {
     await this.getProfile(merchantId);
     validateRequiredUpdateValues(dto);
 
+    const { homepageCategoryKeys, ...profileDto } = dto;
     const data = stripUndefined({
-      ...dto,
+      ...profileDto,
+      homepageCategoryKeys:
+        homepageCategoryKeys === undefined
+          ? undefined
+          : stringifyHomepageCategoryKeys(homepageCategoryKeys),
       minimumDeliveryAmountVnd:
         dto.minimumDeliveryAmountVnd === undefined
           ? undefined
@@ -57,6 +62,10 @@ export class MerchantProfileService {
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      homepageCategoryKeys: parseHomepageCategoryKeys(
+        merchant.homepageCategoryKeys,
+      ),
+      manualPopular: Boolean(merchant.manualPopular),
     };
   }
 }
@@ -93,4 +102,28 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
   ) as Partial<T>;
+}
+
+const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
+
+function stringifyHomepageCategoryKeys(value: string[] | undefined) {
+  if (!value) return '[]';
+  return JSON.stringify(
+    Array.from(new Set(value.filter((item) => HOMEPAGE_CATEGORY_KEYS.has(item)))),
+  );
+}
+
+function parseHomepageCategoryKeys(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
+      : [];
+  } catch {
+    return [];
+  }
 }

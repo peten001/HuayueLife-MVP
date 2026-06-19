@@ -1,5 +1,7 @@
 import {
+  IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsObject,
@@ -11,6 +13,8 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+
+const HOMEPAGE_CATEGORY_KEYS = ['chinese', 'noodles', 'drinks'] as const;
 
 export class UpdateMerchantProfileDto {
   @IsOptional()
@@ -125,4 +129,10 @@ export class UpdateMerchantProfileDto {
   @IsOptional()
   @IsBoolean()
   deliveryEnabled?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(HOMEPAGE_CATEGORY_KEYS, { each: true })
+  homepageCategoryKeys?: string[];
 }

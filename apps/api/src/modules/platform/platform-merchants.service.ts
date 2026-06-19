@@ -24,6 +24,8 @@ type PlatformMerchantListItem = {
   id: string;
   nameZh: string;
   contactPhone: string;
+  homepageCategoryKeys: string[];
+  manualPopular: boolean;
   status: MerchantStatus;
   createdAt: string;
   updatedAt: string;
@@ -108,6 +110,10 @@ export class PlatformMerchantsService {
         dineInEnabled: true,
         pickupEnabled: true,
         deliveryEnabled: false,
+        homepageCategoryKeys: stringifyHomepageCategoryKeys(
+          dto.homepageCategoryKeys,
+        ),
+        manualPopular: Boolean(dto.manualPopular),
         status: MerchantStatus.ACTIVE,
         staff: {
           create: {
@@ -145,6 +151,14 @@ export class PlatformMerchantsService {
     }
     if (dto.contactPhone !== undefined) {
       data.contactPhone = dto.contactPhone.trim();
+    }
+    if (dto.homepageCategoryKeys !== undefined) {
+      data.homepageCategoryKeys = stringifyHomepageCategoryKeys(
+        dto.homepageCategoryKeys,
+      );
+    }
+    if (dto.manualPopular !== undefined) {
+      data.manualPopular = dto.manualPopular;
     }
 
     await this.prisma.merchant.update({
@@ -269,6 +283,10 @@ export class PlatformMerchantsService {
       id: merchant.id.toString(),
       nameZh: merchant.nameZh,
       contactPhone: merchant.contactPhone,
+      homepageCategoryKeys: parseHomepageCategoryKeys(
+        merchant.homepageCategoryKeys,
+      ),
+      manualPopular: Boolean(merchant.manualPopular),
       status: merchant.status,
       createdAt: merchant.createdAt.toISOString(),
       updatedAt: merchant.updatedAt.toISOString(),
@@ -327,5 +345,29 @@ export class PlatformMerchantsService {
         Array.isArray(items) &&
         items.some((item) => typeof item === 'string' && item.trim().length > 0),
     );
+  }
+}
+
+const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
+
+function stringifyHomepageCategoryKeys(value: string[] | undefined) {
+  if (!value) return '[]';
+  return JSON.stringify(
+    Array.from(new Set(value.filter((item) => HOMEPAGE_CATEGORY_KEYS.has(item)))),
+  );
+}
+
+function parseHomepageCategoryKeys(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
+      : [];
+  } catch {
+    return [];
   }
 }

@@ -55,6 +55,8 @@ export async function getPlatformMerchants() {
 
 export async function createPlatformMerchant(payload: {
   phone: string;
+  homepageCategoryKeys?: string[];
+  manualPopular?: boolean;
 }) {
   const response = await platformHttp.post<ApiResponse<PlatformMerchantListItem>>(
     '/platform/merchants',
@@ -68,6 +70,8 @@ export async function updatePlatformMerchant(
   payload: {
     nameZh?: string;
     contactPhone?: string;
+    homepageCategoryKeys?: string[];
+    manualPopular?: boolean;
   },
 ) {
   const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
