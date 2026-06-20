@@ -7,6 +7,8 @@ import {
 } from '@/utils/storage';
 import type {
   ApiResponse,
+  PlatformAnalyticsFilters,
+  PlatformAnalyticsResponse,
   PlatformDashboardData,
   PlatformAdminAccount,
   PlatformMerchantDetailResponse,
@@ -67,6 +69,18 @@ export async function getPlatformMerchantDetail(id: string) {
 export async function getPlatformDashboard() {
   const response = await platformHttp.get<ApiResponse<PlatformDashboardData>>(
     '/platform/dashboard',
+  );
+  return response.data.data;
+}
+
+export async function getPlatformAnalytics(filters: PlatformAnalyticsFilters = {}) {
+  const response = await platformHttp.get<ApiResponse<PlatformAnalyticsResponse>>(
+    '/platform/analytics',
+    {
+      params: Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== '' && value !== undefined),
+      ),
+    },
   );
   return response.data.data;
 }

@@ -812,6 +812,170 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .order-completed { color: #40584a; background: #eef5f0; }
 .order-cancelled { color: #68707a; background: #edf0f2; }
 
+.platform-analytics-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-color: #e4ece6;
+}
+.platform-analytics-filters label {
+  color: #526158;
+  font-weight: 700;
+}
+.platform-analytics-filters input,
+.platform-analytics-filters select {
+  min-height: 42px;
+  border-color: #dfe8e2;
+  background: #fbfdfb;
+}
+.platform-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.platform-analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.analytics-metric-card {
+  display: grid;
+  gap: 8px;
+  border-color: #e4ece6;
+}
+.analytics-metric-card span {
+  color: #69766e;
+  font-size: 14px;
+}
+.analytics-metric-card strong {
+  color: #183f22;
+  font-size: 28px;
+}
+.analytics-metric-card small {
+  color: #7b8780;
+}
+.analytics-metric-card.highlight {
+  border-color: #cde7d2;
+  background: #f4fbf5;
+}
+.platform-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.analytics-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+.analytics-panel .section-heading small {
+  color: #7b8780;
+}
+.analytics-trend-list,
+.analytics-dist-list {
+  display: grid;
+  gap: 12px;
+}
+.analytics-trend-row,
+.analytics-dist-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #edf1ee;
+  border-radius: 12px;
+  background: #f9fbfa;
+}
+.analytics-trend-row strong {
+  color: #183f22;
+}
+.analytics-trend-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.analytics-trend-bars > div,
+.analytics-dist-row > div {
+  display: grid;
+  gap: 6px;
+}
+.analytics-trend-bars span,
+.analytics-dist-row span,
+.analytics-status-card span {
+  color: #69766e;
+  font-size: 13px;
+}
+.analytics-trend-bars small,
+.analytics-dist-row small,
+.analytics-status-card small {
+  color: #7b8780;
+}
+.analytics-bar-track {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9f0eb;
+}
+.analytics-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5bae63, #146d2b);
+}
+.analytics-bar-fill.amount {
+  background: linear-gradient(90deg, #8bcf91, #5bae63);
+}
+.analytics-bar-fill.type {
+  background: linear-gradient(90deg, #7cc57f, #2f8d40);
+}
+.analytics-bar-fill.status {
+  background: linear-gradient(90deg, #8bcf91, #146d2b);
+}
+.analytics-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.analytics-status-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #edf1ee;
+  border-radius: 12px;
+  background: #f9fbfa;
+}
+.analytics-status-card strong {
+  color: #183f22;
+  font-size: 24px;
+}
+.analytics-table {
+  min-width: 760px;
+}
+.analytics-table th {
+  padding: 14px;
+  color: #5c6a62;
+  background: #f7faf9;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.analytics-table td {
+  padding: 14px;
+  vertical-align: middle;
+}
+.analytics-table tbody tr {
+  transition: background .16s ease;
+}
+.analytics-table tbody tr:hover {
+  background: #f8fbf8;
+}
+.analytics-table td:nth-child(4),
+.analytics-table td:nth-child(5) {
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .desktop-only { display: none !important; }
@@ -1018,6 +1182,9 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .platform-metric-grid,
   .platform-dashboard-grid,
   .platform-chart-grid,
+  .platform-analytics-filters,
+  .platform-analytics-summary-grid,
+  .platform-analytics-grid,
   .platform-merchant-filters,
   .platform-order-filters,
   .platform-order-summary-grid {
@@ -1046,6 +1213,10 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .bar-chart {
     overflow-x: auto;
     grid-template-columns: repeat(7, minmax(64px, 1fr));
+  }
+  .analytics-trend-bars,
+  .analytics-status-grid {
+    grid-template-columns: 1fr;
   }
   .alert-list > div {
     grid-template-columns: 1fr auto;

@@ -246,6 +246,61 @@ export interface PlatformOrdersResponse {
   };
 }
 
+export interface PlatformAnalyticsResponse {
+  summary: {
+    orderCount: number;
+    orderAmount: string;
+    completedOrderCount: number;
+    canceledOrderCount: number;
+    pendingOrderCount: number;
+    averageOrderAmount: string | null;
+    completionRate: number | null;
+    cancelRate: number | null;
+  };
+  trend: Array<{
+    date: string;
+    orderCount: number;
+    orderAmount: string;
+  }>;
+  orderTypeDistribution: Array<{
+    type: OrderType;
+    count: number;
+    amount: string;
+  }>;
+  statusDistribution: Array<{
+    status: OrderStatus;
+    count: number;
+    amount: string;
+  }>;
+  merchantRankingByOrders: Array<{
+    merchantId: string;
+    merchantName: string;
+    city: string;
+    orderCount: number;
+    orderAmount: string;
+  }>;
+  merchantRankingByAmount: Array<{
+    merchantId: string;
+    merchantName: string;
+    city: string;
+    orderCount: number;
+    orderAmount: string;
+  }>;
+  cityStats: Array<{
+    city: string;
+    orderCount: number;
+    orderAmount: string;
+    merchantCount: number;
+  }>;
+}
+
+export interface PlatformAnalyticsFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  city?: string;
+  merchantId?: string;
+}
+
 export interface PlatformOrderFilters {
   page?: number;
   pageSize?: number;
