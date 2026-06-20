@@ -18,6 +18,7 @@ import PlatformAnalyticsPage from '@/pages/PlatformAnalyticsPage.vue';
 import PlatformMerchantDetailPage from '@/pages/PlatformMerchantDetailPage.vue';
 import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
 import PlatformOrdersPage from '@/pages/PlatformOrdersPage.vue';
+import PlatformRecommendationsPage from '@/pages/PlatformRecommendationsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
 import { getMerchantMe } from '@/api/merchant';
 import {
@@ -172,6 +173,10 @@ const router = createRouter({
         {
           path: 'orders',
           component: PlatformOrdersPage,
+        },
+        {
+          path: 'recommendations',
+          component: PlatformRecommendationsPage,
         },
       ],
     },
