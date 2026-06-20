@@ -924,6 +924,59 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .platform-user-recent-orders tbody tr:hover {
   background: #f8fbf8;
 }
+.platform-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.platform-settings-card {
+  display: grid;
+  gap: 16px;
+  border-color: #e4ece6;
+}
+.settings-detail-list {
+  grid-template-columns: 130px 1fr;
+}
+.settings-rule-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.settings-rule-list div {
+  padding: 14px 16px;
+  border: 1px solid #e6eee8;
+  border-radius: 12px;
+  background: #f8fbf9;
+}
+.settings-rule-list strong {
+  display: block;
+  color: #183f22;
+  font-size: 15px;
+}
+.settings-rule-list p {
+  margin: 8px 0 0;
+  color: #6f786f;
+  line-height: 1.6;
+}
+.settings-reserve-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.settings-reserve-list span {
+  padding: 8px 12px;
+  border: 1px solid #dfe8e2;
+  border-radius: 999px;
+  color: #5f6b63;
+  background: #f8fbf9;
+  font-size: 13px;
+  font-weight: 700;
+}
+.settings-reserve-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .recommendation-info-card {
   margin-bottom: 20px;
   border-color: #e4ece6;
@@ -1631,6 +1684,10 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   }
   .platform-user-profile,
   .platform-user-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .platform-settings-grid,
+  .settings-rule-list {
     grid-template-columns: 1fr;
   }
   .user-detail-avatar {
