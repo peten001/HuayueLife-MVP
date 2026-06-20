@@ -9,6 +9,7 @@ import type {
   ApiResponse,
   PlatformDashboardData,
   PlatformAdminAccount,
+  PlatformMerchantDetailResponse,
   PlatformMerchantListItem,
   PlatformOrderFilters,
   PlatformOrdersResponse,
@@ -54,6 +55,13 @@ export async function getPlatformMerchants() {
     items: PlatformMerchantListItem[];
   }>>('/platform/merchants');
   return response.data.data.items;
+}
+
+export async function getPlatformMerchantDetail(id: string) {
+  const response = await platformHttp.get<ApiResponse<PlatformMerchantDetailResponse>>(
+    `/platform/merchants/${id}/detail`,
+  );
+  return response.data.data;
 }
 
 export async function getPlatformDashboard() {

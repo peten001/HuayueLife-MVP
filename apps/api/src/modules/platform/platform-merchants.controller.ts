@@ -16,6 +16,11 @@ export class PlatformMerchantsController {
     return this.service.list();
   }
 
+  @Get(':id/detail')
+  detail(@Param() params: IdParamDto) {
+    return this.service.detail(BigInt(params.id));
+  }
+
   @Post()
   create(@Body() dto: CreatePlatformMerchantDto) {
     return this.service.create(dto);

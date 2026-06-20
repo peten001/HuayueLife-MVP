@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import {
@@ -15,6 +16,8 @@ import { useI18n, type TranslationKey } from '@/i18n';
 import type { PlatformMerchantListItem } from '@/types/api';
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
 const loading = ref(false);
 const message = ref('');
@@ -85,6 +88,7 @@ async function loadMerchants() {
   message.value = '';
   try {
     merchants.value = await getPlatformMerchants();
+    await openEditFromRoute();
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -112,6 +116,19 @@ function openEdit(item: PlatformMerchantListItem) {
   form.manualPopular = Boolean(item.manualPopular);
   dialogVisible.value = true;
   message.value = '';
+}
+
+async function openEditFromRoute() {
+  const editId = route.query.edit;
+  if (typeof editId !== 'string' || !editId) return;
+  const target = merchants.value.find((item) => item.id === editId);
+  if (!target) return;
+  openEdit(target);
+  await router.replace({ path: '/platform/merchants' });
+}
+
+function openDetail(item: PlatformMerchantListItem) {
+  router.push(`/platform/merchants/${item.id}`);
 }
 
 function closeDialog() {
@@ -435,7 +452,8 @@ function resetFilters() {
           <td>{{ dateTime(item.lastOrderAt) }}</td>
           <td>
             <div class="merchant-actions">
-              <button class="small secondary" @click="openEdit(item)">查看 / {{ t('edit') }}</button>
+              <button class="small secondary" @click="openDetail(item)">查看</button>
+              <button class="small secondary" @click="openEdit(item)">{{ t('edit') }}</button>
               <button class="small subtle" @click="resetPassword(item)">{{ t('resetPassword') }}</button>
               <button class="small warning" @click="toggleStatus(item)">{{ item.status === 'ACTIVE' ? t('disable') : t('enabled') }}</button>
               <button class="small danger" @click="removeMerchant(item)">{{ t('deleteMerchant') }}</button>

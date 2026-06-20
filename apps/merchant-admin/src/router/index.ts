@@ -14,6 +14,7 @@ import OrdersPage from '@/pages/OrdersPage.vue';
 import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import StaffPage from '@/pages/StaffPage.vue';
 import PlatformDashboardPage from '@/pages/PlatformDashboardPage.vue';
+import PlatformMerchantDetailPage from '@/pages/PlatformMerchantDetailPage.vue';
 import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
 import PlatformOrdersPage from '@/pages/PlatformOrdersPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
@@ -158,6 +159,10 @@ const router = createRouter({
         {
           path: 'merchants',
           component: PlatformMerchantsPage,
+        },
+        {
+          path: 'merchants/:id',
+          component: PlatformMerchantDetailPage,
         },
         {
           path: 'orders',

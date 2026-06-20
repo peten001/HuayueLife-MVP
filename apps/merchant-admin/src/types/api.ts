@@ -111,6 +111,56 @@ export interface PlatformMerchantListItem {
   lastOrderAt?: string | null;
 }
 
+export interface PlatformMerchantDetailResponse {
+  merchant: {
+    id: string;
+    name: string;
+    account: string;
+    phone: string;
+    city: string;
+    district?: string | null;
+    address: string;
+    status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
+    isActive: boolean;
+    logoUrl?: string | null;
+    coverUrl?: string | null;
+    homepageCategoryKeys: string[];
+    manualPopular: boolean;
+    profileCompletion: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+  metrics: {
+    todayOrderCount: number;
+    todayOrderAmount: string;
+    pendingAcceptanceOrderCount: number;
+    preparingOrderCount: number;
+    last7DaysOrderCount: number;
+    last7DaysOrderAmount: string;
+    completedOrderCount: number;
+    canceledOrderCount: number;
+    completionRate: number | null;
+    averageOrderAmount: string | null;
+    lastOrderAt: string | null;
+  };
+  operation: {
+    menuCategoryCount: number;
+    dishCount: number;
+    activeDishCount: number;
+    tableCount: number;
+    activeTableCount: number;
+  };
+  recentOrders: Array<{
+    id: string;
+    orderNo: string;
+    orderType: OrderType;
+    status: OrderStatus;
+    totalAmount: string;
+    contactPhone?: string | null;
+    createdAt: string;
+  }>;
+}
+
 export interface PlatformDashboardData {
   overview: {
     todayOrderCount: number;

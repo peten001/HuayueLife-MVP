@@ -8,8 +8,11 @@ import {
   Merchant,
   MerchantStatus,
   OrderStatus,
+  OrderType,
+  ProductStatus,
   StaffRole,
   StaffStatus,
+  TableStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
@@ -57,6 +60,56 @@ type MerchantOperationStats = {
   preparingOrderCount: number;
   last7DaysOrderCount: number;
   lastOrderAt: string | null;
+};
+
+type PlatformMerchantDetailResponse = {
+  merchant: {
+    id: string;
+    name: string;
+    account: string;
+    phone: string;
+    city: string;
+    district: string | null;
+    address: string;
+    status: MerchantStatus;
+    isActive: boolean;
+    logoUrl: string | null;
+    coverUrl: string | null;
+    homepageCategoryKeys: string[];
+    manualPopular: boolean;
+    profileCompletion: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+  metrics: {
+    todayOrderCount: number;
+    todayOrderAmount: string;
+    pendingAcceptanceOrderCount: number;
+    preparingOrderCount: number;
+    last7DaysOrderCount: number;
+    last7DaysOrderAmount: string;
+    completedOrderCount: number;
+    canceledOrderCount: number;
+    completionRate: number | null;
+    averageOrderAmount: string | null;
+    lastOrderAt: string | null;
+  };
+  operation: {
+    menuCategoryCount: number;
+    dishCount: number;
+    activeDishCount: number;
+    tableCount: number;
+    activeTableCount: number;
+  };
+  recentOrders: Array<{
+    id: string;
+    orderNo: string;
+    orderType: OrderType;
+    status: OrderStatus;
+    totalAmount: string;
+    contactPhone: string | null;
+    createdAt: string;
+  }>;
 };
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -116,6 +169,173 @@ export class PlatformMerchantsService {
       items: merchants.map((merchant) =>
         this.toListItem(merchant, operationStats.get(merchant.id.toString())),
       ),
+    };
+  }
+
+  async detail(id: bigint): Promise<PlatformMerchantDetailResponse> {
+    const merchant = await this.requireMerchant(id);
+    const now = new Date();
+    const todayStart = startOfVietnamDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const last7Start = addDays(todayStart, -6);
+
+    const [
+      todayStats,
+      last7Stats,
+      currentPendingCount,
+      currentPreparingCount,
+      allTimeStats,
+      canceledOrderCount,
+      recentOrders,
+      menuCategoryCount,
+      dishCount,
+      activeDishCount,
+      tableCount,
+      activeTableCount,
+      lastOrder,
+    ] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: {
+          merchantId: id,
+          status: { not: OrderStatus.CANCELLED },
+          createdAt: { gte: todayStart, lt: tomorrowStart },
+        },
+        _count: { _all: true },
+        _sum: { totalAmountVnd: true },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          merchantId: id,
+          status: { not: OrderStatus.CANCELLED },
+          createdAt: { gte: last7Start, lt: tomorrowStart },
+        },
+        _count: { _all: true },
+        _sum: { totalAmountVnd: true },
+      }),
+      this.prisma.order.count({
+        where: {
+          merchantId: id,
+          status: OrderStatus.PENDING_ACCEPTANCE,
+        },
+      }),
+      this.prisma.order.count({
+        where: {
+          merchantId: id,
+          status: { in: PREPARING_STATUSES },
+        },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          merchantId: id,
+          status: { not: OrderStatus.CANCELLED },
+        },
+        _count: { _all: true },
+        _sum: { totalAmountVnd: true },
+      }),
+      this.prisma.order.count({
+        where: {
+          merchantId: id,
+          status: OrderStatus.CANCELLED,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: { merchantId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          orderNo: true,
+          orderType: true,
+          status: true,
+          totalAmountVnd: true,
+          contactPhone: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.category.count({
+        where: { merchantId: id },
+      }),
+      this.prisma.product.count({
+        where: { merchantId: id },
+      }),
+      this.prisma.product.count({
+        where: { merchantId: id, status: ProductStatus.ON_SALE },
+      }),
+      this.prisma.diningTable.count({
+        where: { merchantId: id },
+      }),
+      this.prisma.diningTable.count({
+        where: { merchantId: id, status: TableStatus.ACTIVE },
+      }),
+      this.prisma.order.findFirst({
+        where: { merchantId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const activeCount = Number(allTimeStats._count._all ?? 0);
+    const completedOrderCount = await this.prisma.order.count({
+      where: {
+        merchantId: id,
+        status: OrderStatus.COMPLETED,
+      },
+    });
+    const totalAllTimeAmount = allTimeStats._sum.totalAmountVnd ?? 0n;
+    const profile = this.computeProfileCompletion(merchant);
+
+    return {
+      merchant: {
+        id: merchant.id.toString(),
+        name: merchant.nameZh,
+        account:
+          merchant.staff.find((item) => item.role === StaffRole.OWNER)?.username ??
+          merchant.contactPhone,
+        phone: merchant.contactPhone,
+        city: merchant.city,
+        district: merchant.district,
+        address: merchant.addressDetail,
+        status: merchant.status,
+        isActive: merchant.status === MerchantStatus.ACTIVE,
+        logoUrl: merchant.logoUrl,
+        coverUrl: merchant.coverUrl,
+        homepageCategoryKeys: parseHomepageCategoryKeys(merchant.homepageCategoryKeys),
+        manualPopular: Boolean(merchant.manualPopular),
+        profileCompletion: profile.completion,
+        createdAt: merchant.createdAt.toISOString(),
+        updatedAt: merchant.updatedAt.toISOString(),
+      },
+      metrics: {
+        todayOrderCount: Number(todayStats._count._all ?? 0),
+        todayOrderAmount: (todayStats._sum.totalAmountVnd ?? 0n).toString(),
+        pendingAcceptanceOrderCount: currentPendingCount,
+        preparingOrderCount: currentPreparingCount,
+        last7DaysOrderCount: Number(last7Stats._count._all ?? 0),
+        last7DaysOrderAmount: (last7Stats._sum.totalAmountVnd ?? 0n).toString(),
+        completedOrderCount,
+        canceledOrderCount,
+        completionRate:
+          activeCount > 0 ? Math.round((completedOrderCount / activeCount) * 100) : null,
+        averageOrderAmount:
+          activeCount > 0 ? (totalAllTimeAmount / BigInt(activeCount)).toString() : null,
+        lastOrderAt: lastOrder?.createdAt.toISOString() ?? null,
+      },
+      operation: {
+        menuCategoryCount,
+        dishCount,
+        activeDishCount,
+        tableCount,
+        activeTableCount,
+      },
+      recentOrders: recentOrders.map((order) => ({
+        id: order.id.toString(),
+        orderNo: order.orderNo,
+        orderType: order.orderType,
+        status: order.status,
+        totalAmount: order.totalAmountVnd.toString(),
+        contactPhone: order.contactPhone,
+        createdAt: order.createdAt.toISOString(),
+      })),
     };
   }
 
