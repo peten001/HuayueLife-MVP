@@ -90,6 +90,8 @@ export interface PlatformAdminAccount {
 export interface PlatformMerchantListItem {
   id: string;
   nameZh: string;
+  city: string;
+  district?: string;
   contactPhone: string;
   homepageCategoryKeys: string[];
   manualPopular: boolean;
@@ -101,6 +103,43 @@ export interface PlatformMerchantListItem {
   ownerStatus: 'ACTIVE' | 'DISABLED';
   profileCompletion: number;
   missingProfileFields: string[];
+  todayOrderCount: number;
+  todayOrderAmount: string;
+  pendingAcceptanceOrderCount: number;
+  preparingOrderCount: number;
+  last7DaysOrderCount: number;
+  lastOrderAt?: string | null;
+}
+
+export interface PlatformDashboardData {
+  overview: {
+    todayOrderCount: number;
+    todayOrderAmount: string;
+    todayActiveMerchantCount: number;
+    todayNewMerchantCount: number;
+    pendingAcceptanceOrderCount: number;
+    preparingOrderCount: number;
+  };
+  alerts: {
+    longPendingOrderCount: number;
+    highCancelRateMerchantCount: number;
+    merchantsMissingHomepageCategoryCount: number;
+  };
+  trends: Array<{
+    date: string;
+    orderCount: number;
+    orderAmount: string;
+    activeMerchantCount: number;
+  }>;
+  rankings: Array<{
+    merchantId: string;
+    merchantName: string;
+    city: string;
+    district?: string | null;
+    businessStatus: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
+    orderCount: number;
+    orderAmount: string;
+  }>;
 }
 
 export interface Category {

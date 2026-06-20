@@ -176,6 +176,18 @@ function homepageCategoryText(keys: string[]) {
     .map((item) => item.label);
   return labels.length ? labels.join('、') : '-';
 }
+
+function regionText(item: PlatformMerchantListItem) {
+  return [item.city, item.district].filter(Boolean).join(' / ') || '-';
+}
+
+function money(value: string | number) {
+  return `${Number(value).toLocaleString()} ₫`;
+}
+
+function dateTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : '-';
+}
 </script>
 
 <template>
@@ -226,40 +238,40 @@ function homepageCategoryText(keys: string[]) {
     <table>
       <thead>
         <tr>
-          <th>ID</th>
           <th>{{ t('merchantName') }}</th>
-          <th>{{ t('contactPhone') }}</th>
+          <th>城市 / 区域</th>
+          <th>营业状态</th>
           <th>{{ t('homepageCategories') }}</th>
           <th>{{ t('manualPopular') }}</th>
-          <th>{{ t('profileCompletion') }}</th>
-          <th>{{ t('status') }}</th>
-          <th>{{ t('ownerAccount') }}</th>
-          <th>{{ t('createdAt') }}</th>
+          <th>今日订单</th>
+          <th>待接单</th>
+          <th>今日订单金额</th>
+          <th>近 7 日订单</th>
+          <th>最近订单时间</th>
           <th>{{ t('actions') }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="item in merchants" :key="item.id">
-          <td>{{ item.id }}</td>
           <td>
             {{ item.nameZh }}
-            <small>{{ item.ownerMustChangePassword ? t('mustChangePassword') : t('passwordReady') }}</small>
+            <small>{{ item.contactPhone }}</small>
+            <small>{{ item.ownerUsername }} · {{ item.ownerMustChangePassword ? t('mustChangePassword') : t('passwordReady') }}</small>
+            <small :title="missingProfileText(item)">
+              {{ t('profileCompletion') }} {{ item.profileCompletion }}%
+            </small>
           </td>
-          <td>{{ item.contactPhone }}</td>
+          <td>{{ regionText(item) }}</td>
+          <td><span class="badge" :class="item.status === 'ACTIVE' ? 'success' : item.status === 'DISABLED' ? 'warning-badge' : 'muted'">{{ statusLabel(item.status) }}</span></td>
           <td>{{ homepageCategoryText(item.homepageCategoryKeys) }}</td>
           <td>{{ item.manualPopular ? t('enabled') : '-' }}</td>
           <td>
-            <strong>{{ item.profileCompletion }}%</strong>
-            <small v-if="item.missingProfileFields.length" :title="missingProfileText(item)">
-              {{ t('profileMissingFields') }}：{{ missingProfileText(item) }}
-            </small>
+            <strong>{{ item.todayOrderCount }}</strong>
           </td>
-          <td><span class="badge" :class="item.status === 'ACTIVE' ? 'success' : item.status === 'DISABLED' ? 'warning-badge' : 'muted'">{{ statusLabel(item.status) }}</span></td>
-          <td>
-            {{ item.ownerUsername }}
-            <small>{{ item.ownerStatus === 'ACTIVE' ? t('activeStatus') : t('disabledStatus') }}</small>
-          </td>
-          <td>{{ new Date(item.createdAt).toLocaleString() }}</td>
+          <td>{{ item.pendingAcceptanceOrderCount }}</td>
+          <td>{{ money(item.todayOrderAmount) }}</td>
+          <td>{{ item.last7DaysOrderCount }}</td>
+          <td>{{ dateTime(item.lastOrderAt) }}</td>
           <td>
             <div class="actions">
               <button class="small secondary" @click="openEdit(item)">{{ t('edit') }}</button>

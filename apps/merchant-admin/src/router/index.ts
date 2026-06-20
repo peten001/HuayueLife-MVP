@@ -13,6 +13,7 @@ import DashboardPage from '@/pages/DashboardPage.vue';
 import OrdersPage from '@/pages/OrdersPage.vue';
 import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import StaffPage from '@/pages/StaffPage.vue';
+import PlatformDashboardPage from '@/pages/PlatformDashboardPage.vue';
 import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
 import { getMerchantMe } from '@/api/merchant';
@@ -148,7 +149,11 @@ const router = createRouter({
       component: PlatformLayout,
       meta: { auth: true, area: 'platform' },
       children: [
-        { path: '', redirect: '/platform/merchants' },
+        { path: '', redirect: '/platform/dashboard' },
+        {
+          path: 'dashboard',
+          component: PlatformDashboardPage,
+        },
         {
           path: 'merchants',
           component: PlatformMerchantsPage,
@@ -189,7 +194,7 @@ router.beforeEach(async (to) => {
   if (meta.area === 'platform') {
     const authenticated = Boolean(getPlatformToken());
     if (to.path === '/platform/login') {
-      return authenticated ? '/platform/merchants' : true;
+      return authenticated ? '/platform/dashboard' : true;
     }
     if (meta.auth && !authenticated) return '/platform/login';
     return true;

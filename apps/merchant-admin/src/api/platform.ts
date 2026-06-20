@@ -7,6 +7,7 @@ import {
 } from '@/utils/storage';
 import type {
   ApiResponse,
+  PlatformDashboardData,
   PlatformAdminAccount,
   PlatformMerchantListItem,
 } from '@/types/api';
@@ -51,6 +52,13 @@ export async function getPlatformMerchants() {
     items: PlatformMerchantListItem[];
   }>>('/platform/merchants');
   return response.data.data.items;
+}
+
+export async function getPlatformDashboard() {
+  const response = await platformHttp.get<ApiResponse<PlatformDashboardData>>(
+    '/platform/dashboard',
+  );
+  return response.data.data;
 }
 
 export async function createPlatformMerchant(payload: {

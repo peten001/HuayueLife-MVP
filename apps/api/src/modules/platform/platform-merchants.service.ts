@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Merchant, MerchantStatus, StaffRole, StaffStatus } from '@prisma/client';
+import {
+  Merchant,
+  MerchantStatus,
+  OrderStatus,
+  StaffRole,
+  StaffStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
@@ -23,6 +29,8 @@ type MerchantWithOwner = Merchant & {
 type PlatformMerchantListItem = {
   id: string;
   nameZh: string;
+  city: string;
+  district?: string | null;
   contactPhone: string;
   homepageCategoryKeys: string[];
   manualPopular: boolean;
@@ -34,7 +42,30 @@ type PlatformMerchantListItem = {
   ownerStatus: StaffStatus;
   profileCompletion: number;
   missingProfileFields: string[];
+  todayOrderCount: number;
+  todayOrderAmount: string;
+  pendingAcceptanceOrderCount: number;
+  preparingOrderCount: number;
+  last7DaysOrderCount: number;
+  lastOrderAt: string | null;
 };
+
+type MerchantOperationStats = {
+  todayOrderCount: number;
+  todayOrderAmount: string;
+  pendingAcceptanceOrderCount: number;
+  preparingOrderCount: number;
+  last7DaysOrderCount: number;
+  lastOrderAt: string | null;
+};
+
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const PREPARING_STATUSES: OrderStatus[] = [
+  OrderStatus.ACCEPTED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY,
+  OrderStatus.DELIVERING,
+];
 
 const DEFAULT_BUSINESS_HOURS = {
   monday: ['10:00-22:00'],
@@ -51,6 +82,10 @@ export class PlatformMerchantsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list() {
+    const now = new Date();
+    const todayStart = startOfVietnamDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const last7Start = addDays(todayStart, -6);
     const merchants = await this.prisma.merchant.findMany({
       where: {
         status: { not: MerchantStatus.DELETED },
@@ -69,9 +104,18 @@ export class PlatformMerchantsService {
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+    const merchantIds = merchants.map((merchant) => merchant.id);
+    const operationStats = await this.loadOperationStats(
+      merchantIds,
+      todayStart,
+      tomorrowStart,
+      last7Start,
+    );
 
     return {
-      items: merchants.map((merchant) => this.toListItem(merchant)),
+      items: merchants.map((merchant) =>
+        this.toListItem(merchant, operationStats.get(merchant.id.toString())),
+      ),
     };
   }
 
@@ -140,7 +184,7 @@ export class PlatformMerchantsService {
       },
     });
 
-    return this.toListItem(merchant);
+    return this.toListItem(merchant, emptyOperationStats());
   }
 
   async update(id: bigint, dto: UpdatePlatformMerchantDto) {
@@ -251,7 +295,7 @@ export class PlatformMerchantsService {
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
-    return this.toListItem(merchant);
+    return this.toListItem(merchant, emptyOperationStats());
   }
 
   private async requireMerchant(id: bigint) {
@@ -276,12 +320,17 @@ export class PlatformMerchantsService {
     return merchant as MerchantWithOwner;
   }
 
-  private toListItem(merchant: MerchantWithOwner): PlatformMerchantListItem {
+  private toListItem(
+    merchant: MerchantWithOwner,
+    stats = emptyOperationStats(),
+  ): PlatformMerchantListItem {
     const owner = merchant.staff.find((item) => item.role === StaffRole.OWNER);
     const profile = this.computeProfileCompletion(merchant);
     return {
       id: merchant.id.toString(),
       nameZh: merchant.nameZh,
+      city: merchant.city,
+      district: merchant.district,
       contactPhone: merchant.contactPhone,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
@@ -295,7 +344,100 @@ export class PlatformMerchantsService {
       ownerStatus: owner?.status ?? StaffStatus.DISABLED,
       profileCompletion: profile.completion,
       missingProfileFields: profile.missingFields,
+      todayOrderCount: stats.todayOrderCount,
+      todayOrderAmount: stats.todayOrderAmount,
+      pendingAcceptanceOrderCount: stats.pendingAcceptanceOrderCount,
+      preparingOrderCount: stats.preparingOrderCount,
+      last7DaysOrderCount: stats.last7DaysOrderCount,
+      lastOrderAt: stats.lastOrderAt,
     };
+  }
+
+  private async loadOperationStats(
+    merchantIds: bigint[],
+    todayStart: Date,
+    tomorrowStart: Date,
+    last7Start: Date,
+  ) {
+    const stats = new Map<string, MerchantOperationStats>();
+    for (const merchantId of merchantIds) {
+      stats.set(merchantId.toString(), emptyOperationStats());
+    }
+    if (!merchantIds.length) return stats;
+
+    const [
+      todayGroups,
+      pendingGroups,
+      preparingGroups,
+      last7Groups,
+      lastOrderGroups,
+    ] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ['merchantId'],
+        where: {
+          merchantId: { in: merchantIds },
+          status: { not: OrderStatus.CANCELLED },
+          createdAt: { gte: todayStart, lt: tomorrowStart },
+        },
+        _count: { _all: true },
+        _sum: { totalAmountVnd: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['merchantId'],
+        where: {
+          merchantId: { in: merchantIds },
+          status: OrderStatus.PENDING_ACCEPTANCE,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['merchantId'],
+        where: {
+          merchantId: { in: merchantIds },
+          status: { in: PREPARING_STATUSES },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['merchantId'],
+        where: {
+          merchantId: { in: merchantIds },
+          status: { not: OrderStatus.CANCELLED },
+          createdAt: { gte: last7Start, lt: tomorrowStart },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['merchantId'],
+        where: { merchantId: { in: merchantIds } },
+        _max: { createdAt: true },
+      }),
+    ]);
+
+    for (const item of todayGroups) {
+      const row = stats.get(item.merchantId.toString());
+      if (!row) continue;
+      row.todayOrderCount = item._count._all;
+      row.todayOrderAmount = (item._sum.totalAmountVnd ?? 0n).toString();
+    }
+    for (const item of pendingGroups) {
+      const row = stats.get(item.merchantId.toString());
+      if (row) row.pendingAcceptanceOrderCount = item._count._all;
+    }
+    for (const item of preparingGroups) {
+      const row = stats.get(item.merchantId.toString());
+      if (row) row.preparingOrderCount = item._count._all;
+    }
+    for (const item of last7Groups) {
+      const row = stats.get(item.merchantId.toString());
+      if (row) row.last7DaysOrderCount = item._count._all;
+    }
+    for (const item of lastOrderGroups) {
+      const row = stats.get(item.merchantId.toString());
+      if (row) row.lastOrderAt = item._max.createdAt?.toISOString() ?? null;
+    }
+
+    return stats;
   }
 
   private computeProfileCompletion(merchant: Merchant) {
@@ -370,4 +512,30 @@ function parseHomepageCategoryKeys(value: unknown) {
   } catch {
     return [];
   }
+}
+
+function emptyOperationStats(): MerchantOperationStats {
+  return {
+    todayOrderCount: 0,
+    todayOrderAmount: '0',
+    pendingAcceptanceOrderCount: 0,
+    preparingOrderCount: 0,
+    last7DaysOrderCount: 0,
+    lastOrderAt: null,
+  };
+}
+
+function startOfVietnamDay(date: Date) {
+  const vietnamTime = new Date(date.getTime() + VIETNAM_OFFSET_MS);
+  return new Date(
+    Date.UTC(
+      vietnamTime.getUTCFullYear(),
+      vietnamTime.getUTCMonth(),
+      vietnamTime.getUTCDate(),
+    ) - VIETNAM_OFFSET_MS,
+  );
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
