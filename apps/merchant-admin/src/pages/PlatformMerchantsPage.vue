@@ -21,6 +21,13 @@ const message = ref('');
 const dialogVisible = ref(false);
 const dialogMode = ref<'create' | 'edit'>('create');
 const editingId = ref('');
+const filters = reactive({
+  keyword: '',
+  region: '',
+  status: '',
+  homepageCategory: '',
+  popular: '',
+});
 const form = reactive({
   nameZh: '',
   contactPhone: '',
@@ -34,6 +41,42 @@ const homepageCategoryOptions = computed(() => [
   { value: 'noodles', label: t('homepageCategoryNoodles') },
   { value: 'drinks', label: t('homepageCategoryDrinks') },
 ]);
+const regionOptions = computed(() =>
+  Array.from(
+    new Set(
+      merchants.value
+        .map((item) => regionText(item))
+        .filter((value) => value !== '-'),
+    ),
+  ).sort((left, right) => left.localeCompare(right, 'zh-CN')),
+);
+const filteredMerchants = computed(() =>
+  merchants.value.filter((item) => {
+    const keyword = filters.keyword.trim().toLowerCase();
+    const matchesKeyword = !keyword || [
+      item.id,
+      item.nameZh,
+      item.contactPhone,
+      item.ownerUsername,
+    ].some((value) => String(value ?? '').toLowerCase().includes(keyword));
+    const matchesRegion = !filters.region || regionText(item) === filters.region;
+    const matchesStatus = !filters.status || item.status === filters.status;
+    const matchesCategory =
+      !filters.homepageCategory ||
+      item.homepageCategoryKeys.includes(filters.homepageCategory);
+    const matchesPopular =
+      !filters.popular ||
+      (filters.popular === 'yes' ? item.manualPopular : !item.manualPopular);
+
+    return (
+      matchesKeyword &&
+      matchesRegion &&
+      matchesStatus &&
+      matchesCategory &&
+      matchesPopular
+    );
+  }),
+);
 
 onMounted(loadMerchants);
 
@@ -151,8 +194,8 @@ async function removeMerchant(item: PlatformMerchantListItem) {
 }
 
 function statusLabel(status: PlatformMerchantListItem['status']) {
-  if (status === 'ACTIVE') return t('activeStatus');
-  if (status === 'DISABLED') return t('disabledStatus');
+  if (status === 'ACTIVE') return '营业中';
+  if (status === 'DISABLED') return '已停用';
   if (status === 'DELETED') return t('deletedStatus');
   return t('pendingStatus');
 }
@@ -174,7 +217,11 @@ function homepageCategoryText(keys: string[]) {
   const labels = homepageCategoryOptions.value
     .filter((item) => keys.includes(item.value))
     .map((item) => item.label);
-  return labels.length ? labels.join('、') : '-';
+  return labels.length ? labels.join('、') : '未设置';
+}
+
+function homepageCategoryLabels(keys: string[]) {
+  return homepageCategoryOptions.value.filter((item) => keys.includes(item.value));
 }
 
 function regionText(item: PlatformMerchantListItem) {
@@ -186,13 +233,37 @@ function money(value: string | number) {
 }
 
 function dateTime(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '-';
+  return value
+    ? new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(new Date(value))
+    : '-';
+}
+
+function merchantInitial(name: string) {
+  return name.trim().slice(0, 1) || '商';
+}
+
+function resetFilters() {
+  filters.keyword = '';
+  filters.region = '';
+  filters.status = '';
+  filters.homepageCategory = '';
+  filters.popular = '';
 }
 </script>
 
 <template>
-  <PageHeader :title="t('merchantManagement')" :description="t('platformMerchantDescription')">
-    <button @click="openCreate">{{ t('createMerchant') }}</button>
+  <PageHeader
+    :title="t('merchantManagement')"
+    description="管理平台入驻商户、营业状态、首页分类、热门推荐和经营数据"
+  >
+    <button class="platform-primary-action" @click="openCreate">{{ t('createMerchant') }}</button>
   </PageHeader>
 
   <p v-if="message" class="message">{{ message }}</p>
@@ -234,11 +305,67 @@ function dateTime(value?: string | null) {
     </form>
   </div>
 
-  <div class="card table-wrap">
-    <table>
+  <section class="card platform-merchant-filters">
+    <label>
+      搜索商家名称 / ID
+      <input v-model="filters.keyword" placeholder="输入商户名称、ID、手机号" />
+    </label>
+    <label>
+      城市 / 区域
+      <select v-model="filters.region">
+        <option value="">全部区域</option>
+        <option v-for="item in regionOptions" :key="item" :value="item">{{ item }}</option>
+      </select>
+    </label>
+    <label>
+      营业状态
+      <select v-model="filters.status">
+        <option value="">全部状态</option>
+        <option value="ACTIVE">营业中</option>
+        <option value="PENDING">{{ t('pendingStatus') }}</option>
+        <option value="DISABLED">已停用</option>
+      </select>
+    </label>
+    <label>
+      首页分类
+      <select v-model="filters.homepageCategory">
+        <option value="">全部分类</option>
+        <option
+          v-for="item in homepageCategoryOptions"
+          :key="item.value"
+          :value="item.value"
+        >
+          {{ item.label }}
+        </option>
+      </select>
+    </label>
+    <label>
+      热门推荐
+      <select v-model="filters.popular">
+        <option value="">全部</option>
+        <option value="yes">已推荐</option>
+        <option value="no">未推荐</option>
+      </select>
+    </label>
+    <button class="secondary" type="button" @click="resetFilters">重置筛选</button>
+  </section>
+
+  <section class="card platform-merchant-card">
+    <div class="platform-table-header">
+      <div>
+        <h2>商家列表</h2>
+        <p>共 {{ filteredMerchants.length }} 个商户</p>
+      </div>
+      <button class="secondary" :disabled="loading" @click="loadMerchants">
+        {{ loading ? '加载中...' : '刷新' }}
+      </button>
+    </div>
+
+    <div class="table-wrap platform-merchant-table-wrap">
+    <table class="platform-merchant-table">
       <thead>
         <tr>
-          <th>{{ t('merchantName') }}</th>
+          <th>商户信息</th>
           <th>城市 / 区域</th>
           <th>营业状态</th>
           <th>{{ t('homepageCategories') }}</th>
@@ -252,30 +379,64 @@ function dateTime(value?: string | null) {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="item in merchants" :key="item.id">
+        <tr v-for="item in filteredMerchants" :key="item.id">
           <td>
-            {{ item.nameZh }}
-            <small>{{ item.contactPhone }}</small>
-            <small>{{ item.ownerUsername }} · {{ item.ownerMustChangePassword ? t('mustChangePassword') : t('passwordReady') }}</small>
-            <small :title="missingProfileText(item)">
-              {{ t('profileCompletion') }} {{ item.profileCompletion }}%
-            </small>
+            <div class="merchant-info-cell">
+              <div class="merchant-avatar">{{ merchantInitial(item.nameZh) }}</div>
+              <div>
+                <strong>{{ item.nameZh }}</strong>
+                <small>{{ item.contactPhone }} · ID: {{ item.id }}</small>
+                <small :title="missingProfileText(item)">
+                  {{ t('profileCompletion') }} {{ item.profileCompletion }}%
+                </small>
+              </div>
+            </div>
           </td>
           <td>{{ regionText(item) }}</td>
-          <td><span class="badge" :class="item.status === 'ACTIVE' ? 'success' : item.status === 'DISABLED' ? 'warning-badge' : 'muted'">{{ statusLabel(item.status) }}</span></td>
-          <td>{{ homepageCategoryText(item.homepageCategoryKeys) }}</td>
-          <td>{{ item.manualPopular ? t('enabled') : '-' }}</td>
+          <td>
+            <span
+              class="status-pill"
+              :class="item.status === 'ACTIVE' ? 'is-active' : item.status === 'DISABLED' ? 'is-disabled' : 'is-muted'"
+            >
+              {{ statusLabel(item.status) }}
+            </span>
+          </td>
+          <td>
+            <div v-if="homepageCategoryLabels(item.homepageCategoryKeys).length" class="tag-list">
+              <span
+                v-for="category in homepageCategoryLabels(item.homepageCategoryKeys)"
+                :key="category.value"
+                class="category-tag"
+              >
+                {{ category.label }}
+              </span>
+            </div>
+            <span v-else class="muted-text">{{ homepageCategoryText(item.homepageCategoryKeys) }}</span>
+          </td>
+          <td>
+            <span class="popular-pill" :class="{ active: item.manualPopular }">
+              {{ item.manualPopular ? '已推荐' : '未推荐' }}
+            </span>
+          </td>
           <td>
             <strong>{{ item.todayOrderCount }}</strong>
+            <small>单</small>
           </td>
-          <td>{{ item.pendingAcceptanceOrderCount }}</td>
+          <td>
+            <span
+              class="pending-count"
+              :class="{ urgent: item.pendingAcceptanceOrderCount > 0 }"
+            >
+              待接：{{ item.pendingAcceptanceOrderCount }}
+            </span>
+          </td>
           <td>{{ money(item.todayOrderAmount) }}</td>
-          <td>{{ item.last7DaysOrderCount }}</td>
+          <td>{{ item.last7DaysOrderCount }} 单</td>
           <td>{{ dateTime(item.lastOrderAt) }}</td>
           <td>
-            <div class="actions">
-              <button class="small secondary" @click="openEdit(item)">{{ t('edit') }}</button>
-              <button class="small secondary" @click="resetPassword(item)">{{ t('resetPassword') }}</button>
+            <div class="merchant-actions">
+              <button class="small secondary" @click="openEdit(item)">查看 / {{ t('edit') }}</button>
+              <button class="small subtle" @click="resetPassword(item)">{{ t('resetPassword') }}</button>
               <button class="small warning" @click="toggleStatus(item)">{{ item.status === 'ACTIVE' ? t('disable') : t('enabled') }}</button>
               <button class="small danger" @click="removeMerchant(item)">{{ t('deleteMerchant') }}</button>
             </div>
@@ -283,6 +444,8 @@ function dateTime(value?: string | null) {
         </tr>
       </tbody>
     </table>
-    <p v-if="!loading && merchants.length === 0" class="empty">{{ t('noMatchingMerchants') }}</p>
-  </div>
+    </div>
+    <p v-if="loading" class="empty">商户数据加载中...</p>
+    <p v-else-if="filteredMerchants.length === 0" class="empty">{{ t('noMatchingMerchants') }}</p>
+  </section>
 </template>

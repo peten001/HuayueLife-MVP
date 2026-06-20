@@ -19,6 +19,7 @@ button {
 button:hover:not(:disabled) { background: #256b2a; }
 button:disabled { opacity: .6; cursor: wait; }
 button.secondary { color: #1f2d24; background: #edf4ee; }
+button.subtle { color: #40584a; background: #f3f7f4; }
 button.warning { color: #7a4b00; background: #ffecbf; }
 button.danger { color: #a14a4a; border: 1px solid #e8b9b9; background: #fff5f5; }
 button.small { padding: 6px 10px; font-size: 13px; }
@@ -334,6 +335,174 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .platform-ranking-table td {
   white-space: nowrap;
 }
+.platform-primary-action {
+  background: #5bae63;
+  box-shadow: 0 8px 18px rgb(91 174 99 / 22%);
+}
+.platform-primary-action:hover:not(:disabled) {
+  background: #146d2b;
+}
+.platform-merchant-filters {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(4, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-color: #e4ece6;
+}
+.platform-merchant-filters label {
+  color: #526158;
+  font-weight: 700;
+}
+.platform-merchant-filters input,
+.platform-merchant-filters select {
+  min-height: 42px;
+  border-color: #dfe8e2;
+  background: #fbfdfb;
+}
+.platform-merchant-card {
+  padding: 0;
+  overflow: hidden;
+  border-color: #e4ece6;
+}
+.platform-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #edf2ee;
+  background: #fff;
+}
+.platform-table-header h2 {
+  margin: 0;
+  color: #183f22;
+  font-size: 18px;
+}
+.platform-table-header p {
+  margin: 4px 0 0;
+  color: #758078;
+  font-size: 13px;
+}
+.platform-merchant-table-wrap {
+  margin: 0;
+}
+.platform-merchant-table {
+  min-width: 1320px;
+}
+.platform-merchant-table th {
+  padding: 14px 14px;
+  color: #5c6a62;
+  background: #f7faf9;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.platform-merchant-table td {
+  padding: 14px;
+  vertical-align: middle;
+}
+.platform-merchant-table tbody tr {
+  transition: background .16s ease;
+}
+.platform-merchant-table tbody tr:hover {
+  background: #f8fbf8;
+}
+.platform-merchant-table td:nth-child(6),
+.platform-merchant-table td:nth-child(7),
+.platform-merchant-table td:nth-child(8),
+.platform-merchant-table td:nth-child(9) {
+  white-space: nowrap;
+}
+.merchant-info-cell {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+.merchant-info-cell strong {
+  display: block;
+  overflow: hidden;
+  color: #1f2d24;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merchant-avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d7eadb;
+  border-radius: 12px;
+  color: #146d2b;
+  background: linear-gradient(135deg, #f2fbf3, #e1f2e5);
+  font-weight: 900;
+}
+.status-pill,
+.popular-pill,
+.category-tag,
+.pending-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.status-pill.is-active {
+  color: #146d2b;
+  background: #e5f5ec;
+}
+.status-pill.is-disabled {
+  color: #9b3f3f;
+  background: #fff0f0;
+}
+.status-pill.is-muted {
+  color: #65706a;
+  background: #edf2ef;
+}
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 140px;
+}
+.category-tag {
+  color: #146d2b;
+  background: #eef8f0;
+}
+.popular-pill {
+  color: #68706b;
+  background: #edf2ef;
+}
+.popular-pill.active {
+  color: #146d2b;
+  background: #dff2e3;
+}
+.muted-text {
+  color: #8a948d;
+  font-size: 13px;
+}
+.pending-count {
+  color: #68706b;
+  background: #edf2ef;
+}
+.pending-count.urgent {
+  color: #9a5a00;
+  background: #fff0d9;
+}
+.merchant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 220px;
+}
+.merchant-actions button {
+  border-radius: 8px;
+}
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -565,8 +734,13 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .stat-grid, .order-card-grid, .detail-grid { grid-template-columns: 1fr; }
   .platform-metric-grid,
   .platform-dashboard-grid,
-  .platform-chart-grid {
+  .platform-chart-grid,
+  .platform-merchant-filters {
     grid-template-columns: 1fr;
+  }
+  .platform-table-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .bar-chart {
     overflow-x: auto;
