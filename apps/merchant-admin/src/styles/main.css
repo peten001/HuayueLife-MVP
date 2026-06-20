@@ -758,6 +758,172 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .platform-order-detail {
   width: min(920px, 100%);
 }
+.platform-user-filters {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr repeat(2, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-color: #e4ece6;
+}
+.platform-user-filters label {
+  color: #526158;
+  font-weight: 700;
+}
+.platform-user-filters input {
+  min-height: 42px;
+  border-color: #dfe8e2;
+  background: #fbfdfb;
+}
+.platform-user-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.platform-user-card {
+  padding: 0;
+  overflow: hidden;
+  border-color: #e4ece6;
+}
+.platform-user-table-wrap {
+  margin: 0;
+}
+.platform-user-table {
+  min-width: 1180px;
+}
+.platform-user-table th {
+  padding: 14px;
+  color: #5c6a62;
+  background: #f7faf9;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.platform-user-table td {
+  padding: 14px;
+  vertical-align: middle;
+}
+.platform-user-table tbody tr {
+  transition: background .16s ease;
+}
+.platform-user-table tbody tr:hover {
+  background: #f8fbf8;
+}
+.user-info-cell {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+.user-info-cell strong {
+  display: block;
+  overflow: hidden;
+  color: #1f2d24;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-avatar,
+.user-detail-avatar {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #d7eadb;
+  color: #146d2b;
+  background: linear-gradient(135deg, #f2fbf3, #e1f2e5);
+  font-weight: 900;
+}
+.user-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+.user-avatar img,
+.user-detail-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 220px;
+}
+.user-actions button {
+  border-radius: 8px;
+}
+.platform-user-detail {
+  width: min(1120px, 100%);
+}
+.platform-user-profile {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #e6eee8;
+  border-radius: 14px;
+  background: #f8fbf9;
+}
+.user-detail-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  font-size: 30px;
+}
+.platform-user-profile p {
+  margin: 6px 0 0;
+  color: #5f6c64;
+  line-height: 1.6;
+}
+.platform-user-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.user-metric-card {
+  display: grid;
+  gap: 8px;
+  border-color: #e4ece6;
+}
+.user-metric-card span {
+  color: #6e786f;
+  font-size: 14px;
+}
+.user-metric-card strong {
+  color: #183f22;
+  font-size: 22px;
+}
+.platform-user-orders-card {
+  display: grid;
+  gap: 14px;
+}
+.platform-user-recent-orders-wrap {
+  margin: 0;
+}
+.platform-user-recent-orders {
+  min-width: 860px;
+}
+.platform-user-recent-orders th {
+  padding: 14px;
+  color: #5c6a62;
+  background: #f7faf9;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.platform-user-recent-orders td {
+  padding: 14px;
+  vertical-align: middle;
+}
+.platform-user-recent-orders tbody tr {
+  transition: background .16s ease;
+}
+.platform-user-recent-orders tbody tr:hover {
+  background: #f8fbf8;
+}
 .recommendation-info-card {
   margin-bottom: 20px;
   border-color: #e4ece6;
@@ -1398,6 +1564,8 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .platform-analytics-summary-grid,
   .platform-analytics-grid,
   .platform-merchant-filters,
+  .platform-user-filters,
+  .platform-user-summary-grid,
   .platform-recommendation-filters,
   .platform-recommendation-summary-grid,
   .platform-order-filters,
@@ -1460,6 +1628,18 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .recommendation-table,
   .recommendation-picker-table {
     min-width: 1080px;
+  }
+  .platform-user-profile,
+  .platform-user-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .user-detail-avatar {
+    width: 72px;
+    height: 72px;
+  }
+  .platform-user-table,
+  .platform-user-recent-orders {
+    min-width: 920px;
   }
   .platform-order-log li {
     grid-template-columns: 1fr;

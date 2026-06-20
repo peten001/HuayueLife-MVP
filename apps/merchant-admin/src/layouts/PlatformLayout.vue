@@ -14,7 +14,7 @@ const nav: Array<{ path: string; label: string; disabled?: boolean }> = [
   { path: '/platform/orders', label: '订单管理' },
   { path: '/platform/analytics', label: '营业数据' },
   { path: '/platform/recommendations', label: '分类推荐' },
-  { path: '/platform/users', label: '用户管理', disabled: true },
+  { path: '/platform/users', label: '用户管理' },
   { path: '/platform/settings', label: '系统设置', disabled: true },
 ];
 

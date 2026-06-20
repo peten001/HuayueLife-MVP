@@ -233,6 +233,66 @@ export interface PlatformOrderListItem {
   }>;
 }
 
+export interface PlatformUserListItem {
+  id: string;
+  nickname: string | null;
+  phone: string | null;
+  avatarUrl: string | null;
+  city: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+  orderCount: number;
+  orderAmount: string;
+  completedOrderCount: number;
+  canceledOrderCount: number;
+  lastOrderAt: string | null;
+}
+
+export interface PlatformUsersSummary {
+  userCount: number;
+  boundPhoneUserCount: number;
+  todayNewUserCount: number;
+  orderUserCount: number;
+}
+
+export interface PlatformUsersResponse {
+  items: PlatformUserListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: PlatformUsersSummary;
+}
+
+export interface PlatformUserDetailResponse {
+  user: {
+    id: string;
+    nickname: string | null;
+    phone: string | null;
+    avatarUrl: string | null;
+    city: string | null;
+    createdAt: string;
+    lastLoginAt: string | null;
+  };
+  metrics: {
+    orderCount: number;
+    orderAmount: string;
+    completedOrderCount: number;
+    canceledOrderCount: number;
+    lastOrderAt: string | null;
+    averageOrderAmount: string | null;
+  };
+  recentOrders: Array<{
+    id: string;
+    orderNo: string;
+    merchantId: string;
+    merchantName: string;
+    orderType: OrderType;
+    status: OrderStatus;
+    totalAmount: string;
+    createdAt: string;
+  }>;
+}
+
 export interface PlatformOrdersResponse {
   items: PlatformOrderListItem[];
   total: number;
@@ -312,6 +372,16 @@ export interface PlatformOrderFilters {
   status?: OrderStatus | '';
   phone?: string;
   orderNo?: string;
+}
+
+export interface PlatformUsersFilters {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  phone?: string;
+  city?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface Category {

@@ -11,6 +11,8 @@ import { PlatformMerchantsController } from './platform-merchants.controller';
 import { PlatformMerchantsService } from './platform-merchants.service';
 import { PlatformOrdersController } from './platform-orders.controller';
 import { PlatformOrdersService } from './platform-orders.service';
+import { PlatformUsersController } from './platform-users.controller';
+import { PlatformUsersService } from './platform-users.service';
 
 @Module({
   controllers: [
@@ -19,6 +21,7 @@ import { PlatformOrdersService } from './platform-orders.service';
     PlatformAnalyticsController,
     PlatformMerchantsController,
     PlatformOrdersController,
+    PlatformUsersController,
   ],
   providers: [
     JwtAuthGuard,
@@ -28,6 +31,7 @@ import { PlatformOrdersService } from './platform-orders.service';
     PlatformAnalyticsService,
     PlatformMerchantsService,
     PlatformOrdersService,
+    PlatformUsersService,
   ],
 })
 export class PlatformModule {}

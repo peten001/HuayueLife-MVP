@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import { getPlatformOrders } from '@/api/platform';
@@ -15,6 +16,7 @@ const response = ref<PlatformOrdersResponse | null>(null);
 const selectedOrder = ref<PlatformOrderListItem | null>(null);
 const loading = ref(false);
 const message = ref('');
+const route = useRoute();
 const filters = reactive<Required<Pick<PlatformOrderFilters, 'page' | 'pageSize'>> & Omit<PlatformOrderFilters, 'page' | 'pageSize'>>({
   page: 1,
   pageSize: 20,
@@ -34,7 +36,13 @@ const totalPages = computed(() =>
 const rows = computed(() => response.value?.items ?? []);
 const summary = computed(() => response.value?.summary);
 
-onMounted(loadOrders);
+onMounted(() => {
+  const phone = typeof route.query.phone === 'string' ? route.query.phone : '';
+  const orderNo = typeof route.query.orderNo === 'string' ? route.query.orderNo : '';
+  if (phone) filters.phone = phone;
+  if (orderNo) filters.orderNo = orderNo;
+  void loadOrders();
+});
 
 async function loadOrders() {
   loading.value = true;
