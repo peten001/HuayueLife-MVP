@@ -7,12 +7,15 @@ import { PlatformDashboardController } from './platform-dashboard.controller';
 import { PlatformDashboardService } from './platform-dashboard.service';
 import { PlatformMerchantsController } from './platform-merchants.controller';
 import { PlatformMerchantsService } from './platform-merchants.service';
+import { PlatformOrdersController } from './platform-orders.controller';
+import { PlatformOrdersService } from './platform-orders.service';
 
 @Module({
   controllers: [
     PlatformAuthController,
     PlatformDashboardController,
     PlatformMerchantsController,
+    PlatformOrdersController,
   ],
   providers: [
     JwtAuthGuard,
@@ -20,6 +23,7 @@ import { PlatformMerchantsService } from './platform-merchants.service';
     PlatformAuthService,
     PlatformDashboardService,
     PlatformMerchantsService,
+    PlatformOrdersService,
   ],
 })
 export class PlatformModule {}

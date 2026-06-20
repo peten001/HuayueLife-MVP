@@ -142,6 +142,73 @@ export interface PlatformDashboardData {
   }>;
 }
 
+export interface PlatformOrderListItem {
+  id: string;
+  orderNo: string;
+  merchantId: string;
+  merchantName: string;
+  merchantCity?: string;
+  merchantDistrict?: string | null;
+  orderType: OrderType;
+  status: OrderStatus;
+  totalAmount: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  tableName?: string | null;
+  tableNo?: string | null;
+  deliveryAddress?: string | null;
+  pickupName?: string | null;
+  customerRemark?: string | null;
+  cancelReason?: string | null;
+  createdAt: string;
+  acceptedAt?: string | null;
+  readyAt?: string | null;
+  completedAt?: string | null;
+  canceledAt?: string | null;
+  items: Array<{
+    id: string;
+    productNameZhSnapshot: string;
+    unitPriceVnd: string;
+    quantity: number;
+    subtotalVnd: string;
+    remark?: string | null;
+  }>;
+  statusLogs: Array<{
+    id: string;
+    fromStatus?: OrderStatus | null;
+    toStatus: OrderStatus;
+    operatorType: 'USER' | 'MERCHANT_STAFF' | 'SYSTEM';
+    remark?: string | null;
+    createdAt: string;
+  }>;
+}
+
+export interface PlatformOrdersResponse {
+  items: PlatformOrderListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: {
+    todayOrderCount: number;
+    pendingOrderCount: number;
+    completedRate: number | null;
+    todayOrderAmount: string;
+  };
+}
+
+export interface PlatformOrderFilters {
+  page?: number;
+  pageSize?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  merchantKeyword?: string;
+  city?: string;
+  orderType?: OrderType | '';
+  status?: OrderStatus | '';
+  phone?: string;
+  orderNo?: string;
+}
+
 export interface Category {
   id: string;
   nameZh: string;

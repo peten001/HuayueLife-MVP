@@ -503,6 +503,157 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
 .merchant-actions button {
   border-radius: 8px;
 }
+.platform-order-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-color: #e4ece6;
+}
+.platform-order-filters label,
+.page-size-control {
+  color: #526158;
+  font-weight: 700;
+}
+.platform-order-filters input,
+.platform-order-filters select,
+.page-size-control select {
+  min-height: 42px;
+  border-color: #dfe8e2;
+  background: #fbfdfb;
+}
+.platform-order-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.platform-order-card {
+  padding: 0;
+  overflow: hidden;
+  border-color: #e4ece6;
+  margin-bottom: 18px;
+}
+.page-size-control {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.page-size-control select {
+  width: 82px;
+}
+.platform-order-table {
+  min-width: 1160px;
+}
+.platform-order-table th {
+  padding: 14px;
+  color: #5c6a62;
+  background: #f7faf9;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.platform-order-table td {
+  padding: 14px;
+  vertical-align: middle;
+}
+.platform-order-table tbody tr {
+  transition: background .16s ease;
+}
+.platform-order-table tbody tr:hover {
+  background: #f8fbf8;
+}
+.order-no-cell {
+  max-width: 180px;
+  overflow-wrap: anywhere;
+  color: #183f22;
+  font-weight: 800;
+}
+.order-detail-cell {
+  max-width: 240px;
+  overflow: hidden;
+  color: #526158;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-type-pill,
+.order-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.order-type-pill {
+  color: #146d2b;
+  background: #eef8f0;
+}
+.order-status-pill.pending {
+  color: #4f46a5;
+  background: #eeeeff;
+}
+.order-status-pill.working {
+  color: #9a5a00;
+  background: #fff0d9;
+}
+.order-status-pill.done {
+  color: #146d2b;
+  background: #e5f5ec;
+}
+.order-status-pill.cancelled {
+  color: #9b3f3f;
+  background: #fff0f0;
+}
+.platform-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid #edf2ee;
+  color: #5c6a62;
+}
+.platform-order-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.platform-order-detail {
+  width: min(920px, 100%);
+}
+.platform-order-detail h3 {
+  margin: 22px 0 10px;
+  color: #183f22;
+  font-size: 16px;
+}
+.platform-order-items-table {
+  min-width: 640px;
+}
+.platform-order-log {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.platform-order-log li {
+  display: grid;
+  grid-template-columns: 120px 170px 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #edf2ee;
+  border-radius: 10px;
+  background: #f9fbfa;
+}
+.platform-order-log span,
+.platform-order-log small {
+  color: #68746d;
+}
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -735,7 +886,9 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .platform-metric-grid,
   .platform-dashboard-grid,
   .platform-chart-grid,
-  .platform-merchant-filters {
+  .platform-merchant-filters,
+  .platform-order-filters,
+  .platform-order-summary-grid {
     grid-template-columns: 1fr;
   }
   .platform-table-header {
@@ -752,6 +905,14 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .alert-list > div > button,
   .alert-list > div > .button-link {
     grid-column: span 2;
+  }
+  .platform-order-filter-actions,
+  .platform-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .platform-order-log li {
+    grid-template-columns: 1fr;
   }
   .order-filters { grid-template-columns: 1fr; }
   .order-operation { align-items: stretch; flex-direction: column; }

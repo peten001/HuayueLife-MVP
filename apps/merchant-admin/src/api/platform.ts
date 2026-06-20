@@ -10,6 +10,8 @@ import type {
   PlatformDashboardData,
   PlatformAdminAccount,
   PlatformMerchantListItem,
+  PlatformOrderFilters,
+  PlatformOrdersResponse,
 } from '@/types/api';
 
 const platformHttp = axios.create({
@@ -57,6 +59,18 @@ export async function getPlatformMerchants() {
 export async function getPlatformDashboard() {
   const response = await platformHttp.get<ApiResponse<PlatformDashboardData>>(
     '/platform/dashboard',
+  );
+  return response.data.data;
+}
+
+export async function getPlatformOrders(filters: PlatformOrderFilters = {}) {
+  const response = await platformHttp.get<ApiResponse<PlatformOrdersResponse>>(
+    '/platform/orders',
+    {
+      params: Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== '' && value !== undefined),
+      ),
+    },
   );
   return response.data.data;
 }

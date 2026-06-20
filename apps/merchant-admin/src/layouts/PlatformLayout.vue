@@ -11,7 +11,7 @@ const admin = getPlatformAdmin();
 const nav: Array<{ path: string; label: string; disabled?: boolean }> = [
   { path: '/platform/dashboard', label: '总览' },
   { path: '/platform/merchants', label: t('merchantManagement') },
-  { path: '/platform/orders', label: '订单管理', disabled: true },
+  { path: '/platform/orders', label: '订单管理' },
   { path: '/platform/analytics', label: '营业数据', disabled: true },
   { path: '/platform/recommendations', label: '分类推荐', disabled: true },
   { path: '/platform/users', label: '用户管理', disabled: true },
