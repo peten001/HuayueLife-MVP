@@ -1,10 +1,31 @@
+import { computed, ref } from 'vue';
+
 let wakeLock: WakeLockSentinel | null = null;
 let visibilityListenerAttached = false;
 let autoModeStarted = false;
 const AUTO_REASONS = new Set(['auto-start', 'visibilitychange', 'release']);
+const standaloneWakeLockFailed = ref(false);
+
+export const standaloneWakeLockWarningVisible = computed(() => standaloneWakeLockFailed.value);
+
+export function isStandaloneMode() {
+  if (typeof window === 'undefined') return false;
+  const displayModeStandalone = window.matchMedia?.('(display-mode: standalone)').matches ?? false;
+  const navigatorStandalone =
+    typeof navigator !== 'undefined' &&
+    'standalone' in navigator &&
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  return displayModeStandalone || navigatorStandalone;
+}
 
 function isSupported() {
   return typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+}
+
+function markStandaloneWakeLockFailure(reason?: string, error?: unknown) {
+  if (!isStandaloneMode()) return;
+  standaloneWakeLockFailed.value = true;
+  console.warn('[wake-lock] standalone request failed', reason, error);
 }
 
 function attachVisibilityListener() {
@@ -40,6 +61,7 @@ export async function ensureWakeLock(reason?: string) {
   }
   if (!isSupported()) {
     console.warn('[wake-lock] unsupported');
+    markStandaloneWakeLockFailure(reason);
     return false;
   }
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -52,6 +74,7 @@ export async function ensureWakeLock(reason?: string) {
   try {
     const sentinel = await navigator.wakeLock.request('screen');
     wakeLock = sentinel;
+    standaloneWakeLockFailed.value = false;
     console.log('[wake-lock] active', reason);
     sentinel.addEventListener('release', () => {
       if (wakeLock === sentinel) {
@@ -65,6 +88,7 @@ export async function ensureWakeLock(reason?: string) {
     return true;
   } catch (error) {
     console.warn('[wake-lock] request failed', reason, error);
+    markStandaloneWakeLockFailure(reason, error);
     return false;
   }
 }
