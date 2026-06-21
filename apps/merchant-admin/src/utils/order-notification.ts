@@ -42,16 +42,16 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
-  await resumeAudioContext();
-  const voices = await loadVoices();
-  if (!voices.length) {
-    preloadSpeechSynthesis();
+  const unlocked = await unlockAudioForReminder();
+  if (!unlocked) {
+    setLastSpeakDebugState('failed', 'audio unlock failed');
+    return false;
   }
-  const activated = await speakOrderNotification('声音提醒已开启');
-  if (!activated) {
-    await initializeSoundPlayback();
-  }
+
   setOrderSoundEnabled(true);
+  preloadSpeechSynthesis();
+  await speakOrderNotification('声音提醒已开启');
+  return true;
 }
 
 export function disableOrderSound() {
@@ -170,6 +170,9 @@ async function speakOrderNotification(text: string) {
       const voice = resolveChineseVoice();
       if (voice) utterance.voice = voice;
       speech.cancel();
+      if (typeof speech.resume === 'function') {
+        speech.resume();
+      }
       speech.speak(utterance);
       setLastSpeakDebugState('success');
       return true;
@@ -207,6 +210,21 @@ function preloadSpeechSynthesis() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   updateSpeechVoicesCount(window.speechSynthesis.getVoices());
   void loadVoices();
+}
+
+async function unlockAudioForReminder() {
+  const context = getAudioContext();
+  if (!context) return false;
+  try {
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+    playBeep(context, 0.08, 0.05);
+    return true;
+  } catch (error) {
+    setLastSpeakDebugState('failed', stringifyError(error));
+    return false;
+  }
 }
 
 function loadVoices() {
