@@ -10,15 +10,29 @@ interface RecentNewOrderRecord {
   expiresAt: number;
 }
 
+type SpeakDebugState = 'success' | 'failed' | 'not-called';
+
 const soundEnabled = ref(false);
 const pendingOrderIds = ref<string[]>(readPendingSnapshot());
 const recentNewOrderRecords = ref<RecentNewOrderRecord[]>(readRecentNewRecords());
 const initialized = ref(false);
+const speechVoicesCount = ref(getCurrentSpeechVoicesCount());
+const lastSpeakState = ref<SpeakDebugState>('not-called');
+const lastSpeakReason = ref('not-called');
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
 let audioContext: AudioContext | null = null;
 
 export const pendingOrderCount = computed(() => pendingOrderIds.value.length);
 export const orderSoundEnabled = computed(() => soundEnabled.value);
+export const audioContextDebugState = computed(() => audioContext?.state ?? 'not-created');
+export const speechVoicesDebugCount = computed(() => speechVoicesCount.value);
+export const lastSpeakDebugState = computed(() => lastSpeakState.value);
+export const lastSpeakDebugReason = computed(() => lastSpeakReason.value);
+export const lastSpeakDebugSummary = computed(() =>
+  lastSpeakState.value === 'failed'
+    ? `failed${lastSpeakReason.value ? `: ${lastSpeakReason.value}` : ''}`
+    : lastSpeakState.value,
+);
 export const recentNewPendingOrderIds = computed(() =>
   recentNewOrderRecords.value.map((record) => record.id),
 );
@@ -28,37 +42,12 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
-  const context = getAudioContext();
-  console.log('[order-sound] enable start', {
-    audioState: context?.state ?? 'no-audio-context',
-    voicesLength: typeof window === 'undefined' || !window.speechSynthesis
-      ? -1
-      : window.speechSynthesis.getVoices().length,
-  });
   await resumeAudioContext();
   const voices = await loadVoices();
-  console.log('[order-sound] loadVoices resolved', {
-    voicesLength: voices.length,
-    currentVoicesLength:
-      typeof window === 'undefined' || !window.speechSynthesis
-        ? -1
-        : window.speechSynthesis.getVoices().length,
-  });
   if (!voices.length) {
     preloadSpeechSynthesis();
   }
   const activated = await speakOrderNotification('声音提醒已开启');
-  console.log('[order-sound] speakOrderNotification result', {
-    activated,
-    speaking:
-      typeof window === 'undefined' || !window.speechSynthesis
-        ? false
-        : window.speechSynthesis.speaking,
-    pending:
-      typeof window === 'undefined' || !window.speechSynthesis
-        ? false
-        : window.speechSynthesis.pending,
-  });
   if (!activated) {
     await initializeSoundPlayback();
   }
@@ -166,22 +155,37 @@ function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
 }
 
 async function speakOrderNotification(text: string) {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined') {
+    setLastSpeakDebugState('failed', 'window unavailable');
+    return false;
+  }
   const speech = window.speechSynthesis;
   if (speech && typeof window.SpeechSynthesisUtterance !== 'undefined') {
-    const utterance = new window.SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.volume = 1;
-    utterance.rate = 1;
-    utterance.pitch = 1.1;
-    const voice = resolveChineseVoice();
-    if (voice) utterance.voice = voice;
-    speech.cancel();
-    speech.speak(utterance);
-    return true;
+    try {
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.volume = 1;
+      utterance.rate = 1;
+      utterance.pitch = 1.1;
+      const voice = resolveChineseVoice();
+      if (voice) utterance.voice = voice;
+      speech.cancel();
+      speech.speak(utterance);
+      setLastSpeakDebugState('success');
+      return true;
+    } catch (error) {
+      setLastSpeakDebugState('failed', stringifyError(error));
+      return false;
+    }
   }
-  playFallbackBeep();
-  return true;
+  try {
+    playFallbackBeep();
+    setLastSpeakDebugState('success');
+    return true;
+  } catch (error) {
+    setLastSpeakDebugState('failed', stringifyError(error));
+    return false;
+  }
 }
 
 function resolveChineseVoice() {
@@ -201,29 +205,38 @@ function resolveChineseVoice() {
 
 function preloadSpeechSynthesis() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  window.speechSynthesis.getVoices();
+  updateSpeechVoicesCount(window.speechSynthesis.getVoices());
   void loadVoices();
 }
 
 function loadVoices() {
   return new Promise<SpeechSynthesisVoice[]>((resolve) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
+      updateSpeechVoicesCount([]);
       resolve([]);
       return;
     }
     const voices = window.speechSynthesis.getVoices();
+    updateSpeechVoicesCount(voices);
     if (voices.length) {
       resolve(voices);
       return;
     }
-    const handler = () => {
+    let settled = false;
+    let handler: () => void = () => {};
+    const finish = (nextVoices: SpeechSynthesisVoice[]) => {
+      if (settled) return;
+      settled = true;
+      updateSpeechVoicesCount(nextVoices);
       window.speechSynthesis.removeEventListener('voiceschanged', handler);
-      resolve(window.speechSynthesis.getVoices());
+      resolve(nextVoices);
+    };
+    handler = () => {
+      finish(window.speechSynthesis.getVoices());
     };
     window.speechSynthesis.addEventListener('voiceschanged', handler);
     window.setTimeout(() => {
-      window.speechSynthesis.removeEventListener('voiceschanged', handler);
-      resolve(window.speechSynthesis.getVoices());
+      finish(window.speechSynthesis.getVoices());
     }, 1000);
   });
 }
@@ -288,6 +301,25 @@ function unique(ids: string[]) {
 
 function setOrderSoundEnabled(value: boolean) {
   soundEnabled.value = value;
+}
+
+function setLastSpeakDebugState(state: SpeakDebugState, reason = '') {
+  lastSpeakState.value = state;
+  lastSpeakReason.value = state === 'failed' ? reason || 'unknown error' : '';
+}
+
+function updateSpeechVoicesCount(voices: SpeechSynthesisVoice[]) {
+  speechVoicesCount.value = voices.length;
+}
+
+function getCurrentSpeechVoicesCount() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return 0;
+  return window.speechSynthesis.getVoices().length;
+}
+
+function stringifyError(error: unknown) {
+  if (error instanceof Error) return error.message || error.name || 'unknown error';
+  return typeof error === 'string' ? error : 'unknown error';
 }
 
 function readPendingSnapshot() {

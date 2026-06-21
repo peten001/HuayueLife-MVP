@@ -1,7 +1,11 @@
+import { computed, ref } from 'vue';
+
 let wakeLock: WakeLockSentinel | null = null;
 let visibilityListenerAttached = false;
 let autoModeStarted = false;
-const AUTO_REASONS = new Set(['auto-start', 'visibilitychange', 'release']);
+const wakeLockDebugState = ref<'active' | 'inactive' | 'unknown'>('unknown');
+
+export const wakeLockDebugStatus = computed(() => wakeLockDebugState.value);
 
 function isSupported() {
   return typeof navigator !== 'undefined' && 'wakeLock' in navigator;
@@ -18,7 +22,6 @@ function attachVisibilityListener() {
 }
 
 export async function startAutoWakeLock() {
-  console.log('[wake-lock] auto start');
   autoModeStarted = true;
   attachVisibilityListener();
   await ensureWakeLock('auto-start');
@@ -34,12 +37,10 @@ export async function requestWakeLockOnce(reason?: string) {
 }
 
 export async function ensureWakeLock(reason?: string) {
+  void reason;
   attachVisibilityListener();
-  if (reason && !AUTO_REASONS.has(reason)) {
-    console.log('[wake-lock] request from user gesture', reason);
-  }
   if (!isSupported()) {
-    console.warn('[wake-lock] unsupported', reason);
+    wakeLockDebugState.value = 'unknown';
     return false;
   }
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -52,19 +53,19 @@ export async function ensureWakeLock(reason?: string) {
   try {
     const sentinel = await navigator.wakeLock.request('screen');
     wakeLock = sentinel;
-    console.log('[wake-lock] active', reason);
+    wakeLockDebugState.value = 'active';
     sentinel.addEventListener('release', () => {
       if (wakeLock === sentinel) {
         wakeLock = null;
       }
-      console.log('[wake-lock] released');
+      wakeLockDebugState.value = 'inactive';
       if (autoModeStarted && document.visibilityState === 'visible') {
         void ensureWakeLock('release');
       }
     });
     return true;
   } catch (error) {
-    console.warn('[wake-lock] request failed', reason, error);
+    wakeLockDebugState.value = 'inactive';
     return false;
   }
 }
@@ -74,8 +75,9 @@ async function releaseScreenWakeLock() {
   try {
     await wakeLock.release();
   } catch (error) {
-    console.warn('[wake-lock] release failed', error);
+    wakeLockDebugState.value = 'inactive';
   } finally {
     wakeLock = null;
+    wakeLockDebugState.value = 'inactive';
   }
 }

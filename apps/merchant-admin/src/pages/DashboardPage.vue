@@ -6,12 +6,15 @@ import { errorMessage } from '@/api/http';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
+  audioContextDebugState,
   clearNewPendingOrder,
   enableOrderSound,
+  lastSpeakDebugSummary,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
   orderSoundEnabled,
   recentNewPendingOrderIds,
+  speechVoicesDebugCount,
   disableOrderSound,
 } from '@/utils/order-notification';
 import {
@@ -19,6 +22,7 @@ import {
   requestWakeLockOnce,
   startAutoWakeLock,
   stopAutoWakeLock,
+  wakeLockDebugStatus,
 } from '@/utils/wake-lock';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
@@ -442,6 +446,34 @@ type Action =
           </div>
         </section>
 
+        <section class="audio-debug-panel">
+          <div class="audio-debug-title">
+            <h2>音频调试</h2>
+          </div>
+          <dl class="audio-debug-grid">
+            <div>
+              <dt>AudioContext</dt>
+              <dd>{{ audioContextDebugState }}</dd>
+            </div>
+            <div>
+              <dt>Voices</dt>
+              <dd>{{ speechVoicesDebugCount }}</dd>
+            </div>
+            <div>
+              <dt>Sound Enabled</dt>
+              <dd>{{ orderSoundEnabled ? 'true' : 'false' }}</dd>
+            </div>
+            <div>
+              <dt>Last Speak</dt>
+              <dd>{{ lastSpeakDebugSummary }}</dd>
+            </div>
+            <div>
+              <dt>Wake Lock</dt>
+              <dd>{{ wakeLockDebugStatus }}</dd>
+            </div>
+          </dl>
+        </section>
+
         <section class="metric-grid" :aria-label="operations.snapshot">
           <article
             v-for="metric in metricCards"
@@ -614,6 +646,34 @@ type Action =
             </button>
           </div>
         </div>
+      </section>
+
+      <section class="audio-debug-panel mobile-audio-debug-panel">
+        <div class="audio-debug-title">
+          <h2>音频调试</h2>
+        </div>
+        <dl class="audio-debug-grid">
+          <div>
+            <dt>AudioContext</dt>
+            <dd>{{ audioContextDebugState }}</dd>
+          </div>
+          <div>
+            <dt>Voices</dt>
+            <dd>{{ speechVoicesDebugCount }}</dd>
+          </div>
+          <div>
+            <dt>Sound Enabled</dt>
+            <dd>{{ orderSoundEnabled ? 'true' : 'false' }}</dd>
+          </div>
+          <div>
+            <dt>Last Speak</dt>
+            <dd>{{ lastSpeakDebugSummary }}</dd>
+          </div>
+          <div>
+            <dt>Wake Lock</dt>
+            <dd>{{ wakeLockDebugStatus }}</dd>
+          </div>
+        </dl>
       </section>
 
       <section v-if="hasNewPendingOrders" class="mobile-new-order-banner">
@@ -858,6 +918,50 @@ type Action =
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.audio-debug-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.audio-debug-title h2 {
+  margin: 0;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.audio-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.audio-debug-grid div {
+  display: grid;
+  gap: 2px;
+}
+
+.audio-debug-grid dt {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.audio-debug-grid dd {
+  margin: 0;
+  color: #111827;
+  font-weight: 700;
+  word-break: break-word;
 }
 
 .new-order-banner,
@@ -1575,6 +1679,15 @@ type Action =
 
   .mobile-store-card {
     padding: 13px 13px 12px;
+  }
+
+  .mobile-audio-debug-panel {
+    padding: 9px 11px;
+  }
+
+  .audio-debug-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .mobile-store-copy strong {
