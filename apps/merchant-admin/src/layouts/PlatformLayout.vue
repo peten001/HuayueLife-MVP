@@ -20,18 +20,17 @@ const nav: Array<{ path: string; label: string; icon: string }> = [
 
 const adminName = computed(() => admin?.username?.trim() || '平台管理员');
 const adminInitial = computed(() => adminName.value.trim().charAt(0).toUpperCase() || '平');
-
-const pageLabel = computed(() => {
+const breadcrumb = computed(() => {
   const path = route.path;
-  if (path === '/platform/dashboard') return '总览';
-  if (path.startsWith('/platform/merchants/')) return '商家详情';
-  if (path === '/platform/merchants') return '商家管理';
-  if (path === '/platform/orders') return '订单管理';
-  if (path === '/platform/analytics') return '营业数据';
-  if (path === '/platform/recommendations') return '分类推荐';
-  if (path === '/platform/users') return '用户管理';
-  if (path === '/platform/settings') return '系统设置';
-  return '总览';
+  if (path === '/platform/dashboard') return ['主页', '总览'];
+  if (path.startsWith('/platform/merchants/')) return ['商家管理', '商家详情'];
+  if (path === '/platform/merchants') return ['商家管理', '商家管理'];
+  if (path === '/platform/orders') return ['订单管理', '订单管理'];
+  if (path === '/platform/analytics') return ['营业数据', '营业数据'];
+  if (path === '/platform/recommendations') return ['分类推荐', '分类推荐'];
+  if (path === '/platform/users') return ['用户管理', '用户管理'];
+  if (path === '/platform/settings') return ['系统设置', '系统设置'];
+  return ['主页', '总览'];
 });
 
 function isNavActive(path: string) {
@@ -53,8 +52,8 @@ async function logout() {
   <div class="app-shell platform-shell">
     <aside class="sidebar platform-sidebar">
       <div class="platform-branding">
-        <div class="platform-brand-main">华越优选</div>
-        <div class="platform-brand-sub">平台后台</div>
+        <div class="platform-brand-main">华越优选平台后台</div>
+        <div class="platform-brand-sub">平台运营中心</div>
       </div>
 
       <nav class="platform-nav">
@@ -81,19 +80,23 @@ async function logout() {
 
     <main class="content platform-content">
       <header class="platform-topbar">
-        <div class="platform-breadcrumb">主页 / {{ pageLabel }}</div>
+        <div class="platform-breadcrumb">
+          <span>华越优选平台后台</span>
+          <span aria-hidden="true">/</span>
+          <strong>{{ breadcrumb[1] }}</strong>
+        </div>
 
         <div class="platform-topbar-actions">
           <label class="platform-search" aria-label="全局搜索">
-            <span class="platform-topbar-icon" aria-hidden="true">搜</span>
-            <input type="text" placeholder="全局搜索…" readonly />
+            <span class="platform-topbar-icon" aria-hidden="true">⌕</span>
+            <input type="text" placeholder="搜索商家、订单、用户…" readonly />
           </label>
 
           <button class="platform-icon-button" type="button" aria-label="通知">
-            <span aria-hidden="true">铃</span>
+            <span aria-hidden="true">⌘</span>
           </button>
           <button class="platform-icon-button" type="button" aria-label="语言">
-            <span aria-hidden="true">语</span>
+            <span aria-hidden="true">☰</span>
           </button>
 
           <div class="platform-admin-chip">
@@ -114,7 +117,7 @@ async function logout() {
           <div class="platform-modal-header">
             <div>
               <h2>个人中心</h2>
-              <p>账号由服务器环境变量配置</p>
+              <p>当前平台管理员信息</p>
             </div>
             <button class="platform-icon-button" type="button" aria-label="关闭" @click="profileOpen = false">
               <span aria-hidden="true">✕</span>
@@ -133,8 +136,7 @@ async function logout() {
           </div>
 
           <p class="platform-profile-note">
-            当前平台管理员由服务器配置，暂不支持在线修改账号和密码。如需修改，请联系服务器管理员更新
-            <code>SUPER_ADMIN_USERNAME</code> 和 <code>SUPER_ADMIN_PASSWORD_HASH</code>。
+            当前平台管理员由服务器配置，暂不支持在线修改账号和密码。
           </p>
 
           <div class="platform-modal-footer">

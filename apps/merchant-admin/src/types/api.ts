@@ -143,6 +143,11 @@ export interface PlatformMerchantDetailResponse {
     averageOrderAmount: string | null;
     lastOrderAt: string | null;
   };
+  trend: Array<{
+    date: string;
+    orderCount: number;
+    orderAmount: string;
+  }>;
   operation: {
     menuCategoryCount: number;
     dishCount: number;

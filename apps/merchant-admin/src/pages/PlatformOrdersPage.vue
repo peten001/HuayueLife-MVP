@@ -171,29 +171,6 @@ function completionText(value: number | null | undefined) {
 
   <p v-if="message" class="message">{{ message }}</p>
 
-  <section class="platform-order-summary-grid">
-    <article class="card platform-metric-card">
-      <span>今日订单总数</span>
-      <strong>{{ summary?.todayOrderCount ?? 0 }}</strong>
-      <small>非取消订单</small>
-    </article>
-    <article class="card platform-metric-card">
-      <span>待处理订单</span>
-      <strong>{{ summary?.pendingOrderCount ?? 0 }}</strong>
-      <small>待接单、已接单、制作中、配送中</small>
-    </article>
-    <article class="card platform-metric-card">
-      <span>完成率</span>
-      <strong>{{ completionText(summary?.completedRate) }}</strong>
-      <small>今日已完成 / 今日非取消订单</small>
-    </article>
-    <article class="card platform-metric-card highlight">
-      <span>今日订单金额</span>
-      <strong>{{ money(summary?.todayOrderAmount ?? 0) }}</strong>
-      <small>按订单总额统计，未接支付</small>
-    </article>
-  </section>
-
   <section class="card platform-order-filters">
     <label>
       日期开始
@@ -320,6 +297,29 @@ function completionText(value: number | null | undefined) {
       <span>第 {{ filters.page }} / {{ totalPages }} 页</span>
       <button class="secondary small" :disabled="filters.page >= totalPages" @click="goPage(filters.page + 1)">下一页</button>
     </div>
+  </section>
+
+  <section class="platform-order-summary-grid">
+    <article class="card platform-metric-card">
+      <span>今日订单总数</span>
+      <strong>{{ summary?.todayOrderCount ?? 0 }}</strong>
+      <small>非取消订单</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>待处理订单</span>
+      <strong>{{ summary?.pendingOrderCount ?? 0 }}</strong>
+      <small>待接单、已接单、制作中、配送中</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>完成率</span>
+      <strong>{{ completionText(summary?.completedRate) }}</strong>
+      <small>今日已完成 / 今日非取消订单</small>
+    </article>
+    <article class="card platform-metric-card highlight">
+      <span>今日订单金额</span>
+      <strong>{{ money(summary?.todayOrderAmount ?? 0) }}</strong>
+      <small>按订单总额统计，未接支付</small>
+    </article>
   </section>
 
   <div v-if="selectedOrder" class="modal-backdrop" @click.self="selectedOrder = null">

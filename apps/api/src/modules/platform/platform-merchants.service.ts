@@ -94,6 +94,11 @@ type PlatformMerchantDetailResponse = {
     averageOrderAmount: string | null;
     lastOrderAt: string | null;
   };
+  trend: Array<{
+    date: string;
+    orderCount: number;
+    orderAmount: string;
+  }>;
   operation: {
     menuCategoryCount: number;
     dishCount: number;
@@ -193,6 +198,7 @@ export class PlatformMerchantsService {
       tableCount,
       activeTableCount,
       lastOrder,
+      trendOrders,
     ] = await Promise.all([
       this.prisma.order.aggregate({
         where: {
@@ -272,6 +278,17 @@ export class PlatformMerchantsService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: { createdAt: true },
       }),
+      this.prisma.order.findMany({
+        where: {
+          merchantId: id,
+          status: { not: OrderStatus.CANCELLED },
+          createdAt: { gte: last7Start, lt: tomorrowStart },
+        },
+        select: {
+          totalAmountVnd: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
     const activeCount = Number(allTimeStats._count._all ?? 0);
@@ -320,6 +337,7 @@ export class PlatformMerchantsService {
           activeCount > 0 ? (totalAllTimeAmount / BigInt(activeCount)).toString() : null,
         lastOrderAt: lastOrder?.createdAt.toISOString() ?? null,
       },
+      trend: buildTrendRows(last7Start, trendOrders),
       operation: {
         menuCategoryCount,
         dishCount,
@@ -732,6 +750,39 @@ function parseHomepageCategoryKeys(value: unknown) {
   } catch {
     return [];
   }
+}
+
+function buildTrendRows(
+  start: Date,
+  orders: Array<{ totalAmountVnd: bigint; createdAt: Date }>,
+) {
+  const rows = new Map<string, { date: string; orderCount: number; orderAmount: bigint }>();
+  for (let index = 0; index < 7; index += 1) {
+    const date = formatVietnamDate(addDays(start, index));
+    rows.set(date, { date, orderCount: 0, orderAmount: 0n });
+  }
+
+  for (const order of orders) {
+    const date = formatVietnamDate(order.createdAt);
+    const row = rows.get(date);
+    if (!row) continue;
+    row.orderCount += 1;
+    row.orderAmount += order.totalAmountVnd;
+  }
+
+  return Array.from(rows.values()).map((row) => ({
+    date: row.date,
+    orderCount: row.orderCount,
+    orderAmount: row.orderAmount.toString(),
+  }));
+}
+
+function formatVietnamDate(date: Date) {
+  const vietnamTime = new Date(date.getTime() + VIETNAM_OFFSET_MS);
+  const year = vietnamTime.getUTCFullYear();
+  const month = String(vietnamTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(vietnamTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function emptyOperationStats(): MerchantOperationStats {

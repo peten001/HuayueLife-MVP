@@ -2651,6 +2651,308 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   margin-bottom: 20px;
 }
 
+.platform-shell .page-header {
+  margin-bottom: 18px;
+  padding-bottom: 0;
+}
+
+.platform-shell .page-header h1 {
+  margin: 0;
+  color: #1A202C;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.platform-shell .page-header p {
+  margin: 6px 0 0;
+  color: #718096;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.platform-shell .page-header > :last-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.platform-shell .card {
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+
+.platform-shell .card h2,
+.platform-shell .card h3 {
+  color: #1A202C;
+}
+
+.platform-shell .platform-topbar {
+  border-bottom-color: #E2E8F0;
+}
+
+.platform-shell .platform-search {
+  border-color: #E2E8F0;
+  background: #F7FAF9;
+  box-shadow: none;
+}
+
+.platform-shell .platform-search input {
+  color: #1A202C;
+}
+
+.platform-shell .platform-icon-button,
+.platform-shell .platform-admin-chip {
+  border-color: #E2E8F0;
+  box-shadow: none;
+}
+
+.platform-shell .platform-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #718096;
+}
+
+.platform-shell .platform-breadcrumb strong {
+  color: #1A202C;
+  font-weight: 700;
+}
+
+.platform-shell .platform-brand-main {
+  color: #146D2B;
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.platform-shell .platform-brand-sub {
+  color: #718096;
+}
+
+.platform-shell .platform-nav-item {
+  border-radius: 10px;
+}
+
+.platform-shell .platform-nav-item.active {
+  background: #DFF2E3;
+  box-shadow: inset 0 0 0 1px rgba(91, 174, 99, 0.18);
+}
+
+.platform-shell .platform-profile-entry {
+  border-color: #E2E8F0;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.platform-shell .platform-page-body {
+  padding-top: 24px;
+}
+
+.platform-shell .platform-metric-card,
+.platform-shell .analytics-metric-card,
+.platform-shell .platform-user-summary-grid .card,
+.platform-shell .platform-recommendation-summary-grid .card,
+.platform-shell .platform-order-summary-grid .card {
+  min-height: 124px;
+  border-radius: 16px;
+}
+
+.platform-shell .platform-metric-card span,
+.platform-shell .analytics-metric-card span {
+  color: #718096;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.platform-shell .platform-metric-card strong,
+.platform-shell .analytics-metric-card strong {
+  color: #1A202C;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.platform-shell .platform-metric-card.highlight {
+  border-color: #BFE8C7;
+  background: linear-gradient(180deg, #F4FBF5 0%, #FFFFFF 100%);
+}
+
+.platform-shell .platform-order-filters,
+.platform-shell .platform-merchant-filters,
+.platform-shell .platform-analytics-filters,
+.platform-shell .platform-user-filters,
+.platform-shell .platform-recommendation-filters {
+  border-color: #E2E8F0;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+
+.platform-shell .platform-order-filters label,
+.platform-shell .platform-merchant-filters label,
+.platform-shell .platform-analytics-filters label,
+.platform-shell .platform-user-filters label,
+.platform-shell .platform-recommendation-filters label {
+  color: #4A5568;
+  font-weight: 700;
+}
+
+.platform-shell .platform-order-filters input,
+.platform-shell .platform-order-filters select,
+.platform-shell .platform-merchant-filters input,
+.platform-shell .platform-merchant-filters select,
+.platform-shell .platform-analytics-filters input,
+.platform-shell .platform-analytics-filters select,
+.platform-shell .platform-user-filters input,
+.platform-shell .platform-user-filters select,
+.platform-shell .platform-recommendation-filters input,
+.platform-shell .platform-recommendation-filters select {
+  min-height: 42px;
+  border-color: #D8E2DA;
+  background: #FFFFFF;
+}
+
+.platform-shell .platform-table-header,
+.platform-shell .section-heading {
+  border-color: #E2E8F0;
+}
+
+.platform-shell table {
+  color: #1A202C;
+}
+
+.platform-shell thead th {
+  color: #718096;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #F8FBF9;
+}
+
+.platform-shell tbody tr:hover {
+  background: #F8FBF9;
+}
+
+.platform-shell .badge,
+.platform-shell .status-pill,
+.platform-shell .popular-pill,
+.platform-shell .order-status-pill,
+.platform-shell .order-type-pill,
+.platform-shell .category-tag {
+  border-radius: 999px;
+}
+
+.platform-shell .status-pill.is-active,
+.platform-shell .order-status-pill.done,
+.platform-shell .badge.success {
+  color: #166534;
+  background: #E6F7EA;
+}
+
+.platform-shell .status-pill.is-disabled,
+.platform-shell .order-status-pill.cancelled,
+.platform-shell .badge.muted {
+  color: #4A5568;
+  background: #EDF2F7;
+}
+
+.platform-shell .status-pill.is-active,
+.platform-shell .status-pill.is-disabled,
+.platform-shell .popular-pill,
+.platform-shell .order-type-pill,
+.platform-shell .order-status-pill {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.platform-shell .popular-pill.active,
+.platform-shell .order-status-pill.working,
+.platform-shell .badge.warning {
+  color: #9A3412;
+  background: #FFF3E4;
+}
+
+.platform-shell .merchant-detail-hero {
+  border-color: #E2E8F0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F9FCFA 100%);
+}
+
+.platform-shell .merchant-detail-trend-card,
+.platform-shell .merchant-risk-card {
+  margin-bottom: 20px;
+}
+
+.platform-shell .merchant-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.platform-shell .merchant-trend-item {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.platform-shell .merchant-trend-track {
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  border-radius: 14px;
+  background: #F7FAF9;
+  overflow: hidden;
+}
+
+.platform-shell .merchant-trend-fill {
+  position: absolute;
+  bottom: 0;
+  width: calc(50% - 6px);
+  border-radius: 12px 12px 0 0;
+}
+
+.platform-shell .merchant-trend-fill.count {
+  left: 6px;
+  background: linear-gradient(180deg, #8FD29A 0%, #5BAE63 100%);
+}
+
+.platform-shell .merchant-trend-fill.amount {
+  right: 6px;
+  background: linear-gradient(180deg, rgba(91, 174, 99, 0.24) 0%, rgba(91, 174, 99, 0.9) 100%);
+}
+
+.platform-shell .merchant-trend-item strong {
+  color: #1A202C;
+  font-size: 13px;
+}
+
+.platform-shell .merchant-trend-item small {
+  color: #718096;
+  font-size: 12px;
+  text-align: center;
+}
+
+.platform-shell .platform-order-summary-grid,
+.platform-shell .platform-user-summary-grid,
+.platform-shell .platform-recommendation-summary-grid,
+.platform-shell .platform-analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.platform-shell .platform-order-summary-grid {
+  margin-top: 20px;
+}
+
 @media (max-width: 760px) {
   .platform-shell .sidebar {
     width: auto;
@@ -2669,7 +2971,11 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
   .platform-overview-strip,
   .platform-analytics-context,
   .platform-analytics-context-grid,
-  .platform-recommendation-category-grid {
+  .platform-recommendation-category-grid,
+  .platform-order-summary-grid,
+  .platform-user-summary-grid,
+  .platform-recommendation-summary-grid,
+  .platform-analytics-summary-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -68,7 +68,7 @@ function amountBarHeight(amount: string) {
 </script>
 
 <template>
-  <PageHeader title="平台总览" description="平台运营数据按越南时间 UTC+7 统计">
+  <PageHeader title="总览" description="平台运营数据按越南时间 UTC+7 统计">
     <button class="secondary" :disabled="loading" @click="loadDashboard">
       {{ loading ? '刷新中...' : '刷新数据' }}
     </button>
