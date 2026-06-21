@@ -58,6 +58,21 @@ const maxTypeOrderCount = computed(() =>
 const maxStatusOrderCount = computed(() =>
   Math.max(1, ...(analytics.value?.statusDistribution.map((item) => item.count) ?? [0])),
 );
+const filterSummary = computed(() => [
+  `日期：${filters.dateFrom || '不限'} 至 ${filters.dateTo || '不限'}`,
+  `城市：${filters.city || '全部城市'}`,
+  `商家：${selectedMerchantLabel.value}`,
+]);
+const selectedMerchantLabel = computed(() => {
+  if (!filters.merchantId) return '全部商家';
+  const merchant = merchants.value.find((item) => item.id === filters.merchantId);
+  return merchant ? merchant.nameZh : filters.merchantId;
+});
+const analyticsCoverage = computed(() => ({
+  merchantRankingCount: analytics.value?.merchantRankingByOrders.length ?? 0,
+  cityCount: analytics.value?.cityStats.length ?? 0,
+  statusCount: analytics.value?.statusDistribution.length ?? 0,
+}));
 
 onMounted(async () => {
   filters.dateFrom = defaultDateFrom;
@@ -173,6 +188,27 @@ function trendHasData() {
   <p v-if="message" class="message">{{ message }}</p>
 
   <template v-if="analytics">
+    <section class="card platform-analytics-context">
+      <div>
+        <span>当前统计条件</span>
+        <strong>{{ filterSummary.join(' / ') }}</strong>
+      </div>
+      <div class="platform-analytics-context-grid">
+        <div>
+          <span>商家排行</span>
+          <strong>{{ analyticsCoverage.merchantRankingCount }}</strong>
+        </div>
+        <div>
+          <span>城市数据</span>
+          <strong>{{ analyticsCoverage.cityCount }}</strong>
+        </div>
+        <div>
+          <span>状态分布</span>
+          <strong>{{ analyticsCoverage.statusCount }}</strong>
+        </div>
+      </div>
+    </section>
+
     <section class="card platform-analytics-filters">
       <label>
         日期开始

@@ -38,6 +38,15 @@ const summary = computed(() => response.value?.summary);
 const totalPages = computed(() =>
   Math.max(1, Math.ceil((response.value?.total ?? 0) / appliedFilters.pageSize)),
 );
+const activeFilterLabels = computed(() => {
+  const labels: string[] = [];
+  if (appliedFilters.keyword) labels.push(`关键词：${appliedFilters.keyword}`);
+  if (appliedFilters.city) labels.push(`城市：${appliedFilters.city}`);
+  if (appliedFilters.dateFrom || appliedFilters.dateTo) {
+    labels.push(`注册：${appliedFilters.dateFrom || '不限'} 至 ${appliedFilters.dateTo || '不限'}`);
+  }
+  return labels;
+});
 
 onMounted(() => {
   void loadUsers();
@@ -202,6 +211,14 @@ function userName(user: PlatformUserListItem | PlatformUserDetailResponse['user'
         <button class="platform-primary-action" :disabled="loading" @click="search">查询</button>
         <button class="secondary" :disabled="loading" @click="resetFilters">重置</button>
       </div>
+      <div class="platform-filter-state">
+        <span v-if="activeFilterLabels.length === 0">当前筛选：全部用户</span>
+        <template v-else>
+          <span v-for="label in activeFilterLabels" :key="label" class="category-tag">
+            {{ label }}
+          </span>
+        </template>
+      </div>
     </section>
 
     <section class="platform-user-summary-grid">
@@ -233,6 +250,14 @@ function userName(user: PlatformUserListItem | PlatformUserDetailResponse['user'
           <h2>用户列表</h2>
           <p>共 {{ response?.total ?? 0 }} 位用户</p>
         </div>
+        <label class="page-size-control">
+          每页
+          <select v-model.number="appliedFilters.pageSize" @change="search">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+          </select>
+        </label>
       </div>
 
       <div class="table-wrap platform-user-table-wrap">

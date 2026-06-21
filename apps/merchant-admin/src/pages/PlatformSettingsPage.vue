@@ -80,7 +80,7 @@ function goOrders() {
             <p>订单金额 = 用户下单时的商品金额 + 配送费等订单字段合计</p>
           </div>
         </div>
-        <p class="hint">当前未接在线支付，订单金额不等于实收金额。</p>
+        <p class="hint">当前未接在线支付，订单金额不等于在线支付金额。</p>
       </article>
 
       <article class="card platform-settings-card">

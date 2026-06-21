@@ -9,13 +9,13 @@ const admin = getPlatformAdmin();
 const profileOpen = ref(false);
 
 const nav: Array<{ path: string; label: string; icon: string }> = [
-  { path: '/platform/dashboard', label: '总览', icon: '⌂' },
-  { path: '/platform/merchants', label: '商家管理', icon: '🏪' },
-  { path: '/platform/orders', label: '订单管理', icon: '🧾' },
-  { path: '/platform/analytics', label: '营业数据', icon: '📊' },
-  { path: '/platform/recommendations', label: '分类推荐', icon: '⭐' },
-  { path: '/platform/users', label: '用户管理', icon: '👥' },
-  { path: '/platform/settings', label: '系统设置', icon: '⚙' },
+  { path: '/platform/dashboard', label: '总览', icon: '总' },
+  { path: '/platform/merchants', label: '商家管理', icon: '商' },
+  { path: '/platform/orders', label: '订单管理', icon: '单' },
+  { path: '/platform/analytics', label: '营业数据', icon: '数' },
+  { path: '/platform/recommendations', label: '分类推荐', icon: '荐' },
+  { path: '/platform/users', label: '用户管理', icon: '客' },
+  { path: '/platform/settings', label: '系统设置', icon: '设' },
 ];
 
 const adminName = computed(() => admin?.username?.trim() || '平台管理员');
@@ -85,15 +85,15 @@ async function logout() {
 
         <div class="platform-topbar-actions">
           <label class="platform-search" aria-label="全局搜索">
-            <span class="platform-topbar-icon" aria-hidden="true">⌕</span>
+            <span class="platform-topbar-icon" aria-hidden="true">搜</span>
             <input type="text" placeholder="全局搜索…" readonly />
           </label>
 
           <button class="platform-icon-button" type="button" aria-label="通知">
-            <span aria-hidden="true">🔔</span>
+            <span aria-hidden="true">铃</span>
           </button>
           <button class="platform-icon-button" type="button" aria-label="语言">
-            <span aria-hidden="true">🌐</span>
+            <span aria-hidden="true">语</span>
           </button>
 
           <div class="platform-admin-chip">

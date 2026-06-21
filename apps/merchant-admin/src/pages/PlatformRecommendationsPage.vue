@@ -94,6 +94,12 @@ const overviewCards = computed(() =>
     };
   }),
 );
+const recommendationSummary = computed(() => ({
+  merchantCount: appliedMerchants.value.length,
+  recommendedCount: appliedMerchants.value.filter((item) => item.manualPopular).length,
+  categorizedCount: appliedMerchants.value.filter((item) => (item.homepageCategoryKeys ?? []).length > 0).length,
+  todayOrderAmount: appliedMerchants.value.reduce((sum, item) => sum + Number(item.todayOrderAmount ?? 0), 0),
+}));
 
 const pickerMerchantList = computed(() =>
   merchants.value
@@ -261,6 +267,12 @@ function categoryTags(item: PlatformMerchantListItem) {
     </PageHeader>
 
     <section class="card recommendation-info-card">
+      <div class="section-heading">
+        <div>
+          <h2>首页展示规则</h2>
+          <p>仅管理当前系统已支持的热门推荐和三个首页分类。</p>
+        </div>
+      </div>
       <div class="recommendation-info-grid">
         <div>
           <strong>热门美食</strong>
@@ -282,6 +294,29 @@ function categoryTags(item: PlatformMerchantListItem) {
       <p class="hint recommendation-tip">调整后将影响小程序首页商家分类展示。</p>
     </section>
 
+    <section class="platform-recommendation-summary-grid">
+      <article class="card platform-metric-card">
+        <span>筛选内商家</span>
+        <strong>{{ recommendationSummary.merchantCount }}</strong>
+        <small>当前查询范围</small>
+      </article>
+      <article class="card platform-metric-card">
+        <span>热门推荐</span>
+        <strong>{{ recommendationSummary.recommendedCount }}</strong>
+        <small>manualPopular 已开启</small>
+      </article>
+      <article class="card platform-metric-card">
+        <span>已设置分类</span>
+        <strong>{{ recommendationSummary.categorizedCount }}</strong>
+        <small>至少包含一个首页分类</small>
+      </article>
+      <article class="card platform-metric-card highlight">
+        <span>今日订单金额</span>
+        <strong>{{ money(recommendationSummary.todayOrderAmount) }}</strong>
+        <small>按筛选内商家汇总</small>
+      </article>
+    </section>
+
     <section class="card platform-recommendation-filters">
       <label>
         <span>搜索商家</span>
@@ -300,7 +335,7 @@ function categoryTags(item: PlatformMerchantListItem) {
       </div>
     </section>
 
-    <section class="platform-recommendation-summary-grid">
+    <section class="platform-recommendation-category-grid">
       <article v-for="item in overviewCards" :key="item.key" class="card recommendation-summary-card">
         <span>{{ item.title }}</span>
         <strong>{{ item.merchantCount }}</strong>

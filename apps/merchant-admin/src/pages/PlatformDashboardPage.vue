@@ -15,6 +15,15 @@ const maxOrderCount = computed(() =>
 const maxOrderAmount = computed(() =>
   Math.max(1, ...(dashboard.value?.trends.map((item) => Number(item.orderAmount)) ?? [0])),
 );
+const totalTrendOrders = computed(() =>
+  dashboard.value?.trends.reduce((sum, item) => sum + item.orderCount, 0) ?? 0,
+);
+const totalTrendAmount = computed(() =>
+  dashboard.value?.trends.reduce((sum, item) => sum + Number(item.orderAmount), 0) ?? 0,
+);
+const totalTrendActiveMerchants = computed(() =>
+  dashboard.value?.trends.reduce((sum, item) => sum + item.activeMerchantCount, 0) ?? 0,
+);
 
 onMounted(loadDashboard);
 
@@ -68,6 +77,24 @@ function amountBarHeight(amount: string) {
   <p v-if="message" class="message">{{ message }}</p>
 
   <template v-if="dashboard">
+    <section class="card platform-overview-strip">
+      <div>
+        <span>近 7 日订单</span>
+        <strong>{{ totalTrendOrders }}</strong>
+        <small>按非取消订单统计</small>
+      </div>
+      <div>
+        <span>近 7 日订单金额</span>
+        <strong>{{ money(totalTrendAmount) }}</strong>
+        <small>订单金额合计</small>
+      </div>
+      <div>
+        <span>活跃商家日累计</span>
+        <strong>{{ totalTrendActiveMerchants }}</strong>
+        <small>按每日活跃商家相加</small>
+      </div>
+    </section>
+
     <section class="platform-metric-grid">
       <article class="card platform-metric-card">
         <span>今日订单数</span>
@@ -94,7 +121,10 @@ function amountBarHeight(amount: string) {
     <section class="platform-dashboard-grid">
       <article class="card platform-ops-card">
         <div class="section-heading">
-          <h2>实时运营状态</h2>
+          <div>
+            <h2>实时运营状态</h2>
+            <small>当前需要平台关注的订单状态</small>
+          </div>
         </div>
         <div class="ops-status-grid">
           <div>
@@ -106,23 +136,26 @@ function amountBarHeight(amount: string) {
             <strong>{{ dashboard.overview.preparingOrderCount }}</strong>
           </div>
         </div>
-        <button class="secondary" disabled>订单管理看板</button>
+        <RouterLink class="button-link platform-section-link" to="/platform/orders">查看订单管理</RouterLink>
       </article>
 
       <article class="card platform-alert-card">
         <div class="section-heading">
-          <h2>待处理平台警报</h2>
+          <div>
+            <h2>待处理平台警报</h2>
+            <small>基于现有平台统计数据</small>
+          </div>
         </div>
         <div class="alert-list">
           <div>
             <span>长时间未接单</span>
             <strong>{{ dashboard.alerts.longPendingOrderCount }}</strong>
-            <button class="small secondary" disabled>去处理</button>
+            <RouterLink class="button-link" to="/platform/orders">查看订单</RouterLink>
           </div>
           <div>
             <span>订单取消率过高</span>
             <strong>{{ dashboard.alerts.highCancelRateMerchantCount }}</strong>
-            <button class="small secondary" disabled>查看分析</button>
+            <RouterLink class="button-link" to="/platform/analytics">查看数据</RouterLink>
           </div>
           <div>
             <span>未设置首页分类商家</span>
@@ -136,7 +169,10 @@ function amountBarHeight(amount: string) {
     <section class="platform-chart-grid">
       <article class="card">
         <div class="section-heading">
-          <h2>近 7 日订单趋势</h2>
+          <div>
+            <h2>近 7 日订单趋势</h2>
+            <small>订单数按日汇总</small>
+          </div>
         </div>
         <div class="bar-chart">
           <div v-for="item in dashboard.trends" :key="item.date" class="bar-item">
@@ -151,7 +187,10 @@ function amountBarHeight(amount: string) {
 
       <article class="card">
         <div class="section-heading">
-          <h2>近 7 日订单金额趋势</h2>
+          <div>
+            <h2>近 7 日订单金额趋势</h2>
+            <small>订单金额按日汇总</small>
+          </div>
         </div>
         <div class="bar-chart amount-chart">
           <div v-for="item in dashboard.trends" :key="item.date" class="bar-item">

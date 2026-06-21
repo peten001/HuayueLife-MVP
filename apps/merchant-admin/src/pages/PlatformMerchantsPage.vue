@@ -80,6 +80,21 @@ const filteredMerchants = computed(() =>
     );
   }),
 );
+const merchantSummary = computed(() => {
+  const list = merchants.value;
+  return {
+    total: list.length,
+    active: list.filter((item) => item.status === 'ACTIVE').length,
+    pendingAcceptance: list.reduce(
+      (sum, item) => sum + Number(item.pendingAcceptanceOrderCount ?? 0),
+      0,
+    ),
+    todayOrderAmount: list.reduce(
+      (sum, item) => sum + Number(item.todayOrderAmount ?? 0),
+      0,
+    ),
+  };
+});
 
 onMounted(loadMerchants);
 
@@ -284,6 +299,29 @@ function resetFilters() {
   </PageHeader>
 
   <p v-if="message" class="message">{{ message }}</p>
+
+  <section class="platform-metric-grid platform-merchant-summary-grid">
+    <article class="card platform-metric-card">
+      <span>商家总数</span>
+      <strong>{{ merchantSummary.total }}</strong>
+      <small>当前未删除商家</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>营业中商家</span>
+      <strong>{{ merchantSummary.active }}</strong>
+      <small>状态为营业中</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>待接单订单</span>
+      <strong>{{ merchantSummary.pendingAcceptance }}</strong>
+      <small>跨商家待处理</small>
+    </article>
+    <article class="card platform-metric-card highlight">
+      <span>今日订单金额</span>
+      <strong>{{ money(merchantSummary.todayOrderAmount) }}</strong>
+      <small>按当前列表汇总</small>
+    </article>
+  </section>
 
   <div v-if="dialogVisible" class="modal-backdrop" @click.self="closeDialog">
     <form class="card modal-card form-grid" @submit.prevent="submit">

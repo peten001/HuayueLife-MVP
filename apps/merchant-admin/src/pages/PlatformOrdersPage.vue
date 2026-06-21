@@ -35,6 +35,21 @@ const totalPages = computed(() =>
 );
 const rows = computed(() => response.value?.items ?? []);
 const summary = computed(() => response.value?.summary);
+const activeFilterLabels = computed(() => {
+  const labels: string[] = [];
+  const merchantKeyword = filters.merchantKeyword?.trim() ?? '';
+  const city = filters.city?.trim() ?? '';
+  const phone = filters.phone?.trim() ?? '';
+  const orderNo = filters.orderNo?.trim() ?? '';
+  if (filters.dateFrom || filters.dateTo) labels.push(`日期：${filters.dateFrom || '不限'} 至 ${filters.dateTo || '不限'}`);
+  if (merchantKeyword) labels.push(`商家：${merchantKeyword}`);
+  if (city) labels.push(`城市：${city}`);
+  if (filters.orderType) labels.push(`类型：${orderTypeLabel(filters.orderType)}`);
+  if (filters.status) labels.push(`状态：${orderStatusLabel(filters.status)}`);
+  if (phone) labels.push(`手机号：${phone}`);
+  if (orderNo) labels.push(`订单号：${orderNo}`);
+  return labels;
+});
 
 onMounted(() => {
   const phone = typeof route.query.phone === 'string' ? route.query.phone : '';
@@ -156,6 +171,29 @@ function completionText(value: number | null | undefined) {
 
   <p v-if="message" class="message">{{ message }}</p>
 
+  <section class="platform-order-summary-grid">
+    <article class="card platform-metric-card">
+      <span>今日订单总数</span>
+      <strong>{{ summary?.todayOrderCount ?? 0 }}</strong>
+      <small>非取消订单</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>待处理订单</span>
+      <strong>{{ summary?.pendingOrderCount ?? 0 }}</strong>
+      <small>待接单、已接单、制作中、配送中</small>
+    </article>
+    <article class="card platform-metric-card">
+      <span>完成率</span>
+      <strong>{{ completionText(summary?.completedRate) }}</strong>
+      <small>今日已完成 / 今日非取消订单</small>
+    </article>
+    <article class="card platform-metric-card highlight">
+      <span>今日订单金额</span>
+      <strong>{{ money(summary?.todayOrderAmount ?? 0) }}</strong>
+      <small>按订单总额统计，未接支付</small>
+    </article>
+  </section>
+
   <section class="card platform-order-filters">
     <label>
       日期开始
@@ -206,6 +244,14 @@ function completionText(value: number | null | undefined) {
     <div class="platform-order-filter-actions">
       <button type="button" @click="search">查询</button>
       <button class="secondary" type="button" @click="resetFilters">重置</button>
+    </div>
+    <div class="platform-filter-state">
+      <span v-if="activeFilterLabels.length === 0">当前筛选：全部订单</span>
+      <template v-else>
+        <span v-for="label in activeFilterLabels" :key="label" class="category-tag">
+          {{ label }}
+        </span>
+      </template>
     </div>
   </section>
 
@@ -276,33 +322,13 @@ function completionText(value: number | null | undefined) {
     </div>
   </section>
 
-  <section class="platform-order-summary-grid">
-    <article class="card platform-metric-card">
-      <span>今日订单总数</span>
-      <strong>{{ summary?.todayOrderCount ?? 0 }}</strong>
-      <small>非取消订单</small>
-    </article>
-    <article class="card platform-metric-card">
-      <span>待处理订单</span>
-      <strong>{{ summary?.pendingOrderCount ?? 0 }}</strong>
-      <small>待接单、已接单、制作中、配送中</small>
-    </article>
-    <article class="card platform-metric-card">
-      <span>完成率</span>
-      <strong>{{ completionText(summary?.completedRate) }}</strong>
-      <small>今日已完成 / 今日非取消订单</small>
-    </article>
-    <article class="card platform-metric-card highlight">
-      <span>今日订单金额</span>
-      <strong>{{ money(summary?.todayOrderAmount ?? 0) }}</strong>
-      <small>按订单总额统计，未接支付</small>
-    </article>
-  </section>
-
   <div v-if="selectedOrder" class="modal-backdrop" @click.self="selectedOrder = null">
     <section class="card modal-card platform-order-detail">
       <div class="section-heading">
-        <h2>订单详情</h2>
+        <div>
+          <h2>订单详情</h2>
+          <p>{{ selectedOrder.orderNo }} · {{ selectedOrder.merchantName }}</p>
+        </div>
         <button class="secondary small" @click="selectedOrder = null">关闭</button>
       </div>
       <dl class="detail-list">

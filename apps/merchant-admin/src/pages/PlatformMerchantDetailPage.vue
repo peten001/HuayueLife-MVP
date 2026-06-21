@@ -18,6 +18,39 @@ const homepageCategoryLabelMap: Record<string, string> = {
   noodles: '粉面小吃',
   drinks: '茶饮甜品',
 };
+const riskItems = computed(() => {
+  if (!detail.value) return [];
+  const items: Array<{ label: string; value: string; tone: 'warning' | 'muted' | 'success' }> = [];
+  if (detail.value.metrics.pendingAcceptanceOrderCount > 0) {
+    items.push({
+      label: '待接单订单',
+      value: `${detail.value.metrics.pendingAcceptanceOrderCount} 单`,
+      tone: 'warning',
+    });
+  }
+  if (detail.value.merchant.profileCompletion < 100) {
+    items.push({
+      label: '资料完整度',
+      value: `${detail.value.merchant.profileCompletion}%`,
+      tone: 'warning',
+    });
+  }
+  if (!detail.value.merchant.homepageCategoryKeys.length) {
+    items.push({
+      label: '首页分类',
+      value: '未设置',
+      tone: 'muted',
+    });
+  }
+  if (items.length === 0) {
+    items.push({
+      label: '运营状态',
+      value: '暂无提醒',
+      tone: 'success',
+    });
+  }
+  return items;
+});
 
 onMounted(loadDetail);
 
@@ -234,6 +267,24 @@ function backToList() {
           </div>
         </div>
         <p class="hint">最近下单时间：{{ dateTime(detail.metrics.lastOrderAt) }}</p>
+      </div>
+    </section>
+
+    <section class="card merchant-risk-card">
+      <div class="section-heading">
+        <h2>风险提醒</h2>
+        <span class="badge muted">基于当前数据</span>
+      </div>
+      <div class="merchant-risk-list">
+        <div
+          v-for="item in riskItems"
+          :key="item.label"
+          class="merchant-risk-item"
+          :class="`is-${item.tone}`"
+        >
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
       </div>
     </section>
 
