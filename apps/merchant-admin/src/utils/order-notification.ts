@@ -50,6 +50,7 @@ export async function enableOrderSound() {
 
   setOrderSoundEnabled(true);
   preloadSpeechSynthesis();
+  await delay(180);
   await speakOrderNotification('声音提醒已开启');
   return true;
 }
@@ -169,7 +170,9 @@ async function speakOrderNotification(text: string) {
       utterance.pitch = 1.1;
       const voice = resolveChineseVoice();
       if (voice) utterance.voice = voice;
-      speech.cancel();
+      if (speech.speaking || speech.pending) {
+        speech.cancel();
+      }
       if (typeof speech.resume === 'function') {
         speech.resume();
       }
@@ -338,6 +341,12 @@ function getCurrentSpeechVoicesCount() {
 function stringifyError(error: unknown) {
   if (error instanceof Error) return error.message || error.name || 'unknown error';
   return typeof error === 'string' ? error : 'unknown error';
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function readPendingSnapshot() {
