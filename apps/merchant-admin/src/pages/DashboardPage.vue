@@ -12,11 +12,11 @@ import {
   notifyNewPendingOrders,
   orderSoundEnabled,
   recentNewPendingOrderIds,
-  toggleOrderSound,
+  disableOrderSound,
 } from '@/utils/order-notification';
 import {
   ensureWakeLock,
-  standaloneWakeLockWarningVisible,
+  requestWakeLockOnce,
   startAutoWakeLock,
   stopAutoWakeLock,
 } from '@/utils/wake-lock';
@@ -37,7 +37,6 @@ const operatingId = ref('');
 const refreshCountdown = ref(10);
 const isRefreshing = ref(false);
 let timer: number | undefined;
-let orderGestureWakeLockRequested = false;
 
 const pending = computed(() =>
   orders.value.filter((order) => order.status === 'PENDING_ACCEPTANCE'),
@@ -350,10 +349,7 @@ function primaryAction(order: MerchantOrder) {
 async function execute(order: MerchantOrder) {
   const next = primaryAction(order);
   if (!next || operatingId.value) return;
-  if (orderSoundEnabled.value && !orderGestureWakeLockRequested) {
-    orderGestureWakeLockRequested = true;
-    void ensureWakeLock('order-action');
-  }
+  requestGestureWakeLock('order-action');
   try {
     operatingId.value = order.id;
     await runOrderAction(order.id, next.action);
@@ -388,12 +384,18 @@ function todayInVietnam() {
 
 async function handleSoundToggle() {
   if (!orderSoundEnabled.value) {
-    const enableSoundTask = enableOrderSound();
-    void ensureWakeLock('sound-enabled');
-    await enableSoundTask;
+    await Promise.allSettled([
+      enableOrderSound(),
+      ensureWakeLock('sound-enabled'),
+      requestWakeLockOnce('sound-enabled'),
+    ]);
     return;
   }
-  toggleOrderSound();
+  disableOrderSound();
+}
+
+function requestGestureWakeLock(reason: string) {
+  void ensureWakeLock(reason);
 }
 
 type Action =
@@ -429,7 +431,11 @@ type Action =
               >
                 {{ soundButtonLabel }}
               </button>
-              <RouterLink class="primary-link" to="/orders?status=PENDING_ACCEPTANCE">
+              <RouterLink
+                class="primary-link"
+                to="/orders?status=PENDING_ACCEPTANCE"
+                @click="requestGestureWakeLock('view-orders')"
+              >
                 {{ t('orderWorkbench') }}
               </RouterLink>
             </div>
@@ -466,16 +472,16 @@ type Action =
         </RouterLink>
       </div>
 
-      <section v-if="standaloneWakeLockWarningVisible" class="wake-lock-warning desktop-only">
-        {{ t('standaloneWakeLockWarning') }}
-      </section>
-
       <section v-if="hasNewPendingOrders" class="new-order-banner desktop-only">
         <div>
           <strong>有新订单，请及时接单</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
-        <RouterLink class="secondary alert-link" :to="newOrderLinkTarget">
+        <RouterLink
+          class="secondary alert-link"
+          :to="newOrderLinkTarget"
+          @click="requestGestureWakeLock('view-orders')"
+        >
           {{ t('viewOrders') }}
         </RouterLink>
       </section>
@@ -501,7 +507,9 @@ type Action =
               <h2>{{ t('activeOrders') }}</h2>
               <p>{{ t('pendingOrdersCount', { count: pending.length + inProgress.length }) }}</p>
             </div>
-            <RouterLink to="/orders">{{ t('viewAllOrders') }}</RouterLink>
+            <RouterLink to="/orders" @click="requestGestureWakeLock('view-orders')">
+              {{ t('viewAllOrders') }}
+            </RouterLink>
           </div>
 
           <div v-if="activeOrders.length" class="order-card-grid">
@@ -541,7 +549,11 @@ type Action =
                 >
                   {{ t(primaryAction(order)!.label) }}
                 </button>
-                <RouterLink class="secondary card-link" :to="`/orders/${order.id}`">
+                <RouterLink
+                  class="secondary card-link"
+                  :to="`/orders/${order.id}`"
+                  @click="requestGestureWakeLock('view-order-detail')"
+                >
                   {{ t('viewDetails') }}
                 </RouterLink>
               </div>
@@ -609,13 +621,13 @@ type Action =
           <strong>有新订单，请及时接单</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
-        <RouterLink class="secondary alert-link" :to="newOrderLinkTarget">
+        <RouterLink
+          class="secondary alert-link"
+          :to="newOrderLinkTarget"
+          @click="requestGestureWakeLock('view-orders')"
+        >
           {{ t('viewOrders') }}
         </RouterLink>
-      </section>
-
-      <section v-if="standaloneWakeLockWarningVisible" class="wake-lock-warning mobile-wake-lock-warning">
-        {{ t('standaloneWakeLockWarning') }}
       </section>
 
       <section class="mobile-metric-grid" :aria-label="operations.snapshot">
@@ -639,7 +651,9 @@ type Action =
             <h2>{{ t('activeOrders') }}</h2>
             <p>{{ t('pendingOrdersCount', { count: pending.length + inProgress.length }) }}</p>
           </div>
-          <RouterLink to="/orders">{{ t('viewAllOrders') }}</RouterLink>
+          <RouterLink to="/orders" @click="requestGestureWakeLock('view-orders')">
+            {{ t('viewAllOrders') }}
+          </RouterLink>
         </div>
 
         <div v-if="mobileActiveOrders.length" class="mobile-order-list">
@@ -679,7 +693,11 @@ type Action =
               >
                 {{ t(primaryAction(order)!.label) }}
               </button>
-              <RouterLink class="secondary card-link" :to="`/orders/${order.id}`">
+              <RouterLink
+                class="secondary card-link"
+                :to="`/orders/${order.id}`"
+                @click="requestGestureWakeLock('view-order-detail')"
+              >
                 {{ t('viewDetails') }}
               </RouterLink>
             </div>
@@ -868,22 +886,6 @@ type Action =
   color: #8a5a00;
   font-size: 13px;
   font-weight: 700;
-}
-
-.wake-lock-warning {
-  padding: 11px 14px;
-  border: 1px solid #f1d08a;
-  border-left: 4px solid #d99a20;
-  border-radius: 14px;
-  color: #6f4a00;
-  background: #fff8e8;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.mobile-wake-lock-warning {
-  font-size: 12px;
 }
 
 .welcome-summary {

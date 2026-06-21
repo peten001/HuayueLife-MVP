@@ -1,6 +1,5 @@
 import { computed, ref } from 'vue';
 
-const SOUND_KEY = 'huayue_merchant_order_sound_enabled';
 const PENDING_SNAPSHOT_KEY = 'huayue_merchant_pending_snapshot';
 const RECENT_NEW_KEY = 'huayue_merchant_recent_new_orders';
 const RECENT_NEW_TTL_MS = 60_000;
@@ -11,11 +10,12 @@ interface RecentNewOrderRecord {
   expiresAt: number;
 }
 
-const soundEnabled = ref(readSoundPreference());
+const soundEnabled = ref(false);
 const pendingOrderIds = ref<string[]>(readPendingSnapshot());
 const recentNewOrderRecords = ref<RecentNewOrderRecord[]>(readRecentNewRecords());
 const initialized = ref(false);
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
+let audioContext: AudioContext | null = null;
 
 export const pendingOrderCount = computed(() => pendingOrderIds.value.length);
 export const orderSoundEnabled = computed(() => soundEnabled.value);
@@ -29,6 +29,11 @@ export function isOrderSoundEnabled() {
 
 export async function enableOrderSound() {
   setOrderSoundEnabled(true);
+  await Promise.allSettled([
+    resumeAudioContext(),
+    initializeSpeechSynthesis(),
+    initializeSoundPlayback(),
+  ]);
   await speakOrderNotification('声音提醒已开启');
 }
 
@@ -190,6 +195,36 @@ function loadVoices() {
 
 function playFallbackBeep() {
   if (typeof window === 'undefined') return;
+  const context = getAudioContext();
+  if (!context) return;
+  if (context.state === 'suspended') {
+    void context.resume();
+  }
+
+  playBeep(context, 0.12, 0.25);
+}
+
+async function resumeAudioContext() {
+  const context = getAudioContext();
+  if (!context || context.state !== 'suspended') return;
+  await context.resume();
+}
+
+async function initializeSpeechSynthesis() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  window.speechSynthesis.getVoices();
+  await loadVoices();
+}
+
+function initializeSoundPlayback() {
+  const context = getAudioContext();
+  if (!context) return;
+  playBeep(context, 0.0001, 0.03);
+}
+
+function getAudioContext() {
+  if (typeof window === 'undefined') return null;
+  if (audioContext) return audioContext;
   const AudioContextClass =
     window.AudioContext ||
     (
@@ -197,18 +232,21 @@ function playFallbackBeep() {
         webkitAudioContext?: typeof AudioContext;
       }
     ).webkitAudioContext;
-  if (!AudioContextClass) return;
+  if (!AudioContextClass) return null;
 
-  const context = new AudioContextClass();
+  audioContext = new AudioContextClass();
+  return audioContext;
+}
+
+function playBeep(context: AudioContext, volume: number, duration: number) {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   oscillator.frequency.value = 880;
-  gain.gain.value = 0.12;
+  gain.gain.value = volume;
   oscillator.connect(gain);
   gain.connect(context.destination);
   oscillator.start();
-  oscillator.stop(context.currentTime + 0.25);
-  oscillator.addEventListener('ended', () => void context.close());
+  oscillator.stop(context.currentTime + duration);
 }
 
 function unique(ids: string[]) {
@@ -217,21 +255,6 @@ function unique(ids: string[]) {
 
 function setOrderSoundEnabled(value: boolean) {
   soundEnabled.value = value;
-  persistSoundPreference(value);
-}
-
-function readSoundPreference() {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(SOUND_KEY) === '1';
-}
-
-function persistSoundPreference(value: boolean) {
-  if (typeof window === 'undefined') return;
-  if (value) {
-    window.localStorage.setItem(SOUND_KEY, '1');
-  } else {
-    window.localStorage.removeItem(SOUND_KEY);
-  }
 }
 
 function readPendingSnapshot() {
