@@ -52,6 +52,7 @@ async function logout() {
   <div class="app-shell platform-shell">
     <aside class="sidebar platform-sidebar">
       <div class="platform-branding">
+        <span class="platform-brand-mark" aria-hidden="true">华</span>
         <div class="platform-brand-main">华越优选平台后台</div>
         <div class="platform-brand-sub">平台运营中心</div>
       </div>
@@ -80,10 +81,12 @@ async function logout() {
 
     <main class="content platform-content">
       <header class="platform-topbar">
-        <div class="platform-breadcrumb">
-          <span>华越优选平台后台</span>
-          <span aria-hidden="true">/</span>
-          <strong>{{ breadcrumb[1] }}</strong>
+        <div class="platform-topbar-left">
+          <div class="platform-breadcrumb">
+            <span>华越优选平台后台</span>
+            <span aria-hidden="true">/</span>
+            <strong>{{ breadcrumb[1] }}</strong>
+          </div>
         </div>
 
         <div class="platform-topbar-actions">
@@ -93,10 +96,10 @@ async function logout() {
           </label>
 
           <button class="platform-icon-button" type="button" aria-label="通知">
-            <span aria-hidden="true">⌘</span>
+            <span aria-hidden="true">◉</span>
           </button>
           <button class="platform-icon-button" type="button" aria-label="语言">
-            <span aria-hidden="true">☰</span>
+            <span aria-hidden="true">◫</span>
           </button>
 
           <div class="platform-admin-chip">
