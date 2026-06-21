@@ -28,9 +28,37 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
+  const context = getAudioContext();
+  console.log('[order-sound] enable start', {
+    audioState: context?.state ?? 'no-audio-context',
+    voicesLength: typeof window === 'undefined' || !window.speechSynthesis
+      ? -1
+      : window.speechSynthesis.getVoices().length,
+  });
   await resumeAudioContext();
-  void initializeSpeechSynthesis();
+  const voices = await loadVoices();
+  console.log('[order-sound] loadVoices resolved', {
+    voicesLength: voices.length,
+    currentVoicesLength:
+      typeof window === 'undefined' || !window.speechSynthesis
+        ? -1
+        : window.speechSynthesis.getVoices().length,
+  });
+  if (!voices.length) {
+    preloadSpeechSynthesis();
+  }
   const activated = await speakOrderNotification('声音提醒已开启');
+  console.log('[order-sound] speakOrderNotification result', {
+    activated,
+    speaking:
+      typeof window === 'undefined' || !window.speechSynthesis
+        ? false
+        : window.speechSynthesis.speaking,
+    pending:
+      typeof window === 'undefined' || !window.speechSynthesis
+        ? false
+        : window.speechSynthesis.pending,
+  });
   if (!activated) {
     await initializeSoundPlayback();
   }
