@@ -28,13 +28,13 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
+  await resumeAudioContext();
+  void initializeSpeechSynthesis();
+  const activated = await speakOrderNotification('声音提醒已开启');
+  if (!activated) {
+    await initializeSoundPlayback();
+  }
   setOrderSoundEnabled(true);
-  await Promise.allSettled([
-    resumeAudioContext(),
-    initializeSpeechSynthesis(),
-    initializeSoundPlayback(),
-  ]);
-  await speakOrderNotification('声音提醒已开启');
 }
 
 export function disableOrderSound() {
@@ -138,7 +138,7 @@ function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
 }
 
 async function speakOrderNotification(text: string) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return false;
   const speech = window.speechSynthesis;
   if (speech && typeof window.SpeechSynthesisUtterance !== 'undefined') {
     const utterance = new window.SpeechSynthesisUtterance(text);
@@ -146,18 +146,19 @@ async function speakOrderNotification(text: string) {
     utterance.volume = 1;
     utterance.rate = 1;
     utterance.pitch = 1.1;
-    const voice = await resolveChineseVoice();
+    const voice = resolveChineseVoice();
     if (voice) utterance.voice = voice;
     speech.cancel();
     speech.speak(utterance);
-    return;
+    return true;
   }
   playFallbackBeep();
+  return true;
 }
 
-async function resolveChineseVoice() {
+function resolveChineseVoice() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return null;
-  const voices = await loadVoices();
+  const voices = window.speechSynthesis.getVoices();
   if (!voices.length) return null;
   const zhVoices = voices.filter((voice) => /zh/i.test(voice.lang || voice.name));
   if (!zhVoices.length) return voices[0] ?? null;
@@ -168,6 +169,12 @@ async function resolveChineseVoice() {
     ),
   );
   return preferred ?? zhVoices[0] ?? voices[0] ?? null;
+}
+
+function preloadSpeechSynthesis() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  window.speechSynthesis.getVoices();
+  void loadVoices();
 }
 
 function loadVoices() {
@@ -211,9 +218,7 @@ async function resumeAudioContext() {
 }
 
 async function initializeSpeechSynthesis() {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  window.speechSynthesis.getVoices();
-  await loadVoices();
+  preloadSpeechSynthesis();
 }
 
 function initializeSoundPlayback() {
