@@ -115,10 +115,10 @@ async function loadAllMessages(orderId: string) {
   let cursor: string | undefined;
 
   while (true) {
-    const page = await listMerchantOrderChatMessages(orderId, {
-      cursor,
-      limit: 50,
-    });
+    const page = await listMerchantOrderChatMessages(
+      orderId,
+      cursor ? { cursor, limit: 50 } : { limit: 50 },
+    );
     all.push(...page.items);
     if (!page.pageInfo.hasMore || !page.pageInfo.nextCursor) {
       break;

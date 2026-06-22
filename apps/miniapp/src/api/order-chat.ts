@@ -42,6 +42,20 @@ export interface ListOrderChatMessagesQuery {
   limit?: number;
 }
 
+function buildListOrderChatMessagesData(query: ListOrderChatMessagesQuery) {
+  const data: Record<string, string | number> = {};
+  if (typeof query.limit === 'number') {
+    data.limit = query.limit;
+  }
+  if (typeof query.cursor === 'string') {
+    const cursor = query.cursor.trim();
+    if (cursor && cursor !== 'undefined' && cursor !== 'null') {
+      data.cursor = cursor;
+    }
+  }
+  return data;
+}
+
 export const getOrderChat = (orderId: string) =>
   request<UserChatConversation>(`/orders/${orderId}/chat`);
 
@@ -51,7 +65,7 @@ export const listOrderChatMessages = (
 ) =>
   request<ListOrderChatMessagesResult>(`/orders/${orderId}/chat/messages`, {
     method: 'GET',
-    data: query,
+    data: buildListOrderChatMessagesData(query),
   });
 
 export const sendOrderChatMessage = (orderId: string, content: string) =>

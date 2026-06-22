@@ -95,7 +95,10 @@ async function loadAllMessages(orderId: string) {
   let cursor: string | undefined;
 
   while (true) {
-    const page = await listOrderChatMessages(orderId, { cursor, limit: 50 });
+    const page = await listOrderChatMessages(
+      orderId,
+      cursor ? { cursor, limit: 50 } : { limit: 50 },
+    );
     all.push(...page.items);
     if (!page.pageInfo.hasMore || !page.pageInfo.nextCursor) break;
     cursor = page.pageInfo.nextCursor;
@@ -174,10 +177,12 @@ async function refreshConversation() {
   try {
     const [loadedConversation, page] = await Promise.all([
       getOrderChat(orderId),
-      listOrderChatMessages(orderId, {
-        cursor: lastMessageId.value || undefined,
-        limit: 50,
-      }),
+      lastMessageId.value
+        ? listOrderChatMessages(orderId, {
+            cursor: lastMessageId.value,
+            limit: 50,
+          })
+        : listOrderChatMessages(orderId, { limit: 50 }),
     ]);
 
     if (disposed || seq !== requestSeq) return;

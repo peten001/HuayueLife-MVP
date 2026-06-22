@@ -44,6 +44,20 @@ export interface ListOrderChatMessagesQuery {
   limit?: number;
 }
 
+function buildListOrderChatMessagesParams(query: ListOrderChatMessagesQuery) {
+  const params: Record<string, string | number> = {};
+  if (typeof query.limit === 'number') {
+    params.limit = query.limit;
+  }
+  if (typeof query.cursor === 'string') {
+    const cursor = query.cursor.trim();
+    if (cursor && cursor !== 'undefined' && cursor !== 'null') {
+      params.cursor = cursor;
+    }
+  }
+  return params;
+}
+
 export async function getMerchantOrderChat(orderId: string) {
   const response = await http.get<ApiResponse<MerchantChatConversation>>(
     `/merchant/orders/${orderId}/chat`,
@@ -55,9 +69,10 @@ export async function listMerchantOrderChatMessages(
   orderId: string,
   query: ListOrderChatMessagesQuery = {},
 ) {
+  const params = buildListOrderChatMessagesParams(query);
   const response = await http.get<ApiResponse<ListOrderChatMessagesResult>>(
     `/merchant/orders/${orderId}/chat/messages`,
-    { params: query },
+    { params },
   );
   return response.data.data;
 }

@@ -187,7 +187,7 @@ export class OrderChatService {
   ) {
     const limit = query.limit ?? 20;
     const take = limit + 1;
-    const cursorId = query.cursor ? BigInt(query.cursor) : null;
+    const cursorId = this.parseCursor(query.cursor);
 
     const items = await this.prisma.orderChatMessage.findMany({
       where: {
@@ -208,6 +208,23 @@ export class OrderChatService {
         hasMore,
       },
     };
+  }
+
+  private parseCursor(cursor?: string | null) {
+    const normalized = cursor?.trim();
+    if (
+      !normalized ||
+      normalized === 'undefined' ||
+      normalized === 'null'
+    ) {
+      return null;
+    }
+
+    try {
+      return BigInt(normalized);
+    } catch {
+      throw new BadRequestException('Invalid cursor');
+    }
   }
 
   private async ensureConversation(tx: Prisma.TransactionClient, order: OwnedOrder) {
