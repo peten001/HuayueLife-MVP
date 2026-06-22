@@ -317,6 +317,10 @@ function messageSide(message: OrderChatMessage) {
   return message.senderType === 'MERCHANT' ? 'other' : 'self';
 }
 
+function isOwnMessage(message: OrderChatMessage) {
+  return message.senderType === 'CUSTOMER';
+}
+
 function formatTime(value: string) {
   return new Date(value).toLocaleString();
 }
@@ -358,7 +362,9 @@ function formatTime(value: string) {
               </view>
               <text class="message-content">{{ message.content }}</text>
               <view class="message-foot">
-                <text>{{ message.readAt ? t('read') : t('unread') }}</text>
+                <text v-if="isOwnMessage(message)" :class="['message-status', message.readAt ? 'read' : 'unread']">
+                  {{ message.readAt ? '✓✓' : '✓' }}
+                </text>
               </view>
             </view>
           </view>
@@ -476,7 +482,7 @@ function formatTime(value: string) {
 .message-list {
   flex: 1;
   min-height: 0;
-  padding: 8rpx 4rpx;
+  padding: 6rpx 4rpx;
   border: 1rpx solid #edf0f2;
   border-radius: 18rpx;
   background: #f9fbfa;
@@ -491,7 +497,7 @@ function formatTime(value: string) {
 
 .message-row {
   display: flex;
-  margin-bottom: 10rpx;
+  margin-bottom: 8rpx;
 }
 
 .message-row.self {
@@ -504,7 +510,7 @@ function formatTime(value: string) {
 
 .message-bubble {
   max-width: 78%;
-  padding: 10rpx 14rpx 8rpx;
+  padding: 9rpx 12rpx 7rpx;
   border-radius: 18rpx;
   background: #fff;
   box-shadow: 0 8rpx 22rpx rgb(31 45 36 / 6%);
@@ -524,16 +530,16 @@ function formatTime(value: string) {
   display: flex;
   justify-content: flex-end;
   color: #728077;
-  font-size: 18rpx;
-  line-height: 1.2;
+  font-size: 16rpx;
+  line-height: 1.15;
 }
 
 .message-content {
   display: block;
-  margin-top: 4rpx;
+  margin-top: 3rpx;
   color: #1f2d24;
   font-size: 26rpx;
-  line-height: 1.42;
+  line-height: 1.38;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -541,10 +547,27 @@ function formatTime(value: string) {
 .message-foot {
   display: flex;
   justify-content: flex-end;
-  margin-top: 4rpx;
+  margin-top: 5rpx;
   color: #7c857f;
+  min-height: 18rpx;
+  line-height: 1;
+}
+
+.message-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 20rpx;
   font-size: 18rpx;
-  line-height: 1.2;
+  font-weight: 700;
+}
+
+.message-status.unread {
+  color: #a6b0b8;
+}
+
+.message-status.read {
+  color: #24a148;
 }
 
 .chat-hint {

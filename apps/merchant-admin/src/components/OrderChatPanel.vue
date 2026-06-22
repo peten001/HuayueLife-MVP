@@ -263,7 +263,9 @@ function formatTime(value: string) {
               </header>
               <p class="message-content">{{ message.content }}</p>
               <footer class="message-footer">
-                <small>{{ message.readAt ? t('read') : t('unread') }}</small>
+                <small v-if="message.senderType === 'MERCHANT'" :class="['message-status', message.readAt ? 'read' : 'unread']">
+                  <span aria-hidden="true">{{ message.readAt ? '✓✓' : '✓' }}</span>
+                </small>
               </footer>
             </div>
           </article>
@@ -344,10 +346,10 @@ function formatTime(value: string) {
 
 .message-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-height: 320px;
-  max-height: 52vh;
-  padding: 4px 2px;
+  max-height: 50vh;
+  padding: 3px 2px;
   overflow: auto;
   border: 1px solid #edf0f2;
   border-radius: 14px;
@@ -361,7 +363,6 @@ function formatTime(value: string) {
 
 .message-row {
   display: flex;
-  margin-bottom: 2px;
 }
 
 .message-row.self {
@@ -374,7 +375,7 @@ function formatTime(value: string) {
 
 .message-bubble {
   width: min(78%, 560px);
-  padding: 9px 12px;
+  padding: 8px 11px;
   border-radius: 14px;
   background: white;
   box-shadow: 0 6px 20px rgb(31 45 36 / 6%);
@@ -402,13 +403,33 @@ function formatTime(value: string) {
 .message-content {
   margin: 4px 0 0;
   color: #1f2d24;
-  line-height: 1.45;
+  line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .message-footer {
-  margin-top: 4px;
+  margin-top: 6px;
+  min-height: 12px;
+  justify-content: flex-end;
+}
+
+.message-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.message-status.unread {
+  color: #97a0aa;
+}
+
+.message-status.read {
+  color: #24a148;
 }
 
 .chat-form {
