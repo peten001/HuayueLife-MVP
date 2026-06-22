@@ -85,6 +85,10 @@ export function clearNewPendingOrders(ids: string[]) {
 
 export function notifyNewPendingOrders(ids: string[]) {
   pruneRecentNewOrders();
+  console.log('[merchant-audio] notifyNewPendingOrders called', {
+    incomingIds: ids,
+    soundEnabled: soundEnabled.value,
+  });
 
   const current = unique(ids);
   const currentSet = new Set(current);
@@ -99,8 +103,15 @@ export function notifyNewPendingOrders(ids: string[]) {
   persistPendingSnapshot(current);
 
   if (newIds.length) {
+    console.log('[merchant-audio] notifyNewPendingOrders newIds', {
+      newIds,
+      firstLoad,
+    });
     pushRecentNewOrders(newIds);
     if (soundEnabled.value) {
+      console.log('[merchant-audio] notifyNewPendingOrders speak path', {
+        text: '您有新的订单',
+      });
       void speakOrderNotification('您有新的订单');
     }
   } else {
@@ -187,14 +198,40 @@ async function playNotificationAudio(url: string) {
   if (typeof window === 'undefined') return false;
   try {
     stopActiveNotificationAudio();
+    console.log('[merchant-audio] audio create', { url });
     const audio = new window.Audio(url);
     activeNotificationAudio = audio;
     audio.preload = 'auto';
     audio.setAttribute('playsinline', 'true');
     audio.volume = 1;
-    await audio.play();
+    console.log('[merchant-audio] audio load before play', {
+      src: audio.src,
+      preload: audio.preload,
+      readyState: audio.readyState,
+    });
+    audio.load();
+    console.log('[merchant-audio] audio.load called', { src: audio.src });
+    await audio
+      .play()
+      .then(() => {
+        console.log('[merchant-audio] audio play success', { src: audio.src });
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        const err = error as Error & { name?: string };
+        console.warn('[merchant-audio] audio play failed', {
+          src: audio.src,
+          errorName: err?.name ?? 'unknown',
+          errorMessage: err?.message ?? String(error),
+        });
+        throw error;
+      });
     return true;
   } catch (error) {
+    console.warn('[merchant-audio] audio playback failed, falling back', {
+      url,
+      error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
+    });
     stopActiveNotificationAudio();
     return false;
   }

@@ -273,11 +273,16 @@ async function load(options: { resetCountdown?: boolean } = {}) {
   try {
     const loadedOrders = await getMerchantOrders({ date: todayInVietnam() });
     orders.value = loadedOrders;
-    notifyNewPendingOrders(
+    const newPendingIds = notifyNewPendingOrders(
       loadedOrders
         .filter((order) => order.status === 'PENDING_ACCEPTANCE')
         .map((order) => order.id),
     );
+    console.log('[merchant-audio] dashboard load notifyNewPendingOrders result', {
+      totalOrders: loadedOrders.length,
+      pendingOrders: loadedOrders.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
+      newPendingIds,
+    });
     message.value = '';
   } catch (error) {
     message.value = errorMessage(error);
