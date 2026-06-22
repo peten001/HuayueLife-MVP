@@ -30,6 +30,12 @@ const speechVoicesCount = ref(getCurrentSpeechVoicesCount());
 const lastSpeakState = ref<SpeakDebugState>('not-called');
 const lastSpeakReason = ref('not-called');
 const audioDebugLogs = ref<AudioDebugLogEntry[]>([]);
+const speechSupported = ref(isSpeechSynthesisSupported());
+const speechSpeakCalled = ref('not-called');
+const speechSelectedVoiceName = ref('not-selected');
+const speechSelectedVoiceLang = ref('not-selected');
+const speechUtteranceState = ref('idle');
+const speechUtteranceError = ref('not-called');
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
 let audioContext: AudioContext | null = null;
 const notificationAudioCache = new Map<string, HTMLAudioElement>();
@@ -45,6 +51,14 @@ export const lastSpeakDebugSummary = computed(() =>
     ? `failed${lastSpeakReason.value ? `: ${lastSpeakReason.value}` : ''}`
     : lastSpeakState.value,
 );
+export const speechSynthesisSupportedDebug = computed(() =>
+  speechSupported.value ? 'true' : 'false',
+);
+export const speechSelectedVoiceDebugName = computed(() => speechSelectedVoiceName.value);
+export const speechSelectedVoiceDebugLang = computed(() => speechSelectedVoiceLang.value);
+export const speechSpeakCalledDebug = computed(() => speechSpeakCalled.value);
+export const speechUtteranceStateDebug = computed(() => speechUtteranceState.value);
+export const speechUtteranceErrorDebug = computed(() => speechUtteranceError.value);
 export const orderAudioDebugLogs = computed(() => audioDebugLogs.value.slice(0, 20));
 export const recentNewPendingOrderIds = computed(() =>
   recentNewOrderRecords.value.map((record) => record.id),
@@ -298,12 +312,15 @@ async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
   if (typeof window === 'undefined') {
     setLastSpeakDebugState('failed', 'window unavailable');
     pushAudioDebugLog('speechSynthesis unavailable', { text });
+    speechSpeakCalled.value = 'not-called';
     return 'failed';
   }
+  speechSupported.value = isSpeechSynthesisSupported();
   const speech = window.speechSynthesis;
   if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
     setLastSpeakDebugState('failed', 'speechSynthesis unavailable');
     pushAudioDebugLog('speechSynthesis unavailable for speak', { text });
+    speechSpeakCalled.value = 'not-called';
     return 'failed';
   }
   try {
@@ -314,7 +331,29 @@ async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
     utterance.rate = 1;
     utterance.pitch = 1.1;
     const voice = resolveChineseVoice();
+    speechSpeakCalled.value = 'called';
     if (voice) utterance.voice = voice;
+    speechSelectedVoiceName.value = voice?.name || 'not-selected';
+    speechSelectedVoiceLang.value = voice?.lang || 'not-selected';
+    speechUtteranceState.value = 'queued';
+    utterance.onstart = () => {
+      speechUtteranceState.value = 'onstart';
+      pushAudioDebugLog('utterance onstart', { text, voice: voiceSummary(voice) });
+    };
+    utterance.onend = () => {
+      speechUtteranceState.value = 'onend';
+      pushAudioDebugLog('utterance onend', { text, voice: voiceSummary(voice) });
+    };
+    utterance.onerror = (event) => {
+      speechUtteranceState.value = 'onerror';
+      const errorName = (event as SpeechSynthesisErrorEvent).error || 'unknown';
+      speechUtteranceError.value = errorName;
+      pushAudioDebugLog('utterance onerror', {
+        text,
+        error: errorName,
+        voice: voiceSummary(voice),
+      });
+    };
     if (speech.speaking || speech.pending) {
       speech.cancel();
     }
@@ -326,6 +365,9 @@ async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
     return 'speech';
   } catch (error) {
     setLastSpeakDebugState('failed', stringifyError(error));
+    speechSpeakCalled.value = 'called';
+    speechUtteranceState.value = 'onerror';
+    speechUtteranceError.value = stringifyError(error);
     pushAudioDebugLog('speechSynthesis speak failed', {
       text,
       error: stringifyError(error),
@@ -350,6 +392,7 @@ function resolveChineseVoice() {
 }
 
 function preloadSpeechSynthesis() {
+  speechSupported.value = isSpeechSynthesisSupported();
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   updateSpeechVoicesCount(window.speechSynthesis.getVoices());
   void loadVoices();
@@ -377,10 +420,12 @@ async function unlockAudioForReminder() {
 function loadVoices() {
   return new Promise<SpeechSynthesisVoice[]>((resolve) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
+      speechSupported.value = false;
       updateSpeechVoicesCount([]);
       resolve([]);
       return;
     }
+    speechSupported.value = true;
     const voices = window.speechSynthesis.getVoices();
     updateSpeechVoicesCount(voices);
     if (voices.length) {
@@ -393,6 +438,9 @@ function loadVoices() {
       if (settled) return;
       settled = true;
       updateSpeechVoicesCount(nextVoices);
+      pushAudioDebugLog('voiceschanged', {
+        voicesLength: nextVoices.length,
+      });
       window.speechSynthesis.removeEventListener('voiceschanged', handler);
       resolve(nextVoices);
     };
@@ -495,6 +543,15 @@ function formatAudioDebugDetails(details: unknown) {
   } catch {
     return String(details);
   }
+}
+
+function isSpeechSynthesisSupported() {
+  return typeof window !== 'undefined' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance !== 'undefined';
+}
+
+function voiceSummary(voice: SpeechSynthesisVoice | null) {
+  if (!voice) return 'not-selected';
+  return `${voice.name || 'unknown'} / ${voice.lang || 'unknown'}`;
 }
 
 function updateSpeechVoicesCount(voices: SpeechSynthesisVoice[]) {

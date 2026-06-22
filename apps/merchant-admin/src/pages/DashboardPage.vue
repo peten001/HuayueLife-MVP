@@ -17,6 +17,13 @@ import {
   recentNewPendingOrderIds,
   disableOrderSound,
   pushAudioDebugLog,
+  speechSynthesisSupportedDebug,
+  speechSelectedVoiceDebugName,
+  speechSelectedVoiceDebugLang,
+  speechSpeakCalledDebug,
+  speechUtteranceStateDebug,
+  speechUtteranceErrorDebug,
+  speechVoicesDebugCount,
 } from '@/utils/order-notification';
 import {
   ensureWakeLock,
@@ -758,6 +765,32 @@ type Action =
           </button>
         </div>
       </div>
+      <dl class="audio-debug-summary">
+        <div>
+          <dt>speechSynthesis supported</dt>
+          <dd>{{ speechSynthesisSupportedDebug }}</dd>
+        </div>
+        <div>
+          <dt>voices.length</dt>
+          <dd>{{ speechVoicesDebugCount }}</dd>
+        </div>
+        <div>
+          <dt>selected voice</dt>
+          <dd>{{ speechSelectedVoiceDebugName }} / {{ speechSelectedVoiceDebugLang }}</dd>
+        </div>
+        <div>
+          <dt>speak called</dt>
+          <dd>{{ speechSpeakCalledDebug }}</dd>
+        </div>
+        <div>
+          <dt>utterance state</dt>
+          <dd>{{ speechUtteranceStateDebug }}</dd>
+        </div>
+        <div>
+          <dt>utterance error</dt>
+          <dd>{{ speechUtteranceErrorDebug }}</dd>
+        </div>
+      </dl>
       <div class="audio-debug-log-list">
         <article v-for="(entry, index) in orderAudioDebugLogs" :key="`${entry.time}-${index}`" class="audio-debug-log-item">
           <time>{{ entry.time }}</time>
@@ -1654,6 +1687,34 @@ type Action =
   gap: 6px;
 }
 
+.audio-debug-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.audio-debug-summary div {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #eef3ef;
+}
+
+.audio-debug-summary dt {
+  font-size: 11px;
+  color: #6f7b75;
+}
+
+.audio-debug-summary dd {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #23312b;
+  word-break: break-word;
+}
+
 .audio-debug-button {
   min-height: 28px;
   padding: 0 10px;
@@ -1792,6 +1853,10 @@ type Action =
     left: 10px;
     width: auto;
     max-height: 42vh;
+  }
+
+  .audio-debug-summary {
+    grid-template-columns: 1fr;
   }
 }
 </style>
