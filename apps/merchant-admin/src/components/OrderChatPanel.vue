@@ -220,10 +220,6 @@ function messageSide(message: OrderChatMessage) {
   return message.senderType === 'MERCHANT' ? 'self' : 'other';
 }
 
-function messageSenderLabel(message: OrderChatMessage) {
-  return message.senderType === 'MERCHANT' ? t('merchant') : participantName.value;
-}
-
 function formatTime(value: string) {
   return new Date(value).toLocaleString();
 }
@@ -263,7 +259,6 @@ function formatTime(value: string) {
           >
             <div class="message-bubble">
               <header class="message-header">
-                <strong>{{ messageSenderLabel(message) }}</strong>
                 <small>{{ formatTime(message.createdAt) }}</small>
               </header>
               <p class="message-content">{{ message.content }}</p>
@@ -300,7 +295,7 @@ function formatTime(value: string) {
   width: min(780px, 100%);
   max-height: min(90vh, 920px);
   display: grid;
-  gap: 16px;
+  gap: 12px;
   overflow: hidden;
 }
 
@@ -334,7 +329,7 @@ function formatTime(value: string) {
 
 .chat-body {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -349,10 +344,10 @@ function formatTime(value: string) {
 
 .message-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-height: 320px;
   max-height: 52vh;
-  padding: 6px 2px;
+  padding: 4px 2px;
   overflow: auto;
   border: 1px solid #edf0f2;
   border-radius: 14px;
@@ -366,6 +361,7 @@ function formatTime(value: string) {
 
 .message-row {
   display: flex;
+  margin-bottom: 2px;
 }
 
 .message-row.self {
@@ -378,8 +374,8 @@ function formatTime(value: string) {
 
 .message-bubble {
   width: min(78%, 560px);
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 9px 12px;
+  border-radius: 14px;
   background: white;
   box-shadow: 0 6px 20px rgb(31 45 36 / 6%);
 }
@@ -392,31 +388,27 @@ function formatTime(value: string) {
 .message-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.message-header strong {
-  color: #1f2d24;
-  font-size: 13px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .message-header small,
 .message-footer small {
   color: #7b838b;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .message-content {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   color: #1f2d24;
-  line-height: 1.6;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .message-footer {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 .chat-form {
