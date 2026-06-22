@@ -9,6 +9,7 @@ import {
   clearNewPendingOrder,
   clearAudioDebugLogs,
   debugPlayNewOrderSound,
+  debugUnlockSpeechPlayback,
   enableOrderSound,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
@@ -23,6 +24,11 @@ import {
   speechSpeakCalledDebug,
   speechUtteranceStateDebug,
   speechUtteranceErrorDebug,
+  speechUnlockedDebug,
+  speechRuntimeSpeakingDebug,
+  speechRuntimePendingDebug,
+  speechRuntimePausedDebug,
+  speechRuntimeSnapshotAfterDelayDebug,
   speechVoicesDebugCount,
 } from '@/utils/order-notification';
 import {
@@ -414,6 +420,10 @@ async function handleDebugNewOrderSound() {
   await debugPlayNewOrderSound();
 }
 
+function handleUnlockSpeechPlayback() {
+  void debugUnlockSpeechPlayback();
+}
+
 function handleClearAudioLogs() {
   clearAudioDebugLogs();
 }
@@ -760,12 +770,19 @@ type Action =
           <button type="button" class="audio-debug-button" @click="handleDebugNewOrderSound">
             测试播放新订单声音
           </button>
+          <button type="button" class="audio-debug-button" @click="handleUnlockSpeechPlayback">
+            解锁语音播报
+          </button>
           <button type="button" class="audio-debug-button secondary" @click="handleClearAudioLogs">
             清空日志
           </button>
         </div>
       </div>
       <dl class="audio-debug-summary">
+        <div>
+          <dt>speechUnlocked</dt>
+          <dd>{{ speechUnlockedDebug }}</dd>
+        </div>
         <div>
           <dt>speechSynthesis supported</dt>
           <dd>{{ speechSynthesisSupportedDebug }}</dd>
@@ -789,6 +806,16 @@ type Action =
         <div>
           <dt>utterance error</dt>
           <dd>{{ speechUtteranceErrorDebug }}</dd>
+        </div>
+        <div>
+          <dt>speaking / pending / paused</dt>
+          <dd>
+            {{ speechRuntimeSpeakingDebug }} / {{ speechRuntimePendingDebug }} / {{ speechRuntimePausedDebug }}
+          </dd>
+        </div>
+        <div>
+          <dt>2s snapshot</dt>
+          <dd>{{ speechRuntimeSnapshotAfterDelayDebug }}</dd>
         </div>
       </dl>
       <div class="audio-debug-log-list">

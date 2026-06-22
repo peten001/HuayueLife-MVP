@@ -20,7 +20,7 @@ interface AudioDebugLogEntry {
 
 type SpeakDebugState = 'success' | 'failed' | 'not-called';
 type PlaybackResult = 'audio' | 'beep' | 'speech' | 'failed';
-type DebugOrderReason = 'enable-sound' | 'new-order' | 'debug-test';
+type DebugOrderReason = 'enable-sound' | 'new-order' | 'debug-test' | 'debug-unlock';
 
 const soundEnabled = ref(false);
 const pendingOrderIds = ref<string[]>(readPendingSnapshot());
@@ -36,6 +36,11 @@ const speechSelectedVoiceName = ref('not-selected');
 const speechSelectedVoiceLang = ref('not-selected');
 const speechUtteranceState = ref('idle');
 const speechUtteranceError = ref('not-called');
+const speechUnlocked = ref(false);
+const speechRuntimeSpeaking = ref('false');
+const speechRuntimePending = ref('false');
+const speechRuntimePaused = ref('false');
+const speechRuntimeSnapshotAfterDelay = ref('not-recorded');
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
 let audioContext: AudioContext | null = null;
 const notificationAudioCache = new Map<string, HTMLAudioElement>();
@@ -59,6 +64,11 @@ export const speechSelectedVoiceDebugLang = computed(() => speechSelectedVoiceLa
 export const speechSpeakCalledDebug = computed(() => speechSpeakCalled.value);
 export const speechUtteranceStateDebug = computed(() => speechUtteranceState.value);
 export const speechUtteranceErrorDebug = computed(() => speechUtteranceError.value);
+export const speechUnlockedDebug = computed(() => (speechUnlocked.value ? 'true' : 'false'));
+export const speechRuntimeSpeakingDebug = computed(() => speechRuntimeSpeaking.value);
+export const speechRuntimePendingDebug = computed(() => speechRuntimePending.value);
+export const speechRuntimePausedDebug = computed(() => speechRuntimePaused.value);
+export const speechRuntimeSnapshotAfterDelayDebug = computed(() => speechRuntimeSnapshotAfterDelay.value);
 export const orderAudioDebugLogs = computed(() => audioDebugLogs.value.slice(0, 20));
 export const recentNewPendingOrderIds = computed(() =>
   recentNewOrderRecords.value.map((record) => record.id),
@@ -71,17 +81,13 @@ export function isOrderSoundEnabled() {
 export async function enableOrderSound() {
   pushAudioDebugLog('点击开启声音提醒', { soundEnabled: soundEnabled.value });
   preloadSpeechSynthesis();
-  const result = await speakOrderNotification('声音提醒已开启', 'enable-sound');
+  const result = speakOrderNotification('声音提醒已开启', 'enable-sound');
   pushAudioDebugLog('开启声音提醒完成', {
     result,
     soundEnabled: soundEnabled.value,
   });
-  if (result === 'beep' || result === 'speech' || result === 'audio') {
-    pushAudioDebugLog('soundEnabled 最终状态', { value: soundEnabled.value, result });
-    return soundEnabled.value;
-  }
-  pushAudioDebugLog('soundEnabled 未开启', { value: false, result });
-  return false;
+  pushAudioDebugLog('soundEnabled 最终状态', { value: soundEnabled.value, result });
+  return soundEnabled.value;
 }
 
 export function disableOrderSound() {
@@ -139,7 +145,11 @@ export function notifyNewPendingOrders(ids: string[]) {
     });
     pushRecentNewOrders(newIds);
     if (soundEnabled.value) {
-      void speakOrderNotification('您有新的订单', 'new-order');
+      const result = speakOrderNotification('您有新的订单', 'new-order');
+      pushAudioDebugLog('notifyNewPendingOrders speech trigger', {
+        result,
+        speechUnlocked: speechUnlocked.value,
+      });
     }
   } else {
     pruneRecentNewOrders();
@@ -161,6 +171,13 @@ export async function debugPlayNewOrderSound() {
     soundEnabled: soundEnabled.value,
   });
   return speakOrderNotification('您有新的订单', 'debug-test');
+}
+
+export function debugUnlockSpeechPlayback() {
+  pushAudioDebugLog('解锁语音播报', {
+    speechUnlocked: speechUnlocked.value,
+  });
+  return playSpeechAnnouncementNow('语音播报已解锁', 'debug-unlock');
 }
 
 function pushRecentNewOrders(ids: string[]) {
@@ -205,31 +222,37 @@ function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
   return [...map.values()].sort((left, right) => right.expiresAt - left.expiresAt);
 }
 
-async function speakOrderNotification(
+function speakOrderNotification(
   text: string,
   reason: DebugOrderReason,
-): Promise<PlaybackResult> {
-  const unlocked = await unlockAudioForReminder();
-  if (unlocked) {
+): PlaybackResult {
+  const beepOk = playOrderBeep(reason);
+  if (beepOk) {
     if (reason === 'enable-sound' && !soundEnabled.value) {
       setOrderSoundEnabled(true);
       pushAudioDebugLog('soundEnabled 已开启', { value: true, reason });
     }
     setLastSpeakDebugState('success');
     pushAudioDebugLog('fallback beep success', { text, reason });
-    void speakWithSpeechSynthesis(text, reason);
+    if (reason === 'enable-sound') {
+      void playSpeechAnnouncementNow('已开启', reason);
+    } else if (speechUnlocked.value) {
+      void playSpeechAnnouncementNow(text, reason);
+    } else {
+      pushAudioDebugLog('speech skipped until unlocked', { text, reason, speechUnlocked: false });
+    }
     return 'beep';
   }
 
-  const speechPlayed = await speakWithSpeechSynthesis(text, reason);
-  if (speechPlayed === 'speech') {
+  if (speechUnlocked.value) {
+    void playSpeechAnnouncementNow(text, reason);
     setLastSpeakDebugState('success');
-    pushAudioDebugLog('speechSynthesis fallback success', { text, reason });
+    pushAudioDebugLog('speech triggered without beep', { text, reason });
     return 'speech';
   }
 
   const audioUrl = resolveNotificationAudioUrl(text);
-  if (audioUrl && (await playNotificationAudio(audioUrl))) {
+  if (audioUrl && playNotificationAudio(audioUrl)) {
     setLastSpeakDebugState('success');
     pushAudioDebugLog('speakOrderNotification audio success', { text, reason, audioUrl });
     return 'audio';
@@ -246,7 +269,140 @@ function resolveNotificationAudioUrl(text: string) {
   return null;
 }
 
-async function playNotificationAudio(url: string) {
+function playOrderBeep(reason: DebugOrderReason) {
+  const context = getAudioContext();
+  if (!context) {
+    pushAudioDebugLog('fallback beep failed', { reason, error: 'audio context unavailable' });
+    return false;
+  }
+  try {
+    void resumeAudioContext();
+    playBeep(context, 0.08, 0.05);
+    if (context.state === 'suspended') {
+      pushAudioDebugLog('fallback beep pending resume', { reason, contextState: context.state });
+    }
+    return true;
+  } catch (error) {
+    setLastSpeakDebugState('failed', stringifyError(error));
+    pushAudioDebugLog('fallback beep failed', {
+      reason,
+      error: stringifyError(error),
+    });
+    return false;
+  }
+}
+
+function playSpeechAnnouncementNow(text: string, reason: DebugOrderReason) {
+  if (typeof window === 'undefined') {
+    setLastSpeakDebugState('failed', 'window unavailable');
+    pushAudioDebugLog('speechSynthesis unavailable', { text, reason });
+    speechUtteranceState.value = 'onerror';
+    speechUtteranceError.value = 'window unavailable';
+    return false;
+  }
+  speechSupported.value = isSpeechSynthesisSupported();
+  const speech = window.speechSynthesis;
+  if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
+    setLastSpeakDebugState('failed', 'speechSynthesis unavailable');
+    pushAudioDebugLog('speechSynthesis unavailable for speak', { text, reason });
+    speechSpeakCalled.value = 'not-called';
+    speechUtteranceState.value = 'onerror';
+    speechUtteranceError.value = 'speechSynthesis unavailable';
+    return false;
+  }
+
+  try {
+    updateSpeechRuntimeSnapshot(speech);
+    speech.cancel();
+    pushAudioDebugLog('speech cancel before speak', {
+      text,
+      reason,
+      speaking: speech.speaking,
+      pending: speech.pending,
+      paused: speech.paused,
+    });
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    const voice = resolveChineseVoice();
+    const attachVoice = !!voice && !isIosSafariLike();
+    speechSpeakCalled.value = 'called';
+    speechUtteranceState.value = 'queued';
+    speechSelectedVoiceName.value = voice?.name || 'not-selected';
+    speechSelectedVoiceLang.value = voice?.lang || 'not-selected';
+    utterance.lang = 'zh-CN';
+    utterance.volume = 1;
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    if (attachVoice && voice) {
+      utterance.voice = voice;
+    }
+    utterance.onstart = () => {
+      speechUnlocked.value = true;
+      speechUtteranceState.value = 'onstart';
+      updateSpeechRuntimeSnapshot(speech);
+      pushAudioDebugLog('utterance onstart', {
+        text,
+        reason,
+        voice: voiceSummary(voice),
+      });
+    };
+    utterance.onend = () => {
+      speechUnlocked.value = true;
+      speechUtteranceState.value = 'onend';
+      updateSpeechRuntimeSnapshot(speech);
+      pushAudioDebugLog('utterance onend', {
+        text,
+        reason,
+        voice: voiceSummary(voice),
+      });
+    };
+    utterance.onerror = (event) => {
+      speechUtteranceState.value = 'onerror';
+      const errorName = (event as SpeechSynthesisErrorEvent).error || 'unknown';
+      speechUtteranceError.value = errorName;
+      updateSpeechRuntimeSnapshot(speech);
+      pushAudioDebugLog('utterance onerror', {
+        text,
+        reason,
+        error: errorName,
+        voice: voiceSummary(voice),
+      });
+    };
+    if (typeof speech.resume === 'function') {
+      speech.resume();
+    }
+    speech.speak(utterance);
+    updateSpeechRuntimeSnapshot(speech);
+    pushAudioDebugLog('speechSynthesis speak called', {
+      text,
+      reason,
+      selectedVoice: voiceSummary(voice),
+      attachVoice,
+    });
+    window.setTimeout(() => {
+      updateSpeechRuntimeSnapshot(speech);
+      const snapshot = buildSpeechRuntimeSnapshot(speech);
+      speechRuntimeSnapshotAfterDelay.value = snapshot;
+      pushAudioDebugLog('speech state after 2000ms', {
+        text,
+        reason,
+        snapshot,
+      });
+    }, 2000);
+    return true;
+  } catch (error) {
+    speechUtteranceState.value = 'onerror';
+    speechUtteranceError.value = stringifyError(error);
+    updateSpeechRuntimeSnapshot(speech);
+    pushAudioDebugLog('speechSynthesis speak failed', {
+      text,
+      reason,
+      error: stringifyError(error),
+    });
+    return false;
+  }
+}
+
+function playNotificationAudio(url: string) {
   if (typeof window === 'undefined') return false;
   try {
     const wasCached = notificationAudioCache.has(url);
@@ -266,7 +422,7 @@ async function playNotificationAudio(url: string) {
         error: stringifyError(error),
       });
     }
-    await audio
+    void audio
       .play()
       .then(() => {
         pushAudioDebugLog('audio play success', { src: audio.src });
@@ -335,6 +491,7 @@ async function speakWithSpeechSynthesis(
       selectedVoice: voiceSummary(voice),
       attachVoice,
     });
+    updateSpeechRuntimeSnapshot(speech);
     if (speech.speaking || speech.pending) {
       speech.cancel();
     }
@@ -345,70 +502,69 @@ async function speakWithSpeechSynthesis(
       pending: speech.pending,
       paused: speech.paused,
     });
-    window.setTimeout(() => {
-      pushAudioDebugLog('speech speak scheduled', {
+    try {
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.volume = 1;
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      if (attachVoice && voice) {
+        utterance.voice = voice;
+      }
+      utterance.onstart = () => {
+        speechUnlocked.value = true;
+        speechUtteranceState.value = 'onstart';
+        pushAudioDebugLog('utterance onstart', { text, reason, voice: voiceSummary(voice) });
+        updateSpeechRuntimeSnapshot(speech);
+      };
+      utterance.onend = () => {
+        speechUnlocked.value = true;
+        speechUtteranceState.value = 'onend';
+        pushAudioDebugLog('utterance onend', { text, reason, voice: voiceSummary(voice) });
+        updateSpeechRuntimeSnapshot(speech);
+      };
+      utterance.onerror = (event) => {
+        speechUtteranceState.value = 'onerror';
+        const errorName = (event as SpeechSynthesisErrorEvent).error || 'unknown';
+        speechUtteranceError.value = errorName;
+        pushAudioDebugLog('utterance onerror', {
+          text,
+          reason,
+          error: errorName,
+          voice: voiceSummary(voice),
+        });
+        updateSpeechRuntimeSnapshot(speech);
+      };
+      if (typeof speech.resume === 'function') {
+        speech.resume();
+      }
+      speech.speak(utterance);
+      updateSpeechRuntimeSnapshot(speech);
+      pushAudioDebugLog('speechSynthesis speak called', {
         text,
         reason,
-        delayMs: 150,
+        selectedVoice: voiceSummary(voice),
         attachVoice,
       });
-      try {
-        const utterance = new window.SpeechSynthesisUtterance(text);
-        utterance.lang = 'zh-CN';
-        utterance.volume = 1;
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        if (attachVoice && voice) {
-          utterance.voice = voice;
-        }
-        utterance.onstart = () => {
-          speechUtteranceState.value = 'onstart';
-          pushAudioDebugLog('utterance onstart', { text, reason, voice: voiceSummary(voice) });
-        };
-        utterance.onend = () => {
-          speechUtteranceState.value = 'onend';
-          pushAudioDebugLog('utterance onend', { text, reason, voice: voiceSummary(voice) });
-        };
-        utterance.onerror = (event) => {
-          speechUtteranceState.value = 'onerror';
-          const errorName = (event as SpeechSynthesisErrorEvent).error || 'unknown';
-          speechUtteranceError.value = errorName;
-          pushAudioDebugLog('utterance onerror', {
-            text,
-            reason,
-            error: errorName,
-            voice: voiceSummary(voice),
-          });
-        };
-        if (typeof speech.resume === 'function') {
-          speech.resume();
-        }
-        speech.speak(utterance);
-        pushAudioDebugLog('speechSynthesis speak called', {
-          text,
-          reason,
-          selectedVoice: voiceSummary(voice),
-          attachVoice,
-        });
-        window.setTimeout(() => {
-          pushAudioDebugLog('speech state after 1500ms', {
-            text,
-            reason,
-            speaking: speech.speaking,
-            pending: speech.pending,
-            paused: speech.paused,
-          });
-        }, 1500);
-      } catch (error) {
-        speechUtteranceState.value = 'onerror';
-        speechUtteranceError.value = stringifyError(error);
-        pushAudioDebugLog('speechSynthesis speak failed', {
-          text,
-          reason,
-          error: stringifyError(error),
-        });
-      }
-    }, 150);
+      window.setTimeout(() => {
+        updateSpeechRuntimeSnapshot(speech);
+      const snapshot = buildSpeechRuntimeSnapshot(speech);
+      speechRuntimeSnapshotAfterDelay.value = snapshot;
+      pushAudioDebugLog('speech state after 2000ms', {
+        text,
+        reason,
+        snapshot,
+      });
+      }, 2000);
+    } catch (error) {
+      speechUtteranceState.value = 'onerror';
+      speechUtteranceError.value = stringifyError(error);
+      pushAudioDebugLog('speechSynthesis speak failed', {
+        text,
+        reason,
+        error: stringifyError(error),
+      });
+    }
     return 'speech';
   } catch (error) {
     setLastSpeakDebugState('failed', stringifyError(error));
@@ -442,6 +598,7 @@ function preloadSpeechSynthesis() {
   speechSupported.value = isSpeechSynthesisSupported();
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   updateSpeechVoicesCount(window.speechSynthesis.getVoices());
+  updateSpeechRuntimeSnapshot(window.speechSynthesis);
   void loadVoices();
 }
 
@@ -485,6 +642,7 @@ function loadVoices() {
       if (settled) return;
       settled = true;
       updateSpeechVoicesCount(nextVoices);
+      updateSpeechRuntimeSnapshot(window.speechSynthesis);
       pushAudioDebugLog('voiceschanged', {
         voicesLength: nextVoices.length,
       });
@@ -594,6 +752,25 @@ function formatAudioDebugDetails(details: unknown) {
 
 function isSpeechSynthesisSupported() {
   return typeof window !== 'undefined' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance !== 'undefined';
+}
+
+function updateSpeechRuntimeSnapshot(speech?: SpeechSynthesis) {
+  if (!speech) {
+    speechRuntimeSpeaking.value = 'false';
+    speechRuntimePending.value = 'false';
+    speechRuntimePaused.value = 'false';
+    return;
+  }
+  speechRuntimeSpeaking.value = String(speech.speaking);
+  speechRuntimePending.value = String(speech.pending);
+  speechRuntimePaused.value = String(speech.paused);
+}
+
+function buildSpeechRuntimeSnapshot(speech?: SpeechSynthesis) {
+  if (!speech) {
+    return 'speaking=false pending=false paused=false';
+  }
+  return `speaking=${String(speech.speaking)} pending=${String(speech.pending)} paused=${String(speech.paused)}`;
 }
 
 function voiceSummary(voice: SpeechSynthesisVoice | null) {
