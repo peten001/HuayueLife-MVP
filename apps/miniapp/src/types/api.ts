@@ -19,7 +19,10 @@ export interface MerchantSummary {
   nameVi?: string;
   coverUrl?: string;
   addressDetail: string;
+  province?: string;
   city: string;
+  district?: string;
+  status?: string;
   distanceKm: number | null;
   isOpen: boolean;
   supportedOrderTypes: Array<'DINE_IN' | 'PICKUP' | 'DELIVERY'>;
@@ -209,6 +212,7 @@ export interface UserOrder {
   merchant: {
     id: string;
     nameZh: string;
+    nameVi?: string;
     logoUrl?: string;
   };
   table?: {

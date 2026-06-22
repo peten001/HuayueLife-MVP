@@ -7,6 +7,11 @@ const API_BASE_URL =
 const DEBUG_REQUESTS = true;
 let requestSeq = 0;
 
+type RequestOptions = Omit<UniApp.RequestOptions, 'url' | 'method'> & {
+  method?: UniApp.RequestOptions['method'] | 'PATCH';
+  params?: unknown;
+};
+
 function safeJson(value: unknown) {
   try {
     return JSON.stringify(value);
@@ -17,7 +22,7 @@ function safeJson(value: unknown) {
 
 export async function request<T>(
   path: string,
-  options: Omit<UniApp.RequestOptions, 'url'> = {},
+  options: RequestOptions = {},
 ): Promise<T> {
   const token = getToken();
   const requestId = ++requestSeq;
@@ -41,6 +46,7 @@ export async function request<T>(
     uni.request({
       ...options,
       url,
+      method: options.method as UniApp.RequestOptions['method'],
       header: {
         'content-type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

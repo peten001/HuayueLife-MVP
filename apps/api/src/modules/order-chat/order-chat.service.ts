@@ -282,13 +282,11 @@ export class OrderChatService {
     senderSide: ChatSide,
     message: OrderChatMessage,
   ) {
-    const now = message.createdAt;
     if (senderSide === 'CUSTOMER') {
       await tx.orderChatConversation.update({
         where: { id: conversation.id },
         data: {
-          merchantUnreadCount: conversation.merchantUnreadCount + 1,
-          merchantLastReadAt: conversation.merchantLastReadAt,
+          merchantUnreadCount: { increment: 1 },
         },
       });
       return;
@@ -297,8 +295,7 @@ export class OrderChatService {
     await tx.orderChatConversation.update({
       where: { id: conversation.id },
       data: {
-        customerUnreadCount: conversation.customerUnreadCount + 1,
-        customerLastReadAt: conversation.customerLastReadAt,
+        customerUnreadCount: { increment: 1 },
       },
     });
   }
@@ -308,32 +305,41 @@ export class OrderChatService {
     conversation: OrderChatConversation,
     side: ChatSide,
   ) {
-    const now = new Date();
+    const readAt = new Date();
     const senderType: OrderChatSenderType =
       side === 'CUSTOMER' ? 'MERCHANT' : 'CUSTOMER';
-    const unreadField =
-      side === 'CUSTOMER' ? 'customerUnreadCount' : 'merchantUnreadCount';
-    const readAtField =
-      side === 'CUSTOMER' ? 'customerLastReadAt' : 'merchantLastReadAt';
 
-    await tx.orderChatMessage.updateMany({
+    const marked = await tx.orderChatMessage.updateMany({
       where: {
         conversationId: conversation.id,
         senderType,
         readAt: null,
+        createdAt: { lte: readAt },
       },
       data: {
-        readAt: now,
+        readAt,
       },
     });
 
-    return tx.orderChatConversation.update({
-      where: { id: conversation.id },
-      data: {
-        [unreadField]: 0,
-        [readAtField]: now,
-      } as Prisma.OrderChatConversationUpdateInput,
-    });
+    if (side === 'CUSTOMER') {
+      await tx.$executeRaw`
+        UPDATE order_chat_conversations
+        SET customer_unread_count = GREATEST(customer_unread_count - ${marked.count}, 0),
+            customer_last_read_at = ${readAt},
+            updated_at = CURRENT_TIMESTAMP(3)
+        WHERE id = ${conversation.id}
+      `;
+    } else {
+      await tx.$executeRaw`
+        UPDATE order_chat_conversations
+        SET merchant_unread_count = GREATEST(merchant_unread_count - ${marked.count}, 0),
+            merchant_last_read_at = ${readAt},
+            updated_at = CURRENT_TIMESTAMP(3)
+        WHERE id = ${conversation.id}
+      `;
+    }
+
+    return this.loadConversation(tx, conversation.id);
   }
 
   private ensureCanSend(status: OrderStatus) {

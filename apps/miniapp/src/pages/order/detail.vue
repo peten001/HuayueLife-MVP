@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onHide, onLoad, onShow } from '@dcloudio/uni-app';
+import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import { getOrderChat } from '@/api/order-chat';
 import { cancelOrder, confirmReceived, getOrder } from '@/api/orders';
@@ -65,11 +65,14 @@ onShow(() => {
   }
 });
 
-onHide(() => {
+function stopPolling() {
   if (timer) clearInterval(timer);
   timer = undefined;
   chatOpen.value = false;
-});
+}
+
+onHide(stopPolling);
+onUnload(stopPolling);
 
 async function load(showLoading = false) {
   if (!orderId.value) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onHide, onShow } from '@dcloudio/uni-app';
+import { onHide, onShow, onUnload } from '@dcloudio/uni-app';
 import { getOrders } from '@/api/orders';
 import {
   locale,
@@ -71,10 +71,13 @@ onShow(() => {
   if (!timer) timer = setInterval(() => void load(), 5000);
 });
 
-onHide(() => {
+function stopPolling() {
   if (timer) clearInterval(timer);
   timer = undefined;
-});
+}
+
+onHide(stopPolling);
+onUnload(stopPolling);
 </script>
 
 <template>
