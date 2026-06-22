@@ -219,6 +219,18 @@ export class MerchantOrdersService {
     table: {
       select: { id: true, tableNo: true, tableName: true },
     },
+    chatConversation: {
+      select: {
+        id: true,
+        status: true,
+        merchantUnreadCount: true,
+        customerUnreadCount: true,
+        lastMessageAt: true,
+        lastMessageId: true,
+        merchantLastReadAt: true,
+        customerLastReadAt: true,
+      },
+    },
     items: {
       select: {
         id: true,
@@ -232,6 +244,18 @@ export class MerchantOrdersService {
   private readonly detailInclude = {
     merchant: {
       select: { id: true, nameZh: true },
+    },
+    chatConversation: {
+      select: {
+        id: true,
+        status: true,
+        merchantUnreadCount: true,
+        customerUnreadCount: true,
+        lastMessageAt: true,
+        lastMessageId: true,
+        merchantLastReadAt: true,
+        customerLastReadAt: true,
+      },
     },
     user: {
       select: { id: true, nickname: true, phone: true },

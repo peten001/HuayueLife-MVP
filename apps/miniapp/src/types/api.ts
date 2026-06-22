@@ -160,6 +160,31 @@ export interface UserOrderStatusLog {
   createdAt: string;
 }
 
+export type OrderChatConversationStatus = 'ACTIVE' | 'CLOSED';
+export type OrderChatSenderType = 'CUSTOMER' | 'MERCHANT';
+
+export interface OrderChatMessage {
+  id: string;
+  conversationId: string;
+  orderId: string;
+  senderType: OrderChatSenderType;
+  senderId: string;
+  content: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface UserOrderChatConversation {
+  id: string;
+  status: OrderChatConversationStatus;
+  customerUnreadCount: number;
+  merchantUnreadCount: number;
+  lastMessageAt?: string | null;
+  lastMessageId?: string | null;
+  customerLastReadAt?: string | null;
+  merchantLastReadAt?: string | null;
+}
+
 export interface UserOrder {
   id: string;
   orderNo: string;
@@ -193,4 +218,5 @@ export interface UserOrder {
   };
   items: UserOrderItem[];
   statusLogs?: UserOrderStatusLog[];
+  chatConversation?: UserOrderChatConversation | null;
 }

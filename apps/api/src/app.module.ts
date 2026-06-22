@@ -17,6 +17,7 @@ import { MerchantOrdersModule } from './modules/merchant-orders/merchant-orders.
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { OrderChatModule } from './modules/order-chat/order-chat.module';
 import { PublicMerchantsModule } from './modules/public-merchants/public-merchants.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { QrModule } from './modules/qr/qr.module';
@@ -50,6 +51,7 @@ import { TablesModule } from './modules/tables/tables.module';
     CartModule,
     ProductsModule,
     OrdersModule,
+    OrderChatModule,
     TablesModule,
     PublicMerchantsModule,
     PlatformModule,

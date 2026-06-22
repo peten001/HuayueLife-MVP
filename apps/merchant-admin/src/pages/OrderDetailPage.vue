@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { getMerchantOrder, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
+import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
@@ -13,6 +14,7 @@ const { t } = useI18n();
 const order = ref<MerchantOrder>();
 const message = ref('');
 const operating = ref(false);
+const chatOpen = ref(false);
 let timer: number | undefined;
 
 const actions = computed(() => {
@@ -88,6 +90,25 @@ async function settle() {
     operating.value = false;
   }
 }
+
+function openChat() {
+  chatOpen.value = true;
+}
+
+function closeChat() {
+  chatOpen.value = false;
+}
+
+function applyChatConversation(
+  conversation: MerchantOrder['chatConversation'] | null,
+) {
+  if (!order.value) return;
+  order.value.chatConversation = conversation;
+}
+
+const chatUnreadCount = computed(
+  () => order.value?.chatConversation?.merchantUnreadCount ?? 0,
+);
 
 function typeLabel() {
   if (!order.value) return '';
@@ -168,6 +189,10 @@ type Action =
         >
           {{ t(item.label) }}
         </button>
+        <button type="button" class="secondary chat-entry" @click="openChat">
+          <span>{{ t('openChat') }}</span>
+          <span v-if="chatUnreadCount" class="nav-badge">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</span>
+        </button>
         <button
           v-if="order.settlementStatus === 'UNSETTLED'"
           class="secondary"
@@ -241,4 +266,11 @@ type Action =
       </ol>
     </section>
   </template>
+
+  <OrderChatPanel
+    v-if="order && chatOpen"
+    :order="order"
+    @close="closeChat"
+    @updated="applyChatConversation"
+  />
 </template>

@@ -23,6 +23,16 @@ button.subtle { color: #40584a; background: #f3f7f4; }
 button.warning { color: #7a4b00; background: #ffecbf; }
 button.danger { color: #a14a4a; border: 1px solid #e8b9b9; background: #fff5f5; }
 button.small { padding: 6px 10px; font-size: 13px; }
+button.chat-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+button.chat-entry .nav-badge {
+  margin-left: 0;
+}
 input, select, textarea {
   width: 100%;
   border: 1px solid #d8dde3;

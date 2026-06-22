@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router';
 import { getMerchantOrders, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
+import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
@@ -58,6 +59,10 @@ const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
 const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
 const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
+);
+const chatOrderId = ref('');
+const chatOrder = computed(
+  () => rows.value.find((order) => order.id === chatOrderId.value) ?? null,
 );
 
 function getSpeechLanguage(): OrderSpeechLanguage {
@@ -202,6 +207,27 @@ async function execute(order: MerchantOrder) {
   } finally {
     operatingId.value = '';
   }
+}
+
+function openChat(order: MerchantOrder) {
+  chatOrderId.value = order.id;
+}
+
+function closeChat() {
+  chatOrderId.value = '';
+}
+
+function applyChatConversation(
+  orderId: string,
+  conversation: MerchantOrder['chatConversation'] | null,
+) {
+  const order = rows.value.find((item) => item.id === orderId);
+  if (!order) return;
+  order.chatConversation = conversation;
+}
+
+function chatUnreadCount(order: MerchantOrder) {
+  return order.chatConversation?.merchantUnreadCount ?? 0;
 }
 
 function showPendingOnly() {
@@ -356,6 +382,14 @@ type Action =
         >
           {{ t(primaryAction(order)!.label) }}
         </button>
+        <button
+          type="button"
+          class="secondary chat-entry"
+          @click="openChat(order)"
+        >
+          <span>{{ t('openChat') }}</span>
+          <span v-if="chatUnreadCount(order)" class="nav-badge">{{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}</span>
+        </button>
         <RouterLink class="secondary card-link" :to="`/orders/${order.id}`">
           {{ t('viewDetails') }}
         </RouterLink>
@@ -398,6 +432,14 @@ type Action =
             >
               {{ t(primaryAction(order)!.label) }}
             </button>
+            <button
+              type="button"
+              class="small secondary chat-entry"
+              @click="openChat(order)"
+            >
+              <span>{{ t('openChat') }}</span>
+              <span v-if="chatUnreadCount(order)" class="nav-badge">{{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}</span>
+            </button>
             <RouterLink class="text-link" :to="`/orders/${order.id}`">{{ t('viewDetails') }}</RouterLink>
           </td>
         </tr>
@@ -407,6 +449,13 @@ type Action =
       </tbody>
     </table>
   </div>
+
+  <OrderChatPanel
+    v-if="chatOrder"
+    :order="chatOrder"
+    @close="closeChat"
+    @updated="applyChatConversation(chatOrderId, $event)"
+  />
 </template>
 
 <style scoped>
@@ -454,6 +503,14 @@ type Action =
 .sound-toggle.active {
   color: #fff;
   background: #2e7d32;
+}
+
+.chat-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .order-filters,

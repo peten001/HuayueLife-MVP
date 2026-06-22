@@ -91,6 +91,17 @@ enum OperatorType {
   SYSTEM
 }
 
+enum OrderChatConversationStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum OrderChatSenderType {
+  CUSTOMER
+  MERCHANT
+  SYSTEM
+}
+
 model User {
   id          BigInt     @id @default(autoincrement())
   openid      String     @unique @db.VarChar(64)
@@ -105,6 +116,7 @@ model User {
 
   carts              Cart[]
   orders             Order[]
+  orderChatConversations OrderChatConversation[]
   operatedStatusLogs OrderStatusLog[] @relation("UserStatusLogOperator")
 
   @@map("users")
@@ -145,6 +157,7 @@ model Merchant {
   tables     DiningTable[]
   carts      Cart[]
   orders     Order[]
+  orderChatConversations OrderChatConversation[]
 
   @@index([status])
   @@index([province, city, status])
@@ -304,6 +317,8 @@ model Order {
   table      DiningTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   items      OrderItem[]
   statusLogs OrderStatusLog[]
+  chatConversation OrderChatConversation?
+  chatMessages OrderChatMessage[]
 
   @@unique([userId, idempotencyKey])
   @@index([merchantId, status, createdAt])
@@ -351,4 +366,53 @@ model OrderStatusLog {
   @@index([operatorUserId])
   @@index([operatorStaffId])
   @@map("order_status_logs")
+}
+
+model OrderChatConversation {
+  id                    BigInt                     @id @default(autoincrement())
+  orderId               BigInt                     @unique @map("order_id")
+  merchantId            BigInt                     @map("merchant_id")
+  customerId            BigInt                     @map("customer_id")
+  status                OrderChatConversationStatus @default(ACTIVE)
+  customerUnreadCount    Int                        @default(0) @map("customer_unread_count")
+  merchantUnreadCount    Int                        @default(0) @map("merchant_unread_count")
+  lastMessageId         BigInt?                    @unique @map("last_message_id")
+  lastMessageAt         DateTime?                  @map("last_message_at")
+  customerLastReadAt    DateTime?                  @map("customer_last_read_at")
+  merchantLastReadAt    DateTime?                  @map("merchant_last_read_at")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @map("updated_at")
+
+  order        Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  merchant     Merchant           @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  customer     User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lastMessage   OrderChatMessage?  @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  messages      OrderChatMessage[]
+
+  @@index([merchantId, updatedAt])
+  @@index([customerId, updatedAt])
+  @@index([merchantId, merchantUnreadCount])
+  @@index([customerId, customerUnreadCount])
+  @@map("order_chat_conversations")
+}
+
+model OrderChatMessage {
+  id             BigInt              @id @default(autoincrement())
+  conversationId BigInt              @map("conversation_id")
+  orderId        BigInt              @map("order_id")
+  senderType     OrderChatSenderType @map("sender_type")
+  senderId       BigInt              @map("sender_id")
+  content        String              @db.Text
+  readAt         DateTime?           @map("read_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  conversation   OrderChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  order          Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  lastMessageOfConversation OrderChatConversation? @relation("ConversationLastMessage")
+
+  @@index([conversationId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([conversationId, id])
+  @@index([senderType, senderId, createdAt])
+  @@map("order_chat_messages")
 }

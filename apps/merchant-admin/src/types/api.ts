@@ -459,6 +459,31 @@ export interface OrderStatusLog {
   createdAt: string;
 }
 
+export type OrderChatConversationStatus = 'ACTIVE' | 'CLOSED';
+export type OrderChatSenderType = 'CUSTOMER' | 'MERCHANT';
+
+export interface OrderChatMessage {
+  id: string;
+  conversationId: string;
+  orderId: string;
+  senderType: OrderChatSenderType;
+  senderId: string;
+  content: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface MerchantOrderChatConversation {
+  id: string;
+  status: OrderChatConversationStatus;
+  merchantUnreadCount: number;
+  customerUnreadCount: number;
+  lastMessageAt?: string | null;
+  lastMessageId?: string | null;
+  merchantLastReadAt?: string | null;
+  customerLastReadAt?: string | null;
+}
+
 export interface MerchantOrder {
   id: string;
   orderNo: string;
@@ -493,4 +518,5 @@ export interface MerchantOrder {
   };
   items: OrderItem[];
   statusLogs?: OrderStatusLog[];
+  chatConversation?: MerchantOrderChatConversation | null;
 }

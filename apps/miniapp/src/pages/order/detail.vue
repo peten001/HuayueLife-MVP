@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow } from '@dcloudio/uni-app';
+import OrderChatPanel from '@/components/OrderChatPanel.vue';
+import { getOrderChat } from '@/api/order-chat';
 import { cancelOrder, confirmReceived, getOrder } from '@/api/orders';
 import {
   locale,
@@ -23,6 +25,7 @@ const order = ref<UserOrder>();
 const loading = ref(false);
 const operating = ref(false);
 const message = ref('');
+const chatOpen = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 const { t } = useI18n();
 
@@ -39,6 +42,10 @@ const statusTone = computed(() => {
   if (order.value?.status === 'CANCELLED') return 'cancelled';
   return 'active';
 });
+const chatUnreadCount = computed(
+  () => order.value?.chatConversation?.customerUnreadCount ?? 0,
+);
+const chatOrder = computed(() => order.value ?? null);
 
 usePageTitle(() =>
   order.value ? `${t('orderDetailTitle')} ${order.value.orderNo}` : t('orderDetailTitle'),
@@ -56,6 +63,7 @@ onShow(() => {
 onHide(() => {
   if (timer) clearInterval(timer);
   timer = undefined;
+  chatOpen.value = false;
 });
 
 async function load(showLoading = false) {
@@ -66,7 +74,20 @@ async function load(showLoading = false) {
   if (showLoading) loading.value = true;
   try {
     await auth.ensureLogin();
-    order.value = await getOrder(orderId.value);
+    const [orderResult, chatResult] = await Promise.allSettled([
+      getOrder(orderId.value),
+      getOrderChat(orderId.value),
+    ]);
+    if (orderResult.status !== 'fulfilled') {
+      throw orderResult.reason;
+    }
+    order.value = {
+      ...orderResult.value,
+      chatConversation:
+        chatResult.status === 'fulfilled'
+          ? chatResult.value
+          : order.value?.chatConversation ?? null,
+    };
     message.value = '';
   } catch (caught) {
     message.value = caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
@@ -118,6 +139,19 @@ function receive() {
   });
 }
 
+function openChat() {
+  chatOpen.value = true;
+}
+
+function closeChat() {
+  chatOpen.value = false;
+}
+
+function applyChatConversation(conversation: UserOrder['chatConversation'] | null) {
+  if (!order.value) return;
+  order.value.chatConversation = conversation;
+}
+
 function serviceInfo() {
   if (!order.value) return '';
   if (order.value.orderType === 'DINE_IN') {
@@ -140,6 +174,11 @@ function serviceInfo() {
         <text class="status">{{ orderStatusLabel(order.status, locale) }}</text>
         <text class="status-copy">{{ t('orderStatusUpdated') }}</text>
       </view>
+
+      <button class="chat-entry" @click="openChat">
+        <text>{{ t('contactMerchant') }}</text>
+        <view v-if="chatUnreadCount" class="chat-badge">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</view>
+      </button>
 
       <view class="card">
         <view class="card-title">{{ merchantName(order.merchant, locale) }}</view>
@@ -191,6 +230,14 @@ function serviceInfo() {
         {{ t('confirmReceived') }}
       </button>
     </template>
+
+    <OrderChatPanel
+      v-if="chatOpen && chatOrder"
+      :visible="chatOpen"
+      :order="chatOrder"
+      @close="closeChat"
+      @updated="applyChatConversation"
+    />
   </view>
 </template>
 
@@ -252,6 +299,40 @@ function serviceInfo() {
 .status-copy {
   opacity: .82;
   font-size: 22rpx;
+}
+
+.chat-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+  width: 100%;
+  min-height: 82rpx;
+  margin-bottom: 20rpx;
+  border-radius: 24rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.chat-entry::after {
+  border: 0;
+}
+
+.chat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34rpx;
+  height: 34rpx;
+  padding: 0 9rpx;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #e53935;
+  font-size: 20rpx;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .card {
