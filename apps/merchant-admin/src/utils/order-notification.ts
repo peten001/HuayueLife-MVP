@@ -32,6 +32,7 @@ const lastSpeakReason = ref('not-called');
 const audioDebugLogs = ref<AudioDebugLogEntry[]>([]);
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
 let audioContext: AudioContext | null = null;
+const notificationAudioCache = new Map<string, HTMLAudioElement>();
 
 export const pendingOrderCount = computed(() => pendingOrderIds.value.length);
 export const orderSoundEnabled = computed(() => soundEnabled.value);
@@ -230,20 +231,23 @@ function resolveNotificationAudioUrl(text: string) {
 async function playNotificationAudio(url: string) {
   if (typeof window === 'undefined') return false;
   try {
-    stopActiveNotificationAudio();
-    pushAudioDebugLog('audio create', { url });
-    const audio = new window.Audio(url);
-    activeNotificationAudio = audio;
-    audio.preload = 'auto';
-    audio.setAttribute('playsinline', 'true');
-    audio.volume = 1;
-    pushAudioDebugLog('audio load before play', {
+    const wasCached = notificationAudioCache.has(url);
+    const audio = getCachedNotificationAudio(url);
+    pushAudioDebugLog('audio create or reuse', {
       src: audio.src,
-      preload: audio.preload,
+      cached: wasCached,
       readyState: audio.readyState,
     });
-    audio.load();
-    pushAudioDebugLog('audio.load called', { src: audio.src });
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      pushAudioDebugLog('audio prepared', { src: audio.src, currentTime: audio.currentTime });
+    } catch (error) {
+      pushAudioDebugLog('audio prepare failed', {
+        src: audio.src,
+        error: stringifyError(error),
+      });
+    }
     await audio
       .play()
       .then(() => {
@@ -265,23 +269,20 @@ async function playNotificationAudio(url: string) {
       url,
       error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
     });
-    stopActiveNotificationAudio();
     return false;
   }
 }
 
-let activeNotificationAudio: HTMLAudioElement | null = null;
+function getCachedNotificationAudio(url: string) {
+  const cached = notificationAudioCache.get(url);
+  if (cached) return cached;
 
-function stopActiveNotificationAudio() {
-  if (!activeNotificationAudio) return;
-  try {
-    activeNotificationAudio.pause();
-    activeNotificationAudio.currentTime = 0;
-  } catch {
-    // ignore
-  } finally {
-    activeNotificationAudio = null;
-  }
+  const audio = new window.Audio(url);
+  audio.preload = 'auto';
+  audio.setAttribute('playsinline', 'true');
+  audio.volume = 1;
+  notificationAudioCache.set(url, audio);
+  return audio;
 }
 
 async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
