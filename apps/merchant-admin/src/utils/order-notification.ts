@@ -12,8 +12,15 @@ interface RecentNewOrderRecord {
   expiresAt: number;
 }
 
+interface AudioDebugLogEntry {
+  time: string;
+  message: string;
+  details?: string;
+}
+
 type SpeakDebugState = 'success' | 'failed' | 'not-called';
 type PlaybackResult = 'audio' | 'beep' | 'speech' | 'failed';
+type DebugOrderReason = 'enable-sound' | 'new-order' | 'debug-test';
 
 const soundEnabled = ref(false);
 const pendingOrderIds = ref<string[]>(readPendingSnapshot());
@@ -22,6 +29,7 @@ const initialized = ref(false);
 const speechVoicesCount = ref(getCurrentSpeechVoicesCount());
 const lastSpeakState = ref<SpeakDebugState>('not-called');
 const lastSpeakReason = ref('not-called');
+const audioDebugLogs = ref<AudioDebugLogEntry[]>([]);
 let knownPendingIds = new Set<string>(pendingOrderIds.value);
 let audioContext: AudioContext | null = null;
 
@@ -36,6 +44,7 @@ export const lastSpeakDebugSummary = computed(() =>
     ? `failed${lastSpeakReason.value ? `: ${lastSpeakReason.value}` : ''}`
     : lastSpeakState.value,
 );
+export const orderAudioDebugLogs = computed(() => audioDebugLogs.value.slice(0, 20));
 export const recentNewPendingOrderIds = computed(() =>
   recentNewOrderRecords.value.map((record) => record.id),
 );
@@ -45,12 +54,19 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
+  pushAudioDebugLog('点击开启声音提醒', { soundEnabled: soundEnabled.value });
   preloadSpeechSynthesis();
-  const result = await speakOrderNotification('声音提醒已开启');
+  const result = await speakOrderNotification('声音提醒已开启', 'enable-sound');
+  pushAudioDebugLog('开启声音提醒完成', {
+    result,
+    soundEnabled: soundEnabled.value,
+  });
   if (result === 'audio' || result === 'beep') {
     setOrderSoundEnabled(true);
+    pushAudioDebugLog('soundEnabled 已开启', { value: true });
     return true;
   }
+  pushAudioDebugLog('soundEnabled 未开启', { value: false, result });
   return false;
 }
 
@@ -85,7 +101,7 @@ export function clearNewPendingOrders(ids: string[]) {
 
 export function notifyNewPendingOrders(ids: string[]) {
   pruneRecentNewOrders();
-  console.log('[merchant-audio] notifyNewPendingOrders called', {
+  pushAudioDebugLog('notifyNewPendingOrders called', {
     incomingIds: ids,
     soundEnabled: soundEnabled.value,
   });
@@ -103,16 +119,13 @@ export function notifyNewPendingOrders(ids: string[]) {
   persistPendingSnapshot(current);
 
   if (newIds.length) {
-    console.log('[merchant-audio] notifyNewPendingOrders newIds', {
+    pushAudioDebugLog('notifyNewPendingOrders newPendingIds', {
       newIds,
       firstLoad,
     });
     pushRecentNewOrders(newIds);
     if (soundEnabled.value) {
-      console.log('[merchant-audio] notifyNewPendingOrders speak path', {
-        text: '您有新的订单',
-      });
-      void speakOrderNotification('您有新的订单');
+      void speakOrderNotification('您有新的订单', 'new-order');
     }
   } else {
     pruneRecentNewOrders();
@@ -120,7 +133,20 @@ export function notifyNewPendingOrders(ids: string[]) {
 
   syncRecentNewOrders(currentSet);
 
+  pushAudioDebugLog('notifyNewPendingOrders result', {
+    totalOrders: current.length,
+    pendingOrders: current.length,
+    newPendingIds: newIds,
+  });
+
   return newIds;
+}
+
+export async function debugPlayNewOrderSound() {
+  pushAudioDebugLog('测试播放新订单声音', {
+    soundEnabled: soundEnabled.value,
+  });
+  return speakOrderNotification('您有新的订单', 'debug-test');
 }
 
 function pushRecentNewOrders(ids: string[]) {
@@ -165,26 +191,33 @@ function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
   return [...map.values()].sort((left, right) => right.expiresAt - left.expiresAt);
 }
 
-async function speakOrderNotification(text: string): Promise<PlaybackResult> {
+async function speakOrderNotification(
+  text: string,
+  reason: DebugOrderReason,
+): Promise<PlaybackResult> {
   const audioUrl = resolveNotificationAudioUrl(text);
   if (audioUrl && (await playNotificationAudio(audioUrl))) {
     setLastSpeakDebugState('success');
+    pushAudioDebugLog('speakOrderNotification audio success', { text, reason, audioUrl });
     return 'audio';
   }
 
   const unlocked = await unlockAudioForReminder();
   if (unlocked) {
     setLastSpeakDebugState('success');
+    pushAudioDebugLog('fallback beep success', { text, reason });
     return 'beep';
   }
 
   const speechPlayed = await speakWithSpeechSynthesis(text);
   if (speechPlayed) {
     setLastSpeakDebugState('success');
+    pushAudioDebugLog('speechSynthesis fallback success', { text, reason });
     return 'speech';
   }
 
   setLastSpeakDebugState('failed', 'notification playback failed');
+  pushAudioDebugLog('notification playback failed', { text, reason });
   return 'failed';
 }
 
@@ -198,28 +231,28 @@ async function playNotificationAudio(url: string) {
   if (typeof window === 'undefined') return false;
   try {
     stopActiveNotificationAudio();
-    console.log('[merchant-audio] audio create', { url });
+    pushAudioDebugLog('audio create', { url });
     const audio = new window.Audio(url);
     activeNotificationAudio = audio;
     audio.preload = 'auto';
     audio.setAttribute('playsinline', 'true');
     audio.volume = 1;
-    console.log('[merchant-audio] audio load before play', {
+    pushAudioDebugLog('audio load before play', {
       src: audio.src,
       preload: audio.preload,
       readyState: audio.readyState,
     });
     audio.load();
-    console.log('[merchant-audio] audio.load called', { src: audio.src });
+    pushAudioDebugLog('audio.load called', { src: audio.src });
     await audio
       .play()
       .then(() => {
-        console.log('[merchant-audio] audio play success', { src: audio.src });
+        pushAudioDebugLog('audio play success', { src: audio.src });
         return undefined;
       })
       .catch((error: unknown) => {
         const err = error as Error & { name?: string };
-        console.warn('[merchant-audio] audio play failed', {
+        pushAudioDebugLog('audio play failed', {
           src: audio.src,
           errorName: err?.name ?? 'unknown',
           errorMessage: err?.message ?? String(error),
@@ -228,7 +261,7 @@ async function playNotificationAudio(url: string) {
       });
     return true;
   } catch (error) {
-    console.warn('[merchant-audio] audio playback failed, falling back', {
+    pushAudioDebugLog('audio playback failed, falling back', {
       url,
       error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
     });
@@ -254,15 +287,21 @@ function stopActiveNotificationAudio() {
 async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
   if (typeof window === 'undefined') {
     setLastSpeakDebugState('failed', 'window unavailable');
+    pushAudioDebugLog('speechSynthesis unavailable', { text });
     return 'failed';
   }
   const speech = window.speechSynthesis;
   if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
     try {
       playFallbackBeep();
+      pushAudioDebugLog('speechSynthesis missing, fallback beep success', { text });
       return 'beep';
     } catch (error) {
       setLastSpeakDebugState('failed', stringifyError(error));
+      pushAudioDebugLog('speechSynthesis missing, fallback beep failed', {
+        text,
+        error: stringifyError(error),
+      });
       return 'failed';
     }
   }
@@ -282,9 +321,14 @@ async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
       speech.resume();
     }
     speech.speak(utterance);
+    pushAudioDebugLog('speechSynthesis speak called', { text });
     return 'speech';
   } catch (error) {
     setLastSpeakDebugState('failed', stringifyError(error));
+    pushAudioDebugLog('speechSynthesis speak failed', {
+      text,
+      error: stringifyError(error),
+    });
     return 'failed';
   }
 }
@@ -316,9 +360,15 @@ async function unlockAudioForReminder() {
   try {
     await resumeAudioContext();
     playBeep(context, 0.08, 0.05);
+    pushAudioDebugLog('fallback beep success', {
+      contextState: context.state,
+    });
     return true;
   } catch (error) {
     setLastSpeakDebugState('failed', stringifyError(error));
+    pushAudioDebugLog('fallback beep failed', {
+      error: stringifyError(error),
+    });
     return false;
   }
 }
@@ -420,6 +470,30 @@ function setOrderSoundEnabled(value: boolean) {
 function setLastSpeakDebugState(state: SpeakDebugState, reason = '') {
   lastSpeakState.value = state;
   lastSpeakReason.value = state === 'failed' ? reason || 'unknown error' : '';
+}
+
+export function pushAudioDebugLog(message: string, details?: unknown) {
+  const entry: AudioDebugLogEntry = {
+    time: new Date().toLocaleTimeString(),
+    message,
+  };
+  if (typeof details !== 'undefined') {
+    entry.details = formatAudioDebugDetails(details);
+  }
+  audioDebugLogs.value = [entry, ...audioDebugLogs.value].slice(0, 20);
+}
+
+export function clearAudioDebugLogs() {
+  audioDebugLogs.value = [];
+}
+
+function formatAudioDebugDetails(details: unknown) {
+  if (typeof details === 'string') return details;
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return String(details);
+  }
 }
 
 function updateSpeechVoicesCount(voices: SpeechSynthesisVoice[]) {

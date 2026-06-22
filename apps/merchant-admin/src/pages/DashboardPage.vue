@@ -6,23 +6,23 @@ import { errorMessage } from '@/api/http';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
-  audioContextDebugState,
   clearNewPendingOrder,
+  clearAudioDebugLogs,
+  debugPlayNewOrderSound,
   enableOrderSound,
-  lastSpeakDebugSummary,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
   orderSoundEnabled,
+  orderAudioDebugLogs,
   recentNewPendingOrderIds,
-  speechVoicesDebugCount,
   disableOrderSound,
+  pushAudioDebugLog,
 } from '@/utils/order-notification';
 import {
   ensureWakeLock,
   requestWakeLockOnce,
   startAutoWakeLock,
   stopAutoWakeLock,
-  wakeLockDebugStatus,
 } from '@/utils/wake-lock';
 import type { MerchantOrder, OrderStatus } from '@/types/api';
 import {
@@ -278,7 +278,7 @@ async function load(options: { resetCountdown?: boolean } = {}) {
         .filter((order) => order.status === 'PENDING_ACCEPTANCE')
         .map((order) => order.id),
     );
-    console.log('[merchant-audio] dashboard load notifyNewPendingOrders result', {
+    pushAudioDebugLog('dashboard load notifyNewPendingOrders result', {
       totalOrders: loadedOrders.length,
       pendingOrders: loadedOrders.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
       newPendingIds,
@@ -403,6 +403,14 @@ async function handleSoundToggle() {
   disableOrderSound();
 }
 
+async function handleDebugNewOrderSound() {
+  await debugPlayNewOrderSound();
+}
+
+function handleClearAudioLogs() {
+  clearAudioDebugLogs();
+}
+
 function requestGestureWakeLock(reason: string) {
   void ensureWakeLock(reason);
 }
@@ -449,34 +457,6 @@ type Action =
               </RouterLink>
             </div>
           </div>
-        </section>
-
-        <section class="audio-debug-panel">
-          <div class="audio-debug-title">
-            <h2>音频调试</h2>
-          </div>
-          <dl class="audio-debug-grid">
-            <div>
-              <dt>AudioContext</dt>
-              <dd>{{ audioContextDebugState }}</dd>
-            </div>
-            <div>
-              <dt>Voices</dt>
-              <dd>{{ speechVoicesDebugCount }}</dd>
-            </div>
-            <div>
-              <dt>Sound Enabled</dt>
-              <dd>{{ orderSoundEnabled ? 'true' : 'false' }}</dd>
-            </div>
-            <div>
-              <dt>Last Speak</dt>
-              <dd>{{ lastSpeakDebugSummary }}</dd>
-            </div>
-            <div>
-              <dt>Wake Lock</dt>
-              <dd>{{ wakeLockDebugStatus }}</dd>
-            </div>
-          </dl>
         </section>
 
         <section class="metric-grid" :aria-label="operations.snapshot">
@@ -653,34 +633,6 @@ type Action =
         </div>
       </section>
 
-      <section class="audio-debug-panel mobile-audio-debug-panel">
-        <div class="audio-debug-title">
-          <h2>音频调试</h2>
-        </div>
-        <dl class="audio-debug-grid">
-          <div>
-            <dt>AudioContext</dt>
-            <dd>{{ audioContextDebugState }}</dd>
-          </div>
-          <div>
-            <dt>Voices</dt>
-            <dd>{{ speechVoicesDebugCount }}</dd>
-          </div>
-          <div>
-            <dt>Sound Enabled</dt>
-            <dd>{{ orderSoundEnabled ? 'true' : 'false' }}</dd>
-          </div>
-          <div>
-            <dt>Last Speak</dt>
-            <dd>{{ lastSpeakDebugSummary }}</dd>
-          </div>
-          <div>
-            <dt>Wake Lock</dt>
-            <dd>{{ wakeLockDebugStatus }}</dd>
-          </div>
-        </dl>
-      </section>
-
       <section v-if="hasNewPendingOrders" class="mobile-new-order-banner">
         <div>
           <strong>有新订单，请及时接单</strong>
@@ -791,6 +743,29 @@ type Action =
           </RouterLink>
         </div>
       </section>
+    </section>
+
+    <!-- debug temporary: page-level audio diagnostics for mobile verification -->
+    <section class="audio-debug-overlay" aria-label="声音提醒调试">
+      <div class="audio-debug-overlay-head">
+        <strong>声音提醒调试</strong>
+        <div class="audio-debug-actions">
+          <button type="button" class="audio-debug-button" @click="handleDebugNewOrderSound">
+            测试播放新订单声音
+          </button>
+          <button type="button" class="audio-debug-button secondary" @click="handleClearAudioLogs">
+            清空日志
+          </button>
+        </div>
+      </div>
+      <div class="audio-debug-log-list">
+        <article v-for="(entry, index) in orderAudioDebugLogs" :key="`${entry.time}-${index}`" class="audio-debug-log-item">
+          <time>{{ entry.time }}</time>
+          <p>{{ entry.message }}</p>
+          <small v-if="entry.details">{{ entry.details }}</small>
+        </article>
+        <p v-if="!orderAudioDebugLogs.length" class="audio-debug-empty">暂无日志</p>
+      </div>
     </section>
   </div>
 </template>
@@ -1641,6 +1616,100 @@ type Action =
   border-color: #e8ece8;
 }
 
+/* debug temporary: page-level audio diagnostics */
+.audio-debug-overlay {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(56vh, 520px);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d7dfd9;
+  border-radius: 10px;
+  background: rgba(248, 251, 249, 0.98);
+  box-shadow: 0 10px 32px rgba(20, 28, 24, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.audio-debug-overlay-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.audio-debug-overlay-head strong {
+  font-size: 13px;
+  line-height: 1.3;
+  color: #1f2b25;
+}
+
+.audio-debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.audio-debug-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #c8d2cc;
+  border-radius: 8px;
+  background: #16241d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.audio-debug-button.secondary {
+  background: #fff;
+  color: #1f2b25;
+}
+
+.audio-debug-log-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.audio-debug-log-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: #eef3ef;
+  color: #23312b;
+  font-size: 12px;
+}
+
+.audio-debug-log-item time {
+  font-size: 11px;
+  color: #6f7b75;
+}
+
+.audio-debug-log-item p {
+  margin: 0;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.audio-debug-log-item small {
+  color: #4f5d56;
+  word-break: break-word;
+}
+
+.audio-debug-empty {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  color: #6f7b75;
+}
+
 @media (max-width: 1180px) {
   .quick-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1715,6 +1784,14 @@ type Action =
 
   .mobile-sound-toggle {
     min-height: 30px;
+  }
+
+  .audio-debug-overlay {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: 42vh;
   }
 }
 </style>
