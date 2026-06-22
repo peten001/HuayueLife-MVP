@@ -15,11 +15,15 @@ import {
   recentNewPendingOrderIds,
   toggleOrderSound,
 } from '@/utils/order-notification';
+import type {
+  OrderSpeechAnnouncement,
+  OrderSpeechLanguage,
+} from '@/utils/order-notification';
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const operatingId = ref('');
@@ -56,6 +60,20 @@ const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
 );
 
+function getSpeechLanguage(): OrderSpeechLanguage {
+  if (locale.value === 'vi') return 'vi-VN';
+  if (locale.value === 'en') return 'en-US';
+  return 'zh-CN';
+}
+
+function buildSpeechAnnouncement(type: 'enable-sound' | 'new-order'): OrderSpeechAnnouncement {
+  const lang = getSpeechLanguage();
+  return {
+    lang,
+    text: type === 'enable-sound' ? t('soundEnabledSpeech') : t('newOrderSpeech'),
+  };
+}
+
 async function load() {
   try {
     const loadedRows = await getMerchantOrders(filters);
@@ -64,6 +82,7 @@ async function load() {
       loadedRows
         .filter((order) => order.status === 'PENDING_ACCEPTANCE')
         .map((order) => order.id),
+      buildSpeechAnnouncement('new-order'),
     );
     message.value = '';
     if (await focusHighlightedOrder()) {
@@ -196,7 +215,7 @@ function applyFilters() {
 
 async function handleSoundToggle() {
   if (!orderSoundEnabled.value) {
-    await enableOrderSound();
+    await enableOrderSound(buildSpeechAnnouncement('enable-sound'));
     return;
   }
   toggleOrderSound();
@@ -248,7 +267,7 @@ type Action =
 
   <div v-if="hasNewPendingOrders" class="order-alert order-alert-new">
     <div>
-      <strong>有新订单，请及时接单</strong>
+      <strong>{{ t('newOrderNotice') }}</strong>
       <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
     </div>
     <button type="button" class="sound-toggle" :class="{ active: orderSoundEnabled }" @click="handleSoundToggle">
@@ -313,7 +332,7 @@ type Action =
             v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
             class="new-order-badge"
           >
-            新订单
+            {{ t('newOrderBadge') }}
           </span>
           <strong>#{{ order.orderNo }}</strong>
         </div>

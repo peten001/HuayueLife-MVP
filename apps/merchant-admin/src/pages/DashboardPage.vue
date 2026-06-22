@@ -14,6 +14,10 @@ import {
   recentNewPendingOrderIds,
   disableOrderSound,
 } from '@/utils/order-notification';
+import type {
+  OrderSpeechAnnouncement,
+  OrderSpeechLanguage,
+} from '@/utils/order-notification';
 import {
   ensureWakeLock,
   requestWakeLockOnce,
@@ -70,54 +74,25 @@ const latestOrderTime = computed(() => {
   return latest ? new Date(latest.createdAt).toLocaleTimeString() : '-';
 });
 const activeOrders = computed(() => [...pending.value, ...inProgress.value].slice(0, 6));
-const operations = computed(() => {
-  const dictionary = {
-    zh: {
-      revenue: '今日营业额',
-      revenueHint: '非取消订单金额合计',
-      snapshot: '今日概览',
-      completed: '已完成',
-      cancelled: '已取消',
-      averageOrder: '客单价',
-      latestOrder: '最近订单',
-      waiting: '等待处理',
-      processing: '正在处理',
-      pendingSummary: '今日待处理',
-      emptyHint: '订单会每 10 秒自动刷新',
-    },
-    vi: {
-      revenue: 'Doanh thu hôm nay',
-      revenueHint: 'Tổng đơn chưa hủy',
-      snapshot: 'Tổng quan hôm nay',
-      completed: 'Hoàn thành',
-      cancelled: 'Đã hủy',
-      averageOrder: 'Giá trị TB',
-      latestOrder: 'Đơn gần nhất',
-      waiting: 'Đang chờ xử lý',
-      processing: 'Đang xử lý',
-      pendingSummary: 'Cần xử lý hôm nay',
-      emptyHint: 'Đơn hàng tự làm mới mỗi 10 giây',
-    },
-    en: {
-      revenue: "Today's Revenue",
-      revenueHint: 'Total from non-cancelled orders',
-      snapshot: "Today's Snapshot",
-      completed: 'Completed',
-      cancelled: 'Cancelled',
-      averageOrder: 'Avg. Order',
-      latestOrder: 'Latest Order',
-      waiting: 'Waiting',
-      processing: 'Processing',
-      pendingSummary: 'To Handle Today',
-      emptyHint: 'Orders refresh every 10 seconds',
-    },
-  };
-  return dictionary[locale.value];
-});
+const operations = computed(() => ({
+  revenue: t('dashboardRevenue'),
+  revenueHint: t('dashboardRevenueHint'),
+  snapshot: t('dashboardSnapshot'),
+  completed: t('dashboardCompleted'),
+  cancelled: t('dashboardCancelled'),
+  averageOrder: t('dashboardAverageOrder'),
+  latestOrder: t('dashboardLatestOrder'),
+  waiting: t('dashboardWaiting'),
+  processing: t('dashboardProcessing'),
+  pendingSummary: t('dashboardPendingSummary'),
+  emptyHint: t('dashboardEmptyHint'),
+}));
 const todayStatusText = computed(() =>
   pending.value.length
-    ? t('pendingOrdersCount', { count: pending.value.length })
-    : t('todayAcceptingOrders'),
+    ? t('dashboardWaiting')
+    : inProgress.value.length
+      ? t('dashboardProcessing')
+      : t('acceptingOrders'),
 );
 const metricCards = computed(() => [
   {
@@ -213,25 +188,34 @@ const newOrderLinkTarget = computed(() =>
 const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
 );
+const todayStatusLabel = computed(() => t('todayStatus'));
+const acceptingOrdersLabel = computed(() => t('acceptingOrders'));
+const newOrderNoticeLabel = computed(() => t('newOrderNotice'));
+const viewOrderLabel = computed(() => t('viewOrder'));
+const viewAllOrdersLabel = computed(() => t('viewAllOrders'));
+
+function getSpeechLanguage(): OrderSpeechLanguage {
+  if (locale.value === 'vi') return 'vi-VN';
+  if (locale.value === 'en') return 'en-US';
+  return 'zh-CN';
+}
+
+function buildSpeechAnnouncement(type: 'enable-sound' | 'new-order'): OrderSpeechAnnouncement {
+  const lang = getSpeechLanguage();
+  return {
+    lang,
+    text: type === 'enable-sound' ? t('soundEnabledSpeech') : t('newOrderSpeech'),
+  };
+}
 function mobileQuickTone(path: string) {
   return mobileQuickLinkClasses[path] ?? 'mobile-quick-neutral';
 }
 
 const dashboardRefreshText = computed(() => {
   if (isRefreshing.value) {
-    return locale.value === 'vi'
-      ? 'Đang làm mới...'
-      : locale.value === 'en'
-        ? 'Refreshing...'
-        : '刷新中...';
+    return t('refreshingDashboard');
   }
-  if (locale.value === 'vi') {
-    return `Đơn sẽ tự làm mới sau ${refreshCountdown.value} giây`;
-  }
-  if (locale.value === 'en') {
-    return `Orders will refresh automatically in ${refreshCountdown.value} second${refreshCountdown.value === 1 ? '' : 's'}`;
-  }
-  return `订单将在 ${refreshCountdown.value} 秒后自动刷新`;
+  return t('dashboardAutoRefresh', { count: refreshCountdown.value });
 });
 
 function clearRefreshTimer() {
@@ -273,6 +257,7 @@ async function load(options: { resetCountdown?: boolean } = {}) {
       loadedOrders
         .filter((order) => order.status === 'PENDING_ACCEPTANCE')
         .map((order) => order.id),
+      buildSpeechAnnouncement('new-order'),
     );
     console.debug('dashboard load notifyNewPendingOrders result', {
       totalOrders: loadedOrders.length,
@@ -390,7 +375,7 @@ function todayInVietnam() {
 async function handleSoundToggle() {
   if (!orderSoundEnabled.value) {
     await Promise.allSettled([
-      enableOrderSound(),
+      enableOrderSound(buildSpeechAnnouncement('enable-sound')),
       ensureWakeLock('sound-enabled'),
       requestWakeLockOnce('sound-enabled'),
     ]);
@@ -479,7 +464,7 @@ type Action =
 
       <section v-if="hasNewPendingOrders" class="new-order-banner desktop-only">
         <div>
-          <strong>有新订单，请及时接单</strong>
+          <strong>{{ newOrderNoticeLabel }}</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
         <RouterLink
@@ -487,7 +472,7 @@ type Action =
           :to="newOrderLinkTarget"
           @click="requestGestureWakeLock('view-orders')"
         >
-          {{ t('viewOrders') }}
+          {{ viewOrderLabel }}
         </RouterLink>
       </section>
 
@@ -513,7 +498,7 @@ type Action =
               <p>{{ t('pendingOrdersCount', { count: pending.length + inProgress.length }) }}</p>
             </div>
             <RouterLink to="/orders" @click="requestGestureWakeLock('view-orders')">
-              {{ t('viewAllOrders') }}
+            {{ viewAllOrdersLabel }}
             </RouterLink>
           </div>
 
@@ -530,7 +515,7 @@ type Action =
                     v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
                     class="new-order-badge"
                   >
-                    新订单
+                    {{ t('newOrderBadge') }}
                   </span>
                   <strong>#{{ order.orderNo }}</strong>
                 </div>
@@ -598,14 +583,14 @@ type Action =
     <section class="mobile-dashboard mobile-only">
       <section class="mobile-store-card">
         <div class="mobile-store-copy">
-          <span class="mobile-store-eyebrow">今日状态</span>
+          <span class="mobile-store-eyebrow">{{ todayStatusLabel }}</span>
           <strong>{{ merchantName || t('brand') }}</strong>
           <p>{{ todayStatusText }}</p>
           <small>{{ dashboardRefreshText }}</small>
         </div>
         <div class="mobile-store-side">
           <span class="mobile-store-badge">
-            {{ pending.length ? '待处理' : inProgress.length ? '制作中' : '正常接单' }}
+            {{ pending.length ? t('dashboardWaiting') : inProgress.length ? t('dashboardProcessing') : acceptingOrdersLabel }}
           </span>
           <span class="mobile-store-count">{{ pending.length + inProgress.length }}</span>
           <div class="mobile-store-actions">
@@ -623,7 +608,7 @@ type Action =
 
       <section v-if="hasNewPendingOrders" class="mobile-new-order-banner">
         <div>
-          <strong>有新订单，请及时接单</strong>
+          <strong>{{ newOrderNoticeLabel }}</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
         </div>
         <RouterLink
@@ -631,7 +616,7 @@ type Action =
           :to="newOrderLinkTarget"
           @click="requestGestureWakeLock('view-orders')"
         >
-          {{ t('viewOrders') }}
+          {{ viewOrderLabel }}
         </RouterLink>
       </section>
 
@@ -657,7 +642,7 @@ type Action =
             <p>{{ t('pendingOrdersCount', { count: pending.length + inProgress.length }) }}</p>
           </div>
           <RouterLink to="/orders" @click="requestGestureWakeLock('view-orders')">
-            {{ t('viewAllOrders') }}
+            {{ viewAllOrdersLabel }}
           </RouterLink>
         </div>
 
@@ -674,7 +659,7 @@ type Action =
                   v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
                   class="new-order-badge"
                 >
-                  新订单
+                  {{ t('newOrderBadge') }}
                 </span>
                 <strong>#{{ order.orderNo }}</strong>
               </div>
