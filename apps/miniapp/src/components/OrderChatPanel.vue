@@ -327,8 +327,8 @@ function formatTime(value: string) {
 </script>
 
 <template>
-  <view v-if="visible" class="chat-mask" @click.self="close">
-    <view class="chat-card">
+  <view v-if="visible" class="chat-mask" @tap="close">
+    <view class="chat-card" @tap.stop>
       <view class="chat-header">
         <view>
           <text class="chat-title">{{ t('orderChat') }}</text>
