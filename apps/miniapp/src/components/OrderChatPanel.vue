@@ -49,6 +49,10 @@ const merchantDisplayName = computed(() => {
   return props.order.merchant.nameZh;
 });
 
+function logChat(step: string, payload?: unknown) {
+  console.log(`[miniapp][order-chat] ${step}`, payload ?? '');
+}
+
 watch(
   () => [props.visible, props.order.id],
   ([visible]) => {
@@ -96,10 +100,21 @@ async function loadAllMessages(orderId: string) {
   let cursor: string | undefined;
 
   while (true) {
+    logChat('loadAllMessages request', {
+      orderId,
+      cursor: cursor || null,
+      limit: 50,
+    });
     const page = await listOrderChatMessages(
       orderId,
       cursor ? { cursor, limit: 50 } : { limit: 50 },
     );
+    logChat('loadAllMessages response', {
+      orderId,
+      count: page.items.length,
+      hasMore: page.pageInfo.hasMore,
+      nextCursor: page.pageInfo.nextCursor,
+    });
     all.push(...page.items);
     if (!page.pageInfo.hasMore || !page.pageInfo.nextCursor) break;
     cursor = page.pageInfo.nextCursor;
@@ -117,6 +132,46 @@ function syncReadState() {
   );
 }
 
+function applyOptimisticReadState(
+  currentConversation: UserChatConversation,
+  now = new Date().toISOString(),
+) {
+  return {
+    ...currentConversation,
+    customerUnreadCount: 0,
+    customerLastReadAt: now,
+  };
+}
+
+function markReadInBackground(orderId: string, seq: number, phase: string) {
+  const startedAt = Date.now();
+  logChat('markRead background start', { orderId, seq, phase });
+  void markOrderChatRead(orderId)
+    .then((readConversation) => {
+      logChat('markRead background success', {
+        orderId,
+        seq,
+        phase,
+        durationMs: Date.now() - startedAt,
+        unread: readConversation.customerUnreadCount,
+      });
+      if (disposed || seq !== requestSeq) return;
+      conversation.value = readConversation;
+      syncReadState();
+      emit('updated', readConversation);
+    })
+    .catch((caught) => {
+      logChat('markRead background fail', {
+        orderId,
+        seq,
+        phase,
+        durationMs: Date.now() - startedAt,
+        error:
+          caught instanceof Error ? caught.message : String(caught ?? 'unknown'),
+      });
+    });
+}
+
 async function scrollToLatest() {
   await nextTick();
   const targetId = messages.value[messages.value.length - 1]?.id;
@@ -128,6 +183,7 @@ async function loadConversation(initial = false) {
 
   const orderId = props.order.id;
   const seq = ++requestSeq;
+  logChat('loadConversation start', { orderId, initial, seq });
 
   if (initial) {
     loading.value = true;
@@ -141,21 +197,24 @@ async function loadConversation(initial = false) {
       getOrderChat(orderId),
       loadAllMessages(orderId),
     ]);
+    logChat('loadConversation loaded', {
+      orderId,
+      seq,
+      messages: loadedMessages.length,
+      conversationId: loadedConversation.id,
+    });
 
     if (disposed || seq !== requestSeq) return;
 
-    conversation.value = loadedConversation;
+    conversation.value = applyOptimisticReadState(loadedConversation);
     messages.value = loadedMessages;
     lastMessageId.value =
       loadedMessages[loadedMessages.length - 1]?.id ??
       loadedConversation.lastMessageId ??
       '';
-
-    const readConversation = await markOrderChatRead(orderId);
-    if (disposed || seq !== requestSeq) return;
-    conversation.value = readConversation;
     syncReadState();
-    emit('updated', readConversation);
+    emit('updated', conversation.value);
+    markReadInBackground(orderId, seq, 'loadConversation');
     await scrollToLatest();
     startTimer();
   } catch (caught) {
@@ -174,6 +233,7 @@ async function refreshConversation() {
   const orderId = props.order.id;
   const seq = ++requestSeq;
   refreshing.value = true;
+  logChat('refreshConversation start', { orderId, seq, lastMessageId: lastMessageId.value || null });
 
   try {
     const [loadedConversation, page] = await Promise.all([
@@ -189,14 +249,20 @@ async function refreshConversation() {
     if (disposed || seq !== requestSeq) return;
 
     conversation.value = loadedConversation;
+    logChat('refreshConversation loaded', {
+      orderId,
+      seq,
+      items: page.items.length,
+      hasMore: page.pageInfo.hasMore,
+      nextCursor: page.pageInfo.nextCursor,
+    });
     if (page.items.length) {
       messages.value = mergeMessages(messages.value, page.items);
       lastMessageId.value = page.items[page.items.length - 1]?.id ?? lastMessageId.value;
-      const readConversation = await markOrderChatRead(orderId);
-      if (disposed || seq !== requestSeq) return;
-      conversation.value = readConversation;
+      conversation.value = applyOptimisticReadState(loadedConversation);
       syncReadState();
-      emit('updated', readConversation);
+      emit('updated', conversation.value);
+      markReadInBackground(orderId, seq, 'refreshConversation');
       await scrollToLatest();
     }
   } catch (caught) {
@@ -214,9 +280,15 @@ async function sendMessage() {
 
   sending.value = true;
   error.value = '';
+  logChat('sendMessage start', { orderId: props.order.id, length: content.length });
 
   try {
     const message = await sendOrderChatMessage(props.order.id, content);
+    logChat('sendMessage success', {
+      orderId: props.order.id,
+      messageId: message.id,
+      contentLength: message.content.length,
+    });
     draft.value = '';
     messages.value = mergeMessages(messages.value, [message]);
     lastMessageId.value = message.id;
