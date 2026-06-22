@@ -62,10 +62,9 @@ export async function enableOrderSound() {
     result,
     soundEnabled: soundEnabled.value,
   });
-  if (result === 'audio' || result === 'beep') {
-    setOrderSoundEnabled(true);
-    pushAudioDebugLog('soundEnabled 已开启', { value: true });
-    return true;
+  if (result === 'beep' || result === 'speech' || result === 'audio') {
+    pushAudioDebugLog('soundEnabled 最终状态', { value: soundEnabled.value, result });
+    return soundEnabled.value;
   }
   pushAudioDebugLog('soundEnabled 未开启', { value: false, result });
   return false;
@@ -196,25 +195,35 @@ async function speakOrderNotification(
   text: string,
   reason: DebugOrderReason,
 ): Promise<PlaybackResult> {
+  const unlocked = await unlockAudioForReminder();
+  if (unlocked) {
+    if (reason === 'enable-sound' && !soundEnabled.value) {
+      setOrderSoundEnabled(true);
+      pushAudioDebugLog('soundEnabled 已开启', { value: true, reason });
+    }
+    setLastSpeakDebugState('success');
+    pushAudioDebugLog('fallback beep success', { text, reason });
+    const speechPlayed = await speakWithSpeechSynthesis(text);
+    if (speechPlayed === 'speech') {
+      pushAudioDebugLog('speechSynthesis speak success', { text, reason });
+    } else {
+      pushAudioDebugLog('speechSynthesis speak failed', { text, reason });
+    }
+    return 'beep';
+  }
+
+  const speechPlayed = await speakWithSpeechSynthesis(text);
+  if (speechPlayed === 'speech') {
+    setLastSpeakDebugState('success');
+    pushAudioDebugLog('speechSynthesis fallback success', { text, reason });
+    return 'speech';
+  }
+
   const audioUrl = resolveNotificationAudioUrl(text);
   if (audioUrl && (await playNotificationAudio(audioUrl))) {
     setLastSpeakDebugState('success');
     pushAudioDebugLog('speakOrderNotification audio success', { text, reason, audioUrl });
     return 'audio';
-  }
-
-  const unlocked = await unlockAudioForReminder();
-  if (unlocked) {
-    setLastSpeakDebugState('success');
-    pushAudioDebugLog('fallback beep success', { text, reason });
-    return 'beep';
-  }
-
-  const speechPlayed = await speakWithSpeechSynthesis(text);
-  if (speechPlayed) {
-    setLastSpeakDebugState('success');
-    pushAudioDebugLog('speechSynthesis fallback success', { text, reason });
-    return 'speech';
   }
 
   setLastSpeakDebugState('failed', 'notification playback failed');
@@ -293,18 +302,9 @@ async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
   }
   const speech = window.speechSynthesis;
   if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
-    try {
-      playFallbackBeep();
-      pushAudioDebugLog('speechSynthesis missing, fallback beep success', { text });
-      return 'beep';
-    } catch (error) {
-      setLastSpeakDebugState('failed', stringifyError(error));
-      pushAudioDebugLog('speechSynthesis missing, fallback beep failed', {
-        text,
-        error: stringifyError(error),
-      });
-      return 'failed';
-    }
+    setLastSpeakDebugState('failed', 'speechSynthesis unavailable');
+    pushAudioDebugLog('speechSynthesis unavailable for speak', { text });
+    return 'failed';
   }
   try {
     await loadVoices();
