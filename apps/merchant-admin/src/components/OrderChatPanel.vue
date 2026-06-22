@@ -59,6 +59,23 @@ const participantName = computed(
     t('customer'),
 );
 
+const quickReplies = [
+  '您好，请问几位用餐？',
+  '可以吃辣吗？',
+  '预计20分钟送达',
+  '好的，稍等',
+  '已经出餐',
+  '配送员已出发',
+];
+
+type TimelineItem =
+  | { type: 'date'; key: string; label: string }
+  | { type: 'message'; key: string; message: OrderChatMessage };
+
+const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages.value));
+const showNewMessagePrompt = ref(false);
+const isNearBottom = ref(true);
+
 watch(
   () => props.order.id,
   () => {
@@ -108,6 +125,8 @@ async function scrollToBottom() {
   const el = messageListRef.value;
   if (!el) return;
   el.scrollTop = el.scrollHeight;
+  isNearBottom.value = true;
+  showNewMessagePrompt.value = false;
 }
 
 async function loadAllMessages(orderId: string) {
@@ -129,6 +148,67 @@ async function loadAllMessages(orderId: string) {
   return all;
 }
 
+function buildTimelineItems(list: OrderChatMessage[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  let lastKey = '';
+  for (const message of list) {
+    const key = dayKeyFromDate(new Date(message.createdAt));
+    if (key !== lastKey) {
+      items.push({
+        type: 'date',
+        key: `date-${key}`,
+        label: formatDayLabel(message.createdAt),
+      });
+      lastKey = key;
+    }
+    items.push({ type: 'message', key: message.id, message });
+  }
+  return items;
+}
+
+function dayKeyFromDate(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function formatDayLabel(value: string) {
+  const current = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const currentKey = dayKeyFromDate(current);
+  const todayKey = dayKeyFromDate(today);
+  const yesterdayKey = dayKeyFromDate(yesterday);
+
+  if (currentKey === todayKey) return '今天';
+  if (currentKey === yesterdayKey) return '昨天';
+  return `${current.getFullYear()}/${String(current.getMonth() + 1).padStart(2, '0')}/${String(current.getDate()).padStart(2, '0')}`;
+}
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function handleMessageListScroll(event: Event) {
+  const target = event.currentTarget as HTMLElement | null;
+  if (!target) return;
+  const threshold = 48;
+  const nearBottom = target.scrollHeight - (target.scrollTop + target.clientHeight) <= threshold;
+  isNearBottom.value = nearBottom;
+  if (nearBottom) {
+    showNewMessagePrompt.value = false;
+  }
+}
+
+function handleNewMessagePrompt() {
+  void scrollToBottom();
+}
+
 async function loadConversation(initial = false) {
   const orderId = props.order.id;
   const seq = ++requestSeq;
@@ -141,6 +221,8 @@ async function loadConversation(initial = false) {
   }
 
   try {
+    const wasNearBottom = isNearBottom.value;
+    const previousLastMessageId = lastMessageId.value;
     const [loadedConversation, loadedMessages] = await Promise.all([
       getMerchantOrderChat(orderId),
       loadAllMessages(orderId),
@@ -166,8 +248,18 @@ async function loadConversation(initial = false) {
         : message,
     );
     emit('updated', readConversation);
+    const nextLastMessageId =
+      loadedMessages[loadedMessages.length - 1]?.id ??
+      loadedConversation.lastMessageId ??
+      '';
     if (initial) {
       await scrollToBottom();
+    } else if (nextLastMessageId !== previousLastMessageId) {
+      if (wasNearBottom) {
+        await scrollToBottom();
+      } else {
+        showNewMessagePrompt.value = true;
+      }
     }
 
     startPolling();
@@ -195,6 +287,7 @@ async function sendMessage() {
     draft.value = '';
     messages.value = mergeMessages(messages.value, [message]);
     lastMessageId.value = message.id;
+    showNewMessagePrompt.value = false;
     if (conversation.value) {
       conversation.value = {
         ...conversation.value,
@@ -220,8 +313,8 @@ function messageSide(message: OrderChatMessage) {
   return message.senderType === 'MERCHANT' ? 'self' : 'other';
 }
 
-function formatTime(value: string) {
-  return new Date(value).toLocaleString();
+function isMerchantMessage(message: OrderChatMessage) {
+  return message.senderType === 'MERCHANT';
 }
 </script>
 
@@ -248,32 +341,57 @@ function formatTime(value: string) {
           <small v-else-if="refreshing">{{ t('chatRefreshing') }}</small>
         </div>
 
-        <div ref="messageListRef" class="message-list">
+        <div ref="messageListRef" class="message-list" @scroll="handleMessageListScroll">
           <p v-if="!loading && !messages.length" class="empty chat-empty">
             {{ t('noMessages') }}
           </p>
-          <article
-            v-for="message in messages"
-            :key="message.id"
-            :class="['message-row', messageSide(message)]"
-          >
-            <div class="message-bubble">
-              <header class="message-header">
-                <small>{{ formatTime(message.createdAt) }}</small>
-              </header>
-              <p class="message-content">{{ message.content }}</p>
-              <footer class="message-footer">
-                <small v-if="message.senderType === 'MERCHANT'" :class="['message-status', message.readAt ? 'read' : 'unread']">
-                  <span aria-hidden="true">{{ message.readAt ? '✓✓' : '✓' }}</span>
-                </small>
-              </footer>
+          <template v-for="item in timelineItems" :key="item.key">
+            <div v-if="item.type === 'date'" class="date-divider">
+              <span>{{ item.label }}</span>
             </div>
-          </article>
+            <article v-else :class="['message-row', messageSide(item.message)]">
+              <div class="message-bubble">
+                <header class="message-header">
+                  <small>{{ formatMessageTime(item.message.createdAt) }}</small>
+                </header>
+                <div :class="['message-body', { self: isMerchantMessage(item.message) }]">
+                  <p class="message-content">{{ item.message.content }}</p>
+                  <small
+                    v-if="isMerchantMessage(item.message)"
+                    :class="['message-status', item.message.readAt ? 'read' : 'unread']"
+                    aria-hidden="true"
+                  >
+                    {{ item.message.readAt ? '✓✓' : '✓' }}
+                  </small>
+                </div>
+              </div>
+            </article>
+          </template>
         </div>
+
+        <button
+          v-if="showNewMessagePrompt"
+          type="button"
+          class="new-message-prompt"
+          @click="handleNewMessagePrompt"
+        >
+          ↓ 新消息
+        </button>
 
         <p v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</p>
 
         <form class="chat-form" @submit.prevent="sendMessage">
+          <div class="quick-replies">
+            <button
+              v-for="reply in quickReplies"
+              :key="reply"
+              type="button"
+              class="quick-reply"
+              @click="draft = reply"
+            >
+              {{ reply }}
+            </button>
+          </div>
           <textarea
             v-model="draft"
             :disabled="!canSend || sending"
@@ -295,9 +413,10 @@ function formatTime(value: string) {
 <style scoped>
 .order-chat-panel {
   width: min(780px, 100%);
-  max-height: min(90vh, 920px);
-  display: grid;
-  gap: 12px;
+  height: min(90vh, 920px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   overflow: hidden;
 }
 
@@ -330,7 +449,9 @@ function formatTime(value: string) {
 }
 
 .chat-body {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
 }
@@ -346,14 +467,28 @@ function formatTime(value: string) {
 
 .message-list {
   display: grid;
-  gap: 6px;
-  min-height: 320px;
-  max-height: 50vh;
-  padding: 3px 2px;
+  gap: 4px;
+  min-height: 0;
+  flex: 1;
+  padding: 2px 2px 4px;
   overflow: auto;
   border: 1px solid #edf0f2;
   border-radius: 14px;
   background: #f9fbfa;
+}
+
+.date-divider {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  color: #8a949b;
+  font-size: 11px;
+}
+
+.date-divider span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2f0;
 }
 
 .chat-empty {
@@ -374,8 +509,9 @@ function formatTime(value: string) {
 }
 
 .message-bubble {
-  width: min(78%, 560px);
-  padding: 8px 11px;
+  width: fit-content;
+  max-width: 70%;
+  padding: 7px 10px;
   border-radius: 14px;
   background: white;
   box-shadow: 0 6px 20px rgb(31 45 36 / 6%);
@@ -386,40 +522,39 @@ function formatTime(value: string) {
 }
 
 .message-header,
-.message-footer {
+.message-body {
   display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+}
+
+.message-body {
+  align-items: flex-end;
 }
 
 .message-header small,
-.message-footer small {
+.message-body small {
   color: #7b838b;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.2;
 }
 
 .message-content {
-  margin: 4px 0 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
   color: #1f2d24;
-  line-height: 1.4;
+  line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.message-footer {
-  margin-top: 6px;
-  min-height: 12px;
-  justify-content: flex-end;
 }
 
 .message-status {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 16px;
-  font-size: 11px;
+  min-width: 14px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
 }
@@ -433,7 +568,8 @@ function formatTime(value: string) {
 }
 
 .chat-form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
@@ -441,11 +577,36 @@ function formatTime(value: string) {
   min-height: 90px;
 }
 
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-reply {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #edf4ee;
+  color: #35553e;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
 .chat-form-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.new-message-prompt {
+  align-self: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #35553e;
+  background: #edf4ee;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .chat-hint {
@@ -464,7 +625,7 @@ function formatTime(value: string) {
   }
 
   .message-bubble {
-    width: min(92%, 560px);
+    max-width: 75%;
   }
 
   .chat-form-actions {

@@ -30,9 +30,12 @@ const conversation = ref<UserChatConversation | null>(null);
 const messages = ref<OrderChatMessage[]>([]);
 const lastMessageId = ref('');
 const scrollIntoViewId = ref('');
+const showNewMessagePrompt = ref(false);
+const isNearBottom = ref(true);
 let timer: ReturnType<typeof setInterval> | undefined;
 let requestSeq = 0;
 let disposed = false;
+let suppressScrollTracking = false;
 
 const canSend = computed(() => {
   const current = conversation.value;
@@ -48,6 +51,12 @@ const merchantDisplayName = computed(() => {
   if (locale.value === 'vi') return props.order.merchant.nameVi || props.order.merchant.nameZh;
   return props.order.merchant.nameZh;
 });
+
+type TimelineItem =
+  | { type: 'date'; key: string; label: string }
+  | { type: 'message'; key: string; message: OrderChatMessage };
+
+const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages.value));
 
 function logChat(step: string, payload?: unknown) {
   console.log(`[miniapp][order-chat] ${step}`, payload ?? '');
@@ -95,6 +104,56 @@ function mergeMessages(current: OrderChatMessage[], incoming: OrderChatMessage[]
   });
 }
 
+function buildTimelineItems(list: OrderChatMessage[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  let lastKey = '';
+  for (const message of list) {
+    const key = dayKeyFromDate(new Date(message.createdAt));
+    if (key !== lastKey) {
+      items.push({
+        type: 'date',
+        key: `date-${key}`,
+        label: formatDayLabel(message.createdAt),
+      });
+      lastKey = key;
+    }
+    items.push({ type: 'message', key: message.id, message });
+  }
+  return items;
+}
+
+function dayKeyFromDate(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function formatDayLabel(value: string) {
+  const current = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const currentKey = dayKeyFromDate(current);
+  const todayKey = dayKeyFromDate(today);
+  const yesterdayKey = dayKeyFromDate(yesterday);
+
+  if (currentKey === todayKey) return '今天';
+  if (currentKey === yesterdayKey) return '昨天';
+  return `${current.getFullYear()}/${String(current.getMonth() + 1).padStart(2, '0')}/${String(current.getDate()).padStart(2, '0')}`;
+}
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function isOwnMessage(message: OrderChatMessage) {
+  return message.senderType === 'CUSTOMER';
+}
+
 async function loadAllMessages(orderId: string) {
   const all: OrderChatMessage[] = [];
   let cursor: string | undefined;
@@ -130,6 +189,19 @@ function syncReadState() {
       ? { ...message, readAt: now }
       : message,
   );
+}
+
+function scrollToBottom() {
+  suppressScrollTracking = true;
+  scrollIntoViewId.value = '';
+  void nextTick().then(() => {
+    scrollIntoViewId.value = 'chat-bottom-anchor';
+  });
+  isNearBottom.value = true;
+  showNewMessagePrompt.value = false;
+  setTimeout(() => {
+    suppressScrollTracking = false;
+  }, 120);
 }
 
 function applyOptimisticReadState(
@@ -174,8 +246,22 @@ function markReadInBackground(orderId: string, seq: number, phase: string) {
 
 async function scrollToLatest() {
   await nextTick();
-  const targetId = messages.value[messages.value.length - 1]?.id;
-  scrollIntoViewId.value = targetId ? `msg-${targetId}` : '';
+  scrollToBottom();
+}
+
+function handleScroll() {
+  if (suppressScrollTracking) return;
+  isNearBottom.value = false;
+}
+
+function handleScrollToLower() {
+  if (suppressScrollTracking) return;
+  isNearBottom.value = true;
+  showNewMessagePrompt.value = false;
+}
+
+function handleNewMessagePrompt() {
+  scrollToBottom();
 }
 
 async function loadConversation(initial = false) {
@@ -193,6 +279,8 @@ async function loadConversation(initial = false) {
   }
 
   try {
+    const wasNearBottom = isNearBottom.value;
+    const previousLastMessageId = lastMessageId.value;
     const [loadedConversation, loadedMessages] = await Promise.all([
       getOrderChat(orderId),
       loadAllMessages(orderId),
@@ -215,7 +303,19 @@ async function loadConversation(initial = false) {
     syncReadState();
     emit('updated', conversation.value);
     markReadInBackground(orderId, seq, 'loadConversation');
-    await scrollToLatest();
+    const nextLastMessageId =
+      loadedMessages[loadedMessages.length - 1]?.id ??
+      loadedConversation.lastMessageId ??
+      '';
+    if (initial) {
+      await scrollToLatest();
+    } else if (nextLastMessageId !== previousLastMessageId) {
+      if (wasNearBottom) {
+        await scrollToLatest();
+      } else {
+        showNewMessagePrompt.value = true;
+      }
+    }
     startTimer();
   } catch (caught) {
     if (disposed || seq !== requestSeq) return;
@@ -292,6 +392,7 @@ async function sendMessage() {
     draft.value = '';
     messages.value = mergeMessages(messages.value, [message]);
     lastMessageId.value = message.id;
+    showNewMessagePrompt.value = false;
     if (conversation.value) {
       conversation.value = {
         ...conversation.value,
@@ -317,13 +418,6 @@ function messageSide(message: OrderChatMessage) {
   return message.senderType === 'MERCHANT' ? 'other' : 'self';
 }
 
-function isOwnMessage(message: OrderChatMessage) {
-  return message.senderType === 'CUSTOMER';
-}
-
-function formatTime(value: string) {
-  return new Date(value).toLocaleString();
-}
 </script>
 
 <template>
@@ -346,29 +440,44 @@ function formatTime(value: string) {
           <text v-else-if="refreshing">{{ t('chatRefreshing') }}</text>
         </view>
 
-        <scroll-view class="message-list" scroll-y :scroll-into-view="scrollIntoViewId">
+        <scroll-view
+          class="message-list"
+          scroll-y
+          :scroll-into-view="scrollIntoViewId"
+          @scroll="handleScroll"
+          @scrolltolower="handleScrollToLower"
+        >
           <view v-if="!loading && !messages.length" class="empty-state">
             <text>{{ t('noMessages') }}</text>
           </view>
-          <view
-            v-for="message in messages"
-            :key="message.id"
-            :id="`msg-${message.id}`"
-            :class="['message-row', messageSide(message)]"
-          >
-            <view class="message-bubble">
-              <view class="message-head">
-                <text>{{ formatTime(message.createdAt) }}</text>
-              </view>
-              <text class="message-content">{{ message.content }}</text>
-              <view class="message-foot">
-                <text v-if="isOwnMessage(message)" :class="['message-status', message.readAt ? 'read' : 'unread']">
-                  {{ message.readAt ? '✓✓' : '✓' }}
-                </text>
+          <template v-for="item in timelineItems" :key="item.key">
+            <view v-if="item.type === 'date'" class="date-divider">
+              <text>{{ item.label }}</text>
+            </view>
+            <view v-else :id="`msg-${item.message.id}`" :class="['message-row', messageSide(item.message)]">
+              <view class="message-bubble">
+                <view class="message-head">
+                  <text>{{ formatMessageTime(item.message.createdAt) }}</text>
+                </view>
+                <view :class="['message-body', { self: isOwnMessage(item.message) }]">
+                  <text class="message-content">{{ item.message.content }}</text>
+                  <text
+                    v-if="isOwnMessage(item.message)"
+                    :class="['message-status', item.message.readAt ? 'read' : 'unread']"
+                    aria-hidden="true"
+                  >
+                    {{ item.message.readAt ? '✓✓' : '✓' }}
+                  </text>
+                </view>
               </view>
             </view>
-          </view>
+          </template>
+          <view id="chat-bottom-anchor" class="bottom-anchor" />
         </scroll-view>
+
+        <view v-if="showNewMessagePrompt" class="new-message-wrap">
+          <button class="new-message-prompt" @click="handleNewMessagePrompt">↓ 新消息</button>
+        </view>
 
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
 
@@ -495,6 +604,20 @@ function formatTime(value: string) {
   text-align: center;
 }
 
+.date-divider {
+  display: flex;
+  justify-content: center;
+  padding: 8rpx 0 6rpx;
+  color: #8a949b;
+  font-size: 20rpx;
+}
+
+.date-divider text {
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  background: #eef2f0;
+}
+
 .message-row {
   display: flex;
   margin-bottom: 8rpx;
@@ -509,8 +632,9 @@ function formatTime(value: string) {
 }
 
 .message-bubble {
-  max-width: 78%;
-  padding: 9rpx 12rpx 7rpx;
+  width: fit-content;
+  max-width: 75%;
+  padding: 8rpx 10rpx 6rpx;
   border-radius: 18rpx;
   background: #fff;
   box-shadow: 0 8rpx 22rpx rgb(31 45 36 / 6%);
@@ -529,28 +653,26 @@ function formatTime(value: string) {
 .message-head {
   display: flex;
   justify-content: flex-end;
-  color: #728077;
+  color: #8b949a;
   font-size: 16rpx;
   line-height: 1.15;
 }
 
-.message-content {
-  display: block;
-  margin-top: 3rpx;
-  color: #1f2d24;
-  font-size: 26rpx;
-  line-height: 1.38;
-  white-space: pre-wrap;
-  word-break: break-word;
+.message-body {
+  display: flex;
+  align-items: flex-end;
+  gap: 4rpx;
 }
 
-.message-foot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 5rpx;
-  color: #7c857f;
-  min-height: 18rpx;
-  line-height: 1;
+.message-content {
+  display: block;
+  margin-top: 2rpx;
+  color: #1f2d24;
+  font-size: 26rpx;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .message-status {
@@ -560,6 +682,8 @@ function formatTime(value: string) {
   min-width: 20rpx;
   font-size: 18rpx;
   font-weight: 700;
+  line-height: 1;
+  flex: none;
 }
 
 .message-status.unread {
@@ -568,6 +692,25 @@ function formatTime(value: string) {
 
 .message-status.read {
   color: #24a148;
+}
+
+.bottom-anchor {
+  width: 100%;
+  height: 1rpx;
+}
+
+.new-message-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.new-message-prompt {
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  color: #35553e;
+  background: #edf4ee;
+  font-size: 22rpx;
+  line-height: 1;
 }
 
 .chat-hint {
