@@ -4,6 +4,8 @@ const PENDING_SNAPSHOT_KEY = 'huayue_merchant_pending_snapshot';
 const RECENT_NEW_KEY = 'huayue_merchant_recent_new_orders';
 const RECENT_NEW_TTL_MS = 60_000;
 const MAX_STORED_IDS = 100;
+const ENABLE_SOUND_AUDIO_URL = `${import.meta.env.BASE_URL}order-sound-enabled.wav`;
+const NEW_ORDER_AUDIO_URL = `${import.meta.env.BASE_URL}new-order.wav`;
 
 interface RecentNewOrderRecord {
   id: string;
@@ -11,6 +13,7 @@ interface RecentNewOrderRecord {
 }
 
 type SpeakDebugState = 'success' | 'failed' | 'not-called';
+type PlaybackResult = 'audio' | 'beep' | 'speech' | 'failed';
 
 const soundEnabled = ref(false);
 const pendingOrderIds = ref<string[]>(readPendingSnapshot());
@@ -42,17 +45,13 @@ export function isOrderSoundEnabled() {
 }
 
 export async function enableOrderSound() {
-  const unlocked = await unlockAudioForReminder();
-  if (!unlocked) {
-    setLastSpeakDebugState('failed', 'audio unlock failed');
-    return false;
-  }
-
-  setOrderSoundEnabled(true);
   preloadSpeechSynthesis();
-  await delay(180);
-  await speakOrderNotification('声音提醒已开启');
-  return true;
+  const result = await speakOrderNotification('声音提醒已开启');
+  if (result === 'audio' || result === 'beep') {
+    setOrderSoundEnabled(true);
+    return true;
+  }
+  return false;
 }
 
 export function disableOrderSound() {
@@ -102,7 +101,7 @@ export function notifyNewPendingOrders(ids: string[]) {
   if (newIds.length) {
     pushRecentNewOrders(newIds);
     if (soundEnabled.value) {
-      void speakOrderNotification('你有新的订单啦');
+      void speakOrderNotification('您有新的订单');
     }
   } else {
     pruneRecentNewOrders();
@@ -155,42 +154,101 @@ function dedupeRecentRecords(records: RecentNewOrderRecord[]) {
   return [...map.values()].sort((left, right) => right.expiresAt - left.expiresAt);
 }
 
-async function speakOrderNotification(text: string) {
-  if (typeof window === 'undefined') {
-    setLastSpeakDebugState('failed', 'window unavailable');
+async function speakOrderNotification(text: string): Promise<PlaybackResult> {
+  const audioUrl = resolveNotificationAudioUrl(text);
+  if (audioUrl && (await playNotificationAudio(audioUrl))) {
+    setLastSpeakDebugState('success');
+    return 'audio';
+  }
+
+  const unlocked = await unlockAudioForReminder();
+  if (unlocked) {
+    setLastSpeakDebugState('success');
+    return 'beep';
+  }
+
+  const speechPlayed = await speakWithSpeechSynthesis(text);
+  if (speechPlayed) {
+    setLastSpeakDebugState('success');
+    return 'speech';
+  }
+
+  setLastSpeakDebugState('failed', 'notification playback failed');
+  return 'failed';
+}
+
+function resolveNotificationAudioUrl(text: string) {
+  if (text === '声音提醒已开启') return ENABLE_SOUND_AUDIO_URL;
+  if (text === '您有新的订单' || text === '你有新的订单啦') return NEW_ORDER_AUDIO_URL;
+  return null;
+}
+
+async function playNotificationAudio(url: string) {
+  if (typeof window === 'undefined') return false;
+  try {
+    stopActiveNotificationAudio();
+    const audio = new window.Audio(url);
+    activeNotificationAudio = audio;
+    audio.preload = 'auto';
+    audio.setAttribute('playsinline', 'true');
+    audio.volume = 1;
+    await audio.play();
+    return true;
+  } catch (error) {
+    stopActiveNotificationAudio();
     return false;
   }
+}
+
+let activeNotificationAudio: HTMLAudioElement | null = null;
+
+function stopActiveNotificationAudio() {
+  if (!activeNotificationAudio) return;
+  try {
+    activeNotificationAudio.pause();
+    activeNotificationAudio.currentTime = 0;
+  } catch {
+    // ignore
+  } finally {
+    activeNotificationAudio = null;
+  }
+}
+
+async function speakWithSpeechSynthesis(text: string): Promise<PlaybackResult> {
+  if (typeof window === 'undefined') {
+    setLastSpeakDebugState('failed', 'window unavailable');
+    return 'failed';
+  }
   const speech = window.speechSynthesis;
-  if (speech && typeof window.SpeechSynthesisUtterance !== 'undefined') {
+  if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
     try {
-      const utterance = new window.SpeechSynthesisUtterance(text);
-      utterance.lang = 'zh-CN';
-      utterance.volume = 1;
-      utterance.rate = 1;
-      utterance.pitch = 1.1;
-      const voice = resolveChineseVoice();
-      if (voice) utterance.voice = voice;
-      if (speech.speaking || speech.pending) {
-        speech.cancel();
-      }
-      if (typeof speech.resume === 'function') {
-        speech.resume();
-      }
-      speech.speak(utterance);
-      setLastSpeakDebugState('success');
-      return true;
+      playFallbackBeep();
+      return 'beep';
     } catch (error) {
       setLastSpeakDebugState('failed', stringifyError(error));
-      return false;
+      return 'failed';
     }
   }
   try {
-    playFallbackBeep();
-    setLastSpeakDebugState('success');
-    return true;
+    await loadVoices();
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.volume = 1;
+    utterance.rate = 1;
+    utterance.pitch = 1.1;
+    const voice = resolveChineseVoice();
+    if (voice) utterance.voice = voice;
+    if (speech.speaking || speech.pending) {
+      speech.cancel();
+    }
+    if (typeof speech.resume === 'function') {
+      speech.resume();
+    }
+    speech.speak(utterance);
+    return 'speech';
   } catch (error) {
     setLastSpeakDebugState('failed', stringifyError(error));
-    return false;
+    return 'failed';
   }
 }
 
@@ -219,9 +277,7 @@ async function unlockAudioForReminder() {
   const context = getAudioContext();
   if (!context) return false;
   try {
-    if (context.state === 'suspended') {
-      await context.resume();
-    }
+    await resumeAudioContext();
     playBeep(context, 0.08, 0.05);
     return true;
   } catch (error) {
