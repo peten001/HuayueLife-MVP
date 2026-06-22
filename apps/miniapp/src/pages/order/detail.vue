@@ -57,7 +57,12 @@ onLoad((options) => {
 
 onShow(() => {
   void load(true);
-  if (!timer) timer = setInterval(() => void load(), 5000);
+  if (!timer) {
+    timer = setInterval(() => {
+      if (chatOpen.value) return;
+      void load();
+    }, 5000);
+  }
 });
 
 onHide(() => {
@@ -145,6 +150,7 @@ function openChat() {
 
 function closeChat() {
   chatOpen.value = false;
+  void load();
 }
 
 function applyChatConversation(conversation: UserOrder['chatConversation'] | null) {
@@ -195,6 +201,7 @@ function serviceInfo() {
         <view v-for="item in order.items" :key="item.id" class="item">
           <image
             v-if="resolveMediaUrl(item.imageUrlSnapshot)"
+            class="item-image"
             :src="resolveMediaUrl(item.imageUrlSnapshot)"
             mode="aspectFill"
           />
@@ -316,10 +323,6 @@ function serviceInfo() {
   font-weight: 700;
 }
 
-.chat-entry::after {
-  border: 0;
-}
-
 .chat-badge {
   display: inline-flex;
   align-items: center;
@@ -382,7 +385,6 @@ function serviceInfo() {
   font-size: 23rpx;
 }
 
-.item image,
 .item-image {
   width: 86rpx;
   height: 86rpx;
@@ -466,10 +468,6 @@ function serviceInfo() {
   color: #fff;
   background: #2e7d32;
   font-weight: 700;
-}
-
-.action::after {
-  border: 0;
 }
 
 .action.danger {

@@ -76,7 +76,8 @@ function clearTimer() {
 function startTimer() {
   clearTimer();
   timer = setInterval(() => {
-    void loadConversation(false);
+    if (loading.value || refreshing.value || sending.value) return;
+    void refreshConversation();
   }, 5000);
 }
 
@@ -191,13 +192,11 @@ async function refreshConversation() {
     if (page.items.length) {
       messages.value = mergeMessages(messages.value, page.items);
       lastMessageId.value = page.items[page.items.length - 1]?.id ?? lastMessageId.value;
-    }
-    const readConversation = await markOrderChatRead(orderId);
-    if (disposed || seq !== requestSeq) return;
-    conversation.value = readConversation;
-    syncReadState();
-    emit('updated', readConversation);
-    if (page.items.length) {
+      const readConversation = await markOrderChatRead(orderId);
+      if (disposed || seq !== requestSeq) return;
+      conversation.value = readConversation;
+      syncReadState();
+      emit('updated', readConversation);
       await scrollToLatest();
     }
   } catch (caught) {
@@ -307,7 +306,11 @@ function formatTime(value: string) {
           />
           <view class="composer-actions">
             <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
-            <button class="send-button" :disabled="!canSend || sending || !draft.trim()" @click="sendMessage">
+            <button
+              :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
+              :disabled="!canSend || sending || !draft.trim()"
+              @click="sendMessage"
+            >
               {{ sending ? t('sending') : t('sendMessage') }}
             </button>
           </view>
@@ -498,7 +501,7 @@ function formatTime(value: string) {
   font-size: 24rpx;
 }
 
-.send-button[disabled] {
+.send-button.disabled {
   opacity: .55;
   background: #9ccaa3;
 }
