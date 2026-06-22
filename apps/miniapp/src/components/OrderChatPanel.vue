@@ -317,10 +317,6 @@ function messageSide(message: OrderChatMessage) {
   return message.senderType === 'MERCHANT' ? 'other' : 'self';
 }
 
-function messageSender(message: OrderChatMessage) {
-  return message.senderType === 'MERCHANT' ? t('merchant') : t('me');
-}
-
 function formatTime(value: string) {
   return new Date(value).toLocaleString();
 }
@@ -358,11 +354,12 @@ function formatTime(value: string) {
           >
             <view class="message-bubble">
               <view class="message-head">
-                <text>{{ messageSender(message) }}</text>
                 <text>{{ formatTime(message.createdAt) }}</text>
               </view>
               <text class="message-content">{{ message.content }}</text>
-              <text class="message-state">{{ message.readAt ? t('read') : t('unread') }}</text>
+              <view class="message-foot">
+                <text>{{ message.readAt ? t('read') : t('unread') }}</text>
+              </view>
             </view>
           </view>
         </scroll-view>
@@ -375,17 +372,19 @@ function formatTime(value: string) {
             class="composer-input"
             :disabled="!canSend || sending"
             :placeholder="t('messagePlaceholder')"
+            :auto-height="false"
+            :adjust-position="false"
+            :show-confirm-bar="false"
+            :cursor-spacing="16"
+            maxlength="500"
           />
-          <view class="composer-actions">
-            <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
-            <button
-              :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
-              :disabled="!canSend || sending || !draft.trim()"
-              @click="sendMessage"
-            >
-              {{ sending ? t('sending') : t('sendMessage') }}
-            </button>
-          </view>
+          <button
+            :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
+            :disabled="!canSend || sending || !draft.trim()"
+            @click="sendMessage"
+          >
+            {{ sending ? t('sending') : t('sendMessage') }}
+          </button>
         </view>
       </view>
     </view>
@@ -405,14 +404,17 @@ function formatTime(value: string) {
 
 .chat-card {
   width: 100%;
+  height: 88vh;
   max-height: 88vh;
-  padding: 24rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 20rpx 20rpx calc(18rpx + env(safe-area-inset-bottom));
   border-radius: 28rpx 28rpx 0 0;
   background: #fff;
   box-shadow: 0 -16rpx 40rpx rgb(16 28 19 / 18%);
   box-sizing: border-box;
-  display: grid;
-  gap: 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -456,8 +458,10 @@ function formatTime(value: string) {
 }
 
 .chat-body {
-  display: grid;
-  gap: 16rpx;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10rpx;
   min-height: 0;
 }
 
@@ -470,11 +474,11 @@ function formatTime(value: string) {
 }
 
 .message-list {
-  min-height: 50vh;
-  max-height: 58vh;
-  padding: 10rpx 4rpx;
+  flex: 1;
+  min-height: 0;
+  padding: 8rpx 4rpx;
   border: 1rpx solid #edf0f2;
-  border-radius: 22rpx;
+  border-radius: 18rpx;
   background: #f9fbfa;
   box-sizing: border-box;
 }
@@ -487,7 +491,7 @@ function formatTime(value: string) {
 
 .message-row {
   display: flex;
-  margin-bottom: 14rpx;
+  margin-bottom: 10rpx;
 }
 
 .message-row.self {
@@ -499,40 +503,48 @@ function formatTime(value: string) {
 }
 
 .message-bubble {
-  width: 82%;
-  padding: 18rpx 18rpx 14rpx;
-  border-radius: 22rpx;
+  max-width: 78%;
+  padding: 10rpx 14rpx 8rpx;
+  border-radius: 18rpx;
   background: #fff;
   box-shadow: 0 8rpx 22rpx rgb(31 45 36 / 6%);
+  box-sizing: border-box;
 }
 
 .message-row.self .message-bubble {
-  background: #eaf7ee;
+  background: #def4e4;
+  border-bottom-right-radius: 6rpx;
+}
+
+.message-row.other .message-bubble {
+  border-bottom-left-radius: 6rpx;
 }
 
 .message-head {
   display: flex;
-  justify-content: space-between;
-  gap: 12rpx;
+  justify-content: flex-end;
   color: #728077;
-  font-size: 20rpx;
+  font-size: 18rpx;
+  line-height: 1.2;
 }
 
 .message-content {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 4rpx;
   color: #1f2d24;
   font-size: 26rpx;
-  line-height: 1.6;
+  line-height: 1.42;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.message-state {
-  display: block;
-  margin-top: 10rpx;
+.message-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4rpx;
   color: #7c857f;
-  font-size: 20rpx;
+  font-size: 18rpx;
+  line-height: 1.2;
 }
 
 .chat-hint {
@@ -542,35 +554,40 @@ function formatTime(value: string) {
 }
 
 .composer {
-  display: grid;
-  gap: 14rpx;
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 12rpx;
+  padding-top: 6rpx;
+  background: #fff;
 }
 
 .composer-input {
-  width: 100%;
-  min-height: 140rpx;
-  padding: 18rpx 20rpx;
+  flex: 1;
+  width: auto;
+  height: 80rpx;
+  max-height: 80rpx;
+  min-height: 80rpx;
+  padding: 16rpx 18rpx;
   border: 1rpx solid #dbe6de;
-  border-radius: 20rpx;
+  border-radius: 18rpx;
   box-sizing: border-box;
   background: #fff;
   font-size: 26rpx;
-}
-
-.composer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14rpx;
+  line-height: 1.35;
+  overflow: hidden;
 }
 
 .send-button {
+  flex: none;
   min-width: 150rpx;
-  padding: 16rpx 24rpx;
-  border-radius: 999rpx;
+  height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 18rpx;
   color: #fff;
   background: #43a047;
   font-size: 24rpx;
+  line-height: 80rpx;
 }
 
 .send-button.disabled {

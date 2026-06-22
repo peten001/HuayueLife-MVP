@@ -281,6 +281,7 @@ function formatTime(value: string) {
             v-model="draft"
             :disabled="!canSend || sending"
             :placeholder="t('messagePlaceholder')"
+            @keydown.enter.exact.prevent="sendMessage"
           />
           <div class="chat-form-actions">
             <small v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</small>
