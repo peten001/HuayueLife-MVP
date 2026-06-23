@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { useI18n, usePageTitle } from '@/i18n';
 import {
@@ -71,9 +71,25 @@ const chatShellStyle = computed(() => ({
     : 'calc(18rpx + env(safe-area-inset-bottom))',
 }));
 
+const textareaDisabled = computed(() => !canSend.value || sending.value);
+
 function logChat(step: string, payload?: unknown) {
   console.log(`[miniapp][order-chat-page] ${step}`, payload ?? '');
 }
+
+watch(
+  () => [canSend.value, sending.value, conversation.value?.status, props.order.status],
+  () => {
+    console.log('[miniapp][order-chat-page] input-state', {
+      canSend: canSend.value,
+      sending: sending.value,
+      orderStatus: props.order.status,
+      conversationStatus: conversation.value?.status ?? null,
+      disabled: textareaDisabled.value,
+    });
+  },
+  { immediate: true },
+);
 
 function getViewportHeight() {
   const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync();
@@ -87,6 +103,14 @@ function updateKeyboardHeight(nextHeight: number) {
 }
 
 function handleComposerFocus(event: { detail?: { height?: number } }) {
+  console.log('[miniapp][order-chat-page] textarea focus', {
+    canSend: canSend.value,
+    sending: sending.value,
+    orderStatus: props.order.status,
+    conversationStatus: conversation.value?.status ?? null,
+    disabled: textareaDisabled.value,
+    keyboardHeight: event.detail?.height ?? null,
+  });
   updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
   if (shouldStickToBottom.value) {
     scheduleScrollToBottom('focus');
@@ -591,23 +615,22 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
 
         <view class="composer">
-          <textarea
-            v-model="draft"
-            class="composer-input"
-            :disabled="!canSend || sending"
-            :placeholder="t('messagePlaceholder')"
-            :auto-height="false"
-            :adjust-position="false"
-            :show-confirm-bar="false"
-            :cursor-spacing="0"
-            confirm-type="send"
-            @focus="handleComposerFocus"
-            @blur="handleComposerBlur"
-            @keyboardheightchange="handleKeyboardHeightChange"
-            @confirm="sendMessage"
-            @touchstart.stop
-            maxlength="500"
-          />
+        <textarea
+          v-model="draft"
+          class="composer-input"
+          :disabled="textareaDisabled"
+          :placeholder="t('messagePlaceholder')"
+          :auto-height="false"
+          :adjust-position="false"
+          :show-confirm-bar="false"
+          :cursor-spacing="0"
+          confirm-type="send"
+          @focus="handleComposerFocus"
+          @blur="handleComposerBlur"
+          @keyboardheightchange="handleKeyboardHeightChange"
+          @confirm="sendMessage"
+          maxlength="500"
+        />
           <button
             :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
             :disabled="!canSend || sending || !draft.trim()"
