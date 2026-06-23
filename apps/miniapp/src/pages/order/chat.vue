@@ -38,14 +38,15 @@ let disposed = false;
 let suppressScrollTracking = false;
 
 const canSend = computed(() => {
-  const current = conversation.value;
-  if (!current) return false;
-  return !['COMPLETED', 'CANCELLED'].includes(current.order.status) && current.status !== 'CLOSED';
+  const currentOrderStatus = order.value?.status;
+  const currentConversationStatus = conversation.value?.status;
+  if (!currentOrderStatus) return false;
+  return !['COMPLETED', 'CANCELLED'].includes(currentOrderStatus) && currentConversationStatus !== 'CLOSED';
 });
 
 const showReadOnlyHint = computed(
   () =>
-    ['COMPLETED', 'CANCELLED'].includes(conversation.value?.order.status ?? '') ||
+    ['COMPLETED', 'CANCELLED'].includes(order.value?.status ?? '') ||
     conversation.value?.status === 'CLOSED',
 );
 
@@ -53,6 +54,8 @@ const merchantDisplayName = computed(() => {
   if (locale.value === 'vi') return conversation.value?.merchant.nameVi || conversation.value?.merchant.nameZh || '';
   return conversation.value?.merchant.nameZh || '';
 });
+
+const order = computed(() => conversation.value?.order ?? null);
 
 type TimelineItem =
   | { type: 'date'; key: string; label: string }
@@ -78,12 +81,12 @@ function logChat(step: string, payload?: unknown) {
 }
 
 watch(
-  () => [canSend.value, sending.value, conversation.value?.status, props.order.status],
+  () => [canSend.value, sending.value, conversation.value?.status, order.value?.status],
   () => {
     console.log('[miniapp][order-chat-page] input-state', {
       canSend: canSend.value,
       sending: sending.value,
-      orderStatus: props.order.status,
+      orderStatus: order.value?.status ?? null,
       conversationStatus: conversation.value?.status ?? null,
       disabled: textareaDisabled.value,
     });
@@ -106,7 +109,7 @@ function handleComposerFocus(event: { detail?: { height?: number } }) {
   console.log('[miniapp][order-chat-page] textarea focus', {
     canSend: canSend.value,
     sending: sending.value,
-    orderStatus: props.order.status,
+    orderStatus: order.value?.status ?? null,
     conversationStatus: conversation.value?.status ?? null,
     disabled: textareaDisabled.value,
     keyboardHeight: event.detail?.height ?? null,
@@ -156,7 +159,7 @@ function handleSendButtonTap() {
     sending: sending.value,
     orderId: orderId.value,
     conversationId: conversation.value?.id ?? null,
-    orderStatus: props.order.status,
+    orderStatus: order.value?.status ?? null,
     conversationStatus: conversation.value?.status ?? null,
     disabled: textareaDisabled.value,
   });
@@ -481,7 +484,7 @@ async function sendMessage() {
     sending: sending.value,
     orderId: orderId.value,
     conversationId: conversation.value?.id ?? null,
-    orderStatus: props.order.status,
+    orderStatus: order.value?.status ?? null,
     conversationStatus: conversation.value?.status ?? null,
     disabled: textareaDisabled.value,
   });
