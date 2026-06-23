@@ -28,6 +28,7 @@ const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
 const keyboardHeight = ref(0);
 const viewportHeight = ref(getViewportHeight());
+const keyboardSpacingPx = 8;
 let timer: ReturnType<typeof setInterval> | undefined;
 let requestSeq = 0;
 let disposed = false;
@@ -56,8 +57,8 @@ type TimelineItem =
 
 const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages.value));
 const chatShellStyle = computed(() => ({
-  height: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
-  maxHeight: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
+  height: `${Math.max(0, viewportHeight.value - keyboardHeight.value - (keyboardHeight.value > 0 ? keyboardSpacingPx : 0))}px`,
+  maxHeight: `${Math.max(0, viewportHeight.value - keyboardHeight.value - (keyboardHeight.value > 0 ? keyboardSpacingPx : 0))}px`,
   paddingBottom: keyboardHeight.value > 0 ? '0px' : 'calc(18rpx + env(safe-area-inset-bottom))',
   '--composer-bottom-gap': keyboardHeight.value > 0
     ? '0px'
