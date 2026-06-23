@@ -33,6 +33,7 @@ const scrollIntoViewId = ref('');
 const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
 const keyboardHeight = ref(0);
+const viewportHeight = ref(getViewportHeight());
 let timer: ReturnType<typeof setInterval> | undefined;
 let requestSeq = 0;
 let disposed = false;
@@ -59,11 +60,25 @@ type TimelineItem =
 
 const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages.value));
 const chatCardStyle = computed(() => ({
-  '--keyboard-offset': `${keyboardHeight.value}px`,
+  height: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
+  maxHeight: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
+  '--composer-bottom-gap': keyboardHeight.value > 0
+    ? '2rpx'
+    : 'calc(env(safe-area-inset-bottom) + 2rpx)',
+  '--message-list-bottom-gap': keyboardHeight.value > 0
+    ? '18rpx'
+    : 'calc(18rpx + env(safe-area-inset-bottom))',
 }));
 
 function logChat(step: string, payload?: unknown) {
   console.log(`[miniapp][order-chat] ${step}`, payload ?? '');
+}
+
+function getViewportHeight() {
+  const info = typeof uni.getWindowInfo === 'function'
+    ? uni.getWindowInfo()
+    : uni.getSystemInfoSync();
+  return info.windowHeight ?? 0;
 }
 
 watch(
@@ -548,8 +563,8 @@ function messageSide(message: OrderChatMessage) {
 
 .chat-card {
   width: 100%;
-  height: calc(88vh - var(--keyboard-offset, 0px));
-  max-height: calc(88vh - var(--keyboard-offset, 0px));
+  height: 88vh;
+  max-height: 88vh;
   padding: 20rpx 20rpx calc(18rpx + env(safe-area-inset-bottom));
   border-radius: 28rpx 28rpx 0 0;
   background: #fff;
@@ -621,7 +636,7 @@ function messageSide(message: OrderChatMessage) {
 .message-list {
   flex: 1;
   min-height: 0;
-  padding: 6rpx 4rpx calc(18rpx + env(safe-area-inset-bottom));
+  padding: 6rpx 4rpx var(--message-list-bottom-gap, calc(18rpx + env(safe-area-inset-bottom)));
   border: 1rpx solid #edf0f2;
   border-radius: 18rpx;
   background: #f9fbfa;
@@ -755,7 +770,7 @@ function messageSide(message: OrderChatMessage) {
   align-items: flex-end;
   gap: 12rpx;
   padding-top: 6rpx;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 2rpx);
+  padding-bottom: var(--composer-bottom-gap, calc(env(safe-area-inset-bottom) + 2rpx));
   background: #fff;
 }
 
