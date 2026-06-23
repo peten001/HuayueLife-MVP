@@ -166,6 +166,10 @@ function handleSendButtonTap() {
   void sendMessage();
 }
 
+function handleConfirmSend() {
+  void sendMessage();
+}
+
 function clearTimer() {
   if (timer !== undefined) {
     clearInterval(timer);
@@ -677,10 +681,11 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
           :show-confirm-bar="false"
           :cursor-spacing="0"
           confirm-type="send"
+          confirm-hold="true"
           @focus="handleComposerFocus"
           @blur="handleComposerBlur"
           @keyboardheightchange="handleKeyboardHeightChange"
-          @confirm="sendMessage"
+          @confirm="handleConfirmSend"
           maxlength="500"
         />
           <button
