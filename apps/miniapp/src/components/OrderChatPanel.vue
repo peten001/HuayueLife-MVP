@@ -32,6 +32,7 @@ const lastMessageId = ref('');
 const scrollIntoViewId = ref('');
 const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
+const keyboardHeight = ref(0);
 let timer: ReturnType<typeof setInterval> | undefined;
 let requestSeq = 0;
 let disposed = false;
@@ -57,6 +58,9 @@ type TimelineItem =
   | { type: 'message'; key: string; message: OrderChatMessage };
 
 const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages.value));
+const chatCardStyle = computed(() => ({
+  '--keyboard-offset': `${keyboardHeight.value}px`,
+}));
 
 function logChat(step: string, payload?: unknown) {
   console.log(`[miniapp][order-chat] ${step}`, payload ?? '');
@@ -66,9 +70,11 @@ watch(
   () => [props.visible, props.order.id],
   ([visible]) => {
     if (visible) {
+      updateKeyboardHeight(0);
       void loadConversation(true);
       return;
     }
+    updateKeyboardHeight(0);
     clearTimer();
   },
   { immediate: true },
@@ -264,6 +270,24 @@ function handleNewMessagePrompt() {
   scrollToBottom();
 }
 
+function updateKeyboardHeight(nextHeight: number) {
+  const normalized = Number.isFinite(nextHeight) && nextHeight > 0 ? Math.round(nextHeight) : 0;
+  if (normalized === keyboardHeight.value) return;
+  keyboardHeight.value = normalized;
+}
+
+function handleComposerFocus(event: { detail?: { height?: number } }) {
+  updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
+}
+
+function handleComposerBlur() {
+  updateKeyboardHeight(0);
+}
+
+function handleKeyboardHeightChange(event: { detail?: { height?: number } }) {
+  updateKeyboardHeight(event.detail?.height ?? 0);
+}
+
 async function loadConversation(initial = false) {
   if (!props.visible || disposed) return;
 
@@ -422,7 +446,7 @@ function messageSide(message: OrderChatMessage) {
 
 <template>
   <view v-if="visible" class="chat-mask" @tap="close">
-    <view class="chat-card" @tap.stop>
+    <view class="chat-card" :style="chatCardStyle" @tap.stop>
       <view class="chat-header">
         <view>
           <text class="chat-title">{{ t('orderChat') }}</text>
@@ -491,6 +515,11 @@ function messageSide(message: OrderChatMessage) {
             :adjust-position="false"
             :show-confirm-bar="false"
             :cursor-spacing="16"
+            confirm-type="send"
+            @focus="handleComposerFocus"
+            @blur="handleComposerBlur"
+            @keyboardheightchange="handleKeyboardHeightChange"
+            @confirm="sendMessage"
             maxlength="500"
           />
           <button
@@ -519,8 +548,8 @@ function messageSide(message: OrderChatMessage) {
 
 .chat-card {
   width: 100%;
-  height: 88vh;
-  max-height: 88vh;
+  height: calc(88vh - var(--keyboard-offset, 0px));
+  max-height: calc(88vh - var(--keyboard-offset, 0px));
   padding: 20rpx 20rpx calc(18rpx + env(safe-area-inset-bottom));
   border-radius: 28rpx 28rpx 0 0;
   background: #fff;
@@ -530,6 +559,7 @@ function messageSide(message: OrderChatMessage) {
   flex-direction: column;
   gap: 14rpx;
   overflow: hidden;
+  transition: height 0.18s ease, max-height 0.18s ease;
 }
 
 .chat-header {
@@ -591,7 +621,7 @@ function messageSide(message: OrderChatMessage) {
 .message-list {
   flex: 1;
   min-height: 0;
-  padding: 6rpx 4rpx;
+  padding: 6rpx 4rpx calc(18rpx + env(safe-area-inset-bottom));
   border: 1rpx solid #edf0f2;
   border-radius: 18rpx;
   background: #f9fbfa;
@@ -725,6 +755,7 @@ function messageSide(message: OrderChatMessage) {
   align-items: flex-end;
   gap: 12rpx;
   padding-top: 6rpx;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 2rpx);
   background: #fff;
 }
 
