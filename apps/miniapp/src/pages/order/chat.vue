@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { useI18n, usePageTitle } from '@/i18n';
 import {
@@ -27,6 +27,7 @@ const scrollIntoViewId = ref('');
 const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
 const shouldStickToBottom = ref(true);
+const isUserScrollingHistory = ref(false);
 const keyboardHeight = ref(0);
 const viewportHeight = ref(getViewportHeight());
 const keyboardSpacingPx = 8;
@@ -88,7 +89,7 @@ function updateKeyboardHeight(nextHeight: number) {
 function handleComposerFocus(event: { detail?: { height?: number } }) {
   updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
   if (shouldStickToBottom.value) {
-    void scheduleStickToBottom();
+    scheduleScrollToBottom('focus');
   }
 }
 
@@ -99,7 +100,7 @@ function handleComposerBlur() {
 function handleKeyboardHeightChange(event: { detail?: { height?: number } }) {
   updateKeyboardHeight(event.detail?.height ?? 0);
   if (shouldStickToBottom.value) {
-    void scheduleStickToBottom(80);
+    scheduleScrollToBottom('keyboardheightchange');
   }
 }
 
@@ -108,17 +109,19 @@ function handleScroll() {
   if (keyboardHeight.value > 0 && shouldStickToBottom.value) return;
   isNearBottom.value = false;
   shouldStickToBottom.value = false;
+  isUserScrollingHistory.value = true;
 }
 
 function handleScrollToLower() {
   if (suppressScrollTracking) return;
   isNearBottom.value = true;
   shouldStickToBottom.value = true;
+  isUserScrollingHistory.value = false;
   showNewMessagePrompt.value = false;
 }
 
 function handleNewMessagePrompt() {
-  void scrollToBottom();
+  scheduleScrollToBottom('new-message', true);
 }
 
 function clearTimer() {
@@ -135,14 +138,37 @@ function clearStickToBottomTimer() {
   }
 }
 
-async function scheduleStickToBottom(delay = 60) {
-  if (!shouldStickToBottom.value || disposed) return;
+function scheduleScrollToBottom(reason: string, force = false) {
+  logChat('scheduleScrollToBottom', {
+    reason,
+    force,
+    shouldStickToBottom: shouldStickToBottom.value,
+    isNearBottom: isNearBottom.value,
+    isUserScrollingHistory: isUserScrollingHistory.value,
+    keyboardHeight: keyboardHeight.value,
+  });
+  if (!force && !shouldStickToBottom.value) return;
   clearStickToBottomTimer();
   stickToBottomTimer = setTimeout(async () => {
-    if (!shouldStickToBottom.value || disposed) return;
+    if (disposed) return;
+    if (!force && !shouldStickToBottom.value) return;
+    suppressScrollTracking = true;
     await nextTick();
-    await scrollToBottom();
-  }, delay);
+    scrollIntoViewId.value = '';
+    await nextTick();
+    setTimeout(() => {
+      if (disposed) return;
+      if (!force && !shouldStickToBottom.value) return;
+      scrollIntoViewId.value = 'chat-bottom-anchor';
+      isNearBottom.value = true;
+      shouldStickToBottom.value = true;
+      isUserScrollingHistory.value = false;
+      showNewMessagePrompt.value = false;
+      setTimeout(() => {
+        suppressScrollTracking = false;
+      }, 120);
+    }, 50);
+  }, force ? 0 : 60);
 }
 
 function startTimer() {
@@ -239,19 +265,6 @@ function syncReadState() {
   );
 }
 
-async function scrollToBottom() {
-  await nextTick();
-  suppressScrollTracking = true;
-  scrollIntoViewId.value = '';
-  await nextTick();
-  scrollIntoViewId.value = 'chat-bottom-anchor';
-  isNearBottom.value = true;
-  showNewMessagePrompt.value = false;
-  setTimeout(() => {
-    suppressScrollTracking = false;
-  }, 120);
-}
-
 function applyOptimisticReadState(
   currentConversation: UserChatConversation,
   now = new Date().toISOString(),
@@ -288,11 +301,6 @@ function markReadInBackground(chatOrderId: string, seq: number, phase: string) {
         error: caught instanceof Error ? caught.message : String(caught ?? 'unknown'),
       });
     });
-}
-
-async function scrollToLatest() {
-  await nextTick();
-  await scrollToBottom();
 }
 
 async function loadConversation(initial = false) {
@@ -340,11 +348,11 @@ async function loadConversation(initial = false) {
       loadedConversation.lastMessageId ??
       '';
     if (initial) {
-      await scrollToLatest();
+      scheduleScrollToBottom('initial-load', true);
       shouldStickToBottom.value = true;
     } else if (nextLastMessageId !== previousLastMessageId) {
       if (wasNearBottom) {
-        await scrollToLatest();
+        scheduleScrollToBottom('load-conversation', false);
         shouldStickToBottom.value = true;
       } else {
         showNewMessagePrompt.value = true;
@@ -408,7 +416,7 @@ async function refreshConversation() {
       const nextLastMessageId = page.items[page.items.length - 1]?.id ?? loadedConversation.lastMessageId ?? '';
       if (nextLastMessageId !== previousLastMessageId) {
         if (wasNearBottom) {
-          await scrollToLatest();
+          scheduleScrollToBottom('polling', false);
           shouldStickToBottom.value = true;
         } else {
           showNewMessagePrompt.value = true;
@@ -453,7 +461,7 @@ async function sendMessage() {
         lastMessageAt: message.createdAt,
       };
     }
-    await scrollToLatest();
+    scheduleScrollToBottom('send', true);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : t('orderLoadError');
   } finally {
@@ -478,7 +486,7 @@ function unbindKeyboardListener() {
 function handleGlobalKeyboardHeightChange(result: { height?: number }) {
   updateKeyboardHeight(result.height ?? 0);
   if (keyboardHeight.value > 0 && isNearBottom.value && conversation.value) {
-    void scrollToLatest();
+    scheduleScrollToBottom('global-keyboardheightchange');
   }
 }
 
@@ -513,18 +521,6 @@ onUnload(() => {
 });
 
 usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.value.order.orderNo}` : t('orderChat'));
-
-watch(draft, () => {
-  if (!shouldStickToBottom.value || !keyboardHeight.value) return;
-  void scheduleStickToBottom(50);
-});
-
-watch(keyboardHeight, (nextHeight, prevHeight) => {
-  if (nextHeight === prevHeight) return;
-  if (nextHeight > 0 && shouldStickToBottom.value) {
-    void scheduleStickToBottom(80);
-  }
-});
 </script>
 
 <template>
