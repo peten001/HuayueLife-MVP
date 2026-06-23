@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
-import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import { getOrderChat } from '@/api/order-chat';
 import { cancelOrder, confirmReceived, getOrder } from '@/api/orders';
 import {
@@ -25,7 +24,6 @@ const order = ref<UserOrder>();
 const loading = ref(false);
 const operating = ref(false);
 const message = ref('');
-const chatOpen = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 const { t } = useI18n();
 
@@ -45,7 +43,6 @@ const statusTone = computed(() => {
 const chatUnreadCount = computed(
   () => order.value?.chatConversation?.customerUnreadCount ?? 0,
 );
-const chatOrder = computed(() => order.value ?? null);
 
 usePageTitle(() =>
   order.value ? `${t('orderDetailTitle')} ${order.value.orderNo}` : t('orderDetailTitle'),
@@ -59,7 +56,6 @@ onShow(() => {
   void load(true);
   if (!timer) {
     timer = setInterval(() => {
-      if (chatOpen.value) return;
       void load();
     }, 5000);
   }
@@ -68,7 +64,6 @@ onShow(() => {
 function stopPolling() {
   if (timer) clearInterval(timer);
   timer = undefined;
-  chatOpen.value = false;
 }
 
 onHide(stopPolling);
@@ -148,17 +143,10 @@ function receive() {
 }
 
 function openChat() {
-  chatOpen.value = true;
-}
-
-function closeChat() {
-  chatOpen.value = false;
-  void load();
-}
-
-function applyChatConversation(conversation: UserOrder['chatConversation'] | null) {
   if (!order.value) return;
-  order.value.chatConversation = conversation;
+  uni.navigateTo({
+    url: `/pages/order/chat?orderId=${order.value.id}`,
+  });
 }
 
 function serviceInfo() {
@@ -241,13 +229,6 @@ function serviceInfo() {
       </button>
     </template>
 
-    <OrderChatPanel
-      v-if="chatOpen && chatOrder"
-      :visible="chatOpen"
-      :order="chatOrder"
-      @close="closeChat"
-      @updated="applyChatConversation"
-    />
   </view>
 </template>
 

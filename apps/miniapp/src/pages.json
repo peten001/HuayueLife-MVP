@@ -65,6 +65,12 @@
       "style": {
         "navigationBarTitleText": "订单详情"
       }
+    },
+    {
+      "path": "pages/order/chat",
+      "style": {
+        "navigationBarTitleText": "订单聊天"
+      }
     }
   ],
   "tabBar": {
