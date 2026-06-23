@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { useI18n, usePageTitle } from '@/i18n';
 import {
@@ -26,10 +26,12 @@ const lastMessageId = ref('');
 const scrollIntoViewId = ref('');
 const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
+const shouldStickToBottom = ref(true);
 const keyboardHeight = ref(0);
 const viewportHeight = ref(getViewportHeight());
 const keyboardSpacingPx = 8;
 let timer: ReturnType<typeof setInterval> | undefined;
+let stickToBottomTimer: ReturnType<typeof setTimeout> | undefined;
 let requestSeq = 0;
 let disposed = false;
 let suppressScrollTracking = false;
@@ -85,6 +87,9 @@ function updateKeyboardHeight(nextHeight: number) {
 
 function handleComposerFocus(event: { detail?: { height?: number } }) {
   updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
+  if (shouldStickToBottom.value) {
+    void scheduleStickToBottom();
+  }
 }
 
 function handleComposerBlur() {
@@ -93,16 +98,22 @@ function handleComposerBlur() {
 
 function handleKeyboardHeightChange(event: { detail?: { height?: number } }) {
   updateKeyboardHeight(event.detail?.height ?? 0);
+  if (shouldStickToBottom.value) {
+    void scheduleStickToBottom(80);
+  }
 }
 
 function handleScroll() {
   if (suppressScrollTracking) return;
+  if (keyboardHeight.value > 0 && shouldStickToBottom.value) return;
   isNearBottom.value = false;
+  shouldStickToBottom.value = false;
 }
 
 function handleScrollToLower() {
   if (suppressScrollTracking) return;
   isNearBottom.value = true;
+  shouldStickToBottom.value = true;
   showNewMessagePrompt.value = false;
 }
 
@@ -115,6 +126,23 @@ function clearTimer() {
     clearInterval(timer);
     timer = undefined;
   }
+}
+
+function clearStickToBottomTimer() {
+  if (stickToBottomTimer !== undefined) {
+    clearTimeout(stickToBottomTimer);
+    stickToBottomTimer = undefined;
+  }
+}
+
+async function scheduleStickToBottom(delay = 60) {
+  if (!shouldStickToBottom.value || disposed) return;
+  clearStickToBottomTimer();
+  stickToBottomTimer = setTimeout(async () => {
+    if (!shouldStickToBottom.value || disposed) return;
+    await nextTick();
+    await scrollToBottom();
+  }, delay);
 }
 
 function startTimer() {
@@ -313,11 +341,14 @@ async function loadConversation(initial = false) {
       '';
     if (initial) {
       await scrollToLatest();
+      shouldStickToBottom.value = true;
     } else if (nextLastMessageId !== previousLastMessageId) {
       if (wasNearBottom) {
         await scrollToLatest();
+        shouldStickToBottom.value = true;
       } else {
         showNewMessagePrompt.value = true;
+        shouldStickToBottom.value = false;
       }
     }
 
@@ -378,8 +409,10 @@ async function refreshConversation() {
       if (nextLastMessageId !== previousLastMessageId) {
         if (wasNearBottom) {
           await scrollToLatest();
+          shouldStickToBottom.value = true;
         } else {
           showNewMessagePrompt.value = true;
+          shouldStickToBottom.value = false;
         }
       }
     }
@@ -411,6 +444,7 @@ async function sendMessage() {
     messages.value = mergeMessages(messages.value, [message]);
     lastMessageId.value = message.id;
     showNewMessagePrompt.value = false;
+    shouldStickToBottom.value = true;
     if (conversation.value) {
       conversation.value = {
         ...conversation.value,
@@ -467,16 +501,30 @@ onHide(() => {
 onBeforeUnmount(() => {
   disposed = true;
   clearTimer();
+  clearStickToBottomTimer();
   unbindKeyboardListener();
 });
 
 onUnload(() => {
   disposed = true;
   clearTimer();
+  clearStickToBottomTimer();
   unbindKeyboardListener();
 });
 
 usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.value.order.orderNo}` : t('orderChat'));
+
+watch(draft, () => {
+  if (!shouldStickToBottom.value || !keyboardHeight.value) return;
+  void scheduleStickToBottom(50);
+});
+
+watch(keyboardHeight, (nextHeight, prevHeight) => {
+  if (nextHeight === prevHeight) return;
+  if (nextHeight > 0 && shouldStickToBottom.value) {
+    void scheduleStickToBottom(80);
+  }
+});
 </script>
 
 <template>
