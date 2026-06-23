@@ -28,11 +28,13 @@ const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
 const shouldStickToBottom = ref(true);
 const isUserScrollingHistory = ref(false);
+const inputFocused = ref(false);
 const keyboardHeight = ref(0);
 const viewportHeight = ref(getViewportHeight());
 const keyboardSpacingPx = 8;
 let timer: ReturnType<typeof setInterval> | undefined;
 let stickToBottomTimer: ReturnType<typeof setTimeout> | undefined;
+let refocusTimer: ReturnType<typeof setTimeout> | undefined;
 let requestSeq = 0;
 let disposed = false;
 let suppressScrollTracking = false;
@@ -87,6 +89,7 @@ function updateKeyboardHeight(nextHeight: number) {
 }
 
 function handleComposerFocus(event: { detail?: { height?: number } }) {
+  inputFocused.value = true;
   updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
   if (shouldStickToBottom.value) {
     scheduleScrollToBottom('focus');
@@ -94,6 +97,7 @@ function handleComposerFocus(event: { detail?: { height?: number } }) {
 }
 
 function handleComposerBlur() {
+  inputFocused.value = false;
   updateKeyboardHeight(0);
 }
 
@@ -124,6 +128,14 @@ function handleNewMessagePrompt() {
   scheduleScrollToBottom('new-message', true);
 }
 
+function refocusComposer(delay = 50) {
+  clearRefocusTimer();
+  refocusTimer = setTimeout(() => {
+    if (disposed) return;
+    inputFocused.value = true;
+  }, delay);
+}
+
 function clearTimer() {
   if (timer !== undefined) {
     clearInterval(timer);
@@ -135,6 +147,13 @@ function clearStickToBottomTimer() {
   if (stickToBottomTimer !== undefined) {
     clearTimeout(stickToBottomTimer);
     stickToBottomTimer = undefined;
+  }
+}
+
+function clearRefocusTimer() {
+  if (refocusTimer !== undefined) {
+    clearTimeout(refocusTimer);
+    refocusTimer = undefined;
   }
 }
 
@@ -453,6 +472,7 @@ async function sendMessage() {
     lastMessageId.value = message.id;
     showNewMessagePrompt.value = false;
     shouldStickToBottom.value = true;
+    inputFocused.value = true;
     if (conversation.value) {
       conversation.value = {
         ...conversation.value,
@@ -462,8 +482,11 @@ async function sendMessage() {
       };
     }
     scheduleScrollToBottom('send', true);
+    refocusComposer(50);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : t('orderLoadError');
+    inputFocused.value = true;
+    refocusComposer(50);
   } finally {
     sending.value = false;
   }
@@ -510,6 +533,7 @@ onBeforeUnmount(() => {
   disposed = true;
   clearTimer();
   clearStickToBottomTimer();
+  clearRefocusTimer();
   unbindKeyboardListener();
 });
 
@@ -517,6 +541,7 @@ onUnload(() => {
   disposed = true;
   clearTimer();
   clearStickToBottomTimer();
+  clearRefocusTimer();
   unbindKeyboardListener();
 });
 
@@ -595,6 +620,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
             v-model="draft"
             class="composer-input"
             :disabled="!canSend || sending"
+            :focus="inputFocused"
             :placeholder="t('messagePlaceholder')"
             :auto-height="false"
             :adjust-position="false"
@@ -605,12 +631,14 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
             @blur="handleComposerBlur"
             @keyboardheightchange="handleKeyboardHeightChange"
             @confirm="sendMessage"
+            @touchstart.stop
             maxlength="500"
           />
           <button
             :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
             :disabled="!canSend || sending || !draft.trim()"
-            @click="sendMessage"
+            @touchstart.stop.prevent
+            @tap.stop.prevent="sendMessage"
           >
             {{ sending ? t('sending') : t('sendMessage') }}
           </button>
