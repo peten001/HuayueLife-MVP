@@ -151,7 +151,7 @@ function handleNewMessagePrompt() {
   scheduleScrollToBottom('new-message', true);
 }
 
-function handleSendButtonTouchStart() {
+function handleSendButtonTap() {
   console.log('[miniapp][order-chat-page] send button tapped', {
     messageContent: draft.value,
     trimmedContent: draft.value.trim(),
@@ -683,12 +683,12 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
           @confirm="sendMessage"
           maxlength="500"
         />
-          <view
+          <button
             :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
-            @touchstart.stop.prevent="handleSendButtonTouchStart"
+            @tap="handleSendButtonTap"
           >
             {{ sending ? t('sending') : t('sendMessage') }}
-          </view>
+          </button>
         </view>
       </view>
     </view>
@@ -923,14 +923,18 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
 
 .send-button {
   flex: none;
+  width: 150rpx;
   min-width: 150rpx;
   height: 80rpx;
   padding: 0 24rpx;
+  border: 0;
   border-radius: 18rpx;
+  box-sizing: border-box;
   color: #fff;
   background: #43a047;
   font-size: 24rpx;
   line-height: 80rpx;
+  overflow: hidden;
 }
 
 .send-button.disabled {
