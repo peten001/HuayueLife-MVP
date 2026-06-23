@@ -58,11 +58,12 @@ const timelineItems = computed<TimelineItem[]>(() => buildTimelineItems(messages
 const chatShellStyle = computed(() => ({
   height: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
   maxHeight: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
+  paddingBottom: keyboardHeight.value > 0 ? '0px' : 'calc(18rpx + env(safe-area-inset-bottom))',
   '--composer-bottom-gap': keyboardHeight.value > 0
-    ? '2rpx'
+    ? '0px'
     : 'calc(env(safe-area-inset-bottom) + 2rpx)',
   '--message-list-bottom-gap': keyboardHeight.value > 0
-    ? '18rpx'
+    ? '8rpx'
     : 'calc(18rpx + env(safe-area-inset-bottom))',
 }));
 
@@ -553,7 +554,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
             :auto-height="false"
             :adjust-position="false"
             :show-confirm-bar="false"
-            :cursor-spacing="16"
+            :cursor-spacing="0"
             confirm-type="send"
             @focus="handleComposerFocus"
             @blur="handleComposerBlur"
