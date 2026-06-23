@@ -794,7 +794,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
   flex: none;
   display: flex;
   align-items: flex-end;
-  gap: 12rpx;
+  gap: 9px;
   padding-top: 6rpx;
   padding-bottom: var(--composer-bottom-gap, calc(env(safe-area-inset-bottom) + 2rpx));
   background: #f6faf7;
@@ -818,22 +818,25 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
 
 .send-button {
   flex: none;
-  width: 150rpx;
-  min-width: 150rpx;
+  width: 120rpx;
+  min-width: 120rpx;
   height: 80rpx;
-  padding: 0 24rpx;
+  padding: 0 18rpx;
   border: 0;
-  border-radius: 18rpx;
+  border-radius: 15px;
   box-sizing: border-box;
   color: #fff;
-  background: #43a047;
-  font-size: 24rpx;
-  line-height: 80rpx;
+  background: #4f9b67;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
 }
 
 .send-button.disabled {
-  opacity: .55;
-  background: #9ccaa3;
+  opacity: .62;
+  background: #b8d6c0;
 }
 </style>
