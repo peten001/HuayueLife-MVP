@@ -148,6 +148,21 @@ function handleNewMessagePrompt() {
   scheduleScrollToBottom('new-message', true);
 }
 
+function handleSendButtonTap() {
+  console.log('[miniapp][order-chat-page] send button tapped', {
+    messageContent: draft.value,
+    trimmedContent: draft.value.trim(),
+    canSend: canSend.value,
+    sending: sending.value,
+    orderId: orderId.value,
+    conversationId: conversation.value?.id ?? null,
+    orderStatus: props.order.status,
+    conversationStatus: conversation.value?.status ?? null,
+    disabled: textareaDisabled.value,
+  });
+  void sendMessage();
+}
+
 function clearTimer() {
   if (timer !== undefined) {
     clearInterval(timer);
@@ -459,15 +474,43 @@ async function refreshConversation() {
 
 async function sendMessage() {
   const content = draft.value.trim();
-  if (!content || !canSend.value || sending.value || !orderId.value) return;
+  console.log('[miniapp][order-chat-page] sendMessage entry', {
+    messageContent: draft.value,
+    trimmedContent: content,
+    canSend: canSend.value,
+    sending: sending.value,
+    orderId: orderId.value,
+    conversationId: conversation.value?.id ?? null,
+    orderStatus: props.order.status,
+    conversationStatus: conversation.value?.status ?? null,
+    disabled: textareaDisabled.value,
+  });
+  if (!content || !canSend.value || sending.value || !orderId.value) {
+    console.log('[miniapp][order-chat-page] sendMessage early return', {
+      reason: !content
+        ? 'empty'
+        : !canSend.value
+          ? 'cannot-send'
+          : sending.value
+            ? 'sending'
+            : !orderId.value
+              ? 'missing-order-id'
+              : 'unknown',
+    });
+    return;
+  }
 
   sending.value = true;
   error.value = '';
-  logChat('sendMessage start', { chatOrderId: orderId.value, length: content.length });
+  console.log('[miniapp][order-chat-page] API request start', {
+    chatOrderId: orderId.value,
+    conversationId: conversation.value?.id ?? null,
+    length: content.length,
+  });
 
   try {
     const message = await sendOrderChatMessage(orderId.value, content);
-    logChat('sendMessage success', {
+    console.log('[miniapp][order-chat-page] API request success', {
       chatOrderId: orderId.value,
       messageId: message.id,
       contentLength: message.content.length,
@@ -487,7 +530,13 @@ async function sendMessage() {
     }
     scheduleScrollToBottom('send', true);
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : t('orderLoadError');
+    const message = caught instanceof Error ? caught.message : t('orderLoadError');
+    console.log('[miniapp][order-chat-page] API request fail', {
+      chatOrderId: orderId.value,
+      error: message,
+    });
+    error.value = message;
+    uni.showToast({ title: message, icon: 'none' });
   } finally {
     sending.value = false;
   }
@@ -634,8 +683,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
           <button
             :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
             :disabled="!canSend || sending || !draft.trim()"
-            @touchstart.stop.prevent
-            @tap.stop.prevent="sendMessage"
+            @tap="handleSendButtonTap"
           >
             {{ sending ? t('sending') : t('sendMessage') }}
           </button>
