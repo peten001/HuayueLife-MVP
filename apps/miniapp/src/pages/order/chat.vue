@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { useI18n, usePageTitle } from '@/i18n';
 import {
@@ -74,25 +74,7 @@ const chatShellStyle = computed(() => ({
     : 'calc(18rpx + env(safe-area-inset-bottom))',
 }));
 
-const textareaDisabled = computed(() => !canSend.value || sending.value);
-
-function logChat(step: string, payload?: unknown) {
-  console.log(`[miniapp][order-chat-page] ${step}`, payload ?? '');
-}
-
-watch(
-  () => [canSend.value, sending.value, conversation.value?.status, order.value?.status],
-  () => {
-    console.log('[miniapp][order-chat-page] input-state', {
-      canSend: canSend.value,
-      sending: sending.value,
-      orderStatus: order.value?.status ?? null,
-      conversationStatus: conversation.value?.status ?? null,
-      disabled: textareaDisabled.value,
-    });
-  },
-  { immediate: true },
-);
+const sendButtonDisabled = computed(() => !canSend.value || sending.value || !draft.value.trim());
 
 function getViewportHeight() {
   const info = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync();
@@ -105,22 +87,14 @@ function updateKeyboardHeight(nextHeight: number) {
   keyboardHeight.value = normalized;
 }
 
-function handleComposerFocus(event: { detail?: { height?: number } }) {
-  console.log('[miniapp][order-chat-page] textarea focus', {
-    canSend: canSend.value,
-    sending: sending.value,
-    orderStatus: order.value?.status ?? null,
-    conversationStatus: conversation.value?.status ?? null,
-    disabled: textareaDisabled.value,
-    keyboardHeight: event.detail?.height ?? null,
-  });
+function handleInputFocus(event: { detail?: { height?: number } }) {
   updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
   if (shouldStickToBottom.value) {
     scheduleScrollToBottom('focus');
   }
 }
 
-function handleComposerBlur() {
+function handleInputBlur() {
   updateKeyboardHeight(0);
 }
 
@@ -147,22 +121,15 @@ function handleScrollToLower() {
   showNewMessagePrompt.value = false;
 }
 
+function handleChatContentTap() {
+  uni.hideKeyboard();
+}
+
 function handleNewMessagePrompt() {
   scheduleScrollToBottom('new-message', true);
 }
 
 function handleSendButtonTap() {
-  console.log('[miniapp][order-chat-page] send button tapped', {
-    messageContent: draft.value,
-    trimmedContent: draft.value.trim(),
-    canSend: canSend.value,
-    sending: sending.value,
-    orderId: orderId.value,
-    conversationId: conversation.value?.id ?? null,
-    orderStatus: order.value?.status ?? null,
-    conversationStatus: conversation.value?.status ?? null,
-    disabled: textareaDisabled.value,
-  });
   void sendMessage();
 }
 
@@ -185,14 +152,6 @@ function clearStickToBottomTimer() {
 }
 
 function scheduleScrollToBottom(reason: string, force = false) {
-  logChat('scheduleScrollToBottom', {
-    reason,
-    force,
-    shouldStickToBottom: shouldStickToBottom.value,
-    isNearBottom: isNearBottom.value,
-    isUserScrollingHistory: isUserScrollingHistory.value,
-    keyboardHeight: keyboardHeight.value,
-  });
   if (!force && !shouldStickToBottom.value) return;
   clearStickToBottomTimer();
   stickToBottomTimer = setTimeout(async () => {
@@ -323,29 +282,14 @@ function applyOptimisticReadState(
 }
 
 function markReadInBackground(chatOrderId: string, seq: number, phase: string) {
-  const startedAt = Date.now();
-  logChat('markRead background start', { chatOrderId, seq, phase });
   void markOrderChatRead(chatOrderId)
     .then((readConversation) => {
-      logChat('markRead background success', {
-        chatOrderId,
-        seq,
-        phase,
-        durationMs: Date.now() - startedAt,
-        unread: readConversation.customerUnreadCount,
-      });
       if (disposed || seq !== requestSeq) return;
       conversation.value = readConversation;
       syncReadState();
     })
     .catch((caught) => {
-      logChat('markRead background fail', {
-        chatOrderId,
-        seq,
-        phase,
-        durationMs: Date.now() - startedAt,
-        error: caught instanceof Error ? caught.message : String(caught ?? 'unknown'),
-      });
+      void caught;
     });
 }
 
@@ -354,8 +298,6 @@ async function loadConversation(initial = false) {
 
   const chatOrderId = orderId.value;
   const seq = ++requestSeq;
-  logChat('loadConversation start', { chatOrderId, initial, seq });
-
   if (initial) {
     loading.value = true;
     error.value = '';
@@ -370,13 +312,6 @@ async function loadConversation(initial = false) {
       getOrderChat(chatOrderId),
       loadAllMessages(chatOrderId),
     ]);
-
-    logChat('loadConversation loaded', {
-      chatOrderId,
-      seq,
-      messages: loadedMessages.length,
-      conversationId: loadedConversation.id,
-    });
 
     if (disposed || seq !== requestSeq) return;
 
@@ -425,12 +360,6 @@ async function refreshConversation() {
   const wasNearBottom = isNearBottom.value;
   const previousLastMessageId = lastMessageId.value;
   refreshing.value = true;
-  logChat('refreshConversation start', {
-    chatOrderId,
-    seq,
-    lastMessageId: lastMessageId.value || null,
-  });
-
   try {
     const [loadedConversation, page] = await Promise.all([
       getOrderChat(chatOrderId),
@@ -445,14 +374,6 @@ async function refreshConversation() {
     if (disposed || seq !== requestSeq) return;
 
     conversation.value = loadedConversation;
-    logChat('refreshConversation loaded', {
-      chatOrderId,
-      seq,
-      items: page.items.length,
-      hasMore: page.pageInfo.hasMore,
-      nextCursor: page.pageInfo.nextCursor,
-    });
-
     if (page.items.length) {
       messages.value = mergeMessages(messages.value, page.items);
       lastMessageId.value = page.items[page.items.length - 1]?.id ?? lastMessageId.value;
@@ -481,47 +402,19 @@ async function refreshConversation() {
 
 async function sendMessage() {
   const content = draft.value.trim();
-  console.log('[miniapp][order-chat-page] sendMessage entry', {
-    messageContent: draft.value,
-    trimmedContent: content,
-    canSend: canSend.value,
-    sending: sending.value,
-    orderId: orderId.value,
-    conversationId: conversation.value?.id ?? null,
-    orderStatus: order.value?.status ?? null,
-    conversationStatus: conversation.value?.status ?? null,
-    disabled: textareaDisabled.value,
-  });
-  if (!content || !canSend.value || sending.value || !orderId.value) {
-    console.log('[miniapp][order-chat-page] sendMessage early return', {
-      reason: !content
-        ? 'empty'
-        : !canSend.value
-          ? 'cannot-send'
-          : sending.value
-            ? 'sending'
-            : !orderId.value
-              ? 'missing-order-id'
-              : 'unknown',
-    });
+  if (!content || sending.value || !orderId.value) {
+    return;
+  }
+  if (!canSend.value) {
+    uni.showToast({ title: '订单已完成或已取消，不能继续发送', icon: 'none' });
     return;
   }
 
   sending.value = true;
   error.value = '';
-  console.log('[miniapp][order-chat-page] API request start', {
-    chatOrderId: orderId.value,
-    conversationId: conversation.value?.id ?? null,
-    length: content.length,
-  });
 
   try {
     const message = await sendOrderChatMessage(orderId.value, content);
-    console.log('[miniapp][order-chat-page] API request success', {
-      chatOrderId: orderId.value,
-      messageId: message.id,
-      contentLength: message.content.length,
-    });
     draft.value = '';
     messages.value = mergeMessages(messages.value, [message]);
     lastMessageId.value = message.id;
@@ -538,10 +431,6 @@ async function sendMessage() {
     scheduleScrollToBottom('send', true);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : t('orderLoadError');
-    console.log('[miniapp][order-chat-page] API request fail', {
-      chatOrderId: orderId.value,
-      error: message,
-    });
     error.value = message;
     uni.showToast({ title: message, icon: 'none' });
   } finally {
@@ -633,6 +522,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
           class="message-list"
           scroll-y
           :scroll-into-view="scrollIntoViewId"
+          @tap="handleChatContentTap"
           @scroll="handleScroll"
           @scrolltolower="handleScrollToLower"
         >
@@ -674,26 +564,26 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
         <textarea
           v-model="draft"
           class="composer-input"
-          :disabled="textareaDisabled"
           :placeholder="t('messagePlaceholder')"
           :auto-height="false"
           :adjust-position="false"
           :show-confirm-bar="false"
-          :cursor-spacing="0"
+          :cursor-spacing="8"
           confirm-type="send"
           confirm-hold="true"
-          @focus="handleComposerFocus"
-          @blur="handleComposerBlur"
+          hold-keyboard="true"
+          @focus="handleInputFocus"
+          @blur="handleInputBlur"
           @keyboardheightchange="handleKeyboardHeightChange"
           @confirm="handleConfirmSend"
           maxlength="500"
         />
-          <button
-            :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
-            @tap="handleSendButtonTap"
+          <view
+            :class="['send-button', { disabled: sendButtonDisabled }]"
+            @tap.stop="handleSendButtonTap"
           >
             {{ sending ? t('sending') : t('sendMessage') }}
-          </button>
+          </view>
         </view>
       </view>
     </view>
