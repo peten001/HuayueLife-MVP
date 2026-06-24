@@ -270,51 +270,57 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
 
   <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
     <form class="card printer-modal" @submit.prevent="save()">
-      <h2>{{ form.id ? label({ zh: '编辑打印机', vi: 'Sửa máy in', en: 'Edit Printer' }) : label({ zh: '新增打印机', vi: 'Thêm máy in', en: 'Add Printer' }) }}</h2>
-      <label>{{ label({ zh: '打印机名称', vi: 'Tên máy in', en: 'Printer Name' }) }}<input v-model="form.name" required /></label>
-      <label>{{ label({ zh: 'IP地址', vi: 'Địa chỉ IP', en: 'IP Address' }) }}<input v-model="form.ipAddress" required placeholder="192.168.1.100" /></label>
-      <label>{{ label({ zh: '端口', vi: 'Cổng', en: 'Port' }) }}<input v-model.number="form.port" type="number" min="1" max="65535" required /></label>
-      <label>
-        {{ label({ zh: '用途', vi: 'Mục đích', en: 'Usage' }) }}
-        <select v-model="form.usageType">
-          <option value="FRONT_DESK">{{ label({ zh: '前台', vi: 'Quầy trước', en: 'Front Desk' }) }}</option>
-          <option value="KITCHEN">{{ label({ zh: '厨房', vi: 'Bếp', en: 'Kitchen' }) }}</option>
-          <option value="BAR">{{ label({ zh: '吧台', vi: 'Quầy bar', en: 'Bar' }) }}</option>
-          <option value="GENERAL">{{ label({ zh: '通用', vi: 'Chung', en: 'General' }) }}</option>
-        </select>
-      </label>
-      <label>
-        {{ label({ zh: '小票宽度', vi: 'Khổ giấy', en: 'Paper Width' }) }}
-        <select v-model.number="form.paperWidth">
-          <option :value="58">58mm</option>
-          <option :value="80">80mm</option>
-        </select>
-      </label>
-      <label>{{ label({ zh: '打印份数', vi: 'Số bản in', en: 'Copies' }) }}<input v-model.number="form.copies" type="number" min="1" max="9" required /></label>
-      <label>
-        {{ label({ zh: '打印语言', vi: 'Ngôn ngữ in', en: 'Print Language' }) }}
-        <select v-model="form.language">
-          <option value="zh">中文</option>
-          <option value="vi">Tiếng Việt</option>
-          <option value="en">English</option>
-        </select>
-      </label>
-      <label>
-        {{ label({ zh: '打印编码', vi: 'Mã hóa in', en: 'Print Encoding' }) }}
-        <select v-model="form.encoding">
-          <option value="UTF8">UTF8</option>
-          <option value="GBK">GBK</option>
-          <option value="CP1258">CP1258</option>
-        </select>
-      </label>
-      <label class="check-row"><input v-model="form.autoPrintEnabled" type="checkbox" />{{ label({ zh: '自动打印', vi: 'Tự động in', en: 'Auto Print' }) }}</label>
-      <label class="check-row"><input v-model="form.isDefault" type="checkbox" />{{ label({ zh: '默认打印机', vi: 'Máy in mặc định', en: 'Default Printer' }) }}</label>
-      <div class="actions modal-actions">
-        <button type="button" class="secondary" @click="closeModal">{{ t('cancel') }}</button>
-        <button type="submit" :disabled="saving">{{ t('saveChanges') }}</button>
-        <button type="button" :disabled="saving" @click="save({ testAfterSave: true })">
-          {{ label({ zh: '保存并测试打印', vi: 'Lưu và in thử', en: 'Save and Test' }) }}
-        </button>
+      <div class="printer-modal-header">
+        <h2>{{ form.id ? label({ zh: '编辑打印机', vi: 'Sửa máy in', en: 'Edit Printer' }) : label({ zh: '新增打印机', vi: 'Thêm máy in', en: 'Add Printer' }) }}</h2>
+      </div>
+      <div class="printer-modal-body">
+        <label>{{ label({ zh: '打印机名称', vi: 'Tên máy in', en: 'Printer Name' }) }}<input v-model="form.name" required /></label>
+        <label>{{ label({ zh: 'IP地址', vi: 'Địa chỉ IP', en: 'IP Address' }) }}<input v-model="form.ipAddress" required placeholder="192.168.1.100" /></label>
+        <label>{{ label({ zh: '端口', vi: 'Cổng', en: 'Port' }) }}<input v-model.number="form.port" type="number" min="1" max="65535" required /></label>
+        <label>
+          {{ label({ zh: '用途', vi: 'Mục đích', en: 'Usage' }) }}
+          <select v-model="form.usageType">
+            <option value="FRONT_DESK">{{ label({ zh: '前台', vi: 'Quầy trước', en: 'Front Desk' }) }}</option>
+            <option value="KITCHEN">{{ label({ zh: '厨房', vi: 'Bếp', en: 'Kitchen' }) }}</option>
+            <option value="BAR">{{ label({ zh: '吧台', vi: 'Quầy bar', en: 'Bar' }) }}</option>
+            <option value="GENERAL">{{ label({ zh: '通用', vi: 'Chung', en: 'General' }) }}</option>
+          </select>
+        </label>
+        <label>
+          {{ label({ zh: '小票宽度', vi: 'Khổ giấy', en: 'Paper Width' }) }}
+          <select v-model.number="form.paperWidth">
+            <option :value="58">58mm</option>
+            <option :value="80">80mm</option>
+          </select>
+        </label>
+        <label>{{ label({ zh: '打印份数', vi: 'Số bản in', en: 'Copies' }) }}<input v-model.number="form.copies" type="number" min="1" max="9" required /></label>
+        <label>
+          {{ label({ zh: '打印语言', vi: 'Ngôn ngữ in', en: 'Print Language' }) }}
+          <select v-model="form.language">
+            <option value="zh">中文</option>
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>
+          {{ label({ zh: '打印编码', vi: 'Mã hóa in', en: 'Print Encoding' }) }}
+          <select v-model="form.encoding">
+            <option value="UTF8">UTF8</option>
+            <option value="GBK">GBK</option>
+            <option value="CP1258">CP1258</option>
+          </select>
+        </label>
+        <label class="check-row"><input v-model="form.autoPrintEnabled" type="checkbox" />{{ label({ zh: '自动打印', vi: 'Tự động in', en: 'Auto Print' }) }}</label>
+        <label class="check-row"><input v-model="form.isDefault" type="checkbox" />{{ label({ zh: '默认打印机', vi: 'Máy in mặc định', en: 'Default Printer' }) }}</label>
+      </div>
+      <div class="printer-modal-footer">
+        <div class="actions modal-actions">
+          <button type="button" class="secondary" @click="closeModal">{{ t('cancel') }}</button>
+          <button type="submit" :disabled="saving">{{ t('saveChanges') }}</button>
+          <button type="button" :disabled="saving" @click="save({ testAfterSave: true })">
+            {{ label({ zh: '保存并测试打印', vi: 'Lưu và in thử', en: 'Save and Test' }) }}
+          </button>
+        </div>
       </div>
     </form>
   </div>
@@ -325,20 +331,46 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
   position: fixed;
   inset: 0;
   z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
   background: rgb(17 24 39 / 42%);
 }
 
 .printer-modal {
   width: min(560px, 100%);
-  display: grid;
-  gap: 14px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
 }
 
 .printer-modal h2 {
   margin: 0;
+}
+
+.printer-modal-header {
+  flex: 0 0 auto;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.printer-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 2px 16px;
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.printer-modal-footer {
+  flex: 0 0 auto;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
 }
 
 .check-row {
@@ -354,10 +386,45 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
 
 .modal-actions {
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .danger-badge {
   color: #b42318;
   background: #fee4e2;
+}
+
+.printer-modal label {
+  display: grid;
+  gap: 6px;
+}
+
+.printer-modal input,
+.printer-modal select {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 8px;
+    align-items: flex-end;
+  }
+
+  .printer-modal {
+    width: 100%;
+    max-height: 90vh;
+  }
+
+  .printer-modal-body {
+    padding-right: 4px;
+  }
+
+  .modal-actions {
+    justify-content: stretch;
+  }
+
+  .modal-actions button {
+    flex: 1 1 100%;
+  }
 }
 </style>
