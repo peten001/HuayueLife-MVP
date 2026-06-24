@@ -16,14 +16,19 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { ListMerchantOrdersQueryDto } from './dto/list-merchant-orders-query.dto';
+import { PrintOrderDto } from './dto/print-order.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
+import { PrintersService } from '../printers/printers.service';
 
 @Controller('merchant/orders')
 @UseGuards(JwtAuthGuard, MerchantRoleGuard)
 @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
 export class MerchantOrdersController {
-  constructor(private readonly service: MerchantOrdersService) {}
+  constructor(
+    private readonly service: MerchantOrdersService,
+    private readonly printersService: PrintersService,
+  ) {}
 
   @Get()
   list(
@@ -127,5 +132,18 @@ export class MerchantOrdersController {
   @Post(':id/settle')
   settle(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.service.settle(merchantId, BigInt(params.id));
+  }
+
+  @Post(':id/print')
+  print(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Body() dto: PrintOrderDto,
+  ) {
+    return this.printersService.reprintOrder(
+      merchantId,
+      BigInt(params.id),
+      dto.printerIds?.map((id) => BigInt(id)),
+    );
   }
 }

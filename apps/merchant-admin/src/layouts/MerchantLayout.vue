@@ -26,6 +26,7 @@ const navByRole: Record<
     ['/merchant/profile', 'merchantProfile'],
     ['/merchant/profile/change-password', 'changePassword'],
     ['/merchant/business-settings', 'businessSettings'],
+    ['/merchant/printers', 'printerManagement'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
     ['/tables', 'tables'],
@@ -34,6 +35,7 @@ const navByRole: Record<
   MANAGER: [
     ['/orders', 'orders'],
     ['/merchant/profile/change-password', 'changePassword'],
+    ['/merchant/printers', 'printerManagement'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
     ['/tables', 'tables'],

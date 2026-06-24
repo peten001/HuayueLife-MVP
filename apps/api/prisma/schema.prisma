@@ -102,6 +102,52 @@ enum OrderChatSenderType {
   SYSTEM
 }
 
+enum PrinterType {
+  NETWORK
+}
+
+enum PrinterUsageType {
+  FRONT_DESK
+  KITCHEN
+  BAR
+  GENERAL
+}
+
+enum PrinterEncoding {
+  UTF8
+  GBK
+  CP1258
+}
+
+enum PaperWidth {
+  WIDTH_58
+  WIDTH_80
+}
+
+enum PrintLanguage {
+  zh
+  vi
+  en
+}
+
+enum PrinterStatus {
+  UNKNOWN
+  ONLINE
+  OFFLINE
+}
+
+enum PrintLogStatus {
+  PENDING
+  PRINTING
+  SUCCESS
+  FAILED
+}
+
+enum PrintLogOperator {
+  SYSTEM
+  MERCHANT
+}
+
 model User {
   id          BigInt     @id @default(autoincrement())
   openid      String     @unique @db.VarChar(64)
@@ -158,6 +204,8 @@ model Merchant {
   carts      Cart[]
   orders     Order[]
   orderChatConversations OrderChatConversation[]
+  printerSettings PrinterSetting[]
+  printLogs PrintLog[]
 
   @@index([status])
   @@index([province, city, status])
@@ -319,6 +367,7 @@ model Order {
   statusLogs OrderStatusLog[]
   chatConversation OrderChatConversation?
   chatMessages OrderChatMessage[]
+  printLogs PrintLog[]
 
   @@unique([userId, idempotencyKey])
   @@index([merchantId, status, createdAt])
@@ -415,4 +464,50 @@ model OrderChatMessage {
   @@index([conversationId, id])
   @@index([senderType, senderId, createdAt])
   @@map("order_chat_messages")
+}
+
+model PrinterSetting {
+  id               BigInt        @id @default(autoincrement())
+  merchantId       BigInt        @map("merchant_id")
+  name             String        @db.VarChar(80)
+  type             PrinterType   @default(NETWORK)
+  usageType        PrinterUsageType @default(GENERAL) @map("usage_type")
+  encoding         PrinterEncoding @default(UTF8)
+  ipAddress        String        @map("ip_address") @db.VarChar(64)
+  port             Int           @default(9100)
+  paperWidth       PaperWidth    @default(WIDTH_80) @map("paper_width")
+  copies           Int           @default(1)
+  language         PrintLanguage @default(zh)
+  autoPrintEnabled Boolean       @default(true) @map("auto_print_enabled")
+  isDefault        Boolean       @default(true) @map("is_default")
+  status           PrinterStatus @default(UNKNOWN)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  merchant Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  printLogs PrintLog[]
+
+  @@index([merchantId, isDefault])
+  @@index([merchantId, status])
+  @@map("printer_settings")
+}
+
+model PrintLog {
+  id           BigInt           @id @default(autoincrement())
+  merchantId   BigInt           @map("merchant_id")
+  orderId      BigInt?          @map("order_id")
+  printerId    BigInt?          @map("printer_id")
+  status       PrintLogStatus   @default(PENDING)
+  errorMessage String?          @map("error_message") @db.VarChar(500)
+  printedBy    PrintLogOperator @default(SYSTEM) @map("printed_by")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  order    Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  printer  PrinterSetting? @relation(fields: [printerId], references: [id], onDelete: SetNull)
+
+  @@index([merchantId, createdAt])
+  @@index([orderId, createdAt])
+  @@index([printerId, createdAt])
+  @@map("print_logs")
 }

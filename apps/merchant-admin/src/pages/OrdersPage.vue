@@ -174,6 +174,52 @@ function money(value: string) {
   return `${Number(value).toLocaleString()} ₫`;
 }
 
+function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
+  return labels[locale.value];
+}
+
+function latestPrintLogsByPrinter(order: MerchantOrder) {
+  const seen = new Set<string>();
+  return (order.printLogs ?? []).filter((log) => {
+    const key = log.printerId || log.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function printStatusLabel(order: MerchantOrder) {
+  const logs = latestPrintLogsByPrinter(order);
+  if (!logs.length) {
+    return localLabel({ zh: '未打印', vi: 'Chưa in', en: 'Not printed' });
+  }
+  const hasSuccess = logs.some((log) => log.status === 'SUCCESS');
+  const hasFailed = logs.some((log) => log.status === 'FAILED');
+  const hasPrinting = logs.some((log) => log.status === 'PENDING' || log.status === 'PRINTING');
+  if (hasSuccess && hasFailed) {
+    return localLabel({ zh: '部分成功', vi: 'Thành công một phần', en: 'Partially printed' });
+  }
+  if (hasSuccess) {
+    return localLabel({ zh: '已打印', vi: 'Đã in', en: 'Printed' });
+  }
+  if (hasPrinting) {
+    return localLabel({ zh: '打印中', vi: 'Đang in', en: 'Printing' });
+  }
+  return localLabel({ zh: '打印失败', vi: 'In lỗi', en: 'Print failed' });
+}
+
+function printStatusClass(order: MerchantOrder) {
+  const logs = latestPrintLogsByPrinter(order);
+  const hasSuccess = logs.some((log) => log.status === 'SUCCESS');
+  const hasFailed = logs.some((log) => log.status === 'FAILED');
+  const hasPrinting = logs.some((log) => log.status === 'PENDING' || log.status === 'PRINTING');
+  if (hasSuccess && !hasFailed) return 'success';
+  if (hasSuccess && hasFailed) return 'warning-badge';
+  if (hasFailed) return 'danger-badge';
+  if (hasPrinting) return 'warning-badge';
+  return 'muted';
+}
+
 function primaryAction(order: MerchantOrder) {
   const actionMap: Partial<Record<OrderStatus, { action: Action; label: TranslationKey }>> = {
     PENDING_ACCEPTANCE: { action: 'accept', label: 'acceptOrder' },
@@ -369,6 +415,7 @@ type Action =
       <small v-if="order.customerRemark" class="remark">
         {{ t('remark') }}：{{ order.customerRemark }}
       </small>
+      <span :class="['badge', printStatusClass(order)]">{{ printStatusLabel(order) }}</span>
       <footer>
         <span>{{ t('amount') }}</span>
         <b>{{ money(order.totalAmountVnd) }}</b>
@@ -403,7 +450,7 @@ type Action =
       <thead>
         <tr>
           <th>{{ t('order') }}</th><th>{{ t('type') }}</th><th>{{ t('serviceInfo') }}</th><th>{{ t('amount') }}</th>
-          <th>{{ t('settlement') }}</th><th>{{ t('status') }}</th><th>{{ t('orderTime') }}</th><th>{{ t('actions') }}</th>
+          <th>{{ t('settlement') }}</th><th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th><th>{{ t('status') }}</th><th>{{ t('orderTime') }}</th><th>{{ t('actions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -421,6 +468,7 @@ type Action =
           <td>{{ serviceInfo(order) }}</td>
           <td>{{ money(order.totalAmountVnd) }}</td>
           <td>{{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}</td>
+          <td><span :class="['badge', printStatusClass(order)]">{{ printStatusLabel(order) }}</span></td>
           <td><OrderStatusBadge :status="order.status" /></td>
           <td>{{ new Date(order.createdAt).toLocaleString() }}</td>
           <td class="actions">
@@ -444,7 +492,7 @@ type Action =
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td colspan="8" class="empty">{{ t('noMatchingOrders') }}</td>
+          <td colspan="9" class="empty">{{ t('noMatchingOrders') }}</td>
         </tr>
       </tbody>
     </table>
@@ -503,6 +551,11 @@ type Action =
 .sound-toggle.active {
   color: #fff;
   background: #2e7d32;
+}
+
+.danger-badge {
+  color: #b42318;
+  background: #fee4e2;
 }
 
 .chat-entry {

@@ -434,6 +434,59 @@ export type OrderStatus =
 
 export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export type SettlementStatus = 'UNSETTLED' | 'SETTLED';
+export type PrinterStatus = 'UNKNOWN' | 'ONLINE' | 'OFFLINE';
+export type PrintLogStatus = 'PENDING' | 'PRINTING' | 'SUCCESS' | 'FAILED';
+export type PrintLanguage = 'zh' | 'vi' | 'en';
+export type PaperWidth = 'WIDTH_58' | 'WIDTH_80';
+export type PrinterUsageType = 'FRONT_DESK' | 'KITCHEN' | 'BAR' | 'GENERAL';
+export type PrinterEncoding = 'UTF8' | 'GBK' | 'CP1258';
+
+export interface PrinterSetting {
+  id: string;
+  merchantId: string;
+  name: string;
+  type: 'NETWORK';
+  usageType: PrinterUsageType;
+  encoding: PrinterEncoding;
+  ipAddress: string;
+  port: number;
+  paperWidth: PaperWidth;
+  copies: number;
+  language: PrintLanguage;
+  autoPrintEnabled: boolean;
+  isDefault: boolean;
+  status: PrinterStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrinterPayload {
+  name: string;
+  ipAddress: string;
+  port?: number;
+  paperWidth?: 58 | 80;
+  usageType?: PrinterUsageType;
+  encoding?: PrinterEncoding;
+  copies?: number;
+  language?: PrintLanguage;
+  autoPrintEnabled?: boolean;
+  isDefault?: boolean;
+}
+
+export interface PrintLog {
+  id: string;
+  printerId?: string | null;
+  status: PrintLogStatus;
+  errorMessage?: string | null;
+  printedBy: 'SYSTEM' | 'MERCHANT';
+  createdAt: string;
+  printer?: {
+    id: string;
+    name: string;
+    ipAddress: string;
+    port: number;
+  } | null;
+}
 
 export interface OrderItem {
   id: string;
@@ -519,4 +572,5 @@ export interface MerchantOrder {
   items: OrderItem[];
   statusLogs?: OrderStatusLog[];
   chatConversation?: MerchantOrderChatConversation | null;
+  printLogs?: PrintLog[];
 }

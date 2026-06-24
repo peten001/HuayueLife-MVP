@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -9,13 +10,17 @@ import { randomBytes } from 'node:crypto';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
 import { CartService } from '../cart/cart.service';
+import { PrintersService } from '../printers/printers.service';
 import { OrderRequestDto } from './dto/order-request.dto';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cartService: CartService,
+    private readonly printersService: PrintersService,
   ) {}
 
   list(userId: bigint) {
@@ -49,7 +54,8 @@ export class OrdersService {
     if (existing) return existing;
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      let shouldAutoPrint = false;
+      const order = await this.prisma.$transaction(async (tx) => {
         const duplicate = await tx.order.findUnique({
           where: {
             userId_idempotencyKey: { userId, idempotencyKey },
@@ -104,6 +110,7 @@ export class OrdersService {
           },
           include: this.orderInclude,
         });
+        shouldAutoPrint = true;
 
         await tx.cart.update({
           where: { id: preview.cartId },
@@ -111,6 +118,18 @@ export class OrdersService {
         });
         return order;
       });
+      if (shouldAutoPrint) {
+        void this.printersService
+          .printOrder(order.merchantId, order.id, 'SYSTEM')
+          .catch((error) => {
+            this.logger.warn(
+              `Auto print failed for order ${order.id.toString()}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+      }
+      return order;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

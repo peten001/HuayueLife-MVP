@@ -49,3 +49,19 @@ export async function runOrderAction(
   );
   return response.data.data;
 }
+
+export async function printMerchantOrder(id: string, printerIds?: string[]) {
+  const response = await http.post<ApiResponse<{
+    skipped?: boolean;
+    total: number;
+    successCount: number;
+    failedCount: number;
+    results: Array<{
+      printerId: string;
+      printerName: string;
+      success: boolean;
+      errorMessage?: string;
+    }>;
+  }>>(`/merchant/orders/${id}/print`, { printerIds });
+  return response.data.data;
+}

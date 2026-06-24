@@ -6,6 +6,7 @@ import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
 import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
 import MerchantChangePasswordPage from '@/pages/MerchantChangePasswordPage.vue';
 import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
+import PrintersPage from '@/pages/PrintersPage.vue';
 import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
@@ -127,6 +128,11 @@ const router = createRouter({
           path: 'merchant/business-settings',
           component: BusinessSettingsPage,
           meta: { roles: ['OWNER'] },
+        },
+        {
+          path: 'merchant/printers',
+          component: PrintersPage,
+          meta: { roles: ['OWNER', 'MANAGER'] },
         },
         {
           path: 'menu/categories',

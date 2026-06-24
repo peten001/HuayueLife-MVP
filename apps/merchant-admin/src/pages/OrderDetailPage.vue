@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { getMerchantOrder, runOrderAction } from '@/api/orders';
+import { getMerchantOrder, printMerchantOrder, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
+import { getPrinters } from '@/api/printers';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
-import type { MerchantOrder, OrderStatus, OrderStatusLog } from '@/types/api';
+import type { MerchantOrder, OrderStatus, OrderStatusLog, PrinterSetting } from '@/types/api';
 
 const route = useRoute();
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const order = ref<MerchantOrder>();
+const printers = ref<PrinterSetting[]>([]);
+const selectedPrinterIds = ref<string[]>([]);
 const message = ref('');
 const operating = ref(false);
+const printing = ref(false);
 const chatOpen = ref(false);
 let timer: number | undefined;
 
@@ -54,6 +58,13 @@ async function load() {
   } catch (error) {
     message.value = errorMessage(error);
   }
+}
+
+async function loadPrinters() {
+  printers.value = await getPrinters();
+  selectedPrinterIds.value = printers.value
+    .filter((printer) => printer.autoPrintEnabled || printer.isDefault)
+    .map((printer) => printer.id);
 }
 
 async function execute(action: Action) {
@@ -147,8 +158,76 @@ function money(value: string) {
   return `${Number(value).toLocaleString()} ₫`;
 }
 
+function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
+  return labels[locale.value];
+}
+
+const printLogs = computed(() => order.value?.printLogs ?? []);
+const latestPrintLogsByPrinter = computed(() => {
+  const seen = new Set<string>();
+  return printLogs.value.filter((log) => {
+    const key = log.printerId || log.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+});
+
+const printButtonLabel = computed(() => {
+  if (latestPrintLogsByPrinter.value.some((log) => log.status === 'SUCCESS' || log.status === 'FAILED')) {
+    return localLabel({ zh: '重新打印', vi: 'In lại', en: 'Reprint' });
+  }
+  return localLabel({ zh: '打印小票', vi: 'In phiếu', en: 'Print Receipt' });
+});
+
+function printStatusLabel() {
+  const logs = latestPrintLogsByPrinter.value;
+  if (!logs.length) return localLabel({ zh: '未打印', vi: 'Chưa in', en: 'Not printed' });
+  const hasSuccess = logs.some((log) => log.status === 'SUCCESS');
+  const hasFailed = logs.some((log) => log.status === 'FAILED');
+  const hasPrinting = logs.some((log) => log.status === 'PENDING' || log.status === 'PRINTING');
+  if (hasSuccess && hasFailed) {
+    return localLabel({ zh: '部分成功', vi: 'Thành công một phần', en: 'Partially printed' });
+  }
+  if (hasSuccess) return localLabel({ zh: '已打印', vi: 'Đã in', en: 'Printed' });
+  if (hasPrinting) return localLabel({ zh: '打印中', vi: 'Đang in', en: 'Printing' });
+  return localLabel({ zh: '打印失败', vi: 'In lỗi', en: 'Print failed' });
+}
+
+const failedPrintLogs = computed(() =>
+  latestPrintLogsByPrinter.value.filter((log) => log.status === 'FAILED'),
+);
+
+function printerLabel(id?: string | null) {
+  if (!id) return '-';
+  return printers.value.find((printer) => printer.id === id)?.name ?? id;
+}
+
+async function printReceipt() {
+  if (!order.value || printing.value) return;
+  if (!selectedPrinterIds.value.length) {
+    message.value = localLabel({ zh: '请选择打印机', vi: 'Vui lòng chọn máy in', en: 'Select at least one printer' });
+    return;
+  }
+  try {
+    printing.value = true;
+    const result = await printMerchantOrder(order.value.id, selectedPrinterIds.value);
+    message.value = result.failedCount
+      ? localLabel({ zh: `打印完成，${result.successCount} 台成功，${result.failedCount} 台失败`, vi: `Đã in: ${result.successCount} thành công, ${result.failedCount} lỗi`, en: `Print finished: ${result.successCount} succeeded, ${result.failedCount} failed` })
+      : localLabel({ zh: '打印任务已发送', vi: 'Đã gửi lệnh in', en: 'Print job sent' });
+    await load();
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    printing.value = false;
+  }
+}
+
 onMounted(async () => {
-  await load();
+  await Promise.all([
+    load(),
+    loadPrinters().catch((error) => (message.value = errorMessage(error))),
+  ]);
   timer = window.setInterval(load, 5000);
 });
 onBeforeUnmount(() => window.clearInterval(timer));
@@ -194,6 +273,14 @@ type Action =
           <span v-if="chatUnreadCount" class="nav-badge">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</span>
         </button>
         <button
+          type="button"
+          class="secondary"
+          :disabled="printing || !selectedPrinterIds.length"
+          @click="printReceipt"
+        >
+          {{ printButtonLabel }}
+        </button>
+        <button
           v-if="order.settlementStatus === 'UNSETTLED'"
           class="secondary"
           :disabled="operating"
@@ -217,6 +304,25 @@ type Action =
           <dt v-if="order.orderType === 'DELIVERY'">{{ t('deliveryAddress') }}</dt>
           <dd v-if="order.orderType === 'DELIVERY'">{{ order.deliveryAddress }}</dd>
           <dt>{{ t('customerRemark') }}</dt><dd>{{ order.customerRemark || t('none') }}</dd>
+          <dt>{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
+          <dd>
+            {{ printStatusLabel() }}
+            <span v-if="printLogs[0]?.createdAt"> · {{ new Date(printLogs[0].createdAt).toLocaleString() }}</span>
+          </dd>
+          <dt>{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
+          <dd>
+            <label v-for="printer in printers" :key="printer.id" class="printer-check">
+              <input v-model="selectedPrinterIds" type="checkbox" :value="printer.id" />
+              {{ printer.name }} · {{ printer.ipAddress }}:{{ printer.port }}
+            </label>
+            <span v-if="!printers.length">-</span>
+          </dd>
+          <dt v-if="failedPrintLogs.length">{{ localLabel({ zh: '失败原因', vi: 'Lý do lỗi', en: 'Failure Reason' }) }}</dt>
+          <dd v-if="failedPrintLogs.length">
+            <p v-for="log in failedPrintLogs" :key="log.id" class="print-error-line">
+              {{ printerLabel(log.printerId) }}：{{ log.errorMessage || '-' }}
+            </p>
+          </dd>
           <dt v-if="order.cancelReason">{{ t('cancelReason') }}</dt><dd v-if="order.cancelReason">{{ order.cancelReason }}</dd>
         </dl>
       </div>
@@ -274,3 +380,21 @@ type Action =
     @updated="applyChatConversation"
   />
 </template>
+
+<style scoped>
+.printer-check {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.printer-check input {
+  width: auto;
+  margin-right: 8px;
+}
+
+.print-error-line {
+  margin: 0 0 4px;
+  color: #b42318;
+}
+</style>

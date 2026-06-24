@@ -239,6 +239,18 @@ export class MerchantOrdersService {
         subtotalVnd: true,
       },
     },
+    printLogs: {
+      select: {
+        id: true,
+        status: true,
+        errorMessage: true,
+        printedBy: true,
+        createdAt: true,
+        printerId: true,
+      },
+      orderBy: { createdAt: 'desc' as const },
+      take: 20,
+    },
   };
 
   private readonly detailInclude = {
@@ -273,6 +285,15 @@ export class MerchantOrdersService {
         },
       },
       orderBy: { createdAt: 'asc' as const },
+    },
+    printLogs: {
+      include: {
+        printer: {
+          select: { id: true, name: true, ipAddress: true, port: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' as const },
+      take: 10,
     },
   };
 }
