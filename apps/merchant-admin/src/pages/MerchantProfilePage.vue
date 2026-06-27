@@ -415,6 +415,8 @@ function mapValidationMessage(message: string) {
       </select>
     </label>
     <label>{{ t('city') }}<input v-model="form.city" /></label>
+    <label>{{ t('district') }}<input v-model="form.district" /></label>
+    <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" /></label>
     <section class="span-2 homepage-categories homepage-categories-inline">
       <div class="section-heading compact">
         <strong>{{ t('homepageCategories') }}</strong>
@@ -435,8 +437,6 @@ function mapValidationMessage(message: string) {
         </label>
       </div>
     </section>
-    <label>{{ t('district') }}<input v-model="form.district" /></label>
-    <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" /></label>
     <div class="span-2 image-block">
       <div class="section-heading">
         <h3>{{ t('uploadLogo') }}</h3>
