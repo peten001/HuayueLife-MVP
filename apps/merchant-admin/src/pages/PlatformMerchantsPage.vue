@@ -357,21 +357,21 @@ function resetFilters() {
       <h2>{{ isEditing ? t('editMerchant') : t('createMerchant') }}</h2>
       <label v-if="isEditing" class="span-2">{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
       <label class="span-2">{{ t('contactPhone') }}<input v-model="form.contactPhone" required maxlength="32" /></label>
-      <section class="span-2">
+      <section class="span-2 platform-homepage-categories">
         <strong>{{ t('homepageCategories') }}</strong>
-        <p class="hint">{{ t('homepageCategoriesHint') }}</p>
-        <div class="actions-line">
+        <div class="platform-category-options">
           <label
             v-for="item in homepageCategoryOptions"
             :key="item.value"
-            class="check"
+            class="platform-category-option"
+            :class="{ selected: form.homepageCategoryKeys.includes(item.value) }"
           >
             <input
               type="checkbox"
               :checked="form.homepageCategoryKeys.includes(item.value)"
               @change="toggleHomepageCategory(item.value)"
             />
-            {{ item.label }}
+            <span>{{ item.label }}</span>
           </label>
         </div>
       </section>
@@ -549,3 +549,61 @@ function resetFilters() {
     <p v-else-if="filteredMerchants.length === 0" class="empty">{{ t('noMatchingMerchants') }}</p>
   </section>
 </template>
+
+<style scoped>
+.platform-homepage-categories {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e6dc;
+  border-radius: 10px;
+  background: #f8fcf9;
+}
+
+.platform-homepage-categories strong {
+  font-size: 16px;
+}
+
+.platform-category-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.platform-category-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 120px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #cfe0d4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #21412a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.02);
+}
+
+.platform-category-option.selected {
+  border-color: #20a464;
+  background: #eefaf3;
+  color: #12683d;
+}
+
+.platform-category-option input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: #20a464;
+}
+
+.platform-category-option span {
+  display: inline-block;
+  white-space: nowrap;
+}
+</style>

@@ -26,16 +26,23 @@ export class MerchantProfileService {
   }
 
   async updateProfile(merchantId: bigint, dto: UpdateMerchantProfileDto) {
-    await this.getProfile(merchantId);
+    const currentProfile = await this.getProfile(merchantId);
     validateRequiredUpdateValues(dto);
 
     const { homepageCategoryKeys, ...profileDto } = dto;
+    const nextHomepageCategoryKeys =
+      homepageCategoryKeys === undefined
+        ? undefined
+        : mergeMerchantEditableHomepageCategoryKeys(
+            currentProfile.homepageCategoryKeys,
+            homepageCategoryKeys,
+          );
     const data = stripUndefined({
       ...profileDto,
       homepageCategoryKeys:
-        homepageCategoryKeys === undefined
+        nextHomepageCategoryKeys === undefined
           ? undefined
-          : stringifyHomepageCategoryKeys(homepageCategoryKeys),
+          : stringifyHomepageCategoryKeys(nextHomepageCategoryKeys),
       minimumDeliveryAmountVnd:
         dto.minimumDeliveryAmountVnd === undefined
           ? undefined
@@ -90,6 +97,19 @@ function validateRequiredUpdateValues(dto: UpdateMerchantProfileDto) {
   assertNumber(dto.minimumDeliveryAmountVnd, 'minimumDeliveryAmountVnd');
   assertNumber(dto.deliveryFeeVnd, 'deliveryFeeVnd');
   assertNumber(dto.deliveryRadiusKm, 'deliveryRadiusKm');
+}
+
+function mergeMerchantEditableHomepageCategoryKeys(
+  existingKeys: string[],
+  requestedKeys: string[],
+) {
+  const preservedPlatformKeys = parseHomepageCategoryKeys(existingKeys).filter(
+    (key) => key === 'popular_food',
+  );
+  const editableKeys = parseHomepageCategoryKeys(requestedKeys).filter(
+    (key) => key !== 'popular_food',
+  );
+  return Array.from(new Set([...preservedPlatformKeys, ...editableKeys]));
 }
 
 function assertNumber(value: number | undefined, field: string) {

@@ -44,7 +44,17 @@ const provinceOptions = computed(() => [
   { value: 'Bac Giang', label: t('provinceBacGiang') },
   { value: 'Bac Ninh', label: t('provinceBacNinh') },
 ]);
-const homepageCategoryOptions = computed(() => [
+const platformPopularCategoryKey = 'popular_food';
+const editableHomepageCategoryOptions = computed(() => [
+  { value: 'chinese_dining', label: t('homepageCategoryChinese') },
+  { value: 'noodles_snacks', label: t('homepageCategoryNoodles') },
+  { value: 'coffee_milk_tea', label: t('homepageCategoryDrinks') },
+  { value: 'flowers_gifts', label: t('homepageCategoryFlowers') },
+  { value: 'fresh_fruit', label: t('homepageCategoryFresh') },
+  { value: 'convenience_store', label: t('homepageCategoryConvenience') },
+  { value: 'vietnamese_food', label: t('homepageCategoryVietnamese') },
+]);
+const allHomepageCategoryOptions = computed(() => [
   { value: 'popular_food', label: t('homepageCategoryPopular') },
   { value: 'chinese_dining', label: t('homepageCategoryChinese') },
   { value: 'noodles_snacks', label: t('homepageCategoryNoodles') },
@@ -54,6 +64,9 @@ const homepageCategoryOptions = computed(() => [
   { value: 'convenience_store', label: t('homepageCategoryConvenience') },
   { value: 'vietnamese_food', label: t('homepageCategoryVietnamese') },
 ]);
+const editableHomepageCategoryKeys = computed(
+  () => new Set(editableHomepageCategoryOptions.value.map((item) => item.value)),
+);
 
 const completion = computed(() =>
   profile.value
@@ -211,10 +224,20 @@ function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
   form.logoUrl = nextProfile.logoUrl ?? '';
   form.coverUrl = nextProfile.coverUrl ?? '';
   form.notice = nextProfile.notice ?? '';
-  form.homepageCategoryKeys = normalizeHomepageCategoryKeys(nextProfile.homepageCategoryKeys ?? []);
+  form.homepageCategoryKeys = normalizeHomepageCategoryKeys(nextProfile.homepageCategoryKeys ?? [])
+    .filter((key) => editableHomepageCategoryKeys.value.has(key));
 }
 
 function buildPayload(): UpdateMerchantProfilePayload {
+  const originalHomepageCategoryKeys = normalizeHomepageCategoryKeys(
+    profile.value?.homepageCategoryKeys ?? [],
+  );
+  const preservedPlatformCategories = originalHomepageCategoryKeys.filter(
+    (key) => key === platformPopularCategoryKey,
+  );
+  const editedHomepageCategoryKeys = form.homepageCategoryKeys.filter((key) =>
+    editableHomepageCategoryKeys.value.has(key),
+  );
   const payload: UpdateMerchantProfilePayload = {
     nameZh: trimOrUndefined(form.nameZh),
     nameVi: trimOrUndefined(form.nameVi),
@@ -227,13 +250,16 @@ function buildPayload(): UpdateMerchantProfilePayload {
     logoUrl: trimOrUndefined(form.logoUrl),
     coverUrl: trimOrUndefined(form.coverUrl),
     notice: trimOrUndefined(form.notice),
-    homepageCategoryKeys: [...form.homepageCategoryKeys],
+    homepageCategoryKeys: Array.from(
+      new Set([...preservedPlatformCategories, ...editedHomepageCategoryKeys]),
+    ),
   };
 
   return payload;
 }
 
 function toggleHomepageCategory(value: string) {
+  if (!editableHomepageCategoryKeys.value.has(value)) return;
   if (form.homepageCategoryKeys.includes(value)) {
     form.homepageCategoryKeys = form.homepageCategoryKeys.filter((item) => item !== value);
     return;
@@ -252,7 +278,7 @@ function normalizeHomepageCategoryKeys(keys: string[]) {
           if (normalized === 'drinks') return 'coffee_milk_tea';
           return normalized;
         })
-        .filter((key) => homepageCategoryOptions.value.some((item) => item.value === key)),
+        .filter((key) => allHomepageCategoryOptions.value.some((item) => item.value === key)),
     ),
   );
 }
@@ -391,16 +417,14 @@ function mapValidationMessage(message: string) {
     <label>{{ t('city') }}<input v-model="form.city" /></label>
     <section class="span-2 homepage-categories homepage-categories-inline">
       <div class="section-heading compact">
-        <div>
-          <strong>{{ t('homepageCategories') }}</strong>
-          <p class="hint">{{ t('homepageCategoriesHint') }}</p>
-        </div>
+        <strong>{{ t('homepageCategories') }}</strong>
       </div>
       <div class="category-options">
         <label
-          v-for="item in homepageCategoryOptions"
+          v-for="item in editableHomepageCategoryOptions"
           :key="item.value"
           class="check-option"
+          :class="{ selected: form.homepageCategoryKeys.includes(item.value) }"
         >
           <input
             type="checkbox"
@@ -522,13 +546,13 @@ function mapValidationMessage(message: string) {
 
 .homepage-categories {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .homepage-categories-inline {
-  padding: 14px;
+  padding: 12px;
   border: 1px solid #d8e6dc;
-  border-radius: 14px;
+  border-radius: 10px;
   background: #f8fcf9;
 }
 
@@ -544,21 +568,44 @@ function mapValidationMessage(message: string) {
 .category-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 
 .check-option {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 12px;
+  min-width: 120px;
+  height: 44px;
+  padding: 0 16px;
   border: 1px solid #cfe0d4;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #ffffff;
   font-size: 14px;
   font-weight: 600;
   color: #21412a;
+  line-height: 1;
+  white-space: nowrap;
   box-shadow: 0 1px 0 rgba(16, 24, 40, 0.02);
+}
+
+.check-option.selected {
+  border-color: #20a464;
+  background: #eefaf3;
+  color: #12683d;
+}
+
+.check-option input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: #20a464;
+}
+
+.check-option span {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .hidden-file {
