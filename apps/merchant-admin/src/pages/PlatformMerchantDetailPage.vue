@@ -4,10 +4,12 @@ import { useRoute, useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import { getPlatformMerchantDetail } from '@/api/platform';
+import { useI18n } from '@/i18n';
 import type { PlatformMerchantDetailResponse } from '@/types/api';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const detail = ref<PlatformMerchantDetailResponse>();
 const loading = ref(false);
 const message = ref('');
@@ -199,14 +201,17 @@ function backToList() {
           <span v-else>{{ detail.merchant.name.slice(0, 1) }}</span>
         </div>
         <div class="merchant-detail-main">
-          <div class="merchant-detail-title-row">
-            <h2>{{ detail.merchant.name }}</h2>
-            <span class="status-pill" :class="detail.merchant.isActive ? 'is-active' : 'is-disabled'">
-              {{ statusLabel(detail.merchant.status) }}
-            </span>
-            <span class="popular-pill" :class="{ active: detail.merchant.manualPopular }">
-              {{ detail.merchant.manualPopular ? '已推荐' : '未推荐' }}
-            </span>
+        <div class="merchant-detail-title-row">
+          <h2>{{ detail.merchant.name }}</h2>
+          <span class="status-pill" :class="detail.merchant.isActive ? 'is-active' : 'is-disabled'">
+            {{ statusLabel(detail.merchant.status) }}
+          </span>
+          <span class="status-pill" :class="detail.merchant.isVisibleOnClient ? 'is-active' : 'is-muted'">
+            {{ detail.merchant.isVisibleOnClient ? t('clientVisibilityEnabled') : t('clientVisibilityDisabled') }}
+          </span>
+          <span class="popular-pill" :class="{ active: detail.merchant.manualPopular }">
+            {{ detail.merchant.manualPopular ? '已推荐' : '未推荐' }}
+          </span>
           </div>
           <p>
             账号：{{ detail.merchant.account }} · 手机号：{{ detail.merchant.phone }} · 资料完整度
@@ -247,6 +252,8 @@ function backToList() {
           <dd>{{ detail.merchant.id }}</dd>
           <dt>营业状态</dt>
           <dd>{{ statusLabel(detail.merchant.status) }}</dd>
+          <dt>{{ t('clientVisibility') }}</dt>
+          <dd>{{ detail.merchant.isVisibleOnClient ? t('clientVisibilityEnabled') : t('clientVisibilityDisabled') }}</dd>
           <dt>联系方式</dt>
           <dd>{{ detail.merchant.phone }}</dd>
           <dt>城市 / 区域</dt>

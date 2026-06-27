@@ -27,6 +27,15 @@ onLoad(async (options) => {
     merchant.value = await getMerchant(String(options?.id ?? ''));
     favoriteState.value = isFavorite(merchant.value.id);
   } catch (caught) {
+    const message = caught instanceof Error ? caught.message : '';
+    if (
+      message.includes('Merchant not found or unavailable') ||
+      message.includes('商家不存在') ||
+      message.includes('商家不可用')
+    ) {
+      error.value = t('merchantUnavailable');
+      return;
+    }
     error.value = caught instanceof Error ? caught.message : t('merchantLoadFailed');
   }
 });

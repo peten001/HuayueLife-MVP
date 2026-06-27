@@ -51,6 +51,7 @@ export interface MerchantProfile {
   minimumDeliveryAmountVnd: string;
   deliveryFeeVnd: string;
   deliveryRadiusKm: string;
+  isVisibleOnClient: boolean;
   dineInEnabled: boolean;
   pickupEnabled: boolean;
   deliveryEnabled: boolean;
@@ -95,6 +96,7 @@ export interface PlatformMerchantListItem {
   contactPhone: string;
   homepageCategoryKeys: string[];
   manualPopular: boolean;
+  isVisibleOnClient: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
   createdAt: string;
   updatedAt: string;
@@ -126,6 +128,7 @@ export interface PlatformMerchantDetailResponse {
     coverUrl?: string | null;
     homepageCategoryKeys: string[];
     manualPopular: boolean;
+    isVisibleOnClient: boolean;
     profileCompletion: number;
     createdAt: string;
     updatedAt: string;

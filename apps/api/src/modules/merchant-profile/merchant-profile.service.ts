@@ -66,6 +66,7 @@ export class MerchantProfileService {
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      isVisibleOnClient: merchant.isVisibleOnClient,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),

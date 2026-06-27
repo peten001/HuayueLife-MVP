@@ -41,6 +41,7 @@ type PlatformMerchantListItem = {
   contactPhone: string;
   homepageCategoryKeys: string[];
   manualPopular: boolean;
+  isVisibleOnClient: boolean;
   status: MerchantStatus;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +82,7 @@ type PlatformMerchantDetailResponse = {
     coverUrl: string | null;
     homepageCategoryKeys: string[];
     manualPopular: boolean;
+    isVisibleOnClient: boolean;
     profileCompletion: number;
     createdAt: string;
     updatedAt: string;
@@ -322,6 +324,7 @@ export class PlatformMerchantsService {
         coverUrl: merchant.coverUrl,
         homepageCategoryKeys: parseHomepageCategoryKeys(merchant.homepageCategoryKeys),
         manualPopular: Boolean(merchant.manualPopular),
+        isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
         profileCompletion: profile.completion,
         createdAt: merchant.createdAt.toISOString(),
         updatedAt: merchant.updatedAt.toISOString(),
@@ -400,6 +403,8 @@ export class PlatformMerchantsService {
           dto.homepageCategoryKeys,
         ),
         manualPopular: Boolean(dto.manualPopular),
+        isVisibleOnClient:
+          dto.isVisibleOnClient === undefined ? true : dto.isVisibleOnClient,
         status: MerchantStatus.ACTIVE,
         staff: {
           create: {
@@ -445,6 +450,9 @@ export class PlatformMerchantsService {
     }
     if (dto.manualPopular !== undefined) {
       data.manualPopular = dto.manualPopular;
+    }
+    if (dto.isVisibleOnClient !== undefined) {
+      data.isVisibleOnClient = dto.isVisibleOnClient;
     }
 
     await this.prisma.merchant.update({
@@ -521,7 +529,7 @@ export class PlatformMerchantsService {
   private async findById(id: bigint) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id },
-      include: {
+        include: {
         staff: {
           where: { role: StaffRole.OWNER },
           select: {
@@ -578,6 +586,7 @@ export class PlatformMerchantsService {
         merchant.homepageCategoryKeys,
       ),
       manualPopular: Boolean(merchant.manualPopular),
+      isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
       status: merchant.status,
       createdAt: merchant.createdAt.toISOString(),
       updatedAt: merchant.updatedAt.toISOString(),

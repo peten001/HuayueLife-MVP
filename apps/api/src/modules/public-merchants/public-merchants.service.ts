@@ -50,6 +50,7 @@ export class PublicMerchantsService {
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
       merchantType: 'RESTAURANT',
+      isVisibleOnClient: true,
     };
 
     const include = {
@@ -160,6 +161,7 @@ export class PublicMerchantsService {
         merchant: {
           status: 'ACTIVE',
           merchantType: 'RESTAURANT',
+          isVisibleOnClient: true,
         },
       },
       include: {
@@ -181,6 +183,7 @@ export class PublicMerchantsService {
         id,
         status: 'ACTIVE',
         merchantType: 'RESTAURANT',
+        isVisibleOnClient: true,
       },
     });
     if (!merchant) {

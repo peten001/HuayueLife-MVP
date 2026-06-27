@@ -24,4 +24,8 @@ export class CreatePlatformMerchantDto {
   @IsOptional()
   @IsBoolean()
   manualPopular?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisibleOnClient?: boolean;
 }

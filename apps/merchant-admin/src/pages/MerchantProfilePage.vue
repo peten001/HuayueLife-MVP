@@ -389,6 +389,28 @@ function mapValidationMessage(message: string) {
       </select>
     </label>
     <label>{{ t('city') }}<input v-model="form.city" /></label>
+    <section class="span-2 homepage-categories homepage-categories-inline">
+      <div class="section-heading compact">
+        <div>
+          <strong>{{ t('homepageCategories') }}</strong>
+          <p class="hint">{{ t('homepageCategoriesHint') }}</p>
+        </div>
+      </div>
+      <div class="category-options">
+        <label
+          v-for="item in homepageCategoryOptions"
+          :key="item.value"
+          class="check-option"
+        >
+          <input
+            type="checkbox"
+            :checked="form.homepageCategoryKeys.includes(item.value)"
+            @change="toggleHomepageCategory(item.value)"
+          />
+          <span>{{ item.label }}</span>
+        </label>
+      </div>
+    </section>
     <label>{{ t('district') }}<input v-model="form.district" /></label>
     <label class="span-2">{{ t('addressDetail') }}<input v-model="form.addressDetail" /></label>
     <div class="span-2 image-block">
@@ -442,26 +464,6 @@ function mapValidationMessage(message: string) {
       <small class="hint">{{ uploadingCover ? t('uploadingImage') : t('coverUploadHint') }}</small>
     </div>
     <label class="span-2">{{ t('merchantNotice') }}<textarea v-model="form.notice" rows="4" /></label>
-    <section class="span-2 homepage-categories">
-      <div>
-        <strong>{{ t('homepageCategories') }}</strong>
-        <p class="hint">{{ t('homepageCategoriesHint') }}</p>
-      </div>
-      <div class="category-options">
-        <label
-          v-for="item in homepageCategoryOptions"
-          :key="item.value"
-          class="check-option"
-        >
-          <input
-            type="checkbox"
-            :checked="form.homepageCategoryKeys.includes(item.value)"
-            @change="toggleHomepageCategory(item.value)"
-          />
-          <span>{{ item.label }}</span>
-        </label>
-      </div>
-    </section>
     <div class="form-actions span-2">
       <span class="message">{{ message }}</span>
       <button :disabled="loading">{{ loading ? t('saving') : t('saveProfile') }}</button>
@@ -523,6 +525,22 @@ function mapValidationMessage(message: string) {
   gap: 12px;
 }
 
+.homepage-categories-inline {
+  padding: 14px;
+  border: 1px solid #d8e6dc;
+  border-radius: 14px;
+  background: #f8fcf9;
+}
+
+.section-heading.compact {
+  margin: 0;
+}
+
+.section-heading.compact strong {
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
 .category-options {
   display: flex;
   flex-wrap: wrap;
@@ -534,9 +552,13 @@ function mapValidationMessage(message: string) {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid #d8e6dc;
-  border-radius: 10px;
-  background: #f7fbf8;
+  border: 1px solid #cfe0d4;
+  border-radius: 12px;
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #21412a;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.02);
 }
 
 .hidden-file {

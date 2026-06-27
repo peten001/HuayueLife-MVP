@@ -31,4 +31,8 @@ export class UpdatePlatformMerchantDto {
   @IsOptional()
   @IsBoolean()
   manualPopular?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisibleOnClient?: boolean;
 }
