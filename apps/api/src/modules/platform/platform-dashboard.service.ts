@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MerchantStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { parseHomepageCategoryKeys } from '../shared/homepage-category-keys';
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const PREPARING_STATUSES: OrderStatus[] = [
@@ -217,19 +218,4 @@ function formatVietnamDate(date: Date) {
   const month = String(vietnamTime.getUTCMonth() + 1).padStart(2, '0');
   const day = String(vietnamTime.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function parseHomepageCategoryKeys(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string');
-  }
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
-  } catch {
-    return [];
-  }
 }

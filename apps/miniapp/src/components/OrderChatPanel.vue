@@ -291,16 +291,23 @@ function updateKeyboardHeight(nextHeight: number) {
   keyboardHeight.value = normalized;
 }
 
-function handleComposerFocus(event: { detail?: { height?: number } }) {
-  updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
+function readKeyboardHeight(event: unknown) {
+  const detail = event && typeof event === 'object' && 'detail' in event
+    ? (event as { detail?: { height?: number } }).detail
+    : undefined;
+  return detail?.height ?? 0;
+}
+
+function handleComposerFocus(event: unknown) {
+  updateKeyboardHeight(readKeyboardHeight(event) || keyboardHeight.value);
 }
 
 function handleComposerBlur() {
   updateKeyboardHeight(0);
 }
 
-function handleKeyboardHeightChange(event: { detail?: { height?: number } }) {
-  updateKeyboardHeight(event.detail?.height ?? 0);
+function handleKeyboardHeightChange(event: unknown) {
+  updateKeyboardHeight(readKeyboardHeight(event));
 }
 
 async function loadConversation(initial = false) {

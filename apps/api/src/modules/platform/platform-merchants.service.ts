@@ -18,6 +18,10 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
+import {
+  parseHomepageCategoryKeys,
+  stringifyHomepageCategoryKeys,
+} from '../shared/homepage-category-keys';
 
 type MerchantWithOwner = Merchant & {
   staff: Array<{
@@ -728,29 +732,6 @@ export class PlatformMerchantsService {
   }
 }
 
-const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
-
-function stringifyHomepageCategoryKeys(value: string[] | undefined) {
-  if (!value) return '[]';
-  return JSON.stringify(
-    Array.from(new Set(value.filter((item) => HOMEPAGE_CATEGORY_KEYS.has(item)))),
-  );
-}
-
-function parseHomepageCategoryKeys(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
-  }
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
-      : [];
-  } catch {
-    return [];
-  }
-}
 
 function buildTrendRows(
   start: Date,

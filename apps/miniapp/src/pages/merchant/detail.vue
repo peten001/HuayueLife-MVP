@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { getMerchant } from '@/api/catalog';
 import {
@@ -10,22 +10,36 @@ import {
 } from '@/i18n';
 import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
+import { isFavorite, toggleFavorite } from '@/utils/favorites';
 import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
 const merchant = ref<MerchantDetail | null>(null);
 const error = ref('');
 const { locale, t } = useI18n();
+const favoriteState = ref(false);
+const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
 
 usePageTitle(() => t('merchantDetailTitle'));
 
 onLoad(async (options) => {
   try {
     merchant.value = await getMerchant(String(options?.id ?? ''));
+    favoriteState.value = isFavorite(merchant.value.id);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : t('merchantLoadFailed');
   }
 });
+
+function handleToggleFavorite() {
+  if (!merchant.value) return;
+  const result = toggleFavorite(merchant.value);
+  favoriteState.value = result.saved;
+  uni.showToast({
+    title: result.saved ? t('favoriteSavedToast') : t('favoriteRemovedToast'),
+    icon: 'none',
+  });
+}
 
 async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   if (!merchant.value) return;
@@ -214,10 +228,15 @@ function handlePhoneTap() {
       </view>
       <view class="card">
         <view class="headline">
-          <text class="title">{{ merchantName(merchant, locale) }}</text>
-          <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
-            {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
-          </text>
+          <view class="headline-main">
+            <text class="title">{{ merchantName(merchant, locale) }}</text>
+            <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
+              {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+            </text>
+          </view>
+          <button class="favorite-button" @tap="handleToggleFavorite">
+            {{ favoriteLabel }}
+          </button>
         </view>
         <view class="info-line info-action" @tap="handleAddressTap">
           <text class="info-icon">址</text>
@@ -327,11 +346,35 @@ function handlePhoneTap() {
   gap: 20rpx;
 }
 
+.headline-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
 .title {
   min-width: 0;
   color: #1f2d24;
   font-size: 40rpx;
   font-weight: 800;
+}
+
+.favorite-button {
+  flex: none;
+  margin: 0;
+  padding: 10rpx 18rpx;
+  border: 0;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.favorite-button::after {
+  border: 0;
 }
 
 .status {

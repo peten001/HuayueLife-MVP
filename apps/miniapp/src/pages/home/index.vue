@@ -8,6 +8,16 @@ import { useAuthStore } from '@/stores/auth';
 import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
 
+type ServiceCategoryKey =
+  | 'popular_food'
+  | 'chinese_dining'
+  | 'noodles_snacks'
+  | 'coffee_milk_tea'
+  | 'flowers_gifts'
+  | 'fresh_fruit'
+  | 'convenience_store'
+  | 'vietnamese_food';
+
 const auth = useAuthStore();
 const locationStore = useLocationStore();
 const { locale, t } = useI18n();
@@ -16,7 +26,7 @@ const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
 const requestSeq = ref(0);
 const searchKeyword = ref('');
-const selectedCategory = ref('');
+const selectedCategory = ref<ServiceCategoryKey | ''>('');
 const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
 
 const cityIndex = computed({
@@ -36,31 +46,20 @@ const currentCityLabel = computed(
   () => cities.value.find((city) => city.value === normalizedCity.value)?.label || normalizedCity.value,
 );
 
-const foodCategories = computed(() => [
-  {
-    key: 'popular',
-    mark: '热',
-    label: t('homeCategoryPopular'),
-    tone: 'green',
-  },
-  {
-    key: 'chinese',
-    mark: '餐',
-    label: t('homeCategoryChinese'),
-    tone: 'orange',
-  },
-  {
-    key: 'noodles',
-    mark: '粉',
-    label: t('homeCategoryNoodles'),
-    tone: 'mint',
-  },
-  {
-    key: 'drinks',
-    mark: '饮',
-    label: t('homeCategoryDrinks'),
-    tone: 'yellow',
-  },
+const foodCategories = computed<Array<{
+  key: ServiceCategoryKey;
+  mark: string;
+  label: string;
+  tone: string;
+}>>(() => [
+  { key: 'popular_food', mark: '热', label: t('homeCategoryPopular'), tone: 'green' },
+  { key: 'chinese_dining', mark: '中', label: t('homeCategoryChinese'), tone: 'orange' },
+  { key: 'noodles_snacks', mark: '面', label: t('homeCategoryNoodles'), tone: 'mint' },
+  { key: 'coffee_milk_tea', mark: '饮', label: t('homeCategoryDrinks'), tone: 'yellow' },
+  { key: 'flowers_gifts', mark: '花', label: t('homeCategoryFlowers'), tone: 'rose' },
+  { key: 'fresh_fruit', mark: '鲜', label: t('homeCategoryFresh'), tone: 'blue' },
+  { key: 'convenience_store', mark: '便', label: t('homeCategoryConvenience'), tone: 'teal' },
+  { key: 'vietnamese_food', mark: '越', label: t('homeCategoryVietnamese'), tone: 'violet' },
 ]);
 
 const cityFilteredMerchants = computed(() => {
@@ -97,6 +96,11 @@ const filteredMerchants = computed(() => {
   console.log('[home] merchants after search filter', list.length, list.map((item) => item.nameZh));
   console.log('[home] final merchant names', list.map((item) => item.nameZh));
   return list;
+});
+
+const activeCategoryLabel = computed(() => {
+  if (!selectedCategory.value) return t('homeNearbyRestaurants');
+  return foodCategories.value.find((item) => item.key === selectedCategory.value)?.label || t('homeNearbyRestaurants');
 });
 
 usePageTitle(() => t('homeTitle'));
@@ -211,23 +215,57 @@ function showTableOrderingTip() {
   });
 }
 
-function toggleCategory(categoryKey: string) {
-  selectedCategory.value =
-    selectedCategory.value === categoryKey ? '' : categoryKey;
+function toggleCategory(categoryKey: ServiceCategoryKey) {
+  selectedCategory.value = selectedCategory.value === categoryKey ? '' : categoryKey;
+  const matched = cityFilteredMerchants.value.filter((merchant) => merchantMatchesCategory(merchant, categoryKey));
+  if (!matched.length) {
+    uni.showToast({
+      title: t('homeCategoryJoinSoon'),
+      icon: 'none',
+    });
+  }
 }
 
 function merchantMatchesCategory(
   merchant: MerchantSummary,
-  categoryKey: string,
+  categoryKey: ServiceCategoryKey,
 ) {
-  if (categoryKey === 'popular') {
-    return isPopularMerchant(merchant);
+  const configuredKeys = normalizeHomepageCategoryKeys(merchant.homepageCategoryKeys ?? []);
+  if (categoryKey === 'popular_food') {
+    return Boolean(merchant.manualPopular) || configuredKeys.includes(categoryKey);
   }
-  return (merchant.homepageCategoryKeys ?? []).includes(categoryKey);
+  return configuredKeys.includes(categoryKey);
 }
 
 function isPopularMerchant(merchant: MerchantSummary) {
-  return Boolean(merchant.manualPopular);
+  return Boolean(merchant.manualPopular) || merchantMatchesCategory(merchant, 'popular_food');
+}
+
+function normalizeHomepageCategoryKeys(keys: string[]) {
+  return Array.from(
+    new Set(
+      keys
+        .map((key) => {
+          const normalized = String(key).trim();
+          if (normalized === 'chinese') return 'chinese_dining';
+          if (normalized === 'noodles') return 'noodles_snacks';
+          if (normalized === 'drinks') return 'coffee_milk_tea';
+          return normalized;
+        })
+        .filter((key): key is ServiceCategoryKey => {
+          return [
+            'popular_food',
+            'chinese_dining',
+            'noodles_snacks',
+            'coffee_milk_tea',
+            'flowers_gifts',
+            'fresh_fruit',
+            'convenience_store',
+            'vietnamese_food',
+          ].includes(key as ServiceCategoryKey);
+        }),
+    ),
+  );
 }
 
 function merchantMatchesCity(merchant: MerchantSummary, city: 'Bac Giang' | 'Bac Ninh') {
@@ -349,21 +387,26 @@ const cityAliases: Record<string, string[]> = {
 
     <view id="nearby-restaurants" class="section-head">
       <view>
-        <text class="section-title">{{ t('homeNearbyRestaurants') }}</text>
+        <text class="section-title">{{ activeCategoryLabel }}</text>
         <text class="mode">{{ t('currentCity') }}：{{ currentCityLabel }}</text>
       </view>
-      <button class="location-button" @click="openNearbyMerchants">{{ t('relocate') }}</button>
+      <view class="section-actions">
+        <button v-if="selectedCategory" class="clear-button" @click="selectedCategory = ''">
+          {{ t('allMerchants') }}
+        </button>
+        <button class="location-button" @click="openNearbyMerchants">{{ t('relocate') }}</button>
+      </view>
     </view>
 
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!cityFilteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('noMerchants') }}</text>
-        <text class="empty-copy">{{ t('homeEmptyHint') }}</text>
+        <text class="empty-copy">{{ t('noMerchantsHint') }}</text>
       </view>
       <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
-        <text class="empty-title">当前分类暂无商家</text>
-        <text class="empty-copy">切换到全部或其他分类继续浏览</text>
+        <text class="empty-title">{{ t('homeCategoryJoinSoon') }}</text>
+        <text class="empty-copy">{{ t('homeEmptyHint') }}</text>
       </view>
       <view v-else-if="searchKeyword && !filteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('homeSearchEmpty') }}</text>
@@ -779,6 +822,26 @@ const cityAliases: Record<string, string[]> = {
 .category-yellow {
   color: #8c6b00;
   background: #fff7cf;
+}
+
+.category-rose {
+  color: #a23b6b;
+  background: #fde7f0;
+}
+
+.category-blue {
+  color: #2563a9;
+  background: #e3f0ff;
+}
+
+.category-teal {
+  color: #14786f;
+  background: #e2f8f5;
+}
+
+.category-violet {
+  color: #6d4bb3;
+  background: #efe6ff;
 }
 
 .category-label {

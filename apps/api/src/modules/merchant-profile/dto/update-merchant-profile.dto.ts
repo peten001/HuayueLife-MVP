@@ -13,8 +13,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-
-const HOMEPAGE_CATEGORY_KEYS = ['chinese', 'noodles', 'drinks'] as const;
+import { HOMEPAGE_CATEGORY_KEYS } from '../../shared/homepage-category-keys';
 
 export class UpdateMerchantProfileDto {
   @IsOptional()

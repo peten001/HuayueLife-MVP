@@ -6,6 +6,9 @@ import { Category, Merchant, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { isMerchantOpen } from '../../common/utils/merchant-hours';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
+import {
+  parseHomepageCategoryKeys,
+} from '../shared/homepage-category-keys';
 
 const PAGE_SIZE = 20;
 const CITY_VARIANTS: Record<'Bac Giang' | 'Bac Ninh', string[]> = {
@@ -223,23 +226,6 @@ export class PublicMerchantsService {
         ),
       ),
     };
-  }
-}
-
-const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
-
-function parseHomepageCategoryKeys(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
-  }
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
-      : [];
-  } catch {
-    return [];
   }
 }
 

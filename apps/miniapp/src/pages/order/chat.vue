@@ -87,8 +87,15 @@ function updateKeyboardHeight(nextHeight: number) {
   keyboardHeight.value = normalized;
 }
 
-function handleInputFocus(event: { detail?: { height?: number } }) {
-  updateKeyboardHeight(event.detail?.height ?? keyboardHeight.value);
+function readKeyboardHeight(event: unknown) {
+  const detail = event && typeof event === 'object' && 'detail' in event
+    ? (event as { detail?: { height?: number } }).detail
+    : undefined;
+  return detail?.height ?? 0;
+}
+
+function handleInputFocus(event: unknown) {
+  updateKeyboardHeight(readKeyboardHeight(event) || keyboardHeight.value);
   if (shouldStickToBottom.value) {
     scheduleScrollToBottom('focus');
   }
@@ -98,8 +105,8 @@ function handleInputBlur() {
   updateKeyboardHeight(0);
 }
 
-function handleKeyboardHeightChange(event: { detail?: { height?: number } }) {
-  updateKeyboardHeight(event.detail?.height ?? 0);
+function handleKeyboardHeightChange(event: unknown) {
+  updateKeyboardHeight(readKeyboardHeight(event));
   if (shouldStickToBottom.value) {
     scheduleScrollToBottom('keyboardheightchange');
   }

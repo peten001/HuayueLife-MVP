@@ -40,9 +40,14 @@ const form = reactive({
 
 const isEditing = computed(() => dialogMode.value === 'edit');
 const homepageCategoryOptions = computed(() => [
-  { value: 'chinese', label: t('homepageCategoryChinese') },
-  { value: 'noodles', label: t('homepageCategoryNoodles') },
-  { value: 'drinks', label: t('homepageCategoryDrinks') },
+  { value: 'popular_food', label: t('homepageCategoryPopular') },
+  { value: 'chinese_dining', label: t('homepageCategoryChinese') },
+  { value: 'noodles_snacks', label: t('homepageCategoryNoodles') },
+  { value: 'coffee_milk_tea', label: t('homepageCategoryDrinks') },
+  { value: 'flowers_gifts', label: t('homepageCategoryFlowers') },
+  { value: 'fresh_fruit', label: t('homepageCategoryFresh') },
+  { value: 'convenience_store', label: t('homepageCategoryConvenience') },
+  { value: 'vietnamese_food', label: t('homepageCategoryVietnamese') },
 ]);
 const regionOptions = computed(() =>
   Array.from(
@@ -127,7 +132,7 @@ function openEdit(item: PlatformMerchantListItem) {
   editingId.value = item.id;
   form.nameZh = item.nameZh;
   form.contactPhone = item.contactPhone;
-  form.homepageCategoryKeys = [...(item.homepageCategoryKeys ?? [])];
+  form.homepageCategoryKeys = normalizeHomepageCategoryKeys(item.homepageCategoryKeys ?? []);
   form.manualPopular = Boolean(item.manualPopular);
   dialogVisible.value = true;
   message.value = '';
@@ -254,6 +259,21 @@ function homepageCategoryText(keys: string[]) {
 
 function homepageCategoryLabels(keys: string[]) {
   return homepageCategoryOptions.value.filter((item) => keys.includes(item.value));
+}
+
+function normalizeHomepageCategoryKeys(keys: string[]) {
+  return Array.from(
+    new Set(
+      keys
+        .map((key) => {
+          if (key === 'chinese') return 'chinese_dining';
+          if (key === 'noodles') return 'noodles_snacks';
+          if (key === 'drinks') return 'coffee_milk_tea';
+          return key;
+        })
+        .filter((key) => homepageCategoryOptions.value.some((item) => item.value === key)),
+    ),
+  );
 }
 
 function regionText(item: PlatformMerchantListItem) {

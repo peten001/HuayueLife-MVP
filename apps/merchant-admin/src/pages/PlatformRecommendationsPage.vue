@@ -6,13 +6,21 @@ import { errorMessage } from '@/api/http';
 import { getPlatformMerchants, updatePlatformMerchant } from '@/api/platform';
 import type { PlatformMerchantListItem } from '@/types/api';
 
-type CategoryKey = 'popular' | 'chinese' | 'noodles' | 'drinks';
+type CategoryKey =
+  | 'popular_food'
+  | 'chinese_dining'
+  | 'noodles_snacks'
+  | 'coffee_milk_tea'
+  | 'flowers_gifts'
+  | 'fresh_fruit'
+  | 'convenience_store'
+  | 'vietnamese_food';
 
 const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
 const loading = ref(false);
 const message = ref('');
-const activeCategory = ref<CategoryKey>('popular');
+const activeCategory = ref<CategoryKey>('popular_food');
 const pickerVisible = ref(false);
 const pickerSavingId = ref('');
 
@@ -36,17 +44,25 @@ const categories: Array<{
   title: string;
   description: string;
 }> = [
-  { key: 'popular', title: '热门美食', description: '由平台手动推荐' },
-  { key: 'chinese', title: '中式正餐', description: '商家首页分类 chinese' },
-  { key: 'noodles', title: '粉面小吃', description: '商家首页分类 noodles' },
-  { key: 'drinks', title: '茶饮甜品', description: '商家首页分类 drinks' },
+  { key: 'popular_food', title: '热门美食', description: '由平台手动推荐' },
+  { key: 'chinese_dining', title: '中式正餐', description: '商家首页分类 chinese_dining' },
+  { key: 'noodles_snacks', title: '粉面小吃', description: '商家首页分类 noodles_snacks' },
+  { key: 'coffee_milk_tea', title: '咖啡奶茶', description: '商家首页分类 coffee_milk_tea' },
+  { key: 'flowers_gifts', title: '鲜花礼品', description: '商家首页分类 flowers_gifts' },
+  { key: 'fresh_fruit', title: '水果生鲜', description: '商家首页分类 fresh_fruit' },
+  { key: 'convenience_store', title: '便利超市', description: '商家首页分类 convenience_store' },
+  { key: 'vietnamese_food', title: '特色越餐', description: '商家首页分类 vietnamese_food' },
 ];
 
 const categoryLabelMap: Record<CategoryKey, string> = {
-  popular: '热门美食',
-  chinese: '中式正餐',
-  noodles: '粉面小吃',
-  drinks: '茶饮甜品',
+  popular_food: '热门美食',
+  chinese_dining: '中式正餐',
+  noodles_snacks: '粉面小吃',
+  coffee_milk_tea: '咖啡奶茶',
+  flowers_gifts: '鲜花礼品',
+  fresh_fruit: '水果生鲜',
+  convenience_store: '便利超市',
+  vietnamese_food: '特色越餐',
 };
 
 const cityOptions = computed(() =>
@@ -165,7 +181,7 @@ function goMerchantDetail(id: string) {
 }
 
 function merchantInCategory(item: PlatformMerchantListItem, category: CategoryKey) {
-  if (category === 'popular') return Boolean(item.manualPopular);
+  if (category === 'popular_food') return Boolean(item.manualPopular);
   return (item.homepageCategoryKeys ?? []).includes(category);
 }
 
@@ -182,7 +198,7 @@ async function setMerchantCategory(item: PlatformMerchantListItem) {
   pickerSavingId.value = item.id;
   message.value = '';
   try {
-    if (activeCategory.value === 'popular') {
+    if (activeCategory.value === 'popular_food') {
       if (!item.manualPopular) {
         await updatePlatformMerchant(item.id, { manualPopular: true });
       }
@@ -203,7 +219,7 @@ async function setMerchantCategory(item: PlatformMerchantListItem) {
 async function removeFromCategory(item: PlatformMerchantListItem) {
   message.value = '';
   try {
-    if (activeCategory.value === 'popular') {
+    if (activeCategory.value === 'popular_food') {
       await updatePlatformMerchant(item.id, { manualPopular: false });
     } else {
       await updatePlatformMerchant(item.id, {
@@ -211,7 +227,7 @@ async function removeFromCategory(item: PlatformMerchantListItem) {
       });
     }
     await loadMerchants();
-    message.value = activeCategory.value === 'popular'
+    message.value = activeCategory.value === 'popular_food'
       ? '已取消热门推荐'
       : `已移出${activeCategoryMeta.value.title}`;
   } catch (error) {
@@ -252,7 +268,7 @@ function compareMerchants(left: PlatformMerchantListItem, right: PlatformMerchan
 
 function categoryTags(item: PlatformMerchantListItem) {
   const tags = (item.homepageCategoryKeys ?? []).map((key) => categoryLabelMap[key as CategoryKey] ?? key);
-  if (item.manualPopular) tags.unshift(categoryLabelMap.popular);
+  if (item.manualPopular) tags.unshift(categoryLabelMap.popular_food);
   return Array.from(new Set(tags));
 }
 </script>
@@ -284,11 +300,27 @@ function categoryTags(item: PlatformMerchantListItem) {
         </div>
         <div>
           <strong>粉面小吃</strong>
-          <p>商家首页分类 noodles</p>
+          <p>商家首页分类 noodles_snacks</p>
         </div>
         <div>
-          <strong>茶饮甜品</strong>
-          <p>商家首页分类 drinks</p>
+          <strong>咖啡奶茶</strong>
+          <p>商家首页分类 coffee_milk_tea</p>
+        </div>
+        <div>
+          <strong>鲜花礼品</strong>
+          <p>商家首页分类 flowers_gifts</p>
+        </div>
+        <div>
+          <strong>水果生鲜</strong>
+          <p>商家首页分类 fresh_fruit</p>
+        </div>
+        <div>
+          <strong>便利超市</strong>
+          <p>商家首页分类 convenience_store</p>
+        </div>
+        <div>
+          <strong>特色越餐</strong>
+          <p>商家首页分类 vietnamese_food</p>
         </div>
       </div>
       <p class="hint recommendation-tip">调整后将影响小程序首页商家分类展示。</p>
@@ -419,7 +451,7 @@ function categoryTags(item: PlatformMerchantListItem) {
                 <div class="actions recommendation-actions">
                   <button class="secondary small" @click="goMerchantDetail(item.id)">查看详情</button>
                   <button
-                    v-if="activeCategory === 'popular'"
+                    v-if="activeCategory === 'popular_food'"
                     class="warning small"
                     @click="removeFromCategory(item)"
                   >
@@ -515,14 +547,14 @@ function categoryTags(item: PlatformMerchantListItem) {
                   <div class="actions recommendation-actions">
                     <button class="secondary small" @click="goMerchantDetail(item.id)">查看详情</button>
                     <button
-                      v-if="activeCategory === 'popular' && item.manualPopular"
+                      v-if="activeCategory === 'popular_food' && item.manualPopular"
                       class="secondary small"
                       disabled
                     >
                       已推荐
                     </button>
                     <button
-                      v-else-if="activeCategory !== 'popular' && merchantInCategory(item, activeCategory)"
+                      v-else-if="activeCategory !== 'popular_food' && merchantInCategory(item, activeCategory)"
                       class="secondary small"
                       disabled
                     >
@@ -534,7 +566,7 @@ function categoryTags(item: PlatformMerchantListItem) {
                       :disabled="pickerSavingId === item.id"
                       @click="setMerchantCategory(item)"
                     >
-                      {{ activeCategory === 'popular' ? '设为热门推荐' : '添加到本分类' }}
+                      {{ activeCategory === 'popular_food' ? '设为热门推荐' : '添加到本分类' }}
                     </button>
                   </div>
                 </td>

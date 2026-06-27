@@ -6,6 +6,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { UpdateMerchantProfileDto } from './dto/update-merchant-profile.dto';
+import {
+  parseHomepageCategoryKeys,
+  stringifyHomepageCategoryKeys,
+} from '../shared/homepage-category-keys';
 
 @Injectable()
 export class MerchantProfileService {
@@ -102,28 +106,4 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
   ) as Partial<T>;
-}
-
-const HOMEPAGE_CATEGORY_KEYS = new Set(['chinese', 'noodles', 'drinks']);
-
-function stringifyHomepageCategoryKeys(value: string[] | undefined) {
-  if (!value) return '[]';
-  return JSON.stringify(
-    Array.from(new Set(value.filter((item) => HOMEPAGE_CATEGORY_KEYS.has(item)))),
-  );
-}
-
-function parseHomepageCategoryKeys(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item));
-  }
-  if (typeof value !== 'string' || !value.trim()) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => HOMEPAGE_CATEGORY_KEYS.has(item))
-      : [];
-  } catch {
-    return [];
-  }
 }

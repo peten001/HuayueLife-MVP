@@ -33,7 +33,6 @@ export interface MerchantSummary {
   deliveryRadiusKm: string;
   homepageCategoryKeys?: string[];
   manualPopular?: boolean;
-  categoryNames?: string[];
 }
 
 export interface MerchantDetail extends MerchantSummary {

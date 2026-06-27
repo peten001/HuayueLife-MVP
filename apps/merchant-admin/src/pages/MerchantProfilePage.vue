@@ -45,9 +45,14 @@ const provinceOptions = computed(() => [
   { value: 'Bac Ninh', label: t('provinceBacNinh') },
 ]);
 const homepageCategoryOptions = computed(() => [
-  { value: 'chinese', label: t('homepageCategoryChinese') },
-  { value: 'noodles', label: t('homepageCategoryNoodles') },
-  { value: 'drinks', label: t('homepageCategoryDrinks') },
+  { value: 'popular_food', label: t('homepageCategoryPopular') },
+  { value: 'chinese_dining', label: t('homepageCategoryChinese') },
+  { value: 'noodles_snacks', label: t('homepageCategoryNoodles') },
+  { value: 'coffee_milk_tea', label: t('homepageCategoryDrinks') },
+  { value: 'flowers_gifts', label: t('homepageCategoryFlowers') },
+  { value: 'fresh_fruit', label: t('homepageCategoryFresh') },
+  { value: 'convenience_store', label: t('homepageCategoryConvenience') },
+  { value: 'vietnamese_food', label: t('homepageCategoryVietnamese') },
 ]);
 
 const completion = computed(() =>
@@ -206,7 +211,7 @@ function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
   form.logoUrl = nextProfile.logoUrl ?? '';
   form.coverUrl = nextProfile.coverUrl ?? '';
   form.notice = nextProfile.notice ?? '';
-  form.homepageCategoryKeys = [...(nextProfile.homepageCategoryKeys ?? [])];
+  form.homepageCategoryKeys = normalizeHomepageCategoryKeys(nextProfile.homepageCategoryKeys ?? []);
 }
 
 function buildPayload(): UpdateMerchantProfilePayload {
@@ -234,6 +239,22 @@ function toggleHomepageCategory(value: string) {
     return;
   }
   form.homepageCategoryKeys = [...form.homepageCategoryKeys, value];
+}
+
+function normalizeHomepageCategoryKeys(keys: string[]) {
+  return Array.from(
+    new Set(
+      keys
+        .map((key) => {
+          const normalized = key.trim();
+          if (normalized === 'chinese') return 'chinese_dining';
+          if (normalized === 'noodles') return 'noodles_snacks';
+          if (normalized === 'drinks') return 'coffee_milk_tea';
+          return normalized;
+        })
+        .filter((key) => homepageCategoryOptions.value.some((item) => item.value === key)),
+    ),
+  );
 }
 
 function parseNumber(value: string | number | null | undefined) {

@@ -49,15 +49,15 @@ function goOrders() {
           </div>
           <div>
             <strong>中式正餐</strong>
-            <p>商家首页分类 chinese</p>
+            <p>商家首页分类 chinese_dining</p>
           </div>
           <div>
             <strong>粉面小吃</strong>
-            <p>商家首页分类 noodles</p>
+            <p>商家首页分类 noodles_snacks</p>
           </div>
           <div>
-            <strong>茶饮甜品</strong>
-            <p>商家首页分类 drinks</p>
+            <strong>咖啡奶茶</strong>
+            <p>商家首页分类 coffee_milk_tea</p>
           </div>
         </div>
         <p class="hint">

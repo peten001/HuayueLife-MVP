@@ -21,9 +21,14 @@ const trendMaxOrderAmount = computed(() =>
 );
 
 const homepageCategoryLabelMap: Record<string, string> = {
-  chinese: '中式正餐',
-  noodles: '粉面小吃',
-  drinks: '茶饮甜品',
+  popular_food: '热门美食',
+  chinese_dining: '中式正餐',
+  noodles_snacks: '粉面小吃',
+  coffee_milk_tea: '咖啡奶茶',
+  flowers_gifts: '鲜花礼品',
+  fresh_fruit: '水果生鲜',
+  convenience_store: '便利超市',
+  vietnamese_food: '特色越餐',
 };
 
 const riskItems = computed(() => {
