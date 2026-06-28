@@ -124,19 +124,21 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   ];
   const suggestionRows = input.summary.suggestions.slice(0, 3);
   const topProducts = input.summary.topProducts.slice(0, 5);
-  const productCardHeight = topProducts.length > 0 ? Math.max(180, 153 + (topProducts.length - 1) * 68) : 204;
+  const productCardHeight = topProducts.length > 0 ? Math.max(196, 146 + topProducts.length * 64) : 196;
   const suggestionCardHeight =
-    suggestionRows.length > 0 ? Math.max(176, 152 + (suggestionRows.length - 1) * 60) : 160;
-  const orderSourceCardY = 480;
-  const orderSourceCardHeight = 210;
+    suggestionRows.length > 0 ? Math.max(170, 144 + suggestionRows.length * 58) : 156;
+  const coreStatCardY = 276;
+  const coreStatCardHeight = 184;
+  const orderSourceCardY = coreStatCardY + coreStatCardHeight + 26;
+  const orderSourceCardHeight = 228;
   const statusCardY = orderSourceCardY + orderSourceCardHeight + 26;
-  const statusCardHeight = 176;
+  const statusCardHeight = 188;
   const productCardY = statusCardY + statusCardHeight + 26;
   const peakCardY = productCardY + productCardHeight + 26;
-  const peakCardHeight = 176;
+  const peakCardHeight = 186;
   const suggestionCardY = peakCardY + peakCardHeight + 26;
-  const footerY = suggestionCardY + suggestionCardHeight + 40;
-  const height = footerY + 48;
+  const footerY = suggestionCardY + suggestionCardHeight + 42;
+  const height = footerY + 52;
 
   const coreStatBlocks = stats
     .map((item, index) => {
@@ -144,18 +146,20 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       const accent = item.accent ?? ['#16A34A', '#2563EB', '#7C3AED'][index] ?? '#16A34A';
       const trendColor =
         item.trend === 'up' ? '#16A34A' : item.trend === 'down' ? '#EF4444' : '#6B7280';
+      const iconKind = index === 0 ? 'orders' : index === 1 ? 'revenue' : 'avg';
       return `
-        <g transform="translate(${x}, 282)">
-          <rect width="300" height="154" rx="24" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+        <g transform="translate(${x}, ${coreStatCardY})">
+          <rect width="300" height="${coreStatCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
           <rect x="18" y="18" width="264" height="6" rx="3" fill="${accent}" opacity="0.18" />
-          <circle cx="40" cy="50" r="17" fill="${accent}" opacity="0.12" />
-          <text x="70" y="45" fill="#6B7280" font-size="25" class="report-text">${escapeXml(item.label)}</text>
-          <text x="28" y="99" fill="${index === 1 ? '#047857' : '#111827'}" font-size="${index === 1 ? 39 : 37}" font-weight="700" class="report-text">${escapeXml(
+          <circle cx="150" cy="58" r="28" fill="${accent}" opacity="0.12" />
+          ${renderMetricIcon(iconKind, accent)}
+          <text x="150" y="112" text-anchor="middle" fill="#6B7280" font-size="24" class="report-text">${escapeXml(item.label)}</text>
+          <text x="150" y="149" text-anchor="middle" fill="${index === 1 ? '#047857' : '#111827'}" font-size="${index === 1 ? 38 : 36}" font-weight="700" class="report-text">${escapeXml(
             item.value,
           )}</text>
           ${
             item.comparison
-              ? `<text x="28" y="129" fill="${trendColor}" font-size="20" class="report-text">${escapeXml(
+              ? `<text x="150" y="173" text-anchor="middle" fill="${trendColor}" font-size="18" class="report-text">${escapeXml(
                   item.comparison,
                 )}</text>`
               : ''
@@ -171,22 +175,28 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
           const ratio = item.value / Math.max(1, input.summary.orderCount);
           const width = Math.max(16, Math.round(ratio * 560));
           const barColor = item.color;
+          const iconX = 18;
+          const labelX = 62;
+          const barX = 196;
+          const barWidth = 534;
+          const countX = 820;
           return `
             <g transform="translate(0, ${74 + index * 42})">
-              <text x="0" y="21" fill="#374151" font-size="23" class="report-text">${escapeXml(
+              ${renderOrderSourceIcon(item.label, item.color, iconX, 14)}
+              <text x="${labelX}" y="22" fill="#374151" font-size="22" font-weight="700" class="report-text">${escapeXml(
                 item.label,
               )}</text>
-              <rect x="172" y="2" width="560" height="18" rx="9" fill="#E5E7EB" />
-              <rect x="172" y="2" width="${width}" height="18" rx="9" fill="${barColor}" />
-              <text x="780" y="20" text-anchor="end" fill="#111827" font-size="23" font-weight="700" class="report-text">${item.value}</text>
+              <rect x="${barX}" y="4" width="${barWidth}" height="16" rx="8" fill="#E5E7EB" />
+              <rect x="${barX}" y="4" width="${Math.max(12, Math.round((item.value / Math.max(1, input.summary.orderCount)) * barWidth))}" height="16" rx="8" fill="${barColor}" />
+              <text x="${countX}" y="22" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.value}</text>
             </g>
           `;
         })
         .join('')
     : `
         <g transform="translate(0, 80)">
-          <rect width="860" height="68" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="24" y="42" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
+          <rect width="860" height="72" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="430" y="44" text-anchor="middle" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Hôm nay chưa có dữ liệu đơn hàng' : '今日暂无订单数据',
           )}</text>
         </g>
@@ -196,13 +206,17 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     .map((item, index) => {
       const value = resolveStatusCount(input.summary.statusCounts, item.key);
       const x = (index % 2) * 400;
-      const y = Math.floor(index / 2) * 74;
+      const y = Math.floor(index / 2) * 80;
+      const badgeBg = index === 0 ? '#FFFBEB' : index === 1 ? '#EFF6FF' : index === 2 ? '#DCFCE7' : '#FEE2E2';
+      const badgeText = index === 0 ? '#B45309' : index === 1 ? '#2563EB' : index === 2 ? '#047857' : '#B91C1C';
       return `
         <g transform="translate(${x}, ${y})">
-          <rect width="388" height="58" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
-          <circle cx="28" cy="33" r="7" fill="${item.color}" />
-          <text x="46" y="36" fill="#374151" font-size="23" class="report-text">${escapeXml(item.label)}</text>
-          <text x="372" y="37" text-anchor="end" fill="#111827" font-size="23" font-weight="700" class="report-text">${value}</text>
+          <rect width="388" height="72" rx="22" fill="#F9FAFB" stroke="#E5E7EB" />
+          <circle cx="30" cy="36" r="16" fill="${item.color}" opacity="0.14" />
+          <circle cx="30" cy="36" r="7" fill="${item.color}" />
+          <text x="56" y="41" fill="#374151" font-size="23" font-weight="700" class="report-text">${escapeXml(item.label)}</text>
+          <rect x="292" y="21" width="76" height="30" rx="15" fill="${badgeBg}" />
+          <text x="330" y="42" text-anchor="middle" fill="${badgeText}" font-size="22" font-weight="700" class="report-text">${value}</text>
         </g>
       `;
     })
@@ -212,25 +226,27 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const productBlocks = topProducts.length > 0
     ? topProducts
         .map((item, index) => {
-          const width = Math.max(12, Math.round((item.quantity / maxProductQuantity) * 470));
+          const width = Math.max(12, Math.round((item.quantity / maxProductQuantity) * 462));
           const name = truncateText(item.name, input.language === 'vi' ? 24 : 20);
-          const y = 78 + index * 68;
+          const y = 74 + index * 64;
+          const rankBg = index === 0 ? '#DCFCE7' : index === 1 ? '#DBEAFE' : index === 2 ? '#E9D5FF' : '#FEF3C7';
+          const rankText = index === 0 ? '#047857' : index === 1 ? '#2563EB' : index === 2 ? '#7C3AED' : '#B45309';
           return `
             <g transform="translate(0, ${y})">
-              <circle cx="20" cy="18" r="15" fill="${index === 0 ? '#16A34A' : index === 1 ? '#2563EB' : index === 2 ? '#7C3AED' : '#F59E0B'}" opacity="0.12" />
-              <text x="20" y="23" text-anchor="middle" fill="${index === 0 ? '#047857' : '#374151'}" font-size="17" font-weight="700" class="report-text">${index + 1}</text>
-              <text x="52" y="20" fill="#111827" font-size="23" font-weight="700" class="report-text">${escapeXml(name)}</text>
-              <text x="810" y="20" text-anchor="end" fill="#111827" font-size="23" font-weight="700" class="report-text">${item.quantity} ${input.language === 'vi' ? 'phần' : '份'}</text>
-              <rect x="52" y="31" width="690" height="16" rx="8" fill="#E5E7EB" />
-              <rect x="52" y="31" width="${width}" height="16" rx="8" fill="#16A34A" />
+              <rect x="0" y="0" width="42" height="42" rx="15" fill="${rankBg}" />
+              <text x="21" y="27" text-anchor="middle" fill="${rankText}" font-size="18" font-weight="700" class="report-text">${index + 1}</text>
+              <text x="58" y="20" fill="#111827" font-size="22" font-weight="700" class="report-text">${escapeXml(name)}</text>
+              <text x="820" y="20" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.quantity} ${input.language === 'vi' ? 'phần' : '份'}</text>
+              <rect x="58" y="30" width="686" height="14" rx="7" fill="#E5E7EB" />
+              <rect x="58" y="30" width="${width}" height="14" rx="7" fill="#16A34A" />
             </g>
           `;
         })
         .join('')
     : `
         <g transform="translate(0, 108)">
-          <rect width="860" height="84" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="430" y="50" text-anchor="middle" fill="#6B7280" font-size="25" class="report-text">${escapeXml(
+          <rect width="860" height="86" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="430" y="52" text-anchor="middle" fill="#6B7280" font-size="25" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Hôm nay chưa có món bán chạy' : '今日暂无热销菜品',
           )}</text>
         </g>
@@ -239,21 +255,21 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const suggestionBlocks = suggestionRows.length > 0
     ? suggestionRows
         .map((item, index) => {
-          const y = 78 + index * 60;
+          const y = 74 + index * 58;
           const bg = index % 2 === 0 ? '#F0FDF4' : '#FFFBEB';
           const stroke = index % 2 === 0 ? '#BBF7D0' : '#FDE68A';
           const bullet = index % 2 === 0 ? '#16A34A' : '#F59E0B';
           const lines = wrapTextLines(item, input.language === 'vi' ? 50 : 42, 2);
           return `
             <g transform="translate(0, ${y})">
-              <rect width="${CARD_WIDTH}" height="50" rx="16" fill="${bg}" stroke="${stroke}" />
-              <circle cx="24" cy="24" r="6" fill="${bullet}" />
+              <rect width="${CARD_WIDTH}" height="48" rx="16" fill="${bg}" stroke="${stroke}" />
+              <circle cx="24" cy="24" r="5.5" fill="${bullet}" />
               ${renderTextLines({
                 x: 40,
-                y: 20,
+                y: 19,
                 lines,
-                fontSize: 21,
-                lineHeight: 18,
+                fontSize: 20,
+                lineHeight: 17,
                 fill: '#374151',
               })}
             </g>
@@ -262,8 +278,8 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
         .join('')
     : `
         <g transform="translate(0, 80)">
-          <rect width="${CARD_WIDTH}" height="50" rx="16" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="24" y="32" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
+          <rect width="${CARD_WIDTH}" height="48" rx="16" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="24" y="31" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Chưa có gợi ý cho hôm nay' : '今日暂无经营建议',
           )}</text>
         </g>
@@ -338,24 +354,26 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     ${productBlocks}
   </g>
   <g transform="translate(${CARD_X}, ${peakCardY})">
-    <rect width="${CARD_WIDTH}" height="176" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
-    <rect x="18" y="18" width="924" height="140" rx="22" fill="#ECFDF5" />
-    <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
+    <rect width="${CARD_WIDTH}" height="${peakCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+    <rect x="18" y="18" width="924" height="150" rx="22" fill="#ECFDF5" />
+    <circle cx="62" cy="64" r="30" fill="#16A34A" opacity="0.12" />
+    ${renderPeakIcon(62, 64, '#047857')}
+    <text x="108" y="46" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Khung giờ cao điểm' : '高峰时段',
     )}</text>
-    <text x="28" y="84" fill="#047857" font-size="38" font-weight="700" class="report-text">${escapeXml(
+    <text x="108" y="86" fill="#047857" font-size="38" font-weight="700" class="report-text">${escapeXml(
       input.summary.peakHour,
     )}</text>
-    <rect x="740" y="34" width="176" height="40" rx="20" fill="#16A34A" />
-    <text x="828" y="61" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Điểm nóng' : '高峰提醒',
-    )}</text>
-    <text x="28" y="118" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
+    <text x="108" y="124" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
       input.summary.peakHourOrderCount > 0
         ? `${input.summary.peakHourOrderCount} ${input.language === 'vi' ? 'đơn' : '单'}`
         : input.language === 'vi'
           ? 'Hôm nay chưa có khung giờ cao điểm rõ ràng'
           : '今日暂无明显高峰时段',
+    )}</text>
+    <rect x="742" y="54" width="170" height="42" rx="21" fill="#16A34A" />
+    <text x="827" y="82" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Điểm nóng' : '高峰提醒',
     )}</text>
   </g>
   <g transform="translate(${CARD_X}, ${suggestionCardY})">
@@ -380,6 +398,88 @@ function formatMoney(value: string) {
 
 function formatOrderCountDisplay(value: number, language: DailyReportLanguage) {
   return `${value} ${language === 'vi' ? 'đơn' : '单'}`;
+}
+
+function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string) {
+  if (kind === 'orders') {
+    return `
+      <g transform="translate(132, 40)" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <rect x="1" y="4" width="18" height="14" rx="4" stroke-width="2.4" />
+        <line x1="6" y1="0" x2="14" y2="0" stroke-width="2.4" />
+        <line x1="8" y1="18" x2="8" y2="24" stroke-width="2.4" />
+        <line x1="14" y1="18" x2="14" y2="24" stroke-width="2.4" />
+        <circle cx="6" cy="10" r="1.6" fill="${accent}" stroke="none" />
+        <circle cx="14" cy="10" r="1.6" fill="${accent}" stroke="none" />
+      </g>
+    `;
+  }
+
+  if (kind === 'revenue') {
+    return `
+      <g transform="translate(133, 39)" fill="${accent}">
+        <rect x="1" y="13" width="5" height="12" rx="2" opacity="0.72" />
+        <rect x="9" y="8" width="5" height="17" rx="2" opacity="0.9" />
+        <rect x="17" y="3" width="5" height="22" rx="2" />
+        <path d="M0 2 L23 2" stroke="${accent}" stroke-width="2.2" stroke-linecap="round" fill="none" />
+      </g>
+    `;
+  }
+
+  return `
+    <g transform="translate(133, 38)" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <circle cx="12" cy="12" r="10" stroke-width="2.4" />
+      <path d="M8 12h8" stroke-width="2.4" />
+      <path d="M12 8v8" stroke-width="2.4" />
+    </g>
+  `;
+}
+
+function renderOrderSourceIcon(label: string, color: string, x: number, y: number) {
+  const lower = label.toLowerCase();
+  if (lower.includes('堂食') || lower.includes('tại chỗ') || lower.includes('ăn tại')) {
+    return `
+      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="0" y="10" width="16" height="8" rx="3" fill="${color}" opacity="0.14" stroke="none" />
+        <path d="M2 10h12" stroke-width="2.2" />
+        <path d="M5 18v5" stroke-width="2.2" />
+        <path d="M11 18v5" stroke-width="2.2" />
+      </g>
+    `;
+  }
+
+  if (lower.includes('自取') || lower.includes('mang đi') || lower.includes('mangdi')) {
+    return `
+      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 8h8l3 3v7H2z" fill="${color}" opacity="0.14" stroke="none" />
+        <path d="M3 9h7l2 2v7H3z" stroke-width="2.2" />
+        <path d="M6 9V7h2v2" stroke-width="2.2" />
+      </g>
+    `;
+  }
+
+  return `
+    <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 9h9v6H2z" fill="${color}" opacity="0.14" stroke="none" />
+      <path d="M2 9h8v6H2z" stroke-width="2.2" />
+      <path d="M10 12h3l2 2v1h-5z" stroke-width="2.2" />
+      <circle cx="5" cy="17" r="1.6" fill="${color}" stroke="none" />
+      <circle cx="12" cy="17" r="1.6" fill="${color}" stroke="none" />
+    </g>
+  `;
+}
+
+function renderPeakIcon(cx: number, cy: number, color: string) {
+  return `
+    <g transform="translate(${cx - 12}, ${cy - 12})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 18h20" stroke-width="2.4" />
+      <path d="M4 14l5-5 4 4 5-7" stroke-width="2.4" />
+      <path d="M16 6h2v2" stroke-width="2.4" />
+      <circle cx="4" cy="18" r="1.2" fill="${color}" stroke="none" />
+      <circle cx="9" cy="13" r="1.2" fill="${color}" stroke="none" />
+      <circle cx="13" cy="17" r="1.2" fill="${color}" stroke="none" />
+      <circle cx="18" cy="10" r="1.2" fill="${color}" stroke="none" />
+    </g>
+  `;
 }
 
 function truncateText(value: string, maxLength: number) {
