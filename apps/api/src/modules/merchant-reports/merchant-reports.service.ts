@@ -29,6 +29,10 @@ type DailyReportSummary = {
   orderCount: number;
   totalAmount: string;
   averageOrderAmount: string;
+  orderCountComparison: string;
+  orderCountComparisonTrend: ComparisonTrend;
+  totalAmountComparison: string;
+  totalAmountComparisonTrend: ComparisonTrend;
   dineInCount: number;
   pickupCount: number;
   deliveryCount: number;
@@ -57,6 +61,8 @@ type SendDailyReportForMerchantOptions = {
   source: 'manual' | 'scheduled';
   skipIfAlreadySent?: boolean;
 };
+
+type ComparisonTrend = 'up' | 'down' | 'flat' | 'new';
 
 @Injectable()
 export class MerchantReportsService {
@@ -122,7 +128,7 @@ export class MerchantReportsService {
       select: { language: true },
     });
     const language = resolveLanguage(languageInput ?? settings?.language ?? 'zh');
-    return this.buildSnapshot(merchantId, merchant.nameZh, language);
+    return this.buildSnapshot(merchantId, merchant.nameZh, merchant.nameVi, language);
   }
 
   async sendDailyReport(merchantId: bigint, dto: SendDailyReportDto) {
@@ -182,7 +188,7 @@ export class MerchantReportsService {
     }
 
     try {
-      snapshot = await this.buildSnapshot(merchantId, merchant.nameZh, language, reportDate);
+      snapshot = await this.buildSnapshot(merchantId, merchant.nameZh, merchant.nameVi, language, reportDate);
       const senderResult = await this.zaloSender.sendDailyReport({
         recipient: recipient ?? '',
         language,
@@ -274,12 +280,15 @@ export class MerchantReportsService {
 
   private async buildSnapshot(
     merchantId: bigint,
-    merchantName: string,
+    merchantNameZh: string,
+    merchantNameVi: string | null,
     language: DailyReportLanguage,
     reportDate = getVietnamReportDate(new Date()),
   ): Promise<DailyReportSnapshot> {
     const { startUtc, endUtc } = getVietnamDayBoundsUtc(reportDate);
-    const [orders, orderItems] = await Promise.all([
+    const previousReportDate = new Date(reportDate.getTime() - 24 * 60 * 60 * 1000);
+    const { startUtc: previousStartUtc, endUtc: previousEndUtc } = getVietnamDayBoundsUtc(previousReportDate);
+    const [orders, orderItems, previousStats] = await Promise.all([
       this.prisma.order.findMany({
         where: {
           merchantId,
@@ -312,13 +321,28 @@ export class MerchantReportsService {
           quantity: true,
         },
       }),
+      this.prisma.order.aggregate({
+        where: {
+          merchantId,
+          createdAt: {
+            gte: previousStartUtc,
+            lt: previousEndUtc,
+          },
+        },
+        _count: { _all: true },
+        _sum: { totalAmountVnd: true },
+      }),
     ]);
 
-    const summary = buildSummary(orders, orderItems, language);
+    const summary = buildSummary(orders, orderItems, language, {
+      previousOrderCount: previousStats._count._all,
+      previousTotalAmount: previousStats._sum.totalAmountVnd ?? 0n,
+    });
     const reportDateText = formatDateForReport(reportDate);
+    const merchantDisplayName = resolveMerchantDisplayName(merchantNameZh, merchantNameVi, language);
     const rendered = await this.imageService.renderDailyReport({
       merchantId: merchantId.toString(),
-      merchantName: resolveMerchantDisplayName(merchantName, language),
+      merchantName: merchantDisplayName,
       reportDate: reportDateText,
       language,
       summary,
@@ -327,7 +351,7 @@ export class MerchantReportsService {
     return {
       reportDate: reportDateText,
       language,
-      merchantName: resolveMerchantDisplayName(merchantName, language),
+      merchantName: merchantDisplayName,
       summary,
       imageUrl: rendered.imageUrl,
     };
@@ -340,6 +364,7 @@ export class MerchantReportsService {
       select: {
         id: true,
         nameZh: true,
+        nameVi: true,
         reportFeatureEnabled: true,
       },
     });
@@ -384,10 +409,16 @@ function buildSummary(
     quantity: number;
   }>,
   language: DailyReportLanguage,
+  comparison?: {
+    previousOrderCount: number;
+    previousTotalAmount: bigint;
+  },
 ): DailyReportSummary {
   const orderCount = orders.length;
   const totalAmount = orders.reduce((sum, item) => sum + item.totalAmountVnd, 0n);
   const averageOrderAmount = orderCount > 0 ? totalAmount / BigInt(orderCount) : 0n;
+  const orderCountComparison = buildComparisonText(orderCount, comparison?.previousOrderCount ?? 0, language);
+  const totalAmountComparison = buildComparisonText(totalAmount, comparison?.previousTotalAmount ?? 0n, language);
   const dineInCount = orders.filter((item) => item.orderType === OrderType.DINE_IN).length;
   const pickupCount = orders.filter((item) => item.orderType === OrderType.PICKUP).length;
   const deliveryCount = orders.filter((item) => item.orderType === OrderType.DELIVERY).length;
@@ -433,6 +464,10 @@ function buildSummary(
     orderCount,
     totalAmount: totalAmount.toString(),
     averageOrderAmount: averageOrderAmount.toString(),
+    orderCountComparison: orderCountComparison.text,
+    orderCountComparisonTrend: orderCountComparison.trend,
+    totalAmountComparison: totalAmountComparison.text,
+    totalAmountComparisonTrend: totalAmountComparison.trend,
     dineInCount,
     pickupCount,
     deliveryCount,
@@ -535,6 +570,50 @@ function buildSuggestions(
   return suggestions.slice(0, 3);
 }
 
+function buildComparisonText(
+  current: number | bigint,
+  previous: number | bigint,
+  language: DailyReportLanguage,
+): { text: string; trend: ComparisonTrend } {
+  const currentValue = typeof current === 'bigint' ? Number(current) : current;
+  const previousValue = typeof previous === 'bigint' ? Number(previous) : previous;
+
+  if (previousValue === 0) {
+    if (currentValue === 0) {
+      return {
+        text: language === 'vi' ? 'Tương đương hôm qua' : '较昨日持平',
+        trend: 'flat',
+      };
+    }
+    return {
+      text: language === 'vi' ? 'Hôm nay mới phát sinh' : '较昨日新增',
+      trend: 'new',
+    };
+  }
+
+  const delta = currentValue - previousValue;
+  if (delta === 0) {
+    return {
+      text: language === 'vi' ? 'Tương đương hôm qua' : '较昨日持平',
+      trend: 'flat',
+    };
+  }
+
+  const percent = Math.abs((delta / previousValue) * 100);
+  const percentText = formatPercent(percent);
+  if (delta > 0) {
+    return {
+      text: language === 'vi' ? `Tăng so với hôm qua ${percentText}%` : `较昨日上涨 ${percentText}%`,
+      trend: 'up',
+    };
+  }
+
+  return {
+    text: language === 'vi' ? `Giảm so với hôm qua ${percentText}%` : `较昨日下降 ${percentText}%`,
+    trend: 'down',
+  };
+}
+
 function getPeakHour(
   hourCounts: Map<number, number>,
   language: DailyReportLanguage,
@@ -562,6 +641,11 @@ function getPeakHour(
 
 function formatHour(hour: number) {
   return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function formatPercent(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 function formatDateForReport(date: Date) {
@@ -642,9 +726,13 @@ function normalizeLimit(value?: string) {
   return Math.min(100, Math.max(1, Math.trunc(parsed)));
 }
 
-function resolveMerchantDisplayName(nameZh: string, language: DailyReportLanguage) {
+function resolveMerchantDisplayName(
+  nameZh: string,
+  nameVi: string | null,
+  language: DailyReportLanguage,
+) {
   if (language === 'vi') {
-    return nameZh;
+    return nameVi?.trim() || nameZh;
   }
   return nameZh;
 }

@@ -8,6 +8,10 @@ type DailyReportSummary = {
   orderCount: number;
   totalAmount: string;
   averageOrderAmount: string;
+  orderCountComparison: string;
+  orderCountComparisonTrend: 'up' | 'down' | 'flat' | 'new';
+  totalAmountComparison: string;
+  totalAmountComparisonTrend: 'up' | 'down' | 'flat' | 'new';
   dineInCount: number;
   pickupCount: number;
   deliveryCount: number;
@@ -64,10 +68,14 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     {
       label: input.language === 'vi' ? 'Đơn hôm nay' : '今日订单',
       value: String(input.summary.orderCount),
+      comparison: input.summary.orderCountComparison,
+      trend: input.summary.orderCountComparisonTrend,
     },
     {
       label: input.language === 'vi' ? 'Doanh thu hôm nay' : '今日营业额',
       value: totalAmount,
+      comparison: input.summary.totalAmountComparison,
+      trend: input.summary.totalAmountComparisonTrend,
       accent: '#16A34A',
     },
     {
@@ -126,6 +134,8 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     .map((item, index) => {
       const x = CARD_X + index * 320;
       const accent = item.accent ?? ['#16A34A', '#2563EB', '#7C3AED'][index] ?? '#16A34A';
+      const trendColor =
+        item.trend === 'up' ? '#16A34A' : item.trend === 'down' ? '#EF4444' : item.trend === 'new' ? '#2563EB' : '#6B7280';
       return `
         <g transform="translate(${x}, 288)">
           <rect width="300" height="160" rx="26" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
@@ -135,6 +145,13 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
           <text x="28" y="106" fill="${index === 1 ? '#047857' : '#111827'}" font-size="${index === 1 ? 40 : 38}" font-weight="700" class="report-text">${escapeXml(
             item.value,
           )}</text>
+          ${
+            item.comparison
+              ? `<text x="28" y="140" fill="${trendColor}" font-size="21" class="report-text">${escapeXml(
+                  item.comparison,
+                )}</text>`
+              : ''
+          }
         </g>
       `;
     })
@@ -305,9 +322,6 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Cơ cấu đơn hàng' : '订单类型',
     )}</text>
-    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Tỉ lệ đơn theo nguồn' : '按来源统计订单占比',
-    )}</text>
     ${orderTypeBlocks}
   </g>
   <g transform="translate(${CARD_X}, 716)">
@@ -315,18 +329,12 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Trạng thái đơn hàng' : '订单状态',
     )}</text>
-    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Thống kê nhanh trạng thái đơn' : '订单状态快速统计',
-    )}</text>
     ${statusBlocks}
   </g>
   <g transform="translate(${CARD_X}, 952)">
     <rect width="${CARD_WIDTH}" height="490" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Top món bán chạy' : '热门菜品 Top 5',
-    )}</text>
-    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Những món được gọi nhiều nhất hôm nay' : '今日售出最多的菜品',
     )}</text>
     ${productBlocks}
   </g>
@@ -355,9 +363,6 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <rect width="${CARD_WIDTH}" height="300" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Gợi ý vận hành' : '经营建议',
-    )}</text>
-    <text x="28" y="70" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Các đề xuất ngắn gọn cho hôm nay' : '今日经营建议摘要',
     )}</text>
     ${suggestionBlocks}
   </g>
