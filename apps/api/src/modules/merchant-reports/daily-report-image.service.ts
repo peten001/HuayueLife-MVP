@@ -33,6 +33,8 @@ const REPORTS_DIR = join(process.cwd(), 'public', 'reports', 'daily');
 const IMAGE_WIDTH = 1080;
 const CARD_X = 60;
 const CARD_WIDTH = 960;
+const REPORT_FONT_FAMILY =
+  '"Noto Sans CJK SC", "Noto Sans CJK", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Arial Unicode MS", "DejaVu Sans", sans-serif';
 
 @Injectable()
 export class DailyReportImageService {
@@ -55,6 +57,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     input.language === 'vi'
       ? 'HuaYue YouXuan · Báo cáo kinh doanh hằng ngày'
       : '华越优选 · 每日营业日报';
+  const titleFontSize = input.language === 'vi' ? 34 : 44;
   const subtitle =
     input.language === 'vi'
       ? `Cửa hàng: ${input.merchantName}`
@@ -111,10 +114,10 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       (item, index) => `
         <g transform="translate(${CARD_X + index * 320}, 240)">
           <rect width="300" height="150" rx="24" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-          <text x="24" y="42" fill="#6B7280" font-size="28" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="24" y="42" fill="#6B7280" font-size="28" class="report-text">${escapeXml(
             item.label,
           )}</text>
-          <text x="24" y="98" fill="#111827" font-size="44" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="24" y="98" fill="#111827" font-size="44" font-weight="700" class="report-text">${escapeXml(
             item.value,
           )}</text>
         </g>
@@ -127,12 +130,12 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       const width = Math.max(0, Math.round((item.value / Math.max(1, input.summary.orderCount)) * 520));
       return `
         <g transform="translate(0, ${60 + index * 56})">
-          <text x="0" y="24" fill="#374151" font-size="26" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="0" y="24" fill="#374151" font-size="26" class="report-text">${escapeXml(
             item.label,
           )}</text>
           <rect x="170" y="4" width="520" height="26" rx="13" fill="#E5E7EB" />
           <rect x="170" y="4" width="${Math.max(16, width)}" height="26" rx="13" fill="${item.color}" />
-          <text x="710" y="25" fill="#111827" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${item.value}</text>
+          <text x="710" y="25" fill="#111827" font-size="24" class="report-text">${item.value}</text>
         </g>
       `;
     })
@@ -145,10 +148,10 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       return `
         <g transform="translate(${(index % 2) * 480}, ${70 + Math.floor(index / 2) * 78})">
           <rect width="450" height="62" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="22" y="38" fill="#374151" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(item.label)}</text>
+          <text x="22" y="38" fill="#374151" font-size="24" class="report-text">${escapeXml(item.label)}</text>
           <rect x="220" y="20" width="220" height="22" rx="11" fill="#E5E7EB" />
           <rect x="220" y="20" width="${Math.max(8, width)}" height="22" rx="11" fill="#16A34A" />
-          <text x="410" y="38" text-anchor="end" fill="#111827" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${value}</text>
+          <text x="410" y="38" text-anchor="end" fill="#111827" font-size="24" class="report-text">${value}</text>
         </g>
       `;
     })
@@ -160,12 +163,12 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       const y = 70 + index * 78;
       return `
         <g transform="translate(0, ${y})">
-          <text x="0" y="24" fill="#374151" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="0" y="24" fill="#374151" font-size="24" class="report-text">${escapeXml(
             truncateText(item.name, 18),
           )}</text>
           <rect x="220" y="4" width="560" height="26" rx="13" fill="#E5E7EB" />
           <rect x="220" y="4" width="${width}" height="26" rx="13" fill="#16A34A" />
-          <text x="810" y="25" fill="#111827" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${item.quantity} ${input.language === 'vi' ? 'món' : '份'}</text>
+          <text x="810" y="25" fill="#111827" font-size="24" class="report-text">${item.quantity} ${input.language === 'vi' ? 'món' : '份'}</text>
         </g>
       `;
     })
@@ -176,7 +179,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       (item, index) => `
         <g transform="translate(0, ${70 + index * 92})">
           <rect width="${CARD_WIDTH}" height="74" rx="20" fill="${index % 2 === 0 ? '#F0FDF4' : '#FEFCE8'}" stroke="${index % 2 === 0 ? '#BBF7D0' : '#FDE68A'}" />
-          <text x="28" y="46" fill="#374151" font-size="26" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="28" y="46" fill="#374151" font-size="26" class="report-text">${escapeXml(
             truncateMultiline(item, 42),
           )}</text>
         </g>
@@ -189,7 +192,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       ? `
         <g transform="translate(0, 70)">
           <rect width="${CARD_WIDTH}" height="74" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="28" y="46" fill="#6B7280" font-size="26" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+          <text x="28" y="46" fill="#6B7280" font-size="26" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Chưa có gợi ý cho hôm nay' : '今日暂无经营建议',
           )}</text>
         </g>
@@ -201,6 +204,14 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <style>
+      text {
+        font-family: ${REPORT_FONT_FAMILY};
+      }
+      .report-text {
+        font-family: ${REPORT_FONT_FAMILY};
+      }
+    </style>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#EAF8EF"/>
       <stop offset="100%" stop-color="#F8FFFB"/>
@@ -208,46 +219,46 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   </defs>
   <rect width="${IMAGE_WIDTH}" height="${height}" fill="url(#bg)" />
   <rect x="40" y="40" width="1000" height="${height - 80}" rx="36" fill="#FFFFFF" opacity="0.9" />
-  <text x="${CARD_X}" y="130" fill="#16A34A" font-size="44" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+  <text x="${CARD_X}" y="130" fill="#16A34A" font-size="${titleFontSize}" font-weight="700" class="report-text">${escapeXml(
     title,
   )}</text>
-  <text x="${CARD_X}" y="180" fill="#374151" font-size="30" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
-    subtitle,
+  <text x="${CARD_X}" y="180" fill="#374151" font-size="30" class="report-text">${escapeXml(
+    fitText(subtitle, input.language === 'vi' ? 44 : 28),
   )}</text>
-  <text x="${CARD_X}" y="214" fill="#6B7280" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+  <text x="${CARD_X}" y="214" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
     `${input.language === 'vi' ? 'Ngày' : '日期'}：${input.reportDate}`,
   )}</text>
   ${coreStatBlocks}
   <g transform="translate(${CARD_X}, 420)">
     <rect width="${CARD_WIDTH}" height="190" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Cơ cấu đơn hàng' : '订单类型',
     )}</text>
     ${orderTypeBlocks}
   </g>
   <g transform="translate(${CARD_X}, 640)">
     <rect width="${CARD_WIDTH}" height="360" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Trạng thái đơn hàng' : '订单状态',
     )}</text>
     ${statusBlocks}
   </g>
   <g transform="translate(${CARD_X}, 1040)">
     <rect width="${CARD_WIDTH}" height="480" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Top món bán chạy' : '热门菜品 Top 5',
     )}</text>
     ${productBlocks}
   </g>
   <g transform="translate(${CARD_X}, 1560)">
     <rect width="${CARD_WIDTH}" height="150" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-    <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Khung giờ cao điểm' : '高峰时段',
     )}</text>
-    <text x="28" y="92" fill="#16A34A" font-size="38" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="92" fill="#16A34A" font-size="38" font-weight="700" class="report-text">${escapeXml(
       input.summary.peakHour,
     )}</text>
-    <text x="340" y="92" fill="#6B7280" font-size="24" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="340" y="92" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
       input.summary.peakHourOrderCount > 0
         ? `${input.summary.peakHourOrderCount} ${input.language === 'vi' ? 'đơn' : '单'}`
         : input.language === 'vi'
@@ -257,13 +268,13 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   </g>
   <g transform="translate(${CARD_X}, ${1740})">
     <rect width="${CARD_WIDTH}" height="340" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-    <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+    <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Gợi ý vận hành' : '经营建议',
     )}</text>
     ${suggestionBlocks}
     ${suggestionEmptyBlock}
   </g>
-  <text x="${CARD_X}" y="${footerY}" fill="#6B7280" font-size="22" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif">${escapeXml(
+  <text x="${CARD_X}" y="${footerY}" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
     input.language === 'vi'
       ? 'Báo cáo được HuaYue YouXuan tạo tự động, chỉ dùng để tham khảo kinh doanh.'
       : '本日报由华越优选自动生成，数据仅供商家经营参考。',
@@ -282,6 +293,10 @@ function truncateText(value: string, maxLength: number) {
 }
 
 function truncateMultiline(value: string, maxLength: number) {
+  return truncateText(value.replace(/\s+/g, ' ').trim(), maxLength);
+}
+
+function fitText(value: string, maxLength: number) {
   return truncateText(value.replace(/\s+/g, ' ').trim(), maxLength);
 }
 
