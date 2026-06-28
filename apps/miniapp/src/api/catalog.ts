@@ -30,11 +30,22 @@ export function getNearbyMerchants(params: {
 export const getMerchant = (id: string) =>
   request<MerchantDetail>(`/merchants/${id}`);
 
-export const getMenu = (merchantId: string) =>
-  request<MenuResponse>(`/merchants/${merchantId}/menu`);
+export const getMenu = (
+  merchantId: string,
+  params?: { tableToken?: string },
+) => {
+  const query = params?.tableToken?.trim()
+    ? `?tableToken=${encodeURIComponent(params.tableToken.trim())}`
+    : '';
+  return request<MenuResponse>(`/merchants/${merchantId}/menu${query}`);
+};
 
-export const getProduct = (id: string) =>
-  request<Product>(`/products/${id}`);
+export const getProduct = (id: string, params?: { tableToken?: string }) => {
+  const query = params?.tableToken?.trim()
+    ? `?tableToken=${encodeURIComponent(params.tableToken.trim())}`
+    : '';
+  return request<Product>(`/products/${id}${query}`);
+};
 
 export const resolveQr = (params: {
   token?: string;

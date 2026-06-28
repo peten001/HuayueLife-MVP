@@ -26,16 +26,19 @@ usePageTitle(() => t('productDetailTitle'));
 onLoad(async (options) => {
   const tableName = decodeURIComponent(String(options?.tableName ?? ''));
   const tableNo = decodeURIComponent(String(options?.tableNo ?? ''));
+  const tableToken = String(options?.tableToken ?? '');
   tableLabel.value = tableName || tableNo;
   try {
-    const loadedProduct = await getProduct(String(options?.id ?? ''));
+    const loadedProduct = await getProduct(String(options?.id ?? ''), {
+      tableToken,
+    });
     const result = await cartStore.switchContext({
       merchantId: String(options?.merchantId ?? loadedProduct.merchant?.id ?? ''),
       merchantName: loadedProduct.merchant
         ? merchantName(loadedProduct.merchant, locale.value)
         : '',
       orderType: String(options?.orderType ?? 'PICKUP') as OrderType,
-      tableToken: String(options?.tableToken ?? '') || undefined,
+      tableToken: tableToken || undefined,
       tableNo: tableNo || undefined,
       tableName: tableName || undefined,
     });

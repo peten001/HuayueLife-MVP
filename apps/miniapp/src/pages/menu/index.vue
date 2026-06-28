@@ -42,7 +42,9 @@ onLoad(async (options) => {
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
   try {
-    const loadedMenu = await getMenu(merchantId.value);
+    const loadedMenu = await getMenu(merchantId.value, {
+      tableToken: tableToken.value,
+    });
     await ensureMenuContext(loadedMenu);
     menu.value = loadedMenu;
     activeCategory.value = loadedMenu.categories[0]?.id ?? '';

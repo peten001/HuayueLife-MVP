@@ -18,12 +18,15 @@ export class PublicMerchantsController {
   }
 
   @Get('merchants/:id/menu')
-  menu(@Param() params: IdParamDto) {
-    return this.service.menu(BigInt(params.id));
+  menu(@Param() params: IdParamDto, @Query('tableToken') tableToken?: string) {
+    return this.service.menu(BigInt(params.id), tableToken);
   }
 
   @Get('products/:id')
-  product(@Param() params: IdParamDto) {
-    return this.service.product(BigInt(params.id));
+  product(
+    @Param() params: IdParamDto,
+    @Query('tableToken') tableToken?: string,
+  ) {
+    return this.service.product(BigInt(params.id), tableToken);
   }
 }

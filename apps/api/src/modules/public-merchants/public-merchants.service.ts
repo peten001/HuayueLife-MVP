@@ -1,5 +1,6 @@
 import {
   Injectable,
+  GoneException,
   NotFoundException,
 } from '@nestjs/common';
 import { Category, Merchant, Prisma } from '@prisma/client';
@@ -121,8 +122,10 @@ export class PublicMerchantsService {
     return this.serializeMerchant(merchant, categories, null);
   }
 
-  async menu(id: bigint) {
-    const merchant = await this.requirePublicMerchant(id);
+  async menu(id: bigint, tableToken?: string) {
+    const merchant = tableToken
+      ? await this.requireDineInMerchant(id, tableToken)
+      : await this.requirePublicMerchant(id);
     const categories = await this.prisma.category.findMany({
       where: {
         merchantId: id,
@@ -151,18 +154,21 @@ export class PublicMerchantsService {
     };
   }
 
-  async product(id: bigint) {
+  async product(id: bigint, tableToken?: string) {
+    const merchantFilter: Prisma.MerchantWhereInput = tableToken
+      ? await this.resolveDineInMerchantFilter(id, tableToken)
+      : {
+          status: 'ACTIVE',
+          merchantType: 'RESTAURANT',
+          isVisibleOnClient: true,
+        };
     const product = await this.prisma.product.findFirst({
       where: {
         id,
         productType: 'FOOD',
         status: { in: ['ON_SALE', 'SOLD_OUT'] },
         category: { isActive: true },
-        merchant: {
-          status: 'ACTIVE',
-          merchantType: 'RESTAURANT',
-          isVisibleOnClient: true,
-        },
+        merchant: merchantFilter,
       },
       include: {
         category: true,
@@ -178,6 +184,8 @@ export class PublicMerchantsService {
   }
 
   private async requirePublicMerchant(id: bigint) {
+    // isVisibleOnClient only controls platform discovery and search exposure.
+    // It must not block dine-in access when a valid table QR has already been resolved.
     const merchant = await this.prisma.merchant.findFirst({
       where: {
         id,
@@ -190,6 +198,52 @@ export class PublicMerchantsService {
       throw new NotFoundException('Merchant not found or unavailable');
     }
     return merchant;
+  }
+
+  private async requireDineInMerchant(id: bigint, tableToken: string) {
+    const table = await this.resolveDineInTable(tableToken);
+    if (table.merchantId !== id) {
+      throw new NotFoundException('Merchant not found or unavailable');
+    }
+    return table.merchant;
+  }
+
+  private async resolveDineInMerchantFilter(
+    id: bigint,
+    tableToken: string,
+  ): Promise<Prisma.MerchantWhereInput> {
+    const table = await this.resolveDineInTable(tableToken);
+    if (table.merchantId !== id) {
+      throw new NotFoundException('Merchant not found or unavailable');
+    }
+    return {
+      id: table.merchantId,
+      status: 'ACTIVE',
+      merchantType: 'RESTAURANT',
+    } satisfies Prisma.MerchantWhereInput;
+  }
+
+  private async resolveDineInTable(tableToken: string) {
+    const table = await this.prisma.diningTable.findUnique({
+      where: { qrToken: tableToken },
+      include: { merchant: true },
+    });
+    if (!table) {
+      throw new NotFoundException('Merchant not found or unavailable');
+    }
+    if (table.status !== 'ACTIVE') {
+      throw new GoneException('该桌台已停用');
+    }
+    if (
+      table.merchant.status !== 'ACTIVE' ||
+      table.merchant.merchantType !== 'RESTAURANT'
+    ) {
+      throw new GoneException('商家当前不可用');
+    }
+    if (!table.merchant.dineInEnabled) {
+      throw new GoneException('商家当前未开启堂食');
+    }
+    return table;
   }
 
   private toMerchantSummary(
