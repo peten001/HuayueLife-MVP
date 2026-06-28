@@ -31,6 +31,7 @@
     "class-validator": "^0.14.1",
     "express": "^4.21.2",
     "qrcode": "^1.5.4",
+    "sharp": "^0.33.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

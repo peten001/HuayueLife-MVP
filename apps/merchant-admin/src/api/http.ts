@@ -54,6 +54,9 @@ export function errorMessage(error: unknown) {
     ) {
       return t('permissionDenied');
     }
+    if (message === 'Daily report feature is not enabled for this merchant') {
+      return t('permissionDenied');
+    }
     if (typeof message === 'string' && message.includes('logoUrl')) {
       return t('logoRequired');
     }

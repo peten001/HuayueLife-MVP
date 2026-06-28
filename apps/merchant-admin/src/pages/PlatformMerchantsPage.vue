@@ -37,6 +37,7 @@ const form = reactive({
   homepageCategoryKeys: [] as string[],
   manualPopular: false,
   isVisibleOnClient: true,
+  reportFeatureEnabled: false,
 });
 
 const isEditing = computed(() => dialogMode.value === 'edit');
@@ -125,6 +126,7 @@ function openCreate() {
   form.homepageCategoryKeys = [];
   form.manualPopular = false;
   form.isVisibleOnClient = true;
+  form.reportFeatureEnabled = false;
   dialogVisible.value = true;
   message.value = '';
 }
@@ -137,6 +139,7 @@ function openEdit(item: PlatformMerchantListItem) {
   form.homepageCategoryKeys = normalizeHomepageCategoryKeys(item.homepageCategoryKeys ?? []);
   form.manualPopular = Boolean(item.manualPopular);
   form.isVisibleOnClient = item.isVisibleOnClient !== false;
+  form.reportFeatureEnabled = Boolean(item.reportFeatureEnabled);
   dialogVisible.value = true;
   message.value = '';
 }
@@ -168,6 +171,7 @@ async function submit() {
         homepageCategoryKeys: [...form.homepageCategoryKeys],
         manualPopular: form.manualPopular,
         isVisibleOnClient: form.isVisibleOnClient,
+        reportFeatureEnabled: form.reportFeatureEnabled,
       });
       message.value = `${t('merchantCreated')}\n${t('username')}：${phone}\n${t('password')}：12345678\n${t('mustChangePassword')}`;
     } else {
@@ -177,6 +181,7 @@ async function submit() {
         homepageCategoryKeys: [...form.homepageCategoryKeys],
         manualPopular: form.manualPopular,
         isVisibleOnClient: form.isVisibleOnClient,
+        reportFeatureEnabled: form.reportFeatureEnabled,
       });
       message.value = t('merchantUpdated');
     }
@@ -386,6 +391,13 @@ function resetFilters() {
           <p class="hint">
             {{ form.isVisibleOnClient ? t('clientVisibilityHint') : t('clientVisibilityDisabledHint') }}
           </p>
+        </div>
+      </label>
+      <label class="span-2 check visibility-check">
+        <input v-model="form.reportFeatureEnabled" type="checkbox" />
+        <div>
+          <strong>开放营业日报功能</strong>
+          <p class="hint">开启后，该商家后台将显示“营业日报”功能，可配置日报预览和测试发送。</p>
         </div>
       </label>
       <p class="span-2 hint">{{ t('manualPopularHint') }}</p>

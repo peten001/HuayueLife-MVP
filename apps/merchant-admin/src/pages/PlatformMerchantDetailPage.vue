@@ -136,6 +136,10 @@ function statusClass(value: string) {
   return 'working';
 }
 
+function reportFeatureLabel(value: boolean) {
+  return value ? '营业日报已开放' : '营业日报未开放';
+}
+
 function categoryLabels(keys: string[]) {
   return keys.map((key) => homepageCategoryLabelMap[key] ?? key);
 }
@@ -209,6 +213,9 @@ function backToList() {
           <span class="status-pill" :class="detail.merchant.isVisibleOnClient ? 'is-active' : 'is-muted'">
             {{ detail.merchant.isVisibleOnClient ? t('clientVisibilityEnabled') : t('clientVisibilityDisabled') }}
           </span>
+          <span class="status-pill" :class="detail.merchant.reportFeatureEnabled ? 'is-active' : 'is-muted'">
+            {{ reportFeatureLabel(detail.merchant.reportFeatureEnabled) }}
+          </span>
           <span class="popular-pill" :class="{ active: detail.merchant.manualPopular }">
             {{ detail.merchant.manualPopular ? '已推荐' : '未推荐' }}
           </span>
@@ -254,6 +261,8 @@ function backToList() {
           <dd>{{ statusLabel(detail.merchant.status) }}</dd>
           <dt>{{ t('clientVisibility') }}</dt>
           <dd>{{ detail.merchant.isVisibleOnClient ? t('clientVisibilityEnabled') : t('clientVisibilityDisabled') }}</dd>
+          <dt>营业日报</dt>
+          <dd>{{ detail.merchant.reportFeatureEnabled ? '已开放' : '未开放' }}</dd>
           <dt>联系方式</dt>
           <dd>{{ detail.merchant.phone }}</dd>
           <dt>城市 / 区域</dt>

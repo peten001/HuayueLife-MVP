@@ -192,6 +192,7 @@ model Merchant {
   pickupEnabled            Boolean        @default(true) @map("pickup_enabled")
   deliveryEnabled          Boolean        @default(false) @map("delivery_enabled")
   isVisibleOnClient        Boolean        @default(true) @map("is_visible_on_client")
+  reportFeatureEnabled      Boolean        @default(false) @map("report_feature_enabled")
   homepageCategoryKeys     String         @default("[]") @map("homepage_category_keys") @db.VarChar(255)
   manualPopular            Boolean        @default(false) @map("manual_popular")
   status                   MerchantStatus @default(ACTIVE)
@@ -207,11 +208,29 @@ model Merchant {
   orderChatConversations OrderChatConversation[]
   printerSettings PrinterSetting[]
   printLogs PrintLog[]
+  merchantReportSetting MerchantReportSetting?
+  dailyReportLogs DailyReportLog[]
 
   @@index([status])
   @@index([province, city, status])
   @@index([latitude, longitude])
   @@map("merchants")
+}
+
+model MerchantReportSetting {
+  id            BigInt   @id @default(autoincrement())
+  merchantId    BigInt   @unique @map("merchant_id")
+  enabled       Boolean  @default(false)
+  zaloRecipient String?  @map("zalo_recipient") @db.VarChar(120)
+  pushTime      String   @default("22:00") @map("push_time") @db.VarChar(5)
+  language      String   @default("zh") @db.VarChar(8)
+  aiSuggestions Boolean  @default(false) @map("ai_suggestions")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_report_settings")
 }
 
 model MerchantStaff {
@@ -416,6 +435,27 @@ model OrderStatusLog {
   @@index([operatorUserId])
   @@index([operatorStaffId])
   @@map("order_status_logs")
+}
+
+model DailyReportLog {
+  id             BigInt   @id @default(autoincrement())
+  merchantId     BigInt   @map("merchant_id")
+  reportDate     DateTime @map("report_date") @db.Date
+  language       String   @default("zh") @db.VarChar(8)
+  channel        String   @default("zalo") @db.VarChar(32)
+  recipient      String?  @db.VarChar(120)
+  status         String   @db.VarChar(16)
+  mocked         Boolean  @default(true)
+  reportImageUrl String?  @map("report_image_url") @db.VarChar(500)
+  summaryJson    Json?    @map("summary_json")
+  errorMessage   String?  @map("error_message") @db.VarChar(500)
+  sentAt         DateTime? @map("sent_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, reportDate])
+  @@map("daily_report_logs")
 }
 
 model OrderChatConversation {

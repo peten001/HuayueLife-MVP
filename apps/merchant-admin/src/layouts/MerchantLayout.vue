@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { getReportFeature } from '@/api/reports';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
   clearMerchantStaff,
@@ -15,6 +16,7 @@ const route = useRoute();
 const { t } = useI18n();
 const staff = getMerchantStaff();
 const mobileMenuOpen = ref(false);
+const reportFeatureEnabled = ref(false);
 
 const navByRole: Record<
   'OWNER' | 'MANAGER' | 'STAFF',
@@ -26,6 +28,7 @@ const navByRole: Record<
     ['/merchant/profile', 'merchantProfile'],
     ['/merchant/profile/change-password', 'changePassword'],
     ['/merchant/business-settings', 'businessSettings'],
+    ['/reports', 'dailyReport'],
     ['/merchant/printers', 'printerManagement'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
@@ -36,6 +39,7 @@ const navByRole: Record<
     ['/orders', 'orders'],
     ['/merchant/profile/change-password', 'changePassword'],
     ['/merchant/printers', 'printerManagement'],
+    ['/reports', 'dailyReport'],
     ['/menu/categories', 'categories'],
     ['/menu/products', 'products'],
     ['/tables', 'tables'],
@@ -73,7 +77,12 @@ const mobileTabsByRole: Record<
 };
 
 const role = staff?.role ?? 'STAFF';
-const nav = navByRole[role];
+const nav = computed(() =>
+  navByRole[role].filter(([path]) => {
+    if (path !== '/reports') return true;
+    return reportFeatureEnabled.value;
+  }),
+);
 const mobileTabs = mobileTabsByRole[role];
 const mobileLinkTabs = computed(
   () =>
@@ -86,9 +95,11 @@ const mobileTabPaths = computed(
   () => new Set(mobileTabs.filter((item) => item.path).map((item) => item.path as string)),
 );
 const mobileMoreLinks = computed(() =>
-  nav.filter(([path]) => !mobileTabPaths.value.has(path)),
+  nav.value.filter(([path]) => !mobileTabPaths.value.has(path)),
 );
 const merchantName = computed(() => staff?.merchant?.nameZh || t('brand'));
+
+onMounted(loadReportFeature);
 
 function isOrderRoute(path: string) {
   return path === '/orders' && route.path.startsWith('/orders');
@@ -116,6 +127,16 @@ async function logout() {
 async function goTo(path: string) {
   closeMobileMenu();
   await router.push(path);
+}
+
+async function loadReportFeature() {
+  if (role === 'STAFF') return;
+  try {
+    const result = await getReportFeature();
+    reportFeatureEnabled.value = result.enabled;
+  } catch {
+    reportFeatureEnabled.value = false;
+  }
 }
 </script>
 

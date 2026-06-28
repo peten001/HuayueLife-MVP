@@ -84,6 +84,53 @@ export interface UpdateMerchantProfilePayload {
   homepageCategoryKeys?: string[];
 }
 
+export type DailyReportLanguage = 'zh' | 'vi';
+
+export interface MerchantReportFeatureResponse {
+  enabled: boolean;
+}
+
+export interface MerchantReportSettings {
+  enabled: boolean;
+  zaloRecipient: string;
+  pushTime: string;
+  language: DailyReportLanguage;
+  aiSuggestions: boolean;
+}
+
+export interface DailyReportSummary {
+  orderCount: number;
+  totalAmount: string;
+  averageOrderAmount: string;
+  dineInCount: number;
+  pickupCount: number;
+  deliveryCount: number;
+  statusCounts: Record<string, number>;
+  topProducts: Array<{
+    name: string;
+    quantity: number;
+  }>;
+  peakHour: string;
+  peakHourOrderCount: number;
+  suggestions: string[];
+}
+
+export interface DailyReportPreviewResponse {
+  reportDate: string;
+  language: DailyReportLanguage;
+  merchantName: string;
+  summary: DailyReportSummary;
+  imageUrl: string;
+}
+
+export interface DailyReportSendResponse {
+  success: boolean;
+  mocked: boolean;
+  message: string;
+  logId: string;
+  imageUrl: string;
+}
+
 export interface PlatformAdminAccount {
   username: string;
 }
@@ -97,6 +144,7 @@ export interface PlatformMerchantListItem {
   homepageCategoryKeys: string[];
   manualPopular: boolean;
   isVisibleOnClient: boolean;
+  reportFeatureEnabled: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
   createdAt: string;
   updatedAt: string;
@@ -129,6 +177,7 @@ export interface PlatformMerchantDetailResponse {
     homepageCategoryKeys: string[];
     manualPopular: boolean;
     isVisibleOnClient: boolean;
+    reportFeatureEnabled: boolean;
     profileCompletion: number;
     createdAt: string;
     updatedAt: string;

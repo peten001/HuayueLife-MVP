@@ -28,4 +28,8 @@ export class CreatePlatformMerchantDto {
   @IsOptional()
   @IsBoolean()
   isVisibleOnClient?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  reportFeatureEnabled?: boolean;
 }

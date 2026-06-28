@@ -35,4 +35,8 @@ export class UpdatePlatformMerchantDto {
   @IsOptional()
   @IsBoolean()
   isVisibleOnClient?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  reportFeatureEnabled?: boolean;
 }

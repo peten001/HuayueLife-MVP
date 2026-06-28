@@ -15,8 +15,10 @@ async function bootstrap() {
     exclude: [{ path: 't/:token', method: RequestMethod.GET }],
   });
   const uploadsRoot = join(process.cwd(), 'uploads');
+  const reportsRoot = join(process.cwd(), 'public', 'reports');
   app.use('/api/v1/uploads', express.static(uploadsRoot));
   app.use('/uploads', express.static(uploadsRoot));
+  app.use('/reports', express.static(reportsRoot));
   app.enableCors({
     origin: true,
     credentials: true,

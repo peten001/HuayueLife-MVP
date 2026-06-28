@@ -24,6 +24,7 @@ import PlatformUsersPage from '@/pages/PlatformUsersPage.vue';
 import PlatformSettingsPage from '@/pages/PlatformSettingsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
 import { getMerchantMe } from '@/api/merchant';
+import { getReportFeature } from '@/api/reports';
 import {
   getMerchantStaff,
   getToken as getMerchantToken,
@@ -130,6 +131,11 @@ const router = createRouter({
           meta: { roles: ['OWNER'] },
         },
         {
+          path: 'reports',
+          component: () => import('@/pages/ReportSettingsPage.vue'),
+          meta: { roles: ['OWNER', 'MANAGER'] },
+        },
+        {
           path: 'merchant/printers',
           component: PrintersPage,
           meta: { roles: ['OWNER', 'MANAGER'] },
@@ -218,6 +224,16 @@ router.beforeEach(async (to) => {
       if (!role) return '/login';
       if (meta.roles?.length && !meta.roles.includes(role)) {
         return '/forbidden';
+      }
+      if (to.path.startsWith('/reports')) {
+        try {
+          const feature = await getReportFeature();
+          if (!feature.enabled) {
+            return '/forbidden';
+          }
+        } catch {
+          return '/forbidden';
+        }
       }
       const mustChangePassword = await resolveMerchantPasswordFlag();
       if (mustChangePassword && to.path !== '/merchant/profile/change-password') {

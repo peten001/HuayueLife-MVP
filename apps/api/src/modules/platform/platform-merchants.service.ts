@@ -42,6 +42,7 @@ type PlatformMerchantListItem = {
   homepageCategoryKeys: string[];
   manualPopular: boolean;
   isVisibleOnClient: boolean;
+  reportFeatureEnabled: boolean;
   status: MerchantStatus;
   createdAt: string;
   updatedAt: string;
@@ -83,6 +84,7 @@ type PlatformMerchantDetailResponse = {
     homepageCategoryKeys: string[];
     manualPopular: boolean;
     isVisibleOnClient: boolean;
+    reportFeatureEnabled: boolean;
     profileCompletion: number;
     createdAt: string;
     updatedAt: string;
@@ -325,6 +327,7 @@ export class PlatformMerchantsService {
         homepageCategoryKeys: parseHomepageCategoryKeys(merchant.homepageCategoryKeys),
         manualPopular: Boolean(merchant.manualPopular),
         isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
+        reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
         profileCompletion: profile.completion,
         createdAt: merchant.createdAt.toISOString(),
         updatedAt: merchant.updatedAt.toISOString(),
@@ -405,6 +408,7 @@ export class PlatformMerchantsService {
         manualPopular: Boolean(dto.manualPopular),
         isVisibleOnClient:
           dto.isVisibleOnClient === undefined ? true : dto.isVisibleOnClient,
+        reportFeatureEnabled: Boolean(dto.reportFeatureEnabled),
         status: MerchantStatus.ACTIVE,
         staff: {
           create: {
@@ -453,6 +457,9 @@ export class PlatformMerchantsService {
     }
     if (dto.isVisibleOnClient !== undefined) {
       data.isVisibleOnClient = dto.isVisibleOnClient;
+    }
+    if (dto.reportFeatureEnabled !== undefined) {
+      data.reportFeatureEnabled = dto.reportFeatureEnabled;
     }
 
     await this.prisma.merchant.update({
@@ -586,8 +593,9 @@ export class PlatformMerchantsService {
         merchant.homepageCategoryKeys,
       ),
       manualPopular: Boolean(merchant.manualPopular),
-      isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
-      status: merchant.status,
+        isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
+        reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+        status: merchant.status,
       createdAt: merchant.createdAt.toISOString(),
       updatedAt: merchant.updatedAt.toISOString(),
       ownerUsername: owner?.username ?? '',

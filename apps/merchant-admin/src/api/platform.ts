@@ -129,6 +129,7 @@ export async function createPlatformMerchant(payload: {
   homepageCategoryKeys?: string[];
   manualPopular?: boolean;
   isVisibleOnClient?: boolean;
+  reportFeatureEnabled?: boolean;
 }) {
   const response = await platformHttp.post<ApiResponse<PlatformMerchantListItem>>(
     '/platform/merchants',
@@ -145,6 +146,7 @@ export async function updatePlatformMerchant(
     homepageCategoryKeys?: string[];
     manualPopular?: boolean;
     isVisibleOnClient?: boolean;
+    reportFeatureEnabled?: boolean;
   },
 ) {
   const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
