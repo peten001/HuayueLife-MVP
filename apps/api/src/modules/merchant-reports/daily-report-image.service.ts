@@ -57,11 +57,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     input.language === 'vi'
       ? 'HuaYue YouXuan · Báo cáo kinh doanh hằng ngày'
       : '华越优选 · 每日营业日报';
-  const titleFontSize = input.language === 'vi' ? 34 : 44;
-  const subtitle =
-    input.language === 'vi'
-      ? `Cửa hàng: ${input.merchantName}`
-      : `商家：${input.merchantName}`;
+  const titleLines = wrapTextLines(title, input.language === 'vi' ? 30 : 18, 2);
+  const titleFontSize = input.language === 'vi' ? 34 : 46;
+  const titleLineHeight = input.language === 'vi' ? 42 : 50;
   const totalAmount = formatMoney(input.summary.totalAmount);
   const averageOrderAmount = formatMoney(input.summary.averageOrderAmount);
   const stats = [
@@ -72,6 +70,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     {
       label: input.language === 'vi' ? 'Doanh thu hôm nay' : '今日营业额',
       value: totalAmount,
+      accent: '#16A34A',
     },
     {
       label: input.language === 'vi' ? 'Giá trị TB' : '平均客单价',
@@ -96,110 +95,168 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     },
   ];
   const statusCards = [
-    { key: 'PENDING_ACCEPTANCE', label: input.language === 'vi' ? 'Chờ nhận' : '待接单' },
-    { key: 'PREPARING', label: input.language === 'vi' ? 'Đang chuẩn bị' : '制作中' },
-    { key: 'COMPLETED', label: input.language === 'vi' ? 'Hoàn tất' : '已完成' },
-    { key: 'CANCELLED', label: input.language === 'vi' ? 'Đã hủy' : '已取消' },
+    {
+      key: ['PENDING_ACCEPTANCE', 'PENDING'],
+      label: input.language === 'vi' ? 'Chờ nhận' : '待接单',
+      color: '#F59E0B',
+    },
+    {
+      key: ['PREPARING'],
+      label: input.language === 'vi' ? 'Đang làm' : '制作中',
+      color: '#2563EB',
+    },
+    {
+      key: ['COMPLETED'],
+      label: input.language === 'vi' ? 'Hoàn thành' : '已完成',
+      color: '#16A34A',
+    },
+    {
+      key: ['CANCELLED'],
+      label: input.language === 'vi' ? 'Đã hủy' : '已取消',
+      color: '#EF4444',
+    },
   ];
   const statusTotal = Math.max(
     1,
-    statusCards.reduce((sum, item) => sum + (input.summary.statusCounts[item.key] ?? 0), 0),
+    statusCards.reduce((sum, item) => sum + resolveStatusCount(input.summary.statusCounts, item.key), 0),
   );
   const suggestionRows = input.summary.suggestions.slice(0, 3);
   const topProducts = input.summary.topProducts.slice(0, 5);
-  const height = 2220 + Math.max(0, suggestionRows.length - 1) * 32;
+  const height = 2100;
 
   const coreStatBlocks = stats
-    .map(
-      (item, index) => `
-        <g transform="translate(${CARD_X + index * 320}, 240)">
-          <rect width="300" height="150" rx="24" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
-          <text x="24" y="42" fill="#6B7280" font-size="28" class="report-text">${escapeXml(
-            item.label,
-          )}</text>
-          <text x="24" y="98" fill="#111827" font-size="44" font-weight="700" class="report-text">${escapeXml(
+    .map((item, index) => {
+      const x = CARD_X + index * 320;
+      const accent = item.accent ?? ['#16A34A', '#2563EB', '#7C3AED'][index] ?? '#16A34A';
+      return `
+        <g transform="translate(${x}, 288)">
+          <rect width="300" height="160" rx="26" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+          <rect x="18" y="18" width="264" height="6" rx="3" fill="${accent}" opacity="0.18" />
+          <circle cx="40" cy="54" r="18" fill="${accent}" opacity="0.12" />
+          <text x="70" y="49" fill="#6B7280" font-size="26" class="report-text">${escapeXml(item.label)}</text>
+          <text x="28" y="106" fill="${index === 1 ? '#047857' : '#111827'}" font-size="${index === 1 ? 40 : 38}" font-weight="700" class="report-text">${escapeXml(
             item.value,
           )}</text>
         </g>
-      `,
-    )
-    .join('');
-
-  const orderTypeBlocks = orderTypes
-    .map((item, index) => {
-      const width = Math.max(0, Math.round((item.value / Math.max(1, input.summary.orderCount)) * 520));
-      return `
-        <g transform="translate(0, ${60 + index * 56})">
-          <text x="0" y="24" fill="#374151" font-size="26" class="report-text">${escapeXml(
-            item.label,
-          )}</text>
-          <rect x="170" y="4" width="520" height="26" rx="13" fill="#E5E7EB" />
-          <rect x="170" y="4" width="${Math.max(16, width)}" height="26" rx="13" fill="${item.color}" />
-          <text x="710" y="25" fill="#111827" font-size="24" class="report-text">${item.value}</text>
-        </g>
       `;
     })
     .join('');
+
+  const orderTypeBlocks = input.summary.orderCount > 0
+    ? orderTypes
+        .map((item, index) => {
+          const ratio = item.value / Math.max(1, input.summary.orderCount);
+          const width = Math.max(16, Math.round(ratio * 560));
+          const barColor = item.color;
+          return `
+            <g transform="translate(0, ${76 + index * 46})">
+              <text x="0" y="22" fill="#374151" font-size="24" class="report-text">${escapeXml(
+                item.label,
+              )}</text>
+              <rect x="172" y="2" width="560" height="20" rx="10" fill="#E5E7EB" />
+              <rect x="172" y="2" width="${width}" height="20" rx="10" fill="${barColor}" />
+              <text x="780" y="21" text-anchor="end" fill="#111827" font-size="24" font-weight="700" class="report-text">${item.value}</text>
+            </g>
+          `;
+        })
+        .join('')
+    : `
+        <g transform="translate(0, 86)">
+          <rect width="860" height="72" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="24" y="44" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
+            input.language === 'vi' ? 'Hôm nay chưa có dữ liệu đơn hàng' : '今日暂无订单数据',
+          )}</text>
+        </g>
+      `;
 
   const statusBlocks = statusCards
     .map((item, index) => {
-      const value = input.summary.statusCounts[item.key] ?? 0;
-      const width = Math.max(0, Math.round((value / statusTotal) * 220));
+      const value = resolveStatusCount(input.summary.statusCounts, item.key);
+      const width = Math.max(10, Math.round((value / statusTotal) * 180));
+      const x = (index % 2) * 400;
+      const y = Math.floor(index / 2) * 88;
       return `
-        <g transform="translate(${(index % 2) * 480}, ${70 + Math.floor(index / 2) * 78})">
-          <rect width="450" height="62" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="22" y="38" fill="#374151" font-size="24" class="report-text">${escapeXml(item.label)}</text>
-          <rect x="220" y="20" width="220" height="22" rx="11" fill="#E5E7EB" />
-          <rect x="220" y="20" width="${Math.max(8, width)}" height="22" rx="11" fill="#16A34A" />
-          <text x="410" y="38" text-anchor="end" fill="#111827" font-size="24" class="report-text">${value}</text>
+        <g transform="translate(${x}, ${y})">
+          <rect width="388" height="72" rx="22" fill="#F9FAFB" stroke="#E5E7EB" />
+          <circle cx="28" cy="36" r="7" fill="${item.color}" />
+          <text x="46" y="39" fill="#374151" font-size="24" class="report-text">${escapeXml(item.label)}</text>
+          <rect x="226" y="26" width="156" height="16" rx="8" fill="#E5E7EB" />
+          <rect x="226" y="26" width="${width}" height="16" rx="8" fill="${item.color}" />
+          <text x="372" y="40" text-anchor="end" fill="#111827" font-size="24" font-weight="700" class="report-text">${value}</text>
         </g>
       `;
     })
     .join('');
 
-  const productBlocks = topProducts
-    .map((item, index) => {
-      const width = Math.max(10, Math.round((item.quantity / Math.max(1, topProducts[0]?.quantity ?? 1)) * 560));
-      const y = 70 + index * 78;
-      return `
-        <g transform="translate(0, ${y})">
-          <text x="0" y="24" fill="#374151" font-size="24" class="report-text">${escapeXml(
-            truncateText(item.name, 18),
+  const maxProductQuantity = Math.max(1, ...topProducts.map((item) => item.quantity));
+  const productBlocks = topProducts.length > 0
+    ? topProducts
+        .map((item, index) => {
+          const width = Math.max(12, Math.round((item.quantity / maxProductQuantity) * 470));
+          const name = truncateText(item.name, input.language === 'vi' ? 24 : 20);
+          const y = 82 + index * 74;
+          return `
+            <g transform="translate(0, ${y})">
+              <circle cx="20" cy="20" r="16" fill="${index === 0 ? '#16A34A' : index === 1 ? '#2563EB' : index === 2 ? '#7C3AED' : '#F59E0B'}" opacity="0.12" />
+              <text x="20" y="25" text-anchor="middle" fill="${index === 0 ? '#047857' : '#374151'}" font-size="18" font-weight="700" class="report-text">${index + 1}</text>
+              <text x="52" y="23" fill="#111827" font-size="24" font-weight="700" class="report-text">${escapeXml(name)}</text>
+              <text x="810" y="23" text-anchor="end" fill="#111827" font-size="24" font-weight="700" class="report-text">${item.quantity} ${input.language === 'vi' ? 'phần' : '份'}</text>
+              <rect x="52" y="34" width="690" height="18" rx="9" fill="#E5E7EB" />
+              <rect x="52" y="34" width="${width}" height="18" rx="9" fill="#16A34A" />
+            </g>
+          `;
+        })
+        .join('')
+    : `
+        <g transform="translate(0, 120)">
+          <rect width="860" height="92" rx="22" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="430" y="56" text-anchor="middle" fill="#6B7280" font-size="26" class="report-text">${escapeXml(
+            input.language === 'vi' ? 'Hôm nay chưa có món bán chạy' : '今日暂无热销菜品',
           )}</text>
-          <rect x="220" y="4" width="560" height="26" rx="13" fill="#E5E7EB" />
-          <rect x="220" y="4" width="${width}" height="26" rx="13" fill="#16A34A" />
-          <text x="810" y="25" fill="#111827" font-size="24" class="report-text">${item.quantity} ${input.language === 'vi' ? 'món' : '份'}</text>
         </g>
       `;
-    })
-    .join('');
 
-  const suggestionBlocks = suggestionRows
-    .map(
-      (item, index) => `
-        <g transform="translate(0, ${70 + index * 92})">
-          <rect width="${CARD_WIDTH}" height="74" rx="20" fill="${index % 2 === 0 ? '#F0FDF4' : '#FEFCE8'}" stroke="${index % 2 === 0 ? '#BBF7D0' : '#FDE68A'}" />
-          <text x="28" y="46" fill="#374151" font-size="26" class="report-text">${escapeXml(
-            truncateMultiline(item, 42),
-          )}</text>
-        </g>
-      `,
-    )
-    .join('');
-
-  const suggestionEmptyBlock =
-    suggestionRows.length === 0
-      ? `
-        <g transform="translate(0, 70)">
-          <rect width="${CARD_WIDTH}" height="74" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="28" y="46" fill="#6B7280" font-size="26" class="report-text">${escapeXml(
+  const suggestionBlocks = suggestionRows.length > 0
+    ? suggestionRows
+        .map((item, index) => {
+          const y = 82 + index * 64;
+          const bg = index % 2 === 0 ? '#F0FDF4' : '#FFFBEB';
+          const stroke = index % 2 === 0 ? '#BBF7D0' : '#FDE68A';
+          const bullet = index % 2 === 0 ? '#16A34A' : '#F59E0B';
+          const lines = wrapTextLines(item, input.language === 'vi' ? 50 : 42, 2);
+          return `
+            <g transform="translate(0, ${y})">
+              <rect width="${CARD_WIDTH}" height="54" rx="18" fill="${bg}" stroke="${stroke}" />
+              <circle cx="24" cy="26" r="6" fill="${bullet}" />
+              ${renderTextLines({
+                x: 40,
+                y: 22,
+                lines,
+                fontSize: 22,
+                lineHeight: 20,
+                fill: '#374151',
+              })}
+            </g>
+          `;
+        })
+        .join('')
+    : `
+        <g transform="translate(0, 82)">
+          <rect width="${CARD_WIDTH}" height="54" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="24" y="35" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Chưa có gợi ý cho hôm nay' : '今日暂无经营建议',
           )}</text>
         </g>
-      `
-      : '';
+      `;
 
-  const footerY = 2140 + Math.max(0, suggestionRows.length - 1) * 32;
+  const footerY = 2058;
+  const topRightTag = input.language === 'vi' ? 'Báo cáo' : 'Daily Report';
+  const topRightTagSub = input.language === 'vi' ? 'Hằng ngày' : '经营日报';
+  const merchantName = fitText(input.merchantName, input.language === 'vi' ? 28 : 20);
+  const headerTitleY = titleLines.length > 1 ? 96 : 100;
+  const headerSubtitleY = titleLines.length > 1 ? 182 : 144;
+  const headerDateY = titleLines.length > 1 ? 210 : 172;
+  const headerHeight = titleLines.length > 1 ? 220 : 180;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -213,66 +270,102 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       }
     </style>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#EAF8EF"/>
-      <stop offset="100%" stop-color="#F8FFFB"/>
+      <stop offset="0%" stop-color="#F6F8F7"/>
+      <stop offset="100%" stop-color="#EEF7F2"/>
+    </linearGradient>
+    <linearGradient id="headerBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#16A34A"/>
     </linearGradient>
   </defs>
   <rect width="${IMAGE_WIDTH}" height="${height}" fill="url(#bg)" />
-  <rect x="40" y="40" width="1000" height="${height - 80}" rx="36" fill="#FFFFFF" opacity="0.9" />
-  <text x="${CARD_X}" y="130" fill="#16A34A" font-size="${titleFontSize}" font-weight="700" class="report-text">${escapeXml(
-    title,
-  )}</text>
-  <text x="${CARD_X}" y="180" fill="#374151" font-size="30" class="report-text">${escapeXml(
-    fitText(subtitle, input.language === 'vi' ? 44 : 28),
-  )}</text>
-  <text x="${CARD_X}" y="214" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
-    `${input.language === 'vi' ? 'Ngày' : '日期'}：${input.reportDate}`,
-  )}</text>
+  <rect x="40" y="36" width="1000" height="${height - 72}" rx="36" fill="#FFFFFF" opacity="0.96" />
+  <g transform="translate(${CARD_X}, 56)">
+    <rect width="${CARD_WIDTH}" height="${headerHeight}" rx="30" fill="url(#headerBg)" />
+    <circle cx="880" cy="46" r="84" fill="#FFFFFF" opacity="0.08" />
+    <circle cx="940" cy="110" r="58" fill="#FFFFFF" opacity="0.08" />
+    <rect x="26" y="24" width="126" height="34" rx="17" fill="#FFFFFF" opacity="0.18" />
+    <text x="89" y="48" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
+      topRightTag,
+    )}</text>
+    <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${titleFontSize}" font-weight="700" class="report-text">${escapeXml(
+      titleLines[0] ?? title,
+    )}</text>
+    ${
+      titleLines[1]
+        ? `<text x="28" y="${headerTitleY + titleLineHeight}" fill="#FFFFFF" font-size="${titleFontSize - 6}" font-weight="700" class="report-text">${escapeXml(
+            titleLines[1],
+          )}</text>`
+        : ''
+    }
+    <text x="28" y="${headerSubtitleY}" fill="#D1FAE5" font-size="28" class="report-text">${escapeXml(
+      `${input.language === 'vi' ? 'Cửa hàng' : '商家'}：${merchantName}`,
+    )}</text>
+    <text x="28" y="${headerDateY}" fill="#DCFCE7" font-size="22" class="report-text">${escapeXml(
+      `${topRightTagSub} · ${input.language === 'vi' ? 'Ngày' : '日期'} ${input.reportDate}`,
+    )}</text>
+  </g>
   ${coreStatBlocks}
-  <g transform="translate(${CARD_X}, 420)">
-    <rect width="${CARD_WIDTH}" height="190" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
+  <g transform="translate(${CARD_X}, 480)">
+    <rect width="${CARD_WIDTH}" height="210" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Cơ cấu đơn hàng' : '订单类型',
     )}</text>
+    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Tỉ lệ đơn theo nguồn' : '按来源统计订单占比',
+    )}</text>
     ${orderTypeBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 640)">
-    <rect width="${CARD_WIDTH}" height="360" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
+  <g transform="translate(${CARD_X}, 716)">
+    <rect width="${CARD_WIDTH}" height="210" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Trạng thái đơn hàng' : '订单状态',
     )}</text>
+    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Thống kê nhanh trạng thái đơn' : '订单状态快速统计',
+    )}</text>
     ${statusBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 1040)">
-    <rect width="${CARD_WIDTH}" height="480" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
+  <g transform="translate(${CARD_X}, 952)">
+    <rect width="${CARD_WIDTH}" height="490" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Top món bán chạy' : '热门菜品 Top 5',
     )}</text>
+    <text x="28" y="68" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Những món được gọi nhiều nhất hôm nay' : '今日售出最多的菜品',
+    )}</text>
     ${productBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 1560)">
-    <rect width="${CARD_WIDTH}" height="150" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
+  <g transform="translate(${CARD_X}, 1476)">
+    <rect width="${CARD_WIDTH}" height="176" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+    <rect x="18" y="18" width="924" height="140" rx="22" fill="#ECFDF5" />
     <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Khung giờ cao điểm' : '高峰时段',
     )}</text>
-    <text x="28" y="92" fill="#16A34A" font-size="38" font-weight="700" class="report-text">${escapeXml(
+    <text x="28" y="84" fill="#047857" font-size="38" font-weight="700" class="report-text">${escapeXml(
       input.summary.peakHour,
     )}</text>
-    <text x="340" y="92" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
+    <rect x="740" y="34" width="176" height="40" rx="20" fill="#16A34A" />
+    <text x="828" y="61" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Điểm nóng' : '高峰提醒',
+    )}</text>
+    <text x="28" y="118" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
       input.summary.peakHourOrderCount > 0
         ? `${input.summary.peakHourOrderCount} ${input.language === 'vi' ? 'đơn' : '单'}`
         : input.language === 'vi'
-          ? 'Chưa xác định'
-          : '暂无明显高峰',
+          ? 'Hôm nay chưa có khung giờ cao điểm rõ ràng'
+          : '今日暂无明显高峰时段',
     )}</text>
   </g>
-  <g transform="translate(${CARD_X}, ${1740})">
-    <rect width="${CARD_WIDTH}" height="340" rx="28" fill="#FFFFFF" stroke="#D1FAE5" stroke-width="2" />
+  <g transform="translate(${CARD_X}, 1680)">
+    <rect width="${CARD_WIDTH}" height="300" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Gợi ý vận hành' : '经营建议',
     )}</text>
+    <text x="28" y="70" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
+      input.language === 'vi' ? 'Các đề xuất ngắn gọn cho hôm nay' : '今日经营建议摘要',
+    )}</text>
     ${suggestionBlocks}
-    ${suggestionEmptyBlock}
   </g>
   <text x="${CARD_X}" y="${footerY}" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
     input.language === 'vi'
@@ -284,7 +377,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
 
 function formatMoney(value: string) {
   const amount = Number(value ?? 0);
-  return `${amount.toLocaleString('en-US')} ₫`;
+  return `${amount.toLocaleString('en-US')} VND`;
 }
 
 function truncateText(value: string, maxLength: number) {
@@ -298,6 +391,76 @@ function truncateMultiline(value: string, maxLength: number) {
 
 function fitText(value: string, maxLength: number) {
   return truncateText(value.replace(/\s+/g, ' ').trim(), maxLength);
+}
+
+function wrapTextLines(value: string, maxCharsPerLine: number, maxLines: number) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [''];
+
+  const lines: string[] = [];
+  let current = '';
+  const words = normalized.includes(' ') ? normalized.split(' ') : [normalized];
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+    }
+
+    if (word.length > maxCharsPerLine) {
+      const chunks = chunkText(word, maxCharsPerLine);
+      while (chunks.length > 1 && lines.length < maxLines - 1) {
+        lines.push(chunks.shift() ?? '');
+      }
+      current = chunks[0] ?? '';
+    } else {
+      current = word;
+    }
+
+    if (lines.length >= maxLines) {
+      return lines.slice(0, maxLines);
+    }
+  }
+
+  if (current && lines.length < maxLines) {
+    lines.push(current);
+  }
+
+  return lines.slice(0, maxLines);
+}
+
+function chunkText(value: string, chunkSize: number) {
+  const chunks: string[] = [];
+  for (let index = 0; index < value.length; index += chunkSize) {
+    chunks.push(value.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function renderTextLines(input: {
+  x: number;
+  y: number;
+  lines: string[];
+  fontSize: number;
+  lineHeight: number;
+  fill: string;
+}) {
+  return `
+    <text x="${input.x}" y="${input.y}" fill="${input.fill}" font-size="${input.fontSize}" class="report-text">
+      ${input.lines
+        .map((line, index) => `<tspan x="${input.x}" dy="${index === 0 ? 0 : input.lineHeight}">${escapeXml(line)}</tspan>`)
+        .join('')}
+    </text>
+  `;
+}
+
+function resolveStatusCount(counts: Record<string, number>, keys: string[]) {
+  return keys.reduce((sum, key) => sum + (counts[key] ?? 0), 0);
 }
 
 function escapeXml(value: string) {
