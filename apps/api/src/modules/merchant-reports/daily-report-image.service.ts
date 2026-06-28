@@ -67,7 +67,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const stats = [
     {
       label: input.language === 'vi' ? 'Đơn hôm nay' : '今日订单',
-      value: String(input.summary.orderCount),
+      value: formatOrderCountDisplay(input.summary.orderCount, input.language),
       comparison: input.summary.orderCountComparison,
       trend: input.summary.orderCountComparisonTrend,
     },
@@ -122,13 +122,21 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       color: '#EF4444',
     },
   ];
-  const statusTotal = Math.max(
-    1,
-    statusCards.reduce((sum, item) => sum + resolveStatusCount(input.summary.statusCounts, item.key), 0),
-  );
   const suggestionRows = input.summary.suggestions.slice(0, 3);
   const topProducts = input.summary.topProducts.slice(0, 5);
-  const height = 2040;
+  const productCardHeight = topProducts.length > 0 ? Math.max(180, 153 + (topProducts.length - 1) * 68) : 204;
+  const suggestionCardHeight =
+    suggestionRows.length > 0 ? Math.max(176, 152 + (suggestionRows.length - 1) * 60) : 160;
+  const orderSourceCardY = 480;
+  const orderSourceCardHeight = 210;
+  const statusCardY = orderSourceCardY + orderSourceCardHeight + 26;
+  const statusCardHeight = 176;
+  const productCardY = statusCardY + statusCardHeight + 26;
+  const peakCardY = productCardY + productCardHeight + 26;
+  const peakCardHeight = 176;
+  const suggestionCardY = peakCardY + peakCardHeight + 26;
+  const footerY = suggestionCardY + suggestionCardHeight + 40;
+  const height = footerY + 48;
 
   const coreStatBlocks = stats
     .map((item, index) => {
@@ -187,16 +195,13 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const statusBlocks = statusCards
     .map((item, index) => {
       const value = resolveStatusCount(input.summary.statusCounts, item.key);
-      const width = Math.max(10, Math.round((value / statusTotal) * 180));
       const x = (index % 2) * 400;
-      const y = Math.floor(index / 2) * 82;
+      const y = Math.floor(index / 2) * 74;
       return `
         <g transform="translate(${x}, ${y})">
-          <rect width="388" height="66" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
+          <rect width="388" height="58" rx="18" fill="#F9FAFB" stroke="#E5E7EB" />
           <circle cx="28" cy="33" r="7" fill="${item.color}" />
           <text x="46" y="36" fill="#374151" font-size="23" class="report-text">${escapeXml(item.label)}</text>
-          <rect x="226" y="24" width="156" height="14" rx="7" fill="#E5E7EB" />
-          <rect x="226" y="24" width="${width}" height="14" rx="7" fill="${item.color}" />
           <text x="372" y="37" text-anchor="end" fill="#111827" font-size="23" font-weight="700" class="report-text">${value}</text>
         </g>
       `;
@@ -264,7 +269,6 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
         </g>
       `;
 
-  const footerY = 2058;
   const headerTitleY = merchantNameLines.length > 1 ? 78 : 90;
   const headerSubtitleY = merchantNameLines.length > 1 ? 160 : 132;
   const headerDateY = merchantNameLines.length > 1 ? 192 : 164;
@@ -312,28 +316,28 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     )}</text>
   </g>
   ${coreStatBlocks}
-  <g transform="translate(${CARD_X}, 480)">
+  <g transform="translate(${CARD_X}, ${orderSourceCardY})">
     <rect width="${CARD_WIDTH}" height="210" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
-      input.language === 'vi' ? 'Cơ cấu đơn hàng' : '订单类型',
+      input.language === 'vi' ? 'Cơ cấu đơn hàng' : '订单来源',
     )}</text>
     ${orderTypeBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 716)">
-    <rect width="${CARD_WIDTH}" height="210" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+  <g transform="translate(${CARD_X}, ${statusCardY})">
+    <rect width="${CARD_WIDTH}" height="${statusCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Trạng thái đơn hàng' : '订单状态',
     )}</text>
     ${statusBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 952)">
-    <rect width="${CARD_WIDTH}" height="490" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+  <g transform="translate(${CARD_X}, ${productCardY})">
+    <rect width="${CARD_WIDTH}" height="${productCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="40" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Top món bán chạy' : '热门菜品 Top 5',
     )}</text>
     ${productBlocks}
   </g>
-  <g transform="translate(${CARD_X}, 1476)">
+  <g transform="translate(${CARD_X}, ${peakCardY})">
     <rect width="${CARD_WIDTH}" height="176" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <rect x="18" y="18" width="924" height="140" rx="22" fill="#ECFDF5" />
     <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
@@ -354,8 +358,8 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
           : '今日暂无明显高峰时段',
     )}</text>
   </g>
-  <g transform="translate(${CARD_X}, 1680)">
-    <rect width="${CARD_WIDTH}" height="300" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
+  <g transform="translate(${CARD_X}, ${suggestionCardY})">
+    <rect width="${CARD_WIDTH}" height="${suggestionCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
     <text x="28" y="42" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Gợi ý vận hành' : '经营建议',
     )}</text>
@@ -372,6 +376,10 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
 function formatMoney(value: string) {
   const amount = Number(value ?? 0);
   return `${amount.toLocaleString('en-US')} VND`;
+}
+
+function formatOrderCountDisplay(value: number, language: DailyReportLanguage) {
+  return `${value} ${language === 'vi' ? 'đơn' : '单'}`;
 }
 
 function truncateText(value: string, maxLength: number) {
