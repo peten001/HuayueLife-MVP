@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp from 'sharp';
+import sharp = require('sharp');
 import type { DailyReportLanguage } from './merchant-reports.constants';
 
 type DailyReportSummary = {
