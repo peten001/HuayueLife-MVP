@@ -18,6 +18,7 @@ async function bootstrap() {
   const reportsRoot = join(process.cwd(), 'public', 'reports');
   app.use('/api/v1/uploads', express.static(uploadsRoot));
   app.use('/uploads', express.static(uploadsRoot));
+  app.use('/api/v1/reports', express.static(reportsRoot));
   app.use('/reports', express.static(reportsRoot));
   app.enableCors({
     origin: true,

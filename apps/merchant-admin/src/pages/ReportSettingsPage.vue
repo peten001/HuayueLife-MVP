@@ -10,6 +10,7 @@ import {
   sendDailyReportMock,
   updateReportSettings,
 } from '@/api/reports';
+import { resolveMediaUrl } from '@/utils/media';
 import type { DailyReportLanguage, DailyReportPreviewResponse, MerchantReportSettings } from '@/types/api';
 
 const router = useRouter();
@@ -19,7 +20,9 @@ const previewing = ref(false);
 const sending = ref(false);
 const featureEnabled = ref(false);
 const message = ref('');
+const messageTone = ref<'success' | 'error'>('error');
 const sendMessage = ref('');
+const sendMessageTone = ref<'success' | 'error'>('success');
 const preview = ref<DailyReportPreviewResponse | null>(null);
 const form = reactive<MerchantReportSettings>({
   enabled: false,
@@ -30,7 +33,7 @@ const form = reactive<MerchantReportSettings>({
 });
 
 const reportImageSrc = computed(() =>
-  preview.value?.imageUrl ? resolveReportImageUrl(preview.value.imageUrl) : '',
+  resolveMediaUrl(preview.value?.imageUrl),
 );
 const statusEntries = computed(() =>
   Object.entries(preview.value?.summary.statusCounts ?? {}).filter(([, count]) => count > 0),
@@ -43,6 +46,7 @@ onMounted(loadPage);
 async function loadPage() {
   loading.value = true;
   message.value = '';
+  messageTone.value = 'error';
   try {
     const feature = await getReportFeature();
     featureEnabled.value = feature.enabled;
@@ -63,6 +67,7 @@ async function saveSettings() {
   if (!featureEnabled.value) return;
   saving.value = true;
   message.value = '';
+  messageTone.value = 'error';
   try {
     const payload: MerchantReportSettings = {
       enabled: form.enabled,
@@ -73,6 +78,7 @@ async function saveSettings() {
     };
     const settings = await updateReportSettings(payload);
     Object.assign(form, settings);
+    messageTone.value = 'success';
     message.value = '日报设置已保存';
     await loadPreview(settings.language);
   } catch (error) {
@@ -86,6 +92,7 @@ async function loadPreview(language: DailyReportLanguage = form.language) {
   if (!featureEnabled.value) return;
   previewing.value = true;
   message.value = '';
+  messageTone.value = 'error';
   try {
     preview.value = await previewDailyReport(language);
   } catch (error) {
@@ -99,12 +106,17 @@ async function sendMockReport() {
   if (!featureEnabled.value) return;
   sending.value = true;
   sendMessage.value = '';
+  sendMessageTone.value = 'success';
   try {
     const result = await sendDailyReportMock(form.language);
-    sendMessage.value = `${result.message} · mock sent`;
+    sendMessageTone.value = 'success';
+    sendMessage.value = result.mocked
+      ? '日报测试发送成功（Mock），当前未真实发送到 Zalo。'
+      : '日报发送成功';
     await loadPreview(form.language);
   } catch (error) {
-    sendMessage.value = errorMessage(error);
+    sendMessageTone.value = 'error';
+    sendMessage.value = `日报发送失败：${errorMessage(error)}`;
   } finally {
     sending.value = false;
   }
@@ -129,18 +141,6 @@ function statusLabel(value: string) {
   );
 }
 
-function resolveReportImageUrl(imageUrl: string) {
-  const apiBase =
-    import.meta.env.VITE_API_BASE_URL ??
-    (import.meta.env.PROD
-      ? 'https://api.huayueyouxuan.com/api/v1'
-      : 'http://localhost:3001/api/v1');
-  const origin = apiBase.replace(/\/api\/v1\/?$/, '');
-  if (/^(https?:)?\/\//i.test(imageUrl)) {
-    return imageUrl;
-  }
-  return `${origin}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
-}
 </script>
 
 <template>
@@ -149,8 +149,8 @@ function resolveReportImageUrl(imageUrl: string) {
     description="当前阶段支持日报预览和测试发送，自动定时推送将在下一阶段开启。"
   />
 
-  <p v-if="message" class="message">{{ message }}</p>
-  <p v-if="sendMessage" class="message success">{{ sendMessage }}</p>
+  <p v-if="message" :class="['message', messageTone]">{{ message }}</p>
+  <p v-if="sendMessage" :class="['message', sendMessageTone]">{{ sendMessage }}</p>
 
   <template v-if="loading">
     <section class="card empty">日报功能加载中...</section>
@@ -363,6 +363,18 @@ function resolveReportImageUrl(imageUrl: string) {
   border-radius: 20px;
   border: 1px solid #dbeafe;
   background: #fff;
+}
+
+.message.success {
+  color: #17693c;
+  background: #e5f5ec;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 0.65rem 0.8rem;
+}
+
+.message.error {
+  color: #a82f2f;
 }
 
 @media (max-width: 960px) {
