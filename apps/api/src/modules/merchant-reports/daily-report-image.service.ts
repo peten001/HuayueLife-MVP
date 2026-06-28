@@ -153,11 +153,11 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
           <rect x="18" y="18" width="264" height="6" rx="3" fill="${accent}" opacity="0.16" />
           ${renderIconCircle({
             cx: 150,
-            cy: 62,
-            radius: 31,
+            cy: 64,
+            radius: 34,
             fill: accent,
-            opacity: 0.12,
-            icon: renderMetricIcon(iconKind, accent, 150, 62),
+            opacity: 0.18,
+            icon: renderMetricIcon(iconKind, accent, 150, 64),
           })}
           <text x="150" y="116" text-anchor="middle" fill="#6B7280" font-size="23" class="report-text">${escapeXml(item.label)}</text>
           ${renderMetricValue({
@@ -183,9 +183,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const orderTypeBlocks = input.summary.orderCount > 0
     ? orderTypes
         .map((item, index) => {
-          const iconCx = 28;
-          const iconCy = 18;
-          const labelX = 68;
+          const iconCx = 30;
+          const iconCy = 19;
+          const labelX = 74;
           const barX = 224;
           const barWidth = 488;
           const countX = 824;
@@ -195,9 +195,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
               ${renderIconCircle({
                 cx: iconCx,
                 cy: iconCy,
-                radius: 18,
+                radius: 20,
                 fill: item.color,
-                opacity: 0.12,
+                opacity: 0.18,
                 icon: renderOrderSourceIcon(item.label, item.color, iconCx, iconCy),
               })}
               <text x="${labelX}" y="24" fill="#374151" font-size="22" font-weight="700" class="report-text">${escapeXml(
@@ -228,14 +228,14 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
         <g transform="translate(${x}, ${y})">
           <rect width="388" height="76" rx="22" fill="#FAFBFC" stroke="#E5E7EB" />
           ${renderIconCircle({
-            cx: 42,
+            cx: 44,
             cy: 38,
-            radius: 20,
+            radius: 22,
             fill: item.color,
-            opacity: 0.12,
-            icon: renderStatusIcon(item.label, item.color, 42, 38),
+            opacity: 0.18,
+            icon: renderStatusIcon(item.label, item.color, 44, 38),
           })}
-          <text x="74" y="44" fill="#374151" font-size="23" font-weight="700" class="report-text">${escapeXml(item.label)}</text>
+          <text x="80" y="44" fill="#374151" font-size="23" font-weight="700" class="report-text">${escapeXml(item.label)}</text>
           <text x="346" y="44" text-anchor="end" fill="#111827" font-size="25" font-weight="700" class="report-text">${value}</text>
         </g>
       `;
@@ -379,9 +379,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     ${renderIconCircle({
       cx: 72,
       cy: 88,
-      radius: 30,
+      radius: 34,
       fill: '#16A34A',
-      opacity: 0.12,
+      opacity: 0.18,
       icon: renderPeakIcon(72, 88, '#047857'),
     })}
     <text x="122" y="56" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
@@ -435,7 +435,9 @@ function renderIconCircle(input: {
   icon: string;
 }) {
   return `
+    <circle cx="${input.cx}" cy="${input.cy}" r="${input.radius + 6}" fill="${input.fill}" opacity="0.08" />
     <circle cx="${input.cx}" cy="${input.cy}" r="${input.radius}" fill="${input.fill}" opacity="${input.opacity}" />
+    <circle cx="${input.cx}" cy="${input.cy}" r="${Math.max(12, input.radius - 5)}" fill="${input.fill}" opacity="0.96" />
     ${input.icon}
   `;
 }
@@ -464,128 +466,122 @@ function renderMetricValue(input: {
 }
 
 function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string, cx: number, cy: number) {
-  const left = cx - 11;
-  const top = cy - 12;
+  const fill = '#FFFFFF';
   if (kind === 'orders') {
     return `
-      <g transform="translate(${left}, ${top})" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
-        <rect x="1" y="4" width="18" height="14" rx="4" stroke-width="2.4" />
-        <line x1="6" y1="0" x2="14" y2="0" stroke-width="2.4" />
-        <line x1="8" y1="18" x2="8" y2="24" stroke-width="2.4" />
-        <line x1="14" y1="18" x2="14" y2="24" stroke-width="2.4" />
-        <circle cx="6" cy="10" r="1.6" fill="${accent}" stroke="none" />
-        <circle cx="14" cy="10" r="1.6" fill="${accent}" stroke="none" />
+      <g transform="translate(${cx - 18}, ${cy - 18})" data-accent="${accent}" fill="none" stroke="${fill}" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5h18v24H9z" stroke-width="3.4" rx="5" />
+        <path d="M14 5.5c0-2.8 2.2-4.5 4-4.5h0c1.8 0 4 1.7 4 4.5" stroke-width="3.4" />
+        <path d="M14 14h8" stroke-width="3.2" />
+        <path d="M14 20h8" stroke-width="3.2" />
+        <path d="M14 26h5" stroke-width="3.2" />
       </g>
     `;
   }
 
   if (kind === 'revenue') {
     return `
-      <g transform="translate(${left + 1}, ${top - 1})" fill="${accent}">
-        <rect x="1" y="13" width="5" height="12" rx="2" opacity="0.72" />
-        <rect x="9" y="8" width="5" height="17" rx="2" opacity="0.9" />
-        <rect x="17" y="3" width="5" height="22" rx="2" />
-        <path d="M0 2 L23 2" stroke="${accent}" stroke-width="2.2" stroke-linecap="round" fill="none" />
+      <g transform="translate(${cx - 18}, ${cy - 18})" data-accent="${accent}" fill="none" stroke="${fill}" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 11c0-3.5 3.2-6 11-6 5.5 0 8 2.1 8 5.2 0 2-1.1 3.5-3.1 4.4 1.9 0.9 3.1 2.5 3.1 4.7 0 3.8-3.2 6.7-8.6 6.7-7.7 0-10.4-2.2-10.4-5.7" stroke-width="3.2"/>
+        <path d="M18 2v28" stroke-width="3.2"/>
+        <path d="M12 9h11" stroke-width="3"/>
+        <path d="M11 21h12" stroke-width="3"/>
       </g>
     `;
   }
 
   return `
-    <g transform="translate(${left + 1}, ${top - 2})" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
-      <circle cx="12" cy="12" r="10" stroke-width="2.4" />
-      <path d="M8 12h8" stroke-width="2.4" />
-      <path d="M12 8v8" stroke-width="2.4" />
+    <g transform="translate(${cx - 18}, ${cy - 18})" data-accent="${accent}" fill="none" stroke="${fill}" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="18" cy="12" r="7.5" stroke-width="3.2" />
+      <path d="M7 29c2.8-6.8 7.2-10.2 11-10.2s8.2 3.4 11 10.2" stroke-width="3.4" />
     </g>
   `;
 }
 
 function renderOrderSourceIcon(label: string, color: string, cx: number, cy: number) {
   const lower = label.toLowerCase();
-  const x = cx - 8;
-  const y = cy - 8;
   if (lower.includes('堂食') || lower.includes('tại chỗ') || lower.includes('ăn tại')) {
     return `
-      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="0" y="10" width="16" height="8" rx="3" fill="${color}" opacity="0.14" stroke="none" />
-        <path d="M2 10h12" stroke-width="2.2" />
-        <path d="M5 18v5" stroke-width="2.2" />
-        <path d="M11 18v5" stroke-width="2.2" />
+      <g transform="translate(${cx - 14}, ${cy - 14})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3v12" stroke-width="3" />
+        <path d="M5 3v7" stroke-width="2.6" />
+        <path d="M11 3v7" stroke-width="2.6" />
+        <path d="M20 3v8c0 2-1.4 3.2-3.2 3.2H15" stroke-width="3" />
+        <path d="M8 15v10" stroke-width="3" />
+        <path d="M16 14v11" stroke-width="3" />
       </g>
     `;
   }
 
   if (lower.includes('自取') || lower.includes('mang đi') || lower.includes('mangdi')) {
     return `
-      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M2 8h8l3 3v7H2z" fill="${color}" opacity="0.14" stroke="none" />
-        <path d="M3 9h7l2 2v7H3z" stroke-width="2.2" />
-        <path d="M6 9V7h2v2" stroke-width="2.2" />
+      <g transform="translate(${cx - 14}, ${cy - 14})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 10h18v12H5z" stroke-width="3" />
+        <path d="M9 10V8c0-2.2 1.8-4 4-4h2c2.2 0 4 1.8 4 4v2" stroke-width="3" />
+        <path d="M5 14h18" stroke-width="2.8" />
       </g>
     `;
   }
 
   return `
-    <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M2 9h9v6H2z" fill="${color}" opacity="0.14" stroke="none" />
-      <path d="M2 9h8v6H2z" stroke-width="2.2" />
-      <path d="M10 12h3l2 2v1h-5z" stroke-width="2.2" />
-      <circle cx="5" cy="17" r="1.6" fill="${color}" stroke="none" />
-      <circle cx="12" cy="17" r="1.6" fill="${color}" stroke="none" />
+    <g transform="translate(${cx - 14}, ${cy - 14})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 11h12v8H3z" stroke-width="3" />
+      <path d="M15 13h4l4 4v2h-8" stroke-width="3" />
+      <circle cx="8" cy="22" r="2.4" fill="#FFFFFF" stroke="none" />
+      <circle cx="19" cy="22" r="2.4" fill="#FFFFFF" stroke="none" />
     </g>
   `;
 }
 
 function renderStatusIcon(label: string, color: string, cx: number, cy: number) {
   const lower = label.toLowerCase();
-  const x = cx - 8;
-  const y = cy - 8;
   if (lower.includes('待') || lower.includes('chờ')) {
     return `
-      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="8" cy="8" r="6" stroke-width="2.2" />
-        <path d="M8 4v4l3 2" stroke-width="2.2" />
+      <g transform="translate(${cx - 13}, ${cy - 13})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="13" cy="13" r="8.5" stroke-width="3.2" />
+        <path d="M13 8v5l3.8 2.6" stroke-width="3.2" />
       </g>
     `;
   }
 
   if (lower.includes('制作') || lower.includes('đang')) {
     return `
-      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M2 12h12" stroke-width="2.2" />
-        <path d="M4 12c0-4 2-7 4-9" stroke-width="2.2" />
-        <path d="M8 12c0-4 2-7 4-9" stroke-width="2.2" />
+      <g transform="translate(${cx - 13}, ${cy - 13})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 20h14" stroke-width="3.2" />
+        <path d="M8 20c0-5 2.6-8.7 5-11.3" stroke-width="3.2" />
+        <path d="M13 20c0-4.4 2.4-8 5-10.4" stroke-width="3.2" />
       </g>
     `;
   }
 
   if (lower.includes('完成') || lower.includes('hoàn')) {
     return `
-      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="8" cy="8" r="6" stroke-width="2.2" />
-        <path d="M5 8l2 2 4-4" stroke-width="2.2" />
+      <g transform="translate(${cx - 13}, ${cy - 13})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="13" cy="13" r="8.5" stroke-width="3.2" />
+        <path d="M8.5 13.5l3 3 6-6" stroke-width="3.2" />
       </g>
     `;
   }
 
   return `
-    <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="8" cy="8" r="6" stroke-width="2.2" />
-      <path d="M5 5l6 6" stroke-width="2.2" />
-      <path d="M11 5L5 11" stroke-width="2.2" />
+    <g transform="translate(${cx - 13}, ${cy - 13})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="13" cy="13" r="8.5" stroke-width="3.2" />
+      <path d="M9 9l8 8" stroke-width="3.2" />
+      <path d="M17 9l-8 8" stroke-width="3.2" />
     </g>
   `;
 }
 
 function renderPeakIcon(cx: number, cy: number, color: string) {
   return `
-    <g transform="translate(${cx - 12}, ${cy - 12})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M2 18h20" stroke-width="2.4" />
-      <path d="M4 14l5-5 4 4 5-7" stroke-width="2.4" />
-      <path d="M16 6h2v2" stroke-width="2.4" />
-      <circle cx="4" cy="18" r="1.2" fill="${color}" stroke="none" />
-      <circle cx="9" cy="13" r="1.2" fill="${color}" stroke="none" />
-      <circle cx="13" cy="17" r="1.2" fill="${color}" stroke="none" />
-      <circle cx="18" cy="10" r="1.2" fill="${color}" stroke="none" />
+    <g transform="translate(${cx - 15}, ${cy - 15})" data-color="${color}" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 24h22" stroke-width="3.2" />
+      <path d="M7 18l6-6 5 4 7-9" stroke-width="3.4" />
+      <path d="M21 7h4v4" stroke-width="3.2" />
+      <circle cx="7" cy="18" r="2" fill="#FFFFFF" stroke="none" />
+      <circle cx="13" cy="12" r="2" fill="#FFFFFF" stroke="none" />
+      <circle cx="18" cy="16" r="2" fill="#FFFFFF" stroke="none" />
+      <circle cx="25" cy="7" r="2" fill="#FFFFFF" stroke="none" />
     </g>
   `;
 }
