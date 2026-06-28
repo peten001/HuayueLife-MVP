@@ -58,9 +58,7 @@ export class DailyReportImageService {
 
 function buildDailyReportSvg(input: RenderDailyReportInput) {
   const displayMerchantName = input.merchantName.trim() || (input.language === 'vi' ? 'Cửa hàng' : '商家');
-  const merchantNameLines = wrapTextLines(displayMerchantName, input.language === 'vi' ? 28 : 16, 2);
-  const merchantNameFontSize = input.language === 'vi' ? 38 : 42;
-  const merchantNameLineHeight = input.language === 'vi' ? 42 : 46;
+  const merchantNameLayout = getHeaderMerchantNameLayout(displayMerchantName, input.language);
   const subtitle = input.language === 'vi' ? 'Báo cáo kinh doanh hằng ngày' : '每日营业日报';
   const totalAmount = formatMoney(input.summary.totalAmount);
   const averageOrderAmount = formatMoney(input.summary.averageOrderAmount);
@@ -305,10 +303,10 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
         </g>
       `;
 
-  const headerTitleY = merchantNameLines.length > 1 ? 78 : 90;
-  const headerSubtitleY = merchantNameLines.length > 1 ? 160 : 132;
-  const headerDateY = merchantNameLines.length > 1 ? 192 : 164;
-  const headerHeight = merchantNameLines.length > 1 ? 228 : 184;
+  const headerTitleY = input.language === 'vi' ? 84 : 90;
+  const headerSubtitleY = 132;
+  const headerDateY = 164;
+  const headerHeight = 184;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -336,16 +334,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <rect width="${CARD_WIDTH}" height="${headerHeight}" rx="30" fill="url(#headerBg)" />
     <circle cx="880" cy="46" r="84" fill="#FFFFFF" opacity="0.08" />
     <circle cx="940" cy="110" r="58" fill="#FFFFFF" opacity="0.08" />
-    <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${merchantNameFontSize}" font-weight="700" class="report-text">${escapeXml(
-      merchantNameLines[0],
+    <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${merchantNameLayout.fontSize}" font-weight="700" class="report-text">${escapeXml(
+      merchantNameLayout.text,
     )}</text>
-    ${
-      merchantNameLines[1]
-        ? `<text x="28" y="${headerTitleY + merchantNameLineHeight}" fill="#FFFFFF" font-size="${merchantNameFontSize - 4}" font-weight="700" class="report-text">${escapeXml(
-            merchantNameLines[1],
-          )}</text>`
-        : ''
-    }
     <text x="28" y="${headerSubtitleY}" fill="#D1FAE5" font-size="28" class="report-text">${escapeXml(subtitle)}</text>
     <text x="28" y="${headerDateY}" fill="#DCFCE7" font-size="22" class="report-text">${escapeXml(
       `${input.language === 'vi' ? 'Ngày' : '日期'}：${input.reportDate}`,
@@ -589,6 +580,56 @@ function renderPeakIcon(cx: number, cy: number, color: string) {
 function truncateText(value: string, maxLength: number) {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function getHeaderMerchantNameLayout(value: string, language: DailyReportLanguage) {
+  const maxWidth = 820;
+  const preferredFontSize = language === 'vi' ? 38 : 42;
+  const minFontSize = language === 'vi' ? 30 : 34;
+  const compactValue = value.replace(/\s+/g, ' ').trim();
+
+  for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 2) {
+    if (estimateTextWidth(compactValue, fontSize, language) <= maxWidth) {
+      return {
+        text: compactValue,
+        fontSize,
+      };
+    }
+  }
+
+  let truncated = compactValue;
+  while (truncated.length > 1 && estimateTextWidth(`${truncated}…`, minFontSize, language) > maxWidth) {
+    truncated = truncated.slice(0, -1).trimEnd();
+  }
+
+  return {
+    text: truncated === compactValue ? compactValue : `${truncated}…`,
+    fontSize: minFontSize,
+  };
+}
+
+function estimateTextWidth(value: string, fontSize: number, language: DailyReportLanguage) {
+  let widthUnits = 0;
+  for (const char of value) {
+    if (char === ' ') {
+      widthUnits += 0.33;
+      continue;
+    }
+
+    if (/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF（）()]/u.test(char)) {
+      widthUnits += 1;
+      continue;
+    }
+
+    if (/[A-ZÀ-ỸĐ]/u.test(char)) {
+      widthUnits += language === 'vi' ? 0.82 : 0.74;
+      continue;
+    }
+
+    widthUnits += language === 'vi' ? 0.68 : 0.6;
+  }
+
+  return widthUnits * fontSize;
 }
 
 function truncateMultiline(value: string, maxLength: number) {
