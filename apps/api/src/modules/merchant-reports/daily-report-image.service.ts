@@ -53,13 +53,11 @@ export class DailyReportImageService {
 }
 
 function buildDailyReportSvg(input: RenderDailyReportInput) {
-  const title =
-    input.language === 'vi'
-      ? 'HuaYue YouXuan · Báo cáo kinh doanh hằng ngày'
-      : '华越优选 · 每日营业日报';
-  const titleLines = wrapTextLines(title, input.language === 'vi' ? 30 : 18, 2);
-  const titleFontSize = input.language === 'vi' ? 34 : 46;
-  const titleLineHeight = input.language === 'vi' ? 42 : 50;
+  const displayMerchantName = input.merchantName.trim() || (input.language === 'vi' ? 'Cửa hàng' : '商家');
+  const merchantNameLines = wrapTextLines(displayMerchantName, input.language === 'vi' ? 28 : 16, 2);
+  const merchantNameFontSize = input.language === 'vi' ? 38 : 42;
+  const merchantNameLineHeight = input.language === 'vi' ? 42 : 46;
+  const subtitle = input.language === 'vi' ? 'Báo cáo kinh doanh hằng ngày' : '每日营业日报';
   const totalAmount = formatMoney(input.summary.totalAmount);
   const averageOrderAmount = formatMoney(input.summary.averageOrderAmount);
   const stats = [
@@ -251,12 +249,10 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
 
   const footerY = 2058;
   const topRightTag = input.language === 'vi' ? 'Báo cáo' : 'Daily Report';
-  const topRightTagSub = input.language === 'vi' ? 'Hằng ngày' : '经营日报';
-  const merchantName = fitText(input.merchantName, input.language === 'vi' ? 28 : 20);
-  const headerTitleY = titleLines.length > 1 ? 96 : 100;
-  const headerSubtitleY = titleLines.length > 1 ? 182 : 144;
-  const headerDateY = titleLines.length > 1 ? 210 : 172;
-  const headerHeight = titleLines.length > 1 ? 220 : 180;
+  const headerTitleY = merchantNameLines.length > 1 ? 86 : 98;
+  const headerSubtitleY = merchantNameLines.length > 1 ? 170 : 142;
+  const headerDateY = merchantNameLines.length > 1 ? 202 : 174;
+  const headerHeight = merchantNameLines.length > 1 ? 228 : 184;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${IMAGE_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_WIDTH} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -284,25 +280,23 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <rect width="${CARD_WIDTH}" height="${headerHeight}" rx="30" fill="url(#headerBg)" />
     <circle cx="880" cy="46" r="84" fill="#FFFFFF" opacity="0.08" />
     <circle cx="940" cy="110" r="58" fill="#FFFFFF" opacity="0.08" />
-    <rect x="26" y="24" width="126" height="34" rx="17" fill="#FFFFFF" opacity="0.18" />
-    <text x="89" y="48" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
+    <rect x="26" y="24" width="128" height="32" rx="16" fill="#FFFFFF" opacity="0.16" />
+    <text x="90" y="46" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="700" class="report-text">${escapeXml(
       topRightTag,
     )}</text>
-    <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${titleFontSize}" font-weight="700" class="report-text">${escapeXml(
-      titleLines[0] ?? title,
+    <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${merchantNameFontSize}" font-weight="700" class="report-text">${escapeXml(
+      merchantNameLines[0],
     )}</text>
     ${
-      titleLines[1]
-        ? `<text x="28" y="${headerTitleY + titleLineHeight}" fill="#FFFFFF" font-size="${titleFontSize - 6}" font-weight="700" class="report-text">${escapeXml(
-            titleLines[1],
+      merchantNameLines[1]
+        ? `<text x="28" y="${headerTitleY + merchantNameLineHeight}" fill="#FFFFFF" font-size="${merchantNameFontSize - 4}" font-weight="700" class="report-text">${escapeXml(
+            merchantNameLines[1],
           )}</text>`
         : ''
     }
-    <text x="28" y="${headerSubtitleY}" fill="#D1FAE5" font-size="28" class="report-text">${escapeXml(
-      `${input.language === 'vi' ? 'Cửa hàng' : '商家'}：${merchantName}`,
-    )}</text>
+    <text x="28" y="${headerSubtitleY}" fill="#D1FAE5" font-size="28" class="report-text">${escapeXml(subtitle)}</text>
     <text x="28" y="${headerDateY}" fill="#DCFCE7" font-size="22" class="report-text">${escapeXml(
-      `${topRightTagSub} · ${input.language === 'vi' ? 'Ngày' : '日期'} ${input.reportDate}`,
+      `${input.language === 'vi' ? 'Ngày' : '日期'}：${input.reportDate}`,
     )}</text>
   </g>
   ${coreStatBlocks}
@@ -369,8 +363,8 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   </g>
   <text x="${CARD_X}" y="${footerY}" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
     input.language === 'vi'
-      ? 'Báo cáo được HuaYue YouXuan tạo tự động, chỉ dùng để tham khảo kinh doanh.'
-      : '本日报由华越优选自动生成，数据仅供商家经营参考。',
+      ? 'Báo cáo được tạo tự động, chỉ dùng để tham khảo kinh doanh.'
+      : '本日报由系统自动生成，数据仅供商家经营参考。',
   )}</text>
 </svg>`;
 }
