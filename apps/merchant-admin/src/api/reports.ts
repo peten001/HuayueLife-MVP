@@ -2,6 +2,7 @@ import { http } from './http';
 import type {
   ApiResponse,
   DailyReportLanguage,
+  DailyReportLogsResponse,
   DailyReportPreviewResponse,
   DailyReportSendResponse,
   MerchantReportFeatureResponse,
@@ -48,3 +49,12 @@ export async function sendDailyReportMock(language?: DailyReportLanguage) {
   return response.data.data;
 }
 
+export async function getDailyReportLogs(limit = 20) {
+  const response = await http.get<ApiResponse<DailyReportLogsResponse>>(
+    '/merchant/reports/daily/logs',
+    {
+      params: { limit },
+    },
+  );
+  return response.data.data;
+}

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import {
+  getDailyReportLogs,
   getReportFeature,
   getReportSettings,
   previewDailyReport,
@@ -11,19 +12,26 @@ import {
   updateReportSettings,
 } from '@/api/reports';
 import { resolveMediaUrl } from '@/utils/media';
-import type { DailyReportLanguage, DailyReportPreviewResponse, MerchantReportSettings } from '@/types/api';
+import type {
+  DailyReportLanguage,
+  DailyReportLogItem,
+  DailyReportPreviewResponse,
+  MerchantReportSettings,
+} from '@/types/api';
 
 const router = useRouter();
 const loading = ref(true);
 const saving = ref(false);
 const previewing = ref(false);
 const sending = ref(false);
+const logsLoading = ref(false);
 const featureEnabled = ref(false);
 const message = ref('');
 const messageTone = ref<'success' | 'error'>('error');
 const sendMessage = ref('');
 const sendMessageTone = ref<'success' | 'error'>('success');
 const preview = ref<DailyReportPreviewResponse | null>(null);
+const logs = ref<DailyReportLogItem[]>([]);
 const form = reactive<MerchantReportSettings>({
   enabled: false,
   zaloRecipient: '',
@@ -55,7 +63,7 @@ async function loadPage() {
     }
     const settings = await getReportSettings();
     Object.assign(form, settings);
-    await loadPreview(settings.language);
+    await Promise.all([loadPreview(settings.language), loadLogs()]);
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -113,12 +121,26 @@ async function sendMockReport() {
     sendMessage.value = result.mocked
       ? '日报测试发送成功（Mock），当前未真实发送到 Zalo。'
       : '日报发送成功';
-    await loadPreview(form.language);
+    await Promise.all([loadPreview(form.language), loadLogs()]);
   } catch (error) {
     sendMessageTone.value = 'error';
     sendMessage.value = `日报发送失败：${errorMessage(error)}`;
   } finally {
     sending.value = false;
+  }
+}
+
+async function loadLogs() {
+  if (!featureEnabled.value) return;
+  logsLoading.value = true;
+  try {
+    const result = await getDailyReportLogs(20);
+    logs.value = result.items;
+  } catch (error) {
+    messageTone.value = 'error';
+    message.value = errorMessage(error);
+  } finally {
+    logsLoading.value = false;
   }
 }
 
@@ -139,6 +161,27 @@ function statusLabel(value: string) {
       CANCELLED: '已取消',
     }[value] ?? value
   );
+}
+
+function logStatusLabel(status: string) {
+  if (status === 'SUCCESS') return '发送成功';
+  if (status === 'FAILED') return '发送失败';
+  return status;
+}
+
+function languageLabel(language: DailyReportLanguage) {
+  return language === 'vi' ? '越南语' : '中文';
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 </script>
@@ -284,6 +327,45 @@ function statusLabel(value: string) {
 
       <p v-else class="empty">点击“预览今日日报”生成 PNG 长图预览。</p>
     </section>
+
+    <section class="card report-logs-card">
+      <div class="section-heading">
+        <div>
+          <h2>发送记录</h2>
+          <p>最近 20 条日报发送记录，当前阶段均为 Mock 测试发送。</p>
+        </div>
+        <button class="secondary" type="button" :disabled="logsLoading" @click="loadLogs">
+          {{ logsLoading ? '刷新中...' : '刷新记录' }}
+        </button>
+      </div>
+
+      <div v-if="logs.length" class="report-log-list">
+        <article v-for="item in logs" :key="item.id" class="report-log-item">
+          <div class="report-log-main">
+            <strong>{{ formatDateTime(item.createdAt) }}</strong>
+            <span>日报日期：{{ item.reportDate }} · {{ languageLabel(item.language) }}</span>
+            <span>接收人：{{ item.recipient || '未填写' }}</span>
+            <p v-if="item.errorMessage" class="report-log-error">{{ item.errorMessage }}</p>
+          </div>
+          <div class="report-log-side">
+            <span :class="['report-status', item.status === 'SUCCESS' ? 'success' : 'failed']">
+              {{ logStatusLabel(item.status) }}
+            </span>
+            <span v-if="item.mocked" class="report-mock-badge">Mock</span>
+            <a
+              v-if="item.reportImageUrl"
+              :href="resolveMediaUrl(item.reportImageUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              查看图片
+            </a>
+          </div>
+        </article>
+      </div>
+
+      <p v-else class="empty">暂无发送记录</p>
+    </section>
   </template>
 </template>
 
@@ -377,10 +459,80 @@ function statusLabel(value: string) {
   color: #a82f2f;
 }
 
+.report-log-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.report-log-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.report-log-main {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.report-log-main span,
+.report-log-error {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.report-log-error {
+  margin: 0.25rem 0 0;
+  color: #a82f2f;
+}
+
+.report-log-side {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 180px;
+}
+
+.report-status,
+.report-mock-badge {
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.report-status.success {
+  color: #17693c;
+  background: #dcfce7;
+}
+
+.report-status.failed {
+  color: #a82f2f;
+  background: #fee2e2;
+}
+
+.report-mock-badge {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
 @media (max-width: 960px) {
   .report-preview-layout,
   .report-preview-summary {
     grid-template-columns: 1fr;
+  }
+
+  .report-log-item,
+  .report-log-side {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

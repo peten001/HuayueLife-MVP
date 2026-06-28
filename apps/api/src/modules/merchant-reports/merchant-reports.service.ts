@@ -52,6 +52,12 @@ type DailyReportSnapshot = {
 
 type MerchantReportPreviewResponse = DailyReportSnapshot;
 
+type SendDailyReportForMerchantOptions = {
+  language?: string;
+  source: 'manual' | 'scheduled';
+  skipIfAlreadySent?: boolean;
+};
+
 @Injectable()
 export class MerchantReportsService {
   constructor(
@@ -120,6 +126,23 @@ export class MerchantReportsService {
   }
 
   async sendDailyReport(merchantId: bigint, dto: SendDailyReportDto) {
+    const result = await this.sendDailyReportForMerchant(merchantId, {
+      language: dto.language,
+      source: 'manual',
+    });
+    return {
+      success: true,
+      mocked: result.mocked,
+      message: 'Daily report mock sent',
+      logId: result.logId,
+      imageUrl: result.imageUrl,
+    };
+  }
+
+  async sendDailyReportForMerchant(
+    merchantId: bigint,
+    options: SendDailyReportForMerchantOptions,
+  ) {
     const merchant = await this.requireFeatureEnabled(merchantId);
     const settings = await this.prisma.merchantReportSetting.findUnique({
       where: { merchantId },
@@ -128,14 +151,40 @@ export class MerchantReportsService {
         zaloRecipient: true,
       },
     });
-    const language = resolveLanguage(dto.language ?? settings?.language ?? 'zh');
-    const reportDate = startOfLocalDay(new Date());
+    const language = resolveLanguage(options.language ?? settings?.language ?? 'zh');
+    const reportDate = getVietnamReportDate(new Date());
+    const recipient = settings?.zaloRecipient?.trim() || null;
     let snapshot: DailyReportSnapshot | null = null;
+
+    const shouldSkipDuplicate = options.skipIfAlreadySent || options.source === 'scheduled';
+    if (shouldSkipDuplicate) {
+      const existingSuccessLog = await this.prisma.dailyReportLog.findFirst({
+        where: {
+          merchantId,
+          reportDate,
+          language,
+          channel: 'zalo',
+          status: 'SUCCESS',
+          mocked: true,
+        },
+        select: { id: true },
+      });
+      if (existingSuccessLog) {
+        return {
+          success: false,
+          skipped: true,
+          reason: 'already_sent' as const,
+          mocked: true,
+          logId: existingSuccessLog.id.toString(),
+          imageUrl: null,
+        };
+      }
+    }
 
     try {
       snapshot = await this.buildSnapshot(merchantId, merchant.nameZh, language, reportDate);
       const senderResult = await this.zaloSender.sendDailyReport({
-        recipient: settings?.zaloRecipient?.trim() ?? '',
+        recipient: recipient ?? '',
         language,
         imageUrl: snapshot.imageUrl,
         summary: snapshot.summary as Record<string, unknown>,
@@ -147,7 +196,7 @@ export class MerchantReportsService {
           reportDate,
           language,
           channel: 'zalo',
-          recipient: settings?.zaloRecipient?.trim() || null,
+          recipient,
           status: 'SUCCESS',
           mocked: senderResult.mocked,
           reportImageUrl: snapshot.imageUrl,
@@ -160,7 +209,6 @@ export class MerchantReportsService {
       return {
         success: true,
         mocked: senderResult.mocked,
-        message: 'Daily report mock sent',
         logId: log.id.toString(),
         imageUrl: snapshot.imageUrl,
       };
@@ -172,7 +220,7 @@ export class MerchantReportsService {
           reportDate,
           language,
           channel: 'zalo',
-          recipient: settings?.zaloRecipient?.trim() || null,
+          recipient,
           status: 'FAILED',
           mocked: true,
           reportImageUrl: snapshot?.imageUrl ?? null,
@@ -187,20 +235,57 @@ export class MerchantReportsService {
     }
   }
 
+  async listDailyReportLogs(merchantId: bigint, limitInput?: string) {
+    await this.requireFeatureEnabled(merchantId);
+    const limit = normalizeLimit(limitInput);
+    const logs = await this.prisma.dailyReportLog.findMany({
+      where: { merchantId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+      select: {
+        id: true,
+        reportDate: true,
+        language: true,
+        channel: true,
+        recipient: true,
+        status: true,
+        mocked: true,
+        reportImageUrl: true,
+        errorMessage: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      items: logs.map((item) => ({
+        id: item.id.toString(),
+        reportDate: formatDateForReport(item.reportDate),
+        language: resolveLanguage(item.language),
+        channel: item.channel,
+        recipient: item.recipient,
+        status: item.status,
+        mocked: item.mocked,
+        reportImageUrl: item.reportImageUrl,
+        errorMessage: item.errorMessage,
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  }
+
   private async buildSnapshot(
     merchantId: bigint,
     merchantName: string,
     language: DailyReportLanguage,
-    reportDate = startOfLocalDay(new Date()),
+    reportDate = getVietnamReportDate(new Date()),
   ): Promise<DailyReportSnapshot> {
-    const nextDay = addDays(reportDate, 1);
+    const { startUtc, endUtc } = getVietnamDayBoundsUtc(reportDate);
     const [orders, orderItems] = await Promise.all([
       this.prisma.order.findMany({
         where: {
           merchantId,
           createdAt: {
-            gte: reportDate,
-            lt: nextDay,
+            gte: startUtc,
+            lt: endUtc,
           },
         },
         select: {
@@ -216,8 +301,8 @@ export class MerchantReportsService {
           order: {
             merchantId,
             createdAt: {
-              gte: reportDate,
-              lt: nextDay,
+              gte: startUtc,
+              lt: endUtc,
             },
           },
         },
@@ -321,7 +406,7 @@ function buildSummary(
 
   const hourCounts = new Map<number, number>();
   for (const order of orders) {
-    const hour = order.createdAt.getHours();
+    const hour = getVietnamHour(order.createdAt);
     hourCounts.set(hour, (hourCounts.get(hour) ?? 0) + 1);
   }
   const [peakHour, peakHourOrderCount] = getPeakHour(hourCounts, language);
@@ -480,23 +565,63 @@ function formatHour(hour: number) {
 }
 
 function formatDateForReport(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function startOfLocalDay(date: Date) {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  // TODO: Use Asia/Ho_Chi_Minh timezone for merchant daily reports.
-  return result;
+export function getVietnamCurrentTime(date = new Date()) {
+  const parts = getVietnamDateParts(date);
+  return {
+    ...parts,
+    hhmm: `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`,
+    reportDate: dateOnlyFromVietnamParts(parts),
+    reportDateText: `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`,
+  };
 }
 
-function addDays(date: Date, days: number) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
+function getVietnamReportDate(date: Date) {
+  return getVietnamCurrentTime(date).reportDate;
+}
+
+function getVietnamDayBoundsUtc(reportDate: Date) {
+  const year = reportDate.getUTCFullYear();
+  const month = reportDate.getUTCMonth();
+  const day = reportDate.getUTCDate();
+  return {
+    startUtc: new Date(Date.UTC(year, month, day, -7, 0, 0, 0)),
+    endUtc: new Date(Date.UTC(year, month, day + 1, -7, 0, 0, 0)),
+  };
+}
+
+function getVietnamHour(date: Date) {
+  return getVietnamDateParts(date).hour;
+}
+
+function getVietnamDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+  };
+}
+
+function dateOnlyFromVietnamParts(parts: { year: number; month: number; day: number }) {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0));
 }
 
 function normalizeOptionalText(value?: string) {
@@ -509,6 +634,12 @@ function resolveLanguage(value?: string | null): DailyReportLanguage {
     return value as DailyReportLanguage;
   }
   return 'zh';
+}
+
+function normalizeLimit(value?: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.min(100, Math.max(1, Math.trunc(parsed)));
 }
 
 function resolveMerchantDisplayName(nameZh: string, language: DailyReportLanguage) {

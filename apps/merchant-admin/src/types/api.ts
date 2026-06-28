@@ -131,6 +131,23 @@ export interface DailyReportSendResponse {
   imageUrl: string;
 }
 
+export interface DailyReportLogItem {
+  id: string;
+  reportDate: string;
+  language: DailyReportLanguage;
+  channel: string;
+  recipient?: string | null;
+  status: 'SUCCESS' | 'FAILED' | string;
+  mocked: boolean;
+  reportImageUrl?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
+export interface DailyReportLogsResponse {
+  items: DailyReportLogItem[];
+}
+
 export interface PlatformAdminAccount {
   username: string;
 }

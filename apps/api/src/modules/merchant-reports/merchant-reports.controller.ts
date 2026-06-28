@@ -47,4 +47,12 @@ export class MerchantReportsController {
   ) {
     return this.service.sendDailyReport(merchantId, dto);
   }
+
+  @Get('daily/logs')
+  listDailyReportLogs(
+    @MerchantId() merchantId: bigint,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.listDailyReportLogs(merchantId, limit);
+  }
 }
