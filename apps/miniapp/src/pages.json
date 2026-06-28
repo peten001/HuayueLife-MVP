@@ -77,6 +77,12 @@
       "style": {
         "navigationBarTitleText": "订单聊天"
       }
+    },
+    {
+      "path": "pages/messages/index",
+      "style": {
+        "navigationBarTitleText": "消息"
+      }
     }
   ],
   "tabBar": {

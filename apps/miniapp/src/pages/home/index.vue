@@ -17,6 +17,8 @@ type ServiceCategoryKey =
   | 'fresh_fruit'
   | 'convenience_store'
   | 'vietnamese_food';
+type SortOption = 'smart' | 'distance' | 'open';
+type FilterOption = 'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 
 const auth = useAuthStore();
 const locationStore = useLocationStore();
@@ -27,6 +29,11 @@ const loading = ref(false);
 const requestSeq = ref(0);
 const searchKeyword = ref('');
 const selectedCategory = ref<ServiceCategoryKey | ''>('');
+const sortOption = ref<SortOption>('smart');
+const activeFilters = ref<FilterOption[]>([]);
+const filterDraft = ref<FilterOption[]>([]);
+const sortSheetVisible = ref(false);
+const filterSheetVisible = ref(false);
 const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
 
 const cityIndex = computed({
@@ -48,18 +55,18 @@ const currentCityLabel = computed(
 
 const foodCategories = computed<Array<{
   key: ServiceCategoryKey;
-  mark: string;
+  icon: string;
   label: string;
   tone: string;
 }>>(() => [
-  { key: 'popular_food', mark: '热', label: t('homeCategoryPopular'), tone: 'green' },
-  { key: 'chinese_dining', mark: '中', label: t('homeCategoryChinese'), tone: 'orange' },
-  { key: 'noodles_snacks', mark: '面', label: t('homeCategoryNoodles'), tone: 'mint' },
-  { key: 'coffee_milk_tea', mark: '饮', label: t('homeCategoryDrinks'), tone: 'yellow' },
-  { key: 'flowers_gifts', mark: '花', label: t('homeCategoryFlowers'), tone: 'rose' },
-  { key: 'fresh_fruit', mark: '鲜', label: t('homeCategoryFresh'), tone: 'blue' },
-  { key: 'convenience_store', mark: '便', label: t('homeCategoryConvenience'), tone: 'teal' },
-  { key: 'vietnamese_food', mark: '越', label: t('homeCategoryVietnamese'), tone: 'violet' },
+  { key: 'popular_food', icon: '🍲', label: t('homeCategoryPopular'), tone: 'green' },
+  { key: 'chinese_dining', icon: '🥢', label: t('homeCategoryChinese'), tone: 'orange' },
+  { key: 'noodles_snacks', icon: '🍜', label: t('homeCategoryNoodles'), tone: 'mint' },
+  { key: 'coffee_milk_tea', icon: '🥤', label: t('homeCategoryDrinks'), tone: 'yellow' },
+  { key: 'flowers_gifts', icon: '💐', label: t('homeCategoryFlowers'), tone: 'rose' },
+  { key: 'fresh_fruit', icon: '🍎', label: t('homeCategoryFresh'), tone: 'blue' },
+  { key: 'convenience_store', icon: '🛒', label: t('homeCategoryConvenience'), tone: 'teal' },
+  { key: 'vietnamese_food', icon: '🍽️', label: t('homeCategoryVietnamese'), tone: 'violet' },
 ]);
 
 const cityFilteredMerchants = computed(() => {
@@ -101,6 +108,46 @@ const filteredMerchants = computed(() => {
 const activeCategoryLabel = computed(() => {
   if (!selectedCategory.value) return t('homeNearbyRestaurants');
   return foodCategories.value.find((item) => item.key === selectedCategory.value)?.label || t('homeNearbyRestaurants');
+});
+
+const sortOptions = computed<Array<{ value: SortOption; label: string }>>(() => [
+  { value: 'smart', label: locale.value === 'zh' ? '智能排序' : locale.value === 'vi' ? 'Sắp xếp thông minh' : 'Smart sort' },
+  { value: 'distance', label: locale.value === 'zh' ? '距离最近' : locale.value === 'vi' ? 'Gần nhất' : 'Nearest' },
+  { value: 'open', label: locale.value === 'zh' ? '当前营业' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
+]);
+
+const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(() => [
+  { value: 'OPEN', label: locale.value === 'zh' ? '营业中' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
+  { value: 'DINE_IN', label: locale.value === 'zh' ? '支持堂食' : locale.value === 'vi' ? 'Ăn tại chỗ' : 'Dine in' },
+  { value: 'PICKUP', label: locale.value === 'zh' ? '支持到店自取' : locale.value === 'vi' ? 'Tự lấy' : 'Pickup' },
+  { value: 'DELIVERY', label: locale.value === 'zh' ? '支持商家配送' : locale.value === 'vi' ? 'Giao bởi quán' : 'Delivery' },
+]);
+
+const sortLabel = computed(() => sortOptions.value.find((item) => item.value === sortOption.value)?.label || sortOptions.value[0].label);
+
+const visibleMerchants = computed(() => {
+  const filtered = filteredMerchants.value.filter((merchant) => {
+    return activeFilters.value.every((filter) => {
+      if (filter === 'OPEN') return merchant.isOpen;
+      return merchant.supportedOrderTypes.includes(filter);
+    });
+  });
+
+  const sorted = [...filtered].sort((left, right) => {
+    if (sortOption.value === 'distance') {
+      return compareDistance(left, right);
+    }
+    if (sortOption.value === 'open') {
+      if (left.isOpen !== right.isOpen) return Number(right.isOpen) - Number(left.isOpen);
+      return compareDistance(left, right);
+    }
+    if (left.isOpen !== right.isOpen) return Number(right.isOpen) - Number(left.isOpen);
+    const categoryBoost = Number(isPopularMerchant(right)) - Number(isPopularMerchant(left));
+    if (categoryBoost !== 0) return categoryBoost;
+    return compareDistance(left, right);
+  });
+
+  return sorted;
 });
 
 usePageTitle(() => t('homeTitle'));
@@ -206,13 +253,8 @@ function openMerchant(merchant: MerchantSummary) {
   uni.navigateTo({ url: `/pages/merchant/detail?id=${merchant.id}` });
 }
 
-function showTableOrderingTip() {
-  uni.showModal({
-    title: t('homeTableOrderTitle'),
-    content: t('homeTableOrderModal'),
-    showCancel: false,
-    confirmText: t('gotIt'),
-  });
+function openMessages() {
+  uni.navigateTo({ url: '/pages/messages/index' });
 }
 
 function toggleCategory(categoryKey: ServiceCategoryKey) {
@@ -224,6 +266,43 @@ function toggleCategory(categoryKey: ServiceCategoryKey) {
       icon: 'none',
     });
   }
+}
+
+function compareDistance(left: MerchantSummary, right: MerchantSummary) {
+  const leftDistance = left.distanceKm ?? Number.POSITIVE_INFINITY;
+  const rightDistance = right.distanceKm ?? Number.POSITIVE_INFINITY;
+  if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+  return merchantName(left, locale.value).localeCompare(merchantName(right, locale.value));
+}
+
+function openSortSheet() {
+  sortSheetVisible.value = true;
+}
+
+function selectSort(option: SortOption) {
+  sortOption.value = option;
+  sortSheetVisible.value = false;
+}
+
+function openFilterSheet() {
+  filterDraft.value = [...activeFilters.value];
+  filterSheetVisible.value = true;
+}
+
+function toggleFilter(option: FilterOption) {
+  const set = new Set(filterDraft.value);
+  if (set.has(option)) set.delete(option);
+  else set.add(option);
+  filterDraft.value = Array.from(set);
+}
+
+function resetFilters() {
+  filterDraft.value = [];
+}
+
+function applyFilters() {
+  activeFilters.value = [...filterDraft.value];
+  filterSheetVisible.value = false;
 }
 
 function merchantMatchesCategory(
@@ -308,35 +387,32 @@ const cityAliases: Record<string, string[]> = {
 </script>
 
 <template>
-  <view class="page">
+  <view :class="['page', `page--${locale}`]">
     <view class="topbar">
-      <view>
-        <text class="eyebrow">{{ t('currentCity') }}</text>
-        <text class="title">{{ t('appName') }}</text>
-      </view>
       <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
         <view class="city">
           <text class="location-dot"></text>
-          <text>{{ cities[cityIndex]?.label }}</text>
+          <text class="city-label">{{ cities[cityIndex]?.label }}</text>
           <text class="city-arrow">⌄</text>
         </view>
       </picker>
+      <view class="search-box compact">
+        <text class="search-icon"></text>
+        <input
+          v-model="searchKeyword"
+          class="search-input"
+          :placeholder="t('homeSearchPlaceholder')"
+          confirm-type="search"
+        />
+        <text v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">×</text>
+      </view>
+      <view class="bell-button" @click="openMessages">
+        <text class="bell-icon">🔔</text>
+      </view>
     </view>
 
-    <view class="search-box">
-      <text class="search-icon"></text>
-      <input
-        v-model="searchKeyword"
-        class="search-input"
-        :placeholder="t('homeSearchPlaceholder')"
-        confirm-type="search"
-      />
-      <text v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">×</text>
-    </view>
-
-    <view class="banner">
+    <view :class="['banner', locale === 'vi' ? 'banner--vi' : '']">
       <view class="banner-content">
-        <text class="banner-kicker">{{ t('homeBannerKicker') }}</text>
         <text class="banner-title">{{ t('homeBannerTitle') }}</text>
         <text class="banner-copy">{{ t('homeBannerSubtitle') }}</text>
         <button class="banner-action" @click="openNearbyMerchants">
@@ -354,22 +430,7 @@ const cityAliases: Record<string, string[]> = {
       </view>
     </view>
 
-    <view class="table-tip" @click="showTableOrderingTip">
-      <view class="tip-icon">
-        <text>桌</text>
-      </view>
-      <view class="tip-content">
-        <text class="tip-title">{{ t('homeTableOrderTitle') }}</text>
-        <text class="tip-copy">{{ t('homeTableOrderHint') }}</text>
-      </view>
-      <text class="tip-arrow">›</text>
-    </view>
-
     <view class="category-section">
-      <view class="section-heading">
-        <text class="section-title">{{ t('homeFoodCategories') }}</text>
-        <text class="section-caption">{{ t('homeCategoryCaption') }}</text>
-      </view>
       <view class="category-grid">
         <view
           v-for="category in foodCategories"
@@ -378,7 +439,7 @@ const cityAliases: Record<string, string[]> = {
           @click="toggleCategory(category.key)"
         >
           <view :class="['category-icon', `category-${category.tone}`]">
-            <text>{{ category.mark }}</text>
+            <text class="category-glyph">{{ category.icon }}</text>
           </view>
           <text class="category-label">{{ category.label }}</text>
         </view>
@@ -386,15 +447,19 @@ const cityAliases: Record<string, string[]> = {
     </view>
 
     <view id="nearby-restaurants" class="section-head">
-      <view>
-        <text class="section-title">{{ activeCategoryLabel }}</text>
-        <text class="mode">{{ t('currentCity') }}：{{ currentCityLabel }}</text>
-      </view>
+      <text class="section-title">{{ activeCategoryLabel }}</text>
       <view class="section-actions">
         <button v-if="selectedCategory" class="clear-button" @click="selectedCategory = ''">
           {{ t('allMerchants') }}
         </button>
-        <button class="location-button" @click="openNearbyMerchants">{{ t('relocate') }}</button>
+        <view class="section-action-chip sort-chip" @click="openSortSheet">
+          <text class="section-action-text strong">
+            {{ sortLabel }}⌄
+          </text>
+        </view>
+        <view class="section-action-chip filter-chip" @click="openFilterSheet">
+          <text class="section-action-text">{{ locale === 'zh' ? '筛选' : locale === 'vi' ? 'Lọc' : 'Filter' }}</text>
+        </view>
       </view>
     </view>
 
@@ -413,11 +478,51 @@ const cityAliases: Record<string, string[]> = {
         <text class="empty-copy">{{ t('homeSearchEmptyHint') }}</text>
       </view>
       <MerchantCard
-        v-for="merchant in filteredMerchants"
+        v-for="merchant in visibleMerchants"
         :key="merchant.id"
         :merchant="merchant"
+        variant="compact"
+        :locale-class="locale"
         @select="openMerchant"
       />
+    </view>
+
+    <view v-if="sortSheetVisible" class="sheet-mask" @click="sortSheetVisible = false">
+      <view class="sheet-panel" @click.stop>
+        <text class="sheet-title">{{ locale === 'zh' ? '排序方式' : locale === 'vi' ? 'Cách sắp xếp' : 'Sort by' }}</text>
+        <view
+          v-for="item in sortOptions"
+          :key="item.value"
+          :class="['sheet-option', sortOption === item.value ? 'active' : '']"
+          @click="selectSort(item.value)"
+        >
+          <text>{{ item.label }}</text>
+          <text v-if="sortOption === item.value" class="sheet-check">✓</text>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="filterSheetVisible" class="sheet-mask" @click="filterSheetVisible = false">
+      <view class="sheet-panel" @click.stop>
+        <text class="sheet-title">{{ locale === 'zh' ? '筛选条件' : locale === 'vi' ? 'Bộ lọc' : 'Filters' }}</text>
+        <view
+          v-for="item in filterOptions"
+          :key="item.value"
+          :class="['sheet-option', filterDraft.includes(item.value) ? 'active' : '']"
+          @click="toggleFilter(item.value)"
+        >
+          <text>{{ item.label }}</text>
+          <text v-if="filterDraft.includes(item.value)" class="sheet-check">✓</text>
+        </view>
+        <view class="sheet-actions">
+          <button class="sheet-button secondary" @click="resetFilters">
+            {{ locale === 'zh' ? '重置' : locale === 'vi' ? 'Đặt lại' : 'Reset' }}
+          </button>
+          <button class="sheet-button primary" @click="applyFilters">
+            {{ locale === 'zh' ? '完成' : locale === 'vi' ? 'Xong' : 'Done' }}
+          </button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -425,7 +530,7 @@ const cityAliases: Record<string, string[]> = {
 <style scoped>
 .page {
   min-height: 100vh;
-  padding: 28rpx 28rpx calc(64rpx + env(safe-area-inset-bottom));
+  padding: 12rpx 24rpx calc(40rpx + env(safe-area-inset-bottom));
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
@@ -434,37 +539,32 @@ const cityAliases: Record<string, string[]> = {
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24rpx;
-  padding: 12rpx 0 28rpx;
-}
-
-.eyebrow {
-  display: block;
-  color: #66746b;
-  font-size: 22rpx;
-}
-
-.title {
-  display: block;
-  margin-top: 6rpx;
-  color: #1f2d24;
-  font-size: 42rpx;
-  font-weight: 800;
-  letter-spacing: 1rpx;
+  gap: 10rpx;
+  padding: 0 0 8rpx;
 }
 
 .city {
   display: flex;
   align-items: center;
-  gap: 10rpx;
-  padding: 14rpx 20rpx;
+  gap: 8rpx;
+  padding: 8rpx 12rpx;
   border-radius: 999rpx;
   color: #2e7d32;
   background: #fff;
-  box-shadow: 0 8rpx 24rpx rgb(46 125 50 / 8%);
-  font-size: 25rpx;
+  box-shadow: 0 6rpx 18rpx rgb(46 125 50 / 8%);
+  font-size: 15px;
   font-weight: 700;
+  box-sizing: border-box;
+}
+
+.city-label {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.page--vi .city {
+  min-width: 82px;
+  padding-right: 10rpx;
 }
 
 .location-dot {
@@ -483,21 +583,26 @@ const cityAliases: Record<string, string[]> = {
 .search-box {
   display: flex;
   align-items: center;
-  gap: 18rpx;
-  height: 88rpx;
-  padding: 0 24rpx;
-  margin-bottom: 24rpx;
+  gap: 12rpx;
+  height: 36px;
+  padding: 0 14rpx;
   border: 2rpx solid #f0f0f0;
-  border-radius: 24rpx;
+  border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 10rpx 28rpx rgb(46 125 50 / 6%);
+  box-shadow: 0 8rpx 22rpx rgb(46 125 50 / 6%);
   box-sizing: border-box;
+}
+
+.compact {
+  min-width: 0;
+  flex: 1;
+  margin-bottom: 0;
 }
 
 .search-icon {
   position: relative;
-  width: 24rpx;
-  height: 24rpx;
+  width: 18px;
+  height: 18px;
   flex: none;
   border: 4rpx solid #43a047;
   border-radius: 50%;
@@ -521,7 +626,11 @@ const cityAliases: Record<string, string[]> = {
   height: 100%;
   flex: 1;
   color: #1f2d24;
-  font-size: 27rpx;
+  font-size: 14px;
+}
+
+.page--vi .search-input {
+  font-size: 13px;
 }
 
 .search-clear {
@@ -532,18 +641,35 @@ const cityAliases: Record<string, string[]> = {
   border-radius: 50%;
   color: #fff;
   background: #aab5ac;
-  font-size: 28rpx;
+  font-size: 24rpx;
+  line-height: 1;
+}
+
+.bell-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 22rpx rgb(46 125 50 / 6%);
+}
+
+.bell-icon {
+  font-size: 18px;
   line-height: 1;
 }
 
 .banner {
   position: relative;
   display: flex;
-  min-height: 330rpx;
+  min-height: 228rpx;
+  align-items: center;
   overflow: hidden;
-  padding: 36rpx 32rpx;
-  margin-bottom: 22rpx;
-  border-radius: 34rpx;
+  padding: 14px 18px 14px 18px;
+  margin-bottom: 10px;
+  border-radius: 16px;
   color: #fff;
   background: #43a047;
   box-shadow: 0 18rpx 42rpx rgb(46 125 50 / 16%);
@@ -553,88 +679,107 @@ const cityAliases: Record<string, string[]> = {
 .banner-content {
   position: relative;
   z-index: 2;
-  width: 62%;
-}
-
-.banner-kicker {
-  display: inline-block;
-  padding: 7rpx 14rpx;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 21rpx;
-  font-weight: 700;
+  display: flex;
+  width: 64%;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .banner-title {
   display: block;
-  margin-top: 18rpx;
-  font-size: 40rpx;
+  font-size: 22px;
   font-weight: 800;
   line-height: 1.22;
 }
 
 .banner-copy {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 6px;
   color: rgb(255 255 255 / 84%);
-  font-size: 23rpx;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .banner-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 62rpx;
-  padding: 0 24rpx;
-  margin: 24rpx 0 0;
+  min-height: 30px;
+  padding: 0 16rpx;
+  margin: 10px 0 0;
   border: 0;
   border-radius: 999rpx;
   color: #2e7d32;
   background: #fff;
-  font-size: 23rpx;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 62rpx;
+  line-height: 30px;
+}
+
+.page--vi .banner-title {
+  font-size: 19px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.page--vi .banner-copy {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.banner--vi .banner-content {
+  width: 70%;
+}
+
+.page--vi .banner-action {
+  padding: 0 14rpx;
+  font-size: 12px;
 }
 
 .banner-action::after,
-.location-button::after {
+.clear-button::after {
   border: 0;
 }
 
 .food-visual {
   position: absolute;
-  right: -26rpx;
-  bottom: -24rpx;
-  width: 270rpx;
-  height: 270rpx;
+  right: 18rpx;
+  top: 50%;
+  width: 168rpx;
+  height: 168rpx;
+  transform: translateY(-44%);
 }
 
 .plate {
   position: absolute;
-  right: 18rpx;
-  bottom: 22rpx;
+  right: 14rpx;
+  bottom: 12rpx;
   display: grid;
-  width: 202rpx;
-  height: 202rpx;
+  width: 110rpx;
+  height: 110rpx;
   place-items: center;
-  border: 18rpx solid rgb(255 255 255 / 72%);
+  border: 10rpx solid rgb(255 255 255 / 62%);
   border-radius: 50%;
   background: #ffb74d;
-  box-shadow: inset 0 0 0 12rpx rgb(255 255 255 / 30%);
+  box-shadow: inset 0 0 0 8rpx rgb(255 255 255 / 24%);
   box-sizing: border-box;
 }
 
 .food-mark {
   display: grid;
-  width: 110rpx;
-  height: 110rpx;
+  width: 62rpx;
+  height: 62rpx;
   place-items: center;
   border-radius: 50%;
   color: #2e7d32;
   background: #fff8e7;
-  font-size: 46rpx;
+  font-size: 30rpx;
   font-weight: 800;
 }
 
@@ -644,18 +789,18 @@ const cityAliases: Record<string, string[]> = {
   width: 46rpx;
   height: 86rpx;
   border-radius: 100% 0 100% 0;
-  background: #8bd28f;
+  background: rgb(139 210 143 / 36%);
 }
 
 .leaf-one {
-  right: 184rpx;
-  bottom: 54rpx;
+  right: 146rpx;
+  bottom: 42rpx;
   transform: rotate(-34deg);
 }
 
 .leaf-two {
-  right: 30rpx;
-  bottom: 190rpx;
+  right: 24rpx;
+  bottom: 146rpx;
   transform: rotate(46deg);
 }
 
@@ -670,118 +815,63 @@ const cityAliases: Record<string, string[]> = {
 }
 
 .steam-one {
-  right: 112rpx;
+  right: 90rpx;
   transform: rotate(12deg);
 }
 
 .steam-two {
-  right: 72rpx;
-  top: 24rpx;
+  right: 54rpx;
+  top: 18rpx;
   transform: rotate(-10deg);
 }
 
-.table-tip {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  padding: 22rpx 24rpx;
-  margin-bottom: 34rpx;
-  border-radius: 24rpx;
-  background: #eaf7ee;
-}
-
-.tip-icon {
-  display: grid;
-  width: 68rpx;
-  height: 68rpx;
-  flex: none;
-  place-items: center;
-  border-radius: 20rpx;
-  color: #fff;
-  background: #43a047;
-  font-size: 25rpx;
-  font-weight: 800;
-}
-
-.tip-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.tip-title {
-  display: block;
-  color: #2e7d32;
-  font-size: 27rpx;
-  font-weight: 700;
-}
-
-.tip-copy {
-  display: block;
-  margin-top: 5rpx;
-  color: #58705e;
-  font-size: 22rpx;
-  line-height: 1.45;
-}
-
-.tip-arrow {
-  flex: none;
-  color: #66a66b;
-  font-size: 42rpx;
-  font-weight: 300;
-}
-
 .category-section {
-  padding: 26rpx 24rpx;
-  margin-bottom: 36rpx;
-  border-radius: 28rpx;
+  padding: 12px 12px 10px;
+  margin-bottom: 14rpx;
+  border-radius: 16px;
   background: #fff;
-  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+  box-shadow: 0 10rpx 28rpx rgb(46 125 50 / 6%);
 }
 
 .section-heading,
 .section-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 20rpx;
-}
-
-.section-heading {
-  margin-bottom: 24rpx;
+  gap: 14rpx;
 }
 
 .section-head {
   scroll-margin-top: 20rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 8px;
 }
 
 .section-title {
   display: block;
   color: #1f2d24;
-  font-size: 34rpx;
+  font-size: 20px;
   font-weight: 800;
-}
-
-.section-caption {
-  color: #8a968d;
-  font-size: 21rpx;
 }
 
 .category-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14rpx;
+  gap: 8px 6px;
 }
 
 .category-item {
   display: flex;
   align-items: center;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 6px;
   min-width: 0;
-  padding: 10rpx 0 12rpx;
-  border-radius: 24rpx;
+  padding: 3px 0 5px;
+  border-radius: 14px;
   transition: all 0.2s ease;
+}
+
+.page--vi .category-item {
+  gap: 4px;
 }
 
 .category-item.active {
@@ -795,13 +885,29 @@ const cityAliases: Record<string, string[]> = {
 }
 
 .category-icon {
-  display: grid;
-  width: 86rpx;
-  height: 86rpx;
-  place-items: center;
-  border-radius: 28rpx;
-  font-size: 31rpx;
-  font-weight: 800;
+  display: flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 16px;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+.category-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: visible;
+  font-size: 32px;
+  line-height: 1;
+  transform: scale(1.08);
+  transform-origin: center;
+  flex: none;
 }
 
 .category-green {
@@ -848,34 +954,26 @@ const cityAliases: Record<string, string[]> = {
   max-width: 100%;
   overflow: hidden;
   color: #48544b;
-  font-size: 22rpx;
+  font-size: 12px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.page--vi .category-label {
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.16;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
 .category-item.active .category-label {
   color: #2e7d32;
   font-weight: 700;
-}
-
-.mode {
-  display: block;
-  margin-top: 6rpx;
-  color: #7c8980;
-  font-size: 22rpx;
-}
-
-.location-button {
-  flex: none;
-  padding: 10rpx 18rpx;
-  border: 0;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 22rpx;
-  font-weight: 700;
-  line-height: 1.5;
 }
 
 .empty {
@@ -904,40 +1002,110 @@ const cityAliases: Record<string, string[]> = {
 
 .merchant-panel {
   display: block;
+  min-height: 260rpx;
 }
 
 :deep(.merchant-card) {
-  padding: 20rpx;
-  margin-bottom: 20rpx;
-  border-radius: 26rpx;
-  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+  margin-bottom: 10rpx;
 }
 
-:deep(.merchant-card .cover) {
-  width: 190rpx;
-  height: 164rpx;
-  border-radius: 20rpx;
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
 }
 
-:deep(.merchant-card .placeholder) {
+.section-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  cursor: pointer;
+}
+
+.section-action-text {
+  color: #728077;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.section-action-text.strong {
   color: #2e7d32;
-  background: #eaf7ee;
 }
 
-:deep(.merchant-card .name) {
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(17 24 39 / 24%);
+}
+
+.sheet-panel {
+  width: 100%;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.sheet-title {
+  display: block;
+  margin-bottom: 12px;
   color: #1f2d24;
+  font-size: 16px;
+  font-weight: 800;
 }
 
-:deep(.merchant-card .address) {
-  color: #707b73;
+.sheet-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 4px;
+  border-bottom: 1px solid #eef2ef;
+  color: #455149;
+  font-size: 14px;
 }
 
-:deep(.merchant-card .open) {
+.sheet-option.active {
   color: #2e7d32;
+  font-weight: 700;
 }
 
-:deep(.merchant-card .tag) {
+.sheet-check {
   color: #2e7d32;
-  background: #eaf7ee;
+  font-size: 14px;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.sheet-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sheet-button::after {
+  border: 0;
+}
+
+.sheet-button.secondary {
+  color: #617067;
+  background: #f3f6f4;
+}
+
+.sheet-button.primary {
+  color: #fff;
+  background: #43a047;
 }
 </style>

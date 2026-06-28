@@ -8,7 +8,6 @@ import {
   locale,
   merchantName,
   orderTypeLabel,
-  productName,
   useI18n,
   usePageTitle,
 } from '@/i18n';
@@ -156,6 +155,18 @@ function openProduct(product: Product) {
   });
 }
 
+function getProductDisplayName(product: Product) {
+  if (locale.value === 'vi') return product.nameVi || product.nameZh;
+  if (locale.value === 'en') return product.nameZh;
+  return product.nameZh;
+}
+
+function getProductSubtitle(product: Product) {
+  if (locale.value === 'zh') return product.nameVi || '';
+  if (locale.value === 'vi') return product.nameZh || '';
+  return product.nameZh || product.nameVi || '';
+}
+
 async function add(product: Product) {
   if (product.status === 'SOLD_OUT') return;
   try {
@@ -179,23 +190,25 @@ async function add(product: Product) {
         <view class="dish-mark">鲜</view>
       </view>
       <view class="merchant-content">
-        <view class="merchant-head">
-          <text class="merchant">{{ merchantName(menu.merchant, locale) }}</text>
-          <text :class="['status', menu.merchant.isOpen ? 'open' : 'closed']">
-            {{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
-          </text>
-        </view>
-        <view class="service-tags">
-          <text class="service-tag">{{ orderTypeLabel(orderType, locale) }}</text>
-          <text v-if="hasTable" class="service-tag table-tag">
-            {{ t('currentTable') }}：{{ tableName || tableNo }}
-          </text>
+        <view class="merchant-summary">
+          <view class="merchant-head">
+            <text class="merchant">{{ merchantName(menu.merchant, locale) }}</text>
+          </view>
+          <view class="service-tags">
+            <text :class="['status', menu.merchant.isOpen ? 'open' : 'closed']">
+              {{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+            </text>
+            <text class="service-tag">{{ orderTypeLabel(orderType, locale) }}</text>
+            <text class="service-tag">{{ t('browseMenu') }}</text>
+            <text v-if="hasTable" class="service-tag table-tag">
+              {{ t('currentTable') }}：{{ tableName || tableNo }}
+            </text>
+          </view>
         </view>
         <view v-if="hasTable" class="table-notice">
           <text class="table-notice-icon">桌</text>
           <text>{{ t('tableOrderingActive', { table: tableName || tableNo }) }}</text>
         </view>
-        <text v-else class="browse-note">{{ t('browseOnly') }}</text>
       </view>
     </view>
     <view v-if="notice" class="notice">{{ notice }}</view>
@@ -243,9 +256,9 @@ async function add(product: Product) {
               </text>
             </view>
             <view class="product-body">
-              <text class="product-name">{{ productName(product, locale) }}</text>
-              <text class="description">
-                {{ product.description || t('productDescriptionFallback') }}
+              <text class="product-name">{{ getProductDisplayName(product) }}</text>
+              <text v-if="getProductSubtitle(product)" class="description">
+                {{ getProductSubtitle(product) }}
               </text>
               <view class="price-row">
                 <text class="price">
@@ -282,7 +295,7 @@ async function add(product: Product) {
   height: 100vh;
   min-height: 0;
   flex-direction: column;
-  padding: 24rpx 24rpx calc(220rpx + env(safe-area-inset-bottom));
+  padding: 8rpx 12rpx calc(132rpx + env(safe-area-inset-bottom));
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
@@ -291,17 +304,17 @@ async function add(product: Product) {
 .merchant-card {
   flex: none;
   overflow: hidden;
-  margin-bottom: 20rpx;
-  border-radius: 30rpx;
-  background: #fff;
-  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 8%);
+  margin: 8rpx 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2f8f3f, #4fb263 65%, #67c97a);
+  box-shadow: 0 12rpx 28rpx rgb(46 125 50 / 10%);
 }
 
 .merchant-visual {
   position: relative;
-  height: 154rpx;
+  height: 82rpx;
   overflow: hidden;
-  background: linear-gradient(135deg, #43a047, #77c47b);
+  background: transparent;
 }
 
 .visual-circle {
@@ -311,103 +324,109 @@ async function add(product: Product) {
 }
 
 .visual-circle-large {
-  top: -70rpx;
-  right: -20rpx;
-  width: 230rpx;
-  height: 230rpx;
+  top: -90rpx;
+  right: -42rpx;
+  width: 188rpx;
+  height: 188rpx;
 }
 
 .visual-circle-small {
-  bottom: -42rpx;
-  left: 70rpx;
-  width: 124rpx;
-  height: 124rpx;
+  bottom: -34rpx;
+  left: 92rpx;
+  width: 84rpx;
+  height: 84rpx;
 }
 
 .dish-mark {
   position: absolute;
-  right: 42rpx;
-  bottom: 20rpx;
+  right: 22rpx;
+  top: 20rpx;
   display: grid;
-  width: 106rpx;
-  height: 106rpx;
+  width: 62rpx;
+  height: 62rpx;
   place-items: center;
-  border: 9rpx solid rgb(255 255 255 / 72%);
+  border: 7rpx solid rgb(255 255 255 / 72%);
   border-radius: 50%;
   color: #2e7d32;
   background: #ffcf83;
-  box-shadow: inset 0 0 0 9rpx rgb(255 255 255 / 35%);
-  font-size: 37rpx;
+  box-shadow: inset 0 0 0 7rpx rgb(255 255 255 / 35%);
+  font-size: 22rpx;
   font-weight: 800;
   box-sizing: border-box;
 }
 
 .merchant-content {
-  padding: 24rpx 26rpx 26rpx;
+  padding: 0 18px 14px;
+}
+
+.merchant-summary {
+  transform: translateY(-12px);
 }
 
 .merchant-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 18rpx;
+  gap: 10rpx;
+  padding-top: 0;
 }
 
 .merchant {
   min-width: 0;
-  color: #1f2d24;
-  font-size: 34rpx;
+  color: #fff;
+  font-size: 22px;
   font-weight: 800;
 }
 
 .status {
   flex: none;
-  padding: 7rpx 13rpx;
+  padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  font-size: 21rpx;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .open {
-  color: #2e7d32;
-  background: #eaf7ee;
+  color: #1e7b34;
+  background: rgb(255 255 255 / 92%);
 }
 
 .closed {
-  color: #a66400;
+  color: #935d00;
   background: #fff1dc;
 }
 
 .service-tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10rpx;
-  margin-top: 16rpx;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 8px;
+  overflow: hidden;
 }
 
 .service-tag {
-  padding: 7rpx 13rpx;
+  padding: 4rpx 10rpx;
   border-radius: 999rpx;
-  color: #566159;
-  background: #f6faf7;
-  font-size: 21rpx;
+  color: #1e7b34;
+  background: rgb(255 255 255 / 9);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .table-tag {
-  color: #2e7d32;
-  background: #eaf7ee;
+  color: #1e7b34;
+  background: rgb(255 255 255 / 92%);
 }
 
 .table-notice {
   display: flex;
   align-items: center;
-  gap: 13rpx;
-  padding: 15rpx 17rpx;
-  margin-top: 18rpx;
-  border-radius: 18rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 23rpx;
+  gap: 10rpx;
+  padding: 12rpx 14rpx;
+  margin-top: 10rpx;
+  border-radius: 16rpx;
+  color: #fff;
+  background: rgb(255 255 255 / 14%);
+  font-size: 22rpx;
   font-weight: 700;
 }
 
@@ -425,8 +444,8 @@ async function add(product: Product) {
 
 .browse-note {
   display: block;
-  margin-top: 15rpx;
-  color: #7d8980;
+  margin-top: 12rpx;
+  color: rgb(255 255 255 / 86%);
   font-size: 22rpx;
 }
 
@@ -452,27 +471,38 @@ async function add(product: Product) {
 
 .menu-layout {
   display: grid;
-  grid-template-columns: 172rpx minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr);
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  border-radius: 28rpx;
+  border-radius: 14px;
   background: #fff;
-  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 6%);
+  box-shadow: 0 10rpx 28rpx rgb(46 125 50 / 6%);
 }
 
 .categories {
   height: 100%;
   min-height: 0;
   background: #f6faf7;
+  scrollbar-width: none;
+}
+
+.categories::-webkit-scrollbar,
+.products::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .category {
   position: relative;
-  padding: 27rpx 18rpx 27rpx 24rpx;
-  color: #666;
-  font-size: 24rpx;
-  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 4px 0 10px;
+  color: #3d473f;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .category.active {
@@ -483,10 +513,10 @@ async function add(product: Product) {
 
 .category.active::before {
   position: absolute;
-  top: 23rpx;
-  bottom: 23rpx;
+  top: 8px;
+  bottom: 8px;
   left: 0;
-  width: 7rpx;
+  width: 3px;
   border-radius: 0 8rpx 8rpx 0;
   background: #43a047;
   content: '';
@@ -496,13 +526,14 @@ async function add(product: Product) {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 24rpx 20rpx 0;
+  padding: 10px 10px 0;
   background: #fff;
   box-sizing: border-box;
+  scrollbar-width: none;
 }
 
 .product-list {
-  padding-bottom: 40rpx;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -510,29 +541,30 @@ async function add(product: Product) {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16rpx;
-  margin-bottom: 18rpx;
+  gap: 12rpx;
+  min-height: 40px;
+  margin-bottom: 2px;
 }
 
 .category-title {
   color: #1f2d24;
-  font-size: 30rpx;
+  font-size: 18px;
   font-weight: 800;
 }
 
 .category-count {
   color: #919b93;
-  font-size: 20rpx;
+  font-size: 13px;
 }
 
 .product {
   display: flex;
-  gap: 16rpx;
-  padding: 18rpx;
-  margin-bottom: 16rpx;
-  border-radius: 22rpx;
+  gap: 10px;
+  min-height: 100px;
+  padding: 10px 4px;
+  margin-bottom: 0;
+  border-bottom: 2rpx solid #eef2ef;
   background: #fff;
-  box-shadow: 0 8rpx 24rpx rgb(46 125 50 / 7%);
 }
 
 .product-sold-out {
@@ -541,15 +573,15 @@ async function add(product: Product) {
 
 .image-wrap {
   position: relative;
-  width: 142rpx;
-  height: 128rpx;
+  width: 76px;
+  height: 76px;
   flex: none;
 }
 
 .image {
   width: 100%;
   height: 100%;
-  border-radius: 18rpx;
+  border-radius: 10px;
 }
 
 .placeholder {
@@ -584,21 +616,21 @@ async function add(product: Product) {
   display: block;
   overflow: hidden;
   color: #1f2d24;
-  font-size: 27rpx;
+  font-size: 16px;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .description {
-  display: -webkit-box;
-  margin: 8rpx 0;
+  display: block;
+  margin: 3px 0 4px;
   overflow: hidden;
   color: #818b83;
-  font-size: 21rpx;
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .price-row {
@@ -611,14 +643,14 @@ async function add(product: Product) {
 
 .price {
   color: #1f2d24;
-  font-size: 27rpx;
+  font-size: 17px;
   font-weight: 800;
 }
 
 .currency {
   margin-right: 3rpx;
   color: #ff8a00;
-  font-size: 20rpx;
+  font-size: 13px;
 }
 
 .sold-out {
@@ -627,18 +659,18 @@ async function add(product: Product) {
 }
 
 .add {
-  width: 52rpx;
-  height: 52rpx;
-  min-height: 52rpx;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
   padding: 0;
   margin: 0;
   border: 0;
   border-radius: 50%;
   color: #fff;
   background: #43a047;
-  font-size: 34rpx;
+  font-size: 22px;
   font-weight: 500;
-  line-height: 52rpx;
+  line-height: 38px;
 }
 
 .add::after {

@@ -15,6 +15,7 @@ import type { OrderChatMessage } from '@/types/api';
 const auth = useAuthStore();
 const { t, locale } = useI18n();
 const orderId = ref('');
+const readonly = ref(false);
 const loading = ref(false);
 const refreshing = ref(false);
 const sending = ref(false);
@@ -41,12 +42,13 @@ const canSend = computed(() => {
   const currentOrderStatus = order.value?.status;
   const currentConversationStatus = conversation.value?.status;
   if (!currentOrderStatus) return false;
-  return !['COMPLETED', 'CANCELLED'].includes(currentOrderStatus) && currentConversationStatus !== 'CLOSED';
+  return !readonly.value && !isClosedOrderStatus(currentOrderStatus) && currentConversationStatus !== 'CLOSED';
 });
 
 const showReadOnlyHint = computed(
   () =>
-    ['COMPLETED', 'CANCELLED'].includes(order.value?.status ?? '') ||
+    readonly.value ||
+    isClosedOrderStatus(order.value?.status ?? '') ||
     conversation.value?.status === 'CLOSED',
 );
 
@@ -249,6 +251,21 @@ function formatMessageTime(value: string) {
 
 function isOwnMessage(message: OrderChatMessage) {
   return message.senderType === 'CUSTOMER';
+}
+
+function isClosedOrderStatus(status: string | undefined | null) {
+  const normalized = String(status ?? '').trim().toUpperCase();
+  return [
+    'COMPLETED',
+    'COMPLETE',
+    'FINISHED',
+    'DONE',
+    'CLOSED',
+    'CANCELLED',
+    'CANCELED',
+    'REFUNDED',
+    'REJECTED',
+  ].includes(normalized);
 }
 
 async function loadAllMessages(chatOrderId: string) {
@@ -468,6 +485,7 @@ function handleGlobalKeyboardHeightChange(result: { height?: number }) {
 
 onLoad((options) => {
   updateOrderId(String(options?.orderId ?? ''));
+  readonly.value = String(options?.readonly ?? '') === '1';
   bindKeyboardListener();
   void loadConversation(true);
 });
@@ -567,7 +585,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
 
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
 
-        <view class="composer">
+        <view v-if="!readonly" class="composer">
         <textarea
           v-model="draft"
           class="composer-input"
