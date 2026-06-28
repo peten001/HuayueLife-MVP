@@ -5,9 +5,10 @@ import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
 import {
   categoryName,
-  locale,
   merchantName,
   orderTypeLabel,
+  productName,
+  productSubtitle,
   useI18n,
   usePageTitle,
 } from '@/i18n';
@@ -27,7 +28,7 @@ const activeCategory = ref('');
 const error = ref('');
 const notice = ref('');
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const currentCategory = computed(
   () => menu.value?.categories.find((category) => category.id === activeCategory.value) ?? null,
 );
@@ -130,14 +131,32 @@ function buildContext(loadedMenu: MenuResponse): CartContext {
 function confirmContextSwitch(nextContext: CartContext) {
   const sameMerchant = cartStore.context?.merchantId === nextContext.merchantId;
   const content = sameMerchant
-    ? '当前购物车已有菜品，是否切换到新的桌台？\n切换后当前购物车将清空。'
-    : '切换商家会清空当前购物车，是否继续？';
+    ? locale.value === 'vi'
+      ? 'Giỏ hàng hiện có món. Bạn có muốn chuyển sang bàn mới không?\nGiỏ hàng hiện tại sẽ được xóa.'
+      : locale.value === 'en'
+        ? 'Your cart already has items. Switch to the new table?\nThe current cart will be cleared.'
+        : '当前购物车已有菜品，是否切换到新的桌台？\n切换后当前购物车将清空。'
+    : locale.value === 'vi'
+      ? 'Chuyển cửa hàng sẽ xóa giỏ hàng hiện tại. Bạn có muốn tiếp tục không?'
+      : locale.value === 'en'
+        ? 'Switching merchants will clear the current cart. Continue?'
+        : '切换商家会清空当前购物车，是否继续？';
   return new Promise<boolean>((resolve) => {
     uni.showModal({
-      title: '提示',
+      title: locale.value === 'vi' ? 'Nhắc nhở' : locale.value === 'en' ? 'Notice' : '提示',
       content,
-      cancelText: '取消',
-      confirmText: sameMerchant ? '切换桌台' : '继续切换',
+      cancelText: locale.value === 'vi' ? 'Hủy' : locale.value === 'en' ? 'Cancel' : '取消',
+      confirmText: sameMerchant
+        ? locale.value === 'vi'
+          ? 'Chuyển bàn'
+          : locale.value === 'en'
+            ? 'Switch table'
+            : '切换桌台'
+        : locale.value === 'vi'
+          ? 'Tiếp tục'
+          : locale.value === 'en'
+            ? 'Continue'
+            : '继续切换',
       success: (result) => resolve(Boolean(result.confirm)),
       fail: () => resolve(false),
     });
@@ -156,15 +175,11 @@ function openProduct(product: Product) {
 }
 
 function getProductDisplayName(product: Product) {
-  if (locale.value === 'vi') return product.nameVi || product.nameZh;
-  if (locale.value === 'en') return product.nameZh;
-  return product.nameZh;
+  return productName(product, locale.value);
 }
 
 function getProductSubtitle(product: Product) {
-  if (locale.value === 'zh') return product.nameVi || '';
-  if (locale.value === 'vi') return product.nameZh || '';
-  return product.nameZh || product.nameVi || '';
+  return productSubtitle(product, locale.value);
 }
 
 async function add(product: Product) {
@@ -187,6 +202,7 @@ async function add(product: Product) {
       <view class="merchant-visual">
         <view class="visual-circle visual-circle-large"></view>
         <view class="visual-circle visual-circle-small"></view>
+        <!-- Brand decoration only. Not a functional icon. -->
         <view class="dish-mark">鲜</view>
       </view>
       <view class="merchant-content">
@@ -206,7 +222,7 @@ async function add(product: Product) {
           </view>
         </view>
         <view v-if="hasTable" class="table-notice">
-          <text class="table-notice-icon">桌</text>
+          <text class="table-notice-icon">🍽️</text>
           <text>{{ t('tableOrderingActive', { table: tableName || tableNo }) }}</text>
         </view>
       </view>
@@ -233,7 +249,7 @@ async function add(product: Product) {
             </text>
           </view>
           <view v-if="!currentCategory.products.length" class="empty">
-            <view class="empty-icon">菜</view>
+            <view class="empty-icon">🍽️</view>
             <text class="empty-title">{{ t('noDishes') }}</text>
             <text class="empty-copy">{{ t('tryAgainLater') }}</text>
           </view>
@@ -279,7 +295,7 @@ async function add(product: Product) {
           </view>
         </view>
         <view v-else class="empty product-list">
-          <view class="empty-icon">菜</view>
+          <view class="empty-icon">🍽️</view>
           <text class="empty-title">{{ t('noDishes') }}</text>
           <text class="empty-copy">{{ t('tryAgainLater') }}</text>
         </view>

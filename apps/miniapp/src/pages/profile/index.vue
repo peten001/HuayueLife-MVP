@@ -32,6 +32,7 @@ function openProfileEdit() {
     <view class="profile-card">
       <view class="avatar-wrap">
         <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
+        <!-- i18n-check-allow avatar-initial -->
         <view v-else class="avatar">{{ displayNickname.slice(0, 1) }}</view>
       </view>
       <view class="profile-info">
@@ -45,7 +46,7 @@ function openProfileEdit() {
     <view class="menu-card">
       <button @click="openOrders">
         <view class="menu-main">
-          <view class="menu-icon">单</view>
+          <view class="menu-icon">🧾</view>
           <view>
             <text class="menu-title">{{ t('myOrders') }}</text>
             <text class="menu-copy">{{ t('profileOrdersHint') }}</text>
@@ -55,7 +56,7 @@ function openProfileEdit() {
       </button>
       <button @click="openProfileEdit">
         <view class="menu-main">
-          <view class="menu-icon">我</view>
+          <view class="menu-icon">👤</view>
           <view>
             <text class="menu-title">{{ t('editProfile') }}</text>
             <text class="menu-copy">{{ t('profileEditHintShort') }}</text>
@@ -70,14 +71,14 @@ function openProfileEdit() {
       <LanguageSwitcher />
       <view class="row">
         <view class="row-main">
-          <view class="small-icon">城</view>
+          <view class="small-icon">📍</view>
           <text>{{ t('serviceArea') }}</text>
         </view>
         <text>{{ t('cityBacNinh') }} / {{ t('cityBacGiang') }}</text>
       </view>
       <view class="row">
         <view class="row-main">
-          <view class="small-icon">付</view>
+          <view class="small-icon">💳</view>
           <text>{{ t('paymentMethod') }}</text>
         </view>
         <text>{{ t('offlinePayment') }}</text>
@@ -242,14 +243,14 @@ function openProfileEdit() {
   width: 72rpx;
   height: 72rpx;
   border-radius: 22rpx;
-  font-size: 25rpx;
+  font-size: 32rpx;
 }
 
 .small-icon {
   width: 52rpx;
   height: 52rpx;
   border-radius: 17rpx;
-  font-size: 20rpx;
+  font-size: 24rpx;
 }
 
 .menu-title {

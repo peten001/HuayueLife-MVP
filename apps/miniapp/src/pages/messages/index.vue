@@ -7,7 +7,7 @@ import {
   type UserChatConversation,
 } from '@/api/order-chat';
 import { getOrders } from '@/api/orders';
-import { locale, merchantName, orderStatusLabel, usePageTitle } from '@/i18n';
+import { locale, orderMerchantName, orderStatusLabel, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import type { OrderChatMessage } from '@/types/api';
 import type { UserOrder } from '@/types/api';
@@ -174,7 +174,7 @@ const orderMessages = computed(() =>
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
     .map((order) => ({
       id: order.id,
-      merchantName: merchantName(order.merchant, locale.value),
+      merchantName: orderMerchantName(order, locale.value),
       orderNo: order.orderNo,
       statusLabel: orderStatusLabel(order.status, locale.value),
       time: formatDate(order.updatedAt || order.createdAt),
@@ -237,7 +237,16 @@ async function loadChatSessions(orderList: UserOrder[]) {
 
       return {
         id: order.id,
-        merchantName: merchantName(order.merchant, locale.value),
+        merchantName: orderMerchantName(
+          {
+            ...order,
+            merchant:
+              conversation.merchant && typeof conversation.merchant === 'object'
+                ? conversation.merchant
+                : order.merchant,
+          },
+          locale.value,
+        ),
         orderNo: order.orderNo,
         unread: conversation.customerUnreadCount ?? 0,
         time: formatDate(latestMessage.createdAt || conversation.lastMessageAt || order.updatedAt || order.createdAt),
@@ -335,7 +344,7 @@ function openChat(orderId: string, readonly = false) {
       <view v-if="error" class="message">{{ error }}</view>
 
       <view v-if="loading" class="empty-state">
-        <view class="empty-icon">信</view>
+        <view class="empty-icon">🔔</view>
         <text class="empty-title">{{ locale === 'vi' ? 'Đang tải...' : locale === 'en' ? 'Loading...' : '加载中...' }}</text>
       </view>
 
@@ -357,7 +366,7 @@ function openChat(orderId: string, readonly = false) {
           </view>
         </view>
         <view v-else class="empty-state">
-          <view class="empty-icon">单</view>
+          <view class="empty-icon">🧾</view>
           <text class="empty-title">{{ copy.empty.orders }}</text>
         </view>
       </template>
@@ -392,7 +401,7 @@ function openChat(orderId: string, readonly = false) {
           </view>
         </view>
         <view v-else class="empty-state">
-          <view class="empty-icon">聊</view>
+          <view class="empty-icon">💬</view>
           <text class="empty-title">{{ copy.empty.chats }}</text>
         </view>
       </template>
@@ -412,7 +421,7 @@ function openChat(orderId: string, readonly = false) {
           </view>
         </view>
         <view v-else class="empty-state">
-          <view class="empty-icon">讯</view>
+          <view class="empty-icon">🔔</view>
           <text class="empty-title">{{ copy.empty.system }}</text>
         </view>
       </template>

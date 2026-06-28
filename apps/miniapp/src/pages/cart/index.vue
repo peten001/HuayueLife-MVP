@@ -55,7 +55,7 @@ function checkout() {
 <template>
   <view class="page">
     <view v-if="cartStore.context" class="context">
-      <view class="context-mark">餐</view>
+      <view class="context-mark">🍽️</view>
       <view>
         <text class="merchant">{{ cartStore.context.merchantName }}</text>
         <text class="order-type">
@@ -68,7 +68,7 @@ function checkout() {
       </view>
     </view>
     <view v-if="!cartStore.cart?.items.length" class="empty">
-      <view class="empty-icon">篮</view>
+      <view class="empty-icon">🛒</view>
       <text class="empty-title">{{ t('cartEmpty') }}</text>
     </view>
     <view v-for="item in cartStore.cart?.items" :key="item.id" class="item">
@@ -133,8 +133,7 @@ function checkout() {
   border-radius: 22rpx;
   color: #2e7d32;
   background: #ffcf83;
-  font-size: 27rpx;
-  font-weight: 800;
+  font-size: 32rpx;
 }
 
 .merchant {

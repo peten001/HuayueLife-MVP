@@ -1,4 +1,5 @@
 import { ref, watchEffect } from 'vue';
+import type { LocalizedFields, LocalizedTranslationMap } from '@/types/api';
 import type { Locale } from '@/utils/storage';
 import { getLocale, setLocale as saveLocale } from '@/utils/storage';
 
@@ -933,6 +934,52 @@ export function localeLabel(current = locale.value) {
   return current === 'vi' ? 'Tiếng Việt' : current === 'en' ? 'English' : '中文';
 }
 
+const merchantNameFallbacks: Record<string, { vi?: string; en?: string }> = {
+  '川味小馆（云中店）': {
+    vi: 'Nhà hàng Tứ Xuyên (Chi nhánh Vân Trung)',
+    en: 'Sichuan Bistro (Van Trung Branch)',
+  },
+  '川味小馆（北宁店）': {
+    vi: 'Nhà hàng Tứ Xuyên (Chi nhánh Bắc Ninh)',
+    en: 'Sichuan Bistro (Bac Ninh Branch)',
+  },
+  '农品香-湘菜馆': {
+    vi: 'Nhà hàng Hương Nông - Ẩm thực Hồ Nam',
+    en: 'Nongpinxiang Hunan Restaurant',
+  },
+};
+
+const productNameFallbacks: Record<string, { vi?: string; en?: string }> = {
+  水煮牛肉: {
+    vi: 'Bò luộc cay Tứ Xuyên',
+    en: 'Spicy Boiled Beef',
+  },
+  毛血旺: {
+    vi: 'Mao Xue Wang',
+    en: 'Mao Xue Wang',
+  },
+  回锅肉: {
+    vi: 'Thịt heo xào hai lần',
+    en: 'Twice-Cooked Pork',
+  },
+  辣子鸡: {
+    vi: 'Gà xào ớt khô',
+    en: 'Spicy Diced Chicken',
+  },
+  宫保鸡丁: {
+    vi: 'Gà xào hạt điều kiểu Kung Pao',
+    en: 'Kung Pao Chicken',
+  },
+  麻婆豆腐: {
+    vi: 'Đậu phụ Mapo',
+    en: 'Mapo Tofu',
+  },
+  水煮鱼片: {
+    vi: 'Cá luộc cay Tứ Xuyên',
+    en: 'Spicy Boiled Fish',
+  },
+};
+
 export function cityOptions(current = locale.value) {
   const cities = [
     {
@@ -957,26 +1004,207 @@ export function cityOptions(current = locale.value) {
   return cities;
 }
 
-export function merchantName(
-  item: { nameZh: string; nameVi?: string },
-  current = locale.value,
+type LocalizedRecord = LocalizedFields | Record<string, unknown> | null | undefined;
+
+function readString(source: LocalizedRecord, keys: string[]) {
+  if (!source) return '';
+  const record = source as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function readNestedString(source: LocalizedRecord, localeKey: 'zh' | 'vi' | 'en') {
+  if (!source) return '';
+  const record = source as Record<string, unknown>;
+  const localizedName = record.localizedName;
+  if (localizedName && typeof localizedName === 'object' && localizedName !== null) {
+    const value = (localizedName as Record<string, unknown>)[localeKey];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  const translations = record.translations;
+  if (translations && typeof translations === 'object' && translations !== null) {
+    const localeBlock = (translations as Record<string, unknown>)[localeKey];
+    if (localeBlock && typeof localeBlock === 'object' && localeBlock !== null) {
+      const name = (localeBlock as Record<string, unknown>).name;
+      if (typeof name === 'string' && name.trim()) return name.trim();
+      const title = (localeBlock as Record<string, unknown>).title;
+      if (typeof title === 'string' && title.trim()) return title.trim();
+    }
+  }
+  return '';
+}
+
+function readNestedText(
+  source: LocalizedRecord,
+  localeKey: 'zh' | 'vi' | 'en',
+  field: 'name' | 'title' | 'description',
 ) {
-  if (current === 'vi') return item.nameVi || item.nameZh;
-  return item.nameZh;
+  if (!source) return '';
+  const record = source as Record<string, unknown>;
+  const localizedText = record.localizedText;
+  if (localizedText && typeof localizedText === 'object' && localizedText !== null) {
+    const value = (localizedText as Record<string, unknown>)[localeKey];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  const translations = record.translations as LocalizedTranslationMap | undefined;
+  const translationValue = translations?.[localeKey]?.[field];
+  if (typeof translationValue === 'string' && translationValue.trim()) {
+    return translationValue.trim();
+  }
+  return '';
+}
+
+function localizedField(
+  item: LocalizedRecord,
+  current = locale.value,
+  fallbackMap?: Record<string, { vi?: string; en?: string }>,
+) {
+  const zhValue =
+    readString(item, ['nameZh', 'zhName', 'name_zh', 'titleZh', 'title_zh']) ||
+    readNestedString(item, 'zh') ||
+    readString(item, ['name', 'title']);
+  const viValue =
+    readString(item, ['nameVi', 'viName', 'name_vi', 'titleVi', 'title_vi']) ||
+    readNestedString(item, 'vi') ||
+    fallbackMap?.[zhValue]?.vi ||
+    '';
+  const enValue =
+    readString(item, ['nameEn', 'enName', 'name_en', 'titleEn', 'title_en']) ||
+    readNestedString(item, 'en') ||
+    fallbackMap?.[zhValue]?.en ||
+    '';
+
+  if (current === 'vi') return viValue || zhValue || enValue || '';
+  if (current === 'en') return enValue || viValue || zhValue || '';
+  return zhValue || viValue || enValue || '';
+}
+
+export function localizedName(item: LocalizedRecord, current = locale.value) {
+  return localizedField(item, current);
+}
+
+export function localizedText(
+  item: LocalizedRecord,
+  current = locale.value,
+  keys: string[] = [
+    'descriptionZh',
+    'descriptionVi',
+    'descriptionEn',
+    'description_zh',
+    'description_vi',
+    'description_en',
+    'description',
+  ],
+) {
+  const record = item as Record<string, unknown> | null | undefined;
+  const zhKeys = keys.filter((key) => /Zh|_zh$/.test(key));
+  const viKeys = keys.filter((key) => /Vi|_vi$/.test(key));
+  const enKeys = keys.filter((key) => /En|_en$/.test(key));
+
+  const zhValue =
+    readString(record, zhKeys) ||
+    readNestedText(record, 'zh', 'description') ||
+    readString(record, ['description', 'title', 'name']);
+  const viValue =
+    readString(record, viKeys) ||
+    readNestedText(record, 'vi', 'description') ||
+    '';
+  const enValue =
+    readString(record, enKeys) ||
+    readNestedText(record, 'en', 'description') ||
+    '';
+
+  if (current === 'vi') return viValue || enValue || zhValue || '';
+  if (current === 'en') return enValue || viValue || zhValue || '';
+  return zhValue || viValue || enValue || '';
+}
+
+export function merchantName(item: LocalizedRecord, current = locale.value) {
+  return localizedField(item, current, merchantNameFallbacks);
+}
+
+export function orderMerchantName(item: LocalizedRecord, current = locale.value) {
+  if (!item) return '';
+
+  const record = item as Record<string, unknown>;
+  const merchant = record.merchant;
+  if (merchant && typeof merchant === 'object') {
+    return merchantName(merchant as LocalizedRecord, current);
+  }
+
+  return localizedField(
+    {
+      nameZh:
+        readString(record, ['merchantNameZhSnapshot', 'merchantNameZh']) ||
+        readString(record, ['nameZh', 'zhName', 'name_zh']) ||
+        readString(record, ['merchantName', 'name']),
+      nameVi:
+        readString(record, ['merchantNameViSnapshot', 'merchantNameVi']) ||
+        readString(record, ['nameVi', 'viName', 'name_vi']),
+      nameEn:
+        readString(record, ['merchantNameEnSnapshot', 'merchantNameEn']) ||
+        readString(record, ['nameEn', 'enName', 'name_en']),
+      localizedName: record.localizedName,
+      translations: record.translations,
+    },
+    current,
+    merchantNameFallbacks,
+  );
 }
 
 export function categoryName(
-  item: { nameZh: string; nameVi?: string },
+  item: LocalizedRecord,
   current = locale.value,
 ) {
   return merchantName(item, current);
 }
 
 export function productName(
-  item: { nameZh: string; nameVi?: string },
+  item: LocalizedRecord,
   current = locale.value,
 ) {
-  return merchantName(item, current);
+  return localizedField(item, current, productNameFallbacks);
+}
+
+export function productSubtitle(
+  item: LocalizedRecord,
+  current = locale.value,
+) {
+  const zhValue = localizedField(item, 'zh', productNameFallbacks);
+  const viValue = localizedField(item, 'vi', productNameFallbacks);
+  const enValue = localizedField(item, 'en', productNameFallbacks);
+
+  if (current === 'zh') return viValue || '';
+  if (current === 'vi') return zhValue || '';
+  return zhValue || viValue || '';
+}
+
+export function productSnapshotName(
+  snapshot:
+    | string
+    | {
+        productNameZhSnapshot?: string;
+        productNameViSnapshot?: string;
+        productNameEnSnapshot?: string;
+      },
+  current = locale.value,
+) {
+  if (typeof snapshot === 'string') {
+    return localizedField({ nameZh: snapshot }, current, productNameFallbacks);
+  }
+
+  return localizedField(
+    {
+      nameZh: snapshot?.productNameZhSnapshot || '',
+      nameVi: snapshot?.productNameViSnapshot || '',
+      nameEn: snapshot?.productNameEnSnapshot || '',
+    },
+    current,
+    productNameFallbacks,
+  );
 }
 
 export function orderTypeLabel(

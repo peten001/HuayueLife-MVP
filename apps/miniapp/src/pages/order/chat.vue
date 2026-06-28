@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
-import { useI18n, usePageTitle } from '@/i18n';
+import { merchantName, translateApiError, useI18n, usePageTitle } from '@/i18n';
 import {
   getOrderChat,
   listOrderChatMessages,
@@ -53,8 +53,7 @@ const showReadOnlyHint = computed(
 );
 
 const merchantDisplayName = computed(() => {
-  if (locale.value === 'vi') return conversation.value?.merchant.nameVi || conversation.value?.merchant.nameZh || '';
-  return conversation.value?.merchant.nameZh || '';
+  return merchantName(conversation.value?.merchant, locale.value);
 });
 
 const order = computed(() => conversation.value?.order ?? null);
@@ -239,8 +238,12 @@ function formatDayLabel(value: string) {
   const todayKey = dayKeyFromDate(today);
   const yesterdayKey = dayKeyFromDate(yesterday);
 
-  if (currentKey === todayKey) return '今天';
-  if (currentKey === yesterdayKey) return '昨天';
+  if (currentKey === todayKey) {
+    return locale.value === 'vi' ? 'Hôm nay' : locale.value === 'en' ? 'Today' : '今天';
+  }
+  if (currentKey === yesterdayKey) {
+    return locale.value === 'vi' ? 'Hôm qua' : locale.value === 'en' ? 'Yesterday' : '昨天';
+  }
   return `${current.getFullYear()}/${String(current.getMonth() + 1).padStart(2, '0')}/${String(current.getDate()).padStart(2, '0')}`;
 }
 
@@ -430,7 +433,7 @@ async function sendMessage() {
     return;
   }
   if (!canSend.value) {
-    uni.showToast({ title: '订单已完成或已取消，不能继续发送', icon: 'none' });
+    uni.showToast({ title: t('chatClosedHint'), icon: 'none' });
     return;
   }
 
@@ -454,7 +457,7 @@ async function sendMessage() {
     }
     scheduleScrollToBottom('send', true);
   } catch (caught) {
-    const message = caught instanceof Error ? caught.message : t('orderLoadError');
+    const message = caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
     error.value = message;
     uni.showToast({ title: message, icon: 'none' });
   } finally {
@@ -580,7 +583,9 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
         </scroll-view>
 
         <view v-if="showNewMessagePrompt" class="new-message-wrap">
-          <button class="new-message-prompt" @click="handleNewMessagePrompt">↓ 新消息</button>
+          <button class="new-message-prompt" @click="handleNewMessagePrompt">
+            ↓ {{ locale === 'vi' ? 'Tin nhắn mới' : locale === 'en' ? 'New messages' : '新消息' }}
+          </button>
         </view>
 
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>

@@ -63,7 +63,7 @@ function openMerchant(merchant: MerchantSummary) {
     </view>
 
     <view v-if="!favorites.length" class="empty">
-      <view class="empty-icon">藏</view>
+      <view class="empty-icon">❤️</view>
       <text class="empty-title">{{ emptyTitle }}</text>
       <text class="empty-copy">{{ emptyHint }}</text>
     </view>

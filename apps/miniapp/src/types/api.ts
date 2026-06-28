@@ -5,6 +5,68 @@ export interface ApiResponse<T> {
   requestId: string;
 }
 
+export interface TranslationEntry {
+  name?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface LocalizedNameMap {
+  zh?: string;
+  vi?: string;
+  en?: string;
+}
+
+export interface LocalizedTranslationMap {
+  zh?: TranslationEntry;
+  vi?: TranslationEntry;
+  en?: TranslationEntry;
+}
+
+export interface LocalizedFields {
+  name?: string;
+  title?: string;
+  description?: string;
+  nameZh?: string;
+  nameVi?: string;
+  nameEn?: string;
+  zhName?: string;
+  viName?: string;
+  enName?: string;
+  name_zh?: string;
+  name_vi?: string;
+  name_en?: string;
+  titleZh?: string;
+  titleVi?: string;
+  titleEn?: string;
+  title_zh?: string;
+  title_vi?: string;
+  title_en?: string;
+  descriptionZh?: string;
+  descriptionVi?: string;
+  descriptionEn?: string;
+  description_zh?: string;
+  description_vi?: string;
+  description_en?: string;
+  localizedName?: LocalizedNameMap;
+  localizedText?: LocalizedNameMap;
+  translations?: LocalizedTranslationMap;
+}
+
+export interface MerchantLocalizedRef extends LocalizedFields {
+  id: string;
+  nameZh: string;
+  nameVi?: string;
+  nameEn?: string;
+  logoUrl?: string;
+}
+
+export interface ProductNameSnapshot extends LocalizedFields {
+  productNameZhSnapshot: string;
+  productNameViSnapshot?: string;
+  productNameEnSnapshot?: string;
+}
+
 export interface UserProfile {
   id: string;
   nickname?: string;
@@ -13,7 +75,7 @@ export interface UserProfile {
   status: string;
 }
 
-export interface MerchantSummary {
+export interface MerchantSummary extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
@@ -44,7 +106,7 @@ export interface MerchantDetail extends MerchantSummary {
   businessHours: Record<string, string[]>;
 }
 
-export interface Product {
+export interface Product extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
@@ -52,10 +114,10 @@ export interface Product {
   imageUrl?: string;
   priceVnd: string;
   status: 'ON_SALE' | 'SOLD_OUT';
-  merchant?: { id: string; nameZh: string };
+  merchant?: MerchantLocalizedRef;
 }
 
-export interface MenuCategory {
+export interface MenuCategory extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
@@ -63,17 +125,14 @@ export interface MenuCategory {
 }
 
 export interface MenuResponse {
-  merchant: {
-    id: string;
-    nameZh: string;
-    nameVi?: string;
+  merchant: MerchantLocalizedRef & {
     isOpen: boolean;
   };
   categories: MenuCategory[];
 }
 
 export interface QrResolveResponse {
-  merchant: { id: string; nameZh: string; nameVi?: string };
+  merchant: MerchantLocalizedRef;
   table: { id: string; tableNo: string; tableName?: string };
   orderType: 'DINE_IN';
   tableToken: string;
@@ -101,7 +160,7 @@ export interface Cart {
   merchantId: string;
   tableId: string | null;
   orderType: OrderType;
-  merchant?: { id: string; nameZh: string };
+  merchant?: MerchantLocalizedRef;
   table?: {
     id: string;
     tableNo: string;
@@ -124,7 +183,7 @@ export interface CartContext {
 
 export interface OrderPreview {
   cartId: string;
-  merchant: { id: string; nameZh: string };
+  merchant: MerchantLocalizedRef;
   table: { id: string; tableNo: string; tableName?: string } | null;
   orderType: OrderType;
   items: Array<CartItem & { subtotalVnd: string }>;
@@ -143,9 +202,8 @@ export interface CreatedOrder {
   totalAmountVnd: string;
 }
 
-export interface UserOrderItem {
+export interface UserOrderItem extends ProductNameSnapshot {
   id: string;
-  productNameZhSnapshot: string;
   imageUrlSnapshot?: string;
   unitPriceVnd: string;
   quantity: number;
@@ -192,6 +250,13 @@ export interface UserOrder {
   orderNo: string;
   orderType: OrderType;
   status: OrderStatus;
+  merchantName?: string;
+  merchantNameZh?: string;
+  merchantNameVi?: string;
+  merchantNameEn?: string;
+  merchantNameZhSnapshot?: string;
+  merchantNameViSnapshot?: string;
+  merchantNameEnSnapshot?: string;
   tableNoSnapshot?: string;
   contactName?: string;
   contactPhone?: string;
@@ -208,12 +273,7 @@ export interface UserOrder {
   cancelledAt?: string;
   createdAt: string;
   updatedAt: string;
-  merchant: {
-    id: string;
-    nameZh: string;
-    nameVi?: string;
-    logoUrl?: string;
-  };
+  merchant?: MerchantLocalizedRef;
   table?: {
     id: string;
     tableNo: string;

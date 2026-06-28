@@ -5,6 +5,7 @@ import { getOrders } from '@/api/orders';
 import {
   locale,
   merchantName,
+  productSnapshotName,
   orderStatusLabel,
   orderTypeLabel,
   useI18n,
@@ -100,11 +101,11 @@ onUnload(stopPolling);
 
     <view v-if="message" class="message">{{ message }}</view>
     <view v-if="loading" class="empty">
-      <view class="empty-icon">单</view>
+      <view class="empty-icon">🧾</view>
       <text class="empty-title">{{ t('loading') }}</text>
     </view>
     <view v-else-if="!filteredOrders.length" class="empty">
-      <view class="empty-icon">单</view>
+      <view class="empty-icon">🧾</view>
       <text class="empty-title">{{ t('noOrders') }}</text>
       <text class="empty-copy">{{ t('ordersEmptyHint') }}</text>
       <button class="order-now" @click="orderNow">{{ t('orderNow') }}</button>
@@ -132,7 +133,7 @@ onUnload(stopPolling);
       </view>
       <view class="items">
         <text v-for="item in order.items.slice(0, 3)" :key="item.id">
-          {{ item.productNameZhSnapshot }} × {{ item.quantity }}
+          {{ productSnapshotName(item, locale) }} × {{ item.quantity }}
         </text>
         <text v-if="order.items.length > 3">{{ t('orderItemsMore', { count: order.items.length - 3 }) }}</text>
       </view>

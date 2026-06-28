@@ -6,6 +6,7 @@ import {
   formatNumberCurrency,
   merchantName,
   productName,
+  productSubtitle,
   useI18n,
   usePageTitle,
 } from '@/i18n';
@@ -90,7 +91,7 @@ async function add() {
       <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
       <view class="card">
         <text class="name">{{ productName(product, locale) }}</text>
-        <text v-if="product.nameVi" class="vi">{{ product.nameVi }}</text>
+        <text v-if="productSubtitle(product, locale)" class="vi">{{ productSubtitle(product, locale) }}</text>
         <text class="description">{{ product.description || t('noProductDescription') }}</text>
         <text class="price">{{ formatNumberCurrency(product.priceVnd) }}</text>
         <text v-if="product.status === 'SOLD_OUT'" class="sold-out">{{ t('soldOutCurrent') }}</text>

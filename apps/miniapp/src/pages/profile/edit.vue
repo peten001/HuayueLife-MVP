@@ -86,6 +86,7 @@ async function saveProfile() {
 
       <button class="avatar-picker" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
         <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
+        <!-- i18n-check-allow avatar-initial -->
         <view v-else class="avatar">{{ (draft.nickname || auth.user?.nickname || 'U').slice(0, 1) }}</view>
         <text class="avatar-tip">{{ t('chooseAvatar') }}</text>
       </button>

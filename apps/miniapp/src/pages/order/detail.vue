@@ -9,6 +9,7 @@ import {
   operatorLabel,
   orderStatusLabel,
   orderTypeLabel,
+  productSnapshotName,
   settlementLabel,
   translateApiError,
   useI18n,
@@ -198,7 +199,7 @@ function serviceInfo() {
           />
           <view v-else class="item-image placeholder">{{ t('imagePlaceholder') }}</view>
           <view class="item-main">
-            <text>{{ item.productNameZhSnapshot }}</text>
+            <text>{{ productSnapshotName(item, locale) }}</text>
             <text v-if="item.remark" class="remark">{{ t('orderNote') }}：{{ item.remark }}</text>
           </view>
           <text>× {{ item.quantity }}</text>

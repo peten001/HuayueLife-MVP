@@ -231,7 +231,7 @@ function handlePhoneTap() {
           mode="aspectFill"
         />
         <view v-else class="cover placeholder">
-          <view class="placeholder-mark">鲜</view>
+          <view class="placeholder-mark">🍽️</view>
           <text>{{ t('imagePlaceholder') }}</text>
         </view>
       </view>
@@ -248,12 +248,12 @@ function handlePhoneTap() {
           </button>
         </view>
         <view class="info-line info-action" @tap="handleAddressTap">
-          <text class="info-icon">址</text>
+          <text class="info-icon">📍</text>
           <text class="info-text">{{ merchant.addressDetail }}</text>
           <text class="info-link">{{ t('mapNavigation') }}</text>
         </view>
         <view class="info-line info-action" @tap="handlePhoneTap">
-          <text class="info-icon">电</text>
+          <text class="info-icon">📞</text>
           <text class="info-text">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
           <text class="info-link">{{ t('callMerchant') }}</text>
         </view>

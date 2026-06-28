@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { useI18n } from '@/i18n';
+import { merchantName, useI18n } from '@/i18n';
 import {
   getOrderChat,
   listOrderChatMessages,
@@ -50,8 +50,7 @@ const showReadOnlyHint = computed(
 );
 
 const merchantDisplayName = computed(() => {
-  if (locale.value === 'vi') return props.order.merchant.nameVi || props.order.merchant.nameZh;
-  return props.order.merchant.nameZh;
+  return merchantName(props.order.merchant, locale.value);
 });
 
 type TimelineItem =

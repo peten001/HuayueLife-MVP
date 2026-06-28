@@ -124,6 +124,14 @@ const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(()
 ]);
 
 const sortLabel = computed(() => sortOptions.value.find((item) => item.value === sortOption.value)?.label || sortOptions.value[0].label);
+const sortDisplayLabel = computed(() => `${sortLabel.value}⌄`);
+const isSortActive = computed(() => sortOption.value !== 'smart');
+const filterDisplayLabel = computed(() => {
+  const count = activeFilters.value.length;
+  const base = locale.value === 'zh' ? '筛选' : locale.value === 'vi' ? 'Lọc' : 'Filter';
+  return count > 0 ? `${base}(${count})` : base;
+});
+const isFilterActive = computed(() => activeFilters.value.length > 0);
 
 const visibleMerchants = computed(() => {
   const filtered = filteredMerchants.value.filter((merchant) => {
@@ -423,6 +431,7 @@ const cityAliases: Record<string, string[]> = {
         <view class="leaf leaf-one"></view>
         <view class="leaf leaf-two"></view>
         <view class="plate">
+          <!-- Brand decoration only. Not a functional icon. -->
           <text class="food-mark">鲜</text>
         </view>
         <view class="steam steam-one"></view>
@@ -452,13 +461,13 @@ const cityAliases: Record<string, string[]> = {
         <button v-if="selectedCategory" class="clear-button" @click="selectedCategory = ''">
           {{ t('allMerchants') }}
         </button>
-        <view class="section-action-chip sort-chip" @click="openSortSheet">
-          <text class="section-action-text strong">
-            {{ sortLabel }}⌄
+        <view :class="['section-action-chip', 'sort-chip', { active: isSortActive }]" @click="openSortSheet">
+          <text :class="['section-action-text', { strong: isSortActive }]">
+            {{ sortDisplayLabel }}
           </text>
         </view>
-        <view class="section-action-chip filter-chip" @click="openFilterSheet">
-          <text class="section-action-text">{{ locale === 'zh' ? '筛选' : locale === 'vi' ? 'Lọc' : 'Filter' }}</text>
+        <view :class="['section-action-chip', 'filter-chip', { active: isFilterActive }]" @click="openFilterSheet">
+          <text :class="['section-action-text', { strong: isFilterActive }]">{{ filterDisplayLabel }}</text>
         </view>
       </view>
     </view>
@@ -1023,11 +1032,12 @@ const cityAliases: Record<string, string[]> = {
 }
 
 .section-action-text {
-  color: #728077;
+  color: #5f6f66;
   font-size: 13px;
   font-weight: 600;
 }
 
+.section-action-chip.active .section-action-text,
 .section-action-text.strong {
   color: #2e7d32;
 }

@@ -24,7 +24,7 @@ const idempotencyKey = `order_${Date.now()}_${Math.random().toString(36).slice(2
 let bootstrapPromise: Promise<void> | null = null;
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 const phonePattern = /^\+?\d{8,15}$/;
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const form = reactive({
   contactName: '',
   contactPhone: '',
@@ -41,7 +41,7 @@ const deliveryFeeDisplayText = computed(() => {
   if (preview.value && !preview.value.requiresPhoneConfirmation) {
     return formatCurrencyAmount(preview.value.deliveryFeeVnd);
   }
-  return '商家确认';
+  return checkoutText('商家确认', 'Cửa hàng xác nhận', 'Merchant confirms');
 });
 const totalAmountDisplayText = computed(() => {
   if (context.value?.orderType === 'DELIVERY' && (!preview.value || preview.value.requiresPhoneConfirmation)) {
@@ -58,6 +58,12 @@ const orderTypeLabel = computed(() => {
       ? t('pickup')
       : t('delivery');
 });
+
+function checkoutText(zhText: string, viText: string, enText: string) {
+  if (locale.value === 'vi') return viText;
+  if (locale.value === 'en') return enText;
+  return zhText;
+}
 
 usePageTitle(() => t('checkoutTitle'));
 
@@ -97,7 +103,9 @@ function buildOrderRequest(): OrderRequest {
   const contactName = form.contactName.trim();
   const customerRemark = form.customerRemark.trim();
   if (!phonePattern.test(contactPhone)) {
-    throw new Error('请填写正确的联系电话');
+    throw new Error(
+      checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number'),
+    );
   }
   const request: OrderRequest = {
     merchantId: context.value.merchantId,
@@ -126,7 +134,7 @@ function buildOrderRequest(): OrderRequest {
 async function refreshPreview() {
   const contactPhone = form.contactPhone.trim();
   if (!phonePattern.test(contactPhone)) {
-    message.value = '请填写正确的联系电话';
+    message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
     preview.value = null;
     return;
   }
@@ -146,10 +154,14 @@ async function refreshPreview() {
         normalizeCoordinate(form.deliveryLatitude),
         normalizeCoordinate(form.deliveryLongitude),
       );
-    if (rangeState === 'outside') {
-      locationLabel.value = t('deliveryRangeExceeded');
+      if (rangeState === 'outside') {
+        locationLabel.value = t('deliveryRangeExceeded');
       } else if (rangeState === 'within') {
-        locationLabel.value = '当前位置在商家配送范围内';
+        locationLabel.value = checkoutText(
+          '当前位置在商家配送范围内',
+          'Vị trí hiện tại nằm trong phạm vi giao hàng của cửa hàng',
+          'Your current location is within the merchant delivery range',
+        );
       }
     }
   } catch (caught) {
@@ -170,7 +182,14 @@ async function chooseLocation() {
     const longitude = Number(result.longitude);
     console.log('[checkout] lat lng parsed', latitude, longitude, typeof latitude, typeof longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      uni.showToast({ title: '定位信息无效，请重新选择配送位置', icon: 'none' });
+      uni.showToast({
+        title: checkoutText(
+          '定位信息无效，请重新选择配送位置',
+          'Vị trí không hợp lệ, vui lòng chọn lại địa điểm giao hàng',
+          'Invalid location. Please choose the delivery location again',
+        ),
+        icon: 'none',
+      });
       locationLabel.value = t('locationUnconfirmed');
       preview.value = null;
       return;
@@ -191,11 +210,23 @@ async function chooseLocation() {
     console.log('[checkout] deliveryAddress after set', form.deliveryAddress);
     console.log('[checkout] form location after set', form.deliveryLatitude, form.deliveryLongitude, typeof form.deliveryLatitude, typeof form.deliveryLongitude);
     if (mapAddressText) {
-      locationLabel.value = '已选择配送位置，可补充门牌/楼栋';
+      locationLabel.value = checkoutText(
+        '已选择配送位置，可补充门牌/楼栋',
+        'Đã chọn vị trí giao hàng, có thể bổ sung số nhà / tòa nhà',
+        'Delivery location selected. You can add building or room details',
+      );
     } else if (fallbackRegionText) {
-      locationLabel.value = '已获取当前位置，请补充门牌/楼栋等详细信息';
+      locationLabel.value = checkoutText(
+        '已获取当前位置，请补充门牌/楼栋等详细信息',
+        'Đã lấy vị trí hiện tại, vui lòng bổ sung số nhà / tòa nhà và thông tin chi tiết',
+        'Current location captured. Please add building and address details',
+      );
     } else {
-      locationLabel.value = '已获取当前位置，请补充详细配送地址';
+      locationLabel.value = checkoutText(
+        '已获取当前位置，请补充详细配送地址',
+        'Đã lấy vị trí hiện tại, vui lòng bổ sung địa chỉ giao hàng chi tiết',
+        'Current location captured. Please add a detailed delivery address',
+      );
     }
     setLastContactInfo({
       contactName: form.contactName.trim(),
@@ -217,19 +248,19 @@ async function submit() {
   }
   if (!cartStore.cart?.items?.length) {
     console.log('[checkout] submit blocked reason', 'cart empty');
-    message.value = '购物车为空';
+    message.value = checkoutText('购物车为空', 'Giỏ hàng đang trống', 'Your cart is empty');
     return;
   }
   if (!context.value?.merchantId) {
     console.log('[checkout] submit blocked reason', 'missing merchantId');
-    message.value = '商家信息异常';
+    message.value = checkoutText('商家信息异常', 'Thông tin cửa hàng không hợp lệ', 'Merchant information is invalid');
     return;
   }
 
   const contactPhone = form.contactPhone.trim();
   if (!phonePattern.test(contactPhone)) {
     console.log('[checkout] submit blocked reason', 'invalid contactPhone');
-    message.value = '请填写正确的联系电话';
+    message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
     return;
   }
 
@@ -282,8 +313,12 @@ async function doSubmit() {
           console.log('[checkout] submit blocked reason', 'amount changed');
           await new Promise<void>((resolve) => {
             uni.showModal({
-              title: '提示',
-              content: '订单金额已更新，请确认后再次提交',
+              title: checkoutText('提示', 'Nhắc nhở', 'Notice'),
+              content: checkoutText(
+                '订单金额已更新，请确认后再次提交',
+                'Giá trị đơn hàng đã được cập nhật, vui lòng kiểm tra và gửi lại',
+                'The order amount has been updated. Please review and submit again',
+              ),
               showCancel: false,
               success: () => resolve(),
               fail: () => resolve(),
@@ -378,7 +413,7 @@ function schedulePreview() {
   const contactPhone = form.contactPhone.trim();
   if (!phonePattern.test(contactPhone)) {
     if (contactPhone) {
-      message.value = '请填写正确的联系电话';
+      message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
       preview.value = null;
     }
     return;
@@ -450,16 +485,32 @@ function getDeliverySubmissionWarning() {
   const hasLocation = deliveryLatitude !== null && deliveryLongitude !== null;
 
   if (!hasAddress && !hasLocation) {
-    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+    return checkoutText(
+      '地址不完整时，商家会电话联系你确认，是否继续提交？',
+      'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
+      'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
+    );
   }
   if (!hasAddress) {
-    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+    return checkoutText(
+      '地址不完整时，商家会电话联系你确认，是否继续提交？',
+      'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
+      'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
+    );
   }
   if (!hasLocation) {
-    return '地址不完整时，商家会电话联系你确认，是否继续提交？';
+    return checkoutText(
+      '地址不完整时，商家会电话联系你确认，是否继续提交？',
+      'Địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận. Bạn vẫn muốn gửi đơn chứ?',
+      'The address is incomplete. The merchant will confirm by phone. Submit anyway?',
+    );
   }
   if (getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'outside') {
-    return `${t('deliveryRangeExceeded')}，是否继续提交？`;
+    return locale.value === 'vi'
+      ? `${t('deliveryRangeExceeded')}, bạn vẫn muốn gửi đơn chứ?`
+      : locale.value === 'en'
+        ? `${t('deliveryRangeExceeded')} Continue anyway?`
+        : `${t('deliveryRangeExceeded')}，是否继续提交？`;
   }
   return '';
 }
@@ -467,10 +518,10 @@ function getDeliverySubmissionWarning() {
 function confirmContinue(content: string) {
   return new Promise<boolean>((resolve) => {
     uni.showModal({
-      title: '提示',
+      title: checkoutText('提示', 'Nhắc nhở', 'Notice'),
       content,
-      cancelText: '取消',
-      confirmText: '继续提交',
+      cancelText: checkoutText('取消', 'Hủy', 'Cancel'),
+      confirmText: checkoutText('继续提交', 'Tiếp tục gửi', 'Submit anyway'),
       success: (result) => resolve(Boolean(result.confirm)),
       fail: () => resolve(false),
     });
@@ -479,13 +530,45 @@ function confirmContinue(content: string) {
 function getInitialLocationLabel(deliveryAddress: string, latitude: number | null, longitude: number | null) {
   if (latitude !== null && longitude !== null) {
     const rangeState = getDeliveryRangeState(latitude, longitude);
-    if (rangeState === 'outside') return '当前地址超出商家配送范围，请重新选择地址';
-    if (rangeState === 'within') return '当前位置在商家配送范围内';
-    if (deliveryAddress) return '已获取当前位置，请补充详细配送地址';
-    return '请选择配送位置用于校验配送范围';
+    if (rangeState === 'outside') {
+      return checkoutText(
+        '当前地址超出商家配送范围，请重新选择地址',
+        'Địa chỉ hiện tại nằm ngoài phạm vi giao hàng, vui lòng chọn lại',
+        'The current address is outside the delivery range. Please choose another address',
+      );
+    }
+    if (rangeState === 'within') {
+      return checkoutText(
+        '当前位置在商家配送范围内',
+        'Vị trí hiện tại nằm trong phạm vi giao hàng của cửa hàng',
+        'Your current location is within the merchant delivery range',
+      );
+    }
+    if (deliveryAddress) {
+      return checkoutText(
+        '已获取当前位置，请补充详细配送地址',
+        'Đã lấy vị trí hiện tại, vui lòng bổ sung địa chỉ giao hàng chi tiết',
+        'Current location captured. Please add a detailed delivery address',
+      );
+    }
+    return checkoutText(
+      '请选择配送位置用于校验配送范围',
+      'Vui lòng chọn vị trí giao hàng để kiểm tra phạm vi',
+      'Please choose a delivery location to verify the delivery range',
+    );
   }
-  if (deliveryAddress) return '请使用当前位置校验配送范围';
-  return '请选择配送位置用于校验配送范围';
+  if (deliveryAddress) {
+    return checkoutText(
+      '请使用当前位置校验配送范围',
+      'Vui lòng dùng vị trí hiện tại để kiểm tra phạm vi giao hàng',
+      'Please use your current location to verify the delivery range',
+    );
+  }
+  return checkoutText(
+    '请选择配送位置用于校验配送范围',
+    'Vui lòng chọn vị trí giao hàng để kiểm tra phạm vi',
+    'Please choose a delivery location to verify the delivery range',
+  );
 }
 
 function getDeliveryRangeState(latitude: number | null, longitude: number | null) {
@@ -621,9 +704,20 @@ function showSuccess(order: CreatedOrder) {
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form">
-      <label>{{ t('deliveryAddress') }}<textarea v-model="form.deliveryAddress" placeholder="请输入配送地址，如园区/公司/宿舍/门牌" rows="3" /></label>
-      <button class="location" @click="chooseLocation">选择配送位置</button>
-      <text class="hint">{{ locationLabel || '地址不完整时，商家会电话联系你确认' }}</text>
+      <label>
+        {{ t('deliveryAddress') }}
+        <textarea
+          v-model="form.deliveryAddress"
+          :placeholder="checkoutText('请输入配送地址，如园区/公司/宿舍/门牌', 'Nhập địa chỉ giao hàng, ví dụ khu công nghiệp / công ty / ký túc xá / số nhà', 'Enter the delivery address, such as campus / company / dorm / street number')"
+          rows="3"
+        />
+      </label>
+      <button class="location" @click="chooseLocation">
+        {{ checkoutText('选择配送位置', 'Chọn vị trí giao hàng', 'Choose delivery location') }}
+      </button>
+      <text class="hint">
+        {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
+      </text>
     </view>
 
     <view class="card form">
@@ -643,7 +737,7 @@ function showSuccess(order: CreatedOrder) {
 
     <view v-else-if="cartStore.cart" class="card totals">
       <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：商家确认</text>
+      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：{{ checkoutText('商家确认', 'Cửa hàng xác nhận', 'Merchant confirms') }}</text>
       <text class="total">{{ t('totalAmount') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
     </view>
 
