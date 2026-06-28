@@ -318,6 +318,12 @@ export class MerchantReportsService {
         select: {
           productId: true,
           productNameZhSnapshot: true,
+          product: {
+            select: {
+              nameZh: true,
+              nameVi: true,
+            },
+          },
           quantity: true,
         },
       }),
@@ -406,6 +412,10 @@ function buildSummary(
   orderItems: Array<{
     productId: bigint | null;
     productNameZhSnapshot: string;
+    product: {
+      nameZh: string;
+      nameVi: string | null;
+    } | null;
     quantity: number;
   }>,
   language: DailyReportLanguage,
@@ -453,13 +463,14 @@ function buildSummary(
   const productCounts = new Map<string, { name: string; quantity: number }>();
   for (const item of orderItems) {
     const key = item.productId?.toString() ?? item.productNameZhSnapshot;
+    const resolvedName = resolveReportProductName(item, language);
     const current = productCounts.get(key);
     if (current) {
       current.quantity += item.quantity;
       continue;
     }
     productCounts.set(key, {
-      name: item.productNameZhSnapshot,
+      name: resolvedName,
       quantity: item.quantity,
     });
   }
@@ -576,6 +587,24 @@ function buildSuggestions(
   }
 
   return suggestions.slice(0, 3);
+}
+
+function resolveReportProductName(
+  item: {
+    productNameZhSnapshot: string;
+    product: {
+      nameZh: string;
+      nameVi: string | null;
+    } | null;
+  },
+  language: DailyReportLanguage,
+) {
+  const snapshotZh = item.productNameZhSnapshot.trim();
+  if (language === 'vi') {
+    return item.product?.nameVi?.trim() || item.product?.nameZh?.trim() || snapshotZh;
+  }
+
+  return item.product?.nameZh?.trim() || snapshotZh;
 }
 
 function buildOrderCountComparisonText(
