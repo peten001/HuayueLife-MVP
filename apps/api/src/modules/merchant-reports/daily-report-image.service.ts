@@ -124,18 +124,18 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   ];
   const suggestionRows = input.summary.suggestions.slice(0, 3);
   const topProducts = input.summary.topProducts.slice(0, 5);
-  const productCardHeight = topProducts.length > 0 ? Math.max(196, 146 + topProducts.length * 64) : 196;
+  const productCardHeight = topProducts.length > 0 ? Math.max(212, 154 + topProducts.length * 66) : 210;
   const suggestionCardHeight =
-    suggestionRows.length > 0 ? Math.max(170, 144 + suggestionRows.length * 58) : 156;
-  const coreStatCardY = 276;
-  const coreStatCardHeight = 184;
+    suggestionRows.length > 0 ? Math.max(168, 142 + suggestionRows.length * 56) : 152;
+  const coreStatCardY = 278;
+  const coreStatCardHeight = 194;
   const orderSourceCardY = coreStatCardY + coreStatCardHeight + 26;
-  const orderSourceCardHeight = 228;
+  const orderSourceCardHeight = 236;
   const statusCardY = orderSourceCardY + orderSourceCardHeight + 26;
-  const statusCardHeight = 188;
+  const statusCardHeight = 196;
   const productCardY = statusCardY + statusCardHeight + 26;
   const peakCardY = productCardY + productCardHeight + 26;
-  const peakCardHeight = 186;
+  const peakCardHeight = 194;
   const suggestionCardY = peakCardY + peakCardHeight + 26;
   const footerY = suggestionCardY + suggestionCardHeight + 42;
   const height = footerY + 52;
@@ -150,16 +150,27 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       return `
         <g transform="translate(${x}, ${coreStatCardY})">
           <rect width="300" height="${coreStatCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
-          <rect x="18" y="18" width="264" height="6" rx="3" fill="${accent}" opacity="0.18" />
-          <circle cx="150" cy="58" r="28" fill="${accent}" opacity="0.12" />
-          ${renderMetricIcon(iconKind, accent)}
-          <text x="150" y="112" text-anchor="middle" fill="#6B7280" font-size="24" class="report-text">${escapeXml(item.label)}</text>
-          <text x="150" y="149" text-anchor="middle" fill="${index === 1 ? '#047857' : '#111827'}" font-size="${index === 1 ? 38 : 36}" font-weight="700" class="report-text">${escapeXml(
-            item.value,
-          )}</text>
+          <rect x="18" y="18" width="264" height="6" rx="3" fill="${accent}" opacity="0.16" />
+          ${renderIconCircle({
+            cx: 150,
+            cy: 62,
+            radius: 31,
+            fill: accent,
+            opacity: 0.12,
+            icon: renderMetricIcon(iconKind, accent, 150, 62),
+          })}
+          <text x="150" y="116" text-anchor="middle" fill="#6B7280" font-size="23" class="report-text">${escapeXml(item.label)}</text>
+          ${renderMetricValue({
+            x: 150,
+            y: 156,
+            value: item.value,
+            language: input.language,
+            accent: index === 1 ? '#047857' : '#111827',
+            isRevenue: index === 1,
+          })}
           ${
             item.comparison
-              ? `<text x="150" y="173" text-anchor="middle" fill="${trendColor}" font-size="18" class="report-text">${escapeXml(
+              ? `<text x="150" y="180" text-anchor="middle" fill="${trendColor}" font-size="17" font-weight="700" class="report-text">${escapeXml(
                   item.comparison,
                 )}</text>`
               : ''
@@ -172,31 +183,37 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const orderTypeBlocks = input.summary.orderCount > 0
     ? orderTypes
         .map((item, index) => {
-          const ratio = item.value / Math.max(1, input.summary.orderCount);
-          const width = Math.max(16, Math.round(ratio * 560));
-          const barColor = item.color;
-          const iconX = 18;
-          const labelX = 62;
-          const barX = 196;
-          const barWidth = 534;
-          const countX = 820;
+          const iconCx = 28;
+          const iconCy = 18;
+          const labelX = 68;
+          const barX = 224;
+          const barWidth = 488;
+          const countX = 824;
+          const width = Math.max(16, Math.round((item.value / Math.max(1, input.summary.orderCount)) * barWidth));
           return `
-            <g transform="translate(0, ${74 + index * 42})">
-              ${renderOrderSourceIcon(item.label, item.color, iconX, 14)}
-              <text x="${labelX}" y="22" fill="#374151" font-size="22" font-weight="700" class="report-text">${escapeXml(
+            <g transform="translate(0, ${82 + index * 46})">
+              ${renderIconCircle({
+                cx: iconCx,
+                cy: iconCy,
+                radius: 18,
+                fill: item.color,
+                opacity: 0.12,
+                icon: renderOrderSourceIcon(item.label, item.color, iconCx, iconCy),
+              })}
+              <text x="${labelX}" y="24" fill="#374151" font-size="22" font-weight="700" class="report-text">${escapeXml(
                 item.label,
               )}</text>
-              <rect x="${barX}" y="4" width="${barWidth}" height="16" rx="8" fill="#E5E7EB" />
-              <rect x="${barX}" y="4" width="${Math.max(12, Math.round((item.value / Math.max(1, input.summary.orderCount)) * barWidth))}" height="16" rx="8" fill="${barColor}" />
-              <text x="${countX}" y="22" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.value}</text>
+              <rect x="${barX}" y="7" width="${barWidth}" height="14" rx="7" fill="#E5E7EB" />
+              <rect x="${barX}" y="7" width="${width}" height="14" rx="7" fill="${item.color}" />
+              <text x="${countX}" y="24" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.value}</text>
             </g>
           `;
         })
         .join('')
     : `
-        <g transform="translate(0, 80)">
-          <rect width="860" height="72" rx="20" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="430" y="44" text-anchor="middle" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
+        <g transform="translate(0, 92)">
+          <rect width="860" height="76" rx="22" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="430" y="46" text-anchor="middle" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Hôm nay chưa có dữ liệu đơn hàng' : '今日暂无订单数据',
           )}</text>
         </g>
@@ -206,17 +223,20 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     .map((item, index) => {
       const value = resolveStatusCount(input.summary.statusCounts, item.key);
       const x = (index % 2) * 400;
-      const y = Math.floor(index / 2) * 80;
-      const badgeBg = index === 0 ? '#FFFBEB' : index === 1 ? '#EFF6FF' : index === 2 ? '#DCFCE7' : '#FEE2E2';
-      const badgeText = index === 0 ? '#B45309' : index === 1 ? '#2563EB' : index === 2 ? '#047857' : '#B91C1C';
+      const y = Math.floor(index / 2) * 86;
       return `
         <g transform="translate(${x}, ${y})">
-          <rect width="388" height="72" rx="22" fill="#F9FAFB" stroke="#E5E7EB" />
-          <circle cx="30" cy="36" r="16" fill="${item.color}" opacity="0.14" />
-          <circle cx="30" cy="36" r="7" fill="${item.color}" />
-          <text x="56" y="41" fill="#374151" font-size="23" font-weight="700" class="report-text">${escapeXml(item.label)}</text>
-          <rect x="292" y="21" width="76" height="30" rx="15" fill="${badgeBg}" />
-          <text x="330" y="42" text-anchor="middle" fill="${badgeText}" font-size="22" font-weight="700" class="report-text">${value}</text>
+          <rect width="388" height="76" rx="22" fill="#FAFBFC" stroke="#E5E7EB" />
+          ${renderIconCircle({
+            cx: 42,
+            cy: 38,
+            radius: 20,
+            fill: item.color,
+            opacity: 0.12,
+            icon: renderStatusIcon(item.label, item.color, 42, 38),
+          })}
+          <text x="74" y="44" fill="#374151" font-size="23" font-weight="700" class="report-text">${escapeXml(item.label)}</text>
+          <text x="346" y="44" text-anchor="end" fill="#111827" font-size="25" font-weight="700" class="report-text">${value}</text>
         </g>
       `;
     })
@@ -226,19 +246,19 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const productBlocks = topProducts.length > 0
     ? topProducts
         .map((item, index) => {
-          const width = Math.max(12, Math.round((item.quantity / maxProductQuantity) * 462));
+          const width = Math.max(12, Math.round((item.quantity / maxProductQuantity) * 468));
           const name = truncateText(item.name, input.language === 'vi' ? 24 : 20);
-          const y = 74 + index * 64;
+          const y = 82 + index * 66;
           const rankBg = index === 0 ? '#DCFCE7' : index === 1 ? '#DBEAFE' : index === 2 ? '#E9D5FF' : '#FEF3C7';
           const rankText = index === 0 ? '#047857' : index === 1 ? '#2563EB' : index === 2 ? '#7C3AED' : '#B45309';
           return `
             <g transform="translate(0, ${y})">
-              <rect x="0" y="0" width="42" height="42" rx="15" fill="${rankBg}" />
-              <text x="21" y="27" text-anchor="middle" fill="${rankText}" font-size="18" font-weight="700" class="report-text">${index + 1}</text>
-              <text x="58" y="20" fill="#111827" font-size="22" font-weight="700" class="report-text">${escapeXml(name)}</text>
-              <text x="820" y="20" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.quantity} ${input.language === 'vi' ? 'phần' : '份'}</text>
-              <rect x="58" y="30" width="686" height="14" rx="7" fill="#E5E7EB" />
-              <rect x="58" y="30" width="${width}" height="14" rx="7" fill="#16A34A" />
+              <rect x="0" y="0" width="44" height="44" rx="16" fill="${rankBg}" />
+              <text x="22" y="28" text-anchor="middle" fill="${rankText}" font-size="18" font-weight="700" class="report-text">${index + 1}</text>
+              <text x="62" y="22" fill="#111827" font-size="22" font-weight="700" class="report-text">${escapeXml(name)}</text>
+              <text x="820" y="22" text-anchor="end" fill="#111827" font-size="22" font-weight="700" class="report-text">${item.quantity} ${input.language === 'vi' ? 'phần' : '份'}</text>
+              <rect x="62" y="34" width="680" height="14" rx="7" fill="#E5E7EB" />
+              <rect x="62" y="34" width="${width}" height="14" rx="7" fill="#16A34A" />
             </g>
           `;
         })
@@ -255,21 +275,21 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   const suggestionBlocks = suggestionRows.length > 0
     ? suggestionRows
         .map((item, index) => {
-          const y = 74 + index * 58;
+          const y = 74 + index * 54;
           const bg = index % 2 === 0 ? '#F0FDF4' : '#FFFBEB';
-          const stroke = index % 2 === 0 ? '#BBF7D0' : '#FDE68A';
+          const stroke = index % 2 === 0 ? '#D1FAE5' : '#FDE68A';
           const bullet = index % 2 === 0 ? '#16A34A' : '#F59E0B';
           const lines = wrapTextLines(item, input.language === 'vi' ? 50 : 42, 2);
           return `
             <g transform="translate(0, ${y})">
-              <rect width="${CARD_WIDTH}" height="48" rx="16" fill="${bg}" stroke="${stroke}" />
-              <circle cx="24" cy="24" r="5.5" fill="${bullet}" />
+              <rect width="${CARD_WIDTH}" height="46" rx="15" fill="${bg}" stroke="${stroke}" />
+              <circle cx="24" cy="23" r="5" fill="${bullet}" />
               ${renderTextLines({
                 x: 40,
-                y: 19,
+                y: 18,
                 lines,
-                fontSize: 20,
-                lineHeight: 17,
+                fontSize: 19,
+                lineHeight: 16,
                 fill: '#374151',
               })}
             </g>
@@ -278,8 +298,8 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
         .join('')
     : `
         <g transform="translate(0, 80)">
-          <rect width="${CARD_WIDTH}" height="48" rx="16" fill="#F9FAFB" stroke="#E5E7EB" />
-          <text x="24" y="31" fill="#6B7280" font-size="23" class="report-text">${escapeXml(
+          <rect width="${CARD_WIDTH}" height="46" rx="15" fill="#F9FAFB" stroke="#E5E7EB" />
+          <text x="24" y="30" fill="#6B7280" font-size="22" class="report-text">${escapeXml(
             input.language === 'vi' ? 'Chưa có gợi ý cho hôm nay' : '今日暂无经营建议',
           )}</text>
         </g>
@@ -355,24 +375,30 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
   </g>
   <g transform="translate(${CARD_X}, ${peakCardY})">
     <rect width="${CARD_WIDTH}" height="${peakCardHeight}" rx="28" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
-    <rect x="18" y="18" width="924" height="150" rx="22" fill="#ECFDF5" />
-    <circle cx="62" cy="64" r="30" fill="#16A34A" opacity="0.12" />
-    ${renderPeakIcon(62, 64, '#047857')}
-    <text x="108" y="46" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
+    <rect x="18" y="18" width="924" height="158" rx="24" fill="#ECFDF5" />
+    ${renderIconCircle({
+      cx: 72,
+      cy: 88,
+      radius: 30,
+      fill: '#16A34A',
+      opacity: 0.12,
+      icon: renderPeakIcon(72, 88, '#047857'),
+    })}
+    <text x="122" y="56" fill="#111827" font-size="30" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Khung giờ cao điểm' : '高峰时段',
     )}</text>
-    <text x="108" y="86" fill="#047857" font-size="38" font-weight="700" class="report-text">${escapeXml(
+    <text x="122" y="96" fill="#047857" font-size="38" font-weight="700" class="report-text">${escapeXml(
       input.summary.peakHour,
     )}</text>
-    <text x="108" y="124" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
+    <text x="122" y="132" fill="#6B7280" font-size="24" class="report-text">${escapeXml(
       input.summary.peakHourOrderCount > 0
         ? `${input.summary.peakHourOrderCount} ${input.language === 'vi' ? 'đơn' : '单'}`
         : input.language === 'vi'
           ? 'Hôm nay chưa có khung giờ cao điểm rõ ràng'
           : '今日暂无明显高峰时段',
     )}</text>
-    <rect x="742" y="54" width="170" height="42" rx="21" fill="#16A34A" />
-    <text x="827" y="82" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
+    <rect x="726" y="67" width="186" height="44" rx="22" fill="#16A34A" />
+    <text x="819" y="96" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="700" class="report-text">${escapeXml(
       input.language === 'vi' ? 'Điểm nóng' : '高峰提醒',
     )}</text>
   </g>
@@ -400,10 +426,49 @@ function formatOrderCountDisplay(value: number, language: DailyReportLanguage) {
   return `${value} ${language === 'vi' ? 'đơn' : '单'}`;
 }
 
-function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string) {
+function renderIconCircle(input: {
+  cx: number;
+  cy: number;
+  radius: number;
+  fill: string;
+  opacity: number;
+  icon: string;
+}) {
+  return `
+    <circle cx="${input.cx}" cy="${input.cy}" r="${input.radius}" fill="${input.fill}" opacity="${input.opacity}" />
+    ${input.icon}
+  `;
+}
+
+function renderMetricValue(input: {
+  x: number;
+  y: number;
+  value: string;
+  language: DailyReportLanguage;
+  accent: string;
+  isRevenue: boolean;
+}) {
+  if (!input.isRevenue && (input.value.endsWith(' 单') || input.value.endsWith(' đơn'))) {
+    const [numberPart, unitPart] = input.value.split(' ');
+    return `
+      <text x="${input.x}" y="${input.y}" text-anchor="middle" fill="${input.accent}" class="report-text">
+        <tspan font-size="38" font-weight="700">${escapeXml(numberPart)}</tspan>
+        <tspan dx="8" font-size="24" font-weight="700">${escapeXml(unitPart)}</tspan>
+      </text>
+    `;
+  }
+
+  return `<text x="${input.x}" y="${input.y}" text-anchor="middle" fill="${input.accent}" font-size="${input.isRevenue ? 37 : 35}" font-weight="700" class="report-text">${escapeXml(
+    input.value,
+  )}</text>`;
+}
+
+function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string, cx: number, cy: number) {
+  const left = cx - 11;
+  const top = cy - 12;
   if (kind === 'orders') {
     return `
-      <g transform="translate(132, 40)" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <g transform="translate(${left}, ${top})" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
         <rect x="1" y="4" width="18" height="14" rx="4" stroke-width="2.4" />
         <line x1="6" y1="0" x2="14" y2="0" stroke-width="2.4" />
         <line x1="8" y1="18" x2="8" y2="24" stroke-width="2.4" />
@@ -416,7 +481,7 @@ function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string) {
 
   if (kind === 'revenue') {
     return `
-      <g transform="translate(133, 39)" fill="${accent}">
+      <g transform="translate(${left + 1}, ${top - 1})" fill="${accent}">
         <rect x="1" y="13" width="5" height="12" rx="2" opacity="0.72" />
         <rect x="9" y="8" width="5" height="17" rx="2" opacity="0.9" />
         <rect x="17" y="3" width="5" height="22" rx="2" />
@@ -426,7 +491,7 @@ function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string) {
   }
 
   return `
-    <g transform="translate(133, 38)" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <g transform="translate(${left + 1}, ${top - 2})" stroke="${accent}" stroke-linecap="round" stroke-linejoin="round" fill="none">
       <circle cx="12" cy="12" r="10" stroke-width="2.4" />
       <path d="M8 12h8" stroke-width="2.4" />
       <path d="M12 8v8" stroke-width="2.4" />
@@ -434,8 +499,10 @@ function renderMetricIcon(kind: 'orders' | 'revenue' | 'avg', accent: string) {
   `;
 }
 
-function renderOrderSourceIcon(label: string, color: string, x: number, y: number) {
+function renderOrderSourceIcon(label: string, color: string, cx: number, cy: number) {
   const lower = label.toLowerCase();
+  const x = cx - 8;
+  const y = cy - 8;
   if (lower.includes('堂食') || lower.includes('tại chỗ') || lower.includes('ăn tại')) {
     return `
       <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
@@ -464,6 +531,47 @@ function renderOrderSourceIcon(label: string, color: string, x: number, y: numbe
       <path d="M10 12h3l2 2v1h-5z" stroke-width="2.2" />
       <circle cx="5" cy="17" r="1.6" fill="${color}" stroke="none" />
       <circle cx="12" cy="17" r="1.6" fill="${color}" stroke="none" />
+    </g>
+  `;
+}
+
+function renderStatusIcon(label: string, color: string, cx: number, cy: number) {
+  const lower = label.toLowerCase();
+  const x = cx - 8;
+  const y = cy - 8;
+  if (lower.includes('待') || lower.includes('chờ')) {
+    return `
+      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6" stroke-width="2.2" />
+        <path d="M8 4v4l3 2" stroke-width="2.2" />
+      </g>
+    `;
+  }
+
+  if (lower.includes('制作') || lower.includes('đang')) {
+    return `
+      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 12h12" stroke-width="2.2" />
+        <path d="M4 12c0-4 2-7 4-9" stroke-width="2.2" />
+        <path d="M8 12c0-4 2-7 4-9" stroke-width="2.2" />
+      </g>
+    `;
+  }
+
+  if (lower.includes('完成') || lower.includes('hoàn')) {
+    return `
+      <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6" stroke-width="2.2" />
+        <path d="M5 8l2 2 4-4" stroke-width="2.2" />
+      </g>
+    `;
+  }
+
+  return `
+    <g transform="translate(${x}, ${y})" fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="8" r="6" stroke-width="2.2" />
+      <path d="M5 5l6 6" stroke-width="2.2" />
+      <path d="M11 5L5 11" stroke-width="2.2" />
     </g>
   `;
 }
