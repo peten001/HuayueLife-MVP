@@ -62,7 +62,7 @@ type SendDailyReportForMerchantOptions = {
   skipIfAlreadySent?: boolean;
 };
 
-type ComparisonTrend = 'up' | 'down' | 'flat' | 'new';
+type ComparisonTrend = 'up' | 'down' | 'flat';
 
 @Injectable()
 export class MerchantReportsService {
@@ -417,8 +417,16 @@ function buildSummary(
   const orderCount = orders.length;
   const totalAmount = orders.reduce((sum, item) => sum + item.totalAmountVnd, 0n);
   const averageOrderAmount = orderCount > 0 ? totalAmount / BigInt(orderCount) : 0n;
-  const orderCountComparison = buildComparisonText(orderCount, comparison?.previousOrderCount ?? 0, language);
-  const totalAmountComparison = buildComparisonText(totalAmount, comparison?.previousTotalAmount ?? 0n, language);
+  const orderCountComparison = buildOrderCountComparisonText(
+    orderCount,
+    comparison?.previousOrderCount ?? 0,
+    language,
+  );
+  const totalAmountComparison = buildRevenueComparisonText(
+    totalAmount,
+    comparison?.previousTotalAmount ?? 0n,
+    language,
+  );
   const dineInCount = orders.filter((item) => item.orderType === OrderType.DINE_IN).length;
   const pickupCount = orders.filter((item) => item.orderType === OrderType.PICKUP).length;
   const deliveryCount = orders.filter((item) => item.orderType === OrderType.DELIVERY).length;
@@ -570,7 +578,33 @@ function buildSuggestions(
   return suggestions.slice(0, 3);
 }
 
-function buildComparisonText(
+function buildOrderCountComparisonText(
+  current: number,
+  previous: number,
+  language: DailyReportLanguage,
+): { text: string; trend: ComparisonTrend } {
+  const delta = current - previous;
+  if (delta > 0) {
+    return {
+      text: language === 'vi' ? `↑ ${delta} đơn so với hôm qua` : `较昨日 ↑ ${delta} 单`,
+      trend: 'up',
+    };
+  }
+
+  if (delta < 0) {
+    return {
+      text: language === 'vi' ? `↓ ${Math.abs(delta)} đơn so với hôm qua` : `较昨日 ↓ ${Math.abs(delta)} 单`,
+      trend: 'down',
+    };
+  }
+
+  return {
+    text: language === 'vi' ? '0 đơn so với hôm qua' : '较昨日 0 单',
+    trend: 'flat',
+  };
+}
+
+function buildRevenueComparisonText(
   current: number | bigint,
   previous: number | bigint,
   language: DailyReportLanguage,
@@ -581,36 +615,38 @@ function buildComparisonText(
   if (previousValue === 0) {
     if (currentValue === 0) {
       return {
-        text: language === 'vi' ? 'Tương đương hôm qua' : '较昨日持平',
+        text: language === 'vi' ? '0% so với hôm qua' : '较昨日 0%',
         trend: 'flat',
       };
     }
     return {
-      text: language === 'vi' ? 'Hôm nay mới phát sinh' : '较昨日新增',
-      trend: 'new',
-    };
-  }
-
-  const delta = currentValue - previousValue;
-  if (delta === 0) {
-    return {
-      text: language === 'vi' ? 'Tương đương hôm qua' : '较昨日持平',
-      trend: 'flat',
-    };
-  }
-
-  const percent = Math.abs((delta / previousValue) * 100);
-  const percentText = formatPercent(percent);
-  if (delta > 0) {
-    return {
-      text: language === 'vi' ? `Tăng so với hôm qua ${percentText}%` : `较昨日上涨 ${percentText}%`,
+      text: language === 'vi' ? '↑ 100% so với hôm qua' : '较昨日 ↑ 100%',
       trend: 'up',
     };
   }
 
+  const delta = currentValue - previousValue;
+  if (delta > 0) {
+    const percent = Math.abs((delta / previousValue) * 100);
+    const percentText = formatPercent(percent);
+    return {
+      text: language === 'vi' ? `↑ ${percentText}% so với hôm qua` : `较昨日 ↑ ${percentText}%`,
+      trend: 'up',
+    };
+  }
+
+  if (delta < 0) {
+    const percent = Math.abs((delta / previousValue) * 100);
+    const percentText = formatPercent(percent);
+    return {
+      text: language === 'vi' ? `↓ ${percentText}% so với hôm qua` : `较昨日 ↓ ${percentText}%`,
+      trend: 'down',
+    };
+  }
+
   return {
-    text: language === 'vi' ? `Giảm so với hôm qua ${percentText}%` : `较昨日下降 ${percentText}%`,
-    trend: 'down',
+    text: language === 'vi' ? '0% so với hôm qua' : '较昨日 0%',
+    trend: 'flat',
   };
 }
 

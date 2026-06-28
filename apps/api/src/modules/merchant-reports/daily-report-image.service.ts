@@ -9,9 +9,9 @@ type DailyReportSummary = {
   totalAmount: string;
   averageOrderAmount: string;
   orderCountComparison: string;
-  orderCountComparisonTrend: 'up' | 'down' | 'flat' | 'new';
+  orderCountComparisonTrend: 'up' | 'down' | 'flat';
   totalAmountComparison: string;
-  totalAmountComparisonTrend: 'up' | 'down' | 'flat' | 'new';
+  totalAmountComparisonTrend: 'up' | 'down' | 'flat';
   dineInCount: number;
   pickupCount: number;
   deliveryCount: number;
@@ -135,7 +135,7 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       const x = CARD_X + index * 320;
       const accent = item.accent ?? ['#16A34A', '#2563EB', '#7C3AED'][index] ?? '#16A34A';
       const trendColor =
-        item.trend === 'up' ? '#16A34A' : item.trend === 'down' ? '#EF4444' : item.trend === 'new' ? '#2563EB' : '#6B7280';
+        item.trend === 'up' ? '#16A34A' : item.trend === 'down' ? '#EF4444' : '#6B7280';
       return `
         <g transform="translate(${x}, 288)">
           <rect width="300" height="160" rx="26" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1.5" />
@@ -265,10 +265,9 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
       `;
 
   const footerY = 2058;
-  const topRightTag = input.language === 'vi' ? 'Báo cáo' : 'Daily Report';
-  const headerTitleY = merchantNameLines.length > 1 ? 86 : 98;
-  const headerSubtitleY = merchantNameLines.length > 1 ? 170 : 142;
-  const headerDateY = merchantNameLines.length > 1 ? 202 : 174;
+  const headerTitleY = merchantNameLines.length > 1 ? 78 : 90;
+  const headerSubtitleY = merchantNameLines.length > 1 ? 160 : 132;
+  const headerDateY = merchantNameLines.length > 1 ? 192 : 164;
   const headerHeight = merchantNameLines.length > 1 ? 228 : 184;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -297,10 +296,6 @@ function buildDailyReportSvg(input: RenderDailyReportInput) {
     <rect width="${CARD_WIDTH}" height="${headerHeight}" rx="30" fill="url(#headerBg)" />
     <circle cx="880" cy="46" r="84" fill="#FFFFFF" opacity="0.08" />
     <circle cx="940" cy="110" r="58" fill="#FFFFFF" opacity="0.08" />
-    <rect x="26" y="24" width="128" height="32" rx="16" fill="#FFFFFF" opacity="0.16" />
-    <text x="90" y="46" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="700" class="report-text">${escapeXml(
-      topRightTag,
-    )}</text>
     <text x="28" y="${headerTitleY}" fill="#FFFFFF" font-size="${merchantNameFontSize}" font-weight="700" class="report-text">${escapeXml(
       merchantNameLines[0],
     )}</text>
