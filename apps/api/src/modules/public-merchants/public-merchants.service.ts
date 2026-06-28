@@ -156,7 +156,7 @@ export class PublicMerchantsService {
 
   async product(id: bigint, tableToken?: string) {
     const merchantFilter: Prisma.MerchantWhereInput = tableToken
-      ? await this.resolveDineInMerchantFilter(id, tableToken)
+      ? await this.resolveDineInMerchantFilter(tableToken)
       : {
           status: 'ACTIVE',
           merchantType: 'RESTAURANT',
@@ -209,13 +209,9 @@ export class PublicMerchantsService {
   }
 
   private async resolveDineInMerchantFilter(
-    id: bigint,
     tableToken: string,
   ): Promise<Prisma.MerchantWhereInput> {
     const table = await this.resolveDineInTable(tableToken);
-    if (table.merchantId !== id) {
-      throw new NotFoundException('Merchant not found or unavailable');
-    }
     return {
       id: table.merchantId,
       status: 'ACTIVE',
