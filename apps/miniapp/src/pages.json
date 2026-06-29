@@ -31,6 +31,12 @@
       }
     },
     {
+      "path": "pages/profile/browsing-history",
+      "style": {
+        "navigationBarTitleText": "浏览记录"
+      }
+    },
+    {
       "path": "pages/merchant/detail",
       "style": {
         "navigationBarTitleText": "商家详情"

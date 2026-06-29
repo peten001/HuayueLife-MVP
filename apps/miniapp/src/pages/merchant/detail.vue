@@ -11,6 +11,7 @@ import {
 import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
 import { isFavorite, toggleFavorite } from '@/utils/favorites';
+import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
@@ -26,6 +27,7 @@ onLoad(async (options) => {
   try {
     merchant.value = await getMerchant(String(options?.id ?? ''));
     favoriteState.value = isFavorite(merchant.value.id);
+    addMerchantBrowsingHistory(merchant.value);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : '';
     if (

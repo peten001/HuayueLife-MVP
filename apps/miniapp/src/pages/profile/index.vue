@@ -18,8 +18,8 @@ const displayNickname = computed(() => auth.user?.nickname || t('meNicknameFallb
 const displayPhone = computed(() => auth.user?.phone?.trim() || t('mePhoneFallback'));
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 
-function openFavorites() {
-  uni.switchTab({ url: '/pages/favorites/index' });
+function openBrowsingHistory() {
+  uni.navigateTo({ url: '/pages/profile/browsing-history' });
 }
 
 function openProfileEdit() {
@@ -44,12 +44,12 @@ function openProfileEdit() {
 
     <view class="section-title">{{ t('profileQuickActions') }}</view>
     <view class="menu-card">
-      <button @click="openFavorites">
+      <button @click="openBrowsingHistory">
         <view class="menu-main">
-          <view class="menu-icon">❤️</view>
+          <view class="menu-icon">🕘</view>
           <view>
-            <text class="menu-title">{{ t('myFavorites') }}</text>
-            <text class="menu-copy">{{ t('profileFavoritesHint') }}</text>
+            <text class="menu-title">{{ t('browsingHistory') }}</text>
+            <text class="menu-copy">{{ t('profileBrowsingHistoryHint') }}</text>
           </view>
         </view>
         <text class="arrow">›</text>
