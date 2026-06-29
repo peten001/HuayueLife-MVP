@@ -18,8 +18,8 @@ const displayNickname = computed(() => auth.user?.nickname || t('meNicknameFallb
 const displayPhone = computed(() => auth.user?.phone?.trim() || t('mePhoneFallback'));
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 
-function openOrders() {
-  uni.switchTab({ url: '/pages/orders/index' });
+function openFavorites() {
+  uni.switchTab({ url: '/pages/favorites/index' });
 }
 
 function openProfileEdit() {
@@ -44,12 +44,12 @@ function openProfileEdit() {
 
     <view class="section-title">{{ t('profileQuickActions') }}</view>
     <view class="menu-card">
-      <button @click="openOrders">
+      <button @click="openFavorites">
         <view class="menu-main">
-          <view class="menu-icon">🧾</view>
+          <view class="menu-icon">❤️</view>
           <view>
-            <text class="menu-title">{{ t('myOrders') }}</text>
-            <text class="menu-copy">{{ t('profileOrdersHint') }}</text>
+            <text class="menu-title">{{ t('myFavorites') }}</text>
+            <text class="menu-copy">{{ t('profileFavoritesHint') }}</text>
           </view>
         </view>
         <text class="arrow">›</text>
@@ -75,13 +75,6 @@ function openProfileEdit() {
           <text>{{ t('serviceArea') }}</text>
         </view>
         <text>{{ t('cityBacNinh') }} / {{ t('cityBacGiang') }}</text>
-      </view>
-      <view class="row">
-        <view class="row-main">
-          <view class="small-icon">💳</view>
-          <text>{{ t('paymentMethod') }}</text>
-        </view>
-        <text>{{ t('offlinePayment') }}</text>
       </view>
     </view>
 

@@ -262,7 +262,7 @@ function openMerchant(merchant: MerchantSummary) {
 }
 
 function openMessages() {
-  uni.navigateTo({ url: '/pages/messages/index' });
+  uni.switchTab({ url: '/pages/messages/index' });
 }
 
 function toggleCategory(categoryKey: ServiceCategoryKey) {
