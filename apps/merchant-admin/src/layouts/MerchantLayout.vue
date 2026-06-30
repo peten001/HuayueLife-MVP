@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
-import { getReportFeature } from '@/api/reports';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
   clearMerchantStaff,
@@ -10,42 +9,47 @@ import {
   getMerchantStaff,
 } from '@/utils/storage';
 import { pendingOrderCount } from '@/utils/order-notification';
+import {
+  canAccessMerchantFeature,
+  type MerchantFeature,
+} from '@/utils/merchant-capabilities';
 
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
-const staff = getMerchantStaff();
+const staff = ref(getMerchantStaff());
 const mobileMenuOpen = ref(false);
-const reportFeatureEnabled = ref(false);
 
 const navByRole: Record<
   'OWNER' | 'MANAGER' | 'STAFF',
-  Array<[string, TranslationKey]>
+  Array<[string, TranslationKey, MerchantFeature?]>
 > = {
   OWNER: [
     ['/dashboard', 'dashboard'],
-    ['/orders', 'orders'],
+    ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'merchantProfile'],
     ['/merchant/profile/change-password', 'changePassword'],
     ['/merchant/business-settings', 'businessSettings'],
-    ['/reports', 'dailyReport'],
-    ['/merchant/printers', 'printerManagement'],
-    ['/menu/categories', 'categories'],
-    ['/menu/products', 'products'],
-    ['/tables', 'tables'],
+    ['/reports', 'dailyReport', 'reports'],
+    ['/merchant/printers', 'printerManagement', 'printers'],
+    ['/menu/categories', 'categories', 'products'],
+    ['/menu/products', 'products', 'products'],
+    ['/tables', 'tables', 'tables'],
     ['/staff', 'staffManagement'],
   ],
   MANAGER: [
-    ['/orders', 'orders'],
+    ['/dashboard', 'dashboard'],
+    ['/orders', 'orders', 'orders'],
     ['/merchant/profile/change-password', 'changePassword'],
-    ['/merchant/printers', 'printerManagement'],
-    ['/reports', 'dailyReport'],
-    ['/menu/categories', 'categories'],
-    ['/menu/products', 'products'],
-    ['/tables', 'tables'],
+    ['/merchant/printers', 'printerManagement', 'printers'],
+    ['/reports', 'dailyReport', 'reports'],
+    ['/menu/categories', 'categories', 'products'],
+    ['/menu/products', 'products', 'products'],
+    ['/tables', 'tables', 'tables'],
   ],
   STAFF: [
-    ['/orders', 'orders'],
+    ['/dashboard', 'dashboard'],
+    ['/orders', 'orders', 'orders'],
     ['/merchant/profile/change-password', 'changePassword'],
   ],
 };
@@ -76,30 +80,44 @@ const mobileTabsByRole: Record<
   ],
 };
 
-const role = staff?.role ?? 'STAFF';
+const role = computed(() => staff.value?.role ?? 'STAFF');
+const merchant = computed(() => staff.value?.merchant ?? null);
 const nav = computed(() =>
-  navByRole[role].filter(([path]) => {
-    if (path !== '/reports') return true;
-    return reportFeatureEnabled.value;
-  }),
+  navByRole[role.value].filter(([, , feature]) =>
+    feature ? canAccessMerchantFeature(merchant.value, feature) : true,
+  ),
 );
-const mobileTabs = mobileTabsByRole[role];
+const mobileTabs = computed(() =>
+  mobileTabsByRole[role.value].filter((item) =>
+    item.path ? canShowPath(item.path) : true,
+  ),
+);
 const mobileLinkTabs = computed(
   () =>
-    mobileTabs.filter((item): item is { path: string; label: TranslationKey; icon: string } =>
+    mobileTabs.value.filter((item): item is { path: string; label: TranslationKey; icon: string } =>
       Boolean(item.path),
     ),
 );
-const mobileMoreTab = computed(() => mobileTabs.find((item) => item.action === 'more'));
+const mobileMoreTab = computed(() => mobileTabs.value.find((item) => item.action === 'more'));
 const mobileTabPaths = computed(
-  () => new Set(mobileTabs.filter((item) => item.path).map((item) => item.path as string)),
+  () => new Set(mobileTabs.value.filter((item) => item.path).map((item) => item.path as string)),
 );
 const mobileMoreLinks = computed(() =>
   nav.value.filter(([path]) => !mobileTabPaths.value.has(path)),
 );
-const merchantName = computed(() => staff?.merchant?.nameZh || t('brand'));
+const merchantName = computed(() => staff.value?.merchant?.nameZh || t('brand'));
 
-onMounted(loadReportFeature);
+function syncMerchantStaff() {
+  staff.value = getMerchantStaff();
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    syncMerchantStaff();
+  },
+  { immediate: true },
+);
 
 function isOrderRoute(path: string) {
   return path === '/orders' && route.path.startsWith('/orders');
@@ -121,6 +139,7 @@ async function logout() {
   closeMobileMenu();
   clearToken();
   clearMerchantStaff();
+  staff.value = null;
   await router.push('/login');
 }
 
@@ -129,14 +148,11 @@ async function goTo(path: string) {
   await router.push(path);
 }
 
-async function loadReportFeature() {
-  if (role === 'STAFF') return;
-  try {
-    const result = await getReportFeature();
-    reportFeatureEnabled.value = result.enabled;
-  } catch {
-    reportFeatureEnabled.value = false;
-  }
+function canShowPath(path: string) {
+  if (path === '/orders') return canAccessMerchantFeature(merchant.value, 'orders');
+  if (path === '/menu/products') return canAccessMerchantFeature(merchant.value, 'products');
+  if (path === '/tables') return canAccessMerchantFeature(merchant.value, 'tables');
+  return true;
 }
 </script>
 

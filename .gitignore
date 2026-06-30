@@ -12,5 +12,6 @@ coverage/
 .idea/
 .vscode/
 apps/api/uploads/
+apps/api/public/uploads/
 apps/miniapp/unpackage/
 apps/miniapp/dist/

@@ -18,6 +18,7 @@ export class MerchantProfileService {
   async getProfile(merchantId: bigint) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
+      include: { capabilities: { include: { capability: true } } },
     });
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
@@ -74,12 +75,57 @@ export class MerchantProfileService {
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
       isVisibleOnClient: merchant.isVisibleOnClient,
+      merchantMode: merchant.merchantMode,
+      reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+      capabilities: serializeCapabilities(merchant),
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),
       manualPopular: Boolean(merchant.manualPopular),
     };
   }
+}
+
+function serializeCapabilities(merchant: {
+  dineInEnabled?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+  reportFeatureEnabled?: boolean;
+  capabilities?: Array<{
+    isEnabled: boolean;
+    capability: {
+      code: string;
+      nameZh: string;
+      groupCode: string;
+    };
+  }>;
+}) {
+  const explicit = (merchant.capabilities ?? []).map((item) => ({
+    code: item.capability.code,
+    nameZh: item.capability.nameZh,
+    groupCode: item.capability.groupCode,
+    isEnabled: item.isEnabled,
+  }));
+  if (explicit.length) return explicit;
+  const dineInEnabled = Boolean(merchant.dineInEnabled);
+  const pickupEnabled = Boolean(merchant.pickupEnabled);
+  const deliveryEnabled = Boolean(merchant.deliveryEnabled);
+  const hasOrder = dineInEnabled || pickupEnabled || deliveryEnabled;
+  return [
+    { code: 'phoneEnabled', nameZh: '电话', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'navigationEnabled', nameZh: '导航', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'imageGalleryEnabled', nameZh: '图片/相册展示', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'productDisplayEnabled', nameZh: '商品展示', groupCode: 'PRODUCT', isEnabled: hasOrder },
+    { code: 'onlineOrderEnabled', nameZh: '在线下单', groupCode: 'ORDER', isEnabled: pickupEnabled || deliveryEnabled },
+    { code: 'pickupEnabled', nameZh: '到店自取', groupCode: 'ORDER', isEnabled: pickupEnabled },
+    { code: 'deliveryEnabled', nameZh: '商家配送', groupCode: 'ORDER', isEnabled: deliveryEnabled },
+    { code: 'qrOrderEnabled', nameZh: '扫码点餐', groupCode: 'RESTAURANT', isEnabled: dineInEnabled },
+    { code: 'tableManagementEnabled', nameZh: '桌台管理', groupCode: 'RESTAURANT', isEnabled: dineInEnabled },
+    { code: 'printerEnabled', nameZh: '打印机', groupCode: 'RESTAURANT', isEnabled: hasOrder },
+    { code: 'zaloReportEnabled', nameZh: 'Zalo 日报', groupCode: 'OPERATION', isEnabled: Boolean(merchant.reportFeatureEnabled) },
+    { code: 'chatEnabled', nameZh: '订单聊天', groupCode: 'ORDER', isEnabled: hasOrder },
+    { code: 'voiceNotifyEnabled', nameZh: '语音播报', groupCode: 'RESTAURANT', isEnabled: hasOrder },
+  ];
 }
 
 function validateRequiredUpdateValues(dto: UpdateMerchantProfileDto) {

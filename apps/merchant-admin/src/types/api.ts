@@ -17,7 +17,17 @@ export interface MerchantStaffAccount {
     id: string;
     nameZh: string;
     status: string;
+    merchantMode?: MerchantMode;
+    reportFeatureEnabled?: boolean;
+    capabilities?: MerchantCapabilityValue[];
   };
+}
+
+export interface MerchantCapabilityValue {
+  code: string;
+  nameZh?: string;
+  groupCode?: string;
+  isEnabled: boolean;
 }
 
 export interface MerchantStaffListItem {
@@ -52,9 +62,12 @@ export interface MerchantProfile {
   deliveryFeeVnd: string;
   deliveryRadiusKm: string;
   isVisibleOnClient: boolean;
+  merchantMode?: MerchantMode;
+  reportFeatureEnabled?: boolean;
   dineInEnabled: boolean;
   pickupEnabled: boolean;
   deliveryEnabled: boolean;
+  capabilities?: MerchantCapabilityValue[];
   homepageCategoryKeys: string[];
   manualPopular: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
@@ -152,16 +165,158 @@ export interface PlatformAdminAccount {
   username: string;
 }
 
+export type MerchantMode = 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';
+export type MerchantClaimStatus = 'UNCLAIMED' | 'CLAIMED';
+
+export interface PlatformDictionaryItem {
+  id: string;
+  parentId?: string | null;
+  code: string;
+  nameZh: string;
+  nameVi?: string | null;
+  nameEn?: string | null;
+  iconUrl?: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlatformBusinessType extends PlatformDictionaryItem {
+  level: number;
+  path?: string | null;
+  showOnHome: boolean;
+  defaultMerchantMode: MerchantMode;
+  defaultCapabilities?: Record<string, boolean> | null;
+}
+
+export interface PlatformPromotionTag extends PlatformDictionaryItem {
+  iconText?: string | null;
+  color?: string | null;
+  description?: string | null;
+}
+
+export interface PlatformCapability extends PlatformDictionaryItem {
+  groupCode: string;
+  groupNameZh: string;
+  groupNameVi?: string | null;
+  groupNameEn?: string | null;
+  defaultValue: boolean;
+}
+
+export interface PlatformCapabilityValue extends PlatformDictionaryItem {
+  groupCode?: string;
+  groupNameZh?: string;
+  groupNameVi?: string | null;
+  groupNameEn?: string | null;
+  isEnabled: boolean;
+}
+
+export interface PlatformMerchantImage {
+  id: string;
+  imageType: 'LOGO' | 'COVER' | 'STORE' | 'ENVIRONMENT' | 'PRODUCT' | 'MENU' | 'LICENSE' | string;
+  imageUrl: string;
+  titleZh?: string | null;
+  titleVi?: string | null;
+  titleEn?: string | null;
+  sortOrder: number;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformMerchantImageUploadResult {
+  imageUrl: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+}
+
+export type PlatformMerchantImportStatus = 'VALID' | 'WARNING' | 'ERROR';
+
+export interface PlatformMerchantImportNormalizedRow {
+  nameZh: string;
+  nameVi?: string | null;
+  nameEn?: string | null;
+  businessTypeCode: string;
+  contactPhone: string;
+  city: string;
+  district: string;
+  addressZh: string;
+  addressVi?: string | null;
+  addressEn?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  openingHoursText?: string | null;
+  descriptionZh?: string | null;
+  descriptionVi?: string | null;
+  descriptionEn?: string | null;
+  logoUrl?: string | null;
+  coverUrl?: string | null;
+  promotionTagCodes: string[];
+  isNew: boolean;
+  sortOrder: number;
+  isVisibleOnClient: boolean;
+  status: 'DRAFT' | 'ACTIVE';
+}
+
+export interface PlatformMerchantImportRow {
+  rowNumber: number;
+  rawData: Record<string, string>;
+  normalizedData: PlatformMerchantImportNormalizedRow | null;
+  errors: string[];
+  warnings: string[];
+  status: PlatformMerchantImportStatus;
+}
+
+export interface PlatformMerchantImportPreviewResponse {
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: PlatformMerchantImportRow[];
+}
+
+export interface PlatformMerchantImportConfirmResponse {
+  importedCount: number;
+  failedCount: number;
+  failedRows: Array<{
+    rowNumber: number;
+    errors: string[];
+  }>;
+  createdMerchantIds: string[];
+}
+
 export interface PlatformMerchantListItem {
   id: string;
   nameZh: string;
+  nameVi?: string | null;
+  nameEn?: string | null;
+  businessType?: PlatformDictionaryItem | null;
+  merchantMode: MerchantMode;
+  claimStatus: MerchantClaimStatus;
+  province?: string | null;
   city: string;
   district?: string;
   contactPhone: string;
+  address: string;
+  addressZh?: string | null;
+  addressVi?: string | null;
+  addressEn?: string | null;
+  latitude: string;
+  longitude: string;
+  openingHoursText?: string | null;
+  logoUrl?: string | null;
+  coverUrl?: string | null;
+  images: PlatformMerchantImage[];
   homepageCategoryKeys: string[];
   manualPopular: boolean;
   isVisibleOnClient: boolean;
   reportFeatureEnabled: boolean;
+  promotionTags: PlatformPromotionTag[];
+  capabilities: PlatformCapabilityValue[];
+  capabilitySummary: string[];
+  sortOrder: number;
+  isNew: boolean;
   status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
   createdAt: string;
   updatedAt: string;
@@ -182,11 +337,28 @@ export interface PlatformMerchantDetailResponse {
   merchant: {
     id: string;
     name: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    businessType?: PlatformDictionaryItem | null;
+    merchantMode: MerchantMode;
+    claimStatus: MerchantClaimStatus;
     account: string;
     phone: string;
+    contactName: string;
+    province: string;
     city: string;
     district?: string | null;
     address: string;
+    addressZh?: string | null;
+    addressVi?: string | null;
+    addressEn?: string | null;
+    latitude: string;
+    longitude: string;
+    openingHoursText?: string | null;
+    descriptionZh?: string | null;
+    descriptionVi?: string | null;
+    descriptionEn?: string | null;
     status: 'PENDING' | 'ACTIVE' | 'DISABLED' | 'DELETED';
     isActive: boolean;
     logoUrl?: string | null;
@@ -195,6 +367,11 @@ export interface PlatformMerchantDetailResponse {
     manualPopular: boolean;
     isVisibleOnClient: boolean;
     reportFeatureEnabled: boolean;
+    promotionTags: PlatformPromotionTag[];
+    capabilities: PlatformCapabilityValue[];
+    images: PlatformMerchantImage[];
+    sortOrder: number;
+    isNew: boolean;
     profileCompletion: number;
     createdAt: string;
     updatedAt: string;

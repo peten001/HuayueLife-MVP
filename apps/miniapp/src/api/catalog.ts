@@ -13,6 +13,8 @@ export function getNearbyMerchants(params: {
   radiusKm?: number;
   page?: number;
   city?: string;
+  businessTypeId?: string;
+  promotionTag?: string;
 }) {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== '')

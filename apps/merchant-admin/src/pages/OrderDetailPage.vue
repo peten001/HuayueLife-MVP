@@ -9,9 +9,12 @@ import PageHeader from '@/components/PageHeader.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder, OrderStatus, OrderStatusLog, PrinterSetting } from '@/types/api';
+import { getMerchantStaff } from '@/utils/storage';
+import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 
 const route = useRoute();
 const { locale, t } = useI18n();
+const merchant = getMerchantStaff()?.merchant ?? null;
 const order = ref<MerchantOrder>();
 const printers = ref<PrinterSetting[]>([]);
 const selectedPrinterIds = ref<string[]>([]);
@@ -19,6 +22,8 @@ const message = ref('');
 const operating = ref(false);
 const printing = ref(false);
 const chatOpen = ref(false);
+const chatEnabled = computed(() => canAccessMerchantFeature(merchant, 'chat'));
+const printerEnabled = computed(() => canAccessMerchantFeature(merchant, 'printers'));
 let timer: number | undefined;
 
 const actions = computed(() => {
@@ -103,6 +108,7 @@ async function settle() {
 }
 
 function openChat() {
+  if (!chatEnabled.value) return;
   chatOpen.value = true;
 }
 
@@ -204,7 +210,7 @@ function printerLabel(id?: string | null) {
 }
 
 async function printReceipt() {
-  if (!order.value || printing.value) return;
+  if (!order.value || printing.value || !printerEnabled.value) return;
   if (!selectedPrinterIds.value.length) {
     message.value = localLabel({ zh: '请选择打印机', vi: 'Vui lòng chọn máy in', en: 'Select at least one printer' });
     return;
@@ -226,7 +232,9 @@ async function printReceipt() {
 onMounted(async () => {
   await Promise.all([
     load(),
-    loadPrinters().catch((error) => (message.value = errorMessage(error))),
+    printerEnabled.value
+      ? loadPrinters().catch((error) => (message.value = errorMessage(error)))
+      : Promise.resolve(),
   ]);
   timer = window.setInterval(load, 5000);
 });
@@ -268,11 +276,12 @@ type Action =
         >
           {{ t(item.label) }}
         </button>
-        <button type="button" class="secondary chat-entry" @click="openChat">
+        <button v-if="chatEnabled" type="button" class="secondary chat-entry" @click="openChat">
           <span>{{ t('openChat') }}</span>
           <span v-if="chatUnreadCount" class="nav-badge">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</span>
         </button>
         <button
+          v-if="printerEnabled"
           type="button"
           class="secondary"
           :disabled="printing || !selectedPrinterIds.length"
@@ -304,13 +313,13 @@ type Action =
           <dt v-if="order.orderType === 'DELIVERY'">{{ t('deliveryAddress') }}</dt>
           <dd v-if="order.orderType === 'DELIVERY'">{{ order.deliveryAddress }}</dd>
           <dt>{{ t('customerRemark') }}</dt><dd>{{ order.customerRemark || t('none') }}</dd>
-          <dt>{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
-          <dd>
+          <dt v-if="printerEnabled">{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
+          <dd v-if="printerEnabled">
             {{ printStatusLabel() }}
             <span v-if="printLogs[0]?.createdAt"> · {{ new Date(printLogs[0].createdAt).toLocaleString() }}</span>
           </dd>
-          <dt>{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
-          <dd>
+          <dt v-if="printerEnabled">{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
+          <dd v-if="printerEnabled">
             <label v-for="printer in printers" :key="printer.id" class="printer-check">
               <input v-model="selectedPrinterIds" type="checkbox" :value="printer.id" />
               {{ printer.name }} · {{ printer.ipAddress }}:{{ printer.port }}
@@ -374,7 +383,7 @@ type Action =
   </template>
 
   <OrderChatPanel
-    v-if="order && chatOpen"
+    v-if="order && chatOpen && chatEnabled"
     :order="order"
     @close="closeChat"
     @updated="applyChatConversation"

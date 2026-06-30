@@ -11,31 +11,45 @@ const profileOpen = ref(false);
 const nav: Array<{ path: string; label: string; icon: string }> = [
   { path: '/platform/dashboard', label: '总览', icon: '总' },
   { path: '/platform/merchants', label: '商家管理', icon: '商' },
+  { path: '/platform/recommendations', label: '首页推荐', icon: '首' },
   { path: '/platform/orders', label: '订单管理', icon: '单' },
   { path: '/platform/analytics', label: '营业数据', icon: '数' },
-  { path: '/platform/recommendations', label: '分类推荐', icon: '荐' },
   { path: '/platform/users', label: '用户管理', icon: '客' },
   { path: '/platform/settings', label: '系统设置', icon: '设' },
+];
+const merchantEditSections = [
+  { key: 'profile', label: '基础资料' },
+  { key: 'location', label: '地址与定位' },
+  { key: 'images', label: '图片管理' },
+  { key: 'visibility', label: '前台展示' },
+  { key: 'hot', label: '热门推荐' },
+  { key: 'capabilities', label: '能力开关' },
+  { key: 'account', label: '商家账号' },
+  { key: 'danger', label: '危险操作', danger: true },
 ];
 
 const adminName = computed(() => admin?.username?.trim() || '平台管理员');
 const adminInitial = computed(() => adminName.value.trim().charAt(0).toUpperCase() || '平');
+const isMerchantDetailPage = computed(() => route.path.startsWith('/platform/merchants/'));
+const activeMerchantEditSection = computed(() => route.hash.replace('#merchant-section-', '') || 'profile');
 const breadcrumb = computed(() => {
   const path = route.path;
-  if (path === '/platform/dashboard') return ['主页', '总览'];
+  if (path === '/platform/dashboard') return ['主页', '平台总览'];
   if (path.startsWith('/platform/merchants/')) return ['商家管理', '商家详情'];
-  if (path === '/platform/merchants') return ['商家管理', '商家管理'];
+  if (path === '/platform/merchants') return ['商家管理', '商家列表'];
+  if (path === '/platform/merchant-types') return ['系统设置', '商家类型配置'];
+  if (path === '/platform/promotion-tags') return ['系统设置', '推荐标签配置'];
   if (path === '/platform/orders') return ['订单管理', '订单管理'];
   if (path === '/platform/analytics') return ['营业数据', '营业数据'];
-  if (path === '/platform/recommendations') return ['分类推荐', '分类推荐'];
+  if (path === '/platform/recommendations') return ['首页推荐', '首页推荐'];
   if (path === '/platform/users') return ['用户管理', '用户管理'];
   if (path === '/platform/settings') return ['系统设置', '系统设置'];
-  return ['主页', '总览'];
+  return ['主页', '平台总览'];
 });
 
 function isNavActive(path: string) {
   if (path === '/platform/merchants') {
-    return route.path === path || route.path.startsWith('/platform/merchants/');
+    return route.path.startsWith('/platform/merchants');
   }
   return route.path === path;
 }
@@ -58,16 +72,31 @@ async function logout() {
       </div>
 
       <nav class="platform-nav">
-        <RouterLink
-          v-for="item in nav"
-          :key="item.path"
-          :to="item.path"
-          class="platform-nav-item"
-          :class="{ active: isNavActive(item.path) }"
-        >
-          <span class="platform-nav-icon" aria-hidden="true">{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
-        </RouterLink>
+        <template v-for="item in nav" :key="item.path">
+          <RouterLink
+            :to="item.path"
+            class="platform-nav-item"
+            :class="{ active: isNavActive(item.path) }"
+          >
+            <span class="platform-nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </RouterLink>
+
+          <div v-if="item.path === '/platform/merchants' && isMerchantDetailPage" class="platform-sub-nav">
+            <RouterLink
+              v-for="section in merchantEditSections"
+              :key="section.key"
+              :to="{ path: route.path, hash: `#merchant-section-${section.key}` }"
+              class="platform-sub-nav-item"
+              :class="{
+                'is-active': activeMerchantEditSection === section.key,
+                'is-danger': section.danger,
+              }"
+            >
+              {{ section.label }}
+            </RouterLink>
+          </div>
+        </template>
       </nav>
 
       <button class="platform-profile-entry" type="button" @click="profileOpen = true">
@@ -151,3 +180,58 @@ async function logout() {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.platform-sub-nav {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 8px 38px;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item,
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-active,
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-exact-active {
+  display: flex;
+  align-items: center;
+  width: auto;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: none;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item:hover {
+  background: #f3fbf5;
+  color: #15803d;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-active {
+  background: #e8f7ec;
+  color: #15803d;
+  font-weight: 700;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger,
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.router-link-active,
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.router-link-exact-active {
+  background: transparent;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger:hover {
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item.is-danger.is-active {
+  background: #fff1f2;
+  color: #dc2626;
+  font-weight: 700;
+}
+</style>

@@ -9,16 +9,16 @@ import {
   Max,
   MaxLength,
   Min,
-  MinLength,
+  ValidateIf,
 } from 'class-validator';
-import { HOMEPAGE_CATEGORY_KEYS } from '../../shared/homepage-category-keys';
 
-export class UpdatePlatformMerchantDto {
-  @IsOptional()
+const MERCHANT_MODES = ['DISPLAY', 'MANAGED', 'DISPLAY_ONLY', 'PRODUCT_DISPLAY', 'ONLINE_ORDER', 'QR_ORDER'] as const;
+const MERCHANT_STATUSES = ['PENDING', 'ACTIVE', 'DISABLED'] as const;
+
+export class CreateDisplayMerchantDto {
   @IsString()
-  @MinLength(1)
   @MaxLength(120)
-  nameZh?: string;
+  nameZh: string;
 
   @IsOptional()
   @IsString()
@@ -30,19 +30,17 @@ export class UpdatePlatformMerchantDto {
   @MaxLength(120)
   nameEn?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   businessTypeId?: string;
 
   @IsOptional()
-  @IsIn(['DISPLAY', 'MANAGED', 'DISPLAY_ONLY', 'PRODUCT_DISPLAY', 'ONLINE_ORDER', 'QR_ORDER'])
-  merchantMode?: 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';
+  @IsIn(MERCHANT_MODES)
+  merchantMode?: (typeof MERCHANT_MODES)[number];
 
-  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(32)
-  contactPhone?: string;
+  contactPhone: string;
 
   @IsOptional()
   @IsString()
@@ -54,20 +52,18 @@ export class UpdatePlatformMerchantDto {
   @MaxLength(80)
   province?: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(80)
-  city?: string;
+  city: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(80)
   district?: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(255)
-  addressZh?: string;
+  addressZh: string;
 
   @IsOptional()
   @IsString()
@@ -83,13 +79,13 @@ export class UpdatePlatformMerchantDto {
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-90)
   @Max(90)
-  latitude?: number;
+  latitude?: number | null;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-180)
   @Max(180)
-  longitude?: number;
+  longitude?: number | null;
 
   @IsOptional()
   @IsString()
@@ -124,24 +120,15 @@ export class UpdatePlatformMerchantDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @IsIn(HOMEPAGE_CATEGORY_KEYS, { each: true })
-  homepageCategoryKeys?: string[];
-
-  @IsOptional()
-  @IsBoolean()
-  manualPopular?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  isVisibleOnClient?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  reportFeatureEnabled?: boolean;
+  promotionTagIds?: string[];
 
   @IsOptional()
   @IsBoolean()
   isNew?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisibleOnClient?: boolean;
 
   @IsOptional()
   @IsInt()
@@ -149,6 +136,16 @@ export class UpdatePlatformMerchantDto {
   sortOrder?: number;
 
   @IsOptional()
-  @IsIn(['PENDING', 'ACTIVE', 'DISABLED'])
-  status?: 'PENDING' | 'ACTIVE' | 'DISABLED';
+  @IsIn(MERCHANT_STATUSES)
+  status?: (typeof MERCHANT_STATUSES)[number];
+}
+
+export class UpdateMerchantCapabilitiesDto {
+  @IsArray()
+  items: Array<{ code: string; isEnabled: boolean }>;
+}
+
+export class UpdateMerchantTagsDto {
+  @IsArray()
+  promotionTagIds: string[];
 }

@@ -27,6 +27,20 @@ enum MerchantStatus {
   DELETED
 }
 
+enum MerchantMode {
+  DISPLAY
+  MANAGED
+  DISPLAY_ONLY
+  PRODUCT_DISPLAY
+  ONLINE_ORDER
+  QR_ORDER
+}
+
+enum MerchantClaimStatus {
+  UNCLAIMED
+  CLAIMED
+}
+
 enum StaffRole {
   OWNER
   MANAGER
@@ -164,15 +178,21 @@ model User {
   orders             Order[]
   orderChatConversations OrderChatConversation[]
   operatedStatusLogs OrderStatusLog[] @relation("UserStatusLogOperator")
+  claimedMerchants   Merchant[] @relation("MerchantOwnerUser")
 
   @@map("users")
 }
 
 model Merchant {
   id                       BigInt         @id @default(autoincrement())
+  businessTypeId           BigInt?        @map("business_type_id")
   nameZh                   String         @map("name_zh") @db.VarChar(120)
   nameVi                   String?        @map("name_vi") @db.VarChar(120)
+  nameEn                   String?        @map("name_en") @db.VarChar(120)
   merchantType             MerchantType   @default(RESTAURANT) @map("merchant_type")
+  merchantMode             MerchantMode   @default(DISPLAY_ONLY) @map("merchant_mode")
+  claimStatus              MerchantClaimStatus @default(UNCLAIMED) @map("claim_status")
+  ownerUserId              BigInt?        @map("owner_user_id")
   logoUrl                  String?        @map("logo_url") @db.VarChar(500)
   coverUrl                 String?        @map("cover_url") @db.VarChar(500)
   contactName              String         @map("contact_name") @db.VarChar(64)
@@ -181,10 +201,17 @@ model Merchant {
   city                     String         @db.VarChar(80)
   district                 String?        @db.VarChar(80)
   addressDetail            String         @map("address_detail") @db.VarChar(255)
+  addressZh                String?        @map("address_zh") @db.VarChar(255)
+  addressVi                String?        @map("address_vi") @db.VarChar(255)
+  addressEn                String?        @map("address_en") @db.VarChar(255)
   latitude                 Decimal        @db.Decimal(10, 7)
   longitude                Decimal        @db.Decimal(10, 7)
   businessHours            Json           @map("business_hours")
+  openingHoursText         String?        @map("opening_hours_text") @db.VarChar(255)
   notice                   String?        @db.Text
+  descriptionZh            String?        @map("description_zh") @db.Text
+  descriptionVi            String?        @map("description_vi") @db.Text
+  descriptionEn            String?        @map("description_en") @db.Text
   minimumDeliveryAmountVnd BigInt         @default(0) @map("minimum_delivery_amount_vnd")
   deliveryFeeVnd           BigInt         @default(0) @map("delivery_fee_vnd")
   deliveryRadiusKm         Decimal        @default(0) @map("delivery_radius_km") @db.Decimal(5, 2)
@@ -195,10 +222,15 @@ model Merchant {
   reportFeatureEnabled      Boolean        @default(false) @map("report_feature_enabled")
   homepageCategoryKeys     String         @default("[]") @map("homepage_category_keys") @db.VarChar(255)
   manualPopular            Boolean        @default(false) @map("manual_popular")
+  sortOrder                Int            @default(0) @map("sort_order")
+  isNew                    Boolean        @default(false) @map("is_new")
+  recommendedAt            DateTime?      @map("recommended_at")
   status                   MerchantStatus @default(ACTIVE)
   createdAt                DateTime       @default(now()) @map("created_at")
   updatedAt                DateTime       @updatedAt @map("updated_at")
 
+  businessType MerchantBusinessType? @relation(fields: [businessTypeId], references: [id], onDelete: SetNull)
+  ownerUser    User? @relation("MerchantOwnerUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
   staff      MerchantStaff[]
   categories Category[]
   products   Product[]
@@ -210,11 +242,134 @@ model Merchant {
   printLogs PrintLog[]
   merchantReportSetting MerchantReportSetting?
   dailyReportLogs DailyReportLog[]
+  promotionTags MerchantPromotionTag[]
+  capabilities MerchantCapability[]
+  images MerchantImage[]
 
   @@index([status])
   @@index([province, city, status])
   @@index([latitude, longitude])
+  @@index([businessTypeId, status])
+  @@index([merchantMode, status])
+  @@index([sortOrder])
   @@map("merchants")
+}
+
+model MerchantBusinessType {
+  id                  BigInt       @id @default(autoincrement())
+  parentId            BigInt?      @map("parent_id")
+  code                String       @unique @db.VarChar(64)
+  nameZh              String       @map("name_zh") @db.VarChar(80)
+  nameVi              String?      @map("name_vi") @db.VarChar(80)
+  nameEn              String?      @map("name_en") @db.VarChar(80)
+  iconUrl             String?      @map("icon_url") @db.VarChar(500)
+  level               Int          @default(1)
+  path                String?      @db.VarChar(255)
+  sortOrder           Int          @default(0) @map("sort_order")
+  showOnHome          Boolean      @default(true) @map("show_on_home")
+  enabled             Boolean      @default(true)
+  defaultMerchantMode MerchantMode @default(DISPLAY_ONLY) @map("default_merchant_mode")
+  defaultCapabilities Json?        @map("default_capabilities")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  parent    MerchantBusinessType?  @relation("BusinessTypeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  MerchantBusinessType[] @relation("BusinessTypeTree")
+  merchants Merchant[]
+
+  @@index([parentId, sortOrder])
+  @@index([enabled, showOnHome, sortOrder])
+  @@map("merchant_business_types")
+}
+
+model PromotionTag {
+  id        BigInt   @id @default(autoincrement())
+  code      String   @unique @db.VarChar(64)
+  nameZh    String   @map("name_zh") @db.VarChar(80)
+  nameVi    String?  @map("name_vi") @db.VarChar(80)
+  nameEn    String?  @map("name_en") @db.VarChar(80)
+  iconUrl   String?  @map("icon_url") @db.VarChar(500)
+  iconText  String?  @map("icon_text") @db.VarChar(16)
+  color     String?  @db.VarChar(32)
+  description String? @db.VarChar(255)
+  sortOrder Int      @default(0) @map("sort_order")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  merchants MerchantPromotionTag[]
+
+  @@index([enabled, sortOrder])
+  @@map("promotion_tags")
+}
+
+model Capability {
+  id           BigInt   @id @default(autoincrement())
+  code         String   @unique @db.VarChar(64)
+  nameZh       String   @map("name_zh") @db.VarChar(80)
+  nameVi       String?  @map("name_vi") @db.VarChar(80)
+  nameEn       String?  @map("name_en") @db.VarChar(80)
+  groupCode    String   @default("DISPLAY") @map("group_code") @db.VarChar(32)
+  groupNameZh  String   @default("展示能力") @map("group_name_zh") @db.VarChar(80)
+  groupNameVi  String?  @map("group_name_vi") @db.VarChar(80)
+  groupNameEn  String?  @map("group_name_en") @db.VarChar(80)
+  enabled      Boolean  @default(true)
+  defaultValue Boolean  @default(false) @map("default_value")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  merchants MerchantCapability[]
+
+  @@index([enabled, sortOrder])
+  @@map("capabilities")
+}
+
+model MerchantPromotionTag {
+  merchantId     BigInt   @map("merchant_id")
+  promotionTagId BigInt   @map("promotion_tag_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  merchant     Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  promotionTag PromotionTag @relation(fields: [promotionTagId], references: [id], onDelete: Cascade)
+
+  @@id([merchantId, promotionTagId])
+  @@index([promotionTagId])
+  @@map("merchant_promotion_tags")
+}
+
+model MerchantCapability {
+  merchantId    BigInt   @map("merchant_id")
+  capabilityId  BigInt   @map("capability_id")
+  isEnabled     Boolean  @default(false) @map("is_enabled")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  merchant   Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  capability Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+
+  @@id([merchantId, capabilityId])
+  @@index([capabilityId])
+  @@map("merchant_capabilities")
+}
+
+model MerchantImage {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  imageType  String   @map("image_type") @db.VarChar(32)
+  imageUrl   String   @map("image_url") @db.VarChar(500)
+  titleZh    String?  @map("title_zh") @db.VarChar(120)
+  titleVi    String?  @map("title_vi") @db.VarChar(120)
+  titleEn    String?  @map("title_en") @db.VarChar(120)
+  sortOrder  Int      @default(0) @map("sort_order")
+  isVisible  Boolean  @default(true) @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, imageType, isVisible, sortOrder])
+  @@map("merchant_images")
 }
 
 model MerchantReportSetting {

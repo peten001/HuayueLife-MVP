@@ -32,36 +32,15 @@ const hasCapabilityRecords = computed(() => Boolean(merchant.value?.capabilities
 const canPhone = computed(() => hasCapability('phoneEnabled', true));
 const canNavigate = computed(() => hasCapability('navigationEnabled', true));
 const canShowGallery = computed(() => hasCapability('imageGalleryEnabled', true));
-const canShowProducts = computed(() => {
-  if (hasCapabilityRecords.value) return enabledCapabilityCodes.value.has('productDisplayEnabled');
-  return Boolean(
-    merchant.value?.merchantMode !== 'DISPLAY' &&
-    merchant.value?.merchantMode !== 'DISPLAY_ONLY' &&
-    merchant.value?.supportedOrderTypes?.length,
-  );
-});
-const canOrder = computed(() => {
-  if (!merchant.value || !canShowProducts.value) return false;
-  if (hasCapabilityRecords.value) {
-    return enabledCapabilityCodes.value.has('onlineOrderEnabled');
-  }
-  return (
-    merchant.value.merchantMode !== 'DISPLAY' &&
-    merchant.value.merchantMode !== 'DISPLAY_ONLY' &&
-    merchant.value.supportedOrderTypes.some((item) => item === 'PICKUP' || item === 'DELIVERY')
-  );
-});
 const canPickup = computed(() =>
-  canOrder.value &&
-  (hasCapabilityRecords.value
+  hasCapabilityRecords.value
     ? enabledCapabilityCodes.value.has('pickupEnabled')
-    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP'))),
+    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP')),
 );
 const canDelivery = computed(() =>
-  canOrder.value &&
-  (hasCapabilityRecords.value
+  hasCapabilityRecords.value
     ? enabledCapabilityCodes.value.has('deliveryEnabled')
-    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY'))),
+    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY')),
 );
 const displayAddress = computed(() => {
   if (!merchant.value) return '';

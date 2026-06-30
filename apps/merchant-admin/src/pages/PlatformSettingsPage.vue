@@ -13,6 +13,14 @@ function goRecommendations() {
 function goOrders() {
   router.push('/platform/orders');
 }
+
+function goBusinessTypes() {
+  router.push('/platform/merchant-types');
+}
+
+function goPromotionTags() {
+  router.push('/platform/promotion-tags');
+}
 </script>
 
 <template>
@@ -39,13 +47,13 @@ function goOrders() {
 
       <article class="card platform-settings-card">
         <div class="section-heading">
-          <h2>首页展示规则</h2>
-          <button class="secondary small" @click="goRecommendations">前往分类推荐</button>
+          <h2>首页推荐规则</h2>
+          <button class="secondary small" @click="goRecommendations">前往首页推荐</button>
         </div>
         <div class="settings-rule-list">
           <div>
-            <strong>热门美食</strong>
-            <p>平台手动推荐，来源 manualPopular</p>
+            <strong>热门推荐 HOT_FOOD</strong>
+            <p>当前日常运营主用推荐标签</p>
           </div>
           <div>
             <strong>中式正餐</strong>
@@ -61,8 +69,29 @@ function goOrders() {
           </div>
         </div>
         <p class="hint">
-          如需调整商家分类，请前往“分类推荐”或“商家管理”。
+          如需调整首页推荐或分类入口，请前往“首页推荐”或“商家管理”。
         </p>
+      </article>
+
+      <article class="card platform-settings-card">
+        <div class="section-heading">
+          <h2>高级配置</h2>
+          <span class="badge muted">系统配置</span>
+        </div>
+        <div class="settings-rule-list">
+          <div>
+            <strong>商家类型配置</strong>
+            <p>管理平台可选经营类型和默认能力</p>
+          </div>
+          <div>
+            <strong>推荐标签配置</strong>
+            <p>管理 HOT_FOOD 等首页推荐标签</p>
+          </div>
+        </div>
+        <div class="settings-reserve-actions">
+          <button class="secondary" @click="goBusinessTypes">商家类型配置</button>
+          <button class="secondary" @click="goPromotionTags">推荐标签配置</button>
+        </div>
       </article>
 
       <article class="card platform-settings-card">

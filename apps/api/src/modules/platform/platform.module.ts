@@ -9,6 +9,10 @@ import { PlatformAnalyticsController } from './platform-analytics.controller';
 import { PlatformAnalyticsService } from './platform-analytics.service';
 import { PlatformMerchantsController } from './platform-merchants.controller';
 import { PlatformMerchantsService } from './platform-merchants.service';
+import { PlatformDictionariesController } from './platform-dictionaries.controller';
+import { PlatformDictionariesService } from './platform-dictionaries.service';
+import { PlatformUploadsController } from './platform-uploads.controller';
+import { PlatformUploadsService } from './platform-uploads.service';
 import { PlatformOrdersController } from './platform-orders.controller';
 import { PlatformOrdersService } from './platform-orders.service';
 import { PlatformUsersController } from './platform-users.controller';
@@ -19,6 +23,8 @@ import { PlatformUsersService } from './platform-users.service';
     PlatformAuthController,
     PlatformDashboardController,
     PlatformAnalyticsController,
+    PlatformDictionariesController,
+    PlatformUploadsController,
     PlatformMerchantsController,
     PlatformOrdersController,
     PlatformUsersController,
@@ -29,6 +35,8 @@ import { PlatformUsersService } from './platform-users.service';
     PlatformAuthService,
     PlatformDashboardService,
     PlatformAnalyticsService,
+    PlatformDictionariesService,
+    PlatformUploadsService,
     PlatformMerchantsService,
     PlatformOrdersService,
     PlatformUsersService,

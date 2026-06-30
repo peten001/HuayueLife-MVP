@@ -18,13 +18,14 @@ import PlatformDashboardPage from '@/pages/PlatformDashboardPage.vue';
 import PlatformAnalyticsPage from '@/pages/PlatformAnalyticsPage.vue';
 import PlatformMerchantDetailPage from '@/pages/PlatformMerchantDetailPage.vue';
 import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
+import PlatformBusinessTypesPage from '@/pages/PlatformBusinessTypesPage.vue';
+import PlatformPromotionTagsPage from '@/pages/PlatformPromotionTagsPage.vue';
 import PlatformOrdersPage from '@/pages/PlatformOrdersPage.vue';
 import PlatformRecommendationsPage from '@/pages/PlatformRecommendationsPage.vue';
 import PlatformUsersPage from '@/pages/PlatformUsersPage.vue';
 import PlatformSettingsPage from '@/pages/PlatformSettingsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
 import { getMerchantMe } from '@/api/merchant';
-import { getReportFeature } from '@/api/reports';
 import {
   getMerchantStaff,
   getToken as getMerchantToken,
@@ -32,6 +33,10 @@ import {
   setMerchantStaff,
 } from '@/utils/storage';
 import type { MerchantStaffRole } from '@/types/api';
+import {
+  canAccessMerchantFeature,
+  type MerchantFeature,
+} from '@/utils/merchant-capabilities';
 
 type RouteRole = MerchantStaffRole;
 type RouteArea = 'merchant' | 'platform';
@@ -41,13 +46,11 @@ interface RouteMeta {
   guest?: boolean;
   area?: RouteArea;
   roles?: RouteRole[];
+  feature?: MerchantFeature;
 }
 
 async function resolveMerchantSession() {
   const stored = getMerchantStaff();
-  if (stored?.role && stored?.mustChangePassword !== undefined) {
-    return stored;
-  }
   if (!getMerchantToken()) {
     return null;
   }
@@ -65,11 +68,17 @@ async function resolveMerchantSession() {
         id: user?.merchantId ?? '',
         nameZh: user?.merchant?.nameZh ?? '',
         status: user?.merchant?.status ?? '',
+        merchantMode: user?.merchant?.merchantMode,
+        reportFeatureEnabled: user?.merchant?.reportFeatureEnabled,
+        capabilities: user?.merchant?.capabilities ?? [],
       },
     };
     setMerchantStaff(session);
     return session;
   } catch {
+    if (stored?.role && stored?.mustChangePassword !== undefined) {
+      return stored;
+    }
     return null;
   }
 }
@@ -103,17 +112,17 @@ const router = createRouter({
         {
           path: 'dashboard',
           component: DashboardPage,
-          meta: { roles: ['OWNER'] },
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
           path: 'orders',
           component: OrdersPage,
-          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },
         },
         {
           path: 'orders/:id',
           component: OrderDetailPage,
-          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },
         },
         {
           path: 'merchant/profile',
@@ -133,27 +142,27 @@ const router = createRouter({
         {
           path: 'reports',
           component: () => import('@/pages/ReportSettingsPage.vue'),
-          meta: { roles: ['OWNER', 'MANAGER'] },
+          meta: { roles: ['OWNER', 'MANAGER'], feature: 'reports' },
         },
         {
           path: 'merchant/printers',
           component: PrintersPage,
-          meta: { roles: ['OWNER', 'MANAGER'] },
+          meta: { roles: ['OWNER', 'MANAGER'], feature: 'printers' },
         },
         {
           path: 'menu/categories',
           component: CategoriesPage,
-          meta: { roles: ['OWNER', 'MANAGER'] },
+          meta: { roles: ['OWNER', 'MANAGER'], feature: 'products' },
         },
         {
           path: 'menu/products',
           component: ProductsPage,
-          meta: { roles: ['OWNER', 'MANAGER'] },
+          meta: { roles: ['OWNER', 'MANAGER'], feature: 'products' },
         },
         {
           path: 'tables',
           component: TablesPage,
-          meta: { roles: ['OWNER', 'MANAGER'] },
+          meta: { roles: ['OWNER', 'MANAGER'], feature: 'tables' },
         },
         {
           path: 'staff',
@@ -179,6 +188,14 @@ const router = createRouter({
         {
           path: 'merchants',
           component: PlatformMerchantsPage,
+        },
+        {
+          path: 'merchant-types',
+          component: PlatformBusinessTypesPage,
+        },
+        {
+          path: 'promotion-tags',
+          component: PlatformPromotionTagsPage,
         },
         {
           path: 'merchants/:id',
@@ -216,7 +233,7 @@ router.beforeEach(async (to) => {
       if (mustChangePassword) return '/merchant/profile/change-password';
       const role = await resolveMerchantRole();
       if (!role) return '/login';
-      return role === 'OWNER' ? '/dashboard' : '/orders';
+      return '/dashboard';
     }
     if (meta.auth && !authenticated) return '/login';
     if (meta.auth) {
@@ -225,15 +242,10 @@ router.beforeEach(async (to) => {
       if (meta.roles?.length && !meta.roles.includes(role)) {
         return '/forbidden';
       }
-      if (to.path.startsWith('/reports')) {
-        try {
-          const feature = await getReportFeature();
-          if (!feature.enabled) {
-            return '/forbidden';
-          }
-        } catch {
-          return '/forbidden';
-        }
+      const session = await resolveMerchantSession();
+      if (meta.feature && !canAccessMerchantFeature(session?.merchant, meta.feature)) {
+        window.alert('当前商家未开通此功能');
+        return '/dashboard';
       }
       const mustChangePassword = await resolveMerchantPasswordFlag();
       if (mustChangePassword && to.path !== '/merchant/profile/change-password') {

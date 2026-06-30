@@ -11,10 +11,18 @@ import type {
   PlatformAnalyticsResponse,
   PlatformDashboardData,
   PlatformAdminAccount,
+  PlatformBusinessType,
+  PlatformCapability,
+  PlatformMerchantImage,
+  PlatformMerchantImageUploadResult,
+  PlatformMerchantImportConfirmResponse,
+  PlatformMerchantImportPreviewResponse,
+  PlatformMerchantImportRow,
   PlatformMerchantDetailResponse,
   PlatformMerchantListItem,
   PlatformOrderFilters,
   PlatformOrdersResponse,
+  PlatformPromotionTag,
   PlatformUserDetailResponse,
   PlatformUserListItem,
   PlatformUsersFilters,
@@ -64,6 +72,79 @@ export async function getPlatformMerchants() {
   const response = await platformHttp.get<ApiResponse<{
     items: PlatformMerchantListItem[];
   }>>('/platform/merchants');
+  return response.data.data.items;
+}
+
+export async function getPlatformBusinessTypes() {
+  const response = await platformHttp.get<ApiResponse<{ items: PlatformBusinessType[] }>>(
+    '/platform/merchant-types',
+  );
+  return response.data.data.items;
+}
+
+export async function createPlatformBusinessType(payload: Partial<PlatformBusinessType>) {
+  const response = await platformHttp.post<ApiResponse<PlatformBusinessType>>(
+    '/platform/merchant-types',
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformBusinessType(
+  id: string,
+  payload: Partial<PlatformBusinessType>,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformBusinessType>>(
+    `/platform/merchant-types/${id}`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function disablePlatformBusinessType(id: string) {
+  const response = await platformHttp.delete<ApiResponse<PlatformBusinessType>>(
+    `/platform/merchant-types/${id}`,
+  );
+  return response.data.data;
+}
+
+export async function getPlatformPromotionTags() {
+  const response = await platformHttp.get<ApiResponse<{ items: PlatformPromotionTag[] }>>(
+    '/platform/promotion-tags',
+  );
+  return response.data.data.items;
+}
+
+export async function createPlatformPromotionTag(payload: Partial<PlatformPromotionTag>) {
+  const response = await platformHttp.post<ApiResponse<PlatformPromotionTag>>(
+    '/platform/promotion-tags',
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformPromotionTag(
+  id: string,
+  payload: Partial<PlatformPromotionTag>,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformPromotionTag>>(
+    `/platform/promotion-tags/${id}`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function disablePlatformPromotionTag(id: string) {
+  const response = await platformHttp.delete<ApiResponse<PlatformPromotionTag>>(
+    `/platform/promotion-tags/${id}`,
+  );
+  return response.data.data;
+}
+
+export async function getPlatformCapabilities() {
+  const response = await platformHttp.get<ApiResponse<{ items: PlatformCapability[] }>>(
+    '/platform/capabilities',
+  );
   return response.data.data.items;
 }
 
@@ -138,20 +219,150 @@ export async function createPlatformMerchant(payload: {
   return response.data.data;
 }
 
+export async function createPlatformDisplayMerchant(payload: Record<string, unknown>) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantListItem>>(
+    '/platform/merchants/display',
+    payload,
+  );
+  return response.data.data;
+}
+
 export async function updatePlatformMerchant(
   id: string,
   payload: {
     nameZh?: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    businessTypeId?: string | null;
+    merchantMode?: string;
     contactPhone?: string;
+    contactName?: string;
+    province?: string;
+    city?: string;
+    district?: string;
+    addressZh?: string;
+    addressVi?: string;
+    addressEn?: string;
+    latitude?: number;
+    longitude?: number;
+    openingHoursText?: string;
+    descriptionZh?: string;
+    descriptionVi?: string;
+    descriptionEn?: string;
+    logoUrl?: string;
+    coverUrl?: string;
     homepageCategoryKeys?: string[];
     manualPopular?: boolean;
     isVisibleOnClient?: boolean;
     reportFeatureEnabled?: boolean;
+    isNew?: boolean;
+    sortOrder?: number;
+    status?: string;
   },
 ) {
   const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
     `/platform/merchants/${id}`,
     payload,
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformMerchantCapabilities(
+  id: string,
+  items: Array<{ code: string; isEnabled: boolean }>,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
+    `/platform/merchants/${id}/capabilities`,
+    { items },
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformMerchantTags(id: string, promotionTagIds: string[]) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
+    `/platform/merchants/${id}/tags`,
+    { promotionTagIds },
+  );
+  return response.data.data;
+}
+
+export async function openPlatformMerchantAccount(id: string) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantListItem>>(
+    `/platform/merchants/${id}/open-account`,
+  );
+  return response.data.data;
+}
+
+export async function getPlatformMerchantImages(id: string) {
+  const response = await platformHttp.get<ApiResponse<{ items: PlatformMerchantImage[] }>>(
+    `/platform/merchants/${id}/images`,
+  );
+  return response.data.data.items;
+}
+
+export async function uploadPlatformMerchantImage(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImageUploadResult>>(
+    '/platform/uploads/merchant-image',
+    formData,
+  );
+  return response.data.data;
+}
+
+export async function downloadPlatformMerchantImportTemplate() {
+  const response = await platformHttp.get('/platform/merchants/import-template', {
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+}
+
+export async function previewPlatformMerchantImport(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImportPreviewResponse>>(
+    '/platform/merchants/import-preview',
+    formData,
+  );
+  return response.data.data;
+}
+
+export async function confirmPlatformMerchantImport(
+  rows: PlatformMerchantImportRow[],
+) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImportConfirmResponse>>(
+    '/platform/merchants/import-confirm',
+    { rows },
+  );
+  return response.data.data;
+}
+
+export async function createPlatformMerchantImage(
+  id: string,
+  payload: Partial<PlatformMerchantImage>,
+) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImage>>(
+    `/platform/merchants/${id}/images`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformMerchantImage(
+  id: string,
+  imageId: string,
+  payload: Partial<PlatformMerchantImage>,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantImage>>(
+    `/platform/merchants/${id}/images/${imageId}`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function hidePlatformMerchantImage(id: string, imageId: string) {
+  const response = await platformHttp.delete<ApiResponse<PlatformMerchantImage>>(
+    `/platform/merchants/${id}/images/${imageId}`,
   );
   return response.data.data;
 }

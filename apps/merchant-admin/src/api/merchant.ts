@@ -36,6 +36,14 @@ export async function getMerchantMe() {
         id: string;
         nameZh: string;
         status: string;
+        merchantMode?: string;
+        reportFeatureEnabled?: boolean;
+        capabilities?: Array<{
+          code: string;
+          nameZh?: string;
+          groupCode?: string;
+          isEnabled: boolean;
+        }>;
       };
     };
   }>>('/merchant/me');

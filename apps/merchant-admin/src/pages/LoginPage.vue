@@ -25,7 +25,7 @@ async function submit() {
       await router.push('/merchant/profile/change-password');
       return;
     }
-    await router.push(result.staff.role === 'OWNER' ? '/dashboard' : '/orders');
+    await router.push('/dashboard');
   } catch (caught) {
     error.value = errorMessage(caught);
   } finally {

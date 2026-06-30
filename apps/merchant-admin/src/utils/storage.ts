@@ -20,6 +20,14 @@ export function getMerchantStaff() {
         id: string;
         nameZh: string;
         status: string;
+        merchantMode?: string;
+        reportFeatureEnabled?: boolean;
+        capabilities?: Array<{
+          code: string;
+          nameZh?: string;
+          groupCode?: string;
+          isEnabled: boolean;
+        }>;
       };
     };
   } catch {
@@ -37,6 +45,14 @@ export function setMerchantStaff(
       id: string;
       nameZh: string;
       status: string;
+      merchantMode?: string;
+      reportFeatureEnabled?: boolean;
+      capabilities?: Array<{
+        code: string;
+        nameZh?: string;
+        groupCode?: string;
+        isEnabled: boolean;
+      }>;
     };
   } | null,
 ) {

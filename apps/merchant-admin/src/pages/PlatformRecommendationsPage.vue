@@ -44,7 +44,7 @@ const categories: Array<{
   title: string;
   description: string;
 }> = [
-  { key: 'popular_food', title: '热门美食', description: '由平台手动推荐' },
+  { key: 'popular_food', title: '热门推荐', description: '由平台手动推荐' },
   { key: 'chinese_dining', title: '中式正餐', description: '商家首页分类 chinese_dining' },
   { key: 'noodles_snacks', title: '粉面小吃', description: '商家首页分类 noodles_snacks' },
   { key: 'coffee_milk_tea', title: '咖啡奶茶', description: '商家首页分类 coffee_milk_tea' },
@@ -55,7 +55,7 @@ const categories: Array<{
 ];
 
 const categoryLabelMap: Record<CategoryKey, string> = {
-  popular_food: '热门美食',
+  popular_food: '热门推荐',
   chinese_dining: '中式正餐',
   noodles_snacks: '粉面小吃',
   coffee_milk_tea: '咖啡奶茶',
@@ -276,27 +276,30 @@ function categoryTags(item: PlatformMerchantListItem) {
 <template>
   <section>
     <PageHeader
-      title="分类推荐"
-      description="集中管理首页热门推荐和商家分类展示"
+      title="首页推荐"
+      description="管理小程序首页的热门推荐和分类入口"
     >
-      <button class="secondary" :disabled="loading" @click="loadMerchants">刷新数据</button>
+      <div class="platform-header-actions">
+        <button class="secondary" :disabled="loading" @click="loadMerchants">刷新数据</button>
+        <RouterLink class="secondary button-link" to="/platform/settings">高级配置</RouterLink>
+      </div>
     </PageHeader>
 
     <section class="card recommendation-info-card">
       <div class="section-heading">
         <div>
-          <h2>首页展示规则</h2>
-          <p>仅管理当前系统已支持的热门推荐和三个首页分类。</p>
+          <h2>首页推荐规则</h2>
+          <p>仅管理当前系统已支持的热门推荐和 7 个首页分类。</p>
         </div>
       </div>
       <div class="recommendation-info-grid">
         <div>
-          <strong>热门美食</strong>
+          <strong>热门推荐</strong>
           <p>由平台手动推荐</p>
         </div>
         <div>
           <strong>中式正餐</strong>
-          <p>商家首页分类 chinese</p>
+          <p>商家首页分类 chinese_dining</p>
         </div>
         <div>
           <strong>粉面小吃</strong>
@@ -335,7 +338,7 @@ function categoryTags(item: PlatformMerchantListItem) {
       <article class="card platform-metric-card">
         <span>热门推荐</span>
         <strong>{{ recommendationSummary.recommendedCount }}</strong>
-        <small>manualPopular 已开启</small>
+        <small>HOT_FOOD 已开启</small>
       </article>
       <article class="card platform-metric-card">
         <span>已设置分类</span>

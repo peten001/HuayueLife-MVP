@@ -12,6 +12,47 @@ import {
 } from '../shared/homepage-category-keys';
 
 const PAGE_SIZE = 20;
+type PublicMerchantRow = Merchant & {
+  businessType?: {
+    id: bigint;
+    code: string;
+    nameZh: string;
+    nameVi: string | null;
+    nameEn: string | null;
+  } | null;
+  promotionTags?: Array<{
+    promotionTag: {
+      id: bigint;
+      code: string;
+      nameZh: string;
+      nameVi: string | null;
+      nameEn: string | null;
+      iconText: string | null;
+      color: string | null;
+    };
+  }>;
+  capabilities?: Array<{
+    isEnabled: boolean;
+    capability: {
+      id: bigint;
+      code: string;
+      nameZh: string;
+      nameVi: string | null;
+      nameEn: string | null;
+    };
+  }>;
+  images?: Array<{
+    id: bigint;
+    imageType: string;
+    imageUrl: string;
+    titleZh: string | null;
+    titleVi: string | null;
+    titleEn: string | null;
+    sortOrder: number;
+    isVisible: boolean;
+  }>;
+  categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>>;
+};
 const CITY_VARIANTS: Record<'Bac Giang' | 'Bac Ninh', string[]> = {
   'Bac Giang': [
     'Bac Giang',
@@ -50,11 +91,25 @@ export class PublicMerchantsService {
 
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
-      merchantType: 'RESTAURANT',
       isVisibleOnClient: true,
     };
+    if (query.businessTypeId) {
+      where.businessTypeId = BigInt(query.businessTypeId);
+    }
+    if (query.promotionTag) {
+      where.promotionTags = {
+        some: { promotionTag: { code: query.promotionTag, enabled: true } },
+      };
+    }
 
     const include = {
+      businessType: true,
+      promotionTags: { where: { promotionTag: { enabled: true } }, include: { promotionTag: true } },
+      capabilities: { include: { capability: true } },
+      images: {
+        where: { isVisible: true },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      },
       categories: {
         where: { isActive: true },
         select: {
@@ -64,7 +119,7 @@ export class PublicMerchantsService {
       },
     } satisfies Prisma.MerchantInclude;
 
-    let merchants: Array<Merchant & { categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>> }>;
+    let merchants: PublicMerchantRow[];
     try {
       merchants = await this.prisma.merchant.findMany({
         where,
@@ -126,6 +181,9 @@ export class PublicMerchantsService {
     const merchant = tableToken
       ? await this.requireDineInMerchant(id, tableToken)
       : await this.requirePublicMerchant(id);
+    if (!canShowMenu(merchant)) {
+      throw new GoneException('该商家暂未开通菜单/下单功能');
+    }
     const categories = await this.prisma.category.findMany({
       where: {
         merchantId: id,
@@ -159,7 +217,6 @@ export class PublicMerchantsService {
       ? await this.resolveDineInMerchantFilter(tableToken)
       : {
           status: 'ACTIVE',
-          merchantType: 'RESTAURANT',
           isVisibleOnClient: true,
         };
     const product = await this.prisma.product.findFirst({
@@ -190,8 +247,16 @@ export class PublicMerchantsService {
       where: {
         id,
         status: 'ACTIVE',
-        merchantType: 'RESTAURANT',
         isVisibleOnClient: true,
+      },
+      include: {
+        businessType: true,
+        promotionTags: { where: { promotionTag: { enabled: true } }, include: { promotionTag: true } },
+        capabilities: { include: { capability: true } },
+        images: {
+          where: { isVisible: true },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
       },
     });
     if (!merchant) {
@@ -222,7 +287,11 @@ export class PublicMerchantsService {
   private async resolveDineInTable(tableToken: string) {
     const table = await this.prisma.diningTable.findUnique({
       where: { qrToken: tableToken },
-      include: { merchant: true },
+      include: {
+        merchant: {
+          include: { capabilities: { include: { capability: true } } },
+        },
+      },
     });
     if (!table) {
       throw new NotFoundException('Merchant not found or unavailable');
@@ -230,10 +299,7 @@ export class PublicMerchantsService {
     if (table.status !== 'ACTIVE') {
       throw new GoneException('该桌台已停用');
     }
-    if (
-      table.merchant.status !== 'ACTIVE' ||
-      table.merchant.merchantType !== 'RESTAURANT'
-    ) {
+    if (table.merchant.status !== 'ACTIVE') {
       throw new GoneException('商家当前不可用');
     }
     if (!table.merchant.dineInEnabled) {
@@ -242,14 +308,12 @@ export class PublicMerchantsService {
     return table;
   }
 
-  private toMerchantSummary(
-    merchant: Merchant & { categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>> },
-  ) {
+  private toMerchantSummary(merchant: PublicMerchantRow) {
     return this.serializeMerchant(merchant, merchant.categories ?? [], null);
   }
 
   private serializeMerchant(
-    merchant: Merchant,
+    merchant: PublicMerchantRow,
     categories: Array<Pick<Category, 'nameZh' | 'nameVi'>>,
     distance: number | null,
   ) {
@@ -258,8 +322,28 @@ export class PublicMerchantsService {
       id: merchant.id,
       nameZh: merchant.nameZh,
       nameVi: merchant.nameVi,
+      nameEn: merchant.nameEn,
+      merchantMode: merchant.merchantMode,
+      claimStatus: merchant.claimStatus,
+      businessType: merchant.businessType
+        ? {
+            id: merchant.businessType.id.toString(),
+            code: merchant.businessType.code,
+            nameZh: merchant.businessType.nameZh,
+            nameVi: merchant.businessType.nameVi,
+            nameEn: merchant.businessType.nameEn,
+          }
+        : null,
+      logoUrl: merchant.logoUrl,
       coverUrl: merchant.coverUrl,
       addressDetail: merchant.addressDetail,
+      addressZh: merchant.addressZh,
+      addressVi: merchant.addressVi,
+      addressEn: merchant.addressEn,
+      openingHoursText: merchant.openingHoursText,
+      descriptionZh: merchant.descriptionZh,
+      descriptionVi: merchant.descriptionVi,
+      descriptionEn: merchant.descriptionEn,
       city: merchant.city,
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
       isOpen: isMerchantOpen(merchant),
@@ -273,6 +357,33 @@ export class PublicMerchantsService {
         merchant.homepageCategoryKeys,
       ),
       manualPopular: Boolean(merchant.manualPopular),
+      isNew: Boolean(merchant.isNew),
+      promotionTags: (merchant.promotionTags ?? []).map((item) => ({
+        id: item.promotionTag.id.toString(),
+        code: item.promotionTag.code,
+        nameZh: item.promotionTag.nameZh,
+        nameVi: item.promotionTag.nameVi,
+        nameEn: item.promotionTag.nameEn,
+        iconText: item.promotionTag.iconText,
+        color: item.promotionTag.color,
+      })),
+      capabilities: (merchant.capabilities ?? []).map((item) => ({
+        id: item.capability.id.toString(),
+        code: item.capability.code,
+        nameZh: item.capability.nameZh,
+        nameVi: item.capability.nameVi,
+        nameEn: item.capability.nameEn,
+        isEnabled: item.isEnabled,
+      })),
+      images: (merchant.images ?? []).map((item) => ({
+        id: item.id.toString(),
+        imageType: item.imageType,
+        imageUrl: item.imageUrl,
+        titleZh: item.titleZh,
+        titleVi: item.titleVi,
+        titleEn: item.titleEn,
+        sortOrder: item.sortOrder,
+      })),
       categoryNames: categories.flatMap((category) =>
         [category.nameZh, category.nameVi].filter(
           (value): value is string => Boolean(value),
@@ -282,12 +393,42 @@ export class PublicMerchantsService {
   }
 }
 
-function supportedOrderTypes(merchant: Merchant) {
+function supportedOrderTypes(merchant: PublicMerchantRow) {
+  const capabilities = new Map(
+    (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
+  );
+  if (capabilities.size) {
+    return [
+      capabilities.get('qrOrderEnabled') ? 'DINE_IN' : null,
+      capabilities.get('pickupEnabled') ? 'PICKUP' : null,
+      capabilities.get('deliveryEnabled') ? 'DELIVERY' : null,
+    ].filter(Boolean);
+  }
+  if (merchant.merchantMode === 'DISPLAY' || merchant.merchantMode === 'DISPLAY_ONLY') return [];
   return [
     merchant.dineInEnabled ? 'DINE_IN' : null,
     merchant.pickupEnabled ? 'PICKUP' : null,
     merchant.deliveryEnabled ? 'DELIVERY' : null,
   ].filter(Boolean);
+}
+
+function canShowMenu(merchant: PublicMerchantRow) {
+  const capabilities = new Map(
+    (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
+  );
+  if (capabilities.size) {
+    return Boolean(
+      capabilities.get('productDisplayEnabled') ||
+      capabilities.get('onlineOrderEnabled') ||
+      capabilities.get('pickupEnabled') ||
+      capabilities.get('deliveryEnabled') ||
+      capabilities.get('qrOrderEnabled'),
+    );
+  }
+  if (merchant.merchantMode === 'DISPLAY' || merchant.merchantMode === 'DISPLAY_ONLY') {
+    return false;
+  }
+  return Boolean(merchant.dineInEnabled || merchant.pickupEnabled || merchant.deliveryEnabled);
 }
 
 function resolveCity(city?: string) {

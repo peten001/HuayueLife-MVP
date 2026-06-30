@@ -14,10 +14,13 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: 't/:token', method: RequestMethod.GET }],
   });
-  const uploadsRoot = join(process.cwd(), 'uploads');
+  const publicUploadsRoot = join(process.cwd(), 'public', 'uploads');
+  const legacyUploadsRoot = join(process.cwd(), 'uploads');
   const reportsRoot = join(process.cwd(), 'public', 'reports');
-  app.use('/api/v1/uploads', express.static(uploadsRoot));
-  app.use('/uploads', express.static(uploadsRoot));
+  app.use('/api/v1/uploads', express.static(publicUploadsRoot));
+  app.use('/uploads', express.static(publicUploadsRoot));
+  app.use('/api/v1/uploads', express.static(legacyUploadsRoot));
+  app.use('/uploads', express.static(legacyUploadsRoot));
   app.use('/api/v1/reports', express.static(reportsRoot));
   app.use('/reports', express.static(reportsRoot));
   app.enableCors({

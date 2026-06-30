@@ -16,6 +16,8 @@ import {
   recentNewPendingOrderIds,
   toggleOrderSound,
 } from '@/utils/order-notification';
+import { getMerchantStaff } from '@/utils/storage';
+import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 import type {
   OrderSpeechAnnouncement,
   OrderSpeechLanguage,
@@ -25,6 +27,7 @@ import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 const route = useRoute();
 const router = useRouter();
 const { locale, t } = useI18n();
+const merchant = getMerchantStaff()?.merchant ?? null;
 const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const operatingId = ref('');
@@ -60,6 +63,8 @@ const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
 const soundButtonLabel = computed(() =>
   orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
 );
+const chatEnabled = computed(() => canAccessMerchantFeature(merchant, 'chat'));
+const voiceNotifyEnabled = computed(() => canAccessMerchantFeature(merchant, 'voice'));
 const chatOrderId = ref('');
 const chatOrder = computed(
   () => rows.value.find((order) => order.id === chatOrderId.value) ?? null,
@@ -256,6 +261,7 @@ async function execute(order: MerchantOrder) {
 }
 
 function openChat(order: MerchantOrder) {
+  if (!chatEnabled.value) return;
   chatOrderId.value = order.id;
 }
 
@@ -286,6 +292,7 @@ function applyFilters() {
 }
 
 async function handleSoundToggle() {
+  if (!voiceNotifyEnabled.value) return;
   if (!orderSoundEnabled.value) {
     await enableOrderSound(buildSpeechAnnouncement('enable-sound'));
     return;
@@ -337,7 +344,7 @@ type Action =
 <template>
   <PageHeader :title="t('orders')" />
 
-  <div v-if="hasNewPendingOrders" class="order-alert order-alert-new">
+  <div v-if="hasNewPendingOrders && voiceNotifyEnabled" class="order-alert order-alert-new">
     <div>
       <strong>{{ t('newOrderNotice') }}</strong>
       <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
@@ -430,6 +437,7 @@ type Action =
           {{ t(primaryAction(order)!.label) }}
         </button>
         <button
+          v-if="chatEnabled"
           type="button"
           class="secondary chat-entry"
           @click="openChat(order)"
@@ -481,6 +489,7 @@ type Action =
               {{ t(primaryAction(order)!.label) }}
             </button>
             <button
+              v-if="chatEnabled"
               type="button"
               class="small secondary chat-entry"
               @click="openChat(order)"

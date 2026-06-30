@@ -15,6 +15,9 @@ export interface LocalUserProfile {
   nickname?: string;
   avatarUrl?: string;
   phone?: string;
+  defaultNickname?: string;
+  defaultAvatarKey?: string;
+  defaultAvatarStyle?: 'neutral' | 'male' | 'female';
 }
 
 export const getToken = () => uni.getStorageSync(TOKEN_KEY) as string | undefined;

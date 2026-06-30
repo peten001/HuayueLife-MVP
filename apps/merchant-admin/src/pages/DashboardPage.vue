@@ -24,13 +24,15 @@ import {
   startAutoWakeLock,
   stopAutoWakeLock,
 } from '@/utils/wake-lock';
-import type { MerchantOrder, OrderStatus } from '@/types/api';
+import type { MerchantOrder, MerchantProfile, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
   type ProfileMissingField,
 } from '@/utils/profile-completion';
+import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 
 const orders = ref<MerchantOrder[]>([]);
+const profile = ref<MerchantProfile | null>(null);
 const merchantName = ref('');
 const profileCompletion = ref(0);
 const missingProfileFields = ref<ProfileMissingField[]>([]);
@@ -150,15 +152,23 @@ const mobileMetricCards = computed(() =>
             : operations.value.processing,
   })),
 );
-const quickLinks: Array<{ to: string; label: TranslationKey; icon: string }> = [
-  { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' },
-  { to: '/menu/products', label: 'products', icon: '🍜' },
-  { to: '/tables', label: 'tableQrCodes', icon: '▦' },
-  { to: '/orders', label: 'orderRecords', icon: '🧾' },
-  { to: '/merchant/profile', label: 'merchantProfile', icon: '🏪' },
-  { to: '/staff', label: 'staffManagement', icon: '👥' },
-];
-const mobileQuickLinks = computed(() => quickLinks.slice(0, 4));
+const orderFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'orders'));
+const productFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'products'));
+const tableFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'tables'));
+const voiceFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'voice'));
+type QuickLink = { to: string; label: TranslationKey; icon: string };
+const quickLinks = computed<QuickLink[]>(() => {
+  const rows: Array<QuickLink | null> = [
+    orderFeatureEnabled.value ? { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' } : null,
+    productFeatureEnabled.value ? { to: '/menu/products', label: 'products', icon: '🍜' } : null,
+    tableFeatureEnabled.value ? { to: '/tables', label: 'tableQrCodes', icon: '▦' } : null,
+    orderFeatureEnabled.value ? { to: '/orders', label: 'orderRecords', icon: '🧾' } : null,
+    { to: '/merchant/profile', label: 'merchantProfile', icon: '🏪' },
+    { to: '/staff', label: 'staffManagement', icon: '👥' },
+  ];
+  return rows.filter((item): item is QuickLink => Boolean(item));
+});
+const mobileQuickLinks = computed(() => quickLinks.value.slice(0, 4));
 const mobileQuickLinkClasses: Record<string, string> = {
   '/orders?status=PENDING_ACCEPTANCE': 'mobile-quick-green',
   '/menu/products': 'mobile-quick-warm',
@@ -250,15 +260,21 @@ async function refreshOrders() {
 }
 
 async function load(options: { resetCountdown?: boolean } = {}) {
+  if (!orderFeatureEnabled.value) {
+    orders.value = [];
+    return;
+  }
   try {
     const loadedOrders = await getMerchantOrders({ date: todayInVietnam() });
     orders.value = loadedOrders;
-    const newPendingIds = notifyNewPendingOrders(
-      loadedOrders
-        .filter((order) => order.status === 'PENDING_ACCEPTANCE')
-        .map((order) => order.id),
-      buildSpeechAnnouncement('new-order'),
-    );
+    const newPendingIds = voiceFeatureEnabled.value
+      ? notifyNewPendingOrders(
+          loadedOrders
+            .filter((order) => order.status === 'PENDING_ACCEPTANCE')
+            .map((order) => order.id),
+          buildSpeechAnnouncement('new-order'),
+        )
+      : [];
     console.debug('dashboard load notifyNewPendingOrders result', {
       totalOrders: loadedOrders.length,
       pendingOrders: loadedOrders.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
@@ -276,9 +292,10 @@ async function load(options: { resetCountdown?: boolean } = {}) {
 
 async function loadProfileCompletion() {
   try {
-    const profile = await getProfile();
-    merchantName.value = profile.nameZh;
-    const summary = computeProfileCompletion(profile);
+    const nextProfile = await getProfile();
+    profile.value = nextProfile;
+    merchantName.value = nextProfile.nameZh;
+    const summary = computeProfileCompletion(nextProfile);
     profileCompletion.value = summary.completion;
     missingProfileFields.value = summary.missingFields;
     profileLoaded.value = true;
@@ -354,7 +371,8 @@ async function execute(order: MerchantOrder) {
 }
 
 onMounted(async () => {
-  await Promise.all([load({ resetCountdown: true }), loadProfileCompletion()]);
+  await loadProfileCompletion();
+  await load({ resetCountdown: true });
   startRefreshTimer();
   await startAutoWakeLock();
 });
@@ -373,6 +391,7 @@ function todayInVietnam() {
 }
 
 async function handleSoundToggle() {
+  if (!voiceFeatureEnabled.value) return;
   if (!orderSoundEnabled.value) {
     await Promise.allSettled([
       enableOrderSound(buildSpeechAnnouncement('enable-sound')),
@@ -414,6 +433,7 @@ type Action =
             </div>
             <div class="welcome-actions">
               <button
+                v-if="voiceFeatureEnabled"
                 type="button"
                 class="sound-toggle"
                 :class="{ active: orderSoundEnabled }"
@@ -422,6 +442,7 @@ type Action =
                 {{ soundButtonLabel }}
               </button>
               <RouterLink
+                v-if="orderFeatureEnabled"
                 class="primary-link"
                 to="/orders?status=PENDING_ACCEPTANCE"
                 @click="requestGestureWakeLock('view-orders')"
@@ -462,7 +483,7 @@ type Action =
         </RouterLink>
       </div>
 
-      <section v-if="hasNewPendingOrders" class="new-order-banner desktop-only">
+      <section v-if="hasNewPendingOrders && orderFeatureEnabled" class="new-order-banner desktop-only">
         <div>
           <strong>{{ newOrderNoticeLabel }}</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
@@ -490,7 +511,7 @@ type Action =
         </div>
       </section>
 
-      <section class="workbench-grid">
+      <section v-if="orderFeatureEnabled" class="workbench-grid">
         <div class="panel orders-panel">
           <div class="section-heading">
             <div>
@@ -595,6 +616,7 @@ type Action =
           <span class="mobile-store-count">{{ pending.length + inProgress.length }}</span>
           <div class="mobile-store-actions">
             <button
+              v-if="voiceFeatureEnabled"
               type="button"
               class="sound-toggle mobile-sound-toggle"
               :class="{ active: orderSoundEnabled }"
@@ -606,7 +628,7 @@ type Action =
         </div>
       </section>
 
-      <section v-if="hasNewPendingOrders" class="mobile-new-order-banner">
+      <section v-if="hasNewPendingOrders && orderFeatureEnabled" class="mobile-new-order-banner">
         <div>
           <strong>{{ newOrderNoticeLabel }}</strong>
           <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
@@ -635,7 +657,7 @@ type Action =
         </article>
       </section>
 
-      <section class="panel mobile-orders-panel">
+      <section v-if="orderFeatureEnabled" class="panel mobile-orders-panel">
         <div class="section-heading mobile-section-heading">
           <div>
             <h2>{{ t('activeOrders') }}</h2>

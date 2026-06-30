@@ -22,7 +22,11 @@ export class QrService {
   private async resolveByToken(token: string) {
     const table = await this.prisma.diningTable.findUnique({
       where: { qrToken: token },
-      include: { merchant: true },
+      include: {
+        merchant: {
+          include: { capabilities: { include: { capability: true } } },
+        },
+      },
     });
     if (!table) {
       throw new NotFoundException('二维码无效或已换码');
@@ -36,7 +40,7 @@ export class QrService {
     ) {
       throw new GoneException('商家当前不可用');
     }
-    if (!table.merchant.dineInEnabled) {
+    if (!qrOrderEnabled(table.merchant)) {
       throw new GoneException('商家当前未开启堂食');
     }
 
@@ -65,7 +69,11 @@ export class QrService {
     const qrVersion = Number(matched[2]);
     const table = await this.prisma.diningTable.findUnique({
       where: { id: tableId },
-      include: { merchant: true },
+      include: {
+        merchant: {
+          include: { capabilities: { include: { capability: true } } },
+        },
+      },
     });
     if (!table) {
       throw new NotFoundException('桌台不存在');
@@ -82,7 +90,7 @@ export class QrService {
     ) {
       throw new GoneException('商家当前不可用');
     }
-    if (!table.merchant.dineInEnabled) {
+    if (!qrOrderEnabled(table.merchant)) {
       throw new GoneException('商家当前未开启堂食');
     }
 
@@ -155,4 +163,19 @@ export class QrService {
       return raw;
     }
   }
+}
+
+function qrOrderEnabled(merchant: {
+  dineInEnabled: boolean;
+  capabilities?: Array<{
+    isEnabled: boolean;
+    capability: { code: string };
+  }>;
+}) {
+  if (merchant.capabilities?.length) {
+    return merchant.capabilities.some(
+      (item) => item.capability.code === 'qrOrderEnabled' && item.isEnabled,
+    );
+  }
+  return merchant.dineInEnabled;
 }

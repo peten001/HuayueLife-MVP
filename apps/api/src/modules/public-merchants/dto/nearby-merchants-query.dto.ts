@@ -4,6 +4,7 @@ import {
   IsInt,
   IsNumber,
   IsOptional,
+  IsString,
   Max,
   Min,
 } from 'class-validator';
@@ -39,4 +40,12 @@ export class NearbyMerchantsQueryDto {
   @IsOptional()
   @IsIn(['Bac Ninh', 'Bac Giang', '北宁', '北江'])
   city?: string;
+
+  @IsOptional()
+  @IsString()
+  businessTypeId?: string;
+
+  @IsOptional()
+  @IsString()
+  promotionTag?: string;
 }
