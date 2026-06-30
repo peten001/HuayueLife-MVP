@@ -18,7 +18,14 @@ export class MerchantProfileService {
   async getProfile(merchantId: bigint) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
-      include: { capabilities: { include: { capability: true } } },
+      include: {
+        businessType: true,
+        capabilities: { include: { capability: true } },
+        images: {
+          where: { isVisible: true },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
+      },
     });
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
@@ -82,6 +89,27 @@ export class MerchantProfileService {
         merchant.homepageCategoryKeys,
       ),
       manualPopular: Boolean(merchant.manualPopular),
+      businessType: merchant.businessType
+        ? {
+            id: merchant.businessType.id.toString(),
+            code: merchant.businessType.code,
+            nameZh: merchant.businessType.nameZh,
+            nameVi: merchant.businessType.nameVi,
+            nameEn: merchant.businessType.nameEn,
+          }
+        : null,
+      images: (merchant.images ?? []).map((item: any) => ({
+        id: item.id.toString(),
+        imageType: item.imageType,
+        imageUrl: item.imageUrl,
+        titleZh: item.titleZh,
+        titleVi: item.titleVi,
+        titleEn: item.titleEn,
+        sortOrder: item.sortOrder,
+        isVisible: item.isVisible,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
     };
   }
 }

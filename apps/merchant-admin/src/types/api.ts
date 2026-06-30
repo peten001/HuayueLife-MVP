@@ -45,9 +45,29 @@ export interface MerchantProfile {
   id: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string;
   merchantType: 'RESTAURANT';
+  businessType?: {
+    id: string;
+    code: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+  } | null;
   logoUrl?: string;
   coverUrl?: string;
+  images?: Array<{
+    id: string;
+    imageType: string;
+    imageUrl: string;
+    titleZh?: string | null;
+    titleVi?: string | null;
+    titleEn?: string | null;
+    sortOrder: number;
+    isVisible: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
   contactName: string;
   contactPhone: string;
   province: string;

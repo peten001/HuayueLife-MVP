@@ -62,6 +62,7 @@ const profileForm = reactive({
   merchantMode: 'DISPLAY',
   contactPhone: '',
   contactName: '',
+  province: '',
   city: '',
   district: '',
   addressZh: '',
@@ -77,6 +78,7 @@ const profileForm = reactive({
   status: 'ACTIVE',
   sortOrder: 0,
 });
+const provinceOptions = ['北江', '北宁'] as const;
 const imageForm = reactive({
   id: '',
   imageType: 'STORE',
@@ -237,9 +239,10 @@ const profileRisks = computed(() => {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0)) {
     risks.push('缺少经纬度');
   }
-  if (!item.logoUrl?.trim()) risks.push('缺少 Logo');
-  if (!item.coverUrl?.trim()) risks.push('缺少封面图');
-  if (!item.phone?.trim()) risks.push('缺少电话');
+  if (!item.logoUrl?.trim()) risks.push('缺少商家 Logo');
+  if (!item.coverUrl?.trim()) risks.push('缺少商家封面');
+  if (!item.phone?.trim()) risks.push('缺少联系电话');
+  if (!(item.province || item.city)?.trim()) risks.push('缺少省份');
   if (!(item.addressZh || item.address)?.trim()) risks.push('缺少中文地址');
   if (!item.businessType) risks.push('经营类型未设置');
   return risks;
@@ -294,6 +297,7 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   profileForm.merchantMode = item.merchantMode;
   profileForm.contactPhone = item.phone ?? '';
   profileForm.contactName = item.contactName ?? '';
+  profileForm.province = item.province ?? item.city ?? '';
   profileForm.city = item.city ?? '';
   profileForm.district = item.district ?? '';
   profileForm.addressZh = item.addressZh ?? item.address ?? '';
@@ -384,8 +388,8 @@ async function saveProfile() {
       merchantMode: profileForm.merchantMode,
       contactPhone: profileForm.contactPhone,
       contactName: profileForm.contactName || undefined,
-      city: profileForm.city,
-      district: profileForm.district || undefined,
+      province: profileForm.province || undefined,
+      city: profileForm.province || profileForm.city,
       addressZh: profileForm.addressZh,
       addressVi: profileForm.addressVi || undefined,
       addressEn: profileForm.addressEn || undefined,
@@ -620,8 +624,8 @@ function claimLabel(value: string) {
 function imageTypeLabel(value: string) {
   return (
     {
-      LOGO: 'Logo',
-      COVER: '封面',
+      LOGO: '商家 Logo',
+      COVER: '商家封面',
       STORE: '门店',
       ENVIRONMENT: '环境',
       PRODUCT: '商品',
@@ -711,7 +715,7 @@ function backToList() {
 
   <template v-else-if="merchant && detail">
     <section class="merchant-editor-meta">
-      <span>ID: {{ merchant.id }}</span>
+      <span>商家编号：{{ merchant.id }}</span>
       <span>创建时间: {{ dateTime(merchant.createdAt) }}</span>
       <span>最近更新: {{ dateTime(merchant.updatedAt) }}</span>
     </section>
@@ -723,7 +727,7 @@ function backToList() {
       </div>
       <div class="merchant-summary-main">
         <p>{{ merchant.nameVi || '未填写越南语名称' }}</p>
-        <p>{{ merchant.phone || '未填写电话' }} · {{ merchant.city || '-' }}{{ merchant.district ? ` / ${merchant.district}` : '' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
+        <p>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
         <p>营业时间：{{ merchant.openingHoursText || '-' }}</p>
       </div>
       <div class="merchant-summary-badges">
@@ -751,7 +755,7 @@ function backToList() {
             <label><span>联系电话 <b>*</b></span><input v-model="profileForm.contactPhone" required maxlength="32" /></label>
             <label><span>联系人</span><input v-model="profileForm.contactName" maxlength="64" /></label>
             <label><span>商家模式</span><select v-model="profileForm.merchantMode"><option value="DISPLAY">DISPLAY 展示</option><option value="MANAGED">MANAGED 经营管理</option><option value="DISPLAY_ONLY">DISPLAY_ONLY 兼容</option><option value="ONLINE_ORDER">ONLINE_ORDER 兼容（旧在线下单）</option><option value="QR_ORDER">QR_ORDER 兼容（到店扫码点餐）</option></select></label>
-            <label><span>生命周期 / 状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label>
+            <label><span>状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label>
             <label><span>营业时间</span><input v-model="profileForm.openingHoursText" maxlength="255" /></label>
             <label><span>排序</span><input v-model.number="profileForm.sortOrder" type="number" /></label>
             <label class="span-2"><span>中文简介</span><textarea v-model="profileForm.descriptionZh" rows="4" /></label>
@@ -763,13 +767,12 @@ function backToList() {
         <section id="merchant-section-location" class="editor-section-card">
           <div class="editor-section-head"><div><h2>地址与定位</h2><p>用于小程序地址展示和导航，前台展示商家建议填写准确经纬度</p></div></div>
           <div class="editor-form-grid">
-            <label><span>城市</span><input v-model="profileForm.city" maxlength="80" /></label>
-            <label><span>区域</span><input v-model="profileForm.district" maxlength="80" /></label>
-            <label><span>中文地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
-            <label><span>越南语地址</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
-            <label class="span-2"><span>英文地址</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
-            <label><span>纬度 latitude</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>纬度示例：21.28</small></label>
-            <label><span>经度 longitude</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>经度示例：106.20</small></label>
+            <label><span>省份</span><select v-model="profileForm.province"><option value="">未设置</option><option v-for="item in provinceOptions" :key="item" :value="item">{{ item }}</option></select></label>
+            <label><span>中文详细地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
+            <label><span>越南语详细地址</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
+            <label class="span-2"><span>英文详细地址</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
+            <label><span>纬度</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>纬度示例：21.28</small></label>
+            <label><span>经度</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>经度示例：106.20</small></label>
           </div>
           <p class="editor-tip">北江 / 北宁常见纬度为 21.x，经度为 106.x，请勿填反。前台展示商家建议填写准确经纬度，否则用户导航可能不准确。</p>
           <p v-if="hasInvalidCoordinates" class="editor-warning">当前经纬度缺失或疑似无效，可能影响小程序导航。</p>
@@ -777,16 +780,16 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>图片管理</h2><p>管理商家 Logo、封面和门店图片</p></div>
-            <div class="editor-section-actions"><button class="editor-button is-secondary" type="button" :disabled="uploadingImage" @click="openImagePicker">{{ uploadingImage ? '上传中...' : '上传图片' }}</button><button class="editor-button is-ghost" type="button" @click="resetImageForm">新增图片 URL</button></div>
+            <div><h2>图片管理</h2><p>管理商家 Logo、商家封面和商家相册</p></div>
+            <div class="editor-section-actions"><button class="editor-button is-secondary" type="button" :disabled="uploadingImage" @click="openImagePicker">{{ uploadingImage ? '上传中...' : '上传相册图片' }}</button><button class="editor-button is-ghost" type="button" @click="resetImageForm">新增相册图片 URL</button></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
-            <article><strong>Logo</strong><img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="Logo" /><div v-else class="image-empty">缺少 Logo</div><button class="small secondary" type="button" @click="prepareImage('LOGO')">上传 Logo</button></article>
-            <article><strong>封面图</strong><img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="封面" /><div v-else class="image-empty">缺少封面</div><button class="small secondary" type="button" @click="prepareImage('COVER')">上传封面</button></article>
+            <article><strong>商家 Logo</strong><img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" /><div v-else class="image-empty">暂无 Logo</div><button class="small secondary" type="button" @click="prepareImage('LOGO')">上传商家 Logo</button></article>
+            <article><strong>商家封面</strong><img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" /><div v-else class="image-empty">暂无封面图</div><button class="small secondary" type="button" @click="prepareImage('COVER')">上传商家封面</button></article>
           </div>
           <form class="editor-form-grid image-editor-form" @submit.prevent="saveImage">
-            <label><span>图片类型</span><select v-model="imageForm.imageType"><option value="LOGO">Logo</option><option value="COVER">封面</option><option value="STORE">门店</option><option value="ENVIRONMENT">环境</option><option value="PRODUCT">商品</option><option value="MENU">菜单</option><option value="LICENSE">资质</option></select></label>
+            <label><span>图片类型</span><select v-model="imageForm.imageType"><option value="LOGO">商家 Logo</option><option value="COVER">商家封面</option><option value="STORE">门店</option><option value="ENVIRONMENT">环境</option><option value="PRODUCT">商品</option><option value="MENU">菜单</option><option value="LICENSE">资质</option></select></label>
             <label><span>排序</span><input v-model.number="imageForm.sortOrder" type="number" min="0" /></label>
             <label class="span-2"><span>图片 URL</span><input v-model="imageForm.imageUrl" required maxlength="500" /></label>
             <label><span>中文标题</span><input v-model="imageForm.titleZh" maxlength="120" /></label>
@@ -794,21 +797,21 @@ function backToList() {
             <label><span>英文标题</span><input v-model="imageForm.titleEn" maxlength="120" /></label>
             <label class="editor-check"><input v-model="imageForm.isVisible" type="checkbox" />显示</label>
             <div v-if="imagePreviewUrl" class="span-2 image-upload-preview"><span>预览</span><img :src="imagePreviewUrl" :alt="imageForm.titleZh || imageForm.imageType" /></div>
-            <div class="form-actions span-2"><button type="submit" :disabled="saving || uploadingImage">{{ imageForm.id ? '保存图片' : '新增图片' }}</button></div>
+            <div class="form-actions span-2"><button type="submit" :disabled="saving || uploadingImage">{{ imageForm.id ? '保存图片' : '新增相册图片' }}</button></div>
           </form>
           <div class="merchant-image-table">
             <div v-for="image in merchant.images" :key="image.id" class="merchant-image-row">
               <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
               <div><strong>{{ imageTypeLabel(image.imageType) }} · {{ image.titleZh || '-' }}</strong><small>排序 {{ image.sortOrder }} · {{ image.isVisible ? '显示' : '隐藏' }}</small><small>{{ image.imageUrl }}</small></div>
-              <div class="image-row-actions"><button class="small secondary" type="button" @click="editImage(image)">编辑</button><button class="small secondary" type="button" @click="setImageType(image, 'LOGO')">设为 Logo</button><button class="small secondary" type="button" @click="setImageType(image, 'COVER')">设为封面</button><button class="small secondary" type="button" @click="toggleImageVisibility(image.id, image.isVisible)">{{ image.isVisible ? '隐藏' : '显示' }}</button></div>
+              <div class="image-row-actions"><button class="small secondary" type="button" @click="editImage(image)">编辑</button><button class="small secondary" type="button" @click="setImageType(image, 'LOGO')">设为商家 Logo</button><button class="small secondary" type="button" @click="setImageType(image, 'COVER')">设为商家封面</button><button class="small secondary" type="button" @click="toggleImageVisibility(image.id, image.isVisible)">{{ image.isVisible ? '隐藏' : '显示' }}</button></div>
             </div>
-            <p v-if="!merchant.images.length" class="empty">暂无图片</p>
+            <p v-if="!merchant.images.length" class="empty">暂无相册图片</p>
           </div>
         </section>
 
         <section id="merchant-section-visibility" class="editor-section-card">
           <div class="editor-section-head"><div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div><button class="editor-button is-primary" type="button" @click="saveProfile">保存展示设置</button></div>
-          <div class="visibility-grid"><label class="switch-row"><input v-model="profileForm.isVisibleOnClient" type="checkbox" />是否前台展示</label><label><span>营业状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label></div>
+          <div class="visibility-grid"><label class="switch-row"><input v-model="profileForm.isVisibleOnClient" type="checkbox" />是否前台展示</label><label><span>状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label></div>
           <div class="risk-panel" :class="profileRisks.length ? 'is-warning' : 'is-success'"><strong>{{ profileRisks.length ? '资料待完善' : '资料完整，可展示' }}</strong><span>{{ profileRisks.length ? profileRisks.join('、') : '当前关键资料完整' }}</span></div>
         </section>
 

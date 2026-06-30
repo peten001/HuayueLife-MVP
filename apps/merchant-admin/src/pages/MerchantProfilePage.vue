@@ -6,43 +6,66 @@ import { errorMessage } from '@/api/http';
 import { getProfile, updateProfile } from '@/api/merchant';
 import { useI18n } from '@/i18n';
 import { resolveMediaUrl } from '@/utils/media';
-import type { UpdateMerchantProfilePayload } from '@/types/api';
+import type { MerchantProfile, UpdateMerchantProfilePayload } from '@/types/api';
 
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const message = ref('');
 const loading = ref(false);
-
+const profile = ref<MerchantProfile | null>(null);
 const form = reactive({
-  nameZh: '',
-  nameVi: '',
-  contactName: '',
-  contactPhone: '',
-  province: '',
-  city: '',
-  district: '',
-  addressDetail: '',
-  latitude: null as number | null,
-  longitude: null as number | null,
-  logoUrl: '',
-  coverUrl: '',
   notice: '',
 });
 
-const provinceOptions = computed(() => [
-  { value: 'Bac Giang', label: t('provinceBacGiang') },
-  { value: 'Bac Ninh', label: t('provinceBacNinh') },
-]);
-const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
-const coverPreviewUrl = computed(() => resolveMediaUrl(form.coverUrl));
+const logoPreviewUrl = computed(() =>
+  resolveMediaUrl(
+    profile.value?.logoUrl
+      || profile.value?.images?.find((item) => item.imageType === 'LOGO')?.imageUrl
+      || '',
+  ),
+);
+const coverPreviewUrl = computed(() =>
+  resolveMediaUrl(
+    profile.value?.coverUrl
+      || profile.value?.images?.find((item) => item.imageType === 'COVER')?.imageUrl
+      || '',
+  ),
+);
+const businessTypeLabel = computed(() => {
+  const item = profile.value?.businessType;
+  if (!item) return '-';
+  if (locale.value === 'vi') return item.nameVi || item.nameZh;
+  if (locale.value === 'en') return item.nameEn || item.nameZh;
+  return item.nameZh;
+});
+const galleryImages = computed(() =>
+  (profile.value?.images ?? []).filter(
+    (item) => item.imageType !== 'LOGO' && item.imageType !== 'COVER',
+  ),
+);
+const statusLabel = computed(() => {
+  const value = profile.value?.status;
+  if (!value) return '-';
+  return (
+    {
+      PENDING: t('pendingStatus'),
+      ACTIVE: t('activeStatus'),
+      DISABLED: t('disabledStatus'),
+      DELETED: t('deletedStatus'),
+    }[value] ?? value
+  );
+});
 
-onMounted(async () => {
+onMounted(loadProfile);
+
+async function loadProfile() {
   try {
     const nextProfile = await getProfile();
-    assignForm(nextProfile);
+    profile.value = nextProfile;
+    form.notice = nextProfile.notice ?? '';
   } catch (error) {
     message.value = errorMessage(error);
   }
-});
+}
 
 async function save() {
   loading.value = true;
@@ -51,8 +74,7 @@ async function save() {
     const payload = buildPayload();
     await updateProfile(payload);
     message.value = t('profileSaved');
-    const nextProfile = await getProfile();
-    assignForm(nextProfile);
+    await loadProfile();
   } catch (error) {
     message.value = resolveProfileSaveError(error);
   } finally {
@@ -60,36 +82,10 @@ async function save() {
   }
 }
 
-function assignForm(nextProfile: Awaited<ReturnType<typeof getProfile>>) {
-  form.nameZh = nextProfile.nameZh ?? '';
-  form.nameVi = nextProfile.nameVi ?? '';
-  form.contactName = nextProfile.contactName ?? '';
-  form.contactPhone = nextProfile.contactPhone ?? '';
-  form.province = normalizeProvince(nextProfile.province);
-  form.city = nextProfile.city ?? '';
-  form.district = nextProfile.district ?? '';
-  form.addressDetail = nextProfile.addressDetail ?? '';
-  form.latitude = parseNumber(nextProfile.latitude);
-  form.longitude = parseNumber(nextProfile.longitude);
-  form.logoUrl = nextProfile.logoUrl ?? '';
-  form.coverUrl = nextProfile.coverUrl ?? '';
-  form.notice = nextProfile.notice ?? '';
-}
-
 function buildPayload(): UpdateMerchantProfilePayload {
-  const payload: UpdateMerchantProfilePayload = {
+  return {
     notice: trimOrUndefined(form.notice),
   };
-
-  return payload;
-}
-
-function parseNumber(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const next = Number(value);
-  return Number.isFinite(next) ? next : null;
 }
 
 function trimOrUndefined(value: string | null | undefined) {
@@ -97,23 +93,10 @@ function trimOrUndefined(value: string | null | undefined) {
   return next ? next : undefined;
 }
 
-function normalizeProvince(value?: string | null) {
-  const next = value?.trim();
-  if (!next) return '';
-
-  const normalized = next.toLowerCase().replace(/\s+/g, ' ');
-  const provinceMap: Record<string, 'Bac Giang' | 'Bac Ninh'> = {
-    '北江': 'Bac Giang',
-    'bắc giang': 'Bac Giang',
-    'bac giang': 'Bac Giang',
-    'bac giang province': 'Bac Giang',
-    '北宁': 'Bac Ninh',
-    'bắc ninh': 'Bac Ninh',
-    'bac ninh': 'Bac Ninh',
-    'bac ninh province': 'Bac Ninh',
-  };
-
-  return provinceMap[normalized] ?? '';
+function displayValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  const next = String(value).trim();
+  return next ? next : '-';
 }
 
 function resolveProfileSaveError(error: unknown) {
@@ -121,25 +104,16 @@ function resolveProfileSaveError(error: unknown) {
     return errorMessage(error);
   }
 
-  const payload = buildPayload();
   const response = error.response;
   const body = response?.data;
   const rawMessages = normalizeValidationMessages(body?.message);
 
   console.error('[merchant-profile] save failed', {
-    payload,
+    payload: buildPayload(),
     status: response?.status,
     body,
     validationMessages: rawMessages,
   });
-
-  const friendlyMessages = rawMessages
-    .map((item) => mapValidationMessage(item))
-    .filter((item): item is string => Boolean(item));
-
-  if (friendlyMessages.length) {
-    return Array.from(new Set(friendlyMessages)).join('；');
-  }
 
   if (response?.status === 400) {
     return t('profileSaveFailed');
@@ -156,22 +130,6 @@ function normalizeValidationMessages(message: unknown) {
     return [message];
   }
   return [];
-}
-
-function mapValidationMessage(message: string) {
-  const lower = message.toLowerCase();
-  if (lower.includes('namezh')) return t('merchantNameRequired');
-  if (lower.includes('province')) return t('provinceRequired');
-  if (lower.includes('city')) return t('cityRequired');
-  if (lower.includes('district')) return t('districtRequired');
-  if (lower.includes('addressdetail')) return t('addressDetailRequired');
-  if (lower.includes('logourl')) return t('logoRequired');
-  if (lower.includes('coverurl')) return t('coverRequired');
-  if (lower.includes('businesshours')) return t('businessHoursRequired');
-  if (lower.includes('latitude') || lower.includes('longitude')) {
-    return t('locationManagedBySystem');
-  }
-  return '';
 }
 </script>
 
@@ -191,44 +149,118 @@ function mapValidationMessage(message: string) {
     </div>
   </section>
 
-  <form class="card form-grid" @submit.prevent="save">
-    <label class="readonly-field">{{ t('chineseName') }}<input v-model="form.nameZh" readonly maxlength="120" /></label>
-    <label class="readonly-field">{{ t('vietnameseName') }}<input v-model="form.nameVi" readonly maxlength="120" /></label>
-    <label class="readonly-field">{{ t('contactName') }}<input v-model="form.contactName" readonly /></label>
-    <label class="readonly-field">{{ t('contactPhone') }}<input v-model="form.contactPhone" readonly /></label>
-    <label class="readonly-field">{{ t('province') }}
-      <select v-model="form.province" disabled>
-        <option value="">{{ t('provincePlaceholder') }}</option>
-        <option v-for="item in provinceOptions" :key="item.value" :value="item.value">
-          {{ item.label }}
-        </option>
-      </select>
+  <section class="card readonly-section">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('profileBasicSection') }}</h2>
+      </div>
+    </div>
+    <div class="readonly-grid">
+      <div class="readonly-item">
+        <span>{{ t('merchantIdLabel') }}</span>
+        <strong>{{ displayValue(profile?.id) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('status') }}</span>
+        <strong>{{ statusLabel }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('chineseName') }}</span>
+        <strong>{{ displayValue(profile?.nameZh) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('vietnameseName') }}</span>
+        <strong>{{ displayValue(profile?.nameVi) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('englishName') }}</span>
+        <strong>{{ displayValue(profile?.nameEn) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('businessType') }}</span>
+        <strong>{{ businessTypeLabel }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('contactName') }}</span>
+        <strong>{{ displayValue(profile?.contactName) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('contactPhone') }}</span>
+        <strong>{{ displayValue(profile?.contactPhone) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('province') }}</span>
+        <strong>{{ displayValue(profile?.province) }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="card readonly-section">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('profileLocationSection') }}</h2>
+      </div>
+    </div>
+    <div class="readonly-grid">
+      <div class="readonly-item readonly-item--full">
+        <span>{{ t('addressDetail') }}</span>
+        <strong>{{ displayValue(profile?.addressDetail) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('latitude') }}</span>
+        <strong>{{ displayValue(profile?.latitude) }}</strong>
+      </div>
+      <div class="readonly-item">
+        <span>{{ t('longitude') }}</span>
+        <strong>{{ displayValue(profile?.longitude) }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="card readonly-section">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('profileImagesSection') }}</h2>
+      </div>
+    </div>
+    <div class="readonly-images-grid">
+      <div class="readonly-image-card">
+        <span>{{ t('merchantLogo') }}</span>
+        <div class="preview-box square readonly-preview">
+          <img v-if="logoPreviewUrl" :src="logoPreviewUrl" :alt="t('merchantLogo')" />
+          <div v-else class="empty-preview">{{ t('noMerchantLogo') }}</div>
+        </div>
+      </div>
+      <div class="readonly-image-card readonly-image-card--wide">
+        <span>{{ t('merchantCover') }}</span>
+        <div class="preview-box wide readonly-preview">
+          <img v-if="coverPreviewUrl" :src="coverPreviewUrl" :alt="t('merchantCover')" />
+          <div v-else class="empty-preview">{{ t('noMerchantCover') }}</div>
+        </div>
+      </div>
+      <div class="readonly-image-card readonly-image-card--full">
+        <span>{{ t('merchantImages') }}</span>
+        <div v-if="galleryImages.length" class="gallery-grid">
+          <div v-for="image in galleryImages" :key="image.id" class="gallery-item">
+            <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
+          </div>
+        </div>
+        <div v-else class="gallery-empty">{{ t('noMerchantImages') }}</div>
+      </div>
+    </div>
+  </section>
+
+  <form class="card notice-card" @submit.prevent="save">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('merchantNotice') }}</h2>
+        <p>{{ t('profileDescription') }}</p>
+      </div>
+    </div>
+    <label class="notice-field">
+      <textarea v-model="form.notice" rows="4" />
     </label>
-    <label class="readonly-field">{{ t('city') }}<input v-model="form.city" readonly /></label>
-    <label class="readonly-field">{{ t('district') }}<input v-model="form.district" readonly /></label>
-    <label class="span-2 readonly-field">{{ t('addressDetail') }}<input v-model="form.addressDetail" readonly /></label>
-    <label class="readonly-field">{{ t('latitude') }}<input v-model.number="form.latitude" type="number" readonly step="0.0000001" placeholder="21.28" /></label>
-    <label class="readonly-field">{{ t('longitude') }}<input v-model.number="form.longitude" type="number" readonly step="0.0000001" placeholder="106.20" /></label>
-    <div class="span-2 image-block readonly-image-block">
-      <div class="section-heading">
-        <h3>{{ t('merchantLogo') }}</h3>
-      </div>
-      <div class="preview-box square readonly-preview">
-        <img v-if="logoPreviewUrl" :src="logoPreviewUrl" :alt="t('merchantLogo')" />
-        <div v-else class="empty-preview">{{ t('imagePlaceholder') }}</div>
-      </div>
-    </div>
-    <div class="span-2 image-block readonly-image-block">
-      <div class="section-heading">
-        <h3>{{ t('merchantCover') }}</h3>
-      </div>
-      <div class="preview-box wide readonly-preview">
-        <img v-if="coverPreviewUrl" :src="coverPreviewUrl" :alt="t('merchantCover')" />
-        <div v-else class="empty-preview">{{ t('imagePlaceholder') }}</div>
-      </div>
-    </div>
-    <label class="span-2">{{ t('merchantNotice') }}<textarea v-model="form.notice" rows="4" /></label>
-    <div class="form-actions span-2">
+    <div class="form-actions">
       <span class="message">{{ message }}</span>
       <button :disabled="loading">{{ loading ? t('saving') : t('saveProfile') }}</button>
     </div>
@@ -249,13 +281,72 @@ function mapValidationMessage(message: string) {
   color: #4e6d59;
 }
 
-.image-block {
-  display: grid;
-  gap: 12px;
+.readonly-section,
+.notice-card {
+  margin-bottom: 16px;
 }
 
-.hidden-file {
-  display: none;
+.readonly-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.readonly-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.readonly-item--full {
+  grid-column: 1 / -1;
+}
+
+.readonly-item span,
+.readonly-image-card > span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.readonly-item strong {
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.readonly-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.readonly-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #15803d;
+  background: #eaf7ed;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.readonly-images-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.readonly-image-card {
+  display: grid;
+  gap: 10px;
+}
+
+.readonly-image-card--wide,
+.readonly-image-card--full {
+  grid-column: 1 / -1;
 }
 
 .preview-box {
@@ -263,15 +354,15 @@ function mapValidationMessage(message: string) {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px dashed #d8cbc3;
+  border: 1px solid #dbe3ea;
   border-radius: 14px;
-  background: #faf7f4;
+  background: #f8fafc;
 }
 
 .preview-box.square {
   min-height: 180px;
   aspect-ratio: 1 / 1;
-  max-width: 240px;
+  max-width: 220px;
 }
 
 .preview-box.wide {
@@ -285,42 +376,49 @@ function mapValidationMessage(message: string) {
   object-fit: cover;
 }
 
-.empty-preview {
-  color: #b7aaa1;
+.empty-preview,
+.gallery-empty {
+  color: #94a3b8;
 }
 
-.readonly-field input,
-.readonly-field textarea,
-.readonly-field select {
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.gallery-item {
+  overflow: hidden;
+  border: 1px solid #dbe3ea;
+  border-radius: 12px;
   background: #f8fafc;
-  border-color: #e2e8f0;
-  color: #475569;
-  cursor: not-allowed;
+  aspect-ratio: 1 / 1;
 }
 
-.readonly-field input[readonly],
-.readonly-field textarea[readonly] {
-  background: #f8fafc;
-  color: #475569;
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.readonly-field input:focus,
-.readonly-field textarea:focus,
-.readonly-field select:focus {
-  box-shadow: none;
-}
-
-.readonly-image-block .section-heading {
-  margin-bottom: 0;
-}
-
-.readonly-preview {
-  border-style: solid;
-  border-color: #dbe3ea;
-  background: #f8fafc;
+.notice-field textarea {
+  min-height: 110px;
 }
 
 .readonly-banner .section-heading {
   margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .readonly-grid,
+  .readonly-images-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .readonly-item--full,
+  .readonly-image-card--wide,
+  .readonly-image-card--full {
+    grid-column: auto;
+  }
 }
 </style>
