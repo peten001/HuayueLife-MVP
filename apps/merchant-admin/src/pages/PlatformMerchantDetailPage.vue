@@ -5,11 +5,15 @@ import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import {
   createPlatformMerchantImage,
+  deletePlatformMerchant,
+  disablePlatformMerchant,
+  enablePlatformMerchant,
   getPlatformCapabilities,
   getPlatformBusinessTypes,
   getPlatformMerchantDetail,
   getPlatformPromotionTags,
   openPlatformMerchantAccount,
+  resetPlatformMerchantPassword,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
   updatePlatformMerchantCapabilities,
@@ -31,7 +35,8 @@ type EditorSection =
   | 'visibility'
   | 'hot'
   | 'capabilities'
-  | 'account';
+  | 'account'
+  | 'danger';
 
 const route = useRoute();
 const router = useRouter();
@@ -85,6 +90,7 @@ const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> =
   { key: 'hot', label: '热门推荐' },
   { key: 'capabilities', label: '能力开关' },
   { key: 'account', label: '商家账号' },
+  { key: 'danger', label: '危险操作', danger: true },
 ];
 type CapabilityCard = {
   code: string;
@@ -444,6 +450,70 @@ async function openAccount() {
   }
 }
 
+async function toggleClientVisibility() {
+  if (!merchant.value) return;
+  const nextVisible = !merchant.value.isVisibleOnClient;
+  if (!nextVisible && !window.confirm('该商家将不再在小程序前台展示，是否继续？')) {
+    return;
+  }
+  try {
+    await updatePlatformMerchant(merchantId.value, {
+      isVisibleOnClient: nextVisible,
+    });
+    message.value = nextVisible ? '已显示前台' : '已隐藏前台';
+    await loadPage();
+  } catch (error) {
+    message.value = errorMessage(error);
+  }
+}
+
+async function toggleMerchantStatus() {
+  if (!merchant.value) return;
+  const isActive = merchant.value.status === 'ACTIVE';
+  const confirmed = window.confirm(
+    isActive
+      ? `确认停用商家「${merchant.value.nameZh}」？`
+      : `确认启用商家「${merchant.value.nameZh}」？`,
+  );
+  if (!confirmed) return;
+  try {
+    if (isActive) {
+      await disablePlatformMerchant(merchantId.value);
+      message.value = '商家已停用';
+    } else {
+      await enablePlatformMerchant(merchantId.value);
+      message.value = '商家已启用';
+    }
+    await loadPage();
+  } catch (error) {
+    message.value = errorMessage(error);
+  }
+}
+
+async function resetPassword() {
+  if (!merchant.value) return;
+  if (!window.confirm(`重置 ${merchant.value.nameZh} 的商家后台密码？`)) return;
+  try {
+    await resetPlatformMerchantPassword(merchantId.value);
+    message.value = '商家后台密码已重置';
+    await loadPage();
+  } catch (error) {
+    message.value = errorMessage(error);
+  }
+}
+
+async function deleteMerchant() {
+  if (!merchant.value) return;
+  if (!window.confirm(`确认删除商家「${merchant.value.nameZh}」？此操作不可恢复。`)) return;
+  try {
+    await deletePlatformMerchant(merchantId.value);
+    message.value = '商家已删除';
+    await router.push('/platform/merchants');
+  } catch (error) {
+    message.value = errorMessage(error);
+  }
+}
+
 function dateTime(value?: string | null) {
   return value
     ? new Intl.DateTimeFormat('zh-CN', {
@@ -700,6 +770,25 @@ function backToList() {
         <section id="merchant-section-account" class="editor-section-card">
           <div class="editor-section-head"><div><h2>商家账号</h2><p>管理商家后台登录账号和认领状态</p></div></div>
           <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'"><span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">{{ accountOpened ? '已开通' : '未开通' }}</span><strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong><p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p><div class="section-actions"><button v-if="merchant.claimStatus === 'UNCLAIMED'" class="editor-button is-primary" type="button" @click="openAccount">开通商家后台账号</button></div></div>
+        </section>
+
+        <section id="merchant-section-danger" class="editor-section-card danger-card">
+          <div class="editor-section-head">
+            <div>
+              <h2>危险操作</h2>
+              <p>以下操作会影响商家前台展示、后台账号或商家状态，请谨慎处理。</p>
+            </div>
+          </div>
+          <div class="danger-actions">
+            <button class="editor-button is-danger-outline" type="button" @click="toggleClientVisibility">
+              {{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}
+            </button>
+            <button class="editor-button is-danger-outline" type="button" @click="toggleMerchantStatus">
+              {{ merchant.status === 'DISABLED' ? '启用商家' : '停用商家' }}
+            </button>
+            <button class="editor-button is-danger-outline" type="button" @click="resetPassword">重置密码</button>
+            <button class="editor-button is-danger" type="button" @click="deleteMerchant">删除商家</button>
+          </div>
         </section>
       </div>
     </section>
