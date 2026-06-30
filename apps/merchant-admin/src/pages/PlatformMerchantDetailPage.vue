@@ -744,23 +744,17 @@ function backToList() {
       <div class="merchant-editor-content">
         <section id="merchant-section-profile" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>基础资料</h2><p>维护商家名称、类型、电话和基础介绍</p></div>
+            <div><h2>基础资料</h2><p>维护商家名称、经营类型和联系人信息</p></div>
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveProfile">保存基础资料</button>
           </div>
           <form class="editor-form-grid" @submit.prevent="saveProfile">
+            <label><span>商家编号</span><input :value="merchant.id" readonly disabled /></label>
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
             <label><span>越南语名称</span><input v-model="profileForm.nameVi" maxlength="120" /></label>
             <label><span>英文名称</span><input v-model="profileForm.nameEn" maxlength="120" /></label>
             <label><span>经营类型</span><select v-model="profileForm.businessTypeId"><option value="">未设置</option><option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">{{ item.nameZh }}</option></select></label>
             <label><span>联系电话 <b>*</b></span><input v-model="profileForm.contactPhone" required maxlength="32" /></label>
             <label><span>联系人</span><input v-model="profileForm.contactName" maxlength="64" /></label>
-            <label><span>商家模式</span><select v-model="profileForm.merchantMode"><option value="DISPLAY">DISPLAY 展示</option><option value="MANAGED">MANAGED 经营管理</option><option value="DISPLAY_ONLY">DISPLAY_ONLY 兼容</option><option value="ONLINE_ORDER">ONLINE_ORDER 兼容（旧在线下单）</option><option value="QR_ORDER">QR_ORDER 兼容（到店扫码点餐）</option></select></label>
-            <label><span>状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label>
-            <label><span>营业时间</span><input v-model="profileForm.openingHoursText" maxlength="255" /></label>
-            <label><span>排序</span><input v-model.number="profileForm.sortOrder" type="number" /></label>
-            <label class="span-2"><span>中文简介</span><textarea v-model="profileForm.descriptionZh" rows="4" /></label>
-            <label class="span-2"><span>越南语简介</span><textarea v-model="profileForm.descriptionVi" rows="4" /></label>
-            <label class="span-2"><span>英文简介</span><textarea v-model="profileForm.descriptionEn" rows="4" /></label>
           </form>
         </section>
 
@@ -811,7 +805,7 @@ function backToList() {
 
         <section id="merchant-section-visibility" class="editor-section-card">
           <div class="editor-section-head"><div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div><button class="editor-button is-primary" type="button" @click="saveProfile">保存展示设置</button></div>
-          <div class="visibility-grid"><label class="switch-row"><input v-model="profileForm.isVisibleOnClient" type="checkbox" />是否前台展示</label><label><span>状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label></div>
+          <div class="visibility-grid"><label class="switch-row"><input v-model="profileForm.isVisibleOnClient" type="checkbox" />是否前台展示</label></div>
           <div class="risk-panel" :class="profileRisks.length ? 'is-warning' : 'is-success'"><strong>{{ profileRisks.length ? '资料待完善' : '资料完整，可展示' }}</strong><span>{{ profileRisks.length ? profileRisks.join('、') : '当前关键资料完整' }}</span></div>
         </section>
 
