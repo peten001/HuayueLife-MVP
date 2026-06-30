@@ -1,27 +1,32 @@
 import { defineStore } from 'pinia';
-import { getMe, updateMe, wechatLogin } from '@/api/auth';
+import { bindWechatPhone, getMe, updateMe, wechatLogin } from '@/api/auth';
 import { translateApiError, useI18n } from '@/i18n';
 import type { UserProfile } from '@/types/api';
 import {
-  clearToken,
   clearLocalUserProfile,
+  clearToken,
   getLocalUserProfile,
   getToken,
   setLocalUserProfile,
   setToken,
 } from '@/utils/storage';
 import { ensurePrivacyAuthorized } from '@/utils/privacy';
+import { ensureDefaultProfile } from '@/utils/default-user-profile';
 
 function mergeCachedUserProfile(user: UserProfile | null): UserProfile | null {
+  user = ensureDefaultProfile(user);
   if (!user) return null;
   const cached = getLocalUserProfile();
   if (!cached) return user;
-  return {
+  return ensureDefaultProfile({
     ...user,
     nickname: cached.nickname?.trim() || user.nickname,
     avatarUrl: cached.avatarUrl?.trim() || user.avatarUrl,
     phone: cached.phone?.trim() || user.phone,
-  };
+    defaultNickname: cached.defaultNickname || user.defaultNickname,
+    defaultAvatarKey: cached.defaultAvatarKey || user.defaultAvatarKey,
+    defaultAvatarStyle: cached.defaultAvatarStyle || user.defaultAvatarStyle,
+  });
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -96,6 +101,9 @@ export const useAuthStore = defineStore('auth', {
       nickname?: string;
       avatarUrl?: string;
       phone?: string;
+      defaultNickname?: string;
+      defaultAvatarKey?: string;
+      defaultAvatarStyle?: 'neutral' | 'male' | 'female';
     }) {
       setLocalUserProfile(profile);
       if (this.user) {
@@ -114,6 +122,39 @@ export const useAuthStore = defineStore('auth', {
       setLocalUserProfile(profile);
       this.user = mergeCachedUserProfile(result);
       return this.user;
+    },
+    async bindPhoneWithWechat(detail?: {
+      code?: string;
+      encryptedData?: string;
+      iv?: string;
+      errMsg?: string;
+    }) {
+      const { t } = useI18n();
+      if (!this.user) throw new Error(t('loginProfileEditTitle'));
+      const authorized = await ensurePrivacyAuthorized();
+      if (!authorized) throw new Error(t('phonePrivacyAuthorizationRequired'));
+      const errMsg = detail?.errMsg ?? '';
+      if (errMsg && !errMsg.includes(':ok')) throw new Error(t('phoneAuthorizationCanceled'));
+      if (!detail?.code && !(detail?.encryptedData && detail?.iv)) {
+        throw new Error(t('phoneAuthorizationCanceled'));
+      }
+      try {
+        const result = await bindWechatPhone({
+          code: detail.code ?? '',
+          encryptedData: detail.encryptedData,
+          iv: detail.iv,
+        });
+        this.user = mergeCachedUserProfile(result.user);
+        return this.user;
+      } catch (caught) {
+        const statusCode = caught instanceof Error
+          ? (caught as Error & { statusCode?: number }).statusCode
+          : undefined;
+        if (statusCode === 404) {
+          throw new Error(t('phoneLinkingServiceNotReady'));
+        }
+        throw new Error(t('phoneBindFailed'));
+      }
     },
     async syncWechatNickname(nickname: string) {
       const { t } = useI18n();

@@ -23,6 +23,7 @@ describe('AuthService WeChat login', () => {
   const prisma = {
     user: {
       upsert: jest.fn(),
+      update: jest.fn(),
     },
   };
   const jwtService = {
@@ -48,6 +49,7 @@ describe('AuthService WeChat login', () => {
     config.set('WECHAT_APP_ID', appId);
     config.set('WECHAT_APP_SECRET', appSecret);
     prisma.user.upsert.mockResolvedValue(user);
+    prisma.user.update.mockResolvedValue(user);
     consoleLog = jest.spyOn(console, 'log').mockImplementation();
     consoleError = jest.spyOn(console, 'error').mockImplementation();
     service = new AuthService(
@@ -152,6 +154,51 @@ describe('AuthService WeChat login', () => {
     expect(serialized).not.toContain(appSecret);
     expect(serialized).not.toContain('dev-code');
     expect(serialized).not.toContain(sessionKey);
+  });
+
+  it('binds phone from WeChat phone code and stores it on the current user', async () => {
+    const phone = '84912345678';
+    const purePhone = '912345678';
+    const accessToken = 'access-token-123';
+    const updatedUser = { ...user, phone };
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: accessToken, expires_in: 7200 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          errcode: 0,
+          phone_info: {
+            phoneNumber: phone,
+            purePhoneNumber: purePhone,
+            countryCode: '84',
+          },
+        }),
+      );
+    global.fetch = fetchMock;
+    prisma.user.update.mockResolvedValueOnce(updatedUser);
+
+    const result = await service.bindWechatPhone(
+      { sub: '1', accountType: 'USER', openid: user.openid },
+      { code: 'phone-code' },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new URL(fetchMock.mock.calls[0][0]).origin + new URL(fetchMock.mock.calls[0][0]).pathname).toBe(
+      'https://api.weixin.qq.com/cgi-bin/token',
+    );
+    expect(new URL(fetchMock.mock.calls[1][0]).origin + new URL(fetchMock.mock.calls[1][0]).pathname).toBe(
+      'https://api.weixin.qq.com/wxa/business/getuserphonenumber',
+    );
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 1n },
+        data: { phone },
+      }),
+    );
+    expect(result.phone).toBe(phone);
+    expect(serialize(result)).not.toContain('session_key');
   });
 });
 

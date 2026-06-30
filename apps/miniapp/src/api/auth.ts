@@ -22,6 +22,17 @@ export function wechatLogin(code: string, nickname?: string) {
   );
 }
 
+export function bindWechatPhone(data: {
+  code: string;
+  encryptedData?: string;
+  iv?: string;
+}) {
+  return request<{ phone: string; user: UserProfile }>('/auth/wechat/phone', {
+    method: 'POST',
+    data,
+  });
+}
+
 export function getMe() {
   return request<UserProfile>('/auth/me');
 }

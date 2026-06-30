@@ -9,6 +9,7 @@ import { AuthUser } from '../../common/types/auth-user.type';
 import { ChangeMerchantPasswordDto } from './dto/change-merchant-password.dto';
 import { AuthService } from './auth.service';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
+import { WechatPhoneDto } from './dto/wechat-phone.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
 
@@ -19,6 +20,12 @@ export class AuthController {
   @Post('auth/wechat/login')
   loginWithWechat(@Body() dto: WechatLoginDto) {
     return this.authService.loginWithWechat(dto);
+  }
+
+  @Post('auth/wechat/phone')
+  @UseGuards(JwtAuthGuard, UserAccountGuard)
+  bindWechatPhone(@CurrentUser() user: AuthUser, @Body() dto: WechatPhoneDto) {
+    return this.authService.bindWechatPhone(user, dto);
   }
 
   @Post('merchant/auth/login')

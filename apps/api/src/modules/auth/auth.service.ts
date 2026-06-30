@@ -16,6 +16,7 @@ import { AuthUser } from '../../common/types/auth-user.type';
 import { ChangeMerchantPasswordDto } from './dto/change-merchant-password.dto';
 import { MerchantLoginDto } from './dto/merchant-login.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { WechatPhoneDto } from './dto/wechat-phone.dto';
 import { WechatLoginDto } from './dto/wechat-login.dto';
 
 interface WechatCodeSessionResponse {
@@ -26,6 +27,23 @@ interface WechatCodeSessionResponse {
   errmsg?: unknown;
 }
 
+interface WechatAccessTokenResponse {
+  access_token?: unknown;
+  expires_in?: unknown;
+  errcode?: unknown;
+  errmsg?: unknown;
+}
+
+interface WechatPhoneResponse {
+  errcode?: unknown;
+  errmsg?: unknown;
+  phone_info?: {
+    phoneNumber?: unknown;
+    purePhoneNumber?: unknown;
+    countryCode?: unknown;
+  };
+}
+
 interface WechatIdentity {
   openid: string;
   unionid?: string;
@@ -33,6 +51,9 @@ interface WechatIdentity {
 
 @Injectable()
 export class AuthService {
+  private wechatAccessTokenCache: { token: string; expiresAt: number } | null =
+    null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -83,7 +104,11 @@ export class AuthService {
         },
       },
       include: {
-        merchant: true,
+        merchant: {
+          include: {
+            capabilities: { include: { capability: true } },
+          },
+        },
       },
       take: 2,
     });
@@ -119,9 +144,7 @@ export class AuthService {
         role: staff.role,
         mustChangePassword: staff.mustChangePassword,
         merchant: {
-          id: staff.merchant.id,
-          nameZh: staff.merchant.nameZh,
-          status: staff.merchant.status,
+          ...this.serializeMerchantForSession(staff.merchant),
         },
       },
     };
@@ -135,10 +158,8 @@ export class AuthService {
       where: { id: BigInt(user.sub) },
       include: {
         merchant: {
-          select: {
-            id: true,
-            nameZh: true,
-            status: true,
+          include: {
+            capabilities: { include: { capability: true } },
           },
         },
       },
@@ -155,9 +176,7 @@ export class AuthService {
         username: staff.username,
         mustChangePassword: staff.mustChangePassword,
         merchant: {
-          id: staff.merchant.id,
-          nameZh: staff.merchant.nameZh,
-          status: staff.merchant.status,
+          ...this.serializeMerchantForSession(staff.merchant),
         },
       },
     };
@@ -254,6 +273,43 @@ export class AuthService {
     return updated;
   }
 
+  async bindWechatPhone(user: AuthUser, dto: WechatPhoneDto) {
+    if (user.accountType !== 'USER') {
+      throw new ForbiddenException('User account required');
+    }
+    if (!dto.code.trim()) {
+      throw new BadRequestException('Phone code is required');
+    }
+
+    if (this.configService.get<string>('NODE_ENV') !== 'production' && /^mock[_-]/i.test(dto.code)) {
+      throw new BadRequestException('生产环境不允许使用 mock 手机号 code');
+    }
+
+    if (dto.encryptedData || dto.iv) {
+      // Keep compatibility for callers that still pass legacy fields, but the
+      // backend binds via the new phone code flow.
+    }
+
+    const phone = await this.resolveWechatPhoneNumber(dto.code);
+    const updated = await this.prisma.user.update({
+      where: { id: BigInt(user.sub) },
+      data: { phone },
+      select: {
+        id: true,
+        nickname: true,
+        avatarUrl: true,
+        phone: true,
+        status: true,
+        lastLoginAt: true,
+      },
+    });
+
+    return {
+      phone: updated.phone,
+      user: updated,
+    };
+  }
+
   private async resolveWechatIdentity(code: string): Promise<WechatIdentity> {
     if (this.configService.get<string>('NODE_ENV') !== 'production') {
       return {
@@ -330,6 +386,163 @@ export class AuthService {
         typeof result.unionid === 'string' ? result.unionid : undefined,
     };
   }
+
+  private async resolveWechatPhoneNumber(code: string) {
+    const appId = this.configService.get<string>('WECHAT_APP_ID')?.trim();
+    const appSecret = this.configService.get<string>('WECHAT_APP_SECRET')?.trim();
+    if (!appId || !appSecret) {
+      throw new ServiceUnavailableException('微信手机号绑定服务尚未配置');
+    }
+
+    const accessToken = await this.getWechatAccessToken(appId, appSecret);
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${encodeURIComponent(
+          accessToken,
+        )}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ code }),
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+    } catch {
+      throw new BadGatewayException('微信手机号绑定服务暂时不可用');
+    }
+
+    let payload: WechatPhoneResponse;
+    try {
+      payload = (await response.json()) as WechatPhoneResponse;
+    } catch {
+      throw new BadGatewayException('微信手机号绑定服务返回无效数据');
+    }
+
+    if (!response.ok || (typeof payload.errcode === 'number' && payload.errcode !== 0)) {
+      throw new BadGatewayException(payload.errmsg || '微信手机号绑定失败');
+    }
+
+    const phoneInfo = payload.phone_info;
+    const phoneNumber =
+      typeof phoneInfo?.phoneNumber === 'string'
+        ? phoneInfo.phoneNumber.trim()
+        : '';
+    const purePhoneNumber =
+      typeof phoneInfo?.purePhoneNumber === 'string'
+        ? phoneInfo.purePhoneNumber.trim()
+        : '';
+    const countryCode =
+      typeof phoneInfo?.countryCode === 'string'
+        ? phoneInfo.countryCode.trim()
+        : '';
+
+    const resolvedPhone = phoneNumber || purePhoneNumber;
+    if (!resolvedPhone) {
+      throw new BadGatewayException('微信手机号绑定响应缺少手机号');
+    }
+
+    return countryCode && resolvedPhone === purePhoneNumber
+      ? `${countryCode}${resolvedPhone}`
+      : resolvedPhone;
+  }
+
+  private async getWechatAccessToken(appId: string, appSecret: string) {
+    const cached = this.wechatAccessTokenCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token;
+    }
+
+    const response = await fetch(
+      'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=' +
+        encodeURIComponent(appId) +
+        '&secret=' +
+        encodeURIComponent(appSecret),
+    );
+    let payload: WechatAccessTokenResponse;
+    try {
+      payload = (await response.json()) as WechatAccessTokenResponse;
+    } catch {
+      throw new BadGatewayException('微信 access_token 获取失败');
+    }
+
+    if (!response.ok || !payload.access_token) {
+      throw new BadGatewayException(
+        (typeof payload.errmsg === 'string' && payload.errmsg) || '微信 access_token 获取失败',
+      );
+    }
+
+    const expiresIn = Math.max(0, Number(payload.expires_in ?? 7200));
+    this.wechatAccessTokenCache = {
+      token: String(payload.access_token),
+      expiresAt: Date.now() + (expiresIn - 300) * 1000,
+    };
+    return String(payload.access_token);
+  }
+
+  private serializeMerchantForSession(merchant: {
+    id: bigint;
+    nameZh: string;
+    status: string;
+    merchantMode?: string;
+    reportFeatureEnabled?: boolean;
+    dineInEnabled?: boolean;
+    pickupEnabled?: boolean;
+    deliveryEnabled?: boolean;
+    capabilities?: Array<{
+      isEnabled: boolean;
+      capability: {
+        code: string;
+        nameZh: string;
+        groupCode?: string;
+      };
+    }>;
+  }) {
+    const explicitCapabilities = (merchant.capabilities ?? []).map((item) => ({
+      code: item.capability.code,
+      nameZh: item.capability.nameZh,
+      groupCode: item.capability.groupCode,
+      isEnabled: item.isEnabled,
+    }));
+    const capabilities = explicitCapabilities.length
+      ? explicitCapabilities
+      : fallbackCapabilitiesFromLegacyFields(merchant);
+    return {
+      id: merchant.id,
+      nameZh: merchant.nameZh,
+      status: merchant.status,
+      merchantMode: merchant.merchantMode,
+      reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+      capabilities,
+    };
+  }
+}
+
+function fallbackCapabilitiesFromLegacyFields(merchant: {
+  dineInEnabled?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+  reportFeatureEnabled?: boolean;
+}) {
+  const dineInEnabled = Boolean(merchant.dineInEnabled);
+  const pickupEnabled = Boolean(merchant.pickupEnabled);
+  const deliveryEnabled = Boolean(merchant.deliveryEnabled);
+  const hasOrder = dineInEnabled || pickupEnabled || deliveryEnabled;
+  return [
+    { code: 'phoneEnabled', nameZh: '电话', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'navigationEnabled', nameZh: '导航', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'imageGalleryEnabled', nameZh: '图片/相册展示', groupCode: 'DISPLAY', isEnabled: true },
+    { code: 'productDisplayEnabled', nameZh: '商品展示', groupCode: 'PRODUCT', isEnabled: hasOrder },
+    { code: 'onlineOrderEnabled', nameZh: '在线下单', groupCode: 'ORDER', isEnabled: pickupEnabled || deliveryEnabled },
+    { code: 'pickupEnabled', nameZh: '到店自取', groupCode: 'ORDER', isEnabled: pickupEnabled },
+    { code: 'deliveryEnabled', nameZh: '商家配送', groupCode: 'ORDER', isEnabled: deliveryEnabled },
+    { code: 'qrOrderEnabled', nameZh: '扫码点餐', groupCode: 'RESTAURANT', isEnabled: dineInEnabled },
+    { code: 'tableManagementEnabled', nameZh: '桌台管理', groupCode: 'RESTAURANT', isEnabled: dineInEnabled },
+    { code: 'printerEnabled', nameZh: '打印机', groupCode: 'RESTAURANT', isEnabled: hasOrder },
+    { code: 'zaloReportEnabled', nameZh: 'Zalo 日报', groupCode: 'OPERATION', isEnabled: Boolean(merchant.reportFeatureEnabled) },
+    { code: 'chatEnabled', nameZh: '订单聊天', groupCode: 'ORDER', isEnabled: hasOrder },
+    { code: 'voiceNotifyEnabled', nameZh: '语音播报', groupCode: 'RESTAURANT', isEnabled: hasOrder },
+  ];
 }
 
 function trimOrUndefined(value?: string) {

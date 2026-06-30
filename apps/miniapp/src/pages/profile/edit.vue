@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
-import { translateApiError, useI18n, usePageTitle } from '@/i18n';
+import DefaultAvatar from '@/components/DefaultAvatar.vue';
+import { useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getLocalUserProfile } from '@/utils/storage';
 import { requireLoginForAction } from '@/utils/login-guard';
@@ -17,10 +18,12 @@ const draft = reactive({
 usePageTitle(() => t('profileEditTitle'));
 
 const displayAvatar = computed(() => draft.avatarUrl || auth.user?.avatarUrl || '');
+const defaultAvatarKey = computed(() => auth.user?.defaultAvatarKey || 'neutral-sprout');
+const displayPhone = computed(() => auth.user?.phone?.trim() || '');
 
 function syncDraft() {
   const cached = getLocalUserProfile();
-  draft.nickname = cached?.nickname?.trim() || auth.user?.nickname || '';
+  draft.nickname = cached?.nickname?.trim() || auth.user?.nickname || auth.user?.defaultNickname || '';
   draft.avatarUrl = cached?.avatarUrl?.trim() || auth.user?.avatarUrl || '';
 }
 
@@ -53,7 +56,7 @@ async function saveProfile() {
     uni.navigateBack();
   } catch (caught) {
     uni.showToast({
-      title: caught instanceof Error ? translateApiError(caught.message) : t('requestFailed'),
+      title: caught instanceof Error ? t('profileSaveFailed') : t('requestFailed'),
       icon: 'none',
     });
   } finally {
@@ -61,8 +64,16 @@ async function saveProfile() {
   }
 }
 
-function showPhoneUnavailable() {
-  uni.showToast({ title: t('phoneLinkingUnavailable'), icon: 'none' });
+async function handlePhoneNumber(event: { detail?: { code?: string; encryptedData?: string; iv?: string; errMsg?: string } }) {
+  try {
+    await auth.bindPhoneWithWechat(event.detail);
+    uni.showToast({ title: t('phoneLinked'), icon: 'none' });
+  } catch (error) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : t('phoneBindFailed'),
+      icon: 'none',
+    });
+  }
 }
 </script>
 
@@ -74,8 +85,7 @@ function showPhoneUnavailable() {
 
       <button class="avatar-picker" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
         <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
-        <!-- i18n-check-allow avatar-initial -->
-        <view v-else class="avatar">{{ (draft.nickname || auth.user?.nickname || 'U').slice(0, 1) }}</view>
+        <DefaultAvatar v-else :avatar-key="defaultAvatarKey" size="large" />
         <text class="avatar-tip">{{ t('chooseAvatar') }}</text>
       </button>
 
@@ -91,9 +101,18 @@ function showPhoneUnavailable() {
 
       <view class="field">
         <text class="field-label">{{ t('phone') }}</text>
-        <button class="phone-placeholder" type="button" @click="showPhoneUnavailable">
+        <button
+          v-if="!displayPhone"
+          class="phone-placeholder"
+          open-type="getPhoneNumber"
+          @getphonenumber="handlePhoneNumber"
+        >
           {{ t('phoneNotLinked') }} · {{ t('bindPhone') }}
         </button>
+        <view v-else class="phone-bound">
+          <text>{{ displayPhone }}</text>
+          <text class="phone-bound-tag">{{ t('phoneLinked') }}</text>
+        </view>
       </view>
 
       <text class="hint">{{ t('profileEditHint') }}</text>
@@ -208,6 +227,27 @@ input::placeholder {
 
 .phone-placeholder::after {
   border: 0;
+}
+
+.phone-bound {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 84rpx;
+  padding: 0 22rpx;
+  border: 2rpx solid #e5f2e8;
+  border-radius: 18rpx;
+  color: #1f2d24;
+  background: #f8fbf8;
+  font-size: 25rpx;
+  gap: 16rpx;
+}
+
+.phone-bound-tag {
+  flex: none;
+  color: #2e7d32;
+  font-size: 22rpx;
+  font-weight: 700;
 }
 
 .hint {
