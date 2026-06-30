@@ -671,18 +671,10 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>图片管理</h2><p>管理商家 Logo 和商家封面</p></div>
+            <div><h2>图片管理</h2><p>管理小程序展示使用的商家封面</p></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
-            <article>
-              <strong>商家 Logo</strong>
-              <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
-              <div v-else class="image-empty">暂无 Logo</div>
-              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('LOGO')">
-                {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : '上传商家 Logo' }}
-              </button>
-            </article>
             <article>
               <strong>商家封面</strong>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />

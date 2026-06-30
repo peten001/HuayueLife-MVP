@@ -55,13 +55,6 @@ const settingsForm = reactive({
 });
 const schedule = ref<DaySchedule[]>(createDefaultSchedule());
 
-const logoPreviewUrl = computed(() =>
-  resolveMediaUrl(
-    profile.value?.logoUrl
-      || profile.value?.images?.find((item) => item.imageType === 'LOGO')?.imageUrl
-      || '',
-  ),
-);
 const coverPreviewUrl = computed(() =>
   resolveMediaUrl(
     profile.value?.coverUrl
@@ -437,13 +430,6 @@ function toMinutes(value: string) {
       </div>
     </div>
     <div class="readonly-images-grid readonly-images-grid--compact">
-      <div class="readonly-image-card">
-        <span>{{ t('merchantLogo') }}</span>
-        <div class="preview-box square readonly-preview">
-          <img v-if="logoPreviewUrl" :src="logoPreviewUrl" :alt="t('merchantLogo')" />
-          <div v-else class="empty-preview">{{ t('noMerchantLogo') }}</div>
-        </div>
-      </div>
       <div class="readonly-image-card">
         <span>{{ t('merchantCover') }}</span>
         <div class="preview-box wide readonly-preview">
