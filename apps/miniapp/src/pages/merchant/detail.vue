@@ -34,17 +34,20 @@ const canNavigate = computed(() => hasCapability('navigationEnabled', true));
 const canShowGallery = computed(() => hasCapability('imageGalleryEnabled', true));
 const canPickup = computed(() =>
   hasCapabilityRecords.value
-    ? enabledCapabilityCodes.value.has('pickupEnabled')
+    ? (merchant.value?.pickupEnabled ?? enabledCapabilityCodes.value.has('pickupEnabled'))
     : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP')),
 );
 const canDelivery = computed(() =>
   hasCapabilityRecords.value
-    ? enabledCapabilityCodes.value.has('deliveryEnabled')
+    ? (merchant.value?.deliveryEnabled ?? enabledCapabilityCodes.value.has('deliveryEnabled'))
     : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY')),
 );
-const canDineIn = computed(() =>
+const hasDineInTag = computed(() =>
+  merchant.value?.dineInEnabled ?? Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN')),
+);
+const canScanOrder = computed(() =>
   hasCapabilityRecords.value
-    ? enabledCapabilityCodes.value.has('qrOrderEnabled')
+    ? (merchant.value?.qrOrderEnabled ?? enabledCapabilityCodes.value.has('qrOrderEnabled'))
     : Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN')),
 );
 const displayAddress = computed(() => {
@@ -329,10 +332,17 @@ function hasCapability(code: string, fallbackValue: boolean) {
           />
         </view>
         <view class="tags">
-          <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">
+          <text v-if="hasDineInTag" class="tag">
+            {{ t('dineIn') }}
+          </text>
+          <text
+            v-for="type in merchant.supportedOrderTypes.filter((item) => item !== 'DINE_IN')"
+            :key="type"
+            class="tag"
+          >
             {{ orderTypeLabel(type, locale) }}
           </text>
-          <text v-if="canDineIn" class="tag">
+          <text v-if="canScanOrder" class="tag">
             {{ t('inStoreScanOrder') }}
           </text>
         </view>

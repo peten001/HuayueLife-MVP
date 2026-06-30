@@ -115,6 +115,10 @@ export interface MerchantSummary extends LocalizedFields {
   latitude: string;
   longitude: string;
   deliveryRadiusKm: string;
+  dineInEnabled?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+  qrOrderEnabled?: boolean;
   homepageCategoryKeys?: string[];
   manualPopular?: boolean;
   isNew?: boolean;

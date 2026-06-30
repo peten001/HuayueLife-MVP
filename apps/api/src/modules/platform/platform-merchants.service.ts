@@ -169,6 +169,7 @@ type PlatformMerchantDetailResponse = {
     manualPopular: boolean;
     isVisibleOnClient: boolean;
     reportFeatureEnabled: boolean;
+    dineInEnabled: boolean;
     promotionTags: DictionaryRef[];
     capabilities: Array<DictionaryRef & { isEnabled: boolean }>;
     sortOrder: number;
@@ -460,6 +461,7 @@ export class PlatformMerchantsService {
         manualPopular: Boolean(merchant.manualPopular),
         isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
         reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+        dineInEnabled: Boolean(merchant.dineInEnabled),
         promotionTags: serializePromotionRefs(merchant),
         capabilities: serializeCapabilityRefs(merchant),
         images: serializeImages(merchant),
@@ -1797,9 +1799,9 @@ function parseIdList(values: string[] | undefined) {
 
 function legacyBooleansFromCapabilities(values: Map<string, boolean>) {
   const data: Record<string, boolean> = {};
+  if (values.has('dineInEnabled')) data.dineInEnabled = Boolean(values.get('dineInEnabled'));
   if (values.has('pickupEnabled')) data.pickupEnabled = Boolean(values.get('pickupEnabled'));
   if (values.has('deliveryEnabled')) data.deliveryEnabled = Boolean(values.get('deliveryEnabled'));
-  if (values.has('qrOrderEnabled')) data.dineInEnabled = Boolean(values.get('qrOrderEnabled'));
   if (values.has('zaloReportEnabled')) {
     data.reportFeatureEnabled = Boolean(values.get('zaloReportEnabled'));
   }

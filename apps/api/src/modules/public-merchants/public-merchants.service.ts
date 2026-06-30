@@ -317,6 +317,10 @@ export class PublicMerchantsService {
     categories: Array<Pick<Category, 'nameZh' | 'nameVi'>>,
     distance: number | null,
   ) {
+    const capabilityValues = new Map(
+      (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
+    );
+
     return {
       ...merchant,
       id: merchant.id,
@@ -353,6 +357,16 @@ export class PublicMerchantsService {
       latitude: merchant.latitude.toString(),
       longitude: merchant.longitude.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      dineInEnabled: Boolean(merchant.dineInEnabled),
+      pickupEnabled: capabilityValues.size
+        ? Boolean(capabilityValues.get('pickupEnabled'))
+        : Boolean(merchant.pickupEnabled),
+      deliveryEnabled: capabilityValues.size
+        ? Boolean(capabilityValues.get('deliveryEnabled'))
+        : Boolean(merchant.deliveryEnabled),
+      qrOrderEnabled: capabilityValues.size
+        ? Boolean(capabilityValues.get('qrOrderEnabled'))
+        : false,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),
@@ -399,7 +413,7 @@ function supportedOrderTypes(merchant: PublicMerchantRow) {
   );
   if (capabilities.size) {
     return [
-      capabilities.get('qrOrderEnabled') ? 'DINE_IN' : null,
+      merchant.dineInEnabled ? 'DINE_IN' : null,
       capabilities.get('pickupEnabled') ? 'PICKUP' : null,
       capabilities.get('deliveryEnabled') ? 'DELIVERY' : null,
     ].filter(Boolean);

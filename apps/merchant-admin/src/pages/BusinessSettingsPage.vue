@@ -35,9 +35,6 @@ const DEFAULT_START = '10:00';
 const DEFAULT_END = '22:00';
 
 const form = reactive({
-  dineInEnabled: true,
-  pickupEnabled: true,
-  deliveryEnabled: false,
   minimumDeliveryAmountVnd: 0,
   deliveryFeeVnd: 0,
   deliveryRadiusKm: 0,
@@ -50,9 +47,6 @@ onMounted(async () => {
   try {
     const profile = await getProfile();
     Object.assign(form, {
-      dineInEnabled: profile.dineInEnabled,
-      pickupEnabled: profile.pickupEnabled,
-      deliveryEnabled: profile.deliveryEnabled,
       minimumDeliveryAmountVnd: Number(profile.minimumDeliveryAmountVnd),
       deliveryFeeVnd: Number(profile.deliveryFeeVnd),
       deliveryRadiusKm: Number(profile.deliveryRadiusKm),
@@ -86,9 +80,6 @@ async function save() {
 
   try {
     await updateProfile({
-      dineInEnabled: form.dineInEnabled,
-      pickupEnabled: form.pickupEnabled,
-      deliveryEnabled: form.deliveryEnabled,
       minimumDeliveryAmountVnd: form.minimumDeliveryAmountVnd,
       deliveryFeeVnd: form.deliveryFeeVnd,
       deliveryRadiusKm: form.deliveryRadiusKm,
@@ -230,10 +221,6 @@ function toMinutes(value: string) {
 <template>
   <PageHeader :title="t('businessSettings')" :description="t('businessDescription')" />
   <form class="card form-grid" @submit.prevent="save">
-    <label class="check"><input v-model="form.dineInEnabled" type="checkbox" />{{ t('dineIn') }}</label>
-    <label class="check"><input v-model="form.pickupEnabled" type="checkbox" />{{ t('pickup') }}</label>
-    <label class="check"><input v-model="form.deliveryEnabled" type="checkbox" />{{ t('delivery') }}</label>
-    <span />
     <label>{{ t('minimumDeliveryAmount') }}<input v-model.number="form.minimumDeliveryAmountVnd" type="number" min="0" /></label>
     <label>{{ t('deliveryFeeVnd') }}<input v-model.number="form.deliveryFeeVnd" type="number" min="0" /></label>
     <label>{{ t('deliveryRadius') }}<input v-model.number="form.deliveryRadiusKm" type="number" min="0" max="100" step="0.1" /></label>

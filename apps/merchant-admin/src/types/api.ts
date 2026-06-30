@@ -367,6 +367,7 @@ export interface PlatformMerchantDetailResponse {
     manualPopular: boolean;
     isVisibleOnClient: boolean;
     reportFeatureEnabled: boolean;
+    dineInEnabled: boolean;
     promotionTags: PlatformPromotionTag[];
     capabilities: PlatformCapabilityValue[];
     images: PlatformMerchantImage[];

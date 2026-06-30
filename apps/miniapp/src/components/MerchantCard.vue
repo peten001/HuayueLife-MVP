@@ -19,6 +19,10 @@ defineEmits<{ select: [merchant: MerchantSummary] }>();
 
 const { locale, t } = useI18n();
 const title = computed(() => merchantName(props.merchant));
+const canShowScanOrderTag = computed(() =>
+  props.merchant.qrOrderEnabled ??
+  props.merchant.supportedOrderTypes.includes('DINE_IN'),
+);
 </script>
 
 <template>
@@ -46,6 +50,9 @@ const title = computed(() => merchantName(props.merchant));
         <view class="tags">
           <text v-for="type in props.merchant.supportedOrderTypes" :key="type" class="tag">
             {{ orderTypeLabel(type, locale) }}
+          </text>
+          <text v-if="canShowScanOrderTag" class="tag">
+            {{ t('inStoreScanOrder') }}
           </text>
         </view>
       </view>

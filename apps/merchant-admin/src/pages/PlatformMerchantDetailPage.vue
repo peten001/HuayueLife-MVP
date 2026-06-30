@@ -135,6 +135,12 @@ const displayCapabilityCards = computed<CapabilityCard[]>(() => [
 ]);
 const operationCapabilityCards = computed<CapabilityCard[]>(() => [
   {
+    code: 'dineInEnabled',
+    title: '堂食',
+    description: '支持顾客到店堂食服务',
+    icon: '🍽',
+  },
+  {
     code: 'pickupEnabled',
     title: '到店自取',
     description: '允许用户下单到店自取',
@@ -304,6 +310,7 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   profileForm.sortOrder = item.sortOrder ?? 0;
   selectedTagIds.value = item.promotionTags.map((tag) => tag.id);
   Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
+  capabilityValues.dineInEnabled = Boolean(item.dineInEnabled);
   for (const capability of item.capabilities) {
     capabilityValues[capability.code] = capability.isEnabled;
   }
