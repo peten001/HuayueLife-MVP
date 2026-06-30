@@ -5,16 +5,11 @@ import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import {
   createPlatformMerchantImage,
-  deletePlatformMerchant,
-  disablePlatformMerchant,
-  enablePlatformMerchant,
   getPlatformCapabilities,
   getPlatformBusinessTypes,
   getPlatformMerchantDetail,
   getPlatformPromotionTags,
-  hidePlatformMerchantImage,
   openPlatformMerchantAccount,
-  resetPlatformMerchantPassword,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
   updatePlatformMerchantCapabilities,
@@ -25,7 +20,6 @@ import type {
   PlatformBusinessType,
   PlatformCapability,
   PlatformMerchantDetailResponse,
-  PlatformMerchantImage,
   PlatformPromotionTag,
 } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
@@ -37,8 +31,7 @@ type EditorSection =
   | 'visibility'
   | 'hot'
   | 'capabilities'
-  | 'account'
-  | 'danger';
+  | 'account';
 
 const route = useRoute();
 const router = useRouter();
@@ -51,8 +44,8 @@ const loading = ref(false);
 const saving = ref(false);
 const uploadingImage = ref(false);
 const message = ref('');
-const moreOpen = ref(false);
 const imageFileInput = ref<HTMLInputElement | null>(null);
+const imageUploadTarget = ref<'LOGO' | 'COVER' | null>(null);
 
 const profileForm = reactive({
   nameZh: '',
@@ -79,16 +72,6 @@ const profileForm = reactive({
   sortOrder: 0,
 });
 const provinceOptions = ['北江', '北宁'] as const;
-const imageForm = reactive({
-  id: '',
-  imageType: 'STORE',
-  imageUrl: '',
-  titleZh: '',
-  titleVi: '',
-  titleEn: '',
-  sortOrder: 0,
-  isVisible: true,
-});
 const capabilityValues = reactive<Record<string, boolean>>({});
 const selectedTagIds = ref<string[]>([]);
 
@@ -102,12 +85,7 @@ const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> =
   { key: 'hot', label: '热门推荐' },
   { key: 'capabilities', label: '能力开关' },
   { key: 'account', label: '商家账号' },
-  { key: 'danger', label: '危险操作', danger: true },
 ];
-const visibleImages = computed(() =>
-  (merchant.value?.images ?? []).filter((item) => item.isVisible).slice(0, 8),
-);
-const imagePreviewUrl = computed(() => resolveMediaUrl(imageForm.imageUrl));
 type CapabilityCard = {
   code: string;
   title: string;
@@ -325,54 +303,51 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   }
 }
 
-function resetImageForm() {
-  imageForm.id = '';
-  imageForm.imageType = 'STORE';
-  imageForm.imageUrl = '';
-  imageForm.titleZh = '';
-  imageForm.titleVi = '';
-  imageForm.titleEn = '';
-  imageForm.sortOrder = 0;
-  imageForm.isVisible = true;
-}
-
-function editImage(image: PlatformMerchantImage) {
-  imageForm.id = image.id;
-  imageForm.imageType = image.imageType;
-  imageForm.imageUrl = image.imageUrl;
-  imageForm.titleZh = image.titleZh ?? '';
-  imageForm.titleVi = image.titleVi ?? '';
-  imageForm.titleEn = image.titleEn ?? '';
-  imageForm.sortOrder = image.sortOrder;
-  imageForm.isVisible = image.isVisible;
-  activeSection.value = 'images';
-}
-
-function openImagePicker() {
+function openImagePicker(type: 'LOGO' | 'COVER') {
+  imageUploadTarget.value = type;
   imageFileInput.value?.click();
 }
 
 async function onImageSelected(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
+  const target = imageUploadTarget.value;
   if (!file) return;
+  if (!target) {
+    message.value = '请选择要上传的图片类型';
+    input.value = '';
+    return;
+  }
   const validation = validateUploadImage(file);
   if (validation) {
     message.value = validation;
     input.value = '';
+    imageUploadTarget.value = null;
     return;
   }
   uploadingImage.value = true;
   message.value = '';
   try {
     const result = await uploadPlatformMerchantImage(file);
-    imageForm.imageUrl = result.imageUrl;
-    message.value = '图片上传成功，已填入图片 URL';
+    const existingImage = target === 'LOGO' ? logoImage.value : coverImage.value;
+    const payload = {
+      imageType: target,
+      imageUrl: result.imageUrl,
+      isVisible: true,
+    };
+    if (existingImage) {
+      await updatePlatformMerchantImage(merchantId.value, existingImage.id, payload);
+    } else {
+      await createPlatformMerchantImage(merchantId.value, payload);
+    }
+    message.value = target === 'LOGO' ? '商家 Logo 已更新' : '商家封面已更新';
+    await loadPage();
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
     uploadingImage.value = false;
     input.value = '';
+    imageUploadTarget.value = null;
   }
 }
 
@@ -443,43 +418,6 @@ async function saveTags() {
   }
 }
 
-async function saveImage() {
-  if (!imageForm.imageUrl.trim()) {
-    message.value = '图片 URL 不能为空';
-    return;
-  }
-  if (uploadingImage.value) {
-    message.value = '图片上传中，请稍后再保存';
-    return;
-  }
-  saving.value = true;
-  message.value = '';
-  const payload = {
-    imageType: imageForm.imageType,
-    imageUrl: imageForm.imageUrl.trim(),
-    titleZh: imageForm.titleZh.trim() || undefined,
-    titleVi: imageForm.titleVi.trim() || undefined,
-    titleEn: imageForm.titleEn.trim() || undefined,
-    sortOrder: imageForm.sortOrder,
-    isVisible: imageForm.isVisible,
-  };
-  try {
-    if (imageForm.id) {
-      await updatePlatformMerchantImage(merchantId.value, imageForm.id, payload);
-      message.value = '图片已更新';
-    } else {
-      await createPlatformMerchantImage(merchantId.value, payload);
-      message.value = '图片已新增';
-    }
-    resetImageForm();
-    await loadPage();
-  } catch (error) {
-    message.value = errorMessage(error);
-  } finally {
-    saving.value = false;
-  }
-}
-
 function validateUploadImage(file: File) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     return '仅支持 jpg / jpeg / png / webp 图片';
@@ -494,19 +432,6 @@ function validateUploadImage(file: File) {
   return '';
 }
 
-async function toggleImageVisibility(imageId: string, isVisible: boolean) {
-  try {
-    if (isVisible) {
-      await hidePlatformMerchantImage(merchantId.value, imageId);
-    } else {
-      await updatePlatformMerchantImage(merchantId.value, imageId, { isVisible: true });
-    }
-    await loadPage();
-  } catch (error) {
-    message.value = errorMessage(error);
-  }
-}
-
 async function openAccount() {
   if (!merchant.value || merchant.value.claimStatus === 'CLAIMED') return;
   if (!window.confirm(`为 ${merchant.value.nameZh} 开通商家后台账号？默认密码 12345678。`)) return;
@@ -514,60 +439,6 @@ async function openAccount() {
     await openPlatformMerchantAccount(merchantId.value);
     message.value = '商家后台账号已开通，默认密码 12345678';
     await loadPage();
-  } catch (error) {
-    message.value = errorMessage(error);
-  }
-}
-
-async function toggleClientVisibility() {
-  if (!merchant.value) return;
-  if (merchant.value.isVisibleOnClient && !window.confirm('该商家将不再在小程序用户端展示，是否继续？')) {
-    return;
-  }
-  try {
-    await updatePlatformMerchant(merchantId.value, {
-      isVisibleOnClient: !merchant.value.isVisibleOnClient,
-    });
-    await loadPage();
-  } catch (error) {
-    message.value = errorMessage(error);
-  }
-}
-
-async function toggleMerchantStatus() {
-  if (!merchant.value) return;
-  const disabled = merchant.value.status === 'DISABLED';
-  const confirmed = window.confirm(
-    disabled ? `启用 ${merchant.value.nameZh}？` : `停用 ${merchant.value.nameZh}？`,
-  );
-  if (!confirmed) return;
-  try {
-    if (disabled) {
-      await enablePlatformMerchant(merchantId.value);
-    } else {
-      await disablePlatformMerchant(merchantId.value);
-    }
-    await loadPage();
-  } catch (error) {
-    message.value = errorMessage(error);
-  }
-}
-
-async function resetPassword() {
-  if (!merchant.value || !window.confirm(`重置 ${merchant.value.nameZh} 的商家后台密码？`)) return;
-  try {
-    await resetPlatformMerchantPassword(merchantId.value);
-    message.value = '商家后台密码已重置';
-  } catch (error) {
-    message.value = errorMessage(error);
-  }
-}
-
-async function deleteMerchant() {
-  if (!merchant.value || !window.confirm(`确认删除商家「${merchant.value.nameZh}」？此操作不可恢复。`)) return;
-  try {
-    await deletePlatformMerchant(merchantId.value);
-    await router.push('/platform/merchants');
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -621,20 +492,6 @@ function claimLabel(value: string) {
   return value === 'CLAIMED' ? '已认领' : '未认领';
 }
 
-function imageTypeLabel(value: string) {
-  return (
-    {
-      LOGO: '商家 Logo',
-      COVER: '商家封面',
-      STORE: '门店',
-      ENVIRONMENT: '环境',
-      PRODUCT: '商品',
-      MENU: '菜单',
-      LICENSE: '资质',
-    }[value] ?? value
-  );
-}
-
 function capabilityEnabled(code: string) {
   return Boolean(capabilityValues[code]);
 }
@@ -667,24 +524,6 @@ function syncSectionFromRouteHash() {
   });
 }
 
-function prepareImage(type: string) {
-  resetImageForm();
-  imageForm.imageType = type;
-  openImagePicker();
-}
-
-function setImageType(image: PlatformMerchantImage, type: 'LOGO' | 'COVER') {
-  imageForm.id = image.id;
-  imageForm.imageType = type;
-  imageForm.imageUrl = image.imageUrl;
-  imageForm.titleZh = image.titleZh ?? '';
-  imageForm.titleVi = image.titleVi ?? '';
-  imageForm.titleEn = image.titleEn ?? '';
-  imageForm.sortOrder = image.sortOrder;
-  imageForm.isVisible = true;
-  void saveImage();
-}
-
 function backToList() {
   router.push('/platform/merchants');
 }
@@ -698,15 +537,6 @@ function backToList() {
       <button class="editor-button is-primary" type="button" :disabled="saving || !merchant" @click="saveProfile">
         {{ saving ? '保存中...' : '保存' }}
       </button>
-      <div class="merchant-more-actions">
-        <button class="editor-button is-secondary" type="button" @click="moreOpen = !moreOpen">更多操作</button>
-        <div v-if="moreOpen" class="merchant-more-menu">
-          <button type="button" @click="toggleClientVisibility">{{ merchant?.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</button>
-          <button type="button" @click="toggleMerchantStatus">{{ merchant?.status === 'DISABLED' ? '启用商家' : '停用商家' }}</button>
-          <button type="button" @click="resetPassword">重置密码</button>
-          <button class="is-danger" type="button" @click="deleteMerchant">删除商家</button>
-        </div>
-      </div>
     </div>
   </PageHeader>
 
@@ -748,7 +578,6 @@ function backToList() {
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveProfile">保存基础资料</button>
           </div>
           <form class="editor-form-grid" @submit.prevent="saveProfile">
-            <label><span>商家编号</span><input :value="merchant.id" readonly disabled /></label>
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
             <label><span>越南语名称</span><input v-model="profileForm.nameVi" maxlength="120" /></label>
             <label><span>英文名称</span><input v-model="profileForm.nameEn" maxlength="120" /></label>
@@ -762,9 +591,7 @@ function backToList() {
           <div class="editor-section-head"><div><h2>地址与定位</h2><p>用于小程序地址展示和导航，前台展示商家建议填写准确经纬度</p></div></div>
           <div class="editor-form-grid">
             <label><span>省份</span><select v-model="profileForm.province"><option value="">未设置</option><option v-for="item in provinceOptions" :key="item" :value="item">{{ item }}</option></select></label>
-            <label><span>中文详细地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
-            <label><span>越南语详细地址</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
-            <label class="span-2"><span>英文详细地址</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
+            <label class="span-3"><span>详细地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
             <label><span>纬度</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>纬度示例：21.28</small></label>
             <label><span>经度</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>经度示例：106.20</small></label>
           </div>
@@ -774,32 +601,26 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>图片管理</h2><p>管理商家 Logo、商家封面和商家相册</p></div>
-            <div class="editor-section-actions"><button class="editor-button is-secondary" type="button" :disabled="uploadingImage" @click="openImagePicker">{{ uploadingImage ? '上传中...' : '上传相册图片' }}</button><button class="editor-button is-ghost" type="button" @click="resetImageForm">新增相册图片 URL</button></div>
+            <div><h2>图片管理</h2><p>管理商家 Logo 和商家封面</p></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
-            <article><strong>商家 Logo</strong><img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" /><div v-else class="image-empty">暂无 Logo</div><button class="small secondary" type="button" @click="prepareImage('LOGO')">上传商家 Logo</button></article>
-            <article><strong>商家封面</strong><img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" /><div v-else class="image-empty">暂无封面图</div><button class="small secondary" type="button" @click="prepareImage('COVER')">上传商家封面</button></article>
-          </div>
-          <form class="editor-form-grid image-editor-form" @submit.prevent="saveImage">
-            <label><span>图片类型</span><select v-model="imageForm.imageType"><option value="LOGO">商家 Logo</option><option value="COVER">商家封面</option><option value="STORE">门店</option><option value="ENVIRONMENT">环境</option><option value="PRODUCT">商品</option><option value="MENU">菜单</option><option value="LICENSE">资质</option></select></label>
-            <label><span>排序</span><input v-model.number="imageForm.sortOrder" type="number" min="0" /></label>
-            <label class="span-2"><span>图片 URL</span><input v-model="imageForm.imageUrl" required maxlength="500" /></label>
-            <label><span>中文标题</span><input v-model="imageForm.titleZh" maxlength="120" /></label>
-            <label><span>越南语标题</span><input v-model="imageForm.titleVi" maxlength="120" /></label>
-            <label><span>英文标题</span><input v-model="imageForm.titleEn" maxlength="120" /></label>
-            <label class="editor-check"><input v-model="imageForm.isVisible" type="checkbox" />显示</label>
-            <div v-if="imagePreviewUrl" class="span-2 image-upload-preview"><span>预览</span><img :src="imagePreviewUrl" :alt="imageForm.titleZh || imageForm.imageType" /></div>
-            <div class="form-actions span-2"><button type="submit" :disabled="saving || uploadingImage">{{ imageForm.id ? '保存图片' : '新增相册图片' }}</button></div>
-          </form>
-          <div class="merchant-image-table">
-            <div v-for="image in merchant.images" :key="image.id" class="merchant-image-row">
-              <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
-              <div><strong>{{ imageTypeLabel(image.imageType) }} · {{ image.titleZh || '-' }}</strong><small>排序 {{ image.sortOrder }} · {{ image.isVisible ? '显示' : '隐藏' }}</small><small>{{ image.imageUrl }}</small></div>
-              <div class="image-row-actions"><button class="small secondary" type="button" @click="editImage(image)">编辑</button><button class="small secondary" type="button" @click="setImageType(image, 'LOGO')">设为商家 Logo</button><button class="small secondary" type="button" @click="setImageType(image, 'COVER')">设为商家封面</button><button class="small secondary" type="button" @click="toggleImageVisibility(image.id, image.isVisible)">{{ image.isVisible ? '隐藏' : '显示' }}</button></div>
-            </div>
-            <p v-if="!merchant.images.length" class="empty">暂无相册图片</p>
+            <article>
+              <strong>商家 Logo</strong>
+              <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
+              <div v-else class="image-empty">暂无 Logo</div>
+              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('LOGO')">
+                {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : '上传商家 Logo' }}
+              </button>
+            </article>
+            <article>
+              <strong>商家封面</strong>
+              <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
+              <div v-else class="image-empty">暂无封面图</div>
+              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('COVER')">
+                {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : '上传商家封面' }}
+              </button>
+            </article>
           </div>
         </section>
 
@@ -878,12 +699,7 @@ function backToList() {
 
         <section id="merchant-section-account" class="editor-section-card">
           <div class="editor-section-head"><div><h2>商家账号</h2><p>管理商家后台登录账号和认领状态</p></div></div>
-          <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'"><span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">{{ accountOpened ? '已开通' : '未开通' }}</span><strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong><p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p><div class="section-actions"><button v-if="merchant.claimStatus === 'UNCLAIMED'" class="editor-button is-primary" type="button" @click="openAccount">开通商家后台账号</button><button class="editor-button is-secondary" type="button" :disabled="!accountOpened" @click="resetPassword">重置密码</button></div></div>
-        </section>
-
-        <section id="merchant-section-danger" class="editor-section-card danger-card">
-          <div class="editor-section-head"><div><h2>危险操作</h2><p>以下操作会影响商家前台展示或数据状态，请谨慎处理</p></div></div>
-          <div class="danger-actions"><button class="editor-button is-danger-outline" type="button" @click="toggleClientVisibility">{{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</button><button class="editor-button is-danger-outline" type="button" @click="toggleMerchantStatus">{{ merchant.status === 'DISABLED' ? '启用商家' : '停用商家' }}</button><button class="editor-button is-danger" type="button" @click="deleteMerchant">删除商家</button></div>
+          <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'"><span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">{{ accountOpened ? '已开通' : '未开通' }}</span><strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong><p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p><div class="section-actions"><button v-if="merchant.claimStatus === 'UNCLAIMED'" class="editor-button is-primary" type="button" @click="openAccount">开通商家后台账号</button></div></div>
         </section>
       </div>
     </section>
@@ -1724,6 +1540,10 @@ function backToList() {
   grid-column: span 2;
 }
 
+.span-3 {
+  grid-column: span 3;
+}
+
 .editor-check,
 .switch-row {
   display: inline-flex;
@@ -2007,6 +1827,10 @@ function backToList() {
   }
 
   .span-2 {
+    grid-column: span 1;
+  }
+
+  .span-3 {
     grid-column: span 1;
   }
 }
