@@ -27,9 +27,8 @@ const navByRole: Record<
   OWNER: [
     ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
-    ['/merchant/profile', 'merchantProfile'],
+    ['/merchant/profile', 'storeSettings'],
     ['/merchant/profile/change-password', 'changePassword'],
-    ['/merchant/business-settings', 'businessSettings'],
     ['/reports', 'dailyReport', 'reports'],
     ['/merchant/printers', 'printerManagement', 'printers'],
     ['/menu/categories', 'categories', 'products'],

@@ -5,7 +5,6 @@ import LoginPage from '@/pages/LoginPage.vue';
 import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
 import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
 import MerchantChangePasswordPage from '@/pages/MerchantChangePasswordPage.vue';
-import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
 import PrintersPage from '@/pages/PrintersPage.vue';
 import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
@@ -136,8 +135,7 @@ const router = createRouter({
         },
         {
           path: 'merchant/business-settings',
-          component: BusinessSettingsPage,
-          meta: { roles: ['OWNER'] },
+          redirect: '/merchant/profile',
         },
         {
           path: 'reports',
