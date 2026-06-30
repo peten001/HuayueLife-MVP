@@ -4,7 +4,6 @@ import { onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
 import { cityOptions, merchantName, useI18n, usePageTitle } from '@/i18n';
-import { useAuthStore } from '@/stores/auth';
 import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
 
@@ -20,7 +19,6 @@ type ServiceCategoryKey =
 type SortOption = 'smart' | 'distance' | 'open';
 type FilterOption = 'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 
-const auth = useAuthStore();
 const locationStore = useLocationStore();
 const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
@@ -165,7 +163,6 @@ onShow(() => {
 });
 
 async function refreshHome(forceRelocate: boolean) {
-  auth.ensureLogin().catch(() => undefined);
   try {
     const locateResult = forceRelocate
       ? await locationStore.relocate()

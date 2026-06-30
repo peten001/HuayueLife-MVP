@@ -14,6 +14,7 @@ import {
 } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import type { UserOrder } from '@/types/api';
+import { requireLoginForAction } from '@/utils/login-guard';
 
 type MessageTab = 'merchant' | 'system';
 
@@ -23,6 +24,7 @@ const { t } = useI18n();
 const merchantRecords = ref<UserOrder[]>([]);
 const merchantLoading = ref(false);
 const merchantMessage = ref('');
+const loggedIn = computed(() => Boolean(auth.user));
 
 const tabs = computed<Array<{ value: MessageTab; label: string }>>(() => [
   { value: 'merchant', label: t('merchantNoticesTab') },
@@ -34,9 +36,9 @@ const panelDescription = computed(() =>
 );
 
 async function loadMerchantRecords(showLoading = false) {
+  if (!auth.user) return;
   if (showLoading) merchantLoading.value = true;
   try {
-    await auth.ensureLogin();
     merchantRecords.value = await getOrders();
     merchantMessage.value = '';
   } catch (caught) {
@@ -45,6 +47,17 @@ async function loadMerchantRecords(showLoading = false) {
   } finally {
     merchantLoading.value = false;
   }
+}
+
+function switchTab(tab: MessageTab) {
+  activeTab.value = tab;
+  if (tab === 'merchant' && auth.user && !merchantRecords.value.length) {
+    void loadMerchantRecords(true);
+  }
+}
+
+function loginForMerchantNotices() {
+  void requireLoginForAction('merchantNotice', () => loadMerchantRecords(true));
 }
 
 function isClosedOrder(status: string | undefined | null) {
@@ -72,9 +85,11 @@ function openConversation(order: UserOrder) {
 }
 
 onShow(() => {
-  if (activeTab.value === 'merchant') {
-    void loadMerchantRecords(true);
-  }
+  void auth.restoreSession().then(() => {
+    if (activeTab.value === 'merchant' && auth.user) {
+      void loadMerchantRecords(true);
+    }
+  });
 });
 
 usePageTitle(() => t('messagesTitle'));
@@ -92,7 +107,7 @@ usePageTitle(() => t('messagesTitle'));
         v-for="tab in tabs"
         :key="tab.value"
         :class="['tab', activeTab === tab.value ? 'active' : '']"
-        @click="activeTab = tab.value"
+        @click="switchTab(tab.value)"
       >
         {{ tab.label }}
       </view>
@@ -101,17 +116,26 @@ usePageTitle(() => t('messagesTitle'));
     <view class="panel">
       <text class="panel-desc">{{ panelDescription }}</text>
 
-      <view v-if="activeTab === 'merchant' && merchantMessage" class="message">
+      <view v-if="activeTab === 'merchant' && !loggedIn" class="login-guide">
+        <view class="empty-icon">🔔</view>
+        <text class="empty-title">{{ t('loginMerchantNoticeTitle') }}</text>
+        <text class="empty-copy">{{ t('loginMerchantNoticeContent') }}</text>
+        <button class="login-button" :loading="auth.loading" @click="loginForMerchantNotices">
+          {{ t('wechatOneTapLogin') }}
+        </button>
+      </view>
+
+      <view v-else-if="activeTab === 'merchant' && merchantMessage" class="message">
         {{ merchantMessage }}
       </view>
 
-      <view v-if="activeTab === 'merchant' && merchantLoading" class="empty-state compact">
+      <view v-if="activeTab === 'merchant' && loggedIn && merchantLoading" class="empty-state compact">
         <view class="empty-icon">🧾</view>
         <text class="empty-title">{{ t('loading') }}</text>
       </view>
 
       <view
-        v-else-if="activeTab === 'merchant' && merchantRecords.length"
+        v-else-if="activeTab === 'merchant' && loggedIn && merchantRecords.length"
         class="records"
       >
         <view
@@ -166,7 +190,7 @@ usePageTitle(() => t('messagesTitle'));
         </view>
       </view>
 
-      <view v-else class="empty-state">
+      <view v-else-if="activeTab !== 'merchant' || loggedIn" class="empty-state">
         <view class="empty-icon">{{ activeTab === 'merchant' ? '🔔' : '📢' }}</view>
         <text class="empty-title">
           {{ activeTab === 'merchant' ? t('noMerchantNoticesTitle') : t('noSystemNoticesTitle') }}
@@ -269,6 +293,28 @@ usePageTitle(() => t('messagesTitle'));
 
 .empty-state.compact {
   padding: 56rpx 24rpx 48rpx;
+}
+
+.login-guide {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  padding: 64rpx 28rpx 56rpx;
+  text-align: center;
+}
+
+.login-button {
+  min-width: 300rpx;
+  margin-top: 24rpx;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.login-button::after {
+  border: 0;
 }
 
 .empty-icon {

@@ -4,6 +4,8 @@ import { onShow as onPageShow } from '@dcloudio/uni-app';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import { useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
+import { requireLoginForAction } from '@/utils/login-guard';
+import { openPrivacyContract } from '@/utils/privacy';
 
 const auth = useAuthStore();
 const { t } = useI18n();
@@ -11,11 +13,12 @@ const { t } = useI18n();
 usePageTitle(() => t('profileTitle'));
 
 onPageShow(() => {
-  void auth.ensureLogin();
+  void auth.restoreSession();
 });
 
-const displayNickname = computed(() => auth.user?.nickname || t('meNicknameFallback'));
-const displayPhone = computed(() => auth.user?.phone?.trim() || t('mePhoneFallback'));
+const loggedIn = computed(() => Boolean(auth.user));
+const displayNickname = computed(() => auth.user?.nickname || t('wechatUser'));
+const displayPhone = computed(() => auth.user?.phone?.trim() || t('phoneNotLinked'));
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 
 function openBrowsingHistory() {
@@ -23,13 +26,49 @@ function openBrowsingHistory() {
 }
 
 function openProfileEdit() {
-  uni.navigateTo({ url: '/pages/profile/edit' });
+  void requireLoginForAction('profileEdit', () => {
+    uni.navigateTo({ url: '/pages/profile/edit' });
+  });
+}
+
+async function loginFromProfile() {
+  try {
+    await auth.loginWithWechat();
+    if (auth.user) uni.showToast({ title: t('wechatLoginSuccess'), icon: 'none' });
+  } catch (error) {
+    uni.showToast({
+      title: error instanceof Error ? error.message : t('wechatLoginFailedSimple'),
+      icon: 'none',
+    });
+  }
+}
+
+function logout() {
+  auth.logout();
+  uni.showToast({ title: t('loggedOut'), icon: 'none' });
+}
+
+function showPhoneUnavailable() {
+  uni.showToast({ title: t('phoneLinkingUnavailable'), icon: 'none' });
 }
 </script>
 
 <template>
   <view class="page">
-    <view class="profile-card">
+    <view v-if="!loggedIn" class="login-card">
+      <text class="login-title">{{ t('profileWelcomeTitle') }}</text>
+      <text class="login-copy">{{ t('profileWelcomeDesc') }}</text>
+      <button class="wechat-login-button" :loading="auth.loading" @click="loginFromProfile">
+        {{ t('wechatOneTapLogin') }}
+      </button>
+      <view class="privacy-copy">
+        <text>{{ t('loginPrivacyPrefix') }}</text>
+        <text class="privacy-link" @click="openPrivacyContract">{{ t('privacyProtectionGuide') }}</text>
+      </view>
+      <text class="guest-copy">{{ t('guestBrowseHint') }}</text>
+    </view>
+
+    <view v-else class="profile-card">
       <view class="avatar-wrap">
         <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
         <!-- i18n-check-allow avatar-initial -->
@@ -37,7 +76,7 @@ function openProfileEdit() {
       </view>
       <view class="profile-info">
         <text class="name">{{ displayNickname }}</text>
-        <text class="phone-link" @click="openProfileEdit">{{ displayPhone }}</text>
+        <text class="phone-link" @click="showPhoneUnavailable">{{ displayPhone }}</text>
       </view>
       <button class="edit-button" @click="openProfileEdit">{{ t('editProfile') }}</button>
     </view>
@@ -69,12 +108,26 @@ function openProfileEdit() {
     <view class="section-title">{{ t('profilePreferences') }}</view>
     <view class="preference-card">
       <LanguageSwitcher />
+      <view class="row" @click="showPhoneUnavailable">
+        <view class="row-main">
+          <view class="small-icon">☎</view>
+          <text>{{ t('bindPhone') }}</text>
+        </view>
+        <text>{{ t('phoneNotLinked') }}</text>
+      </view>
       <view class="row">
         <view class="row-main">
           <view class="small-icon">📍</view>
           <text>{{ t('serviceArea') }}</text>
         </view>
         <text>{{ t('cityBacNinh') }} / {{ t('cityBacGiang') }}</text>
+      </view>
+      <view v-if="loggedIn" class="row" @click="logout">
+        <view class="row-main">
+          <view class="small-icon">↩</view>
+          <text>{{ t('logout') }}</text>
+        </view>
+        <text>{{ t('loggedIn') }}</text>
       </view>
     </view>
 
@@ -103,6 +156,53 @@ function openProfileEdit() {
   border-radius: 32rpx;
   background: linear-gradient(135deg, #eaf7ee, #f8fbf8);
   box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
+}
+
+.login-card {
+  display: grid;
+  gap: 18rpx;
+  padding: 36rpx 30rpx;
+  border-radius: 32rpx;
+  background: linear-gradient(135deg, #eaf7ee, #f8fbf8);
+  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
+}
+
+.login-title {
+  color: #1f2d24;
+  font-size: 36rpx;
+  font-weight: 800;
+}
+
+.login-copy,
+.guest-copy,
+.privacy-copy {
+  color: #6d7970;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.wechat-login-button {
+  margin: 6rpx 0 0;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.wechat-login-button::after {
+  border: 0;
+}
+
+.privacy-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4rpx;
+}
+
+.privacy-link {
+  color: #2e7d32;
+  text-decoration: underline;
 }
 
 .avatar-wrap {

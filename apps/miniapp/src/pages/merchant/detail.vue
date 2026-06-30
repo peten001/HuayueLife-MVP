@@ -12,6 +12,7 @@ import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
 import { isFavorite, toggleFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
+import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
@@ -20,6 +21,68 @@ const error = ref('');
 const { locale, t } = useI18n();
 const favoriteState = ref(false);
 const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
+const enabledCapabilityCodes = computed(() =>
+  new Set(
+    (merchant.value?.capabilities ?? [])
+      .filter((item) => item.isEnabled)
+      .map((item) => item.code),
+  ),
+);
+const hasCapabilityRecords = computed(() => Boolean(merchant.value?.capabilities?.length));
+const canPhone = computed(() => hasCapability('phoneEnabled', true));
+const canNavigate = computed(() => hasCapability('navigationEnabled', true));
+const canShowGallery = computed(() => hasCapability('imageGalleryEnabled', true));
+const canShowProducts = computed(() => {
+  if (hasCapabilityRecords.value) return enabledCapabilityCodes.value.has('productDisplayEnabled');
+  return Boolean(
+    merchant.value?.merchantMode !== 'DISPLAY' &&
+    merchant.value?.merchantMode !== 'DISPLAY_ONLY' &&
+    merchant.value?.supportedOrderTypes?.length,
+  );
+});
+const canOrder = computed(() => {
+  if (!merchant.value || !canShowProducts.value) return false;
+  if (hasCapabilityRecords.value) {
+    return enabledCapabilityCodes.value.has('onlineOrderEnabled');
+  }
+  return (
+    merchant.value.merchantMode !== 'DISPLAY' &&
+    merchant.value.merchantMode !== 'DISPLAY_ONLY' &&
+    merchant.value.supportedOrderTypes.some((item) => item === 'PICKUP' || item === 'DELIVERY')
+  );
+});
+const canPickup = computed(() =>
+  canOrder.value &&
+  (hasCapabilityRecords.value
+    ? enabledCapabilityCodes.value.has('pickupEnabled')
+    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP'))),
+);
+const canDelivery = computed(() =>
+  canOrder.value &&
+  (hasCapabilityRecords.value
+    ? enabledCapabilityCodes.value.has('deliveryEnabled')
+    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY'))),
+);
+const displayAddress = computed(() => {
+  if (!merchant.value) return '';
+  if (locale.value === 'vi') return merchant.value.addressVi || merchant.value.addressDetail;
+  if (locale.value === 'en') return merchant.value.addressEn || merchant.value.addressDetail;
+  return merchant.value.addressZh || merchant.value.addressDetail;
+});
+const displayDescription = computed(() => {
+  if (!merchant.value) return '';
+  if (locale.value === 'vi') return merchant.value.descriptionVi || merchant.value.descriptionZh || '';
+  if (locale.value === 'en') return merchant.value.descriptionEn || merchant.value.descriptionZh || '';
+  return merchant.value.descriptionZh || merchant.value.notice || '';
+});
+const displayTags = computed(() => merchant.value?.promotionTags?.map((item) => item.nameZh) ?? []);
+const galleryImages = computed(() =>
+  canShowGallery.value
+    ? (merchant.value?.images ?? []).filter((item) =>
+        ['STORE', 'ENVIRONMENT', 'PRODUCT', 'MENU'].includes(item.imageType),
+      )
+    : [],
+);
 
 usePageTitle(() => t('merchantDetailTitle'));
 
@@ -44,11 +107,14 @@ onLoad(async (options) => {
 
 function handleToggleFavorite() {
   if (!merchant.value) return;
-  const result = toggleFavorite(merchant.value);
-  favoriteState.value = result.saved;
-  uni.showToast({
-    title: result.saved ? t('favoriteSavedToast') : t('favoriteRemovedToast'),
-    icon: 'none',
+  void requireLoginForAction('favorite', () => {
+    if (!merchant.value) return;
+    const result = toggleFavorite(merchant.value);
+    favoriteState.value = result.saved;
+    uni.showToast({
+      title: result.saved ? t('favoriteSavedToast') : t('favoriteRemovedToast'),
+      icon: 'none',
+    });
   });
 }
 
@@ -219,6 +285,11 @@ function handlePhoneTap() {
     },
   });
 }
+
+function hasCapability(code: string, fallbackValue: boolean) {
+  if (!hasCapabilityRecords.value) return fallbackValue;
+  return enabledCapabilityCodes.value.has(code);
+}
 </script>
 
 <template>
@@ -249,17 +320,30 @@ function handlePhoneTap() {
             {{ favoriteLabel }}
           </button>
         </view>
-        <view class="info-line info-action" @tap="handleAddressTap">
+        <view v-if="canNavigate" class="info-line info-action" @tap="handleAddressTap">
           <text class="info-icon">📍</text>
-          <text class="info-text">{{ merchant.addressDetail }}</text>
+          <text class="info-text">{{ displayAddress }}</text>
           <text class="info-link">{{ t('mapNavigation') }}</text>
         </view>
-        <view class="info-line info-action" @tap="handlePhoneTap">
+        <view v-if="canPhone" class="info-line info-action" @tap="handlePhoneTap">
           <text class="info-icon">📞</text>
           <text class="info-text">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
           <text class="info-link">{{ t('callMerchant') }}</text>
         </view>
-        <view v-if="merchant.notice" class="notice">{{ merchant.notice }}</view>
+        <view v-if="merchant.openingHoursText" class="notice">营业时间：{{ merchant.openingHoursText }}</view>
+        <view v-if="displayDescription" class="notice">{{ displayDescription }}</view>
+        <view v-if="displayTags.length" class="tags">
+          <text v-for="tag in displayTags" :key="tag" class="tag">{{ tag }}</text>
+        </view>
+        <view v-if="galleryImages.length" class="gallery">
+          <image
+            v-for="image in galleryImages"
+            :key="image.id"
+            class="gallery-image"
+            :src="resolveMediaUrl(image.imageUrl)"
+            mode="aspectFill"
+          />
+        </view>
         <view class="tags">
           <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">
             {{ orderTypeLabel(type, locale) }}
@@ -268,7 +352,7 @@ function handlePhoneTap() {
       </view>
       <view class="actions">
         <button
-          v-if="merchant.supportedOrderTypes.includes('PICKUP')"
+          v-if="canPickup && merchant.supportedOrderTypes.includes('PICKUP')"
           type="button"
           class="primary pickup"
           @tap="openMenu('PICKUP')"
@@ -276,7 +360,7 @@ function handlePhoneTap() {
           {{ t('pickup') }}
         </button>
         <button
-          v-if="merchant.supportedOrderTypes.includes('DELIVERY')"
+          v-if="canDelivery && merchant.supportedOrderTypes.includes('DELIVERY')"
           type="button"
           class="primary delivery"
           @tap="openMenu('DELIVERY')"
@@ -463,6 +547,20 @@ function handlePhoneTap() {
   flex-wrap: wrap;
   gap: 10rpx;
   margin-top: 22rpx;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.gallery-image {
+  width: 100%;
+  height: 180rpx;
+  border-radius: 18rpx;
+  background: #edf5ee;
 }
 
 .tag {

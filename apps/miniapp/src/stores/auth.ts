@@ -4,11 +4,13 @@ import { translateApiError, useI18n } from '@/i18n';
 import type { UserProfile } from '@/types/api';
 import {
   clearToken,
+  clearLocalUserProfile,
   getLocalUserProfile,
   getToken,
   setLocalUserProfile,
   setToken,
 } from '@/utils/storage';
+import { ensurePrivacyAuthorized } from '@/utils/privacy';
 
 function mergeCachedUserProfile(user: UserProfile | null): UserProfile | null {
   if (!user) return null;
@@ -30,20 +32,34 @@ export const useAuthStore = defineStore('auth', {
     loginError: '',
   }),
   actions: {
-    async ensureLogin() {
+    isLoggedIn() {
+      return Boolean(this.user || getToken());
+    },
+    async restoreSession() {
+      if (this.loading || this.user || !getToken()) {
+        this.ready = true;
+        return;
+      }
+      this.loading = true;
+      this.loginError = '';
+      try {
+        this.user = mergeCachedUserProfile(await getMe());
+      } catch {
+        clearToken();
+        this.user = null;
+      } finally {
+        this.loading = false;
+        this.ready = true;
+      }
+    },
+    async loginWithWechat() {
       const { t } = useI18n();
       if (this.loading) return;
       this.loading = true;
       this.loginError = '';
       try {
-        if (getToken()) {
-          try {
-            this.user = mergeCachedUserProfile(await getMe());
-            return;
-          } catch {
-            clearToken();
-          }
-        }
+        const privacyAuthorized = await ensurePrivacyAuthorized();
+        if (!privacyAuthorized) throw new Error(t('privacyAuthorizationRequired'));
         const loginResult = await new Promise<UniApp.LoginRes>((resolve, reject) => {
           uni.login({ provider: 'weixin', success: resolve, fail: reject });
         });
@@ -52,16 +68,29 @@ export const useAuthStore = defineStore('auth', {
         setToken(result.accessToken);
         this.user = mergeCachedUserProfile(result.user);
       } catch (caught) {
-        const detail =
-          caught instanceof Error
-            ? translateApiError(caught.message)
-            : t('checkNetworkRetry');
-        this.loginError = t('wechatLoginFailed', { detail });
+        if (caught instanceof Error && caught.message === t('privacyAuthorizationRequired')) {
+          this.loginError = caught.message;
+          throw caught;
+        }
+        const statusCode = caught instanceof Error
+          ? (caught as Error & { statusCode?: number }).statusCode
+          : undefined;
+        this.loginError = statusCode === 404
+          ? t('signInServiceNotReady')
+          : t('wechatLoginFailedSimple');
         throw new Error(this.loginError);
       } finally {
         this.loading = false;
         this.ready = true;
       }
+    },
+    async ensureLogin() {
+      if (this.user) return;
+      if (getToken()) {
+        await this.restoreSession();
+        if (this.user) return;
+      }
+      await this.loginWithWechat();
     },
     applyLocalUserProfile(profile: {
       nickname?: string;
@@ -91,6 +120,8 @@ export const useAuthStore = defineStore('auth', {
       if (this.loading) return 'failed';
       this.loading = true;
       try {
+        const privacyAuthorized = await ensurePrivacyAuthorized();
+        if (!privacyAuthorized) throw new Error(t('privacyAuthorizationRequired'));
         const loginResult = await new Promise<UniApp.LoginRes>((resolve, reject) => {
           uni.login({ provider: 'weixin', success: resolve, fail: reject });
         });
@@ -109,6 +140,13 @@ export const useAuthStore = defineStore('auth', {
       } finally {
         this.loading = false;
       }
+    },
+    logout() {
+      clearToken();
+      clearLocalUserProfile();
+      this.user = null;
+      this.loginError = '';
+      this.ready = true;
     },
   },
 });

@@ -4,6 +4,7 @@ import { onShow as onPageShow } from '@dcloudio/uni-app';
 import { translateApiError, useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getLocalUserProfile } from '@/utils/storage';
+import { requireLoginForAction } from '@/utils/login-guard';
 
 const auth = useAuthStore();
 const { t } = useI18n();
@@ -11,23 +12,20 @@ const saving = ref(false);
 const draft = reactive({
   nickname: '',
   avatarUrl: '',
-  phone: '',
 });
 
 usePageTitle(() => t('profileEditTitle'));
 
 const displayAvatar = computed(() => draft.avatarUrl || auth.user?.avatarUrl || '');
-const phonePattern = /^\+?\d{8,15}$/;
 
 function syncDraft() {
   const cached = getLocalUserProfile();
   draft.nickname = cached?.nickname?.trim() || auth.user?.nickname || '';
   draft.avatarUrl = cached?.avatarUrl?.trim() || auth.user?.avatarUrl || '';
-  draft.phone = cached?.phone?.trim() || auth.user?.phone?.trim() || '';
 }
 
 onPageShow(() => {
-  void auth.ensureLogin().finally(() => {
+  void requireLoginForAction('profileEdit', () => {
     syncDraft();
   });
 });
@@ -41,29 +39,15 @@ function onNicknameInput(event: Event) {
   draft.nickname = inputEvent.detail?.value || '';
 }
 
-function onPhoneInput(event: Event) {
-  const inputEvent = event as unknown as { detail?: { value?: string } };
-  draft.phone = inputEvent.detail?.value || '';
-}
-
 async function saveProfile() {
   const nickname = draft.nickname.trim();
   const avatarUrl = draft.avatarUrl.trim();
-  const phone = draft.phone.trim();
-  const currentPhone = auth.user?.phone?.trim() || '';
-  const nextPhone = phone || currentPhone || undefined;
-
-  if (phone && !phonePattern.test(phone)) {
-    uni.showToast({ title: t('profilePhoneInvalid'), icon: 'none' });
-    return;
-  }
 
   saving.value = true;
   try {
     await auth.updateProfile({
       nickname,
       avatarUrl: avatarUrl || undefined,
-      phone: nextPhone,
     });
     uni.showToast({ title: t('wechatProfileSaved'), icon: 'none' });
     uni.navigateBack();
@@ -75,6 +59,10 @@ async function saveProfile() {
   } finally {
     saving.value = false;
   }
+}
+
+function showPhoneUnavailable() {
+  uni.showToast({ title: t('phoneLinkingUnavailable'), icon: 'none' });
 }
 </script>
 
@@ -103,13 +91,9 @@ async function saveProfile() {
 
       <view class="field">
         <text class="field-label">{{ t('phone') }}</text>
-        <input
-          type="text"
-          :value="draft.phone"
-          :placeholder="t('phonePlaceholder')"
-          maxlength="16"
-          @input="onPhoneInput"
-        />
+        <button class="phone-placeholder" type="button" @click="showPhoneUnavailable">
+          {{ t('phoneNotLinked') }} · {{ t('bindPhone') }}
+        </button>
       </view>
 
       <text class="hint">{{ t('profileEditHint') }}</text>
@@ -206,6 +190,24 @@ input {
 
 input::placeholder {
   color: #9ba7a0;
+}
+
+.phone-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 84rpx;
+  padding: 0 22rpx;
+  border: 2rpx solid #f0f0f0;
+  border-radius: 18rpx;
+  color: #657168;
+  background: #f8fbf8;
+  font-size: 25rpx;
+  text-align: left;
+}
+
+.phone-placeholder::after {
+  border: 0;
 }
 
 .hint {
