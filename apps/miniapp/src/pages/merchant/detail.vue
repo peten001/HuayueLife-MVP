@@ -270,15 +270,6 @@ function handlePhoneTap() {
   });
 }
 
-function handleInStoreScanOrderTap() {
-  uni.showModal({
-    title: t('inStoreScanOrder'),
-    content: t('inStoreScanOrderDialogContent'),
-    confirmText: t('gotIt'),
-    showCancel: false,
-  });
-}
-
 function hasCapability(code: string, fallbackValue: boolean) {
   if (!hasCapabilityRecords.value) return fallbackValue;
   return enabledCapabilityCodes.value.has(code);
@@ -341,6 +332,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
           <text v-for="type in merchant.supportedOrderTypes" :key="type" class="tag">
             {{ orderTypeLabel(type, locale) }}
           </text>
+          <text v-if="canDineIn" class="tag">
+            {{ t('inStoreScanOrder') }}
+          </text>
         </view>
       </view>
       <view class="actions">
@@ -359,14 +353,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
           @tap="openMenu('DELIVERY')"
         >
           {{ t('delivery') }}
-        </button>
-        <button
-          v-if="canDineIn"
-          type="button"
-          class="primary scan-order"
-          @tap="handleInStoreScanOrderTap"
-        >
-          {{ t('inStoreScanOrder') }}
         </button>
       </view>
     </template>
@@ -604,11 +590,5 @@ function hasCapability(code: string, fallbackValue: boolean) {
   border: 2rpx solid #43a047;
   color: #2e7d32;
   background: #fff;
-}
-
-.scan-order {
-  border: 2rpx solid #f59e0b;
-  color: #8a5a00;
-  background: #fff8e7;
 }
 </style>

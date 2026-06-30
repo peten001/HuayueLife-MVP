@@ -106,26 +106,84 @@ const visibleImages = computed(() =>
   (merchant.value?.images ?? []).filter((item) => item.isVisible).slice(0, 8),
 );
 const imagePreviewUrl = computed(() => resolveMediaUrl(imageForm.imageUrl));
-const capabilityGroups = computed(() => {
-  const source = capabilities.value.length
-    ? capabilities.value
-    : (merchant.value?.capabilities ?? []).map((item) => ({
-        ...item,
-        defaultValue: false,
-        groupCode: item.groupCode ?? groupCodeForCapability(item.code),
-        groupNameZh: item.groupNameZh ?? groupNameForCapability(item.code),
-      }));
-  const groups = new Map<string, { code: string; name: string; items: PlatformCapability[] }>();
-  for (const item of source) {
-    if (item.code === 'productDisplayEnabled') continue;
-    const code = item.groupCode || groupCodeForCapability(item.code);
-    if (!groups.has(code)) {
-      groups.set(code, { code, name: item.groupNameZh || groupNameForCapability(item.code), items: [] });
-    }
-    groups.get(code)?.items.push(item);
-  }
-  return Array.from(groups.values());
-});
+type CapabilityCard = {
+  code: string;
+  title: string;
+  description: string;
+  icon: string;
+  badge?: string;
+};
+const displayCapabilityCards = computed<CapabilityCard[]>(() => [
+  {
+    code: 'phoneEnabled',
+    title: '电话',
+    description: '小程序展示拨打电话入口',
+    icon: '☎',
+  },
+  {
+    code: 'navigationEnabled',
+    title: '导航',
+    description: '小程序展示导航入口',
+    icon: '📍',
+  },
+  {
+    code: 'imageGalleryEnabled',
+    title: '图片/相册展示',
+    description: '小程序展示商家图片',
+    icon: '🖼',
+  },
+]);
+const operationCapabilityCards = computed<CapabilityCard[]>(() => [
+  {
+    code: 'pickupEnabled',
+    title: '到店自取',
+    description: '允许用户下单到店自取',
+    icon: '🛍',
+  },
+  {
+    code: 'deliveryEnabled',
+    title: '商家配送',
+    description: '允许商家配送',
+    icon: '🛵',
+  },
+  {
+    code: 'qrOrderEnabled',
+    title: '到店扫码点餐',
+    description: '到店堂食顾客入座后扫描桌台二维码点餐',
+    icon: '▣',
+  },
+  {
+    code: 'tableManagementEnabled',
+    title: '桌台管理',
+    description: '管理桌台和桌码',
+    icon: '▦',
+    badge: qrOrderNeedsTableManagement.value ? '建议开启' : undefined,
+  },
+  {
+    code: 'printerEnabled',
+    title: '打印机',
+    description: '允许打印机管理',
+    icon: '🖨',
+  },
+  {
+    code: 'voiceNotifyEnabled',
+    title: '语音播报',
+    description: '允许语音播报提醒',
+    icon: '🔊',
+  },
+  {
+    code: 'chatEnabled',
+    title: '订单聊天',
+    description: '与用户在线沟通',
+    icon: '💬',
+  },
+  {
+    code: 'zaloReportEnabled',
+    title: 'Zalo 日报',
+    description: '允许 Zalo 日报推送',
+    icon: '📊',
+  },
+]);
 const lifecycle = computed(() => {
   const item = merchant.value;
   if (!item) return '-';
@@ -570,46 +628,6 @@ function capabilityEnabled(code: string) {
   return Boolean(capabilityValues[code]);
 }
 
-function capabilityDescription(code: string) {
-  return (
-    {
-      phoneEnabled: '小程序展示拨打电话入口',
-      navigationEnabled: '小程序展示导航入口',
-      imageGalleryEnabled: '小程序展示商家图片',
-      productDisplayEnabled: '展示商品或菜单内容，不阻断到店自取 / 商家配送 / 到店扫码点餐',
-      onlineOrderEnabled: '旧兼容字段，不作为小程序独立入口',
-      pickupEnabled: '允许用户选择到店自取',
-      deliveryEnabled: '允许商家配送',
-      chatEnabled: '允许订单聊天入口',
-      qrOrderEnabled: '到店堂食顾客入座后扫描桌台二维码点餐',
-      tableManagementEnabled: '用于桌台和桌码管理，建议与到店扫码点餐配合开启',
-      printerEnabled: '允许打印机管理',
-      voiceNotifyEnabled: '允许语音播报提醒',
-      zaloReportEnabled: '允许 Zalo 日报推送',
-    }[code] ?? code
-  );
-}
-
-function groupCodeForCapability(code: string) {
-  if (['phoneEnabled', 'navigationEnabled', 'imageGalleryEnabled'].includes(code)) return 'DISPLAY';
-  if (code === 'productDisplayEnabled') return 'PRODUCT';
-  if (['onlineOrderEnabled', 'pickupEnabled', 'deliveryEnabled', 'chatEnabled'].includes(code)) return 'ORDER';
-  if (['qrOrderEnabled', 'tableManagementEnabled', 'printerEnabled', 'voiceNotifyEnabled'].includes(code)) return 'RESTAURANT';
-  return 'OPERATION';
-}
-
-function groupNameForCapability(code: string) {
-  return (
-    {
-      DISPLAY: '展示能力',
-      PRODUCT: '商品能力',
-      ORDER: '订单能力',
-      RESTAURANT: '餐厅能力',
-      OPERATION: '经营能力',
-    }[groupCodeForCapability(code)] ?? '其他能力'
-  );
-}
-
 function switchSection(section: EditorSection) {
   activeSection.value = section;
   document.getElementById(`merchant-section-${section}`)?.scrollIntoView({
@@ -794,10 +812,64 @@ function backToList() {
         </section>
 
         <section id="merchant-section-capabilities" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>能力开关</h2><p>控制商家在小程序和商家后台可使用的功能</p></div><button class="editor-button is-primary" type="button" :disabled="saving" @click="saveCapabilities">保存能力</button></div>
-          <p class="editor-tip">展示型商家默认只开启电话、导航、图片展示。到店扫码点餐不依赖在线下单，开启后建议同步开启桌台管理并完成桌码配置。</p>
-          <div class="capability-management-grid"><div v-for="group in capabilityGroups" :key="group.code" class="capability-edit-card"><h3>{{ group.name }}</h3><label v-for="capability in group.items" :key="capability.code" class="capability-toggle"><input v-model="capabilityValues[capability.code]" type="checkbox" /><span>{{ capability.nameZh }}</span><small>{{ capabilityDescription(capability.code) }}</small></label></div></div>
-          <p v-if="qrOrderNeedsTableManagement" class="editor-warning">开启到店扫码点餐后，建议同步开启桌台管理，否则商家无法管理桌码。</p>
+          <div class="editor-section-head capabilities-head">
+            <div><h2>能力开关</h2><p>控制商家在小程序和商家后台可使用的功能</p></div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveCapabilities">保存能力</button>
+          </div>
+          <div class="capabilities-banner">
+            <span class="capabilities-banner-icon">i</span>
+            <p>展示型商家默认只开启电话、导航、图片展示。到店扫码点餐不依赖在线下单，开启后建议同步开启桌台管理并完成桌码配置。</p>
+          </div>
+          <div class="capability-groups">
+            <article class="capability-group-card">
+              <div class="capability-group-head">
+                <div>
+                  <h3>展示能力</h3>
+                  <p>小程序前台展示</p>
+                </div>
+              </div>
+              <div class="capability-grid capability-grid--display">
+                <label
+                  v-for="capability in displayCapabilityCards"
+                  :key="capability.code"
+                  :class="['capability-card', { 'is-enabled': capabilityEnabled(capability.code) }]"
+                >
+                  <input v-model="capabilityValues[capability.code]" type="checkbox" />
+                  <span class="capability-icon">{{ capability.icon }}</span>
+                  <span class="capability-card-main">
+                    <strong>{{ capability.title }}</strong>
+                    <small>{{ capability.description }}</small>
+                  </span>
+                </label>
+              </div>
+            </article>
+            <article class="capability-group-card">
+              <div class="capability-group-head">
+                <div>
+                  <h3>经营能力</h3>
+                  <p>商家经营与订单相关</p>
+                </div>
+              </div>
+              <div class="capability-grid capability-grid--operation">
+                <label
+                  v-for="capability in operationCapabilityCards"
+                  :key="capability.code"
+                  :class="['capability-card', { 'is-enabled': capabilityEnabled(capability.code) }]"
+                >
+                  <input v-model="capabilityValues[capability.code]" type="checkbox" />
+                  <span class="capability-icon">{{ capability.icon }}</span>
+                  <span class="capability-card-main">
+                    <strong>
+                      {{ capability.title }}
+                      <em v-if="capability.badge">{{ capability.badge }}</em>
+                    </strong>
+                    <small>{{ capability.description }}</small>
+                  </span>
+                </label>
+              </div>
+            </article>
+          </div>
+          <p v-if="qrOrderNeedsTableManagement" class="editor-warning">提示：开启“到店扫码点餐”后，建议同时开启“桌台管理”，并完成桌码配置以确保顾客正常扫码点餐。</p>
         </section>
 
         <section id="merchant-section-account" class="editor-section-card">
@@ -987,6 +1059,176 @@ function backToList() {
   background: #dcfce7;
 }
 
+.capabilities-head {
+  align-items: center;
+}
+
+.capabilities-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid #cfe7d4;
+  border-radius: 16px;
+  background: #f3fbf5;
+}
+
+.capabilities-banner-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: #166534;
+  background: #dcfce7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.capabilities-banner p {
+  margin: 0;
+  color: #54705b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.capability-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.capability-group-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #d8e6dc;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.capability-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.capability-group-head h3 {
+  margin: 0;
+  color: #13351f;
+  font-size: 18px;
+}
+
+.capability-group-head p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.capability-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.capability-grid--display {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capability-grid--operation {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capability-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 34px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid #cfe7d4;
+  border-radius: 14px;
+  background: #fdfefc;
+  cursor: pointer;
+}
+
+.capability-card input {
+  margin-top: 6px;
+  accent-color: #1d7a46;
+}
+
+.capability-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: #1d7a46;
+  background: #eaf7ee;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.capability-card-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.capability-card-main strong {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: #13351f;
+  font-size: 15px;
+}
+
+.capability-card-main strong em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #b45309;
+  background: #fef3c7;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.capability-card-main small {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.capability-card:hover {
+  border-color: #b8dec2;
+  background: #f8fcf9;
+}
+
+.capability-card.is-enabled {
+  border-color: #9bd1a5;
+  background: #f3fbf5;
+}
+
+.capability-card.is-enabled .capability-icon {
+  color: #fff;
+  background: #1d7a46;
+}
+
+.capability-card.is-enabled .capability-card-main strong {
+  color: #1d7a46;
+}
+
+.capability-card.is-enabled .capability-card-main small {
+  color: #5b7161;
+}
+
+.capability-card.is-enabled .capability-card-main strong em {
+  color: #b45309;
+  background: #fde68a;
+}
+
 .capability-toggle,
 .tag-picker-card {
   cursor: pointer;
@@ -1116,12 +1358,21 @@ function backToList() {
 @media (max-width: 900px) {
   .merchant-workbench-hero,
   .merchant-dashboard-grid,
-  .merchant-image-row {
+  .merchant-image-row,
+  .capability-grid--display,
+  .capability-grid--operation {
     grid-template-columns: 1fr;
   }
 
   .merchant-workbench-actions {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 1200px) {
+  .capability-grid--display,
+  .capability-grid--operation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
