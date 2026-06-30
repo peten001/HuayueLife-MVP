@@ -19,10 +19,27 @@ defineEmits<{ select: [merchant: MerchantSummary] }>();
 
 const { locale, t } = useI18n();
 const title = computed(() => merchantName(props.merchant));
+type ServiceTag = {
+  key: string;
+  label: string;
+};
 const canShowScanOrderTag = computed(() =>
   props.merchant.qrOrderEnabled ??
   props.merchant.supportedOrderTypes.includes('DINE_IN'),
 );
+const serviceTags = computed<ServiceTag[]>(() => {
+  const tags: ServiceTag[] = props.merchant.supportedOrderTypes.map((type) => ({
+    key: type,
+    label: orderTypeLabel(type, locale.value),
+  }));
+  if (canShowScanOrderTag.value) {
+    tags.push({
+      key: 'SCAN_TO_ORDER',
+      label: t('inStoreScanOrder'),
+    });
+  }
+  return tags;
+});
 </script>
 
 <template>
@@ -45,14 +62,17 @@ const canShowScanOrderTag = computed(() =>
         </text>
       </view>
       <text class="address">{{ props.merchant.addressDetail }}</text>
-      <view class="row meta">
-        <text v-if="props.merchant.distanceKm !== null">{{ props.merchant.distanceKm }} km</text>
-        <view class="tags">
-          <text v-for="type in props.merchant.supportedOrderTypes" :key="type" class="tag">
-            {{ orderTypeLabel(type, locale) }}
-          </text>
-          <text v-if="canShowScanOrderTag" class="tag">
-            {{ t('inStoreScanOrder') }}
+      <view v-if="props.merchant.distanceKm !== null" class="distance-row">
+        <text>{{ props.merchant.distanceKm }} km</text>
+      </view>
+      <view v-if="serviceTags.length" class="tags">
+        <view
+          v-for="(tag, index) in serviceTags"
+          :key="tag.key"
+          :class="['tag', { 'tag--truncate': index === serviceTags.length - 1 }]"
+        >
+          <text :class="['tag-text', { 'tag-text--truncate': index === serviceTags.length - 1 }]">
+            {{ tag.label }}
           </text>
         </view>
       </view>
@@ -86,9 +106,51 @@ const canShowScanOrderTag = computed(() =>
 .open { color: #18854b; }
 .closed { color: #888; }
 .address { display: block; margin: 10rpx 0 12rpx; overflow: hidden; color: #777; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
-.meta { align-items: center; color: #666; font-size: 23rpx; }
-.tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8rpx; }
-.tag { padding: 6rpx 12rpx; border-radius: 999rpx; color: #2f9e44; background: #eaf7ed; font-size: 20rpx; }
+.distance-row {
+  margin-bottom: 10rpx;
+  color: #666;
+  font-size: 23rpx;
+}
+.tags {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8rpx;
+  overflow: hidden;
+  background: transparent;
+}
+.tag {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  color: #2f9e44;
+  background: #eaf7ed;
+  font-size: 20rpx;
+}
+.tag--truncate {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 220rpx;
+  overflow: hidden;
+}
+.tag-text {
+  white-space: nowrap;
+}
+.tag-text--truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .merchant-card--compact {
   gap: 12rpx;
@@ -133,7 +195,8 @@ const canShowScanOrderTag = computed(() =>
   font-size: 13px;
 }
 
-.merchant-card--compact .meta {
+.merchant-card--compact .distance-row {
+  margin-bottom: 8rpx;
   font-size: 12px;
 }
 
@@ -142,12 +205,16 @@ const canShowScanOrderTag = computed(() =>
   font-size: 11px;
 }
 
-.merchant-card--compact.merchant-card--vi .tags {
-  gap: 4rpx;
-}
-
 .merchant-card--compact.merchant-card--vi .tag {
   font-size: 10.5px;
   padding: 4rpx 7rpx;
+}
+
+.merchant-card--compact .tags {
+  gap: 4rpx;
+}
+
+.merchant-card--compact .tag--truncate {
+  max-width: 160rpx;
 }
 </style>
