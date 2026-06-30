@@ -117,6 +117,7 @@ const capabilityGroups = computed(() => {
       }));
   const groups = new Map<string, { code: string; name: string; items: PlatformCapability[] }>();
   for (const item of source) {
+    if (item.code === 'productDisplayEnabled') continue;
     const code = item.groupCode || groupCodeForCapability(item.code);
     if (!groups.has(code)) {
       groups.set(code, { code, name: item.groupNameZh || groupNameForCapability(item.code), items: [] });
@@ -184,6 +185,9 @@ const hasInvalidCoordinates = computed(() => {
   const longitude = Number(profileForm.longitude);
   return !Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0);
 });
+const qrOrderNeedsTableManagement = computed(
+  () => capabilityEnabled('qrOrderEnabled') && !capabilityEnabled('tableManagementEnabled'),
+);
 
 onMounted(loadPage);
 watch(
@@ -532,8 +536,8 @@ function modeLabel(value: string) {
       MANAGED: '经营管理',
       DISPLAY_ONLY: '仅展示',
       PRODUCT_DISPLAY: '商品展示',
-      ONLINE_ORDER: '在线下单',
-      QR_ORDER: '扫码点餐',
+      ONLINE_ORDER: '在线下单（兼容）',
+      QR_ORDER: '到店扫码点餐',
     }[value] ?? value
   );
 }
@@ -572,13 +576,13 @@ function capabilityDescription(code: string) {
       phoneEnabled: '小程序展示拨打电话入口',
       navigationEnabled: '小程序展示导航入口',
       imageGalleryEnabled: '小程序展示商家图片',
-      productDisplayEnabled: '展示商品或菜单内容',
-      onlineOrderEnabled: '允许用户在线下单',
+      productDisplayEnabled: '展示商品或菜单内容，不阻断到店自取 / 商家配送 / 到店扫码点餐',
+      onlineOrderEnabled: '旧兼容字段，不作为小程序独立入口',
       pickupEnabled: '允许用户选择到店自取',
       deliveryEnabled: '允许商家配送',
       chatEnabled: '允许订单聊天入口',
-      qrOrderEnabled: '允许扫码点餐入口',
-      tableManagementEnabled: '允许桌台管理入口',
+      qrOrderEnabled: '到店堂食顾客入座后扫描桌台二维码点餐',
+      tableManagementEnabled: '用于桌台和桌码管理，建议与到店扫码点餐配合开启',
       printerEnabled: '允许打印机管理',
       voiceNotifyEnabled: '允许语音播报提醒',
       zaloReportEnabled: '允许 Zalo 日报推送',
@@ -721,7 +725,7 @@ function backToList() {
             <label><span>经营类型</span><select v-model="profileForm.businessTypeId"><option value="">未设置</option><option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">{{ item.nameZh }}</option></select></label>
             <label><span>联系电话 <b>*</b></span><input v-model="profileForm.contactPhone" required maxlength="32" /></label>
             <label><span>联系人</span><input v-model="profileForm.contactName" maxlength="64" /></label>
-            <label><span>商家模式</span><select v-model="profileForm.merchantMode"><option value="DISPLAY">DISPLAY 展示</option><option value="MANAGED">MANAGED 经营管理</option><option value="DISPLAY_ONLY">DISPLAY_ONLY 兼容</option><option value="ONLINE_ORDER">ONLINE_ORDER 兼容</option><option value="QR_ORDER">QR_ORDER 兼容</option></select></label>
+            <label><span>商家模式</span><select v-model="profileForm.merchantMode"><option value="DISPLAY">DISPLAY 展示</option><option value="MANAGED">MANAGED 经营管理</option><option value="DISPLAY_ONLY">DISPLAY_ONLY 兼容</option><option value="ONLINE_ORDER">ONLINE_ORDER 兼容（旧在线下单）</option><option value="QR_ORDER">QR_ORDER 兼容（到店扫码点餐）</option></select></label>
             <label><span>生命周期 / 状态</span><select v-model="profileForm.status"><option value="PENDING">待完善</option><option value="ACTIVE">营业中</option><option value="DISABLED">停用</option></select></label>
             <label><span>营业时间</span><input v-model="profileForm.openingHoursText" maxlength="255" /></label>
             <label><span>排序</span><input v-model.number="profileForm.sortOrder" type="number" /></label>
@@ -791,8 +795,9 @@ function backToList() {
 
         <section id="merchant-section-capabilities" class="editor-section-card">
           <div class="editor-section-head"><div><h2>能力开关</h2><p>控制商家在小程序和商家后台可使用的功能</p></div><button class="editor-button is-primary" type="button" :disabled="saving" @click="saveCapabilities">保存能力</button></div>
-          <p class="editor-tip">展示型商家默认只开启电话、导航、图片展示。开通在线下单或扫码点餐前，请确认商家已经准备好接单流程。</p>
+          <p class="editor-tip">展示型商家默认只开启电话、导航、图片展示。到店扫码点餐不依赖在线下单，开启后建议同步开启桌台管理并完成桌码配置。</p>
           <div class="capability-management-grid"><div v-for="group in capabilityGroups" :key="group.code" class="capability-edit-card"><h3>{{ group.name }}</h3><label v-for="capability in group.items" :key="capability.code" class="capability-toggle"><input v-model="capabilityValues[capability.code]" type="checkbox" /><span>{{ capability.nameZh }}</span><small>{{ capabilityDescription(capability.code) }}</small></label></div></div>
+          <p v-if="qrOrderNeedsTableManagement" class="editor-warning">开启到店扫码点餐后，建议同步开启桌台管理，否则商家无法管理桌码。</p>
         </section>
 
         <section id="merchant-section-account" class="editor-section-card">

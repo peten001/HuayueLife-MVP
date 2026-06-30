@@ -47,10 +47,10 @@ const capabilityLabels: Record<string, string> = {
   navigationEnabled: '导航',
   imageGalleryEnabled: '图片展示',
   productDisplayEnabled: '商品展示',
-  onlineOrderEnabled: '在线下单',
+  onlineOrderEnabled: '在线下单（兼容）',
   pickupEnabled: '到店自取',
   deliveryEnabled: '商家配送',
-  qrOrderEnabled: '扫码点餐',
+  qrOrderEnabled: '到店扫码点餐',
   tableManagementEnabled: '桌台管理',
   printerEnabled: '打印机',
   zaloReportEnabled: 'Zalo 日报',
@@ -63,6 +63,9 @@ const parentIds = computed(() =>
       .map((item) => item.parentId)
       .filter((value): value is string => Boolean(value)),
   ),
+);
+const defaultCapabilityEntries = computed(() =>
+  Object.entries(form.defaultCapabilities).filter(([code]) => code !== 'productDisplayEnabled'),
 );
 
 onMounted(loadItems);
@@ -185,9 +188,9 @@ async function disable(item: PlatformBusinessType) {
     <section class="span-2 platform-homepage-categories">
       <strong>默认能力</strong>
       <div class="platform-category-options">
-        <label v-for="(_, code) in form.defaultCapabilities" :key="code" class="platform-category-option">
-          <input v-model="form.defaultCapabilities[code]" type="checkbox" />
-          <span>{{ capabilityLabels[code] ?? code }}</span>
+        <label v-for="entry in defaultCapabilityEntries" :key="entry[0]" class="platform-category-option">
+          <input v-model="form.defaultCapabilities[entry[0]]" type="checkbox" />
+          <span>{{ capabilityLabels[entry[0]] ?? entry[0] }}</span>
         </label>
       </div>
     </section>

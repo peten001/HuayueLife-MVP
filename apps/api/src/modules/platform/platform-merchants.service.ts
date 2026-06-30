@@ -1708,10 +1708,50 @@ function serializePromotionRefs(merchant: MerchantWithOwner) {
 function serializeCapabilityRefs(merchant: MerchantWithOwner) {
   return (merchant.capabilities ?? [])
     .map((item) => {
-      const ref = serializeDictionaryRef(item.capability);
+      const ref = serializeCapabilityDictionaryRef(item.capability);
       return ref ? { ...ref, isEnabled: item.isEnabled } : null;
     })
     .filter((item): item is DictionaryRef & { isEnabled: boolean } => Boolean(item));
+}
+
+function serializeCapabilityDictionaryRef(
+  item:
+    | {
+        id: bigint;
+        code: string;
+        nameZh: string;
+        nameVi: string | null;
+        nameEn: string | null;
+      }
+    | null
+    | undefined,
+): DictionaryRef | null {
+  if (!item) return null;
+  return {
+    id: item.id.toString(),
+    code: item.code,
+    nameZh: displayCapabilityNameZh(item.code, item.nameZh),
+    nameVi: displayCapabilityNameVi(item.code, item.nameVi),
+    nameEn: displayCapabilityNameEn(item.code, item.nameEn),
+  };
+}
+
+function displayCapabilityNameZh(code: string, nameZh: string) {
+  if (code === 'qrOrderEnabled') return '到店扫码点餐';
+  if (code === 'onlineOrderEnabled') return '在线下单（兼容）';
+  return nameZh;
+}
+
+function displayCapabilityNameVi(code: string, nameVi: string | null) {
+  if (code === 'qrOrderEnabled') return 'Quet ma goi mon tai quan';
+  if (code === 'onlineOrderEnabled') return 'Dat hang online (tuong thich)';
+  return nameVi;
+}
+
+function displayCapabilityNameEn(code: string, nameEn: string | null) {
+  if (code === 'qrOrderEnabled') return 'Scan to Order In-store';
+  if (code === 'onlineOrderEnabled') return 'Online Order (Legacy)';
+  return nameEn;
 }
 
 function serializeImages(merchant: MerchantWithOwner) {

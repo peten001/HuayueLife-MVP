@@ -260,10 +260,31 @@ function serializeCapability(item: {
 }) {
   return {
     ...item,
+    nameZh: displayCapabilityNameZh(item.code, item.nameZh),
+    nameVi: displayCapabilityNameVi(item.code, item.nameVi),
+    nameEn: displayCapabilityNameEn(item.code, item.nameEn),
     id: item.id.toString(),
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };
+}
+
+function displayCapabilityNameZh(code: string, nameZh: string) {
+  if (code === 'qrOrderEnabled') return '到店扫码点餐';
+  if (code === 'onlineOrderEnabled') return '在线下单（兼容）';
+  return nameZh;
+}
+
+function displayCapabilityNameVi(code: string, nameVi: string | null) {
+  if (code === 'qrOrderEnabled') return 'Quet ma goi mon tai quan';
+  if (code === 'onlineOrderEnabled') return 'Dat hang online (tuong thich)';
+  return nameVi;
+}
+
+function displayCapabilityNameEn(code: string, nameEn: string | null) {
+  if (code === 'qrOrderEnabled') return 'Scan to Order In-store';
+  if (code === 'onlineOrderEnabled') return 'Online Order (Legacy)';
+  return nameEn;
 }
 
 function trimOrNull(value: string | undefined) {

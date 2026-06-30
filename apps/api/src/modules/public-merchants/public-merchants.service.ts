@@ -418,8 +418,6 @@ function canShowMenu(merchant: PublicMerchantRow) {
   );
   if (capabilities.size) {
     return Boolean(
-      capabilities.get('productDisplayEnabled') ||
-      capabilities.get('onlineOrderEnabled') ||
       capabilities.get('pickupEnabled') ||
       capabilities.get('deliveryEnabled') ||
       capabilities.get('qrOrderEnabled'),

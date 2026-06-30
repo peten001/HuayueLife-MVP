@@ -38,7 +38,7 @@ function goPromotionTags() {
         </div>
         <dl class="detail-list settings-detail-list">
           <dt>平台名称</dt><dd>华越优选</dd>
-          <dt>业务模式</dt><dd>餐厅扫码点餐 / 自取 / 商家配送</dd>
+          <dt>业务模式</dt><dd>到店扫码点餐 / 到店自取 / 商家配送</dd>
           <dt>当前版本</dt><dd>MVP</dd>
           <dt>运营区域</dt><dd>北江 / 北宁</dd>
           <dt>平台状态</dt><dd>运行中</dd>
@@ -102,7 +102,7 @@ function goPromotionTags() {
         <div class="settings-rule-list">
           <div>
             <strong>支持订单类型</strong>
-            <p>堂食 / 自取 / 商家配送</p>
+            <p>到店扫码点餐 / 到店自取 / 商家配送</p>
           </div>
           <div>
             <strong>当前订单金额口径</strong>

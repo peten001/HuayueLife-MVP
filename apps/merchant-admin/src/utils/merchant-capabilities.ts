@@ -41,7 +41,13 @@ export function canAccessMerchantFeature(
     );
   }
   if (feature === 'products') {
-    return hasMerchantCapability(source, 'productDisplayEnabled');
+    return (
+      hasMerchantCapability(source, 'productDisplayEnabled') ||
+      hasMerchantCapability(source, 'onlineOrderEnabled') ||
+      hasMerchantCapability(source, 'pickupEnabled') ||
+      hasMerchantCapability(source, 'deliveryEnabled') ||
+      hasMerchantCapability(source, 'qrOrderEnabled')
+    );
   }
   if (feature === 'tables') {
     return hasMerchantCapability(source, 'tableManagementEnabled');

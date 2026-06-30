@@ -882,8 +882,8 @@ function modeLabel(value: string) {
     MANAGED: '经营管理',
     DISPLAY_ONLY: '仅展示',
     PRODUCT_DISPLAY: '商品展示',
-    ONLINE_ORDER: '在线下单',
-    QR_ORDER: '扫码点餐',
+    ONLINE_ORDER: '在线下单（兼容）',
+    QR_ORDER: '到店扫码点餐',
   }[value] ?? value;
 }
 
