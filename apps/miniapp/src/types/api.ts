@@ -72,6 +72,11 @@ export interface UserProfile {
   nickname?: string;
   avatarUrl?: string;
   phone?: string;
+  defaultNickname?: string;
+  defaultAvatarKey?: string;
+  defaultAvatarStyle?: 'neutral' | 'male' | 'female';
+  gender?: string | number | null;
+  sex?: string | number | null;
   status: string;
 }
 
@@ -79,8 +84,25 @@ export interface MerchantSummary extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string;
+  merchantMode?: 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';
+  businessType?: {
+    id: string;
+    code: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+  } | null;
   coverUrl?: string;
+  logoUrl?: string;
   addressDetail: string;
+  addressZh?: string;
+  addressVi?: string;
+  addressEn?: string;
+  openingHoursText?: string;
+  descriptionZh?: string;
+  descriptionVi?: string;
+  descriptionEn?: string;
   province?: string;
   city: string;
   district?: string;
@@ -95,6 +117,33 @@ export interface MerchantSummary extends LocalizedFields {
   deliveryRadiusKm: string;
   homepageCategoryKeys?: string[];
   manualPopular?: boolean;
+  isNew?: boolean;
+  promotionTags?: Array<{
+    id: string;
+    code: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    iconText?: string | null;
+    color?: string | null;
+  }>;
+  capabilities?: Array<{
+    id: string;
+    code: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    isEnabled: boolean;
+  }>;
+  images?: Array<{
+    id: string;
+    imageType: string;
+    imageUrl: string;
+    titleZh?: string | null;
+    titleVi?: string | null;
+    titleEn?: string | null;
+    sortOrder: number;
+  }>;
 }
 
 export interface MerchantDetail extends MerchantSummary {

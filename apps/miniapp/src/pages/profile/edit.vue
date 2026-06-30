@@ -19,7 +19,6 @@ usePageTitle(() => t('profileEditTitle'));
 
 const displayAvatar = computed(() => draft.avatarUrl || auth.user?.avatarUrl || '');
 const defaultAvatarKey = computed(() => auth.user?.defaultAvatarKey || 'neutral-sprout');
-const displayPhone = computed(() => auth.user?.phone?.trim() || '');
 
 function syncDraft() {
   const cached = getLocalUserProfile();
@@ -63,18 +62,6 @@ async function saveProfile() {
     saving.value = false;
   }
 }
-
-async function handlePhoneNumber(event: { detail?: { code?: string; encryptedData?: string; iv?: string; errMsg?: string } }) {
-  try {
-    await auth.bindPhoneWithWechat(event.detail);
-    uni.showToast({ title: t('phoneLinked'), icon: 'none' });
-  } catch (error) {
-    uni.showToast({
-      title: error instanceof Error ? error.message : t('phoneBindFailed'),
-      icon: 'none',
-    });
-  }
-}
 </script>
 
 <template>
@@ -98,24 +85,6 @@ async function handlePhoneNumber(event: { detail?: { code?: string; encryptedDat
           @input="onNicknameInput"
         />
       </view>
-
-      <view class="field">
-        <text class="field-label">{{ t('phone') }}</text>
-        <button
-          v-if="!displayPhone"
-          class="phone-placeholder"
-          open-type="getPhoneNumber"
-          @getphonenumber="handlePhoneNumber"
-        >
-          {{ t('phoneNotLinked') }} · {{ t('bindPhone') }}
-        </button>
-        <view v-else class="phone-bound">
-          <text>{{ displayPhone }}</text>
-          <text class="phone-bound-tag">{{ t('phoneLinked') }}</text>
-        </view>
-      </view>
-
-      <text class="hint">{{ t('profileEditHint') }}</text>
 
       <button class="save-btn" :loading="saving" @click="saveProfile">
         {{ t('saveProfile') }}
@@ -209,45 +178,6 @@ input {
 
 input::placeholder {
   color: #9ba7a0;
-}
-
-.phone-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 84rpx;
-  padding: 0 22rpx;
-  border: 2rpx solid #f0f0f0;
-  border-radius: 18rpx;
-  color: #657168;
-  background: #f8fbf8;
-  font-size: 25rpx;
-  text-align: left;
-}
-
-.phone-placeholder::after {
-  border: 0;
-}
-
-.phone-bound {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 84rpx;
-  padding: 0 22rpx;
-  border: 2rpx solid #e5f2e8;
-  border-radius: 18rpx;
-  color: #1f2d24;
-  background: #f8fbf8;
-  font-size: 25rpx;
-  gap: 16rpx;
-}
-
-.phone-bound-tag {
-  flex: none;
-  color: #2e7d32;
-  font-size: 22rpx;
-  font-weight: 700;
 }
 
 .hint {

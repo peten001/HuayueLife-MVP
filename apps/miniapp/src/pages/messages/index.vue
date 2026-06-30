@@ -14,7 +14,6 @@ import {
 } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import type { UserOrder } from '@/types/api';
-import { requireLoginForAction } from '@/utils/login-guard';
 
 type MessageTab = 'merchant' | 'system';
 
@@ -23,6 +22,7 @@ const activeTab = ref<MessageTab>('merchant');
 const { t } = useI18n();
 const merchantRecords = ref<UserOrder[]>([]);
 const merchantLoading = ref(false);
+const merchantLoginLoading = ref(false);
 const merchantMessage = ref('');
 const loggedIn = computed(() => Boolean(auth.user));
 
@@ -56,8 +56,24 @@ function switchTab(tab: MessageTab) {
   }
 }
 
-function loginForMerchantNotices() {
-  void requireLoginForAction('merchantNotice', () => loadMerchantRecords(true));
+async function loginForMerchantNotices() {
+  if (merchantLoginLoading.value) return;
+  console.log('[messages] login button tapped');
+  merchantLoginLoading.value = true;
+  try {
+    await auth.loginWithWechat();
+    await auth.restoreSession();
+    console.log('[messages] login success, loading merchant notices');
+    await loadMerchantRecords(true);
+  } catch (error) {
+    console.warn('[messages] merchant notice login failed', error);
+    uni.showToast({
+      title: error instanceof Error ? error.message : t('wechatLoginFailedSimple'),
+      icon: 'none',
+    });
+  } finally {
+    merchantLoginLoading.value = false;
+  }
 }
 
 function isClosedOrder(status: string | undefined | null) {
@@ -120,8 +136,12 @@ usePageTitle(() => t('messagesTitle'));
         <view class="empty-icon">🔔</view>
         <text class="empty-title">{{ t('loginMerchantNoticeTitle') }}</text>
         <text class="empty-copy">{{ t('loginMerchantNoticeContent') }}</text>
-        <button class="login-button" :loading="auth.loading" @click="loginForMerchantNotices">
-          {{ t('wechatOneTapLogin') }}
+        <button
+          class="login-button"
+          :loading="auth.loading || merchantLoginLoading"
+          @click="loginForMerchantNotices"
+        >
+          {{ merchantLoginLoading ? t('loggingIn') : t('wechatOneTapLogin') }}
         </button>
       </view>
 
@@ -296,6 +316,9 @@ usePageTitle(() => t('messagesTitle'));
 }
 
 .login-guide {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   flex-direction: column;
@@ -304,6 +327,7 @@ usePageTitle(() => t('messagesTitle'));
 }
 
 .login-button {
+  width: 100%;
   min-width: 300rpx;
   margin-top: 24rpx;
   border-radius: 999rpx;

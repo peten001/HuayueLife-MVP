@@ -131,19 +131,15 @@ export const useAuthStore = defineStore('auth', {
     }) {
       const { t } = useI18n();
       if (!this.user) throw new Error(t('loginProfileEditTitle'));
-      const authorized = await ensurePrivacyAuthorized();
-      if (!authorized) throw new Error(t('phonePrivacyAuthorizationRequired'));
-      const errMsg = detail?.errMsg ?? '';
-      if (errMsg && !errMsg.includes(':ok')) throw new Error(t('phoneAuthorizationCanceled'));
-      if (!detail?.code && !(detail?.encryptedData && detail?.iv)) {
-        throw new Error(t('phoneAuthorizationCanceled'));
+      const code = detail?.code?.trim();
+      if (!code) {
+        if (detail?.encryptedData && detail?.iv) {
+          throw new Error(t('phoneAuthorizationInfoInvalidUpgrade'));
+        }
+        throw new Error(t('phoneAuthorizationInfoInvalidRetry'));
       }
       try {
-        const result = await bindWechatPhone({
-          code: detail.code ?? '',
-          encryptedData: detail.encryptedData,
-          iv: detail.iv,
-        });
+        const result = await bindWechatPhone({ code });
         this.user = mergeCachedUserProfile(result.user);
         return this.user;
       } catch (caught) {

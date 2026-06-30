@@ -4,11 +4,16 @@ import { onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getMerchant } from '@/api/catalog';
 import { useI18n, usePageTitle } from '@/i18n';
+import { useAuthStore } from '@/stores/auth';
 import { getFavorites } from '@/utils/favorites';
 import type { MerchantSummary } from '@/types/api';
 
+const auth = useAuthStore();
 const { t } = useI18n();
 const favorites = ref<MerchantSummary[]>([]);
+const favoritesLoading = ref(false);
+const favoriteLoginLoading = ref(false);
+const loggedIn = computed(() => Boolean(auth.user));
 
 usePageTitle(() => t('favoritesTab'));
 
@@ -16,39 +21,70 @@ const emptyTitle = computed(() => t('noFavoritesTitle'));
 const emptyHint = computed(() => t('noFavoritesHint'));
 
 async function loadFavorites() {
-  const saved = getFavorites();
-  const items: MerchantSummary[] = [];
-  for (const item of saved) {
-    try {
-      const merchant = await getMerchant(item.id);
-      items.push(merchant);
-    } catch {
-      items.push({
-        id: item.id,
-        nameZh: item.nameZh,
-        nameVi: item.nameVi,
-        coverUrl: item.coverUrl,
-        addressDetail: item.addressDetail ?? '',
-        city: '',
-        distanceKm: item.distanceKm ?? null,
-        isOpen: Boolean(item.isOpen),
-        supportedOrderTypes: item.supportedOrderTypes ?? ['PICKUP'],
-        minimumDeliveryAmountVnd: '0',
-        deliveryFeeVnd: '0',
-        latitude: '',
-        longitude: '',
-        deliveryRadiusKm: '',
-        homepageCategoryKeys: item.homepageCategoryKeys ?? [],
-        manualPopular: Boolean(item.manualPopular),
-      });
+  favoritesLoading.value = true;
+  try {
+    const saved = getFavorites();
+    const items: MerchantSummary[] = [];
+    for (const item of saved) {
+      try {
+        const merchant = await getMerchant(item.id);
+        items.push(merchant);
+      } catch {
+        items.push({
+          id: item.id,
+          nameZh: item.nameZh,
+          nameVi: item.nameVi,
+          coverUrl: item.coverUrl,
+          addressDetail: item.addressDetail ?? '',
+          city: '',
+          distanceKm: item.distanceKm ?? null,
+          isOpen: Boolean(item.isOpen),
+          supportedOrderTypes: item.supportedOrderTypes ?? ['PICKUP'],
+          minimumDeliveryAmountVnd: '0',
+          deliveryFeeVnd: '0',
+          latitude: '',
+          longitude: '',
+          deliveryRadiusKm: '',
+          homepageCategoryKeys: item.homepageCategoryKeys ?? [],
+          manualPopular: Boolean(item.manualPopular),
+        });
+      }
     }
+    favorites.value = items;
+  } finally {
+    favoritesLoading.value = false;
   }
-  favorites.value = items;
 }
 
 onShow(() => {
-  void loadFavorites();
+  void auth.restoreSession().then(() => {
+    if (!auth.user) {
+      favorites.value = [];
+      return;
+    }
+    void loadFavorites();
+  });
 });
+
+async function loginForFavorites() {
+  if (favoriteLoginLoading.value) return;
+  console.log('[favorites] login button tapped');
+  favoriteLoginLoading.value = true;
+  try {
+    await auth.loginWithWechat();
+    await auth.restoreSession();
+    console.log('[favorites] login success, loading favorites');
+    await loadFavorites();
+  } catch (error) {
+    console.warn('[favorites] login failed', error);
+    uni.showToast({
+      title: error instanceof Error ? error.message : t('wechatLoginFailedSimple'),
+      icon: 'none',
+    });
+  } finally {
+    favoriteLoginLoading.value = false;
+  }
+}
 
 function openMerchant(merchant: MerchantSummary) {
   uni.navigateTo({ url: `/pages/merchant/detail?id=${merchant.id}` });
@@ -62,18 +98,34 @@ function openMerchant(merchant: MerchantSummary) {
       <text class="page-subtitle">{{ t('favoritesPageSubtitle') }}</text>
     </view>
 
-    <view v-if="!favorites.length" class="empty">
+    <view v-if="!loggedIn" class="empty login-guide">
       <view class="empty-icon">❤️</view>
-      <text class="empty-title">{{ emptyTitle }}</text>
-      <text class="empty-copy">{{ emptyHint }}</text>
+      <text class="empty-title">{{ t('favoritesLoginTitle') }}</text>
+      <text class="empty-copy">{{ t('favoritesLoginContent') }}</text>
+      <button
+        class="login-button"
+        :loading="auth.loading || favoriteLoginLoading || favoritesLoading"
+        @click="loginForFavorites"
+      >
+        {{ favoriteLoginLoading ? t('loggingIn') : t('wechatOneTapLogin') }}
+      </button>
+      <text class="empty-copy note">{{ t('favoritesLoginHint') }}</text>
     </view>
 
-    <MerchantCard
-      v-for="merchant in favorites"
-      :key="merchant.id"
-      :merchant="merchant"
-      @select="openMerchant"
-    />
+    <template v-else>
+      <view v-if="!favorites.length" class="empty">
+        <view class="empty-icon">❤️</view>
+        <text class="empty-title">{{ emptyTitle }}</text>
+        <text class="empty-copy">{{ emptyHint }}</text>
+      </view>
+
+      <MerchantCard
+        v-for="merchant in favorites"
+        :key="merchant.id"
+        :merchant="merchant"
+        @select="openMerchant"
+      />
+    </template>
   </view>
 </template>
 
@@ -111,4 +163,27 @@ function openMerchant(merchant: MerchantSummary) {
 }
 .empty-title { color: #1f2d24; font-size: 29rpx; font-weight: 700; }
 .empty-copy { margin-top: 10rpx; color: #7d8980; font-size: 23rpx; }
+.login-guide {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  padding-top: 96rpx;
+  padding-bottom: 96rpx;
+}
+.login-button {
+  width: 100%;
+  margin-top: 18rpx;
+  border: 0;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+.login-button::after {
+  border: 0;
+}
+.note {
+  margin-top: 12rpx;
+}
 </style>

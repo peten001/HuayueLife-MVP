@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import DefaultAvatar from '@/components/DefaultAvatar.vue';
 import { useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { requireLoginForAction } from '@/utils/login-guard';
@@ -17,9 +18,9 @@ onPageShow(() => {
 });
 
 const loggedIn = computed(() => Boolean(auth.user));
-const displayNickname = computed(() => auth.user?.nickname || t('wechatUser'));
-const displayPhone = computed(() => auth.user?.phone?.trim() || t('phoneNotLinked'));
+const displayNickname = computed(() => auth.user?.nickname || auth.user?.defaultNickname || '');
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
+const defaultAvatarKey = computed(() => auth.user?.defaultAvatarKey || 'neutral-sprout');
 
 function openBrowsingHistory() {
   uni.navigateTo({ url: '/pages/profile/browsing-history' });
@@ -47,10 +48,6 @@ function logout() {
   auth.logout();
   uni.showToast({ title: t('loggedOut'), icon: 'none' });
 }
-
-function showPhoneUnavailable() {
-  uni.showToast({ title: t('phoneLinkingUnavailable'), icon: 'none' });
-}
 </script>
 
 <template>
@@ -71,12 +68,10 @@ function showPhoneUnavailable() {
     <view v-else class="profile-card">
       <view class="avatar-wrap">
         <image v-if="displayAvatar" :src="displayAvatar" mode="aspectFill" />
-        <!-- i18n-check-allow avatar-initial -->
-        <view v-else class="avatar">{{ displayNickname.slice(0, 1) }}</view>
+        <DefaultAvatar v-else :avatar-key="defaultAvatarKey" size="small" />
       </view>
       <view class="profile-info">
         <text class="name">{{ displayNickname }}</text>
-        <text class="phone-link" @click="showPhoneUnavailable">{{ displayPhone }}</text>
       </view>
       <button class="edit-button" @click="openProfileEdit">{{ t('editProfile') }}</button>
     </view>
@@ -108,13 +103,6 @@ function showPhoneUnavailable() {
     <view class="section-title">{{ t('profilePreferences') }}</view>
     <view class="preference-card">
       <LanguageSwitcher />
-      <view class="row" @click="showPhoneUnavailable">
-        <view class="row-main">
-          <view class="small-icon">☎</view>
-          <text>{{ t('bindPhone') }}</text>
-        </view>
-        <text>{{ t('phoneNotLinked') }}</text>
-      </view>
       <view class="row">
         <view class="row-main">
           <view class="small-icon">📍</view>
@@ -234,6 +222,7 @@ function showPhoneUnavailable() {
   display: grid;
   flex: 1;
   gap: 8rpx;
+  align-items: flex-start;
 }
 
 .name {
@@ -244,21 +233,6 @@ function showPhoneUnavailable() {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.phone {
-  display: block;
-  color: #6d7970;
-  font-size: 23rpx;
-}
-
-.phone-link {
-  display: block;
-  color: #2e7d32;
-  font-size: 23rpx;
-  text-align: left;
-  line-height: 1.5;
-  text-decoration: underline;
 }
 
 .edit-button {
