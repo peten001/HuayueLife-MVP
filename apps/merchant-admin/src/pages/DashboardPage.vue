@@ -227,6 +227,11 @@ const soundButtonLabel = computed(() => {
   if (locale.value === 'vi') return orderSoundEnabled.value ? 'Âm báo đã bật' : 'Bật âm báo';
   return orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder');
 });
+const mobileSoundButtonLabel = computed(() => {
+  if (locale.value === 'en') return 'Enable Sound';
+  if (locale.value === 'vi') return 'Bật âm báo';
+  return '开启声音提醒';
+});
 const localizedMerchantName = computed(() => {
   const currentProfile = profile.value as MerchantProfile & {
     name?: string;
@@ -674,7 +679,7 @@ type Action =
               :class="{ active: orderSoundEnabled }"
               @click="handleSoundToggle"
             >
-              {{ soundButtonLabel }}
+              {{ mobileSoundButtonLabel }}
             </button>
           </div>
         </div>
@@ -1382,87 +1387,134 @@ type Action =
 }
 
 .mobile-store-card {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 14px 14px 13px;
+  min-height: 168px;
+  height: 168px;
+  padding: 20px 26px 20px 24px;
   border-color: #4f9f58;
   background: #5bae63;
+  overflow: hidden;
 }
 
 .mobile-store-copy {
   display: grid;
-  gap: 3px;
+  gap: 4px;
+  max-width: calc(100% - 134px);
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .mobile-store-eyebrow {
   color: #fff;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .mobile-store-copy strong {
   color: #fff;
-  font-size: 18px;
-  line-height: 1.15;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .mobile-store-copy p {
   margin: 0;
   color: #fff;
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 .mobile-store-copy small {
   color: rgba(255, 255, 255, 0.85);
+  font-size: 17px;
+  line-height: 1.25;
 }
 
 .mobile-store-side {
-  display: grid;
-  justify-items: end;
+  position: absolute;
+  top: 20px;
+  right: 26px;
+  bottom: 20px;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  z-index: 2;
 }
 
 .mobile-store-actions {
   display: flex;
   justify-content: flex-end;
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: auto;
 }
 
 .mobile-store-side .mobile-sound-toggle {
-  justify-self: stretch;
+  justify-self: auto;
 }
 
 .mobile-store-side .mobile-sound-toggle.active {
-  color: #2e7d32;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: #1f7a35;
 }
 
 .mobile-store-badge {
   display: inline-flex;
   align-items: center;
-  padding: 5px 10px;
+  justify-content: center;
+  height: 36px;
+  padding: 0 18px;
   border-radius: 999px;
   color: #fff;
-  background: rgba(255, 255, 255, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  font-size: 12px;
-  font-weight: 800;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  font-size: 16px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .mobile-store-count {
   color: #fff;
-  font-size: 26px;
+  font-size: 34px;
   font-weight: 800;
   line-height: 1;
+  text-align: right;
+}
+
+.mobile-sound-toggle {
+  min-width: 116px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  border-color: rgba(255, 255, 255, 0.35);
+  border-radius: 14px;
+  background: #1f7a35;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.mobile-sound-toggle:hover,
+.mobile-sound-toggle.active {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: #1f7a35;
+  color: #fff;
 }
 
 .mobile-metric-grid {
@@ -1737,11 +1789,10 @@ type Action =
   }
 
   .mobile-store-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 12px;
-    min-height: 0;
+    display: block;
+    min-height: 168px;
+    height: 168px;
+    padding: 20px 26px 20px 24px;
   }
 
   .mobile-store-copy,
@@ -1793,16 +1844,18 @@ type Action =
   }
 
   .mobile-store-copy strong {
-    font-size: 17px;
+    font-size: 22px;
   }
 
   .mobile-store-count {
-    font-size: 30px;
+    font-size: 34px;
   }
 
   .mobile-store-side {
-    width: 112px;
-    align-self: stretch;
+    top: 20px;
+    right: 26px;
+    bottom: 20px;
+    width: 120px;
   }
 
   .mobile-order-head {
@@ -1834,12 +1887,12 @@ type Action =
   }
 
   .mobile-sound-toggle {
-    min-height: 32px;
     width: auto;
-    max-width: 100%;
-    min-width: 0;
-    padding: 0 10px;
-    font-size: 11px;
+    max-width: none;
+    min-width: 116px;
+    min-height: 42px;
+    padding: 0 14px;
+    font-size: 15px;
   }
 
 }
@@ -1851,21 +1904,27 @@ type Action =
   }
 
   .mobile-store-card {
-    padding: 14px 12px;
+    min-height: 172px;
+    height: 172px;
+    padding: 18px 18px 18px 16px;
   }
 
   .mobile-store-side {
-    width: 104px;
+    top: 18px;
+    right: 18px;
+    bottom: 18px;
+    width: 112px;
   }
 
   .mobile-store-count {
-    font-size: 28px;
+    font-size: 32px;
   }
 
   .mobile-sound-toggle {
-    min-height: 30px;
-    padding: 0 8px;
-    font-size: 10px;
+    min-width: 108px;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 14px;
   }
 }
 
