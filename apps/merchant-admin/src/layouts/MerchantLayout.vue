@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import huayueLogo from '@/assets/huayue-miniapp-logo.png';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
   clearMerchantStaff,
@@ -16,7 +17,7 @@ import {
 
 const router = useRouter();
 const route = useRoute();
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const staff = ref(getMerchantStaff());
 const mobileMenuOpen = ref(false);
 type DesktopNavIcon = 'dashboard' | 'orders' | 'store' | 'categories' | 'products' | 'tables' | 'staff' | 'logout';
@@ -101,6 +102,26 @@ const mobileMoreLinks = computed(() =>
   nav.value.filter(([path]) => !mobileTabPaths.value.has(path)),
 );
 const merchantName = computed(() => staff.value?.merchant?.nameZh || t('brand'));
+const sidebarBrand = computed(() => {
+  if (locale.value === 'vi') {
+    return {
+      title: 'Bảng điều khiển',
+      subtitle: 'Quản lý cửa hàng',
+    };
+  }
+
+  if (locale.value === 'en') {
+    return {
+      title: 'Merchant Admin',
+      subtitle: 'Store Management',
+    };
+  }
+
+  return {
+    title: '商家后台',
+    subtitle: '高效管理 · 智慧经营',
+  };
+});
 const desktopNav = computed(() =>
   nav.value.map(([path, labelKey]) => ({
     path,
@@ -186,8 +207,27 @@ function iconPaths(icon: DesktopNavIcon) {
 <template>
   <div class="app-shell">
     <aside class="sidebar merchant-sidebar">
-      <div class="brand merchant-brand">{{ t('brand') }}</div>
-      <LanguageSwitcher />
+      <div class="brand-block">
+        <div class="brand-logo">
+          <img :src="huayueLogo" alt="Huayue logo" />
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">{{ sidebarBrand.title }}</div>
+          <div class="brand-subtitle">{{ sidebarBrand.subtitle }}</div>
+        </div>
+      </div>
+      <div class="sidebar-language-row">
+        <span class="sidebar-language-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18" />
+            <path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9" />
+            <path d="M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9" />
+          </svg>
+        </span>
+        <LanguageSwitcher />
+      </div>
+      <div class="sidebar-divider" aria-hidden="true"></div>
       <nav class="merchant-nav">
         <RouterLink
           v-for="item in desktopNav"
@@ -284,38 +324,135 @@ function iconPaths(icon: DesktopNavIcon) {
 
 <style scoped>
 .app-shell {
-  grid-template-columns: 260px minmax(0, 1fr);
+  --merchant-sidebar-width: 280px;
+  grid-template-columns: var(--merchant-sidebar-width) minmax(0, 1fr);
   background: #f6f8f7;
 }
 
 .merchant-sidebar {
-  width: 260px;
-  padding: 18px 16px 16px;
+  width: var(--merchant-sidebar-width);
+  flex: 0 0 var(--merchant-sidebar-width);
+  padding: 20px 16px;
   color: #e5eee8;
   background: linear-gradient(180deg, #10261b 0%, #132d20 48%, #173522 100%);
 }
 
-.merchant-brand {
-  margin-bottom: 20px;
-  color: #f6fbf7;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  min-width: 0;
 }
 
-.sidebar :deep(.language-switcher) {
-  margin: 0 0 18px;
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 0 0 48px;
+  background: #16a34a;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 18px rgba(22, 163, 74, 0.28);
+}
+
+.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.brand-title {
+  color: #f6fbf7;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand-subtitle {
+  color: rgba(219, 231, 223, 0.72);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-language-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.sidebar-language-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: rgba(219, 231, 223, 0.82);
+}
+
+.sidebar-language-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.sidebar-language-row :deep(.language-switcher) {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: auto;
+  min-width: 0;
+  margin: 0;
   color: #dbe7df;
   font-size: 13px;
 }
 
-.sidebar :deep(.language-switcher select) {
-  min-width: 132px;
-  height: 40px;
-  border: 1px solid #3d5548;
-  border-radius: 8px;
+.sidebar-language-row :deep(.language-switcher span) {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
+  color: rgb(219 231 223 / 78%);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sidebar-language-row :deep(.language-switcher select) {
+  width: 124px;
+  min-width: 124px;
+  max-width: 132px;
+  height: 34px;
+  padding: 0 26px 0 10px;
+  border: 1px solid rgba(219, 231, 223, 0.22);
+  border-radius: 9px;
   color: #fff;
   background: rgb(255 255 255 / 8%);
+  font-size: 13px;
+}
+
+.sidebar-divider {
+  height: 1px;
+  margin: 14px 0 16px;
+  background: rgba(219, 231, 223, 0.12);
 }
 
 .merchant-nav {
@@ -328,8 +465,11 @@ function iconPaths(icon: DesktopNavIcon) {
   align-items: center;
   gap: 10px;
   min-height: 48px;
-  padding: 0 15px;
+  height: 48px;
+  padding: 0 16px;
   color: #dbe7df;
+  font-size: 16px;
+  font-weight: 600;
   text-decoration: none;
   border-radius: 12px;
   transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
@@ -364,6 +504,9 @@ function iconPaths(icon: DesktopNavIcon) {
 .merchant-nav-label {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .merchant-logout {

@@ -1255,16 +1255,17 @@ function toMinutes(value: string) {
             <p v-if="reportMessage" class="message card-message">{{ reportMessage }}</p>
 
             <div v-if="reportFeatureAvailable" class="report-settings-grid">
-              <div class="switch-inline switch-inline--report" @click.stop>
+              <label class="report-toggle-row">
                 <input
                   v-model="reportForm.enabled"
+                  class="report-toggle-input"
                   type="checkbox"
-                  @click.stop
-                  @change.stop
                 />
-                <span class="switch-slider" aria-hidden="true"></span>
-                <span>{{ t('enableDailyReportPush') }}</span>
-              </div>
+                <span class="report-toggle-switch" aria-hidden="true">
+                  <span class="report-toggle-thumb"></span>
+                </span>
+                <span class="report-toggle-text">{{ t('enableDailyReportPush') }}</span>
+              </label>
               <label class="field-block">
                 <span>{{ t('zaloRecipient') }}</span>
                 <input v-model="reportForm.zaloRecipient" type="text" placeholder="zalo_user_or_phone" />
@@ -1840,15 +1841,15 @@ function toMinutes(value: string) {
 .report-toggle-row {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: #111827;
   font-size: 14px;
 }
 
-.switch-inline--report {
+.report-toggle-row {
   position: relative;
-  gap: 10px;
-  min-height: 24px;
+  cursor: pointer;
+  user-select: none;
   width: fit-content;
 }
 
@@ -1859,8 +1860,7 @@ function toMinutes(value: string) {
   height: 22px;
 }
 
-.switch-compact input,
-.switch-inline--report input {
+.switch-compact input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1868,6 +1868,12 @@ function toMinutes(value: string) {
   margin: 0;
   cursor: pointer;
   opacity: 0;
+}
+
+.report-toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .switch-slider {
@@ -1879,6 +1885,35 @@ function toMinutes(value: string) {
   border-radius: 999px;
   background: #d1d5db;
   transition: background-color 0.2s ease;
+}
+
+.report-toggle-switch {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cbd5d1;
+  position: relative;
+  flex: 0 0 auto;
+  transition: background 0.2s ease;
+}
+
+.report-toggle-thumb {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 2px;
+  top: 2px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+}
+
+.report-toggle-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
 }
 
 .switch-slider::after {
@@ -1895,13 +1930,20 @@ function toMinutes(value: string) {
 }
 
 .switch-compact input:checked + .switch-slider,
-.switch-inline--report input:checked + .switch-slider {
+.switch-compact input:checked + .switch-slider {
   background: #16a34a;
 }
 
-.switch-compact input:checked + .switch-slider::after,
-.switch-inline--report input:checked + .switch-slider::after {
+.report-toggle-input:checked + .report-toggle-switch {
+  background: #16a34a;
+}
+
+.switch-compact input:checked + .switch-slider::after {
   transform: translateX(18px);
+}
+
+.report-toggle-input:checked + .report-toggle-switch .report-toggle-thumb {
+  transform: translateX(20px);
 }
 
 .hours-status-cell {

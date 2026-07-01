@@ -26,18 +26,11 @@ import {
 } from '@/utils/wake-lock';
 import { getMerchantStaff } from '@/utils/storage';
 import type { MerchantOrder, MerchantProfile, OrderStatus } from '@/types/api';
-import {
-  computeProfileCompletion,
-  type ProfileMissingField,
-} from '@/utils/profile-completion';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 
 const orders = ref<MerchantOrder[]>([]);
 const profile = ref<MerchantProfile | null>(null);
 const merchantName = ref('');
-const profileCompletion = ref(0);
-const missingProfileFields = ref<ProfileMissingField[]>([]);
-const profileLoaded = ref(false);
 const { locale, t } = useI18n();
 const staff = getMerchantStaff();
 const staffMerchant = staff?.merchant ?? null;
@@ -229,9 +222,64 @@ const newOrderLinkTarget = computed(() =>
         },
       },
 );
-const soundButtonLabel = computed(() =>
-  orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
-);
+const soundButtonLabel = computed(() => {
+  if (locale.value === 'en') return orderSoundEnabled.value ? 'Sound On' : 'Enable Sound';
+  if (locale.value === 'vi') return orderSoundEnabled.value ? 'Âm báo đã bật' : 'Bật âm báo';
+  return orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder');
+});
+const localizedMerchantName = computed(() => {
+  const currentProfile = profile.value as MerchantProfile & {
+    name?: string;
+    name_zh?: string;
+    name_vi?: string;
+    name_en?: string;
+    viName?: string;
+    enName?: string;
+    nameVietnamese?: string;
+    nameEnglish?: string;
+  } | null;
+
+  if (locale.value === 'vi') {
+    return (
+      currentProfile?.nameVi ||
+      currentProfile?.viName ||
+      currentProfile?.nameVietnamese ||
+      currentProfile?.name_vi ||
+      currentProfile?.nameZh ||
+      currentProfile?.name_zh ||
+      currentProfile?.name ||
+      merchantName.value ||
+      t('merchantWorkbench')
+    );
+  }
+
+  if (locale.value === 'en') {
+    return (
+      currentProfile?.nameEn ||
+      currentProfile?.enName ||
+      currentProfile?.nameEnglish ||
+      currentProfile?.name_en ||
+      currentProfile?.nameZh ||
+      currentProfile?.name_zh ||
+      currentProfile?.name ||
+      merchantName.value ||
+      t('merchantWorkbench')
+    );
+  }
+
+  return (
+    currentProfile?.nameZh ||
+    currentProfile?.name_zh ||
+    currentProfile?.name ||
+    merchantName.value ||
+    t('merchantWorkbench')
+  );
+});
+const pendingOrdersLabel = computed(() => {
+  if (locale.value === 'vi') return 'Đơn chờ';
+  if (locale.value === 'en') return 'Pending';
+  return '待处理订单';
+});
 const todayStatusLabel = computed(() => t('todayStatus'));
 const acceptingOrdersLabel = computed(() => t('acceptingOrders'));
 const newOrderNoticeLabel = computed(() => t('newOrderNotice'));
@@ -324,25 +372,15 @@ async function load(options: { resetCountdown?: boolean } = {}) {
   }
 }
 
-async function loadProfileCompletion() {
+async function loadProfileData() {
   try {
     const nextProfile = await getProfile();
     profile.value = nextProfile;
     merchantName.value = nextProfile.nameZh;
-    const summary = computeProfileCompletion(nextProfile);
-    profileCompletion.value = summary.completion;
-    missingProfileFields.value = summary.missingFields;
-    profileLoaded.value = true;
   } catch {
+    profile.value = null;
     merchantName.value = '';
-    profileCompletion.value = 0;
-    missingProfileFields.value = [];
-    profileLoaded.value = false;
   }
-}
-
-function profileFieldLabel(field: ProfileMissingField) {
-  return t(field as TranslationKey);
 }
 
 function money(value: number | string) {
@@ -405,7 +443,7 @@ async function execute(order: MerchantOrder) {
 }
 
 onMounted(async () => {
-  await loadProfileCompletion();
+  await loadProfileData();
   await load({ resetCountdown: true });
   startRefreshTimer();
   await startAutoWakeLock();
@@ -456,13 +494,13 @@ type Action =
         <section class="welcome-panel">
           <div class="welcome-copy">
             <span class="eyebrow">{{ t('merchantWorkbench') }}</span>
-            <h1>{{ merchantName || t('brand') }}</h1>
+            <h1>{{ localizedMerchantName }}</h1>
             <p>{{ todayStatusText }}</p>
             <small>{{ dashboardRefreshText }}</small>
           </div>
           <div class="welcome-side">
             <div class="welcome-summary">
-              <span>{{ operations.pendingSummary }}</span>
+              <span>{{ pendingOrdersLabel }}</span>
               <strong>{{ pending.length + inProgress.length }}</strong>
             </div>
             <div class="welcome-actions">
@@ -473,16 +511,10 @@ type Action =
                 :class="{ active: orderSoundEnabled }"
                 @click="handleSoundToggle"
               >
-                {{ soundButtonLabel }}
+                <span class="sound-toggle-icon" aria-hidden="true">🔔</span>
+                <span>{{ soundButtonLabel }}</span>
+                <span v-if="orderSoundEnabled" class="sound-toggle-dot" aria-hidden="true"></span>
               </button>
-              <RouterLink
-                v-if="orderFeatureEnabled"
-                class="primary-link"
-                to="/orders?status=PENDING_ACCEPTANCE"
-                @click="requestGestureWakeLock('view-orders')"
-              >
-                {{ t('orderWorkbench') }}
-              </RouterLink>
             </div>
           </div>
         </section>
@@ -503,20 +535,6 @@ type Action =
         </section>
       </section>
 
-      <div v-if="profileLoaded && profileCompletion < 100" class="card profile-alert">
-        <div>
-          <strong>{{ t('profileCompletion') }}：{{ profileCompletion }}%</strong>
-          <p>{{ t('pleaseCompleteProfile') }}</p>
-          <small v-if="missingProfileFields.length">
-            {{ t('profileMissingFields') }}：
-            {{ missingProfileFields.map((field) => profileFieldLabel(field)).join('、') }}
-          </small>
-        </div>
-        <RouterLink class="secondary alert-link" to="/merchant/profile">
-          {{ t('merchantProfile') }}
-        </RouterLink>
-      </div>
-
       <section v-if="hasNewPendingOrders && orderFeatureEnabled" class="new-order-banner desktop-only">
         <div>
           <strong>{{ newOrderNoticeLabel }}</strong>
@@ -531,7 +549,7 @@ type Action =
         </RouterLink>
       </section>
 
-      <p class="message">{{ message }}</p>
+      <p v-if="message" class="message">{{ message }}</p>
 
       <section class="panel quick-panel">
         <div class="section-heading">
@@ -639,7 +657,7 @@ type Action =
       <section class="mobile-store-card">
         <div class="mobile-store-copy">
           <span class="mobile-store-eyebrow">{{ todayStatusLabel }}</span>
-          <strong>{{ merchantName || t('brand') }}</strong>
+          <strong>{{ localizedMerchantName }}</strong>
           <p>{{ todayStatusText }}</p>
           <small>{{ dashboardRefreshText }}</small>
         </div>
@@ -780,12 +798,12 @@ type Action =
 <style scoped>
 .dashboard-page {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .desktop-dashboard {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mobile-dashboard {
@@ -794,7 +812,7 @@ type Action =
 
 .dashboard-top-stack {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .welcome-panel,
@@ -872,20 +890,49 @@ type Action =
 }
 
 .sound-toggle {
-  min-height: 34px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 46px;
+  min-height: 46px;
+  min-width: 132px;
+  max-width: 188px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 12px;
   color: #fff;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sound-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .sound-toggle.active {
-  border-color: #2e7d32;
-  color: #2e7d32;
-  background: #fff;
+  border-color: rgba(255, 255, 255, 0.48);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.sound-toggle-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.sound-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #86efac;
+  flex: 0 0 auto;
 }
 
 .mobile-sound-toggle {
@@ -898,14 +945,15 @@ type Action =
 .welcome-side {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
 
 .welcome-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -983,40 +1031,30 @@ type Action =
 
 .welcome-summary {
   display: grid;
-  min-width: 98px;
-  gap: 3px;
-  padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.22);
+  align-content: center;
+  gap: 2px;
+  width: 114px;
+  min-width: 114px;
+  height: 46px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  box-sizing: border-box;
 }
 
 .welcome-summary span {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 12px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .welcome-summary strong {
   color: #fff;
-  font-size: 21px;
+  font-size: 22px;
+  font-weight: 800;
   line-height: 1;
-}
-
-.profile-alert {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 0;
-  padding: 14px 16px;
-  border-left: 4px solid #43a047;
-  background: #ffffff;
-}
-
-.profile-alert p {
-  margin: 4px 0 0;
-  color: #58645b;
-  font-size: 13px;
 }
 
 .alert-link {
@@ -1092,7 +1130,7 @@ type Action =
 }
 
 .panel {
-  padding: 16px;
+  padding: 14px 16px;
 }
 
 .section-heading {
@@ -1100,7 +1138,11 @@ type Action =
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+}
+
+.quick-panel {
+  padding-top: 12px;
 }
 
 .section-heading h2,
@@ -1166,7 +1208,7 @@ type Action =
 .workbench-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 14px;
+  gap: 12px;
   align-items: start;
 }
 

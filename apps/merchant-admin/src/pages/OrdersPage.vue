@@ -793,7 +793,7 @@ function todayInVietnam() {
               <th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
               <th>{{ t('status') }}</th>
               <th>{{ t('orderTime') }}</th>
-              <th>{{ t('actions') }}</th>
+              <th class="orders-actions-head">{{ t('actions') }}</th>
             </tr>
           </thead>
           <tbody v-if="displayRows.length">
@@ -877,7 +877,7 @@ function todayInVietnam() {
                   <span>{{ datePart(order.createdAt) }}</span>
                 </div>
               </td>
-              <td>
+              <td class="orders-actions-cell">
                 <div class="orders-actions">
                   <button
                     v-if="primaryAction(order)"
@@ -1250,7 +1250,7 @@ function todayInVietnam() {
 .col-print { width: 10%; }
 .col-status { width: 10%; }
 .col-time { width: 8%; }
-.col-actions { width: 16%; }
+.col-actions { width: 144px; }
 
 .order-info-cell,
 .service-info-cell,
@@ -1419,13 +1419,24 @@ function todayInVietnam() {
 
 .orders-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
   gap: 6px;
+}
+
+.orders-actions-head,
+.orders-actions-cell {
+  text-align: center;
+}
+
+.orders-actions-cell {
+  vertical-align: middle;
 }
 
 .orders-actions .orders-primary-button,
 .orders-actions .orders-outline-button {
   min-height: 28px;
+  min-width: 88px;
   padding: 0 10px;
   border-radius: 8px;
   font-size: 12px;
