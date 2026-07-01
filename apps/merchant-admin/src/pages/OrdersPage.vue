@@ -934,6 +934,8 @@ function todayInVietnam() {
   display: grid;
   gap: 14px;
   max-width: 1280px;
+  min-width: 0;
+  width: 100%;
 }
 
 .merchant-orders-page :deep(.page-header) {
@@ -1024,6 +1026,7 @@ function todayInVietnam() {
   align-items: flex-start;
   gap: 12px;
   min-height: 104px;
+  min-width: 0;
   padding: 15px 16px 14px;
   border: 1px solid #edf1ef;
   border-radius: 16px;
@@ -1518,12 +1521,28 @@ function todayInVietnam() {
 }
 
 @media (max-width: 620px) {
+  .merchant-orders-page {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   .order-category-grid {
     grid-template-columns: 1fr;
   }
 
   .order-status-strip {
     gap: 10px;
+  }
+
+  .orders-table-card,
+  .orders-table-shell,
+  .orders-empty-state {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 }
 </style>

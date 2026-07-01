@@ -323,8 +323,12 @@ function iconPaths(icon: DesktopNavIcon) {
 <style scoped>
 .app-shell {
   --merchant-sidebar-width: 280px;
+  width: 100%;
+  max-width: 100vw;
+  min-width: 0;
   grid-template-columns: var(--merchant-sidebar-width) minmax(0, 1fr);
   background: #f6f8f7;
+  overflow-x: hidden;
 }
 
 .merchant-sidebar {
@@ -526,13 +530,39 @@ function iconPaths(icon: DesktopNavIcon) {
 }
 
 .content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 28px 30px 36px;
   background: #f6f8f7;
+  overflow-x: hidden;
 }
 
 .merchant-nav-icon--logout {
   width: 18px;
   height: 18px;
   flex-basis: 18px;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .merchant-sidebar {
+    display: none;
+  }
+
+  .content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 12px 12px calc(92px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+  }
 }
 </style>

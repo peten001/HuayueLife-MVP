@@ -973,6 +973,10 @@ onMounted(async () => {
   position: relative;
   display: grid;
   gap: 22px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .menu-tabs {
@@ -1027,6 +1031,7 @@ onMounted(async () => {
 .products-sidebar {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .card {
@@ -1628,6 +1633,19 @@ onMounted(async () => {
 
   .search-box {
     width: 100%;
+  }
+
+  .products-dashboard,
+  .category-dashboard,
+  .products-sidebar,
+  .table-shell,
+  .list-card,
+  .category-list-card,
+  .category-form-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   .filter-card,

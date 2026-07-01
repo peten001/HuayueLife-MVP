@@ -799,6 +799,10 @@ type Action =
 .dashboard-page {
   display: grid;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .desktop-dashboard {
@@ -808,6 +812,9 @@ type Action =
 
 .mobile-dashboard {
   display: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .dashboard-top-stack {
@@ -1379,6 +1386,9 @@ type Action =
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 14px 14px 13px;
   border-color: #4f9f58;
   background: #5bae63;
@@ -1417,6 +1427,7 @@ type Action =
   display: grid;
   justify-items: end;
   gap: 8px;
+  min-width: 0;
 }
 
 .mobile-store-side .mobile-sound-toggle {
@@ -1540,6 +1551,9 @@ type Action =
 .mobile-order-card {
   display: grid;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 14px;
 }
 
@@ -1564,11 +1578,14 @@ type Action =
 .mobile-order-card header > div {
   display: grid;
   gap: 7px;
+  min-width: 0;
 }
 
 .mobile-order-card header strong {
   color: #1f2d24;
   font-size: 16px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .mobile-order-card footer b {
@@ -1585,6 +1602,7 @@ type Action =
 .mobile-card-actions button,
 .mobile-card-actions .card-link {
   width: 100%;
+  max-width: 100%;
 }
 
 .mobile-empty-state {
@@ -1699,6 +1717,32 @@ type Action =
   .mobile-dashboard {
     display: grid;
     gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .mobile-store-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mobile-store-copy,
+  .mobile-store-copy p,
+  .mobile-store-copy small,
+  .mobile-store-side,
+  .mobile-metric-grid,
+  .mobile-orders-panel,
+  .mobile-quick-panel,
+  .mobile-order-list,
+  .mobile-order-card,
+  .mobile-quick-grid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   .mobile-metric-grid {
@@ -1735,6 +1779,24 @@ type Action =
     font-size: 24px;
   }
 
+  .mobile-order-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+
+  .service-pill,
+  .items,
+  .remark,
+  .order-time,
+  .mobile-store-copy strong,
+  .mobile-quick-link strong {
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .new-order-banner,
   .mobile-new-order-banner {
     padding: 12px 13px;
@@ -1747,7 +1809,15 @@ type Action =
 
   .mobile-sound-toggle {
     min-height: 30px;
+    width: 100%;
+    max-width: 100%;
   }
 
+}
+
+@media (max-width: 480px) {
+  .mobile-metric-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
