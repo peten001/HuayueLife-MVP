@@ -4,8 +4,6 @@ import PlatformLayout from '@/layouts/PlatformLayout.vue';
 import LoginPage from '@/pages/LoginPage.vue';
 import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
 import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
-import MerchantChangePasswordPage from '@/pages/MerchantChangePasswordPage.vue';
-import PrintersPage from '@/pages/PrintersPage.vue';
 import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
@@ -126,12 +124,11 @@ const router = createRouter({
         {
           path: 'merchant/profile',
           component: MerchantProfilePage,
-          meta: { roles: ['OWNER'] },
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
           path: 'merchant/profile/change-password',
-          component: MerchantChangePasswordPage,
-          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
+          redirect: '/merchant/profile',
         },
         {
           path: 'merchant/business-settings',
@@ -139,13 +136,11 @@ const router = createRouter({
         },
         {
           path: 'reports',
-          component: () => import('@/pages/ReportSettingsPage.vue'),
-          meta: { roles: ['OWNER', 'MANAGER'], feature: 'reports' },
+          redirect: '/merchant/profile',
         },
         {
           path: 'merchant/printers',
-          component: PrintersPage,
-          meta: { roles: ['OWNER', 'MANAGER'], feature: 'printers' },
+          redirect: '/merchant/profile',
         },
         {
           path: 'menu/categories',
@@ -228,7 +223,7 @@ router.beforeEach(async (to) => {
     if (to.path === '/login') {
       if (!authenticated) return true;
       const mustChangePassword = await resolveMerchantPasswordFlag();
-      if (mustChangePassword) return '/merchant/profile/change-password';
+      if (mustChangePassword) return '/merchant/profile';
       const role = await resolveMerchantRole();
       if (!role) return '/login';
       return '/dashboard';
@@ -246,8 +241,8 @@ router.beforeEach(async (to) => {
         return '/dashboard';
       }
       const mustChangePassword = await resolveMerchantPasswordFlag();
-      if (mustChangePassword && to.path !== '/merchant/profile/change-password') {
-        return '/merchant/profile/change-password';
+      if (mustChangePassword && to.path !== '/merchant/profile') {
+        return '/merchant/profile';
       }
     }
     return true;

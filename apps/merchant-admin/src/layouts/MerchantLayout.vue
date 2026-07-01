@@ -25,31 +25,23 @@ const navByRole: Record<
   Array<[string, TranslationKey, MerchantFeature?]>
 > = {
   OWNER: [
-    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
-    ['/merchant/profile/change-password', 'changePassword'],
-    ['/reports', 'dailyReport', 'reports'],
-    ['/merchant/printers', 'printerManagement', 'printers'],
     ['/menu/categories', 'categories', 'products'],
     ['/menu/products', 'products', 'products'],
     ['/tables', 'tables', 'tables'],
     ['/staff', 'staffManagement'],
   ],
   MANAGER: [
-    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
-    ['/merchant/profile/change-password', 'changePassword'],
-    ['/merchant/printers', 'printerManagement', 'printers'],
-    ['/reports', 'dailyReport', 'reports'],
+    ['/merchant/profile', 'storeSettings'],
     ['/menu/categories', 'categories', 'products'],
     ['/menu/products', 'products', 'products'],
     ['/tables', 'tables', 'tables'],
   ],
   STAFF: [
-    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
-    ['/merchant/profile/change-password', 'changePassword'],
+    ['/merchant/profile', 'storeSettings'],
   ],
 };
 
@@ -74,7 +66,7 @@ const mobileTabsByRole: Record<
   STAFF: [
     { path: '/dashboard', label: 'dashboard', icon: '🏠' },
     { path: '/orders', label: 'orders', icon: '🧾' },
-    { path: '/merchant/profile/change-password', label: 'changePassword', icon: '🔑' },
+    { path: '/merchant/profile', label: 'storeSettings', icon: '🏪' },
     { action: 'more', label: 'my', icon: '👤' },
   ],
 };

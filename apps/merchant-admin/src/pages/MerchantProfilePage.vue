@@ -1,13 +1,39 @@
 <script setup lang="ts">
 import axios from 'axios';
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
-import { getProfile, updateProfile } from '@/api/merchant';
+import { changeMerchantPassword, getProfile, updateProfile } from '@/api/merchant';
+import {
+  createPrinter,
+  deletePrinter,
+  getPrinters,
+  testPrinter,
+  updatePrinter,
+} from '@/api/printers';
+import {
+  getReportFeature,
+  getReportSettings,
+  updateReportSettings,
+} from '@/api/reports';
 import { useI18n } from '@/i18n';
 import { resolveMediaUrl } from '@/utils/media';
-import { hasMerchantCapability } from '@/utils/merchant-capabilities';
-import type { MerchantProfile, UpdateMerchantProfilePayload } from '@/types/api';
+import {
+  canAccessMerchantFeature,
+  hasMerchantCapability,
+} from '@/utils/merchant-capabilities';
+import { getMerchantStaff, setMerchantStaff } from '@/utils/storage';
+import type {
+  MerchantProfile,
+  MerchantReportSettings,
+  PrintLanguage,
+  PrinterEncoding,
+  PrinterPayload,
+  PrinterSetting,
+  PrinterUsageType,
+  UpdateMerchantProfilePayload,
+} from '@/types/api';
 
 type WeekdayKey =
   | 'monday'
@@ -38,13 +64,24 @@ const WEEKDAY_KEYS: WeekdayKey[] = [
 const DEFAULT_START = '10:00';
 const DEFAULT_END = '22:00';
 
+const router = useRouter();
 const { locale, t } = useI18n();
 const pageMessage = ref('');
 const noticeMessage = ref('');
 const settingsMessage = ref('');
+const reportMessage = ref('');
+const passwordMessage = ref('');
+const printerMessage = ref('');
 const noticeSaving = ref(false);
 const settingsSaving = ref(false);
+const reportSaving = ref(false);
+const passwordSaving = ref(false);
+const printersLoading = ref(false);
+const printerModalOpen = ref(false);
+const printerSaving = ref(false);
+const testingPrinterId = ref('');
 const profile = ref<MerchantProfile | null>(null);
+const reportFeatureAvailable = ref(false);
 const noticeForm = reactive({
   notice: '',
 });
@@ -52,6 +89,32 @@ const settingsForm = reactive({
   minimumDeliveryAmountVnd: 0,
   deliveryFeeVnd: 0,
   deliveryRadiusKm: 0,
+});
+const reportForm = reactive<MerchantReportSettings>({
+  enabled: false,
+  zaloRecipient: '',
+  pushTime: '22:00',
+  language: 'zh',
+  aiSuggestions: false,
+});
+const passwordForm = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+});
+const printers = ref<PrinterSetting[]>([]);
+const printerForm = reactive({
+  id: '',
+  name: '',
+  ipAddress: '',
+  port: 9100,
+  paperWidth: 80 as 58 | 80,
+  usageType: 'GENERAL' as PrinterUsageType,
+  encoding: 'UTF8' as PrinterEncoding,
+  copies: 1,
+  language: 'zh' as PrintLanguage,
+  autoPrintEnabled: true,
+  isDefault: true,
 });
 const schedule = ref<DaySchedule[]>(createDefaultSchedule());
 
@@ -87,6 +150,14 @@ const clientVisibilityLabel = computed(() =>
 const deliveryCapabilityEnabled = computed(() =>
   hasMerchantCapability(profile.value, 'deliveryEnabled'),
 );
+const currentRole = computed(() => getMerchantStaff()?.role ?? 'STAFF');
+const canEditStoreSettings = computed(() => currentRole.value !== 'STAFF');
+const canManageReports = computed(() => currentRole.value !== 'STAFF');
+const canManagePrinters = computed(() => currentRole.value !== 'STAFF');
+const printerFeatureEnabled = computed(() =>
+  canAccessMerchantFeature(profile.value, 'printers'),
+);
+const printerSectionVisible = computed(() => canManagePrinters.value);
 
 onMounted(loadProfile);
 
@@ -104,6 +175,12 @@ async function loadProfile() {
     schedule.value = parsed.schedule;
     if (parsed.warning) {
       settingsMessage.value = t('businessHoursLoadWarning');
+    }
+    if (canManageReports.value) {
+      await loadReportSettings();
+    }
+    if (canManagePrinters.value) {
+      await loadPrinters();
     }
   } catch (error) {
     pageMessage.value = errorMessage(error);
@@ -154,6 +231,244 @@ async function saveBusinessSettings() {
   } finally {
     settingsSaving.value = false;
   }
+}
+
+async function loadReportSettings() {
+  reportMessage.value = '';
+  if (!canManageReports.value) return;
+  try {
+    const feature = await getReportFeature();
+    reportFeatureAvailable.value = feature.enabled;
+    if (!feature.enabled) return;
+    const settings = await getReportSettings();
+    Object.assign(reportForm, settings);
+  } catch (error) {
+    reportMessage.value = errorMessage(error);
+  }
+}
+
+async function saveReportSettings() {
+  if (!reportFeatureAvailable.value) return;
+  reportSaving.value = true;
+  reportMessage.value = '';
+  try {
+    const payload: MerchantReportSettings = {
+      enabled: reportForm.enabled,
+      zaloRecipient: reportForm.zaloRecipient.trim(),
+      pushTime: reportForm.pushTime,
+      language: reportForm.language,
+      aiSuggestions: reportForm.aiSuggestions,
+    };
+    const settings = await updateReportSettings(payload);
+    Object.assign(reportForm, settings);
+    reportMessage.value = t('reportSettingsSaved');
+  } catch (error) {
+    reportMessage.value = errorMessage(error);
+  } finally {
+    reportSaving.value = false;
+  }
+}
+
+async function changePassword() {
+  passwordSaving.value = true;
+  passwordMessage.value = '';
+  try {
+    await changeMerchantPassword(passwordForm);
+    const staff = getMerchantStaff();
+    if (staff) {
+      setMerchantStaff({ ...staff, mustChangePassword: false });
+    }
+    passwordMessage.value = t('passwordChangedCompleteProfile');
+    passwordForm.currentPassword = '';
+    passwordForm.newPassword = '';
+    passwordForm.confirmPassword = '';
+    await router.push('/merchant/profile?welcome=1');
+  } catch (error) {
+    passwordMessage.value = errorMessage(error);
+  } finally {
+    passwordSaving.value = false;
+  }
+}
+
+function printerLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
+  return labels[locale.value];
+}
+
+function resetPrinterForm() {
+  Object.assign(printerForm, {
+    id: '',
+    name: '',
+    ipAddress: '',
+    port: 9100,
+    paperWidth: 80,
+    usageType: 'GENERAL',
+    encoding: 'UTF8',
+    copies: 1,
+    language: 'zh',
+    autoPrintEnabled: true,
+    isDefault: true,
+  });
+}
+
+function openCreatePrinter() {
+  resetPrinterForm();
+  printerModalOpen.value = true;
+}
+
+function openEditPrinter(row: PrinterSetting) {
+  Object.assign(printerForm, {
+    id: row.id,
+    name: row.name,
+    ipAddress: row.ipAddress,
+    port: row.port,
+    paperWidth: row.paperWidth === 'WIDTH_58' ? 58 : 80,
+    usageType: row.usageType,
+    encoding: row.encoding,
+    copies: row.copies,
+    language: row.language,
+    autoPrintEnabled: row.autoPrintEnabled,
+    isDefault: row.isDefault,
+  });
+  printerModalOpen.value = true;
+}
+
+function closePrinterModal() {
+  printerModalOpen.value = false;
+  resetPrinterForm();
+}
+
+function buildPrinterPayload(): PrinterPayload {
+  return {
+    name: printerForm.name,
+    ipAddress: printerForm.ipAddress,
+    port: Number(printerForm.port),
+    paperWidth: printerForm.paperWidth,
+    usageType: printerForm.usageType,
+    encoding: printerForm.encoding,
+    copies: Number(printerForm.copies),
+    language: printerForm.language,
+    autoPrintEnabled: printerForm.autoPrintEnabled,
+    isDefault: printerForm.isDefault,
+  };
+}
+
+async function loadPrinters() {
+  printerMessage.value = '';
+  if (!canManagePrinters.value || !printerFeatureEnabled.value) return;
+  try {
+    printersLoading.value = true;
+    printers.value = await getPrinters();
+  } catch (error) {
+    printerMessage.value = errorMessage(error);
+  } finally {
+    printersLoading.value = false;
+  }
+}
+
+async function savePrinter(options: { testAfterSave?: boolean } = {}) {
+  try {
+    printerSaving.value = true;
+    const saved = printerForm.id
+      ? await updatePrinter(printerForm.id, buildPrinterPayload())
+      : await createPrinter(buildPrinterPayload());
+    await loadPrinters();
+    if (options.testAfterSave) {
+      await runPrinterTest(saved.id);
+    } else {
+      printerMessage.value = printerLabel({
+        zh: '打印机已保存',
+        vi: 'Đã lưu máy in',
+        en: 'Printer saved',
+      });
+    }
+    closePrinterModal();
+  } catch (error) {
+    printerMessage.value = errorMessage(error);
+  } finally {
+    printerSaving.value = false;
+  }
+}
+
+async function removePrinter(row: PrinterSetting) {
+  if (!confirm(printerLabel({
+    zh: `删除打印机“${row.name}”？`,
+    vi: `Xóa máy in "${row.name}"?`,
+    en: `Delete printer "${row.name}"?`,
+  }))) return;
+  try {
+    await deletePrinter(row.id);
+    await loadPrinters();
+    printerMessage.value = printerLabel({
+      zh: '打印机已删除',
+      vi: 'Đã xóa máy in',
+      en: 'Printer deleted',
+    });
+  } catch (error) {
+    printerMessage.value = errorMessage(error);
+  }
+}
+
+async function runPrinterTest(id: string) {
+  try {
+    testingPrinterId.value = id;
+    const result = await testPrinter(id);
+    await loadPrinters();
+    printerMessage.value = result.success
+      ? printerLabel({
+          zh: '测试打印已发送',
+          vi: 'Đã gửi lệnh in thử',
+          en: 'Test print sent',
+        })
+      : result.errorMessage || printerLabel({
+          zh: '测试打印失败',
+          vi: 'In thử thất bại',
+          en: 'Test print failed',
+        });
+  } catch (error) {
+    printerMessage.value = errorMessage(error);
+  } finally {
+    testingPrinterId.value = '';
+  }
+}
+
+async function setDefaultPrinter(row: PrinterSetting) {
+  try {
+    await updatePrinter(row.id, { isDefault: true });
+    await loadPrinters();
+    printerMessage.value = printerLabel({
+      zh: '默认打印机已更新',
+      vi: 'Đã cập nhật máy in mặc định',
+      en: 'Default printer updated',
+    });
+  } catch (error) {
+    printerMessage.value = errorMessage(error);
+  }
+}
+
+function printerStatusLabel(row: PrinterSetting) {
+  return printerLabel({
+    zh: row.status === 'ONLINE' ? '在线' : row.status === 'OFFLINE' ? '离线' : '未测试',
+    vi: row.status === 'ONLINE' ? 'Online' : row.status === 'OFFLINE' ? 'Offline' : 'Chưa kiểm tra',
+    en: row.status === 'ONLINE' ? 'Online' : row.status === 'OFFLINE' ? 'Offline' : 'Untested',
+  });
+}
+
+function printerLanguageLabel(value: PrintLanguage) {
+  return {
+    zh: '中文',
+    vi: 'Tiếng Việt',
+    en: 'English',
+  }[value];
+}
+
+function printerUsageTypeLabel(value: PrinterUsageType) {
+  const labels = {
+    FRONT_DESK: { zh: '前台', vi: 'Quầy trước', en: 'Front Desk' },
+    KITCHEN: { zh: '厨房', vi: 'Bếp', en: 'Kitchen' },
+    BAR: { zh: '吧台', vi: 'Quầy bar', en: 'Bar' },
+    GENERAL: { zh: '通用', vi: 'Chung', en: 'General' },
+  };
+  return printerLabel(labels[value]);
 }
 
 function buildNoticePayload(): UpdateMerchantProfilePayload {
@@ -327,11 +642,7 @@ function toMinutes(value: string) {
 </script>
 
 <template>
-  <PageHeader :title="t('storeSettings')" :description="t('storeSettingsDescription')">
-    <RouterLink class="text-link" to="/merchant/profile/change-password">
-      {{ t('changePassword') }}
-    </RouterLink>
-  </PageHeader>
+  <PageHeader :title="t('storeSettings')" :description="t('storeSettingsDescription')" />
 
   <p v-if="pageMessage" class="message">{{ pageMessage }}</p>
 
@@ -440,7 +751,7 @@ function toMinutes(value: string) {
     </div>
   </section>
 
-  <form class="card notice-card" @submit.prevent="saveNotice">
+  <form v-if="canEditStoreSettings" class="card notice-card" @submit.prevent="saveNotice">
     <div class="section-heading">
       <div>
         <h2>{{ t('merchantNotice') }}</h2>
@@ -456,7 +767,7 @@ function toMinutes(value: string) {
     </div>
   </form>
 
-  <form class="card settings-card" @submit.prevent="saveBusinessSettings">
+  <form v-if="canEditStoreSettings" class="card settings-card" @submit.prevent="saveBusinessSettings">
     <div class="section-heading">
       <div>
         <h2>{{ t('businessHoursSection') }}</h2>
@@ -531,6 +842,189 @@ function toMinutes(value: string) {
       <button :disabled="settingsSaving">{{ settingsSaving ? t('saving') : t('saveSettings') }}</button>
     </div>
   </form>
+
+  <section v-if="printerSectionVisible" class="card printer-settings-card">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('printerManagement') }}</h2>
+        <p>{{ t('printerSettingsSectionDescription') }}</p>
+      </div>
+      <button v-if="printerFeatureEnabled" type="button" @click="openCreatePrinter">
+        {{ t('addPrinter') }}
+      </button>
+    </div>
+
+    <p v-if="printerMessage" class="message">{{ printerMessage }}</p>
+    <p v-if="!printerFeatureEnabled" class="settings-disabled-tip">{{ t('printerFeatureDisabled') }}</p>
+
+    <div v-else class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>{{ t('printerName') }}</th>
+            <th>{{ t('type') }}</th>
+            <th>{{ t('usageType') }}</th>
+            <th>{{ t('address') }}</th>
+            <th>{{ t('paperWidth') }}</th>
+            <th>{{ t('language') }}</th>
+            <th>{{ t('printEncoding') }}</th>
+            <th>{{ t('autoPrint') }}</th>
+            <th>{{ t('status') }}</th>
+            <th>{{ t('actions') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in printers" :key="row.id">
+            <td>
+              <strong>{{ row.name }}</strong>
+              <span v-if="row.isDefault" class="badge success">{{ t('defaultPrinter') }}</span>
+            </td>
+            <td>{{ t('networkPrinter') }}</td>
+            <td>{{ printerUsageTypeLabel(row.usageType) }}</td>
+            <td>{{ row.ipAddress }}:{{ row.port }}</td>
+            <td>{{ row.paperWidth === 'WIDTH_58' ? '58mm' : '80mm' }} × {{ row.copies }}</td>
+            <td>{{ printerLanguageLabel(row.language) }}</td>
+            <td>{{ row.encoding }}</td>
+            <td>{{ row.autoPrintEnabled ? t('enabled') : t('disable') }}</td>
+            <td>
+              <span :class="['badge', row.status === 'ONLINE' ? 'success' : row.status === 'OFFLINE' ? 'danger-badge' : 'muted']">
+                {{ printerStatusLabel(row) }}
+              </span>
+            </td>
+            <td class="actions">
+              <button class="small secondary" type="button" @click="openEditPrinter(row)">{{ t('edit') }}</button>
+              <button class="small" type="button" :disabled="testingPrinterId === row.id" @click="runPrinterTest(row.id)">
+                {{ t('testPrint') }}
+              </button>
+              <button v-if="!row.isDefault" class="small secondary" type="button" @click="setDefaultPrinter(row)">
+                {{ t('setDefaultPrinter') }}
+              </button>
+              <button class="small danger" type="button" @click="removePrinter(row)">
+                {{ t('delete') }}
+              </button>
+            </td>
+          </tr>
+          <tr v-if="!printers.length && !printersLoading">
+            <td colspan="10" class="empty">{{ t('noPrinters') }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <form v-if="canManageReports" class="card report-settings-card" @submit.prevent="saveReportSettings">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('dailyReport') }}</h2>
+        <p>{{ t('reportSettingsSectionDescription') }}</p>
+      </div>
+    </div>
+
+    <p v-if="reportMessage" class="message">{{ reportMessage }}</p>
+
+    <div v-if="reportFeatureAvailable" class="report-settings-grid">
+      <label class="check-row">
+        <input v-model="reportForm.enabled" type="checkbox" />
+        {{ t('enableDailyReportPush') }}
+      </label>
+      <label>
+        {{ t('zaloRecipient') }}
+        <input v-model="reportForm.zaloRecipient" type="text" placeholder="zalo_user_or_phone" />
+      </label>
+    </div>
+    <p v-else class="settings-disabled-tip">{{ t('reportFeatureDisabled') }}</p>
+
+    <div class="form-actions">
+      <span class="message"></span>
+      <button v-if="reportFeatureAvailable" :disabled="reportSaving">
+        {{ reportSaving ? t('saving') : t('saveReportSettings') }}
+      </button>
+    </div>
+  </form>
+
+  <form class="card password-card" @submit.prevent="changePassword">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('accountSecuritySection') }}</h2>
+        <p>{{ t('changePasswordDescription') }}</p>
+      </div>
+    </div>
+    <div class="settings-grid">
+      <label>
+        {{ t('currentPassword') }}
+        <input v-model="passwordForm.currentPassword" type="password" required minlength="8" />
+      </label>
+      <label>
+        {{ t('newPassword') }}
+        <input v-model="passwordForm.newPassword" type="password" required minlength="8" />
+      </label>
+      <label>
+        {{ t('confirmPassword') }}
+        <input v-model="passwordForm.confirmPassword" type="password" required minlength="8" />
+      </label>
+    </div>
+    <div class="form-actions">
+      <span class="message">{{ passwordMessage }}</span>
+      <button :disabled="passwordSaving">{{ passwordSaving ? t('saving') : t('changePassword') }}</button>
+    </div>
+  </form>
+
+  <div v-if="printerModalOpen" class="modal-backdrop" @click.self="closePrinterModal">
+    <form class="card printer-modal" @submit.prevent="savePrinter()">
+      <div class="printer-modal-header">
+        <h2>{{ printerForm.id ? t('editPrinter') : t('addPrinter') }}</h2>
+      </div>
+      <div class="printer-modal-body">
+        <label>{{ t('printerName') }}<input v-model="printerForm.name" required /></label>
+        <label>{{ t('ipAddress') }}<input v-model="printerForm.ipAddress" required placeholder="192.168.1.100" /></label>
+        <label>{{ t('port') }}<input v-model.number="printerForm.port" type="number" min="1" max="65535" required /></label>
+        <label>
+          {{ t('usageType') }}
+          <select v-model="printerForm.usageType">
+            <option value="FRONT_DESK">{{ printerUsageTypeLabel('FRONT_DESK') }}</option>
+            <option value="KITCHEN">{{ printerUsageTypeLabel('KITCHEN') }}</option>
+            <option value="BAR">{{ printerUsageTypeLabel('BAR') }}</option>
+            <option value="GENERAL">{{ printerUsageTypeLabel('GENERAL') }}</option>
+          </select>
+        </label>
+        <label>
+          {{ t('paperWidth') }}
+          <select v-model.number="printerForm.paperWidth">
+            <option :value="58">58mm</option>
+            <option :value="80">80mm</option>
+          </select>
+        </label>
+        <label>{{ t('copies') }}<input v-model.number="printerForm.copies" type="number" min="1" max="9" required /></label>
+        <label>
+          {{ t('language') }}
+          <select v-model="printerForm.language">
+            <option value="zh">中文</option>
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label>
+          {{ t('printEncoding') }}
+          <select v-model="printerForm.encoding">
+            <option value="UTF8">UTF8</option>
+            <option value="GBK">GBK</option>
+            <option value="CP1258">CP1258</option>
+          </select>
+        </label>
+        <label class="check-row"><input v-model="printerForm.autoPrintEnabled" type="checkbox" />{{ t('autoPrint') }}</label>
+        <label class="check-row"><input v-model="printerForm.isDefault" type="checkbox" />{{ t('defaultPrinter') }}</label>
+      </div>
+      <div class="printer-modal-footer">
+        <div class="actions modal-actions">
+          <button type="button" class="secondary" @click="closePrinterModal">{{ t('cancel') }}</button>
+          <button type="submit" :disabled="printerSaving">{{ t('saveChanges') }}</button>
+          <button type="button" :disabled="printerSaving" @click="savePrinter({ testAfterSave: true })">
+            {{ t('saveAndTestPrint') }}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
 </template>
 
 <style scoped>
@@ -639,16 +1133,152 @@ function toMinutes(value: string) {
   gap: 18px;
 }
 
+.report-settings-card,
+.printer-settings-card,
+.password-card {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.report-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px 18px;
 }
 
+.report-settings-grid label,
 .settings-grid label,
 .time-field {
   display: grid;
   gap: 8px;
+}
+
+.check-row {
+  display: flex !important;
+  gap: 8px;
+  align-items: center;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-wrap th,
+.table-wrap td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table-wrap th {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.table-wrap td strong {
+  margin-right: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.success {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.badge.muted {
+  color: #64748b;
+  background: #e2e8f0;
+}
+
+.badge.danger-badge {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(17 24 39 / 42%);
+}
+
+.printer-modal {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.printer-modal h2 {
+  margin: 0;
+}
+
+.printer-modal-header {
+  flex: 0 0 auto;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.printer-modal-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding: 16px 0;
+  overflow: auto;
+}
+
+.printer-modal label {
+  display: grid;
+  gap: 8px;
+}
+
+.printer-modal input,
+.printer-modal select {
+  min-width: 0;
+}
+
+.printer-modal-footer {
+  flex: 0 0 auto;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.modal-actions {
+  justify-content: flex-end;
 }
 
 .delivery-settings {
@@ -713,8 +1343,10 @@ function toMinutes(value: string) {
   .readonly-grid,
   .readonly-grid--status,
   .readonly-images-grid,
+  .report-settings-grid,
   .settings-grid,
-  .business-hours-row {
+  .business-hours-row,
+  .printer-modal-body {
     grid-template-columns: 1fr;
   }
 
