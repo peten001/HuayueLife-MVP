@@ -1430,6 +1430,13 @@ type Action =
   min-width: 0;
 }
 
+.mobile-store-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  min-width: 0;
+}
+
 .mobile-store-side .mobile-sound-toggle {
   justify-self: stretch;
 }
@@ -1480,6 +1487,12 @@ type Action =
   color: #5f6b63;
   font-size: 13px;
   font-weight: 700;
+}
+
+.mobile-metric-head span:last-child {
+  min-width: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .mobile-metric-icon {
@@ -1725,8 +1738,10 @@ type Action =
 
   .mobile-store-card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
+    gap: 12px;
+    min-height: 0;
   }
 
   .mobile-store-copy,
@@ -1747,10 +1762,16 @@ type Action =
 
   .mobile-metric-grid {
     gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mobile-metric-card strong {
-    font-size: 23px;
+    font-size: 26px;
+  }
+
+  .mobile-metric-card {
+    min-height: 112px;
+    padding: 16px 14px;
   }
 
   .mobile-orders-panel,
@@ -1759,7 +1780,7 @@ type Action =
   }
 
   .mobile-store-card {
-    padding: 13px 13px 12px;
+    padding: 16px 14px;
   }
 
   .mobile-audio-debug-panel {
@@ -1776,7 +1797,12 @@ type Action =
   }
 
   .mobile-store-count {
-    font-size: 24px;
+    font-size: 30px;
+  }
+
+  .mobile-store-side {
+    width: 112px;
+    align-self: stretch;
   }
 
   .mobile-order-head {
@@ -1808,14 +1834,42 @@ type Action =
   }
 
   .mobile-sound-toggle {
-    min-height: 30px;
-    width: 100%;
+    min-height: 32px;
+    width: auto;
     max-width: 100%;
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 11px;
   }
 
 }
 
 @media (max-width: 480px) {
+  .mobile-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mobile-store-card {
+    padding: 14px 12px;
+  }
+
+  .mobile-store-side {
+    width: 104px;
+  }
+
+  .mobile-store-count {
+    font-size: 28px;
+  }
+
+  .mobile-sound-toggle {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 340px) {
   .mobile-metric-grid {
     grid-template-columns: 1fr;
   }
