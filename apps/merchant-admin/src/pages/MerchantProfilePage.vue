@@ -59,6 +59,16 @@ const WEEKDAY_KEYS: WeekdayKey[] = [
   'saturday',
   'sunday',
 ];
+const WEEKDAY_INDEX_MAP: Record<number, WeekdayKey> = {
+  0: 'sunday',
+  1: 'monday',
+  2: 'tuesday',
+  3: 'wednesday',
+  4: 'thursday',
+  5: 'friday',
+  6: 'saturday',
+  7: 'sunday',
+};
 
 const DEFAULT_START = '10:00';
 const DEFAULT_END = '22:00';
@@ -518,50 +528,39 @@ function createDefaultSchedule(): DaySchedule[] {
   }));
 }
 
+function createClosedSchedule(): DaySchedule[] {
+  return WEEKDAY_KEYS.map((key) => ({
+    key,
+    enabled: false,
+    start: DEFAULT_START,
+    end: DEFAULT_END,
+  }));
+}
+
 function parseBusinessHours(raw: unknown): {
   schedule: DaySchedule[];
   warning: boolean;
 } {
-  const next = createDefaultSchedule();
-
-  if (!isPlainObject(raw)) {
+  const normalized = normalizeBusinessHoursInput(raw);
+  if (normalized.value === null || normalized.value === undefined || normalized.value === '') {
     return {
-      schedule: next,
-      warning: true,
+      schedule: createDefaultSchedule(),
+      warning: normalized.warning,
     };
   }
 
-  let warning = false;
-  for (const day of next) {
-    const value = raw[day.key];
-
-    if (!Array.isArray(value) || value.length === 0) {
-      day.enabled = false;
-      day.start = DEFAULT_START;
-      day.end = DEFAULT_END;
-      continue;
-    }
-
-    const first = value[0];
-    if (typeof first !== 'string') {
-      day.enabled = false;
-      warning = true;
-      continue;
-    }
-
-    const parsed = parseTimeRange(first);
-    if (!parsed) {
-      day.enabled = false;
-      warning = true;
-      continue;
-    }
-
-    day.enabled = true;
-    day.start = parsed.start;
-    day.end = parsed.end;
+  const parsed = parseBusinessHoursCollection(normalized.value);
+  if (!parsed.recognized) {
+    return {
+      schedule: createDefaultSchedule(),
+      warning: normalized.warning || parsed.warning,
+    };
   }
 
-  return { schedule: next, warning };
+  return {
+    schedule: parsed.schedule,
+    warning: normalized.warning || parsed.warning,
+  };
 }
 
 function validateSchedule(value: DaySchedule[]) {
@@ -614,6 +613,298 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeBusinessHoursInput(raw: unknown): {
+  value: unknown;
+  warning: boolean;
+} {
+  if (typeof raw !== 'string') {
+    return { value: raw, warning: false };
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { value: null, warning: false };
+  }
+
+  try {
+    return {
+      value: JSON.parse(trimmed),
+      warning: false,
+    };
+  } catch {
+    return {
+      value: null,
+      warning: true,
+    };
+  }
+}
+
+function parseBusinessHoursCollection(raw: unknown): {
+  schedule: DaySchedule[];
+  recognized: boolean;
+  warning: boolean;
+} {
+  if (Array.isArray(raw)) {
+    return parseBusinessHoursArray(raw);
+  }
+
+  if (!isPlainObject(raw)) {
+    return {
+      schedule: createDefaultSchedule(),
+      recognized: false,
+      warning: false,
+    };
+  }
+
+  for (const key of ['schedule', 'businessHours', 'hours']) {
+    if (key in raw) {
+      const nested = parseBusinessHoursCollection(raw[key]);
+      if (nested.recognized || nested.warning) {
+        return nested;
+      }
+    }
+  }
+
+  return parseBusinessHoursObject(raw);
+}
+
+function parseBusinessHoursArray(raw: unknown[]): {
+  schedule: DaySchedule[];
+  recognized: boolean;
+  warning: boolean;
+} {
+  const next = createClosedSchedule();
+  let recognized = false;
+  let warning = false;
+
+  for (const item of raw) {
+    if (!isPlainObject(item)) {
+      if (item !== null && item !== undefined) warning = true;
+      continue;
+    }
+
+    const dayKey = resolveDayKey(
+      item.dayOfWeek
+      ?? item.weekday
+      ?? item.day
+      ?? item.key
+      ?? item.name
+      ?? item.dayKey,
+    );
+    if (!dayKey) {
+      warning = true;
+      continue;
+    }
+
+    recognized = true;
+    const parsed = parseDayEntry(item);
+    applyParsedDay(next, dayKey, parsed);
+    warning = warning || parsed.warning;
+  }
+
+  return { schedule: recognized ? next : createDefaultSchedule(), recognized, warning };
+}
+
+function parseBusinessHoursObject(raw: Record<string, unknown>): {
+  schedule: DaySchedule[];
+  recognized: boolean;
+  warning: boolean;
+} {
+  const next = createClosedSchedule();
+  let recognized = false;
+  let warning = false;
+
+  for (const [key, value] of Object.entries(raw)) {
+    const dayKey = resolveDayKey(key);
+    if (!dayKey) continue;
+
+    recognized = true;
+    const parsed = parseDayEntry(value);
+    applyParsedDay(next, dayKey, parsed);
+    warning = warning || parsed.warning;
+  }
+
+  return { schedule: recognized ? next : createDefaultSchedule(), recognized, warning };
+}
+
+function applyParsedDay(scheduleValue: DaySchedule[], dayKey: WeekdayKey, parsed: {
+  enabled: boolean;
+  start: string;
+  end: string;
+  warning: boolean;
+}) {
+  const target = scheduleValue.find((item) => item.key === dayKey);
+  if (!target) return;
+  target.enabled = parsed.enabled;
+  target.start = parsed.start;
+  target.end = parsed.end;
+}
+
+function parseDayEntry(value: unknown): {
+  enabled: boolean;
+  start: string;
+  end: string;
+  warning: boolean;
+} {
+  if (typeof value === 'string') {
+    const parsed = parseTimeRange(value);
+    if (parsed) {
+      return { enabled: true, start: parsed.start, end: parsed.end, warning: false };
+    }
+    return { enabled: true, start: DEFAULT_START, end: DEFAULT_END, warning: true };
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return { enabled: false, start: DEFAULT_START, end: DEFAULT_END, warning: false };
+    }
+
+    for (const item of value) {
+      if (typeof item === 'string') {
+        const parsed = parseTimeRange(item);
+        if (parsed) {
+          return { enabled: true, start: parsed.start, end: parsed.end, warning: false };
+        }
+      } else if (isPlainObject(item)) {
+        const parsed = parseDayEntry(item);
+        if (!parsed.warning) {
+          return parsed;
+        }
+      }
+    }
+
+    return { enabled: true, start: DEFAULT_START, end: DEFAULT_END, warning: true };
+  }
+
+  if (!isPlainObject(value)) {
+    return { enabled: true, start: DEFAULT_START, end: DEFAULT_END, warning: true };
+  }
+
+  const enabled = resolveBooleanField(value, ['enabled', 'isOpen', 'open', 'active']);
+  const directRange = firstStringField(value, ['timeRange', 'range', 'hours']);
+  if (directRange) {
+    const parsed = parseTimeRange(directRange);
+    if (parsed) {
+      return {
+        enabled: enabled ?? true,
+        start: parsed.start,
+        end: parsed.end,
+        warning: false,
+      };
+    }
+  }
+
+  const start = firstTimeField(value, ['startTime', 'openTime', 'start', 'from']);
+  const end = firstTimeField(value, ['endTime', 'closeTime', 'end', 'to']);
+  if (start && end) {
+    const parsed = parseTimeRange(`${start}-${end}`);
+    if (parsed) {
+      return {
+        enabled: enabled ?? true,
+        start: parsed.start,
+        end: parsed.end,
+        warning: false,
+      };
+    }
+  }
+
+  for (const nestedKey of ['value', 'slot', 'range', 'period']) {
+    if (nestedKey in value) {
+      return parseDayEntry(value[nestedKey]);
+    }
+  }
+
+  for (const nestedKey of ['slots', 'ranges', 'periods']) {
+    const nested = value[nestedKey];
+    if (Array.isArray(nested)) {
+      return parseDayEntry(nested);
+    }
+  }
+
+  if (enabled === false) {
+    return { enabled: false, start: DEFAULT_START, end: DEFAULT_END, warning: false };
+  }
+
+  return { enabled: true, start: DEFAULT_START, end: DEFAULT_END, warning: true };
+}
+
+function resolveDayKey(value: unknown): WeekdayKey | null {
+  if (typeof value === 'number') {
+    return WEEKDAY_INDEX_MAP[value] ?? null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[_\s-]+/g, '');
+  const dayMap: Record<string, WeekdayKey> = {
+    monday: 'monday',
+    mon: 'monday',
+    tuesday: 'tuesday',
+    tue: 'tuesday',
+    tues: 'tuesday',
+    wednesday: 'wednesday',
+    wed: 'wednesday',
+    thursday: 'thursday',
+    thu: 'thursday',
+    thur: 'thursday',
+    thurs: 'thursday',
+    friday: 'friday',
+    fri: 'friday',
+    saturday: 'saturday',
+    sat: 'saturday',
+    sunday: 'sunday',
+    sun: 'sunday',
+  };
+
+  return dayMap[normalized] ?? null;
+}
+
+function resolveBooleanField(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean | undefined {
+  for (const key of keys) {
+    if (!(key in value)) continue;
+    const next = value[key];
+    if (typeof next === 'boolean') return next;
+    if (typeof next === 'number') return next !== 0;
+    if (typeof next === 'string') {
+      const normalized = next.trim().toLowerCase();
+      if (['true', '1', 'yes', 'open', 'enabled'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'closed', 'disabled'].includes(normalized)) return false;
+    }
+  }
+  return undefined;
+}
+
+function firstStringField(
+  value: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const next = value[key];
+    if (typeof next === 'string' && next.trim()) {
+      return next.trim();
+    }
+  }
+  return undefined;
+}
+
+function firstTimeField(
+  value: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  const next = firstStringField(value, keys);
+  if (!next) return undefined;
+  if (/^\d{1,2}:\d{2}$/.test(next)) {
+    const [hours, minutes] = next.split(':');
+    return `${hours.padStart(2, '0')}:${minutes}`;
+  }
+  return undefined;
+}
+
 function isValidTime(value: string) {
   if (!/^\d{2}:\d{2}$/.test(value)) {
     return false;
@@ -642,9 +933,6 @@ function toMinutes(value: string) {
       <div>
         <h1>{{ t('storeSettings') }}</h1>
         <p>{{ t('storeSettingsDescription') }}</p>
-      </div>
-      <div class="settings-inline-tip">
-        {{ t('storeManagedTipCompact') }}
       </div>
     </section>
 
@@ -723,6 +1011,9 @@ function toMinutes(value: string) {
             <img v-if="coverPreviewUrl" :src="coverPreviewUrl" :alt="t('merchantCover')" />
             <div v-else class="empty-preview">{{ t('noMerchantCover') }}</div>
           </div>
+          <div class="profile-maintenance-note">
+            {{ t('storeManagedTipCompact') }}
+          </div>
         </section>
       </div>
     </section>
@@ -733,7 +1024,7 @@ function toMinutes(value: string) {
       </div>
 
       <div class="settings-split settings-split--operations">
-        <div class="settings-column">
+        <div class="settings-column settings-column--operations-left">
           <section class="settings-subsection">
             <div class="subsection-header">
               <div>
@@ -783,9 +1074,9 @@ function toMinutes(value: string) {
           </section>
         </div>
 
-        <div class="settings-column settings-column--bordered">
-          <section class="settings-subsection">
-            <div class="subsection-header">
+        <div class="settings-column settings-column--bordered settings-column--operations-right">
+          <section class="settings-subsection settings-subsection--hours business-hours-section">
+            <div class="subsection-header business-hours-header">
               <div>
                 <h3>{{ t('businessHoursSection') }}</h3>
                 <p>{{ t('businessHoursSectionDescription') }}</p>
@@ -820,17 +1111,19 @@ function toMinutes(value: string) {
                         <span class="switch-slider" aria-hidden="true"></span>
                       </label>
                     </td>
-                    <td>
+                    <td class="time-cell">
                       <input
                         v-model="day.start"
+                        class="business-hours-time-input"
                         type="time"
                         :disabled="!day.enabled"
                         :step="60"
                       />
                     </td>
-                    <td>
+                    <td class="time-cell">
                       <input
                         v-model="day.end"
+                        class="business-hours-time-input"
                         type="time"
                         :disabled="!day.enabled"
                         :step="60"
@@ -873,8 +1166,20 @@ function toMinutes(value: string) {
             <p v-if="printerMessage" class="message card-message">{{ printerMessage }}</p>
             <p v-if="!printerFeatureEnabled" class="settings-disabled-tip">{{ t('printerFeatureDisabled') }}</p>
 
-            <div v-else class="table-wrap">
-              <table>
+            <div v-else class="table-wrap table-wrap--printers">
+              <table class="printer-table">
+                <colgroup>
+                  <col class="printer-col-name" />
+                  <col class="printer-col-type" />
+                  <col class="printer-col-usage" />
+                  <col class="printer-col-address" />
+                  <col class="printer-col-paper" />
+                  <col class="printer-col-language" />
+                  <col class="printer-col-encoding" />
+                  <col class="printer-col-auto" />
+                  <col class="printer-col-status" />
+                  <col class="printer-col-actions" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>{{ t('printerName') }}</th>
@@ -950,11 +1255,16 @@ function toMinutes(value: string) {
             <p v-if="reportMessage" class="message card-message">{{ reportMessage }}</p>
 
             <div v-if="reportFeatureAvailable" class="report-settings-grid">
-              <label class="switch-inline switch-inline--report">
-                <input v-model="reportForm.enabled" type="checkbox" />
+              <div class="switch-inline switch-inline--report" @click.stop>
+                <input
+                  v-model="reportForm.enabled"
+                  type="checkbox"
+                  @click.stop
+                  @change.stop
+                />
                 <span class="switch-slider" aria-hidden="true"></span>
                 <span>{{ t('enableDailyReportPush') }}</span>
-              </label>
+              </div>
               <label class="field-block">
                 <span>{{ t('zaloRecipient') }}</span>
                 <input v-model="reportForm.zaloRecipient" type="text" placeholder="zalo_user_or_phone" />
@@ -1102,17 +1412,16 @@ function toMinutes(value: string) {
 <style scoped>
 .store-settings-page {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 20px 24px 32px;
+  padding: 18px 24px 28px;
 }
 
 .settings-hero {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .settings-hero h1 {
@@ -1129,25 +1438,14 @@ function toMinutes(value: string) {
   line-height: 1.6;
 }
 
-.settings-inline-tip {
-  max-width: 360px;
-  padding: 8px 12px;
-  border: 1px solid #f5d36b;
-  border-radius: 8px;
-  background: #fff8db;
-  color: #7c5a00;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .page-message {
   margin: 0;
 }
 
 .settings-card-shell {
   display: grid;
-  gap: 18px;
-  padding: 20px 22px 22px;
+  gap: 16px;
+  padding: 18px 20px 20px;
   border: 1px solid #e5ebe8;
   border-radius: 18px;
   background: #fff;
@@ -1231,13 +1529,13 @@ function toMinutes(value: string) {
 .profile-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.92fr);
-  gap: 20px;
+  gap: 18px;
 }
 
 .overview-panel {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
 }
 
 .overview-panel h3 {
@@ -1286,6 +1584,17 @@ function toMinutes(value: string) {
   aspect-ratio: 16 / 9;
 }
 
+.profile-maintenance-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .cover-preview-card img {
   width: 100%;
   height: 100%;
@@ -1299,11 +1608,12 @@ function toMinutes(value: string) {
 
 .settings-split {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .settings-split--operations {
-  grid-template-columns: minmax(0, 0.44fr) minmax(0, 0.56fr);
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
+  gap: 28px;
 }
 
 .settings-split--tools {
@@ -1312,23 +1622,48 @@ function toMinutes(value: string) {
 
 .settings-column {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   align-content: start;
 }
 
 .settings-column--bordered {
-  padding-left: 18px;
+  padding-left: 16px;
   border-left: 1px solid #e5e7eb;
+}
+
+.settings-column--operations-left {
+  min-width: 0;
+}
+
+.settings-column--operations-right {
+  min-width: 0;
+  padding-left: 24px;
 }
 
 .settings-subsection {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .settings-subsection--divided {
-  padding-top: 18px;
+  padding-top: 16px;
   border-top: 1px solid #e5e7eb;
+}
+
+.settings-subsection--hours {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.business-hours-section {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.business-hours-header {
+  width: 100%;
 }
 
 .section-action {
@@ -1369,7 +1704,7 @@ function toMinutes(value: string) {
 }
 
 .notice-field textarea {
-  min-height: 132px;
+  min-height: 124px;
   padding: 12px;
   resize: vertical;
 }
@@ -1421,6 +1756,16 @@ function toMinutes(value: string) {
   line-height: 1.6;
 }
 
+.hours-table-wrap {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 16px;
+}
+
 .hours-table,
 .table-wrap table {
   width: 100%;
@@ -1429,6 +1774,9 @@ function toMinutes(value: string) {
 }
 
 .hours-table {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   table-layout: fixed;
   overflow: hidden;
   border: 1px solid #e5e7eb;
@@ -1436,22 +1784,22 @@ function toMinutes(value: string) {
 }
 
 .hours-col-day {
-  width: 60px;
+  width: 14%;
 }
 
 .hours-col-status {
-  width: 84px;
+  width: 18%;
 }
 
 .hours-col-time {
-  width: 118px;
+  width: 34%;
 }
 
 .hours-table th,
 .hours-table td,
 .table-wrap th,
 .table-wrap td {
-  padding: 8px 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: middle;
@@ -1461,7 +1809,7 @@ function toMinutes(value: string) {
 .table-wrap th {
   background: #f8fafc;
   color: #64748b;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1472,17 +1820,20 @@ function toMinutes(value: string) {
 
 .hours-day-cell {
   color: #111827;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .hours-table input {
-  width: 110px;
-  max-width: 100%;
+  width: 100%;
+  max-width: 120px;
+  min-width: 0;
   height: 34px;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 14px;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .switch-inline,
@@ -1495,8 +1846,10 @@ function toMinutes(value: string) {
 }
 
 .switch-inline--report {
+  position: relative;
   gap: 10px;
   min-height: 24px;
+  width: fit-content;
 }
 
 .switch-compact {
@@ -1552,16 +1905,109 @@ function toMinutes(value: string) {
 }
 
 .hours-status-cell {
-  text-align: center;
+  text-align: left;
 }
 
 .hours-status-cell .switch-compact {
-  margin: 0 auto;
+  margin: 0;
+}
+
+.time-cell {
+  min-width: 0;
+}
+
+.business-hours-time-input {
+  width: 100%;
+  max-width: 120px;
+  min-width: 0;
 }
 
 .report-settings-grid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table-wrap--printers table {
+  min-width: 1120px;
+}
+
+.printer-col-name {
+  width: 156px;
+}
+
+.printer-col-type {
+  width: 104px;
+}
+
+.printer-col-usage {
+  width: 72px;
+}
+
+.printer-col-address {
+  width: 188px;
+}
+
+.printer-col-paper {
+  width: 88px;
+}
+
+.printer-col-language {
+  width: 78px;
+}
+
+.printer-col-encoding {
+  width: 86px;
+}
+
+.printer-col-auto {
+  width: 88px;
+}
+
+.printer-col-status {
+  width: 78px;
+}
+
+.printer-col-actions {
+  width: 128px;
+}
+
+.table-wrap--printers th {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.table-wrap--printers td {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.table-wrap--printers td strong {
+  display: inline-block;
+  margin-right: 6px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.table-wrap--printers .badge {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.table-wrap--printers .actions {
+  gap: 6px;
+}
+
+.table-wrap--printers .small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .table-wrap td strong {
@@ -1689,6 +2135,10 @@ function toMinutes(value: string) {
     border-top: 1px solid #e5e7eb;
   }
 
+  .settings-column--operations-right {
+    padding-left: 0;
+  }
+
   .security-submit {
     justify-content: flex-start;
   }
@@ -1707,10 +2157,6 @@ function toMinutes(value: string) {
     align-items: flex-start;
   }
 
-  .settings-inline-tip {
-    max-width: none;
-  }
-
   .settings-grid--delivery,
   .printer-modal-body {
     grid-template-columns: 1fr;
@@ -1718,6 +2164,11 @@ function toMinutes(value: string) {
 
   .hours-table-wrap {
     overflow-x: auto;
+  }
+
+  .hours-table {
+    max-width: none;
+    min-width: 520px;
   }
 }
 </style>
