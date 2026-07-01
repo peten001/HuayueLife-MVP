@@ -4,7 +4,6 @@ import PlatformLayout from '@/layouts/PlatformLayout.vue';
 import LoginPage from '@/pages/LoginPage.vue';
 import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
 import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
-import CategoriesPage from '@/pages/CategoriesPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
 import DashboardPage from '@/pages/DashboardPage.vue';
@@ -144,7 +143,7 @@ const router = createRouter({
         },
         {
           path: 'menu/categories',
-          component: CategoriesPage,
+          redirect: '/menu/products?tab=categories',
           meta: { roles: ['OWNER', 'MANAGER'], feature: 'products' },
         },
         {
