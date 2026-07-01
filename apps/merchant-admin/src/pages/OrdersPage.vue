@@ -8,12 +8,8 @@ import PageHeader from '@/components/PageHeader.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
   clearNewPendingOrder,
-  enableOrderSound,
   isRecentNewPendingOrder,
   notifyNewPendingOrders,
-  orderSoundEnabled,
-  recentNewPendingOrderIds,
-  toggleOrderSound,
 } from '@/utils/order-notification';
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
@@ -80,16 +76,7 @@ if (filters.status === 'PENDING_ACCEPTANCE') {
   activeQuickStatus.value = 'PENDING';
 }
 
-const pendingCount = computed(
-  () => rows.value.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
-);
-const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
-const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
-const soundButtonLabel = computed(() =>
-  orderSoundEnabled.value ? t('soundEnabled') : t('enableSoundReminder'),
-);
 const chatEnabled = computed(() => canAccessMerchantFeature(merchant, 'chat'));
-const voiceNotifyEnabled = computed(() => canAccessMerchantFeature(merchant, 'voice'));
 const chatOrderId = ref('');
 const chatOrder = computed(
   () => rows.value.find((order) => order.id === chatOrderId.value) ?? null,
@@ -621,26 +608,9 @@ function selectQuickStatus(status: QuickStatus) {
   activeQuickStatus.value = status;
 }
 
-function showPendingOnly() {
-  filters.status = '';
-  filters.orderType = '';
-  activeCategory.value = 'ALL';
-  activeQuickStatus.value = 'PENDING';
-  void load();
-}
-
 function applyFilters() {
   activeQuickStatus.value = filters.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : 'ALL';
   void load();
-}
-
-async function handleSoundToggle() {
-  if (!voiceNotifyEnabled.value) return;
-  if (!orderSoundEnabled.value) {
-    await enableOrderSound(buildSpeechAnnouncement('enable-sound'));
-    return;
-  }
-  toggleOrderSound();
 }
 
 function orderItemsSummary(order: MerchantOrder) {
@@ -725,31 +695,6 @@ function todayInVietnam() {
         en: 'Track and process restaurant orders in real time',
       })"
     />
-
-    <div v-if="hasNewPendingOrders && voiceNotifyEnabled" class="orders-alert orders-alert-new">
-      <div>
-        <strong>{{ t('newOrderNotice') }}</strong>
-        <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
-      </div>
-      <button
-        type="button"
-        class="orders-sound-toggle"
-        :class="{ active: orderSoundEnabled }"
-        @click="handleSoundToggle"
-      >
-        {{ soundButtonLabel }}
-      </button>
-    </div>
-
-    <div v-if="pendingCount" class="orders-alert orders-alert-pending">
-      <div>
-        <strong>{{ t('pendingAcceptance') }}</strong>
-        <p>{{ t('pendingOrdersCount', { count: pendingCount }) }}</p>
-      </div>
-      <button type="button" class="orders-outline-button" @click="showPendingOnly">
-        {{ t('viewOrders') }}
-      </button>
-    </div>
 
     <form class="orders-filter-card" @submit.prevent="applyFilters">
       <label class="orders-filter-field">
@@ -987,7 +932,7 @@ function todayInVietnam() {
 <style scoped>
 .merchant-orders-page {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   max-width: 1280px;
 }
 
@@ -1006,7 +951,6 @@ function todayInVietnam() {
   font-size: 14px;
 }
 
-.orders-alert,
 .orders-filter-card,
 .orders-table-card {
   border: 1px solid #e5ebe8;
@@ -1014,37 +958,6 @@ function todayInVietnam() {
   background: #fff;
   box-shadow: 0 8px 24px rgb(15 23 42 / 4%);
 }
-
-.orders-alert {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-}
-
-.orders-alert strong {
-  color: #10261b;
-  font-size: 15px;
-}
-
-.orders-alert p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.orders-alert-new {
-  border-color: #f9d99a;
-  background: linear-gradient(180deg, #fff9ed 0%, #fffdf7 100%);
-}
-
-.orders-alert-pending {
-  border-color: #f5d59a;
-  background: #fffaf2;
-}
-
-.orders-sound-toggle,
 .orders-submit-button,
 .orders-primary-button {
   min-height: 42px;
@@ -1055,14 +968,9 @@ function todayInVietnam() {
   font-weight: 700;
 }
 
-.orders-sound-toggle:hover:not(:disabled),
 .orders-submit-button:hover:not(:disabled),
 .orders-primary-button:hover:not(:disabled) {
   background: #257231;
-}
-
-.orders-sound-toggle.active {
-  background: #1c6a27;
 }
 
 .orders-outline-button {
@@ -1086,8 +994,8 @@ function todayInVietnam() {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   align-items: end;
-  gap: 14px;
-  padding: 20px 24px;
+  gap: 12px;
+  padding: 16px 18px;
 }
 
 .orders-filter-field {
@@ -1108,15 +1016,15 @@ function todayInVietnam() {
 .order-category-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 15px;
+  gap: 14px;
 }
 
 .order-category-card {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  min-height: 114px;
-  padding: 18px 18px 16px;
+  gap: 12px;
+  min-height: 104px;
+  padding: 15px 16px 14px;
   border: 1px solid #edf1ef;
   border-radius: 16px;
   color: #111827;
@@ -1179,19 +1087,19 @@ function todayInVietnam() {
 }
 
 .order-category-copy strong {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .order-category-copy small {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .order-category-count {
   color: #111827;
-  font-size: 30px;
+  font-size: 27px;
   font-weight: 800;
   line-height: 1.1;
 }
@@ -1199,15 +1107,15 @@ function todayInVietnam() {
 .order-status-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
 .order-status-chip {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 14px;
   border: 1px solid #dbe3df;
   border-radius: 10px;
   color: #425466;
@@ -1279,7 +1187,7 @@ function todayInVietnam() {
   min-height: 20px;
   margin: 0;
   color: #c2410c;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .orders-table-card {
@@ -1298,7 +1206,7 @@ function todayInVietnam() {
 }
 
 .orders-table thead th {
-  padding: 15px 14px;
+  padding: 11px 12px;
   border-bottom: 1px solid #e5e7eb;
   color: #475569;
   background: #fbfcfb;
@@ -1307,10 +1215,10 @@ function todayInVietnam() {
 }
 
 .orders-table tbody td {
-  padding: 16px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid #eef2f1;
   vertical-align: top;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .orders-row {
@@ -1350,14 +1258,14 @@ function todayInVietnam() {
 .status-stack,
 .order-time-cell {
   display: grid;
-  gap: 5px;
+  gap: 3px;
 }
 
 .order-info-cell strong,
 .amount-cell strong,
 .order-time-cell strong {
   color: #111827;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -1370,7 +1278,24 @@ function todayInVietnam() {
 .service-info-cell small {
   color: #64748b;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.35;
+}
+
+.order-info-cell small,
+.service-info-cell span,
+.service-info-cell small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.order-info-cell small {
+  -webkit-line-clamp: 1;
+}
+
+.service-info-cell span,
+.service-info-cell small {
+  -webkit-line-clamp: 2;
 }
 
 .orders-mini-badge {
@@ -1378,7 +1303,7 @@ function todayInVietnam() {
   align-items: center;
   justify-content: center;
   width: fit-content;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
   color: #9a5200;
   background: #fff1dc;
@@ -1394,7 +1319,7 @@ function todayInVietnam() {
 
 .service-info-line strong {
   color: #111827;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1416,7 +1341,7 @@ function todayInVietnam() {
   align-items: center;
   justify-content: center;
   width: fit-content;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-size: 12px;
@@ -1495,15 +1420,15 @@ function todayInVietnam() {
 .orders-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .orders-actions .orders-primary-button,
 .orders-actions .orders-outline-button {
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .orders-link-button {
@@ -1569,17 +1494,7 @@ function todayInVietnam() {
 
 @media (max-width: 820px) {
   .merchant-orders-page {
-    gap: 14px;
-  }
-
-  .orders-alert,
-  .orders-filter-card {
-    padding: 16px;
-  }
-
-  .orders-alert {
-    flex-direction: column;
-    align-items: flex-start;
+    gap: 12px;
   }
 
   .order-category-grid {

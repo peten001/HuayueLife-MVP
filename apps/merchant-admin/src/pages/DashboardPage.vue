@@ -780,12 +780,12 @@ type Action =
 <style scoped>
 .dashboard-page {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .desktop-dashboard {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .mobile-dashboard {
@@ -794,7 +794,7 @@ type Action =
 
 .dashboard-top-stack {
   display: grid;
-  gap: 24px;
+  gap: 14px;
 }
 
 .welcome-panel,
@@ -810,16 +810,16 @@ type Action =
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 92px;
+  min-height: 84px;
   gap: 12px;
-  padding: 10px 18px;
+  padding: 8px 16px;
   border-color: #4f9f58;
   background: #5bae63;
 }
 
 .welcome-copy {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .eyebrow {
@@ -831,14 +831,14 @@ type Action =
 .welcome-panel h1 {
   margin: 0;
   color: #fff;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
 .welcome-panel p {
   margin: 0;
   color: #fff;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -855,11 +855,12 @@ type Action =
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
-  padding: 8px 14px;
-  border-radius: 12px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 10px;
   color: #fff;
   background: #2e7d32;
+  font-size: 13px;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
@@ -871,12 +872,13 @@ type Action =
 }
 
 .sound-toggle {
-  min-height: 38px;
-  padding: 8px 14px;
+  min-height: 34px;
+  padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, 0.48);
-  border-radius: 12px;
+  border-radius: 10px;
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -896,13 +898,13 @@ type Action =
 .welcome-side {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .welcome-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -956,8 +958,8 @@ type Action =
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 12px 14px;
   border: 1px solid #f5e6c8;
   border-left: 4px solid #ffb74d;
   border-radius: 16px;
@@ -968,22 +970,22 @@ type Action =
 .new-order-banner strong,
 .mobile-new-order-banner strong {
   color: #1f2d24;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .new-order-banner p,
 .mobile-new-order-banner p {
   margin: 4px 0 0;
   color: #8a5a00;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .welcome-summary {
   display: grid;
-  min-width: 110px;
-  gap: 4px;
-  padding: 8px 12px;
+  min-width: 98px;
+  gap: 3px;
+  padding: 7px 10px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.22);
@@ -991,12 +993,12 @@ type Action =
 
 .welcome-summary span {
   color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .welcome-summary strong {
   color: #fff;
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1;
 }
 
@@ -1004,8 +1006,9 @@ type Action =
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   margin-bottom: 0;
+  padding: 14px 16px;
   border-left: 4px solid #43a047;
   background: #ffffff;
 }
@@ -1013,16 +1016,19 @@ type Action =
 .profile-alert p {
   margin: 4px 0 0;
   color: #58645b;
+  font-size: 13px;
 }
 
 .alert-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 16px;
+  min-height: 34px;
+  padding: 0 12px;
   border-radius: 10px;
   color: #32363d;
   background: #e9edf1;
+  font-size: 13px;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -1030,31 +1036,31 @@ type Action =
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .metric-card {
   display: grid;
   align-content: space-between;
-  min-height: 120px;
-  padding: 14px;
+  min-height: 112px;
+  padding: 12px 14px;
   border-color: #edf4ee;
 }
 
 .metric-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: #5f6b63;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .metric-icon {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
   color: #5b6960;
   background: #f1f5f2;
   font-weight: 800;
@@ -1077,7 +1083,7 @@ type Action =
 
 .metric-card strong {
   color: #2e7d32;
-  font-size: 29px;
+  font-size: 25px;
   line-height: 1.1;
 }
 
@@ -1086,7 +1092,7 @@ type Action =
 }
 
 .panel {
-  padding: 18px;
+  padding: 16px;
 }
 
 .section-heading {
@@ -1094,19 +1100,19 @@ type Action =
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .section-heading h2,
 .summary-panel h2 {
   margin: 0;
   color: #1f2d24;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .section-heading p {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .section-heading a {
@@ -1126,9 +1132,9 @@ type Action =
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 7px;
-  min-height: 86px;
-  padding: 12px 10px;
+  gap: 6px;
+  min-height: 88px;
+  padding: 10px 10px;
   border: 1px solid #e4efe6;
   border-radius: 16px;
   color: #1f2d24;
@@ -1145,22 +1151,22 @@ type Action =
 .quick-link span {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 15px;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
   color: #43a047;
   background: #f1f5f2;
-  font-size: 23px;
+  font-size: 20px;
 }
 
 .quick-link strong {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .workbench-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 18px;
+  gap: 14px;
   align-items: start;
 }
 
@@ -1169,20 +1175,20 @@ type Action =
 }
 
 .orders-panel .section-heading {
-  padding-bottom: 14px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #eef3ef;
 }
 
 .order-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .dashboard-order-card {
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  gap: 9px;
+  padding: 14px;
   border: 1px solid #eeeeee;
   border-radius: 16px;
   background: #fff;
@@ -1206,21 +1212,21 @@ type Action =
 
 .dashboard-order-card header > div {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .dashboard-order-card header strong {
   color: #1f2d24;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .service-pill {
   width: fit-content;
-  padding: 5px 10px;
+  padding: 4px 9px;
   border-radius: 999px;
   color: #2e7d32;
   background: #eaf7ee;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1228,9 +1234,9 @@ type Action =
   display: -webkit-box;
   overflow: hidden;
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
 .remark {
@@ -1239,13 +1245,14 @@ type Action =
 
 .dashboard-order-card footer b {
   color: #2e7d32;
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .card-actions button {
-  min-height: 42px;
-  border-radius: 12px;
+  min-height: 34px;
+  border-radius: 10px;
   background: #2e7d32;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1258,7 +1265,7 @@ type Action =
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
   color: #a95d00;
   background: #fff1dc;
@@ -1268,12 +1275,12 @@ type Action =
 
 .summary-panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .summary-panel dl {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   margin: 0;
 }
 
@@ -1282,7 +1289,7 @@ type Action =
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 14px;
+  padding: 10px 12px;
   border-radius: 14px;
   background: #f3faf4;
 }
@@ -1301,7 +1308,7 @@ type Action =
   display: grid;
   justify-items: center;
   gap: 8px;
-  padding: 30px 18px;
+  padding: 24px 16px;
   border: 1px dashed #e2e7e2;
   border-radius: 16px;
   color: #666666;
@@ -1311,7 +1318,7 @@ type Action =
 
 .empty-state strong {
   color: #1f2d24;
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .mobile-store-card,
