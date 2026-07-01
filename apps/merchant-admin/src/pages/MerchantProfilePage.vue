@@ -2,7 +2,6 @@
 import axios from 'axios';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import { changeMerchantPassword, getProfile, updateProfile } from '@/api/merchant';
 import {
@@ -63,6 +62,7 @@ const WEEKDAY_KEYS: WeekdayKey[] = [
 
 const DEFAULT_START = '10:00';
 const DEFAULT_END = '22:00';
+const NOTICE_LIMIT = 300;
 
 const router = useRouter();
 const { locale, t } = useI18n();
@@ -102,6 +102,11 @@ const passwordForm = reactive({
   newPassword: '',
   confirmPassword: '',
 });
+const passwordVisibility = reactive({
+  current: false,
+  next: false,
+  confirm: false,
+});
 const printers = ref<PrinterSetting[]>([]);
 const printerForm = reactive({
   id: '',
@@ -132,18 +137,6 @@ const businessTypeLabel = computed(() => {
   if (locale.value === 'en') return item.nameEn || item.nameZh;
   return item.nameZh;
 });
-const statusLabel = computed(() => {
-  const value = profile.value?.status;
-  if (!value) return '-';
-  return (
-    {
-      PENDING: t('pendingStatus'),
-      ACTIVE: t('activeStatus'),
-      DISABLED: t('disabledStatus'),
-      DELETED: t('deletedStatus'),
-    }[value] ?? value
-  );
-});
 const clientVisibilityLabel = computed(() =>
   profile.value?.isVisibleOnClient ? t('clientVisibilityEnabled') : t('clientVisibilityDisabled'),
 );
@@ -158,6 +151,8 @@ const printerFeatureEnabled = computed(() =>
   canAccessMerchantFeature(profile.value, 'printers'),
 );
 const printerSectionVisible = computed(() => canManagePrinters.value);
+const toolsSectionVisible = computed(() => printerSectionVisible.value || canManageReports.value);
+const noticeLength = computed(() => noticeForm.notice.length);
 
 onMounted(loadProfile);
 
@@ -642,332 +637,402 @@ function toMinutes(value: string) {
 </script>
 
 <template>
-  <PageHeader :title="t('storeSettings')" :description="t('storeSettingsDescription')" />
-
-  <p v-if="pageMessage" class="message">{{ pageMessage }}</p>
-
-  <section class="card profile-guide readonly-banner">
-    <div class="section-heading">
+  <div class="store-settings-page">
+    <section class="settings-hero">
       <div>
-        <h2>{{ t('profileReadonlyManagedByPlatform') }}</h2>
-        <p>{{ t('profileReadonlyManagedByPlatformHint') }}</p>
+        <h1>{{ t('storeSettings') }}</h1>
+        <p>{{ t('storeSettingsDescription') }}</p>
       </div>
-    </div>
-  </section>
+      <div class="settings-inline-tip">
+        {{ t('storeManagedTipCompact') }}
+      </div>
+    </section>
 
-  <section class="card readonly-section">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('storeStatusSection') }}</h2>
-        <p>{{ t('storeStatusDescription') }}</p>
-      </div>
-    </div>
-    <div class="readonly-grid readonly-grid--status">
-      <div class="readonly-item">
-        <span>{{ t('status') }}</span>
-        <strong>{{ statusLabel }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('clientVisibility') }}</span>
-        <strong>{{ clientVisibilityLabel }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('businessType') }}</span>
-        <strong>{{ businessTypeLabel }}</strong>
-      </div>
-    </div>
-  </section>
+    <p v-if="pageMessage" class="message page-message">{{ pageMessage }}</p>
 
-  <section class="card readonly-section">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('profileBasicSection') }}</h2>
-      </div>
-    </div>
-    <div class="readonly-grid">
-      <div class="readonly-item">
-        <span>{{ t('chineseName') }}</span>
-        <strong>{{ displayValue(profile?.nameZh) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('vietnameseName') }}</span>
-        <strong>{{ displayValue(profile?.nameVi) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('englishName') }}</span>
-        <strong>{{ displayValue(profile?.nameEn) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('contactName') }}</span>
-        <strong>{{ displayValue(profile?.contactName) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('contactPhone') }}</span>
-        <strong>{{ displayValue(profile?.contactPhone) }}</strong>
-      </div>
-    </div>
-  </section>
-
-  <section class="card readonly-section">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('profileLocationSection') }}</h2>
-      </div>
-    </div>
-    <div class="readonly-grid">
-      <div class="readonly-item">
-        <span>{{ t('province') }}</span>
-        <strong>{{ displayValue(profile?.province) }}</strong>
-      </div>
-      <div class="readonly-item readonly-item--full">
-        <span>{{ t('addressDetail') }}</span>
-        <strong>{{ displayValue(profile?.addressDetail) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('latitude') }}</span>
-        <strong>{{ displayValue(profile?.latitude) }}</strong>
-      </div>
-      <div class="readonly-item">
-        <span>{{ t('longitude') }}</span>
-        <strong>{{ displayValue(profile?.longitude) }}</strong>
-      </div>
-    </div>
-  </section>
-
-  <section class="card readonly-section">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('profileImagesSection') }}</h2>
-      </div>
-    </div>
-    <div class="readonly-images-grid readonly-images-grid--compact">
-      <div class="readonly-image-card">
-        <span>{{ t('merchantCover') }}</span>
-        <div class="preview-box wide readonly-preview">
-          <img v-if="coverPreviewUrl" :src="coverPreviewUrl" :alt="t('merchantCover')" />
-          <div v-else class="empty-preview">{{ t('noMerchantCover') }}</div>
+    <section class="card settings-card-shell">
+      <div class="settings-card-header">
+        <h2>{{ t('storeProfileCardTitle') }}</h2>
+        <div class="settings-badges">
+          <span
+            :class="[
+              'settings-badge',
+              profile?.isVisibleOnClient ? 'settings-badge--success' : 'settings-badge--muted',
+            ]"
+          >
+            {{ clientVisibilityLabel }}
+          </span>
+          <span class="settings-badge settings-badge--info">
+            {{ t('businessType') }}：{{ businessTypeLabel }}
+          </span>
         </div>
       </div>
-    </div>
-  </section>
 
-  <form v-if="canEditStoreSettings" class="card notice-card" @submit.prevent="saveNotice">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('merchantNotice') }}</h2>
-        <p>{{ t('noticeSectionDescription') }}</p>
-      </div>
-    </div>
-    <label class="notice-field">
-      <textarea v-model="noticeForm.notice" rows="4" />
-    </label>
-    <div class="form-actions">
-      <span class="message">{{ noticeMessage }}</span>
-      <button :disabled="noticeSaving">{{ noticeSaving ? t('saving') : t('saveNotice') }}</button>
-    </div>
-  </form>
-
-  <form v-if="canEditStoreSettings" class="card settings-card" @submit.prevent="saveBusinessSettings">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('businessHoursSection') }}</h2>
-        <p>{{ t('businessHoursSectionDescription') }}</p>
-      </div>
-    </div>
-
-    <section class="business-hours">
-      <div class="business-hours-grid">
-        <div class="business-hours-row business-hours-row--head">
-          <div>{{ t('status') }}</div>
-          <div>{{ t('startTime') }}</div>
-          <div>{{ t('endTime') }}</div>
-        </div>
-        <div v-for="day in schedule" :key="day.key" class="business-hours-row">
-          <div class="business-hours-day">
-            <div class="business-hours-label">{{ t(day.key) }}</div>
-            <label class="check business-hours-check">
-              <input v-model="day.enabled" type="checkbox" />
-              {{ t('openForBusiness') }}
-            </label>
+      <div class="profile-overview-grid">
+        <section class="overview-panel">
+          <h3>{{ t('profileBasicSection') }}</h3>
+          <div class="readonly-stack">
+            <div class="readonly-line">
+              <span>{{ t('chineseName') }}</span>
+              <strong>{{ displayValue(profile?.nameZh) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('vietnameseName') }}</span>
+              <strong>{{ displayValue(profile?.nameVi) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('englishName') }}</span>
+              <strong>{{ displayValue(profile?.nameEn) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('contactName') }}</span>
+              <strong>{{ displayValue(profile?.contactName) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('contactPhone') }}</span>
+              <strong>{{ displayValue(profile?.contactPhone) }}</strong>
+            </div>
           </div>
-          <label class="time-field">
-            <span>{{ t('startTime') }}</span>
-            <input
-              v-model="day.start"
-              type="time"
-              :disabled="!day.enabled"
-              :step="60"
-            />
-          </label>
-          <label class="time-field">
-            <span>{{ t('endTime') }}</span>
-            <input
-              v-model="day.end"
-              type="time"
-              :disabled="!day.enabled"
-              :step="60"
-            />
-          </label>
+        </section>
+
+        <section class="overview-panel">
+          <h3>{{ t('profileLocationSection') }}</h3>
+          <div class="readonly-stack">
+            <div class="readonly-line">
+              <span>{{ t('province') }}</span>
+              <strong>{{ displayValue(profile?.province) }}</strong>
+            </div>
+            <div class="readonly-line readonly-line--multiline">
+              <span>{{ t('addressDetail') }}</span>
+              <strong>{{ displayValue(profile?.addressDetail) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('latitude') }}</span>
+              <strong>{{ displayValue(profile?.latitude) }}</strong>
+            </div>
+            <div class="readonly-line">
+              <span>{{ t('longitude') }}</span>
+              <strong>{{ displayValue(profile?.longitude) }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="overview-panel overview-panel--cover">
+          <h3>{{ t('merchantCover') }}</h3>
+          <div class="cover-preview-card">
+            <img v-if="coverPreviewUrl" :src="coverPreviewUrl" :alt="t('merchantCover')" />
+            <div v-else class="empty-preview">{{ t('noMerchantCover') }}</div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section v-if="canEditStoreSettings" class="card settings-card-shell">
+      <div class="settings-card-header">
+        <h2>{{ t('businessSettingsCardTitle') }}</h2>
+      </div>
+
+      <div class="settings-split settings-split--operations">
+        <div class="settings-column">
+          <section class="settings-subsection">
+            <div class="subsection-header">
+              <div>
+                <h3>{{ t('merchantNotice') }}</h3>
+                <p>{{ t('noticeSectionDescription') }}</p>
+              </div>
+              <button class="section-action" type="button" :disabled="noticeSaving" @click="saveNotice">
+                {{ noticeSaving ? t('saving') : t('saveNotice') }}
+              </button>
+            </div>
+
+            <label class="notice-field">
+              <textarea v-model="noticeForm.notice" :maxlength="NOTICE_LIMIT" rows="6" />
+            </label>
+            <div class="subsection-footer">
+              <span class="message">{{ noticeMessage }}</span>
+              <span class="field-counter">{{ noticeLength }}/{{ NOTICE_LIMIT }}</span>
+            </div>
+          </section>
+
+          <section class="settings-subsection settings-subsection--divided">
+            <div class="subsection-header">
+              <div>
+                <h3>{{ t('deliverySettingsSection') }}</h3>
+                <p>{{ t('deliverySettingsDescription') }}</p>
+              </div>
+              <button class="section-action" type="button" :disabled="settingsSaving" @click="saveBusinessSettings">
+                {{ settingsSaving ? t('saving') : t('saveDeliverySettings') }}
+              </button>
+            </div>
+
+            <div v-if="deliveryCapabilityEnabled" class="settings-grid settings-grid--delivery">
+              <label class="field-block">
+                <span>{{ t('minimumDeliveryAmount') }}</span>
+                <input v-model.number="settingsForm.minimumDeliveryAmountVnd" type="number" min="0" />
+              </label>
+              <label class="field-block">
+                <span>{{ t('deliveryFeeVnd') }}</span>
+                <input v-model.number="settingsForm.deliveryFeeVnd" type="number" min="0" />
+              </label>
+              <label class="field-block">
+                <span>{{ t('deliveryRadius') }}</span>
+                <input v-model.number="settingsForm.deliveryRadiusKm" type="number" min="0" max="100" step="0.1" />
+              </label>
+            </div>
+            <p v-else class="settings-disabled-tip">{{ t('deliveryCapabilityDisabled') }}</p>
+          </section>
+        </div>
+
+        <div class="settings-column settings-column--bordered">
+          <section class="settings-subsection">
+            <div class="subsection-header">
+              <div>
+                <h3>{{ t('businessHoursSection') }}</h3>
+                <p>{{ t('businessHoursSectionDescription') }}</p>
+              </div>
+              <button class="section-action" type="button" :disabled="settingsSaving" @click="saveBusinessSettings">
+                {{ settingsSaving ? t('saving') : t('saveBusinessHours') }}
+              </button>
+            </div>
+
+            <div class="table-wrap hours-table-wrap">
+              <table class="hours-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('dayLabel') }}</th>
+                    <th>{{ t('businessStatusColumn') }}</th>
+                    <th>{{ t('startTime') }}</th>
+                    <th>{{ t('endTime') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="day in schedule" :key="day.key">
+                    <td class="hours-day-cell">{{ t(day.key) }}</td>
+                    <td>
+                      <label class="switch-inline">
+                        <input v-model="day.enabled" type="checkbox" />
+                        <span>{{ t('openForBusiness') }}</span>
+                      </label>
+                    </td>
+                    <td>
+                      <input
+                        v-model="day.start"
+                        type="time"
+                        :disabled="!day.enabled"
+                        :step="60"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model="day.end"
+                        type="time"
+                        :disabled="!day.enabled"
+                        :step="60"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <p v-if="settingsMessage" class="message card-message">{{ settingsMessage }}</p>
+    </section>
+
+    <section v-if="toolsSectionVisible" class="card settings-card-shell">
+      <div class="settings-card-header">
+        <h2>{{ t('toolsSettingsCardTitle') }}</h2>
+      </div>
+
+      <div class="settings-split settings-split--tools">
+        <div v-if="printerSectionVisible" class="settings-column">
+          <section class="settings-subsection">
+            <div class="subsection-header">
+              <div>
+                <h3>{{ t('printerManagement') }}</h3>
+                <p>{{ t('printerSettingsSectionDescription') }}</p>
+              </div>
+              <button
+                v-if="printerFeatureEnabled"
+                class="section-action section-action--secondary"
+                type="button"
+                @click="openCreatePrinter"
+              >
+                {{ t('addPrinter') }}
+              </button>
+            </div>
+
+            <p v-if="printerMessage" class="message card-message">{{ printerMessage }}</p>
+            <p v-if="!printerFeatureEnabled" class="settings-disabled-tip">{{ t('printerFeatureDisabled') }}</p>
+
+            <div v-else class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{{ t('printerName') }}</th>
+                    <th>{{ t('type') }}</th>
+                    <th>{{ t('usageType') }}</th>
+                    <th>{{ t('address') }}</th>
+                    <th>{{ t('paperWidth') }}</th>
+                    <th>{{ t('language') }}</th>
+                    <th>{{ t('printEncoding') }}</th>
+                    <th>{{ t('autoPrint') }}</th>
+                    <th>{{ t('status') }}</th>
+                    <th>{{ t('actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in printers" :key="row.id">
+                    <td>
+                      <strong>{{ row.name }}</strong>
+                      <span v-if="row.isDefault" class="badge success">{{ t('defaultPrinter') }}</span>
+                    </td>
+                    <td>{{ t('networkPrinter') }}</td>
+                    <td>{{ printerUsageTypeLabel(row.usageType) }}</td>
+                    <td>{{ row.ipAddress }}:{{ row.port }}</td>
+                    <td>{{ row.paperWidth === 'WIDTH_58' ? '58mm' : '80mm' }} × {{ row.copies }}</td>
+                    <td>{{ printerLanguageLabel(row.language) }}</td>
+                    <td>{{ row.encoding }}</td>
+                    <td>{{ row.autoPrintEnabled ? t('enabled') : t('disable') }}</td>
+                    <td>
+                      <span :class="['badge', row.status === 'ONLINE' ? 'success' : row.status === 'OFFLINE' ? 'danger-badge' : 'muted']">
+                        {{ printerStatusLabel(row) }}
+                      </span>
+                    </td>
+                    <td class="actions">
+                      <button class="small secondary" type="button" @click="openEditPrinter(row)">{{ t('edit') }}</button>
+                      <button class="small" type="button" :disabled="testingPrinterId === row.id" @click="runPrinterTest(row.id)">
+                        {{ t('testPrint') }}
+                      </button>
+                      <button v-if="!row.isDefault" class="small secondary" type="button" @click="setDefaultPrinter(row)">
+                        {{ t('setDefaultPrinter') }}
+                      </button>
+                      <button class="small danger" type="button" @click="removePrinter(row)">
+                        {{ t('delete') }}
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="!printers.length && !printersLoading">
+                    <td colspan="10" class="empty">{{ t('noPrinters') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div v-if="canManageReports" class="settings-column settings-column--bordered">
+          <section class="settings-subsection">
+            <div class="subsection-header">
+              <div>
+                <h3>{{ t('dailyReport') }}</h3>
+                <p>{{ t('reportSettingsSectionDescription') }}</p>
+              </div>
+              <button
+                v-if="reportFeatureAvailable"
+                class="section-action"
+                type="button"
+                :disabled="reportSaving"
+                @click="saveReportSettings"
+              >
+                {{ reportSaving ? t('saving') : t('saveReportSettings') }}
+              </button>
+            </div>
+
+            <p v-if="reportMessage" class="message card-message">{{ reportMessage }}</p>
+
+            <div v-if="reportFeatureAvailable" class="report-settings-grid">
+              <label class="report-toggle-row">
+                <input v-model="reportForm.enabled" type="checkbox" />
+                <span>{{ t('enableDailyReportPush') }}</span>
+              </label>
+              <label class="field-block">
+                <span>{{ t('zaloRecipient') }}</span>
+                <input v-model="reportForm.zaloRecipient" type="text" placeholder="zalo_user_or_phone" />
+              </label>
+            </div>
+            <p v-else class="settings-disabled-tip">{{ t('reportFeatureDisabled') }}</p>
+          </section>
         </div>
       </div>
     </section>
 
-    <section class="delivery-settings">
-      <div class="section-heading">
-        <div>
-          <h2>{{ t('deliverySettingsSection') }}</h2>
-          <p>{{ t('deliverySettingsDescription') }}</p>
-        </div>
-      </div>
-
-      <div v-if="deliveryCapabilityEnabled" class="settings-grid">
-        <label>
-          {{ t('minimumDeliveryAmount') }}
-          <input v-model.number="settingsForm.minimumDeliveryAmountVnd" type="number" min="0" />
-        </label>
-        <label>
-          {{ t('deliveryFeeVnd') }}
-          <input v-model.number="settingsForm.deliveryFeeVnd" type="number" min="0" />
-        </label>
-        <label>
-          {{ t('deliveryRadius') }}
-          <input v-model.number="settingsForm.deliveryRadiusKm" type="number" min="0" max="100" step="0.1" />
-        </label>
-      </div>
-      <p v-else class="settings-disabled-tip">{{ t('deliveryCapabilityDisabled') }}</p>
-    </section>
-
-    <div class="form-actions">
-      <span class="message">{{ settingsMessage }}</span>
-      <button :disabled="settingsSaving">{{ settingsSaving ? t('saving') : t('saveSettings') }}</button>
-    </div>
-  </form>
-
-  <section v-if="printerSectionVisible" class="card printer-settings-card">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('printerManagement') }}</h2>
-        <p>{{ t('printerSettingsSectionDescription') }}</p>
-      </div>
-      <button v-if="printerFeatureEnabled" type="button" @click="openCreatePrinter">
-        {{ t('addPrinter') }}
-      </button>
-    </div>
-
-    <p v-if="printerMessage" class="message">{{ printerMessage }}</p>
-    <p v-if="!printerFeatureEnabled" class="settings-disabled-tip">{{ t('printerFeatureDisabled') }}</p>
-
-    <div v-else class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{{ t('printerName') }}</th>
-            <th>{{ t('type') }}</th>
-            <th>{{ t('usageType') }}</th>
-            <th>{{ t('address') }}</th>
-            <th>{{ t('paperWidth') }}</th>
-            <th>{{ t('language') }}</th>
-            <th>{{ t('printEncoding') }}</th>
-            <th>{{ t('autoPrint') }}</th>
-            <th>{{ t('status') }}</th>
-            <th>{{ t('actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in printers" :key="row.id">
-            <td>
-              <strong>{{ row.name }}</strong>
-              <span v-if="row.isDefault" class="badge success">{{ t('defaultPrinter') }}</span>
-            </td>
-            <td>{{ t('networkPrinter') }}</td>
-            <td>{{ printerUsageTypeLabel(row.usageType) }}</td>
-            <td>{{ row.ipAddress }}:{{ row.port }}</td>
-            <td>{{ row.paperWidth === 'WIDTH_58' ? '58mm' : '80mm' }} × {{ row.copies }}</td>
-            <td>{{ printerLanguageLabel(row.language) }}</td>
-            <td>{{ row.encoding }}</td>
-            <td>{{ row.autoPrintEnabled ? t('enabled') : t('disable') }}</td>
-            <td>
-              <span :class="['badge', row.status === 'ONLINE' ? 'success' : row.status === 'OFFLINE' ? 'danger-badge' : 'muted']">
-                {{ printerStatusLabel(row) }}
-              </span>
-            </td>
-            <td class="actions">
-              <button class="small secondary" type="button" @click="openEditPrinter(row)">{{ t('edit') }}</button>
-              <button class="small" type="button" :disabled="testingPrinterId === row.id" @click="runPrinterTest(row.id)">
-                {{ t('testPrint') }}
-              </button>
-              <button v-if="!row.isDefault" class="small secondary" type="button" @click="setDefaultPrinter(row)">
-                {{ t('setDefaultPrinter') }}
-              </button>
-              <button class="small danger" type="button" @click="removePrinter(row)">
-                {{ t('delete') }}
-              </button>
-            </td>
-          </tr>
-          <tr v-if="!printers.length && !printersLoading">
-            <td colspan="10" class="empty">{{ t('noPrinters') }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <form v-if="canManageReports" class="card report-settings-card" @submit.prevent="saveReportSettings">
-    <div class="section-heading">
-      <div>
-        <h2>{{ t('dailyReport') }}</h2>
-        <p>{{ t('reportSettingsSectionDescription') }}</p>
-      </div>
-    </div>
-
-    <p v-if="reportMessage" class="message">{{ reportMessage }}</p>
-
-    <div v-if="reportFeatureAvailable" class="report-settings-grid">
-      <label class="check-row">
-        <input v-model="reportForm.enabled" type="checkbox" />
-        {{ t('enableDailyReportPush') }}
-      </label>
-      <label>
-        {{ t('zaloRecipient') }}
-        <input v-model="reportForm.zaloRecipient" type="text" placeholder="zalo_user_or_phone" />
-      </label>
-    </div>
-    <p v-else class="settings-disabled-tip">{{ t('reportFeatureDisabled') }}</p>
-
-    <div class="form-actions">
-      <span class="message"></span>
-      <button v-if="reportFeatureAvailable" :disabled="reportSaving">
-        {{ reportSaving ? t('saving') : t('saveReportSettings') }}
-      </button>
-    </div>
-  </form>
-
-  <form class="card password-card" @submit.prevent="changePassword">
-    <div class="section-heading">
-      <div>
+    <form class="card settings-card-shell settings-card-shell--security" @submit.prevent="changePassword">
+      <div class="settings-card-header">
         <h2>{{ t('accountSecuritySection') }}</h2>
-        <p>{{ t('changePasswordDescription') }}</p>
       </div>
-    </div>
-    <div class="settings-grid">
-      <label>
-        {{ t('currentPassword') }}
-        <input v-model="passwordForm.currentPassword" type="password" required minlength="8" />
-      </label>
-      <label>
-        {{ t('newPassword') }}
-        <input v-model="passwordForm.newPassword" type="password" required minlength="8" />
-      </label>
-      <label>
-        {{ t('confirmPassword') }}
-        <input v-model="passwordForm.confirmPassword" type="password" required minlength="8" />
-      </label>
-    </div>
-    <div class="form-actions">
-      <span class="message">{{ passwordMessage }}</span>
-      <button :disabled="passwordSaving">{{ passwordSaving ? t('saving') : t('changePassword') }}</button>
-    </div>
-  </form>
+
+      <p class="security-description">{{ t('changePasswordDescription') }}</p>
+      <p v-if="passwordMessage" class="message card-message">{{ passwordMessage }}</p>
+
+      <div class="security-row">
+        <label class="field-block password-field">
+          <span>{{ t('currentPassword') }}</span>
+          <div class="password-input">
+            <input
+              v-model="passwordForm.currentPassword"
+              :type="passwordVisibility.current ? 'text' : 'password'"
+              required
+              minlength="8"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :title="passwordVisibility.current ? '隐藏密码' : '显示密码'"
+              @click="passwordVisibility.current = !passwordVisibility.current"
+            >
+              <span aria-hidden="true">{{ passwordVisibility.current ? '🙈' : '👁' }}</span>
+            </button>
+          </div>
+        </label>
+        <label class="field-block password-field">
+          <span>{{ t('newPassword') }}</span>
+          <div class="password-input">
+            <input
+              v-model="passwordForm.newPassword"
+              :type="passwordVisibility.next ? 'text' : 'password'"
+              required
+              minlength="8"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :title="passwordVisibility.next ? '隐藏密码' : '显示密码'"
+              @click="passwordVisibility.next = !passwordVisibility.next"
+            >
+              <span aria-hidden="true">{{ passwordVisibility.next ? '🙈' : '👁' }}</span>
+            </button>
+          </div>
+        </label>
+        <label class="field-block password-field">
+          <span>{{ t('confirmPassword') }}</span>
+          <div class="password-input">
+            <input
+              v-model="passwordForm.confirmPassword"
+              :type="passwordVisibility.confirm ? 'text' : 'password'"
+              required
+              minlength="8"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :title="passwordVisibility.confirm ? '隐藏密码' : '显示密码'"
+              @click="passwordVisibility.confirm = !passwordVisibility.confirm"
+            >
+              <span aria-hidden="true">{{ passwordVisibility.confirm ? '🙈' : '👁' }}</span>
+            </button>
+          </div>
+        </label>
+        <div class="security-submit">
+          <button class="section-action" :disabled="passwordSaving">
+            {{ passwordSaving ? t('saving') : t('changePassword') }}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
 
   <div v-if="printerModalOpen" class="modal-backdrop" @click.self="closePrinterModal">
     <form class="card printer-modal" @submit.prevent="savePrinter()">
@@ -1028,93 +1093,193 @@ function toMinutes(value: string) {
 </template>
 
 <style scoped>
-.profile-guide {
+.store-settings-page {
   display: grid;
-  gap: 8px;
-  margin-bottom: 16px;
-  border-left: 4px solid #20a464;
-  background: #f4fbf6;
+  gap: 24px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 24px 28px 40px;
 }
 
-.profile-guide p {
+.settings-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.settings-hero h1 {
   margin: 0;
-  color: #4e6d59;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 700;
 }
 
-.readonly-section,
-.notice-card,
-.settings-card {
-  margin-bottom: 16px;
+.settings-hero p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.readonly-grid {
+.settings-inline-tip {
+  max-width: 360px;
+  padding: 8px 12px;
+  border: 1px solid #f5d36b;
+  border-radius: 8px;
+  background: #fff8db;
+  color: #7c5a00;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.page-message {
+  margin: 0;
+}
+
+.settings-card-shell {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+  gap: 24px;
+  padding: 24px 28px 28px;
+  border: 1px solid #e5ebe8;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 4%);
 }
 
-.readonly-grid--status {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.settings-card-shell--security {
+  gap: 16px;
 }
 
-.readonly-item {
+.settings-card-header,
+.subsection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-card-header h2,
+.subsection-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.settings-card-header h2 {
+  font-size: 22px;
+}
+
+.subsection-header h3 {
+  font-size: 18px;
+}
+
+.subsection-header p,
+.security-description {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.settings-badge,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-badge--success,
+.badge.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.settings-badge--muted,
+.badge.muted {
+  background: #e5e7eb;
+  color: #475569;
+}
+
+.settings-badge--info {
+  background: #e0f2fe;
+  color: #1d4ed8;
+}
+
+.badge.danger-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.profile-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.92fr);
+  gap: 24px;
+}
+
+.overview-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.overview-panel h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.readonly-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.readonly-line {
   display: grid;
   gap: 6px;
-  padding: 14px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  background: #f8fafc;
 }
 
-.readonly-item--full {
-  grid-column: 1 / -1;
-}
-
-.readonly-item span,
-.readonly-image-card > span {
+.readonly-line span {
   color: #64748b;
   font-size: 13px;
 }
 
-.readonly-item strong {
-  color: #1f2937;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
+.readonly-line strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.6;
 }
 
-.readonly-images-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.readonly-line--multiline strong {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.readonly-images-grid--compact .readonly-image-card {
-  display: grid;
-  gap: 10px;
-}
-
-.preview-box {
+.cover-preview-card {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 172px;
   overflow: hidden;
-  border: 1px solid #dbe3ea;
-  border-radius: 14px;
+  border: 1px solid #dbe3df;
+  border-radius: 12px;
   background: #f8fafc;
+  aspect-ratio: 16 / 9;
 }
 
-.preview-box.square {
-  min-height: 180px;
-  aspect-ratio: 1 / 1;
-}
-
-.preview-box.wide {
-  min-height: 180px;
-  aspect-ratio: 2 / 1;
-}
-
-.preview-box img {
+.cover-preview-card img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1122,71 +1287,197 @@ function toMinutes(value: string) {
 
 .empty-preview {
   color: #94a3b8;
+  font-size: 14px;
+}
+
+.settings-split {
+  display: grid;
+  gap: 24px;
+}
+
+.settings-split--operations {
+  grid-template-columns: minmax(0, 0.44fr) minmax(0, 0.56fr);
+}
+
+.settings-split--tools {
+  grid-template-columns: minmax(0, 0.62fr) minmax(0, 0.38fr);
+}
+
+.settings-column {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+}
+
+.settings-column--bordered {
+  padding-left: 24px;
+  border-left: 1px solid #e5e7eb;
+}
+
+.settings-subsection {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-subsection--divided {
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.section-action {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.section-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.section-action--secondary {
+  border: 1px solid #16a34a;
+  background: #fff;
+  color: #16a34a;
+}
+
+.notice-field textarea,
+.field-block input,
+.field-block select,
+.hours-table input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #dbe3df;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
 }
 
 .notice-field textarea {
-  min-height: 110px;
+  min-height: 152px;
+  padding: 12px;
+  resize: vertical;
 }
 
-.settings-card {
+.field-block {
   display: grid;
-  gap: 18px;
+  gap: 8px;
 }
 
-.report-settings-card,
-.printer-settings-card,
-.password-card {
-  display: grid;
-  gap: 18px;
-  margin-bottom: 16px;
+.field-block span {
+  color: #64748b;
+  font-size: 13px;
 }
 
-.report-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+.subsection-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-counter {
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .settings-grid {
   display: grid;
+  gap: 16px;
+}
+
+.settings-grid--delivery {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 18px;
 }
 
-.report-settings-grid label,
-.settings-grid label,
-.time-field {
-  display: grid;
-  gap: 8px;
+.card-message {
+  margin: 0;
 }
 
-.check-row {
-  display: flex !important;
-  gap: 8px;
-  align-items: center;
+.settings-disabled-tip {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #dbe7f4;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
+.hours-table-wrap,
 .table-wrap {
   overflow-x: auto;
 }
 
+.hours-table,
 .table-wrap table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
+.hours-table {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.hours-table th,
+.hours-table td,
 .table-wrap th,
 .table-wrap td {
   padding: 12px 10px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: middle;
 }
 
+.hours-table th,
 .table-wrap th {
+  background: #f8fafc;
   color: #64748b;
   font-size: 12px;
   font-weight: 600;
+}
+
+.hours-table tr:last-child td,
+.table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.hours-day-cell {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hours-table input {
+  height: 34px;
+}
+
+.switch-inline,
+.report-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.report-settings-grid {
+  display: grid;
+  gap: 18px;
 }
 
 .table-wrap td strong {
@@ -1199,28 +1490,46 @@ function toMinutes(value: string) {
   gap: 8px;
 }
 
-.badge {
-  display: inline-flex;
+.security-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.password-input {
+  display: flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid #dbe3df;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.password-input input {
+  flex: 1 1 auto;
+  border: 0;
+}
+
+.password-input input:focus {
+  outline: none;
+}
+
+.password-toggle {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid #e5e7eb;
+  background: transparent;
+  color: #64748b;
   font-size: 12px;
   font-weight: 600;
 }
 
-.badge.success {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.badge.muted {
-  color: #64748b;
-  background: #e2e8f0;
-}
-
-.badge.danger-badge {
-  color: #b91c1c;
-  background: #fee2e2;
+.security-submit {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .modal-backdrop {
@@ -1281,81 +1590,46 @@ function toMinutes(value: string) {
   justify-content: flex-end;
 }
 
-.delivery-settings {
-  display: grid;
-  gap: 12px;
-  padding-top: 6px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.settings-disabled-tip {
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid #dbe7f4;
-  border-radius: 12px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.business-hours {
-  display: grid;
-  gap: 12px;
-}
-
-.business-hours-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.business-hours-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 12px;
-  align-items: end;
-}
-
-.business-hours-row--head {
-  font-size: 12px;
-  color: var(--text-secondary, #6b7280);
-  font-weight: 600;
-}
-
-.business-hours-day {
-  display: grid;
-  gap: 6px;
-}
-
-.business-hours-label {
-  font-weight: 600;
-}
-
-.business-hours-check {
-  gap: 8px;
-  align-items: center;
-}
-
-.readonly-banner .section-heading {
-  margin-bottom: 0;
-}
-
-@media (max-width: 900px) {
-  .readonly-grid,
-  .readonly-grid--status,
-  .readonly-images-grid,
-  .report-settings-grid,
-  .settings-grid,
-  .business-hours-row,
-  .printer-modal-body {
+@media (max-width: 1100px) {
+  .profile-overview-grid,
+  .settings-split--operations,
+  .settings-split--tools,
+  .security-row {
     grid-template-columns: 1fr;
   }
 
-  .readonly-item--full {
-    grid-column: auto;
+  .settings-column--bordered {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 24px;
+    border-top: 1px solid #e5e7eb;
   }
 
-  .business-hours-row--head {
-    display: none;
+  .security-submit {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .store-settings-page {
+    padding: 20px 16px 32px;
+  }
+
+  .settings-hero,
+  .settings-card-header,
+  .subsection-header,
+  .subsection-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .settings-inline-tip {
+    max-width: none;
+  }
+
+  .settings-grid--delivery,
+  .printer-modal-body {
+    grid-template-columns: 1fr;
   }
 }
 </style>
