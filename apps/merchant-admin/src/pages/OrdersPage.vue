@@ -5,7 +5,6 @@ import { getMerchantOrders, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
-import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
   clearNewPendingOrder,
@@ -24,6 +23,31 @@ import type {
 } from '@/utils/order-notification';
 import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
 
+type Action =
+  | 'accept'
+  | 'start-preparing'
+  | 'ready'
+  | 'start-delivery'
+  | 'complete';
+
+type OrderCategory = 'ALL' | 'DINE_IN' | 'PICKUP' | 'DELIVERY' | 'ABNORMAL';
+type QuickStatus = 'ALL' | 'PENDING' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+type DashboardIcon =
+  | 'all'
+  | 'dine'
+  | 'pickup'
+  | 'delivery'
+  | 'abnormal'
+  | 'clock'
+  | 'progress'
+  | 'ready'
+  | 'completed'
+  | 'cancelled'
+  | 'table'
+  | 'phone'
+  | 'map'
+  | 'logout';
+
 const route = useRoute();
 const router = useRouter();
 const { locale, t } = useI18n();
@@ -32,13 +56,15 @@ const rows = ref<MerchantOrder[]>([]);
 const message = ref('');
 const operatingId = ref('');
 const highlightedOrderId = ref('');
+const activeCategory = ref<OrderCategory>('ALL');
+const activeQuickStatus = ref<QuickStatus>('ALL');
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
   date: string;
 }>({
   status: (route.query.status as OrderStatus | undefined) ?? '',
-  orderType: '',
+  orderType: (route.query.orderType as OrderType | undefined) ?? '',
   date: todayInVietnam(),
 });
 let timer: number | undefined;
@@ -47,16 +73,15 @@ const requestedHighlightOrderId = computed(() =>
   normalizeQueryValue(route.query.highlightOrderId),
 );
 
+if (filters.orderType) {
+  activeCategory.value = filters.orderType;
+}
+if (filters.status === 'PENDING_ACCEPTANCE') {
+  activeQuickStatus.value = 'PENDING';
+}
+
 const pendingCount = computed(
   () => rows.value.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
-);
-const displayRows = computed(() =>
-  [...rows.value].sort((left, right) => {
-    const leftPending = left.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
-    const rightPending = right.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
-    if (leftPending !== rightPending) return rightPending - leftPending;
-    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-  }),
 );
 const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
 const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
@@ -69,6 +94,215 @@ const chatOrderId = ref('');
 const chatOrder = computed(
   () => rows.value.find((order) => order.id === chatOrderId.value) ?? null,
 );
+
+const categoryFilteredRows = computed(() =>
+  rows.value.filter((order) => orderMatchesCategory(order, activeCategory.value)),
+);
+
+const displayRows = computed(() =>
+  [...categoryFilteredRows.value]
+    .filter((order) => orderMatchesQuickStatus(order, activeQuickStatus.value))
+    .sort((left, right) => {
+      const leftPending = left.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
+      const rightPending = right.status === 'PENDING_ACCEPTANCE' ? 1 : 0;
+      if (leftPending !== rightPending) return rightPending - leftPending;
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    }),
+);
+
+const orderCategoryCards = computed(() => {
+  const stats = {
+    ALL: rows.value.length,
+    DINE_IN: rows.value.filter((order) => order.orderType === 'DINE_IN').length,
+    PICKUP: rows.value.filter((order) => order.orderType === 'PICKUP').length,
+    DELIVERY: rows.value.filter((order) => order.orderType === 'DELIVERY').length,
+    ABNORMAL: rows.value.filter((order) => isAbnormalOrder(order)).length,
+  };
+  return [
+    {
+      key: 'ALL' as const,
+      icon: 'all' as const,
+      accent: 'all',
+      title: localLabel({ zh: '全部订单', vi: 'Tat ca don hang', en: 'All orders' }),
+      description: localLabel({ zh: '今日订单总数', vi: 'Tong so don hom nay', en: 'All orders today' }),
+      count: stats.ALL,
+    },
+    {
+      key: 'DINE_IN' as const,
+      icon: 'dine' as const,
+      accent: 'dine',
+      title: localLabel({ zh: '堂食订单', vi: 'Don tai ban', en: 'Dine-in orders' }),
+      description: localLabel({ zh: '店内扫码点餐', vi: 'Khach quet ma tai ban', en: 'Table QR orders' }),
+      count: stats.DINE_IN,
+    },
+    {
+      key: 'PICKUP' as const,
+      icon: 'pickup' as const,
+      accent: 'pickup',
+      title: localLabel({ zh: '自取订单', vi: 'Don tu den lay', en: 'Pickup orders' }),
+      description: localLabel({ zh: '顾客到店自取', vi: 'Khach den cua hang lay', en: 'Customer pickup orders' }),
+      count: stats.PICKUP,
+    },
+    {
+      key: 'DELIVERY' as const,
+      icon: 'delivery' as const,
+      accent: 'delivery',
+      title: localLabel({ zh: '商家配送', vi: 'Giao hang noi bo', en: 'Merchant delivery' }),
+      description: localLabel({ zh: '商家自行配送', vi: 'Nha hang tu giao', en: 'Delivered by merchant' }),
+      count: stats.DELIVERY,
+    },
+    {
+      key: 'ABNORMAL' as const,
+      icon: 'abnormal' as const,
+      accent: 'abnormal',
+      title: localLabel({ zh: '异常订单', vi: 'Don bat thuong', en: 'Abnormal orders' }),
+      description: localLabel({ zh: '需处理异常订单', vi: 'Can xu ly ngay', en: 'Orders needing attention' }),
+      count: stats.ABNORMAL,
+    },
+  ];
+});
+
+const quickStatusCards = computed(() => {
+  const source = categoryFilteredRows.value;
+  const counts = {
+    ALL: source.length,
+    PENDING: source.filter((order) => quickStatusForOrder(order) === 'PENDING').length,
+    PREPARING: source.filter((order) => quickStatusForOrder(order) === 'PREPARING').length,
+    READY: source.filter((order) => quickStatusForOrder(order) === 'READY').length,
+    COMPLETED: source.filter((order) => quickStatusForOrder(order) === 'COMPLETED').length,
+    CANCELLED: source.filter((order) => quickStatusForOrder(order) === 'CANCELLED').length,
+  };
+  return [
+    {
+      key: 'ALL' as const,
+      icon: 'all' as const,
+      badgeTone: 'all',
+      label: localLabel({ zh: '全部', vi: 'Tat ca', en: 'All' }),
+      count: counts.ALL,
+    },
+    {
+      key: 'PENDING' as const,
+      icon: 'clock' as const,
+      badgeTone: 'pending',
+      label: localLabel({ zh: '待接单', vi: 'Cho nhan don', en: 'Pending' }),
+      count: counts.PENDING,
+    },
+    {
+      key: 'PREPARING' as const,
+      icon: 'progress' as const,
+      badgeTone: 'preparing',
+      label: localLabel({ zh: '制作中', vi: 'Dang che bien', en: 'Preparing' }),
+      count: counts.PREPARING,
+    },
+    {
+      key: 'READY' as const,
+      icon: 'ready' as const,
+      badgeTone: 'ready',
+      label: localLabel({ zh: '待取餐/待配送', vi: 'Cho lay / giao hang', en: 'Ready / delivering' }),
+      count: counts.READY,
+    },
+    {
+      key: 'COMPLETED' as const,
+      icon: 'completed' as const,
+      badgeTone: 'completed',
+      label: localLabel({ zh: '已完成', vi: 'Hoan thanh', en: 'Completed' }),
+      count: counts.COMPLETED,
+    },
+    {
+      key: 'CANCELLED' as const,
+      icon: 'cancelled' as const,
+      badgeTone: 'cancelled',
+      label: localLabel({ zh: '已取消', vi: 'Da huy', en: 'Cancelled' }),
+      count: counts.CANCELLED,
+    },
+  ];
+});
+
+const emptyState = computed(() => {
+  const states: Record<OrderCategory, { title: string; description: string }> = {
+    ALL: {
+      title: localLabel({ zh: '今日暂无订单', vi: 'Hom nay chua co don', en: 'No orders today' }),
+      description: localLabel({
+        zh: '新订单会自动显示在这里，请保持声音提醒和打印机在线。',
+        vi: 'Don moi se hien thi tai day. Hay giu am thanh va may in luon san sang.',
+        en: 'New orders will appear here automatically. Keep reminders and printers online.',
+      }),
+    },
+    DINE_IN: {
+      title: localLabel({ zh: '暂无堂食订单', vi: 'Chua co don tai ban', en: 'No dine-in orders' }),
+      description: localLabel({
+        zh: '顾客扫码点餐后会显示在这里。',
+        vi: 'Don quet ma tai ban se hien thi tai day.',
+        en: 'Table QR orders will appear here.',
+      }),
+    },
+    PICKUP: {
+      title: localLabel({ zh: '暂无自取订单', vi: 'Chua co don tu lay', en: 'No pickup orders' }),
+      description: localLabel({
+        zh: '顾客选择到店自取后会显示在这里。',
+        vi: 'Don den cua hang lay se hien thi tai day.',
+        en: 'Pickup orders will appear here.',
+      }),
+    },
+    DELIVERY: {
+      title: localLabel({ zh: '暂无配送订单', vi: 'Chua co don giao hang', en: 'No delivery orders' }),
+      description: localLabel({
+        zh: '顾客选择商家配送后会显示在这里。',
+        vi: 'Don giao boi nha hang se hien thi tai day.',
+        en: 'Merchant delivery orders will appear here.',
+      }),
+    },
+    ABNORMAL: {
+      title: localLabel({ zh: '暂无异常订单', vi: 'Khong co don bat thuong', en: 'No abnormal orders' }),
+      description: localLabel({
+        zh: '当前没有打印失败或长时间未处理订单。',
+        vi: 'Khong co don in loi hoac cho xu ly qua lau.',
+        en: 'There are no failed-print or overdue pending orders right now.',
+      }),
+    },
+  };
+  return states[activeCategory.value];
+});
+
+watch(
+  () => route.fullPath,
+  () => {
+    const nextHighlightId = requestedHighlightOrderId.value;
+    if (nextHighlightId) {
+      activeCategory.value = 'ALL';
+      activeQuickStatus.value = 'ALL';
+    }
+  },
+);
+
+watch(
+  () => filters.orderType,
+  (value) => {
+    if (value) {
+      activeCategory.value = value;
+      return;
+    }
+    if (activeCategory.value !== 'ABNORMAL') {
+      activeCategory.value = 'ALL';
+    }
+  },
+);
+
+watch(
+  requestedHighlightOrderId,
+  async (orderId) => {
+    if (!orderId) return;
+    markHighlightedOrder(orderId);
+    if (await focusHighlightedOrder()) {
+      await clearHighlightQuery();
+    }
+  },
+  { immediate: true },
+);
+
+function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
+  return labels[locale.value];
+}
 
 function getSpeechLanguage(): OrderSpeechLanguage {
   if (locale.value === 'vi') return 'vi-VN';
@@ -133,10 +367,7 @@ async function focusHighlightedOrder() {
   const orderId = highlightedOrderId.value || requestedHighlightOrderId.value;
   if (!orderId) return false;
   await nextTick();
-  const selector = window.matchMedia('(max-width: 760px)').matches
-    ? `.mobile-order-card[data-order-id="${orderId}"]`
-    : `tr[data-order-id="${orderId}"]`;
-  const target = document.querySelector(selector) as HTMLElement | null;
+  const target = document.querySelector(`[data-order-id="${orderId}"]`) as HTMLElement | null;
   if (!target) return false;
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   return true;
@@ -145,42 +376,26 @@ async function focusHighlightedOrder() {
 async function clearHighlightQuery() {
   if (!requestedHighlightOrderId.value) return;
   const { highlightOrderId, ...rest } = route.query;
-  await router.replace({
-    query: rest,
-  });
+  await router.replace({ query: rest });
 }
 
-function orderTypeLabel(type: OrderType) {
-  const labels: Record<OrderType, TranslationKey> = {
-    DINE_IN: 'dineIn',
-    PICKUP: 'pickup',
-    DELIVERY: 'delivery',
-  };
-  return t(labels[type]);
+function orderMatchesCategory(order: MerchantOrder, category: OrderCategory) {
+  if (category === 'ALL') return true;
+  if (category === 'ABNORMAL') return isAbnormalOrder(order);
+  return order.orderType === category;
 }
 
-function serviceInfo(order: MerchantOrder) {
-  if (order.orderType === 'DINE_IN') {
-    return t('tableNumberValue', {
-      value: order.tableNoSnapshot || order.table?.tableNo || '-',
-    });
-  }
-  if (order.orderType === 'PICKUP') return order.contactPhone || t('pickup');
-  return order.deliveryAddress || t('delivery');
+function orderMatchesQuickStatus(order: MerchantOrder, quickStatus: QuickStatus) {
+  if (quickStatus === 'ALL') return true;
+  return quickStatusForOrder(order) === quickStatus;
 }
 
-function orderItems(order: MerchantOrder) {
-  return order.items
-    .map((item) => `${item.productNameZhSnapshot} × ${item.quantity}`)
-    .join('、') || t('noItemDetails');
-}
-
-function money(value: string) {
-  return `${Number(value).toLocaleString()} ₫`;
-}
-
-function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
-  return labels[locale.value];
+function quickStatusForOrder(order: MerchantOrder): QuickStatus {
+  if (order.status === 'PENDING_ACCEPTANCE') return 'PENDING';
+  if (order.status === 'ACCEPTED' || order.status === 'PREPARING') return 'PREPARING';
+  if (order.status === 'READY' || order.status === 'DELIVERING') return 'READY';
+  if (order.status === 'COMPLETED') return 'COMPLETED';
+  return 'CANCELLED';
 }
 
 function latestPrintLogsByPrinter(order: MerchantOrder) {
@@ -193,24 +408,109 @@ function latestPrintLogsByPrinter(order: MerchantOrder) {
   });
 }
 
+function isAbnormalOrder(order: MerchantOrder) {
+  const logs = latestPrintLogsByPrinter(order);
+  const hasFailedPrint = logs.some((log) => log.status === 'FAILED');
+  const pendingTooLong =
+    order.status === 'PENDING_ACCEPTANCE'
+    && Date.now() - new Date(order.createdAt).getTime() > 20 * 60 * 1000;
+  return hasFailedPrint || pendingTooLong;
+}
+
+function orderTypeLabel(type: OrderType) {
+  const labels: Record<OrderType, string> = {
+    DINE_IN: localLabel({ zh: '堂食', vi: 'Tai ban', en: 'Dine in' }),
+    PICKUP: localLabel({ zh: '自取', vi: 'Tu lay', en: 'Pickup' }),
+    DELIVERY: localLabel({ zh: '商家配送', vi: 'Nha hang giao', en: 'Delivery' }),
+  };
+  return labels[type];
+}
+
+function orderTypeTone(type: OrderType) {
+  const tones: Record<OrderType, string> = {
+    DINE_IN: 'type-dine',
+    PICKUP: 'type-pickup',
+    DELIVERY: 'type-delivery',
+  };
+  return tones[type];
+}
+
+function serviceSummary(order: MerchantOrder) {
+  if (order.orderType === 'DINE_IN') {
+    return {
+      icon: 'table' as const,
+      title: localLabel({
+        zh: `桌号 ${order.tableNoSnapshot || order.table?.tableNo || '-'}`,
+        vi: `Ban ${order.tableNoSnapshot || order.table?.tableNo || '-'}`,
+        en: `Table ${order.tableNoSnapshot || order.table?.tableNo || '-'}`,
+      }),
+      subtitle: localLabel({ zh: '堂食扫码点餐', vi: 'Goi mon bang QR', en: 'Table QR order' }),
+    };
+  }
+  if (order.orderType === 'PICKUP') {
+    return {
+      icon: 'phone' as const,
+      title: order.contactName || order.user?.nickname || order.contactPhone || localLabel({
+        zh: '到店自取',
+        vi: 'Khach tu lay',
+        en: 'Pickup customer',
+      }),
+      subtitle: order.contactPhone || localLabel({
+        zh: '顾客到店自取',
+        vi: 'Khach den cua hang lay',
+        en: 'Pickup at store',
+      }),
+    };
+  }
+  return {
+    icon: 'map' as const,
+    title: order.contactName || order.user?.nickname || order.contactPhone || localLabel({
+      zh: '配送顾客',
+      vi: 'Khach giao hang',
+      en: 'Delivery customer',
+    }),
+    subtitle: order.deliveryAddress || order.contactPhone || localLabel({
+      zh: '商家自行配送',
+      vi: 'Nha hang tu giao',
+      en: 'Merchant delivery',
+    }),
+  };
+}
+
+function settlementLabel(order: MerchantOrder) {
+  return order.settlementStatus === 'SETTLED'
+    ? localLabel({ zh: '已收款', vi: 'Da thanh toan', en: 'Settled' })
+    : localLabel({ zh: '线下收款', vi: 'Thu tien tai quan', en: 'Offline payment' });
+}
+
+function settlementHint(order: MerchantOrder) {
+  return order.settlementStatus === 'SETTLED'
+    ? localLabel({ zh: '已完成结算', vi: 'Da chot thanh toan', en: 'Payment completed' })
+    : localLabel({ zh: '到店或线下收款', vi: 'Thu tien truc tiep', en: 'Collected offline' });
+}
+
+function settlementTone(order: MerchantOrder) {
+  return order.settlementStatus === 'SETTLED' ? 'success' : 'muted';
+}
+
 function printStatusLabel(order: MerchantOrder) {
   const logs = latestPrintLogsByPrinter(order);
   if (!logs.length) {
-    return localLabel({ zh: '未打印', vi: 'Chưa in', en: 'Not printed' });
+    return localLabel({ zh: '未打印', vi: 'Chua in', en: 'Not printed' });
   }
   const hasSuccess = logs.some((log) => log.status === 'SUCCESS');
   const hasFailed = logs.some((log) => log.status === 'FAILED');
   const hasPrinting = logs.some((log) => log.status === 'PENDING' || log.status === 'PRINTING');
   if (hasSuccess && hasFailed) {
-    return localLabel({ zh: '部分成功', vi: 'Thành công một phần', en: 'Partially printed' });
+    return localLabel({ zh: '部分成功', vi: 'Thanh cong mot phan', en: 'Partial success' });
   }
   if (hasSuccess) {
-    return localLabel({ zh: '已打印', vi: 'Đã in', en: 'Printed' });
+    return localLabel({ zh: '已打印', vi: 'Da in', en: 'Printed' });
   }
   if (hasPrinting) {
-    return localLabel({ zh: '打印中', vi: 'Đang in', en: 'Printing' });
+    return localLabel({ zh: '打印中', vi: 'Dang in', en: 'Printing' });
   }
-  return localLabel({ zh: '打印失败', vi: 'In lỗi', en: 'Print failed' });
+  return localLabel({ zh: '打印失败', vi: 'In loi', en: 'Print failed' });
 }
 
 function printStatusClass(order: MerchantOrder) {
@@ -219,10 +519,36 @@ function printStatusClass(order: MerchantOrder) {
   const hasFailed = logs.some((log) => log.status === 'FAILED');
   const hasPrinting = logs.some((log) => log.status === 'PENDING' || log.status === 'PRINTING');
   if (hasSuccess && !hasFailed) return 'success';
-  if (hasSuccess && hasFailed) return 'warning-badge';
-  if (hasFailed) return 'danger-badge';
-  if (hasPrinting) return 'warning-badge';
+  if (hasSuccess && hasFailed) return 'warning';
+  if (hasFailed) return 'danger';
+  if (hasPrinting) return 'info';
   return 'muted';
+}
+
+function statusLabel(status: OrderStatus) {
+  const labels: Record<OrderStatus, TranslationKey> = {
+    PENDING_ACCEPTANCE: 'pendingAcceptance',
+    ACCEPTED: 'accepted',
+    PREPARING: 'preparing',
+    READY: 'ready',
+    DELIVERING: 'delivering',
+    COMPLETED: 'completed',
+    CANCELLED: 'cancelled',
+  };
+  return t(labels[status]);
+}
+
+function statusTone(status: OrderStatus) {
+  const tones: Record<OrderStatus, string> = {
+    PENDING_ACCEPTANCE: 'status-pending',
+    ACCEPTED: 'status-progress',
+    PREPARING: 'status-progress',
+    READY: 'status-ready',
+    DELIVERING: 'status-ready',
+    COMPLETED: 'status-completed',
+    CANCELLED: 'status-cancelled',
+  };
+  return tones[status];
 }
 
 function primaryAction(order: MerchantOrder) {
@@ -282,12 +608,29 @@ function chatUnreadCount(order: MerchantOrder) {
   return order.chatConversation?.merchantUnreadCount ?? 0;
 }
 
+function selectCategory(category: OrderCategory) {
+  activeCategory.value = category;
+  if (category === 'ALL' || category === 'ABNORMAL') {
+    filters.orderType = '';
+    return;
+  }
+  filters.orderType = category;
+}
+
+function selectQuickStatus(status: QuickStatus) {
+  activeQuickStatus.value = status;
+}
+
 function showPendingOnly() {
-  filters.status = 'PENDING_ACCEPTANCE';
+  filters.status = '';
+  filters.orderType = '';
+  activeCategory.value = 'ALL';
+  activeQuickStatus.value = 'PENDING';
   void load();
 }
 
 function applyFilters() {
+  activeQuickStatus.value = filters.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : 'ALL';
   void load();
 }
 
@@ -300,23 +643,61 @@ async function handleSoundToggle() {
   toggleOrderSound();
 }
 
-watch(
-  requestedHighlightOrderId,
-  async (orderId) => {
-    if (!orderId) return;
-    markHighlightedOrder(orderId);
-    if (await focusHighlightedOrder()) {
-      await clearHighlightQuery();
-    }
-  },
-  { immediate: true },
-);
+function orderItemsSummary(order: MerchantOrder) {
+  return order.items
+    .slice(0, 2)
+    .map((item) => `${item.productNameZhSnapshot} × ${item.quantity}`)
+    .join('、');
+}
+
+function money(value: string) {
+  return `₫ ${Number(value || 0).toLocaleString('en-US')}`;
+}
+
+function timePart(value: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat(locale.value === 'vi' ? 'vi-VN' : 'zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function datePart(value: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat('en-GB', {
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function iconPaths(icon: DashboardIcon) {
+  const icons: Record<DashboardIcon, string[]> = {
+    all: ['M4 6h16', 'M4 12h16', 'M4 18h10', 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'],
+    dine: ['M7 4v7', 'M11 4v7', 'M15 4v7', 'M5 11h12', 'M9 11v9', 'M15 11v9'],
+    pickup: ['M5 8h14l-1 10H6L5 8Z', 'M9 8V6a3 3 0 0 1 6 0v2'],
+    delivery: ['M3 8h11v7H3z', 'M14 10h3l3 3v2h-6', 'M7 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', 'M17 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'],
+    abnormal: ['M12 4 21 20H3L12 4Z', 'M12 10v4', 'M12 17h.01'],
+    clock: ['M12 7v5l3 3', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z'],
+    progress: ['M4 12h6', 'M10 12h4', 'M14 12h6', 'M12 4v16'],
+    ready: ['M4 13h6l2 2 8-8', 'M18 9l2 2'],
+    completed: ['M5 12 10 17 19 8'],
+    cancelled: ['M6 6l12 12', 'M18 6 6 18'],
+    table: ['M4 8h16', 'M7 8v10', 'M17 8v10', 'M6 4h12v4H6z'],
+    phone: ['M6.5 4h3l1.5 4-2 1.5a16 16 0 0 0 6 6L17 13l4 1.5v3A2.5 2.5 0 0 1 18.5 20C10.5 20 4 13.5 4 5.5A2.5 2.5 0 0 1 6.5 3Z'],
+    map: ['M8 18 4 20V6l4-2 8 2 4-2v14l-4 2-8-2Z', 'M8 4v14', 'M16 6v14'],
+    logout: ['M10 17 15 12 10 7', 'M15 12H7', 'M12 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6'],
+  };
+  return icons[icon];
+}
 
 onMounted(async () => {
   await load();
   timer = window.setInterval(load, 10000);
 });
+
 onBeforeUnmount(() => window.clearInterval(timer));
+
 onBeforeUnmount(() => {
   if (highlightTimer !== undefined) {
     window.clearTimeout(highlightTimer);
@@ -332,416 +713,891 @@ function todayInVietnam() {
     day: '2-digit',
   }).format(new Date());
 }
-
-type Action =
-  | 'accept'
-  | 'start-preparing'
-  | 'ready'
-  | 'start-delivery'
-  | 'complete';
 </script>
 
 <template>
-  <PageHeader :title="t('orders')" />
+  <div class="merchant-orders-page">
+    <PageHeader
+      :title="t('orders')"
+      :description="localLabel({
+        zh: '实时查看和处理各类订单',
+        vi: 'Theo doi va xu ly don hang theo thoi gian thuc',
+        en: 'Track and process restaurant orders in real time',
+      })"
+    />
 
-  <div v-if="hasNewPendingOrders && voiceNotifyEnabled" class="order-alert order-alert-new">
-    <div>
-      <strong>{{ t('newOrderNotice') }}</strong>
-      <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
-    </div>
-    <button type="button" class="sound-toggle" :class="{ active: orderSoundEnabled }" @click="handleSoundToggle">
-      {{ soundButtonLabel }}
-    </button>
-  </div>
-
-  <div v-if="pendingCount" class="card order-alert">
-    <div>
-      <strong>{{ t('pendingAcceptance') }}</strong>
-      <p>{{ t('pendingOrdersCount', { count: pendingCount }) }}</p>
-    </div>
-    <button type="button" class="secondary" @click="showPendingOnly">{{ t('viewOrders') }}</button>
-  </div>
-
-  <form class="card order-filters" @submit.prevent="applyFilters">
-    <label>{{ t('date') }}<input v-model="filters.date" type="date" /></label>
-    <label>
-      {{ t('status') }}
-      <select v-model="filters.status">
-        <option value="">{{ t('allStatuses') }}</option>
-        <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
-        <option value="ACCEPTED">{{ t('accepted') }}</option>
-        <option value="PREPARING">{{ t('preparing') }}</option>
-        <option value="READY">{{ t('ready') }}</option>
-        <option value="DELIVERING">{{ t('delivering') }}</option>
-        <option value="COMPLETED">{{ t('completed') }}</option>
-        <option value="CANCELLED">{{ t('cancelled') }}</option>
-      </select>
-    </label>
-    <label>
-      {{ t('orderType') }}
-      <select v-model="filters.orderType">
-        <option value="">{{ t('allTypes') }}</option>
-        <option value="DINE_IN">{{ t('dineIn') }}</option>
-        <option value="PICKUP">{{ t('pickup') }}</option>
-        <option value="DELIVERY">{{ t('delivery') }}</option>
-      </select>
-    </label>
-    <button>{{ t('query') }}</button>
-  </form>
-
-  <p class="message">{{ message }}</p>
-
-  <div class="mobile-order-list">
-    <article
-      v-for="order in displayRows"
-      :key="order.id"
-      :data-order-id="order.id"
-      :class="[
-        'mobile-order-card',
-        {
-          'new-order-card': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
-          'highlighted-order-card': highlightedOrderId === order.id,
-        },
-      ]"
-    >
-      <header>
-        <div>
-          <span class="service-pill">{{ orderTypeLabel(order.orderType) }} · {{ serviceInfo(order) }}</span>
-          <span
-            v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
-            class="new-order-badge"
-          >
-            {{ t('newOrderBadge') }}
-          </span>
-          <strong>#{{ order.orderNo }}</strong>
-        </div>
-        <OrderStatusBadge :status="order.status" />
-      </header>
-      <small class="order-time">{{ new Date(order.createdAt).toLocaleString() }}</small>
-      <p class="items">{{ orderItems(order) }}</p>
-      <small v-if="order.customerRemark" class="remark">
-        {{ t('remark') }}：{{ order.customerRemark }}
-      </small>
-      <span :class="['badge', printStatusClass(order)]">{{ printStatusLabel(order) }}</span>
-      <footer>
-        <span>{{ t('amount') }}</span>
-        <b>{{ money(order.totalAmountVnd) }}</b>
-      </footer>
-      <div class="card-actions">
-        <button
-          v-if="primaryAction(order)"
-          type="button"
-          :disabled="operatingId === order.id"
-          @click="execute(order)"
-        >
-          {{ t(primaryAction(order)!.label) }}
-        </button>
-        <button
-          v-if="chatEnabled"
-          type="button"
-          class="secondary chat-entry"
-          @click="openChat(order)"
-        >
-          <span>{{ t('openChat') }}</span>
-          <span v-if="chatUnreadCount(order)" class="nav-badge">{{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}</span>
-        </button>
-        <RouterLink class="secondary card-link" :to="`/orders/${order.id}`">
-          {{ t('viewDetails') }}
-        </RouterLink>
+    <div v-if="hasNewPendingOrders && voiceNotifyEnabled" class="orders-alert orders-alert-new">
+      <div>
+        <strong>{{ t('newOrderNotice') }}</strong>
+        <p>{{ t('newPendingOrdersCount', { count: newPendingOrderIds.length }) }}</p>
       </div>
-    </article>
-    <p v-if="!rows.length" class="empty">{{ t('noMatchingOrders') }}</p>
-  </div>
+      <button
+        type="button"
+        class="orders-sound-toggle"
+        :class="{ active: orderSoundEnabled }"
+        @click="handleSoundToggle"
+      >
+        {{ soundButtonLabel }}
+      </button>
+    </div>
 
-  <div class="card table-wrap desktop-orders">
-    <table class="orders-table">
-      <thead>
-        <tr>
-          <th>{{ t('order') }}</th><th>{{ t('type') }}</th><th>{{ t('serviceInfo') }}</th><th>{{ t('amount') }}</th>
-          <th>{{ t('settlement') }}</th><th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th><th>{{ t('status') }}</th><th>{{ t('orderTime') }}</th><th>{{ t('actions') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="order in displayRows"
-          :key="order.id"
-          :data-order-id="order.id"
-          :class="{
-            'new-order-row': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
-            'highlighted-order-row': highlightedOrderId === order.id,
-          }"
-        >
-          <td>{{ order.orderNo }}<small>{{ t('itemCount', { count: order.items.length }) }}</small></td>
-          <td>{{ orderTypeLabel(order.orderType) }}</td>
-          <td>{{ serviceInfo(order) }}</td>
-          <td>{{ money(order.totalAmountVnd) }}</td>
-          <td>{{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}</td>
-          <td><span :class="['badge', printStatusClass(order)]">{{ printStatusLabel(order) }}</span></td>
-          <td><OrderStatusBadge :status="order.status" /></td>
-          <td>{{ new Date(order.createdAt).toLocaleString() }}</td>
-          <td class="actions">
-            <button
-              v-if="primaryAction(order)"
-              class="small"
-              :disabled="operatingId === order.id"
-              @click="execute(order)"
-            >
-              {{ t(primaryAction(order)!.label) }}
-            </button>
-            <button
-              v-if="chatEnabled"
-              type="button"
-              class="small secondary chat-entry"
-              @click="openChat(order)"
-            >
-              <span>{{ t('openChat') }}</span>
-              <span v-if="chatUnreadCount(order)" class="nav-badge">{{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}</span>
-            </button>
-            <RouterLink class="text-link" :to="`/orders/${order.id}`">{{ t('viewDetails') }}</RouterLink>
-          </td>
-        </tr>
-        <tr v-if="!rows.length">
-          <td colspan="9" class="empty">{{ t('noMatchingOrders') }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    <div v-if="pendingCount" class="orders-alert orders-alert-pending">
+      <div>
+        <strong>{{ t('pendingAcceptance') }}</strong>
+        <p>{{ t('pendingOrdersCount', { count: pendingCount }) }}</p>
+      </div>
+      <button type="button" class="orders-outline-button" @click="showPendingOnly">
+        {{ t('viewOrders') }}
+      </button>
+    </div>
 
-  <OrderChatPanel
-    v-if="chatOrder"
-    :order="chatOrder"
-    @close="closeChat"
-    @updated="applyChatConversation(chatOrderId, $event)"
-  />
+    <form class="orders-filter-card" @submit.prevent="applyFilters">
+      <label class="orders-filter-field">
+        <span>{{ t('date') }}</span>
+        <input v-model="filters.date" type="date" />
+      </label>
+      <label class="orders-filter-field">
+        <span>{{ t('status') }}</span>
+        <select v-model="filters.status">
+          <option value="">{{ t('allStatuses') }}</option>
+          <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
+          <option value="ACCEPTED">{{ t('accepted') }}</option>
+          <option value="PREPARING">{{ t('preparing') }}</option>
+          <option value="READY">{{ t('ready') }}</option>
+          <option value="DELIVERING">{{ t('delivering') }}</option>
+          <option value="COMPLETED">{{ t('completed') }}</option>
+          <option value="CANCELLED">{{ t('cancelled') }}</option>
+        </select>
+      </label>
+      <label class="orders-filter-field">
+        <span>{{ t('orderType') }}</span>
+        <select v-model="filters.orderType">
+          <option value="">{{ t('allTypes') }}</option>
+          <option value="DINE_IN">{{ t('dineIn') }}</option>
+          <option value="PICKUP">{{ t('pickup') }}</option>
+          <option value="DELIVERY">{{ t('delivery') }}</option>
+        </select>
+      </label>
+      <button type="submit" class="orders-submit-button">{{ t('query') }}</button>
+    </form>
+
+    <section class="order-category-grid">
+      <button
+        v-for="card in orderCategoryCards"
+        :key="card.key"
+        type="button"
+        class="order-category-card"
+        :class="[`accent-${card.accent}`, { active: activeCategory === card.key }]"
+        @click="selectCategory(card.key)"
+      >
+        <span class="order-category-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path v-for="segment in iconPaths(card.icon)" :key="segment" :d="segment" />
+          </svg>
+        </span>
+        <div class="order-category-copy">
+          <strong>{{ card.title }}</strong>
+          <span class="order-category-count">{{ card.count }}</span>
+          <small>{{ card.description }}</small>
+        </div>
+      </button>
+    </section>
+
+    <section class="order-status-strip">
+      <button
+        v-for="status in quickStatusCards"
+        :key="status.key"
+        type="button"
+        class="order-status-chip"
+        :class="{ active: activeQuickStatus === status.key }"
+        @click="selectQuickStatus(status.key)"
+      >
+        <span class="order-status-chip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path v-for="segment in iconPaths(status.icon)" :key="segment" :d="segment" />
+          </svg>
+        </span>
+        <span>{{ status.label }}</span>
+        <span class="order-status-chip-badge" :class="`tone-${status.badgeTone}`">{{ status.count }}</span>
+      </button>
+    </section>
+
+    <p v-if="message" class="orders-message">{{ message }}</p>
+
+    <section class="orders-table-card">
+      <div class="orders-table-shell">
+        <table class="orders-table">
+          <colgroup>
+            <col class="col-order" />
+            <col class="col-type" />
+            <col class="col-service" />
+            <col class="col-amount" />
+            <col class="col-payment" />
+            <col class="col-print" />
+            <col class="col-status" />
+            <col class="col-time" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{{ localLabel({ zh: '订单信息', vi: 'Thong tin don', en: 'Order info' }) }}</th>
+              <th>{{ localLabel({ zh: '订单类别', vi: 'Loai don', en: 'Order type' }) }}</th>
+              <th>{{ localLabel({ zh: '用餐/取餐/配送信息', vi: 'Thong tin phuc vu', en: 'Dining / pickup / delivery' }) }}</th>
+              <th>{{ localLabel({ zh: '金额', vi: 'So tien', en: 'Amount' }) }}</th>
+              <th>{{ localLabel({ zh: '收款', vi: 'Thu tien', en: 'Settlement' }) }}</th>
+              <th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
+              <th>{{ t('status') }}</th>
+              <th>{{ t('orderTime') }}</th>
+              <th>{{ t('actions') }}</th>
+            </tr>
+          </thead>
+          <tbody v-if="displayRows.length">
+            <tr
+              v-for="order in displayRows"
+              :key="order.id"
+              :data-order-id="order.id"
+              :class="[
+                'orders-row',
+                {
+                  'orders-row--new': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
+                  'orders-row--highlight': highlightedOrderId === order.id,
+                  'orders-row--abnormal': isAbnormalOrder(order),
+                },
+              ]"
+            >
+              <td>
+                <div class="order-info-cell">
+                  <strong>#{{ order.orderNo }}</strong>
+                  <span>{{ t('itemCount', { count: order.items.length }) }}</span>
+                  <span
+                    v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
+                    class="orders-mini-badge"
+                  >
+                    {{ t('newOrderBadge') }}
+                  </span>
+                  <small v-if="orderItemsSummary(order)">{{ orderItemsSummary(order) }}</small>
+                </div>
+              </td>
+              <td>
+                <span class="order-pill" :class="orderTypeTone(order.orderType)">
+                  {{ orderTypeLabel(order.orderType) }}
+                </span>
+              </td>
+              <td>
+                <div class="service-info-cell">
+                  <div class="service-info-line">
+                    <span class="service-info-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path v-for="segment in iconPaths(serviceSummary(order).icon)" :key="segment" :d="segment" />
+                      </svg>
+                    </span>
+                    <strong>{{ serviceSummary(order).title }}</strong>
+                  </div>
+                  <span>{{ serviceSummary(order).subtitle }}</span>
+                  <small v-if="order.customerRemark">{{ t('remark') }}：{{ order.customerRemark }}</small>
+                </div>
+              </td>
+              <td>
+                <div class="amount-cell">
+                  <strong>{{ money(order.totalAmountVnd) }}</strong>
+                  <span v-if="Number(order.deliveryFeeVnd) > 0">
+                    {{ localLabel({ zh: '含配送费', vi: 'Bao gom phi giao', en: 'Includes delivery fee' }) }}
+                  </span>
+                </div>
+              </td>
+              <td>
+                <div class="status-stack">
+                  <span class="mini-pill" :class="settlementTone(order)">{{ settlementLabel(order) }}</span>
+                  <small>{{ settlementHint(order) }}</small>
+                </div>
+              </td>
+              <td>
+                <div class="status-stack">
+                  <span class="mini-pill" :class="printStatusClass(order)">{{ printStatusLabel(order) }}</span>
+                  <small v-if="latestPrintLogsByPrinter(order).length">
+                    {{ latestPrintLogsByPrinter(order).length }}
+                    {{ localLabel({ zh: '台打印机', vi: 'may in', en: 'printers' }) }}
+                  </small>
+                  <small v-else>—</small>
+                </div>
+              </td>
+              <td>
+                <span class="order-pill" :class="statusTone(order.status)">
+                  {{ statusLabel(order.status) }}
+                </span>
+              </td>
+              <td>
+                <div class="order-time-cell">
+                  <strong>{{ timePart(order.createdAt) }}</strong>
+                  <span>{{ datePart(order.createdAt) }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="orders-actions">
+                  <button
+                    v-if="primaryAction(order)"
+                    type="button"
+                    class="orders-primary-button"
+                    :disabled="operatingId === order.id"
+                    @click="execute(order)"
+                  >
+                    {{ t(primaryAction(order)!.label) }}
+                  </button>
+                  <RouterLink class="orders-outline-button orders-link-button" :to="`/orders/${order.id}`">
+                    {{ t('viewDetails') }}
+                  </RouterLink>
+                  <button
+                    v-if="chatEnabled"
+                    type="button"
+                    class="orders-outline-button orders-chat-button"
+                    @click="openChat(order)"
+                  >
+                    <span>{{ t('openChat') }}</span>
+                    <span v-if="chatUnreadCount(order)" class="nav-badge">
+                      {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                    </span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="!displayRows.length" class="orders-empty-state">
+        <span class="orders-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path v-for="segment in iconPaths(activeCategory === 'ABNORMAL' ? 'abnormal' : 'all')" :key="segment" :d="segment" />
+          </svg>
+        </span>
+        <strong>{{ emptyState.title }}</strong>
+        <p>{{ emptyState.description }}</p>
+      </div>
+    </section>
+
+    <OrderChatPanel
+      v-if="chatOrder"
+      :order="chatOrder"
+      @close="closeChat"
+      @updated="applyChatConversation(chatOrderId, $event)"
+    />
+  </div>
 </template>
 
 <style scoped>
-.order-alert {
+.merchant-orders-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1280px;
+}
+
+.merchant-orders-page :deep(.page-header) {
+  margin-bottom: 0;
+}
+
+.merchant-orders-page :deep(.page-header h1) {
+  color: #10261b;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.merchant-orders-page :deep(.page-header p) {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.orders-alert,
+.orders-filter-card,
+.orders-table-card {
+  border: 1px solid #e5ebe8;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 4%);
+}
+
+.orders-alert {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
-  padding: 18px;
-  border-left: 4px solid #ffb74d;
-  border-radius: 18px;
+  padding: 18px 20px;
+}
+
+.orders-alert strong {
+  color: #10261b;
+  font-size: 15px;
+}
+
+.orders-alert p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.orders-alert-new {
+  border-color: #f9d99a;
+  background: linear-gradient(180deg, #fff9ed 0%, #fffdf7 100%);
+}
+
+.orders-alert-pending {
+  border-color: #f5d59a;
   background: #fffaf2;
 }
 
-.order-alert-new {
-  border-left-color: #ff8a00;
-  background: linear-gradient(180deg, #fff8eb 0%, #fffaf2 100%);
-  box-shadow: 0 8px 20px rgb(31 45 36 / 5%);
-}
-
-.order-alert p {
-  margin: 4px 0 0;
-  color: #666666;
-}
-
-.order-alert-new strong {
-  color: #1f2d24;
-}
-
-.order-alert-new p {
-  color: #8a5a00;
-}
-
-.sound-toggle {
-  min-height: 38px;
-  padding: 8px 14px;
-  border: 1px solid #e4efe6;
-  border-radius: 12px;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-weight: 700;
-}
-
-.sound-toggle.active {
-  color: #fff;
-  background: #2e7d32;
-}
-
-.danger-badge {
-  color: #b42318;
-  background: #fee4e2;
-}
-
-.chat-entry {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.order-filters,
-.desktop-orders {
-  border-radius: 18px;
-}
-
-.order-filters button,
-.actions button {
-  min-height: 40px;
-  border-radius: 12px;
-  background: #2e7d32;
-}
-
-.mobile-order-list {
-  display: none;
-}
-
-.mobile-order-card {
-  display: grid;
-  gap: 13px;
-  padding: 18px;
-  border: 1px solid #eeeeee;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgb(31 45 36 / 7%);
-}
-
-.mobile-order-card.new-order-card {
-  border-color: #ffcc80;
-  box-shadow: 0 0 0 1px rgb(255 183 77 / 24%), 0 12px 26px rgb(31 45 36 / 8%);
-}
-
-.mobile-order-card.highlighted-order-card,
-.new-order-row.highlighted-order-row {
-  border-color: #ff8a00;
-  box-shadow: 0 0 0 1px rgb(255 138 0 / 28%), 0 12px 26px rgb(31 45 36 / 10%);
-  background: #fff4df;
-}
-
-.mobile-order-card header,
-.mobile-order-card footer,
-.card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mobile-order-card header > div {
-  display: grid;
-  gap: 8px;
-}
-
-.service-pill {
-  width: fit-content;
-  padding: 5px 10px;
-  border-radius: 999px;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.mobile-order-card header strong {
-  color: #1f2d24;
-  font-size: 17px;
-}
-
-.mobile-order-card small,
-.mobile-order-card p {
-  color: #666666;
-}
-
-.mobile-order-card .items {
-  margin: 0;
-  display: -webkit-box;
-  overflow: hidden;
-  line-height: 1.6;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.order-time {
-  display: block;
-}
-
-.mobile-order-card footer b {
-  color: #1f2d24;
-  font-size: 22px;
-}
-
-.remark {
-  display: block;
-}
-
-.card-actions button {
+.orders-sound-toggle,
+.orders-submit-button,
+.orders-primary-button {
   min-height: 42px;
-  border-radius: 12px;
-  background: #2e7d32;
+  padding: 0 18px;
+  border-radius: 10px;
+  color: #fff;
+  background: #2f8f3a;
   font-weight: 700;
 }
 
-.card-link {
+.orders-sound-toggle:hover:not(:disabled),
+.orders-submit-button:hover:not(:disabled),
+.orders-primary-button:hover:not(:disabled) {
+  background: #257231;
+}
+
+.orders-sound-toggle.active {
+  background: #1c6a27;
+}
+
+.orders-outline-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 42px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  color: #2e7d32;
-  background: #eaf7ee;
-  text-decoration: none;
-  white-space: nowrap;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #cfe0d2;
+  border-radius: 10px;
+  color: #1e6d29;
+  background: #fff;
   font-weight: 700;
 }
 
-.new-order-badge {
+.orders-outline-button:hover:not(:disabled) {
+  background: #f1f8f2;
+}
+
+.orders-filter-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 20px 24px;
+}
+
+.orders-filter-field {
+  gap: 8px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.orders-filter-field input,
+.orders-filter-field select {
+  height: 42px;
+  border: 1px solid #dbe3df;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.order-category-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.order-category-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 114px;
+  padding: 18px 18px 16px;
+  border: 1px solid #edf1ef;
+  border-radius: 16px;
+  color: #111827;
+  background: #fff;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 4%);
+  text-align: left;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.order-category-card:hover {
+  transform: translateY(-2px);
+  border-color: #b9dec0;
+  box-shadow: 0 14px 28px rgb(15 23 42 / 7%);
+}
+
+.order-category-card.active {
+  border-color: #2f8f3a;
+  box-shadow: 0 0 0 1px rgb(47 143 58 / 16%), 0 16px 28px rgb(47 143 58 / 10%);
+}
+
+.order-category-icon {
   display: inline-flex;
   align-items: center;
-  width: fit-content;
-  padding: 4px 8px;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
   border-radius: 999px;
-  color: #a95d00;
-  background: #fff1dc;
+  color: #fff;
+}
+
+.order-category-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.accent-all .order-category-icon {
+  background: linear-gradient(180deg, #10b981 0%, #2f8f3a 100%);
+}
+
+.accent-dine .order-category-icon {
+  background: linear-gradient(180deg, #34d399 0%, #22c55e 100%);
+}
+
+.accent-pickup .order-category-icon {
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.accent-delivery .order-category-icon {
+  background: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.accent-abnormal .order-category-icon {
+  background: linear-gradient(180deg, #f97316 0%, #ef4444 100%);
+}
+
+.order-category-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.order-category-copy strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.order-category-copy small {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.order-category-count {
+  color: #111827;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.order-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.order-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid #dbe3df;
+  border-radius: 10px;
+  color: #425466;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.order-status-chip.active {
+  border-color: #2f8f3a;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.order-status-chip-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.order-status-chip-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.order-status-chip-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
 }
 
-.new-order-row {
+.tone-all {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.tone-pending {
+  color: #c2410c;
+  background: #ffedd5;
+}
+
+.tone-preparing {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.tone-ready {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.tone-completed {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.tone-cancelled {
+  color: #64748b;
+  background: #e2e8f0;
+}
+
+.orders-message {
+  min-height: 20px;
+  margin: 0;
+  color: #c2410c;
+  font-size: 13px;
+}
+
+.orders-table-card {
+  overflow: hidden;
+}
+
+.orders-table-shell {
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  min-width: 1150px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.orders-table thead th {
+  padding: 15px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #475569;
+  background: #fbfcfb;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.orders-table tbody td {
+  padding: 16px 14px;
+  border-bottom: 1px solid #eef2f1;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.orders-row {
+  background: #fff;
+  transition: background-color 0.14s ease;
+}
+
+.orders-row:hover {
+  background: #f8faf8;
+}
+
+.orders-row--new {
   background: #fffaf2;
 }
 
-.highlighted-order-row {
-  background: #fff4df;
+.orders-row--abnormal {
+  box-shadow: inset 3px 0 0 #f97316;
 }
 
-@media (max-width: 760px) {
-  .desktop-orders {
-    display: none;
+.orders-row--highlight {
+  background: #eefbf0;
+}
+
+.col-order { width: 16%; }
+.col-type { width: 9%; }
+.col-service { width: 20%; }
+.col-amount { width: 10%; }
+.col-payment { width: 11%; }
+.col-print { width: 10%; }
+.col-status { width: 10%; }
+.col-time { width: 8%; }
+.col-actions { width: 16%; }
+
+.order-info-cell,
+.service-info-cell,
+.amount-cell,
+.status-stack,
+.order-time-cell {
+  display: grid;
+  gap: 5px;
+}
+
+.order-info-cell strong,
+.amount-cell strong,
+.order-time-cell strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.order-info-cell span,
+.service-info-cell span,
+.amount-cell span,
+.status-stack small,
+.order-time-cell span,
+.order-info-cell small,
+.service-info-cell small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.orders-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #9a5200;
+  background: #fff1dc;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.service-info-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-info-line strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.service-info-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: #2f8f3a;
+}
+
+.service-info-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.order-pill,
+.mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.type-dine {
+  color: #15803d;
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+.type-pickup {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.type-delivery {
+  color: #6d28d9;
+  border-color: #c4b5fd;
+  background: #ede9fe;
+}
+
+.status-pending {
+  color: #c2410c;
+  background: #ffedd5;
+}
+
+.status-progress {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.status-ready {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.status-completed {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.status-cancelled {
+  color: #64748b;
+  background: #e2e8f0;
+}
+
+.success {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.warning {
+  color: #c2410c;
+  background: #ffedd5;
+}
+
+.info {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.danger {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.muted {
+  color: #64748b;
+  background: #e2e8f0;
+}
+
+.orders-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.orders-actions .orders-primary-button,
+.orders-actions .orders-outline-button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.orders-link-button {
+  text-decoration: none;
+}
+
+.orders-chat-button {
+  gap: 6px;
+}
+
+.orders-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 170px;
+  padding: 36px 20px;
+  text-align: center;
+}
+
+.orders-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.orders-empty-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.orders-empty-state strong {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.orders-empty-state p {
+  max-width: 420px;
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1180px) {
+  .order-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .mobile-order-list {
-    display: grid;
+  .orders-filter-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-submit-button {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 820px) {
+  .merchant-orders-page {
     gap: 14px;
   }
 
-  .mobile-order-card header,
-  .mobile-order-card footer {
+  .orders-alert,
+  .orders-filter-card {
+    padding: 16px;
+  }
+
+  .orders-alert {
+    flex-direction: column;
     align-items: flex-start;
   }
 
-  .card-actions {
-    align-items: stretch;
+  .order-category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .card-actions button,
-  .card-link {
-    width: 100%;
+  .orders-filter-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .order-category-grid {
+    grid-template-columns: 1fr;
   }
 
-  .order-alert,
-  .order-alert-new {
-    align-items: flex-start;
-  }
-
-  .sound-toggle {
-    min-height: 34px;
-    padding: 7px 12px;
+  .order-status-strip {
+    gap: 10px;
   }
 }
 </style>

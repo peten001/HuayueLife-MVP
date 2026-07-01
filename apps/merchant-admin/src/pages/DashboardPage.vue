@@ -24,6 +24,7 @@ import {
   startAutoWakeLock,
   stopAutoWakeLock,
 } from '@/utils/wake-lock';
+import { getMerchantStaff } from '@/utils/storage';
 import type { MerchantOrder, MerchantProfile, OrderStatus } from '@/types/api';
 import {
   computeProfileCompletion,
@@ -38,6 +39,9 @@ const profileCompletion = ref(0);
 const missingProfileFields = ref<ProfileMissingField[]>([]);
 const profileLoaded = ref(false);
 const { locale, t } = useI18n();
+const staff = getMerchantStaff();
+const staffMerchant = staff?.merchant ?? null;
+const staffRole = staff?.role ?? 'STAFF';
 const message = ref('');
 const operatingId = ref('');
 const refreshCountdown = ref(10);
@@ -152,21 +156,51 @@ const mobileMetricCards = computed(() =>
             : operations.value.processing,
   })),
 );
-const orderFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'orders'));
-const productFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'products'));
-const tableFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'tables'));
-const voiceFeatureEnabled = computed(() => canAccessMerchantFeature(profile.value, 'voice'));
+function featureEnabled(feature: 'orders' | 'products' | 'tables' | 'voice') {
+  return (
+    canAccessMerchantFeature(profile.value, feature) ||
+    canAccessMerchantFeature(staffMerchant, feature)
+  );
+}
+
+const orderFeatureEnabled = computed(() => featureEnabled('orders'));
+const productFeatureEnabled = computed(() => featureEnabled('products'));
+const tableFeatureEnabled = computed(() => featureEnabled('tables'));
+const voiceFeatureEnabled = computed(() => featureEnabled('voice'));
 type QuickLink = { to: string; label: TranslationKey; icon: string };
-const quickLinks = computed<QuickLink[]>(() => {
-  const rows: Array<QuickLink | null> = [
-    orderFeatureEnabled.value ? { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' } : null,
-    productFeatureEnabled.value ? { to: '/menu/products', label: 'products', icon: '🍜' } : null,
-    tableFeatureEnabled.value ? { to: '/tables', label: 'tableQrCodes', icon: '▦' } : null,
-    orderFeatureEnabled.value ? { to: '/orders', label: 'orderRecords', icon: '🧾' } : null,
+const quickLinkByRole: Record<'OWNER' | 'MANAGER' | 'STAFF', QuickLink[]> = {
+  OWNER: [
+    { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' },
+    { to: '/menu/products', label: 'products', icon: '🍜' },
+    { to: '/tables', label: 'tableQrCodes', icon: '▦' },
+    { to: '/orders', label: 'orderRecords', icon: '🧾' },
     { to: '/merchant/profile', label: 'merchantProfile', icon: '🏪' },
     { to: '/staff', label: 'staffManagement', icon: '👥' },
-  ];
-  return rows.filter((item): item is QuickLink => Boolean(item));
+  ],
+  MANAGER: [
+    { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' },
+    { to: '/menu/products', label: 'products', icon: '🍜' },
+    { to: '/tables', label: 'tableQrCodes', icon: '▦' },
+    { to: '/orders', label: 'orderRecords', icon: '🧾' },
+    { to: '/merchant/profile', label: 'merchantProfile', icon: '🏪' },
+  ],
+  STAFF: [
+    { to: '/orders?status=PENDING_ACCEPTANCE', label: 'orderWorkbench', icon: '📋' },
+    { to: '/orders', label: 'orderRecords', icon: '🧾' },
+    { to: '/merchant/profile', label: 'merchantProfile', icon: '🏪' },
+  ],
+};
+
+function quickLinkAllowed(link: QuickLink) {
+  if (link.to.startsWith('/orders')) return true;
+  if (link.to === '/menu/products') return productFeatureEnabled.value || staffRole !== 'STAFF';
+  if (link.to === '/tables') return tableFeatureEnabled.value || staffRole !== 'STAFF';
+  if (link.to === '/staff') return staffRole === 'OWNER';
+  return true;
+}
+
+const quickLinks = computed<QuickLink[]>(() => {
+  return quickLinkByRole[staffRole].filter((item) => quickLinkAllowed(item));
 });
 const mobileQuickLinks = computed(() => quickLinks.value.slice(0, 4));
 const mobileQuickLinkClasses: Record<string, string> = {
