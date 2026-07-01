@@ -795,8 +795,14 @@ function toMinutes(value: string) {
               </button>
             </div>
 
-            <div class="table-wrap hours-table-wrap">
+            <div class="hours-table-wrap">
               <table class="hours-table">
+                <colgroup>
+                  <col class="hours-col-day" />
+                  <col class="hours-col-status" />
+                  <col class="hours-col-time" />
+                  <col class="hours-col-time" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>{{ t('dayLabel') }}</th>
@@ -808,10 +814,10 @@ function toMinutes(value: string) {
                 <tbody>
                   <tr v-for="day in schedule" :key="day.key">
                     <td class="hours-day-cell">{{ t(day.key) }}</td>
-                    <td>
-                      <label class="switch-inline">
+                    <td class="hours-status-cell">
+                      <label class="switch-compact">
                         <input v-model="day.enabled" type="checkbox" />
-                        <span>{{ t('openForBusiness') }}</span>
+                        <span class="switch-slider" aria-hidden="true"></span>
                       </label>
                     </td>
                     <td>
@@ -944,8 +950,9 @@ function toMinutes(value: string) {
             <p v-if="reportMessage" class="message card-message">{{ reportMessage }}</p>
 
             <div v-if="reportFeatureAvailable" class="report-settings-grid">
-              <label class="report-toggle-row">
+              <label class="switch-inline switch-inline--report">
                 <input v-model="reportForm.enabled" type="checkbox" />
+                <span class="switch-slider" aria-hidden="true"></span>
                 <span>{{ t('enableDailyReportPush') }}</span>
               </label>
               <label class="field-block">
@@ -1095,17 +1102,17 @@ function toMinutes(value: string) {
 <style scoped>
 .store-settings-page {
   display: grid;
-  gap: 24px;
+  gap: 16px;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 28px 40px;
+  padding: 20px 24px 32px;
 }
 
 .settings-hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
 }
 
 .settings-hero h1 {
@@ -1116,7 +1123,7 @@ function toMinutes(value: string) {
 }
 
 .settings-hero p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: #64748b;
   font-size: 14px;
   line-height: 1.6;
@@ -1139,8 +1146,8 @@ function toMinutes(value: string) {
 
 .settings-card-shell {
   display: grid;
-  gap: 24px;
-  padding: 24px 28px 28px;
+  gap: 18px;
+  padding: 20px 22px 22px;
   border: 1px solid #e5ebe8;
   border-radius: 18px;
   background: #fff;
@@ -1148,7 +1155,7 @@ function toMinutes(value: string) {
 }
 
 .settings-card-shell--security {
-  gap: 16px;
+  gap: 14px;
 }
 
 .settings-card-header,
@@ -1156,7 +1163,7 @@ function toMinutes(value: string) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .settings-card-header h2,
@@ -1176,7 +1183,7 @@ function toMinutes(value: string) {
 
 .subsection-header p,
 .security-description {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: #64748b;
   font-size: 13px;
   line-height: 1.6;
@@ -1185,7 +1192,7 @@ function toMinutes(value: string) {
 .settings-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -1224,13 +1231,13 @@ function toMinutes(value: string) {
 .profile-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 0.92fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 .overview-panel {
   display: grid;
   align-content: start;
-  gap: 16px;
+  gap: 12px;
 }
 
 .overview-panel h3 {
@@ -1242,7 +1249,7 @@ function toMinutes(value: string) {
 
 .readonly-stack {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .readonly-line {
@@ -1271,7 +1278,7 @@ function toMinutes(value: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 172px;
+  min-height: 148px;
   overflow: hidden;
   border: 1px solid #dbe3df;
   border-radius: 12px;
@@ -1292,7 +1299,7 @@ function toMinutes(value: string) {
 
 .settings-split {
   display: grid;
-  gap: 24px;
+  gap: 18px;
 }
 
 .settings-split--operations {
@@ -1305,22 +1312,22 @@ function toMinutes(value: string) {
 
 .settings-column {
   display: grid;
-  gap: 24px;
+  gap: 18px;
   align-content: start;
 }
 
 .settings-column--bordered {
-  padding-left: 24px;
+  padding-left: 18px;
   border-left: 1px solid #e5e7eb;
 }
 
 .settings-subsection {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .settings-subsection--divided {
-  padding-top: 24px;
+  padding-top: 18px;
   border-top: 1px solid #e5e7eb;
 }
 
@@ -1362,7 +1369,7 @@ function toMinutes(value: string) {
 }
 
 .notice-field textarea {
-  min-height: 152px;
+  min-height: 132px;
   padding: 12px;
   resize: vertical;
 }
@@ -1381,7 +1388,7 @@ function toMinutes(value: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .field-counter {
@@ -1392,7 +1399,7 @@ function toMinutes(value: string) {
 
 .settings-grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .settings-grid--delivery {
@@ -1414,11 +1421,6 @@ function toMinutes(value: string) {
   line-height: 1.6;
 }
 
-.hours-table-wrap,
-.table-wrap {
-  overflow-x: auto;
-}
-
 .hours-table,
 .table-wrap table {
   width: 100%;
@@ -1427,16 +1429,29 @@ function toMinutes(value: string) {
 }
 
 .hours-table {
+  table-layout: fixed;
   overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
+}
+
+.hours-col-day {
+  width: 60px;
+}
+
+.hours-col-status {
+  width: 84px;
+}
+
+.hours-col-time {
+  width: 118px;
 }
 
 .hours-table th,
 .hours-table td,
 .table-wrap th,
 .table-wrap td {
-  padding: 12px 10px;
+  padding: 8px 8px;
   border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: middle;
@@ -1446,7 +1461,7 @@ function toMinutes(value: string) {
 .table-wrap th {
   background: #f8fafc;
   color: #64748b;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1457,13 +1472,17 @@ function toMinutes(value: string) {
 
 .hours-day-cell {
   color: #111827;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .hours-table input {
+  width: 110px;
+  max-width: 100%;
   height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .switch-inline,
@@ -1475,9 +1494,74 @@ function toMinutes(value: string) {
   font-size: 14px;
 }
 
+.switch-inline--report {
+  gap: 10px;
+  min-height: 24px;
+}
+
+.switch-compact {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 22px;
+}
+
+.switch-compact input,
+.switch-inline--report input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.switch-slider {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d1d5db;
+  transition: background-color 0.2s ease;
+}
+
+.switch-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 22%);
+  transition: transform 0.2s ease;
+}
+
+.switch-compact input:checked + .switch-slider,
+.switch-inline--report input:checked + .switch-slider {
+  background: #16a34a;
+}
+
+.switch-compact input:checked + .switch-slider::after,
+.switch-inline--report input:checked + .switch-slider::after {
+  transform: translateX(18px);
+}
+
+.hours-status-cell {
+  text-align: center;
+}
+
+.hours-status-cell .switch-compact {
+  margin: 0 auto;
+}
+
 .report-settings-grid {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .table-wrap td strong {
@@ -1493,7 +1577,7 @@ function toMinutes(value: string) {
 .security-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  gap: 16px;
+  gap: 12px;
   align-items: end;
 }
 
@@ -1601,7 +1685,7 @@ function toMinutes(value: string) {
   .settings-column--bordered {
     padding-left: 0;
     border-left: 0;
-    padding-top: 24px;
+    padding-top: 18px;
     border-top: 1px solid #e5e7eb;
   }
 
@@ -1612,7 +1696,7 @@ function toMinutes(value: string) {
 
 @media (max-width: 900px) {
   .store-settings-page {
-    padding: 20px 16px 32px;
+    padding: 18px 16px 28px;
   }
 
   .settings-hero,
@@ -1630,6 +1714,10 @@ function toMinutes(value: string) {
   .settings-grid--delivery,
   .printer-modal-body {
     grid-template-columns: 1fr;
+  }
+
+  .hours-table-wrap {
+    overflow-x: auto;
   }
 }
 </style>
