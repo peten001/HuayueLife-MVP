@@ -25,6 +25,7 @@ const navByRole: Record<
   Array<[string, TranslationKey, MerchantFeature?]>
 > = {
   OWNER: [
+    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
     ['/menu/categories', 'categories', 'products'],
@@ -33,6 +34,7 @@ const navByRole: Record<
     ['/staff', 'staffManagement'],
   ],
   MANAGER: [
+    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
     ['/menu/categories', 'categories', 'products'],
@@ -40,6 +42,7 @@ const navByRole: Record<
     ['/tables', 'tables', 'tables'],
   ],
   STAFF: [
+    ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
   ],
