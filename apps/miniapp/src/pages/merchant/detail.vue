@@ -13,12 +13,6 @@ import type { MerchantDetail } from '@/types/api';
 import { isFavorite, toggleFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { requireLoginForAction } from '@/utils/login-guard';
-import {
-  buildAmapUrl,
-  buildGoogleMapsUrl,
-  openSystemMap,
-  type MerchantMapTarget,
-} from '@/utils/map-navigation';
 import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
@@ -76,8 +70,6 @@ const galleryImages = computed(() =>
       )
     : [],
 );
-const mapAppTestEnabled =
-  import.meta.env.DEV || import.meta.env.VITE_ENABLE_MAP_APP_TEST === 'true';
 
 usePageTitle(() => t('merchantDetailTitle'));
 
@@ -266,104 +258,6 @@ function handleAddressTap() {
   });
 }
 
-function merchantMapTarget(): MerchantMapTarget | null {
-  const location = merchantLocation();
-  if (!merchant.value || !location) return null;
-
-  return {
-    latitude: location.latitude,
-    longitude: location.longitude,
-    name: merchantName(merchant.value, locale.value),
-    address: merchant.value.addressDetail,
-  };
-}
-
-function getUrlHost(url: string) {
-  const matched = url.match(/^https?:\/\/([^/]+)/i);
-  return matched?.[1] ?? '';
-}
-
-function logMapTest(provider: 'google' | 'amap' | 'system', target: MerchantMapTarget, targetUrl = '') {
-  if (!mapAppTestEnabled) return;
-  console.log('[map-app-test]', {
-    provider,
-    merchantId: merchant.value?.id,
-    latitude: target.latitude,
-    longitude: target.longitude,
-    hasName: Boolean(target.name),
-    targetUrlHost: getUrlHost(targetUrl),
-  });
-}
-
-function openMapTestWebView(provider: 'google' | 'amap', target: MerchantMapTarget, targetUrl: string) {
-  const query = [
-    `provider=${provider}`,
-    `targetUrl=${encodeURIComponent(targetUrl)}`,
-    `latitude=${encodeURIComponent(String(target.latitude))}`,
-    `longitude=${encodeURIComponent(String(target.longitude))}`,
-    `name=${encodeURIComponent(target.name)}`,
-    `address=${encodeURIComponent(target.address ?? '')}`,
-  ].join('&');
-
-  uni.navigateTo({
-    url: `/pages/map-test/index?${query}`,
-    fail(error) {
-      console.warn('[merchant/detail] open map test webview failed', error);
-      uni.showToast({ title: t('mapOpenFailed'), icon: 'none' });
-    },
-  });
-}
-
-async function openMapTestProvider(provider: 'google' | 'amap' | 'system') {
-  const target = merchantMapTarget();
-  if (!target) {
-    uni.showToast({ title: t('merchantLocationMissing'), icon: 'none' });
-    return;
-  }
-
-  try {
-    if (provider === 'google') {
-      const targetUrl = buildGoogleMapsUrl(target);
-      logMapTest(provider, target, targetUrl);
-      openMapTestWebView(provider, target, targetUrl);
-      return;
-    }
-
-    if (provider === 'amap') {
-      const targetUrl = buildAmapUrl(target);
-      logMapTest(provider, target, targetUrl);
-      openMapTestWebView(provider, target, targetUrl);
-      return;
-    }
-
-    logMapTest(provider, target);
-    await openSystemMap(target);
-  } catch (error) {
-    console.warn('[merchant/detail] openMapTestProvider failed', { provider, error });
-    uni.showToast({ title: t('mapOpenFailed'), icon: 'none' });
-  }
-}
-
-function handleMapTestTap() {
-  uni.showActionSheet({
-    alertText: t('chooseMapToTest'),
-    itemList: [t('googleMaps'), t('amap'), t('systemMap')],
-    success: ({ tapIndex }) => {
-      if (tapIndex === 0) {
-        void openMapTestProvider('google');
-        return;
-      }
-      if (tapIndex === 1) {
-        void openMapTestProvider('amap');
-        return;
-      }
-      if (tapIndex === 2) {
-        void openMapTestProvider('system');
-      }
-    },
-  });
-}
-
 function handlePhoneTap() {
   const phoneNumber = merchant.value?.contactPhone?.replace(/\s+/g, '') ?? '';
   if (!phoneNumber) {
@@ -417,15 +311,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
           <text class="info-icon">📍</text>
           <text class="info-text">{{ displayAddress }}</text>
           <text class="info-link">{{ t('mapNavigation') }}</text>
-        </view>
-        <view
-          v-if="canNavigate && mapAppTestEnabled"
-          class="info-line info-action map-test-line"
-          @tap="handleMapTestTap"
-        >
-          <text class="info-icon">🧪</text>
-          <text class="info-text">{{ t('chooseMapToTest') }}</text>
-          <text class="info-link test-link">{{ t('mapTest') }}</text>
         </view>
         <view v-if="canPhone" class="info-line info-action" @tap="handlePhoneTap">
           <text class="info-icon">📞</text>
@@ -629,15 +514,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   background: #eaf7ee;
   font-size: 21rpx;
   font-weight: 700;
-}
-
-.map-test-line {
-  margin-top: 12rpx;
-}
-
-.test-link {
-  color: #a45a00;
-  background: #fff1dc;
 }
 
 .info-icon {
