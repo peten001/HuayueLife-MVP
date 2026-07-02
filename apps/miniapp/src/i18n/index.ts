@@ -117,7 +117,7 @@ const zh = {
   mapNavigation: '导航',
   navigationRecommendationTitle: '导航提示',
   navigationRecommendationContent:
-    '为保证越南地区定位准确，建议在地图选择页面中选择 Google Maps 导航。',
+    '为保证定位准确，建议在地图选择页面中选择 Google Maps 导航。',
   continueNavigation: '继续导航',
   merchantLocationMissing: '暂无商家定位信息',
   miniappMapOpenFailed: '无法打开地图，请稍后重试',
@@ -472,7 +472,7 @@ const vi: typeof zh = {
   mapNavigation: 'Chỉ đường',
   navigationRecommendationTitle: 'Gợi ý điều hướng',
   navigationRecommendationContent:
-    'Để định vị chính xác hơn tại Việt Nam, bạn nên chọn Google Maps trên trang lựa chọn bản đồ.',
+    'Để định vị chính xác hơn, bạn nên chọn Google Maps trên trang lựa chọn bản đồ.',
   continueNavigation: 'Tiếp tục điều hướng',
   merchantLocationMissing: 'Chưa có vị trí cửa hàng',
   miniappMapOpenFailed: 'Không thể mở bản đồ, vui lòng thử lại sau',
@@ -826,7 +826,7 @@ const en: typeof zh = {
   mapNavigation: 'Navigate',
   navigationRecommendationTitle: 'Navigation tip',
   navigationRecommendationContent:
-    'For more accurate positioning in Vietnam, we recommend choosing Google Maps on the map selection screen.',
+    'For more accurate positioning, we recommend choosing Google Maps on the map selection screen.',
   continueNavigation: 'Continue',
   merchantLocationMissing: 'Merchant location is unavailable',
   miniappMapOpenFailed: 'Unable to open map, please try again later',

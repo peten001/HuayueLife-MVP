@@ -12,6 +12,7 @@ import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
 import { isFavorite, toggleFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
+import { wgs84ToGcj02 } from '@/utils/coordinates';
 import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
 
@@ -240,8 +241,8 @@ function merchantLocation() {
 }
 
 function handleAddressTap() {
-  const location = merchantLocation();
-  if (!location || !merchant.value) {
+  const sourceLocation = merchantLocation();
+  if (!sourceLocation || !merchant.value) {
     uni.showToast({ title: t('merchantLocationMissing'), icon: 'none' });
     return;
   }
@@ -260,8 +261,30 @@ function handleAddressTap() {
 
     if (!shouldContinue) return;
 
+    const openLocationCoordinate = wgs84ToGcj02(
+      sourceLocation.latitude,
+      sourceLocation.longitude,
+    );
+
+    if (import.meta.env.DEV) {
+      console.log('[merchant-navigation]', {
+        merchantId: merchantValue.id,
+        sourceCoordinateSystem: 'WGS84',
+        targetCoordinateSystem: 'GCJ02',
+        source: {
+          latitude: sourceLocation.latitude,
+          longitude: sourceLocation.longitude,
+        },
+        openLocation: {
+          latitude: openLocationCoordinate.latitude,
+          longitude: openLocationCoordinate.longitude,
+        },
+      });
+    }
+
     uni.openLocation({
-      ...location,
+      latitude: openLocationCoordinate.latitude,
+      longitude: openLocationCoordinate.longitude,
       name: merchantName(merchantValue, locale.value),
       address: merchantValue.addressDetail,
       scale: 16,
