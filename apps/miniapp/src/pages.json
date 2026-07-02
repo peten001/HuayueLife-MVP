@@ -43,6 +43,12 @@
       }
     },
     {
+      "path": "pages/map-test/index",
+      "style": {
+        "navigationBarTitleText": "地图测试"
+      }
+    },
+    {
       "path": "pages/menu/index",
       "style": {
         "navigationBarTitleText": "餐厅菜单"
