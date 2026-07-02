@@ -659,7 +659,7 @@ type Action =
     </section>
 
     <section class="mobile-dashboard mobile-only">
-      <section class="mobile-store-card">
+      <section class="mobile-store-card" :class="{ 'is-locale-en': locale === 'en' }">
         <div class="mobile-store-copy">
           <strong class="mobile-store-name">{{ localizedMerchantName }}</strong>
           <p class="mobile-store-status">{{ todayStatusText }}</p>
@@ -669,7 +669,11 @@ type Action =
           v-if="voiceFeatureEnabled"
           type="button"
           class="sound-toggle mobile-sound-toggle"
-          :class="{ active: orderSoundEnabled, 'is-enabled': orderSoundEnabled }"
+          :class="{
+            active: orderSoundEnabled,
+            'is-enabled': orderSoundEnabled,
+            'is-locale-en': locale === 'en',
+          }"
           @click="handleSoundToggle"
         >
           <svg
@@ -1850,6 +1854,14 @@ type Action =
     min-height: 34px;
     padding: 0 12px;
     font-size: 13px;
+  }
+
+  .mobile-store-card.is-locale-en .mobile-sound-toggle {
+    bottom: 12px;
+  }
+
+  .mobile-store-card.is-locale-en .mobile-store-refresh {
+    max-width: calc(100% - 170px);
   }
 
 }
