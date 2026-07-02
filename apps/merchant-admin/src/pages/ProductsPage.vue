@@ -454,6 +454,52 @@ async function disableCategoryRow(row: Category) {
   }
 }
 
+function isCategoryEnabled(row: Category) {
+  return Boolean(row.isActive);
+}
+
+function getCategoryToggleLabel(row: Category) {
+  if (isCategoryEnabled(row)) {
+    return t('disable');
+  }
+
+  if (locale.value === 'vi') return 'Bật';
+  if (locale.value === 'en') return 'Enable';
+  return '启用';
+}
+
+async function enableCategoryRow(row: Category) {
+  const enableConfirmText =
+    locale.value === 'vi'
+      ? `Bật lại danh mục “${row.nameZh}”?`
+      : locale.value === 'en'
+        ? `Enable category "${row.nameZh}" again?`
+        : `确认启用分类“${row.nameZh}”？`;
+
+  if (!confirm(enableConfirmText)) return;
+
+  try {
+    await updateCategory(row.id, {
+      nameZh: row.nameZh,
+      nameVi: row.nameVi ?? '',
+      sortOrder: row.sortOrder,
+      isActive: true,
+    });
+    await loadData();
+  } catch (error) {
+    categoryMessage.value = errorMessage(error);
+  }
+}
+
+async function toggleCategoryRow(row: Category) {
+  if (isCategoryEnabled(row)) {
+    await disableCategoryRow(row);
+    return;
+  }
+
+  await enableCategoryRow(row);
+}
+
 async function saveProduct() {
   productMessage.value = '';
 
@@ -831,8 +877,8 @@ onMounted(async () => {
                 <td class="numeric-cell">{{ row.sortOrder }}</td>
                 <td class="numeric-cell">{{ row._count?.products ?? 0 }}</td>
                 <td>
-                  <span :class="['status-pill', row.isActive ? 'badge-success' : 'badge-neutral']">
-                    {{ row.isActive ? t('enabled') : t('disabledStatus') }}
+                  <span :class="['status-pill', isCategoryEnabled(row) ? 'badge-success' : 'badge-neutral']">
+                    {{ isCategoryEnabled(row) ? t('enabled') : t('disabledStatus') }}
                   </span>
                 </td>
                 <td>
@@ -841,12 +887,11 @@ onMounted(async () => {
                       {{ t('edit') }}
                     </button>
                     <button
-                      v-if="row.isActive"
                       type="button"
-                      class="text-action danger"
-                      @click="disableCategoryRow(row)"
+                      :class="['text-action', isCategoryEnabled(row) ? 'danger' : 'success']"
+                      @click="toggleCategoryRow(row)"
                     >
-                      {{ t('disable') }}
+                      {{ getCategoryToggleLabel(row) }}
                     </button>
                   </div>
                 </td>
@@ -1475,6 +1520,12 @@ onMounted(async () => {
 .text-action.danger {
   border-color: #fecaca;
   color: #dc2626;
+}
+
+.text-action.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
 }
 
 .table-footer {

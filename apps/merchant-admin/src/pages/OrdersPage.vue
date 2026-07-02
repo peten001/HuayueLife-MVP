@@ -1952,18 +1952,20 @@ function todayInVietnam() {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border: 1px solid #e5ebe8;
-    border-radius: 12px;
-    color: #1f2d24;
+    border-radius: 14px;
+    color: #334155;
     background: #fff;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
 
   .orders-mobile-icon-button svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    stroke-width: 2.2;
   }
 
   .orders-mobile-search,
