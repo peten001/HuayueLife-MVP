@@ -661,28 +661,34 @@ type Action =
     <section class="mobile-dashboard mobile-only">
       <section class="mobile-store-card">
         <div class="mobile-store-copy">
-          <span class="mobile-store-eyebrow">{{ todayStatusLabel }}</span>
-          <strong>{{ localizedMerchantName }}</strong>
-          <p>{{ todayStatusText }}</p>
-          <small>{{ dashboardRefreshText }}</small>
+          <strong class="mobile-store-name">{{ localizedMerchantName }}</strong>
+          <p class="mobile-store-status">{{ todayStatusText }}</p>
+          <small class="mobile-store-refresh">{{ dashboardRefreshText }}</small>
         </div>
-        <div class="mobile-store-side">
-          <span class="mobile-store-badge">
-            {{ pending.length ? t('dashboardWaiting') : inProgress.length ? t('dashboardProcessing') : acceptingOrdersLabel }}
-          </span>
-          <span class="mobile-store-count">{{ pending.length + inProgress.length }}</span>
-          <div class="mobile-store-actions">
-            <button
-              v-if="voiceFeatureEnabled"
-              type="button"
-              class="sound-toggle mobile-sound-toggle"
-              :class="{ active: orderSoundEnabled }"
-              @click="handleSoundToggle"
-            >
-              {{ mobileSoundButtonLabel }}
-            </button>
-          </div>
-        </div>
+        <button
+          v-if="voiceFeatureEnabled"
+          type="button"
+          class="sound-toggle mobile-sound-toggle"
+          :class="{ active: orderSoundEnabled, 'is-enabled': orderSoundEnabled }"
+          @click="handleSoundToggle"
+        >
+          <svg
+            class="mobile-sound-icon-svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path v-if="orderSoundEnabled" d="M16 9.5a4 4 0 0 1 0 5" />
+            <path v-if="orderSoundEnabled" d="M18.5 7a7.5 7.5 0 0 1 0 10" />
+            <path v-else d="M3 3l18 18" />
+          </svg>
+          <span class="mobile-sound-text">{{ mobileSoundButtonLabel }}</span>
+        </button>
       </section>
 
       <section v-if="hasNewPendingOrders && orderFeatureEnabled" class="mobile-new-order-banner">
@@ -1388,16 +1394,12 @@ type Action =
 
 .mobile-store-card {
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 150px;
-  height: 150px;
-  padding: 18px 20px 16px 20px;
+  min-height: 124px;
+  height: 124px;
+  padding: 20px 24px;
   border-color: #4f9f58;
   background: #5bae63;
   overflow: hidden;
@@ -1405,129 +1407,91 @@ type Action =
 
 .mobile-store-copy {
   display: grid;
-  gap: 4px;
-  max-width: calc(100% - 116px);
+  gap: 0;
+  max-width: calc(100% - 150px);
   min-width: 0;
   position: relative;
   z-index: 1;
 }
 
-.mobile-store-eyebrow {
+.mobile-store-name {
   color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.mobile-store-copy strong {
-  color: #fff;
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.18;
-}
-
-.mobile-store-copy p {
   margin: 0;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.16;
+  max-width: calc(100% - 150px);
   overflow-wrap: anywhere;
 }
 
-.mobile-store-copy small {
-  color: rgba(255, 255, 255, 0.85);
+.mobile-store-status {
+  margin: 0;
+  margin-top: 8px;
+  color: #fff;
   font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  max-width: calc(100% - 150px);
+  overflow-wrap: anywhere;
+}
+
+.mobile-store-refresh {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
-  opacity: 0.92;
+  max-width: calc(100% - 150px);
   overflow-wrap: anywhere;
-}
-
-.mobile-store-side {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  bottom: 16px;
-  width: 104px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-  z-index: 2;
-}
-
-.mobile-store-actions {
-  display: flex;
-  justify-content: flex-end;
-  width: auto;
-  min-width: auto;
-}
-
-.mobile-store-side .mobile-sound-toggle {
-  justify-self: auto;
-}
-
-.mobile-store-side .mobile-sound-toggle.active {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.35);
-  background: #1f7a35;
-}
-
-.mobile-store-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 30px;
-  padding: 0 14px;
-  border-radius: 999px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 30px;
-  white-space: nowrap;
-}
-
-.mobile-store-count {
-  color: #fff;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1;
-  text-align: right;
 }
 
 .mobile-sound-toggle {
+  position: absolute;
+  right: 28px;
+  bottom: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-width: 104px;
-  height: 36px;
-  min-height: 36px;
+  min-height: 34px;
+  height: 34px;
   padding: 0 12px;
-  border-color: rgba(255, 255, 255, 0.35);
-  border-radius: 13px;
-  background: #1f7a35;
-  color: #fff;
+  border-color: rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(47, 143, 70, 0.72);
+  color: rgba(255, 255, 255, 0.68);
   font-size: 13px;
   font-weight: 700;
-  line-height: 36px;
+  line-height: 1;
   white-space: nowrap;
+  box-sizing: border-box;
+  cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  z-index: 2;
 }
 
-.mobile-sound-toggle:hover,
-.mobile-sound-toggle:focus,
+.mobile-sound-toggle.is-enabled,
 .mobile-sound-toggle.active,
 .mobile-sound-toggle.is-active,
 .mobile-sound-toggle.enabled,
 .mobile-sound-toggle.is-enabled {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: #1f7a35;
+  background: #2f9a4f;
   color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.mobile-sound-toggle:hover,
+.mobile-sound-toggle:focus,
+.mobile-sound-toggle:active {
+  transform: none;
+}
+
+.mobile-sound-icon-svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  color: currentColor;
 }
 
 .mobile-metric-grid {
@@ -1803,15 +1767,14 @@ type Action =
 
   .mobile-store-card {
     display: block;
-    min-height: 150px;
-    height: 150px;
-    padding: 18px 20px 16px 20px;
+    min-height: 124px;
+    height: 124px;
+    padding: 20px 24px;
   }
 
   .mobile-store-copy,
-  .mobile-store-copy p,
-  .mobile-store-copy small,
-  .mobile-store-side,
+  .mobile-store-status,
+  .mobile-store-refresh,
   .mobile-metric-grid,
   .mobile-orders-panel,
   .mobile-quick-panel,
@@ -1843,10 +1806,6 @@ type Action =
     padding: 14px;
   }
 
-  .mobile-store-card {
-    padding: 16px 14px;
-  }
-
   .mobile-audio-debug-panel {
     padding: 9px 11px;
   }
@@ -1854,13 +1813,6 @@ type Action =
   .audio-debug-grid {
     grid-template-columns: 1fr;
     gap: 6px;
-  }
-
-  .mobile-store-side {
-    top: 18px;
-    right: 18px;
-    bottom: 16px;
-    width: 104px;
   }
 
   .mobile-order-head {
@@ -1895,7 +1847,7 @@ type Action =
     width: auto;
     max-width: none;
     min-width: 104px;
-    min-height: 36px;
+    min-height: 34px;
     padding: 0 12px;
     font-size: 13px;
   }
@@ -1909,21 +1861,16 @@ type Action =
   }
 
   .mobile-store-card {
-    min-height: 150px;
-    height: 150px;
-    padding: 18px 18px 16px 18px;
-  }
-
-  .mobile-store-side {
-    top: 18px;
-    right: 16px;
-    bottom: 16px;
-    width: 100px;
+    min-height: 124px;
+    height: 124px;
+    padding: 18px 22px;
   }
 
   .mobile-sound-toggle {
+    right: 24px;
+    bottom: 18px;
     min-width: 104px;
-    min-height: 36px;
+    min-height: 34px;
     padding: 0 10px;
     font-size: 13px;
   }
