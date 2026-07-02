@@ -318,14 +318,14 @@ export interface PlatformMerchantListItem {
   claimStatus: MerchantClaimStatus;
   province?: string | null;
   city: string;
-  district?: string;
+  district?: string | null;
   contactPhone: string;
-  address: string;
+  address?: string | null;
   addressZh?: string | null;
   addressVi?: string | null;
   addressEn?: string | null;
-  latitude: string;
-  longitude: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   openingHoursText?: string | null;
   logoUrl?: string | null;
   coverUrl?: string | null;

@@ -477,8 +477,15 @@ function hasHotRecommendation(item: PlatformMerchantListItem) {
 function hasValidCoordinates(item: PlatformMerchantListItem) {
   const latitude = Number(item.latitude);
   const longitude = Number(item.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
-  return true;
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180 &&
+    !(latitude === 0 && longitude === 0)
+  );
 }
 
 function hasMissingImages(item: PlatformMerchantListItem) {
@@ -519,7 +526,7 @@ function coordinateStatus(item: PlatformMerchantListItem) {
 function coordinateDetail(item: PlatformMerchantListItem) {
   const latitude = Number(item.latitude);
   const longitude = Number(item.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return '-';
+  if (!hasValidCoordinates(item)) return '-';
   return `${latitude.toFixed(4)} / ${longitude.toFixed(4)}`;
 }
 

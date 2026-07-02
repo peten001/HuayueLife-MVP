@@ -97,9 +97,16 @@ type PlatformMerchantListItem = {
   businessType: DictionaryRef | null;
   merchantMode: MerchantMode;
   claimStatus: MerchantClaimStatus;
+  province: string | null;
   city: string;
   district?: string | null;
   contactPhone: string;
+  address: string | null;
+  addressZh: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  logoUrl: string | null;
+  coverUrl: string | null;
   homepageCategoryKeys: string[];
   manualPopular: boolean;
   isVisibleOnClient: boolean;
@@ -1158,9 +1165,16 @@ export class PlatformMerchantsService {
       businessType: serializeDictionaryRef(merchant.businessType),
       merchantMode: merchant.merchantMode,
       claimStatus: merchant.claimStatus,
+      province: merchant.province ?? null,
       city: merchant.city,
       district: merchant.district,
       contactPhone: merchant.contactPhone,
+      address: merchant.addressDetail ?? merchant.addressZh ?? null,
+      addressZh: merchant.addressZh ?? null,
+      latitude: merchant.latitude?.toString() ?? null,
+      longitude: merchant.longitude?.toString() ?? null,
+      logoUrl: merchant.logoUrl ?? null,
+      coverUrl: merchant.coverUrl ?? null,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),
