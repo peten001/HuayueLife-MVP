@@ -240,22 +240,37 @@ function merchantLocation() {
 }
 
 function handleAddressTap() {
-  if (!merchant.value) return;
   const location = merchantLocation();
-  if (!location) {
+  if (!location || !merchant.value) {
     uni.showToast({ title: t('merchantLocationMissing'), icon: 'none' });
     return;
   }
-  uni.openLocation({
-    ...location,
-    name: merchantName(merchant.value, locale.value),
-    address: merchant.value.addressDetail,
-    scale: 16,
-    fail(error) {
-      console.warn('[merchant/detail] openLocation failed', error);
-      uni.showToast({ title: t('miniappMapOpenFailed'), icon: 'none' });
-    },
-  });
+  const merchantValue = merchant.value;
+  void (async () => {
+    const shouldContinue = await new Promise<boolean>((resolve) => {
+      uni.showModal({
+        title: t('navigationRecommendationTitle'),
+        content: t('navigationRecommendationContent'),
+        confirmText: t('continueNavigation'),
+        cancelText: t('cancel'),
+        success: (result) => resolve(Boolean(result.confirm)),
+        fail: () => resolve(false),
+      });
+    });
+
+    if (!shouldContinue) return;
+
+    uni.openLocation({
+      ...location,
+      name: merchantName(merchantValue, locale.value),
+      address: merchantValue.addressDetail,
+      scale: 16,
+      fail(error) {
+        console.warn('[merchant/detail] openLocation failed', error);
+        uni.showToast({ title: t('miniappMapOpenFailed'), icon: 'none' });
+      },
+    });
+  })();
 }
 
 function handlePhoneTap() {
