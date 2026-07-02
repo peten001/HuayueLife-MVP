@@ -597,24 +597,24 @@ export class PlatformMerchantsService {
         data: {
           businessTypeId,
           nameZh: dto.nameZh.trim(),
-          nameVi: trimOrNull(dto.nameVi),
-          nameEn: trimOrNull(dto.nameEn),
+          nameVi: dto.nameVi.trim(),
+          nameEn: dto.nameEn.trim(),
           merchantType: 'RESTAURANT',
           merchantMode: normalizeMerchantMode(dto.merchantMode) ?? MerchantMode.DISPLAY,
           claimStatus: MerchantClaimStatus.UNCLAIMED,
           logoUrl: trimOrNull(dto.logoUrl),
-          coverUrl: trimOrNull(dto.coverUrl),
-          contactName: trimOrNull(dto.contactName) ?? dto.nameZh.trim(),
+          coverUrl: dto.coverUrl.trim(),
+          contactName: dto.contactName.trim(),
           contactPhone: dto.contactPhone.trim(),
-          province: trimOrNull(dto.province) ?? dto.city.trim(),
-          city: dto.city.trim(),
+          province: dto.province.trim(),
+          city: trimOrNull(dto.city) ?? dto.province.trim(),
           district: trimOrNull(dto.district),
           addressDetail: dto.addressZh.trim(),
           addressZh: dto.addressZh.trim(),
           addressVi: trimOrNull(dto.addressVi),
           addressEn: trimOrNull(dto.addressEn),
-          latitude: dto.latitude ?? 0,
-          longitude: dto.longitude ?? 0,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
           businessHours: DEFAULT_BUSINESS_HOURS,
           openingHoursText: trimOrNull(dto.openingHoursText),
           notice: trimOrNull(dto.descriptionZh),
@@ -693,28 +693,16 @@ export class PlatformMerchantsService {
     const headers = MERCHANT_IMPORT_HEADERS.join(',');
     const example = serializeCsvRow([
       '川味小馆',
+      'Quán Tứ Xuyên',
+      'Chuanwei Restaurant',
       'CHINESE_RESTAURANT',
       '0988123456',
-      'Bac Giang',
-      'Bac Giang City',
-      '北江市某某路 123 号',
-      'Quán Tứ Xuyên',
-      '',
-      '123 đường ...',
-      '',
+      '胡老板',
+      '北江',
+      'No.18 Area A, Commercial Street, Van Trung Industrial Park',
       '21.28',
       '106.20',
-      '10:00-22:00',
-      '正宗川味',
-      '',
-      '',
-      '',
-      '',
-      'HOT_FOOD',
-      'false',
-      '0',
-      'true',
-      'ACTIVE',
+      'https://example.com/merchant-cover.jpg',
     ]);
     return `\ufeff${headers}\n${example}\n`;
   }
@@ -752,26 +740,26 @@ export class PlatformMerchantsService {
         const promotionTags = await this.resolveEnabledPromotionTagsByCodes(normalized.promotionTagCodes);
         const created = await this.createDisplayMerchant({
           nameZh: normalized.nameZh,
-          nameVi: normalized.nameVi ?? undefined,
-          nameEn: normalized.nameEn ?? undefined,
+          nameVi: normalized.nameVi,
+          nameEn: normalized.nameEn,
           businessTypeId: businessType.id.toString(),
           merchantMode: MerchantMode.DISPLAY,
           contactPhone: normalized.contactPhone,
-          contactName: normalized.nameZh,
-          province: normalized.city,
-          city: normalized.city,
-          district: normalized.district,
+          contactName: normalized.contactName,
+          province: normalized.province,
+          city: normalized.city ?? normalized.province,
+          district: normalized.district ?? undefined,
           addressZh: normalized.addressZh,
           addressVi: normalized.addressVi ?? undefined,
           addressEn: normalized.addressEn ?? undefined,
-          latitude: normalized.latitude ?? undefined,
-          longitude: normalized.longitude ?? undefined,
+          latitude: normalized.latitude as number,
+          longitude: normalized.longitude as number,
           openingHoursText: normalized.openingHoursText ?? undefined,
           descriptionZh: normalized.descriptionZh ?? undefined,
           descriptionVi: normalized.descriptionVi ?? undefined,
           descriptionEn: normalized.descriptionEn ?? undefined,
           logoUrl: normalized.logoUrl ?? undefined,
-          coverUrl: normalized.coverUrl ?? undefined,
+          coverUrl: normalized.coverUrl,
           promotionTagIds: promotionTags.map((item) => item.id.toString()),
           isNew: normalized.isNew,
           isVisibleOnClient: normalized.isVisibleOnClient,
@@ -818,7 +806,12 @@ export class PlatformMerchantsService {
       data.contactPhone = dto.contactPhone.trim();
     }
     if (dto.contactName !== undefined) data.contactName = trimOrNull(dto.contactName) ?? '';
-    if (dto.province !== undefined) data.province = trimOrNull(dto.province) ?? '';
+    if (dto.province !== undefined) {
+      data.province = trimOrNull(dto.province) ?? '';
+      if (dto.city === undefined) {
+        data.city = trimOrNull(dto.province) ?? '';
+      }
+    }
     if (dto.city !== undefined) data.city = trimOrNull(dto.city) ?? '';
     if (dto.district !== undefined) data.district = trimOrNull(dto.district);
     if (dto.addressZh !== undefined) {
@@ -1453,19 +1446,22 @@ export class PlatformMerchantsService {
         errors.push(`businessTypeCode ${normalized.businessTypeCode} 不存在或不可导入`);
       }
     }
+    if (!normalized.nameVi) errors.push('nameVi 必填');
+    if (!normalized.nameEn) errors.push('nameEn 必填');
     if (!normalized.contactPhone) errors.push('contactPhone 必填');
-    if (!normalized.city) errors.push('city 必填');
-    if (!normalized.district) errors.push('district 必填');
+    if (!normalized.contactName) errors.push('contactName 必填');
+    if (!normalized.province) errors.push('province 必填');
     if (!normalized.addressZh) errors.push('addressZh 必填');
-    if (normalized.latitude !== undefined && normalized.latitude !== null) {
-      if (normalized.latitude < -90 || normalized.latitude > 90) {
-        errors.push('纬度必须在 -90 到 90 之间');
-      }
+    if (!normalized.coverUrl) errors.push('coverUrl 必填');
+    if (normalized.latitude === null || !Number.isFinite(normalized.latitude)) {
+      errors.push('latitude 必填');
+    } else if (normalized.latitude < -90 || normalized.latitude > 90) {
+      errors.push('纬度必须在 -90 到 90 之间');
     }
-    if (normalized.longitude !== undefined && normalized.longitude !== null) {
-      if (normalized.longitude < -180 || normalized.longitude > 180) {
-        errors.push('经度必须在 -180 到 180 之间');
-      }
+    if (normalized.longitude === null || !Number.isFinite(normalized.longitude)) {
+      errors.push('longitude 必填');
+    } else if (normalized.longitude < -180 || normalized.longitude > 180) {
+      errors.push('经度必须在 -180 到 180 之间');
     }
     if (rawStatus && rawStatus !== 'DRAFT' && rawStatus !== 'ACTIVE') {
       errors.push('status 只能是 DRAFT 或 ACTIVE');
@@ -1486,25 +1482,12 @@ export class PlatformMerchantsService {
     }
 
     const isPublicVisible = normalized.status === 'ACTIVE' && normalized.isVisibleOnClient;
-    const hasLatitude = normalized.latitude !== undefined && normalized.latitude !== null;
-    const hasLongitude = normalized.longitude !== undefined && normalized.longitude !== null;
+    const hasLatitude = normalized.latitude !== null && Number.isFinite(normalized.latitude);
+    const hasLongitude = normalized.longitude !== null && Number.isFinite(normalized.longitude);
     if (isPublicVisible && (!hasLatitude || !hasLongitude)) {
       warnings.push(
         '该商家将前台展示但缺少准确经纬度，可能影响导航，建议补充经纬度或先设为草稿/隐藏。',
       );
-    }
-    if (
-      isPublicVisible &&
-      hasLatitude &&
-      hasLongitude &&
-      normalized.latitude === 0 &&
-      normalized.longitude === 0
-    ) {
-      warnings.push('经纬度为 0/0，可能不是有效门店位置，请确认后再导入。');
-    }
-
-    if (!normalized.sortOrder && normalized.sortOrder !== 0) {
-      normalized.sortOrder = 0;
     }
 
     return {
@@ -1613,52 +1596,38 @@ export class PlatformMerchantsService {
   }
 
   private computeProfileCompletion(merchant: Merchant) {
-    const total = 9;
+    const total = 11;
     const missingFields: string[] = [];
 
     if (!merchant.nameZh?.trim() || merchant.nameZh.startsWith('新商户-')) {
-      missingFields.push('merchantName');
+      missingFields.push('chineseName');
     }
-    if (!merchant.logoUrl?.trim()) {
-      missingFields.push('logoUrl');
-    }
+    if (!merchant.nameVi?.trim()) missingFields.push('vietnameseName');
+    if (!merchant.nameEn?.trim()) missingFields.push('englishName');
+    if (!merchant.businessTypeId) missingFields.push('businessType');
     if (!merchant.coverUrl?.trim()) {
       missingFields.push('coverUrl');
-    }
-    if (!merchant.province?.trim() || merchant.province === '待完善') {
-      missingFields.push('province');
-    }
-    if (!merchant.city?.trim() || merchant.city === '待完善') {
-      missingFields.push('city');
-    }
-    if (!merchant.district?.trim() || merchant.district === '待完善') {
-      missingFields.push('district');
-    }
-    if (!merchant.addressDetail?.trim() || merchant.addressDetail === '待完善') {
-      missingFields.push('addressDetail');
-    }
-    if (!this.hasBusinessHours(merchant.businessHours)) {
-      missingFields.push('businessHoursSection');
     }
     if (!merchant.contactPhone?.trim()) {
       missingFields.push('contactPhone');
     }
+    if (!merchant.contactName?.trim()) {
+      missingFields.push('contactName');
+    }
+    if (!merchant.province?.trim() || merchant.province === '待完善') {
+      missingFields.push('province');
+    }
+    if (
+      (!(merchant.addressZh?.trim()) && !(merchant.addressDetail?.trim()))
+      || merchant.addressDetail === '待完善'
+    ) {
+      missingFields.push('addressDetail');
+    }
+    if (!hasStoredCoordinate(merchant.latitude)) missingFields.push('latitude');
+    if (!hasStoredCoordinate(merchant.longitude)) missingFields.push('longitude');
 
     const completion = Math.max(0, Math.min(100, Math.round(((total - missingFields.length) / total) * 100)));
     return { completion, missingFields };
-  }
-
-  private hasBusinessHours(value: Merchant['businessHours']) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return false;
-    }
-
-    const hours = value as Record<string, unknown>;
-    return Object.values(hours).some(
-      (items) =>
-        Array.isArray(items) &&
-        items.some((item) => typeof item === 'string' && item.trim().length > 0),
-    );
   }
 }
 
@@ -1881,28 +1850,16 @@ function addDays(date: Date, days: number) {
 
 const MERCHANT_IMPORT_HEADERS = [
   'nameZh',
-  'businessTypeCode',
-  'contactPhone',
-  'city',
-  'district',
-  'addressZh',
   'nameVi',
   'nameEn',
-  'addressVi',
-  'addressEn',
+  'businessTypeCode',
+  'contactPhone',
+  'contactName',
+  'province',
+  'addressZh',
   'latitude',
   'longitude',
-  'openingHoursText',
-  'descriptionZh',
-  'descriptionVi',
-  'descriptionEn',
-  'logoUrl',
   'coverUrl',
-  'promotionTagCodes',
-  'isNew',
-  'sortOrder',
-  'isVisibleOnClient',
-  'status',
 ] as const;
 
 function getSelectableBusinessTypes(
@@ -1930,7 +1887,9 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
   const nameEn = normalizeImportText(rawData.nameEn);
   const businessTypeCode = normalizeImportText(rawData.businessTypeCode).toUpperCase();
   const contactPhone = normalizeImportText(rawData.contactPhone);
-  const city = normalizeImportText(rawData.city);
+  const contactName = normalizeImportText(rawData.contactName) || nameZh;
+  const province = normalizeImportText(rawData.province) || normalizeImportText(rawData.city);
+  const city = normalizeImportText(rawData.city) || province;
   const district = normalizeImportText(rawData.district);
   const addressZh = normalizeImportText(rawData.addressZh);
   const addressVi = normalizeImportText(rawData.addressVi);
@@ -1953,19 +1912,21 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
     nameEn,
     businessTypeCode,
     contactPhone,
+    contactName,
+    province,
     city,
     district,
     addressZh,
     addressVi,
     addressEn,
-    latitude,
-    longitude,
+    latitude: latitude ?? null,
+    longitude: longitude ?? null,
     openingHoursText,
     descriptionZh,
     descriptionVi,
     descriptionEn,
     logoUrl,
-    coverUrl,
+    coverUrl: coverUrl || '',
     promotionTagCodes: Array.from(new Set(promotionTagCodes)),
     isNew: parseImportBoolean(rawData.isNew, false),
     sortOrder: parseImportInteger(rawData.sortOrder, 0),
@@ -2096,4 +2057,10 @@ function parseImportStatus(value?: string): 'DRAFT' | 'ACTIVE' {
   const next = value?.trim().toUpperCase();
   if (!next) return 'ACTIVE';
   return next === 'DRAFT' ? 'DRAFT' : 'ACTIVE';
+}
+
+function hasStoredCoordinate(value: Merchant['latitude'] | Merchant['longitude']) {
+  if (value === null || value === undefined) return false;
+  const parsed = Number(value);
+  return Number.isFinite(parsed);
 }

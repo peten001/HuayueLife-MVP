@@ -50,7 +50,7 @@ const saving = ref(false);
 const uploadingImage = ref(false);
 const message = ref('');
 const imageFileInput = ref<HTMLInputElement | null>(null);
-const imageUploadTarget = ref<'LOGO' | 'COVER' | null>(null);
+const imageUploadTarget = ref<'COVER' | null>(null);
 
 const profileForm = reactive({
   nameZh: '',
@@ -85,7 +85,7 @@ const merchant = computed(() => detail.value?.merchant);
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
-  { key: 'images', label: '图片管理' },
+  { key: 'images', label: '封面图片' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
   { key: 'capabilities', label: '能力开关' },
@@ -208,9 +208,6 @@ const selectableBusinessTypes = computed(() => {
   );
   return businessTypes.value.filter((item) => item.enabled && !parentIds.has(item.id) && item.code !== 'FOOD_SERVICE');
 });
-const logoImage = computed(() =>
-  merchant.value?.images.find((image) => image.imageType === 'LOGO' && image.isVisible),
-);
 const coverImage = computed(() =>
   merchant.value?.images.find((image) => image.imageType === 'COVER' && image.isVisible),
 );
@@ -220,21 +217,23 @@ const profileRisks = computed(() => {
   const risks: string[] = [];
   const latitude = Number(item.latitude);
   const longitude = Number(item.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0)) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     risks.push('缺少经纬度');
   }
-  if (!item.logoUrl?.trim()) risks.push('缺少商家 Logo');
-  if (!item.coverUrl?.trim()) risks.push('缺少商家封面');
+  if (!item.coverUrl?.trim()) risks.push('缺少封面图片');
+  if (!item.nameVi?.trim()) risks.push('缺少越南语名称');
+  if (!item.nameEn?.trim()) risks.push('缺少英文名称');
   if (!item.phone?.trim()) risks.push('缺少联系电话');
+  if (!item.contactName?.trim()) risks.push('缺少联系人');
   if (!(item.province || item.city)?.trim()) risks.push('缺少省份');
-  if (!(item.addressZh || item.address)?.trim()) risks.push('缺少中文地址');
+  if (!(item.addressZh || item.address)?.trim()) risks.push('缺少详细地址');
   if (!item.businessType) risks.push('经营类型未设置');
   return risks;
 });
 const hasInvalidCoordinates = computed(() => {
   const latitude = Number(profileForm.latitude);
   const longitude = Number(profileForm.longitude);
-  return !Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0);
+  return !Number.isFinite(latitude) || !Number.isFinite(longitude);
 });
 const qrOrderNeedsTableManagement = computed(
   () => capabilityEnabled('qrOrderEnabled') && !capabilityEnabled('tableManagementEnabled'),
@@ -309,7 +308,7 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   }
 }
 
-function openImagePicker(type: 'LOGO' | 'COVER') {
+function openImagePicker(type: 'COVER') {
   imageUploadTarget.value = type;
   imageFileInput.value?.click();
 }
@@ -335,7 +334,7 @@ async function onImageSelected(event: Event) {
   message.value = '';
   try {
     const result = await uploadPlatformMerchantImage(file);
-    const existingImage = target === 'LOGO' ? logoImage.value : coverImage.value;
+    const existingImage = coverImage.value;
     const payload = {
       imageType: target,
       imageUrl: result.imageUrl,
@@ -346,7 +345,7 @@ async function onImageSelected(event: Event) {
     } else {
       await createPlatformMerchantImage(merchantId.value, payload);
     }
-    message.value = target === 'LOGO' ? '商家 Logo 已更新' : '商家封面已更新';
+    message.value = '商家封面已更新';
     await loadPage();
   } catch (error) {
     message.value = errorMessage(error);
@@ -361,28 +360,38 @@ async function saveProfile() {
   saving.value = true;
   message.value = '';
   try {
+    if (!profileForm.nameZh.trim() || !profileForm.nameVi.trim() || !profileForm.nameEn.trim()) {
+      message.value = '请完整填写中文名称、越南语名称和英文名称';
+      return;
+    }
+    if (!profileForm.businessTypeId) {
+      message.value = '请选择经营类型';
+      return;
+    }
+    if (!profileForm.contactPhone.trim() || !profileForm.contactName.trim()) {
+      message.value = '请完整填写联系电话和联系人';
+      return;
+    }
+    if (!profileForm.province.trim() || !profileForm.addressZh.trim()) {
+      message.value = '请完整填写省份和详细地址';
+      return;
+    }
+    if (!Number.isFinite(Number(profileForm.latitude)) || !Number.isFinite(Number(profileForm.longitude))) {
+      message.value = '请填写有效的纬度和经度';
+      return;
+    }
     await updatePlatformMerchant(merchantId.value, {
       nameZh: profileForm.nameZh,
       nameVi: profileForm.nameVi || undefined,
       nameEn: profileForm.nameEn || undefined,
       businessTypeId: profileForm.businessTypeId || null,
-      merchantMode: profileForm.merchantMode,
       contactPhone: profileForm.contactPhone,
       contactName: profileForm.contactName || undefined,
       province: profileForm.province || undefined,
-      city: profileForm.province || profileForm.city,
+      city: profileForm.province || undefined,
       addressZh: profileForm.addressZh,
-      addressVi: profileForm.addressVi || undefined,
-      addressEn: profileForm.addressEn || undefined,
       latitude: Number(profileForm.latitude),
       longitude: Number(profileForm.longitude),
-      openingHoursText: profileForm.openingHoursText || undefined,
-      descriptionZh: profileForm.descriptionZh || undefined,
-      descriptionVi: profileForm.descriptionVi || undefined,
-      descriptionEn: profileForm.descriptionEn || undefined,
-      isVisibleOnClient: profileForm.isVisibleOnClient,
-      status: profileForm.status,
-      sortOrder: Number(profileForm.sortOrder || 0),
     });
     message.value = '基础资料已保存';
     await loadPage();
@@ -622,13 +631,13 @@ function backToList() {
 
     <section class="merchant-editor-summary">
       <div class="merchant-summary-media">
-        <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" :alt="merchant.nameZh" />
+        <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" :alt="merchant.nameZh" />
         <span v-else>{{ merchant.nameZh.slice(0, 1) }}</span>
       </div>
       <div class="merchant-summary-main">
         <p>{{ merchant.nameVi || '未填写越南语名称' }}</p>
-        <p>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
-        <p>营业时间：{{ merchant.openingHoursText || '-' }}</p>
+        <p>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.contactName || '未填写联系人' }}</p>
+        <p>{{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
       </div>
       <div class="merchant-summary-badges">
         <span class="editor-pill" :class="merchant.isVisibleOnClient ? 'is-success' : 'is-muted'">{{ merchant.isVisibleOnClient ? '前台显示中' : '未显示' }}</span>
@@ -649,11 +658,11 @@ function backToList() {
           </div>
           <form class="editor-form-grid" @submit.prevent="saveProfile">
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
-            <label><span>越南语名称</span><input v-model="profileForm.nameVi" maxlength="120" /></label>
-            <label><span>英文名称</span><input v-model="profileForm.nameEn" maxlength="120" /></label>
+            <label><span>越南语名称 <b>*</b></span><input v-model="profileForm.nameVi" required maxlength="120" /></label>
+            <label><span>英文名称 <b>*</b></span><input v-model="profileForm.nameEn" required maxlength="120" /></label>
             <label><span>经营类型</span><select v-model="profileForm.businessTypeId"><option value="">未设置</option><option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">{{ item.nameZh }}</option></select></label>
             <label><span>联系电话 <b>*</b></span><input v-model="profileForm.contactPhone" required maxlength="32" /></label>
-            <label><span>联系人</span><input v-model="profileForm.contactName" maxlength="64" /></label>
+            <label><span>联系人 <b>*</b></span><input v-model="profileForm.contactName" required maxlength="64" /></label>
           </form>
         </section>
 
@@ -671,24 +680,24 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>图片管理</h2><p>管理小程序展示使用的商家封面</p></div>
+            <div><h2>封面图片</h2><p>用于小程序和商家列表展示</p></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
             <article>
-              <strong>商家封面</strong>
+              <strong>商家封面图片</strong>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
               <div v-else class="image-empty">暂无封面图</div>
               <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('COVER')">
-                {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : '上传商家封面' }}
+                {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : (merchant.coverUrl ? '更换封面图片' : '上传封面图片') }}
               </button>
             </article>
           </div>
         </section>
 
         <section id="merchant-section-visibility" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div><button class="editor-button is-primary" type="button" @click="saveProfile">保存展示设置</button></div>
-          <div class="visibility-grid"><label class="switch-row"><input v-model="profileForm.isVisibleOnClient" type="checkbox" />是否前台展示</label></div>
+          <div class="editor-section-head"><div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div><button class="editor-button is-primary" type="button" @click="toggleClientVisibility">{{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</button></div>
+          <div class="visibility-grid"><label class="switch-row"><input :checked="merchant.isVisibleOnClient" type="checkbox" disabled />是否前台展示</label></div>
           <div class="risk-panel" :class="profileRisks.length ? 'is-warning' : 'is-success'"><strong>{{ profileRisks.length ? '资料待完善' : '资料完整，可展示' }}</strong><span>{{ profileRisks.length ? profileRisks.join('、') : '当前关键资料完整' }}</span></div>
         </section>
 

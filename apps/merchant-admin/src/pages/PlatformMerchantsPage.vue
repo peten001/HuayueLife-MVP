@@ -117,6 +117,7 @@ const form = reactive({
   sortOrder: 0,
   status: 'ACTIVE' as PlatformMerchantListItem['status'],
 });
+const provinceOptions = ['北江', '北宁'] as const;
 
 const isEditing = computed(() => dialogMode.value === 'edit');
 const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
@@ -166,17 +167,7 @@ const cityOptions = computed(() =>
   Array.from(
     new Set(
       merchants.value
-        .map((item) => item.city?.trim())
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ).sort((left, right) => left.localeCompare(right, 'zh-CN')),
-);
-const districtOptions = computed(() =>
-  Array.from(
-    new Set(
-      merchants.value
-        .filter((item) => !filters.city || item.city === filters.city)
-        .map((item) => item.district?.trim())
+        .map((item) => item.province?.trim() || item.city?.trim())
         .filter((value): value is string => Boolean(value)),
     ),
   ).sort((left, right) => left.localeCompare(right, 'zh-CN')),
@@ -205,8 +196,7 @@ const filteredMerchants = computed(() =>
     ].some((value) => String(value ?? '').toLowerCase().includes(keyword));
     const matchesBusinessType =
       !filters.businessTypeId || item.businessType?.id === filters.businessTypeId;
-    const matchesCity = !filters.city || item.city === filters.city;
-    const matchesDistrict = !filters.district || item.district === filters.district;
+    const matchesCity = !filters.city || (item.province || item.city) === filters.city;
     const matchesVisibility =
       !filters.visibility ||
       (filters.visibility === 'visible' ? item.isVisibleOnClient : !item.isVisibleOnClient);
@@ -225,7 +215,6 @@ const filteredMerchants = computed(() =>
       matchesKeyword &&
       matchesBusinessType &&
       matchesCity &&
-      matchesDistrict &&
       matchesVisibility &&
       matchesProfile &&
       matchesPopular
@@ -239,7 +228,7 @@ const merchantSummary = computed(() => {
     visible: list.filter((item) => item.isVisibleOnClient).length,
     incomplete: list.filter((item) => getProfileState(item) !== 'complete').length,
     missingCoords: list.filter((item) => !hasValidCoordinates(item)).length,
-    missingImages: list.filter((item) => hasMissingImages(item)).length,
+    missingCovers: list.filter((item) => hasMissingImages(item)).length,
     hot: list.filter((item) => hasHotRecommendation(item)).length,
   };
 });
@@ -489,23 +478,15 @@ function hasValidCoordinates(item: PlatformMerchantListItem) {
   const latitude = Number(item.latitude);
   const longitude = Number(item.longitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
-  if (latitude === 0 && longitude === 0) return false;
   return true;
 }
 
-function isInvalidCoordinates(item: PlatformMerchantListItem) {
-  const latitude = Number(item.latitude);
-  const longitude = Number(item.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
-  return latitude === 0 && longitude === 0;
-}
-
 function hasMissingImages(item: PlatformMerchantListItem) {
-  return !item.logoUrl?.trim() || !item.coverUrl?.trim();
+  return !item.coverUrl?.trim();
 }
 
 function getProfileState(item: PlatformMerchantListItem) {
-  if (isInvalidCoordinates(item)) return 'missing_coords';
+  if (!hasValidCoordinates(item)) return 'missing_coords';
   if (hasMissingImages(item)) return 'missing_images';
   if (item.missingProfileFields.length > 0) return 'incomplete';
   return 'complete';
@@ -514,7 +495,7 @@ function getProfileState(item: PlatformMerchantListItem) {
 function profileMissingText(item: PlatformMerchantListItem) {
   if (!item.missingProfileFields.length) return '资料完整';
   return item.missingProfileFields
-    .map((key) => t(key as TranslationKey))
+    .map(missingFieldLabel)
     .join('、');
 }
 
@@ -527,19 +508,12 @@ function merchantThumbnail(item: PlatformMerchantListItem) {
 }
 
 function merchantCoverStatus(item: PlatformMerchantListItem) {
-  const hasLogo = Boolean(item.logoUrl?.trim());
   const hasCover = Boolean(item.coverUrl?.trim());
-  if (hasLogo && hasCover) return '完整';
-  if (!hasLogo && !hasCover) return '缺图';
-  if (!hasLogo) return '缺 Logo';
-  return '缺封面';
+  return hasCover ? '已上传' : '缺少';
 }
 
 function coordinateStatus(item: PlatformMerchantListItem) {
-  if (!hasValidCoordinates(item)) {
-    return isInvalidCoordinates(item) ? '无效' : '缺失';
-  }
-  return '已设置';
+  return hasValidCoordinates(item) ? '已定位' : '缺失';
 }
 
 function coordinateDetail(item: PlatformMerchantListItem) {
@@ -558,15 +532,13 @@ function claimStatusText(item: PlatformMerchantListItem) {
 }
 
 function statusClass(item: PlatformMerchantListItem) {
-  if (!hasValidCoordinates(item)) return isInvalidCoordinates(item) ? 'is-warning' : 'is-muted';
+  if (!hasValidCoordinates(item)) return 'is-muted';
   return 'is-active';
 }
 
 function imageStatusClass(item: PlatformMerchantListItem) {
   const status = merchantCoverStatus(item);
-  if (status === '完整') return 'is-active';
-  if (status === '缺图') return 'is-disabled';
-  return 'is-warning';
+  return status === '已上传' ? 'is-active' : 'is-disabled';
 }
 
 async function toggleClientVisibility(item: PlatformMerchantListItem) {
@@ -623,38 +595,43 @@ async function submit() {
       return;
     }
     if (dialogMode.value === 'create') {
-      const created = await createPlatformDisplayMerchant({
+      if (!form.nameZh.trim() || !form.nameVi.trim() || !form.nameEn.trim()) {
+        message.value = '请完整填写中文名称、越南语名称和英文名称';
+        return;
+      }
+      if (!form.businessTypeId) {
+        message.value = '请选择经营类型';
+        return;
+      }
+      if (!form.contactPhone.trim() || !form.contactName.trim()) {
+        message.value = '请完整填写联系电话和联系人';
+        return;
+      }
+      if (!form.province.trim() || !form.addressZh.trim()) {
+        message.value = '请完整填写省份和详细地址';
+        return;
+      }
+      if (latitude === undefined || longitude === undefined) {
+        message.value = '请填写有效的纬度和经度';
+        return;
+      }
+      if (!form.coverUrl.trim()) {
+        message.value = '请上传商家封面图片';
+        return;
+      }
+      await createPlatformDisplayMerchant({
         nameZh: form.nameZh,
-        nameVi: form.nameVi || undefined,
-        nameEn: form.nameEn || undefined,
+        nameVi: form.nameVi,
+        nameEn: form.nameEn,
         businessTypeId: form.businessTypeId,
-        merchantMode: form.merchantMode,
         contactPhone: form.contactPhone,
-        contactName: form.contactName || undefined,
-        province: form.province || form.city,
-        city: form.city,
-        district: form.district || undefined,
+        contactName: form.contactName,
+        province: form.province,
         addressZh: form.addressZh,
-        addressVi: form.addressVi || undefined,
-        addressEn: form.addressEn || undefined,
-        ...(latitude !== undefined ? { latitude } : {}),
-        ...(longitude !== undefined ? { longitude } : {}),
-        openingHoursText: form.openingHoursText || undefined,
-        descriptionZh: form.descriptionZh || undefined,
-        descriptionVi: form.descriptionVi || undefined,
-        descriptionEn: form.descriptionEn || undefined,
-        logoUrl: form.logoUrl || undefined,
-        coverUrl: form.coverUrl || undefined,
-        promotionTagIds: [...form.promotionTagIds],
-        isNew: form.isNew,
-        isVisibleOnClient: form.isVisibleOnClient,
-        sortOrder: form.sortOrder,
-        status: form.status,
+        latitude,
+        longitude,
+        coverUrl: form.coverUrl,
       });
-      await updatePlatformMerchantCapabilities(
-        created.id,
-        Object.entries(form.capabilityValues).map(([code, isEnabled]) => ({ code, isEnabled })),
-      );
       message.value = '展示型商家已创建，默认未开通商家后台账号';
     } else {
       await updatePlatformMerchant(editingId.value, {
@@ -762,7 +739,12 @@ function visibilityLabel(value: boolean) {
 
 function missingProfileText(item: PlatformMerchantListItem) {
   if (!item.missingProfileFields.length) return '';
-  return item.missingProfileFields.map((key) => t(key as TranslationKey)).join('、');
+  return item.missingProfileFields.map(missingFieldLabel).join('、');
+}
+
+function missingFieldLabel(key: string) {
+  if (key === 'coverUrl') return '封面图片';
+  return t(key as TranslationKey);
 }
 
 function toggleHomepageCategory(value: string) {
@@ -800,7 +782,7 @@ function normalizeHomepageCategoryKeys(keys: string[]) {
 }
 
 function regionText(item: PlatformMerchantListItem) {
-  return [item.city, item.district].filter(Boolean).join(' / ') || '-';
+  return item.province || item.city || '-';
 }
 
 function money(value: string | number) {
@@ -947,8 +929,8 @@ function capabilityText(item: PlatformMerchantListItem) {
     <article class="card platform-metric-card">
       <i class="summary-icon is-orange" aria-hidden="true">图</i>
       <div>
-        <span>缺少图片</span>
-        <strong>{{ merchantSummary.missingImages }}</strong>
+        <span>缺少封面图片</span>
+        <strong>{{ merchantSummary.missingCovers }}</strong>
       </div>
     </article>
     <article class="card platform-metric-card highlight">
@@ -976,19 +958,10 @@ function capabilityText(item: PlatformMerchantListItem) {
         </select>
       </label>
       <label>
-        城市
+        省份
         <select v-model="filters.city">
-          <option value="">全部城市</option>
+          <option value="">全部省份</option>
           <option v-for="item in cityOptions" :key="item" :value="item">
-            {{ item }}
-          </option>
-        </select>
-      </label>
-      <label>
-        区域
-        <select v-model="filters.district">
-          <option value="">全部区域</option>
-          <option v-for="item in districtOptions" :key="item" :value="item">
             {{ item }}
           </option>
         </select>
@@ -1008,7 +981,7 @@ function capabilityText(item: PlatformMerchantListItem) {
           <option value="complete">完整</option>
           <option value="incomplete">需完善</option>
           <option value="missing_coords">缺少经纬度</option>
-          <option value="missing_images">缺少图片</option>
+          <option value="missing_images">缺少封面图片</option>
         </select>
       </label>
       <label>
@@ -1049,7 +1022,7 @@ function capabilityText(item: PlatformMerchantListItem) {
             <th>前台</th>
             <th>完整度</th>
             <th>定位</th>
-            <th>图片</th>
+            <th>封面图片</th>
             <th>热门</th>
             <th>账号</th>
             <th>操作</th>
@@ -1081,8 +1054,8 @@ function capabilityText(item: PlatformMerchantListItem) {
             <td>{{ item.businessType?.nameZh || '未设置' }}</td>
             <td>
               <div class="merchant-region-cell">
-                <strong>{{ item.city || '-' }}</strong>
-                <small>{{ item.district || '-' }}</small>
+                <strong>{{ item.province || item.city || '-' }}</strong>
+                <small>{{ item.addressZh || item.address || item.district || '-' }}</small>
               </div>
             </td>
             <td>
@@ -1110,11 +1083,6 @@ function capabilityText(item: PlatformMerchantListItem) {
             <td>
               <div class="merchant-image-cell">
                 <div class="merchant-image-thumbs">
-                  <img
-                    v-if="item.logoUrl?.trim()"
-                    :src="resolveMediaUrl(item.logoUrl)"
-                    alt="Logo"
-                  />
                   <img
                     v-if="item.coverUrl?.trim()"
                     :src="resolveMediaUrl(item.coverUrl)"
@@ -1162,171 +1130,70 @@ function capabilityText(item: PlatformMerchantListItem) {
     <form class="card modal-card form-grid" @submit.prevent="submit">
       <h2>{{ isEditing ? t('editMerchant') : '快速新增展示商家' }}</h2>
       <input
-        ref="logoFileInput"
-        class="hidden-file-input"
-        type="file"
-        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-        @change="onLogoSelected"
-      />
-      <input
         ref="coverFileInput"
         class="hidden-file-input"
         type="file"
         accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
         @change="onCoverSelected"
       />
-      <div v-if="!isEditing" class="span-2 platform-wizard-steps">
-        <button type="button" :class="{ active: createStep === 1 }" @click="createStep = 1">1 经营类型</button>
-        <button type="button" :class="{ active: createStep === 2 }" @click="createStep = 2">2 核心资料</button>
-        <button type="button" :class="{ active: createStep === 3 }" @click="createStep = 3">3 运营配置</button>
+      <div class="span-2 create-merchant-section-title">
+        <strong>基础资料</strong>
       </div>
-      <label v-show="isEditing || createStep === 2">{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
-      <label v-show="isEditing || createStep === 2">越南语店名<input v-model="form.nameVi" maxlength="120" /></label>
-      <label v-show="isEditing || createStep === 2">英文店名<input v-model="form.nameEn" maxlength="120" /></label>
-      <label v-show="isEditing || createStep === 1">经营类型
+      <label>{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
+      <label>越南语名称<input v-model="form.nameVi" required maxlength="120" /></label>
+      <label>英文名称<input v-model="form.nameEn" required maxlength="120" /></label>
+      <label>经营类型
         <select v-model="form.businessTypeId" required>
           <option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">
             {{ item.nameZh }}
           </option>
         </select>
       </label>
-      <label v-show="isEditing || createStep === 1">商家模式
-        <select v-model="form.merchantMode">
-          <option value="DISPLAY">展示</option>
-          <option value="MANAGED">经营管理</option>
+      <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" required maxlength="32" /></label>
+      <label>联系人<input v-model="form.contactName" required maxlength="64" /></label>
+      <div class="span-2 create-merchant-section-title">
+        <strong>地址与定位</strong>
+        <p>用于小程序地址展示和附近商家定位</p>
+      </div>
+      <label>省份
+        <select v-model="form.province" required>
+          <option value="">请选择省份</option>
+          <option v-for="item in provinceOptions" :key="item" :value="item">{{ item }}</option>
         </select>
       </label>
-      <label v-show="isEditing || createStep === 2">{{ t('contactPhone') }}<input v-model="form.contactPhone" required maxlength="32" /></label>
-      <label v-show="isEditing || createStep === 2">联系人<input v-model="form.contactName" maxlength="64" /></label>
-      <label v-show="isEditing || createStep === 2">城市<input v-model="form.city" required maxlength="80" /></label>
-      <label v-show="isEditing || createStep === 2">区域<input v-model="form.district" maxlength="80" /></label>
-      <label v-show="isEditing || createStep === 2" class="span-2">中文地址<input v-model="form.addressZh" :required="!isEditing" maxlength="255" /></label>
-      <label v-show="isEditing || createStep === 2" class="span-2">越南语地址<input v-model="form.addressVi" maxlength="255" /></label>
-      <label v-show="isEditing || createStep === 2" class="span-2">英文地址<input v-model="form.addressEn" maxlength="255" /></label>
-      <label v-show="isEditing || createStep === 2" class="coordinate-field">
+      <label class="span-3">详细地址<input v-model="form.addressZh" required maxlength="255" /></label>
+      <label class="coordinate-field">
         纬度
-        <input v-model="form.latitude" type="number" step="0.0000001" placeholder="21.28" />
-        <small>纬度示例：21.28，不确定可先留空，后续再补。</small>
+        <input v-model="form.latitude" required type="number" step="0.0000001" placeholder="21.28" />
+        <small>纬度示例：21.28</small>
         <small v-if="latitudeError" class="field-error">{{ latitudeError }}</small>
       </label>
-      <label v-show="isEditing || createStep === 2" class="coordinate-field">
+      <label class="coordinate-field">
         经度
-        <input v-model="form.longitude" type="number" step="0.0000001" placeholder="106.20" />
-        <small>经度示例：106.20，不确定可先留空，后续再补。</small>
+        <input v-model="form.longitude" required type="number" step="0.0000001" placeholder="106.20" />
+        <small>经度示例：106.20</small>
         <small v-if="longitudeError" class="field-error">{{ longitudeError }}</small>
       </label>
-      <div v-show="isEditing || createStep === 2" class="span-2 image-upload-field">
-        <label>Logo URL<input v-model="form.logoUrl" maxlength="500" /></label>
-        <div class="field-actions">
-          <button type="button" class="secondary" :disabled="uploadingLogo" @click="openLogoPicker">
-            {{ uploadingLogo ? '上传中...' : '上传 Logo' }}
-          </button>
-        </div>
-        <div v-if="logoPreviewUrl" class="image-preview-inline">
-          <img :src="logoPreviewUrl" alt="Logo 预览" />
-        </div>
+      <p class="span-2 hint">请填写准确经纬度，否则附近商家与导航可能不准确。</p>
+      <div class="span-2 create-merchant-section-title">
+        <strong>封面图片</strong>
+        <p>用于小程序和商家列表展示</p>
       </div>
-      <div v-show="isEditing || createStep === 2" class="span-2 image-upload-field">
-        <label>封面图 URL<input v-model="form.coverUrl" maxlength="500" /></label>
+      <div class="span-2 image-upload-field">
+        <label>商家封面图片<input v-model="form.coverUrl" required maxlength="500" /></label>
         <div class="field-actions">
           <button type="button" class="secondary" :disabled="uploadingCover" @click="openCoverPicker">
-            {{ uploadingCover ? '上传中...' : '上传封面图' }}
+            {{ uploadingCover ? '上传中...' : (coverPreviewUrl ? '更换封面图片' : '上传封面图片') }}
           </button>
         </div>
         <div v-if="coverPreviewUrl" class="image-preview-inline">
           <img :src="coverPreviewUrl" alt="封面图预览" />
         </div>
       </div>
-      <label v-show="isEditing || createStep === 3" class="span-2">营业时间文本<input v-model="form.openingHoursText" maxlength="255" placeholder="10:00-22:00" /></label>
-      <label v-show="isEditing || createStep === 3" class="span-2">中文简介<textarea v-model="form.descriptionZh" rows="3" /></label>
-      <label v-show="isEditing || createStep === 3" class="span-2">越南语简介<textarea v-model="form.descriptionVi" rows="3" /></label>
-      <label v-show="isEditing || createStep === 3" class="span-2">英文简介<textarea v-model="form.descriptionEn" rows="3" /></label>
-      <section v-show="isEditing || createStep === 3" class="span-2 platform-homepage-categories">
-        <strong>推荐标签</strong>
-        <div class="platform-category-options">
-          <label
-            v-for="item in enabledPromotionTags"
-            :key="item.id"
-            class="platform-category-option"
-            :class="{ selected: form.promotionTagIds.includes(item.id) }"
-          >
-            <input v-model="form.promotionTagIds" type="checkbox" :value="item.id" />
-            <span>{{ item.nameZh }}</span>
-          </label>
-        </div>
-      </section>
-      <section v-show="isEditing || createStep === 3" class="span-2 platform-homepage-categories">
-        <strong>能力开关</strong>
-        <div v-for="group in capabilityGroups" :key="group.code" class="capability-group">
-          <strong>{{ group.name }}</strong>
-          <div class="platform-category-options">
-            <label
-              v-for="item in group.items"
-              :key="item.code"
-              class="platform-category-option"
-              :class="{ selected: form.capabilityValues[item.code] }"
-            >
-              <input v-model="form.capabilityValues[item.code]" type="checkbox" />
-              <span>{{ item.nameZh }}</span>
-            </label>
-          </div>
-        </div>
-        <p class="hint">展示型商家默认只开启电话、导航、图片展示。</p>
-      </section>
-      <section v-show="isEditing || createStep === 3" class="span-2 platform-homepage-categories">
-        <strong>{{ t('homepageCategories') }}</strong>
-        <div class="platform-category-options">
-          <label
-            v-for="item in homepageCategoryOptions"
-            :key="item.value"
-            class="platform-category-option"
-            :class="{ selected: form.homepageCategoryKeys.includes(item.value) }"
-          >
-            <input
-              type="checkbox"
-              :checked="form.homepageCategoryKeys.includes(item.value)"
-              @change="toggleHomepageCategory(item.value)"
-            />
-            <span>{{ item.label }}</span>
-          </label>
-        </div>
-      </section>
-      <label class="span-2 check">
-        <input v-model="form.manualPopular" type="checkbox" />
-        <span>{{ t('manualPopular') }}</span>
-      </label>
-      <label v-show="isEditing || createStep === 1" class="span-2 check visibility-check">
-        <input v-model="form.isVisibleOnClient" type="checkbox" />
-        <div>
-          <strong>{{ t('clientVisibility') }}</strong>
-          <p class="hint">
-            {{ form.isVisibleOnClient ? t('clientVisibilityHint') : t('clientVisibilityDisabledHint') }}
-          </p>
-        </div>
-      </label>
-      <label v-show="isEditing || createStep === 3" class="span-2 check visibility-check">
-        <input v-model="form.reportFeatureEnabled" type="checkbox" />
-        <div>
-          <strong>开放营业日报功能</strong>
-          <p class="hint">开启后，该商家后台将显示“营业日报”功能，可配置日报预览和测试发送。</p>
-        </div>
-      </label>
-      <label v-show="isEditing || createStep === 3" class="span-2 check"><input v-model="form.isNew" type="checkbox" /><span>新店推荐</span></label>
-      <label v-show="isEditing || createStep === 3">排序<input v-model.number="form.sortOrder" type="number" min="0" /></label>
-      <label v-show="isEditing || createStep === 3">状态
-        <select v-model="form.status">
-          <option value="ACTIVE">已上架</option>
-          <option value="PENDING">草稿</option>
-          <option value="DISABLED">停用</option>
-        </select>
-      </label>
-      <p v-show="isEditing || createStep === 3" class="span-2 hint">{{ t('manualPopularHint') }}</p>
       <p v-if="!isEditing" class="span-2 hint">新商家默认不创建商家后台账号，认领状态为未认领。</p>
       <div class="form-actions span-2">
         <button class="secondary" type="button" @click="closeDialog">{{ t('cancel') }}</button>
-        <button v-if="!isEditing && createStep > 1" class="secondary" type="button" @click="createStep -= 1">上一步</button>
-        <button v-if="!isEditing && createStep < 3" type="button" @click="createStep += 1">下一步</button>
-        <button v-else type="submit">{{ t('saveChanges') }}</button>
+        <button type="submit">{{ isEditing ? t('saveChanges') : '新增商家' }}</button>
       </div>
     </form>
   </div>
@@ -1354,11 +1221,11 @@ function capabilityText(item: PlatformMerchantListItem) {
       </div>
 
       <section v-if="importStep === 1" class="span-2 import-step-panel">
-        <p class="hint">支持 .csv，UTF-8 编码。第一阶段只导入展示型商家，不创建账号，不开启下单/扫码/桌台能力。</p>
+        <p class="hint">支持 .csv，UTF-8 编码。新模板固定 11 列，旧 23 列 CSV 仍兼容导入。</p>
         <div class="import-help-grid">
           <div class="import-help-card">
             <strong>模板下载</strong>
-            <p>获取带示例行的 CSV 模板，字段包含经营类型编码、联系方式、地址、图片和标签。</p>
+            <p>获取只包含核心建店字段的新 CSV 模板：名称、经营类型、联系方式、地址、经纬度和封面图片。</p>
             <button type="button" class="secondary" @click="downloadImportTemplate">下载 CSV 模板</button>
           </div>
           <div class="import-help-card">
@@ -1372,9 +1239,8 @@ function capabilityText(item: PlatformMerchantListItem) {
         </div>
         <div class="hint import-guidance">
           <p>可用经营类型：中式正餐、粉面小吃、咖啡奶茶、鲜花礼品、水果生鲜、便利超市、特色越餐。</p>
-          <p>推荐标签仅支持 HOT_FOOD 热门推荐。</p>
-          <p>如果没有准确经纬度，建议先设为草稿或隐藏，避免前台导航不准确。</p>
-          <p>当 status=ACTIVE 且 isVisibleOnClient=true 时，建议填写准确 latitude / longitude。</p>
+          <p>联系人、省份、详细地址、纬度、经度、封面图片都属于核心必填项。</p>
+          <p>旧模板中的 city 会自动兼容写入 province，新模板不再要求 city / district / logoUrl。</p>
         </div>
       </section>
 
@@ -1435,7 +1301,7 @@ function capabilityText(item: PlatformMerchantListItem) {
             </tbody>
           </table>
         </div>
-        <p class="hint">错误行不会导入，警告行会导入。点击“确认导入”后会创建 DISPLAY / UNCLAIMED 展示商家。</p>
+        <p class="hint">错误行不会导入，警告行会导入。点击“确认导入”后会创建展示型商家，并继续兼容旧 CSV 的额外列。</p>
       </section>
 
       <section v-else class="span-2 import-step-panel">
@@ -2089,6 +1955,24 @@ function capabilityText(item: PlatformMerchantListItem) {
 .image-upload-field {
   display: grid;
   gap: 10px;
+}
+
+.create-merchant-section-title {
+  display: grid;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.create-merchant-section-title strong {
+  color: #12351f;
+  font-size: 16px;
+}
+
+.create-merchant-section-title p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .field-actions {

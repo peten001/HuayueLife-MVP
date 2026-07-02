@@ -20,15 +20,13 @@ export class CreateDisplayMerchantDto {
   @MaxLength(120)
   nameZh: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(120)
-  nameVi?: string;
+  nameVi: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(120)
-  nameEn?: string;
+  nameEn: string;
 
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
@@ -42,19 +40,18 @@ export class CreateDisplayMerchantDto {
   @MaxLength(32)
   contactPhone: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(64)
-  contactName?: string;
+  contactName: string;
+
+  @IsString()
+  @MaxLength(80)
+  province: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(80)
-  province?: string;
-
-  @IsString()
-  @MaxLength(80)
-  city: string;
+  city?: string;
 
   @IsOptional()
   @IsString()
@@ -75,17 +72,15 @@ export class CreateDisplayMerchantDto {
   @MaxLength(255)
   addressEn?: string;
 
-  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-90)
   @Max(90)
-  latitude?: number | null;
+  latitude: number;
 
-  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-180)
   @Max(180)
-  longitude?: number | null;
+  longitude: number;
 
   @IsOptional()
   @IsString()
@@ -112,10 +107,9 @@ export class CreateDisplayMerchantDto {
   @MaxLength(500)
   logoUrl?: string;
 
-  @IsOptional()
   @IsString()
   @MaxLength(500)
-  coverUrl?: string;
+  coverUrl: string;
 
   @IsOptional()
   @IsArray()
