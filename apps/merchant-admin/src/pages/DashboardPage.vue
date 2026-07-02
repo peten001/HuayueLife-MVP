@@ -1391,13 +1391,13 @@ type Action =
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 168px;
-  height: 168px;
-  padding: 20px 26px 20px 24px;
+  min-height: 150px;
+  height: 150px;
+  padding: 18px 20px 16px 20px;
   border-color: #4f9f58;
   background: #5bae63;
   overflow: hidden;
@@ -1406,7 +1406,7 @@ type Action =
 .mobile-store-copy {
   display: grid;
   gap: 4px;
-  max-width: calc(100% - 134px);
+  max-width: calc(100% - 116px);
   min-width: 0;
   position: relative;
   z-index: 1;
@@ -1414,43 +1414,47 @@ type Action =
 
 .mobile-store-eyebrow {
   color: #fff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
 }
 
 .mobile-store-copy strong {
   color: #fff;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.18;
 }
 
 .mobile-store-copy p {
   margin: 0;
   color: #fff;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .mobile-store-copy small {
   color: rgba(255, 255, 255, 0.85);
-  font-size: 17px;
-  line-height: 1.25;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  opacity: 0.92;
+  overflow-wrap: anywhere;
 }
 
 .mobile-store-side {
   position: absolute;
-  top: 20px;
-  right: 26px;
-  bottom: 20px;
-  width: 120px;
+  top: 18px;
+  right: 18px;
+  bottom: 16px;
+  width: 104px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   z-index: 2;
 }
@@ -1476,45 +1480,54 @@ type Action =
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
-  padding: 0 18px;
+  height: 30px;
+  padding: 0 14px;
   border-radius: 999px;
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  font-size: 14px;
   font-weight: 700;
+  line-height: 30px;
   white-space: nowrap;
 }
 
 .mobile-store-count {
   color: #fff;
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 800;
   line-height: 1;
   text-align: right;
 }
 
 .mobile-sound-toggle {
-  min-width: 116px;
-  height: 42px;
-  min-height: 42px;
-  padding: 0 14px;
+  min-width: 104px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 12px;
   border-color: rgba(255, 255, 255, 0.35);
-  border-radius: 14px;
+  border-radius: 13px;
   background: #1f7a35;
   color: #fff;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 36px;
   white-space: nowrap;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .mobile-sound-toggle:hover,
-.mobile-sound-toggle.active {
+.mobile-sound-toggle:focus,
+.mobile-sound-toggle.active,
+.mobile-sound-toggle.is-active,
+.mobile-sound-toggle.enabled,
+.mobile-sound-toggle.is-enabled {
   border-color: rgba(255, 255, 255, 0.35);
   background: #1f7a35;
   color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 1;
 }
 
 .mobile-metric-grid {
@@ -1790,9 +1803,9 @@ type Action =
 
   .mobile-store-card {
     display: block;
-    min-height: 168px;
-    height: 168px;
-    padding: 20px 26px 20px 24px;
+    min-height: 150px;
+    height: 150px;
+    padding: 18px 20px 16px 20px;
   }
 
   .mobile-store-copy,
@@ -1843,19 +1856,11 @@ type Action =
     gap: 6px;
   }
 
-  .mobile-store-copy strong {
-    font-size: 22px;
-  }
-
-  .mobile-store-count {
-    font-size: 34px;
-  }
-
   .mobile-store-side {
-    top: 20px;
-    right: 26px;
-    bottom: 20px;
-    width: 120px;
+    top: 18px;
+    right: 18px;
+    bottom: 16px;
+    width: 104px;
   }
 
   .mobile-order-head {
@@ -1889,10 +1894,10 @@ type Action =
   .mobile-sound-toggle {
     width: auto;
     max-width: none;
-    min-width: 116px;
-    min-height: 42px;
-    padding: 0 14px;
-    font-size: 15px;
+    min-width: 104px;
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
   }
 
 }
@@ -1904,27 +1909,23 @@ type Action =
   }
 
   .mobile-store-card {
-    min-height: 172px;
-    height: 172px;
-    padding: 18px 18px 18px 16px;
+    min-height: 150px;
+    height: 150px;
+    padding: 18px 18px 16px 18px;
   }
 
   .mobile-store-side {
     top: 18px;
-    right: 18px;
-    bottom: 18px;
-    width: 112px;
-  }
-
-  .mobile-store-count {
-    font-size: 32px;
+    right: 16px;
+    bottom: 16px;
+    width: 100px;
   }
 
   .mobile-sound-toggle {
-    min-width: 108px;
-    min-height: 40px;
-    padding: 0 12px;
-    font-size: 14px;
+    min-width: 104px;
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 }
 
