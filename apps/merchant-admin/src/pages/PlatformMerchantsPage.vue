@@ -1350,7 +1350,7 @@ function toCsvLine(values: Array<string | number>) {
                   <small>{{ row.rawData.contactPhone || '-' }}</small>
                 </td>
                 <td>{{ row.normalizedData?.businessTypeCode || row.rawData.businessType || row.rawData.businessTypeCode || '-' }}</td>
-                <td>{{ row.normalizedData?.coverPath || row.rawData.coverPath || row.rawData.coverUrl || '-' }}</td>
+                <td>{{ row.normalizedData?.coverPath || row.rawData.coverPath || '-' }}</td>
                 <td>
                   <span class="status-pill" :class="importRowStatusClass(row.status)">
                     {{ importRowStatusLabel(row.status) }}
