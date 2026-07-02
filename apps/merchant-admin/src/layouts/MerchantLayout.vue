@@ -262,7 +262,7 @@ function iconPaths(icon: DesktopNavIcon) {
 
     <div
       v-if="mobileMenuOpen"
-      class="mobile-drawer-backdrop"
+      class="mobile-drawer-backdrop mobile-only"
       @click.self="closeMobileMenu"
     >
       <aside class="mobile-drawer" role="dialog" aria-modal="true">
@@ -295,7 +295,7 @@ function iconPaths(icon: DesktopNavIcon) {
       </aside>
     </div>
 
-    <nav class="mobile-tabbar">
+    <nav class="mobile-tabbar mobile-only">
       <RouterLink
         v-for="tab in mobileLinkTabs"
         :key="tab.label"

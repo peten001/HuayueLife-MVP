@@ -54,6 +54,9 @@ const operatingId = ref('');
 const highlightedOrderId = ref('');
 const activeCategory = ref<OrderCategory>('ALL');
 const activeQuickStatus = ref<QuickStatus>('ALL');
+const mobileSearchOpen = ref(false);
+const mobileFilterOpen = ref(false);
+const mobileSearch = ref('');
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
@@ -96,6 +99,12 @@ const displayRows = computed(() =>
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
     }),
 );
+
+const mobileDisplayRows = computed(() => {
+  const keyword = mobileSearch.value.trim().toLowerCase();
+  if (!keyword) return displayRows.value;
+  return displayRows.value.filter((order) => orderMatchesKeyword(order, keyword));
+});
 
 const orderCategoryCards = computed(() => {
   const stats = {
@@ -249,6 +258,35 @@ const emptyState = computed(() => {
     },
   };
   return states[activeCategory.value];
+});
+
+const mobileEmptyState = computed(() => {
+  if (mobileSearch.value.trim()) {
+    return {
+      title: localLabel({
+        zh: '未找到相关订单',
+        vi: 'Khong tim thay don phu hop',
+        en: 'No matching orders',
+      }),
+      description: localLabel({
+        zh: '请尝试其他关键词或调整筛选条件。',
+        vi: 'Thu tu khoa khac hoac dieu chinh bo loc.',
+        en: 'Try another keyword or adjust the filters.',
+      }),
+    };
+  }
+  return {
+    title: localLabel({
+      zh: '今天还没有订单',
+      vi: 'Hom nay chua co don',
+      en: 'No orders today',
+    }),
+    description: localLabel({
+      zh: '新订单会显示在这里，请保持声音和打印机在线。',
+      vi: 'Don moi se hien thi tai day. Hay giu am thanh va may in luon san sang.',
+      en: 'New orders will appear here. Keep sound and printer ready.',
+    }),
+  };
 });
 
 watch(
@@ -480,6 +518,24 @@ function settlementTone(order: MerchantOrder) {
   return order.settlementStatus === 'SETTLED' ? 'success' : 'muted';
 }
 
+function orderMatchesKeyword(order: MerchantOrder, keyword: string) {
+  const haystack = [
+    order.orderNo,
+    order.contactName,
+    order.contactPhone,
+    order.deliveryAddress,
+    order.customerRemark,
+    order.tableNoSnapshot,
+    order.table?.tableNo,
+    order.user?.nickname,
+    ...order.items.flatMap((item) => [item.productNameZhSnapshot, item.remark]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(keyword);
+}
+
 function printStatusLabel(order: MerchantOrder) {
   const logs = latestPrintLogsByPrinter(order);
   if (!logs.length) {
@@ -573,9 +629,50 @@ async function execute(order: MerchantOrder) {
   }
 }
 
+async function rejectOrder(order: MerchantOrder) {
+  if (operatingId.value) return;
+  const reason = window.prompt(t('rejectReasonPrompt'));
+  if (reason === null) return;
+  try {
+    operatingId.value = order.id;
+    await runOrderAction(order.id, 'reject', { reason: reason || undefined });
+    clearNewPendingOrder(order.id);
+    message.value = t('orderUpdated');
+    await load();
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    operatingId.value = '';
+  }
+}
+
 function openChat(order: MerchantOrder) {
   if (!chatEnabled.value) return;
   chatOrderId.value = order.id;
+}
+
+function toggleMobileSearch() {
+  mobileSearchOpen.value = !mobileSearchOpen.value;
+  if (!mobileSearchOpen.value) {
+    mobileSearch.value = '';
+  }
+}
+
+function toggleMobileFilter() {
+  mobileFilterOpen.value = !mobileFilterOpen.value;
+}
+
+function resetMobileFilters() {
+  filters.status = '';
+  filters.orderType = '';
+  filters.date = todayInVietnam();
+  activeCategory.value = 'ALL';
+  activeQuickStatus.value = 'ALL';
+}
+
+function applyMobileFilters() {
+  mobileFilterOpen.value = false;
+  applyFilters();
 }
 
 function closeChat() {
@@ -641,6 +738,104 @@ function datePart(value: string) {
   }).format(date);
 }
 
+function mobileDateTime(value: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat(locale.value === 'vi' ? 'vi-VN' : locale.value === 'en' ? 'en-GB' : 'zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function mobileServiceMeta(order: MerchantOrder) {
+  if (order.orderType === 'DINE_IN') {
+    return localLabel({
+      zh: `桌号 ${order.tableNoSnapshot || order.table?.tableNo || '-'} · 堂食`,
+      vi: `Ban ${order.tableNoSnapshot || order.table?.tableNo || '-'} · Tai ban`,
+      en: `Table ${order.tableNoSnapshot || order.table?.tableNo || '-'} · Dine in`,
+    });
+  }
+  if (order.orderType === 'PICKUP') {
+    return localLabel({
+      zh: '到店自取',
+      vi: 'Khach tu lay',
+      en: 'Store pickup',
+    });
+  }
+  return localLabel({
+    zh: '商家配送',
+    vi: 'Nha hang giao hang',
+    en: 'Merchant delivery',
+  });
+}
+
+function mobileServiceDetail(order: MerchantOrder) {
+  if (order.orderType === 'DINE_IN') {
+    return localLabel({
+      zh: '堂食扫码点餐',
+      vi: 'Goi mon bang QR',
+      en: 'Table QR order',
+    });
+  }
+  if (order.orderType === 'PICKUP') {
+    return order.contactName || order.contactPhone || localLabel({
+      zh: '顾客到店自取',
+      vi: 'Khach den cua hang lay',
+      en: 'Pickup at store',
+    });
+  }
+  return order.deliveryAddress || order.contactPhone || localLabel({
+    zh: '配送地址待确认',
+    vi: 'Can xac nhan dia chi',
+    en: 'Delivery address to confirm',
+  });
+}
+
+function mobileItemsLabel(order: MerchantOrder) {
+  return localLabel({
+    zh: `${order.items.length} 菜品`,
+    vi: `${order.items.length} mon`,
+    en: `${order.items.length} items`,
+  });
+}
+
+function mobileNoteLabel(note: string) {
+  return locale.value === 'vi' ? `Ghi chu: ${note}` : locale.value === 'en' ? `Note: ${note}` : `备注：${note}`;
+}
+
+function mobilePrimaryLabel(order: MerchantOrder) {
+  const next = primaryAction(order);
+  return next ? t(next.label) : '';
+}
+
+function mobileSecondaryLabel(order: MerchantOrder) {
+  if (order.status === 'PENDING_ACCEPTANCE') return t('rejectOrder');
+  if (order.status === 'ACCEPTED') return t('cancelOrder');
+  return t('viewDetails');
+}
+
+function mobileSecondaryKind(order: MerchantOrder) {
+  return order.status === 'PENDING_ACCEPTANCE' || order.status === 'ACCEPTED' ? 'danger' : 'secondary';
+}
+
+function shouldShowMobileSecondary(order: MerchantOrder) {
+  return Boolean(primaryAction(order));
+}
+
+async function handleMobileSecondary(order: MerchantOrder) {
+  if (order.status === 'PENDING_ACCEPTANCE' || order.status === 'ACCEPTED') {
+    await rejectOrder(order);
+    return;
+  }
+  await router.push(`/orders/${order.id}`);
+}
+
+async function goToOrderDetail(order: MerchantOrder) {
+  await router.push(`/orders/${order.id}`);
+}
+
 function iconPaths(icon: DashboardIcon) {
   const icons: Record<DashboardIcon, string[]> = {
     all: ['M4 6h16', 'M4 12h16', 'M4 18h10', 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'],
@@ -687,236 +882,418 @@ function todayInVietnam() {
 
 <template>
   <div class="merchant-orders-page">
-    <PageHeader
-      :title="t('orders')"
-      :description="localLabel({
-        zh: '实时查看和处理各类订单',
-        vi: 'Theo doi va xu ly don hang theo thoi gian thuc',
-        en: 'Track and process restaurant orders in real time',
-      })"
-    />
+    <div class="orders-desktop-view desktop-only">
+      <PageHeader
+        :title="t('orders')"
+        :description="localLabel({
+          zh: '实时查看和处理各类订单',
+          vi: 'Theo doi va xu ly don hang theo thoi gian thuc',
+          en: 'Track and process restaurant orders in real time',
+        })"
+      />
 
-    <form class="orders-filter-card" @submit.prevent="applyFilters">
-      <label class="orders-filter-field">
-        <span>{{ t('date') }}</span>
-        <input v-model="filters.date" type="date" />
-      </label>
-      <label class="orders-filter-field">
-        <span>{{ t('status') }}</span>
-        <select v-model="filters.status">
-          <option value="">{{ t('allStatuses') }}</option>
-          <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
-          <option value="ACCEPTED">{{ t('accepted') }}</option>
-          <option value="PREPARING">{{ t('preparing') }}</option>
-          <option value="READY">{{ t('ready') }}</option>
-          <option value="DELIVERING">{{ t('delivering') }}</option>
-          <option value="COMPLETED">{{ t('completed') }}</option>
-          <option value="CANCELLED">{{ t('cancelled') }}</option>
-        </select>
-      </label>
-      <label class="orders-filter-field">
-        <span>{{ t('orderType') }}</span>
-        <select v-model="filters.orderType">
-          <option value="">{{ t('allTypes') }}</option>
-          <option value="DINE_IN">{{ t('dineIn') }}</option>
-          <option value="PICKUP">{{ t('pickup') }}</option>
-          <option value="DELIVERY">{{ t('delivery') }}</option>
-        </select>
-      </label>
-      <button type="submit" class="orders-submit-button">{{ t('query') }}</button>
-    </form>
+      <form class="orders-filter-card" @submit.prevent="applyFilters">
+        <label class="orders-filter-field">
+          <span>{{ t('date') }}</span>
+          <input v-model="filters.date" type="date" />
+        </label>
+        <label class="orders-filter-field">
+          <span>{{ t('status') }}</span>
+          <select v-model="filters.status">
+            <option value="">{{ t('allStatuses') }}</option>
+            <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
+            <option value="ACCEPTED">{{ t('accepted') }}</option>
+            <option value="PREPARING">{{ t('preparing') }}</option>
+            <option value="READY">{{ t('ready') }}</option>
+            <option value="DELIVERING">{{ t('delivering') }}</option>
+            <option value="COMPLETED">{{ t('completed') }}</option>
+            <option value="CANCELLED">{{ t('cancelled') }}</option>
+          </select>
+        </label>
+        <label class="orders-filter-field">
+          <span>{{ t('orderType') }}</span>
+          <select v-model="filters.orderType">
+            <option value="">{{ t('allTypes') }}</option>
+            <option value="DINE_IN">{{ t('dineIn') }}</option>
+            <option value="PICKUP">{{ t('pickup') }}</option>
+            <option value="DELIVERY">{{ t('delivery') }}</option>
+          </select>
+        </label>
+        <button type="submit" class="orders-submit-button">{{ t('query') }}</button>
+      </form>
 
-    <section class="order-category-grid">
-      <button
-        v-for="card in orderCategoryCards"
-        :key="card.key"
-        type="button"
-        class="order-category-card"
-        :class="[`accent-${card.accent}`, { active: activeCategory === card.key }]"
-        @click="selectCategory(card.key)"
-      >
-        <span class="order-category-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path v-for="segment in iconPaths(card.icon)" :key="segment" :d="segment" />
-          </svg>
-        </span>
-        <div class="order-category-copy">
-          <strong>{{ card.title }}</strong>
-          <span class="order-category-count">{{ card.count }}</span>
-          <small>{{ card.description }}</small>
-        </div>
-      </button>
-    </section>
+      <section class="order-category-grid">
+        <button
+          v-for="card in orderCategoryCards"
+          :key="card.key"
+          type="button"
+          class="order-category-card"
+          :class="[`accent-${card.accent}`, { active: activeCategory === card.key }]"
+          @click="selectCategory(card.key)"
+        >
+          <span class="order-category-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path v-for="segment in iconPaths(card.icon)" :key="segment" :d="segment" />
+            </svg>
+          </span>
+          <div class="order-category-copy">
+            <strong>{{ card.title }}</strong>
+            <span class="order-category-count">{{ card.count }}</span>
+            <small>{{ card.description }}</small>
+          </div>
+        </button>
+      </section>
 
-    <section class="order-status-strip">
-      <button
-        v-for="status in quickStatusCards"
-        :key="status.key"
-        type="button"
-        class="order-status-chip"
-        :class="{ active: activeQuickStatus === status.key }"
-        @click="selectQuickStatus(status.key)"
-      >
-        <span class="order-status-chip-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path v-for="segment in iconPaths(status.icon)" :key="segment" :d="segment" />
-          </svg>
-        </span>
-        <span>{{ status.label }}</span>
-        <span class="order-status-chip-badge" :class="`tone-${status.badgeTone}`">{{ status.count }}</span>
-      </button>
-    </section>
+      <section class="order-status-strip">
+        <button
+          v-for="status in quickStatusCards"
+          :key="status.key"
+          type="button"
+          class="order-status-chip"
+          :class="{ active: activeQuickStatus === status.key }"
+          @click="selectQuickStatus(status.key)"
+        >
+          <span class="order-status-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path v-for="segment in iconPaths(status.icon)" :key="segment" :d="segment" />
+            </svg>
+          </span>
+          <span>{{ status.label }}</span>
+          <span class="order-status-chip-badge" :class="`tone-${status.badgeTone}`">{{ status.count }}</span>
+        </button>
+      </section>
 
-    <p v-if="message" class="orders-message">{{ message }}</p>
+      <p v-if="message" class="orders-message">{{ message }}</p>
 
-    <section class="orders-table-card">
-      <div class="orders-table-shell">
-        <table class="orders-table">
-          <colgroup>
-            <col class="col-order" />
-            <col class="col-type" />
-            <col class="col-service" />
-            <col class="col-amount" />
-            <col class="col-payment" />
-            <col class="col-print" />
-            <col class="col-status" />
-            <col class="col-time" />
-            <col class="col-actions" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>{{ localLabel({ zh: '订单信息', vi: 'Thong tin don', en: 'Order info' }) }}</th>
-              <th>{{ localLabel({ zh: '订单类别', vi: 'Loai don', en: 'Order type' }) }}</th>
-              <th>{{ localLabel({ zh: '用餐/取餐/配送信息', vi: 'Thong tin phuc vu', en: 'Dining / pickup / delivery' }) }}</th>
-              <th>{{ localLabel({ zh: '金额', vi: 'So tien', en: 'Amount' }) }}</th>
-              <th>{{ localLabel({ zh: '收款', vi: 'Thu tien', en: 'Settlement' }) }}</th>
-              <th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
-              <th>{{ t('status') }}</th>
-              <th>{{ t('orderTime') }}</th>
-              <th class="orders-actions-head">{{ t('actions') }}</th>
-            </tr>
-          </thead>
-          <tbody v-if="displayRows.length">
-            <tr
-              v-for="order in displayRows"
-              :key="order.id"
-              :data-order-id="order.id"
-              :class="[
-                'orders-row',
-                {
-                  'orders-row--new': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
-                  'orders-row--highlight': highlightedOrderId === order.id,
-                  'orders-row--abnormal': isAbnormalOrder(order),
-                },
-              ]"
-            >
-              <td>
-                <div class="order-info-cell">
-                  <strong>#{{ order.orderNo }}</strong>
-                  <span>{{ t('itemCount', { count: order.items.length }) }}</span>
-                  <span
-                    v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
-                    class="orders-mini-badge"
-                  >
-                    {{ t('newOrderBadge') }}
-                  </span>
-                  <small v-if="orderItemsSummary(order)">{{ orderItemsSummary(order) }}</small>
-                </div>
-              </td>
-              <td>
-                <span class="order-pill" :class="orderTypeTone(order.orderType)">
-                  {{ orderTypeLabel(order.orderType) }}
-                </span>
-              </td>
-              <td>
-                <div class="service-info-cell">
-                  <div class="service-info-line">
-                    <span class="service-info-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path v-for="segment in iconPaths(serviceSummary(order).icon)" :key="segment" :d="segment" />
-                      </svg>
+      <section class="orders-table-card">
+        <div class="orders-table-shell">
+          <table class="orders-table">
+            <colgroup>
+              <col class="col-order" />
+              <col class="col-type" />
+              <col class="col-service" />
+              <col class="col-amount" />
+              <col class="col-payment" />
+              <col class="col-print" />
+              <col class="col-status" />
+              <col class="col-time" />
+              <col class="col-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>{{ localLabel({ zh: '订单信息', vi: 'Thong tin don', en: 'Order info' }) }}</th>
+                <th>{{ localLabel({ zh: '订单类别', vi: 'Loai don', en: 'Order type' }) }}</th>
+                <th>{{ localLabel({ zh: '用餐/取餐/配送信息', vi: 'Thong tin phuc vu', en: 'Dining / pickup / delivery' }) }}</th>
+                <th>{{ localLabel({ zh: '金额', vi: 'So tien', en: 'Amount' }) }}</th>
+                <th>{{ localLabel({ zh: '收款', vi: 'Thu tien', en: 'Settlement' }) }}</th>
+                <th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
+                <th>{{ t('status') }}</th>
+                <th>{{ t('orderTime') }}</th>
+                <th class="orders-actions-head">{{ t('actions') }}</th>
+              </tr>
+            </thead>
+            <tbody v-if="displayRows.length">
+              <tr
+                v-for="order in displayRows"
+                :key="order.id"
+                :data-order-id="order.id"
+                :class="[
+                  'orders-row',
+                  {
+                    'orders-row--new': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
+                    'orders-row--highlight': highlightedOrderId === order.id,
+                    'orders-row--abnormal': isAbnormalOrder(order),
+                  },
+                ]"
+              >
+                <td>
+                  <div class="order-info-cell">
+                    <strong>#{{ order.orderNo }}</strong>
+                    <span>{{ t('itemCount', { count: order.items.length }) }}</span>
+                    <span
+                      v-if="order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id)"
+                      class="orders-mini-badge"
+                    >
+                      {{ t('newOrderBadge') }}
                     </span>
-                    <strong>{{ serviceSummary(order).title }}</strong>
+                    <small v-if="orderItemsSummary(order)">{{ orderItemsSummary(order) }}</small>
                   </div>
-                  <span>{{ serviceSummary(order).subtitle }}</span>
-                  <small v-if="order.customerRemark">{{ t('remark') }}：{{ order.customerRemark }}</small>
-                </div>
-              </td>
-              <td>
-                <div class="amount-cell">
-                  <strong>{{ money(order.totalAmountVnd) }}</strong>
-                  <span v-if="Number(order.deliveryFeeVnd) > 0">
-                    {{ localLabel({ zh: '含配送费', vi: 'Bao gom phi giao', en: 'Includes delivery fee' }) }}
+                </td>
+                <td>
+                  <span class="order-pill" :class="orderTypeTone(order.orderType)">
+                    {{ orderTypeLabel(order.orderType) }}
                   </span>
-                </div>
-              </td>
-              <td>
-                <div class="status-stack">
-                  <span class="mini-pill" :class="settlementTone(order)">{{ settlementLabel(order) }}</span>
-                  <small>{{ settlementHint(order) }}</small>
-                </div>
-              </td>
-              <td>
-                <div class="status-stack">
-                  <span class="mini-pill" :class="printStatusClass(order)">{{ printStatusLabel(order) }}</span>
-                  <small v-if="latestPrintLogsByPrinter(order).length">
-                    {{ latestPrintLogsByPrinter(order).length }}
-                    {{ localLabel({ zh: '台打印机', vi: 'may in', en: 'printers' }) }}
-                  </small>
-                  <small v-else>—</small>
-                </div>
-              </td>
-              <td>
-                <span class="order-pill" :class="statusTone(order.status)">
-                  {{ statusLabel(order.status) }}
-                </span>
-              </td>
-              <td>
-                <div class="order-time-cell">
-                  <strong>{{ timePart(order.createdAt) }}</strong>
-                  <span>{{ datePart(order.createdAt) }}</span>
-                </div>
-              </td>
-              <td class="orders-actions-cell">
-                <div class="orders-actions">
-                  <button
-                    v-if="primaryAction(order)"
-                    type="button"
-                    class="orders-primary-button"
-                    :disabled="operatingId === order.id"
-                    @click="execute(order)"
-                  >
-                    {{ t(primaryAction(order)!.label) }}
-                  </button>
-                  <RouterLink class="orders-outline-button orders-link-button" :to="`/orders/${order.id}`">
-                    {{ t('viewDetails') }}
-                  </RouterLink>
-                  <button
-                    v-if="chatEnabled"
-                    type="button"
-                    class="orders-outline-button orders-chat-button"
-                    @click="openChat(order)"
-                  >
-                    <span>{{ t('openChat') }}</span>
-                    <span v-if="chatUnreadCount(order)" class="nav-badge">
-                      {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                </td>
+                <td>
+                  <div class="service-info-cell">
+                    <div class="service-info-line">
+                      <span class="service-info-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path v-for="segment in iconPaths(serviceSummary(order).icon)" :key="segment" :d="segment" />
+                        </svg>
+                      </span>
+                      <strong>{{ serviceSummary(order).title }}</strong>
+                    </div>
+                    <span>{{ serviceSummary(order).subtitle }}</span>
+                    <small v-if="order.customerRemark">{{ t('remark') }}：{{ order.customerRemark }}</small>
+                  </div>
+                </td>
+                <td>
+                  <div class="amount-cell">
+                    <strong>{{ money(order.totalAmountVnd) }}</strong>
+                    <span v-if="Number(order.deliveryFeeVnd) > 0">
+                      {{ localLabel({ zh: '含配送费', vi: 'Bao gom phi giao', en: 'Includes delivery fee' }) }}
                     </span>
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  </div>
+                </td>
+                <td>
+                  <div class="status-stack">
+                    <span class="mini-pill" :class="settlementTone(order)">{{ settlementLabel(order) }}</span>
+                    <small>{{ settlementHint(order) }}</small>
+                  </div>
+                </td>
+                <td>
+                  <div class="status-stack">
+                    <span class="mini-pill" :class="printStatusClass(order)">{{ printStatusLabel(order) }}</span>
+                    <small v-if="latestPrintLogsByPrinter(order).length">
+                      {{ latestPrintLogsByPrinter(order).length }}
+                      {{ localLabel({ zh: '台打印机', vi: 'may in', en: 'printers' }) }}
+                    </small>
+                    <small v-else>—</small>
+                  </div>
+                </td>
+                <td>
+                  <span class="order-pill" :class="statusTone(order.status)">
+                    {{ statusLabel(order.status) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="order-time-cell">
+                    <strong>{{ timePart(order.createdAt) }}</strong>
+                    <span>{{ datePart(order.createdAt) }}</span>
+                  </div>
+                </td>
+                <td class="orders-actions-cell">
+                  <div class="orders-actions">
+                    <button
+                      v-if="primaryAction(order)"
+                      type="button"
+                      class="orders-primary-button"
+                      :disabled="operatingId === order.id"
+                      @click="execute(order)"
+                    >
+                      {{ t(primaryAction(order)!.label) }}
+                    </button>
+                    <RouterLink class="orders-outline-button orders-link-button" :to="`/orders/${order.id}`">
+                      {{ t('viewDetails') }}
+                    </RouterLink>
+                    <button
+                      v-if="chatEnabled"
+                      type="button"
+                      class="orders-outline-button orders-chat-button"
+                      @click="openChat(order)"
+                    >
+                      <span>{{ t('openChat') }}</span>
+                      <span v-if="chatUnreadCount(order)" class="nav-badge">
+                        {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                      </span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="!displayRows.length" class="orders-empty-state">
+          <span class="orders-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path v-for="segment in iconPaths(activeCategory === 'ABNORMAL' ? 'abnormal' : 'all')" :key="segment" :d="segment" />
+            </svg>
+          </span>
+          <strong>{{ emptyState.title }}</strong>
+          <p>{{ emptyState.description }}</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="orders-mobile-view mobile-only">
+      <header class="orders-mobile-header">
+        <div>
+          <strong class="orders-mobile-title">{{ t('orders') }}</strong>
+          <p class="orders-mobile-subtitle">
+            {{ localLabel({ zh: '实时查看和处理订单', vi: 'Theo doi va xu ly don hang', en: 'Track and process orders' }) }}
+          </p>
+        </div>
+        <div class="orders-mobile-actions">
+          <button type="button" class="orders-mobile-icon-button" @click="toggleMobileSearch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </button>
+          <button type="button" class="orders-mobile-icon-button" @click="toggleMobileFilter">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 6h16" />
+              <path d="M7 12h10" />
+              <path d="M10 18h4" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div v-if="mobileSearchOpen" class="orders-mobile-search">
+        <input
+          v-model="mobileSearch"
+          type="search"
+          :placeholder="localLabel({ zh: '搜索订单号、顾客或菜品...', vi: 'Tim don, khach hoac mon an...', en: 'Search orders, customer or items...' })"
+        />
       </div>
 
-      <div v-if="!displayRows.length" class="orders-empty-state">
+      <section v-if="mobileFilterOpen" class="orders-mobile-filter-panel">
+        <label class="orders-mobile-filter-field">
+          <span>{{ t('status') }}</span>
+          <select v-model="filters.status">
+            <option value="">{{ t('allStatuses') }}</option>
+            <option value="PENDING_ACCEPTANCE">{{ t('pendingAcceptance') }}</option>
+            <option value="ACCEPTED">{{ t('accepted') }}</option>
+            <option value="PREPARING">{{ t('preparing') }}</option>
+            <option value="READY">{{ t('ready') }}</option>
+            <option value="DELIVERING">{{ t('delivering') }}</option>
+            <option value="COMPLETED">{{ t('completed') }}</option>
+            <option value="CANCELLED">{{ t('cancelled') }}</option>
+          </select>
+        </label>
+        <label class="orders-mobile-filter-field">
+          <span>{{ t('orderType') }}</span>
+          <select v-model="filters.orderType">
+            <option value="">{{ t('allTypes') }}</option>
+            <option value="DINE_IN">{{ t('dineIn') }}</option>
+            <option value="PICKUP">{{ t('pickup') }}</option>
+            <option value="DELIVERY">{{ t('delivery') }}</option>
+          </select>
+        </label>
+        <label class="orders-mobile-filter-field">
+          <span>{{ t('date') }}</span>
+          <input v-model="filters.date" type="date" />
+        </label>
+        <div class="orders-mobile-filter-actions">
+          <button type="button" class="order-mobile-action secondary" @click="resetMobileFilters">
+            {{ localLabel({ zh: '重置', vi: 'Dat lai', en: 'Reset' }) }}
+          </button>
+          <button type="button" class="order-mobile-action primary" @click="applyMobileFilters">
+            {{ localLabel({ zh: '应用', vi: 'Ap dung', en: 'Apply' }) }}
+          </button>
+        </div>
+      </section>
+
+      <div class="orders-mobile-tabs">
+        <button
+          v-for="status in quickStatusCards"
+          :key="status.key"
+          type="button"
+          class="orders-mobile-tab"
+          :class="{ 'is-active': activeQuickStatus === status.key }"
+          @click="selectQuickStatus(status.key)"
+        >
+          <span>{{ status.label }}</span>
+          <span class="orders-mobile-tab-badge">{{ status.count }}</span>
+        </button>
+      </div>
+
+      <p v-if="message" class="orders-message">{{ message }}</p>
+
+      <div v-if="mobileDisplayRows.length" class="orders-mobile-list">
+        <article
+          v-for="order in mobileDisplayRows"
+          :key="order.id"
+          :data-order-id="order.id"
+          class="order-mobile-card"
+          :class="{
+            'order-mobile-card--new': order.status === 'PENDING_ACCEPTANCE' && isRecentNewPendingOrder(order.id),
+            'order-mobile-card--highlight': highlightedOrderId === order.id,
+          }"
+        >
+          <header class="order-mobile-card-header">
+            <div>
+              <strong class="order-mobile-no">#{{ order.orderNo }}</strong>
+            </div>
+            <div class="order-mobile-meta">
+              <span class="order-mobile-time">{{ mobileDateTime(order.createdAt) }}</span>
+              <span class="order-pill" :class="statusTone(order.status)">{{ statusLabel(order.status) }}</span>
+            </div>
+          </header>
+
+          <div class="order-mobile-info">
+            <span class="order-pill" :class="orderTypeTone(order.orderType)">{{ orderTypeLabel(order.orderType) }}</span>
+            <span class="order-mobile-service">{{ mobileServiceMeta(order) }}</span>
+            <span class="order-mobile-address">{{ mobileServiceDetail(order) }}</span>
+          </div>
+
+          <div class="order-mobile-dishes">
+            <div class="order-mobile-images">
+              <template v-for="item in order.items.slice(0, 3)" :key="item.id">
+                <img
+                  v-if="item.imageUrlSnapshot"
+                  :src="item.imageUrlSnapshot"
+                  :alt="item.productNameZhSnapshot"
+                  class="order-mobile-image"
+                />
+                <span v-else class="order-mobile-image order-mobile-image--placeholder">
+                  {{ item.productNameZhSnapshot.slice(0, 1) }}
+                </span>
+              </template>
+            </div>
+            <div class="order-mobile-dish-copy">
+              <strong>{{ mobileItemsLabel(order) }}</strong>
+              <span>{{ orderItemsSummary(order) || localLabel({ zh: '待确认菜品', vi: 'Mon dang xac nhan', en: 'Items pending' }) }}</span>
+            </div>
+          </div>
+
+          <p v-if="order.customerRemark" class="order-mobile-note">{{ mobileNoteLabel(order.customerRemark) }}</p>
+
+          <div class="order-mobile-total">{{ money(order.totalAmountVnd) }}</div>
+
+          <div class="order-mobile-actions-row">
+            <button
+              v-if="shouldShowMobileSecondary(order)"
+              type="button"
+              class="order-mobile-action"
+              :class="mobileSecondaryKind(order)"
+              :disabled="operatingId === order.id"
+              @click="handleMobileSecondary(order)"
+            >
+              {{ mobileSecondaryLabel(order) }}
+            </button>
+            <button
+              v-if="primaryAction(order)"
+              type="button"
+              class="order-mobile-action primary"
+              :disabled="operatingId === order.id"
+              @click="execute(order)"
+            >
+              {{ mobilePrimaryLabel(order) }}
+            </button>
+            <button
+              v-else
+              type="button"
+              class="order-mobile-action secondary"
+              @click="goToOrderDetail(order)"
+            >
+              {{ t('viewDetails') }}
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <div v-else class="orders-mobile-empty-card">
         <span class="orders-empty-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
             <path v-for="segment in iconPaths(activeCategory === 'ABNORMAL' ? 'abnormal' : 'all')" :key="segment" :d="segment" />
           </svg>
         </span>
-        <strong>{{ emptyState.title }}</strong>
-        <p>{{ emptyState.description }}</p>
+        <strong>{{ mobileEmptyState.title }}</strong>
+        <p>{{ mobileEmptyState.description }}</p>
       </div>
     </section>
 
@@ -936,6 +1313,15 @@ function todayInVietnam() {
   max-width: 1280px;
   min-width: 0;
   width: 100%;
+}
+
+.orders-desktop-view {
+  display: grid;
+  gap: 14px;
+}
+
+.orders-mobile-view {
+  display: none;
 }
 
 .merchant-orders-page :deep(.page-header) {
@@ -1520,6 +1906,348 @@ function todayInVietnam() {
   }
 }
 
+@media (max-width: 768px) {
+  .orders-desktop-view {
+    display: none !important;
+  }
+
+  .orders-mobile-view {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 20px 16px 96px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .orders-mobile-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .orders-mobile-title {
+    display: block;
+    color: #0f2a1d;
+    font-size: 28px;
+    line-height: 1.15;
+    font-weight: 800;
+  }
+
+  .orders-mobile-subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  .orders-mobile-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .orders-mobile-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #e5ebe8;
+    border-radius: 12px;
+    color: #1f2d24;
+    background: #fff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  }
+
+  .orders-mobile-icon-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .orders-mobile-search,
+  .orders-mobile-filter-panel,
+  .orders-mobile-empty-card {
+    border: 1px solid #e5ebe8;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  }
+
+  .orders-mobile-search {
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+
+  .orders-mobile-search input,
+  .orders-mobile-filter-field input,
+  .orders-mobile-filter-field select {
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    border: 1px solid #dbe3df;
+    border-radius: 10px;
+    background: #fff;
+    box-sizing: border-box;
+  }
+
+  .orders-mobile-filter-panel {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 16px;
+  }
+
+  .orders-mobile-filter-field {
+    display: grid;
+    gap: 8px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .orders-mobile-filter-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .orders-mobile-tabs {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 2px 0 10px;
+    margin-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .orders-mobile-tab {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 14px;
+    border: 1px solid #e5ebe8;
+    border-radius: 999px;
+    color: #475569;
+    background: #fff;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .orders-mobile-tab.is-active {
+    color: #15803d;
+    border-color: #16a34a;
+    background: #eaf7ee;
+  }
+
+  .orders-mobile-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    color: inherit;
+    background: rgba(15, 23, 42, 0.06);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .orders-mobile-list {
+    display: grid;
+    gap: 14px;
+  }
+
+  .order-mobile-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid #e5ebe8;
+    border-radius: 16px;
+    background: #fff;
+    box-sizing: border-box;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  }
+
+  .order-mobile-card--new {
+    background: #fffaf2;
+  }
+
+  .order-mobile-card--highlight {
+    border-color: #b9dec0;
+    box-shadow: 0 0 0 1px rgba(47, 143, 58, 0.14), 0 12px 24px rgba(47, 143, 58, 0.08);
+  }
+
+  .order-mobile-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .order-mobile-no {
+    color: #15803d;
+    font-size: 15px;
+    font-weight: 800;
+  }
+
+  .order-mobile-meta {
+    display: grid;
+    justify-items: end;
+    gap: 6px;
+  }
+
+  .order-mobile-time {
+    color: #64748b;
+    font-size: 13px;
+    text-align: right;
+  }
+
+  .order-mobile-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-top: 12px;
+    color: #334155;
+    font-size: 14px;
+  }
+
+  .order-mobile-service,
+  .order-mobile-address,
+  .order-mobile-note,
+  .order-mobile-dish-copy span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .order-mobile-address {
+    width: 100%;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .order-mobile-dishes {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .order-mobile-images {
+    display: flex;
+    align-items: center;
+  }
+
+  .order-mobile-image {
+    width: 36px;
+    height: 36px;
+    margin-left: -8px;
+    border: 2px solid #fff;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #f1f5f9;
+  }
+
+  .order-mobile-image:first-child {
+    margin-left: 0;
+  }
+
+  .order-mobile-image--placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .order-mobile-dish-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .order-mobile-dish-copy strong {
+    color: #1f2d24;
+    font-size: 14px;
+  }
+
+  .order-mobile-dish-copy span {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .order-mobile-note {
+    margin-top: 10px;
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .order-mobile-total {
+    margin-top: 12px;
+    color: #15803d;
+    font-size: 18px;
+    font-weight: 800;
+    text-align: right;
+  }
+
+  .order-mobile-actions-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .order-mobile-action {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .order-mobile-action.primary {
+    color: #fff;
+    border: 1px solid #15803d;
+    background: #15803d;
+  }
+
+  .order-mobile-action.danger {
+    color: #ef4444;
+    border: 1px solid #fca5a5;
+    background: #fff;
+  }
+
+  .order-mobile-action.secondary {
+    color: #15803d;
+    border: 1px solid #c7e6d0;
+    background: #fff;
+  }
+
+  .orders-mobile-empty-card {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    padding: 30px 20px;
+    text-align: center;
+  }
+
+  .orders-mobile-empty-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+}
+
 @media (max-width: 620px) {
   .merchant-orders-page {
     min-width: 0;
@@ -1543,6 +2271,29 @@ function todayInVietnam() {
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
+  }
+
+  .orders-mobile-view,
+  .order-mobile-card,
+  .order-mobile-no,
+  .order-mobile-note,
+  .order-mobile-address,
+  .order-mobile-dish-copy span,
+  .order-mobile-service {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+@media (min-width: 769px) {
+  .orders-mobile-view {
+    display: none !important;
+  }
+
+  .orders-desktop-view {
+    display: grid;
   }
 }
 </style>
