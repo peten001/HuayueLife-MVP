@@ -38,6 +38,7 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
+const avatarLoadFailed = reactive<Record<string, boolean>>({});
 const businessTypes = ref<PlatformBusinessType[]>([]);
 const promotionTags = ref<PlatformPromotionTag[]>([]);
 const capabilities = ref<PlatformCapability[]>([]);
@@ -258,6 +259,7 @@ async function loadMerchants() {
       getPlatformCapabilities(),
     ]);
     merchants.value = merchantItems;
+    syncAvatarLoadFailedState(merchantItems);
     businessTypes.value = typeItems;
     promotionTags.value = tagItems;
     capabilities.value = capabilityItems;
@@ -531,7 +533,7 @@ function hasValidCoordinates(item: PlatformMerchantListItem) {
 }
 
 function hasMissingImages(item: PlatformMerchantListItem) {
-  return !item.coverUrl?.trim();
+  return !hasValidCoverUrl(item.coverUrl);
 }
 
 function getProfileState(item: PlatformMerchantListItem) {
@@ -549,15 +551,11 @@ function profileMissingText(item: PlatformMerchantListItem) {
 }
 
 function merchantThumbnail(item: PlatformMerchantListItem) {
-  return resolveMediaUrl(
-    item.logoUrl?.trim()
-      || item.images.find((image) => image.imageType === 'LOGO' && image.isVisible)?.imageUrl
-      || '',
-  );
+  return getMerchantCoverUrl(item);
 }
 
 function merchantCoverStatus(item: PlatformMerchantListItem) {
-  const hasCover = Boolean(item.coverUrl?.trim());
+  const hasCover = hasValidCoverUrl(item.coverUrl);
   return hasCover ? '已上传' : '缺少';
 }
 
@@ -851,8 +849,45 @@ function dateTime(value?: string | null) {
     : '-';
 }
 
-function merchantInitial(name: string) {
-  return name.trim().slice(0, 1) || '商';
+function hasValidCoverUrl(value: string | null | undefined) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function getMerchantCoverUrl(item: PlatformMerchantListItem) {
+  const coverUrl = item.coverUrl;
+  if (!hasValidCoverUrl(coverUrl)) return '';
+  return resolveMediaUrl(String(coverUrl).trim());
+}
+
+function markAvatarFailed(id: string) {
+  avatarLoadFailed[id] = true;
+}
+
+function shouldShowAvatarImage(item: PlatformMerchantListItem) {
+  return hasValidCoverUrl(item.coverUrl) && !avatarLoadFailed[item.id];
+}
+
+function syncAvatarLoadFailedState(items: PlatformMerchantListItem[]) {
+  const activeIds = new Set(items.map((item) => item.id));
+  Object.keys(avatarLoadFailed).forEach((key) => {
+    if (!activeIds.has(key)) {
+      delete avatarLoadFailed[key];
+      return;
+    }
+    const merchant = items.find((item) => item.id === key);
+    if (!merchant || !hasValidCoverUrl(merchant.coverUrl)) {
+      delete avatarLoadFailed[key];
+    }
+  });
+}
+
+function merchantInitial(item: PlatformMerchantListItem) {
+  const source =
+    item.nameZh?.trim()
+    || item.nameVi?.trim()
+    || item.nameEn?.trim()
+    || '商';
+  return Array.from(source)[0] || '商';
 }
 
 function resetFilters() {
@@ -1097,12 +1132,13 @@ function toCsvLine(values: Array<string | number>) {
             <td>
               <div class="merchant-info-cell">
                 <img
-                  v-if="merchantThumbnail(item)"
+                  v-if="shouldShowAvatarImage(item)"
                   class="merchant-avatar merchant-avatar-image"
                   :src="merchantThumbnail(item)"
                   :alt="item.nameZh"
+                  @error="markAvatarFailed(item.id)"
                 />
-                <div v-else class="merchant-avatar">{{ merchantInitial(item.nameZh) }}</div>
+                <div v-else class="merchant-avatar">{{ merchantInitial(item) }}</div>
                 <div>
                   <strong class="merchant-name-link" @click="openDetail(item)">{{ item.nameZh }}</strong>
                   <small>{{ item.contactPhone }} · ID: {{ item.id }}</small>
@@ -1143,8 +1179,8 @@ function toCsvLine(values: Array<string | number>) {
               <div class="merchant-image-cell">
                 <div class="merchant-image-thumbs">
                   <img
-                    v-if="item.coverUrl?.trim()"
-                    :src="resolveMediaUrl(item.coverUrl)"
+                    v-if="getMerchantCoverUrl(item)"
+                    :src="getMerchantCoverUrl(item)"
                     alt="封面"
                   />
                 </div>
