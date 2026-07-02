@@ -107,9 +107,10 @@ export class CreateDisplayMerchantDto {
   @MaxLength(500)
   logoUrl?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(500)
-  coverUrl: string;
+  coverUrl?: string;
 
   @IsOptional()
   @IsArray()

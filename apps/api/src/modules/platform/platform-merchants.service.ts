@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import AdmZip = require('adm-zip');
 import {
   Merchant,
   MerchantClaimStatus,
@@ -18,6 +19,19 @@ import {
   TableStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import ExcelJS = require('exceljs');
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  resolve,
+  sep,
+} from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
@@ -33,9 +47,11 @@ import type {
   MerchantImportNormalizedRow,
   MerchantImportPreviewResponse,
   MerchantImportPreviewRow,
+  MerchantImportSourceType,
 } from './dto/merchant-import.dto';
 import { DEFAULT_DISPLAY_CAPABILITIES } from './platform-dictionary-seed';
 import { PlatformDictionariesService } from './platform-dictionaries.service';
+import { PlatformUploadsService, type UploadedImage } from './platform-uploads.service';
 import {
   parseHomepageCategoryKeys,
   stringifyHomepageCategoryKeys,
@@ -237,13 +253,74 @@ type UploadedFileLike = {
   size?: number;
 };
 
+type MerchantImportSession = {
+  id: string;
+  sourceType: MerchantImportSourceType;
+  createdAt: number;
+  tempDir: string | null;
+  rows: MerchantImportPreviewRow[];
+};
+
+type PreparedMerchantImportSource = {
+  sourceType: MerchantImportSourceType;
+  tempDir: string | null;
+  records: Array<Record<string, string>>;
+};
+
+type MerchantImportFieldKey =
+  | 'nameZh'
+  | 'nameVi'
+  | 'nameEn'
+  | 'businessType'
+  | 'contactPhone'
+  | 'contactName'
+  | 'province'
+  | 'city'
+  | 'district'
+  | 'addressZh'
+  | 'addressVi'
+  | 'addressEn'
+  | 'latitude'
+  | 'longitude'
+  | 'openingHoursText'
+  | 'descriptionZh'
+  | 'descriptionVi'
+  | 'descriptionEn'
+  | 'logoUrl'
+  | 'coverPath'
+  | 'promotionTagCodes'
+  | 'isNew'
+  | 'sortOrder'
+  | 'isVisibleOnClient'
+  | 'status';
+
+type MerchantImportFieldDefinition = {
+  key: MerchantImportFieldKey;
+  label: string;
+  required: boolean;
+  description: string;
+  format: string;
+  options?: string[];
+  correctExample: string;
+  wrongExample: string;
+  textFormat?: boolean;
+  decimalFormat?: string;
+};
+
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const IMPORT_SESSION_TTL_MS = 30 * 60 * 1000;
 const PREPARING_STATUSES: OrderStatus[] = [
   OrderStatus.ACCEPTED,
   OrderStatus.PREPARING,
   OrderStatus.READY,
   OrderStatus.DELIVERING,
 ];
+const IMPORT_TEMPLATE_SHEET_NAME = '商家导入模板';
+const IMPORT_INSTRUCTIONS_SHEET_NAME = '填写说明';
+const IMPORT_OPTIONS_SHEET_NAME = 'Options';
+const IMPORT_BOOLEAN_OPTIONS = ['TRUE', 'FALSE'] as const;
+const IMPORT_STATUS_OPTIONS = ['DRAFT', 'ACTIVE'] as const;
+const IMPORT_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'] as const;
 
 const DEFAULT_BUSINESS_HOURS = {
   monday: ['10:00-22:00'],
@@ -257,9 +334,12 @@ const DEFAULT_BUSINESS_HOURS = {
 
 @Injectable()
 export class PlatformMerchantsService {
+  private readonly importSessions = new Map<string, MerchantImportSession>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly dictionaries: PlatformDictionariesService,
+    private readonly uploads: PlatformUploadsService,
   ) {}
 
   async list() {
@@ -610,7 +690,7 @@ export class PlatformMerchantsService {
           merchantMode: normalizeMerchantMode(dto.merchantMode) ?? MerchantMode.DISPLAY,
           claimStatus: MerchantClaimStatus.UNCLAIMED,
           logoUrl: trimOrNull(dto.logoUrl),
-          coverUrl: dto.coverUrl.trim(),
+          coverUrl: trimOrNull(dto.coverUrl),
           contactName: dto.contactName.trim(),
           contactPhone: dto.contactPhone.trim(),
           province: dto.province.trim(),
@@ -696,100 +776,201 @@ export class PlatformMerchantsService {
     return this.findById(merchant.id);
   }
 
-  getMerchantImportTemplate() {
-    const headers = MERCHANT_IMPORT_HEADERS.join(',');
-    const example = serializeCsvRow([
-      '川味小馆',
-      'Quán Tứ Xuyên',
-      'Chuanwei Restaurant',
-      'CHINESE_RESTAURANT',
-      '0988123456',
-      '胡老板',
-      '北江',
-      'No.18 Area A, Commercial Street, Van Trung Industrial Park',
-      '21.28',
-      '106.20',
-      'https://example.com/merchant-cover.jpg',
+  async getMerchantImportTemplate() {
+    await this.dictionaries.ensureDefaults();
+    const [businessTypes, promotionTags] = await Promise.all([
+      this.prisma.merchantBusinessType.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          parentId: true,
+          code: true,
+          nameZh: true,
+          enabled: true,
+        },
+      }),
+      this.prisma.promotionTag.findMany({
+        where: { enabled: true, code: 'HOT_FOOD' },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        select: { code: true, nameZh: true },
+      }),
     ]);
-    return `\ufeff${headers}\n${example}\n`;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Huayue Life Platform';
+    workbook.created = new Date();
+    const selectableBusinessTypes = getSelectableBusinessTypes(businessTypes);
+    const fieldDefinitions = buildMerchantImportFieldDefinitions({
+      businessTypeCodes: selectableBusinessTypes.map((item) => item.code),
+      promotionTagCodes: promotionTags.map((item) => item.code),
+    });
+    const optionSheet = workbook.addWorksheet(IMPORT_OPTIONS_SHEET_NAME);
+    optionSheet.state = 'veryHidden';
+    fillImportOptionSheet(optionSheet, selectableBusinessTypes.map((item) => item.code), promotionTags.map((item) => item.code));
+
+    const templateSheet = workbook.addWorksheet(IMPORT_TEMPLATE_SHEET_NAME, {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    fillMerchantImportTemplateSheet(templateSheet, fieldDefinitions, optionSheet.name);
+
+    const instructionSheet = workbook.addWorksheet(IMPORT_INSTRUCTIONS_SHEET_NAME, {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    fillMerchantImportInstructionSheet(instructionSheet, fieldDefinitions, selectableBusinessTypes, promotionTags.map((item) => item.code));
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   }
 
   async previewMerchantImport(file?: UploadedFileLike): Promise<MerchantImportPreviewResponse> {
-    const upload = this.ensureImportCsv(file);
-    const csv = decodeCsvBuffer(upload.buffer);
-    const parsed = parseCsv(csv);
-    const records = parsed.records.filter((record) => hasAnyCsvValue(record));
-    if (!records.length) {
-      return { totalRows: 0, validRows: 0, invalidRows: 0, rows: [] };
+    await this.cleanupExpiredImportSessions();
+    const upload = this.ensureImportUpload(file);
+    let prepared: PreparedMerchantImportSource | null = null;
+    try {
+      prepared = await this.prepareMerchantImportSource(upload);
+      const rows = await this.buildMerchantImportPreview(
+        prepared.records,
+        prepared.sourceType,
+        prepared.tempDir,
+      );
+      const sessionId = randomUUID();
+      this.importSessions.set(sessionId, {
+        id: sessionId,
+        sourceType: prepared.sourceType,
+        createdAt: Date.now(),
+        tempDir: prepared.tempDir,
+        rows,
+      });
+      prepared.tempDir = null;
+      return {
+        sessionId,
+        sourceType: prepared.sourceType,
+        totalRows: rows.length,
+        validRows: rows.filter((item) => item.status !== 'ERROR').length,
+        invalidRows: rows.filter((item) => item.status === 'ERROR').length,
+        rows,
+      };
+    } catch (error) {
+      if (prepared?.tempDir) {
+        await this.removeDirectory(prepared.tempDir);
+      }
+      throw error;
     }
-    return this.buildMerchantImportPreview(records);
   }
 
   async confirmMerchantImport(body: MerchantImportConfirmRequest): Promise<MerchantImportConfirmResult> {
-    const rows = Array.isArray(body.rows) ? body.rows : [];
+    await this.cleanupExpiredImportSessions();
+    const sessionId = body.sessionId?.trim();
+    if (!sessionId) {
+      throw new BadRequestException('缺少导入会话，请重新上传文件');
+    }
+
+    const session = this.importSessions.get(sessionId);
+    if (!session) {
+      throw new BadRequestException('导入会话已失效，请重新上传文件');
+    }
+
+    const requestedRowNumbers = Array.isArray(body.rowNumbers) && body.rowNumbers.length
+      ? new Set(body.rowNumbers)
+      : null;
+    const rows = session.rows.filter((row) =>
+      requestedRowNumbers ? requestedRowNumbers.has(row.rowNumber) : row.status !== 'ERROR',
+    );
+    if (!rows.length) {
+      throw new BadRequestException('没有可导入的有效数据');
+    }
+
     const createdMerchantIds: string[] = [];
     const failedRows: MerchantImportConfirmResult['failedRows'] = [];
     let importedCount = 0;
+    let imageUploadSuccessCount = 0;
+    let imageUploadFailureCount = 0;
 
-    for (const row of rows) {
-      const previewErrors = Array.isArray(row.errors) ? row.errors : [];
-      if (previewErrors.length) {
-        failedRows.push({ rowNumber: row.rowNumber, errors: previewErrors });
-        continue;
+    try {
+      for (const row of rows) {
+        const previewErrors = Array.isArray(row.errors) ? row.errors : [];
+        if (previewErrors.length) {
+          failedRows.push({ rowNumber: row.rowNumber, errors: previewErrors });
+          continue;
+        }
+
+        const normalized = row.normalizedData;
+        if (!normalized) {
+          failedRows.push({ rowNumber: row.rowNumber, errors: ['缺少规范化数据'] });
+          continue;
+        }
+
+        let coverUrl: string | undefined;
+        let attemptedImageUpload = false;
+        try {
+          const businessType = await this.resolveSelectableBusinessTypeByCode(normalized.businessTypeCode);
+          const promotionTags = await this.resolveEnabledPromotionTagsByCodes(normalized.promotionTagCodes);
+          if (normalized.coverPath) {
+            attemptedImageUpload = true;
+            const uploadedCover = await this.uploadImportCoverImage(normalized.coverPath, session);
+            coverUrl = uploadedCover.imageUrl;
+          }
+
+          const created = await this.createDisplayMerchant({
+            nameZh: normalized.nameZh,
+            nameVi: normalized.nameVi,
+            nameEn: normalized.nameEn,
+            businessTypeId: businessType.id.toString(),
+            merchantMode: MerchantMode.DISPLAY,
+            contactPhone: normalized.contactPhone,
+            contactName: normalized.contactName,
+            province: normalized.province,
+            city: normalized.city ?? normalized.province,
+            district: normalized.district ?? undefined,
+            addressZh: normalized.addressZh,
+            addressVi: normalized.addressVi ?? undefined,
+            addressEn: normalized.addressEn ?? undefined,
+            latitude: normalized.latitude as number,
+            longitude: normalized.longitude as number,
+            openingHoursText: normalized.openingHoursText ?? undefined,
+            descriptionZh: normalized.descriptionZh ?? undefined,
+            descriptionVi: normalized.descriptionVi ?? undefined,
+            descriptionEn: normalized.descriptionEn ?? undefined,
+            logoUrl: normalized.logoUrl ?? undefined,
+            coverUrl,
+            promotionTagIds: promotionTags.map((item) => item.id.toString()),
+            isNew: normalized.isNew,
+            isVisibleOnClient: normalized.isVisibleOnClient,
+            sortOrder: normalized.sortOrder,
+            status:
+              normalized.status === 'DRAFT' ? MerchantStatus.PENDING : MerchantStatus.ACTIVE,
+          });
+          if (coverUrl) {
+            imageUploadSuccessCount += 1;
+          }
+          createdMerchantIds.push(created.id);
+          importedCount += 1;
+        } catch (error) {
+          if (coverUrl) {
+            await this.uploads.removeMerchantImage(coverUrl);
+          }
+          if (attemptedImageUpload) {
+            imageUploadFailureCount += 1;
+          }
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            errors: [error instanceof Error ? error.message : '导入失败'],
+          });
+        }
       }
-      const normalized = row.normalizedData;
-      if (!normalized) {
-        failedRows.push({ rowNumber: row.rowNumber, errors: ['缺少规范化数据'] });
-        continue;
-      }
-      try {
-        const businessType = await this.resolveSelectableBusinessTypeByCode(normalized.businessTypeCode);
-        const promotionTags = await this.resolveEnabledPromotionTagsByCodes(normalized.promotionTagCodes);
-        const created = await this.createDisplayMerchant({
-          nameZh: normalized.nameZh,
-          nameVi: normalized.nameVi,
-          nameEn: normalized.nameEn,
-          businessTypeId: businessType.id.toString(),
-          merchantMode: MerchantMode.DISPLAY,
-          contactPhone: normalized.contactPhone,
-          contactName: normalized.contactName,
-          province: normalized.province,
-          city: normalized.city ?? normalized.province,
-          district: normalized.district ?? undefined,
-          addressZh: normalized.addressZh,
-          addressVi: normalized.addressVi ?? undefined,
-          addressEn: normalized.addressEn ?? undefined,
-          latitude: normalized.latitude as number,
-          longitude: normalized.longitude as number,
-          openingHoursText: normalized.openingHoursText ?? undefined,
-          descriptionZh: normalized.descriptionZh ?? undefined,
-          descriptionVi: normalized.descriptionVi ?? undefined,
-          descriptionEn: normalized.descriptionEn ?? undefined,
-          logoUrl: normalized.logoUrl ?? undefined,
-          coverUrl: normalized.coverUrl,
-          promotionTagIds: promotionTags.map((item) => item.id.toString()),
-          isNew: normalized.isNew,
-          isVisibleOnClient: normalized.isVisibleOnClient,
-          sortOrder: normalized.sortOrder,
-          status:
-            normalized.status === 'DRAFT' ? MerchantStatus.PENDING : MerchantStatus.ACTIVE,
-        });
-        createdMerchantIds.push(created.id);
-        importedCount += 1;
-      } catch (error) {
-        failedRows.push({
-          rowNumber: row.rowNumber,
-          errors: [error instanceof Error ? error.message : '导入失败'],
-        });
-      }
+
+      return {
+        totalRows: session.rows.length,
+        importedCount,
+        failedCount: failedRows.length,
+        imageUploadSuccessCount,
+        imageUploadFailureCount,
+        failedRows,
+        createdMerchantIds,
+      };
+    } finally {
+      await this.destroyImportSession(sessionId);
     }
-
-    return {
-      importedCount,
-      failedCount: failedRows.length,
-      failedRows,
-      createdMerchantIds,
-    };
   }
 
   async update(id: bigint, dto: UpdatePlatformMerchantDto) {
@@ -1337,26 +1518,114 @@ export class PlatformMerchantsService {
     });
   }
 
-  private ensureImportCsv(file?: UploadedFileLike) {
+  private ensureImportUpload(file?: UploadedFileLike) {
     if (!file) {
-      throw new BadRequestException('CSV file is required');
+      throw new BadRequestException('请上传 XLSX 或 ZIP 导入文件');
     }
     const name = file.originalname?.toLowerCase() ?? '';
-    const mime = file.mimetype?.toLowerCase() ?? '';
-    const isCsvFile =
-      name.endsWith('.csv') ||
-      mime.includes('csv') ||
-      mime === 'text/plain' ||
-      mime === 'application/vnd.ms-excel';
-    if (!isCsvFile) {
-      throw new BadRequestException('当前版本仅支持 CSV');
+    if (name.endsWith('.xlsx') || name.endsWith('.zip')) {
+      return file;
     }
-    return file;
+    throw new BadRequestException('仅支持上传 XLSX 或 ZIP 文件');
+  }
+
+  private async prepareMerchantImportSource(
+    file: UploadedFileLike,
+  ): Promise<PreparedMerchantImportSource> {
+    const name = file.originalname?.toLowerCase() ?? '';
+    if (name.endsWith('.xlsx')) {
+      return {
+        sourceType: 'XLSX',
+        tempDir: null,
+        records: await this.readMerchantImportWorkbook(file.buffer),
+      };
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'huayue-merchant-import-'));
+    try {
+      const workbookBuffer = await this.extractMerchantImportZip(file.buffer, tempDir);
+      return {
+        sourceType: 'ZIP',
+        tempDir,
+        records: await this.readMerchantImportWorkbook(workbookBuffer),
+      };
+    } catch (error) {
+      await this.removeDirectory(tempDir);
+      throw error;
+    }
+  }
+
+  private async extractMerchantImportZip(buffer: Buffer, tempDir: string) {
+    let archive: AdmZip;
+    try {
+      archive = new AdmZip(buffer);
+    } catch {
+      throw new BadRequestException('ZIP 文件损坏或无法解析');
+    }
+
+    const xlsxEntries = archive
+      .getEntries()
+      .filter((entry) => !entry.isDirectory && isRealZipEntry(entry.entryName))
+      .filter((entry) => extname(entry.entryName).toLowerCase() === '.xlsx');
+
+    if (xlsxEntries.length !== 1) {
+      throw new BadRequestException('ZIP 中必须且只能包含一个 XLSX 文件');
+    }
+
+    for (const entry of archive.getEntries()) {
+      if (entry.isDirectory || !isRealZipEntry(entry.entryName)) {
+        continue;
+      }
+      const targetPath = resolveZipEntryPath(tempDir, entry.entryName);
+      await mkdir(dirname(targetPath), { recursive: true });
+      await writeFile(targetPath, entry.getData());
+    }
+
+    return readFile(resolveZipEntryPath(tempDir, xlsxEntries[0].entryName));
+  }
+
+  private async readMerchantImportWorkbook(buffer: Buffer) {
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(buffer);
+    } catch {
+      throw new BadRequestException('XLSX 文件无法解析，请检查模板和文件内容');
+    }
+
+    const worksheet =
+      workbook.getWorksheet(IMPORT_TEMPLATE_SHEET_NAME)
+      ?? workbook.worksheets.find((item) => item.state !== 'hidden');
+    if (!worksheet) {
+      throw new BadRequestException('XLSX 中未找到可导入的工作表');
+    }
+
+    const headerRow = worksheet.getRow(1);
+    const headers = Array.from({ length: worksheet.columnCount }, (_, index) =>
+      normalizeImportText(headerRow.getCell(index + 1).text),
+    ).filter((item) => item.length > 0);
+    if (!headers.length) {
+      throw new BadRequestException('XLSX 第一行缺少表头');
+    }
+
+    const records: Array<Record<string, string>> = [];
+    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+      const row = worksheet.getRow(rowNumber);
+      const record: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        record[header] = normalizeImportText(row.getCell(index + 1).text);
+      });
+      if (hasAnyCsvValue(record)) {
+        records.push(record);
+      }
+    }
+    return records;
   }
 
   private async buildMerchantImportPreview(
     records: Array<Record<string, string>>,
-  ): Promise<MerchantImportPreviewResponse> {
+    sourceType: MerchantImportSourceType,
+    tempDir: string | null,
+  ) {
     await this.dictionaries.ensureDefaults();
     const [businessTypes, promotionTags, existingMerchants] = await Promise.all([
       this.prisma.merchantBusinessType.findMany({
@@ -1390,14 +1659,16 @@ export class PlatformMerchantsService {
     const selectableBusinessTypes = getSelectableBusinessTypes(businessTypes);
     const businessTypeByCode = new Map(selectableBusinessTypes.map((item) => [item.code, item]));
     const promotionTagByCode = new Map(promotionTags.map((item) => [item.code, item]));
-    const rows = records.map((rawData, index) =>
+    const rows = await Promise.all(records.map((rawData, index) =>
       this.normalizeImportRecord({
         rowNumber: index + 2,
         rawData,
         businessTypeByCode,
         promotionTagByCode,
+        sourceType,
+        tempDir,
       }),
-    );
+    ));
 
     const pairCounts = new Map<string, number>();
     for (const row of rows) {
@@ -1427,71 +1698,213 @@ export class PlatformMerchantsService {
       row.status = row.errors.length ? 'ERROR' : row.warnings.length ? 'WARNING' : 'VALID';
     }
 
-    return {
-      totalRows: rows.length,
-      validRows: rows.filter((item) => item.status !== 'ERROR').length,
-      invalidRows: rows.filter((item) => item.status === 'ERROR').length,
-      rows,
-    };
+    return rows;
   }
 
-  private normalizeImportRecord({
+  private async normalizeImportRecord({
     rowNumber,
     rawData,
     businessTypeByCode,
     promotionTagByCode,
+    sourceType,
+    tempDir,
   }: {
     rowNumber: number;
     rawData: Record<string, string>;
     businessTypeByCode: Map<string, { id: bigint; code: string; nameZh: string; enabled: boolean; parentId: bigint | null }>;
     promotionTagByCode: Map<string, { id: bigint; code: string; nameZh: string; enabled: boolean }>;
-  }): MerchantImportPreviewRow {
+    sourceType: MerchantImportSourceType;
+    tempDir: string | null;
+  }): Promise<MerchantImportPreviewRow> {
     const normalized = normalizeMerchantImportRow(rawData);
     const errors: string[] = [];
     const warnings: string[] = [];
+    const rawBusinessType = normalizeImportText(rawData.businessType || rawData.businessTypeCode);
     const rawStatus = normalizeImportText(rawData.status).toUpperCase();
+    const rawIsNew = normalizeImportText(rawData.isNew);
+    const rawVisible = normalizeImportText(rawData.isVisibleOnClient);
+    const rawSortOrder = normalizeImportText(rawData.sortOrder);
+    const parsedIsNew = parseImportBoolean(rawData.isNew, false);
+    const parsedVisible = parseImportBoolean(rawData.isVisibleOnClient, true);
+    const parsedSortOrder = parseImportInteger(rawData.sortOrder, 0);
 
-    if (!normalized.nameZh) errors.push('nameZh 必填');
+    validateImportStringField(errors, rowNumber, 'nameZh', rawData.nameZh, normalized.nameZh, {
+      required: true,
+      maxLength: 120,
+      example: '688便利店',
+    });
+    validateImportStringField(errors, rowNumber, 'nameVi', rawData.nameVi, normalized.nameVi, {
+      required: true,
+      maxLength: 120,
+      example: 'Cua hang tien loi 688',
+    });
+    validateImportStringField(errors, rowNumber, 'nameEn', rawData.nameEn, normalized.nameEn, {
+      required: true,
+      maxLength: 120,
+      example: '688 Convenience Store',
+    });
+
     if (!normalized.businessTypeCode) {
-      errors.push('businessTypeCode 必填');
+      errors.push(formatImportError(rowNumber, 'businessType', rawBusinessType, '不能为空', '请填写系统允许的业务类型编码'));
     } else {
       const businessType = businessTypeByCode.get(normalized.businessTypeCode);
       if (!businessType) {
-        errors.push(`businessTypeCode ${normalized.businessTypeCode} 不存在或不可导入`);
+        errors.push(
+          formatImportError(
+            rowNumber,
+            'businessType',
+            rawBusinessType || normalized.businessTypeCode,
+            '无效',
+            `允许值：${Array.from(businessTypeByCode.keys()).join('、')}`,
+          ),
+        );
       }
     }
-    if (!normalized.nameVi) errors.push('nameVi 必填');
-    if (!normalized.nameEn) errors.push('nameEn 必填');
-    if (!normalized.contactPhone) errors.push('contactPhone 必填');
-    if (!normalized.contactName) errors.push('contactName 必填');
-    if (!normalized.province) errors.push('province 必填');
-    if (!normalized.addressZh) errors.push('addressZh 必填');
-    if (!normalized.coverUrl) errors.push('coverUrl 必填');
+
+    validateImportStringField(errors, rowNumber, 'contactPhone', rawData.contactPhone, normalized.contactPhone, {
+      required: true,
+      maxLength: 32,
+      example: '0333520688',
+    });
+    validateImportStringField(errors, rowNumber, 'contactName', rawData.contactName, normalized.contactName, {
+      required: true,
+      maxLength: 64,
+      example: 'Nguyen Van A',
+    });
+    validateImportStringField(errors, rowNumber, 'province', rawData.province, normalized.province, {
+      required: true,
+      maxLength: 80,
+      example: 'Bac Giang',
+    });
+    validateImportStringField(errors, rowNumber, 'city', rawData.city, normalized.city ?? '', {
+      required: false,
+      maxLength: 80,
+      example: 'Bac Giang',
+    });
+    validateImportStringField(errors, rowNumber, 'district', rawData.district, normalized.district ?? '', {
+      required: false,
+      maxLength: 80,
+      example: 'Viet Yen',
+    });
+    validateImportStringField(errors, rowNumber, 'addressZh', rawData.addressZh, normalized.addressZh, {
+      required: true,
+      maxLength: 255,
+      example: '北江省越安县云中工业区商业街18号',
+    });
+    validateImportStringField(errors, rowNumber, 'addressVi', rawData.addressVi, normalized.addressVi ?? '', {
+      required: false,
+      maxLength: 255,
+      example: 'So 18 pho thuong mai khu cong nghiep Van Trung',
+    });
+    validateImportStringField(errors, rowNumber, 'addressEn', rawData.addressEn, normalized.addressEn ?? '', {
+      required: false,
+      maxLength: 255,
+      example: 'No.18 Commercial Street, Van Trung Industrial Park',
+    });
+    validateImportStringField(errors, rowNumber, 'openingHoursText', rawData.openingHoursText, normalized.openingHoursText ?? '', {
+      required: false,
+      maxLength: 255,
+      example: '10:00-22:00',
+    });
+    validateImportStringField(errors, rowNumber, 'descriptionZh', rawData.descriptionZh, normalized.descriptionZh ?? '', {
+      required: false,
+      maxLength: 2000,
+      example: '主营日用百货与便民服务',
+    });
+    validateImportStringField(errors, rowNumber, 'descriptionVi', rawData.descriptionVi, normalized.descriptionVi ?? '', {
+      required: false,
+      maxLength: 2000,
+      example: 'Chuyen do gia dung va dich vu tien ich',
+    });
+    validateImportStringField(errors, rowNumber, 'descriptionEn', rawData.descriptionEn, normalized.descriptionEn ?? '', {
+      required: false,
+      maxLength: 2000,
+      example: 'Daily goods and convenience services',
+    });
+    validateImportStringField(errors, rowNumber, 'logoUrl', rawData.logoUrl, normalized.logoUrl ?? '', {
+      required: false,
+      maxLength: 500,
+      example: 'https://cdn.example.com/logo.jpg',
+    });
+
     if (normalized.latitude === null || !Number.isFinite(normalized.latitude)) {
-      errors.push('latitude 必填');
+      errors.push(formatImportError(rowNumber, 'latitude', rawData.latitude, '格式错误', '必须填写合法纬度，范围 -90 至 90'));
     } else if (normalized.latitude < -90 || normalized.latitude > 90) {
-      errors.push('纬度必须在 -90 到 90 之间');
+      errors.push(formatImportError(rowNumber, 'latitude', rawData.latitude, '超出范围', '必须填写合法纬度，范围 -90 至 90'));
     }
     if (normalized.longitude === null || !Number.isFinite(normalized.longitude)) {
-      errors.push('longitude 必填');
+      errors.push(formatImportError(rowNumber, 'longitude', rawData.longitude, '格式错误', '必须填写合法经度，范围 -180 至 180'));
     } else if (normalized.longitude < -180 || normalized.longitude > 180) {
-      errors.push('经度必须在 -180 到 180 之间');
+      errors.push(formatImportError(rowNumber, 'longitude', rawData.longitude, '超出范围', '必须填写合法经度，范围 -180 至 180'));
     }
-    if (rawStatus && rawStatus !== 'DRAFT' && rawStatus !== 'ACTIVE') {
-      errors.push('status 只能是 DRAFT 或 ACTIVE');
+
+    if (rawStatus && !IMPORT_STATUS_OPTIONS.includes(rawStatus as (typeof IMPORT_STATUS_OPTIONS)[number])) {
+      errors.push(
+        formatImportError(
+          rowNumber,
+          'status',
+          rawData.status,
+          '无效',
+          `允许值：${IMPORT_STATUS_OPTIONS.join('、')}`,
+        ),
+      );
+    }
+    if (rawIsNew && parsedIsNew.invalid) {
+      errors.push(formatImportError(rowNumber, 'isNew', rawData.isNew, '无效', '只允许 TRUE 或 FALSE'));
+    }
+    if (rawVisible && parsedVisible.invalid) {
+      errors.push(
+        formatImportError(
+          rowNumber,
+          'isVisibleOnClient',
+          rawData.isVisibleOnClient,
+          '无效',
+          '只允许 TRUE 或 FALSE',
+        ),
+      );
+    }
+    if (rawSortOrder && parsedSortOrder.invalid) {
+      errors.push(formatImportError(rowNumber, 'sortOrder', rawData.sortOrder, '格式错误', '必须填写大于等于 0 的整数'));
     }
 
     if (normalized.promotionTagCodes.length) {
       const allowedCodes = new Set(['HOT_FOOD']);
       const invalidCode = normalized.promotionTagCodes.find((code) => !allowedCodes.has(code));
       if (invalidCode) {
-        errors.push('当前阶段仅支持 HOT_FOOD 热门推荐');
+        errors.push(
+          formatImportError(
+            rowNumber,
+            'promotionTagCodes',
+            rawData.promotionTagCodes,
+            '无效',
+            '当前仅允许 HOT_FOOD',
+          ),
+        );
       } else {
         for (const code of normalized.promotionTagCodes) {
           if (!promotionTagByCode.has(code)) {
-            errors.push(`promotionTagCode ${code} 不存在或不可导入`);
+            errors.push(
+              formatImportError(
+                rowNumber,
+                'promotionTagCodes',
+                rawData.promotionTagCodes,
+                '无效',
+                `允许值：${Array.from(promotionTagByCode.keys()).join('、')}`,
+              ),
+            );
           }
         }
+      }
+    }
+
+    if (normalized.coverPath) {
+      const coverPathValidation = await this.validateImportCoverPath(
+        normalized.coverPath,
+        sourceType,
+        tempDir,
+      );
+      if (coverPathValidation) {
+        errors.push(formatImportError(rowNumber, 'coverPath', rawData.coverPath || rawData.coverUrl, coverPathValidation, '请填写 ZIP 包内相对路径，例如 images/BG001_688便利店/cover.jpg'));
       }
     }
 
@@ -1514,6 +1927,94 @@ export class PlatformMerchantsService {
     };
   }
 
+  private async validateImportCoverPath(
+    coverPath: string,
+    sourceType: MerchantImportSourceType,
+    tempDir: string | null,
+  ) {
+    if (sourceType !== 'ZIP') {
+      return '填写了 coverPath 时必须上传 ZIP，不能只上传 XLSX';
+    }
+    if (!tempDir) {
+      return 'ZIP 导入临时目录不存在，请重新上传';
+    }
+
+    const normalizedPath = normalizeImportRelativePath(coverPath);
+    if (!normalizedPath) {
+      return '不能为空';
+    }
+    if (isAbsoluteImportPath(normalizedPath)) {
+      return '不允许填写绝对路径';
+    }
+    if (hasPathTraversal(normalizedPath)) {
+      return '不允许包含 ../ 路径穿越';
+    }
+
+    const extension = extname(normalizedPath).toLowerCase().replace('.', '');
+    if (!IMPORT_IMAGE_EXTENSIONS.includes(extension as (typeof IMPORT_IMAGE_EXTENSIONS)[number])) {
+      return `仅支持 ${IMPORT_IMAGE_EXTENSIONS.join(' / ')} 图片`;
+    }
+
+    let fileBuffer: Buffer;
+    try {
+      const resolvedPath = resolveImportAssetPath(tempDir, normalizedPath);
+      fileBuffer = await readFile(resolvedPath);
+      const mimeType = await this.uploads.detectMerchantImageMime(fileBuffer);
+      this.uploads.validateMerchantImage({
+        buffer: fileBuffer,
+        mimetype: mimeType,
+        originalname: basename(normalizedPath),
+        size: fileBuffer.byteLength,
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        return localizeImportExceptionMessage(extractExceptionMessage(error));
+      }
+      return `找不到文件：${normalizedPath}`;
+    }
+
+    return '';
+  }
+
+  private async uploadImportCoverImage(coverPath: string, session: MerchantImportSession) {
+    if (!session.tempDir) {
+      throw new BadRequestException('当前导入包不包含图片目录，请改为上传 ZIP');
+    }
+    const normalizedPath = normalizeImportRelativePath(coverPath);
+    const filePath = resolveImportAssetPath(session.tempDir, normalizedPath);
+    const buffer = await readFile(filePath);
+    const mimeType = await this.uploads.detectMerchantImageMime(buffer);
+    const uploadFile: UploadedImage = {
+      buffer,
+      mimetype: mimeType,
+      originalname: basename(normalizedPath),
+      size: buffer.byteLength,
+    };
+    return this.uploads.saveMerchantImage(uploadFile);
+  }
+
+  private async destroyImportSession(sessionId: string) {
+    const session = this.importSessions.get(sessionId);
+    this.importSessions.delete(sessionId);
+    if (session?.tempDir) {
+      await this.removeDirectory(session.tempDir);
+    }
+  }
+
+  private async cleanupExpiredImportSessions() {
+    const now = Date.now();
+    const expiredIds = Array.from(this.importSessions.values())
+      .filter((session) => now - session.createdAt >= IMPORT_SESSION_TTL_MS)
+      .map((session) => session.id);
+    for (const sessionId of expiredIds) {
+      await this.destroyImportSession(sessionId);
+    }
+  }
+
+  private async removeDirectory(target: string) {
+    await rm(target, { recursive: true, force: true });
+  }
+
   private async resolveSelectableBusinessTypeByCode(code: string) {
     const businessType = await this.prisma.merchantBusinessType.findFirst({
       where: {
@@ -1527,7 +2028,7 @@ export class PlatformMerchantsService {
       },
     });
     if (!businessType) {
-      throw new BadRequestException(`businessTypeCode ${code} 不存在或不可导入`);
+      throw new BadRequestException(`businessType 值“${code}”无效。允许填写系统开放的业务类型编码`);
     }
     if (businessType.code === 'FOOD_SERVICE' || businessType.parentId === null) {
       const hasChildren = await this.prisma.merchantBusinessType.count({
@@ -1545,7 +2046,7 @@ export class PlatformMerchantsService {
     const allowedCodes = new Set(['HOT_FOOD']);
     const invalidCode = codes.find((code) => !allowedCodes.has(code));
     if (invalidCode) {
-      throw new BadRequestException('当前阶段仅支持 HOT_FOOD 热门推荐');
+      throw new BadRequestException('promotionTagCodes 仅支持 HOT_FOOD');
     }
     const items = await this.prisma.promotionTag.findMany({
       where: {
@@ -1560,7 +2061,7 @@ export class PlatformMerchantsService {
     if (items.length !== new Set(codes).size) {
       const found = new Set(items.map((item) => item.code));
       const missing = codes.find((code) => !found.has(code));
-      throw new BadRequestException(`promotionTagCode ${missing ?? ''} 不存在或不可导入`);
+      throw new BadRequestException(`promotionTagCodes 值“${missing ?? ''}”无效`);
     }
     return items;
   }
@@ -1862,20 +2363,6 @@ function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-const MERCHANT_IMPORT_HEADERS = [
-  'nameZh',
-  'nameVi',
-  'nameEn',
-  'businessTypeCode',
-  'contactPhone',
-  'contactName',
-  'province',
-  'addressZh',
-  'latitude',
-  'longitude',
-  'coverUrl',
-] as const;
-
 function getSelectableBusinessTypes(
   businessTypes: Array<{
     id: bigint;
@@ -1895,11 +2382,190 @@ function getSelectableBusinessTypes(
   );
 }
 
+function buildMerchantImportFieldDefinitions({
+  businessTypeCodes,
+  promotionTagCodes,
+}: {
+  businessTypeCodes: string[];
+  promotionTagCodes: string[];
+}): MerchantImportFieldDefinition[] {
+  return [
+    { key: 'nameZh', label: '中文店名', required: true, description: '商家的中文显示名称', format: '文本，2-120 字符', correctExample: '688便利店', wrongExample: '空白', textFormat: true },
+    { key: 'nameVi', label: '越南语店名', required: true, description: '商家的越南语显示名称', format: '文本，2-120 字符', correctExample: 'Cua hang tien loi 688', wrongExample: '空白', textFormat: true },
+    { key: 'nameEn', label: '英文店名', required: true, description: '商家的英文显示名称', format: '文本，2-120 字符', correctExample: '688 Convenience Store', wrongExample: '空白', textFormat: true },
+    { key: 'businessType', label: '商家类型', required: true, description: '必须填写系统允许的业务类型编码', format: '固定枚举', options: businessTypeCodes, correctExample: businessTypeCodes[0] ?? 'CHINESE_RESTAURANT', wrongExample: '便利店', textFormat: true },
+    { key: 'contactPhone', label: '联系电话', required: true, description: '商家联系电话，按文本填写，避免科学计数法', format: '文本，1-32 字符', correctExample: '0333520688', wrongExample: '3.33521E+9', textFormat: true },
+    { key: 'contactName', label: '联系人', required: true, description: '联系人姓名；留空时会回退为 nameZh', format: '文本，1-64 字符', correctExample: 'Nguyen Van A', wrongExample: '*', textFormat: true },
+    { key: 'province', label: '省/直辖市', required: true, description: '商家所在省/直辖市', format: '文本，1-80 字符', correctExample: 'Bac Giang', wrongExample: '空白', textFormat: true },
+    { key: 'city', label: '城市', required: false, description: '可选；留空时默认使用 province', format: '文本，最多 80 字符', correctExample: 'Bac Giang', wrongExample: '超过 80 字符', textFormat: true },
+    { key: 'district', label: '区/县', required: false, description: '可选区县信息', format: '文本，最多 80 字符', correctExample: 'Viet Yen', wrongExample: '超过 80 字符', textFormat: true },
+    { key: 'addressZh', label: '中文详细地址', required: true, description: '商家的中文详细地址', format: '文本，1-255 字符', correctExample: '北江省越安县云中工业区商业街18号', wrongExample: '空白', textFormat: true },
+    { key: 'addressVi', label: '越南语详细地址', required: false, description: '可选越南语地址', format: '文本，最多 255 字符', correctExample: 'So 18 pho thuong mai khu cong nghiep Van Trung', wrongExample: '超过 255 字符', textFormat: true },
+    { key: 'addressEn', label: '英文详细地址', required: false, description: '可选英文地址', format: '文本，最多 255 字符', correctExample: 'No.18 Commercial Street, Van Trung Industrial Park', wrongExample: '超过 255 字符', textFormat: true },
+    { key: 'latitude', label: '纬度', required: true, description: 'Google Maps 纬度，范围 -90 至 90', format: '小数，最多 7 位小数', correctExample: '21.2414881', wrongExample: '106.154411', decimalFormat: '0.0000000' },
+    { key: 'longitude', label: '经度', required: true, description: 'Google Maps 经度，范围 -180 至 180', format: '小数，最多 7 位小数', correctExample: '106.154411', wrongExample: '21.2414881', decimalFormat: '0.0000000' },
+    { key: 'openingHoursText', label: '营业时间文本', required: false, description: '可选营业时间说明', format: '文本，最多 255 字符', correctExample: '10:00-22:00', wrongExample: '超过 255 字符', textFormat: true },
+    { key: 'descriptionZh', label: '中文描述', required: false, description: '可选中文简介', format: '文本，最多 2000 字符', correctExample: '主营日用百货与便民服务', wrongExample: '超过 2000 字符', textFormat: true },
+    { key: 'descriptionVi', label: '越南语描述', required: false, description: '可选越南语简介', format: '文本，最多 2000 字符', correctExample: 'Chuyen do gia dung va dich vu tien ich', wrongExample: '超过 2000 字符', textFormat: true },
+    { key: 'descriptionEn', label: '英文描述', required: false, description: '可选英文简介', format: '文本，最多 2000 字符', correctExample: 'Daily goods and convenience services', wrongExample: '超过 2000 字符', textFormat: true },
+    { key: 'logoUrl', label: 'Logo URL', required: false, description: '可选商家 Logo 网络地址，保持现有兼容能力', format: '文本，最多 500 字符', correctExample: 'https://cdn.example.com/logo.jpg', wrongExample: '/Users/peter/logo.jpg', textFormat: true },
+    { key: 'coverPath', label: '商家封面图路径', required: false, description: 'ZIP 压缩包内图片的相对路径；不填写则不导入封面图', format: '文本，相对路径', correctExample: 'images/BG001_688便利店/cover.jpg', wrongExample: '/Users/peter/Desktop/cover.jpg', textFormat: true },
+    { key: 'promotionTagCodes', label: '推荐标签编码', required: false, description: '当前仅支持 HOT_FOOD，多个值用英文逗号分隔', format: '固定枚举', options: promotionTagCodes, correctExample: promotionTagCodes[0] ?? 'HOT_FOOD', wrongExample: 'FEATURED', textFormat: true },
+    { key: 'isNew', label: '是否新店', required: false, description: '是否标记为新店', format: '布尔值', options: [...IMPORT_BOOLEAN_OPTIONS], correctExample: 'TRUE', wrongExample: '是', textFormat: true },
+    { key: 'sortOrder', label: '排序值', required: false, description: '列表排序，默认 0', format: '整数，大于等于 0', correctExample: '10', wrongExample: '-1', textFormat: true },
+    { key: 'isVisibleOnClient', label: '前台是否展示', required: false, description: '是否在小程序前台展示，默认 TRUE', format: '布尔值', options: [...IMPORT_BOOLEAN_OPTIONS], correctExample: 'TRUE', wrongExample: 'yes', textFormat: true },
+    { key: 'status', label: '导入状态', required: false, description: 'ACTIVE 导入为启用，DRAFT 导入为待完善', format: '固定枚举', options: [...IMPORT_STATUS_OPTIONS], correctExample: 'ACTIVE', wrongExample: 'PENDING', textFormat: true },
+  ];
+}
+
+function fillImportOptionSheet(
+  sheet: ExcelJS.Worksheet,
+  businessTypeCodes: string[],
+  promotionTagCodes: string[],
+) {
+  sheet.getCell('A1').value = 'businessType';
+  sheet.getCell('B1').value = 'promotionTagCodes';
+  sheet.getCell('C1').value = 'boolean';
+  sheet.getCell('D1').value = 'status';
+  businessTypeCodes.forEach((value, index) => {
+    sheet.getCell(index + 2, 1).value = value;
+  });
+  promotionTagCodes.forEach((value, index) => {
+    sheet.getCell(index + 2, 2).value = value;
+  });
+  IMPORT_BOOLEAN_OPTIONS.forEach((value, index) => {
+    sheet.getCell(index + 2, 3).value = value;
+  });
+  IMPORT_STATUS_OPTIONS.forEach((value, index) => {
+    sheet.getCell(index + 2, 4).value = value;
+  });
+}
+
+function fillMerchantImportTemplateSheet(
+  sheet: ExcelJS.Worksheet,
+  fieldDefinitions: MerchantImportFieldDefinition[],
+  optionSheetName: string,
+) {
+  sheet.addRow(fieldDefinitions.map((field) => field.key));
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: fieldDefinitions.length },
+  };
+
+  fieldDefinitions.forEach((field, index) => {
+    const columnIndex = index + 1;
+    const column = sheet.getColumn(columnIndex);
+    const headerCell = sheet.getRow(1).getCell(columnIndex);
+    headerCell.font = {
+      bold: true,
+      color: { argb: field.required ? 'FFB42318' : 'FF0F172A' },
+    };
+    headerCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: field.required ? 'FFFDE2E2' : 'FFF8FAFC' },
+    };
+    headerCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerCell.border = {
+      top: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+      left: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+      bottom: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+      right: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+    };
+    headerCell.note = `${field.label}\n${field.description}\n格式：${field.format}`;
+    column.width = Math.max(16, Math.min(40, Math.max(field.key.length + 4, field.label.length + 6)));
+    if (field.textFormat) {
+      column.numFmt = '@';
+    }
+    if (field.decimalFormat) {
+      column.numFmt = field.decimalFormat;
+    }
+    applyTemplateValidation(sheet, columnIndex, field, optionSheetName);
+  });
+}
+
+function fillMerchantImportInstructionSheet(
+  sheet: ExcelJS.Worksheet,
+  fieldDefinitions: MerchantImportFieldDefinition[],
+  businessTypes: Array<{ code: string; nameZh: string }>,
+  promotionTagCodes: string[],
+) {
+  const headers = ['字段名', '中文名称', '是否必填', '填写说明', '数据格式', '固定选项', '正确示例', '错误示例'];
+  sheet.addRow(headers);
+  sheet.getRow(1).font = { bold: true };
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: headers.length },
+  };
+  sheet.columns = [
+    { width: 18 },
+    { width: 18 },
+    { width: 10 },
+    { width: 44 },
+    { width: 24 },
+    { width: 38 },
+    { width: 30 },
+    { width: 30 },
+  ];
+
+  const businessTypeText = businessTypes.map((item) => `${item.code}（${item.nameZh}）`).join('、');
+  const promotionTagText = promotionTagCodes.length ? promotionTagCodes.join('、') : '无';
+  for (const field of fieldDefinitions) {
+    const optionsText =
+      field.key === 'businessType'
+        ? businessTypeText
+        : field.key === 'promotionTagCodes'
+          ? promotionTagText
+          : field.options?.join('、') ?? '无';
+    sheet.addRow([
+      field.key,
+      field.label,
+      field.required ? '是' : '否',
+      field.description,
+      field.format,
+      optionsText || '无',
+      field.correctExample,
+      field.wrongExample,
+    ]);
+  }
+}
+
+function applyTemplateValidation(
+  sheet: ExcelJS.Worksheet,
+  columnIndex: number,
+  field: MerchantImportFieldDefinition,
+  optionSheetName: string,
+) {
+  const endRow = 1000;
+  let formula = '';
+  if (field.key === 'businessType' && field.options?.length) {
+    formula = `='${optionSheetName}'!$A$2:$A$${field.options.length + 1}`;
+  } else if (field.key === 'promotionTagCodes' && field.options?.length) {
+    formula = `='${optionSheetName}'!$B$2:$B$${field.options.length + 1}`;
+  } else if ((field.key === 'isNew' || field.key === 'isVisibleOnClient') && field.options?.length) {
+    formula = `='${optionSheetName}'!$C$2:$C$${field.options.length + 1}`;
+  } else if (field.key === 'status' && field.options?.length) {
+    formula = `='${optionSheetName}'!$D$2:$D$${field.options.length + 1}`;
+  }
+  if (!formula) return;
+  for (let rowNumber = 2; rowNumber <= endRow; rowNumber += 1) {
+    sheet.getCell(rowNumber, columnIndex).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [formula],
+      showErrorMessage: true,
+      errorStyle: 'error',
+      errorTitle: '无效值',
+      error: '请从下拉选项中选择系统允许的值',
+    };
+  }
+}
+
 function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantImportNormalizedRow {
   const nameZh = normalizeImportText(rawData.nameZh);
   const nameVi = normalizeImportText(rawData.nameVi);
   const nameEn = normalizeImportText(rawData.nameEn);
-  const businessTypeCode = normalizeImportText(rawData.businessTypeCode).toUpperCase();
+  const businessTypeCode = normalizeImportText(rawData.businessType || rawData.businessTypeCode).toUpperCase();
   const contactPhone = normalizeImportText(rawData.contactPhone);
   const contactName = normalizeImportText(rawData.contactName) || nameZh;
   const province = normalizeImportText(rawData.province) || normalizeImportText(rawData.city);
@@ -1915,10 +2581,13 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
   const descriptionVi = normalizeImportText(rawData.descriptionVi);
   const descriptionEn = normalizeImportText(rawData.descriptionEn);
   const logoUrl = normalizeImportText(rawData.logoUrl);
-  const coverUrl = normalizeImportText(rawData.coverUrl);
+  const coverPath = normalizeImportRelativePath(rawData.coverPath || rawData.coverUrl);
   const promotionTagCodes = normalizeImportList(rawData.promotionTagCodes).map((item) =>
     item.toUpperCase(),
   );
+  const parsedIsNew = parseImportBoolean(rawData.isNew, false);
+  const parsedSortOrder = parseImportInteger(rawData.sortOrder, 0);
+  const parsedVisible = parseImportBoolean(rawData.isVisibleOnClient, true);
 
   return {
     nameZh,
@@ -1940,87 +2609,13 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
     descriptionVi,
     descriptionEn,
     logoUrl,
-    coverUrl: coverUrl || '',
+    coverPath,
     promotionTagCodes: Array.from(new Set(promotionTagCodes)),
-    isNew: parseImportBoolean(rawData.isNew, false),
-    sortOrder: parseImportInteger(rawData.sortOrder, 0),
-    isVisibleOnClient: parseImportBoolean(rawData.isVisibleOnClient, true),
+    isNew: parsedIsNew.value,
+    sortOrder: parsedSortOrder.value,
+    isVisibleOnClient: parsedVisible.value,
     status: parseImportStatus(rawData.status),
   };
-}
-
-function decodeCsvBuffer(buffer: Buffer) {
-  return buffer.toString('utf8').replace(/^\ufeff/, '');
-}
-
-function parseCsv(content: string) {
-  const rows: string[][] = [];
-  let currentCell = '';
-  let currentRow: string[] = [];
-  let inQuotes = false;
-
-  for (let index = 0; index < content.length; index += 1) {
-    const char = content[index];
-    const next = content[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        currentCell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === ',' && !inQuotes) {
-      currentRow.push(currentCell);
-      currentCell = '';
-      continue;
-    }
-
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') {
-        index += 1;
-      }
-      currentRow.push(currentCell);
-      rows.push(currentRow);
-      currentRow = [];
-      currentCell = '';
-      continue;
-    }
-
-    currentCell += char;
-  }
-
-  currentRow.push(currentCell);
-  rows.push(currentRow);
-
-  const [headerRow = [], ...bodyRows] = rows;
-  const headers = headerRow.map((header) => header.trim().replace(/^\ufeff/, ''));
-  const records = bodyRows
-    .map((cells) => {
-      const record: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        record[header] = (cells[index] ?? '').trim();
-      });
-      return record;
-    })
-    .filter((record) => Object.values(record).some((value) => value.trim().length > 0));
-
-  return { headers, records };
-}
-
-function serializeCsvRow(values: Array<string | number | boolean | null | undefined>) {
-  return values
-    .map((value) => {
-      const text = value === null || value === undefined ? '' : String(value);
-      if (!/[",\r\n]/.test(text)) {
-        return text;
-      }
-      return `"${text.replace(/"/g, '""')}"`;
-    })
-    .join(',');
 }
 
 function hasAnyCsvValue(record: Record<string, string>) {
@@ -2046,18 +2641,21 @@ function normalizeImportList(value?: string) {
 
 function parseImportBoolean(value?: string, defaultValue = false) {
   const next = value?.trim();
-  if (!next) return defaultValue;
-  const normalized = next.toLowerCase();
-  if (['true', '1', 'yes', 'y', '是'].includes(normalized)) return true;
-  if (['false', '0', 'no', 'n', '否'].includes(normalized)) return false;
-  return defaultValue;
+  if (!next) return { value: defaultValue, invalid: false };
+  const normalized = next.toUpperCase();
+  if (normalized === 'TRUE') return { value: true, invalid: false };
+  if (normalized === 'FALSE') return { value: false, invalid: false };
+  return { value: defaultValue, invalid: true };
 }
 
 function parseImportInteger(value?: string, defaultValue = 0) {
   const next = value?.trim();
-  if (!next) return defaultValue;
+  if (!next) return { value: defaultValue, invalid: false };
   const parsed = Number(next);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : defaultValue;
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+    return { value: defaultValue, invalid: true };
+  }
+  return { value: parsed, invalid: false };
 }
 
 function parseImportNumber(value?: string) {
@@ -2071,6 +2669,112 @@ function parseImportStatus(value?: string): 'DRAFT' | 'ACTIVE' {
   const next = value?.trim().toUpperCase();
   if (!next) return 'ACTIVE';
   return next === 'DRAFT' ? 'DRAFT' : 'ACTIVE';
+}
+
+function normalizeImportRelativePath(value?: string) {
+  const next = normalizeImportText(value).replace(/\\/g, '/');
+  return next.replace(/^\.\//, '');
+}
+
+function isAbsoluteImportPath(value: string) {
+  return isAbsolute(value) || /^[a-zA-Z]:\//.test(value) || value.startsWith('\\');
+}
+
+function hasPathTraversal(value: string) {
+  const segments = value.split('/').filter(Boolean);
+  return segments.includes('..');
+}
+
+function resolveImportAssetPath(baseDir: string, relativePath: string) {
+  const normalized = normalizeImportRelativePath(relativePath);
+  const resolvedPath = resolve(baseDir, normalized);
+  const resolvedBase = `${resolve(baseDir)}${sep}`;
+  if (!resolvedPath.startsWith(resolvedBase) && resolvedPath !== resolve(baseDir)) {
+    throw new BadRequestException('图片路径越界');
+  }
+  return resolvedPath;
+}
+
+function resolveZipEntryPath(baseDir: string, entryName: string) {
+  const normalizedEntry = normalizeImportRelativePath(entryName);
+  if (!normalizedEntry || isAbsoluteImportPath(normalizedEntry) || hasPathTraversal(normalizedEntry)) {
+    throw new BadRequestException(`ZIP 中存在非法路径：${entryName}`);
+  }
+  return resolveImportAssetPath(baseDir, normalizedEntry);
+}
+
+function isRealZipEntry(entryName: string) {
+  const normalizedEntry = normalizeImportRelativePath(entryName);
+  return Boolean(normalizedEntry) && !normalizedEntry.startsWith('__MACOSX/');
+}
+
+function validateImportStringField(
+  errors: string[],
+  rowNumber: number,
+  field: string,
+  rawValue: string | undefined,
+  normalizedValue: string,
+  options: { required: boolean; maxLength: number; example: string },
+) {
+  if (options.required && !normalizedValue) {
+    errors.push(formatImportError(rowNumber, field, rawValue, '不能为空', `示例：${options.example}`));
+    return;
+  }
+  if (normalizedValue && normalizedValue.length > options.maxLength) {
+    errors.push(
+      formatImportError(
+        rowNumber,
+        field,
+        rawValue,
+        `长度超限，最多 ${options.maxLength} 字符`,
+        `示例：${options.example}`,
+      ),
+    );
+  }
+}
+
+function formatImportError(
+  rowNumber: number,
+  field: string,
+  rawValue: string | undefined,
+  reason: string,
+  hint: string,
+) {
+  const shownValue = normalizeImportText(rawValue) || '(空)';
+  return `第 ${rowNumber} 行 ${field} 值“${shownValue}”${reason}。${hint}`;
+}
+
+function extractExceptionMessage(error: BadRequestException) {
+  const response = error.getResponse();
+  if (typeof response === 'string') {
+    return response;
+  }
+  if (response && typeof response === 'object' && 'message' in response) {
+    const { message } = response as { message?: string | string[] };
+    if (Array.isArray(message)) {
+      return message.join('；');
+    }
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+  return error.message;
+}
+
+function localizeImportExceptionMessage(message: string) {
+  if (message === 'Image file exceeds 5MB') {
+    return '图片文件不能超过 5MB';
+  }
+  if (message === 'Invalid image type' || message === 'Invalid image content') {
+    return '图片格式无效，仅支持 jpg / jpeg / png / webp';
+  }
+  if (message === 'Image file is required') {
+    return '缺少图片文件';
+  }
+  if (message === '图片路径越界') {
+    return '图片路径越界';
+  }
+  return message;
 }
 
 function hasStoredCoordinate(value: Merchant['latitude'] | Merchant['longitude']) {

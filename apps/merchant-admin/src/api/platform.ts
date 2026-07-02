@@ -328,11 +328,12 @@ export async function previewPlatformMerchantImport(file: File) {
 }
 
 export async function confirmPlatformMerchantImport(
-  rows: PlatformMerchantImportRow[],
+  sessionId: string,
+  rowNumbers?: number[],
 ) {
   const response = await platformHttp.post<ApiResponse<PlatformMerchantImportConfirmResponse>>(
     '/platform/merchants/import-confirm',
-    { rows },
+    { sessionId, rowNumbers },
   );
   return response.data.data;
 }

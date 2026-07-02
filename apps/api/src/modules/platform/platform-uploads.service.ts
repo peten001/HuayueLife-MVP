@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import sharp = require('sharp');
 
-type UploadedImage = {
+export type UploadedImage = {
   buffer: Buffer;
   mimetype: string;
   originalname: string;
@@ -23,9 +24,16 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+const SHARP_FORMAT_TO_MIME: Record<string, keyof typeof MIME_TO_EXTENSION> = {
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
 @Injectable()
 export class PlatformUploadsService {
-  async saveMerchantImage(file: UploadedImage) {
+  validateMerchantImage(file: UploadedImage) {
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
@@ -46,6 +54,35 @@ export class PlatformUploadsService {
       throw new BadRequestException('Image file exceeds 5MB');
     }
 
+    return {
+      extension,
+      fileSize,
+      mimeType: file.mimetype,
+    };
+  }
+
+  async detectMerchantImageMime(buffer: Buffer) {
+    try {
+      const metadata = await sharp(buffer).metadata();
+      if (!metadata.format) {
+        throw new BadRequestException('Invalid image content');
+      }
+      const mimeType = SHARP_FORMAT_TO_MIME[metadata.format.toLowerCase()];
+      if (!mimeType) {
+        throw new BadRequestException('Invalid image type');
+      }
+      return mimeType;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Invalid image content');
+    }
+  }
+
+  async saveMerchantImage(file: UploadedImage) {
+    const { extension, fileSize, mimeType } = this.validateMerchantImage(file);
+
     const fileName = `merchant-${Date.now()}-${randomUUID().replace(/-/g, '')}${extension}`;
     const targetDir = join(process.cwd(), 'public', 'uploads', 'merchants');
     await mkdir(targetDir, { recursive: true });
@@ -55,7 +92,17 @@ export class PlatformUploadsService {
       imageUrl: `/uploads/merchants/${fileName}`,
       filename: fileName,
       size: fileSize,
-      mimeType: file.mimetype,
+      mimeType,
     };
+  }
+
+  async removeMerchantImage(imageUrl?: string | null) {
+    const normalizedUrl = String(imageUrl ?? '').trim();
+    if (!normalizedUrl.startsWith('/uploads/merchants/')) {
+      return;
+    }
+    const relativePath = normalize(normalizedUrl.replace(/^\//, ''));
+    const targetPath = join(process.cwd(), 'public', relativePath);
+    await rm(targetPath, { force: true });
   }
 }

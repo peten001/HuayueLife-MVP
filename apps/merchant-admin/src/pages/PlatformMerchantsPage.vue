@@ -153,6 +153,18 @@ const importRows = computed(() => importPreview.value?.rows ?? []);
 const importImportableRows = computed(() =>
   importRows.value.filter((row) => row.status !== 'ERROR'),
 );
+const importWarningRows = computed(() =>
+  importRows.value.filter((row) => row.status === 'WARNING'),
+);
+const importErrorRows = computed(() =>
+  importRows.value.filter((row) => row.status === 'ERROR'),
+);
+const importSelectedRowNumbers = computed(() =>
+  importImportableRows.value.map((row) => row.rowNumber),
+);
+const importHasAnyErrors = computed(() =>
+  importErrorRows.value.length > 0 || Boolean(importResult.value?.failedRows.length),
+);
 const homepageCategoryOptions = computed(() => [
   { value: 'popular_food', label: t('homepageCategoryPopular') },
   { value: 'chinese_dining', label: t('homepageCategoryChinese') },
@@ -326,7 +338,7 @@ async function downloadImportTemplate() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'merchant-import-template.csv';
+    link.download = 'huayue-merchant-import-template.xlsx';
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -342,9 +354,9 @@ async function onImportFileSelected(event: Event) {
   if (!file) return;
   importMessage.value = '';
   const fileName = file.name.toLowerCase();
-  if (!fileName.endsWith('.csv')) {
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.zip')) {
     importFileName.value = '';
-    importMessage.value = '当前版本仅支持 CSV 文件';
+    importMessage.value = '仅支持上传 XLSX 或 ZIP 文件';
     input.value = '';
     return;
   }
@@ -355,7 +367,7 @@ async function onImportFileSelected(event: Event) {
     importPreview.value = preview;
     importResult.value = null;
     importStep.value = 2;
-    importMessage.value = `预览完成：通过 ${preview.validRows} 行，错误 ${preview.invalidRows} 行。`;
+    importMessage.value = `预检查完成：可导入 ${preview.validRows} 行，错误 ${preview.invalidRows} 行。`;
   } catch (error) {
     importMessage.value = errorMessage(error);
   } finally {
@@ -378,24 +390,54 @@ function importRowStatusClass(status: PlatformMerchantImportRow['status']) {
 
 async function confirmImport() {
   if (!importPreview.value) return;
-  const rows = importImportableRows.value;
-  if (!rows.length) {
+  const rowNumbers = importSelectedRowNumbers.value;
+  if (!rowNumbers.length) {
     importMessage.value = '没有可导入的行';
     return;
   }
   importLoading.value = true;
   importMessage.value = '';
   try {
-    const result = await confirmPlatformMerchantImport(rows);
+    const result = await confirmPlatformMerchantImport(importPreview.value.sessionId, rowNumbers);
     importResult.value = result;
     importStep.value = 3;
-    importMessage.value = `导入完成：成功 ${result.importedCount} 行，失败 ${result.failedCount} 行。`;
+    importMessage.value = `导入完成：成功 ${result.importedCount} 行，失败 ${result.failedCount} 行，图片成功 ${result.imageUploadSuccessCount} 张。`;
     await loadMerchants();
   } catch (error) {
     importMessage.value = errorMessage(error);
   } finally {
     importLoading.value = false;
   }
+}
+
+function downloadImportErrorReport() {
+  const lines = ['stage,rowNumber,status,fieldOrMessage,message'];
+  if (importPreview.value) {
+    for (const row of importRows.value) {
+      for (const error of row.errors) {
+        lines.push(toCsvLine(['preview', row.rowNumber, row.status, '', error]));
+      }
+      for (const warning of row.warnings) {
+        lines.push(toCsvLine(['preview', row.rowNumber, row.status, '', warning]));
+      }
+    }
+  }
+  if (importResult.value) {
+    for (const row of importResult.value.failedRows) {
+      for (const error of row.errors) {
+        lines.push(toCsvLine(['confirm', row.rowNumber, 'ERROR', '', error]));
+      }
+    }
+  }
+  const blob = new Blob([`\ufeff${lines.join('\n')}\n`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'merchant-import-errors.csv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function openLogoPicker() {
@@ -887,6 +929,16 @@ function tagText(item: PlatformMerchantListItem) {
 function capabilityText(item: PlatformMerchantListItem) {
   return item.capabilitySummary?.length ? item.capabilitySummary.join('、') : '-';
 }
+
+function toCsvLine(values: Array<string | number>) {
+  return values
+    .map((value) => {
+      const text = String(value ?? '');
+      if (!/[",\r\n]/.test(text)) return text;
+      return `"${text.replace(/"/g, '""')}"`;
+    })
+    .join(',');
+}
 </script>
 
 <template>
@@ -1212,7 +1264,7 @@ function capabilityText(item: PlatformMerchantListItem) {
         ref="importFileInput"
         class="hidden-file-input"
         type="file"
-        accept=".csv,text/csv"
+        accept=".xlsx,.zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip"
         @change="onImportFileSelected"
       />
       <div class="span-2 platform-wizard-steps">
@@ -1228,26 +1280,27 @@ function capabilityText(item: PlatformMerchantListItem) {
       </div>
 
       <section v-if="importStep === 1" class="span-2 import-step-panel">
-        <p class="hint">支持 .csv，UTF-8 编码。新模板固定 11 列，旧 23 列 CSV 仍兼容导入。</p>
+        <p class="hint">支持上传 XLSX 或 ZIP。若需批量上传商家图片，请将 Excel 与 images 文件夹一起压缩为 ZIP，并在 coverPath 中填写 ZIP 内相对路径。</p>
         <div class="import-help-grid">
           <div class="import-help-card">
             <strong>模板下载</strong>
-            <p>获取只包含核心建店字段的新 CSV 模板：名称、经营类型、联系方式、地址、经纬度和封面图片。</p>
-            <button type="button" class="secondary" @click="downloadImportTemplate">下载 CSV 模板</button>
+            <p>下载新版 XLSX 模板。模板包含“商家导入模板”和“填写说明”两个工作表，并带有字段批注、样式和固定选项下拉。</p>
+            <button type="button" class="secondary" @click="downloadImportTemplate">下载导入模板</button>
           </div>
           <div class="import-help-card">
-            <strong>上传 CSV</strong>
-            <p>请先准备 UTF-8 编码的 CSV 文件，再上传进行预览校验。</p>
+            <strong>上传导入包</strong>
+            <p>不带图片时上传 XLSX；带图片时上传 ZIP。上传后会先做逐行预检查，再确认导入。</p>
             <button type="button" class="secondary" :disabled="importLoading" @click="openImportFilePicker">
-              {{ importLoading ? '处理中...' : '上传 CSV 文件' }}
+              {{ importLoading ? '处理中...' : '上传 XLSX / ZIP' }}
             </button>
             <p v-if="importFileName" class="hint">已选择文件：{{ importFileName }}</p>
           </div>
         </div>
         <div class="hint import-guidance">
-          <p>可用经营类型：中式正餐、粉面小吃、咖啡奶茶、鲜花礼品、水果生鲜、便利超市、特色越餐。</p>
-          <p>联系人、省份、详细地址、纬度、经度、封面图片都属于核心必填项。</p>
-          <p>旧模板中的 city 会自动兼容写入 province，新模板不再要求 city / district / logoUrl。</p>
+          <p>不带图片：直接上传 XLSX，coverPath 留空即可。</p>
+          <p>带图片：上传 ZIP，推荐结构为 `merchant-import.zip / merchants.xlsx / images/...`。</p>
+          <p>coverPath 必须填写 ZIP 内相对路径，例如 `images/BG001_688便利店/cover.jpg`，不要填写 Mac 或 Windows 本地绝对路径。</p>
+          <p>固定选项字段请使用模板下拉；布尔值统一填写 `TRUE` 或 `FALSE`。</p>
         </div>
       </section>
 
@@ -1267,8 +1320,14 @@ function capabilityText(item: PlatformMerchantListItem) {
           </article>
           <article class="card platform-import-summary-card highlight">
             <span>警告行</span>
-            <strong>{{ importRows.filter((row) => row.status === 'WARNING').length }}</strong>
+            <strong>{{ importWarningRows.length }}</strong>
           </article>
+        </div>
+        <div class="import-preview-toolbar">
+          <span class="hint">导入类型：{{ importPreview?.sourceType === 'ZIP' ? 'ZIP（含图片）' : 'XLSX（无图片或图片路径留空）' }}</span>
+          <button v-if="importHasAnyErrors" type="button" class="secondary" @click="downloadImportErrorReport">
+            下载错误报告
+          </button>
         </div>
 
         <div class="table-wrap import-preview-table-wrap">
@@ -1278,6 +1337,7 @@ function capabilityText(item: PlatformMerchantListItem) {
                 <th>行号</th>
                 <th>商家</th>
                 <th>经营类型</th>
+                <th>coverPath</th>
                 <th>状态</th>
                 <th>错误 / 警告</th>
               </tr>
@@ -1289,7 +1349,8 @@ function capabilityText(item: PlatformMerchantListItem) {
                   <strong>{{ row.normalizedData?.nameZh || row.rawData.nameZh || '-' }}</strong>
                   <small>{{ row.rawData.contactPhone || '-' }}</small>
                 </td>
-                <td>{{ row.normalizedData?.businessTypeCode || row.rawData.businessTypeCode || '-' }}</td>
+                <td>{{ row.normalizedData?.businessTypeCode || row.rawData.businessType || row.rawData.businessTypeCode || '-' }}</td>
+                <td>{{ row.normalizedData?.coverPath || row.rawData.coverPath || row.rawData.coverUrl || '-' }}</td>
                 <td>
                   <span class="status-pill" :class="importRowStatusClass(row.status)">
                     {{ importRowStatusLabel(row.status) }}
@@ -1308,11 +1369,15 @@ function capabilityText(item: PlatformMerchantListItem) {
             </tbody>
           </table>
         </div>
-        <p class="hint">错误行不会导入，警告行会导入。点击“确认导入”后会创建展示型商家，并继续兼容旧 CSV 的额外列。</p>
+        <p class="hint">错误行不会导入，警告行会继续导入。若 XLSX 中填写了 coverPath 但未上传 ZIP，会在这里直接报错。</p>
       </section>
 
       <section v-else class="span-2 import-step-panel">
         <div v-if="importResult" class="platform-import-result">
+          <article class="card platform-import-summary-card">
+            <span>总行数</span>
+            <strong>{{ importResult.totalRows }}</strong>
+          </article>
           <article class="card platform-import-summary-card">
             <span>成功导入</span>
             <strong>{{ importResult.importedCount }}</strong>
@@ -1322,8 +1387,12 @@ function capabilityText(item: PlatformMerchantListItem) {
             <strong>{{ importResult.failedCount }}</strong>
           </article>
           <article class="card platform-import-summary-card highlight">
-            <span>创建商家数</span>
-            <strong>{{ importResult.createdMerchantIds.length }}</strong>
+            <span>图片上传成功</span>
+            <strong>{{ importResult.imageUploadSuccessCount }}</strong>
+          </article>
+          <article class="card platform-import-summary-card">
+            <span>图片上传失败</span>
+            <strong>{{ importResult.imageUploadFailureCount }}</strong>
           </article>
         </div>
         <div v-if="importResult?.failedRows?.length" class="import-result-failures">
@@ -1334,6 +1403,9 @@ function capabilityText(item: PlatformMerchantListItem) {
             </li>
           </ul>
         </div>
+        <button v-if="importHasAnyErrors" type="button" class="secondary import-error-download" @click="downloadImportErrorReport">
+          下载错误报告
+        </button>
         <p v-else class="hint">导入已完成，可以关闭弹窗查看商家列表。</p>
       </section>
 
@@ -2070,6 +2142,14 @@ function capabilityText(item: PlatformMerchantListItem) {
   background: #eefaf3;
 }
 
+.import-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .import-preview-table-wrap {
   max-height: 420px;
   overflow: auto;
@@ -2104,6 +2184,10 @@ function capabilityText(item: PlatformMerchantListItem) {
   border: 1px solid #ead7a0;
   border-radius: 12px;
   background: #fffcf2;
+}
+
+.import-error-download {
+  justify-self: start;
 }
 
 .muted-text {

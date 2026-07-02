@@ -57,12 +57,15 @@ export class PlatformMerchantsController {
   }
 
   @Get('import-template')
-  downloadImportTemplate(@Res() res: Response) {
-    const template = this.service.getMerchantImportTemplate();
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  async downloadImportTemplate(@Res() res: Response) {
+    const template = await this.service.getMerchantImportTemplate();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="huayue-merchant-import-template.csv"',
+      'attachment; filename="huayue-merchant-import-template.xlsx"',
     );
     res.status(200).send(template);
   }
@@ -71,7 +74,7 @@ export class PlatformMerchantsController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 5 * 1024 * 1024,
+        fileSize: 50 * 1024 * 1024,
       },
     }),
   )

@@ -1,4 +1,5 @@
 export type MerchantImportStatus = 'VALID' | 'WARNING' | 'ERROR';
+export type MerchantImportSourceType = 'XLSX' | 'ZIP';
 
 export interface MerchantImportNormalizedRow {
   nameZh: string;
@@ -20,7 +21,7 @@ export interface MerchantImportNormalizedRow {
   descriptionVi?: string | null;
   descriptionEn?: string | null;
   logoUrl?: string | null;
-  coverUrl: string;
+  coverPath: string;
   promotionTagCodes: string[];
   isNew: boolean;
   sortOrder: number;
@@ -38,6 +39,8 @@ export interface MerchantImportPreviewRow {
 }
 
 export interface MerchantImportPreviewResponse {
+  sessionId: string;
+  sourceType: MerchantImportSourceType;
   totalRows: number;
   validRows: number;
   invalidRows: number;
@@ -45,12 +48,16 @@ export interface MerchantImportPreviewResponse {
 }
 
 export interface MerchantImportConfirmRequest {
-  rows: MerchantImportPreviewRow[];
+  sessionId: string;
+  rowNumbers?: number[];
 }
 
 export interface MerchantImportConfirmResult {
+  totalRows: number;
   importedCount: number;
   failedCount: number;
+  imageUploadSuccessCount: number;
+  imageUploadFailureCount: number;
   failedRows: Array<{
     rowNumber: number;
     errors: string[];

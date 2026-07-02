@@ -253,6 +253,7 @@ export interface PlatformMerchantImageUploadResult {
 }
 
 export type PlatformMerchantImportStatus = 'VALID' | 'WARNING' | 'ERROR';
+export type PlatformMerchantImportSourceType = 'XLSX' | 'ZIP';
 
 export interface PlatformMerchantImportNormalizedRow {
   nameZh: string;
@@ -274,7 +275,7 @@ export interface PlatformMerchantImportNormalizedRow {
   descriptionVi?: string | null;
   descriptionEn?: string | null;
   logoUrl?: string | null;
-  coverUrl: string;
+  coverPath: string;
   promotionTagCodes: string[];
   isNew: boolean;
   sortOrder: number;
@@ -292,6 +293,8 @@ export interface PlatformMerchantImportRow {
 }
 
 export interface PlatformMerchantImportPreviewResponse {
+  sessionId: string;
+  sourceType: PlatformMerchantImportSourceType;
   totalRows: number;
   validRows: number;
   invalidRows: number;
@@ -299,8 +302,11 @@ export interface PlatformMerchantImportPreviewResponse {
 }
 
 export interface PlatformMerchantImportConfirmResponse {
+  totalRows: number;
   importedCount: number;
   failedCount: number;
+  imageUploadSuccessCount: number;
+  imageUploadFailureCount: number;
   failedRows: Array<{
     rowNumber: number;
     errors: string[];
