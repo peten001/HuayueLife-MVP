@@ -32,9 +32,14 @@ const activeFilters = ref<FilterOption[]>([]);
 const filterDraft = ref<FilterOption[]>([]);
 const sortSheetVisible = ref(false);
 const filterSheetVisible = ref(false);
-const merchantListMode = ref<'province' | 'nearby'>('province');
+const merchantListMode = ref<
+  'province'
+  | 'nearby'
+  | 'nearbyUnsupported'
+  | 'nearbyPermissionDenied'
+  | 'nearbyFailed'
+>('province');
 const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
-const currentProvince = computed(() => locationStore.currentProvince);
 
 const cityIndex = computed({
   get: () => {
@@ -216,34 +221,77 @@ async function changeCity(event: { detail: { value: string } }) {
 }
 
 async function openNearbyMerchants() {
-  const selectedProvince = currentProvince.value;
-  if (!selectedProvince) {
-    uni.showModal({
-      title: t('homeNearbyRestaurants'),
-      content: t('homeNearbyProvinceSelectionRequired'),
-      showCancel: false,
-      confirmText: t('gotIt'),
-    });
-    return;
-  }
+  loading.value = true;
+  merchants.value = [];
+  merchantListMode.value = 'nearby';
 
   try {
-    await locationStore.relocate();
-    console.log('[home] selected city', locationStore.city);
-    sortOption.value = 'distance';
-    await loadByCity(selectedProvince, { mode: 'nearby', useLocation: true });
-    uni.pageScrollTo({
-      selector: '#nearby-restaurants',
-      duration: 280,
-    });
+    const locateResult = await locationStore.relocate();
+    console.log('[home] nearby locate result', locateResult);
+
+    if (locateResult.status === 'LOCATED_SUPPORTED' && locateResult.detectedCity) {
+      merchantListMode.value = 'nearby';
+      sortOption.value = 'distance';
+      await loadByCity(locateResult.detectedCity, { mode: 'nearby', useLocation: true });
+      uni.pageScrollTo({
+        selector: '#nearby-restaurants',
+        duration: 280,
+      });
+      return;
+    }
+
+    if (locateResult.status === 'LOCATED_UNSUPPORTED') {
+      loading.value = false;
+      merchantListMode.value = 'nearbyUnsupported';
+      return;
+    }
+
+    if (locateResult.status === 'PERMISSION_DENIED') {
+      loading.value = false;
+      merchantListMode.value = 'nearbyPermissionDenied';
+      return;
+    }
+
+    loading.value = false;
+    merchantListMode.value = 'nearbyFailed';
   } catch {
-    uni.showModal({
-      title: t('homeNearbyRestaurants'),
-      content: t('locationPermissionRequired'),
-      showCancel: false,
-      confirmText: t('gotIt'),
-    });
+    loading.value = false;
+    merchants.value = [];
+    merchantListMode.value = 'nearbyFailed';
   }
+}
+
+function emptyStateTitle() {
+  if (merchantListMode.value === 'nearbyUnsupported') {
+    return t('homeNearbyUnsupportedTitle');
+  }
+  if (merchantListMode.value === 'nearbyPermissionDenied') {
+    return t('homeNearbyLocationPermissionRequired');
+  }
+  if (merchantListMode.value === 'nearbyFailed') {
+    return t('homeNearbyLocationFailed');
+  }
+  if (merchantListMode.value === 'nearby') {
+    return t('homeNearbyProvinceEmptyTitle');
+  }
+  return t('homeProvinceEmptyTitle');
+}
+
+function emptyStateCopy() {
+  if (merchantListMode.value === 'nearbyUnsupported') {
+    return '';
+  }
+  if (merchantListMode.value === 'nearbyPermissionDenied') {
+    return '';
+  }
+  if (merchantListMode.value === 'nearbyFailed') {
+    return '';
+  }
+  return t('homeProvinceEmptyHint');
+}
+
+function hasEmptyStateCopy() {
+  return Boolean(emptyStateCopy());
 }
 
 function openMerchant(merchant: MerchantSummary) {
@@ -447,10 +495,8 @@ function normalizeCityText(value: string) {
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!merchants.length" class="empty">
-        <text class="empty-title">
-          {{ merchantListMode === 'nearby' ? t('homeNearbyProvinceEmptyTitle') : t('homeProvinceEmptyTitle') }}
-        </text>
-        <text class="empty-copy">{{ t('homeProvinceEmptyHint') }}</text>
+        <text class="empty-title">{{ emptyStateTitle() }}</text>
+        <text v-if="hasEmptyStateCopy()" class="empty-copy">{{ emptyStateCopy() }}</text>
       </view>
       <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('homeCategoryJoinSoon') }}</text>
