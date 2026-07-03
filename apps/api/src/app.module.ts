@@ -24,6 +24,7 @@ import { MerchantReportsModule } from './modules/merchant-reports/merchant-repor
 import { PlatformModule } from './modules/platform/platform.module';
 import { PrintersModule } from './modules/printers/printers.module';
 import { QrModule } from './modules/qr/qr.module';
+import { TableSessionsModule } from './modules/table-sessions/table-sessions.module';
 import { TablesModule } from './modules/tables/tables.module';
 
 @Module({
@@ -57,6 +58,7 @@ import { TablesModule } from './modules/tables/tables.module';
     OrdersModule,
     OrderChatModule,
     TablesModule,
+    TableSessionsModule,
     PublicMerchantsModule,
     MerchantReportsModule,
     PlatformModule,

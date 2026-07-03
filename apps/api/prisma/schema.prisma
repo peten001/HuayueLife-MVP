@@ -72,6 +72,11 @@ enum TableStatus {
   DISABLED
 }
 
+enum TableSessionStatus {
+  OPEN
+  CLOSED
+}
+
 enum OrderType {
   DINE_IN
   PICKUP
@@ -174,77 +179,78 @@ model User {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  carts              Cart[]
-  orders             Order[]
+  carts                  Cart[]
+  orders                 Order[]
   orderChatConversations OrderChatConversation[]
-  operatedStatusLogs OrderStatusLog[] @relation("UserStatusLogOperator")
-  claimedMerchants   Merchant[] @relation("MerchantOwnerUser")
+  operatedStatusLogs     OrderStatusLog[]        @relation("UserStatusLogOperator")
+  claimedMerchants       Merchant[]              @relation("MerchantOwnerUser")
 
   @@map("users")
 }
 
 model Merchant {
-  id                       BigInt         @id @default(autoincrement())
-  businessTypeId           BigInt?        @map("business_type_id")
-  nameZh                   String         @map("name_zh") @db.VarChar(120)
-  nameVi                   String?        @map("name_vi") @db.VarChar(120)
-  nameEn                   String?        @map("name_en") @db.VarChar(120)
-  merchantType             MerchantType   @default(RESTAURANT) @map("merchant_type")
-  merchantMode             MerchantMode   @default(DISPLAY_ONLY) @map("merchant_mode")
+  id                       BigInt              @id @default(autoincrement())
+  businessTypeId           BigInt?             @map("business_type_id")
+  nameZh                   String              @map("name_zh") @db.VarChar(120)
+  nameVi                   String?             @map("name_vi") @db.VarChar(120)
+  nameEn                   String?             @map("name_en") @db.VarChar(120)
+  merchantType             MerchantType        @default(RESTAURANT) @map("merchant_type")
+  merchantMode             MerchantMode        @default(DISPLAY_ONLY) @map("merchant_mode")
   claimStatus              MerchantClaimStatus @default(UNCLAIMED) @map("claim_status")
-  ownerUserId              BigInt?        @map("owner_user_id")
-  logoUrl                  String?        @map("logo_url") @db.VarChar(500)
-  coverUrl                 String?        @map("cover_url") @db.VarChar(500)
-  contactName              String         @map("contact_name") @db.VarChar(64)
-  contactPhone             String         @map("contact_phone") @db.VarChar(32)
-  province                 String         @db.VarChar(80)
-  city                     String         @db.VarChar(80)
-  district                 String?        @db.VarChar(80)
-  addressDetail            String         @map("address_detail") @db.VarChar(255)
-  addressZh                String?        @map("address_zh") @db.VarChar(255)
-  addressVi                String?        @map("address_vi") @db.VarChar(255)
-  addressEn                String?        @map("address_en") @db.VarChar(255)
-  latitude                 Decimal        @db.Decimal(10, 7)
-  longitude                Decimal        @db.Decimal(10, 7)
-  businessHours            Json           @map("business_hours")
-  openingHoursText         String?        @map("opening_hours_text") @db.VarChar(255)
-  notice                   String?        @db.Text
-  descriptionZh            String?        @map("description_zh") @db.Text
-  descriptionVi            String?        @map("description_vi") @db.Text
-  descriptionEn            String?        @map("description_en") @db.Text
-  minimumDeliveryAmountVnd BigInt         @default(0) @map("minimum_delivery_amount_vnd")
-  deliveryFeeVnd           BigInt         @default(0) @map("delivery_fee_vnd")
-  deliveryRadiusKm         Decimal        @default(0) @map("delivery_radius_km") @db.Decimal(5, 2)
-  dineInEnabled            Boolean        @default(true) @map("dine_in_enabled")
-  pickupEnabled            Boolean        @default(true) @map("pickup_enabled")
-  deliveryEnabled          Boolean        @default(false) @map("delivery_enabled")
-  isVisibleOnClient        Boolean        @default(true) @map("is_visible_on_client")
-  reportFeatureEnabled      Boolean        @default(false) @map("report_feature_enabled")
-  homepageCategoryKeys     String         @default("[]") @map("homepage_category_keys") @db.VarChar(255)
-  manualPopular            Boolean        @default(false) @map("manual_popular")
-  sortOrder                Int            @default(0) @map("sort_order")
-  isNew                    Boolean        @default(false) @map("is_new")
-  recommendedAt            DateTime?      @map("recommended_at")
-  status                   MerchantStatus @default(ACTIVE)
-  createdAt                DateTime       @default(now()) @map("created_at")
-  updatedAt                DateTime       @updatedAt @map("updated_at")
+  ownerUserId              BigInt?             @map("owner_user_id")
+  logoUrl                  String?             @map("logo_url") @db.VarChar(500)
+  coverUrl                 String?             @map("cover_url") @db.VarChar(500)
+  contactName              String              @map("contact_name") @db.VarChar(64)
+  contactPhone             String              @map("contact_phone") @db.VarChar(32)
+  province                 String              @db.VarChar(80)
+  city                     String              @db.VarChar(80)
+  district                 String?             @db.VarChar(80)
+  addressDetail            String              @map("address_detail") @db.VarChar(255)
+  addressZh                String?             @map("address_zh") @db.VarChar(255)
+  addressVi                String?             @map("address_vi") @db.VarChar(255)
+  addressEn                String?             @map("address_en") @db.VarChar(255)
+  latitude                 Decimal             @db.Decimal(10, 7)
+  longitude                Decimal             @db.Decimal(10, 7)
+  businessHours            Json                @map("business_hours")
+  openingHoursText         String?             @map("opening_hours_text") @db.VarChar(255)
+  notice                   String?             @db.Text
+  descriptionZh            String?             @map("description_zh") @db.Text
+  descriptionVi            String?             @map("description_vi") @db.Text
+  descriptionEn            String?             @map("description_en") @db.Text
+  minimumDeliveryAmountVnd BigInt              @default(0) @map("minimum_delivery_amount_vnd")
+  deliveryFeeVnd           BigInt              @default(0) @map("delivery_fee_vnd")
+  deliveryRadiusKm         Decimal             @default(0) @map("delivery_radius_km") @db.Decimal(5, 2)
+  dineInEnabled            Boolean             @default(true) @map("dine_in_enabled")
+  pickupEnabled            Boolean             @default(true) @map("pickup_enabled")
+  deliveryEnabled          Boolean             @default(false) @map("delivery_enabled")
+  isVisibleOnClient        Boolean             @default(true) @map("is_visible_on_client")
+  reportFeatureEnabled     Boolean             @default(false) @map("report_feature_enabled")
+  homepageCategoryKeys     String              @default("[]") @map("homepage_category_keys") @db.VarChar(255)
+  manualPopular            Boolean             @default(false) @map("manual_popular")
+  sortOrder                Int                 @default(0) @map("sort_order")
+  isNew                    Boolean             @default(false) @map("is_new")
+  recommendedAt            DateTime?           @map("recommended_at")
+  status                   MerchantStatus      @default(ACTIVE)
+  createdAt                DateTime            @default(now()) @map("created_at")
+  updatedAt                DateTime            @updatedAt @map("updated_at")
 
-  businessType MerchantBusinessType? @relation(fields: [businessTypeId], references: [id], onDelete: SetNull)
-  ownerUser    User? @relation("MerchantOwnerUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  staff      MerchantStaff[]
-  categories Category[]
-  products   Product[]
-  tables     DiningTable[]
-  carts      Cart[]
-  orders     Order[]
+  businessType           MerchantBusinessType?   @relation(fields: [businessTypeId], references: [id], onDelete: SetNull)
+  ownerUser              User?                   @relation("MerchantOwnerUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  staff                  MerchantStaff[]
+  categories             Category[]
+  products               Product[]
+  tables                 DiningTable[]
+  tableSessions          TableSession[]
+  carts                  Cart[]
+  orders                 Order[]
   orderChatConversations OrderChatConversation[]
-  printerSettings PrinterSetting[]
-  printLogs PrintLog[]
-  merchantReportSetting MerchantReportSetting?
-  dailyReportLogs DailyReportLog[]
-  promotionTags MerchantPromotionTag[]
-  capabilities MerchantCapability[]
-  images MerchantImage[]
+  printerSettings        PrinterSetting[]
+  printLogs              PrintLog[]
+  merchantReportSetting  MerchantReportSetting?
+  dailyReportLogs        DailyReportLog[]
+  promotionTags          MerchantPromotionTag[]
+  capabilities           MerchantCapability[]
+  images                 MerchantImage[]
 
   @@index([status])
   @@index([province, city, status])
@@ -283,19 +289,19 @@ model MerchantBusinessType {
 }
 
 model PromotionTag {
-  id        BigInt   @id @default(autoincrement())
-  code      String   @unique @db.VarChar(64)
-  nameZh    String   @map("name_zh") @db.VarChar(80)
-  nameVi    String?  @map("name_vi") @db.VarChar(80)
-  nameEn    String?  @map("name_en") @db.VarChar(80)
-  iconUrl   String?  @map("icon_url") @db.VarChar(500)
-  iconText  String?  @map("icon_text") @db.VarChar(16)
-  color     String?  @db.VarChar(32)
-  description String? @db.VarChar(255)
-  sortOrder Int      @default(0) @map("sort_order")
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          BigInt   @id @default(autoincrement())
+  code        String   @unique @db.VarChar(64)
+  nameZh      String   @map("name_zh") @db.VarChar(80)
+  nameVi      String?  @map("name_vi") @db.VarChar(80)
+  nameEn      String?  @map("name_en") @db.VarChar(80)
+  iconUrl     String?  @map("icon_url") @db.VarChar(500)
+  iconText    String?  @map("icon_text") @db.VarChar(16)
+  color       String?  @db.VarChar(32)
+  description String?  @db.VarChar(255)
+  sortOrder   Int      @default(0) @map("sort_order")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   merchants MerchantPromotionTag[]
 
@@ -339,11 +345,11 @@ model MerchantPromotionTag {
 }
 
 model MerchantCapability {
-  merchantId    BigInt   @map("merchant_id")
-  capabilityId  BigInt   @map("capability_id")
-  isEnabled     Boolean  @default(false) @map("is_enabled")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  merchantId   BigInt   @map("merchant_id")
+  capabilityId BigInt   @map("capability_id")
+  isEnabled    Boolean  @default(false) @map("is_enabled")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   merchant   Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   capability Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
@@ -389,17 +395,17 @@ model MerchantReportSetting {
 }
 
 model MerchantStaff {
-  id           BigInt      @id @default(autoincrement())
-  merchantId   BigInt      @map("merchant_id")
-  username     String      @db.VarChar(64)
-  passwordHash String      @map("password_hash") @db.VarChar(255)
-  mustChangePassword Boolean @default(false) @map("must_change_password")
-  displayName  String      @map("display_name") @db.VarChar(64)
-  role         StaffRole   @default(STAFF)
-  status       StaffStatus @default(ACTIVE)
-  lastLoginAt  DateTime?   @map("last_login_at")
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  id                 BigInt      @id @default(autoincrement())
+  merchantId         BigInt      @map("merchant_id")
+  username           String      @db.VarChar(64)
+  passwordHash       String      @map("password_hash") @db.VarChar(255)
+  mustChangePassword Boolean     @default(false) @map("must_change_password")
+  displayName        String      @map("display_name") @db.VarChar(64)
+  role               StaffRole   @default(STAFF)
+  status             StaffStatus @default(ACTIVE)
+  lastLoginAt        DateTime?   @map("last_login_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
 
   merchant           Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   operatedStatusLogs OrderStatusLog[] @relation("StaffStatusLogOperator")
@@ -461,13 +467,36 @@ model DiningTable {
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
 
-  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  carts    Cart[]
-  orders   Order[]
+  merchant      Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  carts         Cart[]
+  orders        Order[]
+  tableSessions TableSession[]
 
   @@unique([merchantId, tableNo])
   @@index([merchantId, status])
   @@map("dining_tables")
+}
+
+model TableSession {
+  id         BigInt             @id @default(autoincrement())
+  merchantId BigInt             @map("merchant_id")
+  tableId    BigInt             @map("table_id")
+  openTableId BigInt?           @unique @map("open_table_id")
+  sessionNo  String             @unique @map("session_no") @db.VarChar(32)
+  status     TableSessionStatus @default(OPEN)
+  openedAt   DateTime           @default(now()) @map("opened_at")
+  closedAt   DateTime?          @map("closed_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  merchant Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  table    DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([merchantId, status])
+  @@index([tableId, openedAt])
+  @@index([merchantId, openedAt])
+  @@map("table_sessions")
 }
 
 model Cart {
@@ -514,6 +543,7 @@ model Order {
   userId            BigInt           @map("user_id")
   merchantId        BigInt           @map("merchant_id")
   tableId           BigInt?          @map("table_id")
+  tableSessionId    BigInt?          @map("table_session_id")
   tableNoSnapshot   String?          @map("table_no_snapshot") @db.VarChar(32)
   orderType         OrderType        @map("order_type")
   status            OrderStatus      @default(PENDING_ACCEPTANCE)
@@ -535,18 +565,20 @@ model Order {
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  user       User             @relation(fields: [userId], references: [id])
-  merchant   Merchant         @relation(fields: [merchantId], references: [id])
-  table      DiningTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  items      OrderItem[]
-  statusLogs OrderStatusLog[]
+  user             User                   @relation(fields: [userId], references: [id])
+  merchant         Merchant               @relation(fields: [merchantId], references: [id])
+  table            DiningTable?           @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSession     TableSession?          @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  items            OrderItem[]
+  statusLogs       OrderStatusLog[]
   chatConversation OrderChatConversation?
-  chatMessages OrderChatMessage[]
-  printLogs PrintLog[]
+  chatMessages     OrderChatMessage[]
+  printLogs        PrintLog[]
 
   @@unique([userId, idempotencyKey])
   @@index([merchantId, status, createdAt])
   @@index([userId, createdAt])
+  @@index([tableSessionId])
   @@map("orders")
 }
 
@@ -593,19 +625,19 @@ model OrderStatusLog {
 }
 
 model DailyReportLog {
-  id             BigInt   @id @default(autoincrement())
-  merchantId     BigInt   @map("merchant_id")
-  reportDate     DateTime @map("report_date") @db.Date
-  language       String   @default("zh") @db.VarChar(8)
-  channel        String   @default("zalo") @db.VarChar(32)
-  recipient      String?  @db.VarChar(120)
-  status         String   @db.VarChar(16)
-  mocked         Boolean  @default(true)
-  reportImageUrl String?  @map("report_image_url") @db.VarChar(500)
-  summaryJson    Json?    @map("summary_json")
-  errorMessage   String?  @map("error_message") @db.VarChar(500)
+  id             BigInt    @id @default(autoincrement())
+  merchantId     BigInt    @map("merchant_id")
+  reportDate     DateTime  @map("report_date") @db.Date
+  language       String    @default("zh") @db.VarChar(8)
+  channel        String    @default("zalo") @db.VarChar(32)
+  recipient      String?   @db.VarChar(120)
+  status         String    @db.VarChar(16)
+  mocked         Boolean   @default(true)
+  reportImageUrl String?   @map("report_image_url") @db.VarChar(500)
+  summaryJson    Json?     @map("summary_json")
+  errorMessage   String?   @map("error_message") @db.VarChar(500)
   sentAt         DateTime? @map("sent_at")
-  createdAt      DateTime @default(now()) @map("created_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
@@ -614,25 +646,25 @@ model DailyReportLog {
 }
 
 model OrderChatConversation {
-  id                    BigInt                     @id @default(autoincrement())
-  orderId               BigInt                     @unique @map("order_id")
-  merchantId            BigInt                     @map("merchant_id")
-  customerId            BigInt                     @map("customer_id")
-  status                OrderChatConversationStatus @default(ACTIVE)
-  customerUnreadCount    Int                        @default(0) @map("customer_unread_count")
-  merchantUnreadCount    Int                        @default(0) @map("merchant_unread_count")
-  lastMessageId         BigInt?                    @unique @map("last_message_id")
-  lastMessageAt         DateTime?                  @map("last_message_at")
-  customerLastReadAt    DateTime?                  @map("customer_last_read_at")
-  merchantLastReadAt    DateTime?                  @map("merchant_last_read_at")
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  updatedAt             DateTime                   @updatedAt @map("updated_at")
+  id                  BigInt                      @id @default(autoincrement())
+  orderId             BigInt                      @unique @map("order_id")
+  merchantId          BigInt                      @map("merchant_id")
+  customerId          BigInt                      @map("customer_id")
+  status              OrderChatConversationStatus @default(ACTIVE)
+  customerUnreadCount Int                         @default(0) @map("customer_unread_count")
+  merchantUnreadCount Int                         @default(0) @map("merchant_unread_count")
+  lastMessageId       BigInt?                     @unique @map("last_message_id")
+  lastMessageAt       DateTime?                   @map("last_message_at")
+  customerLastReadAt  DateTime?                   @map("customer_last_read_at")
+  merchantLastReadAt  DateTime?                   @map("merchant_last_read_at")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
 
-  order        Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  merchant     Merchant           @relation(fields: [merchantId], references: [id], onDelete: Restrict)
-  customer     User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  lastMessage   OrderChatMessage?  @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
-  messages      OrderChatMessage[]
+  order       Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  merchant    Merchant           @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  customer    User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lastMessage OrderChatMessage?  @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  messages    OrderChatMessage[]
 
   @@index([merchantId, updatedAt])
   @@index([customerId, updatedAt])
@@ -651,8 +683,8 @@ model OrderChatMessage {
   readAt         DateTime?           @map("read_at")
   createdAt      DateTime            @default(now()) @map("created_at")
 
-  conversation   OrderChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  order          Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  conversation              OrderChatConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  order                     Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
   lastMessageOfConversation OrderChatConversation? @relation("ConversationLastMessage")
 
   @@index([conversationId, createdAt])
@@ -663,24 +695,24 @@ model OrderChatMessage {
 }
 
 model PrinterSetting {
-  id               BigInt        @id @default(autoincrement())
-  merchantId       BigInt        @map("merchant_id")
-  name             String        @db.VarChar(80)
-  type             PrinterType   @default(NETWORK)
+  id               BigInt           @id @default(autoincrement())
+  merchantId       BigInt           @map("merchant_id")
+  name             String           @db.VarChar(80)
+  type             PrinterType      @default(NETWORK)
   usageType        PrinterUsageType @default(GENERAL) @map("usage_type")
-  encoding         PrinterEncoding @default(UTF8)
-  ipAddress        String        @map("ip_address") @db.VarChar(64)
-  port             Int           @default(9100)
-  paperWidth       PaperWidth    @default(WIDTH_80) @map("paper_width")
-  copies           Int           @default(1)
-  language         PrintLanguage @default(zh)
-  autoPrintEnabled Boolean       @default(true) @map("auto_print_enabled")
-  isDefault        Boolean       @default(true) @map("is_default")
-  status           PrinterStatus @default(UNKNOWN)
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  encoding         PrinterEncoding  @default(UTF8)
+  ipAddress        String           @map("ip_address") @db.VarChar(64)
+  port             Int              @default(9100)
+  paperWidth       PaperWidth       @default(WIDTH_80) @map("paper_width")
+  copies           Int              @default(1)
+  language         PrintLanguage    @default(zh)
+  autoPrintEnabled Boolean          @default(true) @map("auto_print_enabled")
+  isDefault        Boolean          @default(true) @map("is_default")
+  status           PrinterStatus    @default(UNKNOWN)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  merchant Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchant  Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   printLogs PrintLog[]
 
   @@index([merchantId, isDefault])

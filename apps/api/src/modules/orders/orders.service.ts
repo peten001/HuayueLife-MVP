@@ -11,6 +11,7 @@ import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
+import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly cartService: CartService,
     private readonly printersService: PrintersService,
+    private readonly tableSessionsService: TableSessionsService,
   ) {}
 
   list(userId: bigint) {
@@ -65,6 +67,14 @@ export class OrdersService {
         if (duplicate) return duplicate;
 
         const preview = await this.validateAndPrice(tx, userId, dto);
+        const tableSession =
+          dto.orderType === 'DINE_IN' && preview.table
+            ? await this.tableSessionsService.getOrCreateOpenSession(
+                tx,
+                preview.merchant.id,
+                preview.table.id,
+              )
+            : null;
         const order = await tx.order.create({
           data: {
             orderNo: this.generateOrderNo(),
@@ -72,6 +82,7 @@ export class OrdersService {
             userId,
             merchantId: preview.merchant.id,
             tableId: preview.table?.id,
+            tableSessionId: tableSession?.id,
             tableNoSnapshot: preview.table?.tableNo,
             orderType: dto.orderType,
             contactName: dto.orderType === 'DINE_IN' ? undefined : dto.contactName,
