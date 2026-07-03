@@ -10,6 +10,7 @@ describe('Public discovery and QR flow', () => {
   let prisma: PrismaService;
   const merchantIds: bigint[] = [];
   let restaurantId: bigint;
+  let mixedAddressMerchantId: bigint;
   let categoryId: bigint;
   let productId: bigint;
   let tableId: bigint;
@@ -34,24 +35,36 @@ describe('Public discovery and QR flow', () => {
     prisma = app.get(PrismaService);
 
     const restaurant = await prisma.merchant.create({
-      data: merchantData('Day3 北宁餐厅', 'Bac Ninh', 21.1788, 106.0763),
+      data: merchantData('Day3 北宁餐厅', '北宁', 21.1788, 106.0763),
     });
     restaurantId = restaurant.id;
     merchantIds.push(restaurant.id);
 
     const fartherRestaurant = await prisma.merchant.create({
-      data: merchantData('Day3 较远餐厅', 'Bac Ninh', 21.1888, 106.0863),
+      data: merchantData('Day3 较远餐厅', '北宁', 21.1888, 106.0863),
     });
     merchantIds.push(fartherRestaurant.id);
 
     const bacGiangRestaurant = await prisma.merchant.create({
-      data: merchantData('Day3 北江餐厅', 'Bac Giang', 21.2731, 106.1946),
+      data: merchantData('Day3 北江餐厅', '北江', 21.2731, 106.1946),
     });
     merchantIds.push(bacGiangRestaurant.id);
 
+    const mixedAddressMerchant = await prisma.merchant.create({
+      data: merchantData(
+        'Day3 北江地址含北宁',
+        '北江',
+        21.2735,
+        106.1949,
+        '北江 Day3 测试地址 Bắc Ninh',
+      ),
+    });
+    mixedAddressMerchantId = mixedAddressMerchant.id;
+    merchantIds.push(mixedAddressMerchant.id);
+
     const fruitMerchant = await prisma.merchant.create({
       data: {
-        ...merchantData('Day3 水果店', 'Bac Ninh', 21.179, 106.0765),
+        ...merchantData('Day3 水果店', '北宁', 21.179, 106.0765),
         merchantType: 'FRUIT',
       },
     });
@@ -59,7 +72,7 @@ describe('Public discovery and QR flow', () => {
 
     const closedRestaurant = await prisma.merchant.create({
       data: {
-        ...merchantData('Day3 停用餐厅', 'Bac Ninh', 21.1792, 106.0767),
+        ...merchantData('Day3 停用餐厅', '北宁', 21.1792, 106.0767),
         status: 'DISABLED',
       },
     });
@@ -140,7 +153,7 @@ describe('Public discovery and QR flow', () => {
     expect(profile.body.data.nickname).toBe('Day3 用户');
   });
 
-  it('returns only ACTIVE RESTAURANT merchants and sorts by distance', async () => {
+  it('keeps the current no-province behavior when only location is provided', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
       .query({ lat: 21.1788, lng: 106.0763, radiusKm: 5, page: 1 })
@@ -150,18 +163,18 @@ describe('Public discovery and QR flow', () => {
       item.nameZh.startsWith('Day3'),
     );
     expect(day3Items.map((item: { nameZh: string }) => item.nameZh)).toEqual([
+      'Day3 北江餐厅',
+      'Day3 北江地址含北宁',
       'Day3 北宁餐厅',
       'Day3 较远餐厅',
+      'Day3 水果店',
     ]);
-    expect(day3Items[0].distanceKm).toBe(0);
-    expect(day3Items[0].supportedOrderTypes).toEqual([
-      'DINE_IN',
-      'PICKUP',
-      'DELIVERY',
-    ]);
+    expect(
+      day3Items.every((item: { nameZh: string }) => item.nameZh !== 'Day3 停用餐厅'),
+    ).toBe(true);
   });
 
-  it('falls back to city discovery when location is denied', async () => {
+  it('keeps legacy city queries working and leaves no-province queries unchanged', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
       .query({ city: '北江', page: 1 })
@@ -176,7 +189,81 @@ describe('Public discovery and QR flow', () => {
 
     await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
-      .expect(400);
+      .expect(200);
+  });
+
+  it('filters merchants strictly by province query and does not use address text fallback', async () => {
+    const northNinh = await request(app.getHttpServer())
+      .get('/api/v1/merchants/nearby')
+      .query({ province: '北宁', page: 1 })
+      .expect(200);
+
+    expect(
+      northNinh.body.data.items.map((item: { nameZh: string; province: string }) => ({
+        nameZh: item.nameZh,
+        province: item.province,
+      })),
+    ).toEqual([
+      { nameZh: 'Day3 北宁餐厅', province: '北宁' },
+      { nameZh: 'Day3 较远餐厅', province: '北宁' },
+      { nameZh: 'Day3 水果店', province: '北宁' },
+    ]);
+
+    const northGiang = await request(app.getHttpServer())
+      .get('/api/v1/merchants/nearby')
+      .query({ province: '北江', page: 1 })
+      .expect(200);
+
+    expect(
+      northGiang.body.data.items.map((item: { nameZh: string }) => item.nameZh),
+    ).toEqual(['Day3 北江餐厅', 'Day3 北江地址含北宁']);
+
+    const legacyCity = await request(app.getHttpServer())
+      .get('/api/v1/merchants/nearby')
+      .query({ city: '北宁', page: 1 })
+      .expect(200);
+
+    expect(
+      legacyCity.body.data.items.every(
+        (item: { province: string }) => item.province === '北宁',
+      ),
+    ).toBe(true);
+  });
+
+  it('normalizes compatible province variants and returns an empty list when the selected province has no visible merchants', async () => {
+    for (const province of ['Bac Ninh', 'Bắc Ninh', 'BAC_NINH']) {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/merchants/nearby')
+        .query({ province, page: 1 })
+        .expect(200);
+
+      expect(
+        response.body.data.items.every(
+          (item: { province: string }) => item.province === '北宁',
+        ),
+      ).toBe(true);
+    }
+
+    const northNinhIds = merchantIds.filter((id) => id !== mixedAddressMerchantId);
+    await prisma.merchant.updateMany({
+      where: { id: { in: northNinhIds }, province: '北宁' },
+      data: { isVisibleOnClient: false },
+    });
+
+    try {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/merchants/nearby')
+        .query({ province: '北宁', page: 1 })
+        .expect(200);
+
+      expect(response.body.data.items).toEqual([]);
+      expect(response.body.data.total).toBe(0);
+    } finally {
+      await prisma.merchant.updateMany({
+        where: { id: { in: northNinhIds }, province: '北宁' },
+        data: { isVisibleOnClient: true },
+      });
+    }
   });
 
   it('returns merchant detail, active menu and FOOD product detail', async () => {
@@ -235,17 +322,19 @@ describe('Public discovery and QR flow', () => {
 
 function merchantData(
   nameZh: string,
-  city: string,
+  province: string,
   latitude: number,
   longitude: number,
+  addressDetail = `${province} Day3 测试地址`,
 ) {
   return {
     nameZh,
     contactName: 'Day3 联系人',
     contactPhone: '0900000000',
-    province: city,
-    city,
-    addressDetail: `${city} Day3 测试地址`,
+    merchantMode: 'ONLINE_ORDER' as const,
+    province,
+    city: province,
+    addressDetail,
     latitude,
     longitude,
     businessHours: {

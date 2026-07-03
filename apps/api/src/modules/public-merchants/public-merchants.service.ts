@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   GoneException,
   NotFoundException,
@@ -53,27 +54,9 @@ type PublicMerchantRow = Merchant & {
   }>;
   categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>>;
 };
-const CITY_VARIANTS: Record<'Bac Giang' | 'Bac Ninh', string[]> = {
-  'Bac Giang': [
-    'Bac Giang',
-    'Bắc Giang',
-    'bac giang',
-    'bacgiang',
-    'Bac Giang Province',
-    'Bắc Giang Province',
-    '北江',
-    '北江省',
-  ],
-  'Bac Ninh': [
-    'Bac Ninh',
-    'Bắc Ninh',
-    'bac ninh',
-    'bacninh',
-    'Bac Ninh Province',
-    'Bắc Ninh Province',
-    '北宁',
-    '北宁省',
-  ],
+const PROVINCE_ALIASES: Record<'北江' | '北宁', string[]> = {
+  北江: ['北江', 'Bac Giang', 'Bắc Giang', 'BAC_GIANG', 'bac giang', 'bắc giang'],
+  北宁: ['北宁', 'Bac Ninh', 'Bắc Ninh', 'BAC_NINH', 'bac ninh', 'bắc ninh'],
 };
 
 @Injectable()
@@ -82,17 +65,16 @@ export class PublicMerchantsService {
 
   async nearby(query: NearbyMerchantsQueryDto) {
     console.log('[public-merchants] nearby query', query);
-    const resolvedCity =
-      resolveCity(query.city) ??
-      inferCityByLocation(query.lat, query.lng) ??
-      'Bac Giang';
-    console.log('[public-merchants] nearby city', query.city);
-    console.log('[public-merchants] normalized city', resolvedCity);
+    const selectedProvince = resolveSelectedProvince(query);
+    console.log('[public-merchants] selected province', selectedProvince);
 
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
       isVisibleOnClient: true,
     };
+    if (selectedProvince) {
+      where.province = selectedProvince;
+    }
     if (query.businessTypeId) {
       where.businessTypeId = BigInt(query.businessTypeId);
     }
@@ -131,20 +113,7 @@ export class PublicMerchantsService {
     }
 
     console.log('[public-merchants] raw merchants count', merchants.length);
-
-    const cityMatched = merchants.filter((merchant) =>
-      merchantMatchesCity(merchant, resolvedCity),
-    );
-    console.log('[public-merchants] city matched count', cityMatched.length);
-
-    const effectiveMerchants = cityMatched.length ? cityMatched : merchants;
-    if (!cityMatched.length && merchants.length) {
-      console.warn('[public-merchants] city query empty, fallback to active merchants', {
-        resolvedCity,
-      });
-    }
-
-    const results = effectiveMerchants
+    const results = merchants
       .map((merchant) => this.toMerchantSummary(merchant))
       .sort((a, b) => {
         if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
@@ -443,45 +412,34 @@ function canShowMenu(merchant: PublicMerchantRow) {
   return Boolean(merchant.dineInEnabled || merchant.pickupEnabled || merchant.deliveryEnabled);
 }
 
-function resolveCity(city?: string) {
-  const normalized = normalizeCityText(city);
-  if (!normalized) return null;
-  if (normalized.includes('bacgiang') || normalized.includes('北江')) return 'Bac Giang';
-  if (normalized.includes('bacninh') || normalized.includes('北宁')) return 'Bac Ninh';
+function resolveSelectedProvince(
+  query: NearbyMerchantsQueryDto,
+): '北江' | '北宁' | null {
+  const rawValue = query.province ?? query.city;
+  if (!rawValue) return null;
+  const normalized = normalizeProvinceInput(rawValue);
+  if (!normalized) {
+    throw new BadRequestException('Invalid province');
+  }
+  return normalized;
+}
+
+function normalizeProvinceInput(value?: string) {
+  const normalizedValue = normalizeProvinceText(value);
+  if (!normalizedValue) return null;
+  for (const [province, aliases] of Object.entries(PROVINCE_ALIASES) as Array<
+    ['北江' | '北宁', string[]]
+  >) {
+    if (
+      aliases.some((alias) => normalizeProvinceText(alias) === normalizedValue)
+    ) {
+      return province;
+    }
+  }
   return null;
 }
 
-function inferCityByLocation(lat?: number, lng?: number) {
-  if (lat === undefined || lng === undefined) return null;
-  if (lat >= 21.2) return 'Bac Giang';
-  if (lat <= 21.18) return 'Bac Ninh';
-  if (lng >= 106.08) return 'Bac Giang';
-  return 'Bac Ninh';
-}
-
-function merchantMatchesCity(
-  merchant: Merchant,
-  city: 'Bac Giang' | 'Bac Ninh',
-) {
-  const cityKey = normalizeCityText(city);
-  const aliases = CITY_VARIANTS[city] ?? [cityKey];
-  const haystack = [
-    merchant.city,
-    merchant.province,
-    merchant.district,
-    merchant.addressDetail,
-    merchant.nameZh,
-    merchant.nameVi,
-  ]
-    .filter(Boolean)
-    .map((value) => normalizeCityText(String(value)));
-  if (!haystack.length) return true;
-  return aliases.some((alias) =>
-    haystack.some((value) => value.includes(normalizeCityText(alias))),
-  );
-}
-
-function normalizeCityText(value?: string) {
+function normalizeProvinceText(value?: string) {
   return String(value || '')
     .trim()
     .normalize('NFD')

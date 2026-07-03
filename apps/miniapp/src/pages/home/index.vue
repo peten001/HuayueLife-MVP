@@ -67,24 +67,13 @@ const foodCategories = computed<Array<{
   { key: 'vietnamese_food', icon: '🍽️', label: t('homeCategoryVietnamese'), tone: 'violet' },
 ]);
 
-const cityFilteredMerchants = computed(() => {
-  const city = normalizedCity.value;
-  const list = merchants.value.filter((merchant) => merchantMatchesCity(merchant, city));
-  if (!list.length && merchants.value.length) {
-    console.warn('[home] city filter empty, fallback to raw merchants');
-    return merchants.value;
-  }
-  console.log('[home] merchants after city filter', list.length, list.map((item) => item.nameZh));
-  return list;
-});
-
 const categoryFilteredMerchants = computed(() => {
   const category = foodCategories.value.find((item) => item.key === selectedCategory.value);
   const list = category
-    ? cityFilteredMerchants.value.filter((merchant) =>
+    ? merchants.value.filter((merchant) =>
         merchantMatchesCategory(merchant, category.key),
       )
-    : cityFilteredMerchants.value;
+    : merchants.value;
   console.log('[home] merchants after category filter', list.length);
   return list;
 });
@@ -180,43 +169,20 @@ async function refreshHome(forceRelocate: boolean) {
 async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
   const seq = ++requestSeq.value;
   loading.value = true;
-  const query = { city, page: 1 };
+  merchants.value = [];
+  const query = { province: provinceForQuery(city), page: 1 };
   console.log('[home] merchant query', query);
   try {
     const result = await getNearbyMerchants(query);
     const rawList = result.items ?? [];
     console.log('[home] raw merchants', rawList);
     console.log('[home] merchants raw count', rawList.length);
-    console.log('[home] city filter input names', rawList.map((item) => ({
-      name: item.nameZh,
-      city: item.city,
-      province: item.province,
-      district: item.district,
-      address: item.addressDetail,
-      status: item.status,
-      isActive: item.isOpen,
-      enabled: item.isOpen,
-    })));
-    const cityFiltered = rawList.filter((merchant) =>
-      merchantMatchesCity(merchant, city),
-    );
-    console.log('[home] merchants after city filter', cityFiltered.length, cityFiltered.map((item) => item.nameZh));
-    console.log('[home] merchant names', cityFiltered.map((item) => item.nameZh));
     if (seq !== requestSeq.value) return;
-    merchants.value = cityFiltered.length ? cityFiltered : rawList;
+    merchants.value = rawList;
   } catch (error) {
-    console.warn('[home] loadByCity failed, fallback to list merchants', error);
-    try {
-      const fallbackResult = await getNearbyMerchants({ page: 1 });
-      const fallbackList = fallbackResult.items ?? [];
-      console.log('[home] fallback merchants count', fallbackList.length);
-      if (seq !== requestSeq.value) return;
-      merchants.value = fallbackList;
-    } catch (fallbackError) {
-      console.warn('[home] fallback merchants request failed', fallbackError);
-      if (seq !== requestSeq.value) return;
-      console.log('[home] loadByCity failed, keep current merchants');
-    }
+    console.warn('[home] loadByCity failed', error);
+    if (seq !== requestSeq.value) return;
+    merchants.value = [];
   } finally {
     if (seq === requestSeq.value) {
       loading.value = false;
@@ -264,7 +230,7 @@ function openMessages() {
 
 function toggleCategory(categoryKey: ServiceCategoryKey) {
   selectedCategory.value = selectedCategory.value === categoryKey ? '' : categoryKey;
-  const matched = cityFilteredMerchants.value.filter((merchant) => merchantMatchesCategory(merchant, categoryKey));
+  const matched = merchants.value.filter((merchant) => merchantMatchesCategory(merchant, categoryKey));
   if (!matched.length) {
     uni.showToast({
       title: t('homeCategoryJoinSoon'),
@@ -352,21 +318,8 @@ function normalizeHomepageCategoryKeys(keys: string[]) {
   );
 }
 
-function merchantMatchesCity(merchant: MerchantSummary, city: 'Bac Giang' | 'Bac Ninh') {
-  const cityKey = normalizeCityText(city);
-  const aliases = cityAliases[cityKey] ?? [cityKey];
-  const haystack = [
-    merchant.city,
-    merchant.province,
-    merchant.district,
-    merchant.addressDetail,
-    merchant.nameZh,
-    merchant.nameVi,
-  ]
-    .filter(Boolean)
-    .map((value) => normalizeCityText(String(value)));
-  if (!haystack.length) return true;
-  return aliases.some((alias) => haystack.some((value) => value.includes(alias)));
+function provinceForQuery(city: 'Bac Giang' | 'Bac Ninh') {
+  return city === 'Bac Ninh' ? '北宁' : '北江';
 }
 
 function resolveCityCode(value: unknown) {
@@ -385,10 +338,6 @@ function normalizeCityText(value: string) {
     .toLowerCase();
 }
 
-const cityAliases: Record<string, string[]> = {
-  bacgiang: ['bacgiang', 'bacgiangprovince', '北江', '北江省'],
-  bacninh: ['bacninh', 'bacninhprovince', '北宁', '北宁市'],
-};
 </script>
 
 <template>
@@ -471,9 +420,9 @@ const cityAliases: Record<string, string[]> = {
 
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
-      <view v-else-if="!cityFilteredMerchants.length" class="empty">
-        <text class="empty-title">{{ t('noMerchants') }}</text>
-        <text class="empty-copy">{{ t('noMerchantsHint') }}</text>
+      <view v-else-if="!merchants.length" class="empty">
+        <text class="empty-title">{{ t('homeProvinceEmptyTitle') }}</text>
+        <text class="empty-copy">{{ t('homeProvinceEmptyHint') }}</text>
       </view>
       <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
         <text class="empty-title">{{ t('homeCategoryJoinSoon') }}</text>

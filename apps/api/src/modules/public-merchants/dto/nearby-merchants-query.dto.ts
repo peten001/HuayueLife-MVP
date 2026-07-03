@@ -9,6 +9,21 @@ import {
   Min,
 } from 'class-validator';
 
+const PROVINCE_QUERY_VALUES = [
+  '北江',
+  '北宁',
+  'Bac Giang',
+  'Bac Ninh',
+  'Bắc Giang',
+  'Bắc Ninh',
+  'BAC_GIANG',
+  'BAC_NINH',
+  'bac giang',
+  'bac ninh',
+  'bắc giang',
+  'bắc ninh',
+] as const;
+
 export class NearbyMerchantsQueryDto {
   @IsOptional()
   @Type(() => Number)
@@ -38,8 +53,12 @@ export class NearbyMerchantsQueryDto {
   page = 1;
 
   @IsOptional()
-  @IsIn(['Bac Ninh', 'Bac Giang', '北宁', '北江'])
+  @IsIn(PROVINCE_QUERY_VALUES)
   city?: string;
+
+  @IsOptional()
+  @IsIn(PROVINCE_QUERY_VALUES)
+  province?: string;
 
   @IsOptional()
   @IsString()

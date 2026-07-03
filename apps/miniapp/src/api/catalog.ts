@@ -13,6 +13,7 @@ export function getNearbyMerchants(params: {
   radiusKm?: number;
   page?: number;
   city?: string;
+  province?: string;
   businessTypeId?: string;
   promotionTag?: string;
 }) {
