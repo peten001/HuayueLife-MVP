@@ -9,6 +9,8 @@ import type {
   MerchantStaffRole,
   Product,
   ProductStatus,
+  TableSessionDetail,
+  TableSessionSummary,
   UpdateMerchantProfilePayload,
 } from '@/types/api';
 
@@ -150,6 +152,34 @@ export async function disableProduct(id: string) {
 export async function getTables() {
   const response = await http.get<ApiResponse<DiningTable[]>>('/merchant/tables');
   return response.data.data;
+}
+
+export async function getOpenTableSessions() {
+  const response = await http.get<ApiResponse<{
+    sessions: TableSessionSummary[];
+  }>>('/merchant/table-sessions/open');
+  return response.data.data.sessions;
+}
+
+export async function getCurrentTableSession(tableId: string) {
+  const response = await http.get<ApiResponse<{
+    session: TableSessionSummary | null;
+  }>>(`/merchant/tables/${tableId}/current-session`);
+  return response.data.data.session;
+}
+
+export async function getTableSessionDetail(sessionId: string) {
+  const response = await http.get<ApiResponse<{
+    session: TableSessionDetail;
+  }>>(`/merchant/table-sessions/${sessionId}`);
+  return response.data.data.session;
+}
+
+export async function closeTableSession(sessionId: string) {
+  const response = await http.post<ApiResponse<{
+    session: TableSessionDetail;
+  }>>(`/merchant/table-sessions/${sessionId}/close`);
+  return response.data.data.session;
 }
 
 export async function createTable(payload: Partial<DiningTable>) {

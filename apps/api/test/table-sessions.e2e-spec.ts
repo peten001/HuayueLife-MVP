@@ -275,6 +275,29 @@ describe('Table session workflow', () => {
     );
   });
 
+  it('lists the current merchant open sessions in batch', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/merchant/table-sessions/open')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+
+    expect(response.body.data.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: tableOneFirstSessionId,
+          merchantId: merchantOneId.toString(),
+          tableId: tableOneId.toString(),
+          tableNo: `TS-A1-${suffix}`,
+          status: 'OPEN',
+          orderCount: 2,
+          itemCount: 3,
+          totalAmountVnd: '150000',
+          unfinishedOrderCount: 2,
+        }),
+      ]),
+    );
+  });
+
   it('keeps only one open session for concurrent first orders on the same table', async () => {
     await Promise.all([
       addDineInItem(userOneToken, tableTwoToken, 1),
@@ -528,6 +551,12 @@ describe('Table session workflow', () => {
   });
 
   it('enforces merchant ownership for current-session, detail, and close APIs', async () => {
+    const listResponse = await request(app.getHttpServer())
+      .get('/api/v1/merchant/table-sessions/open')
+      .set('Authorization', `Bearer ${tokenTwo}`)
+      .expect(200);
+    expect(listResponse.body.data.sessions).toEqual([]);
+
     await request(app.getHttpServer())
       .get(`/api/v1/merchant/tables/${tableOneId.toString()}/current-session`)
       .set('Authorization', `Bearer ${tokenTwo}`)

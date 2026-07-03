@@ -93,6 +93,24 @@ export class TableSessionsService {
     };
   }
 
+  async listOpenSessions(merchantId: bigint) {
+    const sessions = await this.prisma.tableSession.findMany({
+      where: { merchantId, status: 'OPEN' },
+      include: this.sessionOrdersInclude,
+      orderBy: [{ openedAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return {
+      sessions: sessions.map((session) =>
+        this.serializeSessionSummary(session, {
+          id: session.table.id,
+          tableNo: session.table.tableNo,
+          tableName: session.table.tableName,
+        }),
+      ),
+    };
+  }
+
   async getSessionDetail(merchantId: bigint, sessionId: bigint) {
     const session = await this.requireOwnedSession(this.prisma, merchantId, sessionId);
     return {

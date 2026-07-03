@@ -20,6 +20,11 @@ import { TableSessionsService } from './table-sessions.service';
 export class MerchantTableSessionsController {
   constructor(private readonly service: TableSessionsService) {}
 
+  @Get('table-sessions/open')
+  listOpenSessions(@MerchantId() merchantId: bigint) {
+    return this.service.listOpenSessions(merchantId);
+  }
+
   @Get('tables/:tableId/current-session')
   getCurrentSession(
     @MerchantId() merchantId: bigint,

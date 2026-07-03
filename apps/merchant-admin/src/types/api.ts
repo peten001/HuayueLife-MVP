@@ -684,6 +684,50 @@ export interface DiningTable {
   status: 'ACTIVE' | 'DISABLED';
 }
 
+export type TableSessionStatus = 'OPEN' | 'CLOSED';
+
+export interface TableSessionSummary {
+  id: string;
+  sessionNo: string;
+  merchantId: string;
+  tableId: string;
+  tableNo: string;
+  tableName?: string | null;
+  status: TableSessionStatus;
+  openedAt: string;
+  closedAt?: string | null;
+  orderCount: number;
+  itemCount: number;
+  totalAmountVnd: string;
+  latestOrderAt?: string | null;
+  pendingOrderCount: number;
+  unfinishedOrderCount: number;
+}
+
+export interface TableSessionOrderItem {
+  id: string;
+  productNameZhSnapshot: string;
+  quantity: number;
+  unitPriceVnd: string;
+  subtotalVnd: string;
+}
+
+export interface TableSessionOrder {
+  id: string;
+  orderNo: string;
+  status: OrderStatus;
+  createdAt: string;
+  itemAmountVnd: string;
+  deliveryFeeVnd: string;
+  totalAmountVnd: string;
+  tableNoSnapshot?: string | null;
+  items: TableSessionOrderItem[];
+}
+
+export interface TableSessionDetail extends TableSessionSummary {
+  orders: TableSessionOrder[];
+}
+
 export type OrderStatus =
   | 'PENDING_ACCEPTANCE'
   | 'ACCEPTED'
