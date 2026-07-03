@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Category, Merchant, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { isMerchantOpen } from '../../common/utils/merchant-hours';
+import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 import {
   parseHomepageCategoryKeys,
@@ -113,9 +113,28 @@ export class PublicMerchantsService {
     }
 
     console.log('[public-merchants] raw merchants count', merchants.length);
+    const hasUserLocation =
+      Boolean(selectedProvince)
+      && Number.isFinite(query.lat)
+      && Number.isFinite(query.lng);
     const results = merchants
-      .map((merchant) => this.toMerchantSummary(merchant))
+      .map((merchant) =>
+        this.serializeMerchant(
+          merchant,
+          merchant.categories ?? [],
+          hasUserLocation
+            ? resolveMerchantDistance(
+                query.lat as number,
+                query.lng as number,
+                merchant.latitude,
+                merchant.longitude,
+              )
+            : null,
+        ),
+      )
       .sort((a, b) => {
+        const distanceCompare = compareNullableDistance(a.distanceKm, b.distanceKm);
+        if (distanceCompare !== 0) return distanceCompare;
         if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
         return a.nameZh.localeCompare(b.nameZh, 'zh-CN');
       });
@@ -127,7 +146,7 @@ export class PublicMerchantsService {
       page: query.page,
       pageSize: PAGE_SIZE,
       total: results.length,
-      locationMode: 'CITY',
+      locationMode: hasUserLocation ? 'GPS' : 'CITY',
     };
   }
 
@@ -275,10 +294,6 @@ export class PublicMerchantsService {
       throw new GoneException('商家当前未开启堂食');
     }
     return table;
-  }
-
-  private toMerchantSummary(merchant: PublicMerchantRow) {
-    return this.serializeMerchant(merchant, merchant.categories ?? [], null);
   }
 
   private serializeMerchant(
@@ -446,4 +461,23 @@ function normalizeProvinceText(value?: string) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, '')
     .toLowerCase();
+}
+
+function resolveMerchantDistance(
+  userLatitude: number,
+  userLongitude: number,
+  merchantLatitude: Prisma.Decimal | number | null,
+  merchantLongitude: Prisma.Decimal | number | null,
+) {
+  const latitude = Number(merchantLatitude);
+  const longitude = Number(merchantLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return distanceKm(userLatitude, userLongitude, latitude, longitude);
+}
+
+function compareNullableDistance(left: number | null, right: number | null) {
+  const leftValue = left ?? Number.POSITIVE_INFINITY;
+  const rightValue = right ?? Number.POSITIVE_INFINITY;
+  if (leftValue === rightValue) return 0;
+  return leftValue - rightValue;
 }

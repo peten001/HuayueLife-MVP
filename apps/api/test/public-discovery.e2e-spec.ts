@@ -230,6 +230,54 @@ describe('Public discovery and QR flow', () => {
     ).toBe(true);
   });
 
+  it('keeps nearby results within the selected province and sorts same-province merchants by distance', async () => {
+    const northNinh = await request(app.getHttpServer())
+      .get('/api/v1/merchants/nearby')
+      .query({
+        province: '北宁',
+        lat: 21.1788,
+        lng: 106.0763,
+        page: 1,
+      })
+      .expect(200);
+
+    expect(northNinh.body.data.locationMode).toBe('GPS');
+    expect(
+      northNinh.body.data.items.map((item: { nameZh: string; province: string }) => ({
+        nameZh: item.nameZh,
+        province: item.province,
+      })),
+    ).toEqual([
+      { nameZh: 'Day3 北宁餐厅', province: '北宁' },
+      { nameZh: 'Day3 水果店', province: '北宁' },
+      { nameZh: 'Day3 较远餐厅', province: '北宁' },
+    ]);
+    expect(
+      northNinh.body.data.items.every(
+        (item: { province: string }) => item.province === '北宁',
+      ),
+    ).toBe(true);
+
+    const hanoiNorthGiang = await request(app.getHttpServer())
+      .get('/api/v1/merchants/nearby')
+      .query({
+        province: '北江',
+        lat: 21.0285,
+        lng: 105.8542,
+        page: 1,
+      })
+      .expect(200);
+
+    expect(
+      hanoiNorthGiang.body.data.items.map(
+        (item: { nameZh: string; province: string }) => `${item.nameZh}:${item.province}`,
+      ),
+    ).toEqual([
+      'Day3 北江餐厅:北江',
+      'Day3 北江地址含北宁:北江',
+    ]);
+  });
+
   it('normalizes compatible province variants and returns an empty list when the selected province has no visible merchants', async () => {
     for (const province of ['Bac Ninh', 'Bắc Ninh', 'BAC_NINH']) {
       const response = await request(app.getHttpServer())

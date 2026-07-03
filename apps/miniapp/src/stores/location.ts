@@ -3,7 +3,13 @@ import { defineStore } from 'pinia';
 export type CityCode = 'Bac Giang' | 'Bac Ninh';
 export type CitySource = 'GPS' | 'DEFAULT' | 'MANUAL';
 
-function guessCityByLocation(latitude: number, longitude: number): CityCode {
+function guessCityByLocation(
+  latitude: number,
+  longitude: number,
+): CityCode | null {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (longitude < 105.95 || longitude > 106.45) return null;
+  if (latitude < 20.95 || latitude > 21.45) return null;
   if (latitude >= 21.2) return 'Bac Giang';
   if (latitude <= 21.18) return 'Bac Ninh';
   if (longitude >= 106.08) return 'Bac Giang';
@@ -13,12 +19,19 @@ function guessCityByLocation(latitude: number, longitude: number): CityCode {
 export const useLocationStore = defineStore('location', {
   state: () => ({
     city: 'Bac Giang' as CityCode,
+    detectedCity: null as CityCode | null,
     source: 'DEFAULT' as CitySource,
     latitude: null as number | null,
     longitude: null as number | null,
     bootstrapped: false,
     loading: false,
   }),
+  getters: {
+    currentProvince(state): CityCode | null {
+      if (state.source === 'MANUAL') return state.city;
+      return state.detectedCity;
+    },
+  },
   actions: {
     async bootstrapCity(force = false) {
       if (this.loading) return this.city;
@@ -35,13 +48,24 @@ export const useLocationStore = defineStore('location', {
           });
           this.latitude = position.latitude;
           this.longitude = position.longitude;
-          this.city = guessCityByLocation(position.latitude, position.longitude);
-          this.source = 'GPS';
+          this.detectedCity = guessCityByLocation(position.latitude, position.longitude);
+          if (this.source !== 'MANUAL') {
+            if (this.detectedCity) {
+              this.city = this.detectedCity;
+              this.source = 'GPS';
+            } else {
+              this.city = 'Bac Giang';
+              this.source = 'DEFAULT';
+            }
+          }
         } catch {
           this.latitude = null;
           this.longitude = null;
-          this.city = 'Bac Giang';
-          this.source = 'DEFAULT';
+          this.detectedCity = null;
+          if (this.source !== 'MANUAL') {
+            this.city = 'Bac Giang';
+            this.source = 'DEFAULT';
+          }
         }
         this.bootstrapped = true;
         return this.city;
@@ -51,8 +75,6 @@ export const useLocationStore = defineStore('location', {
     },
     setCity(city: CityCode) {
       this.city = city;
-      this.latitude = null;
-      this.longitude = null;
       this.source = 'MANUAL';
       this.bootstrapped = true;
     },

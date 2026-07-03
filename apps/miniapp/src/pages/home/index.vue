@@ -32,7 +32,9 @@ const activeFilters = ref<FilterOption[]>([]);
 const filterDraft = ref<FilterOption[]>([]);
 const sortSheetVisible = ref(false);
 const filterSheetVisible = ref(false);
+const merchantListMode = ref<'province' | 'nearby'>('province');
 const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
+const currentProvince = computed(() => locationStore.currentProvince);
 
 const cityIndex = computed({
   get: () => {
@@ -160,17 +162,32 @@ async function refreshHome(forceRelocate: boolean) {
     console.log('[home] selected city', locationStore.city);
     const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value;
     console.log('[home] resolved city', resolvedCity);
-    await loadByCity(resolvedCity);
+    await loadByCity(resolvedCity, { mode: 'province' });
   } catch {
-    await loadByCity(normalizedCity.value);
+    await loadByCity(normalizedCity.value, { mode: 'province' });
   }
 }
 
-async function loadByCity(city: 'Bac Giang' | 'Bac Ninh') {
+async function loadByCity(
+  city: 'Bac Giang' | 'Bac Ninh',
+  options?: { mode?: 'province' | 'nearby'; useLocation?: boolean },
+) {
   const seq = ++requestSeq.value;
   loading.value = true;
   merchants.value = [];
-  const query = { province: provinceForQuery(city), page: 1 };
+  merchantListMode.value = options?.mode ?? 'province';
+  const query: Parameters<typeof getNearbyMerchants>[0] = {
+    province: provinceForQuery(city),
+    page: 1,
+  };
+  if (
+    options?.useLocation
+    && Number.isFinite(locationStore.latitude)
+    && Number.isFinite(locationStore.longitude)
+  ) {
+    query.lat = Number(locationStore.latitude);
+    query.lng = Number(locationStore.longitude);
+  }
   console.log('[home] merchant query', query);
   try {
     const result = await getNearbyMerchants(query);
@@ -194,18 +211,27 @@ async function changeCity(event: { detail: { value: string } }) {
   const city = cities.value[Number(event.detail.value)]?.value;
   if (city === 'Bac Giang' || city === 'Bac Ninh') {
     locationStore.setCity(city);
-    await loadByCity(city);
+    await loadByCity(city, { mode: 'province' });
   }
 }
 
 async function openNearbyMerchants() {
+  const selectedProvince = currentProvince.value;
+  if (!selectedProvince) {
+    uni.showModal({
+      title: t('homeNearbyRestaurants'),
+      content: t('homeNearbyProvinceSelectionRequired'),
+      showCancel: false,
+      confirmText: t('gotIt'),
+    });
+    return;
+  }
+
   try {
-    const locateResult = await locationStore.relocate();
-    console.log('[home] locate result', locateResult);
+    await locationStore.relocate();
     console.log('[home] selected city', locationStore.city);
-    const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value || 'Bac Giang';
-    console.log('[home] resolved city', resolvedCity);
-    await loadByCity(resolvedCity);
+    sortOption.value = 'distance';
+    await loadByCity(selectedProvince, { mode: 'nearby', useLocation: true });
     uni.pageScrollTo({
       selector: '#nearby-restaurants',
       duration: 280,
@@ -346,7 +372,7 @@ function normalizeCityText(value: string) {
       <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
         <view class="city">
           <text class="location-dot"></text>
-          <text class="city-label">{{ cities[cityIndex]?.label }}</text>
+          <text class="city-label">{{ currentCityLabel }}</text>
           <text class="city-arrow">⌄</text>
         </view>
       </picker>
@@ -421,7 +447,9 @@ function normalizeCityText(value: string) {
     <view class="merchant-panel" :key="locationStore.city">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!merchants.length" class="empty">
-        <text class="empty-title">{{ t('homeProvinceEmptyTitle') }}</text>
+        <text class="empty-title">
+          {{ merchantListMode === 'nearby' ? t('homeNearbyProvinceEmptyTitle') : t('homeProvinceEmptyTitle') }}
+        </text>
         <text class="empty-copy">{{ t('homeProvinceEmptyHint') }}</text>
       </view>
       <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
