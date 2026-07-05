@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia';
 
-export type CityCode = 'Bac Giang' | 'Bac Ninh';
+/**
+ * NOTE:
+ * Bac Giang / Bac Ninh are BUSINESS REGIONS, not administrative provinces.
+ * This system does NOT use real-world administrative boundaries.
+ * GPS is only used to map user location into operational regions.
+ */
+export type OperationalRegionCode = 'Bac Giang' | 'Bac Ninh';
+export type RegionCode = OperationalRegionCode;
+// Backward-compatible alias used by existing miniapp UI bindings.
+export type CityCode = OperationalRegionCode;
 export type CitySource = 'GPS' | 'DEFAULT' | 'MANUAL';
 export type LocationStatus =
   | 'IDLE'
@@ -11,8 +20,8 @@ export type LocationStatus =
   | 'FAILED';
 
 export type LocationSnapshot = {
-  city: CityCode;
-  detectedCity: CityCode | null;
+  regionCode: RegionCode;
+  detectedRegion: OperationalRegionCode | null;
   latitude: number | null;
   longitude: number | null;
   status: LocationStatus;
@@ -66,7 +75,9 @@ export function guessCityByLocation(
 
 export const useLocationStore = defineStore('location', {
   state: () => ({
+    // UI-selected region code for homepage browsing.
     city: 'Bac Giang' as CityCode,
+    // GPS-mapped operational region used by nearby mode only.
     detectedCity: null as CityCode | null,
     source: 'DEFAULT' as CitySource,
     status: 'IDLE' as LocationStatus,
@@ -76,6 +87,10 @@ export const useLocationStore = defineStore('location', {
     loading: false,
   }),
   getters: {
+    currentOperationalRegion(state): OperationalRegionCode | null {
+      if (state.source === 'MANUAL') return state.city;
+      return state.detectedCity;
+    },
     currentProvince(state): CityCode | null {
       if (state.source === 'MANUAL') return state.city;
       return state.detectedCity;
@@ -86,7 +101,7 @@ export const useLocationStore = defineStore('location', {
       if (this.loading) return this.city;
       if (this.bootstrapped && !force) return this.city;
       const snapshot = await this.resolveLocation(force);
-      return snapshot.city;
+      return snapshot.regionCode;
     },
     setCity(city: CityCode) {
       this.city = city;
@@ -118,17 +133,17 @@ export const useLocationStore = defineStore('location', {
 
           this.latitude = position.latitude;
           this.longitude = position.longitude;
-          this.detectedCity = guessCityByLocation(position.latitude, position.longitude);
-          this.status = this.detectedCity
+          const detectedRegion = guessCityByLocation(position.latitude, position.longitude);
+          this.detectedCity = detectedRegion;
+          this.status = detectedRegion
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
 
           if (this.source !== 'MANUAL') {
-            if (this.detectedCity) {
-              this.city = this.detectedCity;
+            if (detectedRegion) {
+              this.city = detectedRegion;
               this.source = 'GPS';
             } else {
-              this.city = 'Bac Giang';
               this.source = 'DEFAULT';
             }
           }
@@ -140,7 +155,6 @@ export const useLocationStore = defineStore('location', {
             ? 'PERMISSION_DENIED'
             : 'FAILED';
           if (this.source !== 'MANUAL') {
-            this.city = 'Bac Giang';
             this.source = 'DEFAULT';
           }
         }
@@ -153,8 +167,8 @@ export const useLocationStore = defineStore('location', {
     },
     snapshot(): LocationSnapshot {
       return {
-        city: this.city,
-        detectedCity: this.detectedCity,
+        regionCode: this.city,
+        detectedRegion: this.detectedCity,
         latitude: this.latitude,
         longitude: this.longitude,
         status: this.status,

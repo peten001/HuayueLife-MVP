@@ -39,11 +39,11 @@ const merchantListMode = ref<
   | 'nearbyPermissionDenied'
   | 'nearbyFailed'
 >('province');
-const normalizedCity = computed(() => resolveCityCode(locationStore.city) || 'Bac Giang');
+const normalizedRegionCode = computed(() => resolveRegionCode(locationStore.city) || 'Bac Giang');
 
 const cityIndex = computed({
   get: () => {
-    const index = cities.value.findIndex((city) => city.value === normalizedCity.value);
+    const index = cities.value.findIndex((city) => city.value === normalizedRegionCode.value);
     return index >= 0 ? index : 0;
   },
   set: (value: number) => {
@@ -54,8 +54,8 @@ const cityIndex = computed({
   },
 });
 
-const currentCityLabel = computed(
-  () => cities.value.find((city) => city.value === normalizedCity.value)?.label || normalizedCity.value,
+const currentRegionLabel = computed(
+  () => cities.value.find((city) => city.value === normalizedRegionCode.value)?.label || normalizedRegionCode.value,
 );
 
 const foodCategories = computed<Array<{
@@ -160,21 +160,22 @@ onShow(() => {
 
 async function refreshHome(forceRelocate: boolean) {
   try {
-    const locateResult = forceRelocate
-      ? await locationStore.relocate()
+    const regionSnapshot = forceRelocate ? await locationStore.relocate() : null;
+    const bootstrapRegionCode = forceRelocate
+      ? regionSnapshot?.regionCode
       : await locationStore.bootstrapCity();
-    console.log('[home] locate result', locateResult);
-    console.log('[home] selected city', locationStore.city);
-    const resolvedCity = resolveCityCode(locateResult) || normalizedCity.value;
-    console.log('[home] resolved city', resolvedCity);
-    await loadByCity(resolvedCity, { mode: 'province' });
+    console.log('[home] region snapshot', regionSnapshot);
+    console.log('[home] selected region code', locationStore.city);
+    const resolvedRegionCode = resolveRegionCode(bootstrapRegionCode) || normalizedRegionCode.value;
+    console.log('[home] resolved region code', resolvedRegionCode);
+    await loadByRegionCode(resolvedRegionCode, { mode: 'province' });
   } catch {
-    await loadByCity(normalizedCity.value, { mode: 'province' });
+    await loadByRegionCode(normalizedRegionCode.value, { mode: 'province' });
   }
 }
 
-async function loadByCity(
-  city: 'Bac Giang' | 'Bac Ninh',
+async function loadByRegionCode(
+  regionCode: 'Bac Giang' | 'Bac Ninh',
   options?: { mode?: 'province' | 'nearby'; useLocation?: boolean },
 ) {
   const seq = ++requestSeq.value;
@@ -182,7 +183,7 @@ async function loadByCity(
   merchants.value = [];
   merchantListMode.value = options?.mode ?? 'province';
   const query: Parameters<typeof getNearbyMerchants>[0] = {
-    province: provinceForQuery(city),
+    province: operationalRegionForQuery(regionCode),
     page: 1,
   };
   if (
@@ -213,52 +214,57 @@ async function loadByCity(
 }
 
 async function changeCity(event: { detail: { value: string } }) {
-  const city = cities.value[Number(event.detail.value)]?.value;
-  if (city === 'Bac Giang' || city === 'Bac Ninh') {
-    locationStore.setCity(city);
-    await loadByCity(city, { mode: 'province' });
+  const regionCode = cities.value[Number(event.detail.value)]?.value;
+  if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
+    locationStore.setCity(regionCode);
+    await loadByRegionCode(regionCode, { mode: 'province' });
   }
 }
 
 async function openNearbyMerchants() {
   loading.value = true;
-  merchants.value = [];
-  merchantListMode.value = 'nearby';
+  clearNearbyState('nearby');
 
   try {
-    const locateResult = await locationStore.relocate();
-    console.log('[home] nearby locate result', locateResult);
+    const regionSnapshot = await locationStore.relocate();
+    console.log('[home] nearby region snapshot', regionSnapshot);
 
-    if (locateResult.status === 'LOCATED_SUPPORTED' && locateResult.detectedCity) {
-      merchantListMode.value = 'nearby';
-      sortOption.value = 'distance';
-      await loadByCity(locateResult.detectedCity, { mode: 'nearby', useLocation: true });
-      uni.pageScrollTo({
-        selector: '#nearby-restaurants',
-        duration: 280,
-      });
-      return;
-    }
-
-    if (locateResult.status === 'LOCATED_UNSUPPORTED') {
+    if (
+      regionSnapshot.status !== 'LOCATED_SUPPORTED'
+      || !regionSnapshot.detectedRegion
+    ) {
       loading.value = false;
-      merchantListMode.value = 'nearbyUnsupported';
+      if (regionSnapshot.status === 'LOCATED_UNSUPPORTED') {
+        clearNearbyState('nearbyUnsupported');
+        return;
+      }
+      if (regionSnapshot.status === 'PERMISSION_DENIED') {
+        clearNearbyState('nearbyPermissionDenied');
+        return;
+      }
+      clearNearbyState('nearbyFailed');
       return;
     }
 
-    if (locateResult.status === 'PERMISSION_DENIED') {
-      loading.value = false;
-      merchantListMode.value = 'nearbyPermissionDenied';
-      return;
-    }
-
-    loading.value = false;
-    merchantListMode.value = 'nearbyFailed';
+    merchantListMode.value = 'nearby';
+    sortOption.value = 'distance';
+    await loadByRegionCode(regionSnapshot.detectedRegion, { mode: 'nearby', useLocation: true });
+    uni.pageScrollTo({
+      selector: '#nearby-restaurants',
+      duration: 280,
+    });
+    return;
   } catch {
     loading.value = false;
-    merchants.value = [];
-    merchantListMode.value = 'nearbyFailed';
+    clearNearbyState('nearbyFailed');
   }
+}
+
+function clearNearbyState(
+  mode: 'nearby' | 'nearbyUnsupported' | 'nearbyPermissionDenied' | 'nearbyFailed',
+) {
+  merchants.value = [];
+  merchantListMode.value = mode;
 }
 
 function emptyStateTitle() {
@@ -392,11 +398,11 @@ function normalizeHomepageCategoryKeys(keys: string[]) {
   );
 }
 
-function provinceForQuery(city: 'Bac Giang' | 'Bac Ninh') {
-  return city === 'Bac Ninh' ? '北宁' : '北江';
+function operationalRegionForQuery(regionCode: 'Bac Giang' | 'Bac Ninh') {
+  return regionCode === 'Bac Ninh' ? '北宁' : '北江';
 }
 
-function resolveCityCode(value: unknown) {
+function resolveRegionCode(value: unknown) {
   const normalized = normalizeCityText(String(value ?? ''));
   if (normalized.includes('bacgiang') || normalized.includes('北江')) return 'Bac Giang';
   if (normalized.includes('bacninh') || normalized.includes('北宁')) return 'Bac Ninh';
@@ -420,7 +426,7 @@ function normalizeCityText(value: string) {
       <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
         <view class="city">
           <text class="location-dot"></text>
-          <text class="city-label">{{ currentCityLabel }}</text>
+          <text class="city-label">{{ currentRegionLabel }}</text>
           <text class="city-arrow">⌄</text>
         </view>
       </picker>
