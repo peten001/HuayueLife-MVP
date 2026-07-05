@@ -1110,7 +1110,6 @@ export function getCurrentLocale() {
 export function setCurrentLocale(next: Locale) {
   locale.value = next;
   saveLocale(next);
-  syncTabBar();
 }
 
 export function useI18n() {
@@ -1132,24 +1131,6 @@ export function usePageTitle(titleGetter: () => string) {
   watchEffect(() => {
     uni.setNavigationBarTitle({ title: titleGetter() });
   });
-}
-
-export function syncTabBar() {
-  const { t } = useI18n();
-  const items = [
-    ['homeTab', 0],
-    ['favoritesTab', 1],
-    ['messagesTab', 2],
-    ['profileTab', 3],
-  ] as const;
-
-  for (const [key, index] of items) {
-    try {
-      uni.setTabBarItem({ index, text: t(key) });
-    } catch {
-      // no-op for environments without a tab bar
-    }
-  }
 }
 
 export function localeLabel(current = locale.value) {

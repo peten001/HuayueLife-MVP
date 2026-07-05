@@ -8,7 +8,6 @@ import { defineStore } from 'pinia';
  */
 export type OperationalRegionCode = 'Bac Giang' | 'Bac Ninh';
 export type RegionCode = OperationalRegionCode;
-// Backward-compatible alias used by existing miniapp UI bindings.
 export type CityCode = OperationalRegionCode;
 export type CitySource = 'GPS' | 'MANUAL' | 'NONE';
 export type LocationStatus =
@@ -20,8 +19,7 @@ export type LocationStatus =
   | 'FAILED';
 
 export type LocationSnapshot = {
-  regionCode: RegionCode | null;
-  detectedRegion: OperationalRegionCode | null;
+  operationalRegion: OperationalRegionCode | null;
   latitude: number | null;
   longitude: number | null;
   status: LocationStatus;
@@ -75,10 +73,7 @@ export function guessCityByLocation(
 
 export const useLocationStore = defineStore('location', {
   state: () => ({
-    // UI-selected region code for homepage browsing.
-    city: 'Bac Giang' as CityCode,
-    // GPS-mapped operational region used by nearby mode only.
-    detectedCity: null as CityCode | null,
+    operationalRegion: null as OperationalRegionCode | null,
     source: 'NONE' as CitySource,
     status: 'IDLE' as LocationStatus,
     latitude: null as number | null,
@@ -88,26 +83,21 @@ export const useLocationStore = defineStore('location', {
   }),
   getters: {
     currentOperationalRegion(state): OperationalRegionCode | null {
-      return state.detectedCity;
+      return state.operationalRegion;
     },
-    currentProvince(state): CityCode | null {
-      return state.city ?? state.detectedCity;
+    // Legacy read-only alias for existing UI text rendering.
+    city(state): CityCode | null {
+      return state.operationalRegion;
     },
   },
   actions: {
-    async bootstrapCity(force = false) {
-      if (this.loading) return this.city;
-      if (this.bootstrapped && !force) return this.city;
-      this.bootstrapped = true;
-      return this.city;
-    },
     setCity(city: CityCode) {
-      this.city = city;
+      this.operationalRegion = city;
       this.source = 'MANUAL';
       this.bootstrapped = true;
     },
     async relocate() {
-      return this.resolveLocation(true);
+      return this.captureLocation(false);
     },
     async resolveLocation(force = false): Promise<LocationSnapshot> {
       if (this.loading) {
@@ -117,9 +107,21 @@ export const useLocationStore = defineStore('location', {
         return this.snapshot();
       }
 
+      return this.captureLocation(true);
+    },
+    async captureLocation(persist: boolean): Promise<LocationSnapshot> {
+
       this.loading = true;
-      this.status = 'LOCATING';
       try {
+        let latitude: number | null = null;
+        let longitude: number | null = null;
+        let operationalRegion: OperationalRegionCode | null = null;
+        let status: LocationStatus = 'LOCATING';
+
+        if (persist) {
+          this.status = 'LOCATING';
+        }
+
         try {
           const position = await new Promise<UniApp.GetLocationSuccess>((resolve, reject) => {
             uni.getLocation({
@@ -129,34 +131,56 @@ export const useLocationStore = defineStore('location', {
             });
           });
 
-          this.latitude = position.latitude;
-          this.longitude = position.longitude;
-          const detectedRegion = guessCityByLocation(position.latitude, position.longitude);
-          this.detectedCity = detectedRegion;
-          this.status = detectedRegion
+          latitude = position.latitude;
+          longitude = position.longitude;
+          operationalRegion = guessCityByLocation(position.latitude, position.longitude);
+          status = operationalRegion
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
-          this.source = detectedRegion ? 'GPS' : (this.source === 'MANUAL' ? 'MANUAL' : 'NONE');
+          if (persist) {
+            this.latitude = latitude;
+            this.longitude = longitude;
+            this.status = status;
+            this.operationalRegion = operationalRegion;
+            this.source = operationalRegion ? 'GPS' : 'NONE';
+          }
         } catch (error) {
-          this.latitude = null;
-          this.longitude = null;
-          this.detectedCity = null;
-          this.status = isPermissionDeniedError(error)
+          latitude = null;
+          longitude = null;
+          operationalRegion = null;
+          status = isPermissionDeniedError(error)
             ? 'PERMISSION_DENIED'
             : 'FAILED';
-          this.source = this.source === 'MANUAL' ? 'MANUAL' : 'NONE';
+          if (persist) {
+            this.latitude = null;
+            this.longitude = null;
+            this.status = status;
+            this.operationalRegion = null;
+            this.source = 'NONE';
+          }
         }
 
-        this.bootstrapped = true;
-        return this.snapshot();
+        if (persist) {
+          this.bootstrapped = true;
+          return this.snapshot();
+        }
+
+        return {
+          operationalRegion: status === 'LOCATED_SUPPORTED'
+            ? operationalRegion
+            : null,
+          latitude,
+          longitude,
+          status,
+          source: status === 'LOCATED_SUPPORTED' ? 'GPS' : 'NONE',
+        };
       } finally {
         this.loading = false;
       }
     },
     snapshot(): LocationSnapshot {
       return {
-        regionCode: this.city,
-        detectedRegion: this.detectedCity,
+        operationalRegion: this.operationalRegion,
         latitude: this.latitude,
         longitude: this.longitude,
         status: this.status,

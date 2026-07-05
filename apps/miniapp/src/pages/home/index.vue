@@ -34,13 +34,16 @@ const sortSheetVisible = ref(false);
 const filterSheetVisible = ref(false);
 const merchantListMode = ref<
   'province'
+  | 'homeUnsupported'
+  | 'homePermissionDenied'
+  | 'homeFailed'
   | 'nearby'
   | 'nearbyUnsupported'
   | 'nearbyPermissionDenied'
   | 'nearbyFailed'
 >('province');
 const normalizedRegionCode = computed(() =>
-  resolveRegionCode(locationStore.city ?? '') || 'Bac Giang',
+  resolveRegionCode(locationStore.operationalRegion ?? ''),
 );
 
 const cityIndex = computed({
@@ -156,19 +159,58 @@ onShow(() => {
 });
 
 async function refreshHome(forceRelocate: boolean) {
-  if (forceRelocate) {
-    await locationStore.bootstrapCity(true);
-  } else {
-    await locationStore.bootstrapCity(false);
+  if (locationStore.source === 'MANUAL' && locationStore.operationalRegion) {
+    sortOption.value = 'smart';
+    await loadByRegionCode(locationStore.operationalRegion, { mode: 'province' });
+    return;
   }
-  const regionCode = normalizedRegionCode.value === 'Bac Ninh' ? 'Bac Ninh' : 'Bac Giang';
-  sortOption.value = 'smart';
-  await loadByRegionCode(regionCode, { mode: 'province' });
+
+  loading.value = true;
+  merchants.value = [];
+  merchantListMode.value = 'province';
+  try {
+    const snapshot = forceRelocate
+      ? await locationStore.relocate()
+      : await locationStore.resolveLocation();
+    console.log('[home] region snapshot', snapshot);
+
+    if (
+      snapshot.status !== 'LOCATED_SUPPORTED'
+      || !snapshot.operationalRegion
+    ) {
+      loading.value = false;
+      if (snapshot.status === 'LOCATED_UNSUPPORTED') {
+        clearHomeState('homeUnsupported');
+        return;
+      }
+      if (snapshot.status === 'PERMISSION_DENIED') {
+        clearHomeState('homePermissionDenied');
+        return;
+      }
+      clearHomeState('homeFailed');
+      return;
+    }
+    sortOption.value = 'distance';
+    await loadByRegionCode(snapshot.operationalRegion, {
+      mode: 'province',
+      useLocation: true,
+      latitude: snapshot.latitude,
+      longitude: snapshot.longitude,
+    });
+  } catch {
+    loading.value = false;
+    clearHomeState('homeFailed');
+  }
 }
 
 async function loadByRegionCode(
   regionCode: 'Bac Giang' | 'Bac Ninh',
-  options?: { mode?: 'province' | 'nearby'; useLocation?: boolean },
+  options?: {
+    mode?: 'province' | 'nearby';
+    useLocation?: boolean;
+    latitude?: number | null;
+    longitude?: number | null;
+  },
 ) {
   const seq = ++requestSeq.value;
   loading.value = true;
@@ -180,11 +222,11 @@ async function loadByRegionCode(
   };
   if (
     options?.useLocation
-    && Number.isFinite(locationStore.latitude)
-    && Number.isFinite(locationStore.longitude)
+    && Number.isFinite(options.latitude)
+    && Number.isFinite(options.longitude)
   ) {
-    query.lat = Number(locationStore.latitude);
-    query.lng = Number(locationStore.longitude);
+    query.lat = Number(options.latitude);
+    query.lng = Number(options.longitude);
   }
   console.log('[home] merchant query', query);
   try {
@@ -209,38 +251,48 @@ async function changeCity(event: { detail: { value: string } }) {
   const regionCode = cities.value[Number(event.detail.value)]?.value;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
     locationStore.setCity(regionCode);
+    sortOption.value = 'smart';
     await loadByRegionCode(regionCode, { mode: 'province' });
   }
 }
 
 async function openNearbyMerchants() {
   loading.value = true;
-  clearNearbyState('nearby');
+  merchants.value = [];
+  merchantListMode.value = 'nearby';
 
   try {
-    const regionSnapshot = await locationStore.relocate();
-    console.log('[home] nearby region snapshot', regionSnapshot);
+    const snapshot = await locationStore.relocate();
+    console.log('[home] nearby region snapshot', snapshot);
 
     if (
-      regionSnapshot.status !== 'LOCATED_SUPPORTED'
-      || !regionSnapshot.detectedRegion
+      snapshot.status !== 'LOCATED_SUPPORTED'
+      || !snapshot.operationalRegion
     ) {
       loading.value = false;
-      if (regionSnapshot.status === 'LOCATED_UNSUPPORTED') {
-        clearNearbyState('nearbyUnsupported');
+      if (snapshot.status === 'LOCATED_UNSUPPORTED') {
+        merchants.value = [];
+        merchantListMode.value = 'nearbyUnsupported';
         return;
       }
-      if (regionSnapshot.status === 'PERMISSION_DENIED') {
-        clearNearbyState('nearbyPermissionDenied');
+      if (snapshot.status === 'PERMISSION_DENIED') {
+        merchants.value = [];
+        merchantListMode.value = 'nearbyPermissionDenied';
         return;
       }
-      clearNearbyState('nearbyFailed');
+      merchants.value = [];
+      merchantListMode.value = 'nearbyFailed';
       return;
     }
 
     merchantListMode.value = 'nearby';
     sortOption.value = 'distance';
-    await loadByRegionCode(regionSnapshot.detectedRegion, { mode: 'nearby', useLocation: true });
+    await loadByRegionCode(snapshot.operationalRegion, {
+      mode: 'nearby',
+      useLocation: true,
+      latitude: snapshot.latitude,
+      longitude: snapshot.longitude,
+    });
     uni.pageScrollTo({
       selector: '#nearby-restaurants',
       duration: 280,
@@ -248,18 +300,28 @@ async function openNearbyMerchants() {
     return;
   } catch {
     loading.value = false;
-    clearNearbyState('nearbyFailed');
+    merchants.value = [];
+    merchantListMode.value = 'nearbyFailed';
   }
 }
 
-function clearNearbyState(
-  mode: 'nearby' | 'nearbyUnsupported' | 'nearbyPermissionDenied' | 'nearbyFailed',
+function clearHomeState(
+  mode: 'homeUnsupported' | 'homePermissionDenied' | 'homeFailed',
 ) {
   merchants.value = [];
   merchantListMode.value = mode;
 }
 
 function emptyStateTitle() {
+  if (merchantListMode.value === 'homeUnsupported') {
+    return t('homeNearbyUnsupportedTitle');
+  }
+  if (merchantListMode.value === 'homePermissionDenied') {
+    return t('homeNearbyLocationPermissionRequired');
+  }
+  if (merchantListMode.value === 'homeFailed') {
+    return t('homeNearbyLocationFailed');
+  }
   if (merchantListMode.value === 'nearbyUnsupported') {
     return t('homeNearbyUnsupportedTitle');
   }
@@ -276,6 +338,15 @@ function emptyStateTitle() {
 }
 
 function emptyStateCopy() {
+  if (merchantListMode.value === 'homeUnsupported') {
+    return '';
+  }
+  if (merchantListMode.value === 'homePermissionDenied') {
+    return '';
+  }
+  if (merchantListMode.value === 'homeFailed') {
+    return '';
+  }
   if (merchantListMode.value === 'nearbyUnsupported') {
     return '';
   }
@@ -490,7 +561,7 @@ function normalizeCityText(value: string) {
       </view>
     </view>
 
-    <view class="merchant-panel" :key="locationStore.detectedCity || 'unsupported'">
+    <view class="merchant-panel" :key="locationStore.operationalRegion || 'unsupported'">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!merchants.length" class="empty">
         <text class="empty-title">{{ emptyStateTitle() }}</text>
