@@ -76,7 +76,7 @@ export function guessCityByLocation(
 export const useLocationStore = defineStore('location', {
   state: () => ({
     // UI-selected region code for homepage browsing.
-    city: null as CityCode | null,
+    city: 'Bac Giang' as CityCode,
     // GPS-mapped operational region used by nearby mode only.
     detectedCity: null as CityCode | null,
     source: 'NONE' as CitySource,
@@ -91,15 +91,15 @@ export const useLocationStore = defineStore('location', {
       return state.detectedCity;
     },
     currentProvince(state): CityCode | null {
-      return state.detectedCity;
+      return state.city ?? state.detectedCity;
     },
   },
   actions: {
     async bootstrapCity(force = false) {
-      if (this.loading) return this.detectedCity ?? this.city;
-      if (this.bootstrapped && !force) return this.detectedCity ?? this.city;
-      const snapshot = await this.resolveLocation(force);
-      return snapshot.regionCode;
+      if (this.loading) return this.city;
+      if (this.bootstrapped && !force) return this.city;
+      this.bootstrapped = true;
+      return this.city;
     },
     setCity(city: CityCode) {
       this.city = city;
@@ -136,7 +136,7 @@ export const useLocationStore = defineStore('location', {
           this.status = detectedRegion
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
-          this.source = detectedRegion ? 'GPS' : (this.city ? 'MANUAL' : 'NONE');
+          this.source = detectedRegion ? 'GPS' : (this.source === 'MANUAL' ? 'MANUAL' : 'NONE');
         } catch (error) {
           this.latitude = null;
           this.longitude = null;
@@ -144,7 +144,7 @@ export const useLocationStore = defineStore('location', {
           this.status = isPermissionDeniedError(error)
             ? 'PERMISSION_DENIED'
             : 'FAILED';
-          this.source = this.city ? 'MANUAL' : 'NONE';
+          this.source = this.source === 'MANUAL' ? 'MANUAL' : 'NONE';
         }
 
         this.bootstrapped = true;
@@ -155,7 +155,7 @@ export const useLocationStore = defineStore('location', {
     },
     snapshot(): LocationSnapshot {
       return {
-        regionCode: this.detectedCity ?? this.city,
+        regionCode: this.city,
         detectedRegion: this.detectedCity,
         latitude: this.latitude,
         longitude: this.longitude,

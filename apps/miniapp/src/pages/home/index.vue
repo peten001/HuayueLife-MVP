@@ -40,7 +40,7 @@ const merchantListMode = ref<
   | 'nearbyFailed'
 >('province');
 const normalizedRegionCode = computed(() =>
-  resolveRegionCode(locationStore.detectedCity ?? ''),
+  resolveRegionCode(locationStore.city ?? '') || 'Bac Giang',
 );
 
 const cityIndex = computed({
@@ -156,35 +156,14 @@ onShow(() => {
 });
 
 async function refreshHome(forceRelocate: boolean) {
-  loading.value = true;
-  clearNearbyState('nearby');
-  try {
-    const regionSnapshot = forceRelocate
-      ? await locationStore.relocate()
-      : await locationStore.resolveLocation();
-    console.log('[home] region snapshot', regionSnapshot);
-    if (
-      regionSnapshot.status !== 'LOCATED_SUPPORTED'
-      || !regionSnapshot.detectedRegion
-    ) {
-      loading.value = false;
-      if (regionSnapshot.status === 'LOCATED_UNSUPPORTED') {
-        clearNearbyState('nearbyUnsupported');
-        return;
-      }
-      if (regionSnapshot.status === 'PERMISSION_DENIED') {
-        clearNearbyState('nearbyPermissionDenied');
-        return;
-      }
-      clearNearbyState('nearbyFailed');
-      return;
-    }
-    sortOption.value = 'distance';
-    await loadByRegionCode(regionSnapshot.detectedRegion, { mode: 'nearby', useLocation: true });
-  } catch {
-    loading.value = false;
-    clearNearbyState('nearbyFailed');
+  if (forceRelocate) {
+    await locationStore.bootstrapCity(true);
+  } else {
+    await locationStore.bootstrapCity(false);
   }
+  const regionCode = normalizedRegionCode.value === 'Bac Ninh' ? 'Bac Ninh' : 'Bac Giang';
+  sortOption.value = 'smart';
+  await loadByRegionCode(regionCode, { mode: 'province' });
 }
 
 async function loadByRegionCode(
@@ -229,7 +208,8 @@ async function loadByRegionCode(
 async function changeCity(event: { detail: { value: string } }) {
   const regionCode = cities.value[Number(event.detail.value)]?.value;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
-    await refreshHome(true);
+    locationStore.setCity(regionCode);
+    await loadByRegionCode(regionCode, { mode: 'province' });
   }
 }
 
