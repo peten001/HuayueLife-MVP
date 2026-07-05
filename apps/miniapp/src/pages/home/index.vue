@@ -39,23 +39,20 @@ const merchantListMode = ref<
   | 'nearbyPermissionDenied'
   | 'nearbyFailed'
 >('province');
-const normalizedRegionCode = computed(() => resolveRegionCode(locationStore.city) || 'Bac Giang');
+const normalizedRegionCode = computed(() =>
+  resolveRegionCode(locationStore.detectedCity ?? ''),
+);
 
 const cityIndex = computed({
   get: () => {
     const index = cities.value.findIndex((city) => city.value === normalizedRegionCode.value);
     return index >= 0 ? index : 0;
   },
-  set: (value: number) => {
-    const city = cities.value[value]?.value;
-    if (city === 'Bac Giang' || city === 'Bac Ninh') {
-      locationStore.setCity(city);
-    }
-  },
+  set: () => {},
 });
 
 const currentRegionLabel = computed(
-  () => cities.value.find((city) => city.value === normalizedRegionCode.value)?.label || normalizedRegionCode.value,
+  () => cities.value.find((city) => city.value === normalizedRegionCode.value)?.label || '',
 );
 
 const foodCategories = computed<Array<{
@@ -159,18 +156,34 @@ onShow(() => {
 });
 
 async function refreshHome(forceRelocate: boolean) {
+  loading.value = true;
+  clearNearbyState('nearby');
   try {
-    const regionSnapshot = forceRelocate ? await locationStore.relocate() : null;
-    const bootstrapRegionCode = forceRelocate
-      ? regionSnapshot?.regionCode
-      : await locationStore.bootstrapCity();
+    const regionSnapshot = forceRelocate
+      ? await locationStore.relocate()
+      : await locationStore.resolveLocation();
     console.log('[home] region snapshot', regionSnapshot);
-    console.log('[home] selected region code', locationStore.city);
-    const resolvedRegionCode = resolveRegionCode(bootstrapRegionCode) || normalizedRegionCode.value;
-    console.log('[home] resolved region code', resolvedRegionCode);
-    await loadByRegionCode(resolvedRegionCode, { mode: 'province' });
+    if (
+      regionSnapshot.status !== 'LOCATED_SUPPORTED'
+      || !regionSnapshot.detectedRegion
+    ) {
+      loading.value = false;
+      if (regionSnapshot.status === 'LOCATED_UNSUPPORTED') {
+        clearNearbyState('nearbyUnsupported');
+        return;
+      }
+      if (regionSnapshot.status === 'PERMISSION_DENIED') {
+        clearNearbyState('nearbyPermissionDenied');
+        return;
+      }
+      clearNearbyState('nearbyFailed');
+      return;
+    }
+    sortOption.value = 'distance';
+    await loadByRegionCode(regionSnapshot.detectedRegion, { mode: 'nearby', useLocation: true });
   } catch {
-    await loadByRegionCode(normalizedRegionCode.value, { mode: 'province' });
+    loading.value = false;
+    clearNearbyState('nearbyFailed');
   }
 }
 
@@ -203,7 +216,7 @@ async function loadByRegionCode(
     if (seq !== requestSeq.value) return;
     merchants.value = rawList;
   } catch (error) {
-    console.warn('[home] loadByCity failed', error);
+    console.warn('[home] loadByRegionCode failed', error);
     if (seq !== requestSeq.value) return;
     merchants.value = [];
   } finally {
@@ -216,8 +229,7 @@ async function loadByRegionCode(
 async function changeCity(event: { detail: { value: string } }) {
   const regionCode = cities.value[Number(event.detail.value)]?.value;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
-    locationStore.setCity(regionCode);
-    await loadByRegionCode(regionCode, { mode: 'province' });
+    await refreshHome(true);
   }
 }
 
@@ -498,7 +510,7 @@ function normalizeCityText(value: string) {
       </view>
     </view>
 
-    <view class="merchant-panel" :key="locationStore.city">
+    <view class="merchant-panel" :key="locationStore.detectedCity || 'unsupported'">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!merchants.length" class="empty">
         <text class="empty-title">{{ emptyStateTitle() }}</text>

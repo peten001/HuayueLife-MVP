@@ -10,7 +10,7 @@ export type OperationalRegionCode = 'Bac Giang' | 'Bac Ninh';
 export type RegionCode = OperationalRegionCode;
 // Backward-compatible alias used by existing miniapp UI bindings.
 export type CityCode = OperationalRegionCode;
-export type CitySource = 'GPS' | 'DEFAULT' | 'MANUAL';
+export type CitySource = 'GPS' | 'MANUAL' | 'NONE';
 export type LocationStatus =
   | 'IDLE'
   | 'LOCATING'
@@ -20,7 +20,7 @@ export type LocationStatus =
   | 'FAILED';
 
 export type LocationSnapshot = {
-  regionCode: RegionCode;
+  regionCode: RegionCode | null;
   detectedRegion: OperationalRegionCode | null;
   latitude: number | null;
   longitude: number | null;
@@ -76,10 +76,10 @@ export function guessCityByLocation(
 export const useLocationStore = defineStore('location', {
   state: () => ({
     // UI-selected region code for homepage browsing.
-    city: 'Bac Giang' as CityCode,
+    city: null as CityCode | null,
     // GPS-mapped operational region used by nearby mode only.
     detectedCity: null as CityCode | null,
-    source: 'DEFAULT' as CitySource,
+    source: 'NONE' as CitySource,
     status: 'IDLE' as LocationStatus,
     latitude: null as number | null,
     longitude: null as number | null,
@@ -88,18 +88,16 @@ export const useLocationStore = defineStore('location', {
   }),
   getters: {
     currentOperationalRegion(state): OperationalRegionCode | null {
-      if (state.source === 'MANUAL') return state.city;
       return state.detectedCity;
     },
     currentProvince(state): CityCode | null {
-      if (state.source === 'MANUAL') return state.city;
       return state.detectedCity;
     },
   },
   actions: {
     async bootstrapCity(force = false) {
-      if (this.loading) return this.city;
-      if (this.bootstrapped && !force) return this.city;
+      if (this.loading) return this.detectedCity ?? this.city;
+      if (this.bootstrapped && !force) return this.detectedCity ?? this.city;
       const snapshot = await this.resolveLocation(force);
       return snapshot.regionCode;
     },
@@ -138,15 +136,7 @@ export const useLocationStore = defineStore('location', {
           this.status = detectedRegion
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
-
-          if (this.source !== 'MANUAL') {
-            if (detectedRegion) {
-              this.city = detectedRegion;
-              this.source = 'GPS';
-            } else {
-              this.source = 'DEFAULT';
-            }
-          }
+          this.source = detectedRegion ? 'GPS' : (this.city ? 'MANUAL' : 'NONE');
         } catch (error) {
           this.latitude = null;
           this.longitude = null;
@@ -154,9 +144,7 @@ export const useLocationStore = defineStore('location', {
           this.status = isPermissionDeniedError(error)
             ? 'PERMISSION_DENIED'
             : 'FAILED';
-          if (this.source !== 'MANUAL') {
-            this.source = 'DEFAULT';
-          }
+          this.source = this.city ? 'MANUAL' : 'NONE';
         }
 
         this.bootstrapped = true;
@@ -167,7 +155,7 @@ export const useLocationStore = defineStore('location', {
     },
     snapshot(): LocationSnapshot {
       return {
-        regionCode: this.city,
+        regionCode: this.detectedCity ?? this.city,
         detectedRegion: this.detectedCity,
         latitude: this.latitude,
         longitude: this.longitude,

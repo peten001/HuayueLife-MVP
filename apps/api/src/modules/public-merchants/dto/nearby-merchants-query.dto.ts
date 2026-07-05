@@ -9,7 +9,13 @@ import {
   Min,
 } from 'class-validator';
 
-const PROVINCE_QUERY_VALUES = [
+/**
+ * NOTE:
+ * Bac Giang / Bac Ninh are BUSINESS REGIONS, not administrative provinces.
+ * Public discovery accepts these legacy query names for compatibility, but the
+ * values are interpreted only as operational-region filters.
+ */
+const OPERATIONAL_REGION_QUERY_VALUES = [
   '北江',
   '北宁',
   'Bac Giang',
@@ -53,11 +59,11 @@ export class NearbyMerchantsQueryDto {
   page = 1;
 
   @IsOptional()
-  @IsIn(PROVINCE_QUERY_VALUES)
+  @IsIn(OPERATIONAL_REGION_QUERY_VALUES)
   city?: string;
 
   @IsOptional()
-  @IsIn(PROVINCE_QUERY_VALUES)
+  @IsIn(OPERATIONAL_REGION_QUERY_VALUES)
   province?: string;
 
   @IsOptional()

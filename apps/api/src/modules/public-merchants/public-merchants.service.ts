@@ -13,6 +13,15 @@ import {
 } from '../shared/homepage-category-keys';
 
 const PAGE_SIZE = 20;
+/**
+ * NOTE:
+ * Bac Giang / Bac Ninh are BUSINESS REGIONS, not administrative provinces.
+ * This system does NOT use real-world administrative boundaries.
+ * GPS is only used to map user location into operational regions.
+ *
+ * The database column is still named `province` for backward compatibility,
+ * but discovery logic must treat it as the single operational-region filter.
+ */
 type PublicMerchantRow = Merchant & {
   businessType?: {
     id: bigint;
@@ -54,7 +63,7 @@ type PublicMerchantRow = Merchant & {
   }>;
   categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>>;
 };
-const PROVINCE_ALIASES: Record<'北江' | '北宁', string[]> = {
+const OPERATIONAL_REGION_ALIASES: Record<'北江' | '北宁', string[]> = {
   北江: ['北江', 'Bac Giang', 'Bắc Giang', 'BAC_GIANG', 'bac giang', 'bắc giang'],
   北宁: ['北宁', 'Bac Ninh', 'Bắc Ninh', 'BAC_NINH', 'bac ninh', 'bắc ninh'],
 };
@@ -65,16 +74,24 @@ export class PublicMerchantsService {
 
   async nearby(query: NearbyMerchantsQueryDto) {
     console.log('[public-merchants] nearby query', query);
-    const selectedProvince = resolveSelectedProvince(query);
-    console.log('[public-merchants] selected province', selectedProvince);
+    const selectedOperationalRegion = resolveSelectedOperationalRegion(query);
+    console.log('[public-merchants] selected operational region', selectedOperationalRegion);
+
+    if (!selectedOperationalRegion) {
+      return {
+        items: [],
+        page: query.page,
+        pageSize: PAGE_SIZE,
+        total: 0,
+        locationMode: 'REGION_REQUIRED',
+      };
+    }
 
     const where: Prisma.MerchantWhereInput = {
       status: 'ACTIVE',
       isVisibleOnClient: true,
     };
-    if (selectedProvince) {
-      where.province = selectedProvince;
-    }
+    where.province = selectedOperationalRegion;
     if (query.businessTypeId) {
       where.businessTypeId = BigInt(query.businessTypeId);
     }
@@ -114,8 +131,7 @@ export class PublicMerchantsService {
 
     console.log('[public-merchants] raw merchants count', merchants.length);
     const hasUserLocation =
-      Boolean(selectedProvince)
-      && Number.isFinite(query.lat)
+      Number.isFinite(query.lat)
       && Number.isFinite(query.lng);
     const results = merchants
       .map((merchant) =>
@@ -427,34 +443,34 @@ function canShowMenu(merchant: PublicMerchantRow) {
   return Boolean(merchant.dineInEnabled || merchant.pickupEnabled || merchant.deliveryEnabled);
 }
 
-function resolveSelectedProvince(
+function resolveSelectedOperationalRegion(
   query: NearbyMerchantsQueryDto,
 ): '北江' | '北宁' | null {
-  const rawValue = query.province ?? query.city;
-  if (!rawValue) return null;
-  const normalized = normalizeProvinceInput(rawValue);
+  const rawOperationalRegion = query.province ?? query.city;
+  if (!rawOperationalRegion) return null;
+  const normalized = normalizeOperationalRegionInput(rawOperationalRegion);
   if (!normalized) {
-    throw new BadRequestException('Invalid province');
+    throw new BadRequestException('Invalid operational region');
   }
   return normalized;
 }
 
-function normalizeProvinceInput(value?: string) {
-  const normalizedValue = normalizeProvinceText(value);
+function normalizeOperationalRegionInput(value?: string) {
+  const normalizedValue = normalizeOperationalRegionText(value);
   if (!normalizedValue) return null;
-  for (const [province, aliases] of Object.entries(PROVINCE_ALIASES) as Array<
+  for (const [operationalRegion, aliases] of Object.entries(OPERATIONAL_REGION_ALIASES) as Array<
     ['北江' | '北宁', string[]]
   >) {
     if (
-      aliases.some((alias) => normalizeProvinceText(alias) === normalizedValue)
+      aliases.some((alias) => normalizeOperationalRegionText(alias) === normalizedValue)
     ) {
-      return province;
+      return operationalRegion;
     }
   }
   return null;
 }
 
-function normalizeProvinceText(value?: string) {
+function normalizeOperationalRegionText(value?: string) {
   return String(value || '')
     .trim()
     .normalize('NFD')

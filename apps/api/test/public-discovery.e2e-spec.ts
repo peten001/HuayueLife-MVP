@@ -153,28 +153,18 @@ describe('Public discovery and QR flow', () => {
     expect(profile.body.data.nickname).toBe('Day3 用户');
   });
 
-  it('keeps the current no-province behavior when only location is provided', async () => {
+  it('returns an empty list when region is not provided, even if location exists', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
       .query({ lat: 21.1788, lng: 106.0763, radiusKm: 5, page: 1 })
       .expect(200);
 
-    const day3Items = response.body.data.items.filter((item: { nameZh: string }) =>
-      item.nameZh.startsWith('Day3'),
-    );
-    expect(day3Items.map((item: { nameZh: string }) => item.nameZh)).toEqual([
-      'Day3 北江餐厅',
-      'Day3 北江地址含北宁',
-      'Day3 北宁餐厅',
-      'Day3 较远餐厅',
-      'Day3 水果店',
-    ]);
-    expect(
-      day3Items.every((item: { nameZh: string }) => item.nameZh !== 'Day3 停用餐厅'),
-    ).toBe(true);
+    expect(response.body.data.items).toEqual([]);
+    expect(response.body.data.total).toBe(0);
+    expect(response.body.data.locationMode).toBe('REGION_REQUIRED');
   });
 
-  it('keeps legacy city queries working and leaves no-province queries unchanged', async () => {
+  it('keeps legacy city queries working while blocking regionless requests', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
       .query({ city: '北江', page: 1 })
@@ -187,9 +177,11 @@ describe('Public discovery and QR flow', () => {
       ),
     ).toBe(true);
 
-    await request(app.getHttpServer())
+    const noRegion = await request(app.getHttpServer())
       .get('/api/v1/merchants/nearby')
       .expect(200);
+    expect(noRegion.body.data.items).toEqual([]);
+    expect(noRegion.body.data.total).toBe(0);
   });
 
   it('filters merchants strictly by province query and does not use address text fallback', async () => {
