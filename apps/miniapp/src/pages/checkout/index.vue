@@ -102,7 +102,7 @@ function buildOrderRequest(): OrderRequest {
   const contactPhone = form.contactPhone.trim();
   const contactName = form.contactName.trim();
   const customerRemark = form.customerRemark.trim();
-  if (!phonePattern.test(contactPhone)) {
+  if (requiresContactPhone() && !phonePattern.test(contactPhone)) {
     throw new Error(
       checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number'),
     );
@@ -110,13 +110,15 @@ function buildOrderRequest(): OrderRequest {
   const request: OrderRequest = {
     merchantId: context.value.merchantId,
     orderType: context.value.orderType,
-    contactPhone,
   };
   if (context.value.orderType === 'DINE_IN' && context.value.tableToken?.trim()) {
     request.tableToken = context.value.tableToken.trim();
   }
   if (contactName) {
     request.contactName = contactName;
+  }
+  if (contactPhone) {
+    request.contactPhone = contactPhone;
   }
   if (deliveryAddress) {
     request.deliveryAddress = deliveryAddress;
@@ -133,7 +135,7 @@ function buildOrderRequest(): OrderRequest {
 
 async function refreshPreview() {
   const contactPhone = form.contactPhone.trim();
-  if (!phonePattern.test(contactPhone)) {
+  if (requiresContactPhone() && !phonePattern.test(contactPhone)) {
     message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
     preview.value = null;
     return;
@@ -258,7 +260,7 @@ async function submit() {
   }
 
   const contactPhone = form.contactPhone.trim();
-  if (!phonePattern.test(contactPhone)) {
+  if (requiresContactPhone() && !phonePattern.test(contactPhone)) {
     console.log('[checkout] submit blocked reason', 'invalid contactPhone');
     message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
     return;
@@ -411,7 +413,7 @@ function schedulePreview() {
   clearPreviewTimer();
   if (!context.value || !cartStore.cart) return;
   const contactPhone = form.contactPhone.trim();
-  if (!phonePattern.test(contactPhone)) {
+  if (requiresContactPhone() && !phonePattern.test(contactPhone)) {
     if (contactPhone) {
       message.value = checkoutText('请填写正确的联系电话', 'Vui lòng nhập số điện thoại hợp lệ', 'Please enter a valid phone number');
       preview.value = null;
@@ -432,6 +434,10 @@ function clearPreviewTimer() {
   if (!previewTimer) return;
   clearTimeout(previewTimer);
   previewTimer = null;
+}
+
+function requiresContactPhone() {
+  return context.value?.orderType === 'DELIVERY' || context.value?.orderType === 'PICKUP';
 }
 
 function resolveMapAddressText(result: UniApp.ChooseLocationSuccess) {

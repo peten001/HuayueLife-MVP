@@ -249,34 +249,59 @@ describe('Cart and order workflow', () => {
     expect(order.deliveryFeeVnd).toBe('0');
   });
 
-  it('validates delivery minimum, distance, and manual-address fallback', async () => {
-    await addItem(token, 'DELIVERY', productId, { quantity: 1 });
+  it('requires contact phone for PICKUP and DELIVERY, but not for DINE_IN', async () => {
+    await addItem(otherToken, 'PICKUP', productId, { quantity: 1 });
     await request(app.getHttpServer())
       .post('/api/v1/orders/preview')
-      .set('Authorization', `Bearer ${token}`)
-      .send(
-        orderPayload('DELIVERY', {
-          contactName: '配送用户',
-          contactPhone: '0922222222',
-          deliveryAddress: '北宁测试地址',
-        }),
-      )
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send(orderPayload('PICKUP', {
+        contactName: '自取用户',
+      }))
       .expect(400);
 
-    await addItem(token, 'DELIVERY', secondProductId, { quantity: 1 });
+    await addItem(otherToken, 'DELIVERY', productId, { quantity: 1 });
     await request(app.getHttpServer())
       .post('/api/v1/orders/preview')
-      .set('Authorization', `Bearer ${token}`)
-      .send(
-        orderPayload('DELIVERY', {
-          contactName: '配送用户',
-          contactPhone: '0922222222',
-          deliveryAddress: '超出范围地址',
-          deliveryLatitude: 21.4,
-          deliveryLongitude: 106.4,
-        }),
-      )
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send(orderPayload('DELIVERY', {
+        contactName: '配送用户',
+        deliveryAddress: '北宁测试地址',
+      }))
       .expect(400);
+
+    await addItem(otherToken, 'DINE_IN', productId, {
+      tableToken,
+      quantity: 1,
+    });
+    const dineInPreview = await previewOrder(otherToken, {
+      orderType: 'DINE_IN',
+      tableToken,
+    });
+    expect(dineInPreview.orderType).toBe('DINE_IN');
+  });
+
+  it('supports delivery manual-address and out-of-range fallback with phone confirmation', async () => {
+    await addItem(token, 'DELIVERY', productId, { quantity: 1 });
+    const manualBelowMinimum = await previewOrder(token, {
+      orderType: 'DELIVERY',
+      contactName: '配送用户',
+      contactPhone: '0922222222',
+      deliveryAddress: '北宁测试地址',
+    });
+    expect(manualBelowMinimum.requiresPhoneConfirmation).toBe(true);
+    expect(manualBelowMinimum.deliveryFeeVnd).toBe('0');
+
+    await addItem(token, 'DELIVERY', secondProductId, { quantity: 1 });
+    const outOfRange = await previewOrder(token, {
+      orderType: 'DELIVERY',
+      contactName: '配送用户',
+      contactPhone: '0922222222',
+      deliveryAddress: '超出范围地址',
+      deliveryLatitude: 21.4,
+      deliveryLongitude: 106.4,
+    });
+    expect(outOfRange.requiresPhoneConfirmation).toBe(true);
+    expect(outOfRange.deliveryFeeVnd).toBe('0');
 
     const located = await previewOrder(token, {
       orderType: 'DELIVERY',

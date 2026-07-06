@@ -98,6 +98,7 @@ function normalizeOrderRequest(data: OrderRequest): OrderRequest {
   const body: OrderRequest = { ...data };
   if (!body.tableToken?.trim()) delete body.tableToken;
   if (!body.contactName?.trim()) delete body.contactName;
+  if (!body.contactPhone?.trim()) delete body.contactPhone;
   if (!body.deliveryAddress?.trim()) delete body.deliveryAddress;
   const deliveryLatitude = Number(body.deliveryLatitude);
   const deliveryLongitude = Number(body.deliveryLongitude);
