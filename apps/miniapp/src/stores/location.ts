@@ -96,6 +96,12 @@ export const useLocationStore = defineStore('location', {
       this.source = 'MANUAL';
       this.bootstrapped = true;
     },
+    clearManualOverride() {
+      if (this.source !== 'MANUAL') return;
+      this.operationalRegion = null;
+      this.source = 'NONE';
+      this.bootstrapped = false;
+    },
     async relocate() {
       return this.captureLocation(false);
     },

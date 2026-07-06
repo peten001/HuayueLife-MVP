@@ -18,6 +18,9 @@ type ServiceCategoryKey =
   | 'vietnamese_food';
 type SortOption = 'smart' | 'distance' | 'open';
 type FilterOption = 'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY';
+type CityMenuOption =
+  | { role: 'current'; label: string; value: string }
+  | { role: 'region'; label: string; value: 'Bac Giang' | 'Bac Ninh' };
 
 const locationStore = useLocationStore();
 const { locale, t } = useI18n();
@@ -32,6 +35,7 @@ const activeFilters = ref<FilterOption[]>([]);
 const filterDraft = ref<FilterOption[]>([]);
 const sortSheetVisible = ref(false);
 const filterSheetVisible = ref(false);
+const cityMenuVisible = ref(false);
 const merchantListMode = ref<
   'province'
   | 'homeUnsupported'
@@ -46,17 +50,20 @@ const normalizedRegionCode = computed(() =>
   resolveRegionCode(locationStore.operationalRegion ?? ''),
 );
 
-const cityIndex = computed({
-  get: () => {
-    const index = cities.value.findIndex((city) => city.value === normalizedRegionCode.value);
-    return index >= 0 ? index : 0;
-  },
-  set: () => {},
-});
-
 const currentRegionLabel = computed(
-  () => cities.value.find((city) => city.value === normalizedRegionCode.value)?.label || '',
+  () => cities.value.find((city) => city.value === normalizedRegionCode.value)?.label || citySelectPlaceholder(),
 );
+
+const uiCityDisplay = computed(() => currentRegionLabel.value);
+const cityMenuOptions = computed<CityMenuOption[]>(() => [
+  {
+    role: 'current',
+    label: citySelectPlaceholder(),
+    value: 'placeholder',
+  },
+  cityMenuOption('Bac Ninh'),
+  cityMenuOption('Bac Giang'),
+]);
 
 const foodCategories = computed<Array<{
   key: ServiceCategoryKey;
@@ -247,8 +254,15 @@ async function loadByRegionCode(
   }
 }
 
-async function changeCity(event: { detail: { value: string } }) {
-  const regionCode = cities.value[Number(event.detail.value)]?.value;
+function toggleCityMenu() {
+  cityMenuVisible.value = !cityMenuVisible.value;
+}
+
+async function selectCityOption(option: CityMenuOption) {
+  cityMenuVisible.value = false;
+  if (option.role === 'current') return;
+  const regionCode = option.value;
+  if (regionCode === normalizedRegionCode.value) return;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
     locationStore.setCity(regionCode);
     sortOption.value = 'smart';
@@ -260,9 +274,10 @@ async function openNearbyMerchants() {
   loading.value = true;
   merchants.value = [];
   merchantListMode.value = 'nearby';
+  locationStore.clearManualOverride();
 
   try {
-    const snapshot = await locationStore.relocate();
+    const snapshot = await locationStore.resolveLocation(true);
     console.log('[home] nearby region snapshot', snapshot);
 
     if (
@@ -481,18 +496,50 @@ function normalizeCityText(value: string) {
     .toLowerCase();
 }
 
+function citySelectPlaceholder() {
+  if (locale.value === 'vi') return 'Chọn thành phố';
+  if (locale.value === 'en') return 'Select city';
+  return '选择城市';
+}
+
+function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
+  return {
+    role: 'region',
+    label: cities.value.find((city) => city.value === value)?.label || value,
+    value,
+  };
+}
+
 </script>
 
 <template>
   <view :class="['page', `page--${locale}`]">
+    <view v-if="cityMenuVisible" class="city-dropdown-backdrop" @click="cityMenuVisible = false"></view>
     <view class="topbar">
-      <picker range-key="label" :range="cities" :value="cityIndex" @change="changeCity">
-        <view class="city">
+      <view class="city-selector">
+        <view class="city" @click="toggleCityMenu">
           <text class="location-dot"></text>
-          <text class="city-label">{{ currentRegionLabel }}</text>
+          <text class="city-label">{{ uiCityDisplay }}</text>
           <text class="city-arrow">⌄</text>
         </view>
-      </picker>
+        <view v-if="cityMenuVisible" class="city-dropdown">
+          <view
+            v-for="option in cityMenuOptions"
+            :key="`${option.role}-${option.value}`"
+            :class="[
+              'city-option',
+              {
+                current: option.role === 'current',
+                active: option.value === normalizedRegionCode,
+              },
+            ]"
+            @click="selectCityOption(option)"
+          >
+            <text class="city-option-label">{{ option.label }}</text>
+            <text v-if="option.role === 'region' && option.value === normalizedRegionCode" class="city-option-check">✓</text>
+          </view>
+        </view>
+      </view>
       <view class="search-box compact">
         <text class="search-icon"></text>
         <input
@@ -635,10 +682,17 @@ function normalizeCityText(value: string) {
 }
 
 .topbar {
+  position: relative;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 10rpx;
   padding: 0 0 8rpx;
+}
+
+.city-selector {
+  position: relative;
+  flex: none;
 }
 
 .city {
@@ -656,7 +710,9 @@ function normalizeCityText(value: string) {
 }
 
 .city-label {
-  max-width: 100%;
+  max-width: 128rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -676,6 +732,65 @@ function normalizeCityText(value: string) {
 .city-arrow {
   color: #7f9184;
   font-size: 24rpx;
+}
+
+.city-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+}
+
+.city-dropdown {
+  position: absolute;
+  top: calc(100% + 10rpx);
+  left: 0;
+  z-index: 12;
+  min-width: 260rpx;
+  overflow: hidden;
+  border: 1px solid #edf4ef;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 18rpx 44rpx rgb(31 45 36 / 14%);
+}
+
+.city-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  min-height: 80rpx;
+  padding: 0 22rpx;
+  color: #455149;
+  font-size: 14px;
+  font-weight: 650;
+  box-sizing: border-box;
+}
+
+.city-option + .city-option {
+  border-top: 1px solid #eef4f0;
+}
+
+.city-option.current {
+  color: #2e7d32;
+  background: #f1f8f3;
+}
+
+.city-option.active {
+  color: #2e7d32;
+}
+
+.city-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.city-option-check {
+  flex: none;
+  color: #2e7d32;
+  font-size: 15px;
+  font-weight: 900;
 }
 
 .search-box {
