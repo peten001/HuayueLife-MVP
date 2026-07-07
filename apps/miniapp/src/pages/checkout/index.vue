@@ -706,7 +706,9 @@ function showSuccess(order: CreatedOrder) {
           maxlength="16"
         />
       </label>
-      <text v-if="contactCacheHint" class="hint">{{ t('contactCacheHint') }}</text>
+      <view v-if="contactCacheHint" class="hint">
+        <text class="hint-label">{{ t('contactCacheHint') }}</text>
+      </view>
     </view>
 
     <view v-if="context?.orderType === 'DELIVERY'" class="card form">
@@ -719,11 +721,15 @@ function showSuccess(order: CreatedOrder) {
         />
       </label>
       <button class="location" @click="chooseLocation">
-        {{ checkoutText('选择配送位置', 'Chọn vị trí giao hàng', 'Choose delivery location') }}
+        <text class="button-label">
+          {{ checkoutText('选择配送位置', 'Chọn vị trí giao hàng', 'Choose delivery location') }}
+        </text>
       </button>
-      <text class="hint">
-        {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
-      </text>
+      <view class="hint">
+        <text class="hint-label">
+          {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
+        </text>
+      </view>
     </view>
 
     <view class="card form">
@@ -738,7 +744,9 @@ function showSuccess(order: CreatedOrder) {
       <text class="total">
         {{ t('totalAmount') }}：{{ totalAmountDisplayText }}
       </text>
-      <text v-if="preview.requiresPhoneConfirmation" class="warning">{{ t('deliveryRangeWarning') }}</text>
+      <view v-if="preview.requiresPhoneConfirmation" class="warning">
+        <text class="warning-label">{{ t('deliveryRangeWarning') }}</text>
+      </view>
     </view>
 
     <view v-else-if="cartStore.cart" class="card totals">
@@ -749,9 +757,13 @@ function showSuccess(order: CreatedOrder) {
 
     <text v-if="message" class="error">{{ message }}</text>
     <button class="submit" :disabled="submitting" @click="submit">
-      {{ submitting ? t('submitting') : t('submitOrder') }}
+      <text class="button-label">
+        {{ submitting ? t('submitting') : t('submitOrder') }}
+      </text>
     </button>
-    <text class="offline">{{ t('payOfflineHint') }}</text>
+    <view class="offline">
+      <text class="offline-label">{{ t('payOfflineHint') }}</text>
+    </view>
   </view>
 </template>
 
@@ -837,11 +849,18 @@ textarea:focus {
 .secondary {
   margin: 0;
   border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24rpx;
   border-radius: 20rpx;
   color: #2e7d32;
   background: #eaf7ee;
   font-size: 23rpx;
   font-weight: 700;
+  line-height: normal;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .location::after,
@@ -852,7 +871,10 @@ textarea:focus {
 
 .hint,
 .offline {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   color: #8a958d;
   font-size: 22rpx;
   line-height: 1.55;
@@ -874,7 +896,9 @@ textarea:focus {
 
 .warning,
 .error {
-  display: block;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   padding: 17rpx 20rpx;
   margin: 16rpx 0;
   border-radius: 18rpx;
@@ -889,11 +913,18 @@ textarea:focus {
   min-height: 92rpx;
   margin-top: 20rpx;
   border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24rpx;
   border-radius: 26rpx;
   color: #fff;
   background: #2e7d32;
   font-size: 27rpx;
   font-weight: 800;
+  line-height: normal;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .submit[disabled] {
@@ -903,5 +934,15 @@ textarea:focus {
 
 .offline {
   margin-top: 16rpx;
+}
+
+.button-label,
+.warning-label,
+.hint-label,
+.offline-label {
+  display: block;
+  width: 100%;
+  line-height: 1.4;
+  text-align: center;
 }
 </style>
