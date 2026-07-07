@@ -3,7 +3,7 @@
     {
       "path": "pages/home/index",
       "style": {
-        "navigationBarTitleText": "华越优选"
+        "navigationBarTitleText": "云桥 Life"
       }
     },
     {
@@ -117,7 +117,7 @@
   },
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "华越优选",
+    "navigationBarTitleText": "云桥 Life",
     "navigationBarBackgroundColor": "#ffffff",
     "backgroundColor": "#F6FAF7"
   }
