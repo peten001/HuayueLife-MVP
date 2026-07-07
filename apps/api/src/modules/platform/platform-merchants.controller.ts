@@ -65,7 +65,7 @@ export class PlatformMerchantsController {
     );
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="huayue-merchant-import-template.xlsx"',
+      'attachment; filename="yunqiao-life-merchant-import-template.xlsx"',
     );
     res.status(200).send(template);
   }

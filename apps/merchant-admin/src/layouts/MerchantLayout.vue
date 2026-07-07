@@ -207,7 +207,7 @@ function iconPaths(icon: DesktopNavIcon) {
     <aside class="sidebar merchant-sidebar">
       <div class="brand-block">
         <div class="brand-logo">
-          <img :src="huayueLogo" alt="Huayue logo" />
+          <img :src="huayueLogo" alt="Yunqiao Life logo" />
         </div>
         <div class="brand-copy">
           <div class="brand-title">{{ sidebarBrand.title }}</div>

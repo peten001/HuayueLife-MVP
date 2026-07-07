@@ -55,7 +55,7 @@ const PRINT_LABELS: Record<
   }
 > = {
   zh: {
-    brand: '华越优选',
+    brand: '云桥 Life',
     titles: {
       KITCHEN: '厨房订单',
       FRONT_DESK: '前台小票',
@@ -78,7 +78,7 @@ const PRINT_LABELS: Record<
     },
   },
   vi: {
-    brand: 'Huayue Life',
+    brand: '云桥 Life',
     titles: {
       KITCHEN: 'Đơn Bếp',
       FRONT_DESK: 'Phiếu Thu Ngân',
@@ -101,7 +101,7 @@ const PRINT_LABELS: Record<
     },
   },
   en: {
-    brand: 'Huayue Life',
+    brand: 'Yunqiao Life',
     titles: {
       KITCHEN: 'Kitchen Order',
       FRONT_DESK: 'Front Desk Receipt',
@@ -374,7 +374,7 @@ export class PrintersService {
       labels.testTitle,
       this.line(printer.paperWidth),
       labels.testBody,
-      '华越优选',
+      '云桥 Life',
       '厨房订单',
       '前台小票',
       'Kitchen Order',

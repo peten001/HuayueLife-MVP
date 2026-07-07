@@ -37,7 +37,7 @@ function goPromotionTags() {
           <span class="badge success">运行中</span>
         </div>
         <dl class="detail-list settings-detail-list">
-          <dt>平台名称</dt><dd>华越优选</dd>
+          <dt>平台名称</dt><dd>云桥 Life</dd>
           <dt>业务模式</dt><dd>到店扫码点餐 / 到店自取 / 商家配送</dd>
           <dt>当前版本</dt><dd>MVP</dd>
           <dt>运营区域</dt><dd>北江 / 北宁</dd>

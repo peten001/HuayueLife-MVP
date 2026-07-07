@@ -767,7 +767,7 @@ export class PlatformMerchantsService {
     });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Huayue Life Platform';
+    workbook.creator = 'Yunqiao Life Platform';
     workbook.created = new Date();
     const selectableBusinessTypes = getSelectableBusinessTypes(businessTypes);
     const fieldDefinitions = buildMerchantImportFieldDefinitions(
