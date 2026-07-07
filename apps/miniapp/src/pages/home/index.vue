@@ -315,7 +315,7 @@ async function openNearbyMerchants() {
   merchantListMode.value = 'nearby';
 
   try {
-    const snapshot = await locationStore.resolveLocation(true);
+    const snapshot = await locationStore.refreshLocationForNearby();
     console.log('[home] nearby region snapshot', snapshot);
 
     if (

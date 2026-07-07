@@ -167,6 +167,36 @@ export const useLocationStore = defineStore('location', {
     async relocate() {
       return this.resolveLocation(true);
     },
+    async refreshLocationForNearby(): Promise<LocationSnapshot> {
+      this.hydrateFromStorage();
+      if (pendingLocationRequest) {
+        return pendingLocationRequest;
+      }
+
+      pendingLocationRequest = this.captureLocation(false)
+        .then((snapshot) => {
+          if (
+            snapshot.status === 'LOCATED_SUPPORTED'
+            && snapshot.operationalRegion
+          ) {
+            this.operationalRegion = snapshot.operationalRegion;
+            this.latitude = snapshot.latitude;
+            this.longitude = snapshot.longitude;
+            this.status = snapshot.status;
+            this.source = 'GPS';
+            this.bootstrapped = true;
+            this.persistState();
+            return this.snapshot();
+          }
+
+          return snapshot;
+        })
+        .finally(() => {
+          pendingLocationRequest = null;
+        });
+
+      return pendingLocationRequest;
+    },
     async resolveLocation(force = false): Promise<LocationSnapshot> {
       this.hydrateFromStorage();
       if (pendingLocationRequest) {
