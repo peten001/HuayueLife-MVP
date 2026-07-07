@@ -26,6 +26,13 @@ export type LocationSnapshot = {
   source: CitySource;
 };
 
+type StoredLocationState = {
+  operationalRegion: OperationalRegionCode | null;
+  latitude: number | null;
+  longitude: number | null;
+  source: CitySource;
+};
+
 type BoundaryBox = {
   minLatitude: number;
   maxLatitude: number;
@@ -49,6 +56,8 @@ const BAC_NINH_BOUNDARY: BoundaryBox = {
 
 const BAC_GIANG_CENTER = { latitude: 21.281, longitude: 106.197 };
 const BAC_NINH_CENTER = { latitude: 21.121, longitude: 106.084 };
+const LOCATION_STATE_KEY = 'miniapp.location-state.v1';
+let pendingLocationRequest: Promise<LocationSnapshot> | null = null;
 
 export function guessCityByLocation(
   latitude: number,
@@ -80,6 +89,7 @@ export const useLocationStore = defineStore('location', {
     longitude: null as number | null,
     bootstrapped: false,
     loading: false,
+    hydrated: false,
   }),
   getters: {
     currentOperationalRegion(state): OperationalRegionCode | null {
@@ -91,33 +101,91 @@ export const useLocationStore = defineStore('location', {
     },
   },
   actions: {
+    hydrateFromStorage() {
+      if (this.hydrated) return;
+      this.hydrated = true;
+
+      try {
+        const stored = uni.getStorageSync(LOCATION_STATE_KEY) as StoredLocationState | null;
+        if (!stored || typeof stored !== 'object') return;
+
+        const operationalRegion = isOperationalRegionCode(stored.operationalRegion)
+          ? stored.operationalRegion
+          : null;
+        const source = isCitySource(stored.source)
+          ? stored.source
+          : 'NONE';
+        const latitude = normalizeCoordinate(stored.latitude);
+        const longitude = normalizeCoordinate(stored.longitude);
+
+        this.operationalRegion = operationalRegion;
+        this.source = operationalRegion ? source : 'NONE';
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.status = operationalRegion ? 'LOCATED_SUPPORTED' : 'IDLE';
+        this.bootstrapped = Boolean(operationalRegion);
+      } catch {
+        // Ignore malformed local cache and fall back to runtime state.
+      }
+    },
+    persistState() {
+      const next: StoredLocationState = {
+        operationalRegion: this.operationalRegion,
+        latitude: normalizeCoordinate(this.latitude),
+        longitude: normalizeCoordinate(this.longitude),
+        source: this.operationalRegion ? this.source : 'NONE',
+      };
+
+      if (!next.operationalRegion) {
+        uni.removeStorageSync(LOCATION_STATE_KEY);
+        return;
+      }
+
+      uni.setStorageSync(LOCATION_STATE_KEY, next);
+    },
     setCity(city: CityCode) {
+      this.hydrateFromStorage();
       this.operationalRegion = city;
       this.source = 'MANUAL';
+      this.latitude = null;
+      this.longitude = null;
+      this.status = 'IDLE';
       this.bootstrapped = true;
+      this.persistState();
     },
     clearManualOverride() {
+      this.hydrateFromStorage();
       if (this.source !== 'MANUAL') return;
       this.operationalRegion = null;
       this.source = 'NONE';
+      this.latitude = null;
+      this.longitude = null;
+      this.status = 'IDLE';
       this.bootstrapped = false;
+      this.persistState();
     },
     async relocate() {
-      return this.captureLocation(false);
+      return this.resolveLocation(true);
     },
     async resolveLocation(force = false): Promise<LocationSnapshot> {
-      if (this.loading) {
-        return this.snapshot();
+      this.hydrateFromStorage();
+      if (pendingLocationRequest) {
+        return pendingLocationRequest;
       }
-      if (this.bootstrapped && !force) {
+      if (this.source === 'MANUAL' && this.operationalRegion && !force) {
         return this.snapshot();
       }
 
-      return this.captureLocation(true);
+      pendingLocationRequest = this.captureLocation(true).finally(() => {
+        pendingLocationRequest = null;
+      });
+
+      return pendingLocationRequest;
     },
     async captureLocation(persist: boolean): Promise<LocationSnapshot> {
-
+      this.hydrateFromStorage();
       this.loading = true;
+      const previousSnapshot = this.snapshot();
       try {
         let latitude: number | null = null;
         let longitude: number | null = null;
@@ -144,11 +212,23 @@ export const useLocationStore = defineStore('location', {
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
           if (persist) {
-            this.latitude = latitude;
-            this.longitude = longitude;
             this.status = status;
-            this.operationalRegion = operationalRegion;
-            this.source = operationalRegion ? 'GPS' : 'NONE';
+            if (operationalRegion) {
+              this.latitude = latitude;
+              this.longitude = longitude;
+              this.operationalRegion = operationalRegion;
+              this.source = 'GPS';
+            } else if (previousSnapshot.operationalRegion) {
+              this.latitude = null;
+              this.longitude = null;
+              this.operationalRegion = previousSnapshot.operationalRegion;
+              this.source = previousSnapshot.source === 'MANUAL' ? 'MANUAL' : 'NONE';
+            } else {
+              this.latitude = null;
+              this.longitude = null;
+              this.operationalRegion = null;
+              this.source = 'NONE';
+            }
           }
         } catch (error) {
           latitude = null;
@@ -158,16 +238,24 @@ export const useLocationStore = defineStore('location', {
             ? 'PERMISSION_DENIED'
             : 'FAILED';
           if (persist) {
-            this.latitude = null;
-            this.longitude = null;
             this.status = status;
-            this.operationalRegion = null;
-            this.source = 'NONE';
+            if (previousSnapshot.operationalRegion) {
+              this.latitude = null;
+              this.longitude = null;
+              this.operationalRegion = previousSnapshot.operationalRegion;
+              this.source = previousSnapshot.source === 'MANUAL' ? 'MANUAL' : 'NONE';
+            } else {
+              this.latitude = null;
+              this.longitude = null;
+              this.operationalRegion = null;
+              this.source = 'NONE';
+            }
           }
         }
 
         if (persist) {
           this.bootstrapped = true;
+          this.persistState();
           return this.snapshot();
         }
 
@@ -229,4 +317,16 @@ function isPermissionDeniedError(error: unknown) {
     || text.includes('permission denied')
     || text.includes('authorize no response')
     || text.includes('privacy permission');
+}
+
+function isOperationalRegionCode(value: unknown): value is OperationalRegionCode {
+  return value === 'Bac Giang' || value === 'Bac Ninh';
+}
+
+function isCitySource(value: unknown): value is CitySource {
+  return value === 'GPS' || value === 'MANUAL' || value === 'NONE';
+}
+
+function normalizeCoordinate(value: unknown) {
+  return Number.isFinite(value) ? Number(value) : null;
 }

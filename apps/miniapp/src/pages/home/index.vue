@@ -23,6 +23,7 @@ type CityMenuOption =
   | { role: 'region'; label: string; value: 'Bac Giang' | 'Bac Ninh' };
 
 const locationStore = useLocationStore();
+locationStore.hydrateFromStorage();
 const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
 const merchants = ref<MerchantSummary[]>([]);
@@ -166,9 +167,15 @@ onShow(() => {
 });
 
 async function refreshHome(forceRelocate: boolean) {
-  if (locationStore.source === 'MANUAL' && locationStore.operationalRegion) {
+  locationStore.hydrateFromStorage();
+  const fallbackRegion = locationStore.operationalRegion;
+  const fallbackSource = locationStore.source;
+  const fallbackLatitude = locationStore.latitude;
+  const fallbackLongitude = locationStore.longitude;
+
+  if (!forceRelocate && fallbackSource === 'MANUAL' && fallbackRegion) {
     sortOption.value = 'smart';
-    await loadByRegionCode(locationStore.operationalRegion, { mode: 'province' });
+    await loadByRegionCode(fallbackRegion, { mode: 'province' });
     return;
   }
 
@@ -185,6 +192,21 @@ async function refreshHome(forceRelocate: boolean) {
       snapshot.status !== 'LOCATED_SUPPORTED'
       || !snapshot.operationalRegion
     ) {
+      const effectiveFallbackRegion = snapshot.operationalRegion
+        ?? locationStore.operationalRegion
+        ?? fallbackRegion;
+      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
+        && fallbackSource === 'GPS';
+      if (effectiveFallbackRegion) {
+        sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
+        await loadByRegionCode(effectiveFallbackRegion, {
+          mode: 'province',
+          useLocation: canUseFallbackLocation,
+          latitude: fallbackLatitude,
+          longitude: fallbackLongitude,
+        });
+        return;
+      }
       loading.value = false;
       if (snapshot.status === 'LOCATED_UNSUPPORTED') {
         clearHomeState('homeUnsupported');
@@ -205,6 +227,18 @@ async function refreshHome(forceRelocate: boolean) {
       longitude: snapshot.longitude,
     });
   } catch {
+    if (fallbackRegion) {
+      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
+        && fallbackSource === 'GPS';
+      sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
+      await loadByRegionCode(fallbackRegion, {
+        mode: 'province',
+        useLocation: canUseFallbackLocation,
+        latitude: fallbackLatitude,
+        longitude: fallbackLongitude,
+      });
+      return;
+    }
     loading.value = false;
     clearHomeState('homeFailed');
   }
@@ -271,10 +305,14 @@ async function selectCityOption(option: CityMenuOption) {
 }
 
 async function openNearbyMerchants() {
+  locationStore.hydrateFromStorage();
+  const fallbackRegion = locationStore.operationalRegion;
+  const fallbackSource = locationStore.source;
+  const fallbackLatitude = locationStore.latitude;
+  const fallbackLongitude = locationStore.longitude;
   loading.value = true;
   merchants.value = [];
   merchantListMode.value = 'nearby';
-  locationStore.clearManualOverride();
 
   try {
     const snapshot = await locationStore.resolveLocation(true);
@@ -284,6 +322,26 @@ async function openNearbyMerchants() {
       snapshot.status !== 'LOCATED_SUPPORTED'
       || !snapshot.operationalRegion
     ) {
+      const effectiveFallbackRegion = snapshot.operationalRegion
+        ?? locationStore.operationalRegion
+        ?? fallbackRegion;
+      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
+        && fallbackSource === 'GPS';
+      if (effectiveFallbackRegion) {
+        merchantListMode.value = 'nearby';
+        sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
+        await loadByRegionCode(effectiveFallbackRegion, {
+          mode: 'nearby',
+          useLocation: canUseFallbackLocation,
+          latitude: fallbackLatitude,
+          longitude: fallbackLongitude,
+        });
+        uni.pageScrollTo({
+          selector: '#nearby-restaurants',
+          duration: 280,
+        });
+        return;
+      }
       loading.value = false;
       if (snapshot.status === 'LOCATED_UNSUPPORTED') {
         merchants.value = [];
@@ -314,6 +372,22 @@ async function openNearbyMerchants() {
     });
     return;
   } catch {
+    if (fallbackRegion) {
+      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
+        && fallbackSource === 'GPS';
+      sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
+      await loadByRegionCode(fallbackRegion, {
+        mode: 'nearby',
+        useLocation: canUseFallbackLocation,
+        latitude: fallbackLatitude,
+        longitude: fallbackLongitude,
+      });
+      uni.pageScrollTo({
+        selector: '#nearby-restaurants',
+        duration: 280,
+      });
+      return;
+    }
     loading.value = false;
     merchants.value = [];
     merchantListMode.value = 'nearbyFailed';
@@ -508,6 +582,13 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
     label: cities.value.find((city) => city.value === value)?.label || value,
     value,
   };
+}
+
+function hasUsableLocation(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined,
+) {
+  return Number.isFinite(latitude) && Number.isFinite(longitude);
 }
 
 </script>
