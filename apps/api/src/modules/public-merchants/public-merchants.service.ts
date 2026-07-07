@@ -7,6 +7,7 @@ import {
 import { Category, Merchant, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
+import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 import {
   parseHomepageCategoryKeys,
@@ -70,7 +71,10 @@ const OPERATIONAL_REGION_ALIASES: Record<'北江' | '北宁', string[]> = {
 
 @Injectable()
 export class PublicMerchantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly merchantCapabilities: MerchantCapabilitiesService,
+  ) {}
 
   async nearby(query: NearbyMerchantsQueryDto) {
     console.log('[public-merchants] nearby query', query);
@@ -185,7 +189,7 @@ export class PublicMerchantsService {
     const merchant = tableToken
       ? await this.requireDineInMerchant(id, tableToken)
       : await this.requirePublicMerchant(id);
-    if (!canShowMenu(merchant)) {
+    if (!this.canShowMenu(merchant)) {
       throw new GoneException('该商家暂未开通菜单/下单功能');
     }
     const categories = await this.prisma.category.findMany({
@@ -317,8 +321,12 @@ export class PublicMerchantsService {
     categories: Array<Pick<Category, 'nameZh' | 'nameVi'>>,
     distance: number | null,
   ) {
-    const capabilityValues = new Map(
-      (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
+    const resolvedCapabilities =
+      this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
+    const qrOrderEnabled = this.merchantCapabilities.resolveCapabilityFlag(
+      merchant,
+      'qrOrderEnabled',
+      false,
     );
 
     return {
@@ -351,22 +359,16 @@ export class PublicMerchantsService {
       city: merchant.city,
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
       isOpen: isMerchantOpen(merchant),
-      supportedOrderTypes: supportedOrderTypes(merchant),
+      supportedOrderTypes: supportedOrderTypes(merchant, resolvedCapabilities),
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       latitude: merchant.latitude.toString(),
       longitude: merchant.longitude.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
       dineInEnabled: Boolean(merchant.dineInEnabled),
-      pickupEnabled: capabilityValues.size
-        ? Boolean(capabilityValues.get('pickupEnabled'))
-        : Boolean(merchant.pickupEnabled),
-      deliveryEnabled: capabilityValues.size
-        ? Boolean(capabilityValues.get('deliveryEnabled'))
-        : Boolean(merchant.deliveryEnabled),
-      qrOrderEnabled: capabilityValues.size
-        ? Boolean(capabilityValues.get('qrOrderEnabled'))
-        : false,
+      pickupEnabled: resolvedCapabilities.pickupEnabled,
+      deliveryEnabled: resolvedCapabilities.deliveryEnabled,
+      qrOrderEnabled,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),
@@ -405,42 +407,53 @@ export class PublicMerchantsService {
       ),
     };
   }
+
+  private canShowMenu(merchant: PublicMerchantRow) {
+    const resolvedCapabilities =
+      this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
+    const qrOrderEnabled = this.merchantCapabilities.resolveCapabilityFlag(
+      merchant,
+      'qrOrderEnabled',
+      false,
+    );
+    if ((merchant.capabilities ?? []).length) {
+      return Boolean(
+        resolvedCapabilities.pickupEnabled
+        || resolvedCapabilities.deliveryEnabled
+        || qrOrderEnabled,
+      );
+    }
+    if (merchant.merchantMode === 'DISPLAY' || merchant.merchantMode === 'DISPLAY_ONLY') {
+      return false;
+    }
+    return Boolean(
+      merchant.dineInEnabled
+      || resolvedCapabilities.pickupEnabled
+      || resolvedCapabilities.deliveryEnabled,
+    );
+  }
 }
 
-function supportedOrderTypes(merchant: PublicMerchantRow) {
-  const capabilities = new Map(
-    (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
-  );
-  if (capabilities.size) {
+function supportedOrderTypes(
+  merchant: PublicMerchantRow,
+  resolvedCapabilities: {
+    pickupEnabled: boolean;
+    deliveryEnabled: boolean;
+  },
+) {
+  if ((merchant.capabilities ?? []).length) {
     return [
       merchant.dineInEnabled ? 'DINE_IN' : null,
-      capabilities.get('pickupEnabled') ? 'PICKUP' : null,
-      capabilities.get('deliveryEnabled') ? 'DELIVERY' : null,
+      resolvedCapabilities.pickupEnabled ? 'PICKUP' : null,
+      resolvedCapabilities.deliveryEnabled ? 'DELIVERY' : null,
     ].filter(Boolean);
   }
   if (merchant.merchantMode === 'DISPLAY' || merchant.merchantMode === 'DISPLAY_ONLY') return [];
   return [
     merchant.dineInEnabled ? 'DINE_IN' : null,
-    merchant.pickupEnabled ? 'PICKUP' : null,
-    merchant.deliveryEnabled ? 'DELIVERY' : null,
+    resolvedCapabilities.pickupEnabled ? 'PICKUP' : null,
+    resolvedCapabilities.deliveryEnabled ? 'DELIVERY' : null,
   ].filter(Boolean);
-}
-
-function canShowMenu(merchant: PublicMerchantRow) {
-  const capabilities = new Map(
-    (merchant.capabilities ?? []).map((item) => [item.capability.code, item.isEnabled]),
-  );
-  if (capabilities.size) {
-    return Boolean(
-      capabilities.get('pickupEnabled') ||
-      capabilities.get('deliveryEnabled') ||
-      capabilities.get('qrOrderEnabled'),
-    );
-  }
-  if (merchant.merchantMode === 'DISPLAY' || merchant.merchantMode === 'DISPLAY_ONLY') {
-    return false;
-  }
-  return Boolean(merchant.dineInEnabled || merchant.pickupEnabled || merchant.deliveryEnabled);
 }
 
 function resolveSelectedOperationalRegion(

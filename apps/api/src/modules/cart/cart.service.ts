@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { CartContextQueryDto } from './dto/cart-context-query.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
@@ -21,7 +22,10 @@ export interface ResolvedCartContext {
 
 @Injectable()
 export class CartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly merchantCapabilities: MerchantCapabilitiesService,
+  ) {}
 
   async get(userId: bigint, query: CartContextQueryDto) {
     const context = await this.resolveContext(this.prisma, query);
@@ -164,10 +168,13 @@ export class CartService {
     if (input.tableToken) {
       throw new BadRequestException('非堂食购物车不能绑定桌码');
     }
-    if (input.orderType === 'PICKUP' && !merchant.pickupEnabled) {
+    const capabilities = await this.merchantCapabilities.resolveMerchantCapabilities(
+      merchant.id,
+    );
+    if (input.orderType === 'PICKUP' && !capabilities.pickupEnabled) {
       throw new BadRequestException('商家当前未开启到店自取');
     }
-    if (input.orderType === 'DELIVERY' && !merchant.deliveryEnabled) {
+    if (input.orderType === 'DELIVERY' && !capabilities.deliveryEnabled) {
       throw new BadRequestException('商家当前未开启配送');
     }
     return { merchantId, orderType: input.orderType, tableId: null };
