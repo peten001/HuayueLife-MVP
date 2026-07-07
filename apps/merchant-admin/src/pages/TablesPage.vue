@@ -23,6 +23,7 @@ import type {
   MerchantProfile,
   OrderStatus,
   TableSessionDetail,
+  TableSessionOrderItem,
   TableSessionSummary,
 } from '@/types/api';
 
@@ -44,6 +45,9 @@ type IconName =
   | 'printer'
   | 'refresh-cw'
   | 'alert-triangle'
+  | 'chevron-left'
+  | 'chevron-down'
+  | 'chevron-up'
   | 'x';
 type PrimaryActionKey = 'view-bill' | 'complete-checkout' | 'view-qr' | 'enable';
 type MenuActionKey =
@@ -109,6 +113,7 @@ const billError = ref('');
 const selectedSessionId = ref('');
 const billSession = ref<TableSessionDetail | null>(null);
 const closingSessionId = ref('');
+const billMetaExpanded = ref(false);
 const desktopMenuRowId = ref('');
 const desktopMenuDirection = ref<'down' | 'up'>('down');
 const mobileMenuRowId = ref('');
@@ -128,6 +133,9 @@ const iconPaths: Record<IconName, string[]> = {
   printer: ['M6 9V4h12v5', 'M6 18H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-1', 'M7 14h10v7H7z', 'M17 12h.01'],
   'refresh-cw': ['M20 11a8 8 0 1 0 2.3 5.7', 'M20 4v7h-7'],
   'alert-triangle': ['M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z', 'M12 9v4', 'M12 17h.01'],
+  'chevron-left': ['m15 18-6-6 6-6'],
+  'chevron-down': ['m6 9 6 6 6-6'],
+  'chevron-up': ['m18 15-6-6-6 6'],
   x: ['M18 6 6 18', 'M6 6l12 12'],
 };
 
@@ -165,6 +173,25 @@ const billTitle = computed(() => {
   const session = billSession.value;
   if (!session) return t('tableBill');
   return session.tableName || session.tableNo || t('tableBill');
+});
+const mobileBillSubtitle = computed(() => {
+  const session = billSession.value;
+  if (!session) return '';
+  return session.tableName
+    ? `${session.tableName} · ${t('tableNo')} ${session.tableNo}`
+    : `${t('tableNo')} ${session.tableNo}`;
+});
+const billFooterNote = computed(() => {
+  const session = billSession.value;
+  if (!session || session.status !== 'OPEN') return '';
+  return hasUnfinishedOrders(session)
+    ? t('tableSessionUnfinishedHint', { count: session.unfinishedOrderCount })
+    : t('tableAllOrdersCompleted');
+});
+const canCompleteBillSession = computed(() => {
+  const session = billSession.value;
+  if (!session || session.status !== 'OPEN') return false;
+  return !hasUnfinishedOrders(session) && closingSessionId.value !== session.id;
 });
 
 const filterOptions = computed<FilterOption[]>(() => {
@@ -474,12 +501,14 @@ async function openBill(row: TableViewModel) {
   if (!row.currentSession) return;
   closeDesktopMenu();
   closeMobileMenu();
+  billMetaExpanded.value = false;
   billVisible.value = true;
   selectedSessionId.value = row.currentSession.id;
   await loadBill(row.currentSession.id);
 }
 
 function closeBillModal() {
+  billMetaExpanded.value = false;
   billVisible.value = false;
   billLoading.value = false;
   billError.value = '';
@@ -548,6 +577,21 @@ function getTableDisplayStatus(row: DiningTableRow): TableDisplayStatus {
 
 function hasUnfinishedOrders(session: TableSessionSummary | TableSessionDetail | null) {
   return Number(session?.unfinishedOrderCount || 0) > 0;
+}
+
+function billStatusLabelKey(session: TableSessionDetail): TranslationKey {
+  if (session.status !== 'OPEN') return 'completed';
+  return displayStatusLabelKey(hasUnfinishedOrders(session) ? 'IN_USE' : 'READY_TO_SETTLE');
+}
+
+function mobileBillStatusClass(session: TableSessionDetail) {
+  if (session.status !== 'OPEN') {
+    return 'mobile-bill-summary-status mobile-bill-summary-status--success';
+  }
+  if (hasUnfinishedOrders(session)) {
+    return 'mobile-bill-summary-status mobile-bill-summary-status--warning';
+  }
+  return 'mobile-bill-summary-status mobile-bill-summary-status--ready';
 }
 
 function displayStatusLabelKey(status: TableDisplayStatus): TranslationKey {
@@ -749,6 +793,13 @@ function handleEscapeKey(event: KeyboardEvent) {
 
 function localizedProductName(item: { productNameZhSnapshot?: string | null }) {
   return item.productNameZhSnapshot?.trim() || '-';
+}
+
+function mobileBillItemMeta(item: TableSessionOrderItem) {
+  if (item.quantity > 1) {
+    return `× ${item.quantity} · ${formatMoney(item.unitPriceVnd)}`;
+  }
+  return `× ${item.quantity}`;
 }
 
 function displayMerchantName() {
@@ -1281,122 +1332,273 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="billVisible" class="modal-backdrop" @click.self="closeBillModal">
+    <div v-if="billVisible" class="modal-backdrop table-bill-backdrop" @click.self="closeBillModal">
       <div class="card table-bill-modal" @click.stop>
-        <div class="table-modal-header">
-          <div>
-            <h2>{{ t('tableBill') }}</h2>
-            <p>{{ billTitle }}</p>
-          </div>
-          <button type="button" class="table-icon-button" @click="closeBillModal">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path v-for="path in iconPaths.x" :key="`bill-close-${path}`" :d="path" />
-            </svg>
-          </button>
-        </div>
-
-        <p v-if="billLoading" class="table-modal-loading">{{ t('refreshingDashboard') }}</p>
-
-        <div v-else-if="billError" class="table-modal-error">
-          <p>{{ billError }}</p>
-          <div class="table-modal-actions">
-            <button type="button" class="table-secondary-button" @click="closeBillModal">
-              {{ t('close') }}
-            </button>
-            <button
-              v-if="selectedSessionId"
-              type="button"
-              class="table-solid-button"
-              @click="loadBill(selectedSessionId)"
-            >
-              {{ t('retry') }}
+        <div class="desktop-only">
+          <div class="table-modal-header">
+            <div>
+              <h2>{{ t('tableBill') }}</h2>
+              <p>{{ billTitle }}</p>
+            </div>
+            <button type="button" class="table-icon-button" @click="closeBillModal">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path v-for="path in iconPaths.x" :key="`bill-close-${path}`" :d="path" />
+              </svg>
             </button>
           </div>
-        </div>
 
-        <template v-else-if="billSession">
-          <div class="table-bill-summary">
-            <div>
-              <span>{{ t('tableNo') }}</span>
-              <strong>{{ billSession.tableNo }}</strong>
-            </div>
-            <div>
-              <span>{{ t('displayName') }}</span>
-              <strong>{{ billSession.tableName || '-' }}</strong>
-            </div>
-            <div>
-              <span>{{ t('sessionNo') }}</span>
-              <strong>{{ billSession.sessionNo }}</strong>
-            </div>
-            <div>
-              <span>{{ t('sessionOpenedAt') }}</span>
-              <strong>{{ formatDateTime(billSession.openedAt) }}</strong>
-            </div>
-            <div>
-              <span>{{ t('status') }}</span>
-              <strong>
-                {{ billSession.status === 'OPEN' ? t(displayStatusLabelKey(hasUnfinishedOrders(billSession) ? 'IN_USE' : 'READY_TO_SETTLE')) : t('completed') }}
-              </strong>
-            </div>
-            <div>
-              <span>{{ t('tableSessionOrders', { count: billSession.orderCount }) }}</span>
-              <strong>{{ t('tableSessionItems', { count: billSession.itemCount }) }}</strong>
-            </div>
-          </div>
+          <p v-if="billLoading" class="table-modal-loading">{{ t('refreshingDashboard') }}</p>
 
-          <div class="table-bill-orders">
-            <article v-for="order in billSession.orders" :key="order.id" class="bill-order-card">
-              <header class="bill-order-head">
-                <div>
-                  <strong>{{ order.orderNo }}</strong>
-                  <small>{{ formatDateTime(order.createdAt) }}</small>
-                </div>
-                <div class="bill-order-side">
-                  <span :class="['badge', orderStatusClass(order.status)]">
-                    {{ orderStatusLabel(order.status) }}
-                  </span>
-                  <strong>{{ formatMoney(order.totalAmountVnd) }}</strong>
-                </div>
-              </header>
-              <ul class="bill-items">
-                <li v-for="item in order.items" :key="item.id">
-                  <div>
-                    <strong>{{ localizedProductName(item) }}</strong>
-                    <small>× {{ item.quantity }}</small>
-                  </div>
-                  <div class="bill-item-prices">
-                    <span>{{ formatMoney(item.unitPriceVnd) }}</span>
-                    <strong>{{ formatMoney(item.subtotalVnd) }}</strong>
-                  </div>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <div class="table-bill-footer">
-            <div class="table-bill-totals">
-              <strong>{{ t('tableSessionTotal') }} {{ formatMoney(billSession.totalAmountVnd) }}</strong>
-              <span v-if="hasUnfinishedOrders(billSession)" class="table-warning-text">
-                {{ t('tableSessionUnfinishedHint', { count: billSession.unfinishedOrderCount }) }}
-              </span>
-              <span v-else class="table-ready-text">{{ t('tableAllOrdersCompleted') }}</span>
-            </div>
+          <div v-else-if="billError" class="table-modal-error">
+            <p>{{ billError }}</p>
             <div class="table-modal-actions">
               <button type="button" class="table-secondary-button" @click="closeBillModal">
-                {{ t('cancel') }}
+                {{ t('close') }}
               </button>
               <button
+                v-if="selectedSessionId"
                 type="button"
-                class="table-action-button table-action-button--soft-amber"
-                :disabled="hasUnfinishedOrders(billSession) || closingSessionId === billSession.id"
-                :title="hasUnfinishedOrders(billSession) ? t('completeAllOrdersFirst') : ''"
-                @click="completeCheckout()"
+                class="table-solid-button"
+                @click="loadBill(selectedSessionId)"
               >
-                {{ t('completeCheckout') }}
+                {{ t('retry') }}
               </button>
             </div>
           </div>
-        </template>
+
+          <template v-else-if="billSession">
+            <div class="table-bill-summary">
+              <div>
+                <span>{{ t('tableNo') }}</span>
+                <strong>{{ billSession.tableNo }}</strong>
+              </div>
+              <div>
+                <span>{{ t('displayName') }}</span>
+                <strong>{{ billSession.tableName || '-' }}</strong>
+              </div>
+              <div>
+                <span>{{ t('sessionNo') }}</span>
+                <strong>{{ billSession.sessionNo }}</strong>
+              </div>
+              <div>
+                <span>{{ t('sessionOpenedAt') }}</span>
+                <strong>{{ formatDateTime(billSession.openedAt) }}</strong>
+              </div>
+              <div>
+                <span>{{ t('status') }}</span>
+                <strong>
+                  {{ t(billStatusLabelKey(billSession)) }}
+                </strong>
+              </div>
+              <div>
+                <span>{{ t('tableSessionOrders', { count: billSession.orderCount }) }}</span>
+                <strong>{{ t('tableSessionItems', { count: billSession.itemCount }) }}</strong>
+              </div>
+            </div>
+
+            <div class="table-bill-orders">
+              <article v-for="order in billSession.orders" :key="order.id" class="bill-order-card">
+                <header class="bill-order-head">
+                  <div>
+                    <strong>{{ order.orderNo }}</strong>
+                    <small>{{ formatDateTime(order.createdAt) }}</small>
+                  </div>
+                  <div class="bill-order-side">
+                    <span :class="['badge', orderStatusClass(order.status)]">
+                      {{ orderStatusLabel(order.status) }}
+                    </span>
+                    <strong>{{ formatMoney(order.totalAmountVnd) }}</strong>
+                  </div>
+                </header>
+                <ul class="bill-items">
+                  <li v-for="item in order.items" :key="item.id">
+                    <div>
+                      <strong>{{ localizedProductName(item) }}</strong>
+                      <small>× {{ item.quantity }}</small>
+                    </div>
+                    <div class="bill-item-prices">
+                      <span>{{ formatMoney(item.unitPriceVnd) }}</span>
+                      <strong>{{ formatMoney(item.subtotalVnd) }}</strong>
+                    </div>
+                  </li>
+                </ul>
+              </article>
+            </div>
+
+            <div class="table-bill-footer">
+              <div class="table-bill-totals">
+                <strong>{{ t('tableSessionTotal') }} {{ formatMoney(billSession.totalAmountVnd) }}</strong>
+                <span v-if="hasUnfinishedOrders(billSession)" class="table-warning-text">
+                  {{ t('tableSessionUnfinishedHint', { count: billSession.unfinishedOrderCount }) }}
+                </span>
+                <span v-else class="table-ready-text">{{ t('tableAllOrdersCompleted') }}</span>
+              </div>
+              <div class="table-modal-actions">
+                <button type="button" class="table-secondary-button" @click="closeBillModal">
+                  {{ t('cancel') }}
+                </button>
+                <button
+                  type="button"
+                  class="table-action-button table-action-button--soft-amber"
+                  :disabled="hasUnfinishedOrders(billSession) || closingSessionId === billSession.id"
+                  :title="hasUnfinishedOrders(billSession) ? t('completeAllOrdersFirst') : ''"
+                  @click="completeCheckout()"
+                >
+                  {{ t('completeCheckout') }}
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="mobile-only mobile-bill-shell">
+          <header class="mobile-bill-header">
+            <button
+              type="button"
+              class="table-icon-button mobile-bill-header-button"
+              :aria-label="t('back')"
+              @click="closeBillModal"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path v-for="path in iconPaths['chevron-left']" :key="`bill-back-${path}`" :d="path" />
+              </svg>
+            </button>
+            <div class="mobile-bill-heading">
+              <h2>{{ t('tableBill') }}</h2>
+              <p>{{ billSession ? mobileBillSubtitle : billTitle }}</p>
+            </div>
+            <button
+              type="button"
+              class="table-icon-button mobile-bill-header-button"
+              :aria-label="t('close')"
+              @click="closeBillModal"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path v-for="path in iconPaths.x" :key="`bill-mobile-close-${path}`" :d="path" />
+              </svg>
+            </button>
+          </header>
+
+          <div class="mobile-bill-content">
+            <p v-if="billLoading" class="mobile-bill-state">{{ t('loadingTableBill') }}</p>
+
+            <div v-else-if="billError" class="table-modal-error mobile-bill-state-card">
+              <p>{{ billError }}</p>
+              <div class="table-modal-actions">
+                <button type="button" class="table-secondary-button" @click="closeBillModal">
+                  {{ t('close') }}
+                </button>
+                <button
+                  v-if="selectedSessionId"
+                  type="button"
+                  class="table-solid-button"
+                  @click="loadBill(selectedSessionId)"
+                >
+                  {{ t('retry') }}
+                </button>
+              </div>
+            </div>
+
+            <template v-else-if="billSession">
+              <section class="mobile-bill-summary-card">
+                <div class="mobile-bill-summary-row">
+                  <span>{{ t('status') }}</span>
+                  <strong :class="mobileBillStatusClass(billSession)">
+                    {{ t(billStatusLabelKey(billSession)) }}
+                  </strong>
+                </div>
+                <div class="mobile-bill-summary-row">
+                  <span>{{ t('sessionOpenedAt') }}</span>
+                  <strong>{{ formatDateTime(billSession.openedAt) }}</strong>
+                </div>
+                <div class="mobile-bill-summary-row">
+                  <span>{{ t('tableBillOrdersLabel') }}</span>
+                  <strong>{{ t('tableSessionOrders', { count: billSession.orderCount }) }}</strong>
+                </div>
+                <div class="mobile-bill-summary-row">
+                  <span>{{ t('tableBillItemsLabel') }}</span>
+                  <strong>{{ t('tableSessionItems', { count: billSession.itemCount }) }}</strong>
+                </div>
+
+                <button
+                  type="button"
+                  class="mobile-bill-meta-toggle"
+                  @click="billMetaExpanded = !billMetaExpanded"
+                >
+                  <span>{{ billMetaExpanded ? t('collapse') : t('moreInformation') }}</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      v-for="path in iconPaths[billMetaExpanded ? 'chevron-up' : 'chevron-down']"
+                      :key="`bill-meta-${path}`"
+                      :d="path"
+                    />
+                  </svg>
+                </button>
+
+                <div v-if="billMetaExpanded" class="mobile-bill-meta-panel">
+                  <span>{{ t('sessionNo') }}</span>
+                  <strong>{{ billSession.sessionNo }}</strong>
+                </div>
+              </section>
+
+              <section class="mobile-bill-orders">
+                <article
+                  v-for="order in billSession.orders"
+                  :key="order.id"
+                  class="mobile-bill-order-card"
+                >
+                  <header class="mobile-bill-order-header">
+                    <div class="mobile-bill-order-main">
+                      <strong class="mobile-bill-order-no">{{ order.orderNo }}</strong>
+                      <small class="mobile-bill-order-time">{{ formatDateTime(order.createdAt) }}</small>
+                    </div>
+                    <span :class="['badge', orderStatusClass(order.status), 'mobile-bill-order-status']">
+                      {{ orderStatusLabel(order.status) }}
+                    </span>
+                  </header>
+
+                  <ul class="mobile-bill-items">
+                    <li v-for="item in order.items" :key="item.id" class="mobile-bill-item">
+                      <div class="mobile-bill-item-main">
+                        <strong>{{ localizedProductName(item) }}</strong>
+                        <small>{{ mobileBillItemMeta(item) }}</small>
+                      </div>
+                      <strong class="mobile-bill-item-total">{{ formatMoney(item.subtotalVnd) }}</strong>
+                    </li>
+                  </ul>
+
+                  <footer class="mobile-bill-order-footer">
+                    <span>{{ t('orderSubtotal') }}</span>
+                    <strong>{{ formatMoney(order.totalAmountVnd) }}</strong>
+                  </footer>
+                </article>
+              </section>
+            </template>
+          </div>
+
+          <footer
+            v-if="billSession && !billLoading && !billError"
+            class="mobile-bill-footer-bar"
+          >
+            <div class="mobile-bill-footer-total">
+              <span>{{ t('tableSessionTotal') }}</span>
+              <strong>{{ formatMoney(billSession.totalAmountVnd) }}</strong>
+            </div>
+            <p v-if="billFooterNote" class="mobile-bill-footer-note">
+              {{ billFooterNote }}
+            </p>
+            <button
+              v-if="billSession.status === 'OPEN'"
+              type="button"
+              class="mobile-bill-checkout-button"
+              :disabled="!canCompleteBillSession"
+              :title="hasUnfinishedOrders(billSession) ? t('completeAllOrdersFirst') : ''"
+              @click="completeCheckout()"
+            >
+              {{ t('completeCheckout') }}
+            </button>
+          </footer>
+        </div>
       </div>
     </div>
   </section>
@@ -2160,6 +2362,350 @@ onBeforeUnmount(() => {
   padding-top: 0;
 }
 
+.mobile-bill-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: #f6f8f6;
+}
+
+.mobile-bill-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  border-bottom: 1px solid #e4ebe6;
+  background: #ffffff;
+}
+
+.mobile-bill-header-button {
+  flex: none;
+}
+
+.mobile-bill-heading {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-bill-heading h2,
+.mobile-bill-heading p {
+  margin: 0;
+}
+
+.mobile-bill-heading h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #183127;
+}
+
+.mobile-bill-heading p {
+  font-size: 13px;
+  color: #667085;
+  line-height: 1.4;
+}
+
+.mobile-bill-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-bill-state,
+.mobile-bill-state-card {
+  margin: 12px 16px 0;
+}
+
+.mobile-bill-state {
+  padding: 20px 16px;
+  border: 1px solid #e4ebe6;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #667085;
+  text-align: center;
+}
+
+.mobile-bill-state-card {
+  padding: 20px 16px;
+  border: 1px solid #e4ebe6;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(20, 55, 35, 0.04);
+}
+
+.mobile-bill-summary-card,
+.mobile-bill-order-card {
+  margin: 12px 16px 0;
+  border: 1px solid #e4ebe6;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(20, 55, 35, 0.04);
+}
+
+.mobile-bill-summary-card {
+  padding: 16px;
+}
+
+.mobile-bill-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.mobile-bill-summary-row + .mobile-bill-summary-row {
+  margin-top: 4px;
+}
+
+.mobile-bill-summary-row > span {
+  font-size: 13px;
+  color: #667085;
+}
+
+.mobile-bill-summary-row > strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #183127;
+  text-align: right;
+}
+
+.mobile-bill-summary-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mobile-bill-summary-status--warning {
+  background: #fff4de;
+  color: #a86100;
+}
+
+.mobile-bill-summary-status--ready {
+  background: #fff6d8;
+  color: #9b6a00;
+}
+
+.mobile-bill-summary-status--success {
+  background: #eaf7ec;
+  color: #237a32;
+}
+
+.mobile-bill-meta-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eef2ef;
+  color: #34453c;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mobile-bill-meta-toggle svg,
+.mobile-bill-header-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-bill-meta-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e4ebe6;
+}
+
+.mobile-bill-meta-panel span {
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+.mobile-bill-meta-panel strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: #667085;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.mobile-bill-orders {
+  display: grid;
+  gap: 0;
+}
+
+.mobile-bill-order-card {
+  padding: 16px;
+}
+
+.mobile-bill-order-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-bill-order-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-bill-order-no {
+  display: block;
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  color: #183127;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-bill-order-time {
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+.mobile-bill-order-status {
+  flex: none;
+}
+
+.mobile-bill-items {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-bill-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px dashed #e4ebe6;
+}
+
+.mobile-bill-item:last-child {
+  border-bottom: none;
+}
+
+.mobile-bill-item-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-bill-item-main strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: #183127;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.mobile-bill-item-main small {
+  font-size: 13px;
+  color: #667085;
+}
+
+.mobile-bill-item-total {
+  flex: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: #183127;
+  white-space: nowrap;
+}
+
+.mobile-bill-order-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #eef2ef;
+}
+
+.mobile-bill-order-footer span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #667085;
+}
+
+.mobile-bill-order-footer strong {
+  font-size: 17px;
+  font-weight: 700;
+  color: #183127;
+  white-space: nowrap;
+}
+
+.mobile-bill-footer-bar {
+  flex: none;
+  margin-top: auto;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid #e4ebe6;
+  background: #ffffff;
+  box-shadow: 0 -8px 24px rgba(20, 55, 35, 0.08);
+}
+
+.mobile-bill-footer-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-bill-footer-total span {
+  font-size: 15px;
+  font-weight: 600;
+  color: #183127;
+}
+
+.mobile-bill-footer-total strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: #183127;
+  white-space: nowrap;
+}
+
+.mobile-bill-footer-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #a86100;
+  line-height: 1.5;
+}
+
+.mobile-bill-checkout-button {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #a86100;
+  background: #fff0c7;
+}
+
+.mobile-bill-checkout-button:disabled {
+  color: #b0b8b3;
+  background: #f1f3f2;
+  cursor: not-allowed;
+}
+
 @media (max-width: 900px) {
   .table-toolbar-row {
     flex-direction: column;
@@ -2216,8 +2762,7 @@ onBeforeUnmount(() => {
   }
 
   .table-form-modal,
-  .table-qr-modal,
-  .table-bill-modal {
+  .table-qr-modal {
     width: 100%;
     max-height: calc(100vh - 12px);
     padding: 20px;
@@ -2240,6 +2785,28 @@ onBeforeUnmount(() => {
 
   .table-mobile-actions .table-action-button {
     flex-basis: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .table-bill-backdrop {
+    display: block;
+    padding: 0;
+    background: #f6f8f6;
+  }
+
+  .table-bill-modal {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    display: block;
+    gap: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: #f6f8f6;
   }
 }
 </style>
