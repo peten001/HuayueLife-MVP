@@ -48,7 +48,10 @@ const merchantListMode = ref<
   | 'nearbyFailed'
 >('province');
 const normalizedRegionCode = computed(() =>
-  resolveRegionCode(locationStore.operationalRegion ?? ''),
+  resolveRegionCode(displayProvinceForCurrentMode() ?? ''),
+);
+const merchantPanelKey = computed(() =>
+  `${merchantListMode.value}-${normalizedRegionCode.value || 'unsupported'}`,
 );
 
 const currentRegionLabel = computed(
@@ -168,14 +171,22 @@ onShow(() => {
 
 async function refreshHome(forceRelocate: boolean) {
   locationStore.hydrateFromStorage();
-  const fallbackRegion = locationStore.operationalRegion;
-  const fallbackSource = locationStore.source;
-  const fallbackLatitude = locationStore.latitude;
-  const fallbackLongitude = locationStore.longitude;
 
-  if (!forceRelocate && fallbackSource === 'MANUAL' && fallbackRegion) {
+  if (!forceRelocate && locationStore.browseProvince) {
     sortOption.value = 'smart';
-    await loadByRegionCode(fallbackRegion, { mode: 'province' });
+    await loadByRegionCode(locationStore.browseProvince, { mode: 'province' });
+    return;
+  }
+
+  if (!forceRelocate && locationStore.locatedProvince) {
+    const canUseLocation = hasUsableLocation(locationStore.latitude, locationStore.longitude);
+    sortOption.value = canUseLocation ? 'distance' : 'smart';
+    await loadByRegionCode(locationStore.locatedProvince, {
+      mode: 'province',
+      useLocation: canUseLocation,
+      latitude: locationStore.latitude,
+      longitude: locationStore.longitude,
+    });
     return;
   }
 
@@ -188,60 +199,132 @@ async function refreshHome(forceRelocate: boolean) {
       : await locationStore.resolveLocation();
     console.log('[home] region snapshot', snapshot);
 
-    if (
-      snapshot.status !== 'LOCATED_SUPPORTED'
-      || !snapshot.operationalRegion
-    ) {
-      const effectiveFallbackRegion = snapshot.operationalRegion
-        ?? locationStore.operationalRegion
-        ?? fallbackRegion;
-      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
-        && fallbackSource === 'GPS';
-      if (effectiveFallbackRegion) {
-        sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
-        await loadByRegionCode(effectiveFallbackRegion, {
-          mode: 'province',
-          useLocation: canUseFallbackLocation,
-          latitude: fallbackLatitude,
-          longitude: fallbackLongitude,
-        });
-        return;
-      }
-      loading.value = false;
-      if (snapshot.status === 'LOCATED_UNSUPPORTED') {
-        clearHomeState('homeUnsupported');
-        return;
-      }
-      if (snapshot.status === 'PERMISSION_DENIED') {
-        clearHomeState('homePermissionDenied');
-        return;
-      }
-      clearHomeState('homeFailed');
+    if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
+      sortOption.value = 'distance';
+      await loadByRegionCode(snapshot.locatedProvince, {
+        mode: 'province',
+        useLocation: true,
+        latitude: snapshot.latitude,
+        longitude: snapshot.longitude,
+      });
       return;
     }
-    sortOption.value = 'distance';
-    await loadByRegionCode(snapshot.operationalRegion, {
-      mode: 'province',
-      useLocation: true,
-      latitude: snapshot.latitude,
-      longitude: snapshot.longitude,
-    });
-  } catch {
-    if (fallbackRegion) {
-      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
-        && fallbackSource === 'GPS';
-      sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
-      await loadByRegionCode(fallbackRegion, {
+
+    if (snapshot.status === 'LOCATED_UNSUPPORTED') {
+      loading.value = false;
+      clearHomeState('homeUnsupported');
+      return;
+    }
+
+    const fallback = locationFailureFallback();
+    if (fallback) {
+      sortOption.value = fallback.useLocation ? 'distance' : 'smart';
+      await loadByRegionCode(fallback.region, {
         mode: 'province',
-        useLocation: canUseFallbackLocation,
-        latitude: fallbackLatitude,
-        longitude: fallbackLongitude,
+        useLocation: fallback.useLocation,
+        latitude: fallback.latitude,
+        longitude: fallback.longitude,
+      });
+      return;
+    }
+
+    loading.value = false;
+    if (snapshot.status === 'PERMISSION_DENIED') {
+      clearHomeState('homePermissionDenied');
+      return;
+    }
+    clearHomeState('homeFailed');
+  } catch {
+    const fallback = locationFailureFallback();
+    if (fallback) {
+      sortOption.value = fallback.useLocation ? 'distance' : 'smart';
+      await loadByRegionCode(fallback.region, {
+        mode: 'province',
+        useLocation: fallback.useLocation,
+        latitude: fallback.latitude,
+        longitude: fallback.longitude,
       });
       return;
     }
     loading.value = false;
     clearHomeState('homeFailed');
   }
+}
+
+type RegionLoadFallback = {
+  region: 'Bac Giang' | 'Bac Ninh';
+  useLocation: boolean;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+function locationFailureFallback(): RegionLoadFallback | null {
+  const locatedProvince = locationStore.locatedProvince;
+  if (locatedProvince) {
+    const useLocation = hasUsableLocation(locationStore.latitude, locationStore.longitude);
+    return {
+      region: locatedProvince,
+      useLocation,
+      latitude: locationStore.latitude,
+      longitude: locationStore.longitude,
+    };
+  }
+
+  const browseProvince = locationStore.browseProvince ?? locationStore.operationalRegion;
+  if (browseProvince === 'Bac Giang' || browseProvince === 'Bac Ninh') {
+    return {
+      region: browseProvince,
+      useLocation: false,
+      latitude: null,
+      longitude: null,
+    };
+  }
+
+  return null;
+}
+
+function displayProvinceForCurrentMode() {
+  if (
+    merchantListMode.value === 'nearbyUnsupported'
+    || merchantListMode.value === 'homeUnsupported'
+  ) {
+    return null;
+  }
+
+  if (merchantListMode.value === 'nearby' && locationStore.locationStatus === 'LOCATED_SUPPORTED') {
+    return locationStore.locatedProvince;
+  }
+
+  return locationStore.browseProvince
+    ?? locationStore.locatedProvince
+    ?? locationStore.operationalRegion;
+}
+
+function scrollToMerchantList() {
+  uni.pageScrollTo({
+    selector: '#nearby-restaurants',
+    duration: 280,
+  });
+}
+
+function clearNearbyState(
+  mode: 'nearbyUnsupported' | 'nearbyPermissionDenied' | 'nearbyFailed',
+) {
+  loading.value = false;
+  merchants.value = [];
+  merchantListMode.value = mode;
+  scrollToMerchantList();
+}
+
+async function loadFallbackNearby(fallback: RegionLoadFallback) {
+  sortOption.value = fallback.useLocation ? 'distance' : 'smart';
+  await loadByRegionCode(fallback.region, {
+    mode: 'nearby',
+    useLocation: fallback.useLocation,
+    latitude: fallback.latitude,
+    longitude: fallback.longitude,
+  });
+  scrollToMerchantList();
 }
 
 async function loadByRegionCode(
@@ -296,9 +379,9 @@ async function selectCityOption(option: CityMenuOption) {
   cityMenuVisible.value = false;
   if (option.role === 'current') return;
   const regionCode = option.value;
-  if (regionCode === normalizedRegionCode.value) return;
+  if (regionCode === locationStore.browseProvince && merchantListMode.value === 'province') return;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
-    locationStore.setCity(regionCode);
+    locationStore.setBrowseProvince(regionCode);
     sortOption.value = 'smart';
     await loadByRegionCode(regionCode, { mode: 'province' });
   }
@@ -306,10 +389,6 @@ async function selectCityOption(option: CityMenuOption) {
 
 async function openNearbyMerchants() {
   locationStore.hydrateFromStorage();
-  const fallbackRegion = locationStore.operationalRegion;
-  const fallbackSource = locationStore.source;
-  const fallbackLatitude = locationStore.latitude;
-  const fallbackLongitude = locationStore.longitude;
   loading.value = true;
   merchants.value = [];
   merchantListMode.value = 'nearby';
@@ -318,79 +397,43 @@ async function openNearbyMerchants() {
     const snapshot = await locationStore.refreshLocationForNearby();
     console.log('[home] nearby region snapshot', snapshot);
 
-    if (
-      snapshot.status !== 'LOCATED_SUPPORTED'
-      || !snapshot.operationalRegion
-    ) {
-      const effectiveFallbackRegion = snapshot.operationalRegion
-        ?? locationStore.operationalRegion
-        ?? fallbackRegion;
-      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
-        && fallbackSource === 'GPS';
-      if (effectiveFallbackRegion) {
-        merchantListMode.value = 'nearby';
-        sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
-        await loadByRegionCode(effectiveFallbackRegion, {
-          mode: 'nearby',
-          useLocation: canUseFallbackLocation,
-          latitude: fallbackLatitude,
-          longitude: fallbackLongitude,
-        });
-        uni.pageScrollTo({
-          selector: '#nearby-restaurants',
-          duration: 280,
-        });
-        return;
-      }
-      loading.value = false;
-      if (snapshot.status === 'LOCATED_UNSUPPORTED') {
-        merchants.value = [];
-        merchantListMode.value = 'nearbyUnsupported';
-        return;
-      }
-      if (snapshot.status === 'PERMISSION_DENIED') {
-        merchants.value = [];
-        merchantListMode.value = 'nearbyPermissionDenied';
-        return;
-      }
-      merchants.value = [];
-      merchantListMode.value = 'nearbyFailed';
+    if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
+      merchantListMode.value = 'nearby';
+      sortOption.value = 'distance';
+      await loadByRegionCode(snapshot.locatedProvince, {
+        mode: 'nearby',
+        useLocation: true,
+        latitude: snapshot.latitude,
+        longitude: snapshot.longitude,
+      });
+      scrollToMerchantList();
       return;
     }
 
-    merchantListMode.value = 'nearby';
-    sortOption.value = 'distance';
-    await loadByRegionCode(snapshot.operationalRegion, {
-      mode: 'nearby',
-      useLocation: true,
-      latitude: snapshot.latitude,
-      longitude: snapshot.longitude,
-    });
-    uni.pageScrollTo({
-      selector: '#nearby-restaurants',
-      duration: 280,
-    });
-    return;
-  } catch {
-    if (fallbackRegion) {
-      const canUseFallbackLocation = hasUsableLocation(fallbackLatitude, fallbackLongitude)
-        && fallbackSource === 'GPS';
-      sortOption.value = canUseFallbackLocation ? 'distance' : 'smart';
-      await loadByRegionCode(fallbackRegion, {
-        mode: 'nearby',
-        useLocation: canUseFallbackLocation,
-        latitude: fallbackLatitude,
-        longitude: fallbackLongitude,
-      });
-      uni.pageScrollTo({
-        selector: '#nearby-restaurants',
-        duration: 280,
-      });
+    if (snapshot.status === 'LOCATED_UNSUPPORTED') {
+      clearNearbyState('nearbyUnsupported');
       return;
     }
-    loading.value = false;
-    merchants.value = [];
-    merchantListMode.value = 'nearbyFailed';
+
+    const fallback = locationFailureFallback();
+    if (fallback) {
+      await loadFallbackNearby(fallback);
+      return;
+    }
+
+    if (snapshot.status === 'PERMISSION_DENIED') {
+      clearNearbyState('nearbyPermissionDenied');
+      return;
+    }
+
+    clearNearbyState('nearbyFailed');
+  } catch {
+    const fallback = locationFailureFallback();
+    if (fallback) {
+      await loadFallbackNearby(fallback);
+      return;
+    }
+    clearNearbyState('nearbyFailed');
   }
 }
 
@@ -689,7 +732,7 @@ function hasUsableLocation(
       </view>
     </view>
 
-    <view class="merchant-panel" :key="locationStore.operationalRegion || 'unsupported'">
+    <view class="merchant-panel" :key="merchantPanelKey">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
       <view v-else-if="!merchants.length" class="empty">
         <text class="empty-title">{{ emptyStateTitle() }}</text>

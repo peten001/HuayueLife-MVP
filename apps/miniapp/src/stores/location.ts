@@ -9,7 +9,8 @@ import { defineStore } from 'pinia';
 export type OperationalRegionCode = 'Bac Giang' | 'Bac Ninh';
 export type RegionCode = OperationalRegionCode;
 export type CityCode = OperationalRegionCode;
-export type CitySource = 'GPS' | 'MANUAL' | 'NONE';
+export type LocationSource = 'GPS' | 'MANUAL' | 'CACHE' | 'NONE';
+export type CitySource = LocationSource;
 export type LocationStatus =
   | 'IDLE'
   | 'LOCATING'
@@ -20,17 +21,27 @@ export type LocationStatus =
 
 export type LocationSnapshot = {
   operationalRegion: OperationalRegionCode | null;
+  browseProvince: OperationalRegionCode | null;
+  locatedProvince: OperationalRegionCode | null;
+  locatedCityName: string | null;
   latitude: number | null;
   longitude: number | null;
   status: LocationStatus;
-  source: CitySource;
+  locationStatus: LocationStatus;
+  source: LocationSource;
 };
 
 type StoredLocationState = {
-  operationalRegion: OperationalRegionCode | null;
-  latitude: number | null;
-  longitude: number | null;
-  source: CitySource;
+  version?: number;
+  operationalRegion?: OperationalRegionCode | null;
+  browseProvince?: OperationalRegionCode | null;
+  locatedProvince?: OperationalRegionCode | null;
+  locatedCityName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source?: LocationSource;
+  status?: LocationStatus;
+  locationStatus?: LocationStatus;
 };
 
 type BoundaryBox = {
@@ -83,8 +94,12 @@ export function guessCityByLocation(
 export const useLocationStore = defineStore('location', {
   state: () => ({
     operationalRegion: null as OperationalRegionCode | null,
-    source: 'NONE' as CitySource,
+    browseProvince: null as OperationalRegionCode | null,
+    locatedProvince: null as OperationalRegionCode | null,
+    locatedCityName: null as string | null,
+    source: 'NONE' as LocationSource,
     status: 'IDLE' as LocationStatus,
+    locationStatus: 'IDLE' as LocationStatus,
     latitude: null as number | null,
     longitude: null as number | null,
     bootstrapped: false,
@@ -93,11 +108,11 @@ export const useLocationStore = defineStore('location', {
   }),
   getters: {
     currentOperationalRegion(state): OperationalRegionCode | null {
-      return state.operationalRegion;
+      return state.browseProvince ?? state.locatedProvince ?? state.operationalRegion;
     },
     // Legacy read-only alias for existing UI text rendering.
     city(state): CityCode | null {
-      return state.operationalRegion;
+      return state.browseProvince ?? state.locatedProvince ?? state.operationalRegion;
     },
   },
   actions: {
@@ -109,59 +124,94 @@ export const useLocationStore = defineStore('location', {
         const stored = uni.getStorageSync(LOCATION_STATE_KEY) as StoredLocationState | null;
         if (!stored || typeof stored !== 'object') return;
 
-        const operationalRegion = isOperationalRegionCode(stored.operationalRegion)
+        const hasV2Fields = 'browseProvince' in stored || 'locatedProvince' in stored;
+        const legacyOperationalRegion = isOperationalRegionCode(stored.operationalRegion)
           ? stored.operationalRegion
           : null;
         const source = isCitySource(stored.source)
           ? stored.source
           : 'NONE';
+        const storedBrowseProvince = isOperationalRegionCode(stored.browseProvince)
+          ? stored.browseProvince
+          : null;
+        const storedLocatedProvince = isOperationalRegionCode(stored.locatedProvince)
+          ? stored.locatedProvince
+          : null;
+        const browseProvince = hasV2Fields
+          ? storedBrowseProvince
+          : inferLegacyBrowseProvince(legacyOperationalRegion);
+        const locatedProvince = hasV2Fields
+          ? storedLocatedProvince
+          : inferLegacyLocatedProvince(legacyOperationalRegion, source);
         const latitude = normalizeCoordinate(stored.latitude);
         const longitude = normalizeCoordinate(stored.longitude);
+        const locationStatus = normalizeLocationStatus(stored.locationStatus ?? stored.status)
+          ?? inferLocationStatus(locatedProvince);
 
-        this.operationalRegion = operationalRegion;
-        this.source = operationalRegion ? source : 'NONE';
+        this.browseProvince = browseProvince;
+        this.locatedProvince = locatedProvince;
+        this.locatedCityName = normalizeLocatedCityName(stored.locatedCityName);
         this.latitude = latitude;
         this.longitude = longitude;
-        this.status = operationalRegion ? 'LOCATED_SUPPORTED' : 'IDLE';
-        this.bootstrapped = Boolean(operationalRegion);
+        this.locationStatus = locationStatus;
+        this.status = locationStatus;
+        this.source = locationStatus === 'LOCATED_UNSUPPORTED' && source === 'GPS'
+          ? 'GPS'
+          : resolveHydratedSource(source, browseProvince, locatedProvince);
+        this.syncOperationalRegion();
+        this.bootstrapped = Boolean(
+          browseProvince
+          || locatedProvince
+          || this.locatedCityName
+          || locationStatus !== 'IDLE',
+        );
       } catch {
         // Ignore malformed local cache and fall back to runtime state.
       }
     },
     persistState() {
       const next: StoredLocationState = {
-        operationalRegion: this.operationalRegion,
+        version: 2,
+        operationalRegion: this.resolveDisplayProvince(),
+        browseProvince: this.browseProvince,
+        locatedProvince: this.locatedProvince,
+        locatedCityName: this.locatedCityName,
         latitude: normalizeCoordinate(this.latitude),
         longitude: normalizeCoordinate(this.longitude),
-        source: this.operationalRegion ? this.source : 'NONE',
+        source: this.resolvePersistedSource(),
+        status: this.locationStatus,
+        locationStatus: this.locationStatus,
       };
 
-      if (!next.operationalRegion) {
+      if (!hasPersistableState(next)) {
         uni.removeStorageSync(LOCATION_STATE_KEY);
         return;
       }
 
       uni.setStorageSync(LOCATION_STATE_KEY, next);
     },
-    setCity(city: CityCode) {
+    setBrowseProvince(regionCode: RegionCode) {
       this.hydrateFromStorage();
-      this.operationalRegion = city;
+      this.browseProvince = regionCode;
       this.source = 'MANUAL';
-      this.latitude = null;
-      this.longitude = null;
-      this.status = 'IDLE';
+      if (!this.locatedProvince && this.locationStatus === 'IDLE') {
+        this.status = 'IDLE';
+        this.locationStatus = 'IDLE';
+      }
       this.bootstrapped = true;
+      this.syncOperationalRegion();
       this.persistState();
+    },
+    setCity(city: CityCode) {
+      this.setBrowseProvince(city);
     },
     clearManualOverride() {
       this.hydrateFromStorage();
-      if (this.source !== 'MANUAL') return;
-      this.operationalRegion = null;
-      this.source = 'NONE';
-      this.latitude = null;
-      this.longitude = null;
-      this.status = 'IDLE';
-      this.bootstrapped = false;
+      if (!this.browseProvince && this.source !== 'MANUAL') return;
+      this.browseProvince = null;
+      this.source = this.locatedProvince ? 'GPS' : 'NONE';
+      this.syncOperationalRegion();
+      this.bootstrapped = Boolean(this.locatedProvince || this.locationStatus !== 'IDLE');
       this.persistState();
     },
     async relocate() {
@@ -173,27 +223,12 @@ export const useLocationStore = defineStore('location', {
         return pendingLocationRequest;
       }
 
-      pendingLocationRequest = this.captureLocation(false)
-        .then((snapshot) => {
-          if (
-            snapshot.status === 'LOCATED_SUPPORTED'
-            && snapshot.operationalRegion
-          ) {
-            this.operationalRegion = snapshot.operationalRegion;
-            this.latitude = snapshot.latitude;
-            this.longitude = snapshot.longitude;
-            this.status = snapshot.status;
-            this.source = 'GPS';
-            this.bootstrapped = true;
-            this.persistState();
-            return this.snapshot();
-          }
-
-          return snapshot;
-        })
-        .finally(() => {
-          pendingLocationRequest = null;
-        });
+      pendingLocationRequest = this.captureLocation({
+        persist: true,
+        updateBrowseFromGps: false,
+      }).finally(() => {
+        pendingLocationRequest = null;
+      });
 
       return pendingLocationRequest;
     },
@@ -202,28 +237,37 @@ export const useLocationStore = defineStore('location', {
       if (pendingLocationRequest) {
         return pendingLocationRequest;
       }
-      if (this.source === 'MANUAL' && this.operationalRegion && !force) {
+      if (this.browseProvince && !force) {
+        return this.snapshot();
+      }
+      if (this.locatedProvince && !force) {
         return this.snapshot();
       }
 
-      pendingLocationRequest = this.captureLocation(true).finally(() => {
+      pendingLocationRequest = this.captureLocation({
+        persist: true,
+        updateBrowseFromGps: !this.browseProvince,
+      }).finally(() => {
         pendingLocationRequest = null;
       });
 
       return pendingLocationRequest;
     },
-    async captureLocation(persist: boolean): Promise<LocationSnapshot> {
+    async captureLocation(options: {
+      persist: boolean;
+      updateBrowseFromGps?: boolean;
+    }): Promise<LocationSnapshot> {
       this.hydrateFromStorage();
       this.loading = true;
-      const previousSnapshot = this.snapshot();
       try {
         let latitude: number | null = null;
         let longitude: number | null = null;
-        let operationalRegion: OperationalRegionCode | null = null;
+        let locatedProvince: OperationalRegionCode | null = null;
         let status: LocationStatus = 'LOCATING';
 
-        if (persist) {
+        if (options.persist) {
           this.status = 'LOCATING';
+          this.locationStatus = 'LOCATING';
         }
 
         try {
@@ -237,53 +281,45 @@ export const useLocationStore = defineStore('location', {
 
           latitude = position.latitude;
           longitude = position.longitude;
-          operationalRegion = guessCityByLocation(position.latitude, position.longitude);
-          status = operationalRegion
+          locatedProvince = guessCityByLocation(position.latitude, position.longitude);
+          status = locatedProvince
             ? 'LOCATED_SUPPORTED'
             : 'LOCATED_UNSUPPORTED';
-          if (persist) {
+          if (options.persist) {
+            this.latitude = latitude;
+            this.longitude = longitude;
             this.status = status;
-            if (operationalRegion) {
-              this.latitude = latitude;
-              this.longitude = longitude;
-              this.operationalRegion = operationalRegion;
-              this.source = 'GPS';
-            } else if (previousSnapshot.operationalRegion) {
-              this.latitude = null;
-              this.longitude = null;
-              this.operationalRegion = previousSnapshot.operationalRegion;
-              this.source = previousSnapshot.source === 'MANUAL' ? 'MANUAL' : 'NONE';
+            this.locationStatus = status;
+            this.source = 'GPS';
+            if (locatedProvince) {
+              this.locatedProvince = locatedProvince;
+              this.locatedCityName = null;
+              if (options.updateBrowseFromGps && !this.browseProvince) {
+                this.browseProvince = locatedProvince;
+              }
             } else {
-              this.latitude = null;
-              this.longitude = null;
-              this.operationalRegion = null;
-              this.source = 'NONE';
+              this.locatedProvince = null;
+              this.locatedCityName = 'unsupported';
+              this.source = 'GPS';
             }
+            this.syncOperationalRegion();
           }
         } catch (error) {
           latitude = null;
           longitude = null;
-          operationalRegion = null;
+          locatedProvince = null;
           status = isPermissionDeniedError(error)
             ? 'PERMISSION_DENIED'
             : 'FAILED';
-          if (persist) {
+          if (options.persist) {
             this.status = status;
-            if (previousSnapshot.operationalRegion) {
-              this.latitude = null;
-              this.longitude = null;
-              this.operationalRegion = previousSnapshot.operationalRegion;
-              this.source = previousSnapshot.source === 'MANUAL' ? 'MANUAL' : 'NONE';
-            } else {
-              this.latitude = null;
-              this.longitude = null;
-              this.operationalRegion = null;
-              this.source = 'NONE';
-            }
+            this.locationStatus = status;
+            this.source = this.resolveFailureSource();
+            this.syncOperationalRegion();
           }
         }
 
-        if (persist) {
+        if (options.persist) {
           this.bootstrapped = true;
           this.persistState();
           return this.snapshot();
@@ -291,11 +327,15 @@ export const useLocationStore = defineStore('location', {
 
         return {
           operationalRegion: status === 'LOCATED_SUPPORTED'
-            ? operationalRegion
+            ? locatedProvince
             : null,
+          browseProvince: this.browseProvince,
+          locatedProvince: status === 'LOCATED_SUPPORTED' ? locatedProvince : null,
+          locatedCityName: status === 'LOCATED_UNSUPPORTED' ? 'unsupported' : null,
           latitude,
           longitude,
           status,
+          locationStatus: status,
           source: status === 'LOCATED_SUPPORTED' ? 'GPS' : 'NONE',
         };
       } finally {
@@ -304,12 +344,34 @@ export const useLocationStore = defineStore('location', {
     },
     snapshot(): LocationSnapshot {
       return {
-        operationalRegion: this.operationalRegion,
+        operationalRegion: this.resolveDisplayProvince(),
+        browseProvince: this.browseProvince,
+        locatedProvince: this.locatedProvince,
+        locatedCityName: this.locatedCityName,
         latitude: this.latitude,
         longitude: this.longitude,
-        status: this.status,
+        status: this.locationStatus,
+        locationStatus: this.locationStatus,
         source: this.source,
       };
+    },
+    resolveDisplayProvince(): OperationalRegionCode | null {
+      return this.browseProvince ?? this.locatedProvince ?? null;
+    },
+    syncOperationalRegion() {
+      this.operationalRegion = this.resolveDisplayProvince();
+    },
+    resolvePersistedSource(): LocationSource {
+      if (this.source === 'MANUAL' && this.browseProvince) return 'MANUAL';
+      if (this.source === 'GPS' && (this.locatedProvince || this.locationStatus === 'LOCATED_UNSUPPORTED')) return 'GPS';
+      if (this.locatedProvince) return 'CACHE';
+      if (this.browseProvince) return 'MANUAL';
+      return 'NONE';
+    },
+    resolveFailureSource(): LocationSource {
+      if (this.browseProvince) return 'MANUAL';
+      if (this.locatedProvince) return 'CACHE';
+      return 'NONE';
     },
   },
 });
@@ -353,8 +415,73 @@ function isOperationalRegionCode(value: unknown): value is OperationalRegionCode
   return value === 'Bac Giang' || value === 'Bac Ninh';
 }
 
-function isCitySource(value: unknown): value is CitySource {
-  return value === 'GPS' || value === 'MANUAL' || value === 'NONE';
+function isCitySource(value: unknown): value is LocationSource {
+  return value === 'GPS' || value === 'MANUAL' || value === 'CACHE' || value === 'NONE';
+}
+
+function normalizeLocationStatus(value: unknown): LocationStatus | null {
+  return isLocationStatus(value) ? value : null;
+}
+
+function isLocationStatus(value: unknown): value is LocationStatus {
+  return value === 'IDLE'
+    || value === 'LOCATING'
+    || value === 'LOCATED_SUPPORTED'
+    || value === 'LOCATED_UNSUPPORTED'
+    || value === 'PERMISSION_DENIED'
+    || value === 'FAILED';
+}
+
+function inferLocationStatus(
+  locatedProvince: OperationalRegionCode | null,
+): LocationStatus {
+  return locatedProvince ? 'LOCATED_SUPPORTED' : 'IDLE';
+}
+
+function inferLegacyBrowseProvince(
+  legacyOperationalRegion: OperationalRegionCode | null,
+) {
+  if (!legacyOperationalRegion) return null;
+  return legacyOperationalRegion;
+}
+
+function inferLegacyLocatedProvince(
+  legacyOperationalRegion: OperationalRegionCode | null,
+  source: LocationSource,
+) {
+  if (!legacyOperationalRegion) return null;
+  return source === 'GPS' || source === 'CACHE' ? legacyOperationalRegion : null;
+}
+
+function resolveHydratedSource(
+  source: LocationSource,
+  browseProvince: OperationalRegionCode | null,
+  locatedProvince: OperationalRegionCode | null,
+): LocationSource {
+  if (source === 'MANUAL' && browseProvince) return 'MANUAL';
+  if (source === 'GPS' && locatedProvince) return 'GPS';
+  if (source === 'CACHE' && locatedProvince) return 'CACHE';
+  if (browseProvince) return 'MANUAL';
+  if (locatedProvince) return 'CACHE';
+  return 'NONE';
+}
+
+function normalizeLocatedCityName(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function hasPersistableState(state: StoredLocationState) {
+  return Boolean(
+    state.browseProvince
+    || state.locatedProvince
+    || state.locatedCityName
+    || normalizeCoordinate(state.latitude) !== null
+    || normalizeCoordinate(state.longitude) !== null
+    || (state.locationStatus && state.locationStatus !== 'IDLE')
+    || (state.status && state.status !== 'IDLE'),
+  );
 }
 
 function normalizeCoordinate(value: unknown) {
