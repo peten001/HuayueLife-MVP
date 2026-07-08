@@ -440,6 +440,27 @@ function primaryAction(order: MerchantOrder) {
   return actionMap[order.status];
 }
 
+function dashboardPrimaryActionLabel(order: MerchantOrder) {
+  const next = primaryAction(order);
+  if (!next) return '';
+  if (next.action === 'accept') {
+    return localLabel({ zh: '接单', vi: 'Nhận', en: 'Accept' });
+  }
+  if (next.action === 'start-preparing') {
+    return localLabel({ zh: '开始制作', vi: 'Làm món', en: 'Prep' });
+  }
+  if (next.action === 'ready') {
+    return localLabel({ zh: '完成制作', vi: 'Sẵn sàng', en: 'Ready' });
+  }
+  if (next.action === 'start-delivery') {
+    return localLabel({ zh: '开始配送', vi: 'Giao', en: 'Deliver' });
+  }
+  if (next.action === 'complete' && order.orderType === 'DELIVERY') {
+    return localLabel({ zh: '完成配送', vi: 'Đã giao', en: 'Delivered' });
+  }
+  return localLabel({ zh: '完成订单', vi: 'Hoàn tất', en: 'Complete' });
+}
+
 function openChat(order: MerchantOrder) {
   if (!chatEnabled.value) return;
   chatOrderId.value = order.id;
@@ -462,17 +483,8 @@ function chatUnreadCount(order: MerchantOrder) {
   return order.chatConversation?.merchantUnreadCount ?? 0;
 }
 
-function chatUnreadText(count: number) {
-  const displayCount = count > 99 ? '99+' : String(count);
-  return localLabel({
-    zh: `${displayCount} 条新消息`,
-    vi: `${displayCount} tin nhắn mới`,
-    en: `${displayCount} new message${count === 1 ? '' : 's'}`,
-  });
-}
-
-function chatUnreadLabel(order: MerchantOrder) {
-  return chatUnreadText(chatUnreadCount(order));
+function formatUnreadCount(count: number) {
+  return count > 99 ? '99+' : String(count);
 }
 
 async function execute(order: MerchantOrder) {
@@ -641,10 +653,6 @@ type Action =
                     {{ t('newOrderBadge') }}
                   </span>
                   <strong>#{{ order.orderNo }}</strong>
-                  <span v-if="chatUnreadCount(order)" class="chat-unread-chip dashboard-order-chat-unread">
-                    <span class="chat-unread-dot" aria-hidden="true"></span>
-                    {{ chatUnreadLabel(order) }}
-                  </span>
                 </div>
                 <OrderStatusBadge :status="order.status" />
               </header>
@@ -657,33 +665,78 @@ type Action =
                 <span>{{ t('amount') }}</span>
                 <b>{{ money(order.totalAmountVnd) }}</b>
               </footer>
-              <div class="card-actions">
+              <div class="dashboard-order-actions">
                 <button
                   v-if="primaryAction(order)"
                   type="button"
+                  class="dashboard-order-action dashboard-order-action--primary"
                   :disabled="operatingId === order.id"
-                  @click="execute(order)"
+                  @click.stop="execute(order)"
                 >
-                  {{ t(primaryAction(order)!.label) }}
+                  <svg
+                    class="dashboard-order-action__icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                    <path d="M15 18H9" />
+                    <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
+                    <circle cx="17" cy="18" r="2" />
+                    <circle cx="7" cy="18" r="2" />
+                  </svg>
+                  <span class="dashboard-order-action__text">{{ dashboardPrimaryActionLabel(order) }}</span>
                 </button>
                 <RouterLink
-                  class="secondary card-link"
+                  class="dashboard-order-action dashboard-order-action--detail"
                   :to="`/orders/${order.id}`"
-                  @click="requestGestureWakeLock('view-order-detail')"
+                  @click.stop="requestGestureWakeLock('view-order-detail')"
                 >
-                  {{ t('viewDetails') }}
+                  <svg
+                    class="dashboard-order-action__icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                    <path d="M16 13H8" />
+                    <path d="M16 17H8" />
+                    <path d="M10 9H8" />
+                  </svg>
+                  <span class="dashboard-order-action__text">{{ t('viewDetails') }}</span>
                 </RouterLink>
                 <button
                   v-if="chatEnabled"
                   type="button"
-                  class="secondary dashboard-chat-button"
-                  :class="{ 'chat-entry--unread': chatUnreadCount(order) }"
+                  class="dashboard-order-action dashboard-order-action--chat"
+                  :class="{ 'dashboard-order-action--unread': chatUnreadCount(order) }"
                   @click.stop="openChat(order)"
                 >
-                  <span>{{ t('openChat') }}</span>
-                  <span v-if="chatUnreadCount(order)" class="chat-unread-count">
-                    {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                  <span v-if="chatUnreadCount(order)" class="dashboard-order-action__badge">
+                    {{ formatUnreadCount(chatUnreadCount(order)) }}
                   </span>
+                  <svg
+                    class="dashboard-order-action__icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
+                  </svg>
+                  <span class="dashboard-order-action__text">{{ t('openChat') }}</span>
                 </button>
               </div>
             </article>
@@ -812,10 +865,6 @@ type Action =
                   {{ t('newOrderBadge') }}
                 </span>
                 <strong>#{{ order.orderNo }}</strong>
-                <span v-if="chatUnreadCount(order)" class="chat-unread-chip mobile-order-chat-unread">
-                  <span class="chat-unread-dot" aria-hidden="true"></span>
-                  {{ chatUnreadLabel(order) }}
-                </span>
               </div>
               <OrderStatusBadge :status="order.status" />
             </header>
@@ -828,33 +877,78 @@ type Action =
               <span>{{ t('amount') }}</span>
               <b>{{ money(order.totalAmountVnd) }}</b>
             </footer>
-            <div class="mobile-card-actions">
+            <div class="dashboard-order-actions">
               <button
                 v-if="primaryAction(order)"
                 type="button"
+                class="dashboard-order-action dashboard-order-action--primary"
                 :disabled="operatingId === order.id"
-                @click="execute(order)"
+                @click.stop="execute(order)"
               >
-                {{ t(primaryAction(order)!.label) }}
+                <svg
+                  class="dashboard-order-action__icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                  <path d="M15 18H9" />
+                  <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
+                  <circle cx="17" cy="18" r="2" />
+                  <circle cx="7" cy="18" r="2" />
+                </svg>
+                <span class="dashboard-order-action__text">{{ dashboardPrimaryActionLabel(order) }}</span>
               </button>
               <RouterLink
-                class="secondary card-link"
+                class="dashboard-order-action dashboard-order-action--detail"
                 :to="`/orders/${order.id}`"
-                @click="requestGestureWakeLock('view-order-detail')"
+                @click.stop="requestGestureWakeLock('view-order-detail')"
               >
-                {{ t('viewDetails') }}
+                <svg
+                  class="dashboard-order-action__icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6" />
+                  <path d="M16 13H8" />
+                  <path d="M16 17H8" />
+                  <path d="M10 9H8" />
+                </svg>
+                <span class="dashboard-order-action__text">{{ t('viewDetails') }}</span>
               </RouterLink>
               <button
                 v-if="chatEnabled"
                 type="button"
-                class="secondary dashboard-chat-button"
-                :class="{ 'chat-entry--unread': chatUnreadCount(order) }"
+                class="dashboard-order-action dashboard-order-action--chat"
+                :class="{ 'dashboard-order-action--unread': chatUnreadCount(order) }"
                 @click.stop="openChat(order)"
               >
-                <span>{{ t('openChat') }}</span>
-                <span v-if="chatUnreadCount(order)" class="chat-unread-count">
-                  {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                <span v-if="chatUnreadCount(order)" class="dashboard-order-action__badge">
+                  {{ formatUnreadCount(chatUnreadCount(order)) }}
                 </span>
+                <svg
+                  class="dashboard-order-action__icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
+                </svg>
+                <span class="dashboard-order-action__text">{{ t('openChat') }}</span>
               </button>
             </div>
           </article>
@@ -1349,8 +1443,7 @@ type Action =
 }
 
 .dashboard-order-card header,
-.dashboard-order-card footer,
-.card-actions {
+.dashboard-order-card footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1395,79 +1488,109 @@ type Action =
   font-size: 17px;
 }
 
-.card-actions button {
-  min-height: 34px;
-  border-radius: 10px;
-  background: #2e7d32;
-  font-size: 13px;
-  font-weight: 700;
+.dashboard-order-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 3px;
 }
 
-.card-link.secondary {
-  color: #2e7d32;
-  background: #eaf7ee;
-}
-
-.dashboard-chat-button {
-  display: inline-flex;
+.dashboard-order-action {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.dashboard-chat-button.chat-entry--unread {
-  color: #b42318;
-  border-color: #fecaca;
-  background: #fff7f7;
-}
-
-.chat-unread-chip {
-  display: inline-flex;
-  align-items: center;
   gap: 5px;
-  max-width: 100%;
-  width: fit-content;
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: #e5484d;
-  background: #fff1f1;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  white-space: nowrap;
+  min-width: 0;
+  min-height: 72px;
+  padding: 8px 6px;
+  border: 1px solid #ddeee3;
+  border-radius: 14px;
+  color: #2e7d32;
+  background: #f4fbf6;
+  appearance: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 
-.chat-unread-dot {
-  width: 8px;
-  height: 8px;
+.dashboard-order-action:hover {
+  border-color: #c9e8d2;
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.dashboard-order-action:active {
+  background: #dff2e6;
+}
+
+.dashboard-order-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dashboard-order-action:disabled:hover {
+  border-color: #ddeee3;
+  background: #f4fbf6;
+}
+
+.dashboard-order-action--primary {
+  border-color: #d6eedd;
+  background: #f4fbf6;
+}
+
+.dashboard-order-action--detail {
+  background: #f8fcf9;
+}
+
+.dashboard-order-action--unread {
+  border-color: #d6eedd;
+  background: #f4fbf6;
+}
+
+.dashboard-order-action__icon {
+  width: 24px;
+  height: 24px;
   flex: none;
-  border-radius: 999px;
-  background: #e5484d;
+  color: #2e7d32;
 }
 
-.chat-unread-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.dashboard-order-action__text {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: #2e7d32;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dashboard-order-action__badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
   min-width: 18px;
   height: 18px;
-  padding: 0 6px;
+  padding: 0 5px;
   border-radius: 999px;
   color: #fff;
-  background: #e5484d;
+  background: #ef4444;
   font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgb(239 68 68 / 28%);
+  box-sizing: border-box;
 }
 
 .new-order-badge {
@@ -1784,18 +1907,6 @@ type Action =
   font-size: 19px;
 }
 
-.mobile-card-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.mobile-card-actions button,
-.mobile-card-actions .card-link {
-  width: 100%;
-  max-width: 100%;
-}
-
 .mobile-empty-state {
   display: grid;
   justify-items: center;
@@ -2030,6 +2141,29 @@ type Action =
     min-height: 34px;
     padding: 0 10px;
     font-size: 13px;
+  }
+}
+
+@media (max-width: 380px) {
+  .dashboard-order-actions {
+    gap: 6px;
+  }
+
+  .dashboard-order-action {
+    min-height: 66px;
+    padding: 7px 4px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
+  .dashboard-order-action__icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .dashboard-order-action__badge {
+    top: 6px;
+    right: 8px;
   }
 }
 
