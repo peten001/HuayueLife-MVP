@@ -29,6 +29,8 @@ const cities = computed(() => cityOptions(locale.value));
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
 const requestSeq = ref(0);
+const hasInitializedHome = ref(false);
+const manualCitySelectionSeq = ref(0);
 const searchKeyword = ref('');
 const selectedCategory = ref<ServiceCategoryKey | ''>('');
 const sortOption = ref<SortOption>('smart');
@@ -166,37 +168,24 @@ const visibleMerchants = computed(() => {
 usePageTitle(() => t('homeTitle'));
 
 onShow(() => {
-  void refreshHome(false);
+  if (hasInitializedHome.value) return;
+  hasInitializedHome.value = true;
+  void initializeHome();
 });
 
-async function refreshHome(forceRelocate: boolean) {
+async function initializeHome() {
   locationStore.hydrateFromStorage();
+  await refreshHomeByCurrentLocation();
+}
 
-  if (!forceRelocate && locationStore.browseProvince) {
-    sortOption.value = 'smart';
-    await loadByRegionCode(locationStore.browseProvince, { mode: 'province' });
-    return;
-  }
-
-  if (!forceRelocate && locationStore.locatedProvince) {
-    const canUseLocation = hasUsableLocation(locationStore.latitude, locationStore.longitude);
-    sortOption.value = canUseLocation ? 'distance' : 'smart';
-    await loadByRegionCode(locationStore.locatedProvince, {
-      mode: 'province',
-      useLocation: canUseLocation,
-      latitude: locationStore.latitude,
-      longitude: locationStore.longitude,
-    });
-    return;
-  }
-
+async function refreshHomeByCurrentLocation() {
+  const manualSeqAtStart = manualCitySelectionSeq.value;
   loading.value = true;
   merchants.value = [];
   merchantListMode.value = 'province';
   try {
-    const snapshot = forceRelocate
-      ? await locationStore.relocate()
-      : await locationStore.resolveLocation();
+    const snapshot = await locationStore.refreshLocationForHome();
+    if (manualCitySelectionSeq.value !== manualSeqAtStart) return;
     console.log('[home] region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
@@ -216,77 +205,29 @@ async function refreshHome(forceRelocate: boolean) {
       return;
     }
 
-    const fallback = locationFailureFallback();
-    if (fallback) {
-      sortOption.value = fallback.useLocation ? 'distance' : 'smart';
-      await loadByRegionCode(fallback.region, {
-        mode: 'province',
-        useLocation: fallback.useLocation,
-        latitude: fallback.latitude,
-        longitude: fallback.longitude,
-      });
-      return;
-    }
-
     loading.value = false;
+    sortOption.value = 'smart';
     if (snapshot.status === 'PERMISSION_DENIED') {
       clearHomeState('homePermissionDenied');
       return;
     }
     clearHomeState('homeFailed');
   } catch {
-    const fallback = locationFailureFallback();
-    if (fallback) {
-      sortOption.value = fallback.useLocation ? 'distance' : 'smart';
-      await loadByRegionCode(fallback.region, {
-        mode: 'province',
-        useLocation: fallback.useLocation,
-        latitude: fallback.latitude,
-        longitude: fallback.longitude,
-      });
-      return;
-    }
+    if (manualCitySelectionSeq.value !== manualSeqAtStart) return;
     loading.value = false;
+    sortOption.value = 'smart';
     clearHomeState('homeFailed');
   }
-}
-
-type RegionLoadFallback = {
-  region: 'Bac Giang' | 'Bac Ninh';
-  useLocation: boolean;
-  latitude: number | null;
-  longitude: number | null;
-};
-
-function locationFailureFallback(): RegionLoadFallback | null {
-  const locatedProvince = locationStore.locatedProvince;
-  if (locatedProvince) {
-    const useLocation = hasUsableLocation(locationStore.latitude, locationStore.longitude);
-    return {
-      region: locatedProvince,
-      useLocation,
-      latitude: locationStore.latitude,
-      longitude: locationStore.longitude,
-    };
-  }
-
-  const browseProvince = locationStore.browseProvince ?? locationStore.operationalRegion;
-  if (browseProvince === 'Bac Giang' || browseProvince === 'Bac Ninh') {
-    return {
-      region: browseProvince,
-      useLocation: false,
-      latitude: null,
-      longitude: null,
-    };
-  }
-
-  return null;
 }
 
 function displayProvinceForCurrentMode() {
   if (
     merchantListMode.value === 'nearbyUnsupported'
     || merchantListMode.value === 'homeUnsupported'
+    || merchantListMode.value === 'nearbyPermissionDenied'
+    || merchantListMode.value === 'homePermissionDenied'
+    || merchantListMode.value === 'nearbyFailed'
+    || merchantListMode.value === 'homeFailed'
   ) {
     return null;
   }
@@ -313,17 +254,6 @@ function clearNearbyState(
   loading.value = false;
   merchants.value = [];
   merchantListMode.value = mode;
-  scrollToMerchantList();
-}
-
-async function loadFallbackNearby(fallback: RegionLoadFallback) {
-  sortOption.value = fallback.useLocation ? 'distance' : 'smart';
-  await loadByRegionCode(fallback.region, {
-    mode: 'nearby',
-    useLocation: fallback.useLocation,
-    latitude: fallback.latitude,
-    longitude: fallback.longitude,
-  });
   scrollToMerchantList();
 }
 
@@ -381,6 +311,7 @@ async function selectCityOption(option: CityMenuOption) {
   const regionCode = option.value;
   if (regionCode === locationStore.browseProvince && merchantListMode.value === 'province') return;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
+    manualCitySelectionSeq.value += 1;
     locationStore.setBrowseProvince(regionCode);
     sortOption.value = 'smart';
     await loadByRegionCode(regionCode, { mode: 'province' });
@@ -415,12 +346,6 @@ async function openNearbyMerchants() {
       return;
     }
 
-    const fallback = locationFailureFallback();
-    if (fallback) {
-      await loadFallbackNearby(fallback);
-      return;
-    }
-
     if (snapshot.status === 'PERMISSION_DENIED') {
       clearNearbyState('nearbyPermissionDenied');
       return;
@@ -428,11 +353,6 @@ async function openNearbyMerchants() {
 
     clearNearbyState('nearbyFailed');
   } catch {
-    const fallback = locationFailureFallback();
-    if (fallback) {
-      await loadFallbackNearby(fallback);
-      return;
-    }
     clearNearbyState('nearbyFailed');
   }
 }
@@ -625,13 +545,6 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
     label: cities.value.find((city) => city.value === value)?.label || value,
     value,
   };
-}
-
-function hasUsableLocation(
-  latitude: number | null | undefined,
-  longitude: number | null | undefined,
-) {
-  return Number.isFinite(latitude) && Number.isFinite(longitude);
 }
 
 </script>

@@ -131,15 +131,9 @@ export const useLocationStore = defineStore('location', {
         const source = isCitySource(stored.source)
           ? stored.source
           : 'NONE';
-        const storedBrowseProvince = isOperationalRegionCode(stored.browseProvince)
-          ? stored.browseProvince
-          : null;
         const storedLocatedProvince = isOperationalRegionCode(stored.locatedProvince)
           ? stored.locatedProvince
           : null;
-        const browseProvince = hasV2Fields
-          ? storedBrowseProvince
-          : inferLegacyBrowseProvince(legacyOperationalRegion);
         const locatedProvince = hasV2Fields
           ? storedLocatedProvince
           : inferLegacyLocatedProvince(legacyOperationalRegion, source);
@@ -148,7 +142,7 @@ export const useLocationStore = defineStore('location', {
         const locationStatus = normalizeLocationStatus(stored.locationStatus ?? stored.status)
           ?? inferLocationStatus(locatedProvince);
 
-        this.browseProvince = browseProvince;
+        this.browseProvince = null;
         this.locatedProvince = locatedProvince;
         this.locatedCityName = normalizeLocatedCityName(stored.locatedCityName);
         this.latitude = latitude;
@@ -157,11 +151,10 @@ export const useLocationStore = defineStore('location', {
         this.status = locationStatus;
         this.source = locationStatus === 'LOCATED_UNSUPPORTED' && source === 'GPS'
           ? 'GPS'
-          : resolveHydratedSource(source, browseProvince, locatedProvince);
+          : resolveHydratedSource(source, locatedProvince);
         this.syncOperationalRegion();
         this.bootstrapped = Boolean(
-          browseProvince
-          || locatedProvince
+          locatedProvince
           || this.locatedCityName
           || locationStatus !== 'IDLE',
         );
@@ -172,8 +165,8 @@ export const useLocationStore = defineStore('location', {
     persistState() {
       const next: StoredLocationState = {
         version: 2,
-        operationalRegion: this.resolveDisplayProvince(),
-        browseProvince: this.browseProvince,
+        operationalRegion: this.locatedProvince,
+        browseProvince: null,
         locatedProvince: this.locatedProvince,
         locatedCityName: this.locatedCityName,
         latitude: normalizeCoordinate(this.latitude),
@@ -200,7 +193,6 @@ export const useLocationStore = defineStore('location', {
       }
       this.bootstrapped = true;
       this.syncOperationalRegion();
-      this.persistState();
     },
     setCity(city: CityCode) {
       this.setBrowseProvince(city);
@@ -225,7 +217,23 @@ export const useLocationStore = defineStore('location', {
 
       pendingLocationRequest = this.captureLocation({
         persist: true,
-        updateBrowseFromGps: false,
+      }).finally(() => {
+        pendingLocationRequest = null;
+      });
+
+      return pendingLocationRequest;
+    },
+    async refreshLocationForHome(): Promise<LocationSnapshot> {
+      this.hydrateFromStorage();
+      this.browseProvince = null;
+      this.syncOperationalRegion();
+      if (pendingLocationRequest) {
+        return pendingLocationRequest;
+      }
+
+      pendingLocationRequest = this.captureLocation({
+        persist: true,
+        clearBrowseProvince: true,
       }).finally(() => {
         pendingLocationRequest = null;
       });
@@ -237,16 +245,12 @@ export const useLocationStore = defineStore('location', {
       if (pendingLocationRequest) {
         return pendingLocationRequest;
       }
-      if (this.browseProvince && !force) {
-        return this.snapshot();
-      }
       if (this.locatedProvince && !force) {
         return this.snapshot();
       }
 
       pendingLocationRequest = this.captureLocation({
         persist: true,
-        updateBrowseFromGps: !this.browseProvince,
       }).finally(() => {
         pendingLocationRequest = null;
       });
@@ -255,7 +259,7 @@ export const useLocationStore = defineStore('location', {
     },
     async captureLocation(options: {
       persist: boolean;
-      updateBrowseFromGps?: boolean;
+      clearBrowseProvince?: boolean;
     }): Promise<LocationSnapshot> {
       this.hydrateFromStorage();
       this.loading = true;
@@ -266,8 +270,12 @@ export const useLocationStore = defineStore('location', {
         let status: LocationStatus = 'LOCATING';
 
         if (options.persist) {
+          if (options.clearBrowseProvince) {
+            this.browseProvince = null;
+          }
           this.status = 'LOCATING';
           this.locationStatus = 'LOCATING';
+          this.syncOperationalRegion();
         }
 
         try {
@@ -294,9 +302,6 @@ export const useLocationStore = defineStore('location', {
             if (locatedProvince) {
               this.locatedProvince = locatedProvince;
               this.locatedCityName = null;
-              if (options.updateBrowseFromGps && !this.browseProvince) {
-                this.browseProvince = locatedProvince;
-              }
             } else {
               this.locatedProvince = null;
               this.locatedCityName = 'unsupported';
@@ -362,10 +367,8 @@ export const useLocationStore = defineStore('location', {
       this.operationalRegion = this.resolveDisplayProvince();
     },
     resolvePersistedSource(): LocationSource {
-      if (this.source === 'MANUAL' && this.browseProvince) return 'MANUAL';
       if (this.source === 'GPS' && (this.locatedProvince || this.locationStatus === 'LOCATED_UNSUPPORTED')) return 'GPS';
       if (this.locatedProvince) return 'CACHE';
-      if (this.browseProvince) return 'MANUAL';
       return 'NONE';
     },
     resolveFailureSource(): LocationSource {
@@ -438,13 +441,6 @@ function inferLocationStatus(
   return locatedProvince ? 'LOCATED_SUPPORTED' : 'IDLE';
 }
 
-function inferLegacyBrowseProvince(
-  legacyOperationalRegion: OperationalRegionCode | null,
-) {
-  if (!legacyOperationalRegion) return null;
-  return legacyOperationalRegion;
-}
-
 function inferLegacyLocatedProvince(
   legacyOperationalRegion: OperationalRegionCode | null,
   source: LocationSource,
@@ -455,13 +451,10 @@ function inferLegacyLocatedProvince(
 
 function resolveHydratedSource(
   source: LocationSource,
-  browseProvince: OperationalRegionCode | null,
   locatedProvince: OperationalRegionCode | null,
 ): LocationSource {
-  if (source === 'MANUAL' && browseProvince) return 'MANUAL';
   if (source === 'GPS' && locatedProvince) return 'GPS';
   if (source === 'CACHE' && locatedProvince) return 'CACHE';
-  if (browseProvince) return 'MANUAL';
   if (locatedProvince) return 'CACHE';
   return 'NONE';
 }
