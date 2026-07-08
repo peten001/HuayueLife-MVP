@@ -14,6 +14,8 @@ type WechatAccessTokenCache = {
   expiresAt: number;
 };
 
+type WechatMiniProgramEnvVersion = 'release' | 'trial' | 'develop';
+
 @Injectable()
 export class TablesService {
   private accessTokenCache: WechatAccessTokenCache | null = null;
@@ -92,7 +94,7 @@ export class TablesService {
   }) {
     const appId = this.config.get<string>('WECHAT_APP_ID')?.trim();
     const appSecret = this.config.get<string>('WECHAT_APP_SECRET')?.trim();
-    const envVersion = this.config.get<string>('WECHAT_MINIAPP_ENV_VERSION')?.trim() || 'trial';
+    const envVersion = this.resolveMiniappQrEnvVersion();
     if (!appId || !appSecret) {
       throw new BadGatewayException('微信小程序配置缺失');
     }
@@ -121,6 +123,44 @@ export class TablesService {
     }
 
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  private resolveMiniappQrEnvVersion(): WechatMiniProgramEnvVersion {
+    const qrEnvVersion = this.normalizeMiniappEnvVersion(
+      this.config.get<string>('WECHAT_MINIAPP_QR_ENV_VERSION')?.trim(),
+    );
+    if (qrEnvVersion) {
+      return qrEnvVersion;
+    }
+
+    if (this.isProductionRuntime()) {
+      return 'release';
+    }
+
+    return (
+      this.normalizeMiniappEnvVersion(
+        this.config.get<string>('WECHAT_MINIAPP_ENV_VERSION')?.trim(),
+      ) ?? 'release'
+    );
+  }
+
+  private normalizeMiniappEnvVersion(
+    value?: string,
+  ): WechatMiniProgramEnvVersion | null {
+    if (value === 'release' || value === 'trial' || value === 'develop') {
+      return value;
+    }
+
+    return null;
+  }
+
+  private isProductionRuntime() {
+    const nodeEnv = this.config.get<string>('NODE_ENV')?.trim().toLowerCase();
+    return (
+      nodeEnv === 'production' ||
+      nodeEnv === 'prod' ||
+      nodeEnv === 'release'
+    );
   }
 
   private async getWechatAccessToken(appId: string, appSecret: string) {
