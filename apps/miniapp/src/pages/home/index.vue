@@ -271,13 +271,11 @@ async function loadByRegionCode(
     province: operationalRegionForQuery(regionCode),
     page: 1,
   };
-  if (
-    options?.useLocation
-    && Number.isFinite(options.latitude)
-    && Number.isFinite(options.longitude)
-  ) {
-    query.lat = Number(options.latitude);
-    query.lng = Number(options.longitude);
+  const latitude = normalizeCoordinateForQuery(options?.latitude);
+  const longitude = normalizeCoordinateForQuery(options?.longitude);
+  if (options?.useLocation && latitude !== undefined && longitude !== undefined) {
+    query.lat = latitude;
+    query.lng = longitude;
   }
   console.log('[home] merchant query', query);
   try {
@@ -436,6 +434,11 @@ function compareDistance(left: MerchantSummary, right: MerchantSummary) {
   const rightDistance = right.distanceKm ?? Number.POSITIVE_INFINITY;
   if (leftDistance !== rightDistance) return leftDistance - rightDistance;
   return merchantName(left, locale.value).localeCompare(merchantName(right, locale.value));
+}
+
+function normalizeCoordinateForQuery(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Number(value.toFixed(6));
 }
 
 function openSortSheet() {
