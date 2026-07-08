@@ -189,12 +189,9 @@ async function refreshHomeByCurrentLocation() {
     console.log('[home] region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
-      sortOption.value = 'distance';
+      sortOption.value = 'smart';
       await loadByRegionCode(snapshot.locatedProvince, {
         mode: 'province',
-        useLocation: true,
-        latitude: snapshot.latitude,
-        longitude: snapshot.longitude,
       });
       return;
     }
