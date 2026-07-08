@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { getProfile } from '@/api/merchant';
 import { getMerchantOrders, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
+import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
@@ -149,7 +150,7 @@ const mobileMetricCards = computed(() =>
             : operations.value.processing,
   })),
 );
-function featureEnabled(feature: 'orders' | 'products' | 'tables' | 'voice') {
+function featureEnabled(feature: 'orders' | 'products' | 'tables' | 'chat' | 'voice') {
   return (
     canAccessMerchantFeature(profile.value, feature) ||
     canAccessMerchantFeature(staffMerchant, feature)
@@ -159,6 +160,7 @@ function featureEnabled(feature: 'orders' | 'products' | 'tables' | 'voice') {
 const orderFeatureEnabled = computed(() => featureEnabled('orders'));
 const productFeatureEnabled = computed(() => featureEnabled('products'));
 const tableFeatureEnabled = computed(() => featureEnabled('tables'));
+const chatEnabled = computed(() => featureEnabled('chat'));
 const voiceFeatureEnabled = computed(() => featureEnabled('voice'));
 type QuickLink = { to: string; label: TranslationKey; icon: string };
 const quickLinkByRole: Record<'OWNER' | 'MANAGER' | 'STAFF', QuickLink[]> = {
@@ -203,6 +205,10 @@ const mobileQuickLinkClasses: Record<string, string> = {
   '/orders': 'mobile-quick-neutral',
 };
 const mobileActiveOrders = computed(() => activeOrders.value.slice(0, 4));
+const chatOrderId = ref('');
+const chatOrder = computed(
+  () => orders.value.find((order) => order.id === chatOrderId.value) ?? null,
+);
 const newPendingOrderIds = computed(() => recentNewPendingOrderIds.value);
 const hasNewPendingOrders = computed(() => newPendingOrderIds.value.length > 0);
 const latestNewPendingOrderId = computed(() => newPendingOrderIds.value[0] ?? '');
@@ -392,6 +398,10 @@ function money(value: number | string) {
   return `${Number(value).toLocaleString()} ₫`;
 }
 
+function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
+  return labels[locale.value] ?? labels.zh;
+}
+
 function orderTypeLabel(order: MerchantOrder) {
   const labels: Record<MerchantOrder['orderType'], TranslationKey> = {
     DINE_IN: 'dineIn',
@@ -428,6 +438,41 @@ function primaryAction(order: MerchantOrder) {
     DELIVERING: { action: 'complete', label: 'completeDeliveryOrder' },
   };
   return actionMap[order.status];
+}
+
+function openChat(order: MerchantOrder) {
+  if (!chatEnabled.value) return;
+  chatOrderId.value = order.id;
+}
+
+function closeChat() {
+  chatOrderId.value = '';
+}
+
+function applyChatConversation(
+  orderId: string,
+  conversation: MerchantOrder['chatConversation'] | null,
+) {
+  const order = orders.value.find((item) => item.id === orderId);
+  if (!order) return;
+  order.chatConversation = conversation;
+}
+
+function chatUnreadCount(order: MerchantOrder) {
+  return order.chatConversation?.merchantUnreadCount ?? 0;
+}
+
+function chatUnreadText(count: number) {
+  const displayCount = count > 99 ? '99+' : String(count);
+  return localLabel({
+    zh: `${displayCount} 条新消息`,
+    vi: `${displayCount} tin nhắn mới`,
+    en: `${displayCount} new message${count === 1 ? '' : 's'}`,
+  });
+}
+
+function chatUnreadLabel(order: MerchantOrder) {
+  return chatUnreadText(chatUnreadCount(order));
 }
 
 async function execute(order: MerchantOrder) {
@@ -596,6 +641,10 @@ type Action =
                     {{ t('newOrderBadge') }}
                   </span>
                   <strong>#{{ order.orderNo }}</strong>
+                  <span v-if="chatUnreadCount(order)" class="chat-unread-chip dashboard-order-chat-unread">
+                    <span class="chat-unread-dot" aria-hidden="true"></span>
+                    {{ chatUnreadLabel(order) }}
+                  </span>
                 </div>
                 <OrderStatusBadge :status="order.status" />
               </header>
@@ -624,6 +673,18 @@ type Action =
                 >
                   {{ t('viewDetails') }}
                 </RouterLink>
+                <button
+                  v-if="chatEnabled"
+                  type="button"
+                  class="secondary dashboard-chat-button"
+                  :class="{ 'chat-entry--unread': chatUnreadCount(order) }"
+                  @click.stop="openChat(order)"
+                >
+                  <span>{{ t('openChat') }}</span>
+                  <span v-if="chatUnreadCount(order)" class="chat-unread-count">
+                    {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                  </span>
+                </button>
               </div>
             </article>
           </div>
@@ -751,6 +812,10 @@ type Action =
                   {{ t('newOrderBadge') }}
                 </span>
                 <strong>#{{ order.orderNo }}</strong>
+                <span v-if="chatUnreadCount(order)" class="chat-unread-chip mobile-order-chat-unread">
+                  <span class="chat-unread-dot" aria-hidden="true"></span>
+                  {{ chatUnreadLabel(order) }}
+                </span>
               </div>
               <OrderStatusBadge :status="order.status" />
             </header>
@@ -779,6 +844,18 @@ type Action =
               >
                 {{ t('viewDetails') }}
               </RouterLink>
+              <button
+                v-if="chatEnabled"
+                type="button"
+                class="secondary dashboard-chat-button"
+                :class="{ 'chat-entry--unread': chatUnreadCount(order) }"
+                @click.stop="openChat(order)"
+              >
+                <span>{{ t('openChat') }}</span>
+                <span v-if="chatUnreadCount(order)" class="chat-unread-count">
+                  {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
+                </span>
+              </button>
             </div>
           </article>
         </div>
@@ -807,6 +884,12 @@ type Action =
       </section>
     </section>
 
+    <OrderChatPanel
+      v-if="chatOrder"
+      :order="chatOrder"
+      @close="closeChat"
+      @updated="applyChatConversation(chatOrderId, $event)"
+    />
   </div>
 </template>
 
@@ -1323,6 +1406,68 @@ type Action =
 .card-link.secondary {
   color: #2e7d32;
   background: #eaf7ee;
+}
+
+.dashboard-chat-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dashboard-chat-button.chat-entry--unread {
+  color: #b42318;
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.chat-unread-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #e5484d;
+  background: #fff1f1;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.chat-unread-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: #e5484d;
+}
+
+.chat-unread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e5484d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .new-order-badge {
