@@ -126,6 +126,7 @@ function applyChatConversation(
 const chatUnreadCount = computed(
   () => order.value?.chatConversation?.merchantUnreadCount ?? 0,
 );
+const chatUnreadLabel = computed(() => chatUnreadText(chatUnreadCount.value));
 
 function typeLabel() {
   if (!order.value) return '';
@@ -166,6 +167,15 @@ function money(value: string) {
 
 function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
   return labels[locale.value];
+}
+
+function chatUnreadText(count: number) {
+  const displayCount = count > 99 ? '99+' : String(count);
+  return localLabel({
+    zh: `${displayCount} 条新消息`,
+    vi: `${displayCount} tin nhắn mới`,
+    en: `${displayCount} new message${count === 1 ? '' : 's'}`,
+  });
 }
 
 const printLogs = computed(() => order.value?.printLogs ?? []);
@@ -276,9 +286,17 @@ type Action =
         >
           {{ t(item.label) }}
         </button>
-        <button v-if="chatEnabled" type="button" class="secondary chat-entry" @click="openChat">
+        <button
+          v-if="chatEnabled"
+          type="button"
+          class="secondary chat-entry"
+          :class="{ 'chat-entry--unread': chatUnreadCount }"
+          @click="openChat"
+        >
           <span>{{ t('openChat') }}</span>
-          <span v-if="chatUnreadCount" class="nav-badge">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</span>
+          <span v-if="chatUnreadCount" class="chat-unread-count" :title="chatUnreadLabel">
+            {{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}
+          </span>
         </button>
         <button
           v-if="printerEnabled"
@@ -405,5 +423,26 @@ type Action =
 .print-error-line {
   margin: 0 0 4px;
   color: #b42318;
+}
+
+.chat-entry--unread {
+  color: #b42318;
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+}
+
+.chat-unread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e5484d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 </style>

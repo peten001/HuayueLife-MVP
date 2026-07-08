@@ -692,6 +692,19 @@ function chatUnreadCount(order: MerchantOrder) {
   return order.chatConversation?.merchantUnreadCount ?? 0;
 }
 
+function chatUnreadText(count: number) {
+  const displayCount = count > 99 ? '99+' : String(count);
+  return localLabel({
+    zh: `${displayCount} 条新消息`,
+    vi: `${displayCount} tin nhắn mới`,
+    en: `${displayCount} new message${count === 1 ? '' : 's'}`,
+  });
+}
+
+function chatUnreadLabel(order: MerchantOrder) {
+  return chatUnreadText(chatUnreadCount(order));
+}
+
 function selectCategory(category: OrderCategory) {
   activeCategory.value = category;
   if (category === 'ALL' || category === 'ABNORMAL') {
@@ -1016,6 +1029,10 @@ function todayInVietnam() {
                     >
                       {{ t('newOrderBadge') }}
                     </span>
+                    <span v-if="chatUnreadCount(order)" class="chat-unread-chip order-info-unread">
+                      <span class="chat-unread-dot" aria-hidden="true"></span>
+                      {{ chatUnreadLabel(order) }}
+                    </span>
                     <small v-if="orderItemsSummary(order)">{{ orderItemsSummary(order) }}</small>
                   </div>
                 </td>
@@ -1091,10 +1108,11 @@ function todayInVietnam() {
                       v-if="chatEnabled"
                       type="button"
                       class="orders-outline-button orders-chat-button"
+                      :class="{ 'chat-entry--unread': chatUnreadCount(order) }"
                       @click="openChat(order)"
                     >
                       <span>{{ t('openChat') }}</span>
-                      <span v-if="chatUnreadCount(order)" class="nav-badge">
+                      <span v-if="chatUnreadCount(order)" class="chat-unread-count">
                         {{ chatUnreadCount(order) > 99 ? '99+' : chatUnreadCount(order) }}
                       </span>
                     </button>
@@ -1217,6 +1235,10 @@ function todayInVietnam() {
           <header class="order-mobile-card-header">
             <div>
               <strong class="order-mobile-no">#{{ order.orderNo }}</strong>
+              <span v-if="chatUnreadCount(order)" class="chat-unread-chip order-mobile-chat-unread">
+                <span class="chat-unread-dot" aria-hidden="true"></span>
+                {{ chatUnreadLabel(order) }}
+              </span>
             </div>
             <div class="order-mobile-meta">
               <span class="order-mobile-time">{{ mobileDateTime(order.createdAt) }}</span>
@@ -1700,6 +1722,33 @@ function todayInVietnam() {
   font-weight: 800;
 }
 
+.chat-unread-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #e5484d;
+  background: #fff1f1;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.chat-unread-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: #e5484d;
+}
+
+.order-info-unread {
+  margin-top: 1px;
+}
+
 .service-info-line {
   display: flex;
   align-items: center;
@@ -1837,6 +1886,27 @@ function todayInVietnam() {
 
 .orders-chat-button {
   gap: 6px;
+}
+
+.orders-chat-button.chat-entry--unread {
+  color: #b42318;
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.chat-unread-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e5484d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .orders-empty-state {
@@ -2091,10 +2161,21 @@ function todayInVietnam() {
     gap: 12px;
   }
 
+  .order-mobile-card-header > div:first-child {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
   .order-mobile-no {
     color: #15803d;
     font-size: 15px;
     font-weight: 800;
+  }
+
+  .order-mobile-chat-unread {
+    padding: 4px 8px;
+    font-size: 12px;
   }
 
   .order-mobile-meta {

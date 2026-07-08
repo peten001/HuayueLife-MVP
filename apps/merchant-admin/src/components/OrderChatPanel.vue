@@ -347,14 +347,12 @@ function isMerchantMessage(message: OrderChatMessage) {
           </p>
           <template v-for="item in timelineItems" :key="item.key">
             <div v-if="item.type === 'date'" class="date-divider">
-              <span>{{ item.label }}</span>
+              <span class="date-divider-label">{{ item.label }}</span>
             </div>
             <article v-else :class="['message-row', messageSide(item.message)]">
-              <div class="message-bubble">
-                <header class="message-header">
-                  <small>{{ formatMessageTime(item.message.createdAt) }}</small>
-                </header>
-                <div :class="['message-body', { self: isMerchantMessage(item.message) }]">
+              <div class="message-stack">
+                <small class="message-time">{{ formatMessageTime(item.message.createdAt) }}</small>
+                <div :class="['message-bubble', { self: isMerchantMessage(item.message) }]">
                   <p class="message-content">{{ item.message.content }}</p>
                   <small
                     v-if="isMerchantMessage(item.message)"
@@ -466,11 +464,12 @@ function isMerchantMessage(message: OrderChatMessage) {
 }
 
 .message-list {
-  display: grid;
-  gap: 4px;
-  min-height: 0;
+  display: flex;
   flex: 1;
-  padding: 2px 2px 4px;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
   overflow: auto;
   border: 1px solid #edf0f2;
   border-radius: 14px;
@@ -479,16 +478,24 @@ function isMerchantMessage(message: OrderChatMessage) {
 
 .date-divider {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 4px 0;
-  color: #8a949b;
-  font-size: 11px;
+  margin: 4px 0;
 }
 
-.date-divider span {
-  padding: 2px 8px;
+.date-divider-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
+  color: #8a949b;
   background: #eef2f0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .chat-empty {
@@ -498,6 +505,7 @@ function isMerchantMessage(message: OrderChatMessage) {
 
 .message-row {
   display: flex;
+  margin-bottom: 2px;
 }
 
 .message-row.self {
@@ -508,45 +516,57 @@ function isMerchantMessage(message: OrderChatMessage) {
   justify-content: flex-start;
 }
 
-.message-bubble {
-  width: fit-content;
-  max-width: 70%;
-  padding: 7px 10px;
-  border-radius: 14px;
-  background: white;
-  box-shadow: 0 6px 20px rgb(31 45 36 / 6%);
-}
-
-.message-row.self .message-bubble {
-  background: #eaf7ee;
-}
-
-.message-header,
-.message-body {
+.message-stack {
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  max-width: 60%;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.message-body {
+.message-row.self .message-stack {
   align-items: flex-end;
 }
 
-.message-header small,
-.message-body small {
-  color: #7b838b;
-  font-size: 10px;
+.message-time {
+  margin-bottom: 3px;
+  color: #98a2b3;
+  font-size: 11px;
   line-height: 1.2;
+}
+
+.message-bubble {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  height: auto;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #e4ebe6;
+  border-radius: 14px;
+  color: #183127;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(31 45 36 / 5%);
+  box-sizing: border-box;
+}
+
+.message-bubble.self {
+  border-color: #d9ecd9;
+  background: #eaf7ee;
 }
 
 .message-content {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
   margin: 0;
   color: #1f2d24;
-  line-height: 1.35;
+  font-size: 14px;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .message-status {
@@ -624,8 +644,16 @@ function isMerchantMessage(message: OrderChatMessage) {
     width: min(100%, 680px);
   }
 
+  .message-list {
+    padding: 10px;
+  }
+
+  .message-stack {
+    max-width: 72%;
+  }
+
   .message-bubble {
-    max-width: 75%;
+    padding: 8px 10px;
   }
 
   .chat-form-actions {
