@@ -23,6 +23,7 @@ import type {
   MerchantImportPreviewResponse,
 } from './dto/merchant-import.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
+import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
 import {
   CreateDisplayMerchantDto,
   UpdateMerchantCapabilitiesDto,
@@ -98,6 +99,14 @@ export class PlatformMerchantsController {
   @Patch(':id')
   update(@Param() params: IdParamDto, @Body() dto: UpdatePlatformMerchantDto) {
     return this.service.update(BigInt(params.id), dto);
+  }
+
+  @Patch(':id/account-phone')
+  updateAccountPhone(
+    @Param() params: IdParamDto,
+    @Body() dto: UpdateMerchantAccountPhoneDto,
+  ) {
+    return this.service.updateAccountPhone(BigInt(params.id), dto);
   }
 
   @Patch(':id/capabilities')

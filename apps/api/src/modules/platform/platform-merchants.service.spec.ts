@@ -1,6 +1,12 @@
 import AdmZip = require('adm-zip');
 import ExcelJS = require('exceljs');
-import { MerchantMode } from '@prisma/client';
+import {
+  MerchantClaimStatus,
+  MerchantMode,
+  MerchantStatus,
+  StaffRole,
+  StaffStatus,
+} from '@prisma/client';
 import { PlatformMerchantsService } from './platform-merchants.service';
 import { MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS } from './merchant-import-fields';
 
@@ -285,6 +291,160 @@ describe('PlatformMerchantsService merchant import', () => {
     expect(preview.rows[0].errors.join('\n')).toContain('允许值：CONVENIENCE_STORE、CAFE');
   });
 });
+
+describe('PlatformMerchantsService merchant account phone', () => {
+  let prisma: {
+    merchant: {
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+    merchantStaff: {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+  };
+  let service: PlatformMerchantsService;
+
+  beforeEach(() => {
+    prisma = {
+      merchant: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      merchantStaff: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn() } as never,
+      {} as never,
+    );
+  });
+
+  function mockFindById(ownerUsername = '0912345678') {
+    return jest.spyOn(service as any, 'findById').mockResolvedValue({
+      id: '2',
+      ownerUsername,
+      claimStatus: MerchantClaimStatus.CLAIMED,
+      contactPhone: '0988888888',
+    });
+  }
+
+  it('updates only the OWNER username when changing merchant account phone', async () => {
+    const owner = buildOwnerStaff();
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([owner]));
+    prisma.merchantStaff.findFirst.mockResolvedValue(null);
+    prisma.merchantStaff.update.mockResolvedValue({ ...owner, username: '0912345678' });
+    mockFindById('0912345678');
+
+    const result = await service.updateAccountPhone(2n, { phone: '0912345678' });
+
+    expect(prisma.merchantStaff.findFirst).toHaveBeenCalledWith({
+      where: {
+        username: '0912345678',
+        NOT: { id: 10n },
+      },
+      select: { id: true },
+    });
+    expect(prisma.merchantStaff.update).toHaveBeenCalledWith({
+      where: { id: 10n },
+      data: { username: '0912345678' },
+    });
+    const updateData = prisma.merchantStaff.update.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty('passwordHash');
+    expect(updateData).not.toHaveProperty('role');
+    expect(updateData).not.toHaveProperty('permissions');
+    expect(updateData).not.toHaveProperty('merchantId');
+    expect(updateData).not.toHaveProperty('claimStatus');
+    expect(updateData).not.toHaveProperty('contactPhone');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+    expect(result.ownerUsername).toBe('0912345678');
+  });
+
+  it('rejects when the new phone equals the current account phone', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([buildOwnerStaff()]));
+
+    await expect(
+      service.updateAccountPhone(2n, { phone: '0813961413' }),
+    ).rejects.toThrow('新手机号不能与当前手机号相同');
+    expect(prisma.merchantStaff.findFirst).not.toHaveBeenCalled();
+    expect(prisma.merchantStaff.update).not.toHaveBeenCalled();
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the new phone is already used by another staff account', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([buildOwnerStaff()]));
+    prisma.merchantStaff.findFirst.mockResolvedValue({
+      id: 99n,
+      merchantId: 8n,
+      username: '0912345678',
+    });
+
+    await expect(
+      service.updateAccountPhone(2n, { phone: '0912345678' }),
+    ).rejects.toThrow('该手机号已被其他商家账号使用');
+    expect(prisma.merchantStaff.update).not.toHaveBeenCalled();
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'abc', '1234567', '1234567890123456', '09123abc'])(
+    'rejects invalid phone value "%s"',
+    async (phone) => {
+      prisma.merchant.findUnique.mockResolvedValue(buildMerchant([buildOwnerStaff()]));
+
+      await expect(service.updateAccountPhone(2n, { phone })).rejects.toThrow('请输入正确的手机号');
+      expect(prisma.merchantStaff.findFirst).not.toHaveBeenCalled();
+      expect(prisma.merchantStaff.update).not.toHaveBeenCalled();
+      expect(prisma.merchant.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects when merchant does not exist', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.updateAccountPhone(404n, { phone: '0912345678' }),
+    ).rejects.toThrow('Merchant not found');
+    expect(prisma.merchantStaff.update).not.toHaveBeenCalled();
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects when merchant has no OWNER account', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([]));
+
+    await expect(
+      service.updateAccountPhone(2n, { phone: '0912345678' }),
+    ).rejects.toThrow('当前商家尚未开通账号');
+    expect(prisma.merchantStaff.update).not.toHaveBeenCalled();
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+});
+
+function buildOwnerStaff(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 10n,
+    merchantId: 2n,
+    username: '0813961413',
+    passwordHash: 'oldHash',
+    role: StaffRole.OWNER,
+    status: StaffStatus.ACTIVE,
+    mustChangePassword: false,
+    ...overrides,
+  };
+}
+
+function buildMerchant(staff: unknown[]) {
+  return {
+    id: 2n,
+    claimStatus: MerchantClaimStatus.CLAIMED,
+    contactPhone: '0988888888',
+    merchantMode: MerchantMode.MANAGED,
+    status: MerchantStatus.ACTIVE,
+    staff,
+  };
+}
 
 function buildRow(overrides: Partial<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS)[number], string>>) {
   return {

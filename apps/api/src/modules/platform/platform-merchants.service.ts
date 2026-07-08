@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import AdmZip = require('adm-zip');
@@ -34,6 +35,7 @@ import {
 } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
+import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
 import {
   CreateDisplayMerchantDto,
@@ -311,6 +313,7 @@ const DEFAULT_BUSINESS_HOURS = {
 
 @Injectable()
 export class PlatformMerchantsService {
+  private readonly logger = new Logger(PlatformMerchantsService.name);
   private readonly importSessions = new Map<string, MerchantImportSession>();
 
   constructor(
@@ -1208,6 +1211,44 @@ export class PlatformMerchantsService {
         status: StaffStatus.ACTIVE,
       },
     });
+    return this.findById(id);
+  }
+
+  async updateAccountPhone(id: bigint, dto: UpdateMerchantAccountPhoneDto) {
+    const merchant = await this.requireMerchant(id);
+    const owner = merchant.staff.find((item) => item.role === StaffRole.OWNER);
+    if (!owner) {
+      throw new NotFoundException('当前商家尚未开通账号');
+    }
+
+    const phone = dto.phone.trim();
+    if (!/^\d{8,15}$/.test(phone)) {
+      throw new BadRequestException('请输入正确的手机号');
+    }
+
+    const currentPhone = owner.username.trim();
+    if (phone === currentPhone) {
+      throw new BadRequestException('新手机号不能与当前手机号相同');
+    }
+
+    const existingAccount = await this.prisma.merchantStaff.findFirst({
+      where: {
+        username: phone,
+        NOT: { id: owner.id },
+      },
+      select: { id: true },
+    });
+    if (existingAccount) {
+      throw new ConflictException('该手机号已被其他商家账号使用');
+    }
+
+    await this.prisma.merchantStaff.update({
+      where: { id: owner.id },
+      data: { username: phone },
+    });
+    this.logger.log(
+      `Merchant account phone updated merchantId=${id.toString()} staffId=${owner.id.toString()} ${maskPhone(currentPhone)} -> ${maskPhone(phone)}`,
+    );
     return this.findById(id);
   }
 
@@ -2474,6 +2515,12 @@ function localizeImportExceptionMessage(message: string) {
     return '图片路径越界';
   }
   return message;
+}
+
+function maskPhone(phone: string) {
+  const normalized = phone.trim();
+  if (normalized.length <= 6) return normalized;
+  return `${normalized.slice(0, 3)}****${normalized.slice(-3)}`;
 }
 
 function hasStoredCoordinate(value: Merchant['latitude'] | Merchant['longitude']) {

@@ -14,6 +14,7 @@ import {
   getPlatformPromotionTags,
   openPlatformMerchantAccount,
   resetPlatformMerchantPassword,
+  updatePlatformMerchantAccountPhone,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
   updatePlatformMerchantCapabilities,
@@ -51,6 +52,15 @@ const uploadingImage = ref(false);
 const message = ref('');
 const imageFileInput = ref<HTMLInputElement | null>(null);
 const imageUploadTarget = ref<'COVER' | null>(null);
+const accountPhoneDialogOpen = ref(false);
+const accountPhoneSaving = ref(false);
+const accountPhoneError = ref('');
+const accountPhoneForm = reactive({
+  phone: '',
+  confirmPhone: '',
+  remark: '',
+});
+const accountPhonePattern = /^\d{8,15}$/;
 
 const profileForm = reactive({
   nameZh: '',
@@ -82,6 +92,7 @@ const selectedTagIds = ref<string[]>([]);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
 const merchant = computed(() => detail.value?.merchant);
+const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
@@ -459,6 +470,55 @@ async function openAccount() {
   }
 }
 
+function openAccountPhoneDialog() {
+  if (!merchant.value || !accountOpened.value) return;
+  accountPhoneForm.phone = '';
+  accountPhoneForm.confirmPhone = '';
+  accountPhoneForm.remark = '';
+  accountPhoneError.value = '';
+  accountPhoneDialogOpen.value = true;
+}
+
+function closeAccountPhoneDialog() {
+  if (accountPhoneSaving.value) return;
+  accountPhoneDialogOpen.value = false;
+  accountPhoneError.value = '';
+}
+
+function validateAccountPhoneChange() {
+  const phone = accountPhoneForm.phone.trim();
+  const confirmPhone = accountPhoneForm.confirmPhone.trim();
+  const currentPhone = currentAccountPhone.value.trim();
+  if (!phone) return '请输入新的商家登录手机号';
+  if (!confirmPhone) return '请再次输入新的手机号';
+  if (phone !== confirmPhone) return '两次输入的手机号不一致';
+  if (phone === currentPhone) return '新手机号不能与当前手机号相同';
+  if (!accountPhonePattern.test(phone)) return '请输入正确的手机号';
+  return '';
+}
+
+async function submitAccountPhoneChange() {
+  if (!merchant.value) return;
+  const validation = validateAccountPhoneChange();
+  if (validation) {
+    accountPhoneError.value = validation;
+    return;
+  }
+  accountPhoneSaving.value = true;
+  accountPhoneError.value = '';
+  message.value = '';
+  try {
+    await updatePlatformMerchantAccountPhone(merchantId.value, accountPhoneForm.phone.trim());
+    accountPhoneDialogOpen.value = false;
+    message.value = '手机号已更新';
+    await loadPage();
+  } catch (error) {
+    accountPhoneError.value = errorMessage(error) || '更换失败，请稍后重试';
+  } finally {
+    accountPhoneSaving.value = false;
+  }
+}
+
 async function toggleClientVisibility() {
   if (!merchant.value) return;
   const nextVisible = !merchant.value.isVisibleOnClient;
@@ -769,8 +829,39 @@ function backToList() {
         </section>
 
         <section id="merchant-section-account" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>商家账号</h2><p>管理商家后台登录账号和认领状态</p></div></div>
-          <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'"><span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">{{ accountOpened ? '已开通' : '未开通' }}</span><strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong><p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p><div class="section-actions"><button v-if="merchant.claimStatus === 'UNCLAIMED'" class="editor-button is-primary" type="button" @click="openAccount">开通商家后台账号</button></div></div>
+          <div class="editor-section-head">
+            <div>
+              <h2>商家账号</h2>
+              <p>管理商家后台登录账号和认领状态</p>
+            </div>
+          </div>
+          <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'">
+            <div class="account-card-head">
+              <span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">
+                {{ accountOpened ? '已开通' : '未开通' }}
+              </span>
+              <button
+                v-if="accountOpened && merchant.account"
+                class="editor-button is-secondary account-phone-change-button"
+                type="button"
+                @click="openAccountPhoneDialog"
+              >
+                更换手机号
+              </button>
+            </div>
+            <strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong>
+            <p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p>
+            <div class="section-actions">
+              <button
+                v-if="merchant.claimStatus === 'UNCLAIMED'"
+                class="editor-button is-primary"
+                type="button"
+                @click="openAccount"
+              >
+                开通商家后台账号
+              </button>
+            </div>
+          </div>
         </section>
 
         <section id="merchant-section-danger" class="editor-section-card danger-card">
@@ -794,6 +885,71 @@ function backToList() {
       </div>
     </section>
   </template>
+
+  <div
+    v-if="accountPhoneDialogOpen && merchant"
+    class="account-phone-modal-backdrop"
+    role="presentation"
+    @click.self="closeAccountPhoneDialog"
+  >
+    <form class="account-phone-modal" @submit.prevent="submitAccountPhoneChange">
+      <header>
+        <div>
+          <h2>更换商家登录手机号</h2>
+          <p>仅更新商家后台登录手机号，不会修改密码、账号权限和认领状态。</p>
+        </div>
+        <button type="button" class="account-phone-modal-close" :disabled="accountPhoneSaving" @click="closeAccountPhoneDialog">×</button>
+      </header>
+
+      <label>
+        <span>当前手机号</span>
+        <input :value="currentAccountPhone" type="text" readonly />
+      </label>
+      <label>
+        <span>新手机号</span>
+        <input
+          v-model="accountPhoneForm.phone"
+          type="tel"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="15"
+          placeholder="请输入新的商家登录手机号"
+        />
+      </label>
+      <label>
+        <span>确认新手机号</span>
+        <input
+          v-model="accountPhoneForm.confirmPhone"
+          type="tel"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="15"
+          placeholder="请再次输入新的手机号"
+        />
+      </label>
+      <label>
+        <span>备注（可选）</span>
+        <textarea
+          v-model="accountPhoneForm.remark"
+          rows="3"
+          maxlength="120"
+          placeholder="例如：商家更换联系人手机号"
+        />
+      </label>
+
+      <p class="account-phone-warning">
+        手机号更换后，商家下次登录需要使用新手机号；原手机号将不能再作为该账号登录手机号。
+      </p>
+      <p v-if="accountPhoneError" class="account-phone-error">{{ accountPhoneError }}</p>
+
+      <footer>
+        <button type="button" class="editor-button is-ghost" :disabled="accountPhoneSaving" @click="closeAccountPhoneDialog">取消</button>
+        <button type="submit" class="editor-button is-primary" :disabled="accountPhoneSaving">
+          {{ accountPhoneSaving ? '更换中...' : '确认更换' }}
+        </button>
+      </footer>
+    </form>
+  </div>
 </template>
 
 <style scoped>
@@ -1871,6 +2027,28 @@ function backToList() {
   background: #f8fcf9;
 }
 
+.account-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-phone-change-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-color: #cdefd3;
+  border-radius: 10px;
+  color: #237a32;
+  background: #eaf7ec;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.account-phone-change-button:hover {
+  background: #ddf3e2;
+}
+
 .account-card.is-opened {
   border-color: #bbf7d0;
   background: #f0fdf4;
@@ -1879,6 +2057,124 @@ function backToList() {
 .account-card p {
   margin: 0;
   color: #64748b;
+}
+
+.account-phone-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.account-phone-modal {
+  display: grid;
+  gap: 14px;
+  width: min(480px, 100%);
+  padding: 22px;
+  border: 1px solid #d8e6dc;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.account-phone-modal header,
+.account-phone-modal footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-phone-modal header h2 {
+  margin: 0;
+  color: #13351f;
+  font-size: 20px;
+}
+
+.account-phone-modal header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.account-phone-modal-close {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border: 1px solid #d9e3dd;
+  border-radius: 999px;
+  color: #475569;
+  background: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.account-phone-modal label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.account-phone-modal input,
+.account-phone-modal textarea {
+  width: 100%;
+  border: 1px solid #d8e6dc;
+  border-radius: 11px;
+  background: #f8fcf9;
+  color: #13351f;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.account-phone-modal input {
+  height: 40px;
+  padding: 0 12px;
+}
+
+.account-phone-modal input[readonly] {
+  color: #64748b;
+  background: #f1f5f3;
+}
+
+.account-phone-modal textarea {
+  min-height: 84px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.account-phone-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.account-phone-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  color: #b42318;
+  background: #fff5f5;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.account-phone-modal footer {
+  justify-content: flex-end;
 }
 
 .danger-actions {

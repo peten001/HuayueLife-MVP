@@ -293,6 +293,14 @@ export async function openPlatformMerchantAccount(id: string) {
   return response.data.data;
 }
 
+export async function updatePlatformMerchantAccountPhone(id: string, phone: string) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
+    `/platform/merchants/${id}/account-phone`,
+    { phone },
+  );
+  return response.data.data;
+}
+
 export async function getPlatformMerchantImages(id: string) {
   const response = await platformHttp.get<ApiResponse<{ items: PlatformMerchantImage[] }>>(
     `/platform/merchants/${id}/images`,
