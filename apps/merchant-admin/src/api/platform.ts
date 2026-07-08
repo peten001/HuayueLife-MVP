@@ -12,6 +12,7 @@ import type {
   PlatformDashboardData,
   PlatformAdminAccount,
   PlatformBusinessType,
+  PlatformBusinessHours,
   PlatformCapability,
   PlatformMerchantImage,
   PlatformMerchantImageUploadResult,
@@ -297,6 +298,17 @@ export async function updatePlatformMerchantAccountPhone(id: string, phone: stri
   const response = await platformHttp.patch<ApiResponse<PlatformMerchantListItem>>(
     `/platform/merchants/${id}/account-phone`,
     { phone },
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformMerchantBusinessHours(
+  id: string,
+  businessHours: PlatformBusinessHours,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantDetailResponse>>(
+    `/platform/merchants/${id}/business-hours`,
+    { businessHours },
   );
   return response.data.data;
 }

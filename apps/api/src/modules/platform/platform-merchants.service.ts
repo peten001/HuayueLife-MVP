@@ -35,6 +35,7 @@ import {
 } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
+import { UpdateMerchantBusinessHoursDto } from './dto/update-merchant-business-hours.dto';
 import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
 import {
@@ -46,6 +47,7 @@ import { CreateMerchantImageDto, UpdateMerchantImageDto } from './dto/merchant-i
 import type {
   MerchantImportConfirmRequest,
   MerchantImportConfirmResult,
+  MerchantImportBusinessHours,
   MerchantImportNormalizedRow,
   MerchantImportPreviewResponse,
   MerchantImportPreviewRow,
@@ -187,6 +189,7 @@ type PlatformMerchantDetailResponse = {
     addressEn: string | null;
     latitude: string;
     longitude: string;
+    businessHours: MerchantImportBusinessHours;
     openingHoursText: string | null;
     descriptionZh: string | null;
     descriptionVi: string | null;
@@ -310,6 +313,19 @@ const DEFAULT_BUSINESS_HOURS = {
   saturday: ['10:00-22:00'],
   sunday: ['10:00-22:00'],
 };
+const WEEKDAY_KEYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
+const IMPORT_BUSINESS_HOURS_FIELD = '营业时间';
+const BUSINESS_HOURS_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const BUSINESS_HOURS_RANGE_PATTERN =
+  /^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
 
 @Injectable()
 export class PlatformMerchantsService {
@@ -516,6 +532,7 @@ export class PlatformMerchantsService {
         addressEn: merchant.addressEn,
         latitude: merchant.latitude.toString(),
         longitude: merchant.longitude.toString(),
+        businessHours: serializeBusinessHours(merchant.businessHours),
         openingHoursText: merchant.openingHoursText,
         descriptionZh: merchant.descriptionZh,
         descriptionVi: merchant.descriptionVi,
@@ -647,6 +664,10 @@ export class PlatformMerchantsService {
   async createDisplayMerchant(dto: CreateDisplayMerchantDto) {
     await this.dictionaries.ensureDefaults();
     const businessTypeId = await this.resolveBusinessTypeId(dto.businessTypeId);
+    const businessHours =
+      dto.businessHours === undefined
+        ? DEFAULT_BUSINESS_HOURS
+        : validateBusinessHoursPayload(dto.businessHours);
     const tagIds = parseIdList(dto.promotionTagIds);
     const capabilities = await this.loadCapabilities();
     const enabledCapabilityCodes = new Set(
@@ -682,7 +703,7 @@ export class PlatformMerchantsService {
           addressEn: trimOrNull(dto.addressEn),
           latitude: dto.latitude,
           longitude: dto.longitude,
-          businessHours: DEFAULT_BUSINESS_HOURS,
+          businessHours,
           openingHoursText: trimOrNull(dto.openingHoursText),
           notice: trimOrNull(dto.descriptionZh),
           descriptionZh: trimOrNull(dto.descriptionZh),
@@ -895,6 +916,8 @@ export class PlatformMerchantsService {
             addressZh: normalized.addressZh,
             latitude: normalized.latitude as number,
             longitude: normalized.longitude as number,
+            openingHoursText: normalized.openingHoursText || undefined,
+            businessHours: normalized.businessHours,
             coverUrl,
           });
           if (coverUrl) {
@@ -1250,6 +1273,22 @@ export class PlatformMerchantsService {
       `Merchant account phone updated merchantId=${id.toString()} staffId=${owner.id.toString()} ${maskPhone(currentPhone)} -> ${maskPhone(phone)}`,
     );
     return this.findById(id);
+  }
+
+  async updateBusinessHours(id: bigint, dto: UpdateMerchantBusinessHoursDto) {
+    const merchant = await this.requireMerchant(id);
+    if (merchant.claimStatus === MerchantClaimStatus.CLAIMED) {
+      throw new BadRequestException('已认领商家的营业时间请在商家后台维护');
+    }
+
+    const businessHours = validateBusinessHoursPayload(dto.businessHours);
+    await this.prisma.merchant.update({
+      where: { id },
+      data: {
+        businessHours: businessHours as Prisma.InputJsonValue,
+      },
+    });
+    return this.detail(id);
   }
 
   async delete(id: bigint) {
@@ -1778,6 +1817,7 @@ export class PlatformMerchantsService {
         errors.push(formatImportError(rowNumber, 'coverPath', rawData.coverPath, coverPathValidation, '请填写 ZIP 包内相对路径，例如 images/BG001_688便利店/cover.jpg'));
       }
     }
+    normalized.businessHours = parseImportBusinessHours(rawData, rowNumber, errors);
 
     const hasLatitude = normalized.latitude !== null && Number.isFinite(normalized.latitude);
     const hasLongitude = normalized.longitude !== null && Number.isFinite(normalized.longitude);
@@ -2148,6 +2188,126 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
   ) as Partial<T>;
 }
 
+function validateBusinessHoursPayload(value: unknown): MerchantImportBusinessHours {
+  if (!isPlainRecord(value)) {
+    throw new BadRequestException('businessHours must be an object');
+  }
+
+  const result: MerchantImportBusinessHours = {};
+  const allowedKeys = new Set<string>(WEEKDAY_KEYS);
+  for (const [weekday, ranges] of Object.entries(value)) {
+    if (!allowedKeys.has(weekday)) {
+      throw new BadRequestException(`营业时间包含非法星期字段：${weekday}`);
+    }
+    if (!Array.isArray(ranges)) {
+      throw new BadRequestException(`${weekday} 营业时间必须是数组`);
+    }
+    result[weekday] = ranges.map((range) => normalizeBusinessHoursRangeOrThrow(range));
+  }
+  return result;
+}
+
+function normalizeBusinessHoursRangeOrThrow(value: unknown) {
+  if (typeof value === 'string') {
+    return normalizeBusinessHoursRangeStringOrThrow(value);
+  }
+  if (isPlainRecord(value)) {
+    const open = typeof value.open === 'string' ? value.open : value.start;
+    const close = typeof value.close === 'string' ? value.close : value.end;
+    if (typeof open === 'string' && typeof close === 'string') {
+      return normalizeBusinessHoursRangeStringOrThrow(`${open}-${close}`);
+    }
+  }
+  throw new BadRequestException('营业时间格式错误，请使用 HH:mm-HH:mm');
+}
+
+function normalizeBusinessHoursRangeStringOrThrow(value: string) {
+  const normalized = normalizeBusinessHoursRangeString(value);
+  if (!normalized) {
+    throw new BadRequestException('营业时间格式错误，请使用 HH:mm-HH:mm');
+  }
+  return normalized;
+}
+
+function normalizeBusinessHoursRangeString(value: string) {
+  const match = value.match(BUSINESS_HOURS_RANGE_PATTERN);
+  if (!match) return '';
+  const start = `${match[1]}:${match[2]}`;
+  const end = `${match[3]}:${match[4]}`;
+  if (toBusinessMinutes(end) <= toBusinessMinutes(start)) {
+    return '';
+  }
+  return `${start}-${end}`;
+}
+
+function toBusinessMinutes(value: string) {
+  if (!BUSINESS_HOURS_TIME_PATTERN.test(value)) return Number.NaN;
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function serializeBusinessHours(value: unknown): MerchantImportBusinessHours {
+  if (!isPlainRecord(value)) return {};
+
+  const result: MerchantImportBusinessHours = {};
+  for (const weekday of WEEKDAY_KEYS) {
+    const ranges = value[weekday];
+    if (!Array.isArray(ranges)) continue;
+    result[weekday] = ranges
+      .map((range) => {
+        if (typeof range === 'string') {
+          return normalizeBusinessHoursRangeString(range);
+        }
+        if (isPlainRecord(range)) {
+          const open = typeof range.open === 'string' ? range.open : range.start;
+          const close = typeof range.close === 'string' ? range.close : range.end;
+          return typeof open === 'string' && typeof close === 'string'
+            ? normalizeBusinessHoursRangeString(`${open}-${close}`)
+            : '';
+        }
+        return '';
+      })
+      .filter((range): range is string => Boolean(range));
+  }
+  return result;
+}
+
+function parseImportBusinessHours(
+  rawData: Record<string, string>,
+  rowNumber: number,
+  errors: string[],
+): MerchantImportBusinessHours {
+  const rawValue = normalizeImportText(rawData[IMPORT_BUSINESS_HOURS_FIELD]);
+  if (!rawValue) {
+    return buildUniformBusinessHours(DEFAULT_BUSINESS_HOURS.monday[0]);
+  }
+  const range = normalizeBusinessHoursRangeString(rawValue);
+  if (!range) {
+    errors.push(
+      formatImportError(
+        rowNumber,
+        IMPORT_BUSINESS_HOURS_FIELD,
+        rawData[IMPORT_BUSINESS_HOURS_FIELD],
+        '格式错误',
+        '请填写 10:00-22:00、10:00 - 22:00 或留空',
+      ),
+    );
+    return buildUniformBusinessHours(DEFAULT_BUSINESS_HOURS.monday[0]);
+  }
+  return buildUniformBusinessHours(range);
+}
+
+function buildUniformBusinessHours(range: string): MerchantImportBusinessHours {
+  return WEEKDAY_KEYS.reduce<MerchantImportBusinessHours>((acc, weekday) => {
+    acc[weekday] = [range];
+    return acc;
+  }, {});
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 
 function buildTrendRows(
   start: Date,
@@ -2375,6 +2535,7 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
   const latitude = parseImportNumber(rawData.latitude);
   const longitude = parseImportNumber(rawData.longitude);
   const coverPath = normalizeImportRelativePath(rawData.coverPath);
+  const openingHoursText = normalizeImportText(rawData.openingHoursText);
 
   return {
     nameZh,
@@ -2388,6 +2549,8 @@ function normalizeMerchantImportRow(rawData: Record<string, string>): MerchantIm
     latitude: latitude ?? null,
     longitude: longitude ?? null,
     coverPath,
+    openingHoursText,
+    businessHours: { ...DEFAULT_BUSINESS_HOURS },
   };
 }
 

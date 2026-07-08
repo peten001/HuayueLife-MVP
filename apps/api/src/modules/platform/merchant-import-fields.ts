@@ -10,7 +10,8 @@ type MerchantImportTemplateFieldConfig = {
     | 'addressZh'
     | 'latitude'
     | 'longitude'
-    | 'coverPath';
+    | 'coverPath'
+    | '营业时间';
   label: string;
   required: boolean;
   description: string;
@@ -132,6 +133,16 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
     format: '文本，相对路径，仅支持 jpg/jpeg/png/webp',
     correctExample: 'images/BG001_688便利店/cover.jpg',
     wrongExample: '/Users/peter/Desktop/cover.jpg',
+    textFormat: true,
+  },
+  {
+    key: '营业时间',
+    label: '营业时间',
+    required: false,
+    description: '用于小程序判断营业中；填写后自动应用到每天，留空默认每天 10:00-22:00，不支持按星期分别设置',
+    format: 'HH:mm-HH:mm、HH:mm - HH:mm 或空白',
+    correctExample: '10:00-22:00',
+    wrongExample: '上午10点到晚上10点',
     textFormat: true,
   },
 ] as const satisfies readonly MerchantImportTemplateFieldConfig[];

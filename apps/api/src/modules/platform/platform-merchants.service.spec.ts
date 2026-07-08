@@ -46,6 +46,7 @@ describe('PlatformMerchantsService merchant import', () => {
     };
     merchant: {
       findMany: jest.Mock;
+      update: jest.Mock;
     };
   };
   let dictionaries: {
@@ -70,6 +71,7 @@ describe('PlatformMerchantsService merchant import', () => {
       },
       merchant: {
         findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
     };
     dictionaries = {
@@ -84,7 +86,7 @@ describe('PlatformMerchantsService merchant import', () => {
     service = new PlatformMerchantsService(prisma as never, dictionaries as never, uploads as never);
   });
 
-  it('builds an xlsx template with exactly 11 fields and businessType dropdown', async () => {
+  it('builds an xlsx template with exactly 12 fields, one business hours field, and businessType dropdown', async () => {
     const buffer = await service.getMerchantImportTemplate();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
@@ -103,7 +105,17 @@ describe('PlatformMerchantsService merchant import', () => {
       template.getRow(1).getCell(index + 1).text,
     );
     expect(headers).toEqual(MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS);
-    expect(headers).toHaveLength(11);
+    expect(headers).toHaveLength(12);
+    expect(headers).toContain('营业时间');
+    expect(headers).not.toEqual(expect.arrayContaining([
+      '周一营业时间',
+      '周二营业时间',
+      '周三营业时间',
+      '周四营业时间',
+      '周五营业时间',
+      '周六营业时间',
+      '周日营业时间',
+    ]));
     expect(headers).not.toEqual(expect.arrayContaining([
       'city',
       'district',
@@ -122,7 +134,7 @@ describe('PlatformMerchantsService merchant import', () => {
     ]));
 
     const instructionRows = instructions.getRows(2, instructions.rowCount - 1) ?? [];
-    expect(instructionRows).toHaveLength(11);
+    expect(instructionRows).toHaveLength(12);
     expect(instructionRows.map((row) => row.getCell(1).text)).toEqual(MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS);
 
     const validation = template.getCell('D2').dataValidation;
@@ -170,7 +182,115 @@ describe('PlatformMerchantsService merchant import', () => {
         coverUrl: undefined,
       }),
     );
-    expect(createDisplayMerchant.mock.calls[0][0]).not.toHaveProperty('coverPath');
+    const createPayload = createDisplayMerchant.mock.calls[0][0] as Record<string, unknown>;
+    expect(createPayload.businessHours).toEqual(expectedUniformBusinessHours('10:00-22:00'));
+    expect(createPayload).not.toHaveProperty('coverPath');
+  });
+
+  it('imports one business hours value and applies it to every day', async () => {
+    const createDisplayMerchant = jest
+      .spyOn(service as any, 'createDisplayMerchant')
+      .mockResolvedValue({ id: 'merchant-business-hours', coverUrl: null, merchantMode: MerchantMode.DISPLAY } as never);
+
+    const preview = await service.previewMerchantImport({
+      buffer: await buildWorkbookBuffer([
+        buildRow({ 营业时间: '09:00-21:00' }),
+      ]),
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      originalname: 'merchants.xlsx',
+      size: 1024,
+    });
+
+    expect(preview.rows[0].status).toBe('VALID');
+
+    const result = await service.confirmMerchantImport({ sessionId: preview.sessionId });
+    expect(result.importedCount).toBe(1);
+    expect(createDisplayMerchant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        businessHours: expectedUniformBusinessHours('09:00-21:00'),
+      }),
+    );
+  });
+
+  it('rejects malformed imported business hours with row and field names', async () => {
+    const preview = await service.previewMerchantImport({
+      buffer: await buildWorkbookBuffer([
+        buildRow({ 营业时间: '上午10点到晚上10点' }),
+      ]),
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      originalname: 'merchants.xlsx',
+      size: 1024,
+    });
+
+    expect(preview.rows[0].status).toBe('ERROR');
+    expect(preview.rows[0].errors.join('\n')).toContain('第 2 行 营业时间');
+    expect(preview.rows[0].errors.join('\n')).toContain('请填写 10:00-22:00、10:00 - 22:00 或留空');
+  });
+
+  it('keeps openingHoursText separate from imported businessHours', async () => {
+    const createDisplayMerchant = jest
+      .spyOn(service as any, 'createDisplayMerchant')
+      .mockResolvedValue({ id: 'merchant-hours-text', coverUrl: null, merchantMode: MerchantMode.DISPLAY } as never);
+
+    const preview = await service.previewMerchantImport({
+      buffer: await buildWorkbookBufferWithHeaders(
+        [...MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS, 'openingHoursText'],
+        [
+          {
+            ...buildRow({ 营业时间: '09:00-21:00' }),
+            openingHoursText: '周一 09:00-21:00',
+          },
+        ],
+      ),
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      originalname: 'merchants.xlsx',
+      size: 1024,
+    });
+
+    expect(preview.rows[0].status).toBe('VALID');
+
+    await service.confirmMerchantImport({ sessionId: preview.sessionId });
+    expect(createDisplayMerchant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openingHoursText: '周一 09:00-21:00',
+        businessHours: expect.objectContaining({
+          monday: ['09:00-21:00'],
+        }),
+      }),
+    );
+  });
+
+  it('does not update an existing claimed merchant businessHours during import', async () => {
+    prisma.merchant.findMany.mockResolvedValue([
+      {
+        nameZh: '688便利店',
+        contactPhone: '0333520688',
+        claimStatus: MerchantClaimStatus.CLAIMED,
+        businessHours: { monday: ['08:00-20:00'] },
+      },
+    ]);
+    const createDisplayMerchant = jest
+      .spyOn(service as any, 'createDisplayMerchant')
+      .mockResolvedValue({ id: 'merchant-new-copy', coverUrl: null, merchantMode: MerchantMode.DISPLAY } as never);
+
+    const preview = await service.previewMerchantImport({
+      buffer: await buildWorkbookBuffer([
+        buildRow({ 营业时间: '09:00-21:00' }),
+      ]),
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      originalname: 'merchants.xlsx',
+      size: 1024,
+    });
+
+    expect(preview.rows[0].status).toBe('WARNING');
+
+    await service.confirmMerchantImport({ sessionId: preview.sessionId });
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+    expect(createDisplayMerchant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        businessHours: expectedUniformBusinessHours('09:00-21:00'),
+      }),
+    );
   });
 
   it('imports zip rows and uploads cover image from chinese path', async () => {
@@ -422,6 +542,135 @@ describe('PlatformMerchantsService merchant account phone', () => {
   });
 });
 
+describe('PlatformMerchantsService platform business hours', () => {
+  let prisma: {
+    merchant: {
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+  };
+  let service: PlatformMerchantsService;
+
+  beforeEach(() => {
+    prisma = {
+      merchant: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn() } as never,
+      {} as never,
+    );
+    jest.spyOn(service, 'detail').mockResolvedValue({
+      merchant: {
+        id: '2',
+        businessHours: { monday: ['09:00-21:00'] },
+      },
+    } as never);
+  });
+
+  it('updates businessHours for an unclaimed merchant', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+      businessHours: { monday: ['10:00-22:00'] },
+      openingHoursText: '10:00-22:00',
+    }));
+
+    await service.updateBusinessHours(2n, {
+      businessHours: {
+        monday: ['09:00-21:00'],
+        tuesday: [],
+      },
+    });
+
+    expect(prisma.merchant.update).toHaveBeenCalledWith({
+      where: { id: 2n },
+      data: {
+        businessHours: {
+          monday: ['09:00-21:00'],
+          tuesday: [],
+        },
+      },
+    });
+    const updateData = prisma.merchant.update.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty('claimStatus');
+    expect(updateData).not.toHaveProperty('status');
+    expect(updateData).not.toHaveProperty('contactPhone');
+    expect(updateData).not.toHaveProperty('openingHoursText');
+    expect(updateData).not.toHaveProperty('staff');
+  });
+
+  it('rejects businessHours updates for claimed merchants', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.CLAIMED,
+      businessHours: { monday: ['10:00-22:00'] },
+    }));
+
+    await expect(
+      service.updateBusinessHours(2n, {
+        businessHours: { monday: ['09:00-21:00'] },
+      }),
+    ).rejects.toThrow('已认领商家的营业时间请在商家后台维护');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects illegal weekday keys', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(
+      service.updateBusinessHours(2n, {
+        businessHours: { holiday: ['09:00-21:00'] },
+      }),
+    ).rejects.toThrow('营业时间包含非法星期字段');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['abc'],
+    ['9:00-21:00'],
+    ['09:00/21:00'],
+  ])('rejects invalid time format "%s"', async (range) => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(
+      service.updateBusinessHours(2n, {
+        businessHours: { monday: [range] },
+      }),
+    ).rejects.toThrow('营业时间格式错误');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects close time earlier than or equal to open time', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(
+      service.updateBusinessHours(2n, {
+        businessHours: { monday: ['22:00-10:00'] },
+      }),
+    ).rejects.toThrow('营业时间格式错误');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects when merchant does not exist', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.updateBusinessHours(404n, {
+        businessHours: { monday: ['09:00-21:00'] },
+      }),
+    ).rejects.toThrow('Merchant not found');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+});
+
 function buildOwnerStaff(overrides: Record<string, unknown> = {}) {
   return {
     id: 10n,
@@ -435,7 +684,7 @@ function buildOwnerStaff(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildMerchant(staff: unknown[]) {
+function buildMerchant(staff: unknown[], overrides: Record<string, unknown> = {}) {
   return {
     id: 2n,
     claimStatus: MerchantClaimStatus.CLAIMED,
@@ -443,6 +692,9 @@ function buildMerchant(staff: unknown[]) {
     merchantMode: MerchantMode.MANAGED,
     status: MerchantStatus.ACTIVE,
     staff,
+    businessHours: { monday: ['10:00-22:00'] },
+    openingHoursText: '10:00-22:00',
+    ...overrides,
   };
 }
 
@@ -459,25 +711,45 @@ function buildRow(overrides: Partial<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIE
     latitude: '21.2414881',
     longitude: '106.154411',
     coverPath: '',
+    营业时间: '',
     ...overrides,
   };
 }
 
+function expectedUniformBusinessHours(range: string) {
+  return {
+    monday: [range],
+    tuesday: [range],
+    wednesday: [range],
+    thursday: [range],
+    friday: [range],
+    saturday: [range],
+    sunday: [range],
+  };
+}
+
 async function buildWorkbookBuffer(
-  rows: Array<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS)[number], string>>,
+  rows: Array<Partial<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS)[number], string>> & Record<string, string>>,
+) {
+  return buildWorkbookBufferWithHeaders([...MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS], rows);
+}
+
+async function buildWorkbookBufferWithHeaders(
+  headers: string[],
+  rows: Array<Record<string, string>>,
 ) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('商家导入模板');
-  sheet.addRow(MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS);
+  sheet.addRow(headers);
   rows.forEach((row) => {
-    sheet.addRow(MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS.map((key) => row[key] ?? ''));
+    sheet.addRow(headers.map((key) => row[key] ?? ''));
   });
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 }
 
 async function buildZipBuffer(
-  rows: Array<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS)[number], string>>,
+  rows: Array<Partial<Record<(typeof MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS)[number], string>> & Record<string, string>>,
   assets: Array<{ path: string; content: Buffer }>,
 ) {
   const zip = new AdmZip();

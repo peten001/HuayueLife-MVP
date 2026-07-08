@@ -4,6 +4,7 @@ import {
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -86,6 +87,10 @@ export class CreateDisplayMerchantDto {
   @IsString()
   @MaxLength(255)
   openingHoursText?: string;
+
+  @IsOptional()
+  @IsObject({ message: 'businessHours must be an object' })
+  businessHours?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()

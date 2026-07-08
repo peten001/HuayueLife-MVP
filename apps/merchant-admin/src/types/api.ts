@@ -347,6 +347,8 @@ export interface PlatformMerchantListItem {
   lastOrderAt?: string | null;
 }
 
+export type PlatformBusinessHours = Record<string, string[]>;
+
 export interface PlatformMerchantDetailResponse {
   merchant: {
     id: string;
@@ -369,6 +371,7 @@ export interface PlatformMerchantDetailResponse {
     addressEn?: string | null;
     latitude: string;
     longitude: string;
+    businessHours: PlatformBusinessHours;
     openingHoursText?: string | null;
     descriptionZh?: string | null;
     descriptionVi?: string | null;

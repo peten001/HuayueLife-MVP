@@ -1,5 +1,6 @@
 export type MerchantImportStatus = 'VALID' | 'WARNING' | 'ERROR';
 export type MerchantImportSourceType = 'XLSX' | 'ZIP';
+export type MerchantImportBusinessHours = Record<string, string[]>;
 
 export interface MerchantImportNormalizedRow {
   nameZh: string;
@@ -13,6 +14,8 @@ export interface MerchantImportNormalizedRow {
   latitude: number | null;
   longitude: number | null;
   coverPath: string;
+  openingHoursText: string;
+  businessHours: MerchantImportBusinessHours;
 }
 
 export interface MerchantImportPreviewRow {

@@ -15,6 +15,7 @@ import {
   openPlatformMerchantAccount,
   resetPlatformMerchantPassword,
   updatePlatformMerchantAccountPhone,
+  updatePlatformMerchantBusinessHours,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
   updatePlatformMerchantCapabilities,
@@ -22,6 +23,7 @@ import {
   updatePlatformMerchantTags,
 } from '@/api/platform';
 import type {
+  PlatformBusinessHours,
   PlatformBusinessType,
   PlatformCapability,
   PlatformMerchantDetailResponse,
@@ -32,6 +34,7 @@ import { resolveMediaUrl } from '@/utils/media';
 type EditorSection =
   | 'profile'
   | 'location'
+  | 'businessHours'
   | 'images'
   | 'visibility'
   | 'hot'
@@ -61,6 +64,22 @@ const accountPhoneForm = reactive({
   remark: '',
 });
 const accountPhonePattern = /^\d{8,15}$/;
+
+const BUSINESS_HOURS_WEEKDAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
+const DEFAULT_BUSINESS_HOURS_START = '10:00';
+const DEFAULT_BUSINESS_HOURS_END = '22:00';
+const businessHoursStart = ref(DEFAULT_BUSINESS_HOURS_START);
+const businessHoursEnd = ref(DEFAULT_BUSINESS_HOURS_END);
+const businessHoursSaving = ref(false);
+const businessHoursMessage = ref('');
 
 const profileForm = reactive({
   nameZh: '',
@@ -96,6 +115,7 @@ const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
+  { key: 'businessHours', label: '营业时间' },
   { key: 'images', label: '封面图片' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
@@ -200,6 +220,7 @@ const lifecycle = computed(() => {
   return statusLabel(item.status);
 });
 const accountOpened = computed(() => merchant.value?.claimStatus === 'CLAIMED');
+const isClaimedMerchant = computed(() => merchant.value?.claimStatus === 'CLAIMED');
 const hotFoodTag = computed(() => promotionTags.value.find((item) => item.code === 'HOT_FOOD'));
 const isHotFoodSelected = computed({
   get: () => Boolean(hotFoodTag.value && selectedTagIds.value.includes(hotFoodTag.value.id)),
@@ -306,6 +327,10 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   profileForm.isVisibleOnClient = item.isVisibleOnClient;
   profileForm.status = item.status;
   profileForm.sortOrder = item.sortOrder ?? 0;
+  const businessHours = parseBusinessHours(item.businessHours);
+  businessHoursStart.value = businessHours.start;
+  businessHoursEnd.value = businessHours.end;
+  businessHoursMessage.value = '';
   selectedTagIds.value = item.promotionTags.map((tag) => tag.id);
   Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
   capabilityValues.dineInEnabled = Boolean(item.dineInEnabled);
@@ -317,6 +342,67 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
       capabilityValues[capability.code] = false;
     }
   }
+}
+
+function parseBusinessHours(value: PlatformBusinessHours | undefined) {
+  const defaults = {
+    start: DEFAULT_BUSINESS_HOURS_START,
+    end: DEFAULT_BUSINESS_HOURS_END,
+  };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const weekdayOrder = ['monday', ...BUSINESS_HOURS_WEEKDAYS.filter((day) => day !== 'monday')] as const;
+  for (const weekday of weekdayOrder) {
+    const ranges = value[weekday];
+    if (!Array.isArray(ranges) || ranges.length === 0) continue;
+    const parsed = parseBusinessHoursRange(ranges[0]);
+    if (!parsed) {
+      continue;
+    }
+    return parsed;
+  }
+  return defaults;
+}
+
+function parseBusinessHoursRange(value: string | undefined) {
+  const match = value?.match(/^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/);
+  if (!match) return null;
+  const start = `${match[1]}:${match[2]}`;
+  const end = `${match[3]}:${match[4]}`;
+  if (timeToMinutes(end) <= timeToMinutes(start)) return null;
+  return { start, end };
+}
+
+function validateBusinessHoursSchedule() {
+  const start = businessHoursStart.value;
+  const end = businessHoursEnd.value;
+  if (!start || !end) return '请填写开始时间和结束时间';
+  if (!isValidBusinessTime(start) || !isValidBusinessTime(end)) {
+    return '时间格式无效，请使用 24 小时制';
+  }
+  if (timeToMinutes(end) <= timeToMinutes(start)) {
+    return '结束时间必须晚于开始时间';
+  }
+  return '';
+}
+
+function buildBusinessHoursPayload(): PlatformBusinessHours {
+  const range = `${businessHoursStart.value}-${businessHoursEnd.value}`;
+  return BUSINESS_HOURS_WEEKDAYS.reduce<PlatformBusinessHours>((acc, weekday) => {
+    acc[weekday] = [range];
+    return acc;
+  }, {});
+}
+
+function isValidBusinessTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
 }
 
 function openImagePicker(type: 'COVER') {
@@ -410,6 +496,34 @@ async function saveProfile() {
     message.value = errorMessage(error);
   } finally {
     saving.value = false;
+  }
+}
+
+async function saveBusinessHours() {
+  businessHoursMessage.value = '';
+  message.value = '';
+  if (isClaimedMerchant.value) {
+    businessHoursMessage.value = '已认领商家的营业时间以商家后台设置为准';
+    return;
+  }
+  const validation = validateBusinessHoursSchedule();
+  if (validation) {
+    businessHoursMessage.value = validation;
+    return;
+  }
+
+  businessHoursSaving.value = true;
+  try {
+    await updatePlatformMerchantBusinessHours(
+      merchantId.value,
+      buildBusinessHoursPayload(),
+    );
+    await loadPage();
+    businessHoursMessage.value = '营业时间已保存';
+  } catch (error) {
+    businessHoursMessage.value = errorMessage(error);
+  } finally {
+    businessHoursSaving.value = false;
   }
 }
 
@@ -736,6 +850,57 @@ function backToList() {
           </div>
           <p class="editor-tip">北江 / 北宁常见纬度为 21.x，经度为 106.x，请勿填反。前台展示商家建议填写准确经纬度，否则用户导航可能不准确。</p>
           <p v-if="hasInvalidCoordinates" class="editor-warning">当前经纬度缺失或疑似无效，可能影响小程序导航。</p>
+        </section>
+
+        <section id="merchant-section-businessHours" class="editor-section-card">
+          <div class="editor-section-head">
+            <div>
+              <h2>营业时间</h2>
+              <p>用于小程序判断“营业中 / 休息中”，展示文案仍由基础资料中的营业时间文案单独维护。</p>
+            </div>
+            <button
+              v-if="!isClaimedMerchant"
+              class="editor-button is-primary"
+              type="button"
+              :disabled="businessHoursSaving"
+              @click="saveBusinessHours"
+            >
+              {{ businessHoursSaving ? '保存中...' : '保存营业时间' }}
+            </button>
+          </div>
+          <p v-if="isClaimedMerchant" class="editor-tip">
+            已认领商家的营业时间以商家后台设置为准，平台后台仅展示当前设置，不允许覆盖。
+          </p>
+          <div class="platform-business-hours">
+            <div class="platform-business-hours-row">
+              <label>
+                <span>开始时间</span>
+                <input
+                  v-model="businessHoursStart"
+                  type="time"
+                  :disabled="isClaimedMerchant"
+                  :step="60"
+                />
+              </label>
+              <span class="platform-business-hours-separator">-</span>
+              <label>
+                <span>结束时间</span>
+                <input
+                  v-model="businessHoursEnd"
+                  type="time"
+                  :disabled="isClaimedMerchant"
+                  :step="60"
+                />
+              </label>
+            </div>
+            <p class="platform-business-hours-preview">
+              {{ isClaimedMerchant ? '当前营业时间：' : '保存后将应用到每天：' }}{{ businessHoursStart }}-{{ businessHoursEnd }}
+            </p>
+          </div>
+          <p v-if="!isClaimedMerchant" class="editor-tip">
+            未填写历史营业时间时，页面默认回填每天 10:00-22:00；只有点击保存后才会写入数据库。
+          </p>
+          <p v-if="businessHoursMessage" class="editor-warning">{{ businessHoursMessage }}</p>
         </section>
 
         <section id="merchant-section-images" class="editor-section-card">
@@ -1983,6 +2148,58 @@ function backToList() {
   font-size: 13px;
 }
 
+.platform-business-hours {
+  display: grid;
+  gap: 10px;
+}
+
+.platform-business-hours-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #dbe8df;
+  border-radius: 12px;
+  background: #f8fcf9;
+}
+
+.platform-business-hours-row label {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.platform-business-hours-row input[type='time'] {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d4e2d8;
+  border-radius: 10px;
+  color: #0f172a;
+  background: #fff;
+}
+
+.platform-business-hours-separator {
+  align-self: end;
+  padding-bottom: 9px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.platform-business-hours-row input:disabled {
+  color: #94a3b8;
+  background: #eef4f0;
+}
+
+.platform-business-hours-preview {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .capability-management-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -2202,7 +2419,8 @@ function backToList() {
   .editor-section-head,
   .image-primary-grid,
   .editor-form-grid,
-  .visibility-grid {
+  .visibility-grid,
+  .platform-business-hours-row {
     grid-template-columns: 1fr;
   }
 
