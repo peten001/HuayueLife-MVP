@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { TablesService } from './tables.service';
 
 type MiniappQrEnvResolver = {
-  resolveMiniappQrEnvVersion(): 'release' | 'trial' | 'develop';
+  getTableQrEnvVersion(merchantId: number): 'release' | 'trial' | 'develop';
 };
 
 describe('TablesService miniapp QR env version', () => {
@@ -22,38 +22,57 @@ describe('TablesService miniapp QR env version', () => {
     );
   });
 
-  function resolveEnvVersion() {
+  function resolveEnvVersion(merchantId: number) {
     return (
       service as unknown as MiniappQrEnvResolver
-    ).resolveMiniappQrEnvVersion();
+    ).getTableQrEnvVersion(merchantId);
   }
 
-  it('uses release in production even when the legacy miniapp env is trial', () => {
-    config.set('NODE_ENV', 'production');
-    config.set('WECHAT_MINIAPP_ENV_VERSION', 'trial');
+  it('uses trial for whitelisted merchant 2', () => {
+    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
 
-    expect(resolveEnvVersion()).toBe('release');
+    expect(resolveEnvVersion(2)).toBe('trial');
   });
 
-  it('allows the dedicated QR env variable to explicitly override production', () => {
-    config.set('NODE_ENV', 'production');
-    config.set('WECHAT_MINIAPP_ENV_VERSION', 'trial');
+  it('uses trial for whitelisted merchant 7', () => {
+    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
+
+    expect(resolveEnvVersion(7)).toBe('trial');
+  });
+
+  it('uses release for non-whitelisted merchants by default', () => {
+    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
+
+    expect(resolveEnvVersion(11)).toBe('release');
+  });
+
+  it('uses release for merchant 2 when the trial whitelist is not configured', () => {
+    expect(resolveEnvVersion(2)).toBe('release');
+  });
+
+  it('uses the dedicated QR env variable for non-whitelisted merchants', () => {
     config.set('WECHAT_MINIAPP_QR_ENV_VERSION', 'release');
 
-    expect(resolveEnvVersion()).toBe('release');
-  });
-
-  it('keeps legacy miniapp env compatibility outside production', () => {
-    config.set('NODE_ENV', 'development');
-    config.set('WECHAT_MINIAPP_ENV_VERSION', 'develop');
-
-    expect(resolveEnvVersion()).toBe('develop');
+    expect(resolveEnvVersion(11)).toBe('release');
   });
 
   it('falls back to release for invalid QR env values', () => {
-    config.set('NODE_ENV', 'production');
     config.set('WECHAT_MINIAPP_QR_ENV_VERSION', 'staging');
 
-    expect(resolveEnvVersion()).toBe('release');
+    expect(resolveEnvVersion(11)).toBe('release');
+  });
+
+  it('ignores the legacy miniapp env variable for table QR codes', () => {
+    config.set('WECHAT_MINIAPP_ENV_VERSION', 'trial');
+
+    expect(resolveEnvVersion(11)).toBe('release');
+  });
+
+  it('ignores empty and invalid trial whitelist entries', () => {
+    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2, 7, abc');
+
+    expect(resolveEnvVersion(2)).toBe('trial');
+    expect(resolveEnvVersion(7)).toBe('trial');
+    expect(resolveEnvVersion(11)).toBe('release');
   });
 });

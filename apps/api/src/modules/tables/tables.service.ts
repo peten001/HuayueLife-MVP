@@ -90,17 +90,19 @@ export class TablesService {
 
   private async buildWechatMiniProgramCode(table: {
     id: bigint;
+    merchantId: bigint;
     qrVersion: number;
   }) {
     const appId = this.config.get<string>('WECHAT_APP_ID')?.trim();
     const appSecret = this.config.get<string>('WECHAT_APP_SECRET')?.trim();
-    const envVersion = this.resolveMiniappQrEnvVersion();
+    const envVersion = this.getTableQrEnvVersion(table.merchantId);
     if (!appId || !appSecret) {
       throw new BadGatewayException('微信小程序配置缺失');
     }
 
     const accessToken = await this.getWechatAccessToken(appId, appSecret);
     const scene = this.buildScene(table);
+    console.log(`[table-qr] merchantId=${table.merchantId.toString()} env_version=${envVersion}`);
     const response = await fetch(
       `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${encodeURIComponent(accessToken)}`,
       {
@@ -125,42 +127,43 @@ export class TablesService {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  private resolveMiniappQrEnvVersion(): WechatMiniProgramEnvVersion {
+  private getTableQrEnvVersion(
+    merchantId: bigint | number,
+  ): WechatMiniProgramEnvVersion {
+    if (this.isTrialQrMerchant(merchantId)) {
+      return 'trial';
+    }
+
     const qrEnvVersion = this.normalizeMiniappEnvVersion(
       this.config.get<string>('WECHAT_MINIAPP_QR_ENV_VERSION')?.trim(),
     );
-    if (qrEnvVersion) {
-      return qrEnvVersion;
-    }
-
-    if (this.isProductionRuntime()) {
-      return 'release';
-    }
-
-    return (
-      this.normalizeMiniappEnvVersion(
-        this.config.get<string>('WECHAT_MINIAPP_ENV_VERSION')?.trim(),
-      ) ?? 'release'
-    );
+    return qrEnvVersion ?? 'release';
   }
 
   private normalizeMiniappEnvVersion(
     value?: string,
   ): WechatMiniProgramEnvVersion | null {
-    if (value === 'release' || value === 'trial' || value === 'develop') {
-      return value;
+    const normalized = value?.trim().toLowerCase();
+    if (
+      normalized === 'release' ||
+      normalized === 'trial' ||
+      normalized === 'develop'
+    ) {
+      return normalized;
     }
 
     return null;
   }
 
-  private isProductionRuntime() {
-    const nodeEnv = this.config.get<string>('NODE_ENV')?.trim().toLowerCase();
-    return (
-      nodeEnv === 'production' ||
-      nodeEnv === 'prod' ||
-      nodeEnv === 'release'
-    );
+  private isTrialQrMerchant(merchantId: bigint | number) {
+    const numericMerchantId = Number(merchantId);
+    if (!Number.isSafeInteger(numericMerchantId)) return false;
+    const ids = this.config
+      .get<string>('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS')
+      ?.split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isSafeInteger(value));
+    return Boolean(ids?.includes(numericMerchantId));
   }
 
   private async getWechatAccessToken(appId: string, appSecret: string) {

@@ -14,12 +14,46 @@ const CONTEXT_KEY = 'huayue_cart_context';
 
 export type ContextSwitchResult = 'ready' | 'switched' | 'cancelled' | 'failed';
 
+function normalizeContext(context: CartContext): CartContext {
+  const next: CartContext = {
+    merchantId: context.merchantId,
+    merchantName: context.merchantName || '',
+    orderType: context.orderType,
+  };
+  if (context.orderType === 'DINE_IN') {
+    next.tableToken = context.tableToken?.trim() || undefined;
+    next.tableNo = context.tableNo?.trim() || undefined;
+    next.tableName = context.tableName?.trim() || undefined;
+  }
+  return next;
+}
+
+function readStoredContext() {
+  const stored = (uni.getStorageSync(CONTEXT_KEY) || null) as CartContext | null;
+  if (!stored) return null;
+  const normalized = normalizeContext(stored);
+  uni.setStorageSync(CONTEXT_KEY, normalized);
+  return normalized;
+}
+
+function persistContext(context: CartContext | null) {
+  if (context) {
+    uni.setStorageSync(CONTEXT_KEY, normalizeContext(context));
+  } else {
+    uni.removeStorageSync(CONTEXT_KEY);
+  }
+}
+
 function sameContext(a: CartContext | null, b: CartContext) {
   if (!a) return false;
+  const left = normalizeContext(a);
+  const right = normalizeContext(b);
+  if (left.merchantId !== right.merchantId || left.orderType !== right.orderType) {
+    return false;
+  }
+  if (left.orderType !== 'DINE_IN') return true;
   return (
-    a.merchantId === b.merchantId &&
-    a.orderType === b.orderType &&
-    (a.tableToken ?? '') === (b.tableToken ?? '')
+    (left.tableToken ?? '') === (right.tableToken ?? '')
   );
 }
 
@@ -42,7 +76,7 @@ function isStaleContextError(error: unknown) {
 
 export const useCartStore = defineStore('cart', {
   state: () => ({
-    context: (uni.getStorageSync(CONTEXT_KEY) || null) as CartContext | null,
+    context: readStoredContext(),
     cart: null as Cart | null,
     loading: false,
   }),
@@ -96,10 +130,11 @@ export const useCartStore = defineStore('cart', {
       return result;
     },
     needsContextSwitch(next: CartContext) {
-      const result = Boolean(this.context && !sameContext(this.context, next));
+      const normalizedNext = normalizeContext(next);
+      const result = Boolean(this.context && !sameContext(this.context, normalizedNext));
       console.log('[cart] needsContextSwitch', {
         currentContext: this.context,
-        nextContext: next,
+        nextContext: normalizedNext,
         cart: this.cart,
         itemsLength: this.cart?.items?.length ?? 0,
         result,
@@ -107,10 +142,11 @@ export const useCartStore = defineStore('cart', {
       return result;
     },
     async switchContext(next: CartContext): Promise<ContextSwitchResult> {
+      const normalizedNext = normalizeContext(next);
       const current = this.context;
       console.log('[cart] switchContext start', {
         currentContext: current,
-        nextContext: next,
+        nextContext: normalizedNext,
         cart: this.cart,
         itemsLength: this.cart?.items?.length ?? 0,
       });
@@ -120,7 +156,7 @@ export const useCartStore = defineStore('cart', {
         console.error('[cart] switchContext failed', {
           reason: 'load-current-cart-failed',
           current,
-          next,
+          next: normalizedNext,
           error,
         });
         return 'failed';
@@ -130,15 +166,15 @@ export const useCartStore = defineStore('cart', {
 
       if (!activeCurrent) {
         console.log('[cart] switchContext no current context', {
-          nextContext: next,
+          nextContext: normalizedNext,
         });
-        return this.activateContext(next, 'switched');
+        return this.activateContext(normalizedNext, 'switched');
       }
 
-      if (sameContext(activeCurrent, next)) {
+      if (sameContext(activeCurrent, normalizedNext)) {
         console.log('[cart] switchContext same context', {
           currentContext: activeCurrent,
-          nextContext: next,
+          nextContext: normalizedNext,
         });
         if (!this.cart) {
           try {
@@ -147,7 +183,7 @@ export const useCartStore = defineStore('cart', {
             console.error('[cart] switchContext failed', {
               reason: 'load-current-cart-failed',
               current,
-              next,
+              next: normalizedNext,
               error,
             });
             return 'failed';
@@ -160,7 +196,7 @@ export const useCartStore = defineStore('cart', {
         console.error('[cart] switchContext failed', {
           reason: 'context-switch-with-items',
           current,
-          next,
+          next: normalizedNext,
           totalQuantity: this.cart?.totalQuantity ?? 0,
         });
         return 'failed';
@@ -168,22 +204,75 @@ export const useCartStore = defineStore('cart', {
 
       console.log('[cart] switchContext activate next', {
         currentContext: current,
-        nextContext: next,
+        nextContext: normalizedNext,
       });
-      return this.activateContext(next, 'switched');
+      return this.activateContext(normalizedNext, 'switched');
+    },
+    async clearAndSwitchContext(next: CartContext): Promise<ContextSwitchResult> {
+      const normalizedNext = normalizeContext(next);
+      const previousContext = this.context ? normalizeContext(this.context) : null;
+      const previousCart = this.cart;
+      const previousLoading = this.loading;
+      if (!previousContext) return this.activateContext(normalizedNext, 'switched');
+      if (sameContext(previousContext, normalizedNext)) {
+        return this.switchContext(normalizedNext);
+      }
+      console.log('[cart] clearAndSwitchContext start', {
+        previousContext,
+        nextContext: normalizedNext,
+        previousCart,
+        itemsLength: previousCart?.items?.length ?? 0,
+      });
+      this.loading = true;
+      try {
+        const nextCart = await this.fetchCartForContext(normalizedNext);
+        persistContext(normalizedNext);
+        await clearCartApi(previousContext);
+        this.context = normalizedNext;
+        this.cart = nextCart;
+        console.log('[cart] clearAndSwitchContext success', {
+          nextContext: normalizedNext,
+          cart: this.cart,
+          itemsLength: this.cart?.items?.length ?? 0,
+        });
+        return 'switched';
+      } catch (error) {
+        console.error('[cart] clearAndSwitchContext failed', {
+          previousContext,
+          nextContext: normalizedNext,
+          error,
+        });
+        this.context = previousContext;
+        this.cart = previousCart;
+        this.loading = previousLoading;
+        try {
+          persistContext(previousContext);
+        } catch (restoreError) {
+          console.error('[cart] restore previous context failed', restoreError);
+        }
+        return 'failed';
+      } finally {
+        this.loading = false;
+      }
     },
     async activateContext(next: CartContext, result: 'ready' | 'switched') {
+      const normalizedNext = normalizeContext(next);
+      const previousContext = this.context ? normalizeContext(this.context) : null;
+      const previousCart = this.cart;
+      const previousLoading = this.loading;
       console.log('[cart] activateContext', {
-        nextContext: next,
+        nextContext: normalizedNext,
         result,
         previousContext: this.context,
       });
-      this.context = next;
-      uni.setStorageSync(CONTEXT_KEY, next);
+      this.loading = true;
       try {
-        await this.load();
+        const nextCart = await this.fetchCartForContext(normalizedNext);
+        persistContext(normalizedNext);
+        this.context = normalizedNext;
+        this.cart = nextCart;
         console.log('[cart] activateContext loaded', {
-          nextContext: next,
+          nextContext: normalizedNext,
           cart: this.cart,
           itemsLength: this.cart?.items?.length ?? 0,
         });
@@ -191,21 +280,47 @@ export const useCartStore = defineStore('cart', {
       } catch (error) {
         console.error('[cart] switchContext failed', {
           reason: 'load-next-cart-failed',
-          next,
+          next: normalizedNext,
           error,
         });
+        this.context = previousContext;
+        this.cart = previousCart;
+        this.loading = previousLoading;
+        try {
+          persistContext(previousContext);
+        } catch (restoreError) {
+          console.error('[cart] restore previous context failed', restoreError);
+        }
         return 'failed';
+      } finally {
+        this.loading = false;
       }
     },
+    async fetchCartForContext(context: CartContext) {
+      await useAuthStore().ensureLogin();
+      return getCart(normalizeContext(context));
+    },
+    syncContextMetadata(next: CartContext) {
+      const normalizedNext = normalizeContext(next);
+      if (!this.context || !sameContext(this.context, normalizedNext)) return;
+      this.context = normalizedNext;
+      persistContext(normalizedNext);
+      console.log('[cart] syncContextMetadata', {
+        context: this.context,
+      });
+    },
     async load() {
+      if (this.context) {
+        this.context = normalizeContext(this.context);
+        persistContext(this.context);
+      }
       console.log('[cart] load start', {
         context: this.context,
       });
       if (!this.context) return;
-      await useAuthStore().ensureLogin();
       this.loading = true;
       try {
-        this.cart = await getCart(this.context);
+        this.cart = await this.fetchCartForContext(this.context);
         console.log('[cart] load success', {
           context: this.context,
           cart: this.cart,
@@ -219,6 +334,8 @@ export const useCartStore = defineStore('cart', {
     async add(productId: string, quantity = 1, remark = '') {
       const { t } = useI18n();
       if (!this.context) throw new Error(t('missingCartContext'));
+      this.context = normalizeContext(this.context);
+      persistContext(this.context);
       await useAuthStore().ensureLogin();
       this.cart = await addCartItem(this.context, productId, quantity, remark);
     },
@@ -233,6 +350,10 @@ export const useCartStore = defineStore('cart', {
       this.cart = await deleteCartItem(itemId);
     },
     async clearCart() {
+      if (this.context) {
+        this.context = normalizeContext(this.context);
+        persistContext(this.context);
+      }
       console.log('[cart] clearCart', {
         context: this.context,
         cart: this.cart,
@@ -259,12 +380,12 @@ export const useCartStore = defineStore('cart', {
       this.cart = null;
       this.context = null;
       this.loading = false;
-      uni.removeStorageSync(CONTEXT_KEY);
+      persistContext(null);
     },
     resetAfterOrder() {
       this.cart = null;
       this.context = null;
-      uni.removeStorageSync(CONTEXT_KEY);
+      persistContext(null);
     },
   },
 });

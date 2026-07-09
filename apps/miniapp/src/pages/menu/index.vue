@@ -12,7 +12,7 @@ import {
   useI18n,
   usePageTitle,
 } from '@/i18n';
-import { useCartStore } from '@/stores/cart';
+import { useCartStore, type ContextSwitchResult } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
 import type { CartContext } from '@/types/api';
@@ -41,11 +41,17 @@ onLoad(async (options) => {
   tableNo.value = decodeURIComponent(String(options?.tableNo ?? ''));
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
+  normalizeRouteContext();
   try {
+    const contextResult = await ensureMenuContext(buildContext());
+    if (contextResult === 'cancelled') return;
+    if (contextResult === 'failed') {
+      throw new Error(t('cartContextSwitchError'));
+    }
     const loadedMenu = await getMenu(merchantId.value, {
       tableToken: tableToken.value,
     });
-    await ensureMenuContext(loadedMenu);
+    cartStore.syncContextMetadata(buildContext(loadedMenu));
     menu.value = loadedMenu;
     activeCategory.value = loadedMenu.categories[0]?.id ?? '';
   } catch (caught) {
@@ -58,11 +64,10 @@ onLoad(async (options) => {
 
 onShow(() => {
   if (!menu.value || !merchantId.value) return;
-  void ensureMenuContext(menu.value);
+  void ensureMenuContext(buildContext(menu.value));
 });
 
-async function ensureMenuContext(loadedMenu: MenuResponse) {
-  const nextContext = buildContext(loadedMenu);
+async function ensureMenuContext(nextContext: CartContext): Promise<ContextSwitchResult> {
   console.log('[menu] ensure cart context start', {
     params: {
       merchantId: merchantId.value,
@@ -76,11 +81,14 @@ async function ensureMenuContext(loadedMenu: MenuResponse) {
     hasItems: cartStore.hasItems(),
   });
 
+  await cartStore.ensureLoaded();
+
   if (!cartStore.context || !cartStore.needsContextSwitch(nextContext)) {
     const result = await cartStore.switchContext(nextContext);
     if (result === 'failed') {
       throw new Error(t('cartContextSwitchError'));
     }
+    cartStore.syncContextMetadata(nextContext);
     console.log('[menu] ensure cart context success', cartStore.context);
     error.value = '';
     return result;
@@ -98,67 +106,89 @@ async function ensureMenuContext(loadedMenu: MenuResponse) {
       });
       return 'cancelled';
     }
-    console.log('[cart] clear cart before switch');
-    try {
-      await cartStore.clearCart();
-    } catch (error) {
-      console.error('[menu] clear cart before switch failed', error);
-      throw error instanceof Error ? error : new Error(t('cartContextSwitchError'));
+    console.log('[cart] clear cart and switch context');
+    const result = await cartStore.clearAndSwitchContext(nextContext);
+    if (result === 'failed') {
+      throw new Error(t('cartContextSwitchError'));
     }
+    cartStore.syncContextMetadata(nextContext);
+    console.log('[menu] ensure cart context success', cartStore.context);
+    error.value = '';
+    notice.value = '';
+    return result;
   }
 
   const result = await cartStore.switchContext(nextContext);
   if (result === 'failed') {
     throw new Error(t('cartContextSwitchError'));
   }
+  cartStore.syncContextMetadata(nextContext);
   console.log('[menu] ensure cart context success', cartStore.context);
   error.value = '';
   notice.value = '';
   return result;
 }
 
-function buildContext(loadedMenu: MenuResponse): CartContext {
-  return {
+function normalizeRouteContext() {
+  if (orderType.value !== 'DINE_IN') {
+    tableNo.value = '';
+    tableName.value = '';
+    tableToken.value = '';
+  }
+}
+
+function buildContext(loadedMenu?: MenuResponse): CartContext {
+  const fallbackMerchantName =
+    cartStore.context?.merchantId === merchantId.value ? cartStore.context.merchantName : '';
+  const context: CartContext = {
     merchantId: merchantId.value,
-    merchantName: merchantName(loadedMenu.merchant, locale.value),
+    merchantName: loadedMenu ? merchantName(loadedMenu.merchant, locale.value) : fallbackMerchantName,
     orderType: orderType.value,
-    tableToken: tableToken.value || undefined,
-    tableNo: tableNo.value || undefined,
-    tableName: tableName.value || undefined,
   };
+  if (orderType.value === 'DINE_IN') {
+    context.tableToken = tableToken.value || undefined;
+    context.tableNo = tableNo.value || undefined;
+    context.tableName = tableName.value || undefined;
+  }
+  return context;
 }
 
 function confirmContextSwitch(nextContext: CartContext) {
   const sameMerchant = cartStore.context?.merchantId === nextContext.merchantId;
-  const content = sameMerchant
+  const isTableSwitch =
+    sameMerchant &&
+    cartStore.context?.orderType === 'DINE_IN' &&
+    nextContext.orderType === 'DINE_IN';
+  const title = locale.value === 'vi' ? 'Thông báo' : locale.value === 'en' ? 'Notice' : '提示';
+  const content = isTableSwitch
     ? locale.value === 'vi'
-      ? 'Giỏ hàng hiện có món. Bạn có muốn chuyển sang bàn mới không?\nGiỏ hàng hiện tại sẽ được xóa.'
+      ? 'Giỏ hàng hiện có món ăn. Bạn có muốn chuyển sang bàn mới không?\nSau khi chuyển bàn, giỏ hàng hiện tại sẽ bị xóa.'
       : locale.value === 'en'
-        ? 'Your cart already has items. Switch to the new table?\nThe current cart will be cleared.'
+        ? 'Your cart already has items. Do you want to switch to the new table?\nAfter switching tables, the current cart will be cleared.'
         : '当前购物车已有菜品，是否切换到新的桌台？\n切换后当前购物车将清空。'
     : locale.value === 'vi'
-      ? 'Chuyển cửa hàng sẽ xóa giỏ hàng hiện tại. Bạn có muốn tiếp tục không?'
+      ? 'Đổi cửa hàng, bàn hoặc loại đơn sẽ xóa giỏ hàng hiện tại. Tiếp tục không?'
       : locale.value === 'en'
-        ? 'Switching merchants will clear the current cart. Continue?'
-        : '切换商家会清空当前购物车，是否继续？';
+        ? 'Switching merchant, table, or order type will clear the current cart. Continue?'
+        : '切换商家、桌台或订单类型会清空当前购物车，是否继续？';
+  const cancelText = locale.value === 'vi' ? 'Hủy' : locale.value === 'en' ? 'No' : '取消';
+  const confirmText =
+    locale.value === 'zh' && isTableSwitch
+      ? '切换桌台'
+      : locale.value === 'zh'
+        ? '确认'
+        : 'OK';
   return new Promise<boolean>((resolve) => {
     uni.showModal({
-      title: locale.value === 'vi' ? 'Nhắc nhở' : locale.value === 'en' ? 'Notice' : '提示',
+      title,
       content,
-      cancelText: locale.value === 'vi' ? 'Hủy' : locale.value === 'en' ? 'Cancel' : '取消',
-      confirmText: sameMerchant
-        ? locale.value === 'vi'
-          ? 'Chuyển bàn'
-          : locale.value === 'en'
-            ? 'Switch table'
-            : '切换桌台'
-        : locale.value === 'vi'
-          ? 'Tiếp tục'
-          : locale.value === 'en'
-            ? 'Continue'
-            : '继续切换',
-      success: (result) => resolve(Boolean(result.confirm)),
-      fail: () => resolve(false),
+      cancelText,
+      confirmText,
+      success: (result) => resolve(result.confirm === true),
+      fail: (error) => {
+        console.warn('[menu] switch table modal failed', error);
+        resolve(false);
+      },
     });
   });
 }
