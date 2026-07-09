@@ -13,6 +13,7 @@ coverage/
 .vscode/
 apps/api/uploads/
 apps/api/public/uploads/
+apps/api/scripts/.openai-image.local
 apps/miniapp/unpackage/
 apps/miniapp/dist/
 apps/project.private.config.json
