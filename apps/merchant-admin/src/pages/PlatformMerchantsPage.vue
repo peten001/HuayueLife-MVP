@@ -21,7 +21,6 @@ import {
   resetPlatformMerchantPassword,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
-  updatePlatformSettings,
 } from '@/api/platform';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
@@ -51,6 +50,8 @@ const ORDERING_CAPABILITY_CODES = new Set([
   'orderChatEnabled',
   'zaloReportEnabled',
 ]);
+const PLATFORM_ORDERING_CONTROL_MESSAGE =
+  '经营能力总开关由服务器配置控制，请修改 PLATFORM_ORDERING_ENABLED 后重启 API。';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -62,7 +63,6 @@ const promotionTags = ref<PlatformPromotionTag[]>([]);
 const capabilities = ref<PlatformCapability[]>([]);
 const platformSettings = ref<PlatformSettings | null>(null);
 const loading = ref(false);
-const settingsSaving = ref(false);
 const message = ref('');
 const uploadingLogo = ref(false);
 const uploadingCover = ref(false);
@@ -145,10 +145,8 @@ const platformOrderingEnabled = computed(() =>
   Boolean(platformSettings.value?.platformOrderingEnabled),
 );
 const platformOrderingReadOnly = computed(() => platformSettings.value?.readOnly !== false);
-const platformOrderingControlMessage = computed(
-  () =>
-    platformSettings.value?.message ||
-    '当前总开关由服务器环境变量控制，请修改服务器配置后重启 API。',
+const platformOrderingStatusText = computed(
+  () => `经营能力：${platformOrderingEnabled.value ? '开启' : '关闭'}`,
 );
 const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
 const coverPreviewUrl = computed(() => resolveMediaUrl(form.coverUrl));
@@ -338,32 +336,14 @@ async function loadMerchants() {
   }
 }
 
-async function togglePlatformOrdering() {
+function showPlatformOrderingControlMessage() {
   if (platformOrderingReadOnly.value) {
-    message.value = platformOrderingControlMessage.value;
+    message.value = PLATFORM_ORDERING_CONTROL_MESSAGE;
     return;
   }
-  const nextEnabled = !platformOrderingEnabled.value;
-  const confirmed = window.confirm(
-    nextEnabled
-      ? '开启后，单个商家的经营能力配置将重新生效。是否继续？'
-      : '关闭后，小程序将隐藏所有点餐、自取、配送、购物车、结算等订单能力。商家展示、电话、导航、图片仍会保留，且不会修改单个商家的原始能力配置。是否继续？',
-  );
-  if (!confirmed) return;
-  settingsSaving.value = true;
-  message.value = '';
-  try {
-    platformSettings.value = await updatePlatformSettings({
-      platformOrderingEnabled: nextEnabled,
-    });
-    message.value = nextEnabled
-      ? '经营能力总开关已开启，单个商家经营能力配置重新生效。'
-      : '经营能力总开关已关闭，小程序将统一隐藏订单能力。';
-  } catch (error) {
-    message.value = errorMessage(error);
-  } finally {
-    settingsSaving.value = false;
-  }
+  message.value = platformOrderingEnabled.value
+    ? '经营能力当前开启。'
+    : '经营能力当前关闭。';
 }
 
 function openCreate() {
@@ -1077,6 +1057,16 @@ function toCsvLine(values: Array<string | number>) {
     title="商家管理"
   >
     <div class="merchant-page-actions">
+      <button
+        class="platform-ordering-status"
+        :class="{ 'is-enabled': platformOrderingEnabled, 'is-disabled': !platformOrderingEnabled }"
+        type="button"
+        :title="PLATFORM_ORDERING_CONTROL_MESSAGE"
+        @click="showPlatformOrderingControlMessage"
+      >
+        <span>{{ platformOrderingStatusText }}</span>
+        <small>服务器控制</small>
+      </button>
       <button class="merchant-action-button is-secondary" :disabled="loading" @click="loadMerchants">
         {{ loading ? '加载中...' : '刷新' }}
       </button>
@@ -1086,54 +1076,6 @@ function toCsvLine(values: Array<string | number>) {
   </PageHeader>
 
   <p v-if="message" class="message">{{ message }}</p>
-
-  <section class="card platform-ordering-switch-card">
-    <div class="platform-ordering-switch-main">
-      <div>
-        <div class="section-heading">
-          <h2>经营能力总开关</h2>
-          <span class="badge" :class="platformOrderingEnabled ? 'success' : 'muted'">
-            {{ platformOrderingEnabled ? '开启' : '关闭' }}
-          </span>
-        </div>
-        <p>
-          关闭后，小程序将隐藏所有点餐、自取、配送、购物车、结算等订单能力；商家展示、电话、导航、图片不受影响。
-        </p>
-        <p class="hint">
-          {{
-            platformOrderingEnabled
-              ? '单个商家的经营能力开关生效，可独立配置。'
-              : '小程序统一隐藏所有经营/订单能力，单个商家经营能力暂不可编辑，但原配置不会被修改。'
-          }}
-        </p>
-      </div>
-      <button
-        class="merchant-action-button"
-        :class="platformOrderingEnabled ? 'is-secondary' : 'is-primary'"
-        type="button"
-        :disabled="settingsSaving || loading || platformOrderingReadOnly"
-        @click="togglePlatformOrdering"
-      >
-        {{
-          settingsSaving
-            ? '处理中...'
-            : platformOrderingReadOnly
-              ? '服务器配置控制'
-              : platformOrderingEnabled
-              ? '关闭经营能力'
-              : '开启经营能力'
-        }}
-      </button>
-    </div>
-    <p class="hint">
-      {{
-        platformOrderingReadOnly
-          ? platformOrderingControlMessage
-          : '可在平台后台运行时切换。'
-      }}
-      该总开关是运行时遮罩，不会批量修改任何商家的原始能力配置。
-    </p>
-  </section>
 
   <section class="platform-metric-grid platform-merchant-summary-grid">
     <article class="card platform-metric-card">
@@ -1646,6 +1588,53 @@ function toCsvLine(values: Array<string | number>) {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.platform-ordering-status {
+  display: inline-grid;
+  align-content: center;
+  justify-items: start;
+  min-width: 128px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #334155;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.platform-ordering-status span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.platform-ordering-status small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.platform-ordering-status.is-enabled {
+  border-color: #9ad5ad;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.platform-ordering-status.is-disabled {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.platform-ordering-status:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
 }
 
 .merchant-action-button {
@@ -2270,29 +2259,6 @@ function toCsvLine(values: Array<string | number>) {
 
 .capability-group + .capability-group {
   border-top: 1px dashed #d8e6dc;
-}
-
-.platform-ordering-switch-card {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.platform-ordering-switch-main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.platform-ordering-switch-main p {
-  margin: 6px 0 0;
-  color: #475467;
-  line-height: 1.6;
-}
-
-.platform-ordering-switch-main .merchant-action-button {
-  flex: none;
 }
 
 .coordinate-field {
