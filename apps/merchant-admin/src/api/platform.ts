@@ -31,12 +31,17 @@ import type {
   PlatformUsersResponse,
 } from '@/types/api';
 
+const PRODUCTION_API_BASE_URL = 'https://api.huayueyouxuan.com/api/v1';
 const DEFAULT_API_BASE_URL = import.meta.env.PROD
-  ? 'https://api.huayueyouxuan.com/api/v1'
+  ? PRODUCTION_API_BASE_URL
   : 'http://localhost:3001/api/v1';
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = import.meta.env.PROD && configuredApiBaseUrl?.startsWith('/')
+  ? PRODUCTION_API_BASE_URL
+  : configuredApiBaseUrl || DEFAULT_API_BASE_URL;
 
 const platformHttp = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
 
@@ -70,18 +75,48 @@ export async function loginPlatform(username: string, password: string) {
   return response.data.data;
 }
 
+function apiData<T>(body: ApiResponse<T> | T): T {
+  if (
+    body &&
+    typeof body === 'object' &&
+    'data' in body &&
+    'code' in body
+  ) {
+    return (body as ApiResponse<T>).data;
+  }
+  return body as T;
+}
+
+function apiItems<T>(body: ApiResponse<{ items: T[] } | T[]> | { items?: T[] } | T[]): T[] {
+  const data = apiData<{ items?: T[] } | T[]>(body);
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
+
+function apiObject<T>(
+  body: ApiResponse<T> | T,
+  label: string,
+): T {
+  const data = apiData<T>(body);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`${label}返回结构异常`);
+  }
+  return data;
+}
+
 export async function getPlatformMerchants() {
   const response = await platformHttp.get<ApiResponse<{
     items: PlatformMerchantListItem[];
   }>>('/platform/merchants');
-  return response.data.data.items;
+  return apiItems<PlatformMerchantListItem>(response.data);
 }
 
 export async function getPlatformBusinessTypes() {
   const response = await platformHttp.get<ApiResponse<{ items: PlatformBusinessType[] }>>(
     '/platform/merchant-types',
   );
-  return response.data.data.items;
+  return apiItems<PlatformBusinessType>(response.data);
 }
 
 export async function createPlatformBusinessType(payload: Partial<PlatformBusinessType>) {
@@ -114,7 +149,7 @@ export async function getPlatformPromotionTags() {
   const response = await platformHttp.get<ApiResponse<{ items: PlatformPromotionTag[] }>>(
     '/platform/promotion-tags',
   );
-  return response.data.data.items;
+  return apiItems<PlatformPromotionTag>(response.data);
 }
 
 export async function createPlatformPromotionTag(payload: Partial<PlatformPromotionTag>) {
@@ -147,14 +182,18 @@ export async function getPlatformCapabilities() {
   const response = await platformHttp.get<ApiResponse<{ items: PlatformCapability[] }>>(
     '/platform/capabilities',
   );
-  return response.data.data.items;
+  return apiItems<PlatformCapability>(response.data);
 }
 
 export async function getPlatformSettings() {
   const response = await platformHttp.get<ApiResponse<PlatformSettings>>(
     '/platform/settings',
   );
-  return response.data.data;
+  const data = apiObject<PlatformSettings>(response.data, '平台设置接口');
+  if (typeof data.platformOrderingEnabled !== 'boolean') {
+    throw new Error('平台设置接口返回结构异常');
+  }
+  return data;
 }
 
 export async function updatePlatformSettings(payload: Pick<PlatformSettings, 'platformOrderingEnabled'>) {
@@ -162,14 +201,18 @@ export async function updatePlatformSettings(payload: Pick<PlatformSettings, 'pl
     '/platform/settings',
     payload,
   );
-  return response.data.data;
+  return apiData<PlatformSettings>(response.data);
 }
 
 export async function getPlatformMerchantDetail(id: string) {
   const response = await platformHttp.get<ApiResponse<PlatformMerchantDetailResponse>>(
     `/platform/merchants/${id}/detail`,
   );
-  return response.data.data;
+  const data = apiObject<PlatformMerchantDetailResponse>(response.data, '商家详情接口');
+  if (!data.merchant || typeof data.merchant !== 'object') {
+    throw new Error('商家详情接口返回结构异常');
+  }
+  return data;
 }
 
 export async function getPlatformDashboard() {

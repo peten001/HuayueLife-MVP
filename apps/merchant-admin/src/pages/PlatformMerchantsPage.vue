@@ -144,6 +144,12 @@ const isEditing = computed(() => dialogMode.value === 'edit');
 const platformOrderingEnabled = computed(() =>
   Boolean(platformSettings.value?.platformOrderingEnabled),
 );
+const platformOrderingReadOnly = computed(() => platformSettings.value?.readOnly !== false);
+const platformOrderingControlMessage = computed(
+  () =>
+    platformSettings.value?.message ||
+    '当前总开关由服务器环境变量控制，请修改服务器配置后重启 API。',
+);
 const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
 const coverPreviewUrl = computed(() => resolveMediaUrl(form.coverUrl));
 const latitudeError = computed(() => validateCoordinate(form.latitude, -90, 90, '纬度'));
@@ -275,22 +281,56 @@ async function loadMerchants() {
   loading.value = true;
   message.value = '';
   try {
-    const [settings, merchantItems, typeItems, tagItems, capabilityItems] = await Promise.all([
+    const [
+      settingsResult,
+      merchantResult,
+      typeResult,
+      tagResult,
+      capabilityResult,
+    ] = await Promise.allSettled([
       getPlatformSettings(),
       getPlatformMerchants(),
       getPlatformBusinessTypes(),
       getPlatformPromotionTags(),
       getPlatformCapabilities(),
     ]);
-    platformSettings.value = settings;
-    merchants.value = merchantItems;
-    syncAvatarLoadFailedState(merchantItems);
-    businessTypes.value = typeItems;
-    promotionTags.value = tagItems;
-    capabilities.value = capabilityItems;
+    const warnings: string[] = [];
+    if (settingsResult.status === 'fulfilled') {
+      platformSettings.value = settingsResult.value;
+    } else {
+      platformSettings.value ??= {
+        platformOrderingEnabled: false,
+        source: 'PLATFORM_ORDERING_ENABLED',
+        persistence: 'environment',
+        readOnly: true,
+      };
+      warnings.push(`经营能力总开关状态加载失败：${errorMessage(settingsResult.reason)}`);
+    }
+
+    if (merchantResult.status === 'fulfilled') {
+      merchants.value = merchantResult.value;
+      syncAvatarLoadFailedState(merchantResult.value);
+    } else {
+      merchants.value = [];
+      warnings.push(`商家列表加载失败：${errorMessage(merchantResult.reason)}`);
+    }
+
+    businessTypes.value = typeResult.status === 'fulfilled' ? typeResult.value : [];
+    promotionTags.value = tagResult.status === 'fulfilled' ? tagResult.value : [];
+    capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : [];
+    if (typeResult.status === 'rejected') {
+      warnings.push(`经营类型加载失败：${errorMessage(typeResult.reason)}`);
+    }
+    if (tagResult.status === 'rejected') {
+      warnings.push(`推荐标签加载失败：${errorMessage(tagResult.reason)}`);
+    }
+    if (capabilityResult.status === 'rejected') {
+      warnings.push(`能力配置加载失败：${errorMessage(capabilityResult.reason)}`);
+    }
     if (!form.businessTypeId && selectableBusinessTypes.value[0]) {
       form.businessTypeId = selectableBusinessTypes.value[0].id;
     }
+    message.value = warnings.join('；');
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -299,6 +339,10 @@ async function loadMerchants() {
 }
 
 async function togglePlatformOrdering() {
+  if (platformOrderingReadOnly.value) {
+    message.value = platformOrderingControlMessage.value;
+    return;
+  }
   const nextEnabled = !platformOrderingEnabled.value;
   const confirmed = window.confirm(
     nextEnabled
@@ -1067,20 +1111,27 @@ function toCsvLine(values: Array<string | number>) {
         class="merchant-action-button"
         :class="platformOrderingEnabled ? 'is-secondary' : 'is-primary'"
         type="button"
-        :disabled="settingsSaving || loading"
+        :disabled="settingsSaving || loading || platformOrderingReadOnly"
         @click="togglePlatformOrdering"
       >
         {{
           settingsSaving
             ? '处理中...'
-            : platformOrderingEnabled
+            : platformOrderingReadOnly
+              ? '服务器配置控制'
+              : platformOrderingEnabled
               ? '关闭经营能力'
               : '开启经营能力'
         }}
       </button>
     </div>
     <p class="hint">
-      配置来源：PLATFORM_ORDERING_ENABLED。该总开关是运行时遮罩，不会批量修改任何商家的原始能力配置。
+      {{
+        platformOrderingReadOnly
+          ? platformOrderingControlMessage
+          : '可在平台后台运行时切换。'
+      }}
+      该总开关是运行时遮罩，不会批量修改任何商家的原始能力配置。
     </p>
   </section>
 

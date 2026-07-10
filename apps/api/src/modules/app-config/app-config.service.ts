@@ -1,14 +1,14 @@
-import { GoneException, Injectable } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 const ORDERING_DISABLED_MESSAGE = '平台经营能力总开关已关闭，暂不可使用订单能力';
 const MERCHANT_OPERATION_EDIT_DISABLED_MESSAGE =
   '平台经营能力总开关已关闭，暂不可修改商家经营能力。';
+const PLATFORM_ORDERING_ENV_READONLY_MESSAGE =
+  '当前总开关由服务器环境变量控制，请修改服务器配置后重启 API。';
 
 @Injectable()
 export class AppConfigService {
-  private runtimePlatformOrderingEnabled: boolean | null = null;
-
   constructor(private readonly config: ConfigService) {}
 
   getPublicConfig() {
@@ -22,19 +22,16 @@ export class AppConfigService {
       platformOrderingEnabled: this.isPlatformOrderingEnabled(),
       source: 'PLATFORM_ORDERING_ENABLED',
       persistence: 'environment',
+      readOnly: true,
+      message: PLATFORM_ORDERING_ENV_READONLY_MESSAGE,
     };
   }
 
-  updatePlatformOrderingEnabled(enabled: boolean) {
-    this.runtimePlatformOrderingEnabled = enabled;
-    process.env.PLATFORM_ORDERING_ENABLED = enabled ? 'true' : 'false';
-    return this.getPlatformSettings();
+  updatePlatformOrderingEnabled(_enabled?: boolean) {
+    throw new BadRequestException(PLATFORM_ORDERING_ENV_READONLY_MESSAGE);
   }
 
   isPlatformOrderingEnabled() {
-    if (this.runtimePlatformOrderingEnabled !== null) {
-      return this.runtimePlatformOrderingEnabled;
-    }
     return parseBoolean(this.config.get<string>('PLATFORM_ORDERING_ENABLED')) ?? false;
   }
 

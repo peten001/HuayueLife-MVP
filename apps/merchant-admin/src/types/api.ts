@@ -189,6 +189,8 @@ export interface PlatformSettings {
   platformOrderingEnabled: boolean;
   source?: string;
   persistence?: string;
+  readOnly?: boolean;
+  message?: string;
 }
 
 export type MerchantMode = 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';

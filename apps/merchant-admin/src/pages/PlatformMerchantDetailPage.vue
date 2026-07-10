@@ -304,19 +304,57 @@ async function loadPage() {
   loading.value = true;
   message.value = '';
   try {
-    const [settings, nextDetail, nextCapabilities, nextTags, nextBusinessTypes] = await Promise.all([
+    const [
+      settingsResult,
+      detailResult,
+      capabilitiesResult,
+      tagsResult,
+      businessTypesResult,
+    ] = await Promise.allSettled([
       getPlatformSettings(),
       getPlatformMerchantDetail(merchantId.value),
       getPlatformCapabilities(),
       getPlatformPromotionTags(),
       getPlatformBusinessTypes(),
     ]);
-    platformSettings.value = settings;
-    detail.value = nextDetail;
-    capabilities.value = nextCapabilities;
-    promotionTags.value = nextTags;
-    businessTypes.value = nextBusinessTypes;
-    assignForms(nextDetail);
+
+    const warnings: string[] = [];
+    if (settingsResult.status === 'fulfilled') {
+      platformSettings.value = settingsResult.value;
+    } else {
+      platformSettings.value ??= {
+        platformOrderingEnabled: false,
+        source: 'PLATFORM_ORDERING_ENABLED',
+        persistence: 'environment',
+        readOnly: true,
+      };
+      warnings.push(`经营能力总开关状态加载失败：${errorMessage(settingsResult.reason)}`);
+    }
+
+    if (capabilitiesResult.status === 'fulfilled') {
+      capabilities.value = capabilitiesResult.value;
+    } else {
+      capabilities.value = [];
+      warnings.push(`能力配置加载失败：${errorMessage(capabilitiesResult.reason)}`);
+    }
+
+    promotionTags.value = tagsResult.status === 'fulfilled' ? tagsResult.value : [];
+    businessTypes.value = businessTypesResult.status === 'fulfilled' ? businessTypesResult.value : [];
+    if (tagsResult.status === 'rejected') {
+      warnings.push(`推荐标签加载失败：${errorMessage(tagsResult.reason)}`);
+    }
+    if (businessTypesResult.status === 'rejected') {
+      warnings.push(`经营类型加载失败：${errorMessage(businessTypesResult.reason)}`);
+    }
+
+    if (detailResult.status === 'fulfilled') {
+      detail.value = detailResult.value;
+      assignForms(detailResult.value);
+    } else {
+      detail.value = undefined;
+      warnings.push(`商家详情加载失败：${errorMessage(detailResult.reason)}`);
+    }
+    message.value = warnings.join('；');
   } catch (error) {
     message.value = errorMessage(error);
     detail.value = undefined;

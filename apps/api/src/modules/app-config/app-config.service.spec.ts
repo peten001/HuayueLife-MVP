@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { GoneException } from '@nestjs/common';
+import { BadRequestException, GoneException } from '@nestjs/common';
 import { AppConfigService } from './app-config.service';
 
 describe('AppConfigService', () => {
@@ -34,11 +34,20 @@ describe('AppConfigService', () => {
     expect(serviceWith(value).isPlatformOrderingEnabled()).toBe(false);
   });
 
-  it('allows runtime updates without changing merchant capability fields', () => {
+  it('reports platform settings as environment controlled and read-only', () => {
     const service = serviceWith('false');
-    expect(service.getPlatformSettings().platformOrderingEnabled).toBe(false);
-    expect(service.updatePlatformOrderingEnabled(true).platformOrderingEnabled).toBe(true);
-    expect(service.getPublicConfig().platformOrderingEnabled).toBe(true);
+    expect(service.getPlatformSettings()).toMatchObject({
+      platformOrderingEnabled: false,
+      source: 'PLATFORM_ORDERING_ENABLED',
+      persistence: 'environment',
+      readOnly: true,
+    });
+  });
+
+  it('rejects runtime updates because environment settings are read-only', () => {
+    expect(() => serviceWith('false').updatePlatformOrderingEnabled()).toThrow(
+      BadRequestException,
+    );
   });
 
   it('throws a gone error when ordering is disabled', () => {
