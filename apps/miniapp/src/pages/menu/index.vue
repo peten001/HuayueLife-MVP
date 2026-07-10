@@ -42,12 +42,25 @@ onLoad(async (options) => {
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
   normalizeRouteContext();
+  const previousContext = cloneCartContext(cartStore.context);
   try {
     const contextResult = await ensureMenuContext(buildContext());
-    if (contextResult === 'cancelled') return;
-    if (contextResult === 'failed') {
-      throw new Error(t('cartContextSwitchError'));
+    if (contextResult === 'cancelled') {
+      redirectToPreviousCartContext(previousContext);
+      return;
     }
+    if (contextResult === 'failed') {
+      redirectToPreviousCartContext(previousContext, t('cartContextSwitchError'));
+      return;
+    }
+  } catch (caught) {
+    console.error('[menu] ensure cart context failed', caught);
+    const message = caught instanceof Error ? caught.message : t('cartContextSwitchError');
+    redirectToPreviousCartContext(previousContext, message);
+    return;
+  }
+
+  try {
     const loadedMenu = await getMenu(merchantId.value, {
       tableToken: tableToken.value,
     });
@@ -55,7 +68,7 @@ onLoad(async (options) => {
     menu.value = loadedMenu;
     activeCategory.value = loadedMenu.categories[0]?.id ?? '';
   } catch (caught) {
-    console.error('[menu] ensure cart context failed', caught);
+    console.error('[menu] load menu failed', caught);
     const message = caught instanceof Error ? caught.message : t('cartContextSwitchError');
     uni.showToast({ title: message, icon: 'none' });
     error.value = message;
@@ -86,7 +99,7 @@ async function ensureMenuContext(nextContext: CartContext): Promise<ContextSwitc
   if (!cartStore.context || !cartStore.needsContextSwitch(nextContext)) {
     const result = await cartStore.switchContext(nextContext);
     if (result === 'failed') {
-      throw new Error(t('cartContextSwitchError'));
+      return 'failed';
     }
     cartStore.syncContextMetadata(nextContext);
     console.log('[menu] ensure cart context success', cartStore.context);
@@ -95,10 +108,10 @@ async function ensureMenuContext(nextContext: CartContext): Promise<ContextSwitc
   }
 
   if (cartStore.hasItems()) {
-    const confirmed = await confirmContextSwitch(nextContext);
-    console.log('[cart] user confirmed switch', confirmed);
-    if (!confirmed) {
-      notice.value = t('cartContextSwitchCancelled');
+    const confirmResult = await confirmContextSwitch(nextContext);
+    console.log('[cart] user confirmed switch', confirmResult === 'confirmed');
+    if (confirmResult === 'cancelled') {
+      notice.value = '';
       console.log('[menu] ensure cart context failed', {
         reason: 'user cancelled switch',
         currentContext: cartStore.context,
@@ -109,7 +122,7 @@ async function ensureMenuContext(nextContext: CartContext): Promise<ContextSwitc
     console.log('[cart] clear cart and switch context');
     const result = await cartStore.clearAndSwitchContext(nextContext);
     if (result === 'failed') {
-      throw new Error(t('cartContextSwitchError'));
+      return 'failed';
     }
     cartStore.syncContextMetadata(nextContext);
     console.log('[menu] ensure cart context success', cartStore.context);
@@ -120,7 +133,7 @@ async function ensureMenuContext(nextContext: CartContext): Promise<ContextSwitc
 
   const result = await cartStore.switchContext(nextContext);
   if (result === 'failed') {
-    throw new Error(t('cartContextSwitchError'));
+    return 'failed';
   }
   cartStore.syncContextMetadata(nextContext);
   console.log('[menu] ensure cart context success', cartStore.context);
@@ -153,6 +166,65 @@ function buildContext(loadedMenu?: MenuResponse): CartContext {
   return context;
 }
 
+function cloneCartContext(context: CartContext | null): CartContext | null {
+  return context ? { ...context } : null;
+}
+
+function menuUrlFromContext(context: CartContext) {
+  if (context.orderType !== 'DINE_IN' || !context.merchantId || !context.tableToken) {
+    return '';
+  }
+  const query = [
+    `merchantId=${encodeURIComponent(context.merchantId)}`,
+    'orderType=DINE_IN',
+    `tableToken=${encodeURIComponent(context.tableToken)}`,
+  ];
+  if (context.tableNo) query.push(`tableNo=${encodeURIComponent(context.tableNo)}`);
+  if (context.tableName) query.push(`tableName=${encodeURIComponent(context.tableName)}`);
+  return `/pages/menu/index?${query.join('&')}`;
+}
+
+function previousContextUrl(context: CartContext | null) {
+  const menuUrl = context ? menuUrlFromContext(context) : '';
+  if (menuUrl) return menuUrl;
+  return '/pages/cart/index';
+}
+
+function redirectToPreviousCartContext(previousContext: CartContext | null, message?: string) {
+  if (message) {
+    uni.showToast({ title: message, icon: 'none' });
+  }
+  const context = previousContext ?? cloneCartContext(cartStore.context);
+  const targetUrl = previousContextUrl(context);
+  console.log('[menu] redirect to previous cart context', {
+    previousContext: context,
+    targetUrl,
+  });
+  redirectWithFallback(targetUrl);
+}
+
+function redirectWithFallback(url: string) {
+  uni.redirectTo({
+    url,
+    fail(error) {
+      console.warn('[menu] redirect to previous context failed', {
+        url,
+        error,
+      });
+      if (url !== '/pages/cart/index') {
+        redirectWithFallback('/pages/cart/index');
+        return;
+      }
+      uni.switchTab({
+        url: '/pages/home/index',
+        fail(homeError) {
+          console.warn('[menu] fallback to home failed', homeError);
+        },
+      });
+    },
+  });
+}
+
 function confirmContextSwitch(nextContext: CartContext) {
   const sameMerchant = cartStore.context?.merchantId === nextContext.merchantId;
   const isTableSwitch =
@@ -178,16 +250,16 @@ function confirmContextSwitch(nextContext: CartContext) {
       : locale.value === 'zh'
         ? '确认'
         : 'OK';
-  return new Promise<boolean>((resolve) => {
+  return new Promise<'confirmed' | 'cancelled'>((resolve) => {
     uni.showModal({
       title,
       content,
       cancelText,
       confirmText,
-      success: (result) => resolve(result.confirm === true),
+      success: (result) => resolve(result.confirm === true ? 'confirmed' : 'cancelled'),
       fail: (error) => {
         console.warn('[menu] switch table modal failed', error);
-        resolve(false);
+        resolve('cancelled');
       },
     });
   });
