@@ -394,6 +394,16 @@ model MerchantReportSetting {
   @@map("merchant_report_settings")
 }
 
+model PlatformSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique @db.VarChar(120)
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+
 model MerchantStaff {
   id                 BigInt      @id @default(autoincrement())
   merchantId         BigInt      @map("merchant_id")

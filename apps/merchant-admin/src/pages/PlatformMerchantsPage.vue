@@ -21,6 +21,7 @@ import {
   resetPlatformMerchantPassword,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
+  updatePlatformSettings,
 } from '@/api/platform';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
@@ -50,8 +51,6 @@ const ORDERING_CAPABILITY_CODES = new Set([
   'orderChatEnabled',
   'zaloReportEnabled',
 ]);
-const PLATFORM_ORDERING_CONTROL_MESSAGE =
-  '经营能力总开关由服务器配置控制，请修改 PLATFORM_ORDERING_ENABLED 后重启 API。';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -63,6 +62,7 @@ const promotionTags = ref<PlatformPromotionTag[]>([]);
 const capabilities = ref<PlatformCapability[]>([]);
 const platformSettings = ref<PlatformSettings | null>(null);
 const loading = ref(false);
+const settingsSaving = ref(false);
 const message = ref('');
 const uploadingLogo = ref(false);
 const uploadingCover = ref(false);
@@ -144,9 +144,11 @@ const isEditing = computed(() => dialogMode.value === 'edit');
 const platformOrderingEnabled = computed(() =>
   Boolean(platformSettings.value?.platformOrderingEnabled),
 );
-const platformOrderingReadOnly = computed(() => platformSettings.value?.readOnly !== false);
 const platformOrderingStatusText = computed(
   () => `经营能力：${platformOrderingEnabled.value ? '开启' : '关闭'}`,
+);
+const platformOrderingActionText = computed(
+  () => (platformOrderingEnabled.value ? '关闭经营能力' : '开启经营能力'),
 );
 const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
 const coverPreviewUrl = computed(() => resolveMediaUrl(form.coverUrl));
@@ -298,9 +300,8 @@ async function loadMerchants() {
     } else {
       platformSettings.value ??= {
         platformOrderingEnabled: false,
-        source: 'PLATFORM_ORDERING_ENABLED',
-        persistence: 'environment',
-        readOnly: true,
+        source: 'fallback',
+        readOnly: false,
       };
       warnings.push(`经营能力总开关状态加载失败：${errorMessage(settingsResult.reason)}`);
     }
@@ -336,14 +337,28 @@ async function loadMerchants() {
   }
 }
 
-function showPlatformOrderingControlMessage() {
-  if (platformOrderingReadOnly.value) {
-    message.value = PLATFORM_ORDERING_CONTROL_MESSAGE;
-    return;
+async function togglePlatformOrdering() {
+  const nextEnabled = !platformOrderingEnabled.value;
+  const confirmed = window.confirm(
+    nextEnabled
+      ? '开启后，单个商家的经营能力配置将重新生效。是否继续？'
+      : '关闭后，小程序将隐藏所有点餐、自取、配送、购物车、结算等订单能力，但不会修改任何商家的原始能力配置。是否继续？',
+  );
+  if (!confirmed) return;
+  settingsSaving.value = true;
+  message.value = '';
+  try {
+    platformSettings.value = await updatePlatformSettings({
+      platformOrderingEnabled: nextEnabled,
+    });
+    message.value = nextEnabled
+      ? '经营能力总开关已开启，单个商家经营能力配置重新生效。'
+      : '经营能力总开关已关闭，小程序将统一隐藏订单能力。';
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    settingsSaving.value = false;
   }
-  message.value = platformOrderingEnabled.value
-    ? '经营能力当前开启。'
-    : '经营能力当前关闭。';
 }
 
 function openCreate() {
@@ -1057,15 +1072,22 @@ function toCsvLine(values: Array<string | number>) {
     title="商家管理"
   >
     <div class="merchant-page-actions">
-      <button
+      <span
         class="platform-ordering-status"
         :class="{ 'is-enabled': platformOrderingEnabled, 'is-disabled': !platformOrderingEnabled }"
-        type="button"
-        :title="PLATFORM_ORDERING_CONTROL_MESSAGE"
-        @click="showPlatformOrderingControlMessage"
+        title="平台总开关是运行时遮罩，不会修改任何商家的原始能力配置。"
       >
         <span>{{ platformOrderingStatusText }}</span>
-        <small>服务器控制</small>
+        <small>运行时遮罩</small>
+      </span>
+      <button
+        class="merchant-action-button"
+        :class="platformOrderingEnabled ? 'is-secondary' : 'is-primary'"
+        type="button"
+        :disabled="settingsSaving || loading"
+        @click="togglePlatformOrdering"
+      >
+        {{ settingsSaving ? '处理中...' : platformOrderingActionText }}
       </button>
       <button class="merchant-action-button is-secondary" :disabled="loading" @click="loadMerchants">
         {{ loading ? '加载中...' : '刷新' }}

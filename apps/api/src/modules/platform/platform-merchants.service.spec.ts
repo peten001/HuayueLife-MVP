@@ -69,6 +69,29 @@ describe('PlatformMerchantsService platform ordering switch', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('allows operation capability updates when the platform switch is on', async () => {
+    service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      buildAppConfigMock(true) as never,
+    );
+    jest.spyOn(service as any, 'requireMerchant').mockResolvedValue({ id: 2n } as never);
+    jest.spyOn(service as any, 'loadCapabilities').mockResolvedValue([
+      { id: 1n, code: 'phoneEnabled' },
+      { id: 2n, code: 'pickupEnabled' },
+    ] as never);
+    jest.spyOn(service as any, 'findById').mockResolvedValue({ id: '2' } as never);
+
+    await expect(
+      service.updateCapabilities(2n, {
+        items: [{ code: 'pickupEnabled', isEnabled: true }],
+      }),
+    ).resolves.toEqual({ id: '2' });
+    expect(prisma.merchantCapability.upsert).toHaveBeenCalled();
+    expect(prisma.merchant.update).toHaveBeenCalled();
+  });
+
   it('allows display capability updates when the platform switch is off', async () => {
     await expect(
       service.updateCapabilities(2n, {

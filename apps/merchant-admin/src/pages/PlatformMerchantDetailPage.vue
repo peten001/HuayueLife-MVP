@@ -324,9 +324,8 @@ async function loadPage() {
     } else {
       platformSettings.value ??= {
         platformOrderingEnabled: false,
-        source: 'PLATFORM_ORDERING_ENABLED',
-        persistence: 'environment',
-        readOnly: true,
+        source: 'fallback',
+        readOnly: false,
       };
       warnings.push(`经营能力总开关状态加载失败：${errorMessage(settingsResult.reason)}`);
     }
