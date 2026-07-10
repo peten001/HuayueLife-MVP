@@ -8,6 +8,7 @@ import {
   useI18n,
   usePageTitle,
 } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
 import { isFavorite, toggleFavorite } from '@/utils/favorites';
@@ -17,6 +18,7 @@ import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
 
 const cartStore = useCartStore();
+const appConfig = useAppConfigStore();
 const merchant = ref<MerchantDetail | null>(null);
 const error = ref('');
 const { locale, t } = useI18n();
@@ -34,22 +36,31 @@ const canPhone = computed(() => hasCapability('phoneEnabled', true));
 const canNavigate = computed(() => hasCapability('navigationEnabled', true));
 const canShowGallery = computed(() => hasCapability('imageGalleryEnabled', true));
 const canPickup = computed(() =>
-  hasCapabilityRecords.value
+  appConfig.platformOrderingEnabled &&
+  (hasCapabilityRecords.value
     ? (merchant.value?.pickupEnabled ?? enabledCapabilityCodes.value.has('pickupEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP')),
+    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP'))),
 );
 const canDelivery = computed(() =>
-  hasCapabilityRecords.value
+  appConfig.platformOrderingEnabled &&
+  (hasCapabilityRecords.value
     ? (merchant.value?.deliveryEnabled ?? enabledCapabilityCodes.value.has('deliveryEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY')),
+    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY'))),
 );
 const hasDineInTag = computed(() =>
-  merchant.value?.dineInEnabled ?? Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN')),
+  appConfig.platformOrderingEnabled &&
+  (merchant.value?.dineInEnabled ?? Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN'))),
 );
 const canScanOrder = computed(() =>
-  hasCapabilityRecords.value
+  appConfig.platformOrderingEnabled &&
+  (hasCapabilityRecords.value
     ? (merchant.value?.qrOrderEnabled ?? enabledCapabilityCodes.value.has('qrOrderEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN')),
+    : Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN'))),
+);
+const visibleOrderTypes = computed(() =>
+  appConfig.platformOrderingEnabled
+    ? merchant.value?.supportedOrderTypes.filter((item) => item !== 'DINE_IN') ?? []
+    : [],
 );
 const displayAddress = computed(() => {
   if (!merchant.value) return '';
@@ -76,7 +87,11 @@ usePageTitle(() => t('merchantDetailTitle'));
 
 onLoad(async (options) => {
   try {
-    merchant.value = await getMerchant(String(options?.id ?? ''));
+    const [loadedMerchant] = await Promise.all([
+      getMerchant(String(options?.id ?? '')),
+      appConfig.ensureLoaded(),
+    ]);
+    merchant.value = loadedMerchant;
     favoriteState.value = isFavorite(merchant.value.id);
     addMerchantBrowsingHistory(merchant.value);
   } catch (caught) {
@@ -108,6 +123,7 @@ function handleToggleFavorite() {
 
 async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   if (!merchant.value) return;
+  if (!appConfig.platformOrderingEnabled) return;
   const merchantId = merchant.value.id;
   const url = `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}`;
   const nextContext = {
@@ -374,7 +390,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
             {{ t('dineIn') }}
           </text>
           <text
-            v-for="type in merchant.supportedOrderTypes.filter((item) => item !== 'DINE_IN')"
+            v-for="type in visibleOrderTypes"
             :key="type"
             class="tag"
           >

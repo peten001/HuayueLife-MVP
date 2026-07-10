@@ -191,6 +191,10 @@ export interface QrResolveResponse {
   tableToken: string;
 }
 
+export interface AppConfig {
+  platformOrderingEnabled: boolean;
+}
+
 export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export type OrderStatus =
   | 'PENDING_ACCEPTANCE'

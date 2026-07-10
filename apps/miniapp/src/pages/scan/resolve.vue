@@ -3,19 +3,31 @@ import { ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { resolveQr } from '@/api/catalog';
 import { merchantName, useI18n, usePageTitle } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 
+const appConfig = useAppConfigStore();
 const status = ref('');
 const error = ref('');
+const orderingUnavailable = ref(false);
 const { locale, t } = useI18n();
 
-usePageTitle(() => t('scanOrderTitle'));
+usePageTitle(() => (orderingUnavailable.value ? t('orderingUnavailableTitle') : t('scanOrderTitle')));
 
 function goBack() {
   uni.navigateBack();
 }
 
+function goHome() {
+  uni.switchTab({ url: '/pages/home/index' });
+}
+
 onLoad(async (options) => {
   console.log('[scan resolve] onLoad options', options);
+  await appConfig.ensureLoaded();
+  if (!appConfig.platformOrderingEnabled) {
+    orderingUnavailable.value = true;
+    return;
+  }
   const resolved = resolveScanInput(options);
   if (!resolved) {
     error.value = t('qrMissingTableInfo');
@@ -101,7 +113,12 @@ function decodeMaybe(value: string) {
 
 <template>
   <view class="page">
-    <view v-if="error" class="result error">
+    <view v-if="orderingUnavailable" class="result">
+      <text class="title">{{ t('orderingUnavailableTitle') }}</text>
+      <text>{{ t('orderingUnavailableMessage') }}</text>
+      <button @click="goHome">{{ t('backHome') }}</button>
+    </view>
+    <view v-else-if="error" class="result error">
       <text class="title">{{ t('enterOrderFailed') }}</text>
       <text>{{ error }}</text>
       <button @click="goBack">{{ t('goBackRetry') }}</button>

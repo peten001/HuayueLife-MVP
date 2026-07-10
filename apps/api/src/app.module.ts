@@ -26,6 +26,7 @@ import { PrintersModule } from './modules/printers/printers.module';
 import { QrModule } from './modules/qr/qr.module';
 import { TableSessionsModule } from './modules/table-sessions/table-sessions.module';
 import { TablesModule } from './modules/tables/tables.module';
+import { AppConfigModule } from './modules/app-config/app-config.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { TablesModule } from './modules/tables/tables.module';
         },
       }),
     }),
+    AppConfigModule,
     DatabaseModule,
     AuthModule,
     HealthModule,

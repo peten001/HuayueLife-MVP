@@ -8,6 +8,8 @@ import { Category, Merchant, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
+import { AppConfigService } from '../app-config/app-config.service';
+import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 import {
   parseHomepageCategoryKeys,
@@ -74,6 +76,7 @@ export class PublicMerchantsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchantCapabilities: MerchantCapabilitiesService,
+    private readonly appConfig: AppConfigService,
   ) {}
 
   async nearby(query: NearbyMerchantsQueryDto) {
@@ -186,6 +189,7 @@ export class PublicMerchantsService {
   }
 
   async menu(id: bigint, tableToken?: string) {
+    this.appConfig.assertOrderingEnabled();
     const merchant = tableToken
       ? await this.requireDineInMerchant(id, tableToken)
       : await this.requirePublicMerchant(id);
@@ -221,6 +225,7 @@ export class PublicMerchantsService {
   }
 
   async product(id: bigint, tableToken?: string) {
+    this.appConfig.assertOrderingEnabled();
     const merchantFilter: Prisma.MerchantWhereInput = tableToken
       ? await this.resolveDineInMerchantFilter(tableToken)
       : {
@@ -328,6 +333,17 @@ export class PublicMerchantsService {
       'qrOrderEnabled',
       false,
     );
+    const platformOrderingEnabled = this.appConfig.isPlatformOrderingEnabled();
+    const pickupEnabled = platformOrderingEnabled
+      ? resolvedCapabilities.pickupEnabled
+      : false;
+    const deliveryEnabled = platformOrderingEnabled
+      ? resolvedCapabilities.deliveryEnabled
+      : false;
+    const dineInEnabled = platformOrderingEnabled
+      ? Boolean(merchant.dineInEnabled)
+      : false;
+    const effectiveQrOrderEnabled = platformOrderingEnabled ? qrOrderEnabled : false;
 
     return {
       ...merchant,
@@ -359,16 +375,18 @@ export class PublicMerchantsService {
       city: merchant.city,
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
       isOpen: isMerchantOpen(merchant),
-      supportedOrderTypes: supportedOrderTypes(merchant, resolvedCapabilities),
+      supportedOrderTypes: platformOrderingEnabled
+        ? supportedOrderTypes(merchant, resolvedCapabilities)
+        : [],
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       latitude: merchant.latitude.toString(),
       longitude: merchant.longitude.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
-      dineInEnabled: Boolean(merchant.dineInEnabled),
-      pickupEnabled: resolvedCapabilities.pickupEnabled,
-      deliveryEnabled: resolvedCapabilities.deliveryEnabled,
-      qrOrderEnabled,
+      dineInEnabled,
+      pickupEnabled,
+      deliveryEnabled,
+      qrOrderEnabled: effectiveQrOrderEnabled,
       homepageCategoryKeys: parseHomepageCategoryKeys(
         merchant.homepageCategoryKeys,
       ),
@@ -389,7 +407,9 @@ export class PublicMerchantsService {
         nameZh: item.capability.nameZh,
         nameVi: item.capability.nameVi,
         nameEn: item.capability.nameEn,
-        isEnabled: item.isEnabled,
+        isEnabled: platformOrderingEnabled || !isOrderingCapabilityCode(item.capability.code)
+          ? item.isEnabled
+          : false,
       })),
       images: (merchant.images ?? []).map((item) => ({
         id: item.id.toString(),
@@ -409,6 +429,7 @@ export class PublicMerchantsService {
   }
 
   private canShowMenu(merchant: PublicMerchantRow) {
+    if (!this.appConfig.isPlatformOrderingEnabled()) return false;
     const resolvedCapabilities =
       this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
     const qrOrderEnabled = this.merchantCapabilities.resolveCapabilityFlag(

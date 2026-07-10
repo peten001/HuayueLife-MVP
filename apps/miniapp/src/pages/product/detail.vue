@@ -10,11 +10,13 @@ import {
   useI18n,
   usePageTitle,
 } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 import type { OrderType, Product } from '@/types/api';
 
 const cartStore = useCartStore();
+const appConfig = useAppConfigStore();
 const product = ref<Product | null>(null);
 const tableLabel = ref('');
 const quantity = ref(1);
@@ -22,9 +24,11 @@ const error = ref('');
 const notice = ref('');
 const { locale, t } = useI18n();
 
-usePageTitle(() => t('productDetailTitle'));
+usePageTitle(() => (appConfig.platformOrderingEnabled ? t('productDetailTitle') : t('orderingUnavailableTitle')));
 
 onLoad(async (options) => {
+  await appConfig.ensureLoaded();
+  if (!appConfig.platformOrderingEnabled) return;
   const tableName = decodeURIComponent(String(options?.tableName ?? ''));
   const tableNo = decodeURIComponent(String(options?.tableNo ?? ''));
   const tableToken = String(options?.tableToken ?? '');
@@ -61,6 +65,7 @@ onLoad(async (options) => {
 });
 
 async function add() {
+  if (!appConfig.platformOrderingEnabled) return;
   if (!product.value || product.value.status === 'SOLD_OUT') return;
   try {
     await cartStore.add(product.value.id, quantity.value);
@@ -72,11 +77,20 @@ async function add() {
     });
   }
 }
+
+function goHome() {
+  uni.switchTab({ url: '/pages/home/index' });
+}
 </script>
 
 <template>
   <view class="page">
-    <text v-if="notice" class="notice">{{ notice }}</text>
+    <view v-if="!appConfig.platformOrderingEnabled" class="safe-empty">
+      <text class="safe-empty-title">{{ t('orderingUnavailableTitle') }}</text>
+      <text class="safe-empty-copy">{{ t('orderingUnavailableMessage') }}</text>
+      <button class="safe-empty-button" @click="goHome">{{ t('backHome') }}</button>
+    </view>
+    <text v-else-if="notice" class="notice">{{ notice }}</text>
     <view v-if="tableLabel && product" class="context">
       {{ product.merchant ? merchantName(product.merchant, locale) : '' }} · {{ t('tableLabel', { table: tableLabel }) }}
     </view>
@@ -110,6 +124,11 @@ async function add() {
 
 <style scoped>
 .page { min-height: 100vh; padding: 24rpx; background: #f6faf7; }
+.safe-empty { display: grid; gap: 20rpx; place-items: center; padding: 56rpx 34rpx; border-radius: 24rpx; background: #fff; text-align: center; box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%); }
+.safe-empty-title { color: #1f2d24; font-size: 34rpx; font-weight: 800; }
+.safe-empty-copy { color: #5f6f64; font-size: 26rpx; line-height: 1.6; }
+.safe-empty-button { min-width: 220rpx; margin: 0; color: #fff; background: #2e7d32; }
+.safe-empty-button::after { border: 0; }
 .context { padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 18rpx; color: #fff; background: #43a047; }
 .notice { display: block; padding: 18rpx 22rpx; margin-bottom: 20rpx; border-radius: 14rpx; color: #8a5f00; background: #fff4d6; }
 .image { width: 100%; height: 520rpx; border-radius: 24rpx; }

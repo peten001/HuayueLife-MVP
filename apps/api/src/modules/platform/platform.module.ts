@@ -17,8 +17,11 @@ import { PlatformOrdersController } from './platform-orders.controller';
 import { PlatformOrdersService } from './platform-orders.service';
 import { PlatformUsersController } from './platform-users.controller';
 import { PlatformUsersService } from './platform-users.service';
+import { PlatformSettingsController } from './platform-settings.controller';
+import { AppConfigModule } from '../app-config/app-config.module';
 
 @Module({
+  imports: [AppConfigModule],
   controllers: [
     PlatformAuthController,
     PlatformDashboardController,
@@ -28,6 +31,7 @@ import { PlatformUsersService } from './platform-users.service';
     PlatformMerchantsController,
     PlatformOrdersController,
     PlatformUsersController,
+    PlatformSettingsController,
   ],
   providers: [
     JwtAuthGuard,

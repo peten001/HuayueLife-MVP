@@ -10,6 +10,94 @@ import {
 import { PlatformMerchantsService } from './platform-merchants.service';
 import { MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS } from './merchant-import-fields';
 
+function buildAppConfigMock(platformOrderingEnabled = true) {
+  return {
+    isPlatformOrderingEnabled: jest.fn().mockReturnValue(platformOrderingEnabled),
+    merchantOperationEditDisabledMessage: jest
+      .fn()
+      .mockReturnValue('平台经营能力总开关已关闭，暂不可修改商家经营能力。'),
+  };
+}
+
+describe('PlatformMerchantsService platform ordering switch', () => {
+  let service: PlatformMerchantsService;
+  let prisma: {
+    $transaction: jest.Mock;
+    merchantCapability: {
+      upsert: jest.Mock;
+    };
+    merchant: {
+      update: jest.Mock;
+    };
+  };
+
+  beforeEach(() => {
+    prisma = {
+      $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          merchantCapability: { upsert: prisma.merchantCapability.upsert },
+          merchant: { update: prisma.merchant.update },
+        }),
+      ),
+      merchantCapability: {
+        upsert: jest.fn().mockResolvedValue(undefined),
+      },
+      merchant: {
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+    };
+    service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      buildAppConfigMock(false) as never,
+    );
+    jest.spyOn(service as any, 'requireMerchant').mockResolvedValue({ id: 2n } as never);
+    jest.spyOn(service as any, 'loadCapabilities').mockResolvedValue([
+      { id: 1n, code: 'phoneEnabled' },
+      { id: 2n, code: 'pickupEnabled' },
+    ] as never);
+    jest.spyOn(service as any, 'findById').mockResolvedValue({ id: '2' } as never);
+  });
+
+  it('rejects operation capability updates when the platform switch is off', async () => {
+    await expect(
+      service.updateCapabilities(2n, {
+        items: [{ code: 'pickupEnabled', isEnabled: true }],
+      }),
+    ).rejects.toThrow('平台经营能力总开关已关闭，暂不可修改商家经营能力。');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('allows display capability updates when the platform switch is off', async () => {
+    await expect(
+      service.updateCapabilities(2n, {
+        items: [{ code: 'phoneEnabled', isEnabled: true }],
+      }),
+    ).resolves.toEqual({ id: '2' });
+    expect(prisma.merchantCapability.upsert).toHaveBeenCalled();
+    expect(prisma.merchant.update).toHaveBeenCalled();
+  });
+
+  it('does not clear operation fields when unchanged merchant mode is submitted while off', async () => {
+    (service as any).requireMerchant.mockResolvedValueOnce({
+      id: 2n,
+      merchantMode: MerchantMode.DISPLAY,
+      reportFeatureEnabled: false,
+    });
+    await expect(
+      service.update(2n, {
+        nameZh: '展示商家',
+        merchantMode: MerchantMode.DISPLAY,
+      }),
+    ).resolves.toEqual({ id: '2' });
+    expect(prisma.merchant.update).toHaveBeenCalledWith({
+      where: { id: 2n },
+      data: { nameZh: '展示商家' },
+    });
+  });
+});
+
 describe('PlatformMerchantsService merchant import', () => {
   const businessTypes = [
     {
@@ -83,7 +171,12 @@ describe('PlatformMerchantsService merchant import', () => {
       saveMerchantImage: jest.fn().mockResolvedValue({ imageUrl: 'https://cdn.example.com/merchant-cover.jpg' }),
       removeMerchantImage: jest.fn().mockResolvedValue(undefined),
     };
-    service = new PlatformMerchantsService(prisma as never, dictionaries as never, uploads as never);
+    service = new PlatformMerchantsService(
+      prisma as never,
+      dictionaries as never,
+      uploads as never,
+      buildAppConfigMock() as never,
+    );
   });
 
   it('builds an xlsx template with exactly 12 fields, one business hours field, and businessType dropdown', async () => {
@@ -440,6 +533,7 @@ describe('PlatformMerchantsService merchant account phone', () => {
       prisma as never,
       { ensureDefaults: jest.fn() } as never,
       {} as never,
+      buildAppConfigMock() as never,
     );
   });
 
@@ -562,6 +656,7 @@ describe('PlatformMerchantsService platform business hours', () => {
       prisma as never,
       { ensureDefaults: jest.fn() } as never,
       {} as never,
+      buildAppConfigMock() as never,
     );
     jest.spyOn(service, 'detail').mockResolvedValue({
       merchant: {

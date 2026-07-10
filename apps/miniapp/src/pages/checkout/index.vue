@@ -4,6 +4,7 @@ import { onShow as onPageShow } from '@dcloudio/uni-app';
 import { createOrder, previewOrder, type OrderRequest } from '@/api/cart';
 import { getMerchant } from '@/api/catalog';
 import { translateApiError, useI18n, usePageTitle } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import { useLocationStore } from '@/stores/location';
@@ -11,6 +12,7 @@ import type { CreatedOrder, MerchantDetail, OrderPreview } from '@/types/api';
 import { getLastContactInfo, setLastContactInfo } from '@/utils/storage';
 
 const authStore = useAuthStore();
+const appConfig = useAppConfigStore();
 const cartStore = useCartStore();
 const locationStore = useLocationStore();
 const preview = ref<OrderPreview | null>(null);
@@ -65,7 +67,7 @@ function checkoutText(zhText: string, viText: string, enText: string) {
   return zhText;
 }
 
-usePageTitle(() => t('checkoutTitle'));
+usePageTitle(() => (appConfig.platformOrderingEnabled ? t('checkoutTitle') : t('orderingUnavailableTitle')));
 
 onMounted(() => {
   void bootstrapCheckout();
@@ -244,6 +246,7 @@ async function chooseLocation() {
 }
 
 async function submit() {
+  if (!appConfig.platformOrderingEnabled) return;
   if (submitting.value) {
     console.log('[checkout] submit blocked reason', 'already submitting');
     return;
@@ -279,6 +282,7 @@ async function submit() {
 }
 
 async function doSubmit() {
+  if (!appConfig.platformOrderingEnabled) return;
   if (submitting.value) return;
   submitting.value = true;
   message.value = '';
@@ -361,6 +365,11 @@ async function bootstrapCheckout() {
   if (bootstrapPromise) return bootstrapPromise;
   bootstrapPromise = (async () => {
     try {
+      await appConfig.ensureLoaded();
+      if (!appConfig.platformOrderingEnabled) {
+        message.value = '';
+        return;
+      }
       await authStore.ensureLogin();
       await cartStore.load();
       const cachedContact = getLastContactInfo();
@@ -411,6 +420,7 @@ function hasValidDeliveryLocation() {
 
 function schedulePreview() {
   clearPreviewTimer();
+  if (!appConfig.platformOrderingEnabled) return;
   if (!context.value || !cartStore.cart) return;
   const contactPhone = form.contactPhone.trim();
   if (requiresContactPhone() && !phonePattern.test(contactPhone)) {
@@ -675,10 +685,20 @@ function showSuccess(order: CreatedOrder) {
   });
 }
 
+function goHome() {
+  uni.switchTab({ url: '/pages/home/index' });
+}
+
 </script>
 
 <template>
   <view class="page">
+    <view v-if="!appConfig.platformOrderingEnabled" class="safe-empty">
+      <text class="safe-empty-title">{{ t('orderingUnavailableTitle') }}</text>
+      <text class="safe-empty-copy">{{ t('orderingUnavailableMessage') }}</text>
+      <button class="safe-empty-button" @click="goHome">{{ t('backHome') }}</button>
+    </view>
+    <template v-else>
     <view v-if="context" class="context">
       <text class="merchant">{{ context.merchantName }}</text>
       <text>{{ orderTypeLabel }}</text>
@@ -764,6 +784,7 @@ function showSuccess(order: CreatedOrder) {
     <view class="offline">
       <text class="offline-label">{{ t('payOfflineHint') }}</text>
     </view>
+    </template>
   </view>
 </template>
 
@@ -774,6 +795,40 @@ function showSuccess(order: CreatedOrder) {
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
+}
+
+.safe-empty {
+  display: grid;
+  gap: 20rpx;
+  place-items: center;
+  padding: 56rpx 34rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+}
+
+.safe-empty-title {
+  color: #1f2d24;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.safe-empty-copy {
+  color: #5f6f64;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.safe-empty-button {
+  min-width: 220rpx;
+  margin: 0;
+  color: #fff;
+  background: #2e7d32;
+}
+
+.safe-empty-button::after {
+  border: 0;
 }
 
 .context,

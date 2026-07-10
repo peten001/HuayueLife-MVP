@@ -24,6 +24,7 @@ import type {
   PlatformOrderFilters,
   PlatformOrdersResponse,
   PlatformPromotionTag,
+  PlatformSettings,
   PlatformUserDetailResponse,
   PlatformUserListItem,
   PlatformUsersFilters,
@@ -147,6 +148,21 @@ export async function getPlatformCapabilities() {
     '/platform/capabilities',
   );
   return response.data.data.items;
+}
+
+export async function getPlatformSettings() {
+  const response = await platformHttp.get<ApiResponse<PlatformSettings>>(
+    '/platform/settings',
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformSettings(payload: Pick<PlatformSettings, 'platformOrderingEnabled'>) {
+  const response = await platformHttp.patch<ApiResponse<PlatformSettings>>(
+    '/platform/settings',
+    payload,
+  );
+  return response.data.data;
 }
 
 export async function getPlatformMerchantDetail(id: string) {

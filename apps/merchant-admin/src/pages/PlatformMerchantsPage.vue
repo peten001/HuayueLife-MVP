@@ -11,6 +11,7 @@ import {
   downloadPlatformMerchantImportTemplate,
   enablePlatformMerchant,
   getPlatformMerchants,
+  getPlatformSettings,
   getPlatformBusinessTypes,
   getPlatformPromotionTags,
   getPlatformCapabilities,
@@ -20,6 +21,7 @@ import {
   resetPlatformMerchantPassword,
   uploadPlatformMerchantImage,
   updatePlatformMerchant,
+  updatePlatformSettings,
 } from '@/api/platform';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
@@ -31,8 +33,24 @@ import type {
   PlatformMerchantImportPreviewResponse,
   PlatformMerchantImportRow,
   PlatformPromotionTag,
+  PlatformSettings,
 } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
+
+const ORDERING_CAPABILITY_CODES = new Set([
+  'onlineOrderEnabled',
+  'pickupEnabled',
+  'deliveryEnabled',
+  'dineInEnabled',
+  'qrOrderEnabled',
+  'tableManagementEnabled',
+  'printerEnabled',
+  'voiceNotifyEnabled',
+  'voiceBroadcastEnabled',
+  'chatEnabled',
+  'orderChatEnabled',
+  'zaloReportEnabled',
+]);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -42,7 +60,9 @@ const avatarLoadFailed = reactive<Record<string, boolean>>({});
 const businessTypes = ref<PlatformBusinessType[]>([]);
 const promotionTags = ref<PlatformPromotionTag[]>([]);
 const capabilities = ref<PlatformCapability[]>([]);
+const platformSettings = ref<PlatformSettings | null>(null);
 const loading = ref(false);
+const settingsSaving = ref(false);
 const message = ref('');
 const uploadingLogo = ref(false);
 const uploadingCover = ref(false);
@@ -121,6 +141,9 @@ const form = reactive({
 const provinceOptions = ['北江', '北宁'] as const;
 
 const isEditing = computed(() => dialogMode.value === 'edit');
+const platformOrderingEnabled = computed(() =>
+  Boolean(platformSettings.value?.platformOrderingEnabled),
+);
 const logoPreviewUrl = computed(() => resolveMediaUrl(form.logoUrl));
 const coverPreviewUrl = computed(() => resolveMediaUrl(form.coverUrl));
 const latitudeError = computed(() => validateCoordinate(form.latitude, -90, 90, '纬度'));
@@ -252,12 +275,14 @@ async function loadMerchants() {
   loading.value = true;
   message.value = '';
   try {
-    const [merchantItems, typeItems, tagItems, capabilityItems] = await Promise.all([
+    const [settings, merchantItems, typeItems, tagItems, capabilityItems] = await Promise.all([
+      getPlatformSettings(),
       getPlatformMerchants(),
       getPlatformBusinessTypes(),
       getPlatformPromotionTags(),
       getPlatformCapabilities(),
     ]);
+    platformSettings.value = settings;
     merchants.value = merchantItems;
     syncAvatarLoadFailedState(merchantItems);
     businessTypes.value = typeItems;
@@ -270,6 +295,30 @@ async function loadMerchants() {
     message.value = errorMessage(error);
   } finally {
     loading.value = false;
+  }
+}
+
+async function togglePlatformOrdering() {
+  const nextEnabled = !platformOrderingEnabled.value;
+  const confirmed = window.confirm(
+    nextEnabled
+      ? '开启后，单个商家的经营能力配置将重新生效。是否继续？'
+      : '关闭后，小程序将隐藏所有点餐、自取、配送、购物车、结算等订单能力。商家展示、电话、导航、图片仍会保留，且不会修改单个商家的原始能力配置。是否继续？',
+  );
+  if (!confirmed) return;
+  settingsSaving.value = true;
+  message.value = '';
+  try {
+    platformSettings.value = await updatePlatformSettings({
+      platformOrderingEnabled: nextEnabled,
+    });
+    message.value = nextEnabled
+      ? '经营能力总开关已开启，单个商家经营能力配置重新生效。'
+      : '经营能力总开关已关闭，小程序将统一隐藏订单能力。';
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    settingsSaving.value = false;
   }
 }
 
@@ -712,9 +761,12 @@ async function submit() {
         status: form.status,
       });
       await updatePlatformMerchantTags(editingId.value, [...form.promotionTagIds]);
+      const capabilityPayload = Object.entries(form.capabilityValues)
+        .filter(([code]) => platformOrderingEnabled.value || !ORDERING_CAPABILITY_CODES.has(code))
+        .map(([code, isEnabled]) => ({ code, isEnabled }));
       await updatePlatformMerchantCapabilities(
         editingId.value,
-        Object.entries(form.capabilityValues).map(([code, isEnabled]) => ({ code, isEnabled })),
+        capabilityPayload,
       );
       message.value = t('merchantUpdated');
     }
@@ -990,6 +1042,47 @@ function toCsvLine(values: Array<string | number>) {
   </PageHeader>
 
   <p v-if="message" class="message">{{ message }}</p>
+
+  <section class="card platform-ordering-switch-card">
+    <div class="platform-ordering-switch-main">
+      <div>
+        <div class="section-heading">
+          <h2>经营能力总开关</h2>
+          <span class="badge" :class="platformOrderingEnabled ? 'success' : 'muted'">
+            {{ platformOrderingEnabled ? '开启' : '关闭' }}
+          </span>
+        </div>
+        <p>
+          关闭后，小程序将隐藏所有点餐、自取、配送、购物车、结算等订单能力；商家展示、电话、导航、图片不受影响。
+        </p>
+        <p class="hint">
+          {{
+            platformOrderingEnabled
+              ? '单个商家的经营能力开关生效，可独立配置。'
+              : '小程序统一隐藏所有经营/订单能力，单个商家经营能力暂不可编辑，但原配置不会被修改。'
+          }}
+        </p>
+      </div>
+      <button
+        class="merchant-action-button"
+        :class="platformOrderingEnabled ? 'is-secondary' : 'is-primary'"
+        type="button"
+        :disabled="settingsSaving || loading"
+        @click="togglePlatformOrdering"
+      >
+        {{
+          settingsSaving
+            ? '处理中...'
+            : platformOrderingEnabled
+              ? '关闭经营能力'
+              : '开启经营能力'
+        }}
+      </button>
+    </div>
+    <p class="hint">
+      配置来源：PLATFORM_ORDERING_ENABLED。该总开关是运行时遮罩，不会批量修改任何商家的原始能力配置。
+    </p>
+  </section>
 
   <section class="platform-metric-grid platform-merchant-summary-grid">
     <article class="card platform-metric-card">
@@ -2126,6 +2219,29 @@ function toCsvLine(values: Array<string | number>) {
 
 .capability-group + .capability-group {
   border-top: 1px dashed #d8e6dc;
+}
+
+.platform-ordering-switch-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.platform-ordering-switch-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.platform-ordering-switch-main p {
+  margin: 6px 0 0;
+  color: #475467;
+  line-height: 1.6;
+}
+
+.platform-ordering-switch-main .merchant-action-button {
+  flex: none;
 }
 
 .coordinate-field {

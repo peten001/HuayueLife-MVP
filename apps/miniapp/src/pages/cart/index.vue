@@ -1,18 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
 import { formatNumberCurrency, orderTypeLabel, productName, useI18n, usePageTitle } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 
+const appConfig = useAppConfigStore();
 const cartStore = useCartStore();
 const { locale, t } = useI18n();
 const amount = computed(() => Number(cartStore.cart?.itemAmountVnd ?? 0));
 
-usePageTitle(() => t('cartTitle'));
+usePageTitle(() => (appConfig.platformOrderingEnabled ? t('cartTitle') : t('orderingUnavailableTitle')));
 
-onMounted(() => cartStore.load());
+onMounted(() => {
+  void bootstrapCart();
+});
+
+async function bootstrapCart() {
+  await appConfig.ensureLoaded();
+  if (!appConfig.platformOrderingEnabled) return;
+  await cartStore.load();
+}
 
 async function change(itemId: string, quantity: number) {
+  if (!appConfig.platformOrderingEnabled) return;
   try {
     await cartStore.setQuantity(itemId, quantity);
   } catch (caught) {
@@ -24,6 +35,7 @@ async function change(itemId: string, quantity: number) {
 }
 
 async function remove(itemId: string) {
+  if (!appConfig.platformOrderingEnabled) return;
   try {
     await cartStore.remove(itemId);
   } catch (caught) {
@@ -35,6 +47,7 @@ async function remove(itemId: string) {
 }
 
 async function clear() {
+  if (!appConfig.platformOrderingEnabled) return;
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
       title: t('emptyCartTitle'),
@@ -47,14 +60,24 @@ async function clear() {
 }
 
 function checkout() {
+  if (!appConfig.platformOrderingEnabled) return;
   if (!cartStore.cart?.items.length) return;
   uni.navigateTo({ url: '/pages/checkout/index' });
+}
+
+function goHome() {
+  uni.switchTab({ url: '/pages/home/index' });
 }
 </script>
 
 <template>
   <view class="page">
-    <view v-if="cartStore.context" class="context">
+    <view v-if="!appConfig.platformOrderingEnabled" class="safe-empty">
+      <text class="safe-empty-title">{{ t('orderingUnavailableTitle') }}</text>
+      <text class="safe-empty-copy">{{ t('orderingUnavailableMessage') }}</text>
+      <button class="safe-empty-button" @click="goHome">{{ t('backHome') }}</button>
+    </view>
+    <view v-else-if="cartStore.context" class="context">
       <view class="context-mark">🍽️</view>
       <view>
         <text class="merchant">{{ cartStore.context.merchantName }}</text>
@@ -67,11 +90,11 @@ function checkout() {
         </text>
       </view>
     </view>
-    <view v-if="!cartStore.cart?.items.length" class="empty">
+    <view v-if="appConfig.platformOrderingEnabled && !cartStore.cart?.items.length" class="empty">
       <view class="empty-icon">🛒</view>
       <text class="empty-title">{{ t('cartEmpty') }}</text>
     </view>
-    <view v-for="item in cartStore.cart?.items" :key="item.id" class="item">
+    <view v-for="item in appConfig.platformOrderingEnabled ? cartStore.cart?.items : []" :key="item.id" class="item">
       <image
         v-if="resolveMediaUrl(item.product.imageUrl)"
         class="image"
@@ -90,7 +113,7 @@ function checkout() {
         </view>
       </view>
     </view>
-    <view v-if="cartStore.cart?.items.length" class="footer">
+    <view v-if="appConfig.platformOrderingEnabled && cartStore.cart?.items.length" class="footer">
       <button class="clear" @click="clear">{{ t('clearCart') }}</button>
       <view class="total">
         <view class="total-copy">
@@ -110,6 +133,40 @@ function checkout() {
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
+}
+
+.safe-empty {
+  display: grid;
+  gap: 20rpx;
+  place-items: center;
+  padding: 56rpx 34rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+}
+
+.safe-empty-title {
+  color: #1f2d24;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.safe-empty-copy {
+  color: #5f6f64;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.safe-empty-button {
+  min-width: 220rpx;
+  margin: 0;
+  color: #fff;
+  background: #2e7d32;
+}
+
+.safe-empty-button::after {
+  border: 0;
 }
 
 .context {

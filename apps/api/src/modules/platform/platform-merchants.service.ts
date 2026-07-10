@@ -34,6 +34,8 @@ import {
   sep,
 } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
+import { AppConfigService } from '../app-config/app-config.service';
+import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
 import { UpdateMerchantBusinessHoursDto } from './dto/update-merchant-business-hours.dto';
 import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
@@ -336,6 +338,7 @@ export class PlatformMerchantsService {
     private readonly prisma: PrismaService,
     private readonly dictionaries: PlatformDictionariesService,
     private readonly uploads: PlatformUploadsService,
+    private readonly appConfig: AppConfigService,
   ) {}
 
   async list() {
@@ -954,7 +957,7 @@ export class PlatformMerchantsService {
   }
 
   async update(id: bigint, dto: UpdatePlatformMerchantDto) {
-    await this.requireMerchant(id);
+    const current = await this.requireMerchant(id);
     const data: Record<string, unknown> = {};
     if (dto.nameZh !== undefined) {
       data.nameZh = dto.nameZh.trim();
@@ -969,7 +972,14 @@ export class PlatformMerchantsService {
           : [],
       );
     }
-    if (dto.merchantMode !== undefined) data.merchantMode = normalizeMerchantMode(dto.merchantMode);
+    if (dto.merchantMode !== undefined) {
+      const nextMerchantMode = normalizeMerchantMode(dto.merchantMode);
+      const isNoop = nextMerchantMode === current.merchantMode;
+      this.assertOperationFieldEditable(isNoop);
+      if (!isNoop) {
+        data.merchantMode = nextMerchantMode;
+      }
+    }
     if (dto.contactPhone !== undefined) {
       data.contactPhone = dto.contactPhone.trim();
     }
@@ -1011,7 +1021,12 @@ export class PlatformMerchantsService {
       data.isVisibleOnClient = dto.isVisibleOnClient;
     }
     if (dto.reportFeatureEnabled !== undefined) {
-      data.reportFeatureEnabled = dto.reportFeatureEnabled;
+      const nextReportFeatureEnabled = Boolean(dto.reportFeatureEnabled);
+      const isNoop = nextReportFeatureEnabled === Boolean(current.reportFeatureEnabled);
+      this.assertOperationFieldEditable(isNoop);
+      if (!isNoop) {
+        data.reportFeatureEnabled = nextReportFeatureEnabled;
+      }
     }
     if (dto.isNew !== undefined) data.isNew = dto.isNew;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
@@ -1027,6 +1042,7 @@ export class PlatformMerchantsService {
 
   async updateCapabilities(id: bigint, dto: UpdateMerchantCapabilitiesDto) {
     await this.requireMerchant(id);
+    this.assertOperationCapabilitiesEditable(dto.items ?? []);
     await this.dictionaries.ensureDefaults();
     const capabilities = await this.loadCapabilities();
     const capabilityByCode = new Map(capabilities.map((item) => [item.code, item]));
@@ -1993,6 +2009,23 @@ export class PlatformMerchantsService {
       data.reportFeatureEnabled = false;
     }
     return data;
+  }
+
+  private assertOperationFieldEditable(isNoop: boolean) {
+    if (isNoop || this.appConfig.isPlatformOrderingEnabled()) return;
+    throw new BadRequestException(this.appConfig.merchantOperationEditDisabledMessage());
+  }
+
+  private assertOperationCapabilitiesEditable(
+    items: Array<{ code: string; isEnabled: boolean }>,
+  ) {
+    if (this.appConfig.isPlatformOrderingEnabled()) return;
+    const hasOperationCapability = items.some((item) =>
+      isOrderingCapabilityCode(String(item.code)),
+    );
+    if (hasOperationCapability) {
+      throw new BadRequestException(this.appConfig.merchantOperationEditDisabledMessage());
+    }
   }
 
   private computeProfileCompletion(merchant: Merchant) {

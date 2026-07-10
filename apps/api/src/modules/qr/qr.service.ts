@@ -5,13 +5,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { AppConfigService } from '../app-config/app-config.service';
 import type { ResolveQrQueryDto } from './dto/resolve-qr-query.dto';
 
 @Injectable()
 export class QrService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly appConfig: AppConfigService,
+  ) {}
 
   async resolve(query: ResolveQrQueryDto) {
+    this.appConfig.assertOrderingEnabled();
     const resolved = this.normalizeResolveQuery(query);
     if ('scene' in resolved) {
       return this.resolveByScene(resolved.scene);

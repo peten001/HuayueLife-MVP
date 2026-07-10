@@ -12,11 +12,13 @@ import {
   useI18n,
   usePageTitle,
 } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore, type ContextSwitchResult } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
 import type { CartContext } from '@/types/api';
 
+const appConfig = useAppConfigStore();
 const cartStore = useCartStore();
 const menu = ref<MenuResponse | null>(null);
 const merchantId = ref('');
@@ -27,13 +29,14 @@ const tableToken = ref('');
 const activeCategory = ref('');
 const error = ref('');
 const notice = ref('');
+const orderingUnavailable = ref(false);
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
 const { locale, t } = useI18n();
 const currentCategory = computed(
   () => menu.value?.categories.find((category) => category.id === activeCategory.value) ?? null,
 );
 
-usePageTitle(() => t('menuTitle'));
+usePageTitle(() => (orderingUnavailable.value ? t('orderingUnavailableTitle') : t('menuTitle')));
 
 onLoad(async (options) => {
   merchantId.value = String(options?.merchantId ?? '');
@@ -42,6 +45,11 @@ onLoad(async (options) => {
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
   normalizeRouteContext();
+  await appConfig.ensureLoaded();
+  if (!appConfig.platformOrderingEnabled) {
+    orderingUnavailable.value = true;
+    return;
+  }
   const previousContext = cloneCartContext(cartStore.context);
   try {
     const contextResult = await ensureMenuContext(buildContext());
@@ -266,6 +274,7 @@ function confirmContextSwitch(nextContext: CartContext) {
 }
 
 function openProduct(product: Product) {
+  if (orderingUnavailable.value || !appConfig.platformOrderingEnabled) return;
   const tableQuery = hasTable.value
     ? `&tableNo=${encodeURIComponent(tableNo.value)}&tableName=${encodeURIComponent(tableName.value)}&tableToken=${encodeURIComponent(tableToken.value)}`
     : '';
@@ -285,6 +294,7 @@ function getProductSubtitle(product: Product) {
 }
 
 async function add(product: Product) {
+  if (orderingUnavailable.value || !appConfig.platformOrderingEnabled) return;
   if (product.status === 'SOLD_OUT') return;
   try {
     await cartStore.add(product.id);
@@ -296,11 +306,20 @@ async function add(product: Product) {
     });
   }
 }
+
+function goHome() {
+  uni.switchTab({ url: '/pages/home/index' });
+}
 </script>
 
 <template>
   <view class="page">
-    <view v-if="menu" class="merchant-card">
+    <view v-if="orderingUnavailable" class="safe-empty">
+      <text class="safe-empty-title">{{ t('orderingUnavailableTitle') }}</text>
+      <text class="safe-empty-copy">{{ t('orderingUnavailableMessage') }}</text>
+      <button class="safe-empty-button" @click="goHome">{{ t('backHome') }}</button>
+    </view>
+    <view v-else-if="menu" class="merchant-card">
       <view class="merchant-visual">
         <view class="visual-circle visual-circle-large"></view>
         <view class="visual-circle visual-circle-small"></view>
@@ -329,9 +348,9 @@ async function add(product: Product) {
         </view>
       </view>
     </view>
-    <view v-if="notice" class="notice">{{ notice }}</view>
-    <view v-if="error" class="error">{{ error }}</view>
-    <view v-else-if="menu" class="menu-layout">
+    <view v-if="!orderingUnavailable && notice" class="notice">{{ notice }}</view>
+    <view v-if="!orderingUnavailable && error" class="error">{{ error }}</view>
+    <view v-else-if="!orderingUnavailable && menu" class="menu-layout">
       <scroll-view class="categories" scroll-y>
         <view
           v-for="category in menu.categories"
@@ -403,7 +422,7 @@ async function add(product: Product) {
         </view>
       </scroll-view>
     </view>
-    <CartBar v-if="menu" />
+    <CartBar v-if="menu && !orderingUnavailable" />
   </view>
 </template>
 
@@ -417,6 +436,41 @@ async function add(product: Product) {
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
+}
+
+.safe-empty {
+  display: grid;
+  gap: 20rpx;
+  place-items: center;
+  margin: auto 0;
+  padding: 52rpx 34rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+}
+
+.safe-empty-title {
+  color: #1f2d24;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.safe-empty-copy {
+  color: #5f6f64;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.safe-empty-button {
+  min-width: 220rpx;
+  margin: 0;
+  color: #fff;
+  background: #2e7d32;
+}
+
+.safe-empty-button::after {
+  border: 0;
 }
 
 .merchant-card {

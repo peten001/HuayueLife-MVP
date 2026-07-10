@@ -1,11 +1,14 @@
 import type {
   MenuResponse,
+  AppConfig,
   MerchantDetail,
   MerchantSummary,
   Product,
   QrResolveResponse,
 } from '@/types/api';
 import { request } from './http';
+
+export const getAppConfig = () => request<AppConfig>('/public/app-config');
 
 export function getNearbyMerchants(params: {
   lat?: number;

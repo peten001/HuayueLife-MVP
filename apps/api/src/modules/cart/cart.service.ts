@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { AppConfigService } from '../app-config/app-config.service';
 import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { CartContextQueryDto } from './dto/cart-context-query.dto';
@@ -25,15 +26,18 @@ export class CartService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchantCapabilities: MerchantCapabilitiesService,
+    private readonly appConfig: AppConfigService,
   ) {}
 
   async get(userId: bigint, query: CartContextQueryDto) {
+    this.appConfig.assertOrderingEnabled();
     const context = await this.resolveContext(this.prisma, query);
     const cart = await this.findActiveCart(this.prisma, userId, context);
     return cart ? this.loadCart(this.prisma, cart.id) : this.emptyCart(context);
   }
 
   async addItem(userId: bigint, dto: AddCartItemDto) {
+    this.appConfig.assertOrderingEnabled();
     return this.prisma.$transaction(async (tx) => {
       const context = await this.resolveContext(tx, dto);
       const product = await tx.product.findFirst({
@@ -81,6 +85,7 @@ export class CartService {
   }
 
   async updateItem(userId: bigint, itemId: bigint, dto: UpdateCartItemDto) {
+    this.appConfig.assertOrderingEnabled();
     const item = await this.prisma.cartItem.findFirst({
       where: {
         id: itemId,
@@ -110,6 +115,7 @@ export class CartService {
   }
 
   async deleteItem(userId: bigint, itemId: bigint) {
+    this.appConfig.assertOrderingEnabled();
     const item = await this.prisma.cartItem.findFirst({
       where: { id: itemId, cart: { userId, status: 'ACTIVE' } },
     });
@@ -119,6 +125,7 @@ export class CartService {
   }
 
   async clear(userId: bigint, query: CartContextQueryDto) {
+    this.appConfig.assertOrderingEnabled();
     const context = await this.resolveContext(this.prisma, query);
     const cart = await this.findActiveCart(this.prisma, userId, context);
     if (!cart) return this.emptyCart(context);
@@ -130,6 +137,7 @@ export class CartService {
   }
 
   async resolveContext(client: DbClient, input: CartContextQueryDto | AddCartItemDto) {
+    this.appConfig.assertOrderingEnabled();
     const merchantId = BigInt(input.merchantId);
     const merchant = await client.merchant.findFirst({
       where: {

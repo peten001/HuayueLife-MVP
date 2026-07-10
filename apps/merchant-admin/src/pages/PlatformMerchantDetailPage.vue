@@ -12,6 +12,7 @@ import {
   getPlatformBusinessTypes,
   getPlatformMerchantDetail,
   getPlatformPromotionTags,
+  getPlatformSettings,
   openPlatformMerchantAccount,
   resetPlatformMerchantPassword,
   updatePlatformMerchantAccountPhone,
@@ -28,6 +29,7 @@ import type {
   PlatformCapability,
   PlatformMerchantDetailResponse,
   PlatformPromotionTag,
+  PlatformSettings,
 } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
 
@@ -47,6 +49,7 @@ const router = useRouter();
 const detail = ref<PlatformMerchantDetailResponse>();
 const businessTypes = ref<PlatformBusinessType[]>([]);
 const capabilities = ref<PlatformCapability[]>([]);
+const platformSettings = ref<PlatformSettings | null>(null);
 const promotionTags = ref<PlatformPromotionTag[]>([]);
 const activeSection = ref<EditorSection>('profile');
 const loading = ref(false);
@@ -76,6 +79,20 @@ const BUSINESS_HOURS_WEEKDAYS = [
 ] as const;
 const DEFAULT_BUSINESS_HOURS_START = '10:00';
 const DEFAULT_BUSINESS_HOURS_END = '22:00';
+const ORDERING_CAPABILITY_CODES = new Set([
+  'onlineOrderEnabled',
+  'pickupEnabled',
+  'deliveryEnabled',
+  'dineInEnabled',
+  'qrOrderEnabled',
+  'tableManagementEnabled',
+  'printerEnabled',
+  'voiceNotifyEnabled',
+  'voiceBroadcastEnabled',
+  'chatEnabled',
+  'orderChatEnabled',
+  'zaloReportEnabled',
+]);
 const businessHoursStart = ref(DEFAULT_BUSINESS_HOURS_START);
 const businessHoursEnd = ref(DEFAULT_BUSINESS_HOURS_END);
 const businessHoursSaving = ref(false);
@@ -270,6 +287,9 @@ const hasInvalidCoordinates = computed(() => {
 const qrOrderNeedsTableManagement = computed(
   () => capabilityEnabled('qrOrderEnabled') && !capabilityEnabled('tableManagementEnabled'),
 );
+const platformOrderingEnabled = computed(() =>
+  Boolean(platformSettings.value?.platformOrderingEnabled),
+);
 
 onMounted(loadPage);
 watch(
@@ -284,12 +304,14 @@ async function loadPage() {
   loading.value = true;
   message.value = '';
   try {
-    const [nextDetail, nextCapabilities, nextTags, nextBusinessTypes] = await Promise.all([
+    const [settings, nextDetail, nextCapabilities, nextTags, nextBusinessTypes] = await Promise.all([
+      getPlatformSettings(),
       getPlatformMerchantDetail(merchantId.value),
       getPlatformCapabilities(),
       getPlatformPromotionTags(),
       getPlatformBusinessTypes(),
     ]);
+    platformSettings.value = settings;
     detail.value = nextDetail;
     capabilities.value = nextCapabilities;
     promotionTags.value = nextTags;
@@ -531,11 +553,16 @@ async function saveCapabilities() {
   saving.value = true;
   message.value = '';
   try {
+    const capabilityPayload = Object.entries(capabilityValues)
+      .filter(([code]) => platformOrderingEnabled.value || !ORDERING_CAPABILITY_CODES.has(code))
+      .map(([code, isEnabled]) => ({ code, isEnabled }));
     await updatePlatformMerchantCapabilities(
       merchantId.value,
-      Object.entries(capabilityValues).map(([code, isEnabled]) => ({ code, isEnabled })),
+      capabilityPayload,
     );
-    message.value = '能力配置已保存';
+    message.value = platformOrderingEnabled.value
+      ? '能力配置已保存'
+      : '展示能力已保存，经营能力因平台总开关关闭未修改';
     await loadPage();
   } catch (error) {
     message.value = errorMessage(error);
@@ -941,6 +968,10 @@ function backToList() {
             <span class="capabilities-banner-icon">i</span>
             <p>展示型商家默认只开启电话、导航、图片展示。到店扫码点餐不依赖在线下单，开启后建议同步开启桌台管理并完成桌码配置。</p>
           </div>
+          <div v-if="!platformOrderingEnabled" class="capabilities-banner capabilities-banner--warning">
+            <span class="capabilities-banner-icon">!</span>
+            <p>平台已关闭经营能力总开关，当前商家的经营/订单能力暂不可编辑。开启总开关后，将恢复使用该商家原有配置。</p>
+          </div>
           <div class="capability-groups">
             <article class="capability-group-card">
               <div class="capability-group-head">
@@ -964,7 +995,7 @@ function backToList() {
                 </label>
               </div>
             </article>
-            <article class="capability-group-card">
+            <article :class="['capability-group-card', { 'is-disabled': !platformOrderingEnabled }]">
               <div class="capability-group-head">
                 <div>
                   <h3>经营能力</h3>
@@ -975,9 +1006,19 @@ function backToList() {
                 <label
                   v-for="capability in operationCapabilityCards"
                   :key="capability.code"
-                  :class="['capability-card', { 'is-enabled': capabilityEnabled(capability.code) }]"
+                  :class="[
+                    'capability-card',
+                    {
+                      'is-enabled': capabilityEnabled(capability.code),
+                      'is-disabled': !platformOrderingEnabled,
+                    },
+                  ]"
                 >
-                  <input v-model="capabilityValues[capability.code]" type="checkbox" />
+                  <input
+                    v-model="capabilityValues[capability.code]"
+                    type="checkbox"
+                    :disabled="!platformOrderingEnabled"
+                  />
                   <span class="capability-icon">{{ capability.icon }}</span>
                   <span class="capability-card-main">
                     <strong>
@@ -1325,6 +1366,20 @@ function backToList() {
   line-height: 1.6;
 }
 
+.capabilities-banner--warning {
+  border-color: #f3d98b;
+  background: #fff8e6;
+}
+
+.capabilities-banner--warning .capabilities-banner-icon {
+  color: #946200;
+  background: #fef0c7;
+}
+
+.capabilities-banner--warning p {
+  color: #7a5b11;
+}
+
 .capability-groups {
   display: grid;
   gap: 16px;
@@ -1337,6 +1392,10 @@ function backToList() {
   border: 1px solid #d8e6dc;
   border-radius: 18px;
   background: #fff;
+}
+
+.capability-group-card.is-disabled {
+  background: #f8faf9;
 }
 
 .capability-group-head {
@@ -1435,6 +1494,16 @@ function backToList() {
 .capability-card:hover {
   border-color: #b8dec2;
   background: #f8fcf9;
+}
+
+.capability-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.capability-card.is-disabled:hover {
+  border-color: #cfe7d4;
+  background: #fdfefc;
 }
 
 .capability-card.is-enabled {

@@ -4,6 +4,7 @@ import { onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
 import { cityOptions, merchantName, useI18n, usePageTitle } from '@/i18n';
+import { useAppConfigStore } from '@/stores/app-config';
 import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
 
@@ -23,6 +24,7 @@ type CityMenuOption =
   | { role: 'region'; label: string; value: 'Bac Giang' | 'Bac Ninh' };
 
 const locationStore = useLocationStore();
+const appConfig = useAppConfigStore();
 locationStore.hydrateFromStorage();
 const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
@@ -123,12 +125,18 @@ const sortOptions = computed<Array<{ value: SortOption; label: string }>>(() => 
   { value: 'open', label: locale.value === 'zh' ? '当前营业' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
 ]);
 
-const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(() => [
-  { value: 'OPEN', label: locale.value === 'zh' ? '营业中' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
-  { value: 'DINE_IN', label: locale.value === 'zh' ? '支持堂食' : locale.value === 'vi' ? 'Ăn tại chỗ' : 'Dine in' },
-  { value: 'PICKUP', label: locale.value === 'zh' ? '支持到店自取' : locale.value === 'vi' ? 'Tự lấy' : 'Pickup' },
-  { value: 'DELIVERY', label: locale.value === 'zh' ? '支持商家配送' : locale.value === 'vi' ? 'Giao bởi quán' : 'Delivery' },
-]);
+const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(() => {
+  const base: Array<{ value: FilterOption; label: string }> = [
+    { value: 'OPEN', label: locale.value === 'zh' ? '营业中' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
+  ];
+  if (!appConfig.platformOrderingEnabled) return base;
+  return [
+    ...base,
+    { value: 'DINE_IN', label: locale.value === 'zh' ? '支持堂食' : locale.value === 'vi' ? 'Ăn tại chỗ' : 'Dine in' },
+    { value: 'PICKUP', label: locale.value === 'zh' ? '支持到店自取' : locale.value === 'vi' ? 'Tự lấy' : 'Pickup' },
+    { value: 'DELIVERY', label: locale.value === 'zh' ? '支持商家配送' : locale.value === 'vi' ? 'Giao bởi quán' : 'Delivery' },
+  ];
+});
 
 const sortLabel = computed(() => sortOptions.value.find((item) => item.value === sortOption.value)?.label || sortOptions.value[0].label);
 const sortDisplayLabel = computed(() => `${sortLabel.value}⌄`);
@@ -174,6 +182,11 @@ onShow(() => {
 });
 
 async function initializeHome() {
+  await appConfig.ensureLoaded();
+  if (!appConfig.platformOrderingEnabled) {
+    activeFilters.value = activeFilters.value.filter((filter) => filter === 'OPEN');
+    filterDraft.value = filterDraft.value.filter((filter) => filter === 'OPEN');
+  }
   locationStore.hydrateFromStorage();
   await refreshHomeByCurrentLocation();
 }

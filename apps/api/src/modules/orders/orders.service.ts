@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
+import { AppConfigService } from '../app-config/app-config.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
@@ -23,6 +24,7 @@ export class OrdersService {
     private readonly cartService: CartService,
     private readonly printersService: PrintersService,
     private readonly tableSessionsService: TableSessionsService,
+    private readonly appConfig: AppConfigService,
   ) {}
 
   list(userId: bigint) {
@@ -45,12 +47,14 @@ export class OrdersService {
   }
 
   async preview(userId: bigint, dto: OrderRequestDto) {
+    this.appConfig.assertOrderingEnabled();
     return this.prisma.$transaction((tx) =>
       this.validateAndPrice(tx, userId, dto),
     );
   }
 
   async create(userId: bigint, idempotencyKey: string, dto: OrderRequestDto) {
+    this.appConfig.assertOrderingEnabled();
     this.validateIdempotencyKey(idempotencyKey);
     const existing = await this.findByIdempotency(userId, idempotencyKey);
     if (existing) return existing;
