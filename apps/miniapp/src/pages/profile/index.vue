@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import DefaultAvatar from '@/components/DefaultAvatar.vue';
@@ -21,6 +21,7 @@ const loggedIn = computed(() => Boolean(auth.user));
 const displayNickname = computed(() => auth.user?.nickname || auth.user?.defaultNickname || '');
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 const defaultAvatarKey = computed(() => auth.user?.defaultAvatarKey || 'neutral-sprout');
+const privacyAgreed = ref(false);
 
 function openBrowsingHistory() {
   uni.navigateTo({ url: '/pages/profile/browsing-history' });
@@ -33,6 +34,10 @@ function openProfileEdit() {
 }
 
 async function loginFromProfile() {
+  if (!privacyAgreed.value) {
+    uni.showToast({ title: t('privacyAgreeRequired'), icon: 'none' });
+    return;
+  }
   try {
     await auth.loginWithWechat();
     if (auth.user) uni.showToast({ title: t('wechatLoginSuccess'), icon: 'none' });
@@ -42,6 +47,10 @@ async function loginFromProfile() {
       icon: 'none',
     });
   }
+}
+
+function togglePrivacyAgreement() {
+  privacyAgreed.value = !privacyAgreed.value;
 }
 
 function logout() {
@@ -58,9 +67,10 @@ function logout() {
       <button class="wechat-login-button" :loading="auth.loading" @click="loginFromProfile">
         {{ t('wechatOneTapLogin') }}
       </button>
-      <view class="privacy-copy">
+      <view class="privacy-agreement" @tap="togglePrivacyAgreement">
+        <text class="privacy-checkbox">{{ privacyAgreed ? '☑' : '□' }}</text>
         <text>{{ t('loginPrivacyPrefix') }}</text>
-        <text class="privacy-link" @click="openPrivacyContract">{{ t('privacyProtectionGuide') }}</text>
+        <text class="privacy-link" @tap.stop="openPrivacyContract">{{ t('privacyProtectionGuide') }}</text>
       </view>
       <text class="guest-copy">{{ t('guestBrowseHint') }}</text>
     </view>
@@ -163,7 +173,7 @@ function logout() {
 
 .login-copy,
 .guest-copy,
-.privacy-copy {
+.privacy-agreement {
   color: #6d7970;
   font-size: 24rpx;
   line-height: 1.6;
@@ -182,10 +192,17 @@ function logout() {
   border: 0;
 }
 
-.privacy-copy {
+.privacy-agreement {
   display: flex;
   flex-wrap: wrap;
   gap: 4rpx;
+  align-items: center;
+}
+
+.privacy-checkbox {
+  color: #2e7d32;
+  font-size: 27rpx;
+  line-height: 1;
 }
 
 .privacy-link {
