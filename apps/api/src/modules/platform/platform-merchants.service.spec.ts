@@ -19,6 +19,111 @@ function buildAppConfigMock(platformOrderingEnabled = true) {
   };
 }
 
+describe('PlatformMerchantsService list filters', () => {
+  let service: PlatformMerchantsService;
+  let prisma: {
+    merchant: {
+      findMany: jest.Mock;
+    };
+  };
+  let dictionaries: {
+    ensureDefaults: jest.Mock;
+  };
+
+  beforeEach(() => {
+    prisma = {
+      merchant: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    dictionaries = {
+      ensureDefaults: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new PlatformMerchantsService(
+      prisma as never,
+      dictionaries as never,
+      {} as never,
+      buildAppConfigMock() as never,
+    );
+    jest.spyOn(service as any, 'loadOperationStats').mockResolvedValue(new Map());
+  });
+
+  function currentWhere() {
+    return prisma.merchant.findMany.mock.calls[0][0].where;
+  }
+
+  it('uses only the default non-deleted status filter by default', async () => {
+    await service.list({});
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+    });
+    expect(currentWhere()).not.toHaveProperty('claimStatus');
+    expect(currentWhere()).not.toHaveProperty('merchantMode');
+  });
+
+  it('filters claimed merchants', async () => {
+    await service.list({ claimStatus: MerchantClaimStatus.CLAIMED });
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+      claimStatus: MerchantClaimStatus.CLAIMED,
+    });
+  });
+
+  it('filters unclaimed merchants', async () => {
+    await service.list({ claimStatus: MerchantClaimStatus.UNCLAIMED });
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    });
+  });
+
+  it('filters display mode merchants including legacy display-only mode', async () => {
+    await service.list({ merchantMode: MerchantMode.DISPLAY });
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+      merchantMode: {
+        in: [MerchantMode.DISPLAY, MerchantMode.DISPLAY_ONLY],
+      },
+    });
+  });
+
+  it('filters managed mode merchants including legacy ordering modes', async () => {
+    await service.list({ merchantMode: MerchantMode.MANAGED });
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+      merchantMode: {
+        in: [
+          MerchantMode.MANAGED,
+          MerchantMode.PRODUCT_DISPLAY,
+          MerchantMode.ONLINE_ORDER,
+          MerchantMode.QR_ORDER,
+        ],
+      },
+    });
+  });
+
+  it('combines claim status and merchant mode filters with AND semantics', async () => {
+    await service.list({
+      claimStatus: MerchantClaimStatus.CLAIMED,
+      merchantMode: MerchantMode.DISPLAY,
+    });
+
+    expect(currentWhere()).toEqual({
+      status: { not: MerchantStatus.DELETED },
+      claimStatus: MerchantClaimStatus.CLAIMED,
+      merchantMode: {
+        in: [MerchantMode.DISPLAY, MerchantMode.DISPLAY_ONLY],
+      },
+    });
+    expect(currentWhere()).not.toHaveProperty('OR');
+  });
+});
+
 describe('PlatformMerchantsService platform ordering switch', () => {
   let service: PlatformMerchantsService;
   let prisma: {

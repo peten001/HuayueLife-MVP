@@ -25,6 +25,7 @@ import {
 } from '@/api/platform';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
+  MerchantClaimStatus,
   MerchantMode,
   PlatformBusinessType,
   PlatformCapability,
@@ -87,6 +88,8 @@ const filters = reactive({
   district: '',
   visibility: '',
   profileStatus: '',
+  claimStatus: '' as MerchantClaimStatus | '',
+  merchantMode: '' as MerchantMode | '',
 });
 const importFileName = ref('');
 const importPreview = ref<PlatformMerchantImportPreviewResponse | null>(null);
@@ -252,6 +255,9 @@ const filteredMerchants = computed(() =>
     const matchesPopular =
       !filters.popular ||
       (filters.popular === 'yes' ? hasHotRecommendation(item) : !hasHotRecommendation(item));
+    const matchesClaimStatus = !filters.claimStatus || item.claimStatus === filters.claimStatus;
+    const matchesMerchantMode =
+      !filters.merchantMode || normalizedMerchantMode(item.merchantMode) === filters.merchantMode;
 
     return (
       matchesKeyword &&
@@ -259,7 +265,9 @@ const filteredMerchants = computed(() =>
       matchesCity &&
       matchesVisibility &&
       matchesProfile &&
-      matchesPopular
+      matchesPopular &&
+      matchesClaimStatus &&
+      matchesMerchantMode
     );
   }),
 );
@@ -289,7 +297,10 @@ async function loadMerchants() {
       capabilityResult,
     ] = await Promise.allSettled([
       getPlatformSettings(),
-      getPlatformMerchants(),
+      getPlatformMerchants({
+        claimStatus: filters.claimStatus,
+        merchantMode: filters.merchantMode,
+      }),
       getPlatformBusinessTypes(),
       getPlatformPromotionTags(),
       getPlatformCapabilities(),
@@ -992,6 +1003,9 @@ function resetFilters() {
   filters.district = '';
   filters.visibility = '';
   filters.profileStatus = '';
+  filters.claimStatus = '';
+  filters.merchantMode = '';
+  void loadMerchants();
 }
 
 function resetDisplayCapabilities() {
@@ -1042,6 +1056,12 @@ function modeLabel(value: string) {
     ONLINE_ORDER: '在线下单（兼容）',
     QR_ORDER: '到店扫码点餐',
   }[value] ?? value;
+}
+
+function normalizedMerchantMode(value: string) {
+  if (value === 'DISPLAY_ONLY') return 'DISPLAY';
+  if (['PRODUCT_DISPLAY', 'ONLINE_ORDER', 'QR_ORDER'].includes(value)) return 'MANAGED';
+  return value;
 }
 
 function claimLabel(value: string) {
@@ -1192,6 +1212,22 @@ function toCsvLine(values: Array<string | number>) {
           <option value="">全部</option>
           <option value="yes">已推荐</option>
           <option value="no">未推荐</option>
+        </select>
+      </label>
+      <label>
+        认领状态
+        <select v-model="filters.claimStatus">
+          <option value="">全部</option>
+          <option value="CLAIMED">已认领</option>
+          <option value="UNCLAIMED">未认领</option>
+        </select>
+      </label>
+      <label>
+        商家模式
+        <select v-model="filters.merchantMode">
+          <option value="">全部</option>
+          <option value="DISPLAY">展示型商家</option>
+          <option value="MANAGED">餐厅商家</option>
         </select>
       </label>
       <div class="platform-filter-actions">

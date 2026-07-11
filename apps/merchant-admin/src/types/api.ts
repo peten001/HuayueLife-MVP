@@ -196,6 +196,11 @@ export interface PlatformSettings {
 export type MerchantMode = 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';
 export type MerchantClaimStatus = 'UNCLAIMED' | 'CLAIMED';
 
+export interface PlatformMerchantFilters {
+  claimStatus?: MerchantClaimStatus | '';
+  merchantMode?: MerchantMode | '';
+}
+
 export interface PlatformDictionaryItem {
   id: string;
   parentId?: string | null;

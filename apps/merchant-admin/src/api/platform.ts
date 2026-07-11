@@ -19,6 +19,7 @@ import type {
   PlatformMerchantImportConfirmResponse,
   PlatformMerchantImportPreviewResponse,
   PlatformMerchantImportRow,
+  PlatformMerchantFilters,
   PlatformMerchantDetailResponse,
   PlatformMerchantListItem,
   PlatformOrderFilters,
@@ -105,10 +106,14 @@ function apiObject<T>(
   return data;
 }
 
-export async function getPlatformMerchants() {
+export async function getPlatformMerchants(filters: PlatformMerchantFilters = {}) {
   const response = await platformHttp.get<ApiResponse<{
     items: PlatformMerchantListItem[];
-  }>>('/platform/merchants');
+  }>>('/platform/merchants', {
+    params: Object.fromEntries(
+      Object.entries(filters).filter(([, value]) => value !== '' && value !== undefined),
+    ),
+  });
   return apiItems<PlatformMerchantListItem>(response.data);
 }
 

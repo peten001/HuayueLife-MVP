@@ -39,6 +39,7 @@ import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
 import { UpdateMerchantBusinessHoursDto } from './dto/update-merchant-business-hours.dto';
 import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
+import { ListPlatformMerchantsQueryDto } from './dto/list-platform-merchants-query.dto';
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
 import {
   CreateDisplayMerchantDto,
@@ -341,16 +342,19 @@ export class PlatformMerchantsService {
     private readonly appConfig: AppConfigService,
   ) {}
 
-  async list() {
+  async list(query: ListPlatformMerchantsQueryDto = {}) {
     await this.dictionaries.ensureDefaults();
     const now = new Date();
     const todayStart = startOfVietnamDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const last7Start = addDays(todayStart, -6);
+    const where: Prisma.MerchantWhereInput = {
+      status: { not: MerchantStatus.DELETED },
+      ...(query.claimStatus ? { claimStatus: query.claimStatus } : {}),
+      ...merchantModeWhere(query.merchantMode),
+    };
     const merchants = await this.prisma.merchant.findMany({
-      where: {
-        status: { not: MerchantStatus.DELETED },
-      },
+      where,
       include: {
         businessType: true,
         staff: {
@@ -2071,6 +2075,30 @@ function normalizeMerchantMode(value: string | undefined) {
     return MerchantMode.MANAGED;
   }
   return value as MerchantMode;
+}
+
+function merchantModeWhere(value: MerchantMode | undefined): Prisma.MerchantWhereInput {
+  const normalized = normalizeMerchantMode(value);
+  if (normalized === MerchantMode.DISPLAY) {
+    return {
+      merchantMode: {
+        in: [MerchantMode.DISPLAY, MerchantMode.DISPLAY_ONLY],
+      },
+    };
+  }
+  if (normalized === MerchantMode.MANAGED) {
+    return {
+      merchantMode: {
+        in: [
+          MerchantMode.MANAGED,
+          MerchantMode.PRODUCT_DISPLAY,
+          MerchantMode.ONLINE_ORDER,
+          MerchantMode.QR_ORDER,
+        ],
+      },
+    };
+  }
+  return {};
 }
 
 function isDisplayMode(value: unknown) {

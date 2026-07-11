@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseGuards,
@@ -25,6 +26,7 @@ import type {
 import { UpdatePlatformMerchantDto } from './dto/update-platform-merchant.dto';
 import { UpdateMerchantBusinessHoursDto } from './dto/update-merchant-business-hours.dto';
 import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
+import { ListPlatformMerchantsQueryDto } from './dto/list-platform-merchants-query.dto';
 import {
   CreateDisplayMerchantDto,
   UpdateMerchantCapabilitiesDto,
@@ -39,8 +41,8 @@ export class PlatformMerchantsController {
   constructor(private readonly service: PlatformMerchantsService) {}
 
   @Get()
-  list() {
-    return this.service.list();
+  list(@Query() query: ListPlatformMerchantsQueryDto) {
+    return this.service.list(query);
   }
 
   @Get(':id/detail')
