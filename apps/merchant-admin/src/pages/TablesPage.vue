@@ -238,10 +238,14 @@ const showNoResults = computed(
 const hasBlockingOverlay = computed(
   () => formVisible.value || qrVisible.value || billVisible.value || Boolean(mobileMenuRowId.value),
 );
+const shouldDisableBodyTouch = computed(
+  () => formVisible.value || qrVisible.value || Boolean(mobileMenuRowId.value),
+);
 const bodyScrollSnapshot = {
   overflow: '',
   touchAction: '',
 };
+let bodyScrollLocked = false;
 
 async function ensureProfileLoaded() {
   if (profile.value) return;
@@ -768,18 +772,23 @@ async function runMenuAction(action: MenuActionKey, row: TableViewModel) {
   }
 }
 
-function applyBodyScrollLock(locked: boolean) {
+function applyBodyScrollLock(locked: boolean, disableBodyTouch = locked) {
   if (typeof document === 'undefined') return;
   if (locked) {
-    bodyScrollSnapshot.overflow = document.body.style.overflow;
-    bodyScrollSnapshot.touchAction = document.body.style.touchAction;
+    if (!bodyScrollLocked) {
+      bodyScrollSnapshot.overflow = document.body.style.overflow;
+      bodyScrollSnapshot.touchAction = document.body.style.touchAction;
+      bodyScrollLocked = true;
+    }
     document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
+    document.body.style.touchAction = disableBodyTouch ? 'none' : bodyScrollSnapshot.touchAction;
     return;
   }
 
+  if (!bodyScrollLocked) return;
   document.body.style.overflow = bodyScrollSnapshot.overflow;
   document.body.style.touchAction = bodyScrollSnapshot.touchAction;
+  bodyScrollLocked = false;
 }
 
 function handleEscapeKey(event: KeyboardEvent) {
@@ -897,8 +906,8 @@ watch([rows, sessions], () => {
   closeMobileMenu();
 });
 
-watch(hasBlockingOverlay, (locked) => {
-  applyBodyScrollLock(locked);
+watch([hasBlockingOverlay, shouldDisableBodyTouch], ([locked, disableBodyTouch]) => {
+  applyBodyScrollLock(locked, disableBodyTouch);
 });
 
 onMounted(() => {
@@ -2364,13 +2373,16 @@ onBeforeUnmount(() => {
 
 .mobile-bill-shell {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   flex-direction: column;
+  overflow: hidden;
   background: #f6f8f6;
 }
 
 .mobile-bill-header {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2411,8 +2423,11 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-bottom: calc(160px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .mobile-bill-state,
@@ -2799,12 +2814,15 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 100vh;
     height: 100dvh;
+    max-height: 100vh;
     max-height: 100dvh;
-    display: block;
+    display: flex;
+    flex-direction: column;
     gap: 0;
     padding: 0;
     border: none;
     border-radius: 0;
+    overflow: hidden;
     box-shadow: none;
     background: #f6f8f6;
   }
