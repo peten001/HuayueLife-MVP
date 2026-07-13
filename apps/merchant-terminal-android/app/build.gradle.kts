@@ -1,0 +1,185 @@
+import org.gradle.api.provider.Provider
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+val terminalVersionCode = 1
+val terminalVersionName = "0.1.0"
+
+fun configValue(
+    propertyName: String,
+    environmentName: String,
+    fallback: String,
+): Provider<String> = providers.gradleProperty(propertyName)
+    .orElse(providers.environmentVariable(environmentName))
+    .orElse(fallback)
+
+fun String.asBuildConfigString(): String =
+    "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val debugAdminUrl = configValue(
+    propertyName = "merchantAdminUrlDebug",
+    environmentName = "MERCHANT_ADMIN_URL_DEBUG",
+    fallback = "https://merchant-admin.invalid/",
+)
+val releaseAdminUrl = configValue(
+    propertyName = "merchantAdminUrlRelease",
+    environmentName = "MERCHANT_ADMIN_URL_RELEASE",
+    fallback = "https://merchant-admin.invalid/",
+)
+val debugTrustedResourceHosts = configValue(
+    propertyName = "merchantTrustedHostsDebug",
+    environmentName = "MERCHANT_TRUSTED_HOSTS_DEBUG",
+    fallback = "api.huayueyouxuan.com",
+)
+val releaseTrustedResourceHosts = configValue(
+    propertyName = "merchantTrustedHostsRelease",
+    environmentName = "MERCHANT_TRUSTED_HOSTS_RELEASE",
+    fallback = "api.huayueyouxuan.com",
+)
+val buildRevision = configValue(
+    propertyName = "buildRevision",
+    environmentName = "BUILD_REVISION",
+    fallback = "local-build",
+)
+
+val releaseStoreFile = configValue(
+    propertyName = "yunqiaoReleaseStoreFile",
+    environmentName = "YUNQIAO_RELEASE_STORE_FILE",
+    fallback = "",
+)
+val releaseStorePassword = configValue(
+    propertyName = "yunqiaoReleaseStorePassword",
+    environmentName = "YUNQIAO_RELEASE_STORE_PASSWORD",
+    fallback = "",
+)
+val releaseKeyAlias = configValue(
+    propertyName = "yunqiaoReleaseKeyAlias",
+    environmentName = "YUNQIAO_RELEASE_KEY_ALIAS",
+    fallback = "",
+)
+val releaseKeyPassword = configValue(
+    propertyName = "yunqiaoReleaseKeyPassword",
+    environmentName = "YUNQIAO_RELEASE_KEY_PASSWORD",
+    fallback = "",
+)
+val releaseSigningValues = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+)
+val hasAnyReleaseSigningValue = releaseSigningValues.any { !it.orNull.isNullOrBlank() }
+val hasReleaseSigning = releaseSigningValues.all { !it.orNull.isNullOrBlank() }
+
+check(!hasAnyReleaseSigningValue || hasReleaseSigning) {
+    "Release signing is only partially configured; provide all four signing properties or YUNQIAO_RELEASE_* values."
+}
+
+android {
+    namespace = "com.yunqiao.life.merchantterminal"
+    compileSdk = 35
+    buildToolsVersion = "35.0.0"
+
+    defaultConfig {
+        applicationId = "com.yunqiao.life.merchantterminal"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = terminalVersionCode
+        versionName = terminalVersionName
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables.useSupportLibrary = true
+        buildConfigField("String", "TERMINAL_USER_AGENT", "YunQiaoMerchantTerminal/1.0".asBuildConfigString())
+        buildConfigField("String", "BUILD_REVISION", buildRevision.get().asBuildConfigString())
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            buildConfigField("String", "MERCHANT_ADMIN_URL", debugAdminUrl.get().asBuildConfigString())
+            buildConfigField(
+                "String",
+                "TRUSTED_RESOURCE_HOSTS",
+                debugTrustedResourceHosts.get().asBuildConfigString(),
+            )
+            buildConfigField("String", "BUILD_CHANNEL", "debug".asBuildConfigString())
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            buildConfigField("String", "MERCHANT_ADMIN_URL", releaseAdminUrl.get().asBuildConfigString())
+            buildConfigField(
+                "String",
+                "TRUSTED_RESOURCE_HOSTS",
+                releaseTrustedResourceHosts.get().asBuildConfigString(),
+            )
+            buildConfigField("String", "BUILD_CHANNEL", "release".asBuildConfigString())
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+        viewBinding = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+        warningsAsErrors = false
+    }
+}
+
+base {
+    archivesName.set("yunqiao-merchant-terminal-v$terminalVersionName")
+}
+
+dependencies {
+    implementation("androidx.activity:activity-ktx:1.10.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("androidx.webkit:webkit:1.12.1")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}

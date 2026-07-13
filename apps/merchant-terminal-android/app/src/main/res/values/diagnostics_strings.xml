@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diagnostics_title">终端诊断 / Chẩn đoán thiết bị</string>
+    <string name="diagnostics_privacy_note">只显示设备与应用技术信息，不读取商家账号、Token 或页面内容。 / Chỉ hiển thị thông tin kỹ thuật, không đọc tài khoản, token hoặc nội dung trang.</string>
+    <string name="diagnostics_close">关闭 / Đóng</string>
+    <string name="diagnostics_copy">复制诊断 / Sao chép</string>
+    <string name="diagnostics_refresh">刷新 / Làm mới</string>
+    <string name="diagnostics_app_settings">APP 设置 / Cài đặt ứng dụng</string>
+    <string name="diagnostics_battery_settings">电池优化 / Tối ưu pin</string>
+    <string name="diagnostics_network_settings">网络设置 / Cài đặt mạng</string>
+    <string name="diagnostics_clip_label">云桥 Life 终端诊断</string>
+    <string name="diagnostics_copied">诊断信息已复制 / Đã sao chép thông tin</string>
+    <string name="diagnostics_settings_unavailable">无法打开系统设置 / Không thể mở cài đặt</string>
+</resources>

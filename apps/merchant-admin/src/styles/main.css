@@ -3481,3 +3481,193 @@ td small { display: block; margin-top: 3px; color: #8a9199; }
     height: 180px;
   }
 }
+
+/*
+ * Merchant terminal shell adjustments.
+ *
+ * The Android app appends `YunQiaoMerchantTerminal` to the regular WebView
+ * user agent. main.ts maps that marker to this class so normal desktop and
+ * mobile browser layouts remain unchanged.
+ */
+@media (min-width: 761px) and (max-width: 1400px) and (max-height: 900px) and (orientation: landscape) {
+  html.terminal-mode,
+  body.terminal-mode {
+    width: 100%;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  body.terminal-mode .app-shell {
+    --merchant-sidebar-width: 224px;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  body.terminal-mode .merchant-sidebar {
+    padding: 14px 12px;
+  }
+
+  body.terminal-mode .merchant-sidebar .brand-block {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  body.terminal-mode .merchant-sidebar .brand-logo {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  body.terminal-mode .merchant-sidebar .brand-title {
+    font-size: 18px;
+  }
+
+  body.terminal-mode .merchant-sidebar .sidebar-language-row {
+    margin-bottom: 10px;
+  }
+
+  body.terminal-mode .merchant-sidebar .sidebar-divider {
+    margin: 10px 0 12px;
+  }
+
+  body.terminal-mode .merchant-sidebar .merchant-nav {
+    gap: 5px;
+  }
+
+  body.terminal-mode .merchant-sidebar .merchant-nav-link {
+    min-height: 42px;
+    height: 42px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  body.terminal-mode .merchant-sidebar .merchant-logout {
+    min-height: 42px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 18px 20px 24px;
+    overflow-x: hidden;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .page-header {
+    margin-bottom: 14px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .page-header h1 {
+    font-size: 26px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .card {
+    padding: 16px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .welcome-panel {
+    min-height: 74px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .metric-grid {
+    gap: 10px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .metric-card {
+    min-height: 96px;
+    padding: 10px 12px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .quick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .quick-link {
+    min-height: 72px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .summary-panel {
+    display: grid;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .dashboard-page .summary-panel dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .merchant-orders-page .order-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .merchant-orders-page .order-category-card {
+    min-height: 88px;
+    padding: 12px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .merchant-orders-page .orders-filter-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .orders-table-shell,
+  body.terminal-mode .merchant-sidebar + .content .table-wrap,
+  body.terminal-mode .merchant-sidebar + .content .table-desktop-shell {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .tables-grid {
+    min-width: 900px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .order-operation {
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .order-operation .actions {
+    justify-content: flex-end;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .detail-grid {
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .store-settings-page {
+    padding: 8px 0 20px;
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .profile-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.terminal-mode .merchant-sidebar + .content .profile-overview-grid .overview-panel:last-child {
+    grid-column: 1 / -1;
+  }
+
+  body.terminal-mode .modal-backdrop,
+  body.terminal-mode .dialog-backdrop {
+    padding: 12px;
+  }
+
+  body.terminal-mode .modal-card,
+  body.terminal-mode .printer-modal,
+  body.terminal-mode .table-form-modal,
+  body.terminal-mode .table-qr-modal,
+  body.terminal-mode .table-bill-modal,
+  body.terminal-mode .dialog-card {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  body.terminal-mode .printer-modal-body,
+  body.terminal-mode .table-bill-orders,
+  body.terminal-mode .dialog-card {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="terminal_background">#F4F7FB</color>
+    <color name="terminal_surface">#FFFFFF</color>
+    <color name="terminal_primary">#126A64</color>
+    <color name="terminal_primary_dark">#0B4F4A</color>
+    <color name="terminal_on_primary">#FFFFFF</color>
+    <color name="terminal_text_primary">#172126</color>
+    <color name="terminal_text_secondary">#526168</color>
+    <color name="terminal_error">#B42318</color>
+    <color name="terminal_outline">#D5DEE3</color>
+    <color name="terminal_launcher_background">#126A64</color>
+</resources>
