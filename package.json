@@ -9,6 +9,7 @@
     "dev:api": "corepack pnpm --filter @huayue-life/api start:dev",
     "dev:miniapp": "corepack pnpm --filter @huayue-life/miniapp dev:mp-weixin",
     "dev:merchant-admin": "corepack pnpm --filter @huayue-life/merchant-admin dev",
+    "dev:merchant-cashier": "corepack pnpm --filter @huayue-life/merchant-cashier dev",
     "db:generate": "corepack pnpm --filter @huayue-life/api prisma:generate",
     "db:migrate": "corepack pnpm --filter @huayue-life/api prisma:migrate",
     "db:seed": "corepack pnpm --filter @huayue-life/api prisma:seed"

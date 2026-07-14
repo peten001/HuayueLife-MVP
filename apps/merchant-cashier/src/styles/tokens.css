@@ -1,0 +1,203 @@
+:root {
+  color-scheme: light;
+
+  /* Cashier workstation shell */
+  --cashier-shell-950: #061522;
+  --cashier-shell-900: #081b2a;
+  --cashier-shell-850: #0a2031;
+  --cashier-shell-800: #0d2739;
+  --cashier-shell-chrome-start: #071725;
+  --cashier-shell-chrome-middle: #0a1d2d;
+  --cashier-shell-chrome-end: #081827;
+  --cashier-detail-gradient-start: #091b2a;
+  --cashier-detail-gradient-end: #071624;
+  --cashier-shell-border: rgb(115 164 184 / 16%);
+  --cashier-shell-text: #f4fafc;
+  --cashier-shell-muted: #9eb2be;
+
+  /* Workspace surfaces */
+  --cashier-workspace-bg: #eef3f7;
+  --cashier-workspace-bg-top: #f6f9fb;
+  --cashier-transparent: transparent;
+  --cashier-white: #fff;
+  --cashier-surface: var(--cashier-white);
+  --cashier-surface-soft: #f8fafc;
+  --cashier-surface-muted: #f1f5f8;
+  --cashier-border: #d9e3ea;
+  --cashier-border-strong: #c5d2db;
+  --cashier-text: #132238;
+  --cashier-text-secondary: #526275;
+  --cashier-text-muted: #8491a3;
+
+  /* Semantic accents */
+  --cashier-green: #14b86c;
+  --cashier-green-strong: #079a55;
+  --cashier-green-soft: #ecfaf2;
+  --cashier-green-glow: rgb(20 184 108 / 20%);
+  --cashier-blue: #2f80ed;
+  --cashier-blue-soft: #edf5ff;
+  --cashier-orange: #ff7a1a;
+  --cashier-orange-soft: #fff4e9;
+  --cashier-red: #f04454;
+  --cashier-red-soft: #fff0f2;
+  --cashier-purple: #8b5cf6;
+  --cashier-purple-soft: #f3efff;
+  --cashier-yellow: #d99a17;
+  --cashier-yellow-soft: #fff7df;
+
+  /* Shell content and component states */
+  --cashier-brand-border: rgb(73 219 161 / 35%);
+  --cashier-brand-text: #65e5b0;
+  --cashier-navigation-text: #d2dee4;
+  --cashier-navigation-icon: #b0c2cc;
+  --cashier-navigation-active-border: rgb(41 218 139 / 65%);
+  --cashier-navigation-active-indicator: #22d98b;
+  --cashier-navigation-active-icon: #43df9c;
+  --cashier-account-icon: #9de7c5;
+  --cashier-account-name: #f3f8fb;
+  --cashier-merchant-icon: #8ee5bc;
+  --cashier-business-open: #99dcbf;
+  --cashier-business-closed: #e4b36b;
+  --cashier-demo-badge-text: #ffe5aa;
+  --cashier-stat-primary: #dce8ef;
+  --cashier-stat-muted: #a9b8c3;
+  --cashier-stat-info: #66a7ff;
+  --cashier-tool-active: #80e6b8;
+  --cashier-workspace-accent-border: #a8dfc2;
+  --cashier-table-hover-border: #9fc8b2;
+  --cashier-table-in-use-border: #76aaef;
+  --cashier-table-in-use-text: #1e68c4;
+  --cashier-table-in-use-state-bg: #dcecff;
+  --cashier-table-ready-border: #f88993;
+  --cashier-table-ready-text: #c92f42;
+  --cashier-table-ready-state-bg: #ffe1e5;
+  --cashier-status-blue-text: #2469bd;
+  --cashier-status-orange-text: #a1590f;
+  --cashier-status-purple-text: #5c35b6;
+  --cashier-status-red-text: #c62d40;
+  --cashier-detail-icon: #95e8c2;
+  --cashier-detail-contact-text: #d8e5eb;
+  --cashier-detail-contact-icon: #73d6a8;
+  --cashier-detail-order-accent: #9ce1c0;
+  --cashier-detail-notice-text: #ffe1a2;
+  --cashier-detail-total: #72dfa9;
+  --cashier-danger-action-text: #ffbcc4;
+  --cashier-quick-green: #7fe2b2;
+  --cashier-quick-blue: #91bfff;
+  --cashier-quick-cyan: #8ddfd9;
+  --cashier-quick-pending: #e2bd6e;
+  --cashier-status-strip-ok: #7fdaad;
+  --cashier-status-strip-pending: #d9b66d;
+  --cashier-skeleton-base: #edf1f4;
+  --cashier-skeleton-highlight: #f7f9fa;
+  --cashier-connectivity-text: #7b480d;
+  --cashier-connectivity-bg: #fff2d3;
+  --cashier-form-error-text: #b82436;
+  --cashier-demo-border: #e7d19f;
+  --cashier-demo-label-text: #7f530b;
+  --cashier-demo-label-bg: #f6dda5;
+  --cashier-demo-text: #684a17;
+  --cashier-demo-muted: #80632f;
+  --cashier-demo-action-border: #d7bd81;
+  --cashier-demo-action-text: #6a480c;
+  --cashier-orientation-text: #6d4a0d;
+
+  /* Reusable translucent colors */
+  --cashier-white-alpha-03: rgb(255 255 255 / 3%);
+  --cashier-white-alpha-04: rgb(255 255 255 / 4%);
+  --cashier-white-alpha-05: rgb(255 255 255 / 5%);
+  --cashier-white-alpha-07: rgb(255 255 255 / 7%);
+  --cashier-white-alpha-08: rgb(255 255 255 / 8%);
+  --cashier-white-alpha-13: rgb(255 255 255 / 13%);
+  --cashier-white-alpha-14: rgb(255 255 255 / 14%);
+  --cashier-white-alpha-55: rgb(255 255 255 / 55%);
+  --cashier-white-alpha-58: rgb(255 255 255 / 58%);
+  --cashier-white-alpha-82: rgb(255 255 255 / 82%);
+  --cashier-green-alpha-08: rgb(20 184 108 / 8%);
+  --cashier-green-alpha-09: rgb(20 184 108 / 9%);
+  --cashier-green-alpha-10: rgb(20 184 108 / 10%);
+  --cashier-green-alpha-12: rgb(20 184 108 / 12%);
+  --cashier-green-alpha-13: rgb(20 184 108 / 13%);
+  --cashier-green-alpha-14: rgb(20 184 108 / 14%);
+  --cashier-green-alpha-15: rgb(20 184 108 / 15%);
+  --cashier-green-alpha-22: rgb(20 184 108 / 22%);
+  --cashier-green-alpha-35: rgb(20 184 108 / 35%);
+  --cashier-green-alpha-40: rgb(20 184 108 / 40%);
+  --cashier-green-alpha-52: rgb(20 184 108 / 52%);
+  --cashier-blue-alpha-12: rgb(47 128 237 / 12%);
+  --cashier-blue-alpha-15: rgb(47 128 237 / 15%);
+  --cashier-blue-alpha-22: rgb(47 128 237 / 22%);
+  --cashier-cyan-alpha-13: rgb(44 184 179 / 13%);
+  --cashier-yellow-alpha-09: rgb(217 154 23 / 9%);
+  --cashier-yellow-alpha-13: rgb(217 154 23 / 13%);
+  --cashier-yellow-alpha-18: rgb(217 154 23 / 18%);
+  --cashier-yellow-alpha-28: rgb(217 154 23 / 28%);
+  --cashier-yellow-alpha-34: rgb(217 154 23 / 34%);
+  --cashier-red-alpha-08: rgb(240 68 84 / 8%);
+  --cashier-red-alpha-10: rgb(240 68 84 / 10%);
+  --cashier-red-alpha-28: rgb(240 68 84 / 28%);
+  --cashier-red-alpha-38: rgb(240 68 84 / 38%);
+  --cashier-red-alpha-45: rgb(240 68 84 / 45%);
+  --cashier-merchant-card-border: rgb(120 170 190 / 14%);
+  --cashier-workspace-heading-bg: rgb(246 249 251 / 90%);
+  --cashier-shadow-color-10: rgb(15 35 48 / 10%);
+  --cashier-drawer-shadow-color: rgb(3 17 27 / 34%);
+  --cashier-auth-shadow-color: rgb(1 13 22 / 36%);
+  --cashier-scrim-48: rgb(3 14 24 / 48%);
+  --cashier-scrim-68: rgb(3 14 24 / 68%);
+
+  /* Elevation */
+  --cashier-shadow-sm: 0 2px 8px rgb(15 35 48 / 6%);
+  --cashier-shadow-md: 0 8px 24px rgb(15 35 48 / 9%);
+  --cashier-shadow-green:
+    0 0 0 1px rgb(20 184 108 / 15%),
+    0 8px 24px rgb(20 184 108 / 12%);
+
+  /* Compatibility aliases used by the component stylesheet. */
+  --shell-900: var(--cashier-shell-900);
+  --shell-850: var(--cashier-shell-850);
+  --shell-800: var(--cashier-shell-800);
+  --workspace-bg-top: var(--cashier-workspace-bg-top);
+  --surface-soft: var(--cashier-surface-soft);
+  --surface-muted: var(--cashier-surface-muted);
+  --border-strong: var(--cashier-border-strong);
+  --text-secondary: var(--cashier-text-secondary);
+  --text-muted: var(--cashier-text-muted);
+  --cashier-shell: var(--cashier-shell-950);
+  --cashier-shell-raised: var(--cashier-shell-900);
+  --cashier-shell-soft: var(--cashier-shell-800);
+  --cashier-detail: var(--cashier-shell-900);
+  --cashier-workspace: var(--cashier-workspace-bg);
+  --cashier-card: var(--cashier-surface);
+  --cashier-card-muted: var(--cashier-surface-soft);
+  --cashier-border-dark: var(--cashier-shell-border);
+  --cashier-text-on-dark: var(--cashier-shell-text);
+  --cashier-text-on-dark-muted: var(--cashier-shell-muted);
+  --cashier-accent: var(--cashier-green);
+  --cashier-accent-strong: var(--cashier-green-strong);
+  --cashier-accent-soft: var(--cashier-green-soft);
+  --cashier-warning: var(--cashier-orange);
+  --cashier-warning-soft: var(--cashier-orange-soft);
+  --cashier-danger: var(--cashier-red);
+  --cashier-danger-soft: var(--cashier-red-soft);
+  --cashier-info: var(--cashier-blue);
+  --cashier-info-soft: var(--cashier-blue-soft);
+  --cashier-radius-sm: 10px;
+  --cashier-radius: 16px;
+  --cashier-radius-lg: 22px;
+  --cashier-shadow: var(--cashier-shadow-md);
+  --cashier-shadow-strong: 0 20px 48px rgb(3 17 27 / 28%);
+  --cashier-sidebar-width: clamp(176px, 14vw, 216px);
+  --cashier-header-height: clamp(76px, 8.5vh, 92px);
+  --cashier-detail-width: clamp(296px, 22vw, 350px);
+  --cashier-quickbar-height: clamp(68px, 8.5vh, 88px);
+  --cashier-gap: clamp(10px, 1vw, 16px);
+
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+  color: var(--cashier-text);
+  background: var(--cashier-shell-950);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
