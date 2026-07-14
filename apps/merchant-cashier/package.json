@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "screenshots": "node scripts/capture-ui.mjs",
     "screenshots:refine": "node scripts/capture-refine-ui.mjs",
+    "screenshots:brand-refine": "node scripts/capture-brand-refine-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

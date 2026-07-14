@@ -77,7 +77,6 @@ onMounted(async () => {
         v-model:active-status="activeStatus"
         :status-options="statusOptions"
         table-toolbar
-        show-area
       >
         <template #actions>
           <button

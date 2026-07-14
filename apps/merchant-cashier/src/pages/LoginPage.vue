@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Blocks, ExternalLink, Languages, LockKeyhole, LogIn, UserRound } from '@lucide/vue';
+import { ExternalLink, Languages, LockKeyhole, LogIn, UserRound } from '@lucide/vue';
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { cashierConfig } from '@/config';
 import { useI18n, type Locale } from '@/i18n';
 import { useAuthStore } from '@/stores';
+import CashierBrand from '@/components/shell/CashierBrand.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -45,16 +46,12 @@ function changeLocale(event: Event) {
 <template>
   <main class="auth-page">
     <section class="auth-product-intro">
-      <span class="auth-product-mark" aria-hidden="true"><Blocks :size="31" :stroke-width="1.8" /></span>
-      <p>{{ t('shell.brand') }}</p>
-      <h1>{{ cashierConfig.productName }}</h1>
-      <strong>{{ cashierConfig.productSubtitle }}</strong>
+      <CashierBrand class="cashier-brand--auth" />
     </section>
 
     <section class="auth-card">
       <header class="auth-card__header">
         <div>
-          <small>{{ cashierConfig.productSubtitle }}</small>
           <h2>{{ t('auth.loginTitle') }}</h2>
         </div>
         <label class="auth-language">

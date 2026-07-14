@@ -6,7 +6,6 @@ defineProps<{
   query: string;
   activeStatus: string;
   statusOptions: Array<{ value: string; labelKey: string }>;
-  showArea?: boolean;
   tableToolbar?: boolean;
   date?: string;
   orderType?: string;
@@ -33,10 +32,6 @@ const { t } = useI18n();
     }"
     :data-testid="tableToolbar ? 'table-toolbar' : undefined"
   >
-    <div v-if="showArea" class="area-tabs" role="tablist" :aria-label="t('filter.area')">
-      <span role="tab" aria-selected="true">{{ t('filter.allAreas') }}</span>
-    </div>
-
     <label class="cashier-search">
       <Search :size="18" aria-hidden="true" />
       <input

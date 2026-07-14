@@ -1,7 +1,4 @@
 export const zhMessages = {
-  'shell.brand': '云桥 Life',
-  'shell.title': '智慧收银管理',
-  'shell.subtitle': '高效经营 · 智能管理',
   'shell.merchantFallback': '当前商家',
   'shell.staffFallback': '商家员工',
   'shell.networkOnline': '网络正常',
@@ -62,8 +59,6 @@ export const zhMessages = {
   'auth.updatePassword': '更新密码',
   'filter.search': '搜索',
   'filter.searchPlaceholder': '搜索桌台或订单',
-  'filter.area': '桌台区域',
-  'filter.allAreas': '全部区域',
   'filter.status': '状态筛选',
   'stats.title': '经营概览',
   'stats.newOrders': '新订单',
@@ -216,9 +211,6 @@ export const zhMessages = {
 export type TranslationKey = keyof typeof zhMessages;
 
 export const viMessages: Record<TranslationKey, string> = {
-  'shell.brand': 'YunQiao Life',
-  'shell.title': 'Quản lý thu ngân thông minh',
-  'shell.subtitle': 'Vận hành hiệu quả · Quản lý thông minh',
   'shell.merchantFallback': 'Cửa hàng hiện tại',
   'shell.staffFallback': 'Nhân viên',
   'shell.networkOnline': 'Mạng bình thường',
@@ -279,8 +271,6 @@ export const viMessages: Record<TranslationKey, string> = {
   'auth.updatePassword': 'Cập nhật mật khẩu',
   'filter.search': 'Tìm kiếm',
   'filter.searchPlaceholder': 'Tìm bàn hoặc đơn hàng',
-  'filter.area': 'Khu vực bàn',
-  'filter.allAreas': 'Tất cả khu vực',
   'filter.status': 'Lọc trạng thái',
   'stats.title': 'Tổng quan vận hành',
   'stats.newOrders': 'Đơn mới',
@@ -431,9 +421,6 @@ export const viMessages: Record<TranslationKey, string> = {
 };
 
 export const enMessages: Record<TranslationKey, string> = {
-  'shell.brand': 'YunQiao Life',
-  'shell.title': 'Smart Cashier Management',
-  'shell.subtitle': 'Efficient Operations · Smart Management',
   'shell.merchantFallback': 'Current merchant',
   'shell.staffFallback': 'Merchant staff',
   'shell.networkOnline': 'Network online',
@@ -494,8 +481,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'auth.updatePassword': 'Update password',
   'filter.search': 'Search',
   'filter.searchPlaceholder': 'Search tables or orders',
-  'filter.area': 'Table area',
-  'filter.allAreas': 'All areas',
   'filter.status': 'Status filter',
   'stats.title': 'Operations overview',
   'stats.newOrders': 'New orders',

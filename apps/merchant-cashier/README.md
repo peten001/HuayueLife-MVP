@@ -1,4 +1,4 @@
-# 智慧收银管理｜独立 Web 应用
+# Yunqiao｜独立 Web 收银台
 
 `@huayue-life/merchant-cashier` 是面向餐厅前台和 Android 商家终端的独立 Web 收银台。它与现有 `merchant-admin` 分开维护：收银台聚焦订单、桌台和现场操作，完整商家配置仍从商家后台进入。
 

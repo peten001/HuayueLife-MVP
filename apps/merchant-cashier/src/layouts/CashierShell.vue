@@ -14,6 +14,7 @@ import {
   useUiStore,
 } from '@/stores';
 import type { CashierOrderAction } from '@/components/common/view-models';
+import CashierBrand from '@/components/shell/CashierBrand.vue';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
@@ -49,13 +50,6 @@ const identity = computed(() => ({
   staffName: session.value?.displayName || session.value?.username || '',
   role: session.value?.role || 'STAFF',
 }));
-const roleLabel = computed(() => t(
-  identity.value.role === 'OWNER'
-    ? 'auth.role.owner'
-    : identity.value.role === 'MANAGER'
-      ? 'auth.role.manager'
-      : 'auth.role.staff',
-));
 const availableTableCount = computed(
   () => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length,
 );
@@ -213,10 +207,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="cashier-shell">
+    <CashierBrand />
+
     <CashierSidebar
-      :merchant-name="identity.merchantName"
-      :staff-name="identity.staffName"
-      :role-label="roleLabel"
       :new-order-count="pendingOrders.length"
       :active-order-count="activeOrders.length"
       :occupied-table-count="occupiedTableCount"

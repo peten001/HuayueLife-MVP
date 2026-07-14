@@ -7,8 +7,7 @@ function withoutTrailingSlash(value: string) {
 }
 
 export const cashierConfig = Object.freeze({
-  productName: '智慧收银管理',
-  productSubtitle: '高效经营 · 智能管理',
+  brandName: 'Yunqiao',
   apiBaseUrl: withoutTrailingSlash(
     import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL,
   ),

@@ -46,15 +46,12 @@
   --cashier-yellow-soft: #fff7df;
 
   /* Shell content and component states */
-  --cashier-brand-border: rgb(73 219 161 / 35%);
-  --cashier-brand-text: #65e5b0;
   --cashier-navigation-text: #d2dee4;
   --cashier-navigation-icon: #b0c2cc;
   --cashier-navigation-active-border: rgb(41 218 139 / 65%);
   --cashier-navigation-active-indicator: #22d98b;
   --cashier-navigation-active-icon: #43df9c;
   --cashier-account-icon: #9de7c5;
-  --cashier-account-name: #f3f8fb;
   --cashier-merchant-icon: #8ee5bc;
   --cashier-business-open: #99dcbf;
   --cashier-business-closed: #e4b36b;
