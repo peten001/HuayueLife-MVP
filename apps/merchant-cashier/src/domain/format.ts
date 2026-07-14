@@ -32,6 +32,21 @@ export function formatVietnamDateTime(
   }).format(date);
 }
 
+export function formatVietnamTime(
+  value: string | Date | null | undefined,
+  locale: Locale = 'vi',
+) {
+  if (!value) return '--';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return new Intl.DateTimeFormat(localeTags[locale], {
+    timeZone: cashierConfig.vietnamTimeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
 export function todayInVietnam(value = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: cashierConfig.vietnamTimeZone,

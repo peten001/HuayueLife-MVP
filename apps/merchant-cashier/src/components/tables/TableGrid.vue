@@ -17,7 +17,7 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <div v-if="tables.length" class="table-grid">
+  <div v-if="tables.length" class="table-grid" data-testid="table-grid">
     <TableCard
       v-for="table in tables"
       :key="table.id"

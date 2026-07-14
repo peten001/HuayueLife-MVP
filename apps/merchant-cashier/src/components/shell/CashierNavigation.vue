@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { ClipboardClock, History, LayoutGrid, ListChecks } from '@lucide/vue';
+import { Bell, ClipboardList, History, LayoutGrid } from '@lucide/vue';
 import { useI18n } from '@/i18n';
 
 const props = defineProps<{
   newOrderCount?: number;
   activeOrderCount?: number;
-  occupiedTableCount?: number;
 }>();
 
 const { t } = useI18n();
 
 const items = [
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid, countKey: 'none' },
-  { to: '/orders/new', labelKey: 'nav.newOrders', icon: ClipboardClock, countKey: 'new' },
-  { to: '/orders/active', labelKey: 'nav.activeOrders', icon: ListChecks, countKey: 'active' },
+  { to: '/orders/new', labelKey: 'nav.newOrders', icon: Bell, countKey: 'new' },
+  { to: '/orders/active', labelKey: 'nav.activeOrders', icon: ClipboardList, countKey: 'active' },
   { to: '/orders/history', labelKey: 'nav.history', icon: History, countKey: 'history' },
 ] as const;
 

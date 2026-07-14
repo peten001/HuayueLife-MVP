@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import {
-  BellRing,
-  Clock3,
-  Expand,
+  Bell,
+  Clock,
   LoaderCircle,
+  Maximize,
   Minimize,
   Printer,
-  Store,
   Volume2,
   VolumeX,
   Wifi,
@@ -14,30 +13,22 @@ import {
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from '@/i18n';
-import AccountMenu from './AccountMenu.vue';
 
 const props = defineProps<{
-  merchantName?: string;
-  merchantLogoUrl?: string;
-  businessOpen: boolean;
-  businessHoursLabel?: string;
-  staffName?: string;
-  role?: string;
   totalTableCount: number;
   availableTableCount: number;
+  inUseTableCount: number;
+  readyToCloseTableCount: number;
+  disabledTableCount: number;
   newOrderCount: number;
-  activeOrderCount: number;
   online: boolean;
   apiReachable: boolean | null;
   reconnecting: boolean;
   soundEnabled: boolean;
   soundSupported: boolean;
-  demoMode?: boolean;
-  loggingOut?: boolean;
 }>();
 
 const emit = defineEmits<{
-  logout: [];
   openNewOrders: [];
   toggleSound: [];
   fullscreenError: [];
@@ -46,7 +37,6 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 const now = ref(new Date());
 const fullscreen = ref(Boolean(document.fullscreenElement));
-const logoFailed = ref(false);
 let timer: number | undefined;
 
 const localeTag = computed(() =>
@@ -68,40 +58,22 @@ const dateText = computed(() =>
 );
 const networkStatus = computed(() => {
   if (!props.online) {
-    return {
-      label: t('network.offline'),
-      tone: 'danger',
-      icon: WifiOff,
-    } as const;
+    return { label: t('network.offline'), shortLabel: t('network.offlineShort'), tone: 'danger', icon: WifiOff } as const;
   }
-
   if (props.reconnecting || props.apiReachable === null) {
-    return {
-      label: t('network.reconnecting'),
-      tone: 'warning',
-      icon: LoaderCircle,
-    } as const;
+    return { label: t('network.reconnecting'), shortLabel: t('network.reconnectingShort'), tone: 'warning', icon: LoaderCircle } as const;
   }
-
   if (!props.apiReachable) {
-    return {
-      label: t('network.apiUnavailable'),
-      tone: 'danger',
-      icon: WifiOff,
-    } as const;
+    return { label: t('network.apiUnavailable'), shortLabel: t('network.unavailableShort'), tone: 'danger', icon: WifiOff } as const;
   }
-
-  return {
-    label: t('network.connected'),
-    tone: 'ok',
-    icon: Wifi,
-  } as const;
+  return { label: t('network.connected'), shortLabel: t('network.connectedShort'), tone: 'ok', icon: Wifi } as const;
 });
 const stats = computed(() => [
   { key: 'all', label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
-  { key: 'available', label: t('stats.availableTables'), value: props.availableTableCount, tone: 'muted' },
-  { key: 'new', label: t('stats.newOrders'), value: props.newOrderCount, tone: 'success' },
-  { key: 'active', label: t('stats.activeOrders'), value: props.activeOrderCount, tone: 'info' },
+  { key: 'available', label: t('stats.availableTables'), value: props.availableTableCount, tone: 'success' },
+  { key: 'in-use', label: t('stats.inUseTables'), value: props.inUseTableCount, tone: 'info' },
+  { key: 'ready', label: t('stats.readyToCloseTables'), value: props.readyToCloseTableCount, tone: 'warning' },
+  { key: 'disabled', label: t('stats.disabledTables'), value: props.disabledTableCount, tone: 'muted' },
 ]);
 
 async function toggleFullscreen() {
@@ -120,7 +92,7 @@ function syncFullscreen() {
 onMounted(() => {
   timer = window.setInterval(() => {
     now.value = new Date();
-  }, 30_000);
+  }, 60_000);
   document.addEventListener('fullscreenchange', syncFullscreen);
 });
 
@@ -131,108 +103,106 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="cashier-header">
-    <section class="merchant-summary-card">
-      <span class="merchant-summary-card__image" aria-hidden="true">
-        <img
-          v-if="merchantLogoUrl && !logoFailed"
-          :src="merchantLogoUrl"
-          alt=""
-          loading="eager"
-          @error="logoFailed = true"
-        />
-        <Store v-else :size="21" :stroke-width="1.9" />
-      </span>
-      <div class="merchant-summary-card__copy">
-        <strong>{{ merchantName || t('shell.merchantFallback') }}</strong>
-        <span :class="['business-state', { 'business-state--closed': !businessOpen }]">
-          <i aria-hidden="true" />
-          {{ businessHoursLabel || t('shell.businessHoursUnknown') }}
-        </span>
-      </div>
-      <span v-if="demoMode" class="demo-badge">{{ t('demo.badge') }}</span>
-    </section>
-
-    <section class="cashier-stats" :aria-label="t('stats.title')">
-      <article v-for="item in stats" :key="item.key" :class="`cashier-stat cashier-stat--${item.tone}`">
+  <header class="cashier-header" data-testid="cashier-topbar">
+    <section class="cashier-top-metrics" :aria-label="t('stats.title')" data-testid="top-metrics">
+      <article
+        v-for="item in stats"
+        :key="item.key"
+        :class="`cashier-top-metric cashier-top-metric--${item.tone}`"
+        :data-testid="`top-metric-${item.key}`"
+      >
         <span>{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
       </article>
     </section>
 
-    <section class="cashier-header__tools">
+    <section class="cashier-top-status" data-testid="top-status">
       <button
         type="button"
-        class="order-reminder"
-        :class="{ 'order-reminder--active': newOrderCount > 0 }"
+        class="top-status-item top-status-item--new-order"
+        :class="{ 'top-status-item--active': newOrderCount > 0 }"
+        :title="t('stats.newOrders')"
+        data-testid="top-new-orders"
         @click="$emit('openNewOrders')"
       >
-        <BellRing :size="19" aria-hidden="true" />
-        <span>{{ t('stats.newOrders') }}</span>
+        <span class="top-status-item__icon"><Bell :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
         <b v-if="newOrderCount">{{ newOrderCount > 99 ? '99+' : newOrderCount }}</b>
+        <span>{{ t('stats.newOrders') }}</span>
       </button>
 
-      <section class="cashier-header-statuses" aria-live="polite">
-        <span
-          :class="[
-            'header-status-item',
-            `header-status-item--${networkStatus.tone}`,
-            { 'header-status-item--reconnecting': reconnecting || (online && apiReachable === null) },
-          ]"
-          :title="networkStatus.label"
-        >
-          <component :is="networkStatus.icon" :size="16" aria-hidden="true" />
-          <span class="header-status-item__label">{{ networkStatus.label }}</span>
+      <span
+        :class="[
+          'top-status-item',
+          `top-status-item--${networkStatus.tone}`,
+          { 'top-status-item--reconnecting': reconnecting || (online && apiReachable === null) },
+        ]"
+        :title="networkStatus.label"
+        aria-live="polite"
+        data-testid="top-network-status"
+      >
+        <span class="top-status-item__icon">
+          <component :is="networkStatus.icon" :size="28" :stroke-width="1.9" aria-hidden="true" />
         </span>
-
-        <button
-          type="button"
-          class="header-status-item header-status-item--interactive"
-          :class="soundEnabled ? 'header-status-item--ok' : 'header-status-item--warning'"
-          :disabled="!soundSupported"
-          :aria-label="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
-          :aria-pressed="soundEnabled"
-          :title="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
-          @click="$emit('toggleSound')"
-        >
-          <Volume2 v-if="soundEnabled" :size="16" aria-hidden="true" />
-          <VolumeX v-else :size="16" aria-hidden="true" />
-          <span class="header-status-item__label">
-            {{ soundEnabled ? t('sound.enabled') : t('sound.disabled') }}
-          </span>
-        </button>
-
-        <span
-          class="header-status-item header-status-item--pending"
-          :title="t('print.pending')"
-        >
-          <Printer :size="16" aria-hidden="true" />
-          <span class="header-status-item__label">{{ t('print.pending') }}</span>
-        </span>
-      </section>
+        <span class="top-status-item__label top-status-item__label--full">{{ networkStatus.label }}</span>
+        <span class="top-status-item__label top-status-item__label--short">{{ networkStatus.shortLabel }}</span>
+      </span>
 
       <button
         type="button"
-        class="icon-touch-button"
-        :aria-label="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
-        :title="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
-        @click="toggleFullscreen"
+        class="top-status-item top-status-item--interactive"
+        :class="soundEnabled ? 'top-status-item--ok' : 'top-status-item--warning'"
+        :disabled="!soundSupported"
+        :aria-label="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
+        :aria-pressed="soundEnabled"
+        :title="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
+        data-testid="top-sound-status"
+        @click="$emit('toggleSound')"
       >
-        <Minimize v-if="fullscreen" :size="20" aria-hidden="true" />
-        <Expand v-else :size="20" aria-hidden="true" />
+        <span class="top-status-item__icon">
+          <Volume2 v-if="soundEnabled" :size="28" :stroke-width="1.9" aria-hidden="true" />
+          <VolumeX v-else :size="28" :stroke-width="1.9" aria-hidden="true" />
+        </span>
+        <span class="top-status-item__label top-status-item__label--full">
+          {{ soundEnabled ? t('sound.enabled') : t('sound.disabled') }}
+        </span>
+        <span class="top-status-item__label top-status-item__label--short">
+          {{ soundEnabled ? t('sound.enabledShort') : t('sound.disabledShort') }}
+        </span>
       </button>
 
-      <div class="cashier-clock" :aria-label="t('shell.currentTime')">
-        <Clock3 :size="18" aria-hidden="true" />
+      <span
+        class="top-status-item top-status-item--pending"
+        :title="t('print.featurePending')"
+        aria-disabled="true"
+        data-testid="top-print-status"
+      >
+        <span class="top-status-item__icon"><Printer :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
+        <span>{{ t('print.pendingShort') }}</span>
+      </span>
+
+      <button
+        type="button"
+        class="top-status-item top-status-item--fullscreen"
+        :aria-label="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
+        :title="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
+        data-testid="top-fullscreen"
+        @click="toggleFullscreen"
+      >
+        <span class="top-status-item__icon">
+          <Minimize v-if="fullscreen" :size="27" :stroke-width="1.9" aria-hidden="true" />
+          <Maximize v-else :size="27" :stroke-width="1.9" aria-hidden="true" />
+        </span>
+        <span>{{ t('shell.fullscreenShort') }}</span>
+      </button>
+
+      <div
+        class="top-status-item top-status-item--clock"
+        :aria-label="t('shell.currentTime')"
+        data-testid="top-clock"
+      >
+        <Clock :size="30" :stroke-width="1.9" aria-hidden="true" />
         <span><strong>{{ timeText }}</strong><small>{{ dateText }}</small></span>
       </div>
-
-      <AccountMenu
-        :staff-name="staffName"
-        :role="role"
-        :logging-out="loggingOut"
-        @logout="$emit('logout')"
-      />
     </section>
   </header>
 </template>

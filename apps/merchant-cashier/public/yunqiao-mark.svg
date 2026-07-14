@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <title>Yunqiao</title>
+  <defs>
+    <linearGradient id="yunqiao-top" x1="5" y1="14" x2="43" y2="13" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12BEEA" />
+      <stop offset="1" stop-color="#13D39B" />
+    </linearGradient>
+    <linearGradient id="yunqiao-right" x1="35" y1="15" x2="28" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#13D39B" />
+      <stop offset="1" stop-color="#0AAE7F" />
+    </linearGradient>
+    <linearGradient id="yunqiao-base" x1="7" y1="14" x2="29" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2878FF" />
+      <stop offset="0.48" stop-color="#1257D6" />
+      <stop offset="1" stop-color="#12BEEA" />
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M24 2.5 43.5 13.75 35.5 18.35 24 11.75 12.5 18.35 4.5 13.75 24 2.5Z"
+    fill="url(#yunqiao-top)"
+  />
+  <path
+    d="M43.5 13.75V35L24 46.25V37L35.5 30.35v-12l8-4.6Z"
+    fill="url(#yunqiao-right)"
+  />
+  <path
+    d="M24 46.25 4.5 35V13.75l8 4.6v12L24 37v9.25Z"
+    fill="url(#yunqiao-base)"
+  />
+</svg>

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { Clock3, ReceiptText, Utensils } from '@lucide/vue';
+import { Clock3, ReceiptText, Users } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
-import { formatVnd } from '@/domain';
 import { elapsedDuration, type CashierTableView } from '@/components/common/view-models';
 
 const props = defineProps<{
@@ -14,7 +13,7 @@ defineEmits<{
   select: [tableId: string];
 }>();
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const status = computed(() => props.table.operationalStatus ?? (
   props.table.status === 'DISABLED' ? 'DISABLED' : props.table.currentSession ? 'IN_USE' : 'AVAILABLE'
 ));
@@ -42,25 +41,31 @@ const durationLabel = computed(() => {
       `table-card--${status.toLowerCase().replace(/_/g, '-')}`,
       { 'table-card--selected': selected },
     ]"
+    :data-testid="`table-card-${table.id}`"
+    :data-status="status"
     :disabled="disabled"
     @click="$emit('select', table.id)"
   >
     <span class="table-card__topline">
-      <strong>{{ table.tableName || t('table.displayName', { number: table.tableNo || t('table.numberFallback') }) }}</strong>
+      <strong>{{ table.tableNo || t('table.numberFallback') }}</strong>
       <span class="table-card__state">{{ stateLabel }}</span>
     </span>
-    <small class="table-card__number">{{ table.tableNo || t('table.numberFallback') }}</small>
 
-    <template v-if="table.currentSession">
-      <b class="table-card__amount">{{ formatVnd(table.currentSession.totalAmountVnd, locale) }}</b>
-      <span class="table-card__meta">
-        <span><ReceiptText :size="14" aria-hidden="true" />{{ t('table.orderCount', { count: table.currentSession.orderCount || 0 }) }}</span>
-        <span :class="{ 'is-abnormal': duration?.abnormal }"><Clock3 :size="14" aria-hidden="true" />{{ durationLabel }}</span>
+    <span class="table-card__meta">
+      <span :title="t('table.guestCountUnknown')">
+        <Users :size="17" :stroke-width="1.9" aria-hidden="true" />—
       </span>
-    </template>
-    <span v-else class="table-card__available-hint">
-      <Utensils :size="15" aria-hidden="true" />
-      {{ t('table.availableHint') }}
+      <span :class="{ 'is-abnormal': duration?.abnormal }">
+        <Clock3 :size="17" :stroke-width="1.9" aria-hidden="true" />{{ durationLabel || '—' }}
+      </span>
+    </span>
+
+    <span v-if="table.currentSession" class="table-card__orders">
+      <ReceiptText :size="17" :stroke-width="1.9" aria-hidden="true" />
+      {{ t('table.orderCount', { count: table.currentSession.orderCount || 0 }) }}
+    </span>
+    <span v-else-if="disabled" class="table-card__disabled-hint">
+      {{ t('table.disabledHint') }}
     </span>
   </button>
 </template>

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n, type Locale } from '@/i18n';
 
 const props = defineProps<{
+  merchantName?: string;
   staffName?: string;
   role?: string;
   loggingOut?: boolean;
@@ -45,12 +46,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="account-menu">
+  <div ref="root" class="account-menu" data-testid="employee-menu">
     <button
       type="button"
       class="account-menu__trigger"
+      data-testid="employee-menu-trigger"
       :aria-expanded="open"
       :aria-label="t('account.menu')"
+      :title="staffName || t('shell.staffFallback')"
       @click="open = !open"
     >
       <span class="account-menu__avatar" aria-hidden="true"><UserRound :size="18" /></span>
@@ -61,7 +64,11 @@ onBeforeUnmount(() => {
       <ChevronDown :size="16" aria-hidden="true" />
     </button>
 
-    <section v-if="open" class="account-menu__popover">
+    <section v-if="open" class="account-menu__popover" data-testid="employee-menu-popover">
+      <div class="account-menu__compact-identity">
+        <strong>{{ merchantName || t('shell.merchantFallback') }}</strong>
+        <span>{{ staffName || t('shell.staffFallback') }} · {{ roleLabel }}</span>
+      </div>
       <label>
         <Languages :size="17" aria-hidden="true" />
         <span>{{ t('account.language') }}</span>

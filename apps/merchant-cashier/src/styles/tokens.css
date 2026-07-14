@@ -3,45 +3,56 @@
 
   /* Cashier workstation shell */
   --cashier-shell-950: #061522;
-  --cashier-shell-900: #081b2a;
-  --cashier-shell-850: #0a2031;
+  --cashier-shell-925: #071927;
+  --cashier-shell-900: #081d2c;
+  --cashier-shell-875: #0a2232;
+  --cashier-shell-850: #0a2232;
   --cashier-shell-800: #0d2739;
-  --cashier-shell-chrome-start: #071725;
-  --cashier-shell-chrome-middle: #0a1d2d;
-  --cashier-shell-chrome-end: #081827;
-  --cashier-detail-gradient-start: #091b2a;
-  --cashier-detail-gradient-end: #071624;
-  --cashier-shell-border: rgb(115 164 184 / 16%);
+  --cashier-shell-chrome-start: #061522;
+  --cashier-shell-chrome-middle: #071927;
+  --cashier-shell-chrome-end: #061522;
+  --cashier-detail-gradient-start: #081d2c;
+  --cashier-detail-gradient-end: #061724;
+  --cashier-shell-border: rgb(124 171 191 / 16%);
   --cashier-shell-text: #f4fafc;
-  --cashier-shell-muted: #9eb2be;
+  --cashier-shell-muted: #9dafbb;
+
+  /* Yunqiao geometric mark */
+  --logo-blue: #2878ff;
+  --logo-blue-dark: #1257d6;
+  --logo-cyan: #12beea;
+  --logo-green: #13d39b;
+  --logo-green-dark: #0aae7f;
 
   /* Workspace surfaces */
-  --cashier-workspace-bg: #eef3f7;
-  --cashier-workspace-bg-top: #f6f9fb;
+  --cashier-workspace-bg: #eff4f7;
+  --cashier-workspace-bg-top: #f7f9fb;
   --cashier-transparent: transparent;
   --cashier-white: #fff;
   --cashier-surface: var(--cashier-white);
   --cashier-surface-soft: #f8fafc;
-  --cashier-surface-muted: #f1f5f8;
-  --cashier-border: #d9e3ea;
-  --cashier-border-strong: #c5d2db;
-  --cashier-text: #132238;
+  --cashier-surface-muted: #f0f3f6;
+  --cashier-border: #d6e0e7;
+  --cashier-border-strong: #c4d1da;
+  --cashier-text: #14243a;
   --cashier-text-secondary: #526275;
-  --cashier-text-muted: #8491a3;
+  --cashier-text-muted: #738197;
 
   /* Semantic accents */
-  --cashier-green: #14b86c;
-  --cashier-green-strong: #079a55;
-  --cashier-green-soft: #ecfaf2;
-  --cashier-green-glow: rgb(20 184 108 / 20%);
-  --cashier-blue: #2f80ed;
-  --cashier-blue-soft: #edf5ff;
-  --cashier-orange: #ff7a1a;
-  --cashier-orange-soft: #fff4e9;
+  --cashier-green: #19c37d;
+  --cashier-green-strong: #079a5a;
+  --cashier-green-soft: #eaf9f1;
+  --cashier-green-glow: rgb(25 195 125 / 20%);
+  --cashier-blue: #3b82f6;
+  --cashier-blue-soft: #eaf2ff;
+  --cashier-orange: #f3a524;
+  --cashier-orange-soft: #fff4db;
   --cashier-red: #f04454;
   --cashier-red-soft: #fff0f2;
   --cashier-purple: #8b5cf6;
   --cashier-purple-soft: #f3efff;
+  --cashier-gray: #8b98a9;
+  --cashier-gray-soft: #f0f3f6;
   --cashier-yellow: #d99a17;
   --cashier-yellow-soft: #fff7df;
 
@@ -104,18 +115,18 @@
   --cashier-white-alpha-55: rgb(255 255 255 / 55%);
   --cashier-white-alpha-58: rgb(255 255 255 / 58%);
   --cashier-white-alpha-82: rgb(255 255 255 / 82%);
-  --cashier-green-alpha-08: rgb(20 184 108 / 8%);
-  --cashier-green-alpha-09: rgb(20 184 108 / 9%);
-  --cashier-green-alpha-10: rgb(20 184 108 / 10%);
-  --cashier-green-alpha-12: rgb(20 184 108 / 12%);
-  --cashier-green-alpha-13: rgb(20 184 108 / 13%);
-  --cashier-green-alpha-14: rgb(20 184 108 / 14%);
-  --cashier-green-alpha-22: rgb(20 184 108 / 22%);
-  --cashier-green-alpha-35: rgb(20 184 108 / 35%);
-  --cashier-green-alpha-40: rgb(20 184 108 / 40%);
-  --cashier-green-alpha-52: rgb(20 184 108 / 52%);
-  --cashier-blue-alpha-12: rgb(47 128 237 / 12%);
-  --cashier-blue-alpha-22: rgb(47 128 237 / 22%);
+  --cashier-green-alpha-08: rgb(25 195 125 / 8%);
+  --cashier-green-alpha-09: rgb(25 195 125 / 9%);
+  --cashier-green-alpha-10: rgb(25 195 125 / 10%);
+  --cashier-green-alpha-12: rgb(25 195 125 / 12%);
+  --cashier-green-alpha-13: rgb(25 195 125 / 13%);
+  --cashier-green-alpha-14: rgb(25 195 125 / 14%);
+  --cashier-green-alpha-22: rgb(25 195 125 / 22%);
+  --cashier-green-alpha-35: rgb(25 195 125 / 35%);
+  --cashier-green-alpha-40: rgb(25 195 125 / 40%);
+  --cashier-green-alpha-52: rgb(25 195 125 / 52%);
+  --cashier-blue-alpha-12: rgb(59 130 246 / 12%);
+  --cashier-blue-alpha-22: rgb(59 130 246 / 22%);
   --cashier-yellow-alpha-09: rgb(217 154 23 / 9%);
   --cashier-yellow-alpha-13: rgb(217 154 23 / 13%);
   --cashier-yellow-alpha-18: rgb(217 154 23 / 18%);
@@ -137,8 +148,8 @@
   --cashier-shadow-sm: 0 2px 8px rgb(15 35 48 / 6%);
   --cashier-shadow-md: 0 8px 24px rgb(15 35 48 / 9%);
   --cashier-shadow-green:
-    0 0 0 1px rgb(20 184 108 / 15%),
-    0 8px 24px rgb(20 184 108 / 12%);
+    0 0 0 1px rgb(25 195 125 / 15%),
+    0 8px 24px rgb(25 195 125 / 12%);
 
   /* Compatibility aliases used by the component stylesheet. */
   --shell-900: var(--cashier-shell-900);
@@ -174,9 +185,9 @@
   --cashier-radius-lg: 22px;
   --cashier-shadow: var(--cashier-shadow-md);
   --cashier-shadow-strong: 0 20px 48px rgb(3 17 27 / 28%);
-  --cashier-sidebar-width: clamp(176px, 14vw, 216px);
-  --cashier-header-height: clamp(68px, 7.5vh, 76px);
-  --cashier-detail-width: clamp(300px, 22vw, 350px);
+  --cashier-sidebar-width: 248px;
+  --cashier-header-height: 108px;
+  --cashier-detail-width: 376px;
   --cashier-mobile-nav-height: 74px;
   --cashier-gap: clamp(10px, 1vw, 16px);
 

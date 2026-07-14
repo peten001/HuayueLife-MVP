@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ClipboardPlus, History, LayoutGrid, ListTodo } from '@lucide/vue';
+import { Bell, ClipboardList, History, LayoutGrid } from '@lucide/vue';
 import { useI18n } from '@/i18n';
 
 const { t } = useI18n();
 const routes = [
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid },
-  { to: '/orders/new', labelKey: 'nav.newOrders', icon: ClipboardPlus },
-  { to: '/orders/active', labelKey: 'nav.activeOrders', icon: ListTodo },
+  { to: '/orders/new', labelKey: 'nav.newOrders', icon: Bell },
+  { to: '/orders/active', labelKey: 'nav.activeOrders', icon: ClipboardList },
   { to: '/orders/history', labelKey: 'nav.history', icon: History },
 ] as const;
 </script>

@@ -7,6 +7,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/cashier.css';
 import './styles/responsive.css';
+import './styles/final-layout.css';
 
 const app = createApp(App);
 

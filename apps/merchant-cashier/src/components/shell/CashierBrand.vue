@@ -5,7 +5,7 @@ import { cashierConfig } from '@/config';
 <template>
   <div class="cashier-brand" data-testid="cashier-brand" aria-label="Yunqiao">
     <span class="cashier-brand__logo" aria-hidden="true">
-      <img src="/yunqiao-logo.png" alt="" width="64" height="64" />
+      <img src="/yunqiao-mark.svg" alt="" width="48" height="48" />
     </span>
     <strong class="cashier-brand__name">{{ cashierConfig.brandName }}</strong>
   </div>

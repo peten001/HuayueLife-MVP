@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
-import { currentBusinessHoursRange, isWithinBusinessHours, resolveMediaUrl } from '@/domain';
+import { currentBusinessHoursRange, isWithinBusinessHours } from '@/domain';
 import {
   useAuthStore,
   useNetworkStore,
@@ -14,7 +14,6 @@ import {
   useUiStore,
 } from '@/stores';
 import type { CashierOrderAction } from '@/components/common/view-models';
-import CashierBrand from '@/components/shell/CashierBrand.vue';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
@@ -27,7 +26,7 @@ import ToastRegion from '@/components/common/ToastRegion.vue';
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const ordersStore = useOrdersStore();
 const tablesStore = useTablesStore();
@@ -46,15 +45,25 @@ const closeDialogOpen = ref(false);
 const pendingOrderAction = ref<CashierOrderAction | null>(null);
 
 const identity = computed(() => ({
-  merchantName: profile.value?.nameZh || session.value?.merchant.nameZh || '',
+  merchantName:
+    (locale.value === 'vi' ? profile.value?.nameVi : locale.value === 'en' ? profile.value?.nameEn : profile.value?.nameZh)
+    || profile.value?.nameZh
+    || session.value?.merchant.nameZh
+    || '',
   staffName: session.value?.displayName || session.value?.username || '',
   role: session.value?.role || 'STAFF',
 }));
 const availableTableCount = computed(
   () => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length,
 );
-const occupiedTableCount = computed(
-  () => tableCards.value.filter((table) => Boolean(table.currentSession)).length,
+const inUseTableCount = computed(
+  () => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length,
+);
+const readyToCloseTableCount = computed(
+  () => tableCards.value.filter((table) => table.operationalStatus === 'READY_TO_CLOSE').length,
+);
+const disabledTableCount = computed(
+  () => tableCards.value.filter((table) => table.operationalStatus === 'DISABLED').length,
 );
 const showingTableDetail = computed(() => route.path === '/tables');
 const plannedBusinessOpen = computed(() => isWithinBusinessHours(profile.value?.businessHours));
@@ -63,7 +72,6 @@ const businessHoursLabel = computed(() => {
   if (!plannedHoursRange.value) return t('shell.businessHoursUnknown');
   return `${t(plannedBusinessOpen.value ? 'shell.businessOpen' : 'shell.businessClosed')} · ${plannedHoursRange.value}`;
 });
-const merchantLogoUrl = computed(() => resolveMediaUrl(profile.value?.logoUrl));
 const confirmationTitle = computed(() => {
   if (closeDialogOpen.value) return t('table.closeConfirmTitle');
   return t(pendingOrderAction.value === 'reject' ? 'order.rejectConfirmTitle' : 'order.completeConfirmTitle');
@@ -207,36 +215,34 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="cashier-shell">
-    <CashierBrand />
-
     <CashierSidebar
+      :merchant-name="identity.merchantName"
+      :business-open="plannedBusinessOpen"
+      :business-hours-label="businessHoursLabel"
+      :demo-mode="demoMode"
+      :staff-name="identity.staffName"
+      :role="identity.role"
+      :logging-out="loggingOut"
       :new-order-count="pendingOrders.length"
       :active-order-count="activeOrders.length"
-      :occupied-table-count="occupiedTableCount"
+      @logout="logout"
     />
 
     <CashierHeader
-      :merchant-name="identity.merchantName"
-      :merchant-logo-url="merchantLogoUrl"
-      :business-open="plannedBusinessOpen"
-      :business-hours-label="businessHoursLabel"
-      :staff-name="identity.staffName"
-      :role="identity.role"
       :total-table-count="tableCards.length"
       :available-table-count="availableTableCount"
+      :in-use-table-count="inUseTableCount"
+      :ready-to-close-table-count="readyToCloseTableCount"
+      :disabled-table-count="disabledTableCount"
       :new-order-count="pendingOrders.length"
-      :active-order-count="activeOrders.length"
       :online="online"
       :api-reachable="apiReachable"
       :reconnecting="online && apiReachable === null"
       :sound-enabled="soundEnabled"
       :sound-supported="soundSupported"
-      :demo-mode="demoMode"
-      :logging-out="loggingOut"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
-      @logout="logout"
     />
 
     <main class="cashier-shell__route">

@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
-import { useTablesStore, useUiStore } from '@/stores';
+import { useOrdersStore, useTablesStore, useUiStore } from '@/stores';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import SearchFilterBar from '@/components/common/SearchFilterBar.vue';
@@ -14,8 +14,10 @@ const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
 const tablesStore = useTablesStore();
+const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
 const { tableCards, selectedTableId, loading, error } = storeToRefs(tablesStore);
+const { liveOrders, historyOrders } = storeToRefs(ordersStore);
 const query = ref('');
 const activeStatus = ref('ALL');
 const refreshing = ref(false);
@@ -29,9 +31,25 @@ const statusOptions = [
 
 const filteredTables = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase();
+  const matchingOrders = keyword
+    ? [...liveOrders.value, ...historyOrders.value]
+        .filter((order) => `${order.orderNo}`.toLocaleLowerCase().includes(keyword))
+    : [];
+  const matchingTableIds = new Set(
+    matchingOrders.flatMap((order) => order.tableId ? [order.tableId] : []),
+  );
+  const matchingTableNumbers = new Set(
+    matchingOrders.flatMap((order) => {
+      const tableNo = order.table?.tableNo || order.tableNoSnapshot;
+      return tableNo ? [tableNo.toLocaleLowerCase()] : [];
+    }),
+  );
   return tableCards.value.filter((table) => {
     if (activeStatus.value !== 'ALL' && table.operationalStatus !== activeStatus.value) return false;
-    return !keyword || `${table.tableNo} ${table.tableName || ''}`.toLocaleLowerCase().includes(keyword);
+    return !keyword
+      || `${table.tableNo} ${table.tableName || ''}`.toLocaleLowerCase().includes(keyword)
+      || matchingTableIds.has(table.id)
+      || matchingTableNumbers.has(table.tableNo.toLocaleLowerCase());
   });
 });
 

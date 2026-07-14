@@ -71,6 +71,7 @@ const { t } = useI18n();
         :key="option.value"
         type="button"
         :class="{ active: activeStatus === option.value }"
+        :title="t(option.labelKey)"
         @click="$emit('update:activeStatus', option.value)"
       >
         {{ t(option.labelKey) }}
