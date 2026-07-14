@@ -12,6 +12,7 @@
     "test:ui": "node scripts/verify-ui.mjs",
     "test:watch": "vitest",
     "screenshots": "node scripts/capture-ui.mjs",
+    "screenshots:refine": "node scripts/capture-refine-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

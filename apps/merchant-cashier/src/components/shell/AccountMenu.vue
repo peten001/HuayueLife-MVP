@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ChevronDown, ExternalLink, Languages, LogOut, UserRound } from '@lucide/vue';
+import { ChevronDown, Languages, LogOut, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { cashierConfig } from '@/config';
 import { useI18n, type Locale } from '@/i18n';
 
 const props = defineProps<{
@@ -17,7 +16,6 @@ defineEmits<{
 const { t, locale, setLocale } = useI18n();
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
-const merchantAdminUrl = cashierConfig.merchantAdminUrl;
 const roleLabel = computed(() => {
   if (props.role === 'OWNER') return t('auth.role.owner');
   if (props.role === 'MANAGER') return t('auth.role.manager');
@@ -64,15 +62,6 @@ onBeforeUnmount(() => {
     </button>
 
     <section v-if="open" class="account-menu__popover">
-      <a
-        :href="merchantAdminUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-        @click="open = false"
-      >
-        <ExternalLink :size="17" aria-hidden="true" />
-        {{ t('account.openMerchantAdmin') }}
-      </a>
       <label>
         <Languages :size="17" aria-hidden="true" />
         <span>{{ t('account.language') }}</span>

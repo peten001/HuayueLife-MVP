@@ -16,13 +16,12 @@ import {
 import type { CashierOrderAction } from '@/components/common/view-models';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
-import BottomActionBar from '@/components/shell/BottomActionBar.vue';
+import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
 import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import OrderDetailPanel from '@/components/orders/OrderDetailPanel.vue';
 import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
-import ConnectivityBanner from '@/components/common/ConnectivityBanner.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
 
 const route = useRoute();
@@ -37,7 +36,7 @@ const uiStore = useUiStore();
 const { session, profile, isAuthenticated, demoMode } = storeToRefs(authStore);
 const { pendingOrders, activeOrders, selectedOrder, actionLoadingId } = storeToRefs(ordersStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
-const { online, apiReachable, degraded } = storeToRefs(networkStore);
+const { online, apiReachable } = storeToRefs(networkStore);
 const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
 const { detailOpen } = storeToRefs(uiStore);
 const loggingOut = ref(false);
@@ -156,14 +155,6 @@ async function openNewOrders() {
   await router.push('/orders/new');
 }
 
-async function openSelectedTableBill() {
-  if (!selectedTableId.value) return;
-  if (route.path !== '/tables') {
-    await router.push({ path: '/tables', query: { table: selectedTableId.value } });
-  }
-  uiStore.openDetail('table', selectedTableId.value);
-}
-
 async function recoverData() {
   await Promise.allSettled([
     ordersStore.refreshLiveOrders(),
@@ -242,6 +233,9 @@ onBeforeUnmount(() => {
       :available-table-count="availableTableCount"
       :new-order-count="pendingOrders.length"
       :active-order-count="activeOrders.length"
+      :online="online"
+      :api-reachable="apiReachable"
+      :reconnecting="online && apiReachable === null"
       :sound-enabled="soundEnabled"
       :sound-supported="soundSupported"
       :demo-mode="demoMode"
@@ -251,8 +245,6 @@ onBeforeUnmount(() => {
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
       @logout="logout"
     />
-
-    <ConnectivityBanner :visible="degraded" />
 
     <main class="cashier-shell__route">
       <OrientationNotice />
@@ -295,15 +287,7 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
-    <BottomActionBar
-      :online="online"
-      :api-reachable="apiReachable !== false"
-      :sound-enabled="soundEnabled"
-      :sound-supported="soundSupported"
-      :selected-table-id="selectedTableId"
-      @toggle-sound="toggleSound"
-      @open-table-bill="openSelectedTableBill"
-    />
+    <CashierMobileNavigation />
 
     <ToastRegion />
 

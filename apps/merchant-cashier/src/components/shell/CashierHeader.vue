@@ -3,10 +3,14 @@ import {
   BellRing,
   Clock3,
   Expand,
+  LoaderCircle,
   Minimize,
+  Printer,
   Store,
   Volume2,
   VolumeX,
+  Wifi,
+  WifiOff,
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from '@/i18n';
@@ -23,6 +27,9 @@ const props = defineProps<{
   availableTableCount: number;
   newOrderCount: number;
   activeOrderCount: number;
+  online: boolean;
+  apiReachable: boolean | null;
+  reconnecting: boolean;
   soundEnabled: boolean;
   soundSupported: boolean;
   demoMode?: boolean;
@@ -59,6 +66,37 @@ const dateText = computed(() =>
     weekday: 'short',
   }).format(now.value),
 );
+const networkStatus = computed(() => {
+  if (!props.online) {
+    return {
+      label: t('network.offline'),
+      tone: 'danger',
+      icon: WifiOff,
+    } as const;
+  }
+
+  if (props.reconnecting || props.apiReachable === null) {
+    return {
+      label: t('network.reconnecting'),
+      tone: 'warning',
+      icon: LoaderCircle,
+    } as const;
+  }
+
+  if (!props.apiReachable) {
+    return {
+      label: t('network.apiUnavailable'),
+      tone: 'danger',
+      icon: WifiOff,
+    } as const;
+  }
+
+  return {
+    label: t('network.connected'),
+    tone: 'ok',
+    icon: Wifi,
+  } as const;
+});
 const stats = computed(() => [
   { key: 'all', label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
   { key: 'available', label: t('stats.availableTables'), value: props.availableTableCount, tone: 'muted' },
@@ -134,22 +172,44 @@ onBeforeUnmount(() => {
         <b v-if="newOrderCount">{{ newOrderCount > 99 ? '99+' : newOrderCount }}</b>
       </button>
 
-      <div class="cashier-clock" :aria-label="t('shell.currentTime')">
-        <Clock3 :size="18" aria-hidden="true" />
-        <span><strong>{{ timeText }}</strong><small>{{ dateText }}</small></span>
-      </div>
+      <section class="cashier-header-statuses" aria-live="polite">
+        <span
+          :class="[
+            'header-status-item',
+            `header-status-item--${networkStatus.tone}`,
+            { 'header-status-item--reconnecting': reconnecting || (online && apiReachable === null) },
+          ]"
+          :title="networkStatus.label"
+        >
+          <component :is="networkStatus.icon" :size="16" aria-hidden="true" />
+          <span class="header-status-item__label">{{ networkStatus.label }}</span>
+        </span>
 
-      <button
-        type="button"
-        class="icon-touch-button"
-        :class="{ 'icon-touch-button--active': soundEnabled }"
-        :disabled="!soundSupported"
-        :aria-label="soundEnabled ? t('sound.enabled') : t('sound.enable')"
-        @click="$emit('toggleSound')"
-      >
-        <Volume2 v-if="soundEnabled" :size="20" aria-hidden="true" />
-        <VolumeX v-else :size="20" aria-hidden="true" />
-      </button>
+        <button
+          type="button"
+          class="header-status-item header-status-item--interactive"
+          :class="soundEnabled ? 'header-status-item--ok' : 'header-status-item--warning'"
+          :disabled="!soundSupported"
+          :aria-label="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
+          :aria-pressed="soundEnabled"
+          :title="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
+          @click="$emit('toggleSound')"
+        >
+          <Volume2 v-if="soundEnabled" :size="16" aria-hidden="true" />
+          <VolumeX v-else :size="16" aria-hidden="true" />
+          <span class="header-status-item__label">
+            {{ soundEnabled ? t('sound.enabled') : t('sound.disabled') }}
+          </span>
+        </button>
+
+        <span
+          class="header-status-item header-status-item--pending"
+          :title="t('print.pending')"
+        >
+          <Printer :size="16" aria-hidden="true" />
+          <span class="header-status-item__label">{{ t('print.pending') }}</span>
+        </span>
+      </section>
 
       <button
         type="button"
@@ -161,6 +221,11 @@ onBeforeUnmount(() => {
         <Minimize v-if="fullscreen" :size="20" aria-hidden="true" />
         <Expand v-else :size="20" aria-hidden="true" />
       </button>
+
+      <div class="cashier-clock" :aria-label="t('shell.currentTime')">
+        <Clock3 :size="18" aria-hidden="true" />
+        <span><strong>{{ timeText }}</strong><small>{{ dateText }}</small></span>
+      </div>
 
       <AccountMenu
         :staff-name="staffName"

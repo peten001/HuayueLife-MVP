@@ -7,6 +7,7 @@ defineProps<{
   activeStatus: string;
   statusOptions: Array<{ value: string; labelKey: string }>;
   showArea?: boolean;
+  tableToolbar?: boolean;
   date?: string;
   orderType?: string;
   showHistoryFilters?: boolean;
@@ -24,7 +25,18 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <section class="search-filter-bar" :class="{ 'search-filter-bar--history': showHistoryFilters }">
+  <section
+    class="search-filter-bar"
+    :class="{
+      'search-filter-bar--history': showHistoryFilters,
+      'search-filter-bar--tables': tableToolbar,
+    }"
+    :data-testid="tableToolbar ? 'table-toolbar' : undefined"
+  >
+    <div v-if="showArea" class="area-tabs" role="tablist" :aria-label="t('filter.area')">
+      <span role="tab" aria-selected="true">{{ t('filter.allAreas') }}</span>
+    </div>
+
     <label class="cashier-search">
       <Search :size="18" aria-hidden="true" />
       <input
@@ -35,10 +47,6 @@ const { t } = useI18n();
         @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
       />
     </label>
-
-    <div v-if="showArea" class="area-tabs" role="tablist" :aria-label="t('filter.area')">
-      <span role="tab" aria-selected="true">{{ t('filter.allAreas') }}</span>
-    </div>
 
     <label v-if="showHistoryFilters" class="compact-field">
       <span>{{ t('orders.filterDate') }}</span>
@@ -72,6 +80,10 @@ const { t } = useI18n();
       >
         {{ t(option.labelKey) }}
       </button>
+    </div>
+
+    <div v-if="$slots.actions" class="search-filter-bar__actions">
+      <slot name="actions" />
     </div>
   </section>
 </template>

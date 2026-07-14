@@ -82,16 +82,10 @@
   --cashier-detail-notice-text: #ffe1a2;
   --cashier-detail-total: #72dfa9;
   --cashier-danger-action-text: #ffbcc4;
-  --cashier-quick-green: #7fe2b2;
-  --cashier-quick-blue: #91bfff;
-  --cashier-quick-cyan: #8ddfd9;
-  --cashier-quick-pending: #e2bd6e;
-  --cashier-status-strip-ok: #7fdaad;
-  --cashier-status-strip-pending: #d9b66d;
+  --cashier-header-status-ok: #7fdaad;
+  --cashier-header-status-pending: #d9b66d;
   --cashier-skeleton-base: #edf1f4;
   --cashier-skeleton-highlight: #f7f9fa;
-  --cashier-connectivity-text: #7b480d;
-  --cashier-connectivity-bg: #fff2d3;
   --cashier-form-error-text: #b82436;
   --cashier-demo-border: #e7d19f;
   --cashier-demo-label-text: #7f530b;
@@ -119,15 +113,12 @@
   --cashier-green-alpha-12: rgb(20 184 108 / 12%);
   --cashier-green-alpha-13: rgb(20 184 108 / 13%);
   --cashier-green-alpha-14: rgb(20 184 108 / 14%);
-  --cashier-green-alpha-15: rgb(20 184 108 / 15%);
   --cashier-green-alpha-22: rgb(20 184 108 / 22%);
   --cashier-green-alpha-35: rgb(20 184 108 / 35%);
   --cashier-green-alpha-40: rgb(20 184 108 / 40%);
   --cashier-green-alpha-52: rgb(20 184 108 / 52%);
   --cashier-blue-alpha-12: rgb(47 128 237 / 12%);
-  --cashier-blue-alpha-15: rgb(47 128 237 / 15%);
   --cashier-blue-alpha-22: rgb(47 128 237 / 22%);
-  --cashier-cyan-alpha-13: rgb(44 184 179 / 13%);
   --cashier-yellow-alpha-09: rgb(217 154 23 / 9%);
   --cashier-yellow-alpha-13: rgb(217 154 23 / 13%);
   --cashier-yellow-alpha-18: rgb(217 154 23 / 18%);
@@ -140,7 +131,6 @@
   --cashier-red-alpha-45: rgb(240 68 84 / 45%);
   --cashier-merchant-card-border: rgb(120 170 190 / 14%);
   --cashier-workspace-heading-bg: rgb(246 249 251 / 90%);
-  --cashier-shadow-color-10: rgb(15 35 48 / 10%);
   --cashier-drawer-shadow-color: rgb(3 17 27 / 34%);
   --cashier-auth-shadow-color: rgb(1 13 22 / 36%);
   --cashier-scrim-48: rgb(3 14 24 / 48%);
@@ -188,9 +178,9 @@
   --cashier-shadow: var(--cashier-shadow-md);
   --cashier-shadow-strong: 0 20px 48px rgb(3 17 27 / 28%);
   --cashier-sidebar-width: clamp(176px, 14vw, 216px);
-  --cashier-header-height: clamp(76px, 8.5vh, 92px);
-  --cashier-detail-width: clamp(296px, 22vw, 350px);
-  --cashier-quickbar-height: clamp(68px, 8.5vh, 88px);
+  --cashier-header-height: clamp(68px, 7.5vh, 76px);
+  --cashier-detail-width: clamp(300px, 22vw, 350px);
+  --cashier-mobile-nav-height: 74px;
   --cashier-gap: clamp(10px, 1vw, 16px);
 
   font-family:
