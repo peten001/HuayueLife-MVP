@@ -13,6 +13,7 @@ import {
 } from '@/utils/order-notification';
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
+import { resolveMediaUrl } from '@/utils/media';
 import type {
   OrderSpeechAnnouncement,
   OrderSpeechLanguage,
@@ -1257,7 +1258,7 @@ function todayInVietnam() {
               <template v-for="item in order.items.slice(0, 3)" :key="item.id">
                 <img
                   v-if="item.imageUrlSnapshot"
-                  :src="item.imageUrlSnapshot"
+                  :src="resolveMediaUrl(item.imageUrlSnapshot)"
                   :alt="item.productNameZhSnapshot"
                   class="order-mobile-image"
                 />

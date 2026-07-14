@@ -350,6 +350,13 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
             val uri = runCatching { Uri.parse(url) }.getOrNull()
             when {
                 uri == null -> onNavigationBlocked(null)
+                uri.scheme?.equals("blob", ignoreCase = true) == true -> {
+                    Toast.makeText(
+                        this,
+                        R.string.blob_download_unavailable,
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
                 originPolicy.isSafeExternalHttps(uri) -> onExternalHttpsRequested(uri)
                 else -> onNavigationBlocked(uri)
             }

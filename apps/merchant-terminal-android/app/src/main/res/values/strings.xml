@@ -8,6 +8,7 @@
     <string name="exit_confirmation">再次按下退出 / Nhấn lần nữa để thoát</string>
     <string name="external_link_blocked">已阻止不安全链接 / Đã chặn liên kết không an toàn</string>
     <string name="popup_blocked">已阻止不安全弹窗 / Đã chặn cửa sổ không an toàn</string>
+    <string name="blob_download_unavailable">当前终端暂不支持保存此文件，请使用浏览器完成 / Thiết bị hiện chưa hỗ trợ lưu tệp này; vui lòng dùng trình duyệt</string>
     <string name="web_dialog_ok">确定 / Đồng ý</string>
     <string name="web_dialog_cancel">取消 / Hủy</string>
     <string name="error_generic_title">页面暂时无法打开</string>

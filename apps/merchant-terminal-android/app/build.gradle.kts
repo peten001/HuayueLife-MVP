@@ -5,9 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val terminalVersionCode = 1
-val terminalVersionName = "0.1.0"
-
 fun configValue(
     propertyName: String,
     environmentName: String,
@@ -15,6 +12,24 @@ fun configValue(
 ): Provider<String> = providers.gradleProperty(propertyName)
     .orElse(providers.environmentVariable(environmentName))
     .orElse(fallback)
+
+val terminalVersionCode = configValue(
+    propertyName = "terminalVersionCode",
+    environmentName = "TERMINAL_VERSION_CODE",
+    fallback = "1",
+).map { value ->
+    value.toIntOrNull()
+        ?.takeIf { it in 1..2_100_000_000 }
+        ?: error("terminalVersionCode must be an integer between 1 and 2100000000.")
+}
+val terminalVersionName = configValue(
+    propertyName = "terminalVersionName",
+    environmentName = "TERMINAL_VERSION_NAME",
+    fallback = "0.1.0",
+).map { value ->
+    value.takeIf { it.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")) }
+        ?: error("terminalVersionName must contain only letters, digits, dots, underscores, or hyphens.")
+}
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -27,7 +42,7 @@ val debugAdminUrl = configValue(
 val releaseAdminUrl = configValue(
     propertyName = "merchantAdminUrlRelease",
     environmentName = "MERCHANT_ADMIN_URL_RELEASE",
-    fallback = "https://merchant-admin.invalid/",
+    fallback = "https://admin.huayueyouxuan.com/",
 )
 val debugTrustedResourceHosts = configValue(
     propertyName = "merchantTrustedHostsDebug",
@@ -87,8 +102,8 @@ android {
         applicationId = "com.yunqiao.life.merchantterminal"
         minSdk = 26
         targetSdk = 35
-        versionCode = terminalVersionCode
-        versionName = terminalVersionName
+        versionCode = terminalVersionCode.get()
+        versionName = terminalVersionName.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -164,7 +179,7 @@ android {
 }
 
 base {
-    archivesName.set("yunqiao-merchant-terminal-v$terminalVersionName")
+    archivesName.set("yunqiao-merchant-terminal-v${terminalVersionName.get()}")
 }
 
 dependencies {
