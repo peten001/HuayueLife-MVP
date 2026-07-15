@@ -2,7 +2,9 @@
 
 > 本文是决策登记表。只有“已确认”部分是产品方向；“本轮建议”仍需在对应阶段开始前确认，不能作为已批准功能实施。
 
-## 1. 已确认
+## 1. 已确认方向与变更记录
+
+### 1.1 当前有效决策（2026-07-15 更新）
 
 | 决策 | 已确认内容 | 约束 |
 |---|---|---|
@@ -11,10 +13,21 @@
 | Android 定位 | Web 收银台外壳 + 本地打印连接器 | 不承载完整商家订单业务 |
 | 打印核心 | 所有正式打印先形成统一 PrintJob | 浏览器、Android 本地队列、WebSocket 均不是任务事实源 |
 | 通道方向 | 同一任务中心支持本地与云打印 | 通道由受控 adapter 隔离 |
-| 第一优先本地通道 | LAN ESC/POS | 尚未通过 D10 Pro/ZY305UL 真机验证，不得写成已可用 |
-| 后续通道 | USB ESC/POS、云打印、商米/iMin 等内置 SDK | 只预留概念，不在 V1 一次性实现 |
-| 硬件顺序 | 架构与 Web/任务中心之后到店验证 | 不假设 IP、端口 9100、协议、字符集、切纸或状态回执已确认 |
-| 实施顺序 | A 架构 → B Web 收银台 → C 任务中心 → D 硬件验证 → E Android LAN → F 手动真单 → G 自动打印 → H 多机分单 → I 云打印 → J USB/内置 | 除不可绕过依赖外不得自行调整 |
+| 第一优先本地通道 | USB ESC/POS | 尚未完成目标终端与目标打印机实机验证；枚举或概念预留不等于可用 |
+| 后续通道 | LAN ESC/POS、云打印、厂商内置打印机 SDK | LAN 不删除，只从首发通道降为后续受控 adapter；其他通道仍按真实硬件与官方资料单独评审 |
+| 硬件顺序 | 架构、Web 与任务中心之后先验证 USB | 不预设设备标识、接口、端点、协议、字符集、切纸或状态回执 |
+| 实施顺序 | A 架构 → B Web 收银台 → C 任务中心 → D USB 硬件验证 → E Android USB → F 手动真单 → G 自动打印 → H 多机分单 → I 云打印 → J LAN/内置 | A–C 已完成的记录不重写；后续阶段按本次决策执行 |
+
+### 1.2 已被取代但保留的历史决策
+
+以下是本文最初确认的通道顺序摘要，已于 2026-07-15 被 1.1 的 USB-first 决策取代。保留这些历史决策是为了追溯，不再作为后续实施依据；原始逐字版本仍可由对应 Git 历史核对：
+
+| 决策 | 原确认内容 | 原约束 | 当前状态 |
+|---|---|---|---|
+| 第一优先本地通道 | LAN ESC/POS | 尚未通过目标终端/打印机真机验证，不得写成已可用 | 已被 USB ESC/POS 首通道决策取代 |
+| 后续通道 | USB ESC/POS、云打印、厂商内置打印机 SDK | 只预留概念，不在 V1 一次性实现 | USB 已提升为首通道；其余仍为后续 |
+| 硬件顺序 | 架构与 Web/任务中心之后到店验证 LAN | 不假设 IP、端口、协议、字符集、切纸或状态回执已确认 | LAN 验证后移，先做 USB 实机验证 |
+| 实施顺序 | A 架构 → B Web 收银台 → C 任务中心 → D LAN 硬件验证 → E Android LAN → F 手动真单 → G 自动打印 → H 多机分单 → I 云打印 → J USB/内置 | 除不可绕过依赖外不得自行调整 | D–J 的未来顺序已由 1.1 取代 |
 
 ## 2. 当前事实约束
 
@@ -25,7 +38,7 @@
 - 当前已有 `PrinterSetting`/`PrintLog`，以及 API 服务器直接 Socket 打印；不存在统一 Job/Attempt/Terminal：`apps/api/prisma/schema.prisma:707-750`；`apps/api/src/modules/printers/printers.service.ts:205-367`。
 - 当前自动打印发生在订单创建后的 `PENDING_ACCEPTANCE` 阶段，并非已确认的未来产品规则：`apps/api/src/modules/orders/orders.service.ts:56-64,128-146`。
 - `TableSession.CLOSED`、`Order.status=COMPLETED`、`Order.settlementStatus=SETTLED` 当前不是同一状态变化：`apps/api/src/modules/table-sessions/table-sessions.service.ts:121-165`；`apps/api/src/modules/merchant-orders/merchant-orders.service.ts:158-175`。
-- 当前 Android 只是 WebView 外壳，没有打印、终端认证、Room、WorkManager、Foreground Service 或任务领取：`apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/MainActivity.kt`；`apps/merchant-terminal-android/README.md`。
+- 当前 Android 仍以 WebView 外壳为主，本轮已在同一应用内加入隔离的 USB 设备诊断、系统权限、通用 ESC/POS smoke adapter 和合成测试小票能力；这些能力尚未经过目标硬件验证，也不连接生产 API/`PrintJob`。正式终端认证、任务领取/租约/回报、Room、WorkManager、Foreground Service 和生产 USB executor 仍不存在：`apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/diagnostics/`；`apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/printing/`。
 
 ## 3. 需要本轮给出建议
 
@@ -39,7 +52,7 @@
 | 图片文字策略 | 设计首选 Android 使用固定字体的 raster/Bitmap；阶段 D 验证点宽、命令和吞吐后才能确认 | 中越英字符集更一致，但硬件能力尚未验证 | D/E |
 | Job 状态 | `PENDING/CLAIMED/PRINTING/SUCCEEDED/FAILED/RETRY_WAIT/CANCELLED`；结果未知用 `FAILED + PRINT_OUTCOME_UNKNOWN + retryBlocked` | 避免增加模糊状态，同时阻止盲目自动重打 | C |
 | Terminal 认证 | 一次性绑定码 + Android Keystore 生成高熵 terminal secret + 服务端 tokenHash + 短期 Terminal JWT；关键请求查 DB status/tokenVersion | 响应丢失时设备仍持有自己生成的凭据；不长期复用员工 JWT | C/E |
-| 测试打印 | 也创建 `source=TEST` PrintJob；单纯 TCP 探测可另做不出纸诊断 | 验证完整链路并留下统一日志，不形成第二执行通道 | C/E |
+| 测试打印 | 正式产品测试也创建 `source=TEST` PrintJob；阶段 D 不接生产 API、只含合成内容的 USB 硬件 smoke 是受控例外 | 产品测试验证完整链路并留下统一日志；硬件 smoke 只验证设备能力，不形成第二执行通道 | C/E |
 | 首次自动触发 | 默认建议 `ORDER_ACCEPTED`，按 DINE_IN/PICKUP/DELIVERY 独立规则且初始 disabled | 比当前顾客下单即打更少无效单；仍需业务确认 | G |
 | 模板版本 | `ReceiptTemplate` + 发布后不可变的 `ReceiptTemplateVersion`；Job 冻结版本和内容快照 | 规则变更不能改变历史任务/补打内容 | C |
 | 多份打印 | 每一份展开为一个 PrintJob，用 copyIndex 去重 | 能准确表示某一份失败，而不是在一条日志里循环 | C |
@@ -111,7 +124,7 @@
 | B. 固定字体 Bitmap/raster | 中越英视觉一致，可带 Logo/二维码 | 数据大、速度慢；必须验证 raster 命令、点宽和缓存 |
 | C. 混合模式 | 可优化性能 | profile/回归矩阵复杂 |
 
-**推荐：设计首选 B，但以阶段 D 真机结果为门禁。** 如果 ZY305UL raster 不可接受，再选择经过实测的 A/C；不能仅凭型号猜测。
+**推荐：设计首选 B，但以阶段 D 真机结果为门禁。** 如果目标 USB 打印机的 raster 能力或效果不可接受，再选择经过实测的 A/C；不能仅凭型号或协议名称猜测。
 
 不确认会影响：阶段 E renderer，不阻塞任务中心的结构化快照。
 
@@ -144,9 +157,9 @@
 | A. 仅 RFC1918 literal IPv4 + 受控端口 | 最小化利用终端扫描网络/访问特殊地址的风险 | 某些现场可能使用非典型私网或受控 DNS |
 | B. 任意合法 IP/hostname | 兼容性广 | 容易成为局域网探测/SSRF 通道，DNS 重绑定风险高 |
 
-**推荐：A 作为 V1 默认。** 阻止 loopback、link-local、multicast、unspecified、broadcast 和公网地址；host/port 只能来自绑定 Printer 配置，ReceiptDocument/网页不能指定。若阶段 D 发现真实网络不符合，再对特定范围做审计例外。
+**推荐：A 作为后续 LAN adapter 默认。** 阻止 loopback、link-local、multicast、unspecified、broadcast 和公网地址；host/port 只能来自绑定 Printer 配置，ReceiptDocument/网页不能指定。若阶段 J 或后续独立 LAN 实机验证发现真实网络不符合，再对特定范围做审计例外。
 
-不确认会影响：阶段 C DTO 校验、阶段 E Android 二次校验。
+不确认会影响：现有阶段 C LAN DTO 契约，以及阶段 J 或后续 LAN adapter 的 Android 二次校验；不阻塞当前 USB 硬件 smoke。
 
 ### 4.10 终端注册码与凭据轮换流程
 
@@ -161,15 +174,16 @@
 
 ## 5. 不应在本轮决定的事项
 
-- ZY305UL 是否使用端口 9100、是否完整支持 ESC/POS、raster、切纸或状态查询；阶段 D 实测。
-- D10 Pro 是否能稳定后台常驻、开机恢复、是否需要特定厂商电池白名单；阶段 D/G 真机验证。
+- 首个目标 USB 打印机的设备描述符、接口/端点、ESC/POS、raster、切纸和状态查询能力；阶段 D 以实际硬件验证，不预写固定标识。
+- 目标 Android 终端是否具备稳定 USB Host、授权、插拔恢复、后台常驻和开机恢复能力；阶段 D/G 真机验证。
 - 选择飞鹅、芯烨、GPrinter 中哪一家；阶段 I 前完成商务、设备和 API 调研。
-- USB VID/PID、商米/iMin SDK 版本和权限；阶段 J 依据真实设备与官方资料。
+- 后续 LAN 打印机的地址、端口、协议和网络条件，以及厂商内置 SDK 版本与权限；阶段 J 依据真实设备与官方资料。
 - 厨房分类、档口、加菜/退菜票的最终规则；阶段 H 先做业务调研。
 
 ## 6. 决策更新规则
 
 - 用户确认后，将条目从“后续需用户确认”移动到“已确认”，记录日期、选择和影响阶段。
-- 硬件结论必须引用阶段 D 的设备、固件、网络、命令、样张和日志证据。
+- 已被后续决策取代的条目不得删除或无痕改写；应保留原内容、标明取代日期，并指向当前有效决策。
+- 硬件结论必须引用阶段 D 的终端与打印机、连接方式、系统权限、接口/端点、命令、样张和脱敏日志证据。
 - 决策变更不得改写已完成 PrintJob 的 receipt snapshot、templateVersion、ruleVersion 或 Attempt 历史。
 - 若某一决策会改变阶段顺序，必须先说明不可绕过依赖和回滚影响，再获得明确批准。

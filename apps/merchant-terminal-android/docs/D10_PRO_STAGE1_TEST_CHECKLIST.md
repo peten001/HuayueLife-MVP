@@ -1,5 +1,7 @@
 # KiotViet D10 Pro — 阶段 1 真机测试清单
 
+> 历史说明：本文保留阶段 1 当时以 D10 Pro WebView 外壳为目标的验证记录。自 2026-07-15 起，首个本地打印通道已调整为**通用 Android USB ESC/POS**，不再优先 LAN；新门店验证使用仓库根目录 `docs/testing/P10_USB_PRINTER_STORE_VALIDATION.md`，设备型号以 Android 系统实际读取值为准。
+
 适用范围：云桥 Life 商家终端 Android App 阶段 1（WebView 外壳）。本清单不验证打印、后台订单监听、开机自启或 kiosk。
 
 ## 测试记录
@@ -136,6 +138,6 @@
 | 阻塞问题 |  |
 | 非阻塞问题 |  |
 | 失败项对应 Issue |  |
-| 是否允许进入阶段 2 LAN 测试打印 | 是 / 否 |
+| 历史阶段 2 LAN 准入（已被 USB 优先方向取代，仅保留记录） | 是 / 否 |
 | 验收人 |  |
 | 验收日期 |  |

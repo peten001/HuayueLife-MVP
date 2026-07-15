@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
+import android.view.Menu
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.ValueCallback
@@ -21,6 +22,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -34,6 +36,7 @@ import com.yunqiao.life.merchantterminal.data.TerminalSettings
 import com.yunqiao.life.merchantterminal.databinding.ActivityMainBinding
 import com.yunqiao.life.merchantterminal.diagnostics.DeviceDiagnostics
 import com.yunqiao.life.merchantterminal.diagnostics.DiagnosticsActivity
+import com.yunqiao.life.merchantterminal.diagnostics.UsbPrinterDiagnosticsActivity
 import com.yunqiao.life.merchantterminal.web.OriginPolicy
 import com.yunqiao.life.merchantterminal.web.TerminalLoadError
 import com.yunqiao.life.merchantterminal.web.TerminalLoadErrorType
@@ -118,6 +121,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         configureWindowForTerminal()
         configureErrorState()
+        configureTerminalMenu()
         configureSwipeRefresh()
         configureBackNavigation()
         observeTerminalSettings()
@@ -430,6 +434,39 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         }
     }
 
+    private fun configureTerminalMenu() {
+        binding.terminalMenuButton.setOnClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                menu.add(Menu.NONE, MENU_CASHIER, Menu.NONE, R.string.menu_cashier)
+                menu.add(Menu.NONE, MENU_DEVICE_DIAGNOSTICS, Menu.NONE, R.string.menu_device_diagnostics)
+                menu.add(Menu.NONE, MENU_USB_DIAGNOSTICS, Menu.NONE, R.string.menu_usb_diagnostics)
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        MENU_CASHIER -> {
+                            reloadCurrentPage()
+                            true
+                        }
+                        MENU_DEVICE_DIAGNOSTICS -> {
+                            startActivity(Intent(this@MainActivity, DiagnosticsActivity::class.java))
+                            true
+                        }
+                        MENU_USB_DIAGNOSTICS -> {
+                            startActivity(
+                                Intent(
+                                    this@MainActivity,
+                                    UsbPrinterDiagnosticsActivity::class.java,
+                                ),
+                            )
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                show()
+            }
+        }
+    }
+
     private fun configureSwipeRefresh() {
         binding.swipeRefresh.setColorSchemeResources(R.color.terminal_primary)
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
@@ -615,6 +652,9 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         const val NETWORK_RECOVERY_DEBOUNCE_MS = 700L
         const val MAX_FILE_SELECTION_COUNT = 10
         const val MAX_ACCEPTED_MIME_TYPES = 32
+        const val MENU_CASHIER = 1
+        const val MENU_DEVICE_DIAGNOSTICS = 2
+        const val MENU_USB_DIAGNOSTICS = 3
         const val ANY_MIME_TYPE = "*/*"
         val MIME_TOKEN = Regex("^[a-z0-9][a-z0-9!#$&^_.+\\-]*$")
     }

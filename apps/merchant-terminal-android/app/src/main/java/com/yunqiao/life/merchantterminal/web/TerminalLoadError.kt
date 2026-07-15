@@ -57,11 +57,11 @@ enum class TerminalLoadErrorType(
         descriptionVi = "Android Safe Browsing xác định trang này không an toàn.",
     ),
     CONFIGURATION(
-        code = "E_ADMIN_URL_NOT_CONFIGURED",
-        titleZh = "商家后台地址尚未配置",
-        titleVi = "Chưa cấu hình địa chỉ trang quản trị",
-        descriptionZh = "请使用构建参数配置可信的 HTTPS 商家后台地址。",
-        descriptionVi = "Vui lòng cấu hình địa chỉ HTTPS tin cậy khi xây dựng ứng dụng.",
+        code = "E_CASHIER_URL_NOT_CONFIGURED",
+        titleZh = "Web 收银台地址尚未配置",
+        titleVi = "Chưa cấu hình địa chỉ quầy thu ngân Web",
+        descriptionZh = "USB 诊断仍可使用；请在构建时配置可信的 HTTPS 收银台地址和精确 Origin。",
+        descriptionVi = "Vẫn có thể chẩn đoán USB; hãy cấu hình URL HTTPS và Origin tin cậy khi xây dựng.",
     ),
     PAGE_LOAD_FAILURE(
         code = "E_PAGE_LOAD_FAILURE",

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">云桥 Life 商家终端</string>
-    <string name="startup_loading">正在打开商家后台…\nĐang mở trang quản trị…</string>
+    <string name="startup_loading">正在打开 Web 收银台…\nĐang mở quầy thu ngân Web…</string>
     <string name="retry_bilingual">重新加载 / Tải lại</string>
     <string name="network_settings_bilingual">网络设置 / Cài đặt mạng</string>
     <string name="diagnostics_bilingual">终端诊断 / Chẩn đoán thiết bị</string>
@@ -13,4 +13,9 @@
     <string name="web_dialog_cancel">取消 / Hủy</string>
     <string name="error_generic_title">页面暂时无法打开</string>
     <string name="error_generic_title_vi">Tạm thời không thể mở trang</string>
+    <string name="terminal_menu_description">终端功能菜单 / Menu thiết bị</string>
+    <string name="terminal_menu_label">终端 / Thiết bị</string>
+    <string name="menu_cashier">收银台 / Quầy thu ngân</string>
+    <string name="menu_device_diagnostics">设备诊断 / Chẩn đoán thiết bị</string>
+    <string name="menu_usb_diagnostics">USB 打印诊断 / Chẩn đoán in USB</string>
 </resources>

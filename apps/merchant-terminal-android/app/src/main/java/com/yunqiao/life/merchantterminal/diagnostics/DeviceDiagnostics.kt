@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.webkit.WebSettings
 import androidx.webkit.WebViewCompat
 import com.yunqiao.life.merchantterminal.BuildConfig
+import com.yunqiao.life.merchantterminal.web.OriginPolicy
 import java.text.DateFormat
 import java.text.DecimalFormat
 import java.util.Date
@@ -45,7 +46,7 @@ object DeviceDiagnostics {
         val webViewVersion: String,
         val networkType: String,
         val isConnected: String,
-        val merchantAdminUrl: String,
+        val cashierWebUrl: String,
         val userAgent: String,
         val keepScreenOn: String,
         val powerSaveMode: String,
@@ -76,7 +77,7 @@ object DeviceDiagnostics {
             appendLine("WebView 版本 / Phiên bản WebView: $webViewVersion")
             appendLine("网络类型 / Loại mạng: $networkType")
             appendLine("是否联网 / Đã kết nối: $isConnected")
-            appendLine("merchant-admin URL: $merchantAdminUrl")
+            appendLine("Web 收银台 URL / URL quầy thu ngân Web: $cashierWebUrl")
             appendLine("User-Agent: $userAgent")
             appendLine("屏幕常亮 / Luôn bật màn hình: $keepScreenOn")
             appendLine("省电模式 / Chế độ tiết kiệm pin: $powerSaveMode")
@@ -115,7 +116,8 @@ object DeviceDiagnostics {
             webViewVersion = currentWebViewVersion(context),
             networkType = currentNetworkType(context),
             isConnected = connectivityStatus(context),
-            merchantAdminUrl = BuildConfig.MERCHANT_ADMIN_URL
+            cashierWebUrl = OriginPolicy()
+                .sanitizedForDiagnostics(BuildConfig.CASHIER_WEB_URL)
                 .takeIf { it.isNotBlank() }
                 ?: "未配置 / Chưa cấu hình",
             userAgent = currentUserAgent(context),

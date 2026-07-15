@@ -2,6 +2,7 @@
 
 > 文档性质：建议契约，不代表接口已实现。所有路径均带现有全局前缀 `/api/v1`。
 > 当前真实打印 API 见 `00_CURRENT_STATE_AUDIT.md`，新契约不得与旧服务器直连 TCP 同时执行。
+> 决策更新（2026-07-15）：首个本地执行通道改为 USB ESC/POS。本文既有 LAN DTO/响应示例因当前后端只实现了 LAN 配置校验且 LAN 仍是后续通道而保留；它们不代表 LAN 继续优先。正式 USB contract 必须等待门店设备证据后另行冻结，当前 Android 合成 smoke 不连接本 API、Terminal 或 PrintJob。
 
 ## 1. 沿用的 API 约定
 
@@ -67,7 +68,7 @@
 
 `POST /merchant/printers/:id/test` 复用当前路由名称，但语义从“API 服务器即时 Socket”改为“创建统一 PrintJob”。旧行为证据：`apps/api/src/modules/printers/printers.controller.ts:54-57`；`apps/api/src/modules/printers/printers.service.ts:205-214`。
 
-示例创建请求（示例地址和端口不代表任何真实硬件已经验证）：
+以下是为后续 LAN adapter 保留的示例创建请求（示例地址和端口不代表任何真实硬件已经验证，也不是当前 USB-first 配置）：
 
 ```json
 {
@@ -217,7 +218,7 @@ EnrollmentCode 保存 codeHash、受控 terminalName、purpose、expiresAt、use
 | `POST /terminal/print-jobs/:jobNo/succeed` | `{leaseVersion,attemptId,recoveryNonce?,deviceFinishedAt?,bytesWritten,contentHash,printerResponse?}` | Job(SUCCEEDED) | `LEASE_CONFLICT`、`ATTEMPT_MISMATCH`、`CONTENT_HASH_MISMATCH` | 对同 attempt 重复回报幂等；已成功仍返回成功 | 服务器时间为审计权威；nonce 仅用于无后继 Attempt 的短 grace 恢复；普通网页不能调用 |
 | `POST /terminal/print-jobs/:jobNo/fail` | `{leaseVersion,attemptId,recoveryNonce?,deviceFinishedAt?,errorCode,errorMessage,bytesWritten,outcome}` | FAILED/RETRY_WAIT 和 nextAvailableAt | `LEASE_CONFLICT`、`ATTEMPT_MISMATCH`、`INVALID_ERROR_CODE` | 同 attempt 重复回报幂等 | API 根据错误、阶段、bytes/outcome 决定；终端不能任意指定最终状态 |
 
-领取响应示例：
+领取响应示例沿用后续 LAN channel 说明通用租约结构；USB 正式字段待实机验证后冻结，当前 smoke 不领取该响应：
 
 ```json
 {
@@ -283,7 +284,7 @@ reconcile 动作矩阵：
 
 ## 7. 测试打印决策
 
-**建议测试打印也必须创建 PrintJob。**
+**建议正式产品中的测试打印也必须创建 PrintJob。**
 
 原因：
 
@@ -291,7 +292,9 @@ reconcile 动作矩阵：
 - 测试也需要失败日志、权限、终端离线等待和审计。
 - 独立即时接口会再次形成第二事实源和绕过租约的执行路径。
 
-允许另设不出纸的诊断接口，例如终端本地“测试 TCP 连接”；它只能生成 `PrinterConnectionDiagnostic` 或状态上报，不能发送 ESC/POS，也不能标记 PrintJob 成功。
+允许另设不出纸的本地连接诊断，例如 USB open/claim 或后续 LAN connect；它只能生成 `PrinterConnectionDiagnostic` 或状态上报，不能发送 ESC/POS，也不能标记 PrintJob 成功。
+
+阶段 D 为确认未知 USB 硬件能力而提供的前台合成 smoke 是受控例外：内容不来自订单，不连接生产 API，不创建或领取 PrintJob，且只允许用户手动单次发送。该例外在门店验证后不得直接演变为正式订单打印旁路。
 
 ## 8. 人工补打与人工重试的区别
 

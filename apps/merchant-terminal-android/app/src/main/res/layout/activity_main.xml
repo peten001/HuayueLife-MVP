@@ -59,4 +59,15 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/terminal_menu_button"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:contentDescription="@string/terminal_menu_description"
+        android:minWidth="96dp"
+        android:text="@string/terminal_menu_label" />
+
 </FrameLayout>

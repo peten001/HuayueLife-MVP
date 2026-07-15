@@ -1,6 +1,8 @@
 # 统一打印架构 V1：实施计划
 
 > 文档性质：建议实施顺序。本文严格遵守已确认的 A–J 顺序；本轮只完成阶段 A 的文档，不自动开始后续阶段。
+> 决策更新（2026-07-15）：A–C 的已完成范围和原始 LAN-first 计划记录继续保留；尚未开始的 D–J 改为 USB ESC/POS 优先，LAN 降为后续本地通道。硬件尚未实机验证，本文不把枚举或概念预留表述为可用。
+> 阶段衔接：第一行是本文初建时的历史说明；当前任务已进入阶段 D，仅在现有 Android 终端应用内实现隔离 USB 诊断/合成 smoke 能力并构建测试 APK，不接生产 API、`PrintJob` 或正式执行链路。
 
 ## 1. 总体原则
 
@@ -17,13 +19,13 @@
 flowchart LR
     A[阶段 A<br/>架构设计] --> B[阶段 B<br/>独立 Web 收银台]
     B --> C[阶段 C<br/>后端打印任务中心]
-    C --> D[阶段 D<br/>到店硬件验证]
-    D --> E[阶段 E<br/>Android LAN 连接器]
+    C --> D[阶段 D<br/>USB 硬件验证]
+    D --> E[阶段 E<br/>Android USB 连接器]
     E --> F[阶段 F<br/>手动真实订单打印]
     F --> G[阶段 G<br/>自动打印与恢复]
     G --> H[阶段 H<br/>多打印机与厨房分单]
     H --> I[阶段 I<br/>云打印]
-    I --> J[阶段 J<br/>USB 与内置打印机]
+    I --> J[阶段 J<br/>LAN 与内置打印机]
 ```
 
 ## 3. 阶段 A：统一打印架构设计（本轮）
@@ -51,7 +53,7 @@ flowchart LR
 
 | 项目 | 内容 |
 |---|---|
-| 前置条件 | 阶段 A 决策冻结；确认登录入口和目标域名；定义支持的浏览器/WebView 下限，真实 D10 版本留到阶段 D 验证 |
+| 前置条件 | 阶段 A 决策冻结；确认登录入口和目标域名；定义支持的浏览器/WebView 下限，真实目标终端版本留到阶段 D 验证 |
 | 数据库变更 | 原则上无；若发现收银台必需的业务缺口，单独评审，不夹带打印表 |
 | API 变更 | 优先复用现有 merchant orders/tables/table sessions；仅补独立收银台确实缺失的查询/动作，不新增 PrintJob |
 | UI 变更 | 新应用；现有 merchant-admin 只保留管理后台，不大改其信息架构 |
@@ -83,51 +85,54 @@ flowchart LR
 | 回滚方式 | 发布前备份；forward-compatible migration；功能开关关闭新任务创建；代码回退保持新表不删除；不得以恢复旧 API 服务端直连 LAN Socket 作为长期回滚 |
 | 本阶段不做 | 到店验证、真实 TCP、USB、厂商 SDK、云厂商账号、自动规则生产启用、后台 Android 常驻 |
 
-阶段 C 的 `LOCAL_LAN_ESCPOS` 仅建立枚举、配置校验和不可执行路由。没有 ACTIVE Terminal 且未经阶段 D/E 验证时，API 必须拒绝启用规则或创建生产 LAN Job，不能让任务永久悬挂。
+原阶段 C 计划为 `LOCAL_LAN_ESCPOS` 建立枚举、配置校验和不可执行路由，并要求未经后续验证时拒绝生产 LAN Job。这是已发生的实现边界，不表示 LAN 仍是首发通道。
 
-## 6. 阶段 D：到店硬件验证
+以上是阶段 C 按原 LAN-first 决策形成的已发生实现记录，不因 2026-07-15 的方向变化而改写。后端 `LOCAL_USB_ESCPOS` 仍只有枚举/概念预留，没有 USB 通道配置或执行；本轮在现有 Android 终端应用内新增隔离的 USB 诊断、权限、通用 adapter 和合成测试小票能力，但尚未经过目标硬件验证，也没有接入 Terminal/`PrintJob`。不能把这些 smoke 代码或现有 LAN 配置误称为正式 USB connector。生产 USB Job 在阶段 D/E 验收前必须拒绝；生产 LAN Job 则继续关闭，直到阶段 J 或后续独立 LAN 验收完成。
+
+## 6. 阶段 D：USB 硬件可行性验证
 
 ### 开发范围
 
-- 按独立验证流程检查 D10 浏览器/Web 收银台体验。
-- 获取 ZY305UL 真实 IP、端口、固件和网络模式；只针对已确认设备做安全连通测试。
-- 先用 Mac 发送最小 ASCII ESC/POS 测试，再用独立临时 Android smoke-test APK 验证 D10→LAN→打印机。
-- 验证字符模式、raster 图像、点宽、吞吐、切纸、状态反馈能力；中文/越南语需单独样张。
+- 按独立验证流程检查目标 Android 终端的浏览器/Web 收银台体验，不把打印验证与业务写操作混在一起。
+- 确认目标终端具备 USB Host 能力，并通过 Android 官方 API 观察设备枚举、权限申请、接口/端点选择、断开与重新连接。
+- 在现有 `apps/merchant-terminal-android` 中使用隔离的原生 USB 诊断页和通用 smoke adapter，构建专用测试 APK；只向用户明确选择并授权的目标打印机发送一次合成 ESC/POS 测试小票，不连接云桥生产 API、Terminal API 或 `PrintJob`。
+- 验证字符模式、raster 图像、纸宽、吞吐、切纸和可获得的状态反馈；中文/越南语需单独样张。
+- 设备匹配规则必须由实机描述符与能力证据形成；本阶段不在文档或代码中预写固定设备型号、打印机型号或设备标识。
 
 | 项目 | 内容 |
 |---|---|
-| 前置条件 | 阶段 C 已验收，但硬件 smoke test 不必接生产 API；用户在现场提供物理操作和出纸确认 |
+| 前置条件 | 阶段 C 已验收；持有目标 Android 终端、目标 USB ESC/POS 打印机、合规线材/供电与厂家资料；用户在现场提供物理操作和出纸确认 |
 | 数据库变更 | 无；不得把临时测试写入生产任务表 |
-| API 变更 | 无 |
-| UI 变更 | 无正式 UI；仅仓库外临时工具 |
-| 测试方式 | D10 浏览器清单；打印机自检/路由器资料；Mac 单次 LAN 打印；D10 单次 LAN 打印；样张和日志证据 |
-| 验收标准 | 真实 IP/端口确认；Mac 和 D10 均不依赖 USB/云平台成功出纸；无重复打印；明确支持的 renderProfile 和错误反馈边界 |
-| 回滚方式 | 卸载临时 APK、断开测试网线或恢复现场原连接；不改云桥代码/数据 |
-| 本阶段不做 | 正式连接器、真实订单、自动打印、全网段扫描、路由器全局修改、USB/云打印 |
+| API 变更 | 无；诊断/合成测试不调用生产打印 API，也不创建 `PrintJob` |
+| UI 变更 | 在现有 Android 终端应用增加隔离的原生 USB 诊断入口；WebView 收银业务和 merchant-admin 不变 |
+| 测试方式 | Android lint/单元测试/测试 APK 构建；浏览器清单；USB 枚举/授权/拒绝/插拔；本轮 APK 单次连接与单次合成测试小票；字符/raster 样张和脱敏日志证据 |
+| 验收标准 | 系统可稳定识别并授权目标打印机；单次点击只出一张；插拔和拒绝权限可恢复；明确 renderProfile、接口/端点选择和错误反馈边界 |
+| 回滚方式 | 卸载或回退本轮诊断 APK并断开测试 USB 连接；不改云桥 API/数据库，不改变现场其他设备配置 |
+| 本阶段不做 | 正式连接器、真实订单、自动打印、LAN/云打印、来源不明驱动、静默授权、任意 USB 设备访问 |
 
-若 LAN 不可行，按阶段 D 报告停下并重新评审；不得假装通过后直接进入阶段 E。
+若 USB Host、权限、接口或 ESC/POS 出纸任一关键环节不可行，按阶段 D 报告停下并重新评审；不得假装通过后直接进入阶段 E，也不得自行改回 LAN 实施。
 
-## 7. 阶段 E：Android LAN 连接器
+## 7. 阶段 E：Android USB ESC/POS 连接器
 
 ### 开发范围
 
-- 在现有 Android WebView 外壳内新增独立 Terminal 注册/认证、终端配置、Printer 连接诊断和受控 LAN executor。
+- 在现有 Android WebView 外壳内，为阶段 D 已验证的诊断/smoke adapter 增加独立 Terminal 注册/认证、服务端打印机配置和正式 `PrintJob` 领取/租约/回报，使其成为受控 USB executor；不得直接把诊断按钮当生产执行入口。
 - 将 WebView 入口切换到阶段 B 的独立 Web 收银台，并为其真实页面 Origin/资源 Host 更新最小白名单；不得继续把 merchant-admin 当最终收银 UI，也不得放宽为任意 HTTPS。
 - 实现长轮询领取（失败时退化短轮询）、start/lease/succeed/fail、一次只执行一个 Job。
-- 实现经阶段 D 验证的 ESC/POS renderer/profile；只连接服务端绑定 Printer 的 literal IP/允许端口，不接受网页任意 Socket 数据。
+- 实现经阶段 D 验证的 ESC/POS renderer/profile；只访问服务端绑定且 Android 已授权、能力匹配的 USB 打印机，不接受网页传入设备标识、接口、端点或任意打印字节。
 - WebView 与打印连接器通过受控 App 内部协调层展示状态；不暴露可传任意字节或任意地址的 JavaScript Bridge。
 - 阶段 E/F 只保证 App 前台的领取与执行；持久执行台账、进程/设备重启和开机恢复属于阶段 G。
 
 | 项目 | 内容 |
 |---|---|
-| 前置条件 | 阶段 D LAN、ESC/POS、raster/字符方案通过；阶段 C API 已稳定；Terminal credential 与 Printer 绑定可用 |
+| 前置条件 | 阶段 D USB Host、授权、插拔、ESC/POS、raster/字符方案通过；阶段 C API 已稳定；Terminal credential 与 Printer 绑定可用 |
 | 数据库变更 | 原则上无；如阶段 D 发现 capability schema 必须调整，单独小 migration 评审 |
 | API 变更 | 只做契约修正和兼容；不重新设计任务模型 |
-| UI 变更 | Android 原生终端绑定、LAN 状态和错误诊断；“测试连接”只做不出纸诊断，“测试打印”必须创建 `source=TEST` PrintJob，不能另走直连旁路；Web 收银台显示只读打印状态 |
-| 测试方式 | 模拟 Socket server + 真机；超时、拒绝、断网、IP 变化、按钮防重、进程生命周期；安全地址校验；契约测试 |
-| 验收标准 | App 加载独立 Web 收银台且 Origin 白名单正确；测试 PrintJob 可被唯一领取、真实出纸并回报 Attempt；无任意 host/bytes bridge；终端撤销后不能领取；APP前台使用稳定 |
+| UI 变更 | Android 原生终端绑定、USB 授权/连接状态和错误诊断；“测试连接”只做不出纸诊断，“测试打印”必须创建 `source=TEST` PrintJob，不能另走直连旁路；Web 收银台显示只读打印状态 |
+| 测试方式 | Android USB mock/单元测试 + 真机；授权允许/拒绝、插拔、设备不匹配、写入超时、按钮防重、进程生命周期和契约测试 |
+| 验收标准 | App 加载独立 Web 收银台且 Origin 白名单正确；测试 PrintJob 可被唯一领取、通过已授权 USB 打印机真实出纸并回报 Attempt；无任意 device/bytes bridge；终端撤销后不能领取；App 前台使用稳定 |
 | 回滚方式 | 服务端禁用 Terminal/Printer/本地通道；回退 APK；未执行 Job 保留并可取消，不切回旧服务端 Socket |
-| 本阶段不做 | 真实订单自动打印、开机恢复、复杂后台常驻、USB、云打印、多打印机分单 |
+| 本阶段不做 | 真实订单自动打印、开机恢复、复杂后台常驻、LAN、云打印、多打印机分单 |
 
 ## 8. 阶段 F：手动真实订单打印
 
@@ -135,7 +140,7 @@ flowchart LR
 
 - Web 收银台订单详情创建人工打印/补打 Job；首次打印从当前订单和已发布模板生成快照，历史补打默认复制原 Job 快照。
 - 展示任务、Attempt、失败、结果不确定和补打标识；要求补打原因并审计操作者。
-- 用少量测试订单验证完整链路：Web→API→DB→Android→LAN→ZY305UL→结果回报。
+- 用少量测试订单验证完整链路：Web→API→DB→Android→USB ESC/POS 打印机→结果回报。
 
 | 项目 | 内容 |
 |---|---|
@@ -146,7 +151,7 @@ flowchart LR
 | 测试方式 | DINE_IN/PICKUP/DELIVERY 测试订单；内容快照；重复点击/HTTP 重试；失败与人工补打；客户 PII 脱敏 |
 | 验收标准 | 单次操作只产生预期份数；小票内容正确；失败可见；补打新建 Job 且标识清楚；原成功 Job 不被重开 |
 | 回滚方式 | 关闭手动打印 capability/UI；保留审计和历史，不删除任务 |
-| 本阶段不做 | 自动规则启用、后台恢复、多打印机、厨房分单、云/USB |
+| 本阶段不做 | 自动规则启用、后台恢复、多打印机、厨房分单、LAN/云打印 |
 
 ## 9. 阶段 G：自动打印与恢复
 
@@ -163,10 +168,10 @@ flowchart LR
 | 数据库变更 | 原则上无；如需 outbox/事件唯一键，作为本阶段前置 migration 单独评审 |
 | API 变更 | 自动触发器、恢复协调器、告警/健康状态；契约兼容 |
 | UI 变更 | Rule 启停、失败告警、自动/补打标识、终端后台状态；Android 前台服务通知和恢复诊断 |
-| 测试方式 | 重复订单事件、API重启、进程回收、D10重启、Wi-Fi/路由器/打印机断开、回报丢失、租约竞争、长时间 soak test |
+| 测试方式 | 重复订单事件、API重启、进程回收、目标终端重启、API网络中断、USB打印机断开/重连、回报丢失、租约竞争、长时间 soak test |
 | 验收标准 | 自动任务不丢且不因重复事件双建；明确失败可恢复；未知结果不盲打；重启后可对账；旧即时路径不再执行 |
 | 回滚方式 | 逐商家/规则关闭自动 Job 生成；保留手动打印与任务查询；停用后台 connector，不恢复双通道 |
-| 本阶段不做 | 厨房分类分单、云打印、USB、厂商内置 SDK |
+| 本阶段不做 | 厨房分类分单、LAN、云打印、厂商内置 SDK |
 
 ## 10. 阶段 H：多打印机和厨房分单
 
@@ -185,7 +190,7 @@ flowchart LR
 | 测试方式 | 多打印机并发、类别边界、加菜/退菜、部分离线、多份、规则版本迁移 |
 | 验收标准 | 每个业务事件产生可解释的目标任务；无漏项/重复项；部分失败可单独处理 |
 | 回滚方式 | 禁用复杂规则，回到单前台规则；保留已生成快照和日志 |
-| 本阶段不做 | 云厂商、USB、任意表达式脚本、未经需求确认的竞品模板全集 |
+| 本阶段不做 | 云厂商、LAN、厂商内置 SDK、任意表达式脚本、未经需求确认的竞品模板全集 |
 
 ## 11. 阶段 I：云打印
 
@@ -203,27 +208,27 @@ flowchart LR
 | UI 变更 | merchant-admin 厂商绑定/状态/错误；不在 Web 收银台暴露密钥 |
 | 测试方式 | 厂商 sandbox/测试机、超时、限流、重复提交、状态查询、credential轮换、费用与配额 |
 | 验收标准 | 同一 PrintJob 经云 adapter 可追踪；厂商响应映射 Attempt；密钥不泄漏；超时不盲目重复 |
-| 回滚方式 | 禁用单一 cloud adapter/Printer；任务停止新领取；不影响 LAN 通道 |
-| 本阶段不做 | 同时接入所有厂商、把 SDK/密钥放入网页或 Android、修改本地 LAN 状态语义 |
+| 回滚方式 | 禁用单一 cloud adapter/Printer；任务停止新领取；不影响已验证的 USB 通道 |
+| 本阶段不做 | 同时接入所有厂商、把 SDK/密钥放入网页或 Android、修改本地 USB 状态语义 |
 
-## 12. 阶段 J：USB 与厂商内置打印机
+## 12. 阶段 J：LAN 与厂商内置打印机
 
 ### 开发范围
 
-- 在已有 adapter 接口上按真实设备优先级实现 `LOCAL_USB_ESCPOS`、`BUILTIN_SUNMI`、`BUILTIN_IMIN`。
-- USB 使用 Android 官方 USB Host 权限流程；内置打印机使用官方受信 SDK，并隔离为 adapter。
+- 在已有 adapter 接口上按真实设备优先级实现 `LOCAL_LAN_ESCPOS`、`BUILTIN_SUNMI`、`BUILTIN_IMIN`。
+- LAN 只允许 Android 本地连接器访问受控私网 endpoint，服务器和网页均不得直连；内置打印机使用官方受信 SDK，并隔离为 adapter。
 - 能力探测、纸宽、状态回执和 renderer profile 均以具体机型实测为准。
 
 | 项目 | 内容 |
 |---|---|
-| 前置条件 | 阶段 I 已验收；拥有真实设备、官方 SDK/协议和许可证；安全评审通过 |
+| 前置条件 | 阶段 I 已验收；拥有真实 LAN/内置打印设备、官方 SDK/协议和许可证；现场网络与安全评审通过 |
 | 数据库变更 | 通常只增加 capability/config schema version；确需强类型字段再 migration |
 | API 变更 | 统一 Job/Attempt 不变；增加受控 channel config 和 error mapping |
-| UI 变更 | Android USB授权/内置设备诊断；merchant-admin 通道配置 |
-| 测试方式 | 每个厂商/机型真机、USB插拔和权限、SDK异常、进程重启、兼容性回归 |
+| UI 变更 | Android LAN/内置设备诊断；merchant-admin 通道配置 |
+| 测试方式 | 每个通道/机型真机；LAN 断网、地址变化和超时；内置 SDK 异常、进程重启及兼容性回归 |
 | 验收标准 | 新 adapter 不改变统一任务语义；权限最小；断连和回报丢失按相同可靠性规则处理 |
-| 回滚方式 | 按 channel/adapter 功能开关禁用；保留 LAN/云通道 |
-| 本阶段不做 | 来源不明驱动、静默授权、任意 USB 设备访问、让厂商 SDK 侵入订单业务 |
+| 回滚方式 | 按 channel/adapter 功能开关禁用；保留 USB/云通道 |
+| 本阶段不做 | 服务器直连商家 LAN、任意地址/端口访问、来源不明 SDK、让厂商 SDK 侵入订单业务 |
 
 ## 13. Git 分支拆分建议
 
@@ -234,13 +239,13 @@ flowchart LR
 | A | `design/printing-architecture-v1` |
 | B | `feature/merchant-pos-web-shell`、`feature/merchant-pos-orders`、`feature/merchant-pos-tables`、`feature/merchant-pos-terminal-ui` |
 | C | `feature/printing-schema-v1`、`feature/printing-job-core`、`feature/printing-terminal-auth`、`feature/printing-merchant-api`、`feature/printing-admin-ui` |
-| D | 仓库外验证目录；如只提交报告，使用 `docs/printing-hardware-validation` |
-| E | `feature/android-terminal-enrollment`、`feature/android-lan-print-adapter`、`feature/android-print-diagnostics` |
+| D | `apps/merchant-terminal-android` 内的隔离 USB 诊断/合成 smoke 能力与测试 APK；硬件证据单独保存为脱敏报告 |
+| E | `feature/android-terminal-enrollment`、`feature/android-usb-escpos`、`feature/android-print-diagnostics` |
 | F | `feature/manual-order-printing` |
 | G | `feature/automatic-print-trigger`、`feature/android-print-recovery`、`feature/printing-alerts` |
 | H | `feature/printing-routing-rules`、`feature/kitchen-ticketing` |
 | I | 每厂商独立，例如 `feature/cloud-print-feie` |
-| J | 每通道/厂商独立，例如 `feature/android-usb-escpos`、`feature/sunmi-print-adapter` |
+| J | 每通道/厂商独立，例如 `feature/android-lan-print-adapter`、`feature/sunmi-print-adapter` |
 
 分支约束：
 
@@ -257,9 +262,9 @@ flowchart LR
 | A | B | 架构/术语/待决策清楚，用户批准 Web 收银台范围 |
 | B | C | 独立收银台核心订单与桌台流程可用，不依赖打印完成 |
 | C | D | 任务模型/API可测试，生产自动规则保持关闭，硬件验证计划获批准 |
-| D | E | D10 和 ZY305UL 的 LAN、端口、ESC/POS/render profile 有真实证据 |
+| D | E | 目标 Android 终端与目标 USB 打印机的 Host、授权、接口/端点、ESC/POS/render profile 有真实证据 |
 | E | F | 测试 Job 真机成功，终端认证/租约/回报可验证 |
 | F | G | 人工真实订单打印稳定，内容和未知结果处理获确认 |
 | G | H | 自动打印经断网/重启/重复事件 soak test |
 | H | I | 统一规则和日志能承载新通道，选定真实云厂商 |
-| I | J | adapter 边界稳定，持有真实 USB/内置打印设备和官方资料 |
+| I | J | adapter 边界稳定，持有真实 LAN/内置打印设备、现场网络和官方资料 |

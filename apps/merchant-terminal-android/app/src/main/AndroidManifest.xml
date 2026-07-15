@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -22,6 +26,16 @@
             android:name=".diagnostics.DiagnosticsActivity"
             android:exported="false"
             android:screenOrientation="landscape"
+            android:theme="@style/Theme.YunQiaoMerchantTerminal.Diagnostics"
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="DiscouragedApi" />
+
+        <activity
+            android:name=".diagnostics.UsbPrinterDiagnosticsActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.YunQiaoMerchantTerminal.Diagnostics"
             android:windowSoftInputMode="adjustResize"
             tools:ignore="DiscouragedApi" />
 

@@ -6,19 +6,21 @@ import java.net.IDN
 import java.util.Locale
 
 /**
- * Separates the privileged merchant-admin page origin from its resource/API allowlist.
+ * Separates the privileged Web cashier page origin from its resource/API allowlist.
  *
- * Only the exact origin in [BuildConfig.MERCHANT_ADMIN_URL] may navigate inside the WebView or
- * request privileged browser UI. [BuildConfig.TRUSTED_RESOURCE_HOSTS] only grants HTTPS resource
- * access and never grants page-origin privileges. Wildcards are deliberately unsupported.
+ * Only [BuildConfig.TRUSTED_PAGE_ORIGIN] may navigate inside the WebView or request privileged
+ * browser UI. [BuildConfig.TRUSTED_RESOURCE_HOSTS] only grants HTTPS resource access and never
+ * grants page-origin privileges. Wildcards are deliberately unsupported.
  */
 class OriginPolicy(
-    startUrl: String = BuildConfig.MERCHANT_ADMIN_URL,
+    startUrl: String = BuildConfig.CASHIER_WEB_URL,
+    trustedPageOrigin: String = BuildConfig.TRUSTED_PAGE_ORIGIN,
     trustedResourceHosts: String = BuildConfig.TRUSTED_RESOURCE_HOSTS,
 ) {
     private val parsedStartUri = parseHttpsUri(startUrl)
-    private val startHost = parsedStartUri?.host?.toAsciiHost()
-    private val startPort = parsedStartUri?.effectiveHttpsPort()
+    private val parsedTrustedOrigin = parseHttpsOrigin(trustedPageOrigin)
+    private val trustedHost = parsedTrustedOrigin?.host?.toAsciiHost()
+    private val trustedPort = parsedTrustedOrigin?.effectiveHttpsPort()
     private val allowedResourceHosts: Set<String> = buildSet {
         trustedResourceHosts
             .split(',')
@@ -36,7 +38,11 @@ class OriginPolicy(
         get() = parsedStartUri?.toString().orEmpty()
 
     val isConfigured: Boolean
-        get() = parsedStartUri != null && startHost != null && !startHost.endsWith(".invalid")
+        get() = parsedStartUri != null &&
+            parsedTrustedOrigin != null &&
+            trustedHost != null &&
+            !trustedHost.endsWith(".invalid") &&
+            hasSameOrigin(parsedStartUri, parsedTrustedOrigin)
 
     fun isTrustedPage(url: String?): Boolean =
         url?.let { runCatching { Uri.parse(it) }.getOrNull() }?.let(::isTrustedPage) == true
@@ -47,7 +53,7 @@ class OriginPolicy(
 
         val host = uri.host?.toAsciiHost() ?: return false
         val port = uri.effectiveHttpsPort() ?: return false
-        return host == startHost && port == startPort
+        return host == trustedHost && port == trustedPort
     }
 
     fun isSafeExternalHttps(uri: Uri): Boolean =
@@ -71,7 +77,9 @@ class OriginPolicy(
 
     fun sanitizedForDiagnostics(url: String?): String {
         if (url.isNullOrBlank()) return ""
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return "invalid-url"
+        // Reuse the strict parser so userinfo, non-HTTPS schemes and malformed authorities can
+        // never be copied into a support report even if a build variable was misconfigured.
+        val uri = parseHttpsUri(url) ?: return "invalid-url"
         return uri.buildUpon().clearQuery().fragment(null).build().toString().take(MAX_DIAGNOSTIC_URL_LENGTH)
     }
 
@@ -82,6 +90,22 @@ class OriginPolicy(
         if (uri.encodedAuthority?.contains('@') == true || uri.effectiveHttpsPort() == null) return null
         return uri.normalizeScheme()
     }
+
+    private fun parseHttpsOrigin(value: String): Uri? {
+        val uri = parseHttpsUri(value) ?: return null
+        if (
+            uri.encodedPath?.takeIf { it.isNotEmpty() && it != "/" } != null ||
+            uri.encodedQuery != null ||
+            uri.encodedFragment != null
+        ) {
+            return null
+        }
+        return uri
+    }
+
+    private fun hasSameOrigin(left: Uri, right: Uri): Boolean =
+        left.host?.toAsciiHost() == right.host?.toAsciiHost() &&
+            left.effectiveHttpsPort() == right.effectiveHttpsPort()
 
     private fun isAllowedResourceHost(uri: Uri): Boolean {
         if (!uri.scheme.equals(HTTPS_SCHEME, ignoreCase = true)) return false

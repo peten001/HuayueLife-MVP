@@ -16,7 +16,7 @@ fun configValue(
 val terminalVersionCode = configValue(
     propertyName = "terminalVersionCode",
     environmentName = "TERMINAL_VERSION_CODE",
-    fallback = "1",
+    fallback = "3",
 ).map { value ->
     value.toIntOrNull()
         ?.takeIf { it in 1..2_100_000_000 }
@@ -25,7 +25,7 @@ val terminalVersionCode = configValue(
 val terminalVersionName = configValue(
     propertyName = "terminalVersionName",
     environmentName = "TERMINAL_VERSION_NAME",
-    fallback = "0.1.0",
+    fallback = "0.2.0-usb-smoke",
 ).map { value ->
     value.takeIf { it.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")) }
         ?: error("terminalVersionName must contain only letters, digits, dots, underscores, or hyphens.")
@@ -34,25 +34,35 @@ val terminalVersionName = configValue(
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val debugAdminUrl = configValue(
-    propertyName = "merchantAdminUrlDebug",
-    environmentName = "MERCHANT_ADMIN_URL_DEBUG",
-    fallback = "https://merchant-admin.invalid/",
+val debugCashierWebUrl = configValue(
+    propertyName = "cashierWebUrlDebug",
+    environmentName = "CASHIER_WEB_URL_DEBUG",
+    fallback = "https://cashier.invalid/",
 )
-val releaseAdminUrl = configValue(
-    propertyName = "merchantAdminUrlRelease",
-    environmentName = "MERCHANT_ADMIN_URL_RELEASE",
-    fallback = "https://admin.huayueyouxuan.com/",
+val releaseCashierWebUrl = configValue(
+    propertyName = "cashierWebUrlRelease",
+    environmentName = "CASHIER_WEB_URL_RELEASE",
+    fallback = "https://cashier.invalid/",
+)
+val debugTrustedPageOrigin = configValue(
+    propertyName = "trustedPageOriginDebug",
+    environmentName = "TRUSTED_PAGE_ORIGIN_DEBUG",
+    fallback = "https://cashier.invalid",
+)
+val releaseTrustedPageOrigin = configValue(
+    propertyName = "trustedPageOriginRelease",
+    environmentName = "TRUSTED_PAGE_ORIGIN_RELEASE",
+    fallback = "https://cashier.invalid",
 )
 val debugTrustedResourceHosts = configValue(
-    propertyName = "merchantTrustedHostsDebug",
-    environmentName = "MERCHANT_TRUSTED_HOSTS_DEBUG",
-    fallback = "api.huayueyouxuan.com",
+    propertyName = "trustedResourceHostsDebug",
+    environmentName = "TRUSTED_RESOURCE_HOSTS_DEBUG",
+    fallback = "",
 )
 val releaseTrustedResourceHosts = configValue(
-    propertyName = "merchantTrustedHostsRelease",
-    environmentName = "MERCHANT_TRUSTED_HOSTS_RELEASE",
-    fallback = "api.huayueyouxuan.com",
+    propertyName = "trustedResourceHostsRelease",
+    environmentName = "TRUSTED_RESOURCE_HOSTS_RELEASE",
+    fallback = "",
 )
 val buildRevision = configValue(
     propertyName = "buildRevision",
@@ -126,7 +136,12 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "MERCHANT_ADMIN_URL", debugAdminUrl.get().asBuildConfigString())
+            buildConfigField("String", "CASHIER_WEB_URL", debugCashierWebUrl.get().asBuildConfigString())
+            buildConfigField(
+                "String",
+                "TRUSTED_PAGE_ORIGIN",
+                debugTrustedPageOrigin.get().asBuildConfigString(),
+            )
             buildConfigField(
                 "String",
                 "TRUSTED_RESOURCE_HOSTS",
@@ -144,7 +159,12 @@ android {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
-            buildConfigField("String", "MERCHANT_ADMIN_URL", releaseAdminUrl.get().asBuildConfigString())
+            buildConfigField("String", "CASHIER_WEB_URL", releaseCashierWebUrl.get().asBuildConfigString())
+            buildConfigField(
+                "String",
+                "TRUSTED_PAGE_ORIGIN",
+                releaseTrustedPageOrigin.get().asBuildConfigString(),
+            )
             buildConfigField(
                 "String",
                 "TRUSTED_RESOURCE_HOSTS",
@@ -176,6 +196,10 @@ android {
         checkReleaseBuilds = true
         warningsAsErrors = false
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 base {
@@ -192,9 +216,11 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }
