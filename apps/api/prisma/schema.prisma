@@ -167,6 +167,94 @@ enum PrintLogOperator {
   MERCHANT
 }
 
+enum PrinterChannelType {
+  LOCAL_LAN_ESCPOS
+  LOCAL_USB_ESCPOS
+  CLOUD_FEIE
+  CLOUD_XINYE
+  CLOUD_GPRINTER
+  BUILTIN_SUNMI
+  BUILTIN_IMIN
+}
+
+enum PrintingPaperWidth {
+  MM58
+  MM80
+}
+
+enum PrinterPurpose {
+  FRONT_DESK
+  KITCHEN
+  BAR
+  LABEL
+}
+
+enum PrintingPrinterStatus {
+  UNVERIFIED
+  UNKNOWN
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+enum ReceiptType {
+  ORDER_CUSTOMER
+  TABLE_BILL
+}
+
+enum ReceiptLanguageMode {
+  MERCHANT_DEFAULT
+  ZH
+  VI
+  EN
+}
+
+enum PrintTriggerEvent {
+  ORDER_ACCEPTED
+  ORDER_COMPLETED
+  MANUAL
+}
+
+enum PrintJobSource {
+  AUTOMATIC
+  MANUAL_REPRINT
+  TEST
+}
+
+enum PrintJobStatus {
+  PENDING
+  CLAIMED
+  PRINTING
+  SUCCEEDED
+  RETRY_WAIT
+  FAILED
+  CANCELLED
+}
+
+enum PrintAttemptExecutorType {
+  TERMINAL
+  SERVER_ADAPTER
+}
+
+enum PrintAttemptResult {
+  SUCCEEDED
+  FAILED
+  OUTCOME_UNKNOWN
+}
+
+enum MerchantTerminalPlatform {
+  ANDROID
+  WEB
+  SERVER
+}
+
+enum MerchantTerminalStatus {
+  UNPAIRED
+  ACTIVE
+  DISABLED
+  REVOKED
+}
+
 model User {
   id          BigInt     @id @default(autoincrement())
   openid      String     @unique @db.VarChar(64)
@@ -246,6 +334,12 @@ model Merchant {
   orderChatConversations OrderChatConversation[]
   printerSettings        PrinterSetting[]
   printLogs              PrintLog[]
+  printers               Printer[]
+  receiptTemplates       ReceiptTemplate[]
+  printRules             PrintRule[]
+  printJobs              PrintJob[]
+  merchantTerminals      MerchantTerminal[]
+  printingAuditLogs      PrintingAuditLog[]
   merchantReportSetting  MerchantReportSetting?
   dailyReportLogs        DailyReportLog[]
   promotionTags          MerchantPromotionTag[]
@@ -417,8 +511,10 @@ model MerchantStaff {
   createdAt          DateTime    @default(now()) @map("created_at")
   updatedAt          DateTime    @updatedAt @map("updated_at")
 
-  merchant           Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  operatedStatusLogs OrderStatusLog[] @relation("StaffStatusLogOperator")
+  merchant           Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  operatedStatusLogs OrderStatusLog[]   @relation("StaffStatusLogOperator")
+  createdPrintJobs   PrintJob[]         @relation("PrintJobCreatedBy")
+  printingAuditLogs  PrintingAuditLog[] @relation("PrintingAuditActor")
 
   @@unique([merchantId, username])
   @@index([merchantId, status])
@@ -488,20 +584,21 @@ model DiningTable {
 }
 
 model TableSession {
-  id         BigInt             @id @default(autoincrement())
-  merchantId BigInt             @map("merchant_id")
-  tableId    BigInt             @map("table_id")
-  openTableId BigInt?           @unique @map("open_table_id")
-  sessionNo  String             @unique @map("session_no") @db.VarChar(32)
-  status     TableSessionStatus @default(OPEN)
-  openedAt   DateTime           @default(now()) @map("opened_at")
-  closedAt   DateTime?          @map("closed_at")
-  createdAt  DateTime           @default(now()) @map("created_at")
-  updatedAt  DateTime           @updatedAt @map("updated_at")
+  id          BigInt             @id @default(autoincrement())
+  merchantId  BigInt             @map("merchant_id")
+  tableId     BigInt             @map("table_id")
+  openTableId BigInt?            @unique @map("open_table_id")
+  sessionNo   String             @unique @map("session_no") @db.VarChar(32)
+  status      TableSessionStatus @default(OPEN)
+  openedAt    DateTime           @default(now()) @map("opened_at")
+  closedAt    DateTime?          @map("closed_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
 
-  merchant Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  table    DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  orders   Order[]
+  merchant  Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  table     DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  orders    Order[]
+  printJobs PrintJob[]
 
   @@index([merchantId, status])
   @@index([tableId, openedAt])
@@ -584,6 +681,7 @@ model Order {
   chatConversation OrderChatConversation?
   chatMessages     OrderChatMessage[]
   printLogs        PrintLog[]
+  printJobs        PrintJob[]
 
   @@unique([userId, idempotencyKey])
   @@index([merchantId, status, createdAt])
@@ -748,4 +846,205 @@ model PrintLog {
   @@index([orderId, createdAt])
   @@index([printerId, createdAt])
   @@map("print_logs")
+}
+
+model Printer {
+  id               BigInt                @id @default(autoincrement())
+  merchantId       BigInt                @map("merchant_id")
+  name             String                @db.VarChar(80)
+  channelType      PrinterChannelType    @map("channel_type")
+  paperWidth       PrintingPaperWidth    @default(MM80) @map("paper_width")
+  purpose          PrinterPurpose        @default(FRONT_DESK)
+  enabled          Boolean               @default(false)
+  status           PrintingPrinterStatus @default(UNVERIFIED)
+  connectionConfig Json                  @map("connection_config")
+  capabilities     Json?
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  deletedAt        DateTime?             @map("deleted_at")
+
+  merchant Merchant    @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  rules    PrintRule[]
+  jobs     PrintJob[]
+
+  @@index([merchantId, enabled], map: "ix_printer_merchant_enabled")
+  @@index([merchantId, channelType], map: "ix_printer_merchant_channel")
+  @@index([merchantId, deletedAt], map: "ix_printer_merchant_deleted")
+  @@map("printers")
+}
+
+model ReceiptTemplate {
+  id           BigInt              @id @default(autoincrement())
+  merchantId   BigInt?             @map("merchant_id")
+  name         String              @db.VarChar(80)
+  receiptType  ReceiptType         @map("receipt_type")
+  paperWidth   PrintingPaperWidth  @map("paper_width")
+  languageMode ReceiptLanguageMode @default(MERCHANT_DEFAULT) @map("language_mode")
+  version      Int                 @default(1)
+  definition   Json
+  enabled      Boolean             @default(true)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  merchant Merchant?   @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  rules    PrintRule[]
+  jobs     PrintJob[]
+
+  @@unique([merchantId, name, version], map: "uq_receipt_template_version")
+  @@index([merchantId, receiptType, enabled], map: "ix_rt_merchant_type_enabled")
+  @@map("receipt_templates")
+}
+
+model PrintRule {
+  id                BigInt            @id @default(autoincrement())
+  merchantId        BigInt            @map("merchant_id")
+  name              String            @db.VarChar(80)
+  orderType         OrderType?        @map("order_type")
+  triggerEvent      PrintTriggerEvent @map("trigger_event")
+  receiptType       ReceiptType       @map("receipt_type")
+  printerId         BigInt            @map("printer_id")
+  receiptTemplateId BigInt?           @map("receipt_template_id")
+  copies            Int               @default(1)
+  autoPrint         Boolean           @default(false) @map("auto_print")
+  enabled           Boolean           @default(false)
+  priority          Int               @default(100)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  merchant        Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  printer         Printer          @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  receiptTemplate ReceiptTemplate? @relation(fields: [receiptTemplateId], references: [id], onDelete: Restrict)
+  jobs            PrintJob[]
+
+  @@index([merchantId, enabled, triggerEvent], map: "ix_pr_merchant_enabled_event")
+  @@index([printerId, enabled], map: "ix_pr_printer_enabled")
+  @@index([receiptTemplateId], map: "ix_pr_template")
+  @@map("print_rules")
+}
+
+model PrintJob {
+  id                     BigInt            @id @default(autoincrement())
+  merchantId             BigInt            @map("merchant_id")
+  orderId                BigInt?           @map("order_id")
+  tableSessionId         BigInt?           @map("table_session_id")
+  printerId              BigInt            @map("printer_id")
+  printRuleId            BigInt?           @map("print_rule_id")
+  ruleVersion            String?           @map("rule_version") @db.VarChar(64)
+  requestGroupId         String?           @map("request_group_id") @db.VarChar(64)
+  copyIndex              Int               @default(1) @map("copy_index")
+  copyCount              Int               @default(1) @map("copy_count")
+  receiptTemplateId      BigInt?           @map("receipt_template_id")
+  receiptTemplateVersion Int?              @map("receipt_template_version")
+  receiptType            ReceiptType       @map("receipt_type")
+  triggerEvent           PrintTriggerEvent @map("trigger_event")
+  source                 PrintJobSource
+  status                 PrintJobStatus    @default(PENDING)
+  priority               Int               @default(100)
+  dedupeKey              String?           @unique(map: "uq_print_jobs_dedupe") @map("dedupe_key") @db.VarChar(191)
+  receiptSnapshot        Json              @map("receipt_snapshot")
+  availableAt            DateTime          @default(now()) @map("available_at")
+  claimedAt              DateTime?         @map("claimed_at")
+  leaseExpiresAt         DateTime?         @map("lease_expires_at")
+  leaseVersion           Int               @default(0) @map("lease_version")
+  claimedByTerminalId    BigInt?           @map("claimed_by_terminal_id")
+  attemptCount           Int               @default(0) @map("attempt_count")
+  maxAttempts            Int               @default(3) @map("max_attempts")
+  retryBlocked           Boolean           @default(false) @map("retry_blocked")
+  completedAt            DateTime?         @map("completed_at")
+  cancelledAt            DateTime?         @map("cancelled_at")
+  createdByStaffId       BigInt?           @map("created_by_staff_id")
+  lastErrorCode          String?           @map("last_error_code") @db.VarChar(64)
+  lastErrorMessage       String?           @map("last_error_message") @db.VarChar(500)
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+
+  merchant        Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  order           Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  tableSession    TableSession?     @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  printer         Printer           @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  printRule       PrintRule?        @relation(fields: [printRuleId], references: [id], onDelete: Restrict)
+  receiptTemplate ReceiptTemplate?  @relation(fields: [receiptTemplateId], references: [id], onDelete: Restrict)
+  claimedBy       MerchantTerminal? @relation("PrintJobClaimedBy", fields: [claimedByTerminalId], references: [id], onDelete: SetNull)
+  createdByStaff  MerchantStaff?    @relation("PrintJobCreatedBy", fields: [createdByStaffId], references: [id], onDelete: SetNull)
+  attempts        PrintAttempt[]
+
+  @@index([merchantId, status, availableAt, priority], map: "ix_pj_claim")
+  @@index([orderId, createdAt], map: "ix_pj_order")
+  @@index([tableSessionId, createdAt], map: "ix_pj_table_session")
+  @@index([printerId, createdAt], map: "ix_pj_printer")
+  @@index([printRuleId, createdAt], map: "ix_pj_rule")
+  @@index([requestGroupId, copyIndex], map: "ix_pj_request_group")
+  @@index([claimedByTerminalId, status], map: "ix_pj_terminal_status")
+  @@index([status, leaseExpiresAt], map: "ix_pj_lease")
+  @@map("print_jobs")
+}
+
+model PrintAttempt {
+  id              BigInt                   @id @default(autoincrement())
+  jobId           BigInt                   @map("job_id")
+  attemptNo       Int                      @map("attempt_no")
+  executorType    PrintAttemptExecutorType @map("executor_type")
+  terminalId      BigInt?                  @map("terminal_id")
+  adapter         String                   @db.VarChar(80)
+  startedAt       DateTime                 @default(now()) @map("started_at")
+  finishedAt      DateTime?                @map("finished_at")
+  result          PrintAttemptResult?
+  errorCode       String?                  @map("error_code") @db.VarChar(64)
+  errorMessage    String?                  @map("error_message") @db.VarChar(500)
+  printerResponse String?                  @map("printer_response") @db.VarChar(500)
+  appVersion      String?                  @map("app_version") @db.VarChar(64)
+  networkInfo     Json?                    @map("network_info")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+
+  job      PrintJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  terminal MerchantTerminal? @relation(fields: [terminalId], references: [id], onDelete: SetNull)
+
+  @@unique([jobId, attemptNo], map: "uq_pa_job_attempt")
+  @@index([terminalId, startedAt], map: "ix_pa_terminal_started")
+  @@index([result, startedAt], map: "ix_pa_result_started")
+  @@map("print_attempts")
+}
+
+model MerchantTerminal {
+  id           BigInt                   @id @default(autoincrement())
+  merchantId   BigInt                   @map("merchant_id")
+  name         String                   @db.VarChar(80)
+  platform     MerchantTerminalPlatform @default(ANDROID)
+  status       MerchantTerminalStatus   @default(UNPAIRED)
+  capabilities Json
+  appVersion   String?                  @map("app_version") @db.VarChar(64)
+  lastSeenAt   DateTime?                @map("last_seen_at")
+  revokedAt    DateTime?                @map("revoked_at")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  updatedAt    DateTime                 @updatedAt @map("updated_at")
+
+  merchant    Merchant       @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  claimedJobs PrintJob[]     @relation("PrintJobClaimedBy")
+  attempts    PrintAttempt[]
+
+  @@index([merchantId, status], map: "ix_mt_merchant_status")
+  @@index([merchantId, lastSeenAt], map: "ix_mt_merchant_seen")
+  @@map("merchant_terminals")
+}
+
+model PrintingAuditLog {
+  id           BigInt   @id @default(autoincrement())
+  merchantId   BigInt   @map("merchant_id")
+  actorStaffId BigInt?  @map("actor_staff_id")
+  action       String   @db.VarChar(64)
+  resourceType String   @map("resource_type") @db.VarChar(64)
+  resourceId   BigInt?  @map("resource_id")
+  beforeData   Json?    @map("before_data")
+  afterData    Json?    @map("after_data")
+  reason       String?  @db.VarChar(255)
+  requestId    String?  @map("request_id") @db.VarChar(64)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  merchant   Merchant       @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  actorStaff MerchantStaff? @relation("PrintingAuditActor", fields: [actorStaffId], references: [id], onDelete: SetNull)
+
+  @@index([merchantId, createdAt], map: "ix_pal_merchant_created")
+  @@index([resourceType, resourceId, createdAt], map: "ix_pal_resource_created")
+  @@index([merchantId, requestId], map: "ix_pal_merchant_request")
+  @@map("printing_audit_logs")
 }

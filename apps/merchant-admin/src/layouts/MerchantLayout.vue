@@ -20,7 +20,7 @@ const route = useRoute();
 const { locale, t } = useI18n();
 const staff = ref(getMerchantStaff());
 const mobileMenuOpen = ref(false);
-type DesktopNavIcon = 'dashboard' | 'orders' | 'store' | 'categories' | 'products' | 'tables' | 'staff' | 'logout';
+type DesktopNavIcon = 'dashboard' | 'orders' | 'store' | 'categories' | 'products' | 'tables' | 'printing' | 'staff' | 'logout';
 
 const navByRole: Record<
   'OWNER' | 'MANAGER' | 'STAFF',
@@ -30,6 +30,7 @@ const navByRole: Record<
     ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
+    ['/printing-center', 'printingCenterBeta'],
     ['/menu/products', 'products', 'products'],
     ['/tables', 'tables', 'tables'],
     ['/staff', 'staffManagement'],
@@ -38,6 +39,7 @@ const navByRole: Record<
     ['/dashboard', 'dashboard'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
+    ['/printing-center', 'printingCenterBeta'],
     ['/menu/products', 'products', 'products'],
     ['/tables', 'tables', 'tables'],
   ],
@@ -183,6 +185,7 @@ function navIconForPath(path: string): DesktopNavIcon {
   if (path === '/menu/categories') return 'categories';
   if (path === '/menu/products') return 'products';
   if (path === '/tables') return 'tables';
+  if (path === '/printing-center') return 'printing';
   if (path === '/staff') return 'staff';
   return 'dashboard';
 }
@@ -195,6 +198,7 @@ function iconPaths(icon: DesktopNavIcon) {
     categories: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
     products: ['M6 6h12l1 4H5l1-4Z', 'M7 10h10l-1 8H8l-1-8Z', 'M9 6V4a3 3 0 0 1 6 0v2'],
     tables: ['M4 8h16', 'M7 8v10', 'M17 8v10', 'M9 12h6', 'M6 4h12v4H6z'],
+    printing: ['M7 8V4h10v4', 'M6 18H4a2 2 0 0 1-2-2v-5a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v5a2 2 0 0 1-2 2h-2', 'M7 14h10v7H7z', 'M18 11h.01'],
     staff: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M5 20a7 7 0 0 1 14 0', 'M18.5 9.5a2.5 2.5 0 1 0 0-5', 'M19 20a5 5 0 0 0-2.3-4.2'],
     logout: ['M10 17 15 12 10 7', 'M15 12H7', 'M12 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6'],
   };

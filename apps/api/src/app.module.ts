@@ -23,6 +23,7 @@ import { PublicMerchantsModule } from './modules/public-merchants/public-merchan
 import { MerchantReportsModule } from './modules/merchant-reports/merchant-reports.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { PrintersModule } from './modules/printers/printers.module';
+import { PrintingModule } from './modules/printing/printing.module';
 import { QrModule } from './modules/qr/qr.module';
 import { TableSessionsModule } from './modules/table-sessions/table-sessions.module';
 import { TablesModule } from './modules/tables/tables.module';
@@ -65,6 +66,7 @@ import { AppConfigModule } from './modules/app-config/app-config.module';
     MerchantReportsModule,
     PlatformModule,
     PrintersModule,
+    PrintingModule,
     QrModule,
   ],
   providers: [

@@ -21,6 +21,12 @@ import PlatformRecommendationsPage from '@/pages/PlatformRecommendationsPage.vue
 import PlatformUsersPage from '@/pages/PlatformUsersPage.vue';
 import PlatformSettingsPage from '@/pages/PlatformSettingsPage.vue';
 import ForbiddenPage from '@/pages/ForbiddenPage.vue';
+import PrintingCenterShell from '@/components/printing/PrintingCenterShell.vue';
+import PrintingPrintersPage from '@/pages/printing/PrintingPrintersPage.vue';
+import PrintingRulesPage from '@/pages/printing/PrintingRulesPage.vue';
+import PrintingTemplatesPage from '@/pages/printing/PrintingTemplatesPage.vue';
+import PrintingJobsPage from '@/pages/printing/PrintingJobsPage.vue';
+import PrintingTerminalsPage from '@/pages/printing/PrintingTerminalsPage.vue';
 import { getMerchantMe } from '@/api/merchant';
 import {
   getMerchantStaff,
@@ -140,6 +146,19 @@ const router = createRouter({
         {
           path: 'merchant/printers',
           redirect: '/merchant/profile',
+        },
+        {
+          path: 'printing-center',
+          component: PrintingCenterShell,
+          meta: { roles: ['OWNER', 'MANAGER'] },
+          children: [
+            { path: '', redirect: '/printing-center/printers' },
+            { path: 'printers', component: PrintingPrintersPage },
+            { path: 'rules', component: PrintingRulesPage },
+            { path: 'templates', component: PrintingTemplatesPage },
+            { path: 'jobs', component: PrintingJobsPage },
+            { path: 'terminals', component: PrintingTerminalsPage },
+          ],
         },
         {
           path: 'menu/categories',
