@@ -87,9 +87,8 @@ class UsbPrintJobExecutor(
                 false
             } else {
                 if (
-                    error.invalidTerminalCredential ||
+                    error.invalidMerchantSession ||
                     error.errorCode in setOf(
-                        "TERMINAL_DISABLED",
                         "PRINTING_TASK_CENTER_DISABLED",
                         "PRINTING_EXECUTION_DISABLED",
                     )

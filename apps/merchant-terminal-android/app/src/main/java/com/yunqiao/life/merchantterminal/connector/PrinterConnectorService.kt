@@ -18,18 +18,16 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import com.yunqiao.life.merchantterminal.BuildConfig
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintLedger
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintingDatabase
 import com.yunqiao.life.merchantterminal.data.local.LocalJobStatus
-import com.yunqiao.life.merchantterminal.data.local.TerminalStateEntity
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolution
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolver
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.ProcessUsbIoOwnership
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,12 +38,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 class PrinterConnectorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var settingsStore: ConnectorSettings
-    private lateinit var credentialStore: TerminalCredentialStore
+    private lateinit var credentialStore: MerchantSessionTokenStore
     private lateinit var api: ConnectorApiClient
     private lateinit var executor: UsbPrintJobExecutor
     private lateinit var printingDao: com.yunqiao.life.merchantterminal.data.local.LocalPrintingDao
@@ -66,7 +63,7 @@ class PrinterConnectorService : Service() {
         super.onCreate()
         ConnectorRuntimeState.serviceStarted()
         settingsStore = ConnectorSettings(applicationContext)
-        credentialStore = TerminalCredentialStore(applicationContext)
+        credentialStore = MerchantSessionTokenStore(applicationContext)
         api = ConnectorApiClient(credentialStore::read)
         printingDao = LocalPrintingDatabase.get(applicationContext).printingDao()
         val ledger = LocalPrintLedger(printingDao)
@@ -74,7 +71,7 @@ class PrinterConnectorService : Service() {
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         ConnectorAttentionNotifier.clear(applicationContext)
         createNotificationChannel()
-        startAsForeground("正在检查终端绑定与 USB 配置")
+        startAsForeground("正在检查商家登录与 USB 配置")
         registerUsbReceiver()
     }
 
@@ -99,7 +96,6 @@ class PrinterConnectorService : Service() {
 
     private suspend fun connectorLoop() {
         var localRecoveryComplete = false
-        var lastHeartbeatAt = 0L
         var lastConfigAt = 0L
         while (scope.isActive) {
             if (!localRecoveryComplete) {
@@ -116,7 +112,7 @@ class PrinterConnectorService : Service() {
             }
             val settings = settingsStore.snapshot()
             ConnectorStartGate.update(applicationContext, settings, credentialStore.hasCredential())
-            if (!settings.connectorEnabled || settings.terminalId == null || !credentialStore.hasCredential()) {
+            if (!settings.connectorEnabled || !credentialStore.hasCredential()) {
                 stopSelf()
                 return
             }
@@ -132,7 +128,7 @@ class PrinterConnectorService : Service() {
                     settingsStore.applyRemoteConfig(
                         executionEnabled = remote.executionEnabled &&
                             remote.taskCenterEnabled && remote.merchantPrintingEnabled,
-                        terminalEnabled = remote.terminalEnabled,
+                        terminalEnabled = true,
                         printerEnabled = remote.boundPrinterEnabled,
                         automaticPrintingEnabled = remote.automaticPrintingEnabled,
                         pollIntervalMs = remote.pollIntervalMs,
@@ -154,36 +150,12 @@ class PrinterConnectorService : Service() {
                             settingsStore.markConfigApplied(resetVersion)
                         }
                     }
-                    saveTerminalState(settings.terminalId, configAt = now)
+                    reportUsbConnectionState(settingsStore.snapshot())
                     lastConfigAt = now
-                }
-                if (now - lastHeartbeatAt >= settings.heartbeatIntervalMs) {
-                    val sequence = settingsStore.nextHeartbeatSequence()
-                    withContext(Dispatchers.IO) {
-                        val heartbeatSettings = settingsStore.snapshot()
-                        api.heartbeat(
-                            diagnostics = safeDiagnostics(heartbeatSettings),
-                            heartbeatSequence = sequence,
-                            activeJobIds = printingDao.activeJobIds(
-                                statuses = ACTIVE_JOB_STATUSES,
-                                limit = MAX_ACTIVE_JOB_IDS,
-                            ),
-                            appliedConfigVersion = heartbeatSettings.appliedConfigVersion,
-                            lastErrorCode = heartbeatSettings.lastErrorCode,
-                        )
-                        if (
-                            heartbeatSettings.remoteTerminalEnabled &&
-                            heartbeatSettings.remoteExecutionEnabled
-                        ) {
-                            reportUsbConnectionState(heartbeatSettings)
-                        }
-                    }
-                    saveTerminalState(settings.terminalId, heartbeatAt = now)
-                    lastHeartbeatAt = now
                 }
                 val refreshed = settingsStore.snapshot()
                 if (!refreshed.canExecute) {
-                    updateNotification("终端在线；打印执行开关保持关闭")
+                    updateNotification("打印连接器待启用；执行开关或 USB 配置尚未就绪")
                     delay(refreshed.pollIntervalMs)
                     continue
                 }
@@ -212,9 +184,11 @@ class PrinterConnectorService : Service() {
                     continue
                 }
                 val job = withContext(Dispatchers.IO) {
-                    api.claim(allowAutomatic = refreshed.canClaimAutomatic)
+                    api.claim(
+                        allowAutomatic = refreshed.canClaimAutomatic,
+                        printerId = refreshed.usbBinding?.printerId,
+                    )
                 }
-                saveTerminalState(settings.terminalId, claimAt = now)
                 if (job == null) {
                     updateNotification("云桥打印服务正在运行")
                 } else {
@@ -237,30 +211,27 @@ class PrinterConnectorService : Service() {
                 throw cancelled
             } catch (error: ConnectorApiException) {
                 settingsStore.recordError(error.errorCode)
-                saveTerminalState(settings.terminalId, errorCode = error.errorCode)
                 updateNotification("连接器 API 暂不可用：${error.errorCode.take(50)}")
-                if (error.invalidTerminalCredential) {
+                if (error.invalidMerchantSession) {
                     TerminalIdentityReset.clear(applicationContext)
                     stopSelf()
                     return
                 }
                 if (
                     error.errorCode in setOf(
-                        "TERMINAL_DISABLED",
                         "PRINTING_TASK_CENTER_DISABLED",
                         "PRINTING_EXECUTION_DISABLED",
                     )
                 ) {
-                    val disabledTerminal = error.errorCode == "TERMINAL_DISABLED"
                     settingsStore.applyRemoteConfig(
                         executionEnabled = false,
-                        terminalEnabled = !disabledTerminal && settings.remoteTerminalEnabled,
+                        terminalEnabled = true,
                         printerEnabled = settings.remotePrinterEnabled,
                         automaticPrintingEnabled = false,
                         pollIntervalMs = settings.pollIntervalMs,
                         heartbeatIntervalMs = settings.heartbeatIntervalMs,
                     )
-                    updateNotification("远程打印已停用；终端保持在线等待重新启用")
+                    updateNotification("远程打印已停用；等待重新启用")
                     delay(settings.heartbeatIntervalMs)
                     continue
                 }
@@ -271,64 +242,6 @@ class PrinterConnectorService : Service() {
                 delay(API_ERROR_RETRY_MS)
             }
         }
-    }
-
-    private suspend fun safeDiagnostics(
-        settings: com.yunqiao.life.merchantterminal.data.ConnectorSettingsSnapshot,
-    ): JSONObject {
-        val binding = settings.usbBinding
-        val usbPermission = binding?.let {
-            UsbBindingResolver.resolve(it, UsbDeviceInspector(applicationContext).scan()) is
-                UsbBindingResolution.Ready
-        } ?: false
-        val queueStatuses = listOf(
-            LocalJobStatus.CLAIMED,
-            LocalJobStatus.PRINTING,
-            LocalJobStatus.PRINTED_PENDING_REPORT,
-            LocalJobStatus.FAILED_PENDING_REPORT,
-            LocalJobStatus.UNCERTAIN_PENDING_REPORT,
-        )
-        val queueDepth = printingDao.jobsWithStatuses(queueStatuses).size
-        val uncertainCount = printingDao.jobsWithStatuses(
-            listOf(LocalJobStatus.UNCERTAIN, LocalJobStatus.UNCERTAIN_PENDING_REPORT),
-        ).size
-        return JSONObject()
-            .put("manufacturer", Build.MANUFACTURER.take(80))
-            .put("model", Build.MODEL.take(80))
-            .put("androidApiLevel", Build.VERSION.SDK_INT)
-            .put("buildRevision", BuildConfig.BUILD_REVISION.take(80))
-            .put("network", if (isNetworkConnected()) "CONNECTED" else "DISCONNECTED")
-            .put("usbConfigured", binding != null)
-            .put("usbPermissionGranted", usbPermission)
-            .put("usbVendorId", binding?.vendorId ?: JSONObject.NULL)
-            .put("usbProductId", binding?.productId ?: JSONObject.NULL)
-            .put("usbInterfaceIndex", binding?.interfaceIndex ?: JSONObject.NULL)
-            .put("usbEndpointAddress", binding?.endpointAddress ?: JSONObject.NULL)
-            .put("paperWidth", binding?.paperWidth?.name ?: JSONObject.NULL)
-            .put("lastErrorCode", settings.lastErrorCode ?: JSONObject.NULL)
-            .put("queueDepth", queueDepth)
-            .put("uncertainJobCount", uncertainCount)
-            .put("lastPrintAt", settings.lastSuccessfulPrintAt ?: JSONObject.NULL)
-    }
-
-    private suspend fun saveTerminalState(
-        terminalId: String,
-        heartbeatAt: Long? = null,
-        configAt: Long? = null,
-        claimAt: Long? = null,
-        errorCode: String? = null,
-    ) {
-        val previous = printingDao.terminalState(terminalId)
-        printingDao.saveTerminalState(
-            TerminalStateEntity(
-                terminalId = terminalId,
-                lastHeartbeatAt = heartbeatAt ?: previous?.lastHeartbeatAt,
-                lastConfigAt = configAt ?: previous?.lastConfigAt,
-                lastClaimAt = claimAt ?: previous?.lastClaimAt,
-                lastErrorCode = errorCode ?: previous?.lastErrorCode,
-                updatedAt = System.currentTimeMillis(),
-            ),
-        )
     }
 
     private fun reportUsbConnectionState(

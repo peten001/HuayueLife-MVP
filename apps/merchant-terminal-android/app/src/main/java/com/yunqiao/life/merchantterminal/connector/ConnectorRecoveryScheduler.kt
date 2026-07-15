@@ -16,7 +16,7 @@ import com.yunqiao.life.merchantterminal.data.local.LocalJobStatus
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintLedger
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintingDatabase
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -65,7 +65,7 @@ class ConnectorRecoveryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
         if (!ConnectorStartGate.mayAttemptStart(applicationContext)) return Result.success()
-        val credentials = TerminalCredentialStore(applicationContext)
+        val credentials = MerchantSessionTokenStore(applicationContext)
         if (!credentials.hasCredential() || !ConnectorApiConfig.isConfigured) return Result.success()
         val dao = LocalPrintingDatabase.get(applicationContext).printingDao()
         val api = ConnectorApiClient(credentials::read)
@@ -89,14 +89,13 @@ class ConnectorRecoveryWorker(
                 }
             }
         } catch (error: ConnectorApiException) {
-            if (error.invalidTerminalCredential) {
+            if (error.invalidMerchantSession) {
                 TerminalIdentityReset.clear(applicationContext)
                 return Result.success()
             }
             ConnectorSettings(applicationContext).recordError(error.errorCode)
             if (
                 error.errorCode in setOf(
-                    "TERMINAL_DISABLED",
                     "PRINTING_TASK_CENTER_DISABLED",
                     "PRINTING_EXECUTION_DISABLED",
                 )

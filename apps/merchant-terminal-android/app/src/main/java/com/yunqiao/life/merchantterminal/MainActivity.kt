@@ -39,6 +39,7 @@ import com.yunqiao.life.merchantterminal.databinding.ActivityMainBinding
 import com.yunqiao.life.merchantterminal.diagnostics.DeviceDiagnostics
 import com.yunqiao.life.merchantterminal.diagnostics.DiagnosticsActivity
 import com.yunqiao.life.merchantterminal.diagnostics.UsbPrinterDiagnosticsActivity
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import com.yunqiao.life.merchantterminal.web.OriginPolicy
 import com.yunqiao.life.merchantterminal.web.TerminalLoadError
 import com.yunqiao.life.merchantterminal.web.TerminalLoadErrorType
@@ -46,8 +47,10 @@ import com.yunqiao.life.merchantterminal.web.TerminalWebChromeClient
 import com.yunqiao.life.merchantterminal.web.TerminalWebView
 import com.yunqiao.life.merchantterminal.web.TerminalWebViewClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONTokener
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, TerminalWebChromeClient.Host {
@@ -55,6 +58,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     private lateinit var binding: ActivityMainBinding
     private lateinit var originPolicy: OriginPolicy
     private lateinit var terminalSettings: TerminalSettings
+    private lateinit var merchantSessionTokenStore: MerchantSessionTokenStore
     private lateinit var connectivityManager: ConnectivityManager
 
     private var terminalWebView: TerminalWebView? = null
@@ -120,6 +124,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
 
         originPolicy = OriginPolicy()
         terminalSettings = TerminalSettings(applicationContext)
+        merchantSessionTokenStore = MerchantSessionTokenStore(applicationContext)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         configureWindowForTerminal()
         configureErrorState()
@@ -127,6 +132,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         configureSwipeRefresh()
         configureBackNavigation()
         observeTerminalSettings()
+        observeMerchantSessionToken()
         createWebView()
 
         val hadRestorableError = savedInstanceState?.getBoolean(KEY_HAD_ERROR) == true
@@ -171,6 +177,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onPause() {
+        syncMerchantSessionTokenFromWebView()
         terminalWebView?.flushSessionState()
         terminalWebView?.onPause()
         super.onPause()
@@ -241,6 +248,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         lifecycleScope.launch {
             terminalSettings.recordPageLoadSuccess(sanitizedUrl)
         }
+        syncMerchantSessionTokenFromWebView()
     }
 
     override fun onMainPageError(error: TerminalLoadError) {
@@ -549,6 +557,40 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         }
     }
 
+    private fun observeMerchantSessionToken() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    syncMerchantSessionTokenFromWebView()
+                    delay(MERCHANT_SESSION_SYNC_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    private fun syncMerchantSessionTokenFromWebView() {
+        val webView = terminalWebView ?: return
+        val url = webView.url ?: return
+        if (!originPolicy.isTrustedPage(url)) return
+        webView.evaluateJavascript(MERCHANT_SESSION_TOKEN_SCRIPT) { encoded ->
+            val token = decodeJavascriptString(encoded)
+                ?.takeIf { MERCHANT_JWT.matches(it) }
+            if (token == null) {
+                merchantSessionTokenStore.clear()
+                ConnectorServiceStarter.stop(applicationContext)
+                return@evaluateJavascript
+            }
+            merchantSessionTokenStore.save(token)
+            lifecycleScope.launch {
+                ConnectorServiceStarter.startIfEligible(applicationContext)
+            }
+        }
+    }
+
+    private fun decodeJavascriptString(value: String?): String? = runCatching {
+        JSONTokener(value ?: return null).nextValue() as? String
+    }.getOrNull()?.takeIf(String::isNotBlank)
+
     private fun openNetworkSettings() {
         val primary = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
@@ -664,7 +706,12 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         const val MENU_DEVICE_DIAGNOSTICS = 2
         const val MENU_USB_DIAGNOSTICS = 3
         const val MENU_CONNECTOR_SETUP = 4
+        const val MERCHANT_SESSION_SYNC_INTERVAL_MS = 2_000L
         const val ANY_MIME_TYPE = "*/*"
         val MIME_TOKEN = Regex("^[a-z0-9][a-z0-9!#$&^_.+\\-]*$")
+        val MERCHANT_JWT = Regex("^[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}$")
+        const val MERCHANT_SESSION_TOKEN_SCRIPT =
+            "(function(){return window.localStorage.getItem('yunqiao_cashier_access_token')" +
+                "||window.sessionStorage.getItem('yunqiao_cashier_access_token')||'';})()"
     }
 }

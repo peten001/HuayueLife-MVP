@@ -11,7 +11,7 @@ import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolution
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolver
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 
 /** User-visible recovery hint; never contains a token, job, order, or customer field. */
 object ConnectorAttentionNotifier {
@@ -19,7 +19,7 @@ object ConnectorAttentionNotifier {
         val app = context.applicationContext
         val settings = ConnectorSettings(app).snapshot()
         if (!settings.connectorEnabled || settings.usbBinding == null ||
-            !TerminalCredentialStore(app).hasCredential()
+            !MerchantSessionTokenStore(app).hasCredential()
         ) return
         val resolution = UsbBindingResolver.resolve(
             settings.usbBinding,

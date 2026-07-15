@@ -14,44 +14,44 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
 @RunWith(RobolectricTestRunner::class)
-class TerminalCredentialStoreTest {
+class MerchantSessionTokenStoreTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var keyAccess: MemoryKeyAccess
-    private lateinit var store: TerminalCredentialStore
+    private lateinit var store: MerchantSessionTokenStore
 
     @Before
     fun setUp() {
-        context.getSharedPreferences("terminal_credential_encrypted", Context.MODE_PRIVATE)
+        context.getSharedPreferences("merchant_session_token_encrypted", Context.MODE_PRIVATE)
             .edit().clear().commit()
         keyAccess = MemoryKeyAccess()
-        store = TerminalCredentialStore(context, keyAccess)
+        store = MerchantSessionTokenStore(context, keyAccess)
     }
 
     @After fun tearDown() = store.clear()
 
     @Test
-    fun `opaque terminal token round trips but preferences never contain plaintext`() {
-        val token = "yt1.123.${"x".repeat(48)}"
+    fun `merchant session token round trips but preferences never contain plaintext`() {
+        val token = "merchant.jwt.${"x".repeat(48)}"
         store.save(token)
 
         assertEquals(token, store.read())
         val persisted = context
-            .getSharedPreferences("terminal_credential_encrypted", Context.MODE_PRIVATE)
+            .getSharedPreferences("merchant_session_token_encrypted", Context.MODE_PRIVATE)
             .all.values.joinToString("|")
         assertFalse(persisted.contains(token))
-        assertFalse(persisted.contains("yt1.123"))
+        assertFalse(persisted.contains("merchant.jwt"))
     }
 
     @Test
     fun `deleting key makes ciphertext unreadable and clear removes it`() {
-        store.save("yt1.123.${"y".repeat(48)}")
+        store.save("merchant.jwt.${"y".repeat(48)}")
         keyAccess.delete()
         assertNull(store.read())
         store.clear()
         assertFalse(store.hasCredential())
     }
 
-    private class MemoryKeyAccess : TerminalKeyAccess {
+    private class MemoryKeyAccess : MerchantSessionKeyAccess {
         private var key: SecretKey? = null
         override fun getOrCreate(): SecretKey = key ?: KeyGenerator.getInstance("AES")
             .apply { init(256) }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -24,17 +25,15 @@ import com.yunqiao.life.merchantterminal.diagnostics.UsbPrinterDiagnosticsActivi
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolution
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolver
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
-import com.yunqiao.life.merchantterminal.security.SecretRedactor
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 class ConnectorSetupActivity : AppCompatActivity() {
     private lateinit var binding: ActivityConnectorSetupBinding
     private lateinit var settings: ConnectorSettings
-    private lateinit var credentials: TerminalCredentialStore
+    private lateinit var credentials: MerchantSessionTokenStore
     private var suppressSwitchCallbacks = false
 
     private val notificationPermission = registerForActivityResult(
@@ -54,7 +53,7 @@ class ConnectorSetupActivity : AppCompatActivity() {
         binding = ActivityConnectorSetupBinding.inflate(layoutInflater)
         setContentView(binding.root)
         settings = ConnectorSettings(applicationContext)
-        credentials = TerminalCredentialStore(applicationContext)
+        credentials = MerchantSessionTokenStore(applicationContext)
         lifecycleScope.launch { settings.ensureInstallId() }
         configureActions()
         lifecycleScope.launch { refreshStatus(fetchRemote = false) }
@@ -88,7 +87,9 @@ class ConnectorSetupActivity : AppCompatActivity() {
         binding.openUsbSetupButton.setOnClickListener {
             startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
         }
-        binding.pairTerminalButton.setOnClickListener { pairTerminal() }
+        binding.pairingPayloadInput.visibility = View.GONE
+        binding.terminalNameInput.visibility = View.GONE
+        binding.pairTerminalButton.visibility = View.GONE
         binding.refreshConnectorStatusButton.setOnClickListener {
             lifecycleScope.launch { refreshStatus(fetchRemote = true) }
         }
@@ -103,52 +104,6 @@ class ConnectorSetupActivity : AppCompatActivity() {
                 settings.setAutomaticPrintingEnabled(enabled)
                 refreshStatus(fetchRemote = false)
             }
-        }
-    }
-
-    private fun pairTerminal() {
-        val parsed = PairingPayload.parse(binding.pairingPayloadInput.text?.toString().orEmpty())
-        val name = binding.terminalNameInput.text?.toString()?.trim().orEmpty()
-            .ifBlank { "Android Terminal" }
-        if (parsed == null) {
-            binding.pairingPayloadInput.text?.clear()
-            binding.pairingResultText.setText(R.string.connector_pair_invalid)
-            return
-        }
-        binding.pairingPayloadInput.text?.clear()
-        binding.pairTerminalButton.isEnabled = false
-        lifecycleScope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                runCatching {
-                    val installId = settings.ensureInstallId()
-                    ConnectorApiClient(credentialProvider = { null }).pair(
-                        PairingRequest(
-                            pairingId = parsed.pairingId,
-                            pairingCode = parsed.code,
-                            deviceIdentifier = installId,
-                            name = name,
-                        ),
-                    )
-                }
-            }
-            outcome.onSuccess { result ->
-                withContext(Dispatchers.IO) {
-                    // A consumed pairing code creates a new terminal identity. Remove any stale
-                    // merchant-scoped ledger, receipt key and USB binding before saving it.
-                    TerminalIdentityReset.clear(applicationContext)
-                    credentials.save(result.token)
-                    settings.savePairing(result.terminalId, result.merchantId, result.terminalName)
-                    ConnectorStartGate.update(applicationContext, settings.snapshot(), true)
-                }
-                binding.pairingResultText.setText(R.string.connector_pair_success)
-            }.onFailure { error ->
-                binding.pairingResultText.text = when (error) {
-                    is ConnectorApiException -> "${error.errorCode}: ${SecretRedactor.safeError(error.message)}"
-                    else -> error.javaClass.simpleName
-                }
-            }
-            binding.pairTerminalButton.isEnabled = true
-            refreshStatus(fetchRemote = outcome.isSuccess)
         }
     }
 
@@ -172,7 +127,7 @@ class ConnectorSetupActivity : AppCompatActivity() {
                 bindingConfig,
                 UsbDeviceInspector(applicationContext).scan(),
             ) is UsbBindingResolution.Ready
-            if (!credentials.hasCredential() || snapshot.terminalId == null || !usbReady ||
+            if (!credentials.hasCredential() || !usbReady ||
                 !ConnectorApiConfig.isConfigured
             ) {
                 binding.pairingResultText.setText(R.string.connector_enable_blocked)
@@ -264,7 +219,7 @@ class ConnectorSetupActivity : AppCompatActivity() {
                     settings.applyRemoteConfig(
                         executionEnabled = remote.executionEnabled && remote.taskCenterEnabled &&
                             remote.merchantPrintingEnabled,
-                        terminalEnabled = remote.terminalEnabled,
+                        terminalEnabled = true,
                         printerEnabled = remote.boundPrinterEnabled,
                         automaticPrintingEnabled = remote.automaticPrintingEnabled,
                         pollIntervalMs = remote.pollIntervalMs,
@@ -288,26 +243,9 @@ class ConnectorSetupActivity : AppCompatActivity() {
                             settings.markConfigApplied(resetVersion)
                         }
                     }
-                    client.heartbeat(
-                        diagnostics = JSONObject()
-                            .put("source", "CONNECTOR_SETUP")
-                            .put("usbConfigured", settings.snapshot().usbBinding != null),
-                        heartbeatSequence = settings.nextHeartbeatSequence(),
-                        activeJobIds = printingDao.activeJobIds(
-                            statuses = listOf(
-                                LocalJobStatus.CLAIMED,
-                                LocalJobStatus.PRINTING,
-                                LocalJobStatus.PRINTED_PENDING_REPORT,
-                                LocalJobStatus.FAILED_PENDING_REPORT,
-                                LocalJobStatus.UNCERTAIN_PENDING_REPORT,
-                            ),
-                            limit = 20,
-                        ),
-                        appliedConfigVersion = settings.snapshot().appliedConfigVersion,
-                    )
                     Unit
                 }.onFailure { error ->
-                    if (error is ConnectorApiException && error.invalidTerminalCredential) {
+                    if (error is ConnectorApiException && error.invalidMerchantSession) {
                         TerminalIdentityReset.clear(applicationContext)
                     } else {
                         settings.recordError(
@@ -334,12 +272,10 @@ class ConnectorSetupActivity : AppCompatActivity() {
         binding.connectorStatusText.text = buildString {
             appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_REVISION.take(12)})")
             appendLine("API: ${ConnectorApiConfig.sanitizedForDiagnostics()}")
-            appendLine("Paired: ${credentials.hasCredential() && snapshot.terminalId != null}")
-            appendLine("Terminal: ${snapshot.terminalId ?: "NONE"}")
-            appendLine("Merchant: ${snapshot.merchantId ?: "NONE"}")
+            appendLine("Merchant session: ${credentials.hasCredential()}")
             appendLine("Local connector: ${snapshot.connectorEnabled}")
             appendLine("Local automatic: ${snapshot.automaticPrintingEnabled}")
-            appendLine("Remote terminal/execution/printer/automatic: ${snapshot.remoteTerminalEnabled}/" +
+            appendLine("Remote execution/printer/automatic: " +
                 "${snapshot.remoteExecutionEnabled}/${snapshot.remotePrinterEnabled}/" +
                 "${snapshot.remoteAutomaticPrintingEnabled}")
             appendLine("USB: ${usb?.let { "VID ${it.vendorId} PID ${it.productId} IF ${it.interfaceIndex} EP ${it.endpointAddress}" } ?: "NOT_CONFIGURED"}")
@@ -354,7 +290,6 @@ class ConnectorSetupActivity : AppCompatActivity() {
             snapshot.remoteExecutionEnabled && snapshot.remotePrinterEnabled &&
             snapshot.remoteAutomaticPrintingEnabled
         suppressSwitchCallbacks = false
-        binding.pairTerminalButton.isEnabled = !credentials.hasCredential() && ConnectorApiConfig.isConfigured
         binding.clearLocalPairingButton.isEnabled = credentials.hasCredential()
     }
 
@@ -362,19 +297,6 @@ class ConnectorSetupActivity : AppCompatActivity() {
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
-    }
-}
-
-data class PairingPayload(val pairingId: String, val code: String) {
-    companion object {
-        private val PATTERN = Regex(
-            "^ytpair:v1:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}):([0-9]{8})$",
-        )
-
-        fun parse(value: String): PairingPayload? {
-            val match = PATTERN.matchEntire(value.trim()) ?: return null
-            return PairingPayload(match.groupValues[1], match.groupValues[2])
         }
     }
 }

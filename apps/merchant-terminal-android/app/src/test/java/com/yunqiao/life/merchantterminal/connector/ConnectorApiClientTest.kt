@@ -19,52 +19,7 @@ import java.net.URL
 @RunWith(RobolectricTestRunner::class)
 class ConnectorApiClientTest {
     @Test
-    fun `pairing uses the one-time contract without a web credential`() {
-        val response = JSONObject()
-            .put("code", "OK")
-            .put(
-                "data",
-                JSONObject()
-                    .put(
-                        "terminal",
-                        JSONObject()
-                            .put("id", "31")
-                            .put("merchantId", "17")
-                            .put("name", "Front counter"),
-                    )
-                    .put(
-                        "credential",
-                        JSONObject().put(
-                            "token",
-                            "yt1.31.opaque-terminal-token-material",
-                        ),
-                    ),
-            )
-        val connection = FakeConnection(URL("https://api.example.test/api/v1/terminal/pair"), response)
-        val api = ConnectorApiClient(
-            credentialProvider = { null },
-            endpointResolver = { "https://api.example.test/api/v1$it" },
-            connectionFactory = { connection },
-        )
-
-        val paired = api.pair(
-            PairingRequest(
-                pairingId = "123e4567-e89b-42d3-a456-426614174000",
-                pairingCode = "12345678",
-                deviceIdentifier = "1a3ce891-a83c-4924-9169-8478b34d4c11",
-                name = "Front counter",
-            ),
-        )
-
-        val request = JSONObject(connection.requestBody.toString(Charsets.UTF_8))
-        assertEquals("31", paired.terminalId)
-        assertEquals("ANDROID", request.getString("platform"))
-        assertEquals("12345678", request.getString("pairingCode"))
-        assertFalse(connection.headers.containsKey("Authorization"))
-    }
-
-    @Test
-    fun `claim uses terminal credential and explicitly keeps automatic jobs off`() {
+    fun `claim uses merchant bearer token and explicitly keeps automatic jobs off`() {
         val snapshot = JSONObject()
             .put("schemaVersion", 1)
             .put("receiptType", "ORDER_CUSTOMER")
@@ -86,21 +41,26 @@ class ConnectorApiClientTest {
                         .put("receiptSnapshot", snapshot),
                 ),
             )
-        val connection = FakeConnection(URL("https://api.example.test/api/v1/terminal/jobs/claim"), response)
+        val connection = FakeConnection(
+            URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/claim"),
+            response,
+        )
         val api = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = { connection },
         )
 
-        val claimed = api.claim(allowAutomatic = false)
+        val claimed = api.claim(allowAutomatic = false, printerId = "9")
 
         assertEquals("123", claimed?.id)
         assertEquals(
-            "Terminal opaque-terminal-token-that-is-never-a-web-token",
+            "Bearer merchant.jwt.session-token",
             connection.headers["Authorization"],
         )
-        assertFalse(JSONObject(connection.requestBody.toString(Charsets.UTF_8)).getBoolean("allowAutomatic"))
+        val request = JSONObject(connection.requestBody.toString(Charsets.UTF_8))
+        assertFalse(request.getBoolean("allowAutomatic"))
+        assertEquals("9", request.getString("printerId"))
     }
 
     @Test
@@ -113,15 +73,11 @@ class ConnectorApiClientTest {
                     .put("taskCenterEnabled", true)
                     .put("executionEnabled", true)
                     .put("automaticCreationEnabled", false)
-                    .put("terminalEnabled", true)
                     .put("merchantPrintingEnabled", true)
                     .put("printerEnabled", true)
                     .put("pollIntervalSeconds", 5)
                     .put("heartbeatIntervalSeconds", 10)
-                    .put(
-                        "terminal",
-                        JSONObject().put("status", "ACTIVE").put("configVersion", 12),
-                    )
+                    .put("configVersion", 12)
                     .put(
                         "boundPrinter",
                         JSONObject()
@@ -131,10 +87,10 @@ class ConnectorApiClientTest {
                     ),
             )
         val api = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = {
-                FakeConnection(URL("https://api.example.test/api/v1/terminal/config"), response)
+                FakeConnection(URL("https://api.example.test/api/v1/merchant/printing/connector/config"), response)
             },
         )
 
@@ -142,7 +98,6 @@ class ConnectorApiClientTest {
 
         assertTrue(config.taskCenterEnabled)
         assertTrue(config.executionEnabled)
-        assertTrue(config.terminalEnabled)
         assertTrue(config.merchantPrintingEnabled)
         assertTrue(config.boundPrinterEnabled)
         assertFalse(config.automaticPrintingEnabled)
@@ -164,11 +119,11 @@ class ConnectorApiClientTest {
                     .put("leaseExpiresAt", "2026-07-15T10:01:00.000Z"),
             )
         val connection = FakeConnection(
-            URL("https://api.example.test/api/v1/terminal/jobs/123/extend-lease"),
+            URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/123/extend-lease"),
             response,
         )
         val api = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = { connection },
         )
@@ -204,10 +159,10 @@ class ConnectorApiClientTest {
                 ),
             )
         val api = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = {
-                FakeConnection(URL("https://api.example.test/api/v1/terminal/jobs/claim"), response)
+                FakeConnection(URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/claim"), response)
             },
         )
 
@@ -243,10 +198,10 @@ class ConnectorApiClientTest {
                 ),
             )
         val api = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = {
-                FakeConnection(URL("https://api.example.test/api/v1/terminal/jobs/claim"), response)
+                FakeConnection(URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/claim"), response)
             },
         )
 
@@ -261,7 +216,7 @@ class ConnectorApiClientTest {
     fun `start and uncertain report preserve server attempt lease hash and safe outcome`() {
         val hash = "c".repeat(64)
         val startConnection = FakeConnection(
-            URL("https://api.example.test/api/v1/terminal/jobs/125/printing"),
+            URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/125/printing"),
             JSONObject()
                 .put("code", "OK")
                 .put(
@@ -277,11 +232,11 @@ class ConnectorApiClientTest {
                 ),
         )
         val failConnection = FakeConnection(
-            URL("https://api.example.test/api/v1/terminal/jobs/125/failed"),
+            URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/125/failed"),
             JSONObject().put("code", "OK").put("data", JSONObject()),
         )
         val startApi = ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = { startConnection },
         )
@@ -299,7 +254,7 @@ class ConnectorApiClientTest {
 
         val started = startApi.startPrinting(job, "wifi")
         ConnectorApiClient(
-            credentialProvider = { "opaque-terminal-token-that-is-never-a-web-token" },
+            merchantTokenProvider = { "merchant.jwt.session-token" },
             endpointResolver = { "https://api.example.test/api/v1$it" },
             connectionFactory = { failConnection },
         ).failed(

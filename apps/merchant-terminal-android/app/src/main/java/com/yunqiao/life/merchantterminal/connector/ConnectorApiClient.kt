@@ -12,75 +12,24 @@ import java.net.URL
 import java.time.Instant
 
 class ConnectorApiClient(
-    private val credentialProvider: () -> String?,
+    private val merchantTokenProvider: () -> String?,
     private val endpointResolver: (String) -> String = ConnectorApiConfig::endpoint,
     private val connectionFactory: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
 ) {
-    fun pair(request: PairingRequest): PairingResult {
-        require(PAIRING_ID.matches(request.pairingId)) { "pairingId must be a UUID." }
-        require(PAIRING_CODE.matches(request.pairingCode)) { "pairingCode must be exactly 8 digits." }
-        val body = JSONObject()
-            .put("pairingId", request.pairingId)
-            .put("pairingCode", request.pairingCode)
-            .put("deviceIdentifier", request.deviceIdentifier.take(128))
-            .put("name", request.name.take(80))
-            .put("platform", "ANDROID")
-            .put("appVersion", BuildConfig.VERSION_NAME)
-            .put("capabilities", baseCapabilities())
-        val data = request("POST", "/terminal/pair", body, authenticated = false)
-        val terminal = data.requiredObject("terminal")
-        val credential = data.requiredObject("credential")
-        return PairingResult(
-            terminalId = terminal.requiredString("id", 128),
-            merchantId = terminal.requiredString("merchantId", 128),
-            terminalName = terminal.optString("name").takeIf(String::isNotBlank)
-                ?.take(80) ?: request.name,
-            token = credential.requiredString("token", 4_096),
-        )
-    }
-
-    fun heartbeat(
-        diagnostics: JSONObject,
-        heartbeatSequence: Long,
-        activeJobIds: List<String>,
-        appliedConfigVersion: Long?,
-        lastErrorCode: String? = null,
-    ) {
-        val capabilities = baseCapabilities().put("diagnostics", diagnostics)
-        val body = JSONObject()
-            .put("heartbeatSeq", heartbeatSequence)
-            .put("appVersion", BuildConfig.VERSION_NAME)
-            .put("buildRevision", BuildConfig.BUILD_REVISION.take(64))
-            .put("capabilities", capabilities)
-            .put("diagnostics", diagnostics)
-            .put("activeJobIds", JSONArray(activeJobIds.take(20)))
-        appliedConfigVersion?.let { body.put("appliedConfigVersion", it) }
-        lastErrorCode?.takeIf(String::isNotBlank)?.let {
-            body.put("lastErrorCode", it.take(64))
-        }
-        request(
-            "POST",
-            "/terminal/heartbeat",
-            body,
-        )
-    }
-
     fun config(): ConnectorRemoteConfig {
-        val data = request("GET", "/terminal/config")
+        val data = request("GET", "/merchant/printing/connector/config")
         val printer = data.optJSONObject("boundPrinter")
-        val terminal = data.optJSONObject("terminal")
         val resetUsb = data.optJSONObject("commands")?.optJSONObject("resetUsb")
         val printerChannelType = printer?.optString("channelType")?.takeIf(String::isNotBlank)
             ?.take(40)
         val pollSeconds = data.optLong("pollIntervalSeconds", 7).coerceIn(5, 30)
-        val heartbeatSeconds = data.optLong("heartbeatIntervalSeconds", 30).coerceIn(10, 60)
+        val heartbeatSeconds = data.optLong(
+            "configRefreshIntervalSeconds",
+            data.optLong("heartbeatIntervalSeconds", pollSeconds),
+        ).coerceIn(5, 60)
         return ConnectorRemoteConfig(
-            terminalEnabled = data.optBoolean(
-                "terminalEnabled",
-                terminal?.optString("status") == "ACTIVE",
-            ),
             merchantPrintingEnabled = data.optBoolean("merchantPrintingEnabled", false),
             executionEnabled = data.optBoolean("executionEnabled", false),
             taskCenterEnabled = data.optBoolean("taskCenterEnabled", false),
@@ -96,19 +45,26 @@ class ConnectorApiClient(
                 "printerEnabled",
                 printer?.optBoolean("enabled", false) == true,
             ) && printerChannelType == "LOCAL_USB_ESCPOS",
-            configVersion = terminal?.optLong("configVersion", data.optLong("configVersion", 0))
-                ?.coerceAtLeast(0) ?: 0,
+            configVersion = data.optLong("configVersion", 0).coerceAtLeast(0),
             resetUsbConfigVersion = resetUsb?.optLong("configVersion", -1)?.takeIf { it >= 0 },
         )
     }
 
-    fun claim(allowAutomatic: Boolean, leaseMs: Long = 60_000): ClaimedPrintJob? {
+    fun claim(
+        allowAutomatic: Boolean,
+        printerId: String? = null,
+        leaseMs: Long = 60_000,
+    ): ClaimedPrintJob? {
+        require(printerId == null || NUMERIC_ID.matches(printerId)) { "Printer id is invalid." }
         val data = request(
             "POST",
-            "/terminal/jobs/claim",
+            "/merchant/printing/connector/jobs/claim",
             JSONObject()
                 .put("allowAutomatic", allowAutomatic)
-                .put("leaseMs", leaseMs.coerceIn(30_000, 120_000)),
+                .put("leaseMs", leaseMs.coerceIn(30_000, 120_000))
+                .also { body ->
+                    printerId?.let { body.put("printerId", it) }
+                },
         )
         val job = data.optJSONObject("job") ?: return null
         val snapshot = job.requiredObject("receiptSnapshot")
@@ -153,7 +109,7 @@ class ConnectorApiClient(
     ): StartPrintingResult {
         val data = request(
             "POST",
-            "/terminal/jobs/${job.id.safePathSegment()}/printing",
+            "/merchant/printing/connector/jobs/${job.id.safePathSegment()}/printing",
             JSONObject()
                 .put("leaseVersion", job.leaseVersion)
                 .put("adapter", "ANDROID_USB_ESCPOS")
@@ -180,7 +136,7 @@ class ConnectorApiClient(
     ): LeaseExtensionResult {
         val data = request(
             "POST",
-            "/terminal/jobs/${jobId.safePathSegment()}/extend-lease",
+            "/merchant/printing/connector/jobs/${jobId.safePathSegment()}/extend-lease",
             JSONObject()
                 .put("leaseVersion", leaseVersion)
                 .put("leaseMs", leaseMs.coerceIn(30_000, 120_000)),
@@ -200,7 +156,7 @@ class ConnectorApiClient(
     ) {
         request(
             "POST",
-            "/terminal/jobs/${jobId.safePathSegment()}/succeeded",
+            "/merchant/printing/connector/jobs/${jobId.safePathSegment()}/succeeded",
             JSONObject()
                 .put("attemptNo", attemptNo)
                 .put("leaseVersion", leaseVersion)
@@ -223,7 +179,7 @@ class ConnectorApiClient(
     ) {
         request(
             "POST",
-            "/terminal/jobs/${jobId.safePathSegment()}/failed",
+            "/merchant/printing/connector/jobs/${jobId.safePathSegment()}/failed",
             JSONObject()
                 .put("attemptNo", attemptNo)
                 .put("leaseVersion", leaseVersion)
@@ -245,7 +201,7 @@ class ConnectorApiClient(
     ) {
         request(
             "POST",
-            "/terminal/printers/status",
+            "/merchant/printing/connector/printers/status",
             JSONObject()
                 .put("printerId", printerId)
                 .put("status", status.take(32))
@@ -279,9 +235,9 @@ class ConnectorApiClient(
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("X-Terminal-App-Version", BuildConfig.VERSION_NAME.take(80))
             if (authenticated) {
-                val token = credentialProvider()
-                    ?: throw ConnectorApiException(401, "TERMINAL_CREDENTIAL_MISSING", "Terminal is not paired.")
-                setRequestProperty("Authorization", "Terminal $token")
+                val token = merchantTokenProvider()
+                    ?: throw ConnectorApiException(401, "MERCHANT_SESSION_MISSING", "Merchant session is not available.")
+                setRequestProperty("Authorization", "Bearer $token")
             }
             if (body != null) doOutput = true
         }
@@ -371,8 +327,6 @@ class ConnectorApiClient(
         const val READ_TIMEOUT_MS = 15_000
         const val MAX_RESPONSE_CHARS = 1_000_000
         val NUMERIC_ID = Regex("^[1-9][0-9]{0,38}$")
-        val PAIRING_ID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
-        val PAIRING_CODE = Regex("^[0-9]{8}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
     }
 }

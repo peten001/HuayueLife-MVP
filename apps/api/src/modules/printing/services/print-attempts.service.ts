@@ -16,7 +16,7 @@ import { receiptSnapshotHash } from '../utils/snapshot-hash';
 
 export interface StartPrintingInput {
   merchantId: bigint;
-  terminalId: bigint;
+  terminalId: bigint | null;
   jobId: bigint;
   leaseVersion: number;
   adapter: string;
@@ -27,7 +27,7 @@ export interface StartPrintingInput {
 
 export interface FinishPrintingInput {
   merchantId: bigint;
-  terminalId: bigint;
+  terminalId: bigint | null;
   jobId: bigint;
   attemptNo: number;
   leaseVersion: number;
@@ -51,7 +51,9 @@ export class PrintAttemptsService {
 
   async markPrinting(input: StartPrintingInput) {
     this.assertExecution();
-    await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    if (input.terminalId !== null) {
+      await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    }
     const adapter = input.adapter.trim();
     if (!adapter) {
       throw new BadRequestException({
@@ -131,7 +133,9 @@ export class PrintAttemptsService {
 
   async markSucceeded(input: FinishPrintingInput) {
     this.assertExecution();
-    await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    if (input.terminalId !== null) {
+      await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    }
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
       const expectedHash = this.assertContentHash(job, input.contentHash);
@@ -205,7 +209,9 @@ export class PrintAttemptsService {
 
   async markFailed(input: FailPrintingInput) {
     this.assertExecution();
-    await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    if (input.terminalId !== null) {
+      await this.requireActiveTerminal(input.merchantId, input.terminalId);
+    }
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
       const expectedHash = this.assertContentHash(job, input.contentHash);
@@ -300,13 +306,15 @@ export class PrintAttemptsService {
 
   async extendLease(
     merchantId: bigint,
-    terminalId: bigint,
+    terminalId: bigint | null,
     jobId: bigint,
     expectedLeaseVersion: number,
     leaseMs = 30_000,
   ) {
     this.assertExecution();
-    await this.requireActiveTerminal(merchantId, terminalId);
+    if (terminalId !== null) {
+      await this.requireActiveTerminal(merchantId, terminalId);
+    }
     const job = await this.prisma.printJob.findFirst({ where: { id: jobId, merchantId } });
     if (!job) this.notFound();
     this.assertLeaseOwner(job, terminalId, ['CLAIMED', 'PRINTING']);
@@ -360,9 +368,36 @@ export class PrintAttemptsService {
   private async assertStartStillEnabled(
     client: Prisma.TransactionClient,
     merchantId: bigint,
-    terminalId: bigint,
+    terminalId: bigint | null,
     printerId: bigint,
   ) {
+    if (terminalId === null) {
+      const printer = await client.printer.findFirst({
+        where: {
+          id: printerId,
+          merchantId,
+          enabled: true,
+          deletedAt: null,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+        select: {
+          id: true,
+          merchant: { select: { status: true, printingEnabled: true } },
+        },
+      });
+      if (
+        !printer ||
+        printer.merchant.status !== 'ACTIVE' ||
+        !printer.merchant.printingEnabled
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
+          message: '商家账号、打印总开关或 USB 打印机当前不可用',
+        });
+      }
+      return;
+    }
+
     const terminal = await client.merchantTerminal.findFirst({
       where: {
         id: terminalId,
@@ -418,7 +453,7 @@ export class PrintAttemptsService {
       claimedByTerminalId: bigint | null;
       leaseExpiresAt: Date | null;
     },
-    terminalId: bigint,
+    terminalId: bigint | null,
     allowedStatuses: string[],
   ) {
     if (!allowedStatuses.includes(job.status) || job.claimedByTerminalId !== terminalId) {

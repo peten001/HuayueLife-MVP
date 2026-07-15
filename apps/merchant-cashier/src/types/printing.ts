@@ -25,15 +25,6 @@ export interface CashierPrintingPrinter {
   status: string;
 }
 
-export interface CashierMerchantTerminal {
-  id: string;
-  status: string;
-  onlineState?: 'ONLINE' | 'OFFLINE' | 'NOT_CONNECTED';
-  boundPrinterId?: string | null;
-  lastSeenAt?: string | null;
-  revokedAt?: string | null;
-}
-
 export interface CashierPrintJob {
   id: string;
   orderId?: string | null;

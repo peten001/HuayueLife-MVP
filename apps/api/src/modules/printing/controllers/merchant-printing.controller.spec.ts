@@ -35,7 +35,7 @@ describe('MerchantPrintingController contract', () => {
     ]);
   });
 
-  it('exposes only management routes, never connector execution acknowledgements', () => {
+  it('exposes management routes and merchant-session connector routes without terminal pairing', () => {
     const routes = controllerRoutes();
 
     expect(routes).toEqual(
@@ -66,30 +66,28 @@ describe('MerchantPrintingController contract', () => {
         ['POST', 'jobs/order'],
         ['POST', 'jobs/table-bill'],
         ['POST', 'jobs/:id/reprint'],
-        ['GET', 'terminals'],
-        ['POST', 'terminals'],
-        ['PATCH', 'terminals/:id'],
-        ['POST', 'terminals/:id/revoke'],
-        ['GET', 'terminals/:id'],
-        ['POST', 'terminals/:id/pairing-code'],
-        ['POST', 'terminals/:id/rotate-credentials'],
-        ['POST', 'terminals/:id/enable'],
-        ['POST', 'terminals/:id/disable'],
-        ['POST', 'terminals/:id/reset-usb-config'],
+        ['GET', 'connector/config'],
+        ['GET', 'connector/jobs/active'],
+        ['POST', 'connector/jobs/claim'],
+        ['POST', 'connector/jobs/:id/printing'],
+        ['POST', 'connector/jobs/:id/succeeded'],
+        ['POST', 'connector/jobs/:id/failed'],
+        ['POST', 'connector/jobs/:id/extend-lease'],
+        ['POST', 'connector/printers/status'],
       ]),
     );
     expect(routes.flat().join(' ')).not.toMatch(
-      /claim|mark-printing|succeed|fail|extend-lease|heartbeat/i,
+      /terminals|pairing-code|rotate-credentials|heartbeat/i,
     );
 
     const methods = Object.getOwnPropertyNames(MerchantPrintingController.prototype);
     expect(methods).not.toEqual(
       expect.arrayContaining([
-        'claimNextJob',
-        'markPrinting',
-        'markSucceeded',
-        'markFailed',
-        'extendLease',
+        'createTerminal',
+        'updateTerminal',
+        'generateTerminalPairingCode',
+        'rotateTerminalCredentials',
+        'heartbeat',
       ]),
     );
   });
@@ -99,7 +97,7 @@ describe('MerchantPrintingController contract', () => {
     const templates = serviceMock([]);
     const rules = serviceMock([]);
     const jobs = serviceMock(['retry']);
-    const terminals = serviceMock([]);
+    const attempts = serviceMock([]);
     const flags = { status: jest.fn() };
     const settings = {
       get: jest.fn().mockResolvedValue({ printingEnabled: false }),
@@ -111,10 +109,9 @@ describe('MerchantPrintingController contract', () => {
       templates as never,
       rules as never,
       jobs as never,
-      terminals as never,
+      attempts as never,
       flags as never,
       settings as never,
-      serviceMock([]) as never,
     );
 
     await controller.listPrinters(7n);
@@ -156,7 +153,6 @@ describe('MerchantPrintingController contract', () => {
       serviceMock([]) as never,
       flags as never,
       { get: jest.fn() } as never,
-      serviceMock([]) as never,
     );
 
     await expect(controller.listPrinters(7n)).resolves.toEqual([{ id: 1n }]);
@@ -178,14 +174,6 @@ describe('MerchantPrintingController contract', () => {
       'disableRule',
       'cancelJob',
       'updateSettings',
-      'createTerminal',
-      'updateTerminal',
-      'generateTerminalPairingCode',
-      'rotateTerminalCredentials',
-      'enableTerminal',
-      'disableTerminal',
-      'resetTerminalUsbConfig',
-      'revokeTerminal',
     ] as const) {
       expect(
         Reflect.getMetadata(

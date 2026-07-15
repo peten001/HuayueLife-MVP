@@ -3,12 +3,12 @@ package com.yunqiao.life.merchantterminal.connector
 import android.content.Context
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.data.local.LocalConnectorDataWiper
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
-/** Idempotent removal of the independent terminal identity and all merchant-scoped local data. */
+/** Idempotent removal of the shared merchant session and merchant-scoped local printing data. */
 object TerminalIdentityReset {
     suspend fun clear(context: Context) = withContext(NonCancellable + Dispatchers.IO) {
         val app = context.applicationContext
@@ -18,7 +18,7 @@ object TerminalIdentityReset {
         // shared execution/recovery lock so Room evidence and the snapshot key are not deleted
         // while a physical write is being classified or reported.
         ConnectorExecutionGate.exclusive {
-            TerminalCredentialStore(app).clear()
+            MerchantSessionTokenStore(app).clear()
             val settings = ConnectorSettings(app)
             settings.clearPairing()
             LocalConnectorDataWiper.clearIdentityBoundData(app)

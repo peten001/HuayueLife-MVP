@@ -1,6 +1,5 @@
 import type {
   CashierPrintJob,
-  CashierMerchantTerminal,
   CashierPrintingFeatureState,
   CashierPrintingPrinter,
 } from '@/types';
@@ -12,10 +11,6 @@ export function getCashierPrintingFeatureState() {
 
 export function listCashierPrintingPrinters() {
   return requestApi<CashierPrintingPrinter[]>('/merchant/printing/printers');
-}
-
-export function listCashierMerchantTerminals() {
-  return requestApi<CashierMerchantTerminal[]>('/merchant/printing/terminals');
 }
 
 export function listCashierPrintJobs(filters: {

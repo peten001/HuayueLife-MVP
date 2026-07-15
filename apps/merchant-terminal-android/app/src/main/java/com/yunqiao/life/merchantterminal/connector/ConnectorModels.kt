@@ -1,21 +1,6 @@
 package com.yunqiao.life.merchantterminal.connector
 
-data class PairingRequest(
-    val pairingId: String,
-    val pairingCode: String,
-    val deviceIdentifier: String,
-    val name: String,
-)
-
-data class PairingResult(
-    val terminalId: String,
-    val merchantId: String,
-    val terminalName: String,
-    val token: String,
-)
-
 data class ConnectorRemoteConfig(
-    val terminalEnabled: Boolean,
     val merchantPrintingEnabled: Boolean,
     val executionEnabled: Boolean,
     val taskCenterEnabled: Boolean,
@@ -59,16 +44,12 @@ class ConnectorApiException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause) {
-    /**
-     * Connector API contract: only HTTP 401 invalidates the independent terminal credential.
-     * A reversible TERMINAL_DISABLED response is HTTP 409 and must retain local pairing.
-     */
-    val invalidTerminalCredential: Boolean
+    /** HTTP 401 means the shared merchant/staff login has expired or was revoked. */
+    val invalidMerchantSession: Boolean
         get() = statusCode == 401 && errorCode in setOf(
-            "TERMINAL_AUTH_INVALID",
-            "TERMINAL_CREDENTIAL_MISSING",
-            "TERMINAL_REVOKED",
-            "TERMINAL_CREDENTIAL_EXPIRED",
-            "TERMINAL_CREDENTIAL_ROTATED",
+            "MERCHANT_SESSION_MISSING",
+            "MERCHANT_AUTH_INVALID",
+            "UNAUTHORIZED",
+            "HTTP_401",
         )
 }

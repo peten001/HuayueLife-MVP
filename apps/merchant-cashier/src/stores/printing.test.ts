@@ -6,7 +6,6 @@ const apiMocks = vi.hoisted(() => ({
   createPrintJobReprint: vi.fn(),
   createTableBillPrintJob: vi.fn(),
   getCashierPrintingFeatureState: vi.fn(),
-  listCashierMerchantTerminals: vi.fn(),
   listCashierPrintJobs: vi.fn(),
   listCashierPrintingPrinters: vi.fn(),
 }));
@@ -32,15 +31,7 @@ const usbPrinter = {
   channelType: 'LOCAL_USB_ESCPOS',
   paperWidth: 'MM80' as const,
   enabled: true,
-  status: 'READY',
-};
-
-const onlineTerminal = {
-  id: 'terminal-1',
-  status: 'ACTIVE',
-  onlineState: 'ONLINE',
-  boundPrinterId: 'printer-1',
-  lastSeenAt: '2026-07-15T00:00:00.000Z',
+  status: 'ONLINE',
 };
 
 describe('cashier printing gate', () => {
@@ -50,7 +41,6 @@ describe('cashier printing gate', () => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
     apiMocks.getCashierPrintingFeatureState.mockResolvedValue(enabledFeature);
     apiMocks.listCashierPrintingPrinters.mockResolvedValue([usbPrinter]);
-    apiMocks.listCashierMerchantTerminals.mockResolvedValue([onlineTerminal]);
   });
 
   it('is ready only when task execution and an enabled USB printer are available', async () => {
@@ -63,8 +53,9 @@ describe('cashier printing gate', () => {
     await store.refreshStatus();
     expect(store.availability).toBe('CONFIG_REQUIRED');
 
-    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([usbPrinter]);
-    apiMocks.listCashierMerchantTerminals.mockResolvedValueOnce([]);
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
+      { ...usbPrinter, status: 'OFFLINE' },
+    ]);
     await store.refreshStatus();
     expect(store.availability).toBe('TERMINAL_OFFLINE');
 

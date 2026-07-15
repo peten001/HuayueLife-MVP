@@ -32,7 +32,6 @@ const tabs = [
   { path: '/printing-center/rules', label: 'rules' },
   { path: '/printing-center/templates', label: 'templates' },
   { path: '/printing-center/jobs', label: 'jobs' },
-  { path: '/printing-center/terminals', label: 'terminals' },
 ] as const;
 
 watch(

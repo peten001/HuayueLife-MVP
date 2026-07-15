@@ -8,31 +8,18 @@ import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.security.SecretRedactor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PairingAndSafetyPolicyTest {
     @Test
-    fun `accepts only the versioned one-time pairing payload`() {
-        val parsed = PairingPayload.parse(
-            "ytpair:v1:123e4567-e89b-42d3-a456-426614174000:12345678",
-        )
-        assertEquals("123e4567-e89b-42d3-a456-426614174000", parsed?.pairingId)
-        assertEquals("12345678", parsed?.code)
-        assertNull(PairingPayload.parse("12345678"))
-        assertNull(PairingPayload.parse("ytpair:v1:123e4567-e89b-42d3-a456-426614174000:123456"))
-        assertNull(PairingPayload.parse("ytpair:v1:not-a-uuid:12345678"))
-    }
-
-    @Test
-    fun `execution requires exact remote printer association and automatic requires both switches`() {
+    fun `execution requires merchant session printer association and automatic requires both switches`() {
         val base = ConnectorSettingsSnapshot(
             installId = "install",
             connectorEnabled = true,
             automaticPrintingEnabled = true,
             remoteExecutionEnabled = true,
-            remoteTerminalEnabled = true,
+            remoteTerminalEnabled = false,
             remotePrinterEnabled = true,
             remoteAutomaticPrintingEnabled = false,
             usbBinding = binding(printerId = null),
@@ -92,8 +79,8 @@ class PairingAndSafetyPolicyTest {
     }
 
     @Test
-    fun `terminal authorization is removed from diagnostic errors`() {
-        val safe = SecretRedactor.safeError("failed Authorization: Terminal abcdefghijklmnopqrstuvwxyz")
+    fun `merchant bearer authorization is removed from diagnostic errors`() {
+        val safe = SecretRedactor.safeError("failed Authorization: Bearer abcdefghijklmnopqrstuvwxyz")
         assertFalse(safe.orEmpty().contains("abcdefghijklmnopqrstuvwxyz"))
         assertTrue(safe.orEmpty().contains("[REDACTED]"))
     }
@@ -111,18 +98,18 @@ class PairingAndSafetyPolicyTest {
         assertTrue(PendingReportPolicy.requiresOperator("PRINT_JOB_STATE_CONFLICT"))
         assertTrue(PendingReportPolicy.requiresOperator("PRINT_CONTENT_HASH_MISMATCH"))
         assertFalse(PendingReportPolicy.requiresOperator("NETWORK_IO_ERROR"))
-        assertFalse(PendingReportPolicy.requiresOperator("TERMINAL_DISABLED"))
+        assertFalse(PendingReportPolicy.requiresOperator("MERCHANT_PRINTING_DISABLED"))
     }
 
     @Test
-    fun `reversible terminal disable never invalidates the local credential`() {
+    fun `expired merchant session invalidates local API credential use`() {
         assertFalse(
-            ConnectorApiException(409, "TERMINAL_DISABLED", "disabled")
-                .invalidTerminalCredential,
+            ConnectorApiException(409, "MERCHANT_PRINTING_DISABLED", "disabled")
+                .invalidMerchantSession,
         )
         assertTrue(
-            ConnectorApiException(401, "TERMINAL_AUTH_INVALID", "invalid")
-                .invalidTerminalCredential,
+            ConnectorApiException(401, "MERCHANT_AUTH_INVALID", "invalid")
+                .invalidMerchantSession,
         )
     }
 

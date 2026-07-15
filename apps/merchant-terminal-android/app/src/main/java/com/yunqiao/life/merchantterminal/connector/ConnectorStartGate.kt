@@ -11,8 +11,8 @@ object ConnectorStartGate {
     private const val KEY_MAY_START = "may_start"
 
     fun update(context: Context, settings: ConnectorSettingsSnapshot, hasCredential: Boolean) {
-        val mayStart = hasCredential && settings.terminalId != null &&
-            settings.connectorEnabled && settings.usbBinding != null && ConnectorApiConfig.isConfigured
+        val mayStart = hasCredential && settings.connectorEnabled &&
+            settings.usbBinding != null && ConnectorApiConfig.isConfigured
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_MAY_START, mayStart).apply()
     }

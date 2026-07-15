@@ -69,7 +69,7 @@ data class ConnectorSettingsSnapshot(
     val appliedConfigVersion: Long? = null,
 ) {
     val canExecute: Boolean
-        get() = connectorEnabled && remoteExecutionEnabled && remoteTerminalEnabled &&
+        get() = connectorEnabled && remoteExecutionEnabled &&
             remotePrinterEnabled && usbBinding?.printerId != null
 
     val canClaimAutomatic: Boolean

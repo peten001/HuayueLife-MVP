@@ -49,7 +49,7 @@ import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.UsbEscPosAdapter
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionController
 import com.yunqiao.life.merchantterminal.printing.userMessageResource
-import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -715,7 +715,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             ConnectorStartGate.update(
                 applicationContext,
                 snapshot,
-                TerminalCredentialStore(applicationContext).hasCredential(),
+                MerchantSessionTokenStore(applicationContext).hasCredential(),
             )
             withContext(Dispatchers.Main) {
                 binding.usbActionResultText.text = getString(R.string.usb_configuration_saved)

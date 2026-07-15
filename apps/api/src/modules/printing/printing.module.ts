@@ -1,9 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MerchantPrintingController } from './controllers/merchant-printing.controller';
-import {
-  TerminalConnectorController,
-  TerminalPairingController,
-} from './controllers/terminal-connector.controller';
 import { TerminalAuthGuard } from './guards/terminal-auth.guard';
 import { ActiveMerchantStaffGuard } from './guards/active-merchant-staff.guard';
 import { ActiveTerminalGuard } from './guards/active-terminal.guard';
@@ -21,11 +17,7 @@ import { TerminalConnectorService } from './services/terminal-connector.service'
 import { TerminalCredentialsService } from './services/terminal-credentials.service';
 
 @Module({
-  controllers: [
-    MerchantPrintingController,
-    TerminalPairingController,
-    TerminalConnectorController,
-  ],
+  controllers: [MerchantPrintingController],
   providers: [
     PrintingFeatureFlagsService,
     PrintingAuditService,

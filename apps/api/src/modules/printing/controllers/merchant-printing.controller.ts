@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -26,7 +27,15 @@ import {
   ListPrintJobsQueryDto,
   PrintJobActionDto,
 } from '../dto/print-job.dto';
-import { UpdateMerchantPrintingSettingsDto } from '../dto/terminal-connector.dto';
+import {
+  ClaimPrintJobDto,
+  ExtendPrintJobLeaseDto,
+  FailPrintingDto,
+  FinishPrintingDto,
+  MarkPrintingDto,
+  ReportTerminalPrinterStatusDto,
+  UpdateMerchantPrintingSettingsDto,
+} from '../dto/terminal-connector.dto';
 import { ActiveMerchantStaffGuard } from '../guards/active-merchant-staff.guard';
 import { CreatePrintRuleDto, UpdatePrintRuleDto } from '../dto/print-rule.dto';
 import {
@@ -37,19 +46,21 @@ import {
   CreateReceiptTemplateDto,
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
-import {
-  CreateMerchantTerminalDto,
-  GenerateTerminalPairingCodeDto,
-  UpdateMerchantTerminalDto,
-} from '../dto/terminal.dto';
+import { PrintAttemptsService } from '../services/print-attempts.service';
 import { PrintJobsService } from '../services/print-jobs.service';
 import { PrintRulesService } from '../services/print-rules.service';
 import { PrintingFeatureFlagsService } from '../services/printing-feature-flags.service';
 import { PrintingPrintersService } from '../services/printing-printers.service';
 import { PrintingSettingsService } from '../services/printing-settings.service';
 import { ReceiptTemplatesService } from '../services/receipt-templates.service';
-import { TerminalsService } from '../services/terminals.service';
-import { TerminalCredentialsService } from '../services/terminal-credentials.service';
+import { PRINTING_ERROR_CODES } from '../types/printing-errors';
+
+const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
+  PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
+  PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+  PRINTING_ERROR_CODES.USB_DEVICE_DETACHED,
+  PRINTING_ERROR_CODES.USB_WRITE_FAILED,
+]);
 
 @Controller('merchant/printing')
 @UseGuards(JwtAuthGuard, ActiveMerchantStaffGuard, MerchantRoleGuard)
@@ -60,10 +71,9 @@ export class MerchantPrintingController {
     private readonly templates: ReceiptTemplatesService,
     private readonly rules: PrintRulesService,
     private readonly jobs: PrintJobsService,
-    private readonly terminals: TerminalsService,
+    private readonly attempts: PrintAttemptsService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly settings: PrintingSettingsService,
-    private readonly credentials: TerminalCredentialsService,
   ) {}
 
   @Get('feature-state')
@@ -393,143 +403,154 @@ export class MerchantPrintingController {
     );
   }
 
-  @Get('terminals')
-  listTerminals(@MerchantId() merchantId: bigint) {
-    return this.terminals.list(merchantId);
+  @Get('connector/config')
+  connectorConfig(@MerchantId() merchantId: bigint) {
+    return this.jobs.merchantConnectorConfig(merchantId);
   }
 
-  @Get('terminals/:id')
-  getTerminal(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
-    return this.terminals.get(merchantId, BigInt(params.id));
-  }
-
-  @Post('terminals')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  createTerminal(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Body() dto: CreateMerchantTerminalDto,
-  ) {
-    return this.terminals.create(merchantId, BigInt(staff.sub), request.requestId, dto);
-  }
-
-  @Patch('terminals/:id')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  updateTerminal(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-    @Body() dto: UpdateMerchantTerminalDto,
-  ) {
-    return this.terminals.update(
+  @Get('connector/jobs/active')
+  async activeConnectorJob(@MerchantId() merchantId: bigint, @Query('printerId') printerId?: string) {
+    const active = await this.jobs.findActiveMerchantConnectorJob(
       merchantId,
-      BigInt(staff.sub),
-      request.requestId,
+      optionalNumericId(printerId, 'printerId'),
+    );
+    return {
+      job: active
+        ? await this.jobs.connectorJobPayload(merchantId, null, active.id)
+        : null,
+    };
+  }
+
+  @Post('connector/jobs/claim')
+  async claimConnectorJob(
+    @MerchantId() merchantId: bigint,
+    @Body() dto: ClaimPrintJobDto,
+  ) {
+    const claimed = await this.jobs.claimNextMerchantJob(
+      merchantId,
+      optionalNumericId(dto.printerId, 'printerId'),
+      dto.leaseMs,
+      dto.allowAutomatic,
+    );
+    return {
+      job: claimed
+        ? await this.jobs.connectorJobPayload(merchantId, null, claimed.id)
+        : null,
+    };
+  }
+
+  @Post('connector/jobs/:id/printing')
+  async markConnectorPrinting(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Body() dto: MarkPrintingDto,
+  ) {
+    const result = await this.attempts.markPrinting({
+      merchantId,
+      terminalId: null,
+      jobId: BigInt(params.id),
+      leaseVersion: dto.leaseVersion,
+      adapter: dto.adapter,
+      appVersion: dto.appVersion,
+      networkInfo: dto.networkInfo,
+      contentHash: dto.contentHash,
+    });
+    return {
+      job: await this.jobs.connectorJobPayload(merchantId, null, result.job.id),
+      attempt: result.attempt,
+    };
+  }
+
+  @Post('connector/jobs/:id/succeeded')
+  markConnectorSucceeded(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Body() dto: FinishPrintingDto,
+  ) {
+    if (dto.bytesWritten <= 0) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '成功回报必须包含大于 0 的已写入字节数',
+      });
+    }
+    return this.attempts.markSucceeded({
+      merchantId,
+      terminalId: null,
+      jobId: BigInt(params.id),
+      attemptNo: dto.attemptNo,
+      leaseVersion: dto.leaseVersion,
+      printerResponse: dto.printerResponse,
+      contentHash: dto.contentHash,
+      bytesWritten: dto.bytesWritten,
+    });
+  }
+
+  @Post('connector/jobs/:id/failed')
+  markConnectorFailed(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Body() dto: FailPrintingDto,
+  ) {
+    const uncertain = dto.outcome === 'UNCERTAIN';
+    if (
+      uncertain !==
+        (dto.errorCode === PRINTING_ERROR_CODES.PRINT_OUTCOME_UNKNOWN) ||
+      (uncertain && dto.retryable) ||
+      (dto.bytesWritten > 0 && !uncertain) ||
+      (dto.retryable && !SAFE_AUTOMATIC_RETRY_CODES.has(dto.errorCode))
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message:
+          '部分写入或不确定结果必须使用 PRINT_OUTCOME_UNKNOWN 且禁止自动重试',
+      });
+    }
+    return this.attempts.markFailed({
+      merchantId,
+      terminalId: null,
+      jobId: BigInt(params.id),
+      attemptNo: dto.attemptNo,
+      leaseVersion: dto.leaseVersion,
+      retryable: dto.retryable,
+      errorCode: dto.errorCode,
+      errorMessage: dto.errorMessage,
+      printerResponse: dto.printerResponse,
+      contentHash: dto.contentHash,
+      bytesWritten: dto.bytesWritten,
+    });
+  }
+
+  @Post('connector/jobs/:id/extend-lease')
+  extendConnectorLease(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+    @Body() dto: ExtendPrintJobLeaseDto,
+  ) {
+    return this.attempts.extendLease(
+      merchantId,
+      null,
       BigInt(params.id),
-      dto,
+      dto.leaseVersion,
+      dto.leaseMs,
     );
   }
 
-  @Post('terminals/:id/pairing-code')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  generateTerminalPairingCode(
+  @Post('connector/printers/status')
+  reportConnectorPrinterStatus(
     @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-    @Body() dto: GenerateTerminalPairingCodeDto,
+    @Body() dto: ReportTerminalPrinterStatusDto,
   ) {
-    return this.credentials.generatePairingCode(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-      dto.expiresInMinutes,
-    );
+    return this.jobs.reportMerchantConnectorPrinterStatus(merchantId, dto);
   }
+}
 
-  @Post('terminals/:id/rotate-credentials')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  rotateTerminalCredentials(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-    @Body() dto: GenerateTerminalPairingCodeDto,
-  ) {
-    return this.credentials.generatePairingCode(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-      dto.expiresInMinutes,
-      true,
-    );
+function optionalNumericId(value: string | undefined, name: string) {
+  if (value === undefined) return undefined;
+  if (!/^[1-9][0-9]{0,38}$/.test(value)) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: `${name} 必须是有效数字 ID`,
+    });
   }
-
-  @Post('terminals/:id/enable')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  enableTerminal(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-  ) {
-    return this.terminals.enable(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-    );
-  }
-
-  @Post('terminals/:id/disable')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  disableTerminal(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-  ) {
-    return this.terminals.disable(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-    );
-  }
-
-  @Post('terminals/:id/reset-usb-config')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  resetTerminalUsbConfig(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-  ) {
-    return this.terminals.resetUsbConfig(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-    );
-  }
-
-  @Post('terminals/:id/revoke')
-  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
-  revokeTerminal(
-    @MerchantId() merchantId: bigint,
-    @CurrentUser() staff: AuthUser,
-    @Req() request: RequestWithContext,
-    @Param() params: IdParamDto,
-  ) {
-    return this.terminals.revoke(
-      merchantId,
-      BigInt(staff.sub),
-      request.requestId,
-      BigInt(params.id),
-    );
-  }
+  return BigInt(value);
 }

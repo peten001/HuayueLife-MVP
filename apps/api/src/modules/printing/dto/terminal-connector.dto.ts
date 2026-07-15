@@ -73,6 +73,10 @@ export class ClaimPrintJobDto {
   allowAutomatic: boolean;
 
   @IsOptional()
+  @IsNumberString({ no_symbols: true })
+  printerId?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(5_000)
   @Max(120_000)

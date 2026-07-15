@@ -16,6 +16,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../../database/prisma.service';
 import { ListPrintJobsQueryDto } from '../dto/print-job.dto';
+import { ReportTerminalPrinterStatusDto } from '../dto/terminal-connector.dto';
 import {
   PRINTING_ERROR_CODES,
   sanitizePrintingError,
@@ -186,6 +187,48 @@ export class PrintJobsService {
         ...attempt,
         errorMessage: sanitizePrintingError(attempt.errorMessage),
       })),
+    };
+  }
+
+  async merchantConnectorConfig(merchantId: bigint) {
+    this.flags.assertTaskCenterEnabled();
+    const [settings, printers] = await Promise.all([
+      this.settings.get(merchantId),
+      this.prisma.printer.findMany({
+        where: {
+          merchantId,
+          deletedAt: null,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+        select: {
+          id: true,
+          name: true,
+          channelType: true,
+          paperWidth: true,
+          purpose: true,
+          enabled: true,
+          status: true,
+          connectionConfig: true,
+          capabilities: true,
+        },
+        orderBy: [{ enabled: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+      }),
+    ]);
+    const flags = settings.featureFlags;
+    const boundPrinter =
+      printers.find((printer) => printer.enabled) ?? printers[0] ?? null;
+    return {
+      taskCenterEnabled: flags.taskCenterEnabled,
+      executionEnabled: flags.executionEnabled,
+      automaticCreationEnabled: flags.automaticCreationEnabled,
+      legacyPrintingEnabled: flags.legacyPrintingEnabled,
+      merchantPrintingEnabled: settings.printingEnabled,
+      pollIntervalSeconds: 7,
+      automaticPrintingEnabled: flags.automaticCreationEnabled,
+      printerEnabled: boundPrinter?.enabled ?? false,
+      boundPrinter,
+      printers,
+      commands: { resetUsb: null },
     };
   }
 
@@ -979,6 +1022,87 @@ export class PrintJobsService {
     return null;
   }
 
+  async claimNextMerchantJob(
+    merchantId: bigint,
+    printerId?: bigint,
+    leaseMs = 30_000,
+    allowAutomatic = false,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    this.flags.assertExecutionEnabled();
+    await this.settings.assertMerchantEnabled(merchantId);
+    const printer = printerId
+      ? await this.requireEnabledPrinter(merchantId, printerId)
+      : await this.requireDefaultUsbPrinter(merchantId);
+    const automaticAllowed =
+      allowAutomatic && this.flags.automaticCreationEnabled();
+
+    await this.releaseExpiredLeases(new Date());
+    await this.releaseAvailableRetries(new Date(), merchantId);
+    if (automaticAllowed) {
+      await this.processPendingAutomaticTriggers(merchantId);
+    }
+
+    const active = await this.findActiveMerchantConnectorJob(merchantId, printer.id);
+    if (active) return active;
+
+    for (let round = 0; round < 3; round += 1) {
+      const claimed = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const candidate = await tx.printJob.findFirst({
+          where: {
+            merchantId,
+            status: 'PENDING',
+            availableAt: { lte: now },
+            retryBlocked: false,
+            OR: [
+              { source: { in: ['MANUAL', 'MANUAL_REPRINT', 'TEST'] } },
+              ...(automaticAllowed
+                ? [
+                    {
+                      source: 'AUTOMATIC' as const,
+                      printRule: { enabled: true, autoPrint: true },
+                    },
+                  ]
+                : []),
+            ],
+            printerId: printer.id,
+            printer: {
+              merchantId,
+              enabled: true,
+              deletedAt: null,
+              channelType: 'LOCAL_USB_ESCPOS',
+            },
+          },
+          orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
+        });
+        if (!candidate) return null;
+        const leaseExpiresAt = new Date(
+          now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
+        );
+        const changed = await tx.printJob.updateMany({
+          where: {
+            id: candidate.id,
+            merchantId,
+            status: 'PENDING',
+            leaseVersion: candidate.leaseVersion,
+          },
+          data: {
+            status: 'CLAIMED',
+            claimedAt: now,
+            claimedByTerminalId: null,
+            leaseExpiresAt,
+            leaseVersion: { increment: 1 },
+          },
+        });
+        if (changed.count !== 1) return null;
+        return tx.printJob.findUnique({ where: { id: candidate.id } });
+      });
+      if (claimed) return claimed;
+    }
+    return null;
+  }
+
   findActiveTerminalJob(merchantId: bigint, terminalId: bigint) {
     return this.prisma.printJob.findFirst({
       where: {
@@ -991,9 +1115,22 @@ export class PrintJobsService {
     });
   }
 
+  findActiveMerchantConnectorJob(merchantId: bigint, printerId?: bigint) {
+    return this.prisma.printJob.findFirst({
+      where: {
+        merchantId,
+        claimedByTerminalId: null,
+        printerId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+        leaseExpiresAt: { gt: new Date() },
+      },
+      orderBy: { claimedAt: 'asc' },
+    });
+  }
+
   async connectorJobPayload(
     merchantId: bigint,
-    terminalId: bigint,
+    terminalId: bigint | null,
     jobId: bigint,
   ) {
     const job = await this.prisma.printJob.findFirst({
@@ -1061,6 +1198,54 @@ export class PrintJobsService {
       printer: job.printer,
       currentAttempt: job.attempts[0] ?? null,
     };
+  }
+
+  async reportMerchantConnectorPrinterStatus(
+    merchantId: bigint,
+    dto: ReportTerminalPrinterStatusDto,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    const printerId = BigInt(dto.printerId);
+    const capabilities = dto.capabilities
+      ? normalizeConnectorJson(dto.capabilities)
+      : undefined;
+    const persistedStatus =
+      dto.status === 'CONNECTED'
+        ? 'ONLINE'
+        : dto.status === 'DISCONNECTED'
+          ? 'OFFLINE'
+          : dto.status;
+    const printer = await this.prisma.printer.findFirst({
+      where: {
+        id: printerId,
+        merchantId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        deletedAt: null,
+      },
+      select: { id: true, capabilities: true },
+    });
+    if (!printer) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.RESOURCE_NOT_FOUND,
+        message: 'USB 打印机不存在或不属于当前商家',
+      });
+    }
+    const currentCapabilities = isPlainObject(printer.capabilities)
+      ? printer.capabilities
+      : {};
+    return this.prisma.printer.update({
+      where: { id: printer.id },
+      data: {
+        status: persistedStatus,
+        capabilities: capabilities
+          ? normalizeConnectorJson({
+              ...currentCapabilities,
+              connectorStatus: capabilities,
+              connectorStatusUpdatedAt: new Date().toISOString(),
+            })
+          : undefined,
+      },
+    });
   }
 
   async releaseExpiredLeases(now = new Date()) {
@@ -1293,6 +1478,25 @@ export class PrintJobsService {
     return printer;
   }
 
+  private async requireDefaultUsbPrinter(merchantId: bigint) {
+    const printer = await this.prisma.printer.findFirst({
+      where: {
+        merchantId,
+        enabled: true,
+        deletedAt: null,
+        channelType: 'LOCAL_USB_ESCPOS',
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    });
+    if (!printer) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '当前商家没有已启用的 USB ESC/POS 打印机',
+      });
+    }
+    return printer;
+  }
+
   private async requireOwned(merchantId: bigint, id: bigint) {
     const job = await this.prisma.printJob.findFirst({ where: { id, merchantId } });
     if (!job) this.notFound();
@@ -1448,4 +1652,40 @@ function errorCode(error: unknown) {
 
 function outboxRetryDelay(attemptNo: number) {
   return Math.min(300_000, 5_000 * 2 ** Math.max(0, attemptNo - 1));
+}
+
+function normalizeConnectorJson(value: Record<string, unknown>) {
+  assertNoSensitiveConnectorKeys(value);
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length > 8_192) {
+      throw new Error('connector payload exceeds 8192 bytes');
+    }
+    return JSON.parse(serialized) as Prisma.InputJsonObject;
+  } catch (error) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message:
+        error instanceof Error && error.message.includes('8192')
+          ? '打印连接器诊断信息过大'
+          : '打印连接器诊断信息必须是有效 JSON',
+    });
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function assertNoSensitiveConnectorKeys(value: unknown) {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, nested] of Object.entries(value)) {
+    if (/password|secret|token|cookie|authorization|credential|api[_-]?key/i.test(key)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '打印连接器诊断信息不允许包含敏感字段',
+      });
+    }
+    assertNoSensitiveConnectorKeys(nested);
+  }
 }

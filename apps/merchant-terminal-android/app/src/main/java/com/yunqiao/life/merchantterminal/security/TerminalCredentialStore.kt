@@ -11,12 +11,12 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Stores the opaque terminal token encrypted by a non-exportable Android Keystore AES key.
- * SharedPreferences only contains IV+ciphertext; merchant web tokens are never read or reused.
+ * Stores the shared merchant/staff web session token encrypted by a non-exportable Android
+ * Keystore AES key so the native USB connector can call the same merchant APIs as the WebView.
  */
-class TerminalCredentialStore(
+class MerchantSessionTokenStore(
     context: Context,
-    private val keyAccess: TerminalKeyAccess = AndroidTerminalKeyAccess(),
+    private val keyAccess: MerchantSessionKeyAccess = AndroidMerchantSessionKeyAccess(),
 ) {
     private val preferences = context.applicationContext.getSharedPreferences(
         PREFERENCES_NAME,
@@ -25,9 +25,9 @@ class TerminalCredentialStore(
 
     @Synchronized
     fun save(token: String) {
-        require(token.length in 24..MAX_TOKEN_LENGTH) { "Terminal token length is invalid." }
+        require(token.length in 24..MAX_TOKEN_LENGTH) { "Merchant session token length is invalid." }
         require(token.none { it.isWhitespace() || it.code < 0x20 }) {
-            "Terminal token contains invalid characters."
+            "Merchant session token contains invalid characters."
         }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, keyAccess.getOrCreate())
@@ -65,7 +65,7 @@ class TerminalCredentialStore(
 
     private companion object {
         const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val PREFERENCES_NAME = "terminal_credential_encrypted"
+        const val PREFERENCES_NAME = "merchant_session_token_encrypted"
         const val KEY_IV = "iv"
         const val KEY_CIPHERTEXT = "ciphertext"
         const val GCM_TAG_BITS = 128
@@ -73,13 +73,13 @@ class TerminalCredentialStore(
     }
 }
 
-interface TerminalKeyAccess {
+interface MerchantSessionKeyAccess {
     fun getOrCreate(): SecretKey
     fun existing(): SecretKey?
     fun delete()
 }
 
-private class AndroidTerminalKeyAccess : TerminalKeyAccess {
+private class AndroidMerchantSessionKeyAccess : MerchantSessionKeyAccess {
     override fun getOrCreate(): SecretKey = existing() ?: KeyGenerator
         .getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         .apply {
@@ -110,7 +110,7 @@ private class AndroidTerminalKeyAccess : TerminalKeyAccess {
 
     private companion object {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "yunqiao_terminal_credential_v1"
+        const val KEY_ALIAS = "yunqiao_merchant_session_token_v1"
     }
 }
 

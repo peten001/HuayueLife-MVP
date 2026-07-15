@@ -5,7 +5,6 @@ import {
   createPrintJobReprint,
   createTableBillPrintJob,
   getCashierPrintingFeatureState,
-  listCashierMerchantTerminals,
   listCashierPrintJobs,
   listCashierPrintingPrinters,
   messageFromApiError,
@@ -13,7 +12,6 @@ import {
 import { cashierStorageKeys } from '@/config';
 import type {
   CashierPrintJob,
-  CashierMerchantTerminal,
   CashierPrintingAvailability,
   CashierPrintingFeatureState,
   CashierPrintingPrinter,
@@ -23,7 +21,6 @@ import { useAuthStore } from './auth';
 export const usePrintingStore = defineStore('cashier-printing', () => {
   const featureState = ref<CashierPrintingFeatureState | null>(null);
   const printers = ref<CashierPrintingPrinter[]>([]);
-  const terminals = ref<CashierMerchantTerminal[]>([]);
   const loading = ref(false);
   const submitting = ref(false);
   const error = ref('');
@@ -34,22 +31,11 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       (printer) => printer.enabled && printer.channelType === 'LOCAL_USB_ESCPOS',
     ),
   );
-  const onlineTerminals = computed(() =>
-    terminals.value.filter(
-      (terminal) =>
-        terminal.status === 'ACTIVE'
-        && terminal.onlineState === 'ONLINE'
-        && !terminal.revokedAt,
+  const readyUsbPrinters = computed(() =>
+    enabledUsbPrinters.value.filter((printer) =>
+      !['OFFLINE', 'ERROR', 'DISABLED'].includes(printer.status),
     ),
   );
-  const readyUsbPrinters = computed(() => {
-    const boundPrinterIds = new Set(
-      onlineTerminals.value.flatMap((terminal) =>
-        terminal.boundPrinterId ? [terminal.boundPrinterId] : [],
-      ),
-    );
-    return enabledUsbPrinters.value.filter((printer) => boundPrinterIds.has(printer.id));
-  });
 
   const availability = computed<CashierPrintingAvailability>(() => {
     const auth = useAuthStore();
@@ -64,8 +50,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       return 'DISABLED';
     }
     if (!enabledUsbPrinters.value.length) return 'CONFIG_REQUIRED';
-    if (!onlineTerminals.value.length) return 'TERMINAL_OFFLINE';
-    if (!readyUsbPrinters.value.length) return 'CONFIG_REQUIRED';
+    if (!readyUsbPrinters.value.length) return 'TERMINAL_OFFLINE';
     return 'READY';
   });
 
@@ -80,14 +65,12 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     loading.value = true;
     error.value = '';
     try {
-      const [feature, nextPrinters, nextTerminals] = await Promise.all([
+      const [feature, nextPrinters] = await Promise.all([
         getCashierPrintingFeatureState(),
         listCashierPrintingPrinters(),
-        listCashierMerchantTerminals(),
       ]);
       featureState.value = feature;
       printers.value = nextPrinters;
-      terminals.value = nextTerminals;
       lastRefreshAt.value = new Date().toISOString();
     } catch (caught) {
       error.value = messageFromApiError(caught);
@@ -153,7 +136,6 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   function clear() {
     featureState.value = null;
     printers.value = [];
-    terminals.value = [];
     loading.value = false;
     submitting.value = false;
     error.value = '';
@@ -180,9 +162,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   return {
     featureState,
     printers,
-    terminals,
     enabledUsbPrinters,
-    onlineTerminals,
     readyUsbPrinters,
     availability,
     ready,
