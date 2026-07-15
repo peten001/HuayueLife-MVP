@@ -6,7 +6,9 @@
 ## 1. 来源与边界
 
 - 分支：`feature/merchant-terminal-usb-rc-v1`
-- RC 代码与 APK Build Revision：`0f7abfeb97d2b25097272448f710f88c93be1f9a`
+- Web/Android RC 代码与 APK 内嵌 Build Revision：`0f7abfeb97d2b25097272448f710f88c93be1f9a`
+- API 最小部署包源码 Revision：`9f9d3c4ee6456927e396f9674d6cd100460f0eb6`
+- 最终文档/制品索引 Commit：以外部 `RELEASE_MANIFEST.md` 和交付时 Git HEAD 为准
 - rollback 源码基线：`9c7b947efda814da857ccb81067f4e79457b89a9`
 - 外部交付目录：`$HOME/Desktop/yunqiao-merchant-terminal-rc-v1/`（不进入 Git）
 - 生产数据库未连接，生产备份和 migration 未执行，Web/API 未部署，Git 未 push。
