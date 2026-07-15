@@ -94,12 +94,7 @@ class ConnectorRecoveryWorker(
                 return Result.success()
             }
             ConnectorSettings(applicationContext).recordError(error.errorCode)
-            if (
-                error.errorCode in setOf(
-                    "PRINTING_TASK_CENTER_DISABLED",
-                    "PRINTING_EXECUTION_DISABLED",
-                )
-            ) return Result.success()
+            if (error.printingDisabled) return Result.success()
             return if (runAttemptCount < MAX_ONE_TIME_RETRIES) Result.retry() else Result.failure()
         }
         if (!recoveryPerformed) return Result.success()

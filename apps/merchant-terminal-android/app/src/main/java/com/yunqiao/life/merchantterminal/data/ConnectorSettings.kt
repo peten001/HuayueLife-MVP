@@ -59,8 +59,7 @@ data class ConnectorSettingsSnapshot(
     val remotePrinterEnabled: Boolean = false,
     val remoteAutomaticPrintingEnabled: Boolean = false,
     val pollIntervalMs: Long = 7_000,
-    val heartbeatIntervalMs: Long = 30_000,
-    val heartbeatSequence: Long = 0,
+    val configRefreshIntervalMs: Long = 30_000,
     val usbBinding: UsbPrinterBinding? = null,
     /** Server printer association is retained even before the USB descriptor is saved. */
     val boundPrinterId: String? = null,
@@ -122,7 +121,6 @@ class ConnectorSettings(context: Context) {
             preferences[Keys.REMOTE_TERMINAL_ENABLED] = false
             preferences[Keys.REMOTE_PRINTER_ENABLED] = false
             preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = false
-            preferences.remove(Keys.HEARTBEAT_SEQUENCE)
             preferences.remove(Keys.LAST_ERROR_CODE)
             preferences.remove(Keys.LAST_SUCCESSFUL_PRINT_AT)
             preferences.remove(Keys.APPLIED_CONFIG_VERSION)
@@ -137,13 +135,29 @@ class ConnectorSettings(context: Context) {
         dataStore.edit { it[Keys.AUTO_PRINTING_ENABLED] = enabled }
     }
 
+    /**
+     * Binds local USB state to the first authenticated merchant scope. A different merchant must
+     * explicitly reset the connector, preventing one account from consuming another account's
+     * retained local binding or print ledger.
+     */
+    suspend fun bindMerchantScopeIfAbsent(merchantId: String): Boolean {
+        require(merchantId.matches(Regex("^[1-9][0-9]{0,38}$")))
+        var accepted = false
+        dataStore.edit { preferences ->
+            val current = preferences[Keys.MERCHANT_ID]
+            accepted = current == null || current == merchantId
+            if (current == null) preferences[Keys.MERCHANT_ID] = merchantId
+        }
+        return accepted
+    }
+
     suspend fun applyRemoteConfig(
         executionEnabled: Boolean,
         terminalEnabled: Boolean,
         printerEnabled: Boolean,
         automaticPrintingEnabled: Boolean,
         pollIntervalMs: Long,
-        heartbeatIntervalMs: Long,
+        configRefreshIntervalMs: Long,
     ) {
         dataStore.edit { preferences ->
             preferences[Keys.REMOTE_EXECUTION_ENABLED] = executionEnabled
@@ -153,7 +167,8 @@ class ConnectorSettings(context: Context) {
             preferences[Keys.AUTO_PRINTING_ENABLED] =
                 preferences[Keys.AUTO_PRINTING_ENABLED] == true && automaticPrintingEnabled
             preferences[Keys.POLL_INTERVAL_MS] = pollIntervalMs.coerceIn(5_000, 30_000)
-            preferences[Keys.HEARTBEAT_INTERVAL_MS] = heartbeatIntervalMs.coerceIn(10_000, 60_000)
+            preferences[Keys.CONFIG_REFRESH_INTERVAL_MS] =
+                configRefreshIntervalMs.coerceIn(10_000, 60_000)
         }
     }
 
@@ -206,15 +221,6 @@ class ConnectorSettings(context: Context) {
     suspend fun markConfigApplied(configVersion: Long) {
         require(configVersion >= 0)
         dataStore.edit { it[Keys.APPLIED_CONFIG_VERSION] = configVersion }
-    }
-
-    suspend fun nextHeartbeatSequence(): Long {
-        var next = 1L
-        dataStore.edit { preferences ->
-            next = (preferences[Keys.HEARTBEAT_SEQUENCE] ?: 0L).plus(1).coerceAtLeast(1)
-            preferences[Keys.HEARTBEAT_SEQUENCE] = next
-        }
-        return next
     }
 
     suspend fun recordError(code: String?) {
@@ -279,8 +285,7 @@ class ConnectorSettings(context: Context) {
             remoteAutomaticPrintingEnabled =
                 preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] ?: false,
             pollIntervalMs = preferences[Keys.POLL_INTERVAL_MS] ?: 7_000,
-            heartbeatIntervalMs = preferences[Keys.HEARTBEAT_INTERVAL_MS] ?: 30_000,
-            heartbeatSequence = preferences[Keys.HEARTBEAT_SEQUENCE] ?: 0,
+            configRefreshIntervalMs = preferences[Keys.CONFIG_REFRESH_INTERVAL_MS] ?: 30_000,
             usbBinding = binding,
             boundPrinterId = preferences[Keys.PRINTER_ID],
             lastErrorCode = preferences[Keys.LAST_ERROR_CODE],
@@ -301,8 +306,7 @@ class ConnectorSettings(context: Context) {
         val REMOTE_PRINTER_ENABLED = booleanPreferencesKey("remote_printer_enabled")
         val REMOTE_AUTO_PRINTING_ENABLED = booleanPreferencesKey("remote_automatic_printing_enabled")
         val POLL_INTERVAL_MS = longPreferencesKey("poll_interval_ms")
-        val HEARTBEAT_INTERVAL_MS = longPreferencesKey("heartbeat_interval_ms")
-        val HEARTBEAT_SEQUENCE = longPreferencesKey("heartbeat_sequence")
+        val CONFIG_REFRESH_INTERVAL_MS = longPreferencesKey("config_refresh_interval_ms")
         val PRINTER_ID = stringPreferencesKey("printer_id")
         val USB_DEVICE_NAME = stringPreferencesKey("usb_device_name")
         val USB_VENDOR_ID = intPreferencesKey("usb_vendor_id")

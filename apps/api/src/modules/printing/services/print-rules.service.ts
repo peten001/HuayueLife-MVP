@@ -8,6 +8,7 @@ import { CreatePrintRuleDto, UpdatePrintRuleDto } from '../dto/print-rule.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+import { PrintingSettingsService } from './printing-settings.service';
 
 @Injectable()
 export class PrintRulesService {
@@ -15,6 +16,7 @@ export class PrintRulesService {
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly audit: PrintingAuditService,
+    private readonly settings: PrintingSettingsService,
   ) {}
 
   list(merchantId: bigint) {
@@ -36,6 +38,7 @@ export class PrintRulesService {
     dto: CreatePrintRuleDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     this.validateV1Semantics(
       dto.triggerEvent,
       dto.receiptType,
@@ -89,6 +92,7 @@ export class PrintRulesService {
     dto: UpdatePrintRuleDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     const printerId = dto.printerId ? BigInt(dto.printerId) : existing.printerId;
     const receiptTemplateId =
@@ -157,6 +161,7 @@ export class PrintRulesService {
     enabled: boolean,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     if (enabled) {
       this.validateV1Semantics(

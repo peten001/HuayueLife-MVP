@@ -124,6 +124,7 @@ const profileForm = reactive({
 });
 const provinceOptions = ['北江', '北宁'] as const;
 const capabilityValues = reactive<Record<string, boolean>>({});
+const capabilityServerValues = ref<Record<string, boolean>>({});
 const selectedTagIds = ref<string[]>([]);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
@@ -201,8 +202,8 @@ const operationCapabilityCards = computed<CapabilityCard[]>(() => [
   },
   {
     code: 'printerEnabled',
-    title: '打印机',
-    description: '允许打印机管理',
+    title: '平台打印总能力',
+    description: '由平台开通或关闭；商家只能在开通范围内配置打印',
     icon: '🖨',
   },
   {
@@ -401,6 +402,8 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
       capabilityValues[capability.code] = false;
     }
   }
+  capabilityValues.printerEnabled = Boolean(item.printingEnabled);
+  capabilityServerValues.value = { ...capabilityValues };
 }
 
 function parseBusinessHours(value: PlatformBusinessHours | undefined) {
@@ -591,18 +594,28 @@ async function saveCapabilities() {
   message.value = '';
   try {
     const capabilityPayload = Object.entries(capabilityValues)
-      .filter(([code]) => platformOrderingEnabled.value || !ORDERING_CAPABILITY_CODES.has(code))
+      .filter(([code]) => (
+        code === 'printerEnabled'
+        || platformOrderingEnabled.value
+        || !ORDERING_CAPABILITY_CODES.has(code)
+      ))
       .map(([code, isEnabled]) => ({ code, isEnabled }));
     await updatePlatformMerchantCapabilities(
       merchantId.value,
       capabilityPayload,
     );
-    message.value = platformOrderingEnabled.value
-      ? '能力配置已保存'
-      : '展示能力已保存，经营能力因平台总开关关闭未修改';
     await loadPage();
+    if (detail.value) {
+      message.value = platformOrderingEnabled.value
+        ? '能力配置已保存'
+        : '展示和打印能力已保存，其他经营能力因平台总开关关闭未修改';
+    }
   } catch (error) {
-    message.value = errorMessage(error);
+    const failureMessage = errorMessage(error);
+    Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
+    Object.assign(capabilityValues, capabilityServerValues.value);
+    await loadPage();
+    message.value = failureMessage;
   } finally {
     saving.value = false;
   }
@@ -1007,7 +1020,7 @@ function backToList() {
           </div>
           <div v-if="!platformOrderingEnabled" class="capabilities-banner capabilities-banner--warning">
             <span class="capabilities-banner-icon">!</span>
-            <p>平台已关闭经营能力总开关，当前商家的经营/订单能力暂不可编辑。开启总开关后，将恢复使用该商家原有配置。</p>
+            <p>平台已关闭经营能力总开关，当前商家的经营/订单能力暂不可编辑；平台打印总能力仍可独立开通或关闭。</p>
           </div>
           <div class="capability-groups">
             <article class="capability-group-card">
@@ -1047,14 +1060,14 @@ function backToList() {
                     'capability-card',
                     {
                       'is-enabled': capabilityEnabled(capability.code),
-                      'is-disabled': !platformOrderingEnabled,
+                      'is-disabled': !platformOrderingEnabled && capability.code !== 'printerEnabled',
                     },
                   ]"
                 >
                   <input
                     v-model="capabilityValues[capability.code]"
                     type="checkbox"
-                    :disabled="!platformOrderingEnabled"
+                    :disabled="!platformOrderingEnabled && capability.code !== 'printerEnabled'"
                   />
                   <span class="capability-icon">{{ capability.icon }}</span>
                   <span class="capability-card-main">

@@ -2,10 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
-import {
-  getPrintingFeatureState,
-  updateMerchantPrintingSettings,
-} from '@/api/printing';
+import { getPrintingFeatureState } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
 import type { PrintingFeatureState } from '@/types/printing';
 
@@ -15,17 +12,20 @@ const router = useRouter();
 const showLegacyRedirectNotice = ref(false);
 const legacyNoticePath = ref('');
 const featureState = ref<PrintingFeatureState | null>(null);
-const settingsLoading = ref(false);
-const settingsMessage = ref('');
-const settingsSuccess = ref(false);
-
-const executionLabel = computed(() =>
-  !featureState.value?.merchantPrintingEnabled
-    ? p('merchantPrintingOff')
-    : featureState.value.executionEnabled
-      ? p('merchantPrintingOn')
-      : p('merchantEnabledExecutionOff'),
+const featureLoading = ref(true);
+const featureError = ref('');
+const platformPrintingEnabled = computed(
+  () => featureState.value?.merchantPrintingEnabled === true,
 );
+
+const executionLabel = computed(() => {
+  if (featureLoading.value) return p('loading');
+  if (featureError.value) return p('stateUnavailable');
+  if (!featureState.value?.merchantPrintingEnabled) return p('merchantPrintingOff');
+  return featureState.value.executionEnabled
+    ? p('merchantPrintingOn')
+    : p('merchantEnabledExecutionOff');
+});
 
 const tabs = [
   { path: '/printing-center/printers', label: 'printers' },
@@ -53,32 +53,15 @@ watch(
 );
 
 async function loadFeatureState() {
+  featureLoading.value = true;
+  featureError.value = '';
   try {
     featureState.value = await getPrintingFeatureState();
   } catch (error) {
-    settingsSuccess.value = false;
-    settingsMessage.value = errorMessage(error);
-  }
-}
-
-async function toggleMerchantPrinting() {
-  if (!featureState.value || settingsLoading.value) return;
-  const next = !featureState.value.merchantPrintingEnabled;
-  if (!window.confirm(p(next ? 'enableMasterConfirm' : 'disableMasterConfirm'))) return;
-  try {
-    settingsLoading.value = true;
-    const settings = await updateMerchantPrintingSettings(next);
-    featureState.value = {
-      ...settings.featureFlags,
-      merchantPrintingEnabled: settings.printingEnabled,
-    };
-    settingsSuccess.value = true;
-    settingsMessage.value = p('settingsSaved');
-  } catch (error) {
-    settingsSuccess.value = false;
-    settingsMessage.value = errorMessage(error);
+    featureState.value = null;
+    featureError.value = errorMessage(error);
   } finally {
-    settingsLoading.value = false;
+    featureLoading.value = false;
   }
 }
 
@@ -122,25 +105,9 @@ onMounted(loadFeatureState);
           <strong>{{ p('merchantMasterSwitch') }}</strong>
           <p>{{ p('masterSwitchHint') }}</p>
         </div>
-        <button
-          :class="[
-            'printing-button',
-            featureState?.merchantPrintingEnabled
-              ? 'printing-button--danger'
-              : 'printing-button--secondary',
-          ]"
-          type="button"
-          :disabled="!featureState || settingsLoading"
-          @click="toggleMerchantPrinting"
-        >
-          {{ settingsLoading
-            ? p('saving')
-            : featureState?.merchantPrintingEnabled
-              ? p('disable')
-              : p('enable') }}
-        </button>
+        <span class="printing-safety-gates__readonly">{{ p('platformManaged') }}</span>
       </div>
-      <div class="printing-safety-gates__flags">
+      <div v-if="featureState" class="printing-safety-gates__flags">
         <span class="printing-gate">
           {{ p('taskCenterSwitch') }}
           <b :class="featureState?.taskCenterEnabled ? 'is-active' : 'is-danger'">
@@ -172,21 +139,32 @@ onMounted(loadFeatureState);
           </b>
         </span>
       </div>
-      <p
-        v-if="settingsMessage"
-        :class="['printing-message', { 'printing-message--success': settingsSuccess }]"
-      >
-        {{ settingsMessage }}
-      </p>
     </section>
 
-    <nav class="printing-center__tabs" :aria-label="p('title')">
+    <section v-if="featureLoading" class="printing-platform-gate" role="status">
+      <strong>{{ p('loading') }}</strong>
+    </section>
+
+    <section v-else-if="featureError" class="printing-platform-gate printing-platform-gate--error" role="alert">
+      <strong>{{ p('stateUnavailable') }}</strong>
+      <p>{{ featureError }}</p>
+      <button class="printing-button printing-button--secondary" type="button" @click="loadFeatureState">
+        {{ p('refresh') }}
+      </button>
+    </section>
+
+    <section v-else-if="!platformPrintingEnabled" class="printing-platform-gate" role="alert" data-testid="printing-platform-gate">
+      <strong>{{ p('printingNotEnabled') }}</strong>
+      <p>{{ p('printingNotEnabledHint') }}</p>
+    </section>
+
+    <nav v-if="platformPrintingEnabled" class="printing-center__tabs" :aria-label="p('title')">
       <RouterLink v-for="tab in tabs" :key="tab.path" :to="tab.path">
         {{ p(tab.label) }}
       </RouterLink>
     </nav>
 
-    <RouterView />
+    <RouterView v-if="platformPrintingEnabled" />
   </section>
 </template>
 
@@ -267,6 +245,46 @@ onMounted(loadFeatureState);
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.printing-safety-gates__readonly {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #c9ded0;
+  border-radius: 999px;
+  color: #365542;
+  background: #f5faf6;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.printing-platform-gate {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid #ead8ad;
+  border-radius: 16px;
+  color: #6d5115;
+  background: #fff9e8;
+}
+
+.printing-platform-gate strong {
+  font-size: 18px;
+}
+
+.printing-platform-gate p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.printing-platform-gate--error {
+  border-color: #efc7c7;
+  color: #8b2b2b;
+  background: #fff3f3;
 }
 
 .printing-safety-gates__summary strong {

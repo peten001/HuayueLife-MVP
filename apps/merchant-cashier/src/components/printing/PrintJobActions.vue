@@ -34,9 +34,8 @@ const canSubmit = computed(
 );
 const statusLabel = computed(() => {
   if (availability.value === 'READY') return t('print.ready');
-  if (availability.value === 'CONFIG_REQUIRED') return t('print.configurationRequired');
-  if (availability.value === 'UNAVAILABLE') return t('print.unavailable');
-  if (availability.value === 'TERMINAL_OFFLINE') return t('print.terminalOffline');
+  if (availability.value === 'NOT_CONFIGURED') return t('print.configurationRequired');
+  if (availability.value === 'DEVICE_OFFLINE') return t('print.terminalOffline');
   if (availability.value === 'LOADING') return t('print.checking');
   return t('print.disabled');
 });

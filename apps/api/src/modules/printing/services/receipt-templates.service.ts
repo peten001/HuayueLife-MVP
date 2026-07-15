@@ -13,6 +13,7 @@ import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { assertReceiptTemplateDefinition } from '../types/receipt-document';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+import { PrintingSettingsService } from './printing-settings.service';
 
 @Injectable()
 export class ReceiptTemplatesService {
@@ -20,6 +21,7 @@ export class ReceiptTemplatesService {
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly audit: PrintingAuditService,
+    private readonly settings: PrintingSettingsService,
   ) {}
 
   list(merchantId: bigint) {
@@ -42,6 +44,7 @@ export class ReceiptTemplatesService {
     dto: CreateReceiptTemplateDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const definition = this.validateDefinition(dto.definition);
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.receiptTemplate.create({
@@ -80,6 +83,7 @@ export class ReceiptTemplatesService {
     dto: UpdateReceiptTemplateDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     const definition = dto.definition
       ? this.validateDefinition(dto.definition)
@@ -143,6 +147,7 @@ export class ReceiptTemplatesService {
     id: bigint,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const source = await this.requireReadable(merchantId, id);
     return this.prisma.$transaction(async (tx) => {
       const copyName = `${source.name} - 副本`.slice(0, 80);

@@ -24,33 +24,43 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   const loading = ref(false);
   const submitting = ref(false);
   const error = ref('');
+  const statusError = ref('');
   const lastRefreshAt = ref<string | null>(null);
 
+  const configuredUsbPrinters = computed(() =>
+    printers.value.filter(isConfiguredUsbPrinter),
+  );
+  const enabledPrinters = computed(() =>
+    printers.value.filter((printer) => printer.enabled),
+  );
   const enabledUsbPrinters = computed(() =>
-    printers.value.filter(
-      (printer) => printer.enabled && printer.channelType === 'LOCAL_USB_ESCPOS',
-    ),
+    configuredUsbPrinters.value.filter((printer) => printer.enabled),
   );
   const readyUsbPrinters = computed(() =>
-    enabledUsbPrinters.value.filter((printer) =>
-      !['OFFLINE', 'ERROR', 'DISABLED'].includes(printer.status),
-    ),
+    enabledUsbPrinters.value.filter(isReadyUsbPrinter),
   );
 
   const availability = computed<CashierPrintingAvailability>(() => {
     const auth = useAuthStore();
-    if (auth.demoMode) return 'DISABLED';
+    if (auth.demoMode) return 'NOT_ENABLED';
     if (loading.value && !featureState.value) return 'LOADING';
-    if (error.value && !featureState.value) return 'UNAVAILABLE';
+    // Without a verified platform capability response, never infer that the
+    // merchant is enabled. The separate network indicator carries diagnostics.
+    if (statusError.value && !featureState.value) return 'NOT_ENABLED';
+    if (featureState.value?.merchantPrintingEnabled !== true) return 'NOT_ENABLED';
+    if (statusError.value) return 'DEVICE_OFFLINE';
     if (
-      !featureState.value?.taskCenterEnabled
+      !enabledPrinters.value.length
+      || enabledPrinters.value.every(isPrinterNotConfigured)
+    ) return 'NOT_CONFIGURED';
+    if (
+      !auth.isAuthenticated
+      || auth.mustChangePassword
+      || !isExistingPrintingRole(auth.role)
+      || !featureState.value.taskCenterEnabled
       || !featureState.value.executionEnabled
-      || featureState.value.merchantPrintingEnabled === false
-    ) {
-      return 'DISABLED';
-    }
-    if (!enabledUsbPrinters.value.length) return 'CONFIG_REQUIRED';
-    if (!readyUsbPrinters.value.length) return 'TERMINAL_OFFLINE';
+      || !readyUsbPrinters.value.length
+    ) return 'DEVICE_OFFLINE';
     return 'READY';
   });
 
@@ -64,6 +74,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     }
     loading.value = true;
     error.value = '';
+    statusError.value = '';
     try {
       const [feature, nextPrinters] = await Promise.all([
         getCashierPrintingFeatureState(),
@@ -73,7 +84,8 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       printers.value = nextPrinters;
       lastRefreshAt.value = new Date().toISOString();
     } catch (caught) {
-      error.value = messageFromApiError(caught);
+      statusError.value = messageFromApiError(caught);
+      error.value = statusError.value;
       throw caught;
     } finally {
       loading.value = false;
@@ -121,6 +133,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     const requestKey = getOrCreateRequestKey(operationKey);
     submitting.value = true;
     error.value = '';
+    statusError.value = '';
     try {
       const result = await operation(requestKey);
       clearRequestKey(operationKey);
@@ -162,6 +175,8 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   return {
     featureState,
     printers,
+    configuredUsbPrinters,
+    enabledPrinters,
     enabledUsbPrinters,
     readyUsbPrinters,
     availability,
@@ -169,6 +184,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     loading,
     submitting,
     error,
+    statusError,
     lastRefreshAt,
     refreshStatus,
     listEntityJobs,
@@ -178,6 +194,51 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     clear,
   };
 });
+
+const USB_CHANNEL = 'LOCAL_USB_ESCPOS';
+const USB_CUT_MODES = new Set(['NONE', 'HALF', 'FULL']);
+const EXISTING_PRINTING_ROLES = new Set(['OWNER', 'MANAGER', 'STAFF']);
+
+function isConfiguredUsbPrinter(printer: CashierPrintingPrinter) {
+  if (printer.channelType !== USB_CHANNEL || !isPlainObject(printer.connectionConfig)) {
+    return false;
+  }
+  const keys = Object.keys(printer.connectionConfig);
+  if (keys.some((key) => !['paperWidthDots', 'threshold', 'cutMode'].includes(key))) {
+    return false;
+  }
+  const { paperWidthDots, threshold, cutMode } = printer.connectionConfig;
+  return (
+    (paperWidthDots === undefined || isIntegerInRange(paperWidthDots, 200, 1024))
+    && (threshold === undefined || isIntegerInRange(threshold, 0, 255))
+    && (cutMode === undefined || (typeof cutMode === 'string' && USB_CUT_MODES.has(cutMode)))
+  );
+}
+
+function isReadyUsbPrinter(printer: CashierPrintingPrinter) {
+  return printer.status === 'ONLINE'
+    && printer.readiness?.state === 'READY'
+    && printer.readiness.channelImplemented === true
+    && printer.readiness.configValid === true
+    && printer.readiness.statusReady === true;
+}
+
+function isPrinterNotConfigured(printer: CashierPrintingPrinter) {
+  if (printer.readiness?.state === 'NOT_CONFIGURED') return true;
+  return printer.channelType === USB_CHANNEL && !isConfiguredUsbPrinter(printer);
+}
+
+function isExistingPrintingRole(role: string | null) {
+  return role !== null && EXISTING_PRINTING_ROLES.has(role);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isIntegerInRange(value: unknown, minimum: number, maximum: number) {
+  return Number.isInteger(value) && Number(value) >= minimum && Number(value) <= maximum;
+}
 
 function readRequestKeys(): Record<string, string> {
   if (typeof window === 'undefined') return {};

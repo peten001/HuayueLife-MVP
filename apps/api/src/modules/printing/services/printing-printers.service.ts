@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PrinterChannelType, PrintingPrinterStatus, Prisma } from '@prisma/client';
 import { isIP } from 'node:net';
 import { PrismaService } from '../../../database/prisma.service';
 import {
@@ -11,8 +11,10 @@ import {
   UpdatePrintingPrinterDto,
 } from '../dto/printer.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
+import { printerReadiness } from '../utils/printer-readiness';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+import { PrintingSettingsService } from './printing-settings.service';
 
 @Injectable()
 export class PrintingPrintersService {
@@ -20,6 +22,7 @@ export class PrintingPrintersService {
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly audit: PrintingAuditService,
+    private readonly settings: PrintingSettingsService,
   ) {}
 
   async list(merchantId: bigint) {
@@ -43,6 +46,7 @@ export class PrintingPrintersService {
     dto: CreatePrintingPrinterDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const connectionConfig = this.normalizeConnectionConfig(
       dto.channelType,
       dto.connectionConfig,
@@ -87,6 +91,7 @@ export class PrintingPrintersService {
     dto: UpdatePrintingPrinterDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     const channelType = dto.channelType ?? existing.channelType;
     if (
@@ -147,6 +152,7 @@ export class PrintingPrintersService {
     id: bigint,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     const printer = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.printer.update({
@@ -292,18 +298,31 @@ export class PrintingPrintersService {
     }
   }
 
-  private serialize<T extends { channelType: string }>(printer: T) {
+  private serialize<
+    T extends {
+      channelType: PrinterChannelType;
+      enabled: boolean;
+      status: PrintingPrinterStatus;
+      connectionConfig: Prisma.JsonValue;
+      capabilities: Prisma.JsonValue;
+    },
+  >(printer: T) {
     const usb = printer.channelType === 'LOCAL_USB_ESCPOS';
+    const readiness = printerReadiness(printer);
     return {
       ...printer,
+      readiness,
       adapterStatus: usb
-        ? this.flags.executionEnabled()
-          ? 'READY_FOR_TERMINAL_BINDING'
-          : PRINTING_ERROR_CODES.EXECUTION_DISABLED
+        ? !this.flags.executionEnabled()
+          ? PRINTING_ERROR_CODES.EXECUTION_DISABLED
+          : readiness.state === 'READY'
+            ? 'READY'
+            : readiness.state
         : PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-      executionState: this.flags.executionEnabled()
-        ? 'CONNECTOR_NOT_REGISTERED'
-        : 'CONNECTOR_PENDING',
+      executionState:
+        this.flags.executionEnabled() && readiness.state === 'READY'
+          ? 'READY'
+          : 'CONNECTOR_PENDING',
     };
   }
 

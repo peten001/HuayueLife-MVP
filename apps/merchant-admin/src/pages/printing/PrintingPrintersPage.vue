@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
   createPrintingPrinter,
@@ -29,6 +29,22 @@ const success = ref(false);
 const modalOpen = ref(false);
 const capabilitiesText = ref('{}');
 const TEST_JOB_REQUEST_KEYS_STORAGE = 'yunqiao.printing.testJobRequestKeys.v1';
+const printingAvailability = computed(() => {
+  if (!settings.value?.printingEnabled) return 'NOT_ENABLED';
+  const enabledRows = rows.value.filter((row) => row.enabled);
+  if (
+    !enabledRows.length
+    || enabledRows.every((row) => printerAvailability(row) === 'NOT_CONFIGURED')
+  ) return 'NOT_CONFIGURED';
+  if (enabledRows.some((row) => printerAvailability(row) === 'READY')) return 'READY';
+  return 'DEVICE_OFFLINE';
+});
+const printingAvailabilityLabel = computed(() => {
+  if (printingAvailability.value === 'READY') return p('printerReady');
+  if (printingAvailability.value === 'NOT_CONFIGURED') return p('printerNotConfigured');
+  if (printingAvailability.value === 'DEVICE_OFFLINE') return p('printerDeviceOffline');
+  return p('printingNotEnabled');
+});
 
 const form = reactive({
   id: '',
@@ -153,12 +169,31 @@ async function toggleEnabled(row: PrintingPrinter) {
 
 function canCreateTestJob(row: PrintingPrinter) {
   return Boolean(
-    row.channelType === 'LOCAL_USB_ESCPOS' &&
-      row.enabled &&
+    printerAvailability(row) === 'READY' &&
       settings.value?.printingEnabled &&
       settings.value.featureFlags.taskCenterEnabled &&
       settings.value.featureFlags.executionEnabled,
   );
+}
+
+function printerAvailability(row: PrintingPrinter) {
+  if (!row.enabled || row.readiness?.state === 'NOT_CONFIGURED') return 'NOT_CONFIGURED';
+  if (
+    row.channelType === 'LOCAL_USB_ESCPOS'
+    && row.status === 'ONLINE'
+    && row.readiness?.state === 'READY'
+    && row.readiness.channelImplemented
+    && row.readiness.configValid
+    && row.readiness.statusReady
+  ) return 'READY';
+  return 'DEVICE_OFFLINE';
+}
+
+function printerAvailabilityLabel(row: PrintingPrinter) {
+  const state = printerAvailability(row);
+  if (state === 'READY') return p('printerReady');
+  if (state === 'NOT_CONFIGURED') return p('printerNotConfigured');
+  return p('printerDeviceOffline');
 }
 
 async function createTestJob(row: PrintingPrinter) {
@@ -251,6 +286,9 @@ onMounted(load);
     </div>
 
     <p class="printing-hint">{{ p('testJobPrerequisite') }}</p>
+    <p class="printing-message" data-testid="merchant-printing-availability">
+      {{ printingAvailabilityLabel }}
+    </p>
     <p :class="['printing-message', { 'printing-message--success': success }]">{{ message }}</p>
 
     <div class="printing-table-wrap">
@@ -277,10 +315,10 @@ onMounted(load);
             <td>{{ row.purpose }}</td>
             <td>{{ row.channelType === 'LOCAL_USB_ESCPOS' ? p('usbConfiguredOnTerminal') : p('notImplementedChannel') }}</td>
             <td>
-              <span :class="['printing-badge', row.enabled ? 'printing-badge--success' : 'printing-badge--warning']">
-                {{ row.enabled ? p('enabled') : p('disabled') }}
+              <span :class="['printing-badge', printerAvailability(row) === 'READY' ? 'printing-badge--success' : 'printing-badge--warning']">
+                {{ printerAvailabilityLabel(row) }}
               </span>
-              <small>{{ row.status }}</small>
+              <small>{{ row.status }} · {{ row.enabled ? p('enabled') : p('disabled') }}</small>
             </td>
             <td>
               <div class="printing-actions">
@@ -312,7 +350,7 @@ onMounted(load);
               </div>
             </td>
           </tr>
-          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="7">{{ p('noData') }}</td></tr>
+          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="7">{{ p('printerNotConfigured') }}</td></tr>
           <tr v-if="loading"><td class="printing-empty" colspan="7">{{ p('loading') }}</td></tr>
         </tbody>
       </table>

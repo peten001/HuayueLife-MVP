@@ -13,6 +13,8 @@ import {
 } from '../types/printing-errors';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
+import { isReadyPrinter } from '../utils/printer-readiness';
+import { PrintingSettingsService } from './printing-settings.service';
 
 export interface StartPrintingInput {
   merchantId: bigint;
@@ -47,6 +49,7 @@ export class PrintAttemptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
+    private readonly settings: PrintingSettingsService,
   ) {}
 
   async markPrinting(input: StartPrintingInput) {
@@ -101,6 +104,7 @@ export class PrintAttemptsService {
         where: {
           id: job.id,
           merchantId: input.merchantId,
+          merchant: { status: 'ACTIVE', printingEnabled: true },
           status: 'CLAIMED',
           claimedByTerminalId: input.terminalId,
           leaseVersion: input.leaseVersion,
@@ -132,6 +136,9 @@ export class PrintAttemptsService {
   }
 
   async markSucceeded(input: FinishPrintingInput) {
+    // Completion reports reconcile an attempt that already reached hardware.
+    // They intentionally remain accepted after the platform gate closes so a
+    // real output is not left as an unknown/orphaned attempt.
     this.assertExecution();
     if (input.terminalId !== null) {
       await this.requireActiveTerminal(input.merchantId, input.terminalId);
@@ -208,6 +215,7 @@ export class PrintAttemptsService {
   }
 
   async markFailed(input: FailPrintingInput) {
+    // Failure reports are also reconciliation-only and cannot emit output.
     this.assertExecution();
     if (input.terminalId !== null) {
       await this.requireActiveTerminal(input.merchantId, input.terminalId);
@@ -312,6 +320,7 @@ export class PrintAttemptsService {
     leaseMs = 30_000,
   ) {
     this.assertExecution();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     if (terminalId !== null) {
       await this.requireActiveTerminal(merchantId, terminalId);
     }
@@ -323,6 +332,7 @@ export class PrintAttemptsService {
       where: {
         id: jobId,
         merchantId,
+        merchant: { status: 'ACTIVE', printingEnabled: true },
         status: { in: ['CLAIMED', 'PRINTING'] },
         claimedByTerminalId: terminalId,
         leaseVersion: expectedLeaseVersion,
@@ -371,28 +381,27 @@ export class PrintAttemptsService {
     terminalId: bigint | null,
     printerId: bigint,
   ) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId, client);
     if (terminalId === null) {
       const printer = await client.printer.findFirst({
         where: {
           id: printerId,
           merchantId,
-          enabled: true,
           deletedAt: null,
-          channelType: 'LOCAL_USB_ESCPOS',
         },
         select: {
           id: true,
-          merchant: { select: { status: true, printingEnabled: true } },
+          channelType: true,
+          enabled: true,
+          status: true,
+          connectionConfig: true,
+          capabilities: true,
         },
       });
-      if (
-        !printer ||
-        printer.merchant.status !== 'ACTIVE' ||
-        !printer.merchant.printingEnabled
-      ) {
+      if (!printer || !isReadyPrinter(printer)) {
         throw new BadRequestException({
-          code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
-          message: '商家账号、打印总开关或 USB 打印机当前不可用',
+          code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+          message: 'USB 打印设备尚无明确可用证据',
         });
       }
       return;
@@ -407,13 +416,15 @@ export class PrintAttemptsService {
       },
       select: {
         boundPrinterId: true,
-        merchant: { select: { status: true, printingEnabled: true } },
         boundPrinter: {
           select: {
             id: true,
             enabled: true,
+            status: true,
             deletedAt: true,
             channelType: true,
+            connectionConfig: true,
+            capabilities: true,
           },
         },
       },
@@ -425,24 +436,14 @@ export class PrintAttemptsService {
       });
     }
     if (
-      terminal.merchant.status !== 'ACTIVE' ||
-      !terminal.merchant.printingEnabled
-    ) {
-      throw new BadRequestException({
-        code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
-        message: '商家账号或打印总开关已关闭，已阻止开始硬件打印',
-      });
-    }
-    if (
       terminal.boundPrinterId !== printerId ||
       !terminal.boundPrinter ||
-      !terminal.boundPrinter.enabled ||
       terminal.boundPrinter.deletedAt ||
-      terminal.boundPrinter.channelType !== 'LOCAL_USB_ESCPOS'
+      !isReadyPrinter(terminal.boundPrinter)
     ) {
       throw new BadRequestException({
-        code: PRINTING_ERROR_CODES.PRINTER_DISABLED,
-        message: '绑定的 USB 打印机已停用或配置已变更',
+        code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+        message: '绑定的 USB 打印设备尚无明确可用证据',
       });
     }
   }

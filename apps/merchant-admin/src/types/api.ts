@@ -339,6 +339,7 @@ export interface PlatformMerchantListItem {
   manualPopular: boolean;
   isVisibleOnClient: boolean;
   reportFeatureEnabled: boolean;
+  printingEnabled: boolean;
   promotionTags: PlatformPromotionTag[];
   capabilities: PlatformCapabilityValue[];
   capabilitySummary: string[];
@@ -397,6 +398,7 @@ export interface PlatformMerchantDetailResponse {
     manualPopular: boolean;
     isVisibleOnClient: boolean;
     reportFeatureEnabled: boolean;
+    printingEnabled: boolean;
     dineInEnabled: boolean;
     promotionTags: PlatformPromotionTag[];
     capabilities: PlatformCapabilityValue[];

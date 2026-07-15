@@ -73,7 +73,7 @@ const printingStatus = computed(() => {
   if (props.printingAvailability === 'READY') {
     return { label: t('print.ready'), shortLabel: t('print.readyShort'), tone: 'ok' } as const;
   }
-  if (props.printingAvailability === 'CONFIG_REQUIRED') {
+  if (props.printingAvailability === 'NOT_CONFIGURED') {
     return {
       label: t('print.configurationRequired'),
       shortLabel: t('print.configurationRequiredShort'),
@@ -83,10 +83,7 @@ const printingStatus = computed(() => {
   if (props.printingAvailability === 'LOADING') {
     return { label: t('print.checking'), shortLabel: t('print.checkingShort'), tone: 'warning' } as const;
   }
-  if (props.printingAvailability === 'UNAVAILABLE') {
-    return { label: t('print.unavailable'), shortLabel: t('print.unavailableShort'), tone: 'danger' } as const;
-  }
-  if (props.printingAvailability === 'TERMINAL_OFFLINE') {
+  if (props.printingAvailability === 'DEVICE_OFFLINE') {
     return { label: t('print.terminalOffline'), shortLabel: t('print.terminalOfflineShort'), tone: 'warning' } as const;
   }
   return { label: t('print.disabled'), shortLabel: t('print.disabledShort'), tone: 'muted' } as const;

@@ -22,6 +22,10 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.databinding.ActivityUsbPrinterDiagnosticsBinding
+import com.yunqiao.life.merchantterminal.connector.ConnectorApiClient
+import com.yunqiao.life.merchantterminal.connector.ConnectorApiConfig
+import com.yunqiao.life.merchantterminal.connector.ConnectorApiException
+import com.yunqiao.life.merchantterminal.connector.ConnectorPrintExecutionPolicy
 import com.yunqiao.life.merchantterminal.connector.ConnectorStartGate
 import com.yunqiao.life.merchantterminal.connector.ConnectorRuntimeState
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
@@ -220,10 +224,14 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             afterUnrecognizedDeviceConfirmation { runSingleAction(::testConnection) }
         }
         binding.printAsciiTestButton.setOnClickListener {
-            afterUnrecognizedDeviceConfirmation { runSingleAction(::printAsciiSmokeReceipt) }
+            afterUnrecognizedDeviceConfirmation {
+                runSingleAction(::printAsciiSmokeReceipt, requiresPlatformPrinting = true)
+            }
         }
         binding.printImageTestButton.setOnClickListener {
-            afterUnrecognizedDeviceConfirmation { runSingleAction(::printImageSmokeReceipt) }
+            afterUnrecognizedDeviceConfirmation {
+                runSingleAction(::printImageSmokeReceipt, requiresPlatformPrinting = true)
+            }
         }
         binding.saveUsbConfigurationButton.setOnClickListener {
             afterUnrecognizedDeviceConfirmation(::saveSelectedConfiguration)
@@ -325,7 +333,10 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         refreshDevices(null)
     }
 
-    private fun runSingleAction(action: suspend (TestSelection) -> Unit) {
+    private fun runSingleAction(
+        action: suspend (TestSelection) -> Unit,
+        requiresPlatformPrinting: Boolean = false,
+    ) {
         if (ConnectorRuntimeState.serviceActive) {
             showFailure(UsbPrintErrorCode.USB_IO_BUSY)
             updateControlAvailability()
@@ -342,6 +353,15 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         binding.usbActionResultText.text = getString(R.string.usb_action_in_progress)
         activeAction = lifecycleScope.launch {
             try {
+                if (requiresPlatformPrinting) {
+                    val blockCode = withContext(Dispatchers.IO) {
+                        platformPrintBlockCode(selection)
+                    }
+                    if (blockCode != null) {
+                        showPlatformGateFailure(blockCode)
+                        return@launch
+                    }
+                }
                 action(selection)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -359,6 +379,38 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                 setBusy(false)
             }
         }
+    }
+
+    private suspend fun platformPrintBlockCode(selection: TestSelection): String? {
+        if (!ConnectorApiConfig.isConfigured) return "CONNECTOR_API_NOT_CONFIGURED"
+        val credentialStore = MerchantSessionTokenStore(applicationContext)
+        if (!credentialStore.hasCredential()) return "MERCHANT_SESSION_MISSING"
+        val remote = try {
+            ConnectorApiClient(credentialStore::read).config()
+        } catch (error: ConnectorApiException) {
+            return error.errorCode
+        }
+        if (!connectorSettings.bindMerchantScopeIfAbsent(remote.merchantId)) {
+            return "MERCHANT_SCOPE_MISMATCH"
+        }
+        val settings = connectorSettings.snapshot()
+        val saved = settings.usbBinding ?: return "USB_BINDING_MISSING"
+        if (
+            saved.deviceName != selection.device.deviceName ||
+            saved.vendorId != selection.device.vendorId ||
+            saved.productId != selection.device.productId ||
+            saved.interfaceIndex != selection.connectionConfig.interfaceIndex ||
+            saved.interfaceId != selection.connectionConfig.interfaceId ||
+            saved.alternateSetting != selection.connectionConfig.alternateSetting ||
+            saved.endpointAddress != selection.connectionConfig.endpointAddress
+        ) {
+            return "USB_BINDING_MISMATCH"
+        }
+        return ConnectorPrintExecutionPolicy.remoteBlockCode(
+            remote = remote,
+            expectedMerchantId = settings.merchantId,
+            expectedPrinterId = settings.usbBinding?.printerId,
+        )
     }
 
     private fun afterUnrecognizedDeviceConfirmation(action: () -> Unit) {
@@ -503,6 +555,27 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             errorCode = code.name,
             plannedBytes = plannedBytes,
             writtenBytes = writtenBytes,
+        )
+    }
+
+    private fun showPlatformGateFailure(code: String) {
+        val message = when (code) {
+            "PRINTING_NOT_ENABLED", "MERCHANT_PRINTING_DISABLED" -> "打印功能未开通"
+            "USB_PRINTER_NOT_CONFIGURED" -> "打印机未配置"
+            "PRINTER_STATUS_NOT_READY" -> "打印设备离线"
+            "MERCHANT_SESSION_MISSING", "MERCHANT_AUTH_INVALID", "HTTP_401", "HTTP_403" ->
+                "商家登录已失效"
+            else -> "当前状态不允许测试打印"
+        }
+        binding.usbActionResultText.text = getString(
+            R.string.usb_platform_gate_error,
+            message,
+            code.take(80),
+        )
+        lastTest = UsbTestRecord(
+            timestampEpochMs = System.currentTimeMillis(),
+            result = message,
+            errorCode = code.take(80),
         )
     }
 

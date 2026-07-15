@@ -38,14 +38,6 @@ export async function getMerchantPrintingSettings() {
   return response.data.data;
 }
 
-export async function updateMerchantPrintingSettings(printingEnabled: boolean) {
-  const response = await http.patch<ApiResponse<MerchantPrintingSettings>>(
-    '/merchant/printing/settings',
-    { printingEnabled },
-  );
-  return response.data.data;
-}
-
 export async function getPrintingPrinters() {
   const response = await http.get<ApiResponse<CollectionResponse<PrintingPrinter>>>(
     '/merchant/printing/printers',

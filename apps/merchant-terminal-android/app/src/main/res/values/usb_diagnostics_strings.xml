@@ -40,6 +40,7 @@
     <string name="usb_permission_request_failed">无法发起 USB 权限请求。</string>
     <string name="usb_diagnostics_copied">USB 诊断信息已复制。</string>
     <string name="usb_action_in_progress">正在执行一次本地 USB 测试，请勿重复点击…</string>
+    <string name="usb_platform_gate_error">%1$s\nCode: %2$s</string>
     <string name="usb_print_success">发送完成：计划 %1$d 字节，实际写入 %2$d 字节。请人工确认是否只出一张纸。</string>
     <string name="usb_error_host_not_supported">当前 Android 设备未报告 USB Host 支持。</string>
     <string name="usb_error_device_not_found">所选 USB 设备已不存在，请刷新设备列表。</string>

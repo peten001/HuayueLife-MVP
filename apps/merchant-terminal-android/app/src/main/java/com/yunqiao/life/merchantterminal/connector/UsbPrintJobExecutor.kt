@@ -33,9 +33,17 @@ class UsbPrintJobExecutor(
     @Volatile private var activeAdapter: UsbEscPosAdapter? = null
 
     suspend fun execute(job: ClaimedPrintJob, settings: ConnectorSettingsSnapshot): String {
-        val binding = settings.usbBinding ?: return "USB_BINDING_MISSING"
-        if (binding.printerId == null || binding.printerId != job.printerId) {
-            return "PRINTER_BINDING_MISMATCH"
+        ConnectorPrintExecutionPolicy.claimedJobBlockCode(job, settings)?.let { return it }
+        val remote = withContext(Dispatchers.IO) { api.config() }
+        ConnectorPrintExecutionPolicy.remoteBlockCode(
+            remote = remote,
+            expectedMerchantId = settings.merchantId,
+            expectedPrinterId = job.printerId,
+        )?.let { blockCode ->
+            if (blockCode in REMOTE_EXECUTION_STOP_CODES) {
+                throw ConnectorApiException(409, blockCode, "Remote printing gate is closed.")
+            }
+            return blockCode
         }
         return when (val registration = ledger.registerClaim(job)) {
             is ClaimRegistration.AlreadySucceeded -> {
@@ -88,10 +96,7 @@ class UsbPrintJobExecutor(
             } else {
                 if (
                     error.invalidMerchantSession ||
-                    error.errorCode in setOf(
-                        "PRINTING_TASK_CENTER_DISABLED",
-                        "PRINTING_EXECUTION_DISABLED",
-                    )
+                    error.printingDisabled
                 ) throw error
                 false
             }
@@ -174,6 +179,45 @@ class UsbPrintJobExecutor(
                 )
                 reportPending(printingJob)
                 return@withContext localCode
+            }
+            // Re-read the authoritative platform gate immediately before the final lease check and
+            // physical USB I/O. A config accepted before rendering must not authorize a later write.
+            val finalRemoteBlock = try {
+                ConnectorPrintExecutionPolicy.remoteBlockCode(
+                    remote = api.config(),
+                    expectedMerchantId = settings.merchantId,
+                    expectedPrinterId = serverJob.printerId,
+                )
+            } catch (error: ConnectorApiException) {
+                if (error.invalidMerchantSession || error.printingDisabled) {
+                    printingJob = ledger.markUsbFailed(
+                        printingJob,
+                        error.errorCode,
+                        0,
+                        retryable = false,
+                        uncertain = false,
+                    )
+                    throw error
+                }
+                "REMOTE_PREFLIGHT_FAILED"
+            }
+            if (finalRemoteBlock != null) {
+                printingJob = ledger.markUsbFailed(
+                    printingJob,
+                    finalRemoteBlock,
+                    0,
+                    retryable = false,
+                    uncertain = false,
+                )
+                if (finalRemoteBlock in REMOTE_EXECUTION_STOP_CODES) {
+                    throw ConnectorApiException(
+                        409,
+                        finalRemoteBlock,
+                        "Remote printing gate closed before USB I/O.",
+                    )
+                }
+                reportPending(printingJob)
+                return@withContext finalRemoteBlock
             }
             // Rendering happens before the final lease extension and before any USB I/O. This gives
             // a normal receipt the full server-supported lease window without claiming stale work.
@@ -288,5 +332,12 @@ class UsbPrintJobExecutor(
         }
     }
 
-    private companion object { const val PRINT_LEASE_MS = 120_000L }
+    private companion object {
+        const val PRINT_LEASE_MS = 120_000L
+        val REMOTE_EXECUTION_STOP_CODES = setOf(
+            "PRINTING_NOT_ENABLED",
+            "PRINTING_TASK_CENTER_DISABLED",
+            "PRINTING_EXECUTION_DISABLED",
+        )
+    }
 }

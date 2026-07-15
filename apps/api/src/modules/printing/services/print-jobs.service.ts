@@ -23,6 +23,12 @@ import {
 } from '../types/printing-errors';
 import { ReceiptDocument } from '../types/receipt-document';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
+import {
+  hasExplicitUsbExecutionEvidence,
+  isConnectionConfigValid,
+  isReadyPrinter,
+  printerReadiness,
+} from '../utils/printer-readiness';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
@@ -192,6 +198,7 @@ export class PrintJobsService {
 
   async merchantConnectorConfig(merchantId: bigint) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const [settings, printers] = await Promise.all([
       this.settings.get(merchantId),
       this.prisma.printer.findMany({
@@ -215,9 +222,17 @@ export class PrintJobsService {
       }),
     ]);
     const flags = settings.featureFlags;
+    const printersWithReadiness = printers.map((printer) => ({
+      ...printer,
+      readiness: printerReadiness(printer),
+    }));
     const boundPrinter =
-      printers.find((printer) => printer.enabled) ?? printers[0] ?? null;
+      printersWithReadiness.find((printer) => isReadyPrinter(printer)) ??
+      printersWithReadiness.find((printer) => printer.enabled) ??
+      printersWithReadiness[0] ??
+      null;
     return {
+      merchantId: merchantId.toString(),
       taskCenterEnabled: flags.taskCenterEnabled,
       executionEnabled: flags.executionEnabled,
       automaticCreationEnabled: flags.automaticCreationEnabled,
@@ -227,7 +242,7 @@ export class PrintJobsService {
       automaticPrintingEnabled: flags.automaticCreationEnabled,
       printerEnabled: boundPrinter?.enabled ?? false,
       boundPrinter,
-      printers,
+      printers: printersWithReadiness,
       commands: { resetUsb: null },
     };
   }
@@ -235,7 +250,7 @@ export class PrintJobsService {
   async createAutomaticJob(input: CreateAutomaticJobInput) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertAutomaticCreationEnabled();
-    await this.settings.assertMerchantEnabled(input.merchantId);
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
     const rule = await this.prisma.printRule.findFirst({
       where: {
         id: input.ruleId,
@@ -402,7 +417,7 @@ export class PrintJobsService {
       where: { id },
     });
     try {
-      await this.settings.assertMerchantEnabled(trigger.merchantId);
+      await this.settings.assertMerchantPrintingEnabled(trigger.merchantId);
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
         orderId: trigger.orderId,
@@ -543,7 +558,8 @@ export class PrintJobsService {
 
   async createManualPrintJob(input: CreateManualPrintJobInput) {
     this.flags.assertTaskCenterEnabled();
-    await this.settings.assertMerchantEnabled(input.merchantId);
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    await this.requireReadyUsbPrinter(input.merchantId, input.printerId);
     await this.requireOwnedStaff(
       this.prisma,
       input.merchantId,
@@ -609,7 +625,7 @@ export class PrintJobsService {
 
   async createManualReprintJob(input: CreateManualReprintJobInput) {
     this.flags.assertTaskCenterEnabled();
-    await this.settings.assertMerchantEnabled(input.merchantId);
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
     const dedupeKey = this.manualDedupeKey(
       input.merchantId,
       input.createdByStaffId,
@@ -623,6 +639,11 @@ export class PrintJobsService {
           where: { id: input.originalJobId, merchantId: input.merchantId },
         });
         if (!original) this.notFound();
+        await this.requireReadyUsbPrinter(
+          input.merchantId,
+          input.printerId ?? original.printerId,
+          tx,
+        );
         const snapshot = this.snapshots.cloneAndValidate(
           original.receiptSnapshot as unknown as ReceiptDocument,
         );
@@ -678,7 +699,8 @@ export class PrintJobsService {
 
   async createTestJob(input: CreateTestJobInput) {
     this.flags.assertTaskCenterEnabled();
-    await this.settings.assertMerchantEnabled(input.merchantId);
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    await this.requireReadyUsbPrinter(input.merchantId, input.printerId);
     const snapshot = this.snapshots.cloneAndValidate(input.document);
     this.assertSnapshotMerchant(input.merchantId, snapshot);
     const dedupeKey = this.manualDedupeKey(
@@ -739,6 +761,7 @@ export class PrintJobsService {
     requestId?: string,
     requestKey: string = randomUUID(),
   ) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const printer = await this.prisma.printer.findFirst({
       where: {
         id: printerId,
@@ -843,6 +866,7 @@ export class PrintJobsService {
     reason?: string,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     await this.requireOwnedStaff(this.prisma, merchantId, actorStaffId);
     const job = await this.requireOwned(merchantId, id);
     if (!['FAILED', 'RETRY_WAIT'].includes(job.status)) {
@@ -861,7 +885,7 @@ export class PrintJobsService {
     ) {
       this.stateConflict('该错误不可安全重试，请修复配置后创建新的补打任务');
     }
-    await this.requireEnabledPrinter(merchantId, job.printerId);
+    await this.requireReadyUsbPrinter(merchantId, job.printerId);
     return this.prisma.$transaction(async (tx) => {
       const changed = await tx.printJob.updateMany({
         where: { id, merchantId, status: { in: ['FAILED', 'RETRY_WAIT'] } },
@@ -903,6 +927,7 @@ export class PrintJobsService {
   ) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const terminal = await this.prisma.merchantTerminal.findFirst({
       where: { id: terminalId, merchantId, status: 'ACTIVE', revokedAt: null },
       include: { merchant: { select: { status: true, printingEnabled: true } } },
@@ -913,15 +938,6 @@ export class PrintJobsService {
         message: '终端未启用或不属于当前商家',
       });
     }
-    if (
-      terminal.merchant.status !== 'ACTIVE' ||
-      !terminal.merchant.printingEnabled
-    ) {
-      throw new BadRequestException({
-        code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
-        message: '商家账号或打印总开关当前关闭',
-      });
-    }
     if (!terminal.boundPrinterId) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
@@ -929,6 +945,7 @@ export class PrintJobsService {
       });
     }
     const boundPrinterId = terminal.boundPrinterId;
+    await this.requireReadyUsbPrinter(merchantId, boundPrinterId);
     const automaticAllowed =
       allowAutomatic && this.flags.automaticCreationEnabled();
 
@@ -989,6 +1006,7 @@ export class PrintJobsService {
             printer: {
               merchantId,
               enabled: true,
+              status: 'ONLINE',
               deletedAt: null,
               channelType: 'LOCAL_USB_ESCPOS',
             },
@@ -1003,6 +1021,7 @@ export class PrintJobsService {
           where: {
             id: candidate.id,
             merchantId,
+            merchant: { status: 'ACTIVE', printingEnabled: true },
             status: 'PENDING',
             leaseVersion: candidate.leaseVersion,
           },
@@ -1030,10 +1049,10 @@ export class PrintJobsService {
   ) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
-    await this.settings.assertMerchantEnabled(merchantId);
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const printer = printerId
-      ? await this.requireEnabledPrinter(merchantId, printerId)
-      : await this.requireDefaultUsbPrinter(merchantId);
+      ? await this.requireReadyUsbPrinter(merchantId, printerId)
+      : await this.requireDefaultReadyUsbPrinter(merchantId);
     const automaticAllowed =
       allowAutomatic && this.flags.automaticCreationEnabled();
 
@@ -1070,6 +1089,7 @@ export class PrintJobsService {
             printer: {
               merchantId,
               enabled: true,
+              status: 'ONLINE',
               deletedAt: null,
               channelType: 'LOCAL_USB_ESCPOS',
             },
@@ -1084,6 +1104,7 @@ export class PrintJobsService {
           where: {
             id: candidate.id,
             merchantId,
+            merchant: { status: 'ACTIVE', printingEnabled: true },
             status: 'PENDING',
             leaseVersion: candidate.leaseVersion,
           },
@@ -1115,7 +1136,8 @@ export class PrintJobsService {
     });
   }
 
-  findActiveMerchantConnectorJob(merchantId: bigint, printerId?: bigint) {
+  async findActiveMerchantConnectorJob(merchantId: bigint, printerId?: bigint) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
@@ -1133,6 +1155,7 @@ export class PrintJobsService {
     terminalId: bigint | null,
     jobId: bigint,
   ) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const job = await this.prisma.printJob.findFirst({
       where: {
         id: jobId,
@@ -1169,6 +1192,7 @@ export class PrintJobsService {
       },
     });
     if (!job) this.notFound();
+    await this.requireReadyUsbPrinter(merchantId, job.printerId);
     const contentHash =
       job.receiptSnapshotHash ?? receiptSnapshotHash(job.receiptSnapshot);
     if (!job.receiptSnapshotHash) {
@@ -1180,6 +1204,7 @@ export class PrintJobsService {
     const snapshot = job.receiptSnapshot as Record<string, unknown>;
     return {
       id: job.id,
+      merchantId: merchantId.toString(),
       printerId: job.printerId,
       receiptType: job.receiptType,
       triggerEvent: job.triggerEvent,
@@ -1205,13 +1230,16 @@ export class PrintJobsService {
     dto: ReportTerminalPrinterStatusDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
     const printerId = BigInt(dto.printerId);
     const capabilities = dto.capabilities
       ? normalizeConnectorJson(dto.capabilities)
       : undefined;
     const persistedStatus =
       dto.status === 'CONNECTED'
-        ? 'ONLINE'
+        ? hasExplicitUsbExecutionEvidence(dto.capabilities)
+          ? 'ONLINE'
+          : 'UNKNOWN'
         : dto.status === 'DISCONNECTED'
           ? 'OFFLINE'
           : dto.status;
@@ -1233,7 +1261,7 @@ export class PrintJobsService {
     const currentCapabilities = isPlainObject(printer.capabilities)
       ? printer.capabilities
       : {};
-    return this.prisma.printer.update({
+    const updated = await this.prisma.printer.update({
       where: { id: printer.id },
       data: {
         status: persistedStatus,
@@ -1246,6 +1274,7 @@ export class PrintJobsService {
           : undefined,
       },
     });
+    return { ...updated, readiness: printerReadiness(updated) };
   }
 
   async releaseExpiredLeases(now = new Date()) {
@@ -1361,6 +1390,7 @@ export class PrintJobsService {
     createdByStaffId?: bigint;
     allowHistoricalTemplate?: boolean;
   }, client: DbClient = this.prisma) {
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId, client);
     const { printer, template } = await this.validateJobReferences(
       input.merchantId,
       input.printerId,
@@ -1475,14 +1505,40 @@ export class PrintJobsService {
         message: '当前 Release Candidate 仅允许 USB ESC/POS 打印任务',
       });
     }
+    if (!isConnectionConfigValid(printer.channelType, printer.connectionConfig)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: 'USB 打印机连接配置不完整或无效',
+      });
+    }
     return printer;
   }
 
-  private async requireDefaultUsbPrinter(merchantId: bigint) {
+  private async requireReadyUsbPrinter(
+    merchantId: bigint,
+    printerId: bigint,
+    client: DbClient = this.prisma,
+  ) {
+    const printer = await this.requireEnabledPrinter(
+      merchantId,
+      printerId,
+      client,
+    );
+    if (!isReadyPrinter(printer)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+        message: 'USB 打印设备尚无明确可用证据',
+      });
+    }
+    return printer;
+  }
+
+  private async requireDefaultReadyUsbPrinter(merchantId: bigint) {
     const printer = await this.prisma.printer.findFirst({
       where: {
         merchantId,
         enabled: true,
+        status: 'ONLINE',
         deletedAt: null,
         channelType: 'LOCAL_USB_ESCPOS',
       },
@@ -1490,11 +1546,11 @@ export class PrintJobsService {
     });
     if (!printer) {
       throw new BadRequestException({
-        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
-        message: '当前商家没有已启用的 USB ESC/POS 打印机',
+        code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+        message: '当前商家没有明确可用的 USB ESC/POS 打印设备',
       });
     }
-    return printer;
+    return this.requireReadyUsbPrinter(merchantId, printer.id);
   }
 
   private async requireOwned(merchantId: bigint, id: bigint) {

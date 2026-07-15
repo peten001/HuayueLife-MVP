@@ -1,5 +1,5 @@
 import {
-  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -7,15 +7,15 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
-import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+
+type MerchantReader = Pick<Prisma.TransactionClient, 'merchant'>;
 
 @Injectable()
 export class PrintingSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
-    private readonly audit: PrintingAuditService,
   ) {}
 
   async get(merchantId: bigint) {
@@ -29,56 +29,30 @@ export class PrintingSettingsService {
   }
 
   async update(
-    merchantId: bigint,
-    actorStaffId: bigint,
-    requestId: string | undefined,
-    printingEnabled: boolean,
+    _merchantId: bigint,
+    _actorStaffId: bigint,
+    _requestId: string | undefined,
+    _printingEnabled: boolean,
   ) {
     this.flags.assertTaskCenterEnabled();
-    const existing = await this.prisma.merchant.findUnique({
-      where: { id: merchantId },
-      select: { id: true, status: true, printingEnabled: true },
-    });
-    if (!existing) this.notFound();
-    if (printingEnabled && existing.status !== 'ACTIVE') {
-      this.merchantInactive();
-    }
-    return this.prisma.$transaction(async (tx) => {
-      const updated = printingEnabled
-        ? await this.enableWithActiveMerchantCompareAndSet(tx, merchantId)
-        : await tx.merchant.update({
-            where: { id: merchantId },
-            data: { printingEnabled: false },
-            select: { id: true, status: true, printingEnabled: true },
-          });
-      await this.audit.record(
-        {
-          merchantId,
-          actorStaffId,
-          action: printingEnabled
-            ? 'MERCHANT_PRINTING_ENABLED'
-            : 'MERCHANT_PRINTING_DISABLED',
-          resourceType: 'MerchantPrintingSettings',
-          resourceId: merchantId,
-          beforeData: existing,
-          afterData: updated,
-          requestId,
-        },
-        tx,
-      );
-      return { ...updated, featureFlags: this.flags.status() };
+    throw new ForbiddenException({
+      code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+      message: '打印总能力只能由平台管理员开启或关闭',
     });
   }
 
-  async assertMerchantEnabled(merchantId: bigint) {
-    const merchant = await this.prisma.merchant.findUnique({
+  async assertMerchantPrintingEnabled(
+    merchantId: bigint,
+    client: MerchantReader = this.prisma,
+  ) {
+    const merchant = await client.merchant.findUnique({
       where: { id: merchantId },
       select: { status: true, printingEnabled: true },
     });
     if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) {
       throw new ServiceUnavailableException({
-        code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
-        message: '商家账号或打印总开关当前关闭',
+        code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+        message: '打印功能未开通，请联系平台管理员。',
       });
     }
   }
@@ -90,25 +64,4 @@ export class PrintingSettingsService {
     });
   }
 
-  private async enableWithActiveMerchantCompareAndSet(
-    tx: Prisma.TransactionClient,
-    merchantId: bigint,
-  ) {
-    const changed = await tx.merchant.updateMany({
-      where: { id: merchantId, status: 'ACTIVE' },
-      data: { printingEnabled: true },
-    });
-    if (changed.count !== 1) this.merchantInactive();
-    return tx.merchant.findUniqueOrThrow({
-      where: { id: merchantId },
-      select: { id: true, status: true, printingEnabled: true },
-    });
-  }
-
-  private merchantInactive(): never {
-    throw new BadRequestException({
-      code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
-      message: '商家账号未启用，不能开启打印',
-    });
-  }
 }

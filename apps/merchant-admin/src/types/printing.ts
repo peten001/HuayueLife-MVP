@@ -50,6 +50,12 @@ export interface PrintingPrinter {
   status: string;
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
+  readiness?: {
+    state: 'READY' | 'DEVICE_OFFLINE' | 'NOT_CONFIGURED';
+    channelImplemented: boolean;
+    configValid: boolean;
+    statusReady: boolean;
+  };
   adapterStatus?: string;
   executionState?: string;
   createdAt: string;

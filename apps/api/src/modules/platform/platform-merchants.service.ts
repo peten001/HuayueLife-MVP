@@ -139,6 +139,7 @@ type PlatformMerchantListItem = {
   manualPopular: boolean;
   isVisibleOnClient: boolean;
   reportFeatureEnabled: boolean;
+  printingEnabled: boolean;
   promotionTags: DictionaryRef[];
   capabilities: Array<DictionaryRef & { isEnabled: boolean }>;
   capabilitySummary: string[];
@@ -205,6 +206,7 @@ type PlatformMerchantDetailResponse = {
     manualPopular: boolean;
     isVisibleOnClient: boolean;
     reportFeatureEnabled: boolean;
+    printingEnabled: boolean;
     dineInEnabled: boolean;
     promotionTags: DictionaryRef[];
     capabilities: Array<DictionaryRef & { isEnabled: boolean }>;
@@ -552,6 +554,7 @@ export class PlatformMerchantsService {
         manualPopular: Boolean(merchant.manualPopular),
         isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
         reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+        printingEnabled: Boolean(merchant.printingEnabled),
         dineInEnabled: Boolean(merchant.dineInEnabled),
         promotionTags: serializePromotionRefs(merchant),
         capabilities: serializeCapabilityRefs(merchant),
@@ -1418,7 +1421,8 @@ export class PlatformMerchantsService {
       ),
       manualPopular: Boolean(merchant.manualPopular),
         isVisibleOnClient: Boolean(merchant.isVisibleOnClient),
-        reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+      reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
+      printingEnabled: Boolean(merchant.printingEnabled),
       promotionTags: serializePromotionRefs(merchant),
       capabilities: serializeCapabilityRefs(merchant),
       capabilitySummary: serializeCapabilityRefs(merchant)
@@ -2028,6 +2032,7 @@ export class PlatformMerchantsService {
   ) {
     if (this.appConfig.isPlatformOrderingEnabled()) return;
     const hasOperationCapability = items.some((item) =>
+      String(item.code) !== 'printerEnabled' &&
       isOrderingCapabilityCode(String(item.code)),
     );
     if (hasOperationCapability) {
@@ -2140,11 +2145,21 @@ function serializePromotionRefs(merchant: MerchantWithOwner) {
     .filter((item): item is DictionaryRef => Boolean(item));
 }
 
-function serializeCapabilityRefs(merchant: MerchantWithOwner) {
+export function serializeCapabilityRefs(merchant: MerchantWithOwner) {
   return (merchant.capabilities ?? [])
     .map((item) => {
       const ref = serializeCapabilityDictionaryRef(item.capability);
-      return ref ? { ...ref, isEnabled: item.isEnabled } : null;
+      if (!ref) return null;
+      return {
+        ...ref,
+        // Merchant.printingEnabled is the sole runtime truth. The capability
+        // row remains the platform UI representation and may contain legacy
+        // drift, so it must never override the authoritative field on reads.
+        isEnabled:
+          ref.code === 'printerEnabled'
+            ? Boolean(merchant.printingEnabled)
+            : item.isEnabled,
+      };
     })
     .filter((item): item is DictionaryRef & { isEnabled: boolean } => Boolean(item));
 }
@@ -2237,6 +2252,9 @@ function legacyBooleansFromCapabilities(values: Map<string, boolean>) {
   if (values.has('deliveryEnabled')) data.deliveryEnabled = Boolean(values.get('deliveryEnabled'));
   if (values.has('zaloReportEnabled')) {
     data.reportFeatureEnabled = Boolean(values.get('zaloReportEnabled'));
+  }
+  if (values.has('printerEnabled')) {
+    data.printingEnabled = Boolean(values.get('printerEnabled'));
   }
   return data;
 }

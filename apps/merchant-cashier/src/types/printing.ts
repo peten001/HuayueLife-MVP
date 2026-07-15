@@ -12,7 +12,7 @@ export interface CashierPrintingFeatureState {
   automaticCreationEnabled: boolean;
   executionEnabled: boolean;
   legacyPrintingEnabled: boolean;
-  merchantPrintingEnabled?: boolean;
+  merchantPrintingEnabled: boolean;
   executionState: 'CONNECTOR_PENDING' | 'READY_FOR_CONNECTOR';
 }
 
@@ -22,7 +22,15 @@ export interface CashierPrintingPrinter {
   channelType: string;
   paperWidth: 'MM58' | 'MM80';
   enabled: boolean;
-  status: string;
+  status: 'UNVERIFIED' | 'UNKNOWN' | 'ONLINE' | 'OFFLINE' | 'ERROR' | 'DISABLED';
+  connectionConfig: Record<string, unknown>;
+  capabilities?: Record<string, unknown> | null;
+  readiness?: {
+    state: 'READY' | 'DEVICE_OFFLINE' | 'NOT_CONFIGURED';
+    channelImplemented: boolean;
+    configValid: boolean;
+    statusReady: boolean;
+  };
 }
 
 export interface CashierPrintJob {
@@ -45,7 +53,6 @@ export interface CashierPrintJob {
 export type CashierPrintingAvailability =
   | 'LOADING'
   | 'READY'
-  | 'DISABLED'
-  | 'CONFIG_REQUIRED'
-  | 'TERMINAL_OFFLINE'
-  | 'UNAVAILABLE';
+  | 'NOT_ENABLED'
+  | 'NOT_CONFIGURED'
+  | 'DEVICE_OFFLINE';

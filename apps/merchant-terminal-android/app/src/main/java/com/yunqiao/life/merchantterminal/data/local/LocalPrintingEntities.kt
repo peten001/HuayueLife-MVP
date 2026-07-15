@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 object LocalJobStatus {
     const val CLAIMED = "CLAIMED"
@@ -109,7 +110,8 @@ data class PrinterBindingEntity(
 @Entity(tableName = "terminal_state")
 data class TerminalStateEntity(
     @PrimaryKey val terminalId: String,
-    val lastHeartbeatAt: Long? = null,
+    // Preserve the existing local Room column while V1 runtime uses status-report terminology.
+    @ColumnInfo(name = "lastHeartbeatAt") val lastStatusReportAt: Long? = null,
     val lastConfigAt: Long? = null,
     val lastClaimAt: Long? = null,
     val lastErrorCode: String? = null,

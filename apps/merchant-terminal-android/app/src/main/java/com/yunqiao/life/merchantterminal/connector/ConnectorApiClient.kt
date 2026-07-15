@@ -24,12 +24,12 @@ class ConnectorApiClient(
         val resetUsb = data.optJSONObject("commands")?.optJSONObject("resetUsb")
         val printerChannelType = printer?.optString("channelType")?.takeIf(String::isNotBlank)
             ?.take(40)
+        val printerReadiness = printer?.optJSONObject("readiness")
         val pollSeconds = data.optLong("pollIntervalSeconds", 7).coerceIn(5, 30)
-        val heartbeatSeconds = data.optLong(
-            "configRefreshIntervalSeconds",
-            data.optLong("heartbeatIntervalSeconds", pollSeconds),
-        ).coerceIn(5, 60)
+        val configRefreshSeconds = data.optLong("configRefreshIntervalSeconds", pollSeconds)
+            .coerceIn(5, 60)
         return ConnectorRemoteConfig(
+            merchantId = data.requiredNumericString("merchantId"),
             merchantPrintingEnabled = data.optBoolean("merchantPrintingEnabled", false),
             executionEnabled = data.optBoolean("executionEnabled", false),
             taskCenterEnabled = data.optBoolean("taskCenterEnabled", false),
@@ -38,13 +38,22 @@ class ConnectorApiClient(
                 data.optBoolean("automaticPrintingEnabled", false),
             ),
             pollIntervalMs = pollSeconds * 1_000,
-            heartbeatIntervalMs = heartbeatSeconds * 1_000,
+            configRefreshIntervalMs = configRefreshSeconds * 1_000,
             boundPrinterId = printer?.optString("id")?.takeIf(String::isNotBlank)?.take(128),
             boundPrinterChannelType = printerChannelType,
             boundPrinterEnabled = data.optBoolean(
                 "printerEnabled",
                 printer?.optBoolean("enabled", false) == true,
             ) && printerChannelType == "LOCAL_USB_ESCPOS",
+            boundPrinterStatus = printer?.optString("status")
+                ?.takeIf(String::isNotBlank)
+                ?.take(32),
+            boundPrinterReadinessState = printerReadiness?.optString("state")
+                ?.takeIf(String::isNotBlank)
+                ?.take(32),
+            boundPrinterConnectionConfigValid = printer != null &&
+                printer.optJSONObject("connectionConfig") != null &&
+                printerReadiness?.optBoolean("configValid", false) == true,
             configVersion = data.optLong("configVersion", 0).coerceAtLeast(0),
             resetUsbConfigVersion = resetUsb?.optLong("configVersion", -1)?.takeIf { it >= 0 },
         )
@@ -92,7 +101,17 @@ class ConnectorApiClient(
         }
         return ClaimedPrintJob(
             id = job.requiredString("id", 128),
+            merchantId = job.requiredNumericString("merchantId"),
             printerId = job.requiredString("printerId", 128),
+            status = job.requiredString("status", 32).also { status ->
+                if (status != "CLAIMED") {
+                    throw ConnectorApiException(
+                        200,
+                        "PRINT_JOB_NOT_CLAIMED",
+                        "Only a newly claimed print job may enter local execution.",
+                    )
+                }
+            },
             receiptType = job.requiredString("receiptType", 32),
             source = source,
             leaseVersion = job.requiredPositiveLong("leaseVersion"),
@@ -196,6 +215,7 @@ class ConnectorApiClient(
     fun reportPrinterStatus(
         printerId: String,
         status: String,
+        evidence: UsbReadinessEvidence,
         lastErrorCode: String?,
         lastErrorMessage: String?,
     ) {
@@ -209,7 +229,19 @@ class ConnectorApiClient(
                     "capabilities",
                     baseCapabilities()
                         .put("connectorState", status.take(32))
-                        .put("connectionEvidence", "USB_CONFIG_READY_ONLY")
+                        .put(
+                            "connectionEvidence",
+                            if (evidence.isReady) {
+                                "USB_DEVICE_PERMISSION_INTERFACE_ENDPOINT_READY"
+                            } else {
+                                "USB_READINESS_INCOMPLETE"
+                            },
+                        )
+                        .put("usbDeviceRecognized", evidence.usbDeviceRecognized)
+                        .put("usbPermissionGranted", evidence.usbPermissionGranted)
+                        .put("usbInterfaceValid", evidence.usbInterfaceValid)
+                        .put("usbEndpointValid", evidence.usbEndpointValid)
+                        .put("appExecutionReady", evidence.appExecutionReady)
                         .put("printerHealthVerified", false)
                         .put("paperOutputVerified", false),
                 )
@@ -289,6 +321,10 @@ class ConnectorApiClient(
 
     private fun JSONObject.requiredString(key: String, maxLength: Int): String = optString(key)
         .takeIf { it.isNotBlank() && it.length <= maxLength }
+        ?: throw ConnectorApiException(200, "INVALID_RESPONSE", "Missing or invalid field: $key")
+
+    private fun JSONObject.requiredNumericString(key: String): String = requiredString(key, 128)
+        .takeIf(NUMERIC_ID::matches)
         ?: throw ConnectorApiException(200, "INVALID_RESPONSE", "Missing or invalid field: $key")
 
     private fun JSONObject.requiredPositiveLong(key: String): Long = optLong(key, -1)

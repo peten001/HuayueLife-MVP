@@ -216,15 +216,33 @@ class ConnectorSetupActivity : AppCompatActivity() {
                 val client = ConnectorApiClient(credentials::read)
                 runCatching {
                     val remote = client.config()
+                    if (!settings.bindMerchantScopeIfAbsent(remote.merchantId)) {
+                        settings.applyRemoteConfig(
+                            executionEnabled = false,
+                            terminalEnabled = true,
+                            printerEnabled = false,
+                            automaticPrintingEnabled = false,
+                            pollIntervalMs = remote.pollIntervalMs,
+                            configRefreshIntervalMs = remote.configRefreshIntervalMs,
+                        )
+                        settings.recordError("MERCHANT_SCOPE_MISMATCH")
+                        return@runCatching
+                    }
+                    val scoped = settings.snapshot()
+                    val remoteBlock = ConnectorPrintExecutionPolicy.remoteBlockCode(
+                        remote = remote,
+                        expectedMerchantId = scoped.merchantId,
+                        expectedPrinterId = scoped.usbBinding?.printerId,
+                    )
                     settings.applyRemoteConfig(
-                        executionEnabled = remote.executionEnabled && remote.taskCenterEnabled &&
-                            remote.merchantPrintingEnabled,
+                        executionEnabled = remoteBlock == null,
                         terminalEnabled = true,
-                        printerEnabled = remote.boundPrinterEnabled,
+                        printerEnabled = remoteBlock == null,
                         automaticPrintingEnabled = remote.automaticPrintingEnabled,
                         pollIntervalMs = remote.pollIntervalMs,
-                        heartbeatIntervalMs = remote.heartbeatIntervalMs,
+                        configRefreshIntervalMs = remote.configRefreshIntervalMs,
                     )
+                    settings.recordError(remoteBlock)
                     settings.associatePrinterId(remote.boundPrinterId)
                     val printingDao = LocalPrintingDatabase.get(applicationContext).printingDao()
                     printingDao.printerBinding()?.let { localBinding ->
@@ -248,6 +266,17 @@ class ConnectorSetupActivity : AppCompatActivity() {
                     if (error is ConnectorApiException && error.invalidMerchantSession) {
                         TerminalIdentityReset.clear(applicationContext)
                     } else {
+                        if (error is ConnectorApiException && error.printingDisabled) {
+                            settings.applyRemoteConfig(
+                                executionEnabled = false,
+                                terminalEnabled = true,
+                                printerEnabled = false,
+                                automaticPrintingEnabled = false,
+                                pollIntervalMs = settings.snapshot().pollIntervalMs,
+                                configRefreshIntervalMs =
+                                    settings.snapshot().configRefreshIntervalMs,
+                            )
+                        }
                         settings.recordError(
                             (error as? ConnectorApiException)?.errorCode
                                 ?: "CONNECTOR_CONFIG_REFRESH_FAILED",
