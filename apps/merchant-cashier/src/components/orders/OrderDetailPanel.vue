@@ -16,6 +16,7 @@ import {
 const props = defineProps<{
   order?: CashierOrderView | null;
   actionLoading?: boolean;
+  actionsDisabled?: boolean;
 }>();
 
 defineEmits<{
@@ -136,6 +137,7 @@ function hideBrokenImage(event: Event) {
       <OrderActionBar
         :order="order"
         :loading="actionLoading"
+        :disabled="actionsDisabled"
         @action="$emit('action', $event)"
       />
     </div>

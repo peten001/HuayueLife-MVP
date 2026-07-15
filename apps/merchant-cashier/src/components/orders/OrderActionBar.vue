@@ -11,6 +11,7 @@ import { availableOrderActions } from './order-actions';
 const props = defineProps<{
   order?: CashierOrderView | null;
   loading?: boolean;
+  disabled?: boolean;
 }>();
 
 defineEmits<{
@@ -37,7 +38,7 @@ function iconFor(action: CashierOrderAction) {
       :key="item.action"
       type="button"
       :class="item.tone === 'danger' ? 'secondary-action secondary-action--danger' : `primary-action primary-action--${item.tone}`"
-      :disabled="loading"
+      :disabled="loading || disabled"
       @click="$emit('action', item.action)"
     >
       <component :is="iconFor(item.action)" :size="20" aria-hidden="true" />

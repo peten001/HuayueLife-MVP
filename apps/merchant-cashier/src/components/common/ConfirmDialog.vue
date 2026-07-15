@@ -8,6 +8,7 @@ defineProps<{
   cancelLabel: string;
   confirmLabel: string;
   loading?: boolean;
+  confirmDisabled?: boolean;
 }>();
 
 defineEmits<{
@@ -30,7 +31,12 @@ defineEmits<{
         <button type="button" class="secondary-action" :disabled="loading" @click="$emit('cancel')">
           {{ cancelLabel }}
         </button>
-        <button type="button" class="primary-action" :disabled="loading" @click="$emit('confirm')">
+        <button
+          type="button"
+          class="primary-action"
+          :disabled="loading || confirmDisabled"
+          @click="$emit('confirm')"
+        >
           {{ confirmLabel }}
         </button>
       </footer>

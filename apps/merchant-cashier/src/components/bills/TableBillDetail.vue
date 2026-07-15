@@ -15,6 +15,7 @@ const props = defineProps<{
   table?: TableCardView | null;
   session?: TableSessionDetail | null;
   closing?: boolean;
+  actionsDisabled?: boolean;
 }>();
 
 defineEmits<{
@@ -108,7 +109,7 @@ function orderItemCount(order: TableSessionOrder) {
       <button
         type="button"
         class="primary-action table-close-action"
-        :disabled="!canClose || closing"
+        :disabled="!canClose || closing || actionsDisabled"
         @click="$emit('closeSession')"
       >
         <BriefcaseBusiness :size="20" :stroke-width="1.9" aria-hidden="true" />

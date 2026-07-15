@@ -28,6 +28,7 @@ import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
+import { guardNetworkWrite, networkWritesDisabled } from './network-write-guard';
 
 const route = useRoute();
 const router = useRouter();
@@ -73,6 +74,9 @@ const plannedHoursRange = computed(() => currentBusinessHoursRange(profile.value
 const plannedBusinessOpen = computed<boolean | null>(() =>
   profile.value ? isWithinBusinessHours(profile.value.businessHours) : null,
 );
+const writeActionsDisabled = computed(() =>
+  !demoMode.value && networkWritesDisabled(online.value, apiReachable.value),
+);
 const businessHoursLabel = computed(() => {
   if (!profile.value) return t('shell.businessHoursUnknown');
   if (!plannedHoursRange.value) return t('shell.businessClosed');
@@ -111,7 +115,15 @@ async function toggleSound() {
   await soundStore.enable();
 }
 
+function networkWriteAvailable() {
+  if (demoMode.value) return true;
+  return guardNetworkWrite(online.value, apiReachable.value, () => {
+    uiStore.pushToast(t('error.network'), 'error');
+  });
+}
+
 function requestOrderAction(action: CashierOrderAction) {
+  if (!networkWriteAvailable()) return;
   if (action === 'reject' || action === 'complete') {
     pendingOrderAction.value = action;
     return;
@@ -121,6 +133,7 @@ function requestOrderAction(action: CashierOrderAction) {
 
 async function executeOrderAction(action: CashierOrderAction) {
   if (!selectedOrder.value || actionLoadingId.value) return;
+  if (!networkWriteAvailable()) return;
   try {
     await ordersStore.runAction(selectedOrder.value.id, action);
     await Promise.allSettled([ordersStore.refreshLiveOrders(), tablesStore.fetchTables()]);
@@ -132,8 +145,14 @@ async function executeOrderAction(action: CashierOrderAction) {
   }
 }
 
+function requestCloseSession() {
+  if (!networkWriteAvailable()) return;
+  closeDialogOpen.value = true;
+}
+
 async function closeSession() {
   if (closingSession.value) return;
+  if (!networkWriteAvailable()) return;
   closingSession.value = true;
   try {
     await tablesStore.closeSelectedSession();
@@ -275,12 +294,14 @@ onBeforeUnmount(() => {
           :table="selectedTable"
           :session="selectedSessionDetail"
           :closing="closingSession"
-          @close-session="closeDialogOpen = true"
+          :actions-disabled="writeActionsDisabled"
+          @close-session="requestCloseSession"
         />
         <OrderDetailPanel
           v-else-if="selectedOrder"
           :order="selectedOrder"
           :action-loading="actionLoadingId === selectedOrder.id"
+          :actions-disabled="writeActionsDisabled"
           @action="requestOrderAction"
         />
         <EmptyState
@@ -302,6 +323,7 @@ onBeforeUnmount(() => {
       :cancel-label="t('common.cancel')"
       :confirm-label="t('common.confirm')"
       :loading="closingSession || Boolean(actionLoadingId)"
+      :confirm-disabled="writeActionsDisabled"
       @cancel="cancelConfirmation"
       @confirm="confirmCurrentAction"
     />
