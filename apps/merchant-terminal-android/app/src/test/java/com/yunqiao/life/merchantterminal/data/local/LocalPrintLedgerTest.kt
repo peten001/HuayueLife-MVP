@@ -146,7 +146,9 @@ class LocalPrintLedgerTest {
 
     private fun job() = ClaimedPrintJob(
         id = "123",
+        merchantId = "7",
         printerId = "456",
+        status = "CLAIMED",
         receiptType = "ORDER_CUSTOMER",
         source = "MANUAL",
         leaseVersion = 1,

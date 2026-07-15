@@ -48,6 +48,19 @@ class UsbBindingResolverTest {
         )
     }
 
+    @Test
+    fun `saved endpoint must still identify a valid bulk out endpoint`() {
+        val resolution = UsbBindingResolver.resolve(
+            binding().copy(endpointAddress = 9),
+            listOf(device("saved-path", true)),
+        )
+
+        assertEquals(
+            "USB_SAVED_ENDPOINT_CHANGED",
+            (resolution as UsbBindingResolution.Unavailable).errorCode,
+        )
+    }
+
     private fun binding() = UsbPrinterBinding(
         printerId = "9",
         deviceName = "saved-path",

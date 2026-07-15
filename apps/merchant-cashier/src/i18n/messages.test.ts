@@ -45,4 +45,19 @@ describe('cashier translation dictionaries', () => {
     ]).toEqual(['Tất cả', 'Trống', 'Đang dùng', 'Đã tắt']);
     expect('table.status.readyToClose' in viMessages).toBe(false);
   });
+
+  it('exposes the four real printing states in all supported languages', () => {
+    expect([
+      zhMessages['print.disabled'],
+      zhMessages['print.configurationRequired'],
+      zhMessages['print.terminalOffline'],
+      zhMessages['print.ready'],
+    ]).toEqual(['打印功能未开通', '打印机未配置', '打印设备离线', '可以打印']);
+
+    for (const messages of [viMessages, enMessages]) {
+      expect(messages['print.disabled']).not.toBe(messages['print.configurationRequired']);
+      expect(messages['print.configurationRequired']).not.toBe(messages['print.terminalOffline']);
+      expect(messages['print.terminalOffline']).not.toBe(messages['print.ready']);
+    }
+  });
 });

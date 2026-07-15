@@ -27,11 +27,13 @@ class ConnectorApiClientTest {
             .put("code", "OK")
             .put(
                 "data",
-                JSONObject().put(
+                JSONObject().put("merchantId", "7").put(
                     "job",
                     JSONObject()
                         .put("id", "123")
+                        .put("merchantId", "7")
                         .put("printerId", "9")
+                        .put("status", "CLAIMED")
                         .put("receiptType", "ORDER_CUSTOMER")
                         .put("source", "MANUAL")
                         .put("leaseVersion", 1)
@@ -70,20 +72,27 @@ class ConnectorApiClientTest {
             .put(
                 "data",
                 JSONObject()
+                    .put("merchantId", "7")
                     .put("taskCenterEnabled", true)
                     .put("executionEnabled", true)
                     .put("automaticCreationEnabled", false)
                     .put("merchantPrintingEnabled", true)
                     .put("printerEnabled", true)
                     .put("pollIntervalSeconds", 5)
-                    .put("heartbeatIntervalSeconds", 10)
+                    .put("configRefreshIntervalSeconds", 10)
                     .put("configVersion", 12)
                     .put(
                         "boundPrinter",
                         JSONObject()
                             .put("id", "9")
                             .put("enabled", true)
-                            .put("channelType", "LOCAL_USB_ESCPOS"),
+                            .put("channelType", "LOCAL_USB_ESCPOS")
+                            .put("status", "ONLINE")
+                            .put("connectionConfig", JSONObject())
+                            .put(
+                                "readiness",
+                                JSONObject().put("state", "READY").put("configValid", true),
+                            ),
                     ),
             )
         val api = ConnectorApiClient(
@@ -100,11 +109,14 @@ class ConnectorApiClientTest {
         assertTrue(config.executionEnabled)
         assertTrue(config.merchantPrintingEnabled)
         assertTrue(config.boundPrinterEnabled)
+        assertEquals("ONLINE", config.boundPrinterStatus)
+        assertEquals("READY", config.boundPrinterReadinessState)
+        assertTrue(config.boundPrinterConnectionConfigValid)
         assertFalse(config.automaticPrintingEnabled)
         assertEquals("9", config.boundPrinterId)
         assertEquals("LOCAL_USB_ESCPOS", config.boundPrinterChannelType)
         assertEquals(5_000L, config.pollIntervalMs)
-        assertEquals(10_000L, config.heartbeatIntervalMs)
+        assertEquals(10_000L, config.configRefreshIntervalMs)
         assertEquals(12L, config.configVersion)
     }
 
@@ -136,6 +148,45 @@ class ConnectorApiClientTest {
     }
 
     @Test
+    fun `printer status report contains only explicit USB readiness evidence`() {
+        val connection = FakeConnection(
+            URL("https://api.example.test/api/v1/merchant/printing/connector/printers/status"),
+            JSONObject().put("code", "OK").put("data", JSONObject()),
+        )
+        val api = ConnectorApiClient(
+            merchantTokenProvider = { "merchant.jwt.session-token" },
+            endpointResolver = { "https://api.example.test/api/v1$it" },
+            connectionFactory = { connection },
+        )
+
+        api.reportPrinterStatus(
+            printerId = "9",
+            status = "CONNECTED",
+            evidence = UsbReadinessEvidence(
+                usbDeviceRecognized = true,
+                usbPermissionGranted = true,
+                usbInterfaceValid = true,
+                usbEndpointValid = true,
+                appExecutionReady = true,
+            ),
+            lastErrorCode = null,
+            lastErrorMessage = null,
+        )
+
+        val body = JSONObject(connection.requestBody.toString(Charsets.UTF_8))
+        val capabilities = body.getJSONObject("capabilities")
+        assertTrue(capabilities.getBoolean("usbDeviceRecognized"))
+        assertTrue(capabilities.getBoolean("usbPermissionGranted"))
+        assertTrue(capabilities.getBoolean("usbInterfaceValid"))
+        assertTrue(capabilities.getBoolean("usbEndpointValid"))
+        assertTrue(capabilities.getBoolean("appExecutionReady"))
+        assertEquals(
+            "USB_DEVICE_PERMISSION_INTERFACE_ENDPOINT_READY",
+            capabilities.getString("connectionEvidence"),
+        )
+    }
+
+    @Test
     fun `automatic server job is rejected when local automatic claiming is off`() {
         val snapshot = JSONObject()
             .put("schemaVersion", 1)
@@ -144,11 +195,13 @@ class ConnectorApiClientTest {
             .put("code", "OK")
             .put(
                 "data",
-                JSONObject().put(
+                JSONObject().put("merchantId", "7").put(
                     "job",
                     JSONObject()
                         .put("id", "124")
+                        .put("merchantId", "7")
                         .put("printerId", "9")
+                        .put("status", "CLAIMED")
                         .put("receiptType", "ORDER_CUSTOMER")
                         .put("source", "AUTOMATIC")
                         .put("leaseVersion", 1)
@@ -173,6 +226,50 @@ class ConnectorApiClientTest {
     }
 
     @Test
+    fun `terminal server job status is rejected before local execution`() {
+        listOf("SUCCEEDED", "CANCELLED").forEach { status ->
+            val snapshot = JSONObject()
+                .put("schemaVersion", 1)
+                .put("receiptType", "ORDER_CUSTOMER")
+            val response = JSONObject()
+                .put("code", "OK")
+                .put(
+                    "data",
+                    JSONObject().put(
+                        "job",
+                        JSONObject()
+                            .put("id", "127")
+                            .put("merchantId", "7")
+                            .put("printerId", "9")
+                            .put("status", status)
+                            .put("receiptType", "ORDER_CUSTOMER")
+                            .put("source", "MANUAL")
+                            .put("leaseVersion", 1)
+                            .put("leaseExpiresAt", "2026-07-15T10:00:00.000Z")
+                            .put("contentHash", CanonicalReceiptHash.compute(snapshot))
+                            .put("snapshotSchemaVersion", 1)
+                            .put("receiptSnapshot", snapshot),
+                    ),
+                )
+            val api = ConnectorApiClient(
+                merchantTokenProvider = { "merchant.jwt.session-token" },
+                endpointResolver = { "https://api.example.test/api/v1$it" },
+                connectionFactory = {
+                    FakeConnection(
+                        URL("https://api.example.test/api/v1/merchant/printing/connector/jobs/claim"),
+                        response,
+                    )
+                },
+            )
+
+            val error = assertThrows(ConnectorApiException::class.java) {
+                api.claim(allowAutomatic = false, printerId = "9")
+            }
+            assertEquals("PRINT_JOB_NOT_CLAIMED", error.errorCode)
+        }
+    }
+
+    @Test
     fun `claim rejects a tampered receipt before it can enter the local ledger`() {
         val authenticSnapshot = JSONObject()
             .put("schemaVersion", 1)
@@ -183,11 +280,13 @@ class ConnectorApiClientTest {
             .put("code", "OK")
             .put(
                 "data",
-                JSONObject().put(
+                JSONObject().put("merchantId", "7").put(
                     "job",
                     JSONObject()
                         .put("id", "126")
+                        .put("merchantId", "7")
                         .put("printerId", "9")
+                        .put("status", "CLAIMED")
                         .put("receiptType", "ORDER_CUSTOMER")
                         .put("source", "MANUAL")
                         .put("leaseVersion", 1)
@@ -242,7 +341,9 @@ class ConnectorApiClientTest {
         )
         val job = ClaimedPrintJob(
             id = "125",
+            merchantId = "7",
             printerId = "9",
+            status = "CLAIMED",
             receiptType = "ORDER_CUSTOMER",
             source = "MANUAL",
             leaseVersion = 3,

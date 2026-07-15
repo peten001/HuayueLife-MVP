@@ -8,16 +8,48 @@ const templateId = 27n;
 describe('PrintRulesService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let audit: { record: jest.Mock };
+  let settings: { assertMerchantPrintingEnabled: jest.Mock };
   let service: PrintRulesService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
+    settings = {
+      assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+    };
     service = new PrintRulesService(
       prisma as never,
       { assertTaskCenterEnabled: jest.fn() } as never,
       audit as never,
+      settings as never,
     );
+  });
+
+  it('blocks rule configuration mutations while platform printing is disabled', async () => {
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
+    const dto = {
+      name: '不可创建',
+      triggerEvent: 'ORDER_ACCEPTED' as const,
+      receiptType: 'ORDER_CUSTOMER' as const,
+      printerId: printerId.toString(),
+    };
+
+    await expect(
+      service.create(merchantId, 3n, undefined, dto),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.update(merchantId, 3n, undefined, 101n, { name: '不可修改' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.enable(merchantId, 3n, undefined, 101n),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.disable(merchantId, 3n, undefined, 101n),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printRule.create).not.toHaveBeenCalled();
+    expect(prisma.printRule.update).not.toHaveBeenCalled();
   });
 
   it('creates rules disabled with automatic printing off by default', async () => {

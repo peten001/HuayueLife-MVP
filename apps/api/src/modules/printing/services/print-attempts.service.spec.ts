@@ -11,6 +11,7 @@ describe('PrintAttemptsService', () => {
     assertTaskCenterEnabled: jest.Mock;
     assertExecutionEnabled: jest.Mock;
   };
+  let settings: { assertMerchantPrintingEnabled: jest.Mock };
   let service: PrintAttemptsService;
 
   beforeEach(() => {
@@ -19,8 +20,15 @@ describe('PrintAttemptsService', () => {
       assertTaskCenterEnabled: jest.fn(),
       assertExecutionEnabled: jest.fn(),
     };
+    settings = {
+      assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+    };
     prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminal());
-    service = new PrintAttemptsService(prisma as never, flags as never);
+    service = new PrintAttemptsService(
+      prisma as never,
+      flags as never,
+      settings as never,
+    );
   });
 
   it('atomically enters PRINTING and creates one numbered attempt', async () => {
@@ -88,13 +96,11 @@ describe('PrintAttemptsService', () => {
     expect(prisma.printAttempt.create).not.toHaveBeenCalled();
   });
 
-  it('rechecks merchant and bound-printer kill switches before hardware execution', async () => {
+  it('rechecks the platform printing gate before hardware execution', async () => {
     prisma.printJob.findFirst.mockResolvedValue(job({ status: 'CLAIMED' }));
-    prisma.merchantTerminal.findFirst
-      .mockResolvedValueOnce(activeTerminal())
-      .mockResolvedValueOnce(
-        activeTerminal({ merchant: { status: 'ACTIVE', printingEnabled: false } }),
-      );
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
 
     await expect(
       service.markPrinting({
@@ -109,12 +115,17 @@ describe('PrintAttemptsService', () => {
     expect(prisma.printAttempt.create).not.toHaveBeenCalled();
   });
 
-  it('blocks hardware start after the platform disables the merchant', async () => {
+  it('blocks hardware start unless the bound printer has positive ONLINE readiness', async () => {
     prisma.printJob.findFirst.mockResolvedValue(job({ status: 'CLAIMED' }));
     prisma.merchantTerminal.findFirst
       .mockResolvedValueOnce(activeTerminal())
       .mockResolvedValueOnce(
-        activeTerminal({ merchant: { status: 'DISABLED', printingEnabled: true } }),
+        activeTerminal({
+          boundPrinter: {
+            ...activeTerminal().boundPrinter,
+            status: 'UNVERIFIED',
+          },
+        }),
       );
 
     await expect(
@@ -567,6 +578,18 @@ describe('PrintAttemptsService', () => {
     }
   });
 
+  it('does not extend an execution lease after platform printing is closed', async () => {
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
+
+    await expect(
+      service.extendLease(merchantId, terminalId, jobId, 2),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
   it('extends only the active owner lease and caps the extension at 120 seconds', async () => {
     const printing = job({ status: 'PRINTING', attemptCount: 1 });
     prisma.printJob.findFirst.mockResolvedValue(printing);
@@ -658,8 +681,20 @@ function activeTerminal(overrides: Record<string, unknown> = {}) {
     boundPrinter: {
       id: 88n,
       enabled: true,
+      status: 'ONLINE',
       deletedAt: null,
       channelType: 'LOCAL_USB_ESCPOS',
+      connectionConfig: {},
+      capabilities: {
+        connectorStatusUpdatedAt: new Date().toISOString(),
+        connectorStatus: {
+          usbDeviceRecognized: true,
+          usbPermissionGranted: true,
+          usbInterfaceValid: true,
+          usbEndpointValid: true,
+          appExecutionReady: true,
+        },
+      },
     },
     ...overrides,
   };

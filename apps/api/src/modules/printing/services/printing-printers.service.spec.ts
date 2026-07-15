@@ -5,10 +5,14 @@ const merchantId = 7n;
 
 describe('PrintingPrintersService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
+  let settings: { assertMerchantPrintingEnabled: jest.Mock };
   let service: PrintingPrintersService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
+    settings = {
+      assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+    };
     service = new PrintingPrintersService(
       prisma as never,
       {
@@ -16,7 +20,32 @@ describe('PrintingPrintersService', () => {
         executionEnabled: jest.fn().mockReturnValue(false),
       } as never,
       { record: jest.fn().mockResolvedValue({ id: 1n }) } as never,
+      settings as never,
     );
+  });
+
+  it('blocks every printer mutation while platform printing is disabled', async () => {
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
+
+    await expect(
+      service.create(merchantId, 3n, undefined, {
+        name: '不可创建',
+        channelType: 'LOCAL_USB_ESCPOS',
+        paperWidth: 'MM80',
+        connectionConfig: {},
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.update(merchantId, 3n, undefined, 17n, { name: '不可修改' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.disable(merchantId, 3n, undefined, 17n),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.printer.create).not.toHaveBeenCalled();
+    expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
   it('stores only a private IPv4 LAN endpoint and remains disabled by default', async () => {

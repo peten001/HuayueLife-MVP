@@ -39,6 +39,7 @@ describe('PrintJobsService', () => {
     cloneAndValidate: jest.Mock;
   };
   let audit: { record: jest.Mock };
+  let settings: { assertMerchantPrintingEnabled: jest.Mock; get: jest.Mock };
   let service: PrintJobsService;
 
   beforeEach(() => {
@@ -52,6 +53,18 @@ describe('PrintJobsService', () => {
       ),
     };
     audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
+    settings = {
+      assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn().mockResolvedValue({
+        printingEnabled: true,
+        featureFlags: {
+          taskCenterEnabled: true,
+          executionEnabled: true,
+          automaticCreationEnabled: false,
+          legacyPrintingEnabled: false,
+        },
+      }),
+    };
     prisma.printJob.findMany.mockResolvedValue([]);
     prisma.merchantStaff.findFirst.mockResolvedValue({ id: 3n });
     service = new PrintJobsService(
@@ -59,7 +72,117 @@ describe('PrintJobsService', () => {
       flags as never,
       snapshots as never,
       audit as never,
-      { assertMerchantEnabled: jest.fn() } as never,
+      settings as never,
+    );
+  });
+
+  it('blocks connector config and every job-producing path when platform printing is disabled', async () => {
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
+
+    await expect(service.merchantConnectorConfig(merchantId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      service.createManualPrintJob({
+        merchantId,
+        createdByStaffId: 3n,
+        requestKey: 'manual-disabled',
+        printerId,
+        orderId,
+        receiptType: 'ORDER_CUSTOMER',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createManualReprintJob({
+        merchantId,
+        originalJobId: 301n,
+        createdByStaffId: 3n,
+        requestKey: 'reprint-disabled',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createTestJob({
+        merchantId,
+        printerId,
+        createdByStaffId: 3n,
+        requestKey: 'test-disabled',
+        document: receipt,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.createAutomaticJob({
+        merchantId,
+        ruleId,
+        orderId,
+        eventKey: 'order-status-log:platform-disabled',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.retry(merchantId, 3n, 'retry-disabled', 301n),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.claimNextMerchantJob(merchantId, printerId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printRule.findFirst).not.toHaveBeenCalled();
+    expect(snapshots.fromOrder).not.toHaveBeenCalled();
+  });
+
+  it('returns merchant-scoped connector configuration with explicit printer readiness', async () => {
+    prisma.printer.findMany.mockResolvedValue([
+      enabledPrinter({ id: 18n, name: '未验证 USB', status: 'UNVERIFIED' }),
+      enabledPrinter({ name: 'USB', status: 'ONLINE' }),
+    ]);
+
+    await expect(service.merchantConnectorConfig(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        merchantId: merchantId.toString(),
+        merchantPrintingEnabled: true,
+        boundPrinter: expect.objectContaining({
+          id: printerId,
+          status: 'ONLINE',
+          readiness: expect.objectContaining({ state: 'READY' }),
+        }),
+      }),
+    );
+  });
+
+  it('promotes CONNECTED to ONLINE only with complete positive USB evidence', async () => {
+    const base = enabledPrinter({ status: 'UNKNOWN', capabilities: {} });
+    prisma.printer.findFirst.mockResolvedValue(base);
+    prisma.printer.update.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => ({
+        ...base,
+        ...data,
+      }),
+    );
+
+    await service.reportMerchantConnectorPrinterStatus(merchantId, {
+      printerId: printerId.toString(),
+      status: 'CONNECTED',
+      capabilities: { usbDeviceRecognized: true },
+    });
+    expect(prisma.printer.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'UNKNOWN' }) }),
+    );
+
+    await service.reportMerchantConnectorPrinterStatus(merchantId, {
+      printerId: printerId.toString(),
+      status: 'CONNECTED',
+      capabilities: {
+        usbDeviceRecognized: true,
+        usbPermissionGranted: true,
+        usbInterfaceValid: true,
+        usbEndpointValid: true,
+        appExecutionReady: true,
+      },
+    });
+    expect(prisma.printer.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'ONLINE' }) }),
     );
   });
 
@@ -266,6 +389,31 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    enabledPrinter({ status: 'UNKNOWN' }),
+    enabledPrinter({
+      capabilities: {
+        ...positiveUsbCapabilities(),
+        connectorStatusUpdatedAt: new Date(Date.now() - 120_001).toISOString(),
+      },
+    }),
+  ])('rejects manual printing without current positive device evidence', async (printer) => {
+    prisma.printer.findFirst.mockResolvedValue(printer);
+
+    await expect(
+      service.createManualPrintJob({
+        merchantId,
+        createdByStaffId: 3n,
+        requestKey: 'manual-not-ready',
+        printerId,
+        orderId,
+        receiptType: 'ORDER_CUSTOMER',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(snapshots.fromOrder).not.toHaveBeenCalled();
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
+  });
+
   it('rejects an automatic snapshot whose merchant scope does not match the job', async () => {
     prisma.printRule.findFirst.mockResolvedValue(automaticRule());
     snapshots.fromOrder.mockResolvedValue({
@@ -428,6 +576,7 @@ describe('PrintJobsService', () => {
       boundPrinterId: printerId,
       merchant: { status: 'ACTIVE', printingEnabled: true },
     });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
     prisma.printJob.findFirst.mockImplementation(
       async ({ where }: { where: { status: unknown } }) =>
         typeof where.status === 'object' ? null : candidate,
@@ -468,16 +617,15 @@ describe('PrintJobsService', () => {
   });
 
   it('blocks claim when the platform has disabled the merchant', async () => {
-    prisma.merchantTerminal.findFirst.mockResolvedValue({
-      id: terminalId,
-      boundPrinterId: printerId,
-      merchant: { status: 'DISABLED', printingEnabled: true },
-    });
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
 
     await expect(service.claimNextJob(merchantId, terminalId)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.findFirst).not.toHaveBeenCalled();
   });
 
   it('compensates durable automatic triggers before an automatic connector claim', async () => {
@@ -487,6 +635,7 @@ describe('PrintJobsService', () => {
       boundPrinterId: printerId,
       merchant: { status: 'ACTIVE', printingEnabled: true },
     });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
     prisma.printJob.findFirst.mockResolvedValue(null);
     jest.spyOn(service, 'releaseExpiredLeases').mockResolvedValue({
       claimed: 0,
@@ -671,7 +820,11 @@ function createPrismaMock() {
   const prisma = {
     merchant: { findUnique: jest.fn() },
     printRule: { findFirst: jest.fn(), findMany: jest.fn() },
-    printer: { findFirst: jest.fn() },
+    printer: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
     receiptTemplate: { findFirst: jest.fn() },
     order: { findFirst: jest.fn() },
     tableSession: { findFirst: jest.fn() },
@@ -726,8 +879,24 @@ function enabledPrinter(overrides: Record<string, unknown> = {}) {
     paperWidth: 'MM80',
     channelType: 'LOCAL_USB_ESCPOS',
     enabled: true,
+    status: 'ONLINE',
+    connectionConfig: {},
+    capabilities: positiveUsbCapabilities(),
     deletedAt: null,
     ...overrides,
+  };
+}
+
+function positiveUsbCapabilities() {
+  return {
+    connectorStatusUpdatedAt: new Date().toISOString(),
+    connectorStatus: {
+      usbDeviceRecognized: true,
+      usbPermissionGranted: true,
+      usbInterfaceValid: true,
+      usbEndpointValid: true,
+      appExecutionReady: true,
+    },
   };
 }
 

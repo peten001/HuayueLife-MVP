@@ -1,113 +1,103 @@
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrintingSettingsService } from './printing-settings.service';
 
 describe('PrintingSettingsService', () => {
-  it('keeps merchant printing disabled unless explicitly enabled and audited', async () => {
+  it('returns the platform-owned printing capability as read-only state', async () => {
     const prisma = createPrismaMock();
     prisma.merchant.findUnique.mockResolvedValue({
-      id: 7n,
-      status: 'ACTIVE',
-      printingEnabled: false,
-    });
-    prisma.merchant.updateMany.mockResolvedValue({ count: 1 });
-    prisma.merchant.findUniqueOrThrow.mockResolvedValue({
       id: 7n,
       status: 'ACTIVE',
       printingEnabled: true,
     });
-    const audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
-    const service = new PrintingSettingsService(
-      prisma as never,
-      {
-        assertTaskCenterEnabled: jest.fn(),
-        status: jest.fn().mockReturnValue({ executionEnabled: false }),
-      } as never,
-      audit as never,
-    );
+    const flags = createFlagsMock();
+    const service = new PrintingSettingsService(prisma as never, flags as never);
 
-    await expect(service.assertMerchantEnabled(7n)).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
-    await expect(service.update(7n, 3n, 'request-1', true)).resolves.toEqual(
-      expect.objectContaining({ printingEnabled: true }),
-    );
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'MERCHANT_PRINTING_ENABLED' }),
-      prisma,
-    );
-    expect(prisma.merchant.updateMany).toHaveBeenCalledWith({
-      where: { id: 7n, status: 'ACTIVE' },
-      data: { printingEnabled: true },
+    await expect(service.get(7n)).resolves.toEqual({
+      id: 7n,
+      status: 'ACTIVE',
+      printingEnabled: true,
+      featureFlags: { executionEnabled: false },
     });
   });
 
-  it('does not enable physical printing for an inactive merchant', async () => {
+  it.each([true, false])(
+    'rejects merchant attempts to set the platform printing capability to %s',
+    async (printingEnabled) => {
+      const prisma = createPrismaMock();
+      const service = new PrintingSettingsService(
+        prisma as never,
+        createFlagsMock() as never,
+      );
+
+      await expect(
+        service.update(7n, 3n, 'merchant-request', printingEnabled),
+      ).rejects.toMatchObject({
+        constructor: ForbiddenException,
+        response: expect.objectContaining({
+          code: 'PERMISSION_DENIED',
+          message: '打印总能力只能由平台管理员开启或关闭',
+        }),
+      });
+      expect(prisma.merchant.update).not.toHaveBeenCalled();
+      expect(prisma.merchant.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails closed with the unified error when platform printing is disabled', async () => {
     const prisma = createPrismaMock();
     prisma.merchant.findUnique.mockResolvedValue({
-      id: 7n,
-      status: 'DISABLED',
-      printingEnabled: false,
-    });
-    const service = new PrintingSettingsService(
-      prisma as never,
-      {
-        assertTaskCenterEnabled: jest.fn(),
-        status: jest.fn().mockReturnValue({ executionEnabled: false }),
-      } as never,
-      { record: jest.fn() } as never,
-    );
-
-    await expect(service.update(7n, 3n, 'request-disabled', true)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    await expect(service.assertMerchantEnabled(7n)).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
-    expect(prisma.merchant.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('fails closed if the merchant is disabled between the read and enable write', async () => {
-    const prisma = createPrismaMock();
-    prisma.merchant.findUnique.mockResolvedValue({
-      id: 7n,
       status: 'ACTIVE',
       printingEnabled: false,
     });
-    prisma.merchant.updateMany.mockResolvedValue({ count: 0 });
-    const audit = { record: jest.fn() };
     const service = new PrintingSettingsService(
       prisma as never,
-      {
-        assertTaskCenterEnabled: jest.fn(),
-        status: jest.fn().mockReturnValue({ executionEnabled: false }),
-      } as never,
-      audit as never,
+      createFlagsMock() as never,
     );
 
-    await expect(service.update(7n, 3n, 'request-race', true)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(prisma.merchant.updateMany).toHaveBeenCalledWith({
-      where: { id: 7n, status: 'ACTIVE' },
-      data: { printingEnabled: true },
+    await expect(
+      service.assertMerchantPrintingEnabled(7n),
+    ).rejects.toMatchObject({
+      constructor: ServiceUnavailableException,
+      response: {
+        code: 'PRINTING_NOT_ENABLED',
+        message: '打印功能未开通，请联系平台管理员。',
+      },
     });
-    expect(prisma.merchant.findUniqueOrThrow).not.toHaveBeenCalled();
-    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('permits execution only for an active merchant with printing enabled', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchant.findUnique.mockResolvedValue({
+      status: 'ACTIVE',
+      printingEnabled: true,
+    });
+    const service = new PrintingSettingsService(
+      prisma as never,
+      createFlagsMock() as never,
+    );
+
+    await expect(
+      service.assertMerchantPrintingEnabled(7n),
+    ).resolves.toBeUndefined();
   });
 });
 
+function createFlagsMock() {
+  return {
+    assertTaskCenterEnabled: jest.fn(),
+    status: jest.fn().mockReturnValue({ executionEnabled: false }),
+  };
+}
+
 function createPrismaMock() {
-  const prisma = {
+  return {
     merchant: {
       findUnique: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    $transaction: jest.fn(),
   };
-  prisma.$transaction.mockImplementation(
-    async (callback: (tx: typeof prisma) => unknown) => callback(prisma),
-  );
-  return prisma;
 }

@@ -111,6 +111,10 @@ class PairingAndSafetyPolicyTest {
             ConnectorApiException(401, "MERCHANT_AUTH_INVALID", "invalid")
                 .invalidMerchantSession,
         )
+        assertTrue(
+            ConnectorApiException(403, "HTTP_403", "staff disabled")
+                .invalidMerchantSession,
+        )
     }
 
     private fun binding(printerId: String?) = UsbPrinterBinding(

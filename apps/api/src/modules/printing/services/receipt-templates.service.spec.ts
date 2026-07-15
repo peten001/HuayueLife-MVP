@@ -5,15 +5,42 @@ const merchantId = 7n;
 
 describe('ReceiptTemplatesService versioning', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
+  let settings: { assertMerchantPrintingEnabled: jest.Mock };
   let service: ReceiptTemplatesService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
+    settings = {
+      assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+    };
     service = new ReceiptTemplatesService(
       prisma as never,
       { assertTaskCenterEnabled: jest.fn() } as never,
       { record: jest.fn().mockResolvedValue({ id: 1n }) } as never,
+      settings as never,
     );
+  });
+
+  it('blocks template mutations while platform printing is disabled', async () => {
+    settings.assertMerchantPrintingEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
+    );
+    await expect(
+      service.create(merchantId, 3n, undefined, {
+        name: '不可创建',
+        receiptType: 'ORDER_CUSTOMER',
+        paperWidth: 'MM80',
+        languageMode: 'MERCHANT_DEFAULT',
+        definition: { schemaVersion: 1, sections: [{ type: 'ITEMS' }] },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.update(merchantId, 3n, undefined, 27n, { name: '不可修改' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.duplicate(merchantId, 3n, undefined, 27n),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.receiptTemplate.create).not.toHaveBeenCalled();
   });
 
   it('creates a new immutable version, disables the previous row, and safely disables retargeted rules', async () => {

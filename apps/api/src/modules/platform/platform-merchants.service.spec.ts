@@ -7,7 +7,10 @@ import {
   StaffRole,
   StaffStatus,
 } from '@prisma/client';
-import { PlatformMerchantsService } from './platform-merchants.service';
+import {
+  PlatformMerchantsService,
+  serializeCapabilityRefs,
+} from './platform-merchants.service';
 import { MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS } from './merchant-import-fields';
 
 function buildAppConfigMock(platformOrderingEnabled = true) {
@@ -134,6 +137,11 @@ describe('PlatformMerchantsService platform ordering switch', () => {
     merchant: {
       update: jest.Mock;
     };
+    printer: { deleteMany: jest.Mock };
+    printRule: { deleteMany: jest.Mock };
+    receiptTemplate: { deleteMany: jest.Mock };
+    printJob: { deleteMany: jest.Mock };
+    printAttempt: { deleteMany: jest.Mock };
   };
 
   beforeEach(() => {
@@ -142,6 +150,11 @@ describe('PlatformMerchantsService platform ordering switch', () => {
         callback({
           merchantCapability: { upsert: prisma.merchantCapability.upsert },
           merchant: { update: prisma.merchant.update },
+          printer: prisma.printer,
+          printRule: prisma.printRule,
+          receiptTemplate: prisma.receiptTemplate,
+          printJob: prisma.printJob,
+          printAttempt: prisma.printAttempt,
         }),
       ),
       merchantCapability: {
@@ -150,6 +163,11 @@ describe('PlatformMerchantsService platform ordering switch', () => {
       merchant: {
         update: jest.fn().mockResolvedValue(undefined),
       },
+      printer: { deleteMany: jest.fn() },
+      printRule: { deleteMany: jest.fn() },
+      receiptTemplate: { deleteMany: jest.fn() },
+      printJob: { deleteMany: jest.fn() },
+      printAttempt: { deleteMany: jest.fn() },
     };
     service = new PlatformMerchantsService(
       prisma as never,
@@ -161,6 +179,7 @@ describe('PlatformMerchantsService platform ordering switch', () => {
     jest.spyOn(service as any, 'loadCapabilities').mockResolvedValue([
       { id: 1n, code: 'phoneEnabled' },
       { id: 2n, code: 'pickupEnabled' },
+      { id: 3n, code: 'printerEnabled' },
     ] as never);
     jest.spyOn(service as any, 'findById').mockResolvedValue({ id: '2' } as never);
   });
@@ -207,6 +226,32 @@ describe('PlatformMerchantsService platform ordering switch', () => {
     expect(prisma.merchant.update).toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    'allows the platform to set printerEnabled=%s and synchronizes Merchant.printingEnabled in the same transaction',
+    async (printingEnabled) => {
+      await expect(
+        service.updateCapabilities(2n, {
+          items: [{ code: 'printerEnabled', isEnabled: printingEnabled }],
+        }),
+      ).resolves.toEqual({ id: '2' });
+
+      expect(prisma.merchantCapability.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: { isEnabled: printingEnabled },
+        }),
+      );
+      expect(prisma.merchant.update).toHaveBeenCalledWith({
+        where: { id: 2n },
+        data: { printingEnabled },
+      });
+      expect(prisma.printer.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.printRule.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.receiptTemplate.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.printJob.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.printAttempt.deleteMany).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not clear operation fields when unchanged merchant mode is submitted while off', async () => {
     (service as any).requireMerchant.mockResolvedValueOnce({
       id: 2n,
@@ -223,6 +268,34 @@ describe('PlatformMerchantsService platform ordering switch', () => {
       where: { id: 2n },
       data: { nameZh: '展示商家' },
     });
+  });
+});
+
+describe('PlatformMerchantsService printing capability serialization', () => {
+  it('always reflects Merchant.printingEnabled when legacy capability data has drifted', () => {
+    const capability = {
+      id: 3n,
+      code: 'printerEnabled',
+      nameZh: '打印机',
+      nameVi: 'May in',
+      nameEn: 'Printer',
+    };
+    expect(
+      serializeCapabilityRefs({
+        printingEnabled: false,
+        capabilities: [{ isEnabled: true, capability }],
+      } as never),
+    ).toEqual([
+      expect.objectContaining({ code: 'printerEnabled', isEnabled: false }),
+    ]);
+    expect(
+      serializeCapabilityRefs({
+        printingEnabled: true,
+        capabilities: [{ isEnabled: false, capability }],
+      } as never),
+    ).toEqual([
+      expect.objectContaining({ code: 'printerEnabled', isEnabled: true }),
+    ]);
   });
 });
 

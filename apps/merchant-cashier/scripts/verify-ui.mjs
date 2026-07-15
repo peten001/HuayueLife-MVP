@@ -421,7 +421,7 @@ async function verifyPrintIsDisabled() {
   const printButton = page.getByTestId('print-primary');
   assert.equal(await printButton.isDisabled(), true, 'Printing must remain disabled until RC execution and printer gates are enabled');
   assert.match((await printButton.textContent()) || '', /打印桌账/);
-  assert.match((await page.getByTestId('print-availability').textContent()) || '', /打印总开关未开启/);
+  assert.match((await page.getByTestId('print-availability').textContent()) || '', /打印功能未开通/);
   assert.equal(await page.locator('[data-testid*="print"][href]').count(), 0, 'No print navigation may be exposed');
 }
 
