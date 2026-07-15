@@ -13,10 +13,10 @@
 | merchant-cashier 回归 | PASS | typecheck、lint、16 files / 81 tests、七种 viewport 三语言 UI、Fixture=false 生产 build |
 | Android 回归 | PASS | clean、67 tests、lint 0 error/22 warning、debug/release build |
 | 正式签名材料 | PASS | 长期 JKS 位于 Git 外，证书 SHA-256 已固定；密码仅在本机 Keychain |
-| 正式签名候选 APK | 待最终 Commit 后生成 | 正式包名、真实候选 URL/API、release 证书、R8、校验值 |
-| 诊断与 rollback APK | 待最终 Commit 后生成 | debug 诊断包；同证书且更高 versionCode 的不领取任务 rollback 包 |
-| Secret/隐私扫描 | 待最终 Commit 前复核 | 无账号、密码、Token、Cookie、顾客隐私、keystore、local.properties、构建产物进入 Git |
-| 部署包 Manifest | 待最终构建 | Web/admin/API/migration/APK 的路径、SHA-256、Commit 和 NOT DEPLOYED 标记 |
+| 正式签名候选 APK | PASS | 正式包名、候选 URL/API、R8 和 release 证书验证通过；SHA-256 见 `LOCAL_VALIDATION_AND_ARTIFACTS.md` |
+| 诊断与 rollback APK | PASS | debug 诊断包已生成；同证书、更高 versionCode 且不领取任务的 rollback 包已验证 |
+| Secret/隐私扫描 | PASS | 已复核 Git 暂存范围、跟踪文件和制品列表；未提交真实账号、密码、Token、Cookie、顾客隐私、keystore、`local.properties` 或构建产物 |
+| 部署包 Manifest | PASS | Git 外制品目录包含 Web/admin/API/migration/APK、SHA-256、源码版本和 `NOT DEPLOYED` 标记 |
 
 ## 生产与安装 Gate
 
