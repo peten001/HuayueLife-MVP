@@ -36,8 +36,10 @@ try {
     [1536, 1024],
     [1366, 768],
     [1280, 800],
+    [1180, 800],
     [1024, 768],
     [820, 1180],
+    [768, 1024],
   ];
 
   for (const [width, height] of viewports) {
@@ -52,7 +54,7 @@ try {
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
   process.stdout.write(
     'Verified the final operator layout at 1536x1024, 1366x768, 1280x800, '
-      + '1024x768, and 820x1180, including fixture facts, employee menu, disabled '
+      + '1180x800, 1024x768, 820x1180, and 768x1024, including fixture facts, employee menu, disabled '
       + 'printing, zh/vi/en overflow, order flow, and network recovery.\n',
   );
 } finally {
@@ -259,6 +261,16 @@ async function verifyViewport(width, height) {
     const firstCard = tableCards[0]?.getBoundingClientRect();
     const route = document.querySelector('.cashier-shell__route');
     const detail = document.querySelector('.cashier-shell__detail');
+    const detailOverflow = detail instanceof HTMLElement
+      ? Math.max(
+          detail.scrollWidth - detail.clientWidth,
+          ...[...detail.querySelectorAll(
+            '.bill-order-row, .bill-order-row__meta b, .table-close-action, .table-print-action',
+          )].map((element) => element instanceof HTMLElement
+            ? element.scrollWidth - element.clientWidth
+            : 0),
+        )
+      : 0;
     return {
       documentOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       documentOverflowY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
@@ -286,11 +298,13 @@ async function verifyViewport(width, height) {
       header: rectOf('[data-testid="cashier-topbar"]'),
       route: rectOf('.cashier-shell__route'),
       detail: detail instanceof HTMLElement ? rectOf('.cashier-shell__detail') : null,
+      detailOverflowX: Math.max(0, detailOverflow),
       brand: rectOf('[data-testid="cashier-brand"]'),
       merchant: rectOf('[data-testid="cashier-merchant-panel"]'),
       employee: rectOf('[data-testid="employee-menu-trigger"]'),
       nav: rectOf('.cashier-navigation'),
       toolbar: rectOf('[data-testid="table-toolbar"]'),
+      grid: rectOf('[data-testid="table-grid"]'),
       search: { x: searchRect.x, y: searchRect.y, width: searchRect.width, height: searchRect.height },
       statuses: { x: statusesRect.x, y: statusesRect.y, width: statusesRect.width, height: statusesRect.height },
       refresh: { x: refreshRect.x, y: refreshRect.y, width: refreshRect.width, height: refreshRect.height },
@@ -329,60 +343,76 @@ async function verifyViewport(width, height) {
   }
 
   if (width >= 1366) {
-    assertBetween(layout.sidebar.width, 224, 248, `${width}x${height}: left rail width`);
-    assertBetween(layout.detail?.width ?? 0, 350, 376, `${width}x${height}: detail width`);
+    assertNear(layout.sidebar.width, 224, 4, `${width}x${height}: left rail width`);
+    assertNear(layout.detail?.width ?? 0, 350, 4, `${width}x${height}: detail width`);
   }
 
   if (width === 1536 && height === 1024) {
-    assertNear(layout.sidebar.width, 248, 4, '1536: left rail width');
+    assertNear(layout.sidebar.width, 224, 4, '1536: left rail width');
     assertNear(layout.header.height, 108, 4, '1536: top bar height');
-    assertNear(layout.detail?.width ?? 0, 376, 4, '1536: detail width');
-    assertNear(layout.brand.x, 24, 4, '1536: brand x');
+    assertNear(layout.route.width, 962, 4, '1536: central workspace width');
+    assertNear(layout.detail?.width ?? 0, 350, 4, '1536: detail width');
+    assertNear(layout.brand.x, 20, 4, '1536: brand x');
     assertNear(layout.brand.y, 20, 4, '1536: brand y');
-    assertNear(layout.merchant.x, 24, 4, '1536: merchant x');
+    assertNear(layout.merchant.x, 20, 4, '1536: merchant x');
     assertNear(layout.merchant.y, 128, 4, '1536: merchant y');
-    assertNear(layout.nav.x, 12, 4, '1536: navigation x');
+    assertNear(layout.nav.x, 10, 4, '1536: navigation x');
     assertNear(layout.nav.y, 252, 4, '1536: navigation y');
-    assertNear(layout.employee.x, 20, 4, '1536: employee x');
+    assertNear(layout.employee.x, 16, 4, '1536: employee x');
     assertNear(layout.employee.y, 902, 4, '1536: employee y');
-    assertNear(layout.firstCard?.width ?? 0, 198, 4, '1536: table card width');
+    assertBetween(layout.search.width, 300, 320, '1536: search width');
+    assertBetween(layout.firstCard?.width ?? 0, 218, 224, '1536: table card width');
     assertNear(layout.firstCard?.height ?? 0, 154, 4, '1536: table card height');
   }
 
   if (width === 1280 && height === 800) {
-    assertNear(layout.sidebar.width, 206, 2, 'D10: left rail width');
+    assertNear(layout.sidebar.width, 186, 2, 'D10: left rail width');
     assertNear(layout.header.height, 84, 2, 'D10: top bar height');
-    assertNear(layout.route.width, 764, 2, 'D10: central workspace width');
-    assertNear(layout.detail?.width ?? 0, 310, 2, 'D10: detail width');
-    assertNear(layout.brand.x, 18, 2, 'D10: brand x');
+    assertNear(layout.route.width, 802, 2, 'D10: central workspace width');
+    assertNear(layout.detail?.width ?? 0, 292, 2, 'D10: detail width');
+    assertNear(layout.detailOverflowX, 0, 1, 'D10: detail content overflow');
+    assertNear(layout.brand.x, 14, 2, 'D10: brand x');
     assertNear(layout.brand.y, 14, 2, 'D10: brand y');
-    assertNear(layout.brand.width, 172, 2, 'D10: brand width');
+    assertNear(layout.brand.width, 158, 2, 'D10: brand width');
     assertNear(layout.brand.height, 54, 2, 'D10: brand height');
-    assertNear(layout.merchant.x, 18, 2, 'D10: merchant x');
+    assertNear(layout.merchant.x, 14, 2, 'D10: merchant x');
     assertNear(layout.merchant.y, 88, 2, 'D10: merchant y');
-    assertNear(layout.merchant.width, 172, 2, 'D10: merchant width');
+    assertNear(layout.merchant.width, 158, 2, 'D10: merchant width');
     assertNear(layout.merchant.height, 82, 2, 'D10: merchant height');
-    assertNear(layout.nav.x, 10, 2, 'D10: navigation x');
+    assertNear(layout.nav.x, 8, 2, 'D10: navigation x');
     assertNear(layout.nav.y, 190, 2, 'D10: navigation y');
-    assertNear(layout.nav.width, 186, 2, 'D10: navigation width');
-    assertNear(layout.employee.x, 16, 2, 'D10: employee x');
-    assertNear(layout.employee.y, 710, 2, 'D10: employee y');
-    assertNear(layout.employee.width, 174, 2, 'D10: employee width');
-    assertNear(layout.employee.height, 72, 2, 'D10: employee height');
-    assertNear(layout.toolbar.x, 218, 2, 'D10: toolbar x');
+    assertNear(layout.nav.width, 170, 2, 'D10: navigation width');
+    assertNear(layout.employee.x, 12, 2, 'D10: employee x');
+    assertNear(layout.employee.y, 712, 2, 'D10: employee y');
+    assertNear(layout.employee.width, 162, 2, 'D10: employee width');
+    assertBetween(layout.employee.height, 68, 72, 'D10: employee height');
+    assertNear(layout.toolbar.x, 196, 2, 'D10: toolbar x');
     assertNear(layout.toolbar.y, 96, 2, 'D10: toolbar y');
-    assertNear(layout.toolbar.width, 740, 2, 'D10: toolbar width');
+    assertNear(layout.toolbar.width, 782, 2, 'D10: toolbar width');
     assertNear(layout.toolbar.height, 52, 2, 'D10: toolbar height');
-    assertBetween(layout.search.width, 278, 300, 'D10: search width');
+    assertNear(layout.search.width, 250, 2, 'D10: search width');
     assertNear(layout.search.height, 44, 2, 'D10: search height');
-    assert.ok(layout.statuses.width <= 384, `D10: status filter is too wide (${layout.statuses.width}px)`);
+    assertBetween(layout.statuses.width, 326, 342, 'D10: status filter width');
     assertNear(layout.statuses.height, 44, 2, 'D10: status height');
+    assert.ok(
+      layout.statuses.x > layout.search.x + layout.search.width + 12,
+      'D10: toolbar must retain a natural gap between search and status filters',
+    );
+    assertNear(
+      layout.refresh.x - (layout.statuses.x + layout.statuses.width),
+      10,
+      2,
+      'D10: gap between status filters and refresh',
+    );
     assertNear(layout.refresh.width, 44, 2, 'D10: refresh width');
     assertNear(layout.refresh.height, 44, 2, 'D10: refresh height');
-    assertNear(layout.firstCard?.x ?? 0, 218, 2, 'D10: first table card x');
+    assertNear(layout.refresh.x + layout.refresh.width, layout.toolbar.x + layout.toolbar.width, 2, 'D10: refresh right edge');
+    assertNear(layout.grid.x, 196, 2, 'D10: table grid x');
+    assertNear(layout.grid.width, 782, 2, 'D10: table grid width');
+    assertNear(layout.firstCard?.x ?? 0, 196, 2, 'D10: first table card x');
     assertNear(layout.firstCard?.y ?? 0, 162, 2, 'D10: first table card y');
-    assertBetween(layout.firstCard?.width ?? 0, 174, 178, 'D10: table card width');
-    assertBetween(layout.firstCard?.height ?? 0, 122, 126, 'D10: table card height');
+    assertBetween(layout.firstCard?.width ?? 0, 188, 190, 'D10: table card width');
+    assertBetween(layout.firstCard?.height ?? 0, 130, 134, 'D10: table card height');
     assert.equal(layout.sidebarMerchantVisible, true, 'D10: merchant panel is missing');
     assert.equal(layout.sidebarEmployeeVisible, true, 'D10: employee card is missing');
   }
@@ -453,7 +483,27 @@ async function verifyLocales() {
       locale === 'zh' ? 'zh-CN' : locale,
     );
 
-    for (const [width, height] of [[1280, 800], [820, 1180]]) {
+    if (locale === 'vi') {
+      assert.deepEqual(
+        (await page.locator('[data-testid="table-toolbar"] .status-filters button').allTextContents())
+          .map((label) => label.trim()),
+        ['Tất cả', 'Trống', 'Đang dùng', 'Chờ đóng', 'Đã tắt'],
+        'Vietnamese table states must use the approved compact labels',
+      );
+      assert.equal(
+        await page.getByText('Chờ đóng bàn', { exact: true }).count(),
+        0,
+        'The retired Vietnamese table-state label must not remain',
+      );
+    }
+
+    for (const [width, height] of [
+      [1280, 800],
+      [1180, 800],
+      [1024, 768],
+      [820, 1180],
+      [768, 1024],
+    ]) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(100);
       const overflow = await page.evaluate(() => {
@@ -465,7 +515,51 @@ async function verifyLocales() {
         const sidebar = document.querySelector('[data-testid="cashier-sidebar"]');
         const shortLabels = [...document.querySelectorAll('.top-status-item__label--short')]
           .filter((element) => getComputedStyle(element).display !== 'none');
+        const statusContainer = document.querySelector('[data-testid="table-toolbar"] .status-filters');
         const statusButtons = [...document.querySelectorAll('[data-testid="table-toolbar"] .status-filters button')];
+        const statusGeometry = statusButtons.map((button) => {
+          const buttonRect = button.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(button);
+          const textRect = range.getBoundingClientRect();
+          const style = getComputedStyle(button);
+          return {
+            button: {
+              left: buttonRect.left,
+              right: buttonRect.right,
+              top: buttonRect.top,
+              bottom: buttonRect.bottom,
+            },
+            text: {
+              left: textRect.left,
+              right: textRect.right,
+              top: textRect.top,
+              bottom: textRect.bottom,
+            },
+            whiteSpace: style.whiteSpace,
+            overflow: style.overflow,
+            textOverflow: style.textOverflow,
+          };
+        });
+        const adjacentButtonsOverlap = statusGeometry.some((item, index) => {
+          const next = statusGeometry[index + 1];
+          return next ? item.button.right > next.button.left + 1 : false;
+        });
+        const adjacentTextOverlaps = statusGeometry.some((item, index) => {
+          const next = statusGeometry[index + 1];
+          return next ? item.text.right > next.text.left + 1 : false;
+        });
+        const textOutsideButton = statusGeometry.some((item) => (
+          item.text.left < item.button.left - 1
+          || item.text.right > item.button.right + 1
+          || item.text.top < item.button.top - 1
+          || item.text.bottom > item.button.bottom + 1
+        ));
+        const invalidStatusStyle = statusGeometry.some((item) => (
+          item.whiteSpace !== 'nowrap'
+          || item.overflow !== 'visible'
+          || item.textOverflow !== 'clip'
+        ));
         return {
           documentX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           documentY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
@@ -474,6 +568,14 @@ async function verifyLocales() {
           sidebarX: horizontalOverflow(sidebar),
           statusLabelX: Math.max(0, ...shortLabels.map(horizontalOverflow)),
           statusButtonX: Math.max(0, ...statusButtons.map(horizontalOverflow)),
+          statusContainerX: Math.max(0, horizontalOverflow(statusContainer)),
+          statusContainerOverflowX: statusContainer instanceof HTMLElement
+            ? getComputedStyle(statusContainer).overflowX
+            : '',
+          adjacentButtonsOverlap,
+          adjacentTextOverlaps,
+          textOutsideButton,
+          invalidStatusStyle,
         };
       });
       assert.ok(overflow.documentX <= 1, `${locale} ${width}x${height}: document overflows horizontally`);
@@ -483,6 +585,19 @@ async function verifyLocales() {
       assert.ok(overflow.sidebarX <= 1, `${locale} ${width}x${height}: left identity content overflows`);
       assert.ok(overflow.statusLabelX <= 1, `${locale} ${width}x${height}: top short labels overflow`);
       assert.ok(overflow.statusButtonX <= 1, `${locale} ${width}x${height}: table state labels overflow`);
+      assert.equal(overflow.adjacentButtonsOverlap, false, `${locale} ${width}x${height}: table state buttons overlap`);
+      assert.equal(overflow.adjacentTextOverlaps, false, `${locale} ${width}x${height}: table state text overlaps`);
+      assert.equal(overflow.textOutsideButton, false, `${locale} ${width}x${height}: table state text escapes its button`);
+      assert.equal(overflow.invalidStatusStyle, false, `${locale} ${width}x${height}: table state nowrap/overflow rules changed`);
+      if (width >= 900) {
+        assert.ok(overflow.statusContainerX <= 1, `${locale} ${width}x${height}: table state container overflows`);
+      } else {
+        assert.equal(
+          overflow.statusContainerOverflowX,
+          'auto',
+          `${locale} ${width}x${height}: compact table states must own their horizontal scrolling`,
+        );
+      }
     }
   }
 }

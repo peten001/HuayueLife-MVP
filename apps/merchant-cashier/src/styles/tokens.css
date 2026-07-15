@@ -185,9 +185,9 @@
   --cashier-radius-lg: 22px;
   --cashier-shadow: var(--cashier-shadow-md);
   --cashier-shadow-strong: 0 20px 48px rgb(3 17 27 / 28%);
-  --cashier-sidebar-width: 248px;
+  --cashier-sidebar-width: 224px;
   --cashier-header-height: 108px;
-  --cashier-detail-width: 376px;
+  --cashier-detail-width: 350px;
   --cashier-mobile-nav-height: 74px;
   --cashier-gap: clamp(10px, 1vw, 16px);
 

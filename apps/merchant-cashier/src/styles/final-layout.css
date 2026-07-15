@@ -1,6 +1,6 @@
 /* Final operator layout: reference geometry first, with D10 Pro as the primary breakpoint. */
 .cashier-shell {
-  grid-template-columns: 248px minmax(0, 1fr) 376px;
+  grid-template-columns: 224px minmax(0, 1fr) 350px;
   grid-template-rows: 108px minmax(0, 1fr);
 }
 
@@ -18,9 +18,9 @@
 .cashier-sidebar .cashier-brand {
   position: absolute;
   top: 20px;
-  left: 24px;
+  left: 20px;
   z-index: 2;
-  width: 200px;
+  width: 184px;
   height: 68px;
   padding: 0 8px;
   gap: 14px;
@@ -38,7 +38,7 @@
   position: absolute;
   top: 85px;
   left: 0;
-  width: 200px;
+  width: 184px;
   height: 1px;
   background: var(--cashier-shell-border);
 }
@@ -61,11 +61,11 @@
 .cashier-merchant-panel {
   position: absolute;
   top: 128px;
-  left: 24px;
+  left: 20px;
   display: grid;
   align-content: center;
   gap: 12px;
-  width: 200px;
+  width: 184px;
   height: 96px;
   min-width: 0;
   padding: 14px 12px;
@@ -109,9 +109,9 @@
 .cashier-sidebar .cashier-navigation {
   position: absolute;
   top: 252px;
-  left: 12px;
+  left: 10px;
   display: flex;
-  width: 224px;
+  width: 204px;
   padding: 0;
   gap: 16px;
 }
@@ -148,9 +148,9 @@
 
 .cashier-employee-menu {
   position: absolute;
-  left: 20px;
+  left: 16px;
   bottom: 24px;
-  width: 204px;
+  width: 192px;
   height: 98px;
 }
 
@@ -348,14 +348,14 @@
 }
 
 .search-filter-bar--tables {
-  grid-template-columns: 380px 396px 54px;
+  display: flex;
   align-items: center;
   justify-content: start;
   gap: 18px;
-  width: min(866px, 100%);
+  width: 100%;
   height: 62px;
   min-height: 62px;
-  margin-left: 8px;
+  margin-left: 0;
   padding: 1px 0;
   border: 0;
   border-radius: 0;
@@ -364,6 +364,10 @@
 }
 
 .search-filter-bar--tables .cashier-search {
+  flex: 0 0 310px;
+  width: 310px;
+  min-width: 300px;
+  max-width: 320px;
   height: 60px;
   padding: 0 18px;
   gap: 12px;
@@ -374,18 +378,23 @@
 .search-filter-bar--tables .cashier-search svg { width: 24px; height: 24px; }
 .search-filter-bar--tables .cashier-search input { min-height: 58px; font-size: 17px; }
 .search-filter-bar--tables .status-filters {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  width: 396px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: max-content;
+  margin-left: auto;
   height: 60px;
   border-radius: 10px;
 }
 
 .search-filter-bar--tables .status-filters button {
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: 48px;
   min-height: 58px;
   padding: 0 12px;
   font-size: 15px;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .search-filter-bar--tables .table-toolbar__refresh {
@@ -399,16 +408,17 @@
 .search-filter-bar--tables .table-toolbar__refresh svg { width: 24px; height: 24px; }
 
 .cashier-workspace__content--table-overview > .table-grid {
-  grid-template-columns: repeat(4, 198px);
-  gap: 18px;
-  padding: 0 4px 20px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  padding: 0 0 20px;
   scrollbar-gutter: auto;
 }
 
 .table-card {
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
-  width: 198px;
+  width: 100%;
   height: 154px;
   min-height: 154px;
   padding: 16px;
@@ -634,9 +644,9 @@
   .top-status-item__label--short { display: inline; overflow: hidden; max-width: 100%; text-overflow: ellipsis; }
   .top-status-item--clock strong { font-size: 22px; }
   .cashier-workspace__content--table-overview { grid-template-rows: 54px minmax(0, 1fr); gap: 14px; padding: 14px 16px; }
-  .search-filter-bar--tables { grid-template-columns: minmax(260px, 300px) minmax(0, 384px) 46px; width: 100%; height: 54px; min-height: 54px; margin: 0; gap: 10px; }
-  .search-filter-bar--tables .cashier-search,
-  .search-filter-bar--tables .status-filters { width: 100%; height: 46px; }
+  .search-filter-bar--tables { width: 100%; height: 54px; min-height: 54px; margin: 0; gap: 10px; }
+  .search-filter-bar--tables .cashier-search { flex-basis: 300px; width: 300px; min-width: 280px; max-width: 300px; height: 46px; }
+  .search-filter-bar--tables .status-filters { width: max-content; height: 46px; }
   .search-filter-bar--tables .cashier-search input,
   .search-filter-bar--tables .status-filters button { min-height: 44px; font-size: 13px; }
   .search-filter-bar--tables .table-toolbar__refresh { width: 46px; height: 46px; min-width: 46px; min-height: 46px; }
@@ -654,33 +664,33 @@
 /* KiotViet D10 Pro: exact 1280×800 geometry. */
 @media (min-width: 1180px) and (max-width: 1365px) {
   :root {
-    --cashier-sidebar-width: 206px;
+    --cashier-sidebar-width: 186px;
     --cashier-header-height: 84px;
-    --cashier-detail-width: 310px;
+    --cashier-detail-width: 292px;
   }
 
-  .cashier-shell { grid-template-columns: 206px minmax(0, 1fr) 310px; grid-template-rows: 84px minmax(0, 1fr); }
-  .cashier-sidebar .cashier-brand { top: 14px; left: 18px; width: 172px; height: 54px; padding: 0 6px; gap: 10px; }
-  .cashier-sidebar .cashier-brand::after { top: 61px; width: 172px; }
-  .cashier-brand__logo { width: 34px; height: 34px; flex-basis: 34px; }
-  .cashier-brand__name { display: block; font-size: 18px; }
+  .cashier-shell { grid-template-columns: 186px minmax(0, 1fr) 292px; grid-template-rows: 84px minmax(0, 1fr); }
+  .cashier-sidebar .cashier-brand { top: 14px; left: 14px; width: 158px; height: 54px; padding: 0; gap: 8px; }
+  .cashier-sidebar .cashier-brand::after { top: 61px; width: 158px; }
+  .cashier-brand__logo { width: 32px; height: 32px; flex-basis: 32px; }
+  .cashier-brand__name { display: block; font-size: 17px; white-space: nowrap; }
   .cashier-sidebar .cashier-brand__name { line-height: 28px; transform: translateY(-3px); }
-  .cashier-merchant-panel { top: 88px; left: 18px; width: 172px; height: 82px; padding: 10px 8px; gap: 8px; }
+  .cashier-merchant-panel { top: 88px; left: 14px; width: 158px; height: 82px; padding: 10px 0; gap: 8px; }
   .cashier-merchant-panel > strong { font-size: 15px; }
   .cashier-merchant-panel .business-state { font-size: 12px; }
   .cashier-merchant-panel .demo-badge { font-size: 10px; }
-  .cashier-sidebar .cashier-navigation { top: 190px; left: 10px; width: 186px; gap: 8px; }
-  .cashier-navigation__item { min-height: 52px; padding: 0 14px; gap: 11px; font-size: 14px; }
+  .cashier-sidebar .cashier-navigation { top: 190px; left: 8px; width: 170px; gap: 7px; }
+  .cashier-navigation__item { min-height: 50px; padding: 0 12px; gap: 10px; font-size: 14px; }
   .cashier-navigation__icon,
   .cashier-navigation__icon svg { width: 20px; height: 20px; flex-basis: 20px; }
   .cashier-navigation__badge { min-width: 22px; height: 22px; font-size: 10px; }
-  .cashier-employee-menu { left: 16px; bottom: 18px; width: 174px; height: 72px; }
+  .cashier-employee-menu { left: 12px; bottom: 18px; width: 162px; height: 70px; }
   .cashier-employee-menu .account-menu__trigger { padding: 8px 10px; gap: 9px; }
   .cashier-employee-menu .account-menu__avatar { width: 40px; height: 40px; }
   .cashier-employee-menu .account-menu__avatar svg { width: 22px; height: 22px; }
   .cashier-employee-menu .account-menu__copy strong { font-size: 12px; }
   .cashier-employee-menu .account-menu__copy small { font-size: 10px; }
-  .cashier-employee-menu .account-menu__popover { width: 224px; }
+  .cashier-employee-menu .account-menu__popover { width: 218px; }
   .cashier-header { grid-template-columns: 360px minmax(0, 1fr); height: 84px; padding: 6px 12px; gap: 12px; }
   .cashier-top-metrics { width: 360px; height: 72px; }
   .cashier-top-metric { gap: 4px; }
@@ -698,28 +708,31 @@
   .top-status-item--clock { gap: 7px; }
   .top-status-item--clock strong { font-size: 20px; }
   .top-status-item--clock small { font-size: 9px; }
-  .cashier-workspace__content--table-overview { grid-template-rows: 52px minmax(0, 1fr); gap: 14px; padding: 12px 12px 10px; }
-  .search-filter-bar--tables { grid-template-columns: 292px minmax(0, 384px) 44px; width: 740px; height: 52px; min-height: 52px; margin: 0; padding: 4px 0; gap: 10px; }
-  .search-filter-bar--tables .cashier-search { width: 292px; height: 44px; padding: 0 13px; gap: 9px; font-size: 14px; }
+  .cashier-workspace__content--table-overview { grid-template-rows: 52px minmax(0, 1fr); gap: 14px; padding: 12px 10px 10px; }
+  .search-filter-bar--tables { width: 100%; height: 52px; min-height: 52px; margin: 0; padding: 4px 0; gap: 10px; }
+  .search-filter-bar--tables .cashier-search { flex: 0 0 250px; width: 250px; min-width: 240px; max-width: 260px; height: 44px; padding: 0 13px; gap: 9px; font-size: 14px; }
   .search-filter-bar--tables .cashier-search svg { width: 20px; height: 20px; }
   .search-filter-bar--tables .cashier-search input { min-height: 42px; font-size: 14px; }
-  .search-filter-bar--tables .status-filters { width: 100%; max-width: 384px; height: 44px; }
-  .search-filter-bar--tables .status-filters button { min-height: 42px; padding: 0 7px; font-size: 11px; }
-  html[lang='vi'] .search-filter-bar--tables .status-filters button,
-  html[lang='en'] .search-filter-bar--tables .status-filters button { padding-inline: 4px; font-size: 10px; }
+  .search-filter-bar--tables .status-filters { flex: 0 0 auto; width: max-content; max-width: none; height: 44px; overflow: visible; }
+  .search-filter-bar--tables .status-filters button { min-height: 42px; padding: 0 10px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: visible; text-overflow: clip; }
+  .search-filter-bar--tables .status-filters button:nth-child(1) { min-width: 56px; }
+  .search-filter-bar--tables .status-filters button:nth-child(2) { min-width: 56px; }
+  .search-filter-bar--tables .status-filters button:nth-child(3) { min-width: 78px; }
+  .search-filter-bar--tables .status-filters button:nth-child(4) { min-width: 76px; }
+  .search-filter-bar--tables .status-filters button:nth-child(5) { min-width: 60px; }
   .search-filter-bar--tables .table-toolbar__refresh { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .search-filter-bar--tables .table-toolbar__refresh svg { width: 20px; height: 20px; }
-  .cashier-workspace__content--table-overview > .table-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; width: 740px; padding: 0 2px 16px 0; }
-  .table-card { width: 100%; height: 124px; min-height: 124px; padding: 12px; gap: 8px; }
-  .table-card__topline > strong { font-size: 16px; }
+  .cashier-workspace__content--table-overview > .table-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; width: 100%; padding: 0 0 16px; }
+  .table-card { width: 100%; height: 132px; min-height: 132px; padding: 12px; gap: 9px; border-radius: 10px; }
+  .table-card__topline > strong { font-size: 17px; }
   .table-card__state { padding: 4px 6px; font-size: 11px; }
-  .table-card__meta { gap: 14px; font-size: 10px; }
+  .table-card__meta { gap: 14px; font-size: 11px; }
   .table-card__meta span,
   .table-card__orders,
-  .table-card__disabled-hint { gap: 4px; font-size: 10px; }
+  .table-card__disabled-hint { gap: 4px; font-size: 11px; }
   .table-card__meta svg,
   .table-card__orders svg { width: 14px; height: 14px; }
-  .detail-panel-content { padding: 18px; }
+  .detail-panel-content { padding: 14px; }
   .table-bill-detail { gap: 10px; }
   .table-detail-header { gap: 7px; padding: 0 0 12px; }
   .table-detail-header > span { font-size: 11px; }
@@ -730,7 +743,7 @@
   .table-bill-orders .detail-section__heading h4 { font-size: 15px; }
   .table-bill-orders .detail-section__heading span { font-size: 10px; }
   .table-bill-orders .bill-order-list { gap: 8px; }
-  .table-bill-orders .bill-order-row { min-height: 80px; padding: 10px 11px; gap: 8px; }
+  .table-bill-orders .bill-order-row { min-height: 80px; padding: 10px; gap: 8px; }
   .bill-order-row__heading strong,
   .bill-order-row__meta b { font-size: 12px; }
   .bill-order-row__meta { font-size: 10px; }
@@ -740,6 +753,21 @@
   .table-bill-detail .detail-notice { min-height: 46px; padding: 9px 10px; font-size: 10px; }
   .table-close-action { min-height: 52px; font-size: 14px; }
   .table-print-action { min-height: 48px; font-size: 14px; }
+}
+
+/* Keep the lower edge of the D10 landscape range usable without changing 1280×800. */
+@media (min-width: 1180px) and (max-width: 1239px) {
+  .search-filter-bar--tables .cashier-search {
+    flex-basis: 220px;
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+  }
+
+  .search-filter-bar--tables .status-filters button {
+    padding-inline: 7px;
+    font-size: 11px;
+  }
 }
 
 /* Collapsed landscape tablet rail. */
@@ -795,11 +823,11 @@
   .top-status-item--clock strong { font-size: 17px; }
   .cashier-shell__route { grid-column: 2; }
   .cashier-workspace__content--table-overview { grid-template-rows: 52px minmax(0, 1fr); gap: 12px; padding: 12px; }
-  .search-filter-bar--tables { grid-template-columns: minmax(220px, 300px) minmax(0, 384px) 44px; width: 100%; height: 52px; min-height: 52px; margin: 0; padding: 4px 0; gap: 10px; }
-  .search-filter-bar--tables .cashier-search,
-  .search-filter-bar--tables .status-filters { width: 100%; height: 44px; }
+  .search-filter-bar--tables { display: flex; width: 100%; height: 52px; min-height: 52px; margin: 0; padding: 4px 0; gap: 10px; }
+  .search-filter-bar--tables .cashier-search { flex: 0 0 220px; width: 220px; min-width: 220px; max-width: 220px; height: 44px; }
+  .search-filter-bar--tables .status-filters { flex: 0 0 auto; width: max-content; max-width: none; height: 44px; margin-left: auto; overflow: visible; }
   .search-filter-bar--tables .cashier-search input,
-  .search-filter-bar--tables .status-filters button { min-height: 42px; font-size: 11px; }
+  .search-filter-bar--tables .status-filters button { min-height: 42px; font-size: 11px; white-space: nowrap; overflow: visible; text-overflow: clip; }
   .search-filter-bar--tables .table-toolbar__refresh { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .cashier-workspace__content--table-overview > .table-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
   .table-card { width: 100%; height: 124px; min-height: 124px; padding: 11px; gap: 8px; }
@@ -842,11 +870,11 @@
   .cashier-top-metric strong { font-size: 18px; }
   .cashier-shell__route { grid-column: 1; grid-row: 2; }
   .cashier-workspace__content--table-overview { grid-template-rows: 96px minmax(0, 1fr); gap: 10px; padding: 10px; }
-  .search-filter-bar--tables { grid-template-columns: minmax(0, 1fr) 44px; grid-template-rows: 44px 44px; width: 100%; height: 96px; min-height: 96px; margin: 0; padding: 2px 0; gap: 4px 10px; }
+  .search-filter-bar--tables { display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-rows: 44px 44px; width: 100%; height: 96px; min-height: 96px; margin: 0; padding: 2px 0; gap: 4px 10px; }
   .search-filter-bar--tables .cashier-search { grid-column: 1; grid-row: 1; width: 100%; height: 44px; padding-inline: 12px; font-size: 13px; }
   .search-filter-bar--tables .cashier-search input { min-height: 42px; font-size: 13px; }
   .search-filter-bar--tables .status-filters { grid-column: 1 / -1; grid-row: 2; width: max-content; max-width: 100%; height: 44px; overflow-x: auto; }
-  .search-filter-bar--tables .status-filters button { min-width: 56px; min-height: 42px; padding-inline: 10px; font-size: 11px; }
+  .search-filter-bar--tables .status-filters button { min-width: 56px; min-height: 42px; padding-inline: 10px; font-size: 11px; white-space: nowrap; overflow: visible; text-overflow: clip; }
   .search-filter-bar--tables .search-filter-bar__actions { grid-column: 2; grid-row: 1; }
   .search-filter-bar--tables .table-toolbar__refresh { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .cashier-workspace__content--table-overview > .table-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-bottom: 14px; }
