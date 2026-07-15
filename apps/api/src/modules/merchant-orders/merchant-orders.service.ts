@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -11,6 +12,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ListMerchantOrdersQueryDto } from './dto/list-merchant-orders-query.dto';
+import { PrintJobsService } from '../printing/services/print-jobs.service';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -64,7 +66,12 @@ const TRANSITIONS: Record<MerchantOrderAction, TransitionRule> = {
 
 @Injectable()
 export class MerchantOrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MerchantOrdersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly printJobs: PrintJobsService,
+  ) {}
 
   list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
     const createdAt = query.date ? this.dateRange(query.date) : undefined;
@@ -91,14 +98,14 @@ export class MerchantOrdersService {
     return order;
   }
 
-  transition(
+  async transition(
     merchantId: bigint,
     staffId: bigint,
     id: bigint,
     action: MerchantOrderAction,
     reason?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const transitioned = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, merchantId },
         select: { id: true, status: true, orderType: true },
@@ -137,7 +144,7 @@ export class MerchantOrdersService {
         throw new ConflictException('订单状态已变化，请刷新后重试');
       }
 
-      await tx.orderStatusLog.create({
+      const statusLog = await tx.orderStatusLog.create({
         data: {
           orderId: id,
           fromStatus: rule.from,
@@ -150,9 +157,35 @@ export class MerchantOrdersService {
               : rule.remark,
         },
       });
+      const printTriggers =
+        rule.to === 'ACCEPTED' || rule.to === 'COMPLETED'
+          ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+              merchantId,
+              orderId: id,
+              orderStatusLogId: statusLog.id,
+              orderType: order.orderType,
+              status: rule.to,
+            })
+          : [];
 
-      return this.requireOrder(tx, merchantId, id);
+      return {
+        order: await this.requireOrder(tx, merchantId, id),
+        printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+      };
     });
+    if (transitioned.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs.processAutomaticTriggerIds(transitioned.printTriggerIds);
+      } catch (error) {
+        // The trigger intent is already durable in the transaction above.
+        // Connector claim performs compensation if this immediate attempt is
+        // interrupted or temporarily fails.
+        this.logger.warn(
+          `Print trigger processing deferred merchant=${merchantId} order=${id} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
+    }
+    return transitioned.order;
   }
 
   settle(merchantId: bigint, id: bigint) {

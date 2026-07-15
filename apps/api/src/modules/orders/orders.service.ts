@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -13,6 +15,7 @@ import { AppConfigService } from '../app-config/app-config.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
+import { PrintJobsService } from '../printing/services/print-jobs.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
 
@@ -27,6 +30,9 @@ export class OrdersService {
     private readonly tableSessionsService: TableSessionsService,
     private readonly appConfig: AppConfigService,
     private readonly printingFlags: PrintingFeatureFlagsService,
+    @Optional()
+    @Inject(PrintJobsService)
+    private readonly printJobs?: PrintJobsService,
   ) {}
 
   list(userId: bigint) {
@@ -199,11 +205,11 @@ export class OrdersService {
     });
   }
 
-  confirmReceived(userId: bigint, id: bigint) {
-    return this.prisma.$transaction(async (tx) => {
+  async confirmReceived(userId: bigint, id: bigint) {
+    const completed = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, userId },
-        select: { id: true, status: true, orderType: true },
+        select: { id: true, merchantId: true, status: true, orderType: true },
       });
       if (!order) {
         throw new NotFoundException('Order not found');
@@ -231,7 +237,7 @@ export class OrdersService {
         throw new ConflictException('订单状态已变化，请刷新后重试');
       }
 
-      await tx.orderStatusLog.create({
+      const statusLog = await tx.orderStatusLog.create({
         data: {
           orderId: id,
           fromStatus: 'DELIVERING',
@@ -241,8 +247,30 @@ export class OrdersService {
           remark: '用户确认收货',
         },
       });
-      return this.requireOwnedOrder(tx, userId, id);
+      const printTriggers = this.printJobs
+        ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+            merchantId: order.merchantId,
+            orderId: id,
+            orderStatusLogId: statusLog.id,
+            orderType: order.orderType,
+            status: 'COMPLETED',
+          })
+        : [];
+      return {
+        order: await this.requireOwnedOrder(tx, userId, id),
+        printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+      };
     });
+    if (completed.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs?.processAutomaticTriggerIds(completed.printTriggerIds);
+      } catch (error) {
+        this.logger.warn(
+          `Print trigger processing deferred merchant=${completed.order.merchantId} order=${completed.order.id} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
+    }
+    return completed.order;
   }
 
   private async validateAndPrice(

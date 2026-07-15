@@ -67,6 +67,45 @@ describe('PrintRulesService', () => {
     expect(prisma.printRule.create).not.toHaveBeenCalled();
   });
 
+  it('rejects an automatic table-bill rule that the order transition cannot build', async () => {
+    await expect(
+      service.create(merchantId, 3n, undefined, {
+        name: '错误的桌账自动规则',
+        triggerEvent: 'ORDER_ACCEPTED',
+        receiptType: 'TABLE_BILL',
+        printerId: printerId.toString(),
+        autoPrint: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printRule.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects automatic printing on a MANUAL trigger when creating a rule', async () => {
+    await expect(
+      service.create(merchantId, 3n, undefined, {
+        name: '错误的手动自动规则',
+        triggerEvent: 'MANUAL',
+        receiptType: 'ORDER_CUSTOMER',
+        printerId: printerId.toString(),
+        autoPrint: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printRule.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects updating an automatic rule trigger to MANUAL', async () => {
+    prisma.printRule.findFirst.mockResolvedValue(
+      rule({ autoPrint: true, enabled: false }),
+    );
+
+    await expect(
+      service.update(merchantId, 3n, undefined, 101n, {
+        triggerEvent: 'MANUAL',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printRule.update).not.toHaveBeenCalled();
+  });
+
   it('rejects a template outside the merchant or system scope', async () => {
     prisma.printer.findFirst.mockResolvedValue(printer());
     prisma.receiptTemplate.findFirst.mockResolvedValue(null);
@@ -74,7 +113,7 @@ describe('PrintRulesService', () => {
     await expect(
       service.create(merchantId, 3n, undefined, {
         name: '越权模板规则',
-        triggerEvent: 'ORDER_COMPLETED',
+        triggerEvent: 'MANUAL',
         receiptType: 'TABLE_BILL',
         printerId: printerId.toString(),
         receiptTemplateId: templateId.toString(),
@@ -148,6 +187,7 @@ function printer(overrides: Record<string, unknown> = {}) {
     id: printerId,
     merchantId,
     name: '前台打印机',
+    channelType: 'LOCAL_USB_ESCPOS',
     paperWidth: 'MM80',
     enabled: true,
     deletedAt: null,

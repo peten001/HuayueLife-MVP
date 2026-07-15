@@ -18,7 +18,16 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../../common/types/auth-user.type';
 import { RequestWithContext } from '../../../common/types/request.type';
-import { ListPrintJobsQueryDto, PrintJobActionDto } from '../dto/print-job.dto';
+import {
+  CreateManualOrderPrintJobDto,
+  CreateManualReprintJobDto,
+  CreateManualTableBillPrintJobDto,
+  CreatePrinterTestJobDto,
+  ListPrintJobsQueryDto,
+  PrintJobActionDto,
+} from '../dto/print-job.dto';
+import { UpdateMerchantPrintingSettingsDto } from '../dto/terminal-connector.dto';
+import { ActiveMerchantStaffGuard } from '../guards/active-merchant-staff.guard';
 import { CreatePrintRuleDto, UpdatePrintRuleDto } from '../dto/print-rule.dto';
 import {
   CreatePrintingPrinterDto,
@@ -30,17 +39,20 @@ import {
 } from '../dto/receipt-template.dto';
 import {
   CreateMerchantTerminalDto,
+  GenerateTerminalPairingCodeDto,
   UpdateMerchantTerminalDto,
 } from '../dto/terminal.dto';
 import { PrintJobsService } from '../services/print-jobs.service';
 import { PrintRulesService } from '../services/print-rules.service';
 import { PrintingFeatureFlagsService } from '../services/printing-feature-flags.service';
 import { PrintingPrintersService } from '../services/printing-printers.service';
+import { PrintingSettingsService } from '../services/printing-settings.service';
 import { ReceiptTemplatesService } from '../services/receipt-templates.service';
 import { TerminalsService } from '../services/terminals.service';
+import { TerminalCredentialsService } from '../services/terminal-credentials.service';
 
 @Controller('merchant/printing')
-@UseGuards(JwtAuthGuard, MerchantRoleGuard)
+@UseGuards(JwtAuthGuard, ActiveMerchantStaffGuard, MerchantRoleGuard)
 @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER, StaffRole.STAFF)
 export class MerchantPrintingController {
   constructor(
@@ -50,11 +62,38 @@ export class MerchantPrintingController {
     private readonly jobs: PrintJobsService,
     private readonly terminals: TerminalsService,
     private readonly flags: PrintingFeatureFlagsService,
+    private readonly settings: PrintingSettingsService,
+    private readonly credentials: TerminalCredentialsService,
   ) {}
 
   @Get('feature-state')
-  featureState() {
-    return this.flags.status();
+  async featureState(@MerchantId() merchantId: bigint) {
+    const settings = await this.settings.get(merchantId);
+    return {
+      ...this.flags.status(),
+      merchantPrintingEnabled: settings.printingEnabled,
+    };
+  }
+
+  @Get('settings')
+  getSettings(@MerchantId() merchantId: bigint) {
+    return this.settings.get(merchantId);
+  }
+
+  @Patch('settings')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  updateSettings(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: UpdateMerchantPrintingSettingsDto,
+  ) {
+    return this.settings.update(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      dto.printingEnabled,
+    );
   }
 
   @Get('printers')
@@ -109,6 +148,24 @@ export class MerchantPrintingController {
       BigInt(staff.sub),
       request.requestId,
       BigInt(params.id),
+    );
+  }
+
+  @Post('printers/:id/test-job')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  createPrinterTestJob(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+    @Body() dto: CreatePrinterTestJobDto,
+  ) {
+    return this.jobs.createSafeUsbTestJob(
+      merchantId,
+      BigInt(params.id),
+      BigInt(staff.sub),
+      request.requestId,
+      dto.requestKey,
     );
   }
 
@@ -241,9 +298,64 @@ export class MerchantPrintingController {
     return this.jobs.list(merchantId, query);
   }
 
+  @Post('jobs/order')
+  createOrderPrintJob(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: CreateManualOrderPrintJobDto,
+  ) {
+    return this.jobs.createManualPrintJob({
+      merchantId,
+      createdByStaffId: BigInt(staff.sub),
+      requestId: request.requestId,
+      requestKey: dto.requestKey,
+      printerId: BigInt(dto.printerId),
+      orderId: BigInt(dto.orderId),
+      receiptType: 'ORDER_CUSTOMER',
+    });
+  }
+
+  @Post('jobs/table-bill')
+  createTableBillPrintJob(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: CreateManualTableBillPrintJobDto,
+  ) {
+    return this.jobs.createManualPrintJob({
+      merchantId,
+      createdByStaffId: BigInt(staff.sub),
+      requestId: request.requestId,
+      requestKey: dto.requestKey,
+      printerId: BigInt(dto.printerId),
+      tableSessionId: BigInt(dto.tableSessionId),
+      receiptType: 'TABLE_BILL',
+    });
+  }
+
   @Get('jobs/:id')
   getJob(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.jobs.get(merchantId, BigInt(params.id));
+  }
+
+  @Post('jobs/:id/reprint')
+  createReprintJob(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+    @Body() dto: CreateManualReprintJobDto,
+  ) {
+    return this.jobs.createManualReprintJob({
+      merchantId,
+      originalJobId: BigInt(params.id),
+      createdByStaffId: BigInt(staff.sub),
+      requestId: request.requestId,
+      requestKey: dto.requestKey,
+      reason: dto.reason.trim(),
+      printerId: dto.printerId ? BigInt(dto.printerId) : undefined,
+    });
   }
 
   @Post('jobs/:id/cancel')
@@ -286,6 +398,11 @@ export class MerchantPrintingController {
     return this.terminals.list(merchantId);
   }
 
+  @Get('terminals/:id')
+  getTerminal(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
+    return this.terminals.get(merchantId, BigInt(params.id));
+  }
+
   @Post('terminals')
   @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
   createTerminal(
@@ -312,6 +429,91 @@ export class MerchantPrintingController {
       request.requestId,
       BigInt(params.id),
       dto,
+    );
+  }
+
+  @Post('terminals/:id/pairing-code')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  generateTerminalPairingCode(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+    @Body() dto: GenerateTerminalPairingCodeDto,
+  ) {
+    return this.credentials.generatePairingCode(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+      dto.expiresInMinutes,
+    );
+  }
+
+  @Post('terminals/:id/rotate-credentials')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  rotateTerminalCredentials(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+    @Body() dto: GenerateTerminalPairingCodeDto,
+  ) {
+    return this.credentials.generatePairingCode(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+      dto.expiresInMinutes,
+      true,
+    );
+  }
+
+  @Post('terminals/:id/enable')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  enableTerminal(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+  ) {
+    return this.terminals.enable(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+    );
+  }
+
+  @Post('terminals/:id/disable')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  disableTerminal(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+  ) {
+    return this.terminals.disable(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+    );
+  }
+
+  @Post('terminals/:id/reset-usb-config')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  resetTerminalUsbConfig(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+  ) {
+    return this.terminals.resetUsbConfig(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
     );
   }
 

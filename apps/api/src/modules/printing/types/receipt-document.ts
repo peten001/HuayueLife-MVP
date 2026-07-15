@@ -46,6 +46,7 @@ export interface ReceiptDocument {
     currency: 'VND';
   };
   note?: string;
+  verificationCode?: string;
 }
 
 export const RECEIPT_TEMPLATE_SECTION_TYPES = [
@@ -81,6 +82,7 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
       'items',
       'totals',
       'note',
+      'verificationCode',
     ])
   ) {
     throw new Error('Receipt document contains unsupported fields');
@@ -212,7 +214,9 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
     (document.totals.serviceFee !== undefined &&
       (!Number.isSafeInteger(document.totals.serviceFee) ||
         document.totals.serviceFee < 0)) ||
-    (document.note !== undefined && !isBoundedText(document.note, 0, 500))
+    (document.note !== undefined && !isBoundedText(document.note, 0, 500)) ||
+    (document.verificationCode !== undefined &&
+      !isBoundedText(document.verificationCode, 1, 128))
   ) {
     throw new Error('Receipt totals are invalid');
   }

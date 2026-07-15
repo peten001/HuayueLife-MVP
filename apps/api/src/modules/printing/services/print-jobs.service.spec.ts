@@ -59,6 +59,7 @@ describe('PrintJobsService', () => {
       flags as never,
       snapshots as never,
       audit as never,
+      { assertMerchantEnabled: jest.fn() } as never,
     );
   });
 
@@ -69,7 +70,9 @@ describe('PrintJobsService', () => {
     prisma.receiptTemplate.findFirst.mockResolvedValue(template());
     prisma.order.findFirst.mockResolvedValue({ id: orderId });
     prisma.printJob.create.mockRejectedValue(uniqueViolation());
-    prisma.printJob.findMany.mockResolvedValue([existing]);
+    prisma.printJob.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([existing]);
 
     await expect(
       service.createAutomaticJob({
@@ -129,7 +132,7 @@ describe('PrintJobsService', () => {
     }
   });
 
-  it('derives automatic idempotency from the stable event key, not mutable rule timestamps', async () => {
+  it('includes the frozen rule version in automatic idempotency', async () => {
     prisma.printRule.findFirst
       .mockResolvedValueOnce(
         automaticRule({ updatedAt: new Date('2026-07-15T00:00:00.000Z') }),
@@ -160,8 +163,8 @@ describe('PrintJobsService', () => {
     const [first, second] = prisma.printJob.create.mock.calls.map(
       ([call]) => call.data,
     );
-    expect(first.dedupeKey).toBe(second.dedupeKey);
-    expect(first.requestGroupId).toBe(second.requestGroupId);
+    expect(first.dedupeKey).not.toBe(second.dedupeKey);
+    expect(first.requestGroupId).not.toBe(second.requestGroupId);
     expect(first.ruleVersion).not.toBe(second.ruleVersion);
   });
 
@@ -192,12 +195,14 @@ describe('PrintJobsService', () => {
       originalJobId: original.id,
       createdByStaffId: 3n,
       reason: '顾客要求补打',
+      requestKey: 'reprint-request-1',
     });
     await service.createManualReprintJob({
       merchantId,
       originalJobId: original.id,
       createdByStaffId: 3n,
       reason: '再次补打',
+      requestKey: 'reprint-request-2',
     });
 
     expect(snapshots.cloneAndValidate).toHaveBeenCalledTimes(2);
@@ -211,7 +216,7 @@ describe('PrintJobsService', () => {
           createdByStaffId: 3n,
         }),
       );
-      expect(call.data.dedupeKey).toBeUndefined();
+      expect(call.data.dedupeKey).toMatch(/^manual:[a-f0-9]{64}$/);
       expect(call.data.receiptSnapshot).not.toBe(originalSnapshot);
     }
   });
@@ -279,13 +284,157 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
+  it('writes one durable outbox row per enabled rule inside the order transaction', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    flags.legacyPrintingEnabled.mockReturnValue(false);
+    prisma.merchant.findUnique.mockResolvedValue({ status: 'ACTIVE', printingEnabled: true });
+    prisma.printRule.findMany.mockResolvedValue([automaticRule({ copies: 2 })]);
+    prisma.printTriggerOutbox.createMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findMany.mockResolvedValue([{ id: 501n }]);
+
+    await expect(
+      service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {
+        merchantId,
+        orderId,
+        orderStatusLogId: 9001n,
+        orderType: 'DINE_IN',
+        status: 'ACCEPTED',
+      }),
+    ).resolves.toEqual([{ id: 501n }]);
+
+    expect(prisma.printTriggerOutbox.createMany).toHaveBeenCalledWith({
+      skipDuplicates: true,
+      data: [
+        expect.objectContaining({
+          merchantId,
+          orderId,
+          orderStatusLogId: 9001n,
+          printRuleId: ruleId,
+          triggerEvent: 'ORDER_ACCEPTED',
+          ruleVersion: '2026-07-15T00:00:00.000Z',
+          copies: 2,
+          eventKey: expect.stringMatching(/^auto-trigger:[a-f0-9]{64}$/),
+        }),
+      ],
+    });
+  });
+
+  it('does not touch outbox tables while automatic creation remains disabled', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(false);
+
+    await expect(
+      service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {
+        merchantId,
+        orderId,
+        orderStatusLogId: 9002n,
+        orderType: 'DINE_IN',
+        status: 'COMPLETED',
+      }),
+    ).resolves.toEqual([]);
+
+    expect(prisma.merchant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.printTriggerOutbox.createMany).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue automatic output for a disabled merchant even if its old print flag is true', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    flags.legacyPrintingEnabled.mockReturnValue(false);
+    prisma.merchant.findUnique.mockResolvedValue({
+      status: 'DISABLED',
+      printingEnabled: true,
+    });
+
+    await expect(
+      service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {
+        merchantId,
+        orderId,
+        orderStatusLogId: 9003n,
+        orderType: 'DINE_IN',
+        status: 'ACCEPTED',
+      }),
+    ).resolves.toEqual([]);
+
+    expect(prisma.printRule.findMany).not.toHaveBeenCalled();
+    expect(prisma.printTriggerOutbox.createMany).not.toHaveBeenCalled();
+  });
+
+  it('processes an ACCEPTED outbox event even after the order has advanced', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    flags.legacyPrintingEnabled.mockReturnValue(false);
+    const trigger = pendingTrigger({
+      status: 'PROCESSING',
+      leaseVersion: 1,
+      attemptCount: 1,
+    });
+    prisma.printTriggerOutbox.findFirst.mockResolvedValue(pendingTrigger());
+    prisma.printTriggerOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findUniqueOrThrow.mockResolvedValue(trigger);
+    prisma.printJob.findMany.mockResolvedValue([]);
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.receiptTemplate.findFirst.mockResolvedValue(template());
+    // No current-status predicate is used: PREPARING does not erase the
+    // already committed ORDER_ACCEPTED intent.
+    prisma.order.findFirst.mockResolvedValue({ id: orderId, status: 'PREPARING' });
+    prisma.printJob.create.mockResolvedValue({ id: 601n });
+
+    await expect(service.processAutomaticTriggerIds([trigger.id])).resolves.toEqual([
+      { id: trigger.id, outcome: 'PROCESSED' },
+    ]);
+
+    expect(snapshots.fromOrder).toHaveBeenCalledWith(merchantId, orderId);
+    expect(prisma.printJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'AUTOMATIC',
+          triggerEvent: 'ORDER_ACCEPTED',
+          printRuleId: ruleId,
+        }),
+      }),
+    );
+  });
+
+  it('marks a recovered outbox event processed when its deduplicated job already exists', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    flags.legacyPrintingEnabled.mockReturnValue(false);
+    const trigger = pendingTrigger({
+      status: 'PROCESSING',
+      leaseVersion: 3,
+      attemptCount: 2,
+    });
+    prisma.printTriggerOutbox.findFirst.mockResolvedValue(
+      pendingTrigger({ leaseVersion: 2 }),
+    );
+    prisma.printTriggerOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findUniqueOrThrow.mockResolvedValue(trigger);
+    prisma.printJob.findMany.mockResolvedValue([{ id: 701n }]);
+
+    await expect(service.processAutomaticTriggerIds([trigger.id])).resolves.toEqual([
+      { id: trigger.id, outcome: 'PROCESSED' },
+    ]);
+    expect(snapshots.fromOrder).not.toHaveBeenCalled();
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
+  });
+
   it('uses compare-and-set so only one competing terminal claims a job', async () => {
     let winner: bigint | null = null;
     const candidate = pendingJob();
-    prisma.merchantTerminal.findFirst.mockResolvedValue({ id: terminalId });
-    prisma.printJob.findFirst.mockResolvedValue(candidate);
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    prisma.printJob.findFirst.mockImplementation(
+      async ({ where }: { where: { status: unknown } }) =>
+        typeof where.status === 'object' ? null : candidate,
+    );
     prisma.printJob.updateMany.mockImplementation(
       async ({ data }: { data: { claimedByTerminalId: bigint } }) => {
+        if (data.claimedByTerminalId === undefined) return { count: 0 };
         if (winner !== null) return { count: 0 };
         winner = data.claimedByTerminalId;
         return { count: 1 };
@@ -316,6 +465,43 @@ describe('PrintJobsService', () => {
         }),
       }),
     );
+  });
+
+  it('blocks claim when the platform has disabled the merchant', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      merchant: { status: 'DISABLED', printingEnabled: true },
+    });
+
+    await expect(service.claimNextJob(merchantId, terminalId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('compensates durable automatic triggers before an automatic connector claim', async () => {
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    prisma.printJob.findFirst.mockResolvedValue(null);
+    jest.spyOn(service, 'releaseExpiredLeases').mockResolvedValue({
+      claimed: 0,
+      printing: 0,
+    });
+    jest.spyOn(service, 'releaseAvailableRetries').mockResolvedValue(0);
+    const compensation = jest
+      .spyOn(service, 'processPendingAutomaticTriggers')
+      .mockResolvedValue([]);
+
+    await expect(
+      service.claimNextJob(merchantId, terminalId, 30_000, true),
+    ).resolves.toBeNull();
+
+    expect(compensation).toHaveBeenCalledWith(merchantId);
   });
 
   it('recovers expired claimed and printing leases without claiming success', async () => {
@@ -475,17 +661,24 @@ function createFlagsMock() {
     assertTaskCenterEnabled: jest.fn(),
     assertAutomaticCreationEnabled: jest.fn(),
     assertExecutionEnabled: jest.fn(),
+    taskCenterEnabled: jest.fn().mockReturnValue(true),
+    automaticCreationEnabled: jest.fn().mockReturnValue(false),
+    legacyPrintingEnabled: jest.fn().mockReturnValue(false),
   };
 }
 
 function createPrismaMock() {
   const prisma = {
-    printRule: { findFirst: jest.fn() },
+    merchant: { findUnique: jest.fn() },
+    printRule: { findFirst: jest.fn(), findMany: jest.fn() },
     printer: { findFirst: jest.fn() },
     receiptTemplate: { findFirst: jest.fn() },
     order: { findFirst: jest.fn() },
     tableSession: { findFirst: jest.fn() },
-    merchantTerminal: { findFirst: jest.fn() },
+    merchantTerminal: {
+      findFirst: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     merchantStaff: { findFirst: jest.fn() },
     printJob: {
       findMany: jest.fn(),
@@ -496,6 +689,13 @@ function createPrismaMock() {
       updateMany: jest.fn(),
     },
     printAttempt: { updateMany: jest.fn() },
+    printTriggerOutbox: {
+      createMany: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      updateMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
@@ -512,6 +712,7 @@ function automaticRule(overrides: Record<string, unknown> = {}) {
     receiptTemplateId: templateId,
     receiptType: 'ORDER_CUSTOMER',
     triggerEvent: 'ORDER_ACCEPTED',
+    copies: 1,
     priority: 20,
     updatedAt: new Date('2026-07-15T00:00:00.000Z'),
     ...overrides,
@@ -523,6 +724,7 @@ function enabledPrinter(overrides: Record<string, unknown> = {}) {
     id: printerId,
     merchantId,
     paperWidth: 'MM80',
+    channelType: 'LOCAL_USB_ESCPOS',
     enabled: true,
     deletedAt: null,
     ...overrides,
@@ -552,6 +754,37 @@ function pendingJob(overrides: Record<string, unknown> = {}) {
     leaseVersion: 0,
     attemptCount: 0,
     maxAttempts: 3,
+    ...overrides,
+  };
+}
+
+function pendingTrigger(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 501n,
+    merchantId,
+    orderId,
+    orderStatusLogId: 9001n,
+    printRuleId: ruleId,
+    printerId,
+    receiptTemplateId: templateId,
+    eventKey: `auto-trigger:${'a'.repeat(64)}`,
+    triggerEvent: 'ORDER_ACCEPTED',
+    ruleVersion: '2026-07-15T00:00:00.000Z',
+    receiptType: 'ORDER_CUSTOMER',
+    copies: 1,
+    priority: 20,
+    status: 'PENDING',
+    availableAt: new Date('2026-07-15T00:00:00.000Z'),
+    claimedAt: null,
+    leaseExpiresAt: null,
+    leaseVersion: 0,
+    attemptCount: 0,
+    maxAttempts: 20,
+    processedAt: null,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    createdAt: new Date('2026-07-15T00:00:00.000Z'),
+    updatedAt: new Date('2026-07-15T00:00:00.000Z'),
     ...overrides,
   };
 }

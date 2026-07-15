@@ -12,6 +12,7 @@ import {
   sanitizePrintingError,
 } from '../types/printing-errors';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+import { receiptSnapshotHash } from '../utils/snapshot-hash';
 
 export interface StartPrintingInput {
   merchantId: bigint;
@@ -21,6 +22,7 @@ export interface StartPrintingInput {
   adapter: string;
   appVersion?: string;
   networkInfo?: Record<string, unknown>;
+  contentHash?: string;
 }
 
 export interface FinishPrintingInput {
@@ -30,6 +32,8 @@ export interface FinishPrintingInput {
   attemptNo: number;
   leaseVersion: number;
   printerResponse?: string;
+  contentHash?: string;
+  bytesWritten?: number;
 }
 
 export interface FailPrintingInput extends FinishPrintingInput {
@@ -58,6 +62,34 @@ export class PrintAttemptsService {
     const networkInfo = normalizeNetworkInfo(input.networkInfo);
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
+      await this.assertStartStillEnabled(
+        tx,
+        input.merchantId,
+        input.terminalId,
+        job.printerId,
+      );
+      const expectedHash = this.assertContentHash(job, input.contentHash);
+      if (input.adapter !== 'ANDROID_USB_ESCPOS') {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+          message: '本阶段终端只允许 Android USB ESC/POS 适配器',
+        });
+      }
+      if (job.status === 'PRINTING' && job.claimedByTerminalId === input.terminalId) {
+        const existingAttempt = await tx.printAttempt.findFirst({
+          where: {
+            jobId: job.id,
+            attemptNo: job.attemptCount,
+            terminalId: input.terminalId,
+            finishedAt: null,
+            adapter: input.adapter,
+            contentHash: expectedHash,
+          },
+        });
+        if (existingAttempt && job.leaseExpiresAt && job.leaseExpiresAt > new Date()) {
+          return { job, attempt: existingAttempt };
+        }
+      }
       this.assertLeaseOwner(job, input.terminalId, ['CLAIMED']);
       if (job.attemptCount >= job.maxAttempts) {
         this.stateConflict('任务已达到最大尝试次数');
@@ -76,6 +108,7 @@ export class PrintAttemptsService {
           status: 'PRINTING',
           attemptCount: { increment: 1 },
           leaseVersion: { increment: 1 },
+          receiptSnapshotHash: job.receiptSnapshotHash ?? expectedHash,
         },
       });
       if (changed.count !== 1) this.leaseConflict();
@@ -88,6 +121,7 @@ export class PrintAttemptsService {
           adapter: adapter.slice(0, 80),
           appVersion: input.appVersion?.slice(0, 64),
           networkInfo,
+          contentHash: expectedHash,
         },
       });
       const updatedJob = await tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
@@ -100,6 +134,7 @@ export class PrintAttemptsService {
     await this.requireActiveTerminal(input.merchantId, input.terminalId);
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
+      const expectedHash = this.assertContentHash(job, input.contentHash);
       if (job.status === 'SUCCEEDED') {
         const completedAttempt = await tx.printAttempt.findFirst({
           where: {
@@ -112,6 +147,8 @@ export class PrintAttemptsService {
         if (
           completedAttempt &&
           completedAttempt.printerResponse === sanitizePrintingError(input.printerResponse)
+          && (input.contentHash === undefined || completedAttempt.contentHash === expectedHash)
+          && (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
           return job;
         }
@@ -153,9 +190,15 @@ export class PrintAttemptsService {
           finishedAt: now,
           result: 'SUCCEEDED',
           printerResponse: sanitizePrintingError(input.printerResponse),
+          contentHash: expectedHash,
+          bytesWritten: input.bytesWritten,
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
+      await tx.printer.updateMany({
+        where: { id: job.printerId, merchantId: input.merchantId, deletedAt: null },
+        data: { status: 'ONLINE' },
+      });
       return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
     });
   }
@@ -165,32 +208,33 @@ export class PrintAttemptsService {
     await this.requireActiveTerminal(input.merchantId, input.terminalId);
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
+      const expectedHash = this.assertContentHash(job, input.contentHash);
       const outcomeUnknown =
         input.errorCode === PRINTING_ERROR_CODES.PRINT_OUTCOME_UNKNOWN;
       const expectedResult = outcomeUnknown ? 'OUTCOME_UNKNOWN' : 'FAILED';
-      const expectedStatus =
-        !outcomeUnknown && input.retryable && job.attemptCount < job.maxAttempts
-          ? 'RETRY_WAIT'
-          : 'FAILED';
-      if (['RETRY_WAIT', 'FAILED'].includes(job.status)) {
-        const completedAttempt = await tx.printAttempt.findFirst({
-          where: {
-            jobId: job.id,
-            attemptNo: input.attemptNo,
-            terminalId: input.terminalId,
-          },
-        });
+      const completedAttempt = await tx.printAttempt.findFirst({
+        where: {
+          jobId: job.id,
+          attemptNo: input.attemptNo,
+          terminalId: input.terminalId,
+          finishedAt: { not: null },
+        },
+      });
+      if (completedAttempt) {
         if (
-          completedAttempt &&
           completedAttempt.result === expectedResult &&
           completedAttempt.errorCode === input.errorCode &&
           completedAttempt.errorMessage === sanitizePrintingError(input.errorMessage) &&
           completedAttempt.printerResponse === sanitizePrintingError(input.printerResponse) &&
-          job.status === expectedStatus
+          (input.contentHash === undefined || completedAttempt.contentHash === expectedHash) &&
+          (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
           return job;
         }
         this.stateConflict('重复失败回报与已记录尝试不一致');
+      }
+      if (['RETRY_WAIT', 'FAILED'].includes(job.status)) {
+        this.stateConflict('任务已结束当前尝试，但未找到匹配的完成回报');
       }
       this.assertLeaseOwner(job, input.terminalId, ['PRINTING']);
       this.assertCurrentAttempt(job.attemptCount, input.attemptNo);
@@ -234,9 +278,22 @@ export class PrintAttemptsService {
           errorCode: input.errorCode,
           errorMessage: sanitizePrintingError(input.errorMessage),
           printerResponse: sanitizePrintingError(input.printerResponse),
+          contentHash: expectedHash,
+          bytesWritten: input.bytesWritten,
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
+      await tx.printer.updateMany({
+        where: { id: job.printerId, merchantId: input.merchantId, deletedAt: null },
+        data: {
+          status: outcomeUnknown
+            ? 'UNKNOWN'
+            : input.errorCode === PRINTING_ERROR_CODES.PRINTER_OFFLINE ||
+                input.errorCode === PRINTING_ERROR_CODES.USB_DEVICE_DETACHED
+              ? 'OFFLINE'
+              : 'ERROR',
+        },
+      });
       return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
     });
   }
@@ -300,6 +357,61 @@ export class PrintAttemptsService {
     return job;
   }
 
+  private async assertStartStillEnabled(
+    client: Prisma.TransactionClient,
+    merchantId: bigint,
+    terminalId: bigint,
+    printerId: bigint,
+  ) {
+    const terminal = await client.merchantTerminal.findFirst({
+      where: {
+        id: terminalId,
+        merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+      },
+      select: {
+        boundPrinterId: true,
+        merchant: { select: { status: true, printingEnabled: true } },
+        boundPrinter: {
+          select: {
+            id: true,
+            enabled: true,
+            deletedAt: true,
+            channelType: true,
+          },
+        },
+      },
+    });
+    if (!terminal) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+        message: '终端未启用或不属于当前商家',
+      });
+    }
+    if (
+      terminal.merchant.status !== 'ACTIVE' ||
+      !terminal.merchant.printingEnabled
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
+        message: '商家账号或打印总开关已关闭，已阻止开始硬件打印',
+      });
+    }
+    if (
+      terminal.boundPrinterId !== printerId ||
+      !terminal.boundPrinter ||
+      !terminal.boundPrinter.enabled ||
+      terminal.boundPrinter.deletedAt ||
+      terminal.boundPrinter.channelType !== 'LOCAL_USB_ESCPOS'
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PRINTER_DISABLED,
+        message: '绑定的 USB 打印机已停用或配置已变更',
+      });
+    }
+  }
+
   private assertLeaseOwner(
     job: {
       status: string;
@@ -321,6 +433,21 @@ export class PrintAttemptsService {
     if (!Number.isInteger(reportedAttemptNo) || reportedAttemptNo !== currentAttemptNo) {
       this.stateConflict('打印回报的尝试序号与当前任务不匹配');
     }
+  }
+
+  private assertContentHash(
+    job: { receiptSnapshot: unknown; receiptSnapshotHash: string | null },
+    received: string | undefined,
+  ) {
+    const expected =
+      job.receiptSnapshotHash ?? receiptSnapshotHash(job.receiptSnapshot);
+    if (received !== undefined && received !== expected) {
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.CONTENT_HASH_MISMATCH,
+        message: '小票快照哈希不匹配，已拒绝执行或回报',
+      });
+    }
+    return expected;
   }
 
   private notFound(): never {

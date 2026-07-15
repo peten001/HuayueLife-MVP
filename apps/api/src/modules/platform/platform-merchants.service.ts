@@ -1214,7 +1214,10 @@ export class PlatformMerchantsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.merchant.update({
         where: { id },
-        data: { status: MerchantStatus.DISABLED },
+        // Platform disable is also a physical-output kill switch. Re-enabling
+        // the merchant must not silently resume a previously enabled print
+        // connector; printing is turned back on explicitly after review.
+        data: { status: MerchantStatus.DISABLED, printingEnabled: false },
       });
       await tx.merchantStaff.updateMany({
         where: { merchantId: id },

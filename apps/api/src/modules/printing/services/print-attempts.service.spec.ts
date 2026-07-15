@@ -19,7 +19,7 @@ describe('PrintAttemptsService', () => {
       assertTaskCenterEnabled: jest.fn(),
       assertExecutionEnabled: jest.fn(),
     };
-    prisma.merchantTerminal.findFirst.mockResolvedValue({ id: terminalId });
+    prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminal());
     service = new PrintAttemptsService(prisma as never, flags as never);
   });
 
@@ -39,7 +39,7 @@ describe('PrintAttemptsService', () => {
       terminalId,
       jobId,
       leaseVersion: claimed.leaseVersion,
-      adapter: 'LOCAL_LAN_ESCPOS',
+      adapter: 'ANDROID_USB_ESCPOS',
       appVersion: '0.1.0',
       networkInfo: { type: 'wifi' },
     });
@@ -53,11 +53,12 @@ describe('PrintAttemptsService', () => {
         claimedByTerminalId: terminalId,
         leaseVersion: claimed.leaseVersion,
       }),
-      data: {
+      data: expect.objectContaining({
         status: 'PRINTING',
         attemptCount: { increment: 1 },
         leaseVersion: { increment: 1 },
-      },
+        receiptSnapshotHash: expect.any(String),
+      }),
     });
     expect(prisma.printAttempt.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -65,7 +66,7 @@ describe('PrintAttemptsService', () => {
         attemptNo: 2,
         executorType: 'TERMINAL',
         terminalId,
-        adapter: 'LOCAL_LAN_ESCPOS',
+        adapter: 'ANDROID_USB_ESCPOS',
       }),
     });
   });
@@ -81,21 +82,63 @@ describe('PrintAttemptsService', () => {
         terminalId,
         jobId,
         leaseVersion: 2,
-        adapter: 'LOCAL_LAN_ESCPOS',
+        adapter: 'ANDROID_USB_ESCPOS',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it('rechecks merchant and bound-printer kill switches before hardware execution', async () => {
+    prisma.printJob.findFirst.mockResolvedValue(job({ status: 'CLAIMED' }));
+    prisma.merchantTerminal.findFirst
+      .mockResolvedValueOnce(activeTerminal())
+      .mockResolvedValueOnce(
+        activeTerminal({ merchant: { status: 'ACTIVE', printingEnabled: false } }),
+      );
+
+    await expect(
+      service.markPrinting({
+        merchantId,
+        terminalId,
+        jobId,
+        leaseVersion: 2,
+        adapter: 'ANDROID_USB_ESCPOS',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks hardware start after the platform disables the merchant', async () => {
+    prisma.printJob.findFirst.mockResolvedValue(job({ status: 'CLAIMED' }));
+    prisma.merchantTerminal.findFirst
+      .mockResolvedValueOnce(activeTerminal())
+      .mockResolvedValueOnce(
+        activeTerminal({ merchant: { status: 'DISABLED', printingEnabled: true } }),
+      );
+
+    await expect(
+      service.markPrinting({
+        merchantId,
+        terminalId,
+        jobId,
+        leaseVersion: 2,
+        adapter: 'ANDROID_USB_ESCPOS',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     expect(prisma.printAttempt.create).not.toHaveBeenCalled();
   });
 
   it.each([
     { adapter: '   ', networkInfo: undefined, caseName: 'blank adapter' },
     {
-      adapter: 'LOCAL_LAN_ESCPOS',
+      adapter: 'ANDROID_USB_ESCPOS',
       networkInfo: { nested: { apiKey: 'must-not-be-logged' } },
       caseName: 'sensitive network field',
     },
     {
-      adapter: 'LOCAL_LAN_ESCPOS',
+      adapter: 'ANDROID_USB_ESCPOS',
       networkInfo: { diagnostic: 'x'.repeat(4_097) },
       caseName: 'oversized network information',
     },
@@ -288,13 +331,53 @@ describe('PrintAttemptsService', () => {
     ).resolves.toBe(retryWaiting);
 
     expect(prisma.printAttempt.findFirst).toHaveBeenCalledWith({
-      where: { jobId, attemptNo: 1, terminalId },
+      where: {
+        jobId,
+        attemptNo: 1,
+        terminalId,
+        finishedAt: { not: null },
+      },
     });
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
   });
 
-  it('rejects a duplicate failure report unless attempt result, error code, and job status all match', async () => {
+  it('acknowledges a matching repeated failure even after the job was reclaimed', async () => {
+    const reclaimed = job({
+      status: 'CLAIMED',
+      attemptCount: 1,
+      claimedByTerminalId: terminalId + 1n,
+    });
+    prisma.printJob.findFirst.mockResolvedValue(reclaimed);
+    prisma.printAttempt.findFirst.mockResolvedValue({
+      jobId,
+      attemptNo: 1,
+      terminalId,
+      finishedAt: new Date(),
+      result: 'FAILED',
+      errorCode: 'NETWORK_TIMEOUT',
+      errorMessage: 'first report response was lost',
+      printerResponse: null,
+      contentHash: reclaimed.receiptSnapshotHash,
+      bytesWritten: null,
+    });
+
+    await expect(
+      service.markFailed({
+        merchantId,
+        terminalId,
+        jobId,
+        attemptNo: 1,
+        leaseVersion: 3,
+        retryable: true,
+        errorCode: 'NETWORK_TIMEOUT',
+        errorMessage: 'first report response was lost',
+      }),
+    ).resolves.toBe(reclaimed);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a duplicate failure report when the recorded result details differ', async () => {
     prisma.printJob.findFirst.mockResolvedValue(
       job({
         status: 'FAILED',
@@ -308,8 +391,9 @@ describe('PrintAttemptsService', () => {
       jobId,
       attemptNo: 1,
       terminalId,
+      finishedAt: new Date(),
       result: 'FAILED',
-      errorCode: 'NETWORK_TIMEOUT',
+      errorCode: 'PRINTER_OFFLINE',
       errorMessage: 'the original retryable report cannot match FAILED status',
       printerResponse: null,
     });
@@ -443,7 +527,7 @@ describe('PrintAttemptsService', () => {
         terminalId,
         jobId,
         leaseVersion: 1,
-        adapter: 'LOCAL_LAN_ESCPOS',
+        adapter: 'ANDROID_USB_ESCPOS',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
@@ -537,6 +621,9 @@ function createPrismaMock() {
       findFirst: jest.fn(),
       updateMany: jest.fn(),
     },
+    printer: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
@@ -555,6 +642,25 @@ function job(overrides: Record<string, unknown> = {}) {
     leaseVersion: 2,
     attemptCount: 0,
     maxAttempts: 3,
+    printerId: 88n,
+    receiptSnapshot: { schemaVersion: 1 },
+    receiptSnapshotHash: null,
+    ...overrides,
+  };
+}
+
+function activeTerminal(overrides: Record<string, unknown> = {}) {
+  return {
+    id: terminalId,
+    merchantId,
+    boundPrinterId: 88n,
+    merchant: { status: 'ACTIVE', printingEnabled: true },
+    boundPrinter: {
+      id: 88n,
+      enabled: true,
+      deletedAt: null,
+      channelType: 'LOCAL_USB_ESCPOS',
+    },
     ...overrides,
   };
 }

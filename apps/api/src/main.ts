@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import * as express from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
+import { createCorsOptions } from './common/config/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -23,10 +24,9 @@ async function bootstrap() {
   app.use('/uploads', express.static(legacyUploadsRoot));
   app.use('/api/v1/reports', express.static(reportsRoot));
   app.use('/reports', express.static(reportsRoot));
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
+  app.enableCors(
+    createCorsOptions(process.env.NODE_ENV, process.env.CORS_ALLOWED_ORIGINS),
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

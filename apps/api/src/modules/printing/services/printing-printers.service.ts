@@ -186,6 +186,47 @@ export class PrintingPrintersService {
 
   private normalizeConnectionConfig(channelType: string, value: Record<string, unknown>) {
     this.assertNoSecrets(value);
+    if (channelType === 'LOCAL_USB_ESCPOS') {
+      const allowed = ['paperWidthDots', 'threshold', 'cutMode'];
+      if (Object.keys(value).some((key) => !allowed.includes(key))) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+          message: 'USB 配置仅允许纸张点宽、阈值和切纸方式',
+        });
+      }
+      const paperWidthDots = value.paperWidthDots;
+      const threshold = value.threshold;
+      const cutMode = value.cutMode;
+      if (
+        paperWidthDots !== undefined &&
+        (!Number.isInteger(paperWidthDots) ||
+          Number(paperWidthDots) < 200 ||
+          Number(paperWidthDots) > 1024)
+      ) {
+        this.configError('USB paperWidthDots 必须是 200–1024 的整数');
+      }
+      if (
+        threshold !== undefined &&
+        (!Number.isInteger(threshold) ||
+          Number(threshold) < 0 ||
+          Number(threshold) > 255)
+      ) {
+        this.configError('USB threshold 必须是 0–255 的整数');
+      }
+      if (
+        cutMode !== undefined &&
+        !['NONE', 'HALF', 'FULL'].includes(String(cutMode))
+      ) {
+        this.configError('USB cutMode 仅允许 NONE、HALF 或 FULL');
+      }
+      return {
+        ...(paperWidthDots === undefined
+          ? {}
+          : { paperWidthDots: Number(paperWidthDots) }),
+        ...(threshold === undefined ? {} : { threshold: Number(threshold) }),
+        ...(cutMode === undefined ? {} : { cutMode: String(cutMode) }),
+      } satisfies Prisma.InputJsonObject;
+    }
     if (channelType !== 'LOCAL_LAN_ESCPOS') {
       if (Object.keys(value).length > 0) {
         throw new BadRequestException({
@@ -252,13 +293,25 @@ export class PrintingPrintersService {
   }
 
   private serialize<T extends { channelType: string }>(printer: T) {
+    const usb = printer.channelType === 'LOCAL_USB_ESCPOS';
     return {
       ...printer,
-      adapterStatus: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+      adapterStatus: usb
+        ? this.flags.executionEnabled()
+          ? 'READY_FOR_TERMINAL_BINDING'
+          : PRINTING_ERROR_CODES.EXECUTION_DISABLED
+        : PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
       executionState: this.flags.executionEnabled()
         ? 'CONNECTOR_NOT_REGISTERED'
         : 'CONNECTOR_PENDING',
     };
+  }
+
+  private configError(message: string): never {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message,
+    });
   }
 
   private auditView(printer: {

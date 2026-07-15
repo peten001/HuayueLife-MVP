@@ -65,7 +65,7 @@ describe('PrintingFeatureFlagsService safe defaults', () => {
     }
   });
 
-  it('rejects a dual automatic-print configuration during startup validation', () => {
+  it('rejects legacy direct printing with automatic task creation during startup validation', () => {
     values.set('LEGACY_PRINTING_ENABLED', 'true');
     values.set('PRINTING_AUTO_CREATE_ENABLED', 'true');
 
@@ -75,7 +75,27 @@ describe('PrintingFeatureFlagsService safe defaults', () => {
     } catch (error) {
       expect((error as ServiceUnavailableException).getResponse()).toEqual({
         code: 'PRINTING_DUAL_PATH_NOT_ALLOWED',
-        message: '旧自动直打与新自动打印任务不能同时启用',
+        message: '旧服务器直打与新打印任务创建或执行通道不能同时启用',
+      });
+    }
+  });
+
+  it('rejects legacy direct printing with the new execution path', () => {
+    values.set('LEGACY_PRINTING_ENABLED', 'true');
+    values.set('PRINTING_AUTO_CREATE_ENABLED', 'false');
+    values.set('PRINTING_EXECUTION_ENABLED', 'true');
+
+    expect(() => service.status()).toThrow(ServiceUnavailableException);
+    expect(() => service.assertExecutionEnabled()).toThrow(
+      ServiceUnavailableException,
+    );
+
+    try {
+      service.assertExecutionEnabled();
+    } catch (error) {
+      expect((error as ServiceUnavailableException).getResponse()).toEqual({
+        code: 'PRINTING_DUAL_PATH_NOT_ALLOWED',
+        message: '旧服务器直打与新打印任务创建或执行通道不能同时启用',
       });
     }
   });

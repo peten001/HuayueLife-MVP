@@ -36,6 +36,11 @@ export class PrintRulesService {
     dto: CreatePrintRuleDto,
   ) {
     this.flags.assertTaskCenterEnabled();
+    this.validateV1Semantics(
+      dto.triggerEvent,
+      dto.receiptType,
+      dto.autoPrint ?? false,
+    );
     await this.validateReferences(
       merchantId,
       BigInt(dto.printerId),
@@ -92,6 +97,11 @@ export class PrintRulesService {
         : dto.receiptTemplateId
           ? BigInt(dto.receiptTemplateId)
           : existing.receiptTemplateId;
+    this.validateV1Semantics(
+      dto.triggerEvent ?? existing.triggerEvent,
+      dto.receiptType ?? existing.receiptType,
+      dto.autoPrint ?? existing.autoPrint,
+    );
     await this.validateReferences(
       merchantId,
       printerId,
@@ -149,6 +159,11 @@ export class PrintRulesService {
     this.flags.assertTaskCenterEnabled();
     const existing = await this.requireOwned(merchantId, id);
     if (enabled) {
+      this.validateV1Semantics(
+        existing.triggerEvent,
+        existing.receiptType,
+        existing.autoPrint,
+      );
       await this.validateReferences(
         merchantId,
         existing.printerId,
@@ -200,6 +215,12 @@ export class PrintRulesService {
         message: '目标打印机已停用',
       });
     }
+    if (requireEnabledPrinter && printer.channelType !== 'LOCAL_USB_ESCPOS') {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+        message: '当前 Release Candidate 只能启用 USB ESC/POS 规则',
+      });
+    }
     if (templateId && !template) this.referenceError('小票模板不存在');
     if (template && !template.enabled) {
       this.referenceError('小票模板已停用');
@@ -221,6 +242,22 @@ export class PrintRulesService {
       });
     }
     return rule;
+  }
+
+  private validateV1Semantics(
+    triggerEvent: string,
+    receiptType: string,
+    autoPrint: boolean,
+  ) {
+    if (
+      ['ORDER_ACCEPTED', 'ORDER_COMPLETED'].includes(triggerEvent) &&
+      receiptType !== 'ORDER_CUSTOMER'
+    ) {
+      this.referenceError('订单状态自动触发只支持订单客单');
+    }
+    if (autoPrint && triggerEvent === 'MANUAL') {
+      this.referenceError('手动触发规则不能开启自动打印');
+    }
   }
 
   private referenceError(message: string): never {

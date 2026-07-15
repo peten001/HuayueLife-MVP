@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TerminalsService } from './terminals.service';
 
 const merchantId = 7n;
@@ -13,6 +14,7 @@ describe('TerminalsService', () => {
       prisma as never,
       { assertTaskCenterEnabled: jest.fn() } as never,
       { record: jest.fn().mockResolvedValue({ id: 1n }) } as never,
+      new ConfigService({ TERMINAL_HEARTBEAT_SECONDS: '20' }),
     );
   });
 
@@ -22,7 +24,7 @@ describe('TerminalsService', () => {
     );
 
     const result = await service.create(merchantId, 3n, 'request-1', {
-      name: 'D10 测试终端',
+      name: '通用测试终端',
       platform: 'ANDROID',
       capabilities: { lanEscPos: false },
     });
@@ -30,7 +32,7 @@ describe('TerminalsService', () => {
     expect(prisma.merchantTerminal.create).toHaveBeenCalledWith({
       data: {
         merchantId,
-        name: 'D10 测试终端',
+        name: '通用测试终端',
         platform: 'ANDROID',
         status: 'UNPAIRED',
         capabilities: { lanEscPos: false },
@@ -39,9 +41,19 @@ describe('TerminalsService', () => {
     expect(result).toEqual(
       expect.objectContaining({
         pairingState: 'NOT_PAIRED',
-        onlineState: 'NOT_CONNECTED',
+        onlineState: 'OFFLINE',
       }),
     );
+  });
+
+  it('reports a recently-heartbeating disabled terminal as online without enabling execution', async () => {
+    prisma.merchantTerminal.findMany.mockResolvedValue([
+      terminal({ status: 'DISABLED', lastSeenAt: new Date() }),
+    ]);
+
+    await expect(service.list(merchantId)).resolves.toEqual([
+      expect.objectContaining({ status: 'DISABLED', onlineState: 'ONLINE' }),
+    ]);
   });
 
   it('rejects secret-like capability fields', async () => {
@@ -53,6 +65,33 @@ describe('TerminalsService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.merchantTerminal.create).not.toHaveBeenCalled();
+  });
+
+  it('validates and stores an optional same-merchant USB printer binding', async () => {
+    prisma.printer.findFirst.mockResolvedValue({ id: 88n });
+    prisma.merchantTerminal.findFirst.mockResolvedValue(null);
+    prisma.merchantTerminal.create.mockImplementation(
+      async ({ data }: { data: object }) => terminal({ ...data }),
+    );
+
+    await service.create(merchantId, 3n, 'request-bind', {
+      name: '前台 USB 终端',
+      platform: 'ANDROID',
+      boundPrinterId: '88',
+    });
+
+    expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 88n,
+        merchantId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(prisma.merchantTerminal.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ boundPrinterId: 88n }),
+    });
   });
 
   it('rejects oversized terminal capability JSON', async () => {
@@ -75,36 +114,44 @@ describe('TerminalsService', () => {
     await expect(
       service.revoke(merchantId, 3n, undefined, 999n),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(prisma.merchantTerminal.update).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
   });
 
   it('updates and revokes only an owned terminal while retaining an audit trail', async () => {
     const existing = terminal({ status: 'UNPAIRED' });
-    const updated = terminal({ name: '前台 D10' });
+    const updated = terminal({ name: '前台终端' });
     const revoked = terminal({
-      name: '前台 D10',
+      name: '前台终端',
       status: 'REVOKED',
       revokedAt: new Date('2026-07-15T01:00:00.000Z'),
     });
     prisma.merchantTerminal.findFirst.mockResolvedValue(existing);
-    prisma.merchantTerminal.update
+    prisma.merchantTerminal.findUniqueOrThrow
       .mockResolvedValueOnce(updated)
       .mockResolvedValueOnce(revoked);
 
     await expect(
       service.update(merchantId, 3n, 'request-2', existing.id, {
-        name: '前台 D10',
+        name: '前台终端',
       }),
-    ).resolves.toEqual(expect.objectContaining({ name: '前台 D10' }));
+    ).resolves.toEqual(expect.objectContaining({ name: '前台终端' }));
     await expect(
       service.revoke(merchantId, 3n, 'request-3', existing.id),
     ).resolves.toEqual(
-      expect.objectContaining({ status: 'REVOKED', onlineState: 'NOT_CONNECTED' }),
+      expect.objectContaining({ status: 'REVOKED', onlineState: 'OFFLINE' }),
     );
 
-    expect(prisma.merchantTerminal.update).toHaveBeenNthCalledWith(2, {
-      where: { id: existing.id },
-      data: { status: 'REVOKED', revokedAt: expect.any(Date) },
+    expect(prisma.merchantTerminal.updateMany).toHaveBeenNthCalledWith(2, {
+      where: expect.objectContaining({
+        id: existing.id,
+        merchantId,
+        status: existing.status,
+      }),
+      data: expect.objectContaining({
+        status: 'REVOKED',
+        revokedAt: expect.any(Date),
+        tokenHash: null,
+      }),
     });
   });
 });
@@ -113,8 +160,18 @@ function createPrismaMock() {
   const prisma = {
     merchantTerminal: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUniqueOrThrow: jest.fn(),
+    },
+    printer: { findFirst: jest.fn() },
+    printJob: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    printAttempt: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     $transaction: jest.fn(),
   };
@@ -128,13 +185,16 @@ function terminal(overrides: Record<string, unknown> = {}) {
   return {
     id: 67n,
     merchantId,
-    name: 'D10 测试终端',
+    name: '通用测试终端',
     platform: 'ANDROID',
     status: 'UNPAIRED',
     capabilities: {},
     appVersion: null,
     lastSeenAt: null,
     revokedAt: null,
+    tokenHash: null,
+    tokenVersion: 0,
+    tokenExpiresAt: null,
     createdAt: new Date('2026-07-15T00:00:00.000Z'),
     updatedAt: new Date('2026-07-15T00:00:00.000Z'),
     ...overrides,

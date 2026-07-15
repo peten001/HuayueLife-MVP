@@ -81,6 +81,7 @@ export class ReceiptSnapshotService {
         currency: 'VND',
       },
       note: order.customerRemark ?? undefined,
+      verificationCode: `YQ:ORDER:${order.id}:${order.orderNo}`,
     };
     return this.validateAndFreeze(document);
   }
@@ -124,6 +125,18 @@ export class ReceiptSnapshotService {
       (sum, order) => sum + order.totalAmountVnd,
       0n,
     );
+    const tableItems = aggregateReceiptItems(
+      session.orders.flatMap((order) =>
+        order.items.map((item) => ({
+          name: item.productNameZhSnapshot,
+          nameVi: item.product?.nameVi ?? undefined,
+          quantity: item.quantity,
+          unitPrice: safeVnd(item.unitPriceVnd),
+          lineTotal: safeVnd(item.subtotalVnd),
+          note: item.remark ?? undefined,
+        })),
+      ),
+    );
     const document: ReceiptDocument = {
       schemaVersion: 1,
       receiptType: 'TABLE_BILL',
@@ -143,21 +156,13 @@ export class ReceiptSnapshotService {
         closedAt: session.closedAt?.toISOString(),
         orderNos: session.orders.map((order) => order.orderNo),
       },
-      items: session.orders.flatMap((order) =>
-        order.items.map((item) => ({
-          name: item.productNameZhSnapshot,
-          nameVi: item.product?.nameVi ?? undefined,
-          quantity: item.quantity,
-          unitPrice: safeVnd(item.unitPriceVnd),
-          lineTotal: safeVnd(item.subtotalVnd),
-          note: item.remark ?? undefined,
-        })),
-      ),
+      items: tableItems,
       totals: {
         subtotal: safeVnd(subtotal),
         total: safeVnd(total),
         currency: 'VND',
       },
+      verificationCode: `YQ:TABLE:${session.id}:${session.sessionNo}`,
     };
     return this.validateAndFreeze(document);
   }
@@ -206,4 +211,26 @@ function deepFreeze<T>(value: T): T {
     }
   }
   return value;
+}
+
+function aggregateReceiptItems(items: ReceiptDocument['items']) {
+  const grouped = new Map<string, ReceiptDocument['items'][number]>();
+  for (const item of items) {
+    const key = JSON.stringify([
+      item.name,
+      item.nameVi ?? '',
+      item.nameEn ?? '',
+      item.specification ?? '',
+      item.note ?? '',
+      item.unitPrice,
+    ]);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += item.quantity;
+      existing.lineTotal += item.lineTotal;
+    } else {
+      grouped.set(key, { ...item });
+    }
+  }
+  return [...grouped.values()];
 }

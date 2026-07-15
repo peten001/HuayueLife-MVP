@@ -179,7 +179,7 @@ function validJobQuery(): Record<string, unknown> {
 
 function validTerminal(): Record<string, unknown> {
   return {
-    name: 'D10 Pro 测试终端',
+    name: '通用测试终端',
     platform: 'ANDROID',
     capabilities: {},
   };

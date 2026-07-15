@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
   PrintJobSource,
   PrintJobStatus,
   PrintTriggerEvent,
+  OrderType,
   Prisma,
   ReceiptType,
 } from '@prisma/client';
@@ -19,8 +21,10 @@ import {
   sanitizePrintingError,
 } from '../types/printing-errors';
 import { ReceiptDocument } from '../types/receipt-document';
+import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+import { PrintingSettingsService } from './printing-settings.service';
 import { ReceiptSnapshotService } from './receipt-snapshot.service';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
@@ -40,6 +44,25 @@ export interface CreateAutomaticJobInput {
   tableSessionId?: bigint;
 }
 
+export interface EnqueueAutomaticTriggerInput {
+  merchantId: bigint;
+  orderId: bigint;
+  orderStatusLogId: bigint;
+  orderType: OrderType;
+  status: 'ACCEPTED' | 'COMPLETED';
+}
+
+interface AutomaticRuleSnapshot {
+  id: bigint;
+  printerId: bigint;
+  receiptTemplateId: bigint | null;
+  receiptType: ReceiptType;
+  triggerEvent: PrintTriggerEvent;
+  copies: number;
+  priority: number;
+  ruleVersion: string;
+}
+
 export interface CreateManualReprintJobInput {
   merchantId: bigint;
   originalJobId: bigint;
@@ -47,6 +70,18 @@ export interface CreateManualReprintJobInput {
   requestId?: string;
   reason?: string;
   printerId?: bigint;
+  requestKey: string;
+}
+
+export interface CreateManualPrintJobInput {
+  merchantId: bigint;
+  createdByStaffId: bigint;
+  requestId?: string;
+  requestKey: string;
+  printerId: bigint;
+  orderId?: bigint;
+  tableSessionId?: bigint;
+  receiptType: ReceiptType;
 }
 
 export interface CreateTestJobInput {
@@ -55,16 +90,20 @@ export interface CreateTestJobInput {
   receiptTemplateId?: bigint;
   createdByStaffId?: bigint;
   requestId?: string;
+  requestKey: string;
   document: ReceiptDocument;
 }
 
 @Injectable()
 export class PrintJobsService {
+  private readonly logger = new Logger(PrintJobsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly snapshots: ReceiptSnapshotService,
     private readonly audit: PrintingAuditService,
+    private readonly settings: PrintingSettingsService,
   ) {}
 
   async list(merchantId: bigint, query: ListPrintJobsQueryDto) {
@@ -76,6 +115,9 @@ export class PrintJobsService {
         source: query.source as PrintJobSource | undefined,
         printerId: query.printerId ? BigInt(query.printerId) : undefined,
         orderId: query.orderId ? BigInt(query.orderId) : undefined,
+        tableSessionId: query.tableSessionId
+          ? BigInt(query.tableSessionId)
+          : undefined,
       },
       select: {
         id: true,
@@ -150,6 +192,7 @@ export class PrintJobsService {
   async createAutomaticJob(input: CreateAutomaticJobInput) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertAutomaticCreationEnabled();
+    await this.settings.assertMerchantEnabled(input.merchantId);
     const rule = await this.prisma.printRule.findFirst({
       where: {
         id: input.ruleId,
@@ -164,16 +207,220 @@ export class PrintJobsService {
         message: '自动打印规则不存在或未启用',
       });
     }
-    if (!input.eventKey.trim() || input.eventKey.length > 64) {
-      this.referenceError('自动打印事件标识不能为空且不能超过 64 个字符');
+    this.assertAutomaticEventKey(input.eventKey);
+    return this.createAutomaticJobsFromRuleSnapshot({
+      merchantId: input.merchantId,
+      orderId: input.orderId,
+      tableSessionId: input.tableSessionId,
+      eventKey: input.eventKey,
+      rule: {
+        id: rule.id,
+        printerId: rule.printerId,
+        receiptTemplateId: rule.receiptTemplateId,
+        receiptType: rule.receiptType,
+        triggerEvent: rule.triggerEvent,
+        copies: rule.copies,
+        priority: rule.priority,
+        ruleVersion: rule.updatedAt.toISOString(),
+      },
+    });
+  }
+
+  /**
+   * Records automatic-print intent inside the caller's order transition
+   * transaction. No row is created while any global, merchant, rule or printer
+   * gate is disabled. The event/routing snapshot survives later order status
+   * changes and is processed idempotently after commit.
+   */
+  async enqueueAutomaticTriggersForOrderTransition(
+    tx: Prisma.TransactionClient,
+    input: EnqueueAutomaticTriggerInput,
+  ) {
+    if (!this.automaticTriggeringEnabled()) return [];
+    const merchant = await tx.merchant.findUnique({
+      where: { id: input.merchantId },
+      select: { status: true, printingEnabled: true },
+    });
+    if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) return [];
+    const triggerEvent: PrintTriggerEvent =
+      input.status === 'ACCEPTED' ? 'ORDER_ACCEPTED' : 'ORDER_COMPLETED';
+    const rules = await tx.printRule.findMany({
+      where: {
+        merchantId: input.merchantId,
+        enabled: true,
+        autoPrint: true,
+        triggerEvent,
+        receiptType: 'ORDER_CUSTOMER',
+        OR: [{ orderType: input.orderType }, { orderType: null }],
+        printer: {
+          enabled: true,
+          deletedAt: null,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+      },
+      select: {
+        id: true,
+        printerId: true,
+        receiptTemplateId: true,
+        receiptType: true,
+        triggerEvent: true,
+        copies: true,
+        priority: true,
+        updatedAt: true,
+      },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+    if (rules.length === 0) return [];
+    const records = rules.map((rule) => ({
+      merchantId: input.merchantId,
+      orderId: input.orderId,
+      orderStatusLogId: input.orderStatusLogId,
+      printRuleId: rule.id,
+      printerId: rule.printerId,
+      receiptTemplateId: rule.receiptTemplateId,
+      eventKey: this.outboxEventKey(
+        input.merchantId,
+        input.orderStatusLogId,
+        triggerEvent,
+        rule.id,
+        rule.updatedAt.toISOString(),
+      ),
+      triggerEvent,
+      ruleVersion: rule.updatedAt.toISOString(),
+      receiptType: rule.receiptType,
+      copies: Math.max(1, Math.min(3, rule.copies)),
+      priority: rule.priority,
+    }));
+    await tx.printTriggerOutbox.createMany({ data: records, skipDuplicates: true });
+    return tx.printTriggerOutbox.findMany({
+      where: { eventKey: { in: records.map((record) => record.eventKey) } },
+      select: { id: true },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async processAutomaticTriggerIds(ids: bigint[]) {
+    if (!this.automaticTriggeringEnabled() || ids.length === 0) return [];
+    const results = [];
+    for (const id of ids) results.push(await this.processAutomaticTrigger(id));
+    return results;
+  }
+
+  async processPendingAutomaticTriggers(merchantId: bigint, limit = 20) {
+    if (!this.automaticTriggeringEnabled()) return [];
+    const now = new Date();
+    const candidates = await this.prisma.printTriggerOutbox.findMany({
+      where: {
+        merchantId,
+        OR: [
+          { status: 'PENDING', availableAt: { lte: now } },
+          { status: 'PROCESSING', leaseExpiresAt: { lte: now } },
+        ],
+      },
+      select: { id: true },
+      orderBy: [{ availableAt: 'asc' }, { id: 'asc' }],
+      take: Math.min(100, Math.max(1, limit)),
+    });
+    return this.processAutomaticTriggerIds(candidates.map(({ id }) => id));
+  }
+
+  private async processAutomaticTrigger(id: bigint) {
+    const now = new Date();
+    const candidate = await this.prisma.printTriggerOutbox.findFirst({
+      where: {
+        id,
+        OR: [
+          { status: 'PENDING', availableAt: { lte: now } },
+          { status: 'PROCESSING', leaseExpiresAt: { lte: now } },
+        ],
+      },
+    });
+    if (!candidate) return { id, outcome: 'NOT_DUE' as const };
+    const leaseExpiresAt = new Date(now.getTime() + 30_000);
+    const claimed = await this.prisma.printTriggerOutbox.updateMany({
+      where: {
+        id,
+        leaseVersion: candidate.leaseVersion,
+        OR: [
+          { status: 'PENDING', availableAt: { lte: now } },
+          { status: 'PROCESSING', leaseExpiresAt: { lte: now } },
+        ],
+      },
+      data: {
+        status: 'PROCESSING',
+        claimedAt: now,
+        leaseExpiresAt,
+        leaseVersion: { increment: 1 },
+        attemptCount: { increment: 1 },
+      },
+    });
+    if (claimed.count !== 1) return { id, outcome: 'CONTENDED' as const };
+    const trigger = await this.prisma.printTriggerOutbox.findUniqueOrThrow({
+      where: { id },
+    });
+    try {
+      await this.settings.assertMerchantEnabled(trigger.merchantId);
+      await this.createAutomaticJobsFromRuleSnapshot({
+        merchantId: trigger.merchantId,
+        orderId: trigger.orderId,
+        eventKey: trigger.eventKey,
+        rule: {
+          id: trigger.printRuleId,
+          printerId: trigger.printerId,
+          receiptTemplateId: trigger.receiptTemplateId,
+          receiptType: trigger.receiptType,
+          triggerEvent: trigger.triggerEvent,
+          copies: trigger.copies,
+          priority: trigger.priority,
+          ruleVersion: trigger.ruleVersion,
+        },
+      });
+      const processed = await this.prisma.printTriggerOutbox.updateMany({
+        where: { id, status: 'PROCESSING', leaseVersion: trigger.leaseVersion },
+        data: {
+          status: 'PROCESSED',
+          processedAt: new Date(),
+          claimedAt: null,
+          leaseExpiresAt: null,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+      });
+      return {
+        id,
+        outcome: processed.count === 1 ? ('PROCESSED' as const) : ('CONTENDED' as const),
+      };
+    } catch (error) {
+      const failedPermanently = trigger.attemptCount >= trigger.maxAttempts;
+      await this.prisma.printTriggerOutbox.updateMany({
+        where: { id, status: 'PROCESSING', leaseVersion: trigger.leaseVersion },
+        data: {
+          status: failedPermanently ? 'FAILED' : 'PENDING',
+          availableAt: failedPermanently
+            ? undefined
+            : new Date(Date.now() + outboxRetryDelay(trigger.attemptCount)),
+          claimedAt: null,
+          leaseExpiresAt: null,
+          lastErrorCode: errorCode(error),
+          lastErrorMessage: '自动打印触发事件处理失败；等待安全重试',
+        },
+      });
+      this.logger.warn(
+        `Automatic print outbox processing failed id=${id} attempt=${trigger.attemptCount} code=${errorCode(error)}`,
+      );
+      return { id, outcome: failedPermanently ? ('FAILED' as const) : ('RETRY' as const) };
     }
-    const snapshot = await this.createSnapshot(
-      input.merchantId,
-      rule.receiptType,
-      input.orderId,
-      input.tableSessionId,
-    );
-    this.assertSnapshotMerchant(input.merchantId, snapshot);
+  }
+
+  private async createAutomaticJobsFromRuleSnapshot(input: {
+    merchantId: bigint;
+    orderId?: bigint;
+    tableSessionId?: bigint;
+    eventKey: string;
+    rule: AutomaticRuleSnapshot;
+  }) {
+    this.assertAutomaticEventKey(input.eventKey);
+    const rule = input.rule;
     const requestGroupId = this.requestGroupId({
       merchantId: input.merchantId,
       eventKey: input.eventKey,
@@ -181,6 +428,7 @@ export class PrintJobsService {
       receiptType: rule.receiptType,
       triggerEvent: rule.triggerEvent,
       ruleId: rule.id,
+      ruleVersion: rule.ruleVersion,
     });
     const copyCount = Number.isInteger(rule.copies)
       ? Math.max(1, Math.min(3, rule.copies))
@@ -193,9 +441,22 @@ export class PrintJobsService {
         receiptType: rule.receiptType,
         triggerEvent: rule.triggerEvent,
         ruleId: rule.id,
+        ruleVersion: rule.ruleVersion,
         copyIndex: index + 1,
       }),
     );
+    const alreadyCreated = await this.prisma.printJob.findMany({
+      where: { merchantId: input.merchantId, dedupeKey: { in: dedupeKeys } },
+      orderBy: { copyIndex: 'asc' },
+    });
+    if (alreadyCreated.length === dedupeKeys.length) return alreadyCreated;
+    const snapshot = await this.createSnapshot(
+      input.merchantId,
+      rule.receiptType,
+      input.orderId,
+      input.tableSessionId,
+    );
+    this.assertSnapshotMerchant(input.merchantId, snapshot);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const jobs = [];
@@ -208,7 +469,7 @@ export class PrintJobsService {
                 tableSessionId: input.tableSessionId,
                 printerId: rule.printerId,
                 printRuleId: rule.id,
-                ruleVersion: rule.updatedAt.toISOString(),
+                ruleVersion: rule.ruleVersion,
                 requestGroupId,
                 copyIndex: index + 1,
                 copyCount,
@@ -237,98 +498,258 @@ export class PrintJobsService {
     }
   }
 
+  async createManualPrintJob(input: CreateManualPrintJobInput) {
+    this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantEnabled(input.merchantId);
+    await this.requireOwnedStaff(
+      this.prisma,
+      input.merchantId,
+      input.createdByStaffId,
+    );
+    const snapshot = await this.createSnapshot(
+      input.merchantId,
+      input.receiptType,
+      input.orderId,
+      input.tableSessionId,
+    );
+    const dedupeKey = this.manualDedupeKey(
+      input.merchantId,
+      input.createdByStaffId,
+      `print:${input.receiptType}:${input.orderId ?? input.tableSessionId}:${input.printerId}`,
+      input.requestKey,
+    );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await this.createJob(
+          {
+            merchantId: input.merchantId,
+            orderId: input.orderId,
+            tableSessionId: input.tableSessionId,
+            printerId: input.printerId,
+            requestGroupId: randomUUID(),
+            copyIndex: 1,
+            copyCount: 1,
+            receiptType: input.receiptType,
+            triggerEvent: 'MANUAL',
+            source: 'MANUAL',
+            priority: 50,
+            dedupeKey,
+            snapshot,
+            createdByStaffId: input.createdByStaffId,
+          },
+          tx,
+        );
+        await this.audit.record(
+          {
+            merchantId: input.merchantId,
+            actorStaffId: input.createdByStaffId,
+            action: 'PRINT_JOB_MANUAL_CREATED',
+            resourceType: 'PrintJob',
+            resourceId: created.id,
+            afterData: {
+              printerId: created.printerId.toString(),
+              receiptType: created.receiptType,
+            },
+            requestId: input.requestId,
+          },
+          tx,
+        );
+        return created;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      if (!existing || existing.merchantId !== input.merchantId) throw error;
+      return existing;
+    }
+  }
+
   async createManualReprintJob(input: CreateManualReprintJobInput) {
     this.flags.assertTaskCenterEnabled();
-    return this.prisma.$transaction(async (tx) => {
-      await this.requireOwnedStaff(tx, input.merchantId, input.createdByStaffId);
-      const original = await tx.printJob.findFirst({
-        where: { id: input.originalJobId, merchantId: input.merchantId },
-      });
-      if (!original) this.notFound();
-      const snapshot = this.snapshots.cloneAndValidate(
-        original.receiptSnapshot as unknown as ReceiptDocument,
-      );
-      this.assertSnapshotMerchant(input.merchantId, snapshot);
-      const created = await this.createJob(
-        {
-          merchantId: input.merchantId,
-          orderId: original.orderId ?? undefined,
-          tableSessionId: original.tableSessionId ?? undefined,
-          printerId: input.printerId ?? original.printerId,
-          printRuleId: original.printRuleId ?? undefined,
-          ruleVersion: original.ruleVersion ?? undefined,
-          requestGroupId: randomUUID(),
-          copyIndex: 1,
-          copyCount: 1,
-          receiptTemplateId: original.receiptTemplateId ?? undefined,
-          receiptType: original.receiptType,
-          triggerEvent: 'MANUAL',
-          source: 'MANUAL_REPRINT',
-          priority: original.priority,
-          snapshot,
-          createdByStaffId: input.createdByStaffId,
-          allowHistoricalTemplate: true,
-        },
-        tx,
-      );
-      await this.audit.record(
-        {
-          merchantId: input.merchantId,
-          actorStaffId: input.createdByStaffId,
-          action: 'PRINT_JOB_MANUAL_REPRINT_CREATED',
-          resourceType: 'PrintJob',
-          resourceId: created.id,
-          afterData: {
-            sourceJobId: original.id.toString(),
-            printerId: created.printerId.toString(),
+    await this.settings.assertMerchantEnabled(input.merchantId);
+    const dedupeKey = this.manualDedupeKey(
+      input.merchantId,
+      input.createdByStaffId,
+      `reprint:${input.originalJobId}:${input.printerId ?? 'original-printer'}`,
+      input.requestKey,
+    );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.requireOwnedStaff(tx, input.merchantId, input.createdByStaffId);
+        const original = await tx.printJob.findFirst({
+          where: { id: input.originalJobId, merchantId: input.merchantId },
+        });
+        if (!original) this.notFound();
+        const snapshot = this.snapshots.cloneAndValidate(
+          original.receiptSnapshot as unknown as ReceiptDocument,
+        );
+        this.assertSnapshotMerchant(input.merchantId, snapshot);
+        const created = await this.createJob(
+          {
+            merchantId: input.merchantId,
+            orderId: original.orderId ?? undefined,
+            tableSessionId: original.tableSessionId ?? undefined,
+            printerId: input.printerId ?? original.printerId,
+            printRuleId: original.printRuleId ?? undefined,
+            ruleVersion: original.ruleVersion ?? undefined,
+            requestGroupId: randomUUID(),
+            copyIndex: 1,
+            copyCount: 1,
+            receiptTemplateId: original.receiptTemplateId ?? undefined,
+            receiptType: original.receiptType,
+            triggerEvent: 'MANUAL',
+            source: 'MANUAL_REPRINT',
+            priority: original.priority,
+            dedupeKey,
+            snapshot,
+            createdByStaffId: input.createdByStaffId,
+            allowHistoricalTemplate: true,
           },
-          reason: input.reason,
-          requestId: input.requestId,
-        },
-        tx,
-      );
-      return created;
-    });
+          tx,
+        );
+        await this.audit.record(
+          {
+            merchantId: input.merchantId,
+            actorStaffId: input.createdByStaffId,
+            action: 'PRINT_JOB_MANUAL_REPRINT_CREATED',
+            resourceType: 'PrintJob',
+            resourceId: created.id,
+            afterData: {
+              sourceJobId: original.id.toString(),
+              printerId: created.printerId.toString(),
+            },
+            reason: input.reason,
+            requestId: input.requestId,
+          },
+          tx,
+        );
+        return created;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      if (!existing || existing.merchantId !== input.merchantId) throw error;
+      return existing;
+    }
   }
 
   async createTestJob(input: CreateTestJobInput) {
     this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantEnabled(input.merchantId);
     const snapshot = this.snapshots.cloneAndValidate(input.document);
     this.assertSnapshotMerchant(input.merchantId, snapshot);
-    return this.prisma.$transaction(async (tx) => {
-      if (input.createdByStaffId) {
-        await this.requireOwnedStaff(tx, input.merchantId, input.createdByStaffId);
-      }
-      const created = await this.createJob(
-        {
-          merchantId: input.merchantId,
-          printerId: input.printerId,
-          requestGroupId: randomUUID(),
-          copyIndex: 1,
-          copyCount: 1,
-          receiptTemplateId: input.receiptTemplateId,
-          receiptType: input.document.receiptType,
-          triggerEvent: 'MANUAL',
-          source: 'TEST',
-          priority: 100,
-          snapshot,
-          createdByStaffId: input.createdByStaffId,
+    const dedupeKey = this.manualDedupeKey(
+      input.merchantId,
+      input.createdByStaffId ?? 0n,
+      `test:${input.printerId}`,
+      input.requestKey,
+    );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        if (input.createdByStaffId) {
+          await this.requireOwnedStaff(tx, input.merchantId, input.createdByStaffId);
+        }
+        const created = await this.createJob(
+          {
+            merchantId: input.merchantId,
+            printerId: input.printerId,
+            requestGroupId: randomUUID(),
+            copyIndex: 1,
+            copyCount: 1,
+            receiptTemplateId: input.receiptTemplateId,
+            receiptType: input.document.receiptType,
+            triggerEvent: 'MANUAL',
+            source: 'TEST',
+            priority: 100,
+            dedupeKey,
+            snapshot,
+            createdByStaffId: input.createdByStaffId,
+          },
+          tx,
+        );
+        await this.audit.record(
+          {
+            merchantId: input.merchantId,
+            actorStaffId: input.createdByStaffId,
+            action: 'PRINT_JOB_TEST_CREATED',
+            resourceType: 'PrintJob',
+            resourceId: created.id,
+            afterData: { printerId: created.printerId.toString() },
+            requestId: input.requestId,
+          },
+          tx,
+        );
+        return created;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      if (!existing || existing.merchantId !== input.merchantId) throw error;
+      return existing;
+    }
+  }
+
+  async createSafeUsbTestJob(
+    merchantId: bigint,
+    printerId: bigint,
+    createdByStaffId: bigint,
+    requestId?: string,
+    requestKey: string = randomUUID(),
+  ) {
+    const printer = await this.prisma.printer.findFirst({
+      where: {
+        id: printerId,
+        merchantId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!printer) {
+      this.referenceError('测试任务仅允许同一商家的 USB ESC/POS 打印机');
+    }
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true, nameZh: true, addressZh: true, contactPhone: true },
+    });
+    if (!merchant) this.referenceError('商家不存在');
+    const generatedAt = new Date().toISOString();
+    return this.createTestJob({
+      merchantId,
+      printerId,
+      createdByStaffId,
+      requestId,
+      requestKey,
+      document: {
+        schemaVersion: 1,
+        receiptType: 'ORDER_CUSTOMER',
+        generatedAt,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.nameZh,
+          address: merchant.addressZh ?? undefined,
+          phone: merchant.contactPhone,
         },
-        tx,
-      );
-      await this.audit.record(
-        {
-          merchantId: input.merchantId,
-          actorStaffId: input.createdByStaffId,
-          action: 'PRINT_JOB_TEST_CREATED',
-          resourceType: 'PrintJob',
-          resourceId: created.id,
-          afterData: { printerId: created.printerId.toString() },
-          requestId: input.requestId,
+        order: {
+          id: '0',
+          orderNo: `USB-TEST-${Date.now()}`.slice(0, 32),
+          orderType: 'TEST',
+          createdAt: generatedAt,
         },
-        tx,
-      );
-      return created;
+        items: [
+          {
+            name: '云桥 USB 打印测试',
+            nameVi: 'Kiem tra in USB YunQiao',
+            nameEn: 'YunQiao USB print test',
+            quantity: 1,
+            unitPrice: 0,
+            lineTotal: 0,
+          },
+        ],
+        totals: { subtotal: 0, total: 0, currency: 'VND' },
+        note: 'Synthetic test only - no customer data',
+        verificationCode: `YQ:USB-TEST:${Date.now()}`,
+      },
     });
   }
 
@@ -435,11 +856,13 @@ export class PrintJobsService {
     merchantId: bigint,
     terminalId: bigint,
     leaseMs = 30_000,
+    allowAutomatic = false,
   ) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
     const terminal = await this.prisma.merchantTerminal.findFirst({
       where: { id: terminalId, merchantId, status: 'ACTIVE', revokedAt: null },
+      include: { merchant: { select: { status: true, printingEnabled: true } } },
     });
     if (!terminal) {
       throw new BadRequestException({
@@ -447,24 +870,92 @@ export class PrintJobsService {
         message: '终端未启用或不属于当前商家',
       });
     }
+    if (
+      terminal.merchant.status !== 'ACTIVE' ||
+      !terminal.merchant.printingEnabled
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.MERCHANT_PRINTING_DISABLED,
+        message: '商家账号或打印总开关当前关闭',
+      });
+    }
+    if (!terminal.boundPrinterId) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '终端尚未绑定 USB 打印机',
+      });
+    }
+    const boundPrinterId = terminal.boundPrinterId;
+    const automaticAllowed =
+      allowAutomatic && this.flags.automaticCreationEnabled();
 
+    await this.releaseExpiredLeases(new Date());
     await this.releaseAvailableRetries(new Date(), merchantId);
+    if (automaticAllowed) {
+      // Durable trigger rows are the crash-recovery path for the small window
+      // between committing an order transition and creating its PrintJob.
+      await this.processPendingAutomaticTriggers(merchantId);
+    }
+
+    const active = await this.findActiveTerminalJob(merchantId, terminalId);
+    if (active) return active;
 
     for (let round = 0; round < 3; round += 1) {
       const claimed = await this.prisma.$transaction(async (tx) => {
         const now = new Date();
+        const locked = await tx.merchantTerminal.updateMany({
+          where: {
+            id: terminalId,
+            merchantId,
+            status: 'ACTIVE',
+            revokedAt: null,
+            boundPrinterId,
+            tokenVersion: terminal.tokenVersion,
+          },
+          data: { lastSeenAt: now },
+        });
+        if (locked.count !== 1) return null;
+        const alreadyClaimed = await tx.printJob.findFirst({
+          where: {
+            merchantId,
+            claimedByTerminalId: terminalId,
+            status: { in: ['CLAIMED', 'PRINTING'] },
+            leaseExpiresAt: { gt: now },
+          },
+          orderBy: { claimedAt: 'asc' },
+        });
+        if (alreadyClaimed) return alreadyClaimed;
         const candidate = await tx.printJob.findFirst({
           where: {
             merchantId,
             status: 'PENDING',
             availableAt: { lte: now },
             retryBlocked: false,
-            printer: { merchantId, enabled: true, deletedAt: null },
+            OR: [
+              { source: { in: ['MANUAL', 'MANUAL_REPRINT', 'TEST'] } },
+              ...(automaticAllowed
+                ? [
+                    {
+                      source: 'AUTOMATIC' as const,
+                      printRule: { enabled: true, autoPrint: true },
+                    },
+                  ]
+                : []),
+            ],
+            printerId: boundPrinterId,
+            printer: {
+              merchantId,
+              enabled: true,
+              deletedAt: null,
+              channelType: 'LOCAL_USB_ESCPOS',
+            },
           },
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
-        const leaseExpiresAt = new Date(now.getTime() + Math.max(5_000, leaseMs));
+        const leaseExpiresAt = new Date(
+          now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
+        );
         const changed = await tx.printJob.updateMany({
           where: {
             id: candidate.id,
@@ -486,6 +977,90 @@ export class PrintJobsService {
       if (claimed) return claimed;
     }
     return null;
+  }
+
+  findActiveTerminalJob(merchantId: bigint, terminalId: bigint) {
+    return this.prisma.printJob.findFirst({
+      where: {
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+        leaseExpiresAt: { gt: new Date() },
+      },
+      orderBy: { claimedAt: 'asc' },
+    });
+  }
+
+  async connectorJobPayload(
+    merchantId: bigint,
+    terminalId: bigint,
+    jobId: bigint,
+  ) {
+    const job = await this.prisma.printJob.findFirst({
+      where: {
+        id: jobId,
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+      },
+      include: {
+        printer: {
+          select: {
+            id: true,
+            name: true,
+            channelType: true,
+            paperWidth: true,
+            purpose: true,
+            enabled: true,
+            status: true,
+            connectionConfig: true,
+            capabilities: true,
+          },
+        },
+        attempts: {
+          where: { finishedAt: null },
+          orderBy: { attemptNo: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            attemptNo: true,
+            adapter: true,
+            startedAt: true,
+            contentHash: true,
+          },
+        },
+      },
+    });
+    if (!job) this.notFound();
+    const contentHash =
+      job.receiptSnapshotHash ?? receiptSnapshotHash(job.receiptSnapshot);
+    if (!job.receiptSnapshotHash) {
+      await this.prisma.printJob.updateMany({
+        where: { id: job.id, merchantId, receiptSnapshotHash: null },
+        data: { receiptSnapshotHash: contentHash },
+      });
+    }
+    const snapshot = job.receiptSnapshot as Record<string, unknown>;
+    return {
+      id: job.id,
+      printerId: job.printerId,
+      receiptType: job.receiptType,
+      triggerEvent: job.triggerEvent,
+      source: job.source,
+      status: job.status,
+      priority: job.priority,
+      copyIndex: job.copyIndex,
+      copyCount: job.copyCount,
+      attemptCount: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      leaseVersion: job.leaseVersion,
+      leaseExpiresAt: job.leaseExpiresAt,
+      contentHash,
+      snapshotSchemaVersion: snapshot.schemaVersion,
+      receiptSnapshot: job.receiptSnapshot,
+      printer: job.printer,
+      currentAttempt: job.attempts[0] ?? null,
+    };
   }
 
   async releaseExpiredLeases(now = new Date()) {
@@ -643,6 +1218,7 @@ export class PrintJobsService {
         priority: input.priority,
         dedupeKey: input.dedupeKey,
         receiptSnapshot: input.snapshot as unknown as Prisma.InputJsonValue,
+        receiptSnapshotHash: receiptSnapshotHash(input.snapshot),
         createdByStaffId: input.createdByStaffId,
       },
     });
@@ -708,6 +1284,12 @@ export class PrintJobsService {
         message: '打印机已停用，不能创建或重试任务',
       });
     }
+    if (printer.channelType !== 'LOCAL_USB_ESCPOS') {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+        message: '当前 Release Candidate 仅允许 USB ESC/POS 打印任务',
+      });
+    }
     return printer;
   }
 
@@ -743,6 +1325,37 @@ export class PrintJobsService {
     }
   }
 
+  private automaticTriggeringEnabled() {
+    return (
+      this.flags.taskCenterEnabled() &&
+      this.flags.automaticCreationEnabled() &&
+      !this.flags.legacyPrintingEnabled()
+    );
+  }
+
+  private assertAutomaticEventKey(eventKey: string) {
+    if (!eventKey.trim() || eventKey.length > 191) {
+      this.referenceError('自动打印事件标识不能为空且不能超过 191 个字符');
+    }
+  }
+
+  private outboxEventKey(
+    merchantId: bigint,
+    orderStatusLogId: bigint,
+    triggerEvent: PrintTriggerEvent,
+    ruleId: bigint,
+    ruleVersion: string,
+  ) {
+    const digest = createHash('sha256')
+      .update(
+        ['trigger-v1', merchantId, orderStatusLogId, triggerEvent, ruleId, ruleVersion].join(
+          ':',
+        ),
+      )
+      .digest('hex');
+    return `auto-trigger:${digest}`;
+  }
+
   private automaticDedupeKey(input: {
     merchantId: bigint;
     eventKey: string;
@@ -750,6 +1363,7 @@ export class PrintJobsService {
     receiptType: ReceiptType;
     triggerEvent: PrintTriggerEvent;
     ruleId: bigint;
+    ruleVersion: string;
     copyIndex: number;
   }) {
     const raw = [
@@ -760,6 +1374,7 @@ export class PrintJobsService {
       input.receiptType,
       input.triggerEvent,
       input.ruleId,
+      input.ruleVersion,
       input.copyIndex,
     ].join(':');
     return `auto:${createHash('sha256').update(raw).digest('hex')}`;
@@ -772,6 +1387,7 @@ export class PrintJobsService {
     receiptType: ReceiptType;
     triggerEvent: PrintTriggerEvent;
     ruleId: bigint;
+    ruleVersion: string;
   }) {
     return createHash('sha256')
       .update(
@@ -783,9 +1399,21 @@ export class PrintJobsService {
           input.receiptType,
           input.triggerEvent,
           input.ruleId,
+          input.ruleVersion,
         ].join(':'),
       )
       .digest('hex');
+  }
+
+  private manualDedupeKey(
+    merchantId: bigint,
+    staffId: bigint,
+    operationKey: string,
+    requestKey: string,
+  ) {
+    return `manual:${createHash('sha256')
+      .update(`v1:${merchantId}:${staffId}:${operationKey}:${requestKey}`)
+      .digest('hex')}`;
   }
 
   private notFound(): never {
@@ -806,4 +1434,18 @@ export class PrintJobsService {
 
 function isUniqueViolation(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+function errorCode(error: unknown) {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const response = (error as { response?: unknown }).response;
+    if (response && typeof response === 'object' && 'code' in response) {
+      return String((response as { code: unknown }).code).slice(0, 64);
+    }
+  }
+  return error instanceof Error ? error.name : 'UNKNOWN';
+}
+
+function outboxRetryDelay(attemptNo: number) {
+  return Math.min(300_000, 5_000 * 2 ** Math.max(0, attemptNo - 1));
 }

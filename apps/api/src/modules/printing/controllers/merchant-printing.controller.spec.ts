@@ -15,6 +15,7 @@ import { Reflector } from '@nestjs/core';
 import { MERCHANT_ROLES_KEY } from '../../../common/decorators/merchant-roles.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../../common/guards/merchant-role.guard';
+import { ActiveMerchantStaffGuard } from '../guards/active-merchant-staff.guard';
 import { MerchantPrintingController } from './merchant-printing.controller';
 
 describe('MerchantPrintingController contract', () => {
@@ -24,6 +25,7 @@ describe('MerchantPrintingController contract', () => {
     );
     expect(Reflect.getMetadata(GUARDS_METADATA, MerchantPrintingController)).toEqual([
       JwtAuthGuard,
+      ActiveMerchantStaffGuard,
       MerchantRoleGuard,
     ]);
     expect(Reflect.getMetadata(MERCHANT_ROLES_KEY, MerchantPrintingController)).toEqual([
@@ -40,10 +42,13 @@ describe('MerchantPrintingController contract', () => {
       expect.arrayContaining([
         ['GET', 'printers'],
         ['GET', 'feature-state'],
+        ['GET', 'settings'],
+        ['PATCH', 'settings'],
         ['POST', 'printers'],
         ['GET', 'printers/:id'],
         ['PATCH', 'printers/:id'],
         ['POST', 'printers/:id/disable'],
+        ['POST', 'printers/:id/test-job'],
         ['GET', 'templates'],
         ['POST', 'templates'],
         ['GET', 'templates/:id'],
@@ -58,10 +63,19 @@ describe('MerchantPrintingController contract', () => {
         ['GET', 'jobs/:id'],
         ['POST', 'jobs/:id/cancel'],
         ['POST', 'jobs/:id/retry'],
+        ['POST', 'jobs/order'],
+        ['POST', 'jobs/table-bill'],
+        ['POST', 'jobs/:id/reprint'],
         ['GET', 'terminals'],
         ['POST', 'terminals'],
         ['PATCH', 'terminals/:id'],
         ['POST', 'terminals/:id/revoke'],
+        ['GET', 'terminals/:id'],
+        ['POST', 'terminals/:id/pairing-code'],
+        ['POST', 'terminals/:id/rotate-credentials'],
+        ['POST', 'terminals/:id/enable'],
+        ['POST', 'terminals/:id/disable'],
+        ['POST', 'terminals/:id/reset-usb-config'],
       ]),
     );
     expect(routes.flat().join(' ')).not.toMatch(
@@ -87,6 +101,9 @@ describe('MerchantPrintingController contract', () => {
     const jobs = serviceMock(['retry']);
     const terminals = serviceMock([]);
     const flags = { status: jest.fn() };
+    const settings = {
+      get: jest.fn().mockResolvedValue({ printingEnabled: false }),
+    };
     printers.list.mockResolvedValue([]);
     jobs.retry.mockResolvedValue({ id: 301n });
     const controller = new MerchantPrintingController(
@@ -96,6 +113,8 @@ describe('MerchantPrintingController contract', () => {
       jobs as never,
       terminals as never,
       flags as never,
+      settings as never,
+      serviceMock([]) as never,
     );
 
     await controller.listPrinters(7n);
@@ -117,7 +136,10 @@ describe('MerchantPrintingController contract', () => {
     );
 
     flags.status.mockReturnValue({ legacyPrintingEnabled: false });
-    expect(controller.featureState()).toEqual({ legacyPrintingEnabled: false });
+    await expect(controller.featureState(7n)).resolves.toEqual({
+      legacyPrintingEnabled: false,
+      merchantPrintingEnabled: false,
+    });
   });
 
   it('keeps the new printing API available while legacy printing is disabled', async () => {
@@ -133,6 +155,8 @@ describe('MerchantPrintingController contract', () => {
       serviceMock([]) as never,
       serviceMock([]) as never,
       flags as never,
+      { get: jest.fn() } as never,
+      serviceMock([]) as never,
     );
 
     await expect(controller.listPrinters(7n)).resolves.toEqual([{ id: 1n }]);
@@ -142,6 +166,7 @@ describe('MerchantPrintingController contract', () => {
   it('requires owner or manager for configuration mutations', () => {
     for (const methodName of [
       'createPrinter',
+      'createPrinterTestJob',
       'updatePrinter',
       'disablePrinter',
       'createTemplate',
@@ -152,8 +177,14 @@ describe('MerchantPrintingController contract', () => {
       'enableRule',
       'disableRule',
       'cancelJob',
+      'updateSettings',
       'createTerminal',
       'updateTerminal',
+      'generateTerminalPairingCode',
+      'rotateTerminalCredentials',
+      'enableTerminal',
+      'disableTerminal',
+      'resetTerminalUsbConfig',
       'revokeTerminal',
     ] as const) {
       expect(
