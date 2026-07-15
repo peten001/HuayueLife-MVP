@@ -39,6 +39,7 @@ import {
   canAccessMerchantFeature,
   type MerchantFeature,
 } from '@/utils/merchant-capabilities';
+import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 
 type RouteRole = MerchantStaffRole;
 type RouteArea = 'merchant' | 'platform';
@@ -49,6 +50,7 @@ interface RouteMeta {
   area?: RouteArea;
   roles?: RouteRole[];
   feature?: MerchantFeature;
+  legacyPrintingRoute?: boolean;
 }
 
 async function resolveMerchantSession() {
@@ -145,7 +147,8 @@ const router = createRouter({
         },
         {
           path: 'merchant/printers',
-          redirect: '/merchant/profile',
+          component: MerchantProfilePage,
+          meta: { roles: ['OWNER', 'MANAGER'], legacyPrintingRoute: true },
         },
         {
           path: 'printing-center',
@@ -254,6 +257,15 @@ router.beforeEach(async (to) => {
         return '/forbidden';
       }
       const session = await resolveMerchantSession();
+      if (meta.legacyPrintingRoute) {
+        const state = await resolvePrintingFeatureState();
+        return state.legacyPrintingEnabled
+          ? '/merchant/profile'
+          : {
+              path: '/printing-center/printers',
+              query: { from: 'legacy' },
+            };
+      }
       if (meta.feature && !canAccessMerchantFeature(session?.merchant, meta.feature)) {
         window.alert('当前商家未开通此功能');
         return '/dashboard';

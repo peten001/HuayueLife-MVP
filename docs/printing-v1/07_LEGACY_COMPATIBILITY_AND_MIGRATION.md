@@ -1,9 +1,9 @@
 # 旧打印系统兼容与迁移边界
 
-> 文档性质：阶段 C 兼容设计与后续迁移约束。
-> 当前结论：本轮新打印任务中心与旧打印系统独立并存；不复制旧配置、不迁移旧日志、不切换真实订单，也不执行生产 migration。
+> 文档性质：阶段 C/C.1 兼容设计、运行切换与后续迁移约束。
+> 当前结论：新打印任务中心与旧代码、旧表继续并存，但阶段 C.1 已把旧服务器 Socket/TCP 直打默认关闭，并把 merchant-admin 的可见入口统一到“打印中心 Beta”；不复制旧配置、不迁移旧日志，也不执行生产 migration。
 
-## 1. 当前事实：旧打印系统仍在运行路径中
+## 1. 当前事实：旧实现仍保留在代码与数据结构中
 
 ### 1.1 旧数据结构
 
@@ -18,27 +18,28 @@
 
 ### 1.2 旧 API 与旧管理页面
 
-下列旧接口继续保持原路径和原行为：
+下列旧接口和页面文件继续保留，以支持审计与 Feature Flag 回滚；它们不再是默认公开的打印能力。`/merchant/printers` 全组接口及旧订单打印接口在 `LEGACY_PRINTING_ENABLED=false` 时必须先返回 `410 Gone / LEGACY_PRINTING_DISABLED`，不得进入旧 Service 或 Socket：
 
-| 路径 | 当前行为 | 证据 |
+| 路径 | 代码仍保留的能力 | 默认关闭时的行为 | 证据 |
 |---|---|---|
-| `GET /merchant/printers` | 查询旧 `PrinterSetting` | `apps/api/src/modules/printers/printers.controller.ts` |
-| `POST /merchant/printers` | 新增旧打印机配置 | `apps/api/src/modules/printers/printers.controller.ts` |
-| `PATCH /merchant/printers/:id` | 修改旧打印机配置 | `apps/api/src/modules/printers/printers.controller.ts` |
-| `DELETE /merchant/printers/:id` | 删除旧打印机配置 | `apps/api/src/modules/printers/printers.controller.ts` |
-| `POST /merchant/printers/:id/test` | API 服务器生成旧测试票据并直接 TCP 连接打印机 | `apps/api/src/modules/printers/printers.controller.ts`、`apps/api/src/modules/printers/printers.service.ts` |
-| `POST /merchant/orders/:id/print` | 重新读取当前订单后调用旧即时打印 | `apps/api/src/modules/merchant-orders/merchant-orders.controller.ts`、`apps/api/src/modules/printers/printers.service.ts` |
+| `GET /merchant/printers` | 查询旧 `PrinterSetting` | 410，不读取或返回旧配置 | `apps/api/src/modules/printers/printers.controller.ts` |
+| `POST /merchant/printers` | 新增旧打印机配置 | 410，不写旧配置 | `apps/api/src/modules/printers/printers.controller.ts` |
+| `PATCH /merchant/printers/:id` | 修改旧打印机配置 | 410，不写旧配置 | `apps/api/src/modules/printers/printers.controller.ts` |
+| `DELETE /merchant/printers/:id` | 删除旧打印机配置 | 410，不删除旧配置 | `apps/api/src/modules/printers/printers.controller.ts` |
+| `POST /merchant/printers/:id/test` | API 服务器生成旧测试票据并直接 TCP 连接打印机 | 410；不建 Socket、不发送字节、不创建旧 `PrintLog` | `apps/api/src/modules/printers/printers.controller.ts`、`apps/api/src/modules/printers/printers.service.ts` |
+| `POST /merchant/orders/:id/print` | 重新读取当前订单后调用旧即时打印 | 410；不建 Socket、不发送字节、不创建旧 `PrintLog` | `apps/api/src/modules/merchant-orders/merchant-orders.controller.ts`、`apps/api/src/modules/printers/printers.service.ts` |
 
-merchant-admin 的旧客户端封装仍访问 `/merchant/printers`，证据为 `apps/merchant-admin/src/api/printers.ts`。旧打印配置 UI 仍位于商家资料页面，`/merchant/printers` 会重定向到 `/merchant/profile`；证据为 `apps/merchant-admin/src/pages/MerchantProfilePage.vue` 和 `apps/merchant-admin/src/router/index.ts`。仓库中仍保留 `apps/merchant-admin/src/pages/PrintersPage.vue`，本轮也不删除该历史页面文件。
+merchant-admin 的旧客户端封装和页面文件仍保留，证据为 `apps/merchant-admin/src/api/printers.ts`、`apps/merchant-admin/src/pages/MerchantProfilePage.vue` 和 `apps/merchant-admin/src/pages/PrintersPage.vue`。阶段 C.1 默认隐藏旧菜单，旧打印 URL 重定向到 `/printing-center/printers?from=legacy`；重定向不能复制旧配置、创建新 Printer 或删除旧数据。开关回滚时可恢复旧入口，但必须保持新自动任务关闭。
 
 ### 1.3 旧订单创建直连链路
 
-当前真实链路不是统一任务中心：
+下图是仍被保留的旧实现；只有 `LEGACY_PRINTING_ENABLED=true` 时才能进入。安全默认值为 `false`，因此默认订单创建只跳过打印副作用，不查询旧打印机 IP、不创建 Socket，也不创建旧 `PrintLog`：
 
 ```mermaid
 sequenceDiagram
     participant U as 顾客/小程序
     participant O as OrdersService
+    participant G as Legacy Feature Gate
     participant DB as MySQL
     participant P as 旧 PrintersService
     participant L as PrintLog
@@ -46,20 +47,25 @@ sequenceDiagram
 
     U->>O: 创建订单
     O->>DB: 事务内保存 Order 与状态日志
-    O-->>P: 事务后 fire-and-forget printOrder()
+    O->>G: 检查 LEGACY_PRINTING_ENABLED
+    alt true（仅回滚）
+    G-->>P: 事务后 fire-and-forget printOrder()
     P->>DB: 读取旧 PrinterSetting 与当前订单
     P->>L: 创建 PENDING 日志
     P->>HW: API 服务器直接 Socket/TCP 发送
     P->>L: 更新 SUCCESS 或 FAILED
+    else false（默认）
+    G-->>O: 跳过旧打印，不影响订单结果
+    end
 ```
 
 事实证据：
 
-- 订单创建成功后异步调用 `PrintersService.printOrder()`：`apps/api/src/modules/orders/orders.service.ts`。
+- 订单创建成功后只有在 `LEGACY_PRINTING_ENABLED=true` 时才异步调用 `PrintersService.printOrder()`：`apps/api/src/modules/orders/orders.service.ts`。
 - 旧服务直接使用 `node:net` 的 `Socket`：`apps/api/src/modules/printers/printers.service.ts`。
 - 旧服务会把最后一次 Socket 结果回写为旧打印机的 `ONLINE/OFFLINE`；这不等于终端心跳或可靠的实时在线状态：`apps/api/src/modules/printers/printers.service.ts`。
 
-## 2. 本轮实现：新旧系统独立并存
+## 2. 当前实现：新旧代码并存，运行入口已经切换
 
 本轮新任务中心使用独立命名空间与独立表：
 
@@ -70,9 +76,11 @@ sequenceDiagram
 - 新 merchant-admin 入口：`打印中心 Beta`，路由前缀为 `/printing-center/*`。
 - 新 migration：`apps/api/prisma/migrations/20260715000000_add_printing_task_center_v1/migration.sql`。
 
-上述新资源不会覆盖、代理或重定向旧 `/merchant/printers` 和 `/merchant/orders/:id/print`。新页面顶部必须持续显示：
+新资源不会覆盖或迁移旧数据，但 merchant-admin 的打印入口已统一到新中心；旧打印写接口在默认开关下返回 410，旧页面 URL 安全重定向。新页面顶部必须持续显示：
 
-> Beta：当前任务中心尚未接入执行端，不影响旧打印配置。
+> Beta：旧局域网直打已停用。
+>
+> 当前打印任务中心尚未接入 Android、本地 LAN/USB 或云打印执行端，因此不会产生真实打印。
 
 ### 2.1 新任务记录的可靠性边界
 
@@ -106,19 +114,22 @@ sequenceDiagram
 
 本轮通过以下边界防止新中心影响真实经营：
 
+- `LEGACY_PRINTING_ENABLED=false`：旧自动、测试和手动 Socket 直打默认全部停止。
 - `PRINTING_AUTO_CREATE_ENABLED=false`：订单事件不自动创建新任务。
 - `PRINTING_EXECUTION_ENABLED=false`：即使存在测试或人工创建的任务，也没有执行器自动领取或发送。
-- 不接入订单创建监听器，不修改 `apps/api/src/modules/orders/orders.service.ts` 的旧生产行为。
+- 订单创建保留原业务事务，只在旧打印开关打开时才调用旧 Service；关闭时不解析旧 IP、不创建 Socket/PrintLog，也不自动改为创建新任务。
+- 旧测试打印、订单手动打印及旧配置写接口默认返回 `410 Gone / LEGACY_PRINTING_DISABLED`。
+- `LEGACY_PRINTING_ENABLED=true` 与 `PRINTING_AUTO_CREATE_ENABLED=true` 同时出现时以 `PRINTING_DUAL_PATH_NOT_ALLOWED` 阻止启动。
 - 不公开 Android/connector 任务领取路由，不运行 worker。
 - 新 `PrintRule` 的 `autoPrint` 与 `enabled` 默认关闭。
 - 新 `Printer` 不因保存 LAN host/port 而发起连接，也不能显示为已在线。
 - 新模板更新会创建新版本、停用旧版本，并把关联规则改指向新版本且重新关闭 `enabled/autoPrint`，避免未经复核的模板变更立即进入自动链路；历史 Job 仍保留原模板 ID、版本和快照。
 
-因此本轮不存在“旧即时直打 + 新 PrintJob 执行”同时出纸的运行路径。新中心当前只提供配置、任务记录和状态机基础能力。
+因此默认既没有旧即时直打，也没有新 PrintJob 自动创建/执行。新中心当前只提供配置、任务记录和状态机基础能力。
 
-### 3.2 未来切换的硬性条件
+### 3.2 未来启用任一路径的硬性条件
 
-未来启用真实任务执行时，不能只打开新开关。对同一商家、同一订单事件必须先确定唯一触发源：
+未来启用真实任务执行或临时回滚旧链路时，不能只打开某个开关。对同一商家、同一订单事件必须先确定唯一触发源：
 
 ```mermaid
 flowchart LR
@@ -128,10 +139,10 @@ flowchart LR
     G -. 禁止 .-> B[旧直连与新任务同时执行]
 ```
 
-未来切换必须在单一可审计操作中完成：
+未来启用必须在单一可审计操作中完成：
 
-1. 先停用该商家的旧自动直打来源。
-2. 再启用新规则与任务创建。
+1. 使用新链路时保持 `LEGACY_PRINTING_ENABLED=false`。
+2. 经审核后再启用新规则与任务创建。
 3. 最后启用经验证的执行端领取。
 4. 每一步均验证旧 `autoPrintEnabled`、新 `PrintRule` 和执行开关没有交叉启用。
 5. 任何状态不确定时保持新执行关闭，不得通过重复打印“探测”结果。
@@ -185,10 +196,12 @@ flowchart LR
 
 ### 7.1 本轮代码/管理能力回滚
 
-- 关闭 `PRINTING_TASK_CENTER_ENABLED`，隐藏或阻断 Beta 管理能力。
-- 保持 `PRINTING_AUTO_CREATE_ENABLED=false` 和 `PRINTING_EXECUTION_ENABLED=false`。
+- 必须先确认 `PRINTING_AUTO_CREATE_ENABLED=false` 和 `PRINTING_EXECUTION_ENABLED=false`。
+- 只有获得明确授权时才将 `LEGACY_PRINTING_ENABLED=true`，并按现有部署方式重启 API；本轮不执行部署。
+- merchant-admin 从已认证的 `GET /merchant/printing/feature-state` 读取同一服务端状态；服务端恢复 `LEGACY_PRINTING_ENABLED=true` 后，前端据该安全布尔值恢复旧入口。接口失败时前端必须按 `legacy=false` 关闭入口，不另设可能漂移的前端环境开关。
+- 双路径配置校验必须通过，否则禁止启动；恢复后使用专用测试商家验证并记录回滚审计。
 - 回退应用代码时保留新增表，不在紧急回滚中删除 schema 或历史数据。
-- 旧 `/merchant/printers`、旧订单打印接口和旧页面本轮未被替换，因此无需通过数据反向迁移来恢复。
+- 旧 Controller、Service、DTO、Socket 代码和旧页面文件仍在，因此无需通过数据反向迁移来恢复。
 
 ### 7.2 未来试点执行回滚
 
@@ -205,4 +218,6 @@ flowchart LR
 - 不调用 TCP 9100 或云打印厂商 API。
 - 不修改 Android APP 和 Web 收银台业务。
 - 不把 Web 收银台的“打印待接入”改为在线。
+- 用户已确认当前没有真实商家使用旧本地局域网打印；此确认不替代物理删除前的生产旧配置数量审计。
+- 旧代码和旧表仅停止入口与执行，尚未物理删除；删除准入详见 `docs/printing-v1/09_LEGACY_PRINTING_CUTOVER_V1.md`。
 - 不部署、不 push。

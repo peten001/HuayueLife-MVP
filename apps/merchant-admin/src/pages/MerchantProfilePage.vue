@@ -22,6 +22,7 @@ import {
   canAccessMerchantFeature,
   hasMerchantCapability,
 } from '@/utils/merchant-capabilities';
+import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 import { getMerchantStaff, setMerchantStaff } from '@/utils/storage';
 import type {
   MerchantProfile,
@@ -157,14 +158,26 @@ const currentRole = computed(() => getMerchantStaff()?.role ?? 'STAFF');
 const canEditStoreSettings = computed(() => currentRole.value !== 'STAFF');
 const canManageReports = computed(() => currentRole.value !== 'STAFF');
 const canManagePrinters = computed(() => currentRole.value !== 'STAFF');
+const legacyPrintingEnabled = ref(false);
 const printerFeatureEnabled = computed(() =>
   canAccessMerchantFeature(profile.value, 'printers'),
 );
-const printerSectionVisible = computed(() => canManagePrinters.value);
+const printerSectionVisible = computed(() =>
+  legacyPrintingEnabled.value && canManagePrinters.value,
+);
 const toolsSectionVisible = computed(() => printerSectionVisible.value || canManageReports.value);
 const noticeLength = computed(() => noticeForm.notice.length);
 
-onMounted(loadProfile);
+onMounted(async () => {
+  const [featureState] = await Promise.all([
+    resolvePrintingFeatureState(),
+    loadProfile(),
+  ]);
+  legacyPrintingEnabled.value = featureState.legacyPrintingEnabled;
+  if (printerSectionVisible.value) {
+    await loadPrinters();
+  }
+});
 
 async function loadProfile() {
   try {
@@ -184,7 +197,7 @@ async function loadProfile() {
     if (canManageReports.value) {
       await loadReportSettings();
     }
-    if (canManagePrinters.value) {
+    if (printerSectionVisible.value) {
       await loadPrinters();
     }
   } catch (error) {
@@ -359,7 +372,7 @@ function buildPrinterPayload(): PrinterPayload {
 
 async function loadPrinters() {
   printerMessage.value = '';
-  if (!canManagePrinters.value || !printerFeatureEnabled.value) return;
+  if (!printerSectionVisible.value || !printerFeatureEnabled.value) return;
   try {
     printersLoading.value = true;
     printers.value = await getPrinters();

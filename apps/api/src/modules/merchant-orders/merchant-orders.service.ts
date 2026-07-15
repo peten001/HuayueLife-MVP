@@ -289,7 +289,9 @@ export class MerchantOrdersService {
     printLogs: {
       include: {
         printer: {
-          select: { id: true, name: true, ipAddress: true, port: true },
+          // Historical display metadata only. LAN connection details remain in
+          // the gated legacy printer API and are not exposed with every order.
+          select: { id: true, name: true },
         },
       },
       orderBy: { createdAt: 'desc' as const },

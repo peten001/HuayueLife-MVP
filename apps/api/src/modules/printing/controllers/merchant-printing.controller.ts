@@ -34,6 +34,7 @@ import {
 } from '../dto/terminal.dto';
 import { PrintJobsService } from '../services/print-jobs.service';
 import { PrintRulesService } from '../services/print-rules.service';
+import { PrintingFeatureFlagsService } from '../services/printing-feature-flags.service';
 import { PrintingPrintersService } from '../services/printing-printers.service';
 import { ReceiptTemplatesService } from '../services/receipt-templates.service';
 import { TerminalsService } from '../services/terminals.service';
@@ -48,7 +49,13 @@ export class MerchantPrintingController {
     private readonly rules: PrintRulesService,
     private readonly jobs: PrintJobsService,
     private readonly terminals: TerminalsService,
+    private readonly flags: PrintingFeatureFlagsService,
   ) {}
+
+  @Get('feature-state')
+  featureState() {
+    return this.flags.status();
+  }
 
   @Get('printers')
   listPrinters(@MerchantId() merchantId: bigint) {

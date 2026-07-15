@@ -6,6 +6,7 @@ import type {
   PrintJobSource,
   PrintJobStatus,
   PrintingJob,
+  PrintingFeatureState,
   PrintingListEnvelope,
   PrintingPrinter,
   PrintingPrinterPayload,
@@ -19,6 +20,13 @@ type CollectionResponse<T> = T[] | PrintingListEnvelope<T>;
 
 function normalizeCollection<T>(value: CollectionResponse<T>): T[] {
   return Array.isArray(value) ? value : value.items;
+}
+
+export async function getPrintingFeatureState() {
+  const response = await http.get<ApiResponse<PrintingFeatureState>>(
+    '/merchant/printing/feature-state',
+  );
+  return response.data.data;
 }
 
 export async function getPrintingPrinters() {

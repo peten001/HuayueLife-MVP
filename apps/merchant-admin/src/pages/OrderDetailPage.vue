@@ -11,6 +11,7 @@ import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder, OrderStatus, OrderStatusLog, PrinterSetting } from '@/types/api';
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
+import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 
 const route = useRoute();
 const { locale, t } = useI18n();
@@ -22,8 +23,11 @@ const message = ref('');
 const operating = ref(false);
 const printing = ref(false);
 const chatOpen = ref(false);
+const legacyPrintingEnabled = ref(false);
 const chatEnabled = computed(() => canAccessMerchantFeature(merchant, 'chat'));
-const printerEnabled = computed(() => canAccessMerchantFeature(merchant, 'printers'));
+const legacyPrinterEnabled = computed(() =>
+  legacyPrintingEnabled.value && canAccessMerchantFeature(merchant, 'printers'),
+);
 let timer: number | undefined;
 
 const actions = computed(() => {
@@ -220,7 +224,7 @@ function printerLabel(id?: string | null) {
 }
 
 async function printReceipt() {
-  if (!order.value || printing.value || !printerEnabled.value) return;
+  if (!order.value || printing.value || !legacyPrinterEnabled.value) return;
   if (!selectedPrinterIds.value.length) {
     message.value = localLabel({ zh: '请选择打印机', vi: 'Vui lòng chọn máy in', en: 'Select at least one printer' });
     return;
@@ -240,12 +244,14 @@ async function printReceipt() {
 }
 
 onMounted(async () => {
-  await Promise.all([
+  const [featureState] = await Promise.all([
+    resolvePrintingFeatureState(),
     load(),
-    printerEnabled.value
-      ? loadPrinters().catch((error) => (message.value = errorMessage(error)))
-      : Promise.resolve(),
   ]);
+  legacyPrintingEnabled.value = featureState.legacyPrintingEnabled;
+  if (legacyPrinterEnabled.value) {
+    await loadPrinters().catch((error) => (message.value = errorMessage(error)));
+  }
   timer = window.setInterval(load, 5000);
 });
 onBeforeUnmount(() => window.clearInterval(timer));
@@ -299,13 +305,16 @@ type Action =
           </span>
         </button>
         <button
-          v-if="printerEnabled"
+          v-if="legacyPrinterEnabled"
           type="button"
           class="secondary"
           :disabled="printing || !selectedPrinterIds.length"
           @click="printReceipt"
         >
           {{ printButtonLabel }}
+        </button>
+        <button v-else type="button" class="secondary" disabled>
+          {{ localLabel({ zh: '打印执行端待接入', vi: 'Chờ kết nối bộ thực thi in', en: 'Print executor integration pending' }) }}
         </button>
         <button
           v-if="order.settlementStatus === 'UNSETTLED'"
@@ -331,21 +340,21 @@ type Action =
           <dt v-if="order.orderType === 'DELIVERY'">{{ t('deliveryAddress') }}</dt>
           <dd v-if="order.orderType === 'DELIVERY'">{{ order.deliveryAddress }}</dd>
           <dt>{{ t('customerRemark') }}</dt><dd>{{ order.customerRemark || t('none') }}</dd>
-          <dt v-if="printerEnabled">{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
-          <dd v-if="printerEnabled">
+          <dt v-if="legacyPrinterEnabled">{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
+          <dd v-if="legacyPrinterEnabled">
             {{ printStatusLabel() }}
             <span v-if="printLogs[0]?.createdAt"> · {{ new Date(printLogs[0].createdAt).toLocaleString() }}</span>
           </dd>
-          <dt v-if="printerEnabled">{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
-          <dd v-if="printerEnabled">
+          <dt v-if="legacyPrinterEnabled">{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
+          <dd v-if="legacyPrinterEnabled">
             <label v-for="printer in printers" :key="printer.id" class="printer-check">
               <input v-model="selectedPrinterIds" type="checkbox" :value="printer.id" />
               {{ printer.name }} · {{ printer.ipAddress }}:{{ printer.port }}
             </label>
             <span v-if="!printers.length">-</span>
           </dd>
-          <dt v-if="failedPrintLogs.length">{{ localLabel({ zh: '失败原因', vi: 'Lý do lỗi', en: 'Failure Reason' }) }}</dt>
-          <dd v-if="failedPrintLogs.length">
+          <dt v-if="legacyPrinterEnabled && failedPrintLogs.length">{{ localLabel({ zh: '失败原因', vi: 'Lý do lỗi', en: 'Failure Reason' }) }}</dt>
+          <dd v-if="legacyPrinterEnabled && failedPrintLogs.length">
             <p v-for="log in failedPrintLogs" :key="log.id" class="print-error-line">
               {{ printerLabel(log.printerId) }}：{{ log.errorMessage || '-' }}
             </p>

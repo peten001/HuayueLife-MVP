@@ -20,6 +20,7 @@ import { PrintOrderDto } from './dto/print-order.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
 import { PrintersService } from '../printers/printers.service';
+import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
 
 @Controller('merchant/orders')
 @UseGuards(JwtAuthGuard, MerchantRoleGuard)
@@ -28,6 +29,7 @@ export class MerchantOrdersController {
   constructor(
     private readonly service: MerchantOrdersService,
     private readonly printersService: PrintersService,
+    private readonly printingFlags: PrintingFeatureFlagsService,
   ) {}
 
   @Get()
@@ -140,6 +142,7 @@ export class MerchantOrdersController {
     @Param() params: IdParamDto,
     @Body() dto: PrintOrderDto,
   ) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     return this.printersService.reprintOrder(
       merchantId,
       BigInt(params.id),

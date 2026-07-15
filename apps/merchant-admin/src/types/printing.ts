@@ -24,6 +24,14 @@ export type PrintJobStatus =
   | 'CANCELLED';
 export type MerchantTerminalPlatform = 'ANDROID' | 'WEB' | 'SERVER';
 
+export interface PrintingFeatureState {
+  taskCenterEnabled: boolean;
+  automaticCreationEnabled: boolean;
+  executionEnabled: boolean;
+  legacyPrintingEnabled: boolean;
+  executionState: 'CONNECTOR_PENDING' | 'READY_FOR_CONNECTOR';
+}
+
 export interface PrintingPrinter {
   id: string;
   merchantId?: string;

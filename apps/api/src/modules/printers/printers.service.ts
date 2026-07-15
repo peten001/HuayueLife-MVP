@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { Socket } from 'node:net';
 import { PrismaService } from '../../database/prisma.service';
+import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
 import { CreatePrinterDto } from './dto/create-printer.dto';
 import { UpdatePrinterDto } from './dto/update-printer.dto';
 
@@ -129,9 +130,13 @@ const PRINT_LABELS: Record<
 export class PrintersService {
   private readonly logger = new Logger(PrintersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly printingFlags: PrintingFeatureFlagsService,
+  ) {}
 
   async createPrinter(merchantId: bigint, dto: CreatePrinterDto) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     if (dto.isDefault ?? true) {
       await this.clearDefaultPrinters(merchantId);
     }
@@ -153,6 +158,7 @@ export class PrintersService {
   }
 
   async updatePrinter(merchantId: bigint, id: bigint, dto: UpdatePrinterDto) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     await this.requirePrinter(merchantId, id);
     if (dto.isDefault === true) {
       await this.clearDefaultPrinters(merchantId, id);
@@ -176,12 +182,14 @@ export class PrintersService {
   }
 
   async deletePrinter(merchantId: bigint, id: bigint) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     await this.requirePrinter(merchantId, id);
     await this.prisma.printerSetting.delete({ where: { id } });
     return { deleted: true };
   }
 
   getPrintersByMerchant(merchantId: bigint) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     return this.prisma.printerSetting.findMany({
       where: { merchantId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
@@ -189,6 +197,7 @@ export class PrintersService {
   }
 
   getDefaultPrinter(merchantId: bigint) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     return this.prisma.printerSetting.findFirst({
       where: { merchantId, isDefault: true },
       orderBy: { createdAt: 'desc' },
@@ -196,6 +205,7 @@ export class PrintersService {
   }
 
   getAutoPrintPrinters(merchantId: bigint) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     return this.prisma.printerSetting.findMany({
       where: { merchantId, autoPrintEnabled: true, status: { not: 'OFFLINE' } },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
@@ -203,6 +213,7 @@ export class PrintersService {
   }
 
   async testPrint(merchantId: bigint, printerId: bigint) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     const printer = await this.requirePrinter(merchantId, printerId);
     const log = await this.createPrintLog({
       merchantId,
@@ -219,6 +230,7 @@ export class PrintersService {
     printedBy: PrintLogOperator = 'SYSTEM',
     printerIds?: bigint[],
   ): Promise<OrderPrintResult> {
+    this.printingFlags.assertLegacyPrintingEnabled();
     const [order, printers] = await Promise.all([
       this.prisma.order.findFirst({
         where: { id: orderId, merchantId },
@@ -278,6 +290,7 @@ export class PrintersService {
     errorMessage?: string;
     printedBy: PrintLogOperator;
   }) {
+    this.printingFlags.assertLegacyPrintingEnabled();
     return this.prisma.printLog.create({ data });
   }
 

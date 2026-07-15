@@ -3,7 +3,8 @@ import { useI18n } from '@/i18n';
 const zh = {
   title: '打印中心 Beta',
   description: '统一管理打印设备、规则、模板、任务与终端。',
-  betaNotice: 'Beta：当前任务中心尚未接入执行端，不影响旧打印配置。',
+  betaNotice: 'Beta：旧局域网直打已停用。当前打印任务中心尚未接入 Android、本地 LAN/USB 或云打印执行端，因此不会产生真实打印。',
+  legacyRedirectNotice: '旧打印配置入口已停用，当前已切换到打印中心 Beta。打印执行端尚未接入，当前不会产生真实打印。',
   printers: '打印机',
   rules: '打印规则',
   templates: '小票模板',
@@ -110,7 +111,8 @@ type PrintingTranslationKey = keyof typeof zh;
 const vi: Record<PrintingTranslationKey, string> = {
   title: 'Trung tâm in Beta',
   description: 'Quản lý tập trung máy in, quy tắc, mẫu, tác vụ và thiết bị đầu cuối.',
-  betaNotice: 'Beta: Trung tâm tác vụ chưa kết nối bộ thực thi và không ảnh hưởng cấu hình in cũ.',
+  betaNotice: 'Beta: Chức năng in trực tiếp qua mạng LAN cũ đã bị tắt. Trung tâm tác vụ in hiện chưa kết nối Android, bộ thực thi LAN/USB cục bộ hoặc dịch vụ in đám mây, vì vậy sẽ không phát sinh bản in thật.',
+  legacyRedirectNotice: 'Lối vào cấu hình in cũ đã bị tắt và hiện đã chuyển sang Trung tâm in Beta. Bộ thực thi in chưa được kết nối nên hiện sẽ không phát sinh bản in thật.',
   printers: 'Máy in',
   rules: 'Quy tắc in',
   templates: 'Mẫu hóa đơn',
@@ -215,7 +217,8 @@ const vi: Record<PrintingTranslationKey, string> = {
 const en: Record<PrintingTranslationKey, string> = {
   title: 'Printing Center Beta',
   description: 'Manage printers, rules, templates, jobs, and merchant terminals in one place.',
-  betaNotice: 'Beta: The task center is not connected to an executor and does not affect legacy print settings.',
+  betaNotice: 'Beta: Legacy direct LAN printing is disabled. The printing task center is not connected to Android, local LAN/USB, or cloud print executors, so it will not produce real prints.',
+  legacyRedirectNotice: 'The legacy print settings entry is disabled and has moved to Printing Center Beta. No print executor is connected, so no real printing will occur.',
   printers: 'Printers',
   rules: 'Print Rules',
   templates: 'Receipt Templates',

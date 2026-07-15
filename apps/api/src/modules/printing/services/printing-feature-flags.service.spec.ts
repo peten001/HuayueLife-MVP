@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { GoneException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 
@@ -20,6 +20,7 @@ describe('PrintingFeatureFlagsService safe defaults', () => {
       taskCenterEnabled: true,
       automaticCreationEnabled: false,
       executionEnabled: false,
+      legacyPrintingEnabled: false,
       executionState: 'CONNECTOR_PENDING',
     });
   });
@@ -33,15 +34,49 @@ describe('PrintingFeatureFlagsService safe defaults', () => {
     );
   });
 
-  it('accepts explicit boolean-like values without unsafe truthiness', () => {
+  it('accepts only explicit true and false values without unsafe truthiness', () => {
     values.set('PRINTING_AUTO_CREATE_ENABLED', 'true');
-    values.set('PRINTING_EXECUTION_ENABLED', '1');
+    values.set('PRINTING_EXECUTION_ENABLED', 'true');
+    values.set('LEGACY_PRINTING_ENABLED', 'false');
     expect(service.automaticCreationEnabled()).toBe(true);
     expect(service.executionEnabled()).toBe(true);
+    expect(service.legacyPrintingEnabled()).toBe(false);
 
     values.set('PRINTING_AUTO_CREATE_ENABLED', 'false');
-    values.set('PRINTING_EXECUTION_ENABLED', 'off');
+    values.set('PRINTING_EXECUTION_ENABLED', 'false');
     expect(service.automaticCreationEnabled()).toBe(false);
     expect(service.executionEnabled()).toBe(false);
+
+    values.set('PRINTING_EXECUTION_ENABLED', '1');
+    expect(() => service.executionEnabled()).toThrow(ServiceUnavailableException);
+  });
+
+  it('returns HTTP 410 and the stable code while legacy printing is off', () => {
+    expect(() => service.assertLegacyPrintingEnabled()).toThrow(GoneException);
+    try {
+      service.assertLegacyPrintingEnabled();
+    } catch (error) {
+      const exception = error as GoneException;
+      expect(exception.getStatus()).toBe(410);
+      expect(exception.getResponse()).toEqual({
+        code: 'LEGACY_PRINTING_DISABLED',
+        message: '旧打印功能已停用，请使用打印中心。当前执行端尚未接入。',
+      });
+    }
+  });
+
+  it('rejects a dual automatic-print configuration during startup validation', () => {
+    values.set('LEGACY_PRINTING_ENABLED', 'true');
+    values.set('PRINTING_AUTO_CREATE_ENABLED', 'true');
+
+    expect(() => service.onModuleInit()).toThrow(ServiceUnavailableException);
+    try {
+      service.onModuleInit();
+    } catch (error) {
+      expect((error as ServiceUnavailableException).getResponse()).toEqual({
+        code: 'PRINTING_DUAL_PATH_NOT_ALLOWED',
+        message: '旧自动直打与新自动打印任务不能同时启用',
+      });
+    }
   });
 });

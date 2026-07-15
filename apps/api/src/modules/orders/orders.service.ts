@@ -12,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AppConfigService } from '../app-config/app-config.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
+import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
 
@@ -25,6 +26,7 @@ export class OrdersService {
     private readonly printersService: PrintersService,
     private readonly tableSessionsService: TableSessionsService,
     private readonly appConfig: AppConfigService,
+    private readonly printingFlags: PrintingFeatureFlagsService,
   ) {}
 
   list(userId: bigint) {
@@ -133,7 +135,7 @@ export class OrdersService {
         });
         return order;
       });
-      if (shouldAutoPrint) {
+      if (shouldAutoPrint && this.printingFlags.legacyPrintingEnabled()) {
         void this.printersService
           .printOrder(order.merchantId, order.id, 'SYSTEM')
           .catch((error) => {

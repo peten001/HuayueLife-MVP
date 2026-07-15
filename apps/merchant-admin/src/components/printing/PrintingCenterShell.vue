@@ -1,7 +1,13 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { usePrintingI18n } from '@/i18n/printing';
 
 const { p } = usePrintingI18n();
+const route = useRoute();
+const router = useRouter();
+const showLegacyRedirectNotice = ref(false);
+const legacyNoticePath = ref('');
 
 const tabs = [
   { path: '/printing-center/printers', label: 'printers' },
@@ -10,6 +16,24 @@ const tabs = [
   { path: '/printing-center/jobs', label: 'jobs' },
   { path: '/printing-center/terminals', label: 'terminals' },
 ] as const;
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.query.from === 'legacy') {
+      showLegacyRedirectNotice.value = true;
+      legacyNoticePath.value = route.path;
+      const query = { ...route.query };
+      delete query.from;
+      void router.replace({ path: route.path, query, hash: route.hash });
+      return;
+    }
+    if (showLegacyRedirectNotice.value && route.path !== legacyNoticePath.value) {
+      showLegacyRedirectNotice.value = false;
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -20,7 +44,13 @@ const tabs = [
         <h1>{{ p('title') }}</h1>
         <p>{{ p('description') }}</p>
       </div>
+      <span class="printing-center__execution-status">{{ p('executionPending') }}</span>
     </header>
+
+    <div v-if="showLegacyRedirectNotice" class="printing-center__notice printing-center__notice--legacy" role="status">
+      <span aria-hidden="true">↪</span>
+      <strong>{{ p('legacyRedirectNotice') }}</strong>
+    </div>
 
     <div class="printing-center__notice" role="status">
       <span aria-hidden="true">ⓘ</span>
@@ -81,6 +111,20 @@ const tabs = [
   letter-spacing: 0.08em;
 }
 
+.printing-center__execution-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #81570d;
+  background: #fff1d5;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .printing-center__notice {
   display: flex;
   align-items: center;
@@ -92,6 +136,12 @@ const tabs = [
   color: #72510d;
   background: #fff9e9;
   font-size: 14px;
+}
+
+.printing-center__notice--legacy {
+  border-color: #b8d5f4;
+  color: #1c5185;
+  background: #eef6ff;
 }
 
 .printing-center__tabs {

@@ -39,6 +39,7 @@ describe('MerchantPrintingController contract', () => {
     expect(routes).toEqual(
       expect.arrayContaining([
         ['GET', 'printers'],
+        ['GET', 'feature-state'],
         ['POST', 'printers'],
         ['GET', 'printers/:id'],
         ['PATCH', 'printers/:id'],
@@ -85,6 +86,7 @@ describe('MerchantPrintingController contract', () => {
     const rules = serviceMock([]);
     const jobs = serviceMock(['retry']);
     const terminals = serviceMock([]);
+    const flags = { status: jest.fn() };
     printers.list.mockResolvedValue([]);
     jobs.retry.mockResolvedValue({ id: 301n });
     const controller = new MerchantPrintingController(
@@ -93,6 +95,7 @@ describe('MerchantPrintingController contract', () => {
       rules as never,
       jobs as never,
       terminals as never,
+      flags as never,
     );
 
     await controller.listPrinters(7n);
@@ -112,6 +115,28 @@ describe('MerchantPrintingController contract', () => {
       301n,
       '排除故障后重试',
     );
+
+    flags.status.mockReturnValue({ legacyPrintingEnabled: false });
+    expect(controller.featureState()).toEqual({ legacyPrintingEnabled: false });
+  });
+
+  it('keeps the new printing API available while legacy printing is disabled', async () => {
+    const printers = serviceMock(['list']);
+    printers.list.mockResolvedValue([{ id: 1n }]);
+    const flags = {
+      status: jest.fn().mockReturnValue({ legacyPrintingEnabled: false }),
+    };
+    const controller = new MerchantPrintingController(
+      printers as never,
+      serviceMock([]) as never,
+      serviceMock([]) as never,
+      serviceMock([]) as never,
+      serviceMock([]) as never,
+      flags as never,
+    );
+
+    await expect(controller.listPrinters(7n)).resolves.toEqual([{ id: 1n }]);
+    expect(flags.status()).toEqual({ legacyPrintingEnabled: false });
   });
 
   it('requires owner or manager for configuration mutations', () => {

@@ -14,6 +14,7 @@ import {
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 import { resolveMediaUrl } from '@/utils/media';
+import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 import type {
   OrderSpeechAnnouncement,
   OrderSpeechLanguage,
@@ -58,6 +59,7 @@ const activeQuickStatus = ref<QuickStatus>('ALL');
 const mobileSearchOpen = ref(false);
 const mobileFilterOpen = ref(false);
 const mobileSearch = ref('');
+const legacyPrintingEnabled = ref(false);
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
@@ -220,9 +222,9 @@ const emptyState = computed(() => {
     ALL: {
       title: localLabel({ zh: '今日暂无订单', vi: 'Hom nay chua co don', en: 'No orders today' }),
       description: localLabel({
-        zh: '新订单会自动显示在这里，请保持声音提醒和打印机在线。',
-        vi: 'Don moi se hien thi tai day. Hay giu am thanh va may in luon san sang.',
-        en: 'New orders will appear here automatically. Keep reminders and printers online.',
+        zh: '新订单会自动显示在这里，请保持声音提醒开启。',
+        vi: 'Don moi se hien thi tai day. Hay luon bat nhac am thanh.',
+        en: 'New orders will appear here automatically. Keep sound reminders enabled.',
       }),
     },
     DINE_IN: {
@@ -251,11 +253,17 @@ const emptyState = computed(() => {
     },
     ABNORMAL: {
       title: localLabel({ zh: '暂无异常订单', vi: 'Khong co don bat thuong', en: 'No abnormal orders' }),
-      description: localLabel({
-        zh: '当前没有打印失败或长时间未处理订单。',
-        vi: 'Khong co don in loi hoac cho xu ly qua lau.',
-        en: 'There are no failed-print or overdue pending orders right now.',
-      }),
+      description: legacyPrintingEnabled.value
+        ? localLabel({
+            zh: '当前没有打印失败或长时间未处理订单。',
+            vi: 'Khong co don in loi hoac cho xu ly qua lau.',
+            en: 'There are no failed-print or overdue pending orders right now.',
+          })
+        : localLabel({
+            zh: '当前没有长时间未处理订单。打印执行端仍待接入。',
+            vi: 'Khong co don cho xu ly qua lau. Bo thuc thi in dang cho ket noi.',
+            en: 'There are no overdue pending orders. Print executor integration is pending.',
+          }),
     },
   };
   return states[activeCategory.value];
@@ -283,9 +291,9 @@ const mobileEmptyState = computed(() => {
       en: 'No orders today',
     }),
     description: localLabel({
-      zh: '新订单会显示在这里，请保持声音和打印机在线。',
-      vi: 'Don moi se hien thi tai day. Hay giu am thanh va may in luon san sang.',
-      en: 'New orders will appear here. Keep sound and printer ready.',
+      zh: '新订单会显示在这里，请保持声音提醒开启。',
+      vi: 'Don moi se hien thi tai day. Hay luon bat nhac am thanh.',
+      en: 'New orders will appear here. Keep sound reminders enabled.',
     }),
   };
 });
@@ -436,7 +444,8 @@ function latestPrintLogsByPrinter(order: MerchantOrder) {
 
 function isAbnormalOrder(order: MerchantOrder) {
   const logs = latestPrintLogsByPrinter(order);
-  const hasFailedPrint = logs.some((log) => log.status === 'FAILED');
+  const hasFailedPrint = legacyPrintingEnabled.value
+    && logs.some((log) => log.status === 'FAILED');
   const pendingTooLong =
     order.status === 'PENDING_ACCEPTANCE'
     && Date.now() - new Date(order.createdAt).getTime() > 20 * 60 * 1000;
@@ -871,7 +880,11 @@ function iconPaths(icon: DashboardIcon) {
 }
 
 onMounted(async () => {
-  await load();
+  const [featureState] = await Promise.all([
+    resolvePrintingFeatureState(),
+    load(),
+  ]);
+  legacyPrintingEnabled.value = featureState.legacyPrintingEnabled;
   timer = window.setInterval(load, 10000);
 });
 
@@ -988,7 +1001,7 @@ function todayInVietnam() {
               <col class="col-service" />
               <col class="col-amount" />
               <col class="col-payment" />
-              <col class="col-print" />
+              <col v-if="legacyPrintingEnabled" class="col-print" />
               <col class="col-status" />
               <col class="col-time" />
               <col class="col-actions" />
@@ -1000,7 +1013,7 @@ function todayInVietnam() {
                 <th>{{ localLabel({ zh: '用餐/取餐/配送信息', vi: 'Thong tin phuc vu', en: 'Dining / pickup / delivery' }) }}</th>
                 <th>{{ localLabel({ zh: '金额', vi: 'So tien', en: 'Amount' }) }}</th>
                 <th>{{ localLabel({ zh: '收款', vi: 'Thu tien', en: 'Settlement' }) }}</th>
-                <th>{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
+                <th v-if="legacyPrintingEnabled">{{ localLabel({ zh: '打印', vi: 'In', en: 'Print' }) }}</th>
                 <th>{{ t('status') }}</th>
                 <th>{{ t('orderTime') }}</th>
                 <th class="orders-actions-head">{{ t('actions') }}</th>
@@ -1070,7 +1083,7 @@ function todayInVietnam() {
                     <small>{{ settlementHint(order) }}</small>
                   </div>
                 </td>
-                <td>
+                <td v-if="legacyPrintingEnabled">
                   <div class="status-stack">
                     <span class="mini-pill" :class="printStatusClass(order)">{{ printStatusLabel(order) }}</span>
                     <small v-if="latestPrintLogsByPrinter(order).length">
