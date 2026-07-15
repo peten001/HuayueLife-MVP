@@ -16,7 +16,7 @@ import { filterOrders } from '@/components/orders/filter-orders';
 const { t } = useI18n();
 const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
-const { historyOrders, selectedOrder, historyLoading, error } = storeToRefs(ordersStore);
+const { historyOrders, selectedOrder, historyLoading, historyErrorKey } = storeToRefs(ordersStore);
 const query = ref('');
 const activeStatus = ref('ALL');
 const date = ref(todayInVietnam());
@@ -78,9 +78,9 @@ onMounted(async () => {
     />
     <LoadingState v-if="historyLoading && !historyOrders.length" :label="t('orders.loading')" />
     <ErrorState
-      v-else-if="error && !historyOrders.length"
+      v-else-if="historyErrorKey && !historyOrders.length"
       :title="t('error.title')"
-      :description="error || t('error.description')"
+      :description="t(historyErrorKey || 'error.description')"
       :retry-label="t('common.retry')"
       :loading="historyLoading"
       @retry="refresh(false)"

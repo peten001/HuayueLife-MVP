@@ -95,7 +95,6 @@ async function verifyFixtureFacts() {
     all: '15',
     available: '13',
     'in-use': '1',
-    ready: '0',
     disabled: '1',
   };
   for (const [key, value] of Object.entries(expectedMetrics)) {
@@ -113,7 +112,6 @@ async function verifyFixtureFacts() {
   assert.equal(await page.locator('.table-card').count(), 15, 'All 15 fixture tables must render');
   assert.equal(await page.locator('.table-card[data-status="AVAILABLE"]').count(), 13);
   assert.equal(await page.locator('.table-card[data-status="IN_USE"]').count(), 1);
-  assert.equal(await page.locator('.table-card[data-status="READY_TO_CLOSE"]').count(), 0);
   assert.equal(await page.locator('.table-card[data-status="DISABLED"]').count(), 1);
 
   const table = page.getByTestId('table-card-demo-table-1');
@@ -392,7 +390,7 @@ async function verifyViewport(width, height) {
     assertNear(layout.toolbar.height, 52, 2, 'D10: toolbar height');
     assertNear(layout.search.width, 250, 2, 'D10: search width');
     assertNear(layout.search.height, 44, 2, 'D10: search height');
-    assertBetween(layout.statuses.width, 326, 342, 'D10: status filter width');
+    assertBetween(layout.statuses.width, 248, 258, 'D10: status filter width');
     assertNear(layout.statuses.height, 44, 2, 'D10: status height');
     assert.ok(
       layout.statuses.x > layout.search.x + layout.search.width + 12,
@@ -487,13 +485,13 @@ async function verifyLocales() {
       assert.deepEqual(
         (await page.locator('[data-testid="table-toolbar"] .status-filters button').allTextContents())
           .map((label) => label.trim()),
-        ['Tất cả', 'Trống', 'Đang dùng', 'Chờ đóng', 'Đã tắt'],
+        ['Tất cả', 'Trống', 'Đang dùng', 'Đã tắt'],
         'Vietnamese table states must use the approved compact labels',
       );
       assert.equal(
-        await page.getByText('Chờ đóng bàn', { exact: true }).count(),
+        await page.getByText('Chờ đóng', { exact: true }).count(),
         0,
-        'The retired Vietnamese table-state label must not remain',
+        'The backend has no independent ready-to-close state, so the fake filter must not remain',
       );
     }
 

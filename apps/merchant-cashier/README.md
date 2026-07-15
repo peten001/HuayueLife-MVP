@@ -36,7 +36,7 @@ cp apps/merchant-cashier/.env.example apps/merchant-cashier/.env.local
 | 变量 | 默认/示例值 | 用途 |
 |---|---|---|
 | `VITE_API_BASE_URL` | `https://api.huayueyouxuan.com/api/v1` | 云桥 API 根地址，必须包含 `/api/v1` |
-| `VITE_CASHIER_USE_FIXTURES` | `false` | `true` 时仅使用前端 fixture；修改后需重启 Vite |
+| `VITE_CASHIER_USE_FIXTURES` | `false` | `true` 时显示显式演示入口；只有进入演示会话后才读取 fixture，修改后需重启 Vite |
 | `VITE_MERCHANT_ADMIN_URL` | `https://admin.huayueyouxuan.com/` | 跳转到完整商家后台的公开地址 |
 
 所有 `VITE_` 变量都会写入浏览器构建产物，只能保存公开配置。禁止写入商家账号、密码、Token、Cookie、API Key、数据库连接串或任何服务端密钥。
@@ -70,6 +70,8 @@ VITE_CASHIER_USE_FIXTURES=true \
 
 Fixture 数据不是生产事实，不会验证真实权限、并发订单、Token 过期或服务器状态迁移。验收真实业务前必须关闭 fixture 并重新启动开发服务器或重新构建。
 
+Fixture 开关即使显式开启，也不会截获正常账号登录；只有用户点击“进入演示”后，当前会话才切换到本地数据源。默认值、`.env.example` 和生产构建均不会开启该入口。
+
 ## 连接真实 API
 
 开发模式未传环境变量时默认连接 `http://localhost:3001/api/v1`；生产构建默认使用公开生产 API。连接真实环境前，确认当前操作不会影响真实订单；账号和密码只在登录页面手动输入，不得写入环境文件或测试代码。
@@ -90,6 +92,16 @@ VITE_API_BASE_URL=http://localhost:3001/api/v1 \
 
 真实模式复用现有商家员工登录和 Bearer Token 认证。收银台是独立页面 Origin，不应通过 URL、`postMessage` 或 Android Bridge 从 merchant-admin 搬运 Token；首次进入独立 Origin 时需要正常登录。
 
+当前真实接口范围：
+
+- `POST /merchant/auth/login`、`GET /merchant/me`、`GET /merchant/profile`
+- `GET /merchant/tables`、`GET /merchant/table-sessions/open`
+- `GET /merchant/table-sessions/:id`、`POST /merchant/table-sessions/:id/close`
+- `GET /merchant/orders`、`GET /merchant/orders/:id`
+- 现有订单 `accept`、`reject`、`start-preparing`、`ready`、`start-delivery`、`complete` 动作
+
+真实桌台模型只有 `ACTIVE / DISABLED`，开放的 TableSession 统一显示为“用餐中”。“可关闭桌账”是 `unfinishedOrderCount === 0` 的操作条件，不是独立后端状态，因此收银台不提供虚构的“待结桌”筛选。
+
 ## 质量检查
 
 ```bash
@@ -103,6 +115,13 @@ corepack pnpm --filter @huayue-life/merchant-cashier build
 
 ```bash
 corepack pnpm --filter @huayue-life/merchant-cashier test:ui
+```
+
+启动真实模式开发服务器后，可用完全脱敏的浏览器 API Mock 验证真实 Fetch、Bearer、响应 envelope 和 UI 状态；该命令不会使用真实账号或数据库：
+
+```bash
+corepack pnpm --filter @huayue-life/merchant-cashier test:ui:real-api
+corepack pnpm --filter @huayue-life/merchant-cashier screenshots:real-api
 ```
 
 生产构建输出到 `apps/merchant-cashier/dist/`。根目录的递归 `typecheck` 和 `build` 也会自动包含本应用。

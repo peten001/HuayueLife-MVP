@@ -76,6 +76,7 @@ function changeLocale(event: Event) {
               name="username"
               autocomplete="username"
               inputmode="text"
+              maxlength="64"
               :placeholder="t('auth.usernamePlaceholder')"
               required
             />
@@ -90,6 +91,8 @@ function changeLocale(event: Event) {
               name="password"
               type="password"
               autocomplete="current-password"
+              minlength="8"
+              maxlength="128"
               :placeholder="t('auth.passwordPlaceholder')"
               required
             />

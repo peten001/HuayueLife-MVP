@@ -18,7 +18,6 @@ const props = defineProps<{
   totalTableCount: number;
   availableTableCount: number;
   inUseTableCount: number;
-  readyToCloseTableCount: number;
   disabledTableCount: number;
   newOrderCount: number;
   online: boolean;
@@ -72,7 +71,6 @@ const stats = computed(() => [
   { key: 'all', label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
   { key: 'available', label: t('stats.availableTables'), value: props.availableTableCount, tone: 'success' },
   { key: 'in-use', label: t('stats.inUseTables'), value: props.inUseTableCount, tone: 'info' },
-  { key: 'ready', label: t('stats.readyToCloseTables'), value: props.readyToCloseTableCount, tone: 'warning' },
   { key: 'disabled', label: t('stats.disabledTables'), value: props.disabledTableCount, tone: 'muted' },
 ]);
 

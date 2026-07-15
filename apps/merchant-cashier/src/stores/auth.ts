@@ -27,6 +27,7 @@ export const useAuthStore = defineStore('cashier-auth', () => {
   const hydrated = ref(false);
   const loading = ref(false);
   const error = ref('');
+  const profileError = ref('');
   const demoMode = ref(false);
   const authExpiredAt = ref<string | null>(null);
   const rememberSession = ref(hasPersistentStoredToken());
@@ -56,15 +57,20 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     if (hydrated.value) return;
     if (hydratePromise) return hydratePromise;
     hydratePromise = (async () => {
-      if (!accessToken.value || !session.value) {
+      if (!accessToken.value) {
         hydrated.value = true;
         return;
       }
       try {
         const result = await getMerchantMe();
-        session.value = sessionFromMe(result);
+        session.value = sessionFromMe(result, session.value);
         persistSession();
-        profile.value = await getMerchantProfile();
+        try {
+          await loadProfile();
+        } catch {
+          // The token and merchant identity are valid. Profile-only fields remain
+          // unknown until a later reload instead of forcing a false sign-out.
+        }
       } catch (caught) {
         // A 401 event clears the session. A network failure keeps the cached session
         // so the shell can render an explicit offline state.
@@ -93,9 +99,10 @@ export const useAuthStore = defineStore('cashier-auth', () => {
       session.value = { ...result.staff, mustChangePassword: Boolean(result.staff.mustChangePassword) };
       persistSession();
       try {
-        profile.value = await getMerchantProfile();
-      } catch (profileError) {
-        error.value = messageFromApiError(profileError);
+        await loadProfile();
+      } catch {
+        // Authentication succeeded. Merchant identity remains available from the
+        // login response while the shell presents profile-dependent fields as unknown.
       }
       hydrated.value = true;
       return session.value;
@@ -153,6 +160,7 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     accessToken.value = '';
     session.value = null;
     profile.value = null;
+    profileError.value = '';
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(cashierStorageKeys.accessToken);
       window.localStorage.removeItem(cashierStorageKeys.staffSession);
@@ -187,6 +195,18 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     }
   }
 
+  async function loadProfile() {
+    profileError.value = '';
+    try {
+      profile.value = await getMerchantProfile();
+      return profile.value;
+    } catch (caught) {
+      profile.value = null;
+      profileError.value = messageFromApiError(caught);
+      throw caught;
+    }
+  }
+
   return {
     session,
     profile,
@@ -194,6 +214,7 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     hydrated,
     loading,
     error,
+    profileError,
     demoMode,
     authExpiredAt,
     isAuthenticated,
@@ -208,6 +229,7 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     login,
     enterDemoSession,
     changePassword,
+    refreshProfile: loadProfile,
     logout,
     clearError,
   };
@@ -237,11 +259,17 @@ function hasPersistentStoredToken() {
   return Boolean(window.localStorage.getItem(cashierStorageKeys.accessToken));
 }
 
-function sessionFromMe(result: Awaited<ReturnType<typeof getMerchantMe>>): MerchantStaffSession {
+function sessionFromMe(
+  result: Awaited<ReturnType<typeof getMerchantMe>>,
+  previous: MerchantStaffSession | null,
+): MerchantStaffSession {
   return {
     id: result.user.sub,
     username: result.user.username,
-    displayName: result.user.username,
+    displayName:
+      previous?.id === result.user.sub && previous.displayName
+        ? previous.displayName
+        : result.user.username,
     role: result.user.role,
     mustChangePassword: Boolean(result.user.mustChangePassword),
     merchant: result.user.merchant,

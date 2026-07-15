@@ -16,7 +16,7 @@ const { t } = useI18n();
 const tablesStore = useTablesStore();
 const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
-const { tableCards, selectedTableId, loading, error } = storeToRefs(tablesStore);
+const { tableCards, selectedTableId, loading, errorKey } = storeToRefs(tablesStore);
 const { liveOrders, historyOrders } = storeToRefs(ordersStore);
 const query = ref('');
 const activeStatus = ref('ALL');
@@ -25,7 +25,6 @@ const statusOptions = [
   { value: 'ALL', labelKey: 'common.all' },
   { value: 'AVAILABLE', labelKey: 'table.status.available' },
   { value: 'IN_USE', labelKey: 'table.status.inUse' },
-  { value: 'READY_TO_CLOSE', labelKey: 'table.status.readyToClose' },
   { value: 'DISABLED', labelKey: 'table.status.disabled' },
 ];
 
@@ -113,9 +112,9 @@ onMounted(async () => {
       </SearchFilterBar>
       <LoadingState v-if="loading && !tableCards.length" :label="t('table.loading')" />
       <ErrorState
-        v-else-if="error && !tableCards.length"
+        v-else-if="errorKey && !tableCards.length"
         :title="t('error.title')"
-        :description="error || t('error.description')"
+        :description="t(errorKey || 'error.description')"
         :retry-label="t('common.retry')"
         :loading="loading"
         @retry="refresh(false)"

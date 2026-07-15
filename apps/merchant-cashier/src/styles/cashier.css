@@ -701,7 +701,6 @@
 .table-card:hover:not(:disabled) { border-color: var(--cashier-table-hover-border); transform: translateY(-1px); }
 .table-card--selected { border-color: var(--cashier-green); box-shadow: var(--cashier-shadow-green); }
 .table-card--in-use { border-color: var(--cashier-table-in-use-border); background: var(--cashier-blue-soft); }
-.table-card--ready-to-close { border-color: var(--cashier-table-ready-border); background: var(--cashier-red-soft); }
 .table-card--disabled { color: var(--cashier-text-muted); background: var(--cashier-surface-muted); box-shadow: none; }
 .table-card__topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; min-width: 0; }
 .table-card__topline > strong { overflow: hidden; font-size: 16px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
@@ -715,7 +714,6 @@
   font-weight: 650;
 }
 .table-card--in-use .table-card__state { color: var(--cashier-table-in-use-text); background: var(--cashier-table-in-use-state-bg); }
-.table-card--ready-to-close .table-card__state { color: var(--cashier-table-ready-text); background: var(--cashier-table-ready-state-bg); }
 .table-card__number { color: var(--cashier-text-muted); font-size: 10px; font-weight: 500; }
 .table-card__amount { align-self: center; color: var(--cashier-text); font-size: 17px; font-weight: 700; }
 .table-card__meta { display: flex; align-items: center; justify-content: space-between; gap: 5px; color: var(--cashier-text-secondary); font-size: 9px; }

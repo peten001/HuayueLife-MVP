@@ -6,7 +6,8 @@ import CashierNavigation from './CashierNavigation.vue';
 
 defineProps<{
   merchantName?: string;
-  businessOpen: boolean;
+  merchantLogoUrl?: string;
+  businessOpen: boolean | null;
   businessHoursLabel?: string;
   demoMode?: boolean;
   staffName?: string;
@@ -27,6 +28,7 @@ defineEmits<{
 
     <CashierMerchantPanel
       :merchant-name="merchantName"
+      :merchant-logo-url="merchantLogoUrl"
       :business-open="businessOpen"
       :business-hours-label="businessHoursLabel"
       :demo-mode="demoMode"

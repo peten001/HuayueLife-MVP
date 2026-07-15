@@ -35,4 +35,14 @@ describe('cashier translation dictionaries', () => {
       expect(placeholders(enMessages[key]), `en:${key}`).toEqual(expected);
     }
   });
+
+  it('uses the real compact Vietnamese table states without a fake close-ready state', () => {
+    expect([
+      viMessages['common.all'],
+      viMessages['table.status.available'],
+      viMessages['table.status.inUse'],
+      viMessages['table.status.disabled'],
+    ]).toEqual(['Tất cả', 'Trống', 'Đang dùng', 'Đã tắt']);
+    expect('table.status.readyToClose' in viMessages).toBe(false);
+  });
 });

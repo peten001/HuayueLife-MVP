@@ -14,7 +14,7 @@ import { filterOrders } from '@/components/orders/filter-orders';
 const { t } = useI18n();
 const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
-const { pendingOrders, selectedOrder, pendingLoading, error } = storeToRefs(ordersStore);
+const { pendingOrders, selectedOrder, pendingLoading, pendingErrorKey } = storeToRefs(ordersStore);
 const query = ref('');
 const activeStatus = ref('ALL');
 const statusOptions = [
@@ -58,9 +58,9 @@ onMounted(() => refresh(false));
     />
     <LoadingState v-if="pendingLoading && !pendingOrders.length" :label="t('orders.loading')" />
     <ErrorState
-      v-else-if="error && !pendingOrders.length"
+      v-else-if="pendingErrorKey && !pendingOrders.length"
       :title="t('error.title')"
-      :description="error || t('error.description')"
+      :description="t(pendingErrorKey || 'error.description')"
       :retry-label="t('common.retry')"
       :loading="pendingLoading"
       @retry="refresh(false)"

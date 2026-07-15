@@ -10,12 +10,14 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:ui": "node scripts/verify-ui.mjs",
+    "test:ui:real-api": "node scripts/capture-real-api-ui.mjs --verify-only",
     "test:watch": "vitest",
     "screenshots": "node scripts/capture-ui.mjs",
     "screenshots:refine": "node scripts/capture-refine-ui.mjs",
     "screenshots:brand-refine": "node scripts/capture-brand-refine-ui.mjs",
     "screenshots:final": "node scripts/capture-final-layout-ui.mjs",
     "screenshots:width-refine": "node scripts/capture-width-refine-ui.mjs",
+    "screenshots:real-api": "node scripts/capture-real-api-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

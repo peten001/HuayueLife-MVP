@@ -21,7 +21,6 @@ const disabled = computed(() => status.value === 'DISABLED');
 const duration = computed(() => elapsedDuration(props.table.currentSession?.openedAt));
 const stateLabel = computed(() => {
   if (status.value === 'DISABLED') return t('table.status.disabled');
-  if (status.value === 'READY_TO_CLOSE') return t('table.status.readyToClose');
   if (status.value === 'IN_USE') return t('table.status.inUse');
   return t('table.status.available');
 });

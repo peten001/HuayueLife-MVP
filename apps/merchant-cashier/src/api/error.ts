@@ -27,6 +27,23 @@ export function messageFromApiError(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
+export function apiErrorTranslationKey(
+  error: unknown,
+  fallback = 'error.operationFailed',
+) {
+  if (!(error instanceof CashierApiError)) return fallback;
+  if (error.code === 'TABLE_SESSION_HAS_UNFINISHED_ORDERS') {
+    return 'table.closeConflict';
+  }
+  if (error.code === 'NETWORK_ERROR') return 'error.network';
+  if (error.code === 'REQUEST_ABORTED') return 'error.requestTimeout';
+  if (error.status === 401) return 'error.unauthorized';
+  if (error.status === 403) return 'error.forbidden';
+  if (error.status === 409) return 'error.conflict';
+  if (error.status >= 500) return 'error.server';
+  return fallback;
+}
+
 export function normalizeApiErrorPayload(value: unknown): ApiErrorResponse | null {
   if (!value || typeof value !== 'object') return null;
   const payload = value as Partial<ApiErrorResponse>;

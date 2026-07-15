@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import {
+  apiErrorTranslationKey,
+  CashierApiError,
   closeTableSession,
   getTableSessionDetail,
   listDiningTables,
@@ -26,9 +28,11 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   const detailLoading = ref(false);
   const closing = ref(false);
   const error = ref('');
+  const errorKey = ref('');
   const lastRefreshAt = ref<string | null>(null);
   let fetchRequest: Promise<TableCardView[]> | null = null;
   let detailRequestSequence = 0;
+  let dataGeneration = 0;
 
   const tableCards = computed(() => buildTableCards(tables.value, openSessions.value));
   const selectedTable = computed(
@@ -38,27 +42,37 @@ export const useTablesStore = defineStore('cashier-tables', () => {
 
   function fetchTables() {
     if (fetchRequest) return fetchRequest;
+    const generation = dataGeneration;
     loading.value = true;
     error.value = '';
-    fetchRequest = Promise.all([listDiningTables(), listOpenTableSessions()])
-      .then(([nextTables, nextSessions]) => {
+    errorKey.value = '';
+    const request = Promise.all([listDiningTables(), listOpenTableSessions()])
+      .then(async ([nextTables, nextSessions]) => {
+        const nextCards = buildTableCards(nextTables, nextSessions);
+        if (generation !== dataGeneration) return nextCards;
         tables.value = nextTables;
         openSessions.value = nextSessions;
         lastRefreshAt.value = new Date().toISOString();
-        return tableCards.value;
+        await refreshSelectedSession();
+        return nextCards;
       })
       .catch((caught) => {
-        error.value = messageFromApiError(caught);
+        if (generation === dataGeneration) {
+          error.value = messageFromApiError(caught);
+          errorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        }
         throw caught;
       })
       .finally(() => {
-        loading.value = false;
-        fetchRequest = null;
+        if (fetchRequest === request) fetchRequest = null;
+        if (generation === dataGeneration) loading.value = false;
       });
-    return fetchRequest;
+    fetchRequest = request;
+    return request;
   }
 
   async function selectTable(tableOrId: TableCardView | string | null) {
+    const generation = dataGeneration;
     const requestSequence = ++detailRequestSequence;
     if (!tableOrId) {
       selectedTableId.value = '';
@@ -75,13 +89,17 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     if (!table.currentSession) return null;
     detailLoading.value = true;
     error.value = '';
+    errorKey.value = '';
     try {
       const detail = await getTableSessionDetail(table.currentSession.id);
-      if (requestSequence === detailRequestSequence) selectedSessionDetail.value = detail;
+      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
+        selectedSessionDetail.value = detail;
+      }
       return detail;
     } catch (caught) {
-      if (requestSequence === detailRequestSequence) {
+      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
         error.value = messageFromApiError(caught);
+        errorKey.value = apiErrorTranslationKey(caught, 'error.description');
       }
       throw caught;
     } finally {
@@ -95,18 +113,25 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     if (!canCloseTableSession(session)) {
       throw new Error('Table session still has unfinished orders');
     }
+    const generation = dataGeneration;
     closing.value = true;
     error.value = '';
+    errorKey.value = '';
     try {
       const closed = await closeTableSession(session.id);
-      selectedSessionDetail.value = closed;
-      await fetchTables();
+      if (generation === dataGeneration) {
+        selectedSessionDetail.value = closed;
+        await fetchTables();
+      }
       return closed;
     } catch (caught) {
-      error.value = messageFromApiError(caught);
+      if (generation === dataGeneration) {
+        error.value = messageFromApiError(caught);
+        errorKey.value = apiErrorTranslationKey(caught, 'table.closeFailed');
+      }
       throw caught;
     } finally {
-      closing.value = false;
+      if (generation === dataGeneration) closing.value = false;
     }
   }
 
@@ -117,11 +142,58 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     detailLoading.value = false;
   }
 
+  async function refreshSelectedSession() {
+    const tableId = selectedTableId.value;
+    if (!tableId) return null;
+    const table = tableCards.value.find((item) => item.id === tableId);
+    if (!table) {
+      clearSelection();
+      return null;
+    }
+    if (!table.currentSession) {
+      detailRequestSequence += 1;
+      selectedSessionDetail.value = null;
+      detailLoading.value = false;
+      return null;
+    }
+
+    const sessionId = table.currentSession.id;
+    const requestSequence = ++detailRequestSequence;
+    const changedSession = selectedSessionDetail.value?.id !== sessionId;
+    if (changedSession) selectedSessionDetail.value = null;
+    detailLoading.value = true;
+    try {
+      const detail = await getTableSessionDetail(sessionId);
+      if (requestSequence === detailRequestSequence && selectedTableId.value === tableId) {
+        selectedSessionDetail.value = detail;
+      }
+      return detail;
+    } catch (caught) {
+      if (requestSequence === detailRequestSequence) {
+        error.value = messageFromApiError(caught);
+        errorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        if (caught instanceof CashierApiError && caught.code === 'TABLE_SESSION_NOT_FOUND') {
+          selectedSessionDetail.value = null;
+        }
+      }
+      // A list refresh remains useful even when the selected detail request fails.
+      return null;
+    } finally {
+      if (requestSequence === detailRequestSequence) detailLoading.value = false;
+    }
+  }
+
   function clear() {
+    dataGeneration += 1;
+    fetchRequest = null;
     tables.value = [];
     openSessions.value = [];
     clearSelection();
     error.value = '';
+    errorKey.value = '';
+    loading.value = false;
+    closing.value = false;
+    lastRefreshAt.value = null;
     livePolling.stop();
   }
 
@@ -146,6 +218,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     detailLoading,
     closing,
     error,
+    errorKey,
     lastRefreshAt,
     polling: livePolling.started,
     canCloseSelectedSession,

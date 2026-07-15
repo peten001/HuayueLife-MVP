@@ -5,17 +5,15 @@ import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import BillSummary from './BillSummary.vue';
-import { formatVietnamTime, formatVnd } from '@/domain';
+import { formatVietnamTime, formatVnd, summarizeTableSessionItems } from '@/domain';
 import {
   elapsedDuration,
-  type CashierOrderView,
-  type CashierTableSessionDetailView,
-  type CashierTableView,
 } from '@/components/common/view-models';
+import type { TableCardView, TableSessionDetail, TableSessionOrder } from '@/types';
 
 const props = defineProps<{
-  table?: CashierTableView | null;
-  session?: CashierTableSessionDetailView | null;
+  table?: TableCardView | null;
+  session?: TableSessionDetail | null;
   closing?: boolean;
 }>();
 
@@ -28,6 +26,7 @@ const canClose = computed(
   () => props.session?.status === 'OPEN' && Number(props.session.unfinishedOrderCount || 0) === 0,
 );
 const duration = computed(() => elapsedDuration(props.session?.openedAt));
+const itemSummary = computed(() => summarizeTableSessionItems(props.session));
 const durationLabel = computed(() => {
   if (!duration.value) return t('common.notAvailable');
   if (duration.value.abnormal) return t('table.timeAbnormal');
@@ -37,13 +36,12 @@ const durationLabel = computed(() => {
 });
 const tableStatus = computed(() => props.table?.operationalStatus || 'IN_USE');
 const tableStatusLabel = computed(() => {
-  if (tableStatus.value === 'READY_TO_CLOSE') return t('table.status.readyToClose');
   if (tableStatus.value === 'DISABLED') return t('table.status.disabled');
   if (tableStatus.value === 'AVAILABLE') return t('table.status.available');
   return t('table.status.inUse');
 });
 
-function orderItemCount(order: CashierOrderView) {
+function orderItemCount(order: TableSessionOrder) {
   return (order.items || []).reduce((total, item) => total + Number(item.quantity || 0), 0);
 }
 </script>
@@ -84,6 +82,19 @@ function orderItemCount(order: CashierOrderView) {
             <span>{{ t('table.itemCount', { count: orderItemCount(order) }) }}</span>
           </div>
         </article>
+
+        <section v-if="itemSummary.length" class="table-bill-item-summary">
+          <div class="table-bill-item-summary__heading">
+            <strong>{{ t('bill.itemSummary') }}</strong>
+            <span>{{ t('order.itemKinds', { count: itemSummary.length }) }}</span>
+          </div>
+          <ul>
+            <li v-for="item in itemSummary" :key="item.name">
+              <span>{{ item.name }} × {{ item.quantity }}</span>
+              <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
+            </li>
+          </ul>
+        </section>
       </div>
     </section>
 

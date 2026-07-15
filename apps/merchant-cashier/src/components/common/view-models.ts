@@ -73,7 +73,7 @@ export interface CashierTableView {
   tableName?: string | null;
   status?: 'ACTIVE' | 'DISABLED';
   currentSession?: CashierTableSessionSummaryView | null;
-  operationalStatus?: 'AVAILABLE' | 'IN_USE' | 'READY_TO_CLOSE' | 'DISABLED';
+  operationalStatus?: 'AVAILABLE' | 'IN_USE' | 'DISABLED';
 }
 
 export interface CashierTableSessionDetailView extends CashierTableSessionSummaryView {

@@ -14,11 +14,9 @@ export function buildTableCards(
     const currentSession = sessionsByTable.get(table.id) ?? null;
     const operationalStatus = table.status === 'DISABLED'
       ? 'DISABLED'
-      : !currentSession
-        ? 'AVAILABLE'
-        : currentSession.unfinishedOrderCount > 0
-          ? 'IN_USE'
-          : 'READY_TO_CLOSE';
+      : currentSession
+        ? 'IN_USE'
+        : 'AVAILABLE';
     return {
       ...table,
       currentSession,
@@ -27,6 +25,30 @@ export function buildTableCards(
         currentSession?.status === 'OPEN' && currentSession.unfinishedOrderCount === 0,
     };
   });
+}
+
+export function summarizeTableSessionItems(
+  session: TableSessionDetail | null | undefined,
+) {
+  const itemsByName = new Map<string, { name: string; quantity: number; subtotalVnd: bigint }>();
+  session?.orders
+    .filter((order) => order.status !== 'CANCELLED')
+    .flatMap((order) => order.items ?? [])
+    .forEach((item) => {
+      const name = item.productNameZhSnapshot?.trim() || '—';
+      const current = itemsByName.get(name) ?? { name, quantity: 0, subtotalVnd: 0n };
+      current.quantity += Number(item.quantity || 0);
+      try {
+        current.subtotalVnd += BigInt(item.subtotalVnd || 0);
+      } catch {
+        // Invalid legacy monetary values are ignored instead of inventing a total.
+      }
+      itemsByName.set(name, current);
+    });
+  return [...itemsByName.values()].map((item) => ({
+    ...item,
+    subtotalVnd: item.subtotalVnd.toString(),
+  }));
 }
 
 export function canCloseTableSession(

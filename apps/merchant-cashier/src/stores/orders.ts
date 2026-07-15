@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import {
+  apiErrorTranslationKey,
+  CashierApiError,
   getMerchantOrder,
   listMerchantOrders,
   messageFromApiError,
@@ -35,6 +37,10 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   const detailLoading = ref(false);
   const actionLoadingId = ref('');
   const error = ref('');
+  const pendingErrorKey = ref('');
+  const activeErrorKey = ref('');
+  const historyErrorKey = ref('');
+  const detailErrorKey = ref('');
   const lastLiveRefreshAt = ref<string | null>(null);
   const lastHistoryRefreshAt = ref<string | null>(null);
   const historyFilters = ref<MerchantOrderFilters>({ date: todayInVietnam() });
@@ -42,6 +48,9 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   let activeRequest: Promise<MerchantOrder[]> | null = null;
   let liveRequest: Promise<void> | null = null;
   let detailRequestSequence = 0;
+  let historyRequestSequence = 0;
+  let dataGeneration = 0;
+  let liveQueryRevision = 0;
 
   const loading = computed(
     () => pendingLoading.value || activeLoading.value || historyLoading.value || detailLoading.value,
@@ -50,62 +59,93 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
 
   function fetchPending() {
     if (pendingRequest) return pendingRequest;
+    const generation = dataGeneration;
+    const revision = liveQueryRevision;
     pendingLoading.value = true;
     error.value = '';
-    pendingRequest = listMerchantOrders({ status: 'PENDING_ACCEPTANCE' })
+    pendingErrorKey.value = '';
+    const request = listMerchantOrders({ status: 'PENDING_ACCEPTANCE' })
       .then((result) => {
-        pendingOrders.value = mergeOrders(result);
-        notifyPendingSnapshot();
-        return pendingOrders.value;
+        const nextOrders = mergeOrders(result);
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          pendingOrders.value = nextOrders;
+          notifyPendingSnapshot();
+        }
+        return nextOrders;
       })
       .catch((caught) => {
-        error.value = messageFromApiError(caught);
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          error.value = messageFromApiError(caught);
+          pendingErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        }
         throw caught;
       })
       .finally(() => {
-        pendingLoading.value = false;
-        pendingRequest = null;
+        if (pendingRequest === request) pendingRequest = null;
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          pendingLoading.value = false;
+        }
       });
-    return pendingRequest;
+    pendingRequest = request;
+    return request;
   }
 
   function fetchActive() {
     if (activeRequest) return activeRequest;
+    const generation = dataGeneration;
+    const revision = liveQueryRevision;
     activeLoading.value = true;
     error.value = '';
-    activeRequest = Promise.all(
+    activeErrorKey.value = '';
+    const request = Promise.all(
         ACTIVE_ORDER_STATUSES.map((status) => listMerchantOrders({ status })),
       )
       .then((groups) => {
-        activeOrders.value = mergeOrders(...groups);
-        return activeOrders.value;
+        const nextOrders = mergeOrders(...groups);
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          activeOrders.value = nextOrders;
+        }
+        return nextOrders;
       })
       .catch((caught) => {
-        error.value = messageFromApiError(caught);
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          error.value = messageFromApiError(caught);
+          activeErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        }
         throw caught;
       })
       .finally(() => {
-        activeLoading.value = false;
-        activeRequest = null;
+        if (activeRequest === request) activeRequest = null;
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          activeLoading.value = false;
+        }
       });
-    return activeRequest;
+    activeRequest = request;
+    return request;
   }
 
   function refreshLiveOrders() {
     if (liveRequest) return liveRequest;
-    liveRequest = Promise.all([fetchPending(), fetchActive()])
-      .then(() => {
+    const generation = dataGeneration;
+    const revision = liveQueryRevision;
+    const request = Promise.all([fetchPending(), fetchActive()])
+      .then(async () => {
+        if (generation !== dataGeneration || revision !== liveQueryRevision) return;
         lastLiveRefreshAt.value = new Date().toISOString();
+        await refreshSelectedOrder();
       })
       .finally(() => {
-        liveRequest = null;
+        if (liveRequest === request) liveRequest = null;
       });
-    return liveRequest;
+    liveRequest = request;
+    return request;
   }
 
   async function fetchHistory(filters: MerchantOrderFilters = historyFilters.value) {
+    const requestSequence = ++historyRequestSequence;
     historyLoading.value = true;
     error.value = '';
+    historyErrorKey.value = '';
     historyFilters.value = { ...filters };
     try {
       const groups = filters.status
@@ -115,18 +155,25 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
               listMerchantOrders({ ...filters, status }),
             ),
           );
-      historyOrders.value = mergeOrders(...groups);
-      lastHistoryRefreshAt.value = new Date().toISOString();
-      return historyOrders.value;
+      const nextOrders = mergeOrders(...groups);
+      if (requestSequence === historyRequestSequence) {
+        historyOrders.value = nextOrders;
+        lastHistoryRefreshAt.value = new Date().toISOString();
+      }
+      return nextOrders;
     } catch (caught) {
-      error.value = messageFromApiError(caught);
+      if (requestSequence === historyRequestSequence) {
+        error.value = messageFromApiError(caught);
+        historyErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+      }
       throw caught;
     } finally {
-      historyLoading.value = false;
+      if (requestSequence === historyRequestSequence) historyLoading.value = false;
     }
   }
 
   async function selectOrder(orderOrId: MerchantOrder | string | null) {
+    const generation = dataGeneration;
     const requestSequence = ++detailRequestSequence;
     if (!orderOrId) {
       selectedOrder.value = null;
@@ -139,14 +186,18 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
         ? findCachedOrder(id) ?? null
         : orderOrId;
     detailLoading.value = true;
+    detailErrorKey.value = '';
     try {
       const detail = await getMerchantOrder(id);
-      if (requestSequence === detailRequestSequence) selectedOrder.value = detail;
-      updateCachedOrder(detail);
+      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
+        selectedOrder.value = detail;
+        updateCachedOrder(detail);
+      }
       return detail;
     } catch (caught) {
-      if (requestSequence === detailRequestSequence) {
+      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
         error.value = messageFromApiError(caught);
+        detailErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
       }
       throw caught;
     } finally {
@@ -164,23 +215,59 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     if (!canRunOrderAction(order, action)) {
       throw new Error(`Action ${action} is not allowed from ${order.status}`);
     }
+    const generation = dataGeneration;
+    invalidateLiveRequests();
+    detailRequestSequence += 1;
     actionLoadingId.value = id;
     error.value = '';
     try {
       const updated = await runMerchantOrderAction(id, action, reason);
-      selectedOrder.value = updated;
-      updateCachedOrder(updated);
+      if (generation === dataGeneration) {
+        selectedOrder.value = updated;
+        updateCachedOrder(updated);
+      }
       return updated;
     } catch (caught) {
-      error.value = messageFromApiError(caught);
-      try {
-        await selectOrder(id);
-      } catch {
-        // Preserve the action error; a best-effort refresh must not mask it.
+      if (generation === dataGeneration) {
+        error.value = messageFromApiError(caught);
+        try {
+          await selectOrder(id);
+        } catch {
+          // Preserve the action error; a best-effort refresh must not mask it.
+        }
       }
       throw caught;
     } finally {
-      actionLoadingId.value = '';
+      if (generation === dataGeneration) actionLoadingId.value = '';
+    }
+  }
+
+  async function refreshSelectedOrder() {
+    const id = selectedOrder.value?.id;
+    if (!id) return null;
+    const generation = dataGeneration;
+    const requestSequence = ++detailRequestSequence;
+    try {
+      const detail = await getMerchantOrder(id);
+      if (
+        generation === dataGeneration
+        && requestSequence === detailRequestSequence
+        && selectedOrder.value?.id === id
+      ) {
+        selectedOrder.value = detail;
+        updateCachedOrder(detail);
+      }
+      return detail;
+    } catch (caught) {
+      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
+        error.value = messageFromApiError(caught);
+        detailErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        if (caught instanceof CashierApiError && caught.status === 404) {
+          selectedOrder.value = null;
+        }
+      }
+      // Live list data is still valid even when the selected detail disappeared.
+      return null;
     }
   }
 
@@ -221,14 +308,36 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     ).find((order) => order.id === id);
   }
 
+  function invalidateLiveRequests() {
+    liveQueryRevision += 1;
+    pendingRequest = null;
+    activeRequest = null;
+    liveRequest = null;
+    pendingLoading.value = false;
+    activeLoading.value = false;
+  }
+
   function clear() {
+    dataGeneration += 1;
+    invalidateLiveRequests();
+    historyRequestSequence += 1;
     pendingOrders.value = [];
     activeOrders.value = [];
     historyOrders.value = [];
     detailRequestSequence += 1;
     selectedOrder.value = null;
+    pendingLoading.value = false;
+    activeLoading.value = false;
+    historyLoading.value = false;
     detailLoading.value = false;
+    actionLoadingId.value = '';
     error.value = '';
+    pendingErrorKey.value = '';
+    activeErrorKey.value = '';
+    historyErrorKey.value = '';
+    detailErrorKey.value = '';
+    lastLiveRefreshAt.value = null;
+    lastHistoryRefreshAt.value = null;
     livePolling.stop();
   }
 
@@ -251,6 +360,10 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     detailLoading,
     actionLoadingId,
     error,
+    pendingErrorKey,
+    activeErrorKey,
+    historyErrorKey,
+    detailErrorKey,
     lastLiveRefreshAt,
     lastHistoryRefreshAt,
     historyFilters,

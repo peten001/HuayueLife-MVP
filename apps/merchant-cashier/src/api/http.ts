@@ -60,7 +60,9 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
         details: errorBody,
       });
       reportFailure(error);
-      if (response.status === 401) dispatchWindowEvent(CASHIER_UNAUTHORIZED_EVENT);
+      if (response.status === 401 && authenticated) {
+        dispatchWindowEvent(CASHIER_UNAUTHORIZED_EVENT);
+      }
       throw error;
     }
 

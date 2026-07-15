@@ -4,7 +4,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
-import { currentBusinessHoursRange, isWithinBusinessHours } from '@/domain';
+import {
+  currentBusinessHoursRange,
+  isWithinBusinessHours,
+  resolveMediaUrl,
+} from '@/domain';
+import { apiErrorTranslationKey } from '@/api';
 import {
   useAuthStore,
   useNetworkStore,
@@ -35,7 +40,7 @@ const soundStore = useSoundStore();
 const uiStore = useUiStore();
 const { session, profile, isAuthenticated, demoMode } = storeToRefs(authStore);
 const { pendingOrders, activeOrders, selectedOrder, actionLoadingId } = storeToRefs(ordersStore);
-const { tableCards, selectedTableId, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
+const { tableCards, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
 const { detailOpen } = storeToRefs(uiStore);
@@ -52,6 +57,7 @@ const identity = computed(() => ({
     || '',
   staffName: session.value?.displayName || session.value?.username || '',
   role: session.value?.role || 'STAFF',
+  merchantLogoUrl: resolveMediaUrl(profile.value?.logoUrl),
 }));
 const availableTableCount = computed(
   () => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length,
@@ -59,17 +65,17 @@ const availableTableCount = computed(
 const inUseTableCount = computed(
   () => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length,
 );
-const readyToCloseTableCount = computed(
-  () => tableCards.value.filter((table) => table.operationalStatus === 'READY_TO_CLOSE').length,
-);
 const disabledTableCount = computed(
   () => tableCards.value.filter((table) => table.operationalStatus === 'DISABLED').length,
 );
 const showingTableDetail = computed(() => route.path === '/tables');
-const plannedBusinessOpen = computed(() => isWithinBusinessHours(profile.value?.businessHours));
 const plannedHoursRange = computed(() => currentBusinessHoursRange(profile.value?.businessHours));
+const plannedBusinessOpen = computed<boolean | null>(() =>
+  profile.value ? isWithinBusinessHours(profile.value.businessHours) : null,
+);
 const businessHoursLabel = computed(() => {
-  if (!plannedHoursRange.value) return t('shell.businessHoursUnknown');
+  if (!profile.value) return t('shell.businessHoursUnknown');
+  if (!plannedHoursRange.value) return t('shell.businessClosed');
   return `${t(plannedBusinessOpen.value ? 'shell.businessOpen' : 'shell.businessClosed')} · ${plannedHoursRange.value}`;
 });
 const confirmationTitle = computed(() => {
@@ -119,8 +125,8 @@ async function executeOrderAction(action: CashierOrderAction) {
     await ordersStore.runAction(selectedOrder.value.id, action);
     await Promise.allSettled([ordersStore.refreshLiveOrders(), tablesStore.fetchTables()]);
     uiStore.pushToast(t('order.actionSuccess'), 'success');
-  } catch {
-    uiStore.pushToast(t('order.actionFailed'), 'error');
+  } catch (caught) {
+    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.actionFailed')), 'error');
   } finally {
     pendingOrderAction.value = null;
   }
@@ -136,8 +142,8 @@ async function closeSession() {
     uiStore.closeDetail();
     await router.replace({ path: '/tables', query: {} });
     uiStore.pushToast(t('table.closeSuccess'), 'success');
-  } catch {
-    uiStore.pushToast(t('table.closeFailed'), 'error');
+  } catch (caught) {
+    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.closeFailed')), 'error');
   } finally {
     closingSession.value = false;
   }
@@ -159,18 +165,17 @@ async function openNewOrders() {
 
 async function recoverData() {
   await Promise.allSettled([
+    ...(profile.value ? [] : [authStore.refreshProfile()]),
     ordersStore.refreshLiveOrders(),
     tablesStore.fetchTables(),
   ]);
-  if (selectedTableId.value) {
-    await tablesStore.selectTable(selectedTableId.value).catch(() => undefined);
-  }
 }
 
 watch(isAuthenticated, async (authenticated) => {
   if (!authenticated && !loggingOut.value) {
-    ordersStore.stopLivePolling();
-    tablesStore.stopLivePolling();
+    ordersStore.clear();
+    tablesStore.clear();
+    uiStore.closeDetail();
     await router.replace({ path: '/login', query: { expired: '1' } });
   }
 });
@@ -217,6 +222,7 @@ onBeforeUnmount(() => {
   <div class="cashier-shell">
     <CashierSidebar
       :merchant-name="identity.merchantName"
+      :merchant-logo-url="identity.merchantLogoUrl"
       :business-open="plannedBusinessOpen"
       :business-hours-label="businessHoursLabel"
       :demo-mode="demoMode"
@@ -232,7 +238,6 @@ onBeforeUnmount(() => {
       :total-table-count="tableCards.length"
       :available-table-count="availableTableCount"
       :in-use-table-count="inUseTableCount"
-      :ready-to-close-table-count="readyToCloseTableCount"
       :disabled-table-count="disabledTableCount"
       :new-order-count="pendingOrders.length"
       :online="online"

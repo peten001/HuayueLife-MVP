@@ -59,7 +59,6 @@ export interface TableSessionDetail extends TableSessionSummary {
 export type TableOperationalStatus =
   | 'AVAILABLE'
   | 'IN_USE'
-  | 'READY_TO_CLOSE'
   | 'DISABLED';
 
 export interface TableCardView extends DiningTable {

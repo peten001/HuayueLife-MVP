@@ -74,7 +74,14 @@
   background: transparent;
 }
 
-.cashier-merchant-panel > strong {
+.cashier-merchant-panel__identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.cashier-merchant-panel__identity > strong {
   overflow: hidden;
   font-size: 18px;
   font-weight: 700;
@@ -82,6 +89,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.cashier-merchant-panel__logo {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  color: var(--cashier-green);
+  background: rgb(255 255 255 / 6%);
+  font-size: 13px;
+}
+
+.cashier-merchant-panel__logo img { width: 100%; height: 100%; object-fit: cover; }
+.cashier-merchant-panel__logo b { font-weight: 700; }
 
 .cashier-merchant-panel__meta {
   display: flex;
@@ -100,6 +124,9 @@
   height: 9px;
   flex-basis: 9px;
 }
+
+.cashier-merchant-panel .business-state--unknown { color: var(--cashier-shell-muted); }
+.cashier-merchant-panel .business-state--unknown i { background: var(--cashier-gray); }
 
 .cashier-merchant-panel .demo-badge {
   padding: 4px 7px;
@@ -224,7 +251,7 @@
 
 .cashier-top-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 482px;
   height: 76px;
   min-width: 0;
@@ -433,12 +460,10 @@
 }
 
 .table-card--in-use { border-color: #b8d3f7; background: #fbfdff; }
-.table-card--ready-to-close { border-color: #f1cf90; background: #fffdf8; }
 .table-card--disabled { opacity: 0.55; }
 .table-card__topline > strong { font-size: 19px; }
 .table-card__state { padding: 5px 8px; font-size: 13px; }
 .table-card--available .table-card__state { color: var(--cashier-green-strong); background: var(--cashier-green-soft); }
-.table-card--ready-to-close .table-card__state { color: #a4660d; background: var(--cashier-orange-soft); }
 .table-card__meta {
   justify-content: flex-start;
   gap: 20px;
@@ -496,7 +521,6 @@
   white-space: nowrap;
 }
 
-.table-detail-state--ready-to-close { color: #f3bf62; background: rgb(243 165 36 / 14%); }
 .table-detail-state--available { color: #62dda5; background: rgb(25 195 125 / 14%); }
 .table-detail-header p {
   display: flex;
@@ -543,6 +567,28 @@
 .bill-order-row__heading strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .bill-order-row__meta { color: var(--cashier-shell-muted); font-size: 12px; }
 .bill-order-row__meta b { color: var(--cashier-green); font-size: 14px; }
+.table-bill-item-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--cashier-shell-border);
+  border-radius: 8px;
+  background: var(--cashier-white-alpha-03);
+}
+.table-bill-item-summary__heading,
+.table-bill-item-summary li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.table-bill-item-summary__heading strong { font-size: 13px; }
+.table-bill-item-summary__heading span,
+.table-bill-item-summary li { color: var(--cashier-shell-muted); font-size: 11px; }
+.table-bill-item-summary ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.table-bill-item-summary li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-bill-item-summary li b { flex: 0 0 auto; color: var(--cashier-green); font-size: 11px; }
 .table-bill-detail .bill-summary { flex: 0 0 auto; padding-block: 12px; }
 .table-bill-detail .bill-summary > div { min-height: 28px; }
 .table-bill-detail .bill-summary__total dd { color: var(--cashier-green); font-size: 28px; }
@@ -676,7 +722,9 @@
   .cashier-brand__name { display: block; font-size: 17px; white-space: nowrap; }
   .cashier-sidebar .cashier-brand__name { line-height: 28px; transform: translateY(-3px); }
   .cashier-merchant-panel { top: 88px; left: 14px; width: 158px; height: 82px; padding: 10px 0; gap: 8px; }
-  .cashier-merchant-panel > strong { font-size: 15px; }
+  .cashier-merchant-panel__identity { gap: 7px; }
+  .cashier-merchant-panel__identity > strong { font-size: 15px; }
+  .cashier-merchant-panel__logo { width: 26px; height: 26px; flex-basis: 26px; border-radius: 7px; }
   .cashier-merchant-panel .business-state { font-size: 12px; }
   .cashier-merchant-panel .demo-badge { font-size: 10px; }
   .cashier-sidebar .cashier-navigation { top: 190px; left: 8px; width: 170px; gap: 7px; }
@@ -718,8 +766,7 @@
   .search-filter-bar--tables .status-filters button:nth-child(1) { min-width: 56px; }
   .search-filter-bar--tables .status-filters button:nth-child(2) { min-width: 56px; }
   .search-filter-bar--tables .status-filters button:nth-child(3) { min-width: 78px; }
-  .search-filter-bar--tables .status-filters button:nth-child(4) { min-width: 76px; }
-  .search-filter-bar--tables .status-filters button:nth-child(5) { min-width: 60px; }
+  .search-filter-bar--tables .status-filters button:nth-child(4) { min-width: 60px; }
   .search-filter-bar--tables .table-toolbar__refresh { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .search-filter-bar--tables .table-toolbar__refresh svg { width: 20px; height: 20px; }
   .cashier-workspace__content--table-overview > .table-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; width: 100%; padding: 0 0 16px; }
@@ -747,6 +794,11 @@
   .bill-order-row__heading strong,
   .bill-order-row__meta b { font-size: 12px; }
   .bill-order-row__meta { font-size: 10px; }
+  .table-bill-item-summary { gap: 6px; padding: 9px 10px; }
+  .table-bill-item-summary__heading strong { font-size: 11px; }
+  .table-bill-item-summary__heading span,
+  .table-bill-item-summary li,
+  .table-bill-item-summary li b { font-size: 9px; }
   .table-bill-detail .bill-summary { padding-block: 8px; }
   .table-bill-detail .bill-summary > div { min-height: 25px; }
   .table-bill-detail .bill-summary__total dd { font-size: 22px; }
