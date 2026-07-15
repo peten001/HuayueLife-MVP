@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Deliberately not a wildcard: <usb-device /> would make this app an attach candidate for every
+      USB peripheral on the terminal. Standard class-7 printers can wake the manifest receiver.
+      Vendor-specific BULK OUT printers remain fully selectable in-app and are observed by the
+      running service's dynamic receiver; after process death they require boot recovery with an
+      existing permission or an explicit user reopen/reauthorization. The resolver below never
+      substitutes an unrelated device and no VID/PID is fixed in the application.
+    -->
+    <usb-device class="7" />
+</resources>

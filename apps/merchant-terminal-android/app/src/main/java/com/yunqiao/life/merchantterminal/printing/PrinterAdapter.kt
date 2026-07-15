@@ -78,6 +78,8 @@ sealed interface PrintResult {
         val technicalDetail: String? = null,
         val plannedBytes: Int = 0,
         val writtenBytes: Int = 0,
+        /** True once Android invoked bulkTransfer; a reported zero does not prove zero output. */
+        val ioAttempted: Boolean = false,
     ) : PrintResult
 }
 
@@ -90,6 +92,7 @@ enum class UsbPrintErrorCode {
     USB_BULK_OUT_NOT_FOUND,
     USB_OPEN_FAILED,
     USB_CLAIM_INTERFACE_FAILED,
+    USB_IO_BUSY,
     USB_DEVICE_DETACHED,
     USB_WRITE_TIMEOUT,
     USB_PARTIAL_WRITE,

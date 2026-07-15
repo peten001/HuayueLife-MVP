@@ -78,20 +78,24 @@ data class UsbConnectionOption(
 
 object UsbCandidateClassifier {
     const val USB_PRINTER_CLASS = 7
+    private val NEVER_PRINT_CLASSES = setOf(3, 8, 9) // HID, mass storage, hub
 
     fun isLikelyPrinter(device: UsbDeviceDescriptor): Boolean =
-        device.interfaces.any { usbInterface ->
-            usbInterface.interfaceClass == USB_PRINTER_CLASS ||
-                usbInterface.endpoints.any { endpoint ->
-                    endpoint.type == UsbEndpointType.BULK &&
-                        endpoint.direction == UsbEndpointDirection.OUT
-                }
-        }
+        !isKnownUnsafeDevice(device) &&
+            device.interfaces.any { it.interfaceClass == USB_PRINTER_CLASS }
+
+    fun isKnownUnsafeDevice(device: UsbDeviceDescriptor): Boolean =
+        device.deviceClass in NEVER_PRINT_CLASSES
+
+    fun isKnownUnsafeInterface(usbInterface: UsbInterfaceDescriptor): Boolean =
+        usbInterface.interfaceClass in NEVER_PRINT_CLASSES
 }
 
 object UsbEndpointSelector {
     fun allBulkOutOptions(device: UsbDeviceDescriptor): List<UsbConnectionOption> =
-        device.interfaces.flatMap { usbInterface ->
+        if (UsbCandidateClassifier.isKnownUnsafeDevice(device)) emptyList() else
+            device.interfaces.filterNot(UsbCandidateClassifier::isKnownUnsafeInterface)
+                .flatMap { usbInterface ->
             usbInterface.endpoints
                 .filter { endpoint ->
                     endpoint.type == UsbEndpointType.BULK &&

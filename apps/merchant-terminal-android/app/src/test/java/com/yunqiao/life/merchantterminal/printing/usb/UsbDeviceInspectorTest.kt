@@ -19,7 +19,7 @@ class UsbDeviceInspectorTest {
     }
 
     @Test
-    fun `vendor specific bulk out device is a candidate`() {
+    fun `vendor specific bulk out remains manually selectable but is not auto classified`() {
         val descriptor = device(
             interfaces = listOf(
                 usbInterface(
@@ -30,8 +30,25 @@ class UsbDeviceInspectorTest {
             ),
         )
 
-        assertTrue(descriptor.likelyPrinter)
+        assertFalse(descriptor.likelyPrinter)
         assertEquals(4, descriptor.bulkOutOptions.single().interfaceId)
+    }
+
+    @Test
+    fun `mass storage bulk out is never selectable as a printer transport`() {
+        val descriptor = device(
+            interfaces = listOf(
+                usbInterface(
+                    id = 8,
+                    interfaceClass = 8,
+                    endpoints = listOf(endpoint(direction = UsbEndpointDirection.OUT)),
+                ),
+            ),
+        )
+
+        assertFalse(descriptor.likelyPrinter)
+        assertTrue(descriptor.bulkOutOptions.isEmpty())
+        assertNull(UsbEndpointSelector.select(descriptor))
     }
 
     @Test

@@ -231,6 +231,14 @@
                     android:layout_marginStart="8dp"
                     android:text="@string/usb_print_image" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/save_usb_configuration_button"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/usb_save_configuration" />
+
                 <ProgressBar
                     android:id="@+id/usb_action_progress"
                     android:layout_width="32dp"

@@ -4,6 +4,14 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 14+ connectedDevice FGS prerequisite. The app never changes network state;
+         this normal permission keeps a system-managed sticky restart safe if USB permission is
+         revoked between service scheduling and startForeground(). -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <uses-feature
         android:name="android.hardware.usb.host"
@@ -21,6 +29,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.YunQiaoMerchantTerminal"
         android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".connector.ConnectorSetupActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.YunQiaoMerchantTerminal.Diagnostics"
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="DiscouragedApi" />
 
         <activity
             android:name=".diagnostics.DiagnosticsActivity"
@@ -54,6 +70,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".connector.PrinterConnectorService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="false"
+            tools:ignore="ForegroundServicePermission" />
+        <!-- Normal starts also require an explicit UsbManager grant. CHANGE_NETWORK_STATE is the
+             Android 14+ connectedDevice prerequisite fallback for a system sticky-restart race;
+             connector code never invokes an API that changes network state. -->
+
+        <receiver
+            android:name=".connector.ConnectorBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".connector.ConnectorUsbAttachReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </receiver>
     </application>
 
 </manifest>

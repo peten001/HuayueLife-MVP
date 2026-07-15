@@ -141,7 +141,7 @@ object QrCodeBitmapRenderer {
             BarcodeFormat.QR_CODE,
             size,
             size,
-            mapOf(EncodeHintType.MARGIN to 1, EncodeHintType.CHARACTER_SET to "UTF-8"),
+            mapOf(EncodeHintType.MARGIN to 4, EncodeHintType.CHARACTER_SET to "UTF-8"),
         )
         val pixels = IntArray(size * size)
         for (y in 0 until size) {

@@ -69,6 +69,8 @@ class SmokeReceiptRendererTest {
             val colors = pixels(bitmap).toSet()
             assertTrue(Color.BLACK in colors)
             assertTrue(Color.WHITE in colors)
+            assertTrue((0 until bitmap.width).all { x -> bitmap.getPixel(x, 0) == Color.WHITE })
+            assertTrue((0 until bitmap.height).all { y -> bitmap.getPixel(0, y) == Color.WHITE })
         } finally {
             bitmap.recycle()
         }

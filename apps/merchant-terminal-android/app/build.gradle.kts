@@ -3,6 +3,7 @@ import org.gradle.api.provider.Provider
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.kapt")
 }
 
 fun configValue(
@@ -16,7 +17,7 @@ fun configValue(
 val terminalVersionCode = configValue(
     propertyName = "terminalVersionCode",
     environmentName = "TERMINAL_VERSION_CODE",
-    fallback = "3",
+    fallback = "4",
 ).map { value ->
     value.toIntOrNull()
         ?.takeIf { it in 1..2_100_000_000 }
@@ -25,7 +26,7 @@ val terminalVersionCode = configValue(
 val terminalVersionName = configValue(
     propertyName = "terminalVersionName",
     environmentName = "TERMINAL_VERSION_NAME",
-    fallback = "0.2.0-usb-smoke",
+    fallback = "1.0.0-rc1",
 ).map { value ->
     value.takeIf { it.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")) }
         ?: error("terminalVersionName must contain only letters, digits, dots, underscores, or hyphens.")
@@ -63,6 +64,16 @@ val releaseTrustedResourceHosts = configValue(
     propertyName = "trustedResourceHostsRelease",
     environmentName = "TRUSTED_RESOURCE_HOSTS_RELEASE",
     fallback = "",
+)
+val debugConnectorApiBaseUrl = configValue(
+    propertyName = "connectorApiBaseUrlDebug",
+    environmentName = "CONNECTOR_API_BASE_URL_DEBUG",
+    fallback = "https://api.invalid/api/v1/",
+)
+val releaseConnectorApiBaseUrl = configValue(
+    propertyName = "connectorApiBaseUrlRelease",
+    environmentName = "CONNECTOR_API_BASE_URL_RELEASE",
+    fallback = "https://api.invalid/api/v1/",
 )
 val buildRevision = configValue(
     propertyName = "buildRevision",
@@ -148,6 +159,11 @@ android {
                 debugTrustedResourceHosts.get().asBuildConfigString(),
             )
             buildConfigField("String", "BUILD_CHANNEL", "debug".asBuildConfigString())
+            buildConfigField(
+                "String",
+                "CONNECTOR_API_BASE_URL",
+                debugConnectorApiBaseUrl.get().asBuildConfigString(),
+            )
         }
         release {
             isMinifyEnabled = true
@@ -171,6 +187,11 @@ android {
                 releaseTrustedResourceHosts.get().asBuildConfigString(),
             )
             buildConfigField("String", "BUILD_CHANNEL", "release".asBuildConfigString())
+            buildConfigField(
+                "String",
+                "CONNECTOR_API_BASE_URL",
+                releaseConnectorApiBaseUrl.get().asBuildConfigString(),
+            )
         }
     }
 
@@ -212,15 +233,22 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    kapt("androidx.room:room-compiler:2.6.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

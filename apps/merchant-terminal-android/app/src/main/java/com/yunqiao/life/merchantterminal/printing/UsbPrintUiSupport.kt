@@ -14,6 +14,7 @@ fun UsbPrintErrorCode.userMessageResource(): Int = when (this) {
     UsbPrintErrorCode.USB_BULK_OUT_NOT_FOUND -> R.string.usb_error_bulk_out_not_found
     UsbPrintErrorCode.USB_OPEN_FAILED -> R.string.usb_error_open_failed
     UsbPrintErrorCode.USB_CLAIM_INTERFACE_FAILED -> R.string.usb_error_claim_failed
+    UsbPrintErrorCode.USB_IO_BUSY -> R.string.usb_error_io_busy
     UsbPrintErrorCode.USB_DEVICE_DETACHED -> R.string.usb_error_device_detached
     UsbPrintErrorCode.USB_WRITE_TIMEOUT -> R.string.usb_error_write_timeout
     UsbPrintErrorCode.USB_PARTIAL_WRITE -> R.string.usb_error_partial_write

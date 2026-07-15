@@ -39,6 +39,7 @@ class ChunkedUsbWriterTest {
         assertEquals(1, callCount)
         assertEquals(UsbPrintErrorCode.USB_PARTIAL_WRITE, result.code)
         assertEquals(4_091, result.writtenBytes)
+        assertTrue(result.ioAttempted)
     }
 
     @Test
@@ -54,6 +55,7 @@ class ChunkedUsbWriterTest {
 
         assertEquals(UsbPrintErrorCode.USB_WRITE_TIMEOUT, result.code)
         assertEquals(0, result.writtenBytes)
+        assertTrue(result.ioAttempted)
     }
 
     @Test
@@ -72,6 +74,7 @@ class ChunkedUsbWriterTest {
 
         assertEquals(UsbPrintErrorCode.USB_DEVICE_DETACHED, result.code)
         assertTrue(!called)
+        assertTrue(!result.ioAttempted)
     }
 
     @Test
@@ -84,5 +87,6 @@ class ChunkedUsbWriterTest {
         ) as BulkWriteOutcome.Failed
 
         assertEquals(UsbPrintErrorCode.USB_WRITE_FAILED, result.code)
+        assertTrue(result.ioAttempted)
     }
 }

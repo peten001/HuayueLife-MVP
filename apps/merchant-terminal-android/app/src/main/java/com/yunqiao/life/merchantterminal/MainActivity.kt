@@ -33,6 +33,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.yunqiao.life.merchantterminal.data.TerminalSettings
+import com.yunqiao.life.merchantterminal.connector.ConnectorSetupActivity
+import com.yunqiao.life.merchantterminal.connector.ConnectorServiceStarter
 import com.yunqiao.life.merchantterminal.databinding.ActivityMainBinding
 import com.yunqiao.life.merchantterminal.diagnostics.DeviceDiagnostics
 import com.yunqiao.life.merchantterminal.diagnostics.DiagnosticsActivity
@@ -149,6 +151,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     override fun onStart() {
         super.onStart()
         registerNetworkCallback()
+        lifecycleScope.launch { ConnectorServiceStarter.startIfEligible(applicationContext) }
     }
 
     override fun onResume() {
@@ -440,6 +443,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
                 menu.add(Menu.NONE, MENU_CASHIER, Menu.NONE, R.string.menu_cashier)
                 menu.add(Menu.NONE, MENU_DEVICE_DIAGNOSTICS, Menu.NONE, R.string.menu_device_diagnostics)
                 menu.add(Menu.NONE, MENU_USB_DIAGNOSTICS, Menu.NONE, R.string.menu_usb_diagnostics)
+                menu.add(Menu.NONE, MENU_CONNECTOR_SETUP, Menu.NONE, R.string.menu_connector_setup)
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         MENU_CASHIER -> {
@@ -457,6 +461,10 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
                                     UsbPrinterDiagnosticsActivity::class.java,
                                 ),
                             )
+                            true
+                        }
+                        MENU_CONNECTOR_SETUP -> {
+                            startActivity(Intent(this@MainActivity, ConnectorSetupActivity::class.java))
                             true
                         }
                         else -> false
@@ -655,6 +663,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         const val MENU_CASHIER = 1
         const val MENU_DEVICE_DIAGNOSTICS = 2
         const val MENU_USB_DIAGNOSTICS = 3
+        const val MENU_CONNECTOR_SETUP = 4
         const val ANY_MIME_TYPE = "*/*"
         val MIME_TOKEN = Regex("^[a-z0-9][a-z0-9!#$&^_.+\\-]*$")
     }

@@ -24,9 +24,11 @@ class UsbEscPosAdapter(
     context: Context,
     private val inspector: UsbDeviceInspector = UsbDeviceInspector(context),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val ownershipGate: UsbIoOwnershipGate = ProcessUsbIoOwnership.gate,
 ) : PrinterAdapter {
     private val usbManager = context.applicationContext.getSystemService(UsbManager::class.java)
     private val mutex = Mutex()
+    private val ownershipToken = Any()
 
     @Volatile
     private var connection: UsbDeviceConnection? = null
@@ -50,7 +52,18 @@ class UsbEscPosAdapter(
                         UsbPrintErrorCode.UNKNOWN_USB_ERROR,
                         "UsbEscPosAdapter requires USB connection config.",
                     )
-                mutex.withLock { connectLocked(usbConfig) }
+                if (!ownershipGate.tryAcquire(ownershipToken)) {
+                    throw UsbPrinterException(
+                        UsbPrintErrorCode.USB_IO_BUSY,
+                        "Another in-process component owns the USB print channel.",
+                    )
+                }
+                try {
+                    mutex.withLock { connectLocked(usbConfig) }
+                } catch (error: Throwable) {
+                    ownershipGate.release(ownershipToken)
+                    throw error
+                }
             }
         }
 
@@ -94,6 +107,7 @@ class UsbEscPosAdapter(
                     technicalDetail = outcome.detail,
                     plannedBytes = document.bytes.size,
                     writtenBytes = outcome.writtenBytes,
+                    ioAttempted = outcome.ioAttempted,
                 )
             }
         }
@@ -101,7 +115,11 @@ class UsbEscPosAdapter(
 
     override suspend fun disconnect() {
         withContext(ioDispatcher) {
-            mutex.withLock { disconnectLocked() }
+            try {
+                mutex.withLock { disconnectLocked() }
+            } finally {
+                ownershipGate.release(ownershipToken)
+            }
         }
     }
 
@@ -118,6 +136,8 @@ class UsbEscPosAdapter(
     fun closeConnectionImmediately() {
         runCatching { connection?.close() }
         connection = null
+        // Do not release here: a blocked bulkTransfer may not have unwound yet. The owning
+        // coroutine must call disconnect() from NonCancellable after the I/O frame exits.
     }
 
     private fun connectLocked(config: PrinterConnectionConfig.Usb) {
@@ -346,6 +366,7 @@ sealed interface BulkWriteOutcome {
         val code: UsbPrintErrorCode,
         val writtenBytes: Int,
         val detail: String,
+        val ioAttempted: Boolean,
     ) : BulkWriteOutcome
 }
 
@@ -367,6 +388,7 @@ object ChunkedUsbWriter {
                     UsbPrintErrorCode.USB_DEVICE_DETACHED,
                     offset,
                     "USB device detached during write.",
+                    ioAttempted = false,
                 )
             }
             val length = minOf(chunkSize, data.size - offset)
@@ -382,6 +404,7 @@ object ChunkedUsbWriter {
                     },
                     offset,
                     throwable::class.java.simpleName.take(80),
+                    ioAttempted = true,
                 )
             }
             val elapsedMs = (nanoTime() - startedAt).coerceAtLeast(0L) / 1_000_000L
@@ -395,6 +418,7 @@ object ChunkedUsbWriter {
                     code = code,
                     writtenBytes = offset,
                     detail = "bulkTransfer returned $transferred after ${elapsedMs}ms.",
+                    ioAttempted = true,
                 )
             }
             if (transferred != length) {
@@ -402,6 +426,7 @@ object ChunkedUsbWriter {
                     code = UsbPrintErrorCode.USB_PARTIAL_WRITE,
                     writtenBytes = offset + max(0, transferred),
                     detail = "Planned chunk $length bytes, wrote $transferred bytes.",
+                    ioAttempted = true,
                 )
             }
             offset += transferred

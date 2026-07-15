@@ -23,11 +23,16 @@
     <string name="usb_test_connection">测试连接 / Kiểm tra kết nối</string>
     <string name="usb_print_ascii">打印 ASCII 测试</string>
     <string name="usb_print_image">打印中越英图片测试</string>
+    <string name="usb_save_configuration">保存 USB 配置</string>
+    <string name="usb_configuration_saved">USB 配置已保存；打印服务仍需单独启用。</string>
     <string name="usb_no_test_result">尚未执行测试。测试连接只打开接口，不代表已成功出纸。</string>
     <string name="usb_no_devices">未检测到 USB 设备 / Không tìm thấy thiết bị USB</string>
     <string name="usb_no_bulk_endpoint">没有 BULK OUT 端点；可查看接口详情，但无法发送测试小票。</string>
     <string name="usb_possible_printer_prefix">可能的打印设备</string>
-    <string name="usb_other_device_prefix">其他 USB 设备</string>
+    <string name="usb_other_device_prefix">未识别 USB 设备（需人工核对）</string>
+    <string name="usb_unrecognized_confirmation_title">确认这是打印机</string>
+    <string name="usb_unrecognized_confirmation_message">此设备不是标准 USB Printer Class：%1$s（VID %2$d / PID %3$d）。请先核对设备标签，确认不是 U 盘、键盘、Hub 或其他外设。继续后本次页面会允许 claim 接口或发送测试数据。</string>
+    <string name="usb_unrecognized_confirmation_continue">已核对，继续</string>
     <string name="usb_host_summary">当前设备：%1$s · Android %2$s · USB Host：%3$s</string>
     <string name="usb_supported">支持</string>
     <string name="usb_not_supported">不支持</string>
@@ -44,6 +49,8 @@
     <string name="usb_error_bulk_out_not_found">没有找到可写入的 BULK OUT 端点。</string>
     <string name="usb_error_open_failed">无法打开 USB 设备。</string>
     <string name="usb_error_claim_failed">无法独占所选 USB 接口或切换 alternateSetting。</string>
+    <string name="usb_error_io_busy">USB 打印通道正在被正式连接器使用，请先关闭连接器再运行诊断。</string>
+    <string name="usb_connector_active_diagnostics_blocked">正式打印连接器正在运行。为防止两路数据交错，连接、测试打印、授权和保存配置已禁用；请先在终端设置中关闭连接器。</string>
     <string name="usb_error_device_detached">写入期间 USB 设备被拔出。</string>
     <string name="usb_error_write_timeout">USB 写入超时。</string>
     <string name="usb_error_partial_write">USB 只写入了部分数据；为防重复，本次不会自动重试。</string>

@@ -57,6 +57,44 @@ class EscPosRasterEncoderTest {
     }
 
     @Test
+    fun `long raster is emitted as bounded strips with one final cut`() {
+        val raster = MonochromeRaster(
+            width = 8,
+            height = 300,
+            blackPixels = BooleanArray(8 * 300),
+        )
+
+        val encoded = EscPosRasterEncoder.encode(raster, CutMode.HALF)
+        val header = byteArrayOf(0x1d, 0x76, 0x30, 0x00)
+        val headerOffsets = encoded.indices.filter { offset ->
+            offset + header.size <= encoded.size &&
+                encoded.copyOfRange(offset, offset + header.size).contentEquals(header)
+        }
+
+        assertEquals(listOf(5, 269), headerOffsets)
+        assertEquals(0, encoded[11].toInt() and 0xff)
+        assertEquals(1, encoded[12].toInt() and 0xff)
+        assertEquals(44, encoded[275].toInt() and 0xff)
+        assertEquals(0, encoded[276].toInt() and 0xff)
+        assertArrayEquals(byteArrayOf(0x1d, 0x56, 0x01), encoded.takeLast(3).toByteArray())
+    }
+
+    @Test
+    fun `raster above the bounded height is rejected without truncation`() {
+        val raster = MonochromeRaster(
+            width = 200,
+            height = 8_001,
+            blackPixels = BooleanArray(200 * 8_001),
+        )
+
+        val error = assertThrows(UsbPrinterException::class.java) {
+            EscPosRasterEncoder.encode(raster, CutMode.NONE)
+        }
+
+        assertEquals(UsbPrintErrorCode.INVALID_PRINT_WIDTH, error.code)
+    }
+
+    @Test
     fun `ascii receipt contains no customer data and defaults can omit cut`() {
         val encoded = AsciiSmokeReceiptEncoder.encode(
             deviceModel = "Generic Terminal",

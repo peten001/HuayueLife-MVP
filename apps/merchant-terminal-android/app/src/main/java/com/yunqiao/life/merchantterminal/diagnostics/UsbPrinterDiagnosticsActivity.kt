@@ -14,6 +14,7 @@ import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -21,6 +22,12 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.databinding.ActivityUsbPrinterDiagnosticsBinding
+import com.yunqiao.life.merchantterminal.connector.ConnectorStartGate
+import com.yunqiao.life.merchantterminal.connector.ConnectorRuntimeState
+import com.yunqiao.life.merchantterminal.data.ConnectorSettings
+import com.yunqiao.life.merchantterminal.data.UsbPrinterBinding
+import com.yunqiao.life.merchantterminal.data.local.LocalPrintingDatabase
+import com.yunqiao.life.merchantterminal.data.local.PrinterBindingEntity
 import com.yunqiao.life.merchantterminal.printing.CutMode
 import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.printing.PrintActionGate
@@ -42,6 +49,7 @@ import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.UsbEscPosAdapter
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionController
 import com.yunqiao.life.merchantterminal.printing.userMessageResource
+import com.yunqiao.life.merchantterminal.security.TerminalCredentialStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -51,13 +59,15 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.security.MessageDigest
 
-/** Foreground-only smoke-test screen. It never consumes orders or schedules background work. */
+/** User-controlled USB diagnostics and binding screen; test buttons never consume order data. */
 class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityUsbPrinterDiagnosticsBinding
     private lateinit var inspector: UsbDeviceInspector
     private lateinit var printerAdapter: UsbEscPosAdapter
     private lateinit var permissionController: UsbPermissionController
+    private lateinit var connectorSettings: ConnectorSettings
 
     private var devices: List<UsbDeviceDescriptor> = emptyList()
     private var endpointOptions: List<UsbConnectionOption> = emptyList()
@@ -68,6 +78,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
     private var isBusy = false
     private var suppressSpinnerCallbacks = false
     private val printActionGate = PrintActionGate()
+    private val confirmedUnrecognizedDevices = mutableSetOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +89,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
 
         inspector = UsbDeviceInspector(applicationContext)
         printerAdapter = UsbEscPosAdapter(applicationContext, inspector)
+        connectorSettings = ConnectorSettings(applicationContext)
         permissionController = UsbPermissionController(
             activity = this,
             onPermissionResult = ::handlePermissionResult,
@@ -89,7 +101,12 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         configureSpinners()
         configureThreshold()
         configureActions()
-        refreshDevices(savedInstanceState?.getString(KEY_SELECTED_DEVICE))
+        val restoredDevice = savedInstanceState?.getString(KEY_SELECTED_DEVICE)
+        if (restoredDevice != null) {
+            refreshDevices(restoredDevice)
+        } else {
+            lifecycleScope.launch { restoreSavedConfiguration() }
+        }
         consumePermissionResultIntent(intent)
         enterImmersiveMode()
     }
@@ -200,13 +217,16 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         binding.refreshUsbDevicesButton.setOnClickListener { refreshDevices(selectedDeviceName) }
         binding.requestUsbPermissionButton.setOnClickListener { requestSelectedDevicePermission() }
         binding.testUsbConnectionButton.setOnClickListener {
-            runSingleAction(::testConnection)
+            afterUnrecognizedDeviceConfirmation { runSingleAction(::testConnection) }
         }
         binding.printAsciiTestButton.setOnClickListener {
-            runSingleAction(::printAsciiSmokeReceipt)
+            afterUnrecognizedDeviceConfirmation { runSingleAction(::printAsciiSmokeReceipt) }
         }
         binding.printImageTestButton.setOnClickListener {
-            runSingleAction(::printImageSmokeReceipt)
+            afterUnrecognizedDeviceConfirmation { runSingleAction(::printImageSmokeReceipt) }
+        }
+        binding.saveUsbConfigurationButton.setOnClickListener {
+            afterUnrecognizedDeviceConfirmation(::saveSelectedConfiguration)
         }
     }
 
@@ -306,6 +326,11 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
     }
 
     private fun runSingleAction(action: suspend (TestSelection) -> Unit) {
+        if (ConnectorRuntimeState.serviceActive) {
+            showFailure(UsbPrintErrorCode.USB_IO_BUSY)
+            updateControlAvailability()
+            return
+        }
         if (!printActionGate.tryAcquire(SystemClock.elapsedRealtime())) return
         val selection = currentSelection()
         if (selection == null) {
@@ -334,6 +359,33 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                 setBusy(false)
             }
         }
+    }
+
+    private fun afterUnrecognizedDeviceConfirmation(action: () -> Unit) {
+        val device = selectedDevice()
+        if (
+            device == null || device.likelyPrinter ||
+            device.deviceName in confirmedUnrecognizedDevices
+        ) {
+            action()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.usb_unrecognized_confirmation_title)
+            .setMessage(
+                getString(
+                    R.string.usb_unrecognized_confirmation_message,
+                    device.displayName.take(120),
+                    device.vendorId,
+                    device.productId,
+                ),
+            )
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.usb_unrecognized_confirmation_continue) { _, _ ->
+                confirmedUnrecognizedDevices += device.deviceName
+                action()
+            }
+            .show()
     }
 
     private suspend fun testConnection(selection: TestSelection) {
@@ -383,11 +435,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                 ),
             )
             try {
-                val raster = EscPosRasterEncoder.bitmapToRaster(
-                    bitmap,
-                    threshold,
-                )
-                EscPosRasterEncoder.encode(raster, cutMode)
+                EscPosRasterEncoder.encodeBitmap(bitmap, threshold, cutMode)
             } finally {
                 bitmap.recycle()
             }
@@ -491,12 +539,18 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
 
     private fun updateControlAvailability() {
         val device = selectedDevice()
+        val connectorOwnsUsb = ConnectorRuntimeState.serviceActive
         val ready = inspector.isUsbHostSupported &&
             device?.hasPermission == true &&
             endpointOptions.isNotEmpty() &&
-            !isBusy
+            !isBusy &&
+            !connectorOwnsUsb
+        if (connectorOwnsUsb && !isBusy) {
+            binding.usbActionResultText.setText(R.string.usb_connector_active_diagnostics_blocked)
+        }
         binding.requestUsbPermissionButton.isEnabled =
-            !isBusy && device != null && !device.hasPermission && !permissionController.hasPendingRequest()
+            !isBusy && !connectorOwnsUsb && device != null && !device.hasPermission &&
+            !permissionController.hasPendingRequest()
         binding.requestUsbPermissionButton.text = getString(
             if (device?.hasPermission == true) R.string.usb_permission_granted
             else R.string.usb_request_permission,
@@ -504,13 +558,15 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         binding.testUsbConnectionButton.isEnabled = ready
         binding.printAsciiTestButton.isEnabled = ready
         binding.printImageTestButton.isEnabled = ready
+        binding.saveUsbConfigurationButton.isEnabled = ready
         binding.refreshUsbDevicesButton.isEnabled = !isBusy
-        binding.usbDeviceSpinner.isEnabled = !isBusy && devices.isNotEmpty()
-        binding.usbEndpointSpinner.isEnabled = !isBusy && endpointOptions.isNotEmpty()
-        binding.paperWidthSpinner.isEnabled = !isBusy
-        binding.customPrintDotsInput.isEnabled = !isBusy
-        binding.cutModeSpinner.isEnabled = !isBusy
-        binding.imageThresholdSeekbar.isEnabled = !isBusy
+        binding.usbDeviceSpinner.isEnabled = !isBusy && !connectorOwnsUsb && devices.isNotEmpty()
+        binding.usbEndpointSpinner.isEnabled =
+            !isBusy && !connectorOwnsUsb && endpointOptions.isNotEmpty()
+        binding.paperWidthSpinner.isEnabled = !isBusy && !connectorOwnsUsb
+        binding.customPrintDotsInput.isEnabled = !isBusy && !connectorOwnsUsb
+        binding.cutModeSpinner.isEnabled = !isBusy && !connectorOwnsUsb
+        binding.imageThresholdSeekbar.isEnabled = !isBusy && !connectorOwnsUsb
     }
 
     private fun setBusy(value: Boolean) {
@@ -566,6 +622,110 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         CUT_FULL_POSITION -> CutMode.FULL
         else -> CutMode.NONE
     }
+
+    private suspend fun restoreSavedConfiguration() {
+        val saved = connectorSettings.snapshot().usbBinding
+        if (saved == null) {
+            refreshDevices(null)
+            return
+        }
+        refreshDevices(saved.deviceName)
+        val matchedIndex = devices.indexOfFirst {
+            it.deviceName == saved.deviceName ||
+                (it.vendorId == saved.vendorId && it.productId == saved.productId)
+        }
+        if (matchedIndex >= 0) {
+            binding.usbDeviceSpinner.setSelection(matchedIndex)
+            selectDevice(devices[matchedIndex].deviceName)
+            val endpointIndex = endpointOptions.indexOfFirst {
+                it.interfaceIndex == saved.interfaceIndex &&
+                    it.interfaceId == saved.interfaceId &&
+                    it.alternateSetting == saved.alternateSetting &&
+                    it.endpointAddress == saved.endpointAddress
+            }
+            if (endpointIndex >= 0) binding.usbEndpointSpinner.setSelection(endpointIndex)
+        }
+        binding.paperWidthSpinner.setSelection(
+            when (saved.paperWidth) {
+                PaperWidth.MM_80 -> PAPER_80_POSITION
+                PaperWidth.MM_58 -> PAPER_58_POSITION
+                PaperWidth.CUSTOM -> PAPER_CUSTOM_POSITION
+            },
+        )
+        saved.customDots?.let {
+            binding.customPrintDotsInput.setText(String.format(Locale.US, "%d", it))
+        }
+        binding.imageThresholdSeekbar.progress = saved.threshold
+        binding.cutModeSpinner.setSelection(
+            when (saved.cutMode) {
+                CutMode.NONE -> CUT_NONE_POSITION
+                CutMode.HALF -> CUT_HALF_POSITION
+                CutMode.FULL -> CUT_FULL_POSITION
+            },
+        )
+    }
+
+    private fun saveSelectedConfiguration() {
+        val device = selectedDevice() ?: return
+        val option = selectedEndpointOption() ?: return
+        val paperWidth = selectedPaperWidth()
+        val customDotsValue = customDots()
+        val threshold = binding.imageThresholdSeekbar.progress
+        val cutMode = selectedCutMode()
+        val dots = runCatching { PrintWidthValidator.resolve(paperWidth, customDotsValue) }
+            .getOrElse {
+                showFailure(UsbPrintErrorCode.INVALID_PRINT_WIDTH)
+                return
+            }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val connectorSnapshot = connectorSettings.snapshot()
+            val saved = UsbPrinterBinding(
+                printerId = connectorSnapshot.boundPrinterId,
+                deviceName = device.deviceName,
+                vendorId = device.vendorId,
+                productId = device.productId,
+                interfaceIndex = option.interfaceIndex,
+                interfaceId = option.interfaceId,
+                alternateSetting = option.alternateSetting,
+                endpointAddress = option.endpointAddress,
+                paperWidth = paperWidth,
+                customDots = customDotsValue,
+                threshold = threshold,
+                cutMode = cutMode,
+            )
+            connectorSettings.saveUsbBinding(saved)
+            LocalPrintingDatabase.get(applicationContext).printingDao().savePrinterBinding(
+                PrinterBindingEntity(
+                    printerId = saved.printerId,
+                    vendorId = saved.vendorId,
+                    productId = saved.productId,
+                    deviceNameHash = sha256(saved.deviceName),
+                    interfaceIndex = saved.interfaceIndex,
+                    interfaceId = saved.interfaceId,
+                    alternateSetting = saved.alternateSetting,
+                    endpointAddress = saved.endpointAddress,
+                    paperWidth = saved.paperWidth.name,
+                    printDots = dots,
+                    threshold = saved.threshold,
+                    cutMode = saved.cutMode.name,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            val snapshot = connectorSettings.snapshot()
+            ConnectorStartGate.update(
+                applicationContext,
+                snapshot,
+                TerminalCredentialStore(applicationContext).hasCredential(),
+            )
+            withContext(Dispatchers.Main) {
+                binding.usbActionResultText.text = getString(R.string.usb_configuration_saved)
+            }
+        }
+    }
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private fun formatDeviceDetails(device: UsbDeviceDescriptor): String = buildString {
         appendLine("deviceName: ${device.deviceName}")
