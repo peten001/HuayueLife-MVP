@@ -3,6 +3,7 @@ import type { ApiResponse } from '@/types/api';
 import type {
   MerchantTerminal,
   MerchantTerminalPayload,
+  MerchantPrintingSettings,
   PrintJobSource,
   PrintJobStatus,
   PrintingJob,
@@ -14,6 +15,7 @@ import type {
   PrintingReceiptTemplatePayload,
   PrintingRule,
   PrintingRulePayload,
+  TerminalPairingCodeResult,
 } from '@/types/printing';
 
 type CollectionResponse<T> = T[] | PrintingListEnvelope<T>;
@@ -25,6 +27,21 @@ function normalizeCollection<T>(value: CollectionResponse<T>): T[] {
 export async function getPrintingFeatureState() {
   const response = await http.get<ApiResponse<PrintingFeatureState>>(
     '/merchant/printing/feature-state',
+  );
+  return response.data.data;
+}
+
+export async function getMerchantPrintingSettings() {
+  const response = await http.get<ApiResponse<MerchantPrintingSettings>>(
+    '/merchant/printing/settings',
+  );
+  return response.data.data;
+}
+
+export async function updateMerchantPrintingSettings(printingEnabled: boolean) {
+  const response = await http.patch<ApiResponse<MerchantPrintingSettings>>(
+    '/merchant/printing/settings',
+    { printingEnabled },
   );
   return response.data.data;
 }
@@ -58,6 +75,14 @@ export async function updatePrintingPrinter(
 export async function disablePrintingPrinter(id: string) {
   const response = await http.post<ApiResponse<PrintingPrinter>>(
     `/merchant/printing/printers/${id}/disable`,
+  );
+  return response.data.data;
+}
+
+export async function createPrintingTestJob(printerId: string, requestKey: string) {
+  const response = await http.post<ApiResponse<PrintingJob>>(
+    `/merchant/printing/printers/${printerId}/test-job`,
+    { requestKey },
   );
   return response.data.data;
 }
@@ -170,6 +195,13 @@ export async function getMerchantTerminals() {
   return normalizeCollection(response.data.data);
 }
 
+export async function getMerchantTerminal(id: string) {
+  const response = await http.get<ApiResponse<MerchantTerminal>>(
+    `/merchant/printing/terminals/${id}`,
+  );
+  return response.data.data;
+}
+
 export async function createMerchantTerminal(payload: MerchantTerminalPayload) {
   const response = await http.post<ApiResponse<MerchantTerminal>>(
     '/merchant/printing/terminals',
@@ -192,6 +224,44 @@ export async function updateMerchantTerminal(
 export async function revokeMerchantTerminal(id: string) {
   const response = await http.post<ApiResponse<MerchantTerminal>>(
     `/merchant/printing/terminals/${id}/revoke`,
+  );
+  return response.data.data;
+}
+
+export async function setMerchantTerminalEnabled(id: string, enabled: boolean) {
+  const response = await http.post<ApiResponse<MerchantTerminal>>(
+    `/merchant/printing/terminals/${id}/${enabled ? 'enable' : 'disable'}`,
+    {},
+  );
+  return response.data.data;
+}
+
+export async function generateMerchantTerminalPairingCode(
+  id: string,
+  expiresInMinutes = 10,
+) {
+  const response = await http.post<ApiResponse<TerminalPairingCodeResult>>(
+    `/merchant/printing/terminals/${id}/pairing-code`,
+    { expiresInMinutes },
+  );
+  return response.data.data;
+}
+
+export async function rotateMerchantTerminalCredentials(
+  id: string,
+  expiresInMinutes = 10,
+) {
+  const response = await http.post<ApiResponse<TerminalPairingCodeResult>>(
+    `/merchant/printing/terminals/${id}/rotate-credentials`,
+    { expiresInMinutes },
+  );
+  return response.data.data;
+}
+
+export async function resetMerchantTerminalUsbConfig(id: string) {
+  const response = await http.post<ApiResponse<MerchantTerminal>>(
+    `/merchant/printing/terminals/${id}/reset-usb-config`,
+    {},
   );
   return response.data.data;
 }

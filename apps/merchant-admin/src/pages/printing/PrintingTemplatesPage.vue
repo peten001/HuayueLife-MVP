@@ -157,6 +157,7 @@ onMounted(load);
       <div class="printing-toolbar__copy">
         <h2>{{ p('templates') }}</h2>
         <p>{{ p('templateSnapshotHint') }}</p>
+        <p>{{ p('rcFixedRendererHint') }}</p>
       </div>
       <div class="printing-toolbar__actions">
         <button class="printing-button printing-button--secondary" type="button" @click="load">{{ p('refresh') }}</button>

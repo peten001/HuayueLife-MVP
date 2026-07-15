@@ -1,13 +1,31 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { errorMessage } from '@/api/http';
+import {
+  getPrintingFeatureState,
+  updateMerchantPrintingSettings,
+} from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
+import type { PrintingFeatureState } from '@/types/printing';
 
 const { p } = usePrintingI18n();
 const route = useRoute();
 const router = useRouter();
 const showLegacyRedirectNotice = ref(false);
 const legacyNoticePath = ref('');
+const featureState = ref<PrintingFeatureState | null>(null);
+const settingsLoading = ref(false);
+const settingsMessage = ref('');
+const settingsSuccess = ref(false);
+
+const executionLabel = computed(() =>
+  !featureState.value?.merchantPrintingEnabled
+    ? p('merchantPrintingOff')
+    : featureState.value.executionEnabled
+      ? p('merchantPrintingOn')
+      : p('merchantEnabledExecutionOff'),
+);
 
 const tabs = [
   { path: '/printing-center/printers', label: 'printers' },
@@ -34,6 +52,38 @@ watch(
   },
   { immediate: true },
 );
+
+async function loadFeatureState() {
+  try {
+    featureState.value = await getPrintingFeatureState();
+  } catch (error) {
+    settingsSuccess.value = false;
+    settingsMessage.value = errorMessage(error);
+  }
+}
+
+async function toggleMerchantPrinting() {
+  if (!featureState.value || settingsLoading.value) return;
+  const next = !featureState.value.merchantPrintingEnabled;
+  if (!window.confirm(p(next ? 'enableMasterConfirm' : 'disableMasterConfirm'))) return;
+  try {
+    settingsLoading.value = true;
+    const settings = await updateMerchantPrintingSettings(next);
+    featureState.value = {
+      ...settings.featureFlags,
+      merchantPrintingEnabled: settings.printingEnabled,
+    };
+    settingsSuccess.value = true;
+    settingsMessage.value = p('settingsSaved');
+  } catch (error) {
+    settingsSuccess.value = false;
+    settingsMessage.value = errorMessage(error);
+  } finally {
+    settingsLoading.value = false;
+  }
+}
+
+onMounted(loadFeatureState);
 </script>
 
 <template>
@@ -44,7 +94,17 @@ watch(
         <h1>{{ p('title') }}</h1>
         <p>{{ p('description') }}</p>
       </div>
-      <span class="printing-center__execution-status">{{ p('executionPending') }}</span>
+      <span
+        :class="[
+          'printing-center__execution-status',
+          {
+            'printing-center__execution-status--enabled':
+              featureState?.merchantPrintingEnabled && featureState?.executionEnabled,
+          },
+        ]"
+      >
+        {{ executionLabel }}
+      </span>
     </header>
 
     <div v-if="showLegacyRedirectNotice" class="printing-center__notice printing-center__notice--legacy" role="status">
@@ -56,6 +116,70 @@ watch(
       <span aria-hidden="true">ⓘ</span>
       <strong>{{ p('betaNotice') }}</strong>
     </div>
+
+    <section class="printing-safety-gates" :aria-label="p('merchantMasterSwitch')">
+      <div class="printing-safety-gates__summary">
+        <div>
+          <strong>{{ p('merchantMasterSwitch') }}</strong>
+          <p>{{ p('masterSwitchHint') }}</p>
+        </div>
+        <button
+          :class="[
+            'printing-button',
+            featureState?.merchantPrintingEnabled
+              ? 'printing-button--danger'
+              : 'printing-button--secondary',
+          ]"
+          type="button"
+          :disabled="!featureState || settingsLoading"
+          @click="toggleMerchantPrinting"
+        >
+          {{ settingsLoading
+            ? p('saving')
+            : featureState?.merchantPrintingEnabled
+              ? p('disable')
+              : p('enable') }}
+        </button>
+      </div>
+      <div class="printing-safety-gates__flags">
+        <span class="printing-gate">
+          {{ p('taskCenterSwitch') }}
+          <b :class="featureState?.taskCenterEnabled ? 'is-active' : 'is-danger'">
+            {{ featureState?.taskCenterEnabled ? p('enabled') : p('disabled') }}
+          </b>
+        </span>
+        <span class="printing-gate">
+          {{ p('merchantMasterSwitch') }}
+          <b :class="featureState?.merchantPrintingEnabled ? 'is-active' : 'is-safe'">
+            {{ featureState?.merchantPrintingEnabled ? p('enabled') : p('disabled') }}
+          </b>
+        </span>
+        <span class="printing-gate">
+          {{ p('automaticCreationSwitch') }}
+          <b :class="featureState?.automaticCreationEnabled ? 'is-danger' : 'is-safe'">
+            {{ featureState?.automaticCreationEnabled ? p('enabled') : p('disabled') }}
+          </b>
+        </span>
+        <span class="printing-gate">
+          {{ p('executionSwitch') }}
+          <b :class="featureState?.executionEnabled ? 'is-active' : 'is-safe'">
+            {{ featureState?.executionEnabled ? p('enabled') : p('disabled') }}
+          </b>
+        </span>
+        <span class="printing-gate">
+          {{ p('legacyDirectSwitch') }}
+          <b :class="featureState?.legacyPrintingEnabled ? 'is-danger' : 'is-safe'">
+            {{ featureState?.legacyPrintingEnabled ? p('enabled') : p('disabled') }}
+          </b>
+        </span>
+      </div>
+      <p
+        v-if="settingsMessage"
+        :class="['printing-message', { 'printing-message--success': settingsSuccess }]"
+      >
+        {{ settingsMessage }}
+      </p>
+    </section>
 
     <nav class="printing-center__tabs" :aria-label="p('title')">
       <RouterLink v-for="tab in tabs" :key="tab.path" :to="tab.path">
@@ -123,6 +247,73 @@ watch(
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.printing-center__execution-status--enabled {
+  color: #17693c;
+  background: #e4f4e9;
+}
+
+.printing-safety-gates {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--printing-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.printing-safety-gates__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.printing-safety-gates__summary strong {
+  color: var(--printing-ink);
+  font-size: 14px;
+}
+
+.printing-safety-gates__summary p {
+  margin: 4px 0 0;
+  color: var(--printing-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.printing-safety-gates__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.printing-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid #e2e9e4;
+  border-radius: 9px;
+  color: #526158;
+  background: #f8faf9;
+  font-size: 12px;
+}
+
+.printing-gate b {
+  font-size: 11px;
+}
+
+.printing-gate .is-active {
+  color: #17693c;
+}
+
+.printing-gate .is-safe {
+  color: #17693c;
+}
+
+.printing-gate .is-danger {
+  color: #9a3030;
 }
 
 .printing-center__notice {
@@ -536,6 +727,11 @@ watch(
 
   .printing-center__tabs a {
     padding: 8px 12px;
+  }
+
+  .printing-safety-gates__summary {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .printing-panel {

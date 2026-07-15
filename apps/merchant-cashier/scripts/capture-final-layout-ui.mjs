@@ -58,9 +58,8 @@ try {
   await capture('09-english-1280x800.png', 1280, 800);
 
   await setLocale('zh');
-  await page.getByTestId('table-print-tooltip-trigger').hover();
-  await page.locator('#table-print-tooltip').waitFor();
-  await capture('10-print-disabled-tooltip-1280x800.png', 1280, 800);
+  await page.getByTestId('print-availability').waitFor();
+  await capture('10-print-gated-1280x800.png', 1280, 800);
 
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
   process.stdout.write(`Captured final cashier review images in ${outputDirectory}\n`);

@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { describe, expect, it } from 'vitest';
 import type { CashierOrderView } from '@/components/common/view-models';
 import type { TableSessionDetail } from '@/types';
@@ -42,6 +43,7 @@ describe('network write controls', () => {
     };
     const wrapper = mount(TableBillDetail, {
       props: { session, actionsDisabled: true },
+      global: { plugins: [createPinia()] },
     });
 
     const closeButton = wrapper.find<HTMLButtonElement>('.table-close-action');

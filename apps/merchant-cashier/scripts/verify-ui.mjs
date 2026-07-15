@@ -418,16 +418,10 @@ async function verifyViewport(width, height) {
 
 async function verifyPrintIsDisabled() {
   await selectFixtureTable();
-  const printButton = page.getByTestId('table-print-disabled');
-  assert.equal(await printButton.isDisabled(), true, 'Table bill print must be disabled in V1');
+  const printButton = page.getByTestId('print-primary');
+  assert.equal(await printButton.isDisabled(), true, 'Printing must remain disabled until RC execution and printer gates are enabled');
   assert.match((await printButton.textContent()) || '', /打印桌账/);
-  assert.equal(await printButton.getAttribute('aria-describedby'), 'table-print-tooltip');
-  const tooltipTrigger = page.getByTestId('table-print-tooltip-trigger');
-  assert.match((await tooltipTrigger.getAttribute('data-tooltip')) || '', /打印功能待接入/);
-  await tooltipTrigger.hover();
-  const tooltip = page.locator('#table-print-tooltip');
-  await tooltip.waitFor();
-  assert.match((await tooltip.textContent()) || '', /打印功能待接入/);
+  assert.match((await page.getByTestId('print-availability').textContent()) || '', /打印总开关未开启/);
   assert.equal(await page.locator('[data-testid*="print"][href]').count(), 0, 'No print navigation may be exposed');
 }
 

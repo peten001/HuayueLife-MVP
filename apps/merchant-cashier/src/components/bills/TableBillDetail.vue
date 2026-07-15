@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { BriefcaseBusiness, Clock3, ReceiptText, Users } from '@lucide/vue';
+import { BriefcaseBusiness, Clock3, Users } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import BillSummary from './BillSummary.vue';
+import PrintJobActions from '@/components/printing/PrintJobActions.vue';
 import { formatVietnamTime, formatVnd, summarizeTableSessionItems } from '@/domain';
 import {
   elapsedDuration,
@@ -101,6 +102,8 @@ function orderItemCount(order: TableSessionOrder) {
 
     <BillSummary :item-amount="session.totalAmountVnd" :total-amount="session.totalAmountVnd" />
 
+    <PrintJobActions :table-session-id="session.id" :disabled="actionsDisabled" />
+
     <p v-if="Number(session.unfinishedOrderCount || 0) > 0" class="detail-notice">
       {{ t('table.closeBlocked', { count: session.unfinishedOrderCount || 0 }) }}
     </p>
@@ -116,29 +119,6 @@ function orderItemCount(order: TableSessionOrder) {
         {{ closing ? t('table.closingSession') : t('table.closeSession') }}
       </button>
 
-      <span
-        class="disabled-action-tooltip"
-        data-testid="table-print-tooltip-trigger"
-        tabindex="0"
-        :aria-label="t('print.featurePending')"
-        aria-describedby="table-print-tooltip"
-        :data-tooltip="t('print.featurePending')"
-      >
-        <button
-          type="button"
-          class="secondary-action table-print-action"
-          data-testid="table-print-disabled"
-          disabled
-          aria-describedby="table-print-tooltip"
-          :title="t('print.featurePending')"
-        >
-          <ReceiptText :size="20" :stroke-width="1.9" aria-hidden="true" />
-          {{ t('bill.printTableBill') }}
-        </button>
-        <span id="table-print-tooltip" class="disabled-action-tooltip__bubble" role="tooltip">
-          {{ t('print.featurePending') }}
-        </span>
-      </span>
     </div>
   </div>
 

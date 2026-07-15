@@ -1238,3 +1238,83 @@
   .detail-panel-content { padding: 10px; gap: 7px; }
   .detail-facts > div { min-height: 30px; padding-block: 5px; }
 }
+
+.print-job-actions {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(78, 113, 101, 0.22);
+  border-radius: 12px;
+  background: rgba(245, 249, 247, 0.92);
+}
+
+.print-job-actions header,
+.print-job-actions header > span,
+.print-job-actions__buttons,
+.print-job-actions__reason > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.print-job-actions header {
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.print-job-actions header button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+}
+
+.print-job-actions__status,
+.print-job-actions__latest {
+  margin: 0;
+}
+
+.print-job-actions__status {
+  color: var(--cashier-muted, #66756d);
+}
+
+.print-job-actions__status--ready {
+  color: #167044;
+}
+
+.print-job-actions__status--unavailable {
+  color: #b63838;
+}
+
+.print-job-actions label,
+.print-job-actions__reason {
+  display: grid;
+  gap: 6px;
+}
+
+.print-job-actions select,
+.print-job-actions input {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid rgba(78, 113, 101, 0.3);
+  border-radius: 8px;
+  background: #fff;
+  color: #1c2924;
+}
+
+.print-job-actions__buttons {
+  align-items: stretch;
+}
+
+.print-job-actions__buttons > button {
+  flex: 1;
+}
+
+.print-job-actions__reason > div {
+  justify-content: flex-end;
+}

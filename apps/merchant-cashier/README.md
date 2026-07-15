@@ -99,6 +99,7 @@ VITE_API_BASE_URL=http://localhost:3001/api/v1 \
 - `GET /merchant/table-sessions/:id`、`POST /merchant/table-sessions/:id/close`
 - `GET /merchant/orders`、`GET /merchant/orders/:id`
 - 现有订单 `accept`、`reject`、`start-preparing`、`ready`、`start-delivery`、`complete` 动作
+- 打印任务中心状态、USB 打印机列表、订单/桌账人工 PrintJob 与带原因补打；网页只创建和查看任务，不能传 ESC/POS 字节或回报打印成功
 
 真实桌台模型只有 `ACTIVE / DISABLED`，开放的 TableSession 统一显示为“用餐中”。“可关闭桌账”是 `unfinishedOrderCount === 0` 的操作条件，不是独立后端状态，因此收银台不提供虚构的“待结桌”筛选。
 
@@ -126,12 +127,21 @@ corepack pnpm --filter @huayue-life/merchant-cashier screenshots:real-api
 
 生产构建输出到 `apps/merchant-cashier/dist/`。根目录的递归 `typecheck` 和 `build` 也会自动包含本应用。
 
+## USB RC 打印安全 Gate
+
+- 页面默认显示打印关闭；只有任务中心、全局执行、商家打印总开关和已启用 `LOCAL_USB_ESCPOS` Printer 同时满足时才开放按钮。
+- 初次人工打印由 API 生成不可变 ReceiptSnapshot；网页不生成原始打印字节。
+- 补打必须填写原因并生成新任务，不修改或重复执行原任务。
+- 网络异常时打印写操作与订单写操作一样被禁用。
+- 自动打印、任务领取和最终成功回报属于 API 与 Android Connector，不在浏览器中执行。
+- Fixture 演示模式始终禁用真实打印 API。
+
 ## 部署边界
 
-- 本阶段只创建和验证独立 SPA，不修改生产 Nginx、DNS、TLS、API 或数据库。
+- 仓库提供 RC 部署准备和 Nginx 模板，但在 DNS、TLS、服务器目录和回滚路径确认前不修改生产站点。
 - 正式部署应使用独立、经确认的 HTTPS Origin，并为 Vue Router 配置回退到 `index.html`。
 - JS、CSS、图标和提示音优先随收银台同源发布；API 和媒体资源使用 `api.huayueyouxuan.com`。
-- 当前 Android 外壳仍加载 merchant-admin。只有独立收银台部署、HTTPS 和资源 Host 验证完成后，才能在后续阶段切换 Android WebView 的精确 Origin 白名单。
+- Android RC 通过集中 BuildConfig 加载同一 Web 收银台；正式包必须在独立收银台部署、HTTPS 和资源 Host 验证完成后写入精确 Origin。
 - 本项目不依赖 PWA 或 Service Worker。
 
 ## 当前能力边界
@@ -140,11 +150,10 @@ corepack pnpm --filter @huayue-life/merchant-cashier screenshots:real-api
 
 当前明确不包含：
 
-- LAN、USB、蓝牙或云打印
-- ESC/POS、TCP 9100 或厂商打印 SDK
-- PrintJob、PrintAttempt、打印规则、模板和自动打印
-- Android JavaScript 打印 Bridge、后台服务、开机启动或 WorkManager
+- 浏览器直接 USB/LAN、蓝牙、云打印或任意 ESC/POS 字节
+- TCP 9100 或厂商打印 SDK
+- JavaScript 打印 Bridge
 - 完整现场点餐、会员、交班和复杂收银
-- 生产部署、数据库 migration 或服务器配置修改
+- 未经备份 Gate 的生产 migration 或服务器配置修改
 
-打印入口在任务中心和执行器可用前只能是禁用占位或只读状态，不得伪造“打印成功”。
+打印入口在任务中心、商家开关、打印机和执行器可用前保持禁用，不得伪造“打印成功”。

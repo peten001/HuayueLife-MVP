@@ -44,6 +44,9 @@ const form = reactive({
 });
 
 const printerNames = computed(() => new Map(printers.value.map((printer) => [printer.id, printer.name])));
+const rulePrinters = computed(() =>
+  printers.value.filter((printer) => printer.channelType === 'LOCAL_USB_ESCPOS'),
+);
 const matchingTemplates = computed(() => {
   const printer = printers.value.find((item) => item.id === form.printerId);
   return templates.value.filter(
@@ -53,7 +56,10 @@ const matchingTemplates = computed(() => {
       (!printer || template.paperWidth === printer.paperWidth),
   );
 });
-const triggerEvents: PrintingTriggerEvent[] = ['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'MANUAL'];
+// V1 automatic creation hooks exist only for these two durable order events.
+// The MANUAL enum remains readable for historical rows but is not offered as
+// an automatic rule configuration.
+const triggerEvents: PrintingTriggerEvent[] = ['ORDER_ACCEPTED', 'ORDER_COMPLETED'];
 const orderTypes: PrintingOrderType[] = ['DINE_IN', 'PICKUP', 'DELIVERY'];
 
 function resetForm() {
@@ -63,7 +69,7 @@ function resetForm() {
     orderType: '',
     triggerEvent: 'ORDER_ACCEPTED',
     receiptType: 'ORDER_CUSTOMER',
-    printerId: printers.value[0]?.id ?? '',
+    printerId: rulePrinters.value[0]?.id ?? '',
     receiptTemplateId: '',
     copies: 1,
     autoPrint: false,
@@ -128,6 +134,7 @@ async function load() {
 }
 
 async function save() {
+  if (form.autoPrint && !window.confirm(p('enableAutoPrintConfirm'))) return;
   try {
     saving.value = true;
     if (form.id) {
@@ -146,6 +153,9 @@ async function save() {
 }
 
 async function toggle(row: PrintingRule) {
+  const printer = printers.value.find((item) => item.id === row.printerId);
+  if (!row.enabled && printer?.channelType !== 'LOCAL_USB_ESCPOS') return;
+  if (!row.enabled && !window.confirm(p('enableRuleConfirm'))) return;
   try {
     await setPrintingRuleEnabled(row.id, !row.enabled);
     await load();
@@ -177,7 +187,7 @@ onMounted(load);
       </div>
       <div class="printing-toolbar__actions">
         <button class="printing-button printing-button--secondary" type="button" @click="load">{{ p('refresh') }}</button>
-        <button class="printing-button" type="button" :disabled="!printers.length" @click="openCreate">{{ p('addRule') }}</button>
+        <button class="printing-button" type="button" :disabled="!rulePrinters.length" @click="openCreate">{{ p('addRule') }}</button>
       </div>
     </div>
 
@@ -208,12 +218,12 @@ onMounted(load);
             <td>{{ row.printer?.name || printerNames.get(row.printerId) || row.printerId }}</td>
             <td>{{ row.receiptTemplate?.name || row.receiptTemplateId || '—' }}</td>
             <td>{{ row.copies }}</td>
-            <td><span :class="['printing-badge', row.autoPrint ? 'printing-badge--warning' : '']">{{ row.autoPrint ? p('enabled') : p('disabled') }}</span></td>
-            <td><span :class="['printing-badge', row.enabled ? 'printing-badge--warning' : '']">{{ row.enabled ? p('executionPending') : p('disabled') }}</span></td>
+            <td><span :class="['printing-badge', row.autoPrint ? 'printing-badge--success' : 'printing-badge--warning']">{{ row.autoPrint ? p('enabled') : p('disabled') }}</span></td>
+            <td><span :class="['printing-badge', row.enabled ? 'printing-badge--success' : 'printing-badge--warning']">{{ row.enabled ? p('enabled') : p('disabled') }}</span></td>
             <td>
               <div class="printing-actions">
-                <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('edit') }}</button>
-                <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="toggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button>
+                <button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="printers.find((printer) => printer.id === row.printerId)?.channelType !== 'LOCAL_USB_ESCPOS'" @click="openEdit(row)">{{ p('edit') }}</button>
+                <button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="!row.enabled && printers.find((printer) => printer.id === row.printerId)?.channelType !== 'LOCAL_USB_ESCPOS'" @click="toggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button>
               </div>
             </td>
           </tr>
@@ -235,7 +245,7 @@ onMounted(load);
         <label class="printing-field">
           {{ p('targetPrinter') }}
           <select v-model="form.printerId" required>
-            <option v-for="printer in printers" :key="printer.id" :value="printer.id">{{ printer.name }} · {{ printer.enabled ? p('executionPending') : p('disabled') }}</option>
+            <option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printer.name }} · {{ printer.enabled ? p('enabled') : p('disabled') }}</option>
           </select>
         </label>
         <label class="printing-field">

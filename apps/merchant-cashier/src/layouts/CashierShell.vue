@@ -14,6 +14,7 @@ import {
   useAuthStore,
   useNetworkStore,
   useOrdersStore,
+  usePrintingStore,
   useSoundStore,
   useTablesStore,
   useUiStore,
@@ -35,6 +36,7 @@ const router = useRouter();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const ordersStore = useOrdersStore();
+const printingStore = usePrintingStore();
 const tablesStore = useTablesStore();
 const networkStore = useNetworkStore();
 const soundStore = useSoundStore();
@@ -44,11 +46,13 @@ const { pendingOrders, activeOrders, selectedOrder, actionLoadingId } = storeToR
 const { tableCards, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
+const { availability: printingAvailability } = storeToRefs(printingStore);
 const { detailOpen } = storeToRefs(uiStore);
 const loggingOut = ref(false);
 const closingSession = ref(false);
 const closeDialogOpen = ref(false);
 const pendingOrderAction = ref<CashierOrderAction | null>(null);
+let printingStatusTimer: number | undefined;
 
 const identity = computed(() => ({
   merchantName:
@@ -99,6 +103,7 @@ async function logout() {
     tablesStore.stopLivePolling();
     ordersStore.clear();
     tablesStore.clear();
+    printingStore.clear();
     uiStore.closeDetail();
     await authStore.logout();
     await router.replace('/login');
@@ -187,6 +192,7 @@ async function recoverData() {
     ...(profile.value ? [] : [authStore.refreshProfile()]),
     ordersStore.refreshLiveOrders(),
     tablesStore.fetchTables(),
+    printingStore.refreshStatus(),
   ]);
 }
 
@@ -227,13 +233,18 @@ onMounted(async () => {
   await Promise.allSettled([
     ordersStore.refreshLiveOrders(),
     ordersStore.fetchHistory(),
+    printingStore.refreshStatus(),
   ]);
+  printingStatusTimer = window.setInterval(() => {
+    if (online.value) void printingStore.refreshStatus().catch(() => undefined);
+  }, 15_000);
 });
 
 onBeforeUnmount(() => {
   ordersStore.stopLivePolling();
   tablesStore.stopLivePolling();
   networkStore.stop();
+  if (printingStatusTimer !== undefined) window.clearInterval(printingStatusTimer);
 });
 </script>
 
@@ -264,6 +275,7 @@ onBeforeUnmount(() => {
       :reconnecting="online && apiReachable === null"
       :sound-enabled="soundEnabled"
       :sound-supported="soundSupported"
+      :printing-availability="printingAvailability"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"

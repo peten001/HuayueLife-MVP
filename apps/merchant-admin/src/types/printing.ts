@@ -13,7 +13,7 @@ export type PrintingReceiptType = 'ORDER_CUSTOMER' | 'TABLE_BILL';
 export type ReceiptLanguageMode = 'MERCHANT_DEFAULT' | 'ZH' | 'VI' | 'EN';
 export type PrintingTriggerEvent = 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'MANUAL';
 export type PrintingOrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
-export type PrintJobSource = 'AUTOMATIC' | 'MANUAL_REPRINT' | 'TEST';
+export type PrintJobSource = 'AUTOMATIC' | 'MANUAL' | 'MANUAL_REPRINT' | 'TEST';
 export type PrintJobStatus =
   | 'PENDING'
   | 'CLAIMED'
@@ -29,7 +29,14 @@ export interface PrintingFeatureState {
   automaticCreationEnabled: boolean;
   executionEnabled: boolean;
   legacyPrintingEnabled: boolean;
+  merchantPrintingEnabled: boolean;
   executionState: 'CONNECTOR_PENDING' | 'READY_FOR_CONNECTOR';
+}
+
+export interface MerchantPrintingSettings {
+  id: string;
+  printingEnabled: boolean;
+  featureFlags: Omit<PrintingFeatureState, 'merchantPrintingEnabled'>;
 }
 
 export interface PrintingPrinter {
@@ -43,6 +50,8 @@ export interface PrintingPrinter {
   status: string;
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
+  adapterStatus?: string;
+  executionState?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -146,16 +155,55 @@ export interface PrintingJob {
   updatedAt: string;
 }
 
+export type MerchantTerminalStatus = 'UNPAIRED' | 'ACTIVE' | 'DISABLED' | 'REVOKED';
+export type MerchantTerminalOnlineState = 'ONLINE' | 'OFFLINE';
+
+export interface MerchantTerminalBoundPrinter {
+  id: string;
+  name: string;
+  channelType: PrinterChannelType;
+  paperWidth: PrintingPaperWidth;
+  enabled: boolean;
+  status: string;
+  capabilities?: Record<string, unknown> | null;
+}
+
+export interface MerchantTerminalAttemptSummary {
+  id: string;
+  jobId: string;
+  attemptNo: number;
+  startedAt: string;
+  finishedAt?: string | null;
+  result?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  bytesWritten?: number | null;
+}
+
 export interface MerchantTerminal {
   id: string;
   merchantId?: string;
+  boundPrinterId?: string | null;
+  boundPrinter?: MerchantTerminalBoundPrinter | null;
   name: string;
   platform: MerchantTerminalPlatform;
-  status: string;
+  status: MerchantTerminalStatus;
+  pairingState?: 'NOT_PAIRED' | MerchantTerminalStatus;
+  onlineState?: MerchantTerminalOnlineState;
   capabilities: Record<string, unknown>;
+  deviceIdentifier?: string | null;
   appVersion?: string | null;
   lastSeenAt?: string | null;
+  pairedAt?: string | null;
+  pairingExpiresAt?: string | null;
+  tokenExpiresAt?: string | null;
+  configVersion?: number;
+  resetUsbRequestedAt?: string | null;
+  resetUsbAcknowledgedAt?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
   revokedAt?: string | null;
+  attempts?: MerchantTerminalAttemptSummary[];
   createdAt: string;
   updatedAt: string;
 }
@@ -163,7 +211,19 @@ export interface MerchantTerminal {
 export interface MerchantTerminalPayload {
   name: string;
   platform: MerchantTerminalPlatform;
-  capabilities: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  boundPrinterId?: string | null;
+}
+
+export interface TerminalPairingCodeResult {
+  terminal: MerchantTerminal;
+  pairing: {
+    pairingId: string;
+    pairingCode: string;
+    pairingPayload: string;
+    expiresAt: string;
+    maxAttempts: number;
+  };
 }
 
 export interface PrintingListEnvelope<T> {

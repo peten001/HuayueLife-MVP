@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import BillSummary from '@/components/bills/BillSummary.vue';
+import PrintJobActions from '@/components/printing/PrintJobActions.vue';
 import OrderActionBar from './OrderActionBar.vue';
 import { formatVietnamDateTime, formatVnd, resolveMediaUrl } from '@/domain';
 import {
@@ -132,6 +133,8 @@ function hideBrokenImage(event: Event) {
       :delivery-fee="order.deliveryFeeVnd"
       :total-amount="order.totalAmountVnd"
     />
+
+    <PrintJobActions :order-id="order.id" :disabled="actionsDisabled" />
 
     <div class="detail-action-stack">
       <OrderActionBar

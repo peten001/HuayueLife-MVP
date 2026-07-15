@@ -13,6 +13,7 @@ import {
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from '@/i18n';
+import type { CashierPrintingAvailability } from '@/types';
 
 const props = defineProps<{
   totalTableCount: number;
@@ -25,6 +26,7 @@ const props = defineProps<{
   reconnecting: boolean;
   soundEnabled: boolean;
   soundSupported: boolean;
+  printingAvailability: CashierPrintingAvailability;
 }>();
 
 const emit = defineEmits<{
@@ -66,6 +68,28 @@ const networkStatus = computed(() => {
     return { label: t('network.apiUnavailable'), shortLabel: t('network.unavailableShort'), tone: 'danger', icon: WifiOff } as const;
   }
   return { label: t('network.connected'), shortLabel: t('network.connectedShort'), tone: 'ok', icon: Wifi } as const;
+});
+const printingStatus = computed(() => {
+  if (props.printingAvailability === 'READY') {
+    return { label: t('print.ready'), shortLabel: t('print.readyShort'), tone: 'ok' } as const;
+  }
+  if (props.printingAvailability === 'CONFIG_REQUIRED') {
+    return {
+      label: t('print.configurationRequired'),
+      shortLabel: t('print.configurationRequiredShort'),
+      tone: 'warning',
+    } as const;
+  }
+  if (props.printingAvailability === 'LOADING') {
+    return { label: t('print.checking'), shortLabel: t('print.checkingShort'), tone: 'warning' } as const;
+  }
+  if (props.printingAvailability === 'UNAVAILABLE') {
+    return { label: t('print.unavailable'), shortLabel: t('print.unavailableShort'), tone: 'danger' } as const;
+  }
+  if (props.printingAvailability === 'TERMINAL_OFFLINE') {
+    return { label: t('print.terminalOffline'), shortLabel: t('print.terminalOfflineShort'), tone: 'warning' } as const;
+  }
+  return { label: t('print.disabled'), shortLabel: t('print.disabledShort'), tone: 'muted' } as const;
 });
 const stats = computed(() => [
   { key: 'all', label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
@@ -169,13 +193,14 @@ onBeforeUnmount(() => {
       </button>
 
       <span
-        class="top-status-item top-status-item--pending"
-        :title="t('print.featurePending')"
+        :class="['top-status-item', `top-status-item--${printingStatus.tone}`]"
+        :title="printingStatus.label"
         aria-disabled="true"
         data-testid="top-print-status"
       >
         <span class="top-status-item__icon"><Printer :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
-        <span>{{ t('print.pendingShort') }}</span>
+        <span class="top-status-item__label top-status-item__label--full">{{ printingStatus.label }}</span>
+        <span class="top-status-item__label top-status-item__label--short">{{ printingStatus.shortLabel }}</span>
       </span>
 
       <button

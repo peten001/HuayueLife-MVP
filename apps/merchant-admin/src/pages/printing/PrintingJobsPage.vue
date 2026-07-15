@@ -32,7 +32,7 @@ const statuses: PrintJobStatus[] = [
   'FAILED',
   'CANCELLED',
 ];
-const sources: PrintJobSource[] = ['AUTOMATIC', 'MANUAL_REPRINT', 'TEST'];
+const sources: PrintJobSource[] = ['AUTOMATIC', 'MANUAL', 'MANUAL_REPRINT', 'TEST'];
 
 async function load() {
   try {
