@@ -132,7 +132,7 @@ export const MERCHANT_IMPORT_TEMPLATE_FIELDS = [
     description: 'ZIP 压缩包内图片的相对路径；不填写则不导入封面图',
     format: '文本，相对路径，仅支持 jpg/jpeg/png/webp',
     correctExample: 'images/BG001_688便利店/cover.jpg',
-    wrongExample: '/Users/peter/Desktop/cover.jpg',
+    wrongExample: '/absolute/path/cover.jpg',
     textFormat: true,
   },
   {

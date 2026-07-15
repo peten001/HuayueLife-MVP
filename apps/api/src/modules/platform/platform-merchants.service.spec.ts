@@ -562,7 +562,7 @@ describe('PlatformMerchantsService merchant import', () => {
   it('rejects absolute coverPath in zip preview', async () => {
     const preview = await service.previewMerchantImport({
       buffer: await buildZipBuffer(
-        [buildRow({ coverPath: '/Users/peter/Desktop/cover.jpg' })],
+        [buildRow({ coverPath: '/absolute/path/cover.jpg' })],
         [],
       ),
       mimetype: 'application/zip',
