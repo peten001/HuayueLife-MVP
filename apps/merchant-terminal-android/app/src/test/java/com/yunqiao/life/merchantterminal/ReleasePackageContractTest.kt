@@ -22,8 +22,8 @@ class ReleasePackageContractTest {
         assumeTrue(BuildConfig.BUILD_TYPE == "release")
 
         assertEquals("com.yunqiao.life.merchantterminal", BuildConfig.APPLICATION_ID)
-        assertEquals("1.0.0-rc2", BuildConfig.VERSION_NAME)
-        assertEquals(6, BuildConfig.VERSION_CODE)
+        assertEquals("1.0.0-rc3", BuildConfig.VERSION_NAME)
+        assertEquals(7, BuildConfig.VERSION_CODE)
         assertEquals("https://cashier.huayueyouxuan.com/", BuildConfig.CASHIER_WEB_URL)
         assertEquals("https://cashier.huayueyouxuan.com", BuildConfig.TRUSTED_PAGE_ORIGIN)
         assertEquals("api.huayueyouxuan.com", BuildConfig.TRUSTED_RESOURCE_HOSTS)

@@ -2,10 +2,17 @@
 <resources>
     <string name="menu_connector_control">USB 打印连接器</string>
     <string name="connector_control_title">USB 打印连接器</string>
+    <string name="connector_close_page">关闭页面 / Đóng trang</string>
     <string name="connector_session_note">连接器复用当前商家网页登录会话，不读取或保存账号密码。</string>
     <string name="connector_controls_section">本地安全开关（默认全部关闭）</string>
     <string name="connector_enabled_label">启用本地打印连接器</string>
-    <string name="connector_auto_enabled_label">允许自动打印任务（需服务器端同时开启）</string>
+    <string name="connector_state_off">已关闭</string>
+    <string name="connector_state_starting">正在启动</string>
+    <string name="connector_state_enabled">已开启</string>
+    <string name="connector_state_online">已在线</string>
+    <string name="connector_state_failed">启动失败：%1$s</string>
+    <string name="connector_auto_enabled_label">允许自动打印任务</string>
+    <string name="connector_auto_unavailable_note">当前版本暂未开放自动打印</string>
     <string name="connector_open_usb_diagnostics">USB 配置与诊断</string>
     <string name="connector_refresh_status">刷新状态</string>
     <string name="connector_safety_note">连接器只执行认证 API 下发的结构化 ReceiptSnapshot，不接收网页 ESC/POS 字节。结果不确定时不会自动重打。</string>

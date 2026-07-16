@@ -9,6 +9,7 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -16,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.yunqiao.life.merchantterminal.BuildConfig
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
+import com.yunqiao.life.merchantterminal.data.ConnectorSettingsSnapshot
 import com.yunqiao.life.merchantterminal.data.local.LocalJobStatus
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintingDatabase
 import com.yunqiao.life.merchantterminal.databinding.ActivityConnectorControlBinding
@@ -34,12 +36,16 @@ class ConnectorControlActivity : AppCompatActivity() {
     private lateinit var settings: ConnectorSettings
     private lateinit var merchantSession: MerchantSessionTokenStore
     private var suppressSwitchCallbacks = false
+    private var connectorStartPending = false
+    private var connectorUiErrorCode: String? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) enableConnector()
         else {
+            connectorStartPending = false
+            connectorUiErrorCode = "POST_NOTIFICATIONS_DENIED"
             binding.connectorMessageText.setText(R.string.connector_notification_denied)
             lifecycleScope.launch { refreshStatus(fetchRemote = false) }
         }
@@ -51,6 +57,7 @@ class ConnectorControlActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         binding = ActivityConnectorControlBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applySafeInsets()
         settings = ConnectorSettings(applicationContext)
         merchantSession = MerchantSessionTokenStore(applicationContext)
         configureActions()
@@ -71,7 +78,9 @@ class ConnectorControlActivity : AppCompatActivity() {
                 ConnectorServiceStarter.startIfEligible(applicationContext) ==
                 ConnectorStartResult.START_BLOCKED
             ) {
+                connectorUiErrorCode = "FGS_START_BLOCKED"
                 binding.connectorMessageText.setText(R.string.connector_fgs_start_blocked)
+                refreshStatus(fetchRemote = false)
             }
         }
     }
@@ -89,17 +98,32 @@ class ConnectorControlActivity : AppCompatActivity() {
         binding.refreshConnectorStatusButton.setOnClickListener {
             lifecycleScope.launch { refreshStatus(fetchRemote = true) }
         }
-        binding.connectorEnabledSwitch.setOnCheckedChangeListener { _, enabled ->
-            if (suppressSwitchCallbacks) return@setOnCheckedChangeListener
-            if (enabled) requestEnableConnector() else disableConnector()
-        }
-        binding.automaticPrintingSwitch.setOnCheckedChangeListener { _, enabled ->
-            if (suppressSwitchCallbacks) return@setOnCheckedChangeListener
-            lifecycleScope.launch {
-                settings.setAutomaticPrintingEnabled(enabled)
-                refreshStatus(fetchRemote = false)
+        binding.connectorToggleRow.setOnClickListener {
+            if (binding.connectorEnabledSwitch.isEnabled) {
+                binding.connectorEnabledSwitch.performClick()
             }
         }
+        binding.connectorEnabledSwitch.setOnCheckedChangeListener { _, enabled ->
+            if (suppressSwitchCallbacks) return@setOnCheckedChangeListener
+            when (connectorToggleAction(enabled)) {
+                ConnectorToggleAction.ENABLE -> {
+                    connectorStartPending = true
+                    connectorUiErrorCode = null
+                    renderConnectorState(ConnectorVisualState.STARTING, null)
+                    requestEnableConnector()
+                }
+                ConnectorToggleAction.DISABLE -> {
+                    connectorStartPending = false
+                    connectorUiErrorCode = null
+                    renderConnectorState(ConnectorVisualState.OFF, null)
+                    disableConnector()
+                }
+            }
+        }
+        // This UI-only refinement keeps automatic control unavailable; service logic is unchanged.
+        binding.automaticPrintingSwitch.isChecked = false
+        binding.automaticPrintingSwitch.isEnabled = false
+        binding.automaticPrintingSwitch.isClickable = false
     }
 
     private fun requestEnableConnector() {
@@ -123,11 +147,15 @@ class ConnectorControlActivity : AppCompatActivity() {
                 UsbDeviceInspector(applicationContext).scan(),
             ) is UsbBindingResolution.Ready
             if (!merchantSession.hasCredential() || !usbReady || !ConnectorApiConfig.isConfigured) {
+                connectorStartPending = false
+                connectorUiErrorCode = "CONNECTOR_ENABLE_BLOCKED"
                 binding.connectorMessageText.setText(R.string.connector_enable_blocked)
                 refreshStatus(fetchRemote = false)
                 return@launch
             }
             settings.setConnectorEnabled(true)
+            connectorStartPending = false
+            connectorUiErrorCode = null
             val updated = settings.snapshot()
             ConnectorStartGate.update(applicationContext, updated, true)
             ConnectorRecoveryScheduler.enable(applicationContext)
@@ -139,6 +167,8 @@ class ConnectorControlActivity : AppCompatActivity() {
     private fun disableConnector() {
         lifecycleScope.launch {
             settings.setConnectorEnabled(false)
+            connectorStartPending = false
+            connectorUiErrorCode = null
             settings.setAutomaticPrintingEnabled(false)
             ConnectorStartGate.update(
                 applicationContext,
@@ -256,13 +286,77 @@ class ConnectorControlActivity : AppCompatActivity() {
             appendLine("Uncertain jobs: $uncertainCount")
             append("Last error: ${snapshot.lastErrorCode ?: "NONE"}")
         }
+        val connectorUi = connectorControlUi(
+            snapshot = snapshot,
+            serviceActive = ConnectorRuntimeState.serviceActive,
+            startPending = connectorStartPending,
+            transientErrorCode = connectorUiErrorCode,
+        )
+        renderConnectorControls(connectorUi)
+    }
+
+    internal fun renderConnectorControls(connectorUi: ConnectorControlUi) {
         suppressSwitchCallbacks = true
-        binding.connectorEnabledSwitch.isChecked = snapshot.connectorEnabled
-        binding.automaticPrintingSwitch.isChecked = snapshot.automaticPrintingEnabled
-        binding.automaticPrintingSwitch.isEnabled = snapshot.connectorEnabled &&
-            snapshot.remoteExecutionEnabled && snapshot.remotePrinterEnabled &&
-            snapshot.remoteAutomaticPrintingEnabled
+        binding.connectorEnabledSwitch.isChecked = connectorUi.checked
+        binding.automaticPrintingSwitch.isChecked = false
+        binding.automaticPrintingSwitch.isEnabled = false
         suppressSwitchCallbacks = false
+        renderConnectorState(connectorUi.state, connectorUi.errorCode)
+    }
+
+    private fun renderConnectorState(state: ConnectorVisualState, errorCode: String?) {
+        when (state) {
+            ConnectorVisualState.OFF -> {
+                binding.connectorStateText.setText(R.string.connector_state_off)
+                binding.connectorStateText.setTextColor(
+                    ContextCompat.getColor(this, R.color.terminal_text_secondary),
+                )
+            }
+            ConnectorVisualState.STARTING -> {
+                binding.connectorStateText.setText(R.string.connector_state_starting)
+                binding.connectorStateText.setTextColor(
+                    ContextCompat.getColor(this, R.color.terminal_primary),
+                )
+            }
+            ConnectorVisualState.ENABLED -> {
+                binding.connectorStateText.setText(R.string.connector_state_enabled)
+                binding.connectorStateText.setTextColor(
+                    ContextCompat.getColor(this, R.color.terminal_primary),
+                )
+            }
+            ConnectorVisualState.ONLINE -> {
+                binding.connectorStateText.setText(R.string.connector_state_online)
+                binding.connectorStateText.setTextColor(
+                    ContextCompat.getColor(this, R.color.terminal_primary),
+                )
+            }
+            ConnectorVisualState.FAILED -> {
+                binding.connectorStateText.text = getString(
+                    R.string.connector_state_failed,
+                    errorCode ?: "UNKNOWN",
+                )
+                binding.connectorStateText.setTextColor(
+                    ContextCompat.getColor(this, R.color.terminal_error),
+                )
+            }
+        }
+    }
+
+    private fun applySafeInsets() {
+        val basePadding = (16 * resources.displayMetrics.density).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(binding.connectorControlRoot) { view, insets ->
+            val safe = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            view.setPadding(
+                basePadding + safe.left,
+                basePadding + safe.top,
+                basePadding + safe.right,
+                basePadding + safe.bottom,
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.connectorControlRoot)
     }
 
     private fun enterImmersiveMode() {
@@ -272,3 +366,54 @@ class ConnectorControlActivity : AppCompatActivity() {
         }
     }
 }
+
+internal enum class ConnectorToggleAction {
+    ENABLE,
+    DISABLE,
+}
+
+internal fun connectorToggleAction(checked: Boolean): ConnectorToggleAction =
+    if (checked) ConnectorToggleAction.ENABLE else ConnectorToggleAction.DISABLE
+
+internal enum class ConnectorVisualState {
+    OFF,
+    STARTING,
+    ENABLED,
+    ONLINE,
+    FAILED,
+}
+
+internal data class ConnectorControlUi(
+    val checked: Boolean,
+    val state: ConnectorVisualState,
+    val errorCode: String? = null,
+)
+
+/** UI-only projection. The checked value intentionally mirrors connectorEnabled without inversion. */
+internal fun connectorControlUi(
+    snapshot: ConnectorSettingsSnapshot,
+    serviceActive: Boolean,
+    startPending: Boolean = false,
+    transientErrorCode: String? = null,
+): ConnectorControlUi {
+    val state = when {
+        startPending -> ConnectorVisualState.STARTING
+        transientErrorCode != null -> ConnectorVisualState.FAILED
+        !snapshot.connectorEnabled -> ConnectorVisualState.OFF
+        snapshot.lastErrorCode in CONNECTOR_BOOTSTRAP_STATUS_CODES -> ConnectorVisualState.STARTING
+        snapshot.lastErrorCode != null -> ConnectorVisualState.FAILED
+        serviceActive && snapshot.remoteExecutionEnabled && snapshot.remotePrinterEnabled ->
+            ConnectorVisualState.ONLINE
+        else -> ConnectorVisualState.ENABLED
+    }
+    return ConnectorControlUi(
+        checked = snapshot.connectorEnabled,
+        state = state,
+        errorCode = transientErrorCode ?: snapshot.lastErrorCode,
+    )
+}
+
+private val CONNECTOR_BOOTSTRAP_STATUS_CODES = setOf(
+    "PRINTER_STATUS_NOT_READY",
+    "PRINTER_READINESS_EXPIRED",
+)

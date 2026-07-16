@@ -4,10 +4,10 @@
 TableSession、账号和权限全部复用现有 Web 收银台及 API；Android 不实现第二套业务 UI，
 只负责受控 WebView、本机 USB 执行、恢复和诊断。
 
-当前发布候选版本为 `1.0.0-rc2`（versionCode `6`）。真实打印机的纸宽、图像质量、
+当前发布候选版本为 `1.0.0-rc3`（versionCode `7`）。真实打印机的纸宽、图像质量、
 二维码、切纸及异常行为仍须门店实机验收；构建和静态检查通过不等于真实出纸通过。
 
-## 1. RC2 架构
+## 1. RC3 架构
 
 ```text
 Web 收银台（HTTPS）
@@ -26,7 +26,7 @@ Foreground Service
         └── 通用 UsbManager BULK OUT → 操作者选择并授权的 USB 打印机
 ```
 
-RC2 不使用独立设备账号或独立设备认证。连接器只使用 Web 收银台已建立的现有商家会话，
+RC3 不使用独立设备账号或独立设备认证。连接器只使用 Web 收银台已建立的现有商家会话，
 只调用现有 `/api/v1/merchant/printing/connector/*` 接口。当前 V1 同一商家现场只允许运行
 一台 USB Connector，避免缺少设备级身份时多个连接器竞争同一任务。
 
@@ -85,12 +85,12 @@ USB Manifest attach filter 只匹配标准 Printer Class 7，不使用“所有 
 
 ## 5. 包名、版本、地址与权限
 
-| 项目 | RC2 值 |
+| 项目 | RC3 值 |
 |---|---|
 | release applicationId | `com.yunqiao.life.merchantterminal` |
 | debug applicationId | `com.yunqiao.life.merchantterminal.debug` |
-| versionName | `1.0.0-rc2`（debug 追加 `-debug`） |
-| versionCode | `6` |
+| versionName | `1.0.0-rc3`（debug 追加 `-debug`） |
+| versionCode | `7` |
 | minSdk | 26 |
 | targetSdk / compileSdk | 35 / 35 |
 | Web 收银台 | `https://cashier.huayueyouxuan.com/` |
