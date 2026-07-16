@@ -11,6 +11,7 @@ const props = defineProps<{
   orderId?: string;
   tableSessionId?: string;
   disabled?: boolean;
+  compact?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -116,7 +117,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="print-job-actions" :aria-label="t('print.sectionTitle')">
+  <button
+    v-if="compact"
+    type="button"
+    :class="[
+      'secondary-action',
+      'detail-print-action',
+      orderId ? 'order-print-action' : 'table-print-action',
+    ]"
+    data-testid="print-primary"
+    :disabled="!canSubmit || !selectedPrinterId"
+    @click="print"
+  >
+    <Printer :size="18" aria-hidden="true" />
+    {{ orderId ? t('print.action') : t('bill.printTableBill') }}
+  </button>
+
+  <section v-else class="print-job-actions" :aria-label="t('print.sectionTitle')">
     <header>
       <span><Printer :size="18" aria-hidden="true" />{{ t('print.sectionTitle') }}</span>
       <button type="button" :title="t('common.refresh')" :disabled="jobsLoading" @click="refreshJobs">

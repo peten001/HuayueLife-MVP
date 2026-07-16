@@ -10,7 +10,6 @@ defineProps<{
   businessOpen: boolean | null;
   businessHoursLabel?: string;
   demoMode?: boolean;
-  staffName?: string;
   role?: string;
   loggingOut?: boolean;
   newOrderCount: number;
@@ -42,7 +41,6 @@ defineEmits<{
     <AccountMenu
       class="cashier-employee-menu"
       :merchant-name="merchantName"
-      :staff-name="staffName"
       :role="role"
       :logging-out="loggingOut"
       @logout="$emit('logout')"

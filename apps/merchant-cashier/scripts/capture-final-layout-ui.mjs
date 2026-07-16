@@ -5,10 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const outputDirectory = resolve(
-  scriptDirectory,
-  '../../../docs/ui-review/merchant-cashier-final-layout',
-);
+const outputDirectory = process.env.CASHIER_SCREENSHOT_DIR
+  ? resolve(process.env.CASHIER_SCREENSHOT_DIR)
+  : resolve(scriptDirectory, '../../../docs/ui-review/merchant-cashier-final-layout');
 const baseUrl = process.env.CASHIER_BASE_URL || 'http://127.0.0.1:5176';
 const browserErrors = [];
 
@@ -32,34 +31,37 @@ try {
   await enterFixtureDemo();
   await selectFixtureTable();
 
-  await capture('01-final-1536x1024.png', 1536, 1024);
-  await capture('02-final-1366x768.png', 1366, 768);
-  await capture('03-final-1280x800.png', 1280, 800);
-
-  await closeResponsiveDetail(1024, 768);
-  await capture('04-final-1024x768.png', 1024, 768);
-  await capture('05-final-820x1180.png', 820, 1180);
+  await capture('01-table-summary-1920x1080.png', 1920, 1080);
+  await capture('02-table-summary-1440x900.png', 1440, 900);
+  await capture('03-table-summary-1280x800.png', 1280, 800);
+  await page.getByTestId('table-orders-tab').click();
+  await capture('04-table-orders-1280x800.png', 1280, 800);
+  await page.getByTestId('table-summary-tab').click();
 
   await setLocale('zh');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByTestId('employee-menu-trigger').click();
   await page.getByTestId('employee-menu-popover').waitFor();
   await clearInteractionFocus();
-  await capture('06-sidebar-employee-menu-1280x800.png', 1280, 800);
+  await capture('05-sidebar-role-menu-1280x800.png', 1280, 800);
   await page.keyboard.press('Escape');
   await clearInteractionFocus();
 
-  await capture('07-right-detail-1280x800.png', 1280, 800);
+  await page.locator('a[href="/orders/new"]:visible').first().click();
+  await page.waitForURL('**/orders/new');
+  await page.locator('.order-card').first().click();
+  await page.getByTestId('order-detail-actions').waitFor();
+  await capture('06-new-order-actions-1280x800.png', 1280, 800);
 
   await setLocale('vi');
-  await capture('08-vietnamese-1280x800.png', 1280, 800);
+  await capture('07-new-order-vietnamese-1280x800.png', 1280, 800);
 
   await setLocale('en');
-  await capture('09-english-1280x800.png', 1280, 800);
+  await capture('08-new-order-english-1280x800.png', 1280, 800);
 
   await setLocale('zh');
-  await page.getByTestId('print-availability').waitFor();
-  await capture('10-print-gated-1280x800.png', 1280, 800);
+  await page.getByTestId('top-print-status').waitFor();
+  await capture('09-new-order-print-gated-1280x800.png', 1280, 800);
 
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
   process.stdout.write(`Captured final cashier review images in ${outputDirectory}\n`);
@@ -86,16 +88,6 @@ async function selectFixtureTable() {
   await page.getByTestId('table-card-demo-table-1').click();
   await page.getByTestId('table-detail').waitFor();
   await page.waitForTimeout(120);
-}
-
-async function closeResponsiveDetail(width, height) {
-  await page.setViewportSize({ width, height });
-  await page.waitForTimeout(100);
-  const detail = page.locator('.cashier-shell__detail--open');
-  if (await detail.count()) {
-    await detail.locator('.shell-detail-close').click();
-    await page.locator('.cashier-shell__detail--open').waitFor({ state: 'detached' });
-  }
 }
 
 async function setLocale(locale) {

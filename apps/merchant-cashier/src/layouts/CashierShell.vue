@@ -20,6 +20,7 @@ import {
   useUiStore,
 } from '@/stores';
 import type { CashierOrderAction } from '@/components/common/view-models';
+import type { TableSessionOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
@@ -60,8 +61,7 @@ const identity = computed(() => ({
     || profile.value?.nameZh
     || session.value?.merchant.nameZh
     || '',
-  staffName: session.value?.displayName || session.value?.username || '',
-  role: session.value?.role || 'STAFF',
+  role: session.value?.role,
   merchantLogoUrl: resolveMediaUrl(profile.value?.logoUrl),
 }));
 const availableTableCount = computed(
@@ -187,6 +187,21 @@ async function openNewOrders() {
   await router.push('/orders/new');
 }
 
+async function openTableOrder(order: TableSessionOrder) {
+  const path = order.status === 'PENDING_ACCEPTANCE'
+    ? '/orders/new'
+    : ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'].includes(order.status)
+      ? '/orders/active'
+      : '/orders/history';
+  await router.push(path);
+  try {
+    await ordersStore.selectOrder(order.id);
+    uiStore.openDetail('order', order.id);
+  } catch {
+    uiStore.pushToast(t('error.operationFailed'), 'error');
+  }
+}
+
 async function recoverData() {
   await Promise.allSettled([
     ...(profile.value ? [] : [authStore.refreshProfile()]),
@@ -256,7 +271,6 @@ onBeforeUnmount(() => {
       :business-open="plannedBusinessOpen"
       :business-hours-label="businessHoursLabel"
       :demo-mode="demoMode"
-      :staff-name="identity.staffName"
       :role="identity.role"
       :logging-out="loggingOut"
       :new-order-count="pendingOrders.length"
@@ -308,6 +322,7 @@ onBeforeUnmount(() => {
           :closing="closingSession"
           :actions-disabled="writeActionsDisabled"
           @close-session="requestCloseSession"
+          @open-order="openTableOrder"
         />
         <OrderDetailPanel
           v-else-if="selectedOrder"

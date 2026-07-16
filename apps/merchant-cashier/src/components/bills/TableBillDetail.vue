@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { BriefcaseBusiness, Clock3, Users } from '@lucide/vue';
-import { computed } from 'vue';
+import { BriefcaseBusiness, Clock3, ListOrdered } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
@@ -21,9 +21,11 @@ const props = defineProps<{
 
 defineEmits<{
   closeSession: [];
+  openOrder: [order: TableSessionOrder];
 }>();
 
 const { t, locale } = useI18n();
+const activeTab = ref<'items' | 'orders'>('items');
 const canClose = computed(
   () => props.session?.status === 'OPEN' && Number(props.session.unfinishedOrderCount || 0) === 0,
 );
@@ -46,6 +48,13 @@ const tableStatusLabel = computed(() => {
 function orderItemCount(order: TableSessionOrder) {
   return (order.items || []).reduce((total, item) => total + Number(item.quantity || 0), 0);
 }
+
+watch(
+  () => props.session?.id,
+  () => {
+    activeTab.value = 'items';
+  },
+);
 </script>
 
 <template>
@@ -59,21 +68,56 @@ function orderItemCount(order: TableSessionOrder) {
         </span>
       </div>
       <p>
-        <span :title="t('table.guestCountUnknown')"><Users :size="16" aria-hidden="true" />—</span>
-        <i aria-hidden="true">|</i>
         <span>{{ t('table.openedAtValue', { time: formatVietnamTime(session.openedAt, locale) }) }}</span>
         <i aria-hidden="true">|</i>
         <span><Clock3 :size="16" aria-hidden="true" />{{ durationLabel }}</span>
+        <i aria-hidden="true">|</i>
+        <span><ListOrdered :size="16" aria-hidden="true" />{{ t('table.orderCount', { count: session.orderCount || 0 }) }}</span>
       </p>
     </header>
 
-    <section class="detail-section table-bill-orders">
-      <div class="detail-section__heading">
-        <h4>{{ t('bill.orders') }}</h4>
-        <span>{{ t('bill.orderCountShort', { count: session.orderCount || 0 }) }}</span>
+    <section class="detail-section table-bill-content">
+      <div class="table-detail-tabs" role="tablist" :aria-label="t('bill.tableBill')" data-testid="table-detail-tabs">
+        <button
+          type="button"
+          role="tab"
+          data-testid="table-summary-tab"
+          :aria-selected="activeTab === 'items'"
+          :class="{ 'is-active': activeTab === 'items' }"
+          @click="activeTab = 'items'"
+        >
+          {{ t('bill.itemSummary') }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-testid="table-orders-tab"
+          :aria-selected="activeTab === 'orders'"
+          :class="{ 'is-active': activeTab === 'orders' }"
+          @click="activeTab = 'orders'"
+        >
+          {{ t('bill.orderDetails') }}
+        </button>
       </div>
-      <div class="bill-order-list">
-        <article v-for="order in session.orders || []" :key="order.id" class="bill-order-row">
+
+      <div class="table-bill-scroll" data-testid="table-bill-scroll">
+        <div v-if="activeTab === 'items'" class="table-item-summary-list" data-testid="table-item-summary">
+          <article v-for="item in itemSummary" :key="item.name" class="table-item-summary-row">
+            <strong>{{ item.name }}</strong>
+            <span>{{ t('order.quantity', { count: item.quantity }) }}</span>
+            <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
+          </article>
+          <p v-if="!itemSummary.length" class="table-detail-empty">{{ t('bill.itemSummaryEmpty') }}</p>
+        </div>
+
+        <div v-else class="bill-order-list" data-testid="table-order-details">
+          <button
+            v-for="order in session.orders || []"
+            :key="order.id"
+            type="button"
+            class="bill-order-row"
+            @click="$emit('openOrder', order)"
+          >
           <div class="bill-order-row__heading">
             <strong>#{{ order.orderNo || t('order.numberFallback') }}</strong>
             <OrderStatusBadge :status="order.status" />
@@ -83,32 +127,19 @@ function orderItemCount(order: TableSessionOrder) {
             <b>{{ formatVnd(order.totalAmountVnd, locale) }}</b>
             <span>{{ t('table.itemCount', { count: orderItemCount(order) }) }}</span>
           </div>
-        </article>
-
-        <section v-if="itemSummary.length" class="table-bill-item-summary">
-          <div class="table-bill-item-summary__heading">
-            <strong>{{ t('bill.itemSummary') }}</strong>
-            <span>{{ t('order.itemKinds', { count: itemSummary.length }) }}</span>
-          </div>
-          <ul>
-            <li v-for="item in itemSummary" :key="item.name">
-              <span>{{ item.name }} × {{ item.quantity }}</span>
-              <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
-            </li>
-          </ul>
-        </section>
+          </button>
+        </div>
       </div>
     </section>
 
     <BillSummary :item-amount="session.totalAmountVnd" :total-amount="session.totalAmountVnd" />
 
-    <PrintJobActions :table-session-id="session.id" :disabled="actionsDisabled" />
-
     <p v-if="Number(session.unfinishedOrderCount || 0) > 0" class="detail-notice">
       {{ t('table.closeBlocked', { count: session.unfinishedOrderCount || 0 }) }}
     </p>
 
-    <div class="detail-action-stack">
+    <div class="detail-action-stack table-detail-actions" data-testid="table-detail-actions">
+      <PrintJobActions compact :table-session-id="session.id" :disabled="actionsDisabled" />
       <button
         type="button"
         class="primary-action table-close-action"
@@ -118,7 +149,6 @@ function orderItemCount(order: TableSessionOrder) {
         <BriefcaseBusiness :size="20" :stroke-width="1.9" aria-hidden="true" />
         {{ closing ? t('table.closingSession') : t('table.closeSession') }}
       </button>
-
     </div>
   </div>
 

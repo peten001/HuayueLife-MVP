@@ -76,27 +76,7 @@ function hideBrokenImage(event: Event) {
       </div>
     </dl>
 
-    <section v-if="order.contactName || order.contactPhone || order.deliveryAddress" class="detail-section">
-      <div class="detail-section__heading">
-        <h4>{{ t('order.customerInfo') }}</h4>
-      </div>
-      <ul class="contact-list">
-        <li v-if="order.contactName">
-          <UserRound :size="16" aria-hidden="true" />
-          <span>{{ order.contactName }}</span>
-        </li>
-        <li v-if="order.contactPhone">
-          <Phone :size="16" aria-hidden="true" />
-          <span>{{ order.contactPhone }}</span>
-        </li>
-        <li v-if="order.deliveryAddress">
-          <MapPin :size="16" aria-hidden="true" />
-          <span>{{ order.deliveryAddress }}</span>
-        </li>
-      </ul>
-    </section>
-
-    <section class="detail-section detail-section--scrollable">
+    <section class="detail-section detail-section--scrollable order-detail-scroll" data-testid="order-item-scroll">
       <div class="detail-section__heading">
         <h4>{{ t('order.itemsTitle') }}</h4>
         <span>{{ t('order.itemKinds', { count: order.items?.length || 0 }) }}</span>
@@ -121,11 +101,29 @@ function hideBrokenImage(event: Event) {
           <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
         </article>
       </div>
-    </section>
 
-    <section v-if="order.customerRemark" class="detail-remark">
-      <strong>{{ t('order.customerRemark') }}</strong>
-      <p>{{ order.customerRemark }}</p>
+      <section v-if="order.contactName || order.contactPhone || order.deliveryAddress" class="order-detail-contact">
+        <strong>{{ t('order.customerInfo') }}</strong>
+        <ul class="contact-list">
+          <li v-if="order.contactName">
+            <UserRound :size="16" aria-hidden="true" />
+            <span>{{ order.contactName }}</span>
+          </li>
+          <li v-if="order.contactPhone">
+            <Phone :size="16" aria-hidden="true" />
+            <span>{{ order.contactPhone }}</span>
+          </li>
+          <li v-if="order.deliveryAddress">
+            <MapPin :size="16" aria-hidden="true" />
+            <span>{{ order.deliveryAddress }}</span>
+          </li>
+        </ul>
+      </section>
+
+      <section v-if="order.customerRemark" class="detail-remark">
+        <strong>{{ t('order.customerRemark') }}</strong>
+        <p>{{ order.customerRemark }}</p>
+      </section>
     </section>
 
     <BillSummary
@@ -134,15 +132,17 @@ function hideBrokenImage(event: Event) {
       :total-amount="order.totalAmountVnd"
     />
 
-    <PrintJobActions :order-id="order.id" :disabled="actionsDisabled" />
-
     <div class="detail-action-stack">
       <OrderActionBar
         :order="order"
         :loading="actionLoading"
         :disabled="actionsDisabled"
         @action="$emit('action', $event)"
-      />
+      >
+        <template #print>
+          <PrintJobActions compact :order-id="order.id" :disabled="actionsDisabled" />
+        </template>
+      </OrderActionBar>
     </div>
   </div>
 

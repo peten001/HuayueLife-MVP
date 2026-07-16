@@ -33,6 +33,8 @@ try {
   await verifyEmployeeMenu();
 
   const viewports = [
+    [1920, 1080],
+    [1440, 900],
     [1536, 1024],
     [1366, 768],
     [1280, 800],
@@ -50,10 +52,11 @@ try {
   await verifyOrderFlow();
   await verifyNetworkRecovery();
   await verifyLocales();
+  await verifyAndroidWebViewLandscape();
 
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
   process.stdout.write(
-    'Verified the final operator layout at 1536x1024, 1366x768, 1280x800, '
+    'Verified the final operator layout at 1920x1080, 1536x1024, 1440x900, 1366x768, 1280x800, '
       + '1180x800, 1024x768, 820x1180, and 768x1024, including fixture facts, employee menu, disabled '
       + 'printing, zh/vi/en overflow, order flow, and network recovery.\n',
   );
@@ -124,9 +127,18 @@ async function verifyFixtureFacts() {
   );
 
   const detail = page.getByTestId('table-detail');
+  assert.equal(
+    await detail.getByTestId('table-summary-tab').getAttribute('aria-selected'),
+    'true',
+    'Table detail must default to item summary',
+  );
+  assert.ok(await detail.locator('.table-item-summary-row').count() > 0, 'A01 must show its item summary');
+  await detail.getByTestId('table-orders-tab').click();
   assert.equal(await detail.locator('.bill-order-row').count(), 3, 'A01 must show its three real fixture orders');
+  await detail.getByTestId('table-summary-tab').click();
   assert.match((await detail.textContent()) || '', /411[.,]?000/);
-  assert.match((await detail.textContent()) || '', /仍有\s*2\s*笔未完成订单，不能关闭桌台/);
+  assert.match((await detail.textContent()) || '', /仍有\s*2\s*笔订单未完成，暂不能关闭桌台/);
+  assert.equal(await detail.locator('.print-job-actions').count(), 0, 'Standalone print card must be absent');
 
   const search = page.getByTestId('table-toolbar').locator('input[type="search"]');
   await search.fill('DEMO-1001');
@@ -175,6 +187,9 @@ async function verifyFinalShellContent() {
 async function verifyEmployeeMenu() {
   await page.setViewportSize({ width: 1280, height: 800 });
   const trigger = page.getByTestId('employee-menu-trigger');
+  assert.equal((await page.getByTestId('account-role-label').textContent())?.trim(), '经理');
+  assert.equal((await page.getByTestId('account-role-account-label').textContent())?.trim(), '管理账号');
+  assert.equal((await trigger.textContent())?.includes('演示员工'), false, 'Employee nickname must not appear');
   await trigger.click();
   const popover = page.getByTestId('employee-menu-popover');
   await popover.waitFor();
@@ -189,9 +204,11 @@ async function verifyEmployeeMenu() {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.getByTestId('employee-menu-trigger').click();
   const compactIdentity = page.getByTestId('employee-menu-popover').locator('.account-menu__compact-identity');
-  assert.equal(await compactIdentity.isVisible(), true, 'Collapsed tablet rail must expose merchant and employee identity');
+  assert.equal(await compactIdentity.isVisible(), true, 'Collapsed tablet rail must expose merchant and role identity');
   assert.match((await compactIdentity.textContent()) || '', /演示餐厅/);
-  assert.match((await compactIdentity.textContent()) || '', /演示员工/);
+  assert.match((await compactIdentity.textContent()) || '', /经理/);
+  assert.match((await compactIdentity.textContent()) || '', /管理账号/);
+  assert.doesNotMatch((await compactIdentity.textContent()) || '', /演示员工/);
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1280, height: 800 });
 }
@@ -259,6 +276,31 @@ async function verifyViewport(width, height) {
     const firstCard = tableCards[0]?.getBoundingClientRect();
     const route = document.querySelector('.cashier-shell__route');
     const detail = document.querySelector('.cashier-shell__detail');
+    const detailPanel = document.querySelector('.cashier-shell__detail-panel');
+    const actionRow = document.querySelector('[data-testid="table-detail-actions"]');
+    const actionButtons = actionRow ? [...actionRow.querySelectorAll('button')] : [];
+    const actionRect = actionRow instanceof HTMLElement ? actionRow.getBoundingClientRect() : null;
+    const panelRect = detailPanel instanceof HTMLElement ? detailPanel.getBoundingClientRect() : null;
+    const actionsContained = Boolean(actionRect && panelRect)
+      && actionRect.left >= panelRect.left - 1
+      && actionRect.right <= panelRect.right + 1
+      && actionRect.top >= panelRect.top - 1
+      && actionRect.bottom <= panelRect.bottom + 1
+      && actionButtons.every((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.left >= panelRect.left - 1
+          && rect.right <= panelRect.right + 1
+          && rect.top >= panelRect.top - 1
+          && rect.bottom <= panelRect.bottom + 1;
+      });
+    const actionButtonsOverlap = actionButtons.some((button, index) => {
+      const rect = button.getBoundingClientRect();
+      return actionButtons.slice(index + 1).some((candidate) => {
+        const next = candidate.getBoundingClientRect();
+        return rect.left < next.right - 1 && rect.right > next.left + 1
+          && rect.top < next.bottom - 1 && rect.bottom > next.top + 1;
+      });
+    });
     const detailOverflow = detail instanceof HTMLElement
       ? Math.max(
           detail.scrollWidth - detail.clientWidth,
@@ -297,6 +339,24 @@ async function verifyViewport(width, height) {
       route: rectOf('.cashier-shell__route'),
       detail: detail instanceof HTMLElement ? rectOf('.cashier-shell__detail') : null,
       detailOverflowX: Math.max(0, detailOverflow),
+      actionRowOverflowX: actionRow instanceof HTMLElement
+        ? Math.max(0, actionRow.scrollWidth - actionRow.clientWidth)
+        : 0,
+      actionsContained,
+      actionButtonsOverlap,
+      actionGeometry: {
+        panel: panelRect ? { left: panelRect.left, right: panelRect.right, top: panelRect.top, bottom: panelRect.bottom } : null,
+        row: actionRect ? { left: actionRect.left, right: actionRect.right, top: actionRect.top, bottom: actionRect.bottom } : null,
+        buttons: actionButtons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+        }),
+      },
+      standalonePrintCards: document.querySelectorAll('.print-job-actions').length,
+      tableScrollOverflowY: (() => {
+        const scroll = document.querySelector('[data-testid="table-bill-scroll"]');
+        return scroll instanceof HTMLElement ? Math.max(0, scroll.scrollHeight - scroll.clientHeight) : 0;
+      })(),
       brand: rectOf('[data-testid="cashier-brand"]'),
       merchant: rectOf('[data-testid="cashier-merchant-panel"]'),
       employee: rectOf('[data-testid="employee-menu-trigger"]'),
@@ -326,6 +386,14 @@ async function verifyViewport(width, height) {
   assert.equal(layout.headerMerchantCount, 0, `${width}x${height}: merchant panel leaked into top bar`);
   assert.equal(layout.headerEmployeeCount, 0, `${width}x${height}: employee card leaked into top bar`);
   assert.equal(layout.topItemsOverlap, false, `${width}x${height}: top status items overlap`);
+  assert.equal(
+    layout.actionsContained,
+    true,
+    `${width}x${height}: detail actions escape the right panel ${JSON.stringify(layout.actionGeometry)}`,
+  );
+  assert.equal(layout.actionButtonsOverlap, false, `${width}x${height}: detail action buttons overlap`);
+  assert.ok(layout.actionRowOverflowX <= 1, `${width}x${height}: detail actions overflow horizontally`);
+  assert.equal(layout.standalonePrintCards, 0, `${width}x${height}: standalone print card remains`);
   assert.equal(layout.mobileNavVisible, width < 900, `${width}x${height}: wrong navigation mode`);
 
   if (width >= 900) {
@@ -421,7 +489,8 @@ async function verifyPrintIsDisabled() {
   const printButton = page.getByTestId('print-primary');
   assert.equal(await printButton.isDisabled(), true, 'Printing must remain disabled until RC execution and printer gates are enabled');
   assert.match((await printButton.textContent()) || '', /打印桌账/);
-  assert.match((await page.getByTestId('print-availability').textContent()) || '', /打印功能未开通/);
+  assert.match((await page.getByTestId('top-print-status').textContent()) || '', /打印功能未开通|未开通/);
+  assert.equal(await page.locator('.print-job-actions').count(), 0, 'No standalone print card may remain');
   assert.equal(await page.locator('[data-testid*="print"][href]').count(), 0, 'No print navigation may be exposed');
 }
 
@@ -435,6 +504,13 @@ async function verifyOrderFlow() {
   await page.locator('a[href="/orders/new"]:visible').first().click();
   await page.waitForURL('**/orders/new');
   await page.locator('.order-card').first().click();
+  const actionLabels = await page.getByTestId('order-detail-actions').locator('button').evaluateAll((buttons) =>
+    buttons
+      .sort((left, right) => Number(getComputedStyle(left).order) - Number(getComputedStyle(right).order))
+      .map((button) => button.textContent?.trim()),
+  );
+  assert.deepEqual(actionLabels, ['拒单', '打印', '接单']);
+  assert.equal(await page.locator('.print-job-actions').count(), 0, 'New order detail must not show a print card');
   await page.getByRole('button', { name: '拒单', exact: true }).click();
   await page.getByRole('alertdialog').waitFor();
   await page.getByRole('button', { name: '取消', exact: true }).click();
@@ -489,6 +565,12 @@ async function verifyLocales() {
       );
     }
 
+    await selectFixtureTable();
+    const tableDetail = page.getByTestId('table-detail');
+    assert.equal(await tableDetail.getByTestId('table-summary-tab').isVisible(), true);
+    assert.equal(await tableDetail.getByTestId('table-orders-tab').isVisible(), true);
+    assert.equal(await tableDetail.getByTestId('table-detail-actions').locator('button').count(), 2);
+
     for (const [width, height] of [
       [1280, 800],
       [1180, 800],
@@ -505,6 +587,15 @@ async function verifyLocales() {
         const header = document.querySelector('[data-testid="cashier-topbar"]');
         const toolbar = document.querySelector('[data-testid="table-toolbar"]');
         const sidebar = document.querySelector('[data-testid="cashier-sidebar"]');
+        const detail = document.querySelector('.cashier-shell__detail-panel');
+        const actionRow = document.querySelector('[data-testid="table-detail-actions"]');
+        const actionButtons = actionRow ? [...actionRow.querySelectorAll('button')] : [];
+        const detailRect = detail instanceof HTMLElement ? detail.getBoundingClientRect() : null;
+        const actionsContained = Boolean(detailRect) && actionButtons.every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= detailRect.left - 1 && rect.right <= detailRect.right + 1
+            && rect.top >= detailRect.top - 1 && rect.bottom <= detailRect.bottom + 1;
+        });
         const shortLabels = [...document.querySelectorAll('.top-status-item__label--short')]
           .filter((element) => getComputedStyle(element).display !== 'none');
         const statusContainer = document.querySelector('[data-testid="table-toolbar"] .status-filters');
@@ -568,6 +659,8 @@ async function verifyLocales() {
           adjacentTextOverlaps,
           textOutsideButton,
           invalidStatusStyle,
+          actionsContained,
+          actionButtonX: Math.max(0, ...actionButtons.map(horizontalOverflow)),
         };
       });
       assert.ok(overflow.documentX <= 1, `${locale} ${width}x${height}: document overflows horizontally`);
@@ -581,6 +674,8 @@ async function verifyLocales() {
       assert.equal(overflow.adjacentTextOverlaps, false, `${locale} ${width}x${height}: table state text overlaps`);
       assert.equal(overflow.textOutsideButton, false, `${locale} ${width}x${height}: table state text escapes its button`);
       assert.equal(overflow.invalidStatusStyle, false, `${locale} ${width}x${height}: table state nowrap/overflow rules changed`);
+      assert.equal(overflow.actionsContained, true, `${locale} ${width}x${height}: action buttons escape the panel`);
+      assert.ok(overflow.actionButtonX <= 1, `${locale} ${width}x${height}: action labels overflow`);
       if (width >= 900) {
         assert.ok(overflow.statusContainerX <= 1, `${locale} ${width}x${height}: table state container overflows`);
       } else {
@@ -591,6 +686,35 @@ async function verifyLocales() {
         );
       }
     }
+  }
+}
+
+async function verifyAndroidWebViewLandscape() {
+  const webViewContext = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    deviceScaleFactor: 1,
+    userAgent: 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/121 Mobile Safari/537.36 YunQiaoMerchantTerminal/1.0',
+    reducedMotion: 'reduce',
+  });
+  const webViewPage = await webViewContext.newPage();
+  try {
+    await webViewPage.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
+    await webViewPage.getByTestId('enter-demo').click();
+    await webViewPage.waitForURL('**/tables');
+    await webViewPage.getByTestId('table-card-demo-table-1').click();
+    const detail = webViewPage.getByTestId('table-detail');
+    await detail.waitFor();
+    assert.equal(await detail.getByTestId('table-summary-tab').isVisible(), true);
+    assert.equal(await detail.getByTestId('table-detail-actions').locator('button').count(), 2);
+    assert.equal(await webViewPage.locator('.print-job-actions').count(), 0);
+    const overflow = await webViewPage.evaluate(() => ({
+      x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }));
+    assert.ok(overflow.x <= 1, 'Android WebView 1280x800 overflows horizontally');
+    assert.ok(overflow.y <= 1, 'Android WebView 1280x800 overflows vertically');
+  } finally {
+    await webViewContext.close();
   }
 }
 

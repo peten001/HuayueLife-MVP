@@ -5,7 +5,6 @@ import { useI18n, type Locale } from '@/i18n';
 
 const props = defineProps<{
   merchantName?: string;
-  staffName?: string;
   role?: string;
   loggingOut?: boolean;
 }>();
@@ -17,10 +16,22 @@ defineEmits<{
 const { t, locale, setLocale } = useI18n();
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
+const normalizedRole = computed(() => {
+  if (props.role === 'OWNER' || props.role === 'MANAGER' || props.role === 'STAFF') {
+    return props.role;
+  }
+  console.warn('[cashier] Unrecognized merchant role; using the STAFF display fallback.');
+  return 'STAFF';
+});
 const roleLabel = computed(() => {
-  if (props.role === 'OWNER') return t('auth.role.owner');
-  if (props.role === 'MANAGER') return t('auth.role.manager');
+  if (normalizedRole.value === 'OWNER') return t('auth.role.owner');
+  if (normalizedRole.value === 'MANAGER') return t('auth.role.manager');
   return t('auth.role.staff');
+});
+const roleAccountLabel = computed(() => {
+  if (normalizedRole.value === 'OWNER') return t('auth.roleAccount.owner');
+  if (normalizedRole.value === 'MANAGER') return t('auth.roleAccount.manager');
+  return t('auth.roleAccount.staff');
 });
 
 function changeLocale(event: Event) {
@@ -53,13 +64,13 @@ onBeforeUnmount(() => {
       data-testid="employee-menu-trigger"
       :aria-expanded="open"
       :aria-label="t('account.menu')"
-      :title="staffName || t('shell.staffFallback')"
+      :title="`${roleLabel} · ${roleAccountLabel}`"
       @click="open = !open"
     >
       <span class="account-menu__avatar" aria-hidden="true"><UserRound :size="18" /></span>
       <span class="account-menu__copy">
-        <strong>{{ staffName || t('shell.staffFallback') }}</strong>
-        <small>{{ roleLabel }}</small>
+        <strong data-testid="account-role-label">{{ roleLabel }}</strong>
+        <small data-testid="account-role-account-label">{{ roleAccountLabel }}</small>
       </span>
       <ChevronDown :size="16" aria-hidden="true" />
     </button>
@@ -67,7 +78,7 @@ onBeforeUnmount(() => {
     <section v-if="open" class="account-menu__popover" data-testid="employee-menu-popover">
       <div class="account-menu__compact-identity">
         <strong>{{ merchantName || t('shell.merchantFallback') }}</strong>
-        <span>{{ staffName || t('shell.staffFallback') }} · {{ roleLabel }}</span>
+        <span>{{ roleLabel }} · {{ roleAccountLabel }}</span>
       </div>
       <label>
         <Languages :size="17" aria-hidden="true" />
