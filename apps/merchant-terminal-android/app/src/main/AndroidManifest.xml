@@ -31,7 +31,7 @@
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name=".connector.ConnectorSetupActivity"
+            android:name=".connector.ConnectorControlActivity"
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.YunQiaoMerchantTerminal.Diagnostics"

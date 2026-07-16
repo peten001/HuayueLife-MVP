@@ -42,10 +42,10 @@ class OriginPolicyTest {
     }
 
     @Test
-    fun `invalid placeholder remains an unconfigured but safe diagnostic build`() {
+    fun `empty debug configuration remains safely unconfigured`() {
         val policy = OriginPolicy(
-            startUrl = "https://cashier.invalid/",
-            trustedPageOrigin = "https://cashier.invalid",
+            startUrl = "",
+            trustedPageOrigin = "",
             trustedResourceHosts = "",
         )
 

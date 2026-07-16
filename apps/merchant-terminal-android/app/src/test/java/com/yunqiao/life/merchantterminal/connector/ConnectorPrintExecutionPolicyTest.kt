@@ -136,7 +136,6 @@ class ConnectorPrintExecutionPolicyTest {
     )
 
     private fun settings() = ConnectorSettingsSnapshot(
-        installId = "install",
         merchantId = "7",
         connectorEnabled = true,
         remoteExecutionEnabled = true,

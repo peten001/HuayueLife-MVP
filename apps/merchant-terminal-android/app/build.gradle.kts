@@ -14,23 +14,8 @@ fun configValue(
     .orElse(providers.environmentVariable(environmentName))
     .orElse(fallback)
 
-val terminalVersionCode = configValue(
-    propertyName = "terminalVersionCode",
-    environmentName = "TERMINAL_VERSION_CODE",
-    fallback = "4",
-).map { value ->
-    value.toIntOrNull()
-        ?.takeIf { it in 1..2_100_000_000 }
-        ?: error("terminalVersionCode must be an integer between 1 and 2100000000.")
-}
-val terminalVersionName = configValue(
-    propertyName = "terminalVersionName",
-    environmentName = "TERMINAL_VERSION_NAME",
-    fallback = "1.0.0-rc1",
-).map { value ->
-    value.takeIf { it.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")) }
-        ?: error("terminalVersionName must contain only letters, digits, dots, underscores, or hyphens.")
-}
+val terminalVersionCode = providers.provider { 6 }
+val terminalVersionName = providers.provider { "1.0.0-rc2" }
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -38,43 +23,29 @@ fun String.asBuildConfigString(): String =
 val debugCashierWebUrl = configValue(
     propertyName = "cashierWebUrlDebug",
     environmentName = "CASHIER_WEB_URL_DEBUG",
-    fallback = "https://cashier.invalid/",
+    fallback = "",
 )
-val releaseCashierWebUrl = configValue(
-    propertyName = "cashierWebUrlRelease",
-    environmentName = "CASHIER_WEB_URL_RELEASE",
-    fallback = "https://cashier.invalid/",
-)
+val releaseCashierWebUrl = providers.provider { "https://cashier.huayueyouxuan.com/" }
 val debugTrustedPageOrigin = configValue(
     propertyName = "trustedPageOriginDebug",
     environmentName = "TRUSTED_PAGE_ORIGIN_DEBUG",
-    fallback = "https://cashier.invalid",
+    fallback = "",
 )
-val releaseTrustedPageOrigin = configValue(
-    propertyName = "trustedPageOriginRelease",
-    environmentName = "TRUSTED_PAGE_ORIGIN_RELEASE",
-    fallback = "https://cashier.invalid",
-)
+val releaseTrustedPageOrigin = providers.provider { "https://cashier.huayueyouxuan.com" }
 val debugTrustedResourceHosts = configValue(
     propertyName = "trustedResourceHostsDebug",
     environmentName = "TRUSTED_RESOURCE_HOSTS_DEBUG",
     fallback = "",
 )
-val releaseTrustedResourceHosts = configValue(
-    propertyName = "trustedResourceHostsRelease",
-    environmentName = "TRUSTED_RESOURCE_HOSTS_RELEASE",
-    fallback = "",
-)
+val releaseTrustedResourceHosts = providers.provider { "api.huayueyouxuan.com" }
 val debugConnectorApiBaseUrl = configValue(
     propertyName = "connectorApiBaseUrlDebug",
     environmentName = "CONNECTOR_API_BASE_URL_DEBUG",
-    fallback = "https://api.invalid/api/v1/",
+    fallback = "",
 )
-val releaseConnectorApiBaseUrl = configValue(
-    propertyName = "connectorApiBaseUrlRelease",
-    environmentName = "CONNECTOR_API_BASE_URL_RELEASE",
-    fallback = "https://api.invalid/api/v1/",
-)
+val releaseConnectorApiBaseUrl = providers.provider {
+    "https://api.huayueyouxuan.com/api/v1"
+}
 val buildRevision = configValue(
     propertyName = "buildRevision",
     environmentName = "BUILD_REVISION",

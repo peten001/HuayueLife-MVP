@@ -139,7 +139,6 @@ class PrinterConnectorService : Service() {
                     )
                     settingsStore.applyRemoteConfig(
                         executionEnabled = remoteBlock == null,
-                        terminalEnabled = true,
                         printerEnabled = remoteBlock == null,
                         automaticPrintingEnabled = remote.automaticPrintingEnabled,
                         pollIntervalMs = remote.pollIntervalMs,
@@ -231,7 +230,7 @@ class PrinterConnectorService : Service() {
                 settingsStore.recordError(error.errorCode)
                 updateNotification("连接器 API 暂不可用：${error.errorCode.take(50)}")
                 if (error.invalidMerchantSession) {
-                    TerminalIdentityReset.clear(applicationContext)
+                    MerchantSessionShutdown.clear(applicationContext)
                     stopSelf()
                     return
                 }
@@ -240,7 +239,6 @@ class PrinterConnectorService : Service() {
                 ) {
                     settingsStore.applyRemoteConfig(
                         executionEnabled = false,
-                        terminalEnabled = true,
                         printerEnabled = settings.remotePrinterEnabled,
                         automaticPrintingEnabled = false,
                         pollIntervalMs = settings.pollIntervalMs,
@@ -362,7 +360,7 @@ class PrinterConnectorService : Service() {
             PendingIntent.getActivity(
                 this,
                 0,
-                Intent(this, ConnectorSetupActivity::class.java),
+                Intent(this, ConnectorControlActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ),
         )

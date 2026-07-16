@@ -1,5 +1,8 @@
 package com.yunqiao.life.merchantterminal.connector
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.data.ConnectorSettingsSnapshot
 import com.yunqiao.life.merchantterminal.data.UsbPrinterBinding
 import com.yunqiao.life.merchantterminal.printing.CutMode
@@ -10,16 +13,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import kotlinx.coroutines.runBlocking
 
-class PairingAndSafetyPolicyTest {
+@RunWith(RobolectricTestRunner::class)
+class ConnectorSafetyPolicyTest {
     @Test
     fun `execution requires merchant session printer association and automatic requires both switches`() {
         val base = ConnectorSettingsSnapshot(
-            installId = "install",
             connectorEnabled = true,
             automaticPrintingEnabled = true,
             remoteExecutionEnabled = true,
-            remoteTerminalEnabled = false,
             remotePrinterEnabled = true,
             remoteAutomaticPrintingEnabled = false,
             usbBinding = binding(printerId = null),
@@ -115,6 +120,35 @@ class PairingAndSafetyPolicyTest {
             ConnectorApiException(403, "HTTP_403", "staff disabled")
                 .invalidMerchantSession,
         )
+    }
+
+    @Test
+    fun `Web sign out closes all execution gates but preserves USB evidence`() = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val settings = ConnectorSettings(context)
+        val usbBinding = binding(printerId = "41")
+        settings.bindMerchantScopeIfAbsent("7")
+        settings.saveUsbBinding(usbBinding)
+        settings.setConnectorEnabled(true)
+        settings.setAutomaticPrintingEnabled(true)
+        settings.applyRemoteConfig(
+            executionEnabled = true,
+            printerEnabled = true,
+            automaticPrintingEnabled = true,
+            pollIntervalMs = 7_000,
+            configRefreshIntervalMs = 30_000,
+        )
+
+        settings.disableForSignedOutSession()
+        val stopped = settings.snapshot()
+
+        assertFalse(stopped.connectorEnabled)
+        assertFalse(stopped.automaticPrintingEnabled)
+        assertFalse(stopped.remoteExecutionEnabled)
+        assertFalse(stopped.remotePrinterEnabled)
+        assertFalse(stopped.remoteAutomaticPrintingEnabled)
+        assertEquals("7", stopped.merchantId)
+        assertEquals(usbBinding, stopped.usbBinding)
     }
 
     private fun binding(printerId: String?) = UsbPrinterBinding(

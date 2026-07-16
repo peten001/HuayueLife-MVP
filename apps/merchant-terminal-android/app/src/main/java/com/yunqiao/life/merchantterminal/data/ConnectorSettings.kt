@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
-import java.util.UUID
 
 private val Context.connectorSettingsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "connector_settings",
@@ -48,14 +47,10 @@ data class UsbPrinterBinding(
 }
 
 data class ConnectorSettingsSnapshot(
-    val installId: String,
-    val terminalId: String? = null,
     val merchantId: String? = null,
-    val terminalName: String? = null,
     val connectorEnabled: Boolean = false,
     val automaticPrintingEnabled: Boolean = false,
     val remoteExecutionEnabled: Boolean = false,
-    val remoteTerminalEnabled: Boolean = false,
     val remotePrinterEnabled: Boolean = false,
     val remoteAutomaticPrintingEnabled: Boolean = false,
     val pollIntervalMs: Long = 7_000,
@@ -86,44 +81,14 @@ class ConnectorSettings(context: Context) {
 
     suspend fun snapshot(): ConnectorSettingsSnapshot = values.first()
 
-    suspend fun ensureInstallId(): String {
-        val current = snapshot().installId
-        if (current.isNotBlank()) return current
-        val generated = UUID.randomUUID().toString()
+    /** Stops native execution after Web sign-out while retaining USB config and local evidence. */
+    suspend fun disableForSignedOutSession() {
         dataStore.edit { preferences ->
-            if (preferences[Keys.INSTALL_ID].isNullOrBlank()) preferences[Keys.INSTALL_ID] = generated
-        }
-        return snapshot().installId
-    }
-
-    suspend fun savePairing(terminalId: String, merchantId: String, terminalName: String) {
-        dataStore.edit { preferences ->
-            preferences[Keys.TERMINAL_ID] = terminalId.take(MAX_ID_LENGTH)
-            preferences[Keys.MERCHANT_ID] = merchantId.take(MAX_ID_LENGTH)
-            preferences[Keys.TERMINAL_NAME] = terminalName.take(MAX_NAME_LENGTH)
             preferences[Keys.CONNECTOR_ENABLED] = false
             preferences[Keys.AUTO_PRINTING_ENABLED] = false
             preferences[Keys.REMOTE_EXECUTION_ENABLED] = false
-            preferences[Keys.REMOTE_TERMINAL_ENABLED] = false
             preferences[Keys.REMOTE_PRINTER_ENABLED] = false
             preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = false
-        }
-    }
-
-    suspend fun clearPairing() {
-        dataStore.edit { preferences ->
-            preferences.remove(Keys.TERMINAL_ID)
-            preferences.remove(Keys.MERCHANT_ID)
-            preferences.remove(Keys.TERMINAL_NAME)
-            preferences[Keys.CONNECTOR_ENABLED] = false
-            preferences[Keys.AUTO_PRINTING_ENABLED] = false
-            preferences[Keys.REMOTE_EXECUTION_ENABLED] = false
-            preferences[Keys.REMOTE_TERMINAL_ENABLED] = false
-            preferences[Keys.REMOTE_PRINTER_ENABLED] = false
-            preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = false
-            preferences.remove(Keys.LAST_ERROR_CODE)
-            preferences.remove(Keys.LAST_SUCCESSFUL_PRINT_AT)
-            preferences.remove(Keys.APPLIED_CONFIG_VERSION)
         }
     }
 
@@ -153,7 +118,6 @@ class ConnectorSettings(context: Context) {
 
     suspend fun applyRemoteConfig(
         executionEnabled: Boolean,
-        terminalEnabled: Boolean,
         printerEnabled: Boolean,
         automaticPrintingEnabled: Boolean,
         pollIntervalMs: Long,
@@ -161,7 +125,6 @@ class ConnectorSettings(context: Context) {
     ) {
         dataStore.edit { preferences ->
             preferences[Keys.REMOTE_EXECUTION_ENABLED] = executionEnabled
-            preferences[Keys.REMOTE_TERMINAL_ENABLED] = terminalEnabled
             preferences[Keys.REMOTE_PRINTER_ENABLED] = printerEnabled
             preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = automaticPrintingEnabled
             preferences[Keys.AUTO_PRINTING_ENABLED] =
@@ -273,14 +236,10 @@ class ConnectorSettings(context: Context) {
         } else null
 
         return ConnectorSettingsSnapshot(
-            installId = preferences[Keys.INSTALL_ID].orEmpty(),
-            terminalId = preferences[Keys.TERMINAL_ID],
             merchantId = preferences[Keys.MERCHANT_ID],
-            terminalName = preferences[Keys.TERMINAL_NAME],
             connectorEnabled = preferences[Keys.CONNECTOR_ENABLED] ?: false,
             automaticPrintingEnabled = preferences[Keys.AUTO_PRINTING_ENABLED] ?: false,
             remoteExecutionEnabled = preferences[Keys.REMOTE_EXECUTION_ENABLED] ?: false,
-            remoteTerminalEnabled = preferences[Keys.REMOTE_TERMINAL_ENABLED] ?: false,
             remotePrinterEnabled = preferences[Keys.REMOTE_PRINTER_ENABLED] ?: false,
             remoteAutomaticPrintingEnabled =
                 preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] ?: false,
@@ -295,14 +254,10 @@ class ConnectorSettings(context: Context) {
     }
 
     private object Keys {
-        val INSTALL_ID = stringPreferencesKey("install_id")
-        val TERMINAL_ID = stringPreferencesKey("terminal_id")
         val MERCHANT_ID = stringPreferencesKey("merchant_id")
-        val TERMINAL_NAME = stringPreferencesKey("terminal_name")
         val CONNECTOR_ENABLED = booleanPreferencesKey("connector_enabled")
         val AUTO_PRINTING_ENABLED = booleanPreferencesKey("automatic_printing_enabled")
         val REMOTE_EXECUTION_ENABLED = booleanPreferencesKey("remote_execution_enabled")
-        val REMOTE_TERMINAL_ENABLED = booleanPreferencesKey("remote_terminal_enabled")
         val REMOTE_PRINTER_ENABLED = booleanPreferencesKey("remote_printer_enabled")
         val REMOTE_AUTO_PRINTING_ENABLED = booleanPreferencesKey("remote_automatic_printing_enabled")
         val POLL_INTERVAL_MS = longPreferencesKey("poll_interval_ms")
@@ -326,7 +281,6 @@ class ConnectorSettings(context: Context) {
 
     private companion object {
         const val MAX_ID_LENGTH = 128
-        const val MAX_NAME_LENGTH = 100
         const val MAX_DEVICE_NAME_LENGTH = 512
     }
 }

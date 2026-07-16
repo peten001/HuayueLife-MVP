@@ -333,7 +333,7 @@ RC 曾实现过以下 V2 候选能力：
 - 终端服务、凭据服务、TerminalAuthGuard、ActiveTerminalGuard：`apps/api/src/modules/printing/services/terminal-credentials.service.ts`, `apps/api/src/modules/printing/guards/terminal-auth.guard.ts`
 - 终端 pairing/heartbeat controller 文件：`apps/api/src/modules/printing/controllers/terminal-connector.controller.ts`, `apps/api/src/modules/printing/controllers/terminal-pairing.controller.ts`
 - merchant-admin 曾有终端管理页：`apps/merchant-admin/src/pages/printing/PrintingTerminalsPage.vue`
-- Android 曾有配对页与终端凭据存储：`apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/connector/ConnectorSetupActivity.kt`
+- Android RC1 曾有配对页与终端凭据存储；RC2 已从 Android release 源码、Manifest 与资源中移除该运行链路。
 
 ### 4.2 本轮 V1 校正
 
@@ -353,11 +353,11 @@ flowchart LR
 |---|---|---|
 | `/terminal/*` controller | 不再注册到 `PrintingModule.controllers` | `apps/api/src/modules/printing/printing.module.ts` |
 | 商家后台终端 Tab | 从打印中心可见导航移除 | `apps/merchant-admin/src/components/printing/PrintingCenterShell.vue`, `apps/merchant-admin/src/router/index.ts` |
-| Android 绑定码 UI | 配对输入和按钮隐藏，APP 不再要求先配对 | `ConnectorSetupActivity.kt` |
+| Android 旧设备认证 UI | 旧 Activity、Manifest 注册、layout 和 strings 已物理移除；新控制页只管理本机 USB 连接器 | `apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/connector/ConnectorControlActivity.kt`, `apps/merchant-terminal-android/app/src/main/AndroidManifest.xml` |
 | Android 原生认证 | `ConnectorApiClient` 使用 `Authorization: Bearer <merchant JWT>` 调用 `/merchant/printing/connector/*` | `ConnectorApiClient.kt` |
-| Android Token 存储 | Keystore 中保存 WebView 商家/员工会话 token，不保存 Terminal Token | `security/TerminalCredentialStore.kt` |
-| WebView 登录同步 | 只在白名单 URL 下读取 `yunqiao_cashier_access_token` / sessionStorage token | `MainActivity.kt` |
-| Heartbeat | V1 不调用 heartbeat；仅保留本地配置刷新间隔字段用于服务循环 | `PrinterConnectorService.kt`, `ConnectorApiClient.kt` |
+| Android 会话存储 | 记住登录时由 Keystore 加密保存 WebView 商家/员工会话；sessionStorage 登录仅保留在 APP 进程 | `apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/security/MerchantSessionTokenStore.kt` |
+| WebView 登录同步 | 只在精确白名单 Origin 下同步 `yunqiao_cashier_access_token`；可信页面的单向退出信号只停止本机执行，不暴露原生能力 | `apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/MainActivity.kt` |
+| 后台同步 | V1 不调用独立设备在线接口；服务只轮询现有 merchant connector 配置与任务 | `apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/connector/PrinterConnectorService.kt`, `apps/merchant-terminal-android/app/src/main/java/com/yunqiao/life/merchantterminal/connector/ConnectorApiClient.kt` |
 
 说明：
 
@@ -368,7 +368,7 @@ flowchart LR
 安全注意：
 
 - Android 原生层只从可信 WebView 页面读取同一商家 JWT；不读取账号密码，不创建 JS Bridge 执行命令。
-- 商家退出登录或 token 失效后，原生层清除本地 token 并停止连接器启动条件。
+- 商家退出登录或 token 失效后，原生层清除本地会话并停止服务、恢复调度和连接器启动条件；USB 配置及本地打印证据保留。
 - 如果后续发现 WebView token 共享在目标 Android WebView 版本上不稳定，应停止上线并由用户确认替代方案；不得自行恢复 Terminal Token 作为 V1 前提。
 
 ## 5. 打印能力与平台开关

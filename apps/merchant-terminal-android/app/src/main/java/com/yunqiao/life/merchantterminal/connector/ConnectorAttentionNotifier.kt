@@ -57,7 +57,7 @@ object ConnectorAttentionNotifier {
         val intent = PendingIntent.getActivity(
             app,
             0,
-            Intent(app, ConnectorSetupActivity::class.java),
+            Intent(app, ConnectorControlActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         manager.notify(

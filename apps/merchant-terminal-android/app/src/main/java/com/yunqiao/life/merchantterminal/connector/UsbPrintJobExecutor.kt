@@ -131,6 +131,7 @@ class UsbPrintJobExecutor(
         val start = try {
             api.startPrinting(serverJob, networkInfo = "android-connected")
         } catch (error: ConnectorApiException) {
+            if (error.invalidMerchantSession || error.printingDisabled) throw error
             return@withContext error.errorCode
         }
         var printingJob = ledger.markPrinting(

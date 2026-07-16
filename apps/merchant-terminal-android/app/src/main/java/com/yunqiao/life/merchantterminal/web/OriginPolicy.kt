@@ -41,7 +41,6 @@ class OriginPolicy(
         get() = parsedStartUri != null &&
             parsedTrustedOrigin != null &&
             trustedHost != null &&
-            !trustedHost.endsWith(".invalid") &&
             hasSameOrigin(parsedStartUri, parsedTrustedOrigin)
 
     fun isTrustedPage(url: String?): Boolean =

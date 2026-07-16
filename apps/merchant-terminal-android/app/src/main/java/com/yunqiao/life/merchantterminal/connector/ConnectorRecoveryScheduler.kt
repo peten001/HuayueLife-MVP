@@ -90,7 +90,7 @@ class ConnectorRecoveryWorker(
             }
         } catch (error: ConnectorApiException) {
             if (error.invalidMerchantSession) {
-                TerminalIdentityReset.clear(applicationContext)
+                MerchantSessionShutdown.clear(applicationContext)
                 return Result.success()
             }
             ConnectorSettings(applicationContext).recordError(error.errorCode)

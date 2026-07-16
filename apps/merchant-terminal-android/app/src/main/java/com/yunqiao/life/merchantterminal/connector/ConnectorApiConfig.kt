@@ -3,7 +3,7 @@ package com.yunqiao.life.merchantterminal.connector
 import android.net.Uri
 import com.yunqiao.life.merchantterminal.BuildConfig
 
-/** Central, HTTPS-only connector endpoint. It deliberately treats *.invalid as unconfigured. */
+/** Central HTTPS-only endpoint for the existing merchant printing connector API. */
 object ConnectorApiConfig {
     val baseUri: Uri? by lazy {
         runCatching { Uri.parse(BuildConfig.CONNECTOR_API_BASE_URL.trim()) }
@@ -13,8 +13,7 @@ object ConnectorApiConfig {
                     !uri.host.isNullOrBlank() &&
                     uri.userInfo == null &&
                     uri.query == null &&
-                    uri.fragment == null &&
-                    !uri.host.orEmpty().endsWith(".invalid", ignoreCase = true)
+                    uri.fragment == null
             }
     }
 
