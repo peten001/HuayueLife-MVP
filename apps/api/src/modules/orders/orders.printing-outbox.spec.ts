@@ -10,6 +10,7 @@ describe('OrdersService printing outbox', () => {
       orderType: 'DELIVERY',
       status: 'COMPLETED',
     };
+    const storedCompleted = { ...completed, createdByStaffId: null };
     const tx = {
       order: {
         findFirst: jest.fn().mockResolvedValue({
@@ -18,7 +19,7 @@ describe('OrdersService printing outbox', () => {
           orderType: 'DELIVERY',
           status: 'DELIVERING',
         }),
-        findFirstOrThrow: jest.fn().mockResolvedValue(completed),
+        findFirstOrThrow: jest.fn().mockResolvedValue(storedCompleted),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       orderStatusLog: { create: jest.fn().mockResolvedValue({ id: 9003n }) },
@@ -52,10 +53,12 @@ describe('OrdersService printing outbox', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       printJobs as never,
     );
 
-    await expect(service.confirmReceived(5n, 37n)).resolves.toBe(completed);
+    await expect(service.confirmReceived(5n, 37n)).resolves.toEqual(completed);
 
     expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledWith(
       tx,

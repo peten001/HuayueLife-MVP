@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ImageIcon, MapPin, Phone, ReceiptText, UserRound } from '@lucide/vue';
+import { ImageIcon, MapPin, Minus, Phone, ReceiptText, RotateCcw, UserRound } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -11,6 +11,7 @@ import { formatVietnamDateTime, formatVnd, resolveMediaUrl } from '@/domain';
 import {
   tableLabel,
   type CashierOrderAction,
+  type CashierOrderItemView,
   type CashierOrderView,
 } from '@/components/common/view-models';
 
@@ -18,13 +19,27 @@ const props = defineProps<{
   order?: CashierOrderView | null;
   actionLoading?: boolean;
   actionsDisabled?: boolean;
+  adjustmentLoadingId?: string;
+  pendingAdjustmentItemId?: string;
 }>();
 
 defineEmits<{
   action: [action: CashierOrderAction];
+  decreaseItem: [item: CashierOrderItemView];
+  returnItem: [item: CashierOrderItemView];
 }>();
 
 const { t, locale } = useI18n();
+const canDecreaseItems = computed(() =>
+  props.order?.orderType === 'DINE_IN'
+  && Boolean(props.order.tableSessionId)
+  && props.order.status === 'PENDING_ACCEPTANCE',
+);
+const canReturnItems = computed(() =>
+  props.order?.orderType === 'DINE_IN'
+  && Boolean(props.order.tableSessionId)
+  && ['ACCEPTED', 'PREPARING', 'READY'].includes(props.order.status || ''),
+);
 
 const serviceLabel = computed(() => {
   if (props.order?.orderType === 'DINE_IN') {
@@ -49,6 +64,20 @@ function itemName(item: NonNullable<CashierOrderView['items']>[number]) {
 
 function hideBrokenImage(event: Event) {
   (event.currentTarget as HTMLImageElement).hidden = true;
+}
+
+function adjustmentDisabled(itemId: string) {
+  return Boolean(
+    props.actionsDisabled
+    || props.adjustmentLoadingId
+    || (props.pendingAdjustmentItemId && props.pendingAdjustmentItemId !== itemId),
+  );
+}
+
+function adjustmentLabel(itemId: string, fallback: 'itemAdjustment.decrease' | 'itemAdjustment.return') {
+  return props.pendingAdjustmentItemId === itemId && !props.adjustmentLoadingId
+    ? t('mutation.retrySameRequest')
+    : t(fallback);
 }
 </script>
 
@@ -98,7 +127,29 @@ function hideBrokenImage(event: Event) {
             <small v-if="item.remark">{{ t('order.itemRemark', { remark: item.remark }) }}</small>
             <small>{{ t('order.quantity', { count: item.quantity || 0 }) }}</small>
           </div>
-          <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
+          <div class="order-item-row__aside">
+            <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
+            <button
+              v-if="pendingAdjustmentItemId === item.id || canDecreaseItems"
+              type="button"
+              class="order-item-adjustment order-item-adjustment--decrease"
+              data-testid="decrease-order-item"
+              :disabled="adjustmentDisabled(item.id)"
+              @click="$emit('decreaseItem', item)"
+            >
+              <Minus :size="15" aria-hidden="true" />{{ adjustmentLabel(item.id, 'itemAdjustment.decrease') }}
+            </button>
+            <button
+              v-else-if="canReturnItems"
+              type="button"
+              class="order-item-adjustment order-item-adjustment--return"
+              data-testid="return-order-item"
+              :disabled="adjustmentDisabled(item.id)"
+              @click="$emit('returnItem', item)"
+            >
+              <RotateCcw :size="14" aria-hidden="true" />{{ adjustmentLabel(item.id, 'itemAdjustment.return') }}
+            </button>
+          </div>
         </article>
       </div>
 
@@ -136,7 +187,7 @@ function hideBrokenImage(event: Event) {
       <OrderActionBar
         :order="order"
         :loading="actionLoading"
-        :disabled="actionsDisabled"
+        :disabled="actionsDisabled || Boolean(adjustmentLoadingId) || Boolean(pendingAdjustmentItemId)"
         @action="$emit('action', $event)"
       >
         <template #print>

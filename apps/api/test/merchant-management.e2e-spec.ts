@@ -12,12 +12,54 @@ describe('Merchant management isolation', () => {
   let merchantTwoId: bigint;
   let tokenOne: string;
   let tokenTwo: string;
+  let previousPlatformOrderingEnabled: string | undefined;
+  let previousWechatAppId: string | undefined;
+  let previousWechatAppSecret: string | undefined;
+  let previousPublicQrBaseUrl: string | undefined;
+  const originalFetch = global.fetch;
   const suffix = `${Date.now()}`;
 
   beforeAll(async () => {
+    previousPlatformOrderingEnabled = process.env.PLATFORM_ORDERING_ENABLED;
+    previousWechatAppId = process.env.WECHAT_APP_ID;
+    previousWechatAppSecret = process.env.WECHAT_APP_SECRET;
+    previousPublicQrBaseUrl = process.env.PUBLIC_QR_BASE_URL;
+    process.env.PLATFORM_ORDERING_ENABLED = 'true';
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
     process.env.WECHAT_APP_ID = 'wx2e951e5e94eae8c4';
+    process.env.WECHAT_APP_SECRET = 'merchant-management-e2e-secret';
     process.env.PUBLIC_QR_BASE_URL = 'https://api.huayueyouxuan.com';
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.weixin.qq.com/cgi-bin/token?')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'merchant-management-e2e-access-token',
+            expires_in: 7200,
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.weixin.qq.com/wxa/getwxacodeunlimit?')) {
+        return new Response(MINIMAL_WECHAT_QR_PNG, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+
+      throw new Error(`Unexpected outbound request in merchant management E2E: ${url}`);
+    }) as typeof fetch;
+
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -70,6 +112,15 @@ describe('Merchant management isolation', () => {
   });
 
   afterAll(async () => {
+    global.fetch = originalFetch;
+    restoreEnvironmentVariable(
+      'PLATFORM_ORDERING_ENABLED',
+      previousPlatformOrderingEnabled,
+    );
+    restoreEnvironmentVariable('WECHAT_APP_ID', previousWechatAppId);
+    restoreEnvironmentVariable('WECHAT_APP_SECRET', previousWechatAppSecret);
+    restoreEnvironmentVariable('PUBLIC_QR_BASE_URL', previousPublicQrBaseUrl);
+
     if (merchantOneId) {
       await prisma.product.deleteMany({
         where: { merchantId: { in: [merchantOneId, merchantTwoId] } },
@@ -566,4 +617,17 @@ function merchantData(nameZh: string) {
     businessHours: { monday: ['10:00-22:00'] },
     status: 'ACTIVE' as const,
   };
+}
+
+const MINIMAL_WECHAT_QR_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
+
+function restoreEnvironmentVariable(name: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
 }

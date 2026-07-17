@@ -50,6 +50,9 @@ describe('MerchantOrdersService printing outbox', () => {
     const service = new MerchantOrdersService(
       prisma as never,
       printJobs as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     await expect(service.transition(7n, 3n, 37n, 'ACCEPT')).resolves.toBe(
@@ -109,6 +112,9 @@ describe('MerchantOrdersService printing outbox', () => {
         $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)),
       } as never,
       printJobs as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     await expect(service.transition(7n, 3n, 38n, 'ACCEPT')).resolves.toBe(

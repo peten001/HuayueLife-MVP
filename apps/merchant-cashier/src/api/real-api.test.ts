@@ -198,6 +198,69 @@ describe('real merchant API contracts', () => {
     });
   });
 
+  it('loads the existing merchant menu APIs with only on-sale products', async () => {
+    const { api } = await loadApi();
+    const category = { id: 'category-1', nameZh: '主食', sortOrder: 1, isActive: true };
+    const product = {
+      id: 'product-1',
+      categoryId: category.id,
+      nameZh: '牛肉粉',
+      priceVnd: '60000',
+      sortOrder: 1,
+      status: 'ON_SALE',
+      productType: 'FOOD',
+      category,
+    };
+    fetchMock
+      .mockResolvedValueOnce(apiResponse([category]))
+      .mockResolvedValueOnce(apiResponse([product]));
+
+    await expect(api.listCashierMenuCategories()).resolves.toEqual([category]);
+    await expect(api.listCashierMenuProducts()).resolves.toEqual([product]);
+    const productUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    expect(productUrl.pathname).toBe('/api/v1/merchant/products');
+    expect(productUrl.searchParams.get('status')).toBe('ON_SALE');
+  });
+
+  it('uses the unified merchant item-ordering and adjustment contracts', async () => {
+    const { api } = await loadApi();
+    const mutationResult = { order, session: { ...session, status: 'OPEN', closedAt: null } };
+    fetchMock
+      .mockResolvedValueOnce(apiResponse(mutationResult))
+      .mockResolvedValueOnce(apiResponse(mutationResult))
+      .mockResolvedValueOnce(apiResponse(mutationResult));
+
+    await expect(api.createMerchantTableOrder('table-1', {
+      idempotencyKey: 'add-request-1',
+      items: [{ productId: 'product-1', quantity: 2, remark: 'Less spicy' }],
+    })).resolves.toEqual(mutationResult);
+    await expect(api.decreaseMerchantOrderItem('order-1', 'item-1', {
+      requestKey: 'decrease-request-1',
+      expectedQuantity: 2,
+      targetQuantity: 1,
+    })).resolves.toEqual(mutationResult);
+    await expect(api.returnMerchantOrderItem('order-1', 'item-1', {
+      requestKey: 'return-request-1',
+      expectedQuantity: 2,
+      returnQuantity: 1,
+    })).resolves.toEqual(mutationResult);
+
+    expect(fetchMock.mock.calls.map(requestPath)).toEqual([
+      '/api/v1/merchant/tables/table-1/orders',
+      '/api/v1/merchant/orders/order-1/items/item-1/quantity',
+      '/api/v1/merchant/orders/order-1/items/item-1/return',
+    ]);
+    expect(fetchMock.mock.calls.map((call) => requestInit(call).method)).toEqual([
+      'POST',
+      'PATCH',
+      'POST',
+    ]);
+    expect(JSON.parse(String(requestInit(fetchMock.mock.calls[0]).body))).toEqual({
+      idempotencyKey: 'add-request-1',
+      items: [{ productId: 'product-1', quantity: 2, remark: 'Less spicy' }],
+    });
+  });
+
   it('uses the API by default and fixtures only after explicit activation', async () => {
     const real = await loadApi('false');
     fetchMock.mockResolvedValueOnce(apiResponse([table]));

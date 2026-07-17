@@ -523,6 +523,7 @@ model MerchantStaff {
 
   merchant           Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   operatedStatusLogs OrderStatusLog[]   @relation("StaffStatusLogOperator")
+  createdOrders      Order[]            @relation("StaffCreatedOrders")
   createdPrintJobs   PrintJob[]         @relation("PrintJobCreatedBy")
   printingAuditLogs  PrintingAuditLog[] @relation("PrintingAuditActor")
 
@@ -657,7 +658,8 @@ model Order {
   id                BigInt           @id @default(autoincrement())
   orderNo           String           @unique @map("order_no") @db.VarChar(32)
   idempotencyKey    String           @map("idempotency_key") @db.VarChar(64)
-  userId            BigInt           @map("user_id")
+  userId            BigInt?          @map("user_id")
+  createdByStaffId  BigInt?          @map("created_by_staff_id")
   merchantId        BigInt           @map("merchant_id")
   tableId           BigInt?          @map("table_id")
   tableSessionId    BigInt?          @map("table_session_id")
@@ -682,7 +684,8 @@ model Order {
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  user               User                   @relation(fields: [userId], references: [id])
+  user               User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdByStaff     MerchantStaff?         @relation("StaffCreatedOrders", fields: [createdByStaffId], references: [id], onDelete: Restrict, map: "fk_orders_created_by_staff")
   merchant           Merchant               @relation(fields: [merchantId], references: [id])
   table              DiningTable?           @relation(fields: [tableId], references: [id], onDelete: SetNull)
   tableSession       TableSession?          @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
@@ -695,8 +698,10 @@ model Order {
   printTriggerOutbox PrintTriggerOutbox[]
 
   @@unique([userId, idempotencyKey])
+  @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
   @@index([merchantId, status, createdAt])
   @@index([userId, createdAt])
+  @@index([createdByStaffId, createdAt], map: "ix_orders_staff_created")
   @@index([tableSessionId])
   @@map("orders")
 }
@@ -729,6 +734,9 @@ model OrderStatusLog {
   operatorType    OperatorType @map("operator_type")
   operatorUserId  BigInt?      @map("operator_user_id")
   operatorStaffId BigInt?      @map("operator_staff_id")
+  action          String?      @db.VarChar(64)
+  metadata        Json?
+  requestKey      String?      @map("request_key") @db.VarChar(64)
   remark          String?      @db.VarChar(255)
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
@@ -738,9 +746,11 @@ model OrderStatusLog {
   operatorStaff      MerchantStaff?       @relation("StaffStatusLogOperator", fields: [operatorStaffId], references: [id], onDelete: SetNull)
   printTriggerOutbox PrintTriggerOutbox[]
 
+  @@unique([orderId, requestKey], map: "uq_order_status_logs_request")
   @@index([orderId, createdAt])
   @@index([operatorUserId])
   @@index([operatorStaffId])
+  @@index([action, createdAt], map: "ix_order_status_logs_action")
   @@map("order_status_logs")
 }
 

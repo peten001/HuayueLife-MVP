@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BriefcaseBusiness, Clock3, ListOrdered } from '@lucide/vue';
+import { BriefcaseBusiness, Clock3, ListOrdered, UtensilsCrossed } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -19,9 +19,10 @@ const props = defineProps<{
   actionsDisabled?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   closeSession: [];
   openOrder: [order: TableSessionOrder];
+  orderItems: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -29,6 +30,7 @@ const activeTab = ref<'items' | 'orders'>('items');
 const canClose = computed(
   () => props.session?.status === 'OPEN' && Number(props.session.unfinishedOrderCount || 0) === 0,
 );
+const canOrderItems = computed(() => props.session?.status === 'OPEN');
 const duration = computed(() => elapsedDuration(props.session?.openedAt));
 const itemSummary = computed(() => summarizeTableSessionItems(props.session));
 const durationLabel = computed(() => {
@@ -139,12 +141,23 @@ watch(
     </p>
 
     <div class="detail-action-stack table-detail-actions" data-testid="table-detail-actions">
+      <button
+        v-if="canOrderItems"
+        type="button"
+        class="secondary-action table-order-items-action"
+        data-testid="table-order-items"
+        :disabled="actionsDisabled"
+        @click="emit('orderItems')"
+      >
+        <UtensilsCrossed :size="18" aria-hidden="true" />
+        {{ t('ordering.action') }}
+      </button>
       <PrintJobActions compact :table-session-id="session.id" :disabled="actionsDisabled" />
       <button
         type="button"
         class="primary-action table-close-action"
         :disabled="!canClose || closing || actionsDisabled"
-        @click="$emit('closeSession')"
+        @click="emit('closeSession')"
       >
         <BriefcaseBusiness :size="20" :stroke-width="1.9" aria-hidden="true" />
         {{ closing ? t('table.closingSession') : t('table.closeSession') }}

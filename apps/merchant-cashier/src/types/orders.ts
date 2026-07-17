@@ -22,6 +22,8 @@ export interface OrderItem {
   id: string;
   productId?: string | null;
   productNameZhSnapshot: string;
+  productNameViSnapshot?: string | null;
+  productNameEnSnapshot?: string | null;
   imageUrlSnapshot?: string | null;
   unitPriceVnd?: string;
   quantity: number;
@@ -29,11 +31,35 @@ export interface OrderItem {
   remark?: string | null;
 }
 
+export interface MerchantTableOrderItemInput {
+  productId: string;
+  quantity: number;
+  remark?: string;
+}
+
+export interface CreateMerchantTableOrderInput {
+  idempotencyKey: string;
+  items: MerchantTableOrderItemInput[];
+}
+
+export interface DecreaseMerchantOrderItemInput {
+  requestKey: string;
+  expectedQuantity: number;
+  targetQuantity: number;
+}
+
+export interface ReturnMerchantOrderItemInput {
+  requestKey: string;
+  expectedQuantity: number;
+  returnQuantity: number;
+}
+
 export interface MerchantOrder {
   id: string;
   orderNo: string;
   idempotencyKey?: string;
-  userId?: string;
+  userId?: string | null;
+  createdByStaffId?: string | null;
   merchantId: string;
   tableId?: string | null;
   tableSessionId?: string | null;

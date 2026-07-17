@@ -17,14 +17,16 @@ import { ListMerchantChatConversationsQueryDto } from './dto/list-merchant-chat-
 import { ListOrderChatMessagesQueryDto } from './dto/list-order-chat-messages-query.dto';
 import { SendOrderChatMessageDto } from './dto/send-order-chat-message.dto';
 
-type OwnedOrder = {
+type ChatOrder = {
   id: bigint;
   merchantId: bigint;
-  userId: bigint;
+  userId: bigint | null;
   orderNo: string;
   status: OrderStatus;
   createdAt: Date;
 };
+
+type CustomerOrder = ChatOrder & { userId: bigint };
 
 type ChatSide = 'CUSTOMER' | 'MERCHANT';
 
@@ -227,7 +229,16 @@ export class OrderChatService {
     }
   }
 
-  private async ensureConversation(tx: Prisma.TransactionClient, order: OwnedOrder) {
+  private async ensureConversation(
+    tx: Prisma.TransactionClient,
+    order: ChatOrder,
+  ) {
+    if (order.userId === null) {
+      throw new ConflictException({
+        code: 'STAFF_ORDER_CUSTOMER_CHAT_UNAVAILABLE',
+        message: '员工追加订单不支持顾客聊天',
+      });
+    }
     const conversation = await tx.orderChatConversation.upsert({
       where: { orderId: order.id },
       create: {
@@ -380,7 +391,10 @@ export class OrderChatService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
-    return order as OwnedOrder;
+    if (order.userId === null) {
+      throw new NotFoundException('Order not found');
+    }
+    return { ...order, userId: order.userId } satisfies CustomerOrder;
   }
 
   private async requireMerchantOrder(
@@ -395,7 +409,7 @@ export class OrderChatService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
-    return order as OwnedOrder;
+    return order;
   }
 
   private readonly orderSelect = {

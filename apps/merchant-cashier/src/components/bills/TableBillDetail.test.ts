@@ -70,14 +70,25 @@ describe('TableBillDetail final panel', () => {
     expect(wrapper.get('[data-testid="table-order-details"]').text()).toContain('O-1002');
   });
 
-  it('uses one in-panel print/complete row without a standalone print card', () => {
+  it('uses one in-panel order/print/complete row without a standalone print card', () => {
     const wrapper = mountDetail();
     const actions = wrapper.get('[data-testid="table-detail-actions"]');
 
     expect(wrapper.find('.print-job-actions').exists()).toBe(false);
-    expect(actions.findAll('button')).toHaveLength(2);
+    expect(actions.findAll('button')).toHaveLength(3);
+    expect(actions.get('[data-testid="table-order-items"]').text()).toContain('点菜');
     expect(actions.get('[data-testid="print-primary"]').text()).toContain('打印桌账');
     expect(actions.get('.table-close-action').text()).toContain('完成桌账');
+  });
+
+  it('shows ordering only for an open TableSession and emits the existing table context', async () => {
+    const wrapper = mountDetail();
+
+    await wrapper.get('[data-testid="table-order-items"]').trigger('click');
+    expect(wrapper.emitted('orderItems')).toEqual([[]]);
+
+    await wrapper.setProps({ session: { ...session(), status: 'CLOSED' } });
+    expect(wrapper.find('[data-testid="table-order-items"]').exists()).toBe(false);
   });
 
   it('keeps the unfinished-order close gate and compact warning', async () => {

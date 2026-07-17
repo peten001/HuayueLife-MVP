@@ -244,23 +244,29 @@ export class PlatformUsersService {
     const [allOrders, completedOrders, cancelledOrders, latestOrders] = await Promise.all([
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: { userId: { in: userIds } },
+        where: { userId: { in: userIds, not: null } },
         _count: { _all: true },
         _sum: { totalAmountVnd: true },
         _max: { createdAt: true },
       }),
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: { userId: { in: userIds }, status: { in: COMPLETED_STATUSES } },
+        where: {
+          userId: { in: userIds, not: null },
+          status: { in: COMPLETED_STATUSES },
+        },
         _count: { _all: true },
       }),
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: { userId: { in: userIds }, status: { in: CANCELLED_STATUSES } },
+        where: {
+          userId: { in: userIds, not: null },
+          status: { in: CANCELLED_STATUSES },
+        },
         _count: { _all: true },
       }),
       this.prisma.order.findMany({
-        where: { userId: { in: userIds } },
+        where: { userId: { in: userIds, not: null } },
         select: {
           userId: true,
           merchant: {
@@ -275,21 +281,25 @@ export class PlatformUsersService {
 
     const allMap = new Map<string, (typeof allOrders)[number]>();
     for (const item of allOrders) {
+      if (item.userId === null) continue;
       allMap.set(item.userId.toString(), item);
     }
 
     const completedMap = new Map<string, number>();
     for (const item of completedOrders) {
+      if (item.userId === null) continue;
       completedMap.set(item.userId.toString(), item._count._all);
     }
 
     const cancelledMap = new Map<string, number>();
     for (const item of cancelledOrders) {
+      if (item.userId === null) continue;
       cancelledMap.set(item.userId.toString(), item._count._all);
     }
 
     const cityMap = new Map<string, string | null>();
     for (const order of latestOrders) {
+      if (order.userId === null) continue;
       const key = order.userId.toString();
       if (!cityMap.has(key)) {
         cityMap.set(key, order.merchant.city ?? null);

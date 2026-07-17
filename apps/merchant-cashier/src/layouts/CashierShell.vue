@@ -2,14 +2,29 @@
 import { X } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
 import {
   currentBusinessHoursRange,
+  getOrCreatePendingDecreaseMutation,
+  getOrCreatePendingReturnMutation,
+  hasUnresolvedCashierMutation,
+  isPendingDecreaseInlineRetryReachable,
   isWithinBusinessHours,
   resolveMediaUrl,
+  shouldBlockCashierMutationNavigation,
+  type PendingDecreaseMutation,
+  type PendingReturnMutation,
 } from '@/domain';
-import { apiErrorTranslationKey } from '@/api';
+import {
+  apiErrorTranslationKey,
+  CashierApiError,
+  decreaseMerchantOrderItem,
+  isDefinitiveMutationRejection,
+  isMutationOutcomeUncertain,
+  returnMerchantOrderItem,
+  shouldRefreshAfterItemAdjustmentError,
+} from '@/api';
 import {
   useAuthStore,
   useNetworkStore,
@@ -19,17 +34,23 @@ import {
   useTablesStore,
   useUiStore,
 } from '@/stores';
-import type { CashierOrderAction } from '@/components/common/view-models';
-import type { TableSessionOrder } from '@/types';
+import type {
+  CashierOrderAction,
+  CashierOrderItemView,
+} from '@/components/common/view-models';
+import type { MerchantOrderMutationResult, TableSessionOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
 import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import OrderDetailPanel from '@/components/orders/OrderDetailPanel.vue';
+import PendingDecreaseRecovery from '@/components/orders/PendingDecreaseRecovery.vue';
 import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
+import TableOrderingWorkspace from '@/components/ordering/TableOrderingWorkspace.vue';
+import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
 import { guardNetworkWrite, networkWritesDisabled } from './network-write-guard';
 
 const route = useRoute();
@@ -53,6 +74,12 @@ const loggingOut = ref(false);
 const closingSession = ref(false);
 const closeDialogOpen = ref(false);
 const pendingOrderAction = ref<CashierOrderAction | null>(null);
+const orderingOpen = ref(false);
+const orderingMutationLocked = ref(false);
+const adjustmentLoadingId = ref('');
+const pendingDecreaseMutation = ref<PendingDecreaseMutation | null>(null);
+const returnDialogItem = ref<CashierOrderItemView | null>(null);
+const pendingReturnMutation = ref<PendingReturnMutation | null>(null);
 let printingStatusTimer: number | undefined;
 
 const identity = computed(() => ({
@@ -81,6 +108,31 @@ const plannedBusinessOpen = computed<boolean | null>(() =>
 const writeActionsDisabled = computed(() =>
   !demoMode.value && networkWritesDisabled(online.value, apiReachable.value),
 );
+const returnOutcomeUncertain = computed(() =>
+  Boolean(pendingReturnMutation.value) && !adjustmentLoadingId.value,
+);
+const decreaseOutcomeUncertain = computed(() =>
+  Boolean(pendingDecreaseMutation.value) && !adjustmentLoadingId.value,
+);
+const decreaseInlineRetryReachable = computed(() => {
+  if (!decreaseOutcomeUncertain.value) return false;
+  return isPendingDecreaseInlineRetryReachable({
+    pending: pendingDecreaseMutation.value,
+    selectedOrder: selectedOrder.value,
+    detailOpen: detailOpen.value,
+    showingTableDetail: showingTableDetail.value,
+  });
+});
+const showPendingDecreaseRecovery = computed(() =>
+  decreaseOutcomeUncertain.value && !decreaseInlineRetryReachable.value,
+);
+const mutationNavigationBlocked = computed(() =>
+  hasUnresolvedCashierMutation({
+    orderingLocked: orderingMutationLocked.value,
+    pendingDecrease: pendingDecreaseMutation.value,
+    pendingReturn: pendingReturnMutation.value,
+  }),
+);
 const businessHoursLabel = computed(() => {
   if (!profile.value) return t('shell.businessHoursUnknown');
   if (!plannedHoursRange.value) return t('shell.businessClosed');
@@ -97,6 +149,10 @@ const confirmationDescription = computed(() => {
 
 async function logout() {
   if (loggingOut.value) return;
+  if (mutationNavigationBlocked.value) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return;
+  }
   loggingOut.value = true;
   try {
     ordersStore.stopLivePolling();
@@ -105,10 +161,180 @@ async function logout() {
     tablesStore.clear();
     printingStore.clear();
     uiStore.closeDetail();
+    orderingOpen.value = false;
+    pendingDecreaseMutation.value = null;
+    returnDialogItem.value = null;
+    pendingReturnMutation.value = null;
     await authStore.logout();
     await router.replace('/login');
   } finally {
     loggingOut.value = false;
+  }
+}
+
+function openOrdering() {
+  if (!networkWriteAvailable()) return;
+  if (!selectedTable.value || selectedSessionDetail.value?.status !== 'OPEN') {
+    uiStore.pushToast(t('itemAdjustment.tableSessionClosed'), 'error');
+    void tablesStore.fetchTables();
+    return;
+  }
+  orderingOpen.value = true;
+}
+
+function closeOrdering() {
+  if (orderingMutationLocked.value) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return;
+  }
+  orderingOpen.value = false;
+}
+
+function applyItemMutation(result: MerchantOrderMutationResult) {
+  ordersStore.applyOrderSnapshot(result.order);
+  tablesStore.applySessionSnapshot(result.session);
+}
+
+async function handleTableOrderCreated(result: MerchantOrderMutationResult) {
+  applyItemMutation(result);
+  orderingOpen.value = false;
+  await router.push('/orders/new');
+  ordersStore.applyOrderSnapshot(result.order, true);
+  uiStore.openDetail('order', result.order.id);
+  uiStore.pushToast(t('ordering.success'), 'success');
+  void refreshAdjustmentContext();
+}
+
+async function refreshAdjustmentContext(force = false) {
+  await Promise.allSettled([
+    ordersStore.refreshLiveOrders({ force }),
+    tablesStore.fetchTables({ force }),
+  ]);
+}
+
+async function handleOrderingFailure(error: unknown) {
+  await refreshAdjustmentContext(
+    isMutationOutcomeUncertain(error) || shouldRefreshAfterItemAdjustmentError(error),
+  );
+  if (error instanceof CashierApiError && [
+    'TABLE_SESSION_NOT_OPEN',
+    'TABLE_SESSION_CLOSED',
+    'TABLE_NOT_AVAILABLE',
+    'TABLE_NOT_FOUND',
+  ].includes(error.code)) {
+    orderingOpen.value = false;
+  }
+}
+
+async function decreaseItem(item: CashierOrderItemView) {
+  const order = selectedOrder.value;
+  const expectedQuantity = Number(item.quantity || 0);
+  if (!order || adjustmentLoadingId.value || expectedQuantity < 1) return;
+  if (!networkWriteAvailable()) return;
+  const mutation = getOrCreatePendingDecreaseMutation(pendingDecreaseMutation.value, {
+    orderId: order.id,
+    itemId: item.id,
+    expectedQuantity,
+  });
+  if (!mutation) {
+    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
+    return;
+  }
+  pendingDecreaseMutation.value = mutation;
+  await executePendingDecrease(mutation);
+}
+
+async function retryPendingDecrease() {
+  const mutation = pendingDecreaseMutation.value;
+  if (!mutation || adjustmentLoadingId.value) return;
+  if (!networkWriteAvailable()) return;
+  await executePendingDecrease(mutation);
+}
+
+async function executePendingDecrease(mutation: PendingDecreaseMutation) {
+  adjustmentLoadingId.value = mutation.itemId;
+  try {
+    const result = await decreaseMerchantOrderItem(mutation.orderId, mutation.itemId, {
+      requestKey: mutation.requestKey,
+      expectedQuantity: mutation.expectedQuantity,
+      targetQuantity: mutation.targetQuantity,
+    });
+    applyItemMutation(result);
+    pendingDecreaseMutation.value = null;
+    uiStore.pushToast(t('itemAdjustment.decreaseSuccess'), 'success');
+  } catch (error) {
+    if (!isDefinitiveMutationRejection(error)) {
+      await refreshAdjustmentContext(true);
+      uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
+    } else {
+      pendingDecreaseMutation.value = null;
+      uiStore.pushToast(t(apiErrorTranslationKey(error, 'itemAdjustment.decreaseFailed')), 'error');
+      if (shouldRefreshAfterItemAdjustmentError(error)) await refreshAdjustmentContext(true);
+    }
+  } finally {
+    adjustmentLoadingId.value = '';
+  }
+}
+
+function requestReturnItem(item: CashierOrderItemView) {
+  if (!networkWriteAvailable()) return;
+  if (pendingDecreaseMutation.value) {
+    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
+    return;
+  }
+  returnDialogItem.value = item;
+  pendingReturnMutation.value = null;
+}
+
+function cancelReturnItem() {
+  if (adjustmentLoadingId.value) return;
+  if (pendingReturnMutation.value) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return;
+  }
+  returnDialogItem.value = null;
+}
+
+async function confirmReturnItem(returnQuantity: number) {
+  const order = selectedOrder.value;
+  const item = returnDialogItem.value;
+  const expectedQuantity = Number(item?.quantity || 0);
+  if (!order || !item || adjustmentLoadingId.value || expectedQuantity < 1) return;
+  if (!networkWriteAvailable()) return;
+  const mutation = getOrCreatePendingReturnMutation(pendingReturnMutation.value, {
+    orderId: order.id,
+    itemId: item.id,
+    expectedQuantity,
+    returnQuantity,
+  });
+  if (!mutation) {
+    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
+    return;
+  }
+  pendingReturnMutation.value = mutation;
+  adjustmentLoadingId.value = item.id;
+  try {
+    const result = await returnMerchantOrderItem(order.id, item.id, {
+      requestKey: mutation.requestKey,
+      expectedQuantity: mutation.expectedQuantity,
+      returnQuantity: mutation.returnQuantity,
+    });
+    applyItemMutation(result);
+    returnDialogItem.value = null;
+    pendingReturnMutation.value = null;
+    uiStore.pushToast(t('itemAdjustment.returnSuccess'), 'success');
+  } catch (error) {
+    if (!isDefinitiveMutationRejection(error)) {
+      await refreshAdjustmentContext(true);
+      uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
+    } else {
+      uiStore.pushToast(t(apiErrorTranslationKey(error, 'itemAdjustment.returnFailed')), 'error');
+      if (shouldRefreshAfterItemAdjustmentError(error)) await refreshAdjustmentContext(true);
+      returnDialogItem.value = null;
+      pendingReturnMutation.value = null;
+    }
+  } finally {
+    adjustmentLoadingId.value = '';
   }
 }
 
@@ -211,6 +437,12 @@ async function recoverData() {
   ]);
 }
 
+function protectUnresolvedMutation(event: BeforeUnloadEvent) {
+  if (!mutationNavigationBlocked.value) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
 watch(isAuthenticated, async (authenticated) => {
   if (!authenticated && !loggingOut.value) {
     ordersStore.clear();
@@ -228,6 +460,20 @@ watch(
   },
 );
 
+function guardUnresolvedMutationNavigation(destinationName: string | symbol | null | undefined) {
+  const blocked = shouldBlockCashierMutationNavigation({
+    unresolvedMutation: mutationNavigationBlocked.value,
+    authenticated: isAuthenticated.value,
+    destinationName,
+  });
+  if (!blocked) return true;
+  uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+  return false;
+}
+
+onBeforeRouteUpdate((to) => guardUnresolvedMutationNavigation(to.name));
+onBeforeRouteLeave((to) => guardUnresolvedMutationNavigation(to.name));
+
 watch(soundError, (error) => {
   if (error) uiStore.pushToast(t('sound.unlockFailed'), 'warning');
 });
@@ -238,10 +484,12 @@ watch(
     if (nextPath === previousPath) return;
     uiStore.closeDetail();
     if (nextPath !== '/tables') void ordersStore.selectOrder(null);
+    if (nextPath !== '/tables') orderingOpen.value = false;
   },
 );
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', protectUnresolvedMutation);
   networkStore.start();
   ordersStore.startLivePolling();
   tablesStore.startLivePolling();
@@ -256,6 +504,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', protectUnresolvedMutation);
   ordersStore.stopLivePolling();
   tablesStore.stopLivePolling();
   networkStore.stop();
@@ -323,13 +572,18 @@ onBeforeUnmount(() => {
           :actions-disabled="writeActionsDisabled"
           @close-session="requestCloseSession"
           @open-order="openTableOrder"
+          @order-items="openOrdering"
         />
         <OrderDetailPanel
           v-else-if="selectedOrder"
           :order="selectedOrder"
           :action-loading="actionLoadingId === selectedOrder.id"
           :actions-disabled="writeActionsDisabled"
+          :adjustment-loading-id="adjustmentLoadingId"
+          :pending-adjustment-item-id="pendingDecreaseMutation?.itemId"
           @action="requestOrderAction"
+          @decrease-item="decreaseItem"
+          @return-item="requestReturnItem"
         />
         <EmptyState
           v-else
@@ -342,6 +596,36 @@ onBeforeUnmount(() => {
     <CashierMobileNavigation />
 
     <ToastRegion />
+
+    <PendingDecreaseRecovery
+      :open="showPendingDecreaseRecovery"
+      :loading="Boolean(adjustmentLoadingId)"
+      :disabled="writeActionsDisabled"
+      @retry="retryPendingDecrease"
+    />
+
+    <TableOrderingWorkspace
+      :open="orderingOpen"
+      :table-id="selectedTable?.id || ''"
+      :table-label="selectedSessionDetail?.tableNo || selectedTable?.tableNo || t('table.numberFallback')"
+      :session-id="selectedSessionDetail?.id || ''"
+      :disabled="writeActionsDisabled"
+      @close="closeOrdering"
+      @created="handleTableOrderCreated"
+      @failed="handleOrderingFailure"
+      @mutation-lock-changed="orderingMutationLocked = $event"
+    />
+
+    <ReturnItemDialog
+      :open="Boolean(returnDialogItem)"
+      :item="returnDialogItem"
+      :loading="Boolean(adjustmentLoadingId)"
+      :disabled="writeActionsDisabled"
+      :outcome-uncertain="returnOutcomeUncertain"
+      :fixed-quantity="pendingReturnMutation?.returnQuantity"
+      @cancel="cancelReturnItem"
+      @confirm="confirmReturnItem"
+    />
 
     <ConfirmDialog
       :open="closeDialogOpen || Boolean(pendingOrderAction)"

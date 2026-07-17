@@ -8,10 +8,11 @@ describe('OrdersService legacy printing gate', () => {
     'creates the order normally with legacy enabled=%s and invokes it %s time(s)',
     async (legacyEnabled, expectedCalls) => {
       const createdOrder = { id: 91n, merchantId: 7n };
+      const storedOrder = { ...createdOrder, createdByStaffId: null };
       const tx = {
         order: {
           findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn().mockResolvedValue(createdOrder),
+          create: jest.fn().mockResolvedValue(storedOrder),
         },
         cart: { update: jest.fn().mockResolvedValue({}) },
       };
@@ -28,6 +29,9 @@ describe('OrdersService legacy printing gate', () => {
       const printingFlags = {
         legacyPrintingEnabled: jest.fn(() => legacyEnabled),
       };
+      const creatorInvariant = {
+        assertValid: jest.fn().mockResolvedValue({ staffRole: null }),
+      };
       const service = new OrdersService(
         prisma as never,
         {} as never,
@@ -35,6 +39,8 @@ describe('OrdersService legacy printing gate', () => {
         {} as never,
         appConfig as never,
         printingFlags as never,
+        creatorInvariant as never,
+        {} as never,
       );
       Object.defineProperty(service, 'validateAndPrice', {
         value: jest.fn().mockResolvedValue({
@@ -60,9 +66,14 @@ describe('OrdersService legacy printing gate', () => {
           contactName: 'Test',
           contactPhone: '00000000',
         } as never),
-      ).resolves.toBe(createdOrder);
+      ).resolves.toEqual(createdOrder);
 
       expect(tx.order.create).toHaveBeenCalledTimes(1);
+      expect(creatorInvariant.assertValid).toHaveBeenCalledWith(tx, {
+        merchantId: 7n,
+        userId: 5n,
+        createdByStaffId: null,
+      });
       expect(tx.cart.update).toHaveBeenCalledTimes(1);
       expect(printers.printOrder).toHaveBeenCalledTimes(expectedCalls);
       if (legacyEnabled) {
@@ -73,10 +84,11 @@ describe('OrdersService legacy printing gate', () => {
 
   it('does not let a legacy print failure affect a completed order creation', async () => {
     const createdOrder = { id: 92n, merchantId: 7n };
+    const storedOrder = { ...createdOrder, createdByStaffId: null };
     const tx = {
       order: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue(createdOrder),
+        create: jest.fn().mockResolvedValue(storedOrder),
       },
       cart: { update: jest.fn().mockResolvedValue({}) },
     };
@@ -96,6 +108,8 @@ describe('OrdersService legacy printing gate', () => {
       {} as never,
       { assertOrderingEnabled: jest.fn() } as never,
       { legacyPrintingEnabled: jest.fn(() => true) } as never,
+      { assertValid: jest.fn().mockResolvedValue({ staffRole: null }) } as never,
+      {} as never,
     );
     Object.defineProperty(service, 'validateAndPrice', {
       value: jest.fn().mockResolvedValue({
@@ -121,7 +135,7 @@ describe('OrdersService legacy printing gate', () => {
         contactName: 'Test',
         contactPhone: '00000000',
       } as never),
-    ).resolves.toBe(createdOrder);
+    ).resolves.toEqual(createdOrder);
     expect(printers.printOrder).toHaveBeenCalledTimes(1);
   });
 });

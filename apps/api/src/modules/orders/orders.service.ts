@@ -18,6 +18,8 @@ import { PrintingFeatureFlagsService } from '../printing/services/printing-featu
 import { PrintJobsService } from '../printing/services/print-jobs.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
+import { OrderCreatorInvariantService } from './order-creator-invariant.service';
+import { PendingOrderCancellationService } from './pending-order-cancellation.service';
 
 @Injectable()
 export class OrdersService {
@@ -30,17 +32,20 @@ export class OrdersService {
     private readonly tableSessionsService: TableSessionsService,
     private readonly appConfig: AppConfigService,
     private readonly printingFlags: PrintingFeatureFlagsService,
+    private readonly creatorInvariant: OrderCreatorInvariantService,
+    private readonly pendingCancellation: PendingOrderCancellationService,
     @Optional()
     @Inject(PrintJobsService)
     private readonly printJobs?: PrintJobsService,
   ) {}
 
-  list(userId: bigint) {
-    return this.prisma.order.findMany({
+  async list(userId: bigint) {
+    const orders = await this.prisma.order.findMany({
       where: { userId },
       include: this.orderListInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+    return orders.map((order) => this.serializeCustomerOrder(order));
   }
 
   async get(userId: bigint, id: bigint) {
@@ -51,7 +56,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
-    return order;
+    return this.serializeCustomerOrder(order);
   }
 
   async preview(userId: bigint, dto: OrderRequestDto) {
@@ -65,7 +70,7 @@ export class OrdersService {
     this.appConfig.assertOrderingEnabled();
     this.validateIdempotencyKey(idempotencyKey);
     const existing = await this.findByIdempotency(userId, idempotencyKey);
-    if (existing) return existing;
+    if (existing) return this.serializeCustomerOrder(existing);
 
     try {
       let shouldAutoPrint = false;
@@ -79,6 +84,11 @@ export class OrdersService {
         if (duplicate) return duplicate;
 
         const preview = await this.validateAndPrice(tx, userId, dto);
+        await this.creatorInvariant.assertValid(tx, {
+          merchantId: preview.merchant.id,
+          userId,
+          createdByStaffId: null,
+        });
         const tableSession =
           dto.orderType === 'DINE_IN' && preview.table
             ? await this.tableSessionsService.getOrCreateOpenSession(
@@ -152,21 +162,21 @@ export class OrdersService {
             );
           });
       }
-      return order;
+      return this.serializeCustomerOrder(order);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
         const duplicate = await this.findByIdempotency(userId, idempotencyKey);
-        if (duplicate) return duplicate;
+        if (duplicate) return this.serializeCustomerOrder(duplicate);
       }
       throw error;
     }
   }
 
-  cancel(userId: bigint, id: bigint) {
-    return this.prisma.$transaction(async (tx) => {
+  async cancel(userId: bigint, id: bigint) {
+    const order = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, userId },
         select: { id: true, status: true },
@@ -178,31 +188,15 @@ export class OrdersService {
         throw new ConflictException('商家接单后不能取消订单');
       }
 
-      const now = new Date();
-      const updated = await tx.order.updateMany({
-        where: { id, userId, status: 'PENDING_ACCEPTANCE' },
-        data: {
-          status: 'CANCELLED',
-          cancelledAt: now,
-          cancelReason: '用户取消订单',
-        },
-      });
-      if (updated.count !== 1) {
-        throw new ConflictException('订单状态已变化，请刷新后重试');
-      }
-
-      await tx.orderStatusLog.create({
-        data: {
-          orderId: id,
-          fromStatus: 'PENDING_ACCEPTANCE',
-          toStatus: 'CANCELLED',
-          operatorType: 'USER',
-          operatorUserId: userId,
-          remark: '用户取消订单',
-        },
+      await this.pendingCancellation.cancel(tx, {
+        orderId: id,
+        userId,
+        operatorUserId: userId,
+        reason: '用户取消订单',
       });
       return this.requireOwnedOrder(tx, userId, id);
     });
+    return this.serializeCustomerOrder(order);
   }
 
   async confirmReceived(userId: bigint, id: bigint) {
@@ -270,7 +264,7 @@ export class OrdersService {
         );
       }
     }
-    return completed.order;
+    return this.serializeCustomerOrder(completed.order);
   }
 
   private async validateAndPrice(
@@ -444,6 +438,40 @@ export class OrdersService {
         'Idempotency-Key must be 8-64 URL-safe characters',
       );
     }
+  }
+
+  /**
+   * Keep the existing miniapp/customer order response contract stable after
+   * adding merchant-origin and internal adjustment audit columns. Merchant
+   * order endpoints intentionally retain the full fields for cashier audit.
+   */
+  private serializeCustomerOrder<
+    T extends {
+      createdByStaffId: bigint | null;
+      statusLogs?: ReadonlyArray<{
+        action: string | null;
+        metadata: Prisma.JsonValue | null;
+        requestKey: string | null;
+      }>;
+    },
+  >(order: T) {
+    const { createdByStaffId: _createdByStaffId, ...withoutCreator } = order;
+    if (!order.statusLogs) {
+      return withoutCreator;
+    }
+
+    return {
+      ...withoutCreator,
+      statusLogs: order.statusLogs.map((log) => {
+        const {
+          action: _action,
+          metadata: _metadata,
+          requestKey: _requestKey,
+          ...publicLog
+        } = log;
+        return publicLog;
+      }),
+    };
   }
 
   private generateOrderNo() {

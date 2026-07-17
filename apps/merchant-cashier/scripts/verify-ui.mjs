@@ -49,6 +49,7 @@ try {
   }
 
   await verifyPrintIsDisabled();
+  await verifyTableOrderingWorkspace();
   await verifyOrderFlow();
   await verifyNetworkRecovery();
   await verifyLocales();
@@ -58,7 +59,7 @@ try {
   process.stdout.write(
     'Verified the final operator layout at 1920x1080, 1536x1024, 1440x900, 1366x768, 1280x800, '
       + '1180x800, 1024x768, 820x1180, and 768x1024, including fixture facts, employee menu, disabled '
-      + 'printing, zh/vi/en overflow, order flow, and network recovery.\n',
+      + 'printing, table ordering, zh/vi/en overflow, order flow, and network recovery.\n',
   );
 } finally {
   await browser.close();
@@ -494,6 +495,66 @@ async function verifyPrintIsDisabled() {
   assert.equal(await page.locator('[data-testid*="print"][href]').count(), 0, 'No print navigation may be exposed');
 }
 
+async function verifyTableOrderingWorkspace() {
+  await selectFixtureTable();
+  assert.match((await page.getByTestId('table-detail').textContent()) || '', /411[.,]?000/);
+  const actions = page.getByTestId('table-detail-actions');
+  assert.deepEqual(
+    (await actions.locator('button').allTextContents()).map((label) => label.trim()),
+    ['点菜', '打印桌账', '完成桌账'],
+    'Open table actions must remain in one order/print/complete row',
+  );
+
+  await actions.getByTestId('table-order-items').click();
+  const workspace = page.getByTestId('table-ordering-workspace');
+  await workspace.waitFor();
+  await workspace.getByText('演示牛肉粉', { exact: true }).waitFor();
+  const geometry = await workspace.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      overflowX: element.scrollWidth - element.clientWidth,
+      overflowY: element.scrollHeight - element.clientHeight,
+    };
+  });
+  assertNear(geometry.left, 186, 2, 'D10 ordering workspace left edge');
+  assertNear(geometry.top, 84, 2, 'D10 ordering workspace top edge');
+  assertNear(geometry.right, 1280, 2, 'D10 ordering workspace right edge');
+  assertNear(geometry.bottom, 800, 2, 'D10 ordering workspace bottom edge');
+  assert.ok(geometry.overflowX <= 1, 'D10 ordering workspace overflows horizontally');
+  assert.ok(geometry.overflowY <= 1, 'D10 ordering workspace overflows vertically');
+
+  const confirm = workspace.getByTestId('confirm-table-order');
+  assert.equal(await confirm.isDisabled(), true, 'Zero quantity must not be submitted');
+  const beef = workspace.locator('.table-ordering-product').filter({ hasText: '演示牛肉粉' });
+  await beef.getByRole('button', { name: '增加数量' }).click();
+  await beef.getByRole('button', { name: '增加数量' }).click();
+  await workspace.getByRole('button', { name: '饮品', exact: true }).click();
+  const tea = workspace.locator('.table-ordering-product').filter({ hasText: '演示柠檬茶' });
+  await tea.getByRole('button', { name: '增加数量' }).click();
+  assert.equal(await confirm.isDisabled(), false, 'Selected menu item must enable confirmation');
+  await confirm.click();
+  await page.waitForURL('**/orders/new');
+  await page.getByText('点菜成功，新订单已创建。', { exact: true }).waitFor();
+  const createdCard = page.locator('.order-card').filter({ hasText: 'DEMO-ADD-001' });
+  assert.equal(await createdCard.count(), 1, 'Fixture ordering must create one new pending order');
+  assert.match((await page.locator('.order-detail-panel').textContent()) || '', /166[.,]?000/);
+
+  const beefRow = page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' });
+  await beefRow.getByTestId('decrease-order-item').click();
+  await page.getByText('减菜成功。', { exact: true }).waitFor();
+  assert.match((await beefRow.textContent()) || '', /×\s*1/);
+  assert.match((await page.locator('.order-detail-panel').textContent()) || '', /98[.,]?000/);
+
+  await selectFixtureTable();
+  const updatedBill = page.getByTestId('table-detail');
+  assert.match((await updatedBill.textContent()) || '', /4\s*笔/);
+  assert.match((await updatedBill.textContent()) || '', /509[.,]?000/);
+}
+
 async function verifyOrderFlow() {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('a[href="/orders/history"]:visible').first().click();
@@ -503,7 +564,8 @@ async function verifyOrderFlow() {
 
   await page.locator('a[href="/orders/new"]:visible').first().click();
   await page.waitForURL('**/orders/new');
-  await page.locator('.order-card').first().click();
+  const createdCard = page.locator('.order-card').filter({ hasText: 'DEMO-ADD-001' });
+  await createdCard.click();
   const actionLabels = await page.getByTestId('order-detail-actions').locator('button').evaluateAll((buttons) =>
     buttons
       .sort((left, right) => Number(getComputedStyle(left).order) - Number(getComputedStyle(right).order))
@@ -511,11 +573,40 @@ async function verifyOrderFlow() {
   );
   assert.deepEqual(actionLabels, ['拒单', '打印', '接单']);
   assert.equal(await page.locator('.print-job-actions').count(), 0, 'New order detail must not show a print card');
+  assert.equal(await page.getByTestId('decrease-order-item').count(), 2, 'Pending table order must expose decrease for each item');
+  assert.ok(
+    Math.min(...await page.getByTestId('decrease-order-item').evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().height),
+    )) >= 44,
+    'Decrease controls must keep a 44px minimum touch target',
+  );
+  assert.equal(await page.getByTestId('return-order-item').count(), 0, 'Pending table order must not expose return');
   await page.getByRole('button', { name: '拒单', exact: true }).click();
   await page.getByRole('alertdialog').waitFor();
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '接单', exact: true }).click();
   await page.getByText('订单状态已更新。').waitFor();
+  const acceptedBeefRow = page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' });
+  const returnButton = acceptedBeefRow.getByTestId('return-order-item');
+  await returnButton.waitFor();
+  assert.ok(
+    await returnButton.evaluate((button) => button.getBoundingClientRect().height) >= 44,
+    'Return controls must keep a 44px minimum touch target',
+  );
+  assert.equal(await page.getByTestId('decrease-order-item').count(), 0, 'Accepted order must no longer expose decrease');
+  await returnButton.click();
+  const returnDialog = page.getByTestId('return-item-dialog');
+  await returnDialog.waitFor();
+  assert.equal(await returnDialog.locator('input, textarea').count(), 0, 'Simple return must not ask for a reason');
+  await returnDialog.getByRole('button', { name: '确认退菜', exact: true }).click();
+  await page.getByText('退菜成功。', { exact: true }).waitFor();
+  assert.equal(await page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' }).count(), 0);
+  assert.match((await page.locator('.order-detail-panel').textContent()) || '', /30[.,]?000/);
+
+  await selectFixtureTable();
+  const updatedBill = page.getByTestId('table-detail');
+  assert.match((await updatedBill.textContent()) || '', /4\s*笔/);
+  assert.match((await updatedBill.textContent()) || '', /441[.,]?000/);
 }
 
 async function verifyNetworkRecovery() {
@@ -569,7 +660,25 @@ async function verifyLocales() {
     const tableDetail = page.getByTestId('table-detail');
     assert.equal(await tableDetail.getByTestId('table-summary-tab').isVisible(), true);
     assert.equal(await tableDetail.getByTestId('table-orders-tab').isVisible(), true);
-    assert.equal(await tableDetail.getByTestId('table-detail-actions').locator('button').count(), 2);
+    assert.equal(await tableDetail.getByTestId('table-detail-actions').locator('button').count(), 3);
+
+    if (locale === 'vi' || locale === 'en') {
+      await tableDetail.getByTestId('table-order-items').click();
+      const workspace = page.getByTestId('table-ordering-workspace');
+      await workspace.waitFor();
+      await assertOverlayWithinViewport(workspace, `${locale} D10 ordering workspace`);
+      await workspace.locator('.table-ordering-close').click();
+
+      await page.locator('a[href="/orders/active"]:visible').first().click();
+      await page.waitForURL('**/orders/active');
+      await page.locator('.order-card').filter({ hasText: 'DEMO-ADD-001' }).click();
+      await page.getByTestId('return-order-item').first().click();
+      const returnDialog = page.getByTestId('return-item-dialog');
+      await returnDialog.waitFor();
+      await assertOverlayWithinViewport(returnDialog, `${locale} D10 return dialog`);
+      await returnDialog.locator('button.secondary-action').click();
+      await selectFixtureTable();
+    }
 
     for (const [width, height] of [
       [1280, 800],
@@ -705,8 +814,24 @@ async function verifyAndroidWebViewLandscape() {
     const detail = webViewPage.getByTestId('table-detail');
     await detail.waitFor();
     assert.equal(await detail.getByTestId('table-summary-tab').isVisible(), true);
-    assert.equal(await detail.getByTestId('table-detail-actions').locator('button').count(), 2);
+    assert.equal(await detail.getByTestId('table-detail-actions').locator('button').count(), 3);
     assert.equal(await webViewPage.locator('.print-job-actions').count(), 0);
+    await detail.getByTestId('table-order-items').click();
+    const workspace = webViewPage.getByTestId('table-ordering-workspace');
+    await workspace.waitFor();
+    await assertOverlayWithinViewport(workspace, 'Android WebView ordering workspace');
+    await workspace.locator('.table-ordering-close').click();
+
+    await webViewPage.locator('a[href="/orders/new"]:visible').first().click();
+    await webViewPage.waitForURL('**/orders/new');
+    await webViewPage.locator('.order-card').filter({ hasText: 'DEMO-1001' }).click();
+    await webViewPage.getByRole('button', { name: '接单', exact: true }).click();
+    await webViewPage.getByText('订单状态已更新。').waitFor();
+    await webViewPage.getByTestId('return-order-item').click();
+    const returnDialog = webViewPage.getByTestId('return-item-dialog');
+    await returnDialog.waitFor();
+    await assertOverlayWithinViewport(returnDialog, 'Android WebView return dialog');
+    await returnDialog.locator('button.secondary-action').click();
     const overflow = await webViewPage.evaluate(() => ({
       x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
@@ -716,6 +841,28 @@ async function verifyAndroidWebViewLandscape() {
   } finally {
     await webViewContext.close();
   }
+}
+
+async function assertOverlayWithinViewport(locator, label) {
+  const geometry = await locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      overflowX: element.scrollWidth - element.clientWidth,
+      overflowY: element.scrollHeight - element.clientHeight,
+    };
+  });
+  assert.ok(geometry.left >= -1, `${label}: escapes the left viewport edge`);
+  assert.ok(geometry.top >= -1, `${label}: escapes the top viewport edge`);
+  assert.ok(geometry.right <= geometry.viewportWidth + 1, `${label}: escapes the right viewport edge`);
+  assert.ok(geometry.bottom <= geometry.viewportHeight + 1, `${label}: escapes the bottom viewport edge`);
+  assert.ok(geometry.overflowX <= 1, `${label}: overflows horizontally`);
+  assert.ok(geometry.overflowY <= 1, `${label}: overflows vertically`);
 }
 
 function assertNear(actual, expected, tolerance, label) {

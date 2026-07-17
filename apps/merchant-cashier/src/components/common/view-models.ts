@@ -19,6 +19,7 @@ export type CashierOrderAction =
 
 export interface CashierOrderItemView {
   id: string;
+  productId?: string | null;
   productNameZhSnapshot?: string;
   productNameViSnapshot?: string | null;
   productNameEnSnapshot?: string | null;
@@ -35,6 +36,7 @@ export interface CashierOrderView {
   orderType?: CashierOrderType;
   status?: CashierOrderStatus;
   tableNoSnapshot?: string | null;
+  tableSessionId?: string | null;
   createdAt?: string;
   contactName?: string | null;
   contactPhone?: string | null;

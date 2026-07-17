@@ -20,6 +20,15 @@ describe('Merchant staff permissions', () => {
   let tableId: bigint;
   const orderIds: bigint[] = [];
   const suffix = Date.now().toString();
+  const phoneSuffix = suffix.slice(-7).padStart(7, '0');
+  const staffUsernames = {
+    roleplay: `090${phoneSuffix}`,
+    apiCreate: `091${phoneSuffix}`,
+    forbiddenStaff: `092${phoneSuffix}`,
+    forbiddenManager: `093${phoneSuffix}`,
+    disable: `094${phoneSuffix}`,
+    reset: `095${phoneSuffix}`,
+  };
   const password = 'Password123!';
   const passwordHashPromise = bcrypt.hash(password, 4);
 
@@ -91,13 +100,13 @@ describe('Merchant staff permissions', () => {
     ownerTwoToken = await login(`owner_two_${suffix}`);
 
     const created = await createStaff(ownerOneToken, {
-      username: `roleplay_${suffix}`,
+      username: staffUsernames.roleplay,
       displayName: '角色演练员工',
       password,
       role: 'STAFF',
     });
     const createdId = created.id as string;
-    staffToken = await login(`roleplay_${suffix}`);
+    staffToken = await login(staffUsernames.roleplay);
 
     await request(app.getHttpServer())
       .patch(`/api/v1/merchant/staff/${createdId}`)
@@ -107,7 +116,7 @@ describe('Merchant staff permissions', () => {
         role: 'MANAGER',
       })
       .expect(200);
-    managerToken = await login(`roleplay_${suffix}`);
+    managerToken = await login(staffUsernames.roleplay);
 
     const category = await prisma.category.create({
       data: {
@@ -198,7 +207,7 @@ describe('Merchant staff permissions', () => {
 
   it('allows OWNER to create staff and enforces global username uniqueness', async () => {
     const created = await createStaff(ownerOneToken, {
-      username: `api_create_${suffix}`,
+      username: staffUsernames.apiCreate,
       displayName: '新员工',
       password,
       role: 'STAFF',
@@ -210,14 +219,14 @@ describe('Merchant staff permissions', () => {
       .set('Authorization', `Bearer ${ownerOneToken}`)
       .expect(200);
     expect(list.body.data.map((item: { username: string }) => item.username)).toContain(
-      `api_create_${suffix}`,
+      staffUsernames.apiCreate,
     );
 
     await request(app.getHttpServer())
       .post('/api/v1/merchant/staff')
       .set('Authorization', `Bearer ${ownerTwoToken}`)
       .send({
-        username: `api_create_${suffix}`,
+        username: staffUsernames.apiCreate,
         displayName: '重复用户名',
         password,
         role: 'STAFF',
@@ -226,12 +235,15 @@ describe('Merchant staff permissions', () => {
   });
 
   it('rejects employee management for MANAGER and STAFF', async () => {
-    for (const token of [managerToken, staffToken]) {
+    for (const [index, token] of [managerToken, staffToken].entries()) {
       await request(app.getHttpServer())
         .post('/api/v1/merchant/staff')
         .set('Authorization', `Bearer ${token}`)
         .send({
-          username: `forbidden_${suffix}_${Math.random().toString(36).slice(2, 6)}`,
+          username:
+            index === 0
+              ? staffUsernames.forbiddenManager
+              : staffUsernames.forbiddenStaff,
           displayName: '不允许创建',
           password,
           role: 'STAFF',
@@ -406,13 +418,13 @@ describe('Merchant staff permissions', () => {
 
   it('disables staff, blocks login, and resets passwords', async () => {
     const created = await createStaff(ownerOneToken, {
-      username: `disable_${suffix}`,
+      username: staffUsernames.disable,
       displayName: '待停用员工',
       password,
       role: 'STAFF',
     });
 
-    await login(`disable_${suffix}`, password);
+    await login(staffUsernames.disable, password);
 
     await request(app.getHttpServer())
       .post(`/api/v1/merchant/staff/${created.id}/disable`)
@@ -422,13 +434,13 @@ describe('Merchant staff permissions', () => {
     await request(app.getHttpServer())
       .post('/api/v1/merchant/auth/login')
       .send({
-        username: `disable_${suffix}`,
+        username: staffUsernames.disable,
         password,
       })
       .expect(401);
 
     const resetTarget = await createStaff(ownerOneToken, {
-      username: `reset_${suffix}`,
+      username: staffUsernames.reset,
       displayName: '待重置员工',
       password,
       role: 'STAFF',
@@ -445,12 +457,12 @@ describe('Merchant staff permissions', () => {
     await request(app.getHttpServer())
       .post('/api/v1/merchant/auth/login')
       .send({
-        username: `reset_${suffix}`,
+        username: staffUsernames.reset,
         password,
       })
       .expect(401);
 
-    const relogin = await login(`reset_${suffix}`, newPassword);
+    const relogin = await login(staffUsernames.reset, newPassword);
     expect(relogin).toBeTruthy();
   });
 

@@ -124,7 +124,8 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     return request;
   }
 
-  function refreshLiveOrders() {
+  function refreshLiveOrders(options: { force?: boolean } = {}) {
+    if (options.force) invalidateLiveRequests();
     if (liveRequest) return liveRequest;
     const generation = dataGeneration;
     const revision = liveQueryRevision;
@@ -289,6 +290,17 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     notifyPendingSnapshot();
   }
 
+  function applyOrderSnapshot(order: MerchantOrder, select = false) {
+    // A mutation snapshot is newer than any list polling request that was
+    // already in flight. Invalidate those requests before applying it so a
+    // late response cannot restore the pre-mutation order state.
+    invalidateLiveRequests();
+    detailRequestSequence += 1;
+    detailLoading.value = false;
+    if (select || selectedOrder.value?.id === order.id) selectedOrder.value = order;
+    updateCachedOrder(order);
+  }
+
   function notifyPendingSnapshot() {
     const auth = useAuthStore();
     const merchantId = auth.merchant?.id ?? pendingOrders.value[0]?.merchantId;
@@ -375,6 +387,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     refreshLiveOrders,
     fetchHistory,
     selectOrder,
+    applyOrderSnapshot,
     runAction,
     startLivePolling,
     stopLivePolling,

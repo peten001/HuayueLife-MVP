@@ -1,4 +1,6 @@
 import type {
+  CashierMenuCategory,
+  CashierMenuProduct,
   DiningTable,
   MerchantOrder,
   MerchantProfile,
@@ -31,6 +33,53 @@ export const demoStaffSession: MerchantStaffSession = {
 export const demoMerchantProfile: MerchantProfile = {
   id: 'demo-merchant', nameZh: '演示餐厅（非真实数据）', nameVi: 'Nhà hàng demo (không phải dữ liệu thật)', nameEn: 'Demo Restaurant (not real data)', merchantType: 'RESTAURANT', merchantMode: 'QR_ORDER', contactName: 'Demo', contactPhone: '', province: 'Demo', city: 'Demo', addressDetail: 'Demo only', latitude: '0', longitude: '0', businessHours: { monday: ['00:00-23:59'], tuesday: ['00:00-23:59'], wednesday: ['00:00-23:59'], thursday: ['00:00-23:59'], friday: ['00:00-23:59'], saturday: ['00:00-23:59'], sunday: ['00:00-23:59'] }, minimumDeliveryAmountVnd: '0', deliveryFeeVnd: '0', deliveryRadiusKm: '0', dineInEnabled: true, pickupEnabled: true, deliveryEnabled: true, isVisibleOnClient: false, status: 'ACTIVE', capabilities: demoStaffSession.merchant.capabilities,
 };
+
+export const demoMenuCategories: CashierMenuCategory[] = [
+  { id: 'demo-category-main', nameZh: '招牌菜', nameVi: 'Món đặc trưng', sortOrder: 1, isActive: true },
+  { id: 'demo-category-drink', nameZh: '饮品', nameVi: 'Đồ uống', sortOrder: 2, isActive: true },
+];
+
+export const demoMenuProducts: CashierMenuProduct[] = [
+  {
+    id: 'demo-product-beef',
+    categoryId: 'demo-category-main',
+    nameZh: '演示牛肉粉',
+    nameVi: 'Phở bò demo',
+    description: '演示数据 / Dữ liệu demo',
+    imageUrl: null,
+    priceVnd: '68000',
+    sortOrder: 1,
+    status: 'ON_SALE',
+    productType: 'FOOD',
+    category: demoMenuCategories[0],
+  },
+  {
+    id: 'demo-product-rice',
+    categoryId: 'demo-category-main',
+    nameZh: '演示炒饭',
+    nameVi: 'Cơm chiên demo',
+    description: '演示数据 / Dữ liệu demo',
+    imageUrl: null,
+    priceVnd: '52000',
+    sortOrder: 2,
+    status: 'ON_SALE',
+    productType: 'FOOD',
+    category: demoMenuCategories[0],
+  },
+  {
+    id: 'demo-product-tea',
+    categoryId: 'demo-category-drink',
+    nameZh: '演示柠檬茶',
+    nameVi: 'Trà chanh demo',
+    description: '演示数据 / Dữ liệu demo',
+    imageUrl: null,
+    priceVnd: '30000',
+    sortOrder: 1,
+    status: 'ON_SALE',
+    productType: 'FOOD',
+    category: demoMenuCategories[1],
+  },
+];
 
 export const demoTables: DiningTable[] = [
   { id: 'demo-table-1', merchantId: 'demo-merchant', tableNo: 'A01', tableName: '演示桌 A01', qrToken: 'DEMO-NOT-A-REAL-TOKEN', qrVersion: 1, status: 'ACTIVE' },

@@ -1,14 +1,20 @@
 import { canRunOrderAction } from '@/domain';
 import type {
+  CreateMerchantTableOrderInput,
+  DecreaseMerchantOrderItemInput,
   MerchantOrder,
   MerchantOrderAction,
   MerchantOrderFilters,
+  MerchantOrderMutationResult,
+  ReturnMerchantOrderItemInput,
   TableSessionDetail,
   TableSessionSummary,
 } from '@/types';
 import { CashierApiError } from '@/api/error';
 import {
   demoMerchantProfile,
+  demoMenuCategories,
+  demoMenuProducts,
   demoStaffSession,
   demoTables,
   initialDemoOrders,
@@ -16,15 +22,21 @@ import {
 
 let orders = structuredClone(initialDemoOrders);
 let sessionClosed = false;
+let nextAddedOrder = 1;
+let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 
 export function resetDemoRepository() {
   orders = structuredClone(initialDemoOrders);
   sessionClosed = false;
+  nextAddedOrder = 1;
+  adjustmentResults = new Map();
 }
 
 export const demoRepository = {
   staff: () => structuredClone(demoStaffSession),
   profile: () => structuredClone(demoMerchantProfile),
+  categories: () => structuredClone(demoMenuCategories),
+  products: () => structuredClone(demoMenuProducts),
   orders: (filters: MerchantOrderFilters = {}) => structuredClone(
     orders.filter((order) =>
       (!filters.status || order.status === filters.status) &&
@@ -62,12 +74,164 @@ export const demoRepository = {
     sessionClosed = true;
     return buildSessionDetail();
   },
+  createTableOrder(
+    tableId: string,
+    input: CreateMerchantTableOrderInput,
+  ): MerchantOrderMutationResult {
+    requireOpenDemoTable(tableId);
+    const existing = orders.find((order) =>
+      order.createdByStaffId === demoStaffSession.id
+      && order.idempotencyKey === input.idempotencyKey,
+    );
+    if (existing) return mutationResult(existing);
+
+    const selected = input.items
+      .filter((item) => item.quantity > 0)
+      .map((item, index) => {
+        const product = demoMenuProducts.find((candidate) => candidate.id === item.productId);
+        if (!product || product.status !== 'ON_SALE') {
+          throw conflict('PRODUCT_NOT_AVAILABLE', 'Demo product is unavailable');
+        }
+        const subtotal = BigInt(product.priceVnd) * BigInt(item.quantity);
+        return {
+          id: `demo-added-item-${nextAddedOrder}-${index + 1}`,
+          productId: product.id,
+          productNameZhSnapshot: product.nameZh,
+          productNameViSnapshot: product.nameVi,
+          imageUrlSnapshot: product.imageUrl,
+          unitPriceVnd: product.priceVnd,
+          quantity: item.quantity,
+          subtotalVnd: subtotal.toString(),
+          remark: item.remark?.trim() || null,
+        };
+      });
+    if (!selected.length) throw conflict('INVALID_ITEM_QUANTITY', 'Select at least one item');
+    const total = selected.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n).toString();
+    const now = new Date().toISOString();
+    const sequence = nextAddedOrder++;
+    const order: MerchantOrder = {
+      id: `demo-added-order-${sequence}`,
+      orderNo: `DEMO-ADD-${String(sequence).padStart(3, '0')}`,
+      idempotencyKey: input.idempotencyKey,
+      userId: null,
+      createdByStaffId: demoStaffSession.id,
+      merchantId: demoStaffSession.merchant.id,
+      tableId,
+      tableSessionId: 'demo-session-1',
+      tableNoSnapshot: 'A01',
+      orderType: 'DINE_IN',
+      status: 'PENDING_ACCEPTANCE',
+      itemAmountVnd: total,
+      deliveryFeeVnd: '0',
+      totalAmountVnd: total,
+      settlementStatus: 'UNSETTLED',
+      createdAt: now,
+      updatedAt: now,
+      table: { id: tableId, tableNo: 'A01', tableName: '演示桌 A01' },
+      items: selected,
+    };
+    orders.unshift(order);
+    return mutationResult(order);
+  },
+  decreaseOrderItem(
+    orderId: string,
+    itemId: string,
+    input: DecreaseMerchantOrderItemInput,
+  ): MerchantOrderMutationResult {
+    const cached = adjustmentResults.get(`${orderId}:${input.requestKey}`);
+    if (cached) return structuredClone(cached);
+    const order = requireOrder(orderId);
+    requireOpenDemoSession(order);
+    if (order.status !== 'PENDING_ACCEPTANCE') {
+      throw conflict('ORDER_STATUS_CHANGED', 'Demo order status changed');
+    }
+    const item = requireOrderItem(order, itemId);
+    if (item.quantity !== input.expectedQuantity) {
+      throw conflict('ORDER_ITEM_QUANTITY_CHANGED', 'Demo item quantity changed');
+    }
+    if (input.targetQuantity < 0 || input.targetQuantity >= item.quantity) {
+      throw conflict('INVALID_ITEM_QUANTITY', 'Invalid demo target quantity');
+    }
+    item.quantity = input.targetQuantity;
+    item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
+    if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
+    if (!order.items.length) order.status = 'CANCELLED';
+    recalculateDemoOrder(order);
+    return cacheAdjustmentResult(order, input.requestKey);
+  },
+  returnOrderItem(
+    orderId: string,
+    itemId: string,
+    input: ReturnMerchantOrderItemInput,
+  ): MerchantOrderMutationResult {
+    const cached = adjustmentResults.get(`${orderId}:${input.requestKey}`);
+    if (cached) return structuredClone(cached);
+    const order = requireOrder(orderId);
+    requireOpenDemoSession(order);
+    if (!['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
+      throw conflict('ORDER_STATUS_CHANGED', 'Demo order status changed');
+    }
+    const item = requireOrderItem(order, itemId);
+    if (item.quantity !== input.expectedQuantity) {
+      throw conflict('ORDER_ITEM_QUANTITY_CHANGED', 'Demo item quantity changed');
+    }
+    if (input.returnQuantity < 1 || input.returnQuantity > item.quantity) {
+      throw conflict('INVALID_ITEM_QUANTITY', 'Invalid demo return quantity');
+    }
+    if (order.items.length === 1 && input.returnQuantity === item.quantity) {
+      throw conflict('LAST_ORDER_ITEM_RETURN_NOT_ALLOWED', 'Cannot return the last demo item');
+    }
+    item.quantity -= input.returnQuantity;
+    item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
+    if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
+    recalculateDemoOrder(order);
+    return cacheAdjustmentResult(order, input.requestKey);
+  },
 };
 
 function requireOrder(id: string) {
   const order = orders.find((item) => item.id === id);
   if (!order) throw notFound('Demo order not found');
   return order;
+}
+
+function requireOrderItem(order: MerchantOrder, itemId: string) {
+  const item = order.items.find((candidate) => candidate.id === itemId);
+  if (!item) throw conflict('ORDER_ITEM_NOT_FOUND', 'Demo order item not found');
+  return item;
+}
+
+function requireOpenDemoTable(tableId: string) {
+  if (tableId !== 'demo-table-1' || sessionClosed) {
+    throw conflict('TABLE_SESSION_NOT_OPEN', 'Demo table session is not open');
+  }
+}
+
+function requireOpenDemoSession(order: MerchantOrder) {
+  if (sessionClosed || order.tableSessionId !== 'demo-session-1') {
+    throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
+  }
+}
+
+function recalculateDemoOrder(order: MerchantOrder) {
+  const itemTotal = order.items.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n).toString();
+  order.itemAmountVnd = itemTotal;
+  order.totalAmountVnd = (BigInt(itemTotal) + BigInt(order.deliveryFeeVnd)).toString();
+  order.updatedAt = new Date().toISOString();
+}
+
+function mutationResult(order: MerchantOrder): MerchantOrderMutationResult {
+  return { order: structuredClone(order), session: buildSessionDetail() };
+}
+
+function cacheAdjustmentResult(order: MerchantOrder, requestKey: string) {
+  const result = mutationResult(order);
+  adjustmentResults.set(`${order.id}:${requestKey}`, structuredClone(result));
+  return result;
+}
+
+function conflict(code: string, message: string) {
+  return new CashierApiError({ message, status: 409, code });
 }
 
 function nextStatus(order: MerchantOrder, action: MerchantOrderAction): MerchantOrder['status'] {

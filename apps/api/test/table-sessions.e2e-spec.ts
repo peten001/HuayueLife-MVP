@@ -34,10 +34,13 @@ describe('Table session workflow', () => {
   let tableOneFirstSessionId = '';
   let tableOneFirstOrderId = '';
   let tableOneSecondOrderId = '';
+  let previousPlatformOrderingEnabled: string | undefined;
   const suffix = `${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
+    previousPlatformOrderingEnabled = process.env.PLATFORM_ORDERING_ENABLED;
+    process.env.PLATFORM_ORDERING_ENABLED = 'true';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -225,6 +228,14 @@ describe('Table session workflow', () => {
       where: { id: { in: [userOneId, userTwoId] } },
     });
     await app.close();
+  });
+
+  afterAll(() => {
+    if (previousPlatformOrderingEnabled === undefined) {
+      delete process.env.PLATFORM_ORDERING_ENABLED;
+      return;
+    }
+    process.env.PLATFORM_ORDERING_ENABLED = previousPlatformOrderingEnabled;
   });
 
   it('returns null when a table does not have an open session', async () => {

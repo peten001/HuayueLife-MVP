@@ -8,6 +8,7 @@ describe('User order records', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let merchantId: bigint;
+  let staffId: bigint;
   let userOneId: bigint;
   let userTwoId: bigint;
   let tokenOne: string;
@@ -47,6 +48,17 @@ describe('User order records', () => {
       },
     });
     merchantId = merchant.id;
+    const staff = await prisma.merchantStaff.create({
+      data: {
+        merchantId,
+        username: `day6-staff-${suffix}`,
+        passwordHash: 'not-used-by-this-e2e-test',
+        displayName: 'Day6 Staff',
+        role: 'STAFF',
+        status: 'ACTIVE',
+      },
+    });
+    staffId = staff.id;
     const first = await login(`day6-user-one-${suffix}`);
     const second = await login(`day6-user-two-${suffix}`);
     userOneId = BigInt(first.user.id);
@@ -80,12 +92,16 @@ describe('User order records', () => {
         (order: { userId: string }) => order.userId === userOneId.toString(),
       ),
     ).toBe(true);
+    for (const order of list.body.data) {
+      expectLegacyCustomerOrderContract(order);
+    }
 
     const detail = await request(app.getHttpServer())
       .get(`/api/v1/orders/${mine.id}`)
       .set('Authorization', `Bearer ${tokenOne}`)
       .expect(200);
     expect(detail.body.data.statusLogs).toHaveLength(1);
+    expectLegacyCustomerOrderContract(detail.body.data);
   });
 
   it('returns 404 when another user reads or operates an order', async () => {
@@ -102,6 +118,46 @@ describe('User order records', () => {
       .post(`/api/v1/orders/${order.id}/confirm-received`)
       .set('Authorization', `Bearer ${tokenTwo}`)
       .expect(404);
+  });
+
+  it('excludes staff-origin orders from customer list, detail, cancel, and chat', async () => {
+    const staffOrder = await createStaffOrder();
+
+    const list = await request(app.getHttpServer())
+      .get('/api/v1/orders')
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+    expect(
+      list.body.data.map((order: { id: string }) => order.id),
+    ).not.toContain(staffOrder.id.toString());
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/orders/${staffOrder.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/v1/orders/${staffOrder.id}/cancel`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/api/v1/orders/${staffOrder.id}/chat`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(404);
+
+    await expect(
+      prisma.order.findUniqueOrThrow({ where: { id: staffOrder.id } }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        userId: null,
+        createdByStaffId: staffId,
+        status: 'PENDING_ACCEPTANCE',
+      }),
+    );
+    await expect(
+      prisma.orderChatConversation.count({
+        where: { orderId: staffOrder.id },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('allows cancellation only while pending acceptance and logs the user', async () => {
@@ -125,6 +181,7 @@ describe('User order records', () => {
         operatorUserId: userOneId.toString(),
       }),
     );
+    expectLegacyCustomerOrderContract(response.body.data);
 
     await request(app.getHttpServer())
       .post(`/api/v1/orders/${pending.id}/cancel`)
@@ -154,6 +211,7 @@ describe('User order records', () => {
         operatorUserId: userOneId.toString(),
       }),
     );
+    expectLegacyCustomerOrderContract(response.body.data);
 
     await request(app.getHttpServer())
       .post(`/api/v1/orders/${delivery.id}/confirm-received`)
@@ -229,6 +287,47 @@ describe('User order records', () => {
     orderIds.push(order.id);
     return order;
   }
+
+  async function createStaffOrder() {
+    const order = await prisma.order.create({
+      data: {
+        orderNo: `D6S${Date.now()}${Math.random().toString().slice(2, 8)}`,
+        idempotencyKey: `day6_staff_${Date.now()}_${Math.random()
+          .toString()
+          .slice(2, 10)}`,
+        userId: null,
+        createdByStaffId: staffId,
+        merchantId,
+        orderType: 'DINE_IN',
+        status: 'PENDING_ACCEPTANCE',
+        itemAmountVnd: 80000n,
+        deliveryFeeVnd: 0n,
+        totalAmountVnd: 80000n,
+        items: {
+          create: {
+            productNameZhSnapshot: 'Day6 员工追加菜品',
+            unitPriceVnd: 80000n,
+            quantity: 1,
+            subtotalVnd: 80000n,
+          },
+        },
+        statusLogs: {
+          create: {
+            toStatus: 'PENDING_ACCEPTANCE',
+            operatorType: 'MERCHANT_STAFF',
+            operatorStaffId: staffId,
+            action: 'MERCHANT_ADD_ITEMS',
+            requestKey: `day6_log_${Date.now()}_${Math.random()
+              .toString()
+              .slice(2, 8)}`,
+            remark: 'Day6 员工追加订单',
+          },
+        },
+      },
+    });
+    orderIds.push(order.id);
+    return order;
+  }
 });
 
 function alwaysOpen() {
@@ -241,4 +340,14 @@ function alwaysOpen() {
     saturday: ['00:00-23:59'],
     sunday: ['00:00-23:59'],
   };
+}
+
+function expectLegacyCustomerOrderContract(order: Record<string, unknown>) {
+  expect(order).not.toHaveProperty('createdByStaffId');
+  if (!Array.isArray(order.statusLogs)) return;
+  for (const log of order.statusLogs) {
+    expect(log).not.toHaveProperty('action');
+    expect(log).not.toHaveProperty('metadata');
+    expect(log).not.toHaveProperty('requestKey');
+  }
 }

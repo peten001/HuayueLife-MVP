@@ -25,7 +25,7 @@ describe('network write controls', () => {
     expect(wrapper.emitted('action')).toBeUndefined();
   });
 
-  it('disables TableSession closing while writes are disabled', async () => {
+  it('disables TableSession ordering and closing while writes are disabled', async () => {
     const session: TableSessionDetail = {
       id: 'session-1',
       sessionNo: 'TS-1',
@@ -47,8 +47,12 @@ describe('network write controls', () => {
     });
 
     const closeButton = wrapper.find<HTMLButtonElement>('.table-close-action');
+    const orderButton = wrapper.find<HTMLButtonElement>('[data-testid="table-order-items"]');
+    expect(orderButton.attributes('disabled')).toBeDefined();
     expect(closeButton.attributes('disabled')).toBeDefined();
+    await orderButton.trigger('click');
     await closeButton.trigger('click');
+    expect(wrapper.emitted('orderItems')).toBeUndefined();
     expect(wrapper.emitted('closeSession')).toBeUndefined();
   });
 

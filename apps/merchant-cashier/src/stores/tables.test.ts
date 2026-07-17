@@ -113,6 +113,56 @@ describe('cashier table store real-session refresh', () => {
     expect(store.tables).toEqual([]);
     expect(store.openSessions).toEqual([]);
   });
+
+  it('applies the latest dynamic bill returned by an item mutation', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+
+    store.applySessionSnapshot({ ...detail, itemCount: 2, totalAmountVnd: '75000' });
+
+    expect(store.selectedSessionDetail?.itemCount).toBe(2);
+    expect(store.selectedSessionDetail?.totalAmountVnd).toBe('75000');
+    expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
+  });
+
+  it('does not let an older polling response overwrite a session snapshot', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+
+    const staleSessions = createDeferred<TableSessionSummary[]>();
+    apiMocks.listOpenTableSessions.mockReturnValueOnce(staleSessions.promise);
+    const staleRequest = store.fetchTables();
+
+    store.applySessionSnapshot({ ...detail, itemCount: 2, totalAmountVnd: '75000' });
+    staleSessions.resolve([summary]);
+    await staleRequest;
+
+    expect(store.selectedSessionDetail?.totalAmountVnd).toBe('75000');
+    expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
+    expect(store.detailLoading).toBe(false);
+  });
+
+  it('force refresh bypasses an in-flight request and only applies the newest revision', async () => {
+    const staleSessions = createDeferred<TableSessionSummary[]>();
+    const refreshedSummary = { ...summary, itemCount: 2, totalAmountVnd: '75000' };
+    apiMocks.listOpenTableSessions
+      .mockReturnValueOnce(staleSessions.promise)
+      .mockResolvedValueOnce([refreshedSummary]);
+    const store = useTablesStore();
+
+    const staleRequest = store.fetchTables();
+    const forcedRequest = store.fetchTables({ force: true });
+    await forcedRequest;
+    staleSessions.resolve([summary]);
+    await staleRequest;
+
+    expect(apiMocks.listDiningTables).toHaveBeenCalledTimes(2);
+    expect(apiMocks.listOpenTableSessions).toHaveBeenCalledTimes(2);
+    expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
+    expect(store.loading).toBe(false);
+  });
 });
 
 function createDeferred<T>() {

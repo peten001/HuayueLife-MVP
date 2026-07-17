@@ -39,9 +39,17 @@ export class TableSessionsService {
   ): Promise<{ id: bigint }> {
     await this.lockTableRow(tx, merchantId, tableId);
 
-    const existingId = await this.findOpenSessionIdForUpdate(tx, merchantId, tableId);
+    const existingId = await this.findOpenSessionId(tx, merchantId, tableId);
     if (existingId) {
-      return { id: existingId };
+      const currentId = await this.confirmOpenSessionIdForUpdate(
+        tx,
+        merchantId,
+        tableId,
+        existingId,
+      );
+      if (currentId) {
+        return { id: currentId };
+      }
     }
 
     try {
@@ -112,7 +120,15 @@ export class TableSessionsService {
   }
 
   async getSessionDetail(merchantId: bigint, sessionId: bigint) {
-    const session = await this.requireOwnedSession(this.prisma, merchantId, sessionId);
+    return this.getSessionDetailWithClient(this.prisma, merchantId, sessionId);
+  }
+
+  async getSessionDetailWithClient(
+    client: DbClient,
+    merchantId: bigint,
+    sessionId: bigint,
+  ) {
+    const session = await this.requireOwnedSession(client, merchantId, sessionId);
     return {
       session: this.serializeSessionDetail(session),
     };
@@ -132,13 +148,24 @@ export class TableSessionsService {
         return { sessionId };
       }
 
-      const unfinishedCount = await tx.order.count({
-        where: {
-          tableSessionId: sessionId,
-          status: { in: UNFINISHED_ORDER_STATUSES },
-        },
-      });
-      if (unfinishedCount > 0) {
+      // Use a locking/current read after the table and session locks. A normal
+      // Prisma count here can retain an older MySQL RR snapshot and miss an
+      // add-on order that committed while closeSession waited for the table.
+      const sessionOrders = await tx.$queryRaw<Array<{
+        id: bigint;
+        status: OrderStatus;
+      }>>`
+        SELECT id, status
+        FROM orders
+        WHERE table_session_id = ${sessionId}
+        ORDER BY id
+        FOR UPDATE
+      `;
+      if (
+        sessionOrders.some((order) =>
+          UNFINISHED_ORDER_STATUSES.includes(order.status),
+        )
+      ) {
         throw new ConflictException({
           code: 'TABLE_SESSION_HAS_UNFINISHED_ORDERS',
           message: '该桌仍有未完成订单，无法完成结账。',
@@ -255,6 +282,28 @@ export class TableSessionsService {
     return session;
   }
 
+  private async findOpenSessionId(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    tableId: bigint,
+  ) {
+    // The dining-table row lock serializes competing creates for the same
+    // table. Keep this first lookup non-locking so missing unique keys for two
+    // different tables do not acquire overlapping InnoDB gap locks and
+    // deadlock when both sessions are inserted. If a stale RR snapshot misses
+    // a concurrently committed session, the unique key catches it below and
+    // the retry path uses a current locking read.
+    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
+      SELECT id
+      FROM table_sessions
+      WHERE open_table_id = ${tableId}
+        AND merchant_id = ${merchantId}
+        AND table_id = ${tableId}
+        AND status = 'OPEN'
+    `;
+    return rows[0]?.id ?? null;
+  }
+
   private async findOpenSessionIdForUpdate(
     tx: Prisma.TransactionClient,
     merchantId: bigint,
@@ -263,11 +312,32 @@ export class TableSessionsService {
     const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
       SELECT id
       FROM table_sessions
-      WHERE merchant_id = ${merchantId}
+      WHERE open_table_id = ${tableId}
+        AND merchant_id = ${merchantId}
         AND table_id = ${tableId}
-        AND open_table_id IS NOT NULL
-      ORDER BY opened_at DESC, id DESC
-      LIMIT 1
+        AND status = 'OPEN'
+      FOR UPDATE
+    `;
+    return rows[0]?.id ?? null;
+  }
+
+  private async confirmOpenSessionIdForUpdate(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    tableId: bigint,
+    sessionId: bigint,
+  ) {
+    // Lock by the known primary key so this is a current read without taking a
+    // missing-key gap lock on open_table_id. This detects a session that was
+    // closed while this transaction waited for the dining-table row.
+    const rows = await tx.$queryRaw<Array<{ id: bigint }>>`
+      SELECT id
+      FROM table_sessions
+      WHERE id = ${sessionId}
+        AND open_table_id = ${tableId}
+        AND merchant_id = ${merchantId}
+        AND table_id = ${tableId}
+        AND status = 'OPEN'
       FOR UPDATE
     `;
     return rows[0]?.id ?? null;

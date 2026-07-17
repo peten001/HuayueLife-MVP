@@ -16,8 +16,11 @@ describe('Public discovery and QR flow', () => {
   let tableId: bigint;
   let originalToken: string;
   let testUserId: bigint | undefined;
+  let previousPlatformOrderingEnabled: string | undefined;
 
   beforeAll(async () => {
+    previousPlatformOrderingEnabled = process.env.PLATFORM_ORDERING_ENABLED;
+    process.env.PLATFORM_ORDERING_ENABLED = 'true';
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -120,6 +123,12 @@ describe('Public discovery and QR flow', () => {
   });
 
   afterAll(async () => {
+    if (previousPlatformOrderingEnabled === undefined) {
+      delete process.env.PLATFORM_ORDERING_ENABLED;
+    } else {
+      process.env.PLATFORM_ORDERING_ENABLED = previousPlatformOrderingEnabled;
+    }
+
     await prisma.product.deleteMany({
       where: { merchantId: { in: merchantIds } },
     });

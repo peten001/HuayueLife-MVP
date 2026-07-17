@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -18,6 +19,9 @@ import { AuthUser } from '../../common/types/auth-user.type';
 import { ListMerchantOrdersQueryDto } from './dto/list-merchant-orders-query.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
+import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
+import { ReturnOrderItemDto } from './dto/return-order-item.dto';
+import { OrderItemParamsDto } from './dto/order-item-params.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
@@ -128,6 +132,38 @@ export class MerchantOrdersController {
       BigInt(staff.sub),
       BigInt(params.id),
       'COMPLETE',
+    );
+  }
+
+  @Patch(':orderId/items/:itemId/quantity')
+  decreaseItem(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: OrderItemParamsDto,
+    @Body() dto: DecreaseOrderItemDto,
+  ) {
+    return this.service.decreaseOrderItem(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.orderId),
+      BigInt(params.itemId),
+      dto,
+    );
+  }
+
+  @Post(':orderId/items/:itemId/return')
+  returnItem(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: OrderItemParamsDto,
+    @Body() dto: ReturnOrderItemDto,
+  ) {
+    return this.service.returnOrderItem(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.orderId),
+      BigInt(params.itemId),
+      dto,
     );
   }
 

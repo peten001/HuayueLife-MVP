@@ -1,4 +1,4 @@
-import type { OrderStatus } from './orders';
+import type { MerchantOrder, OrderStatus } from './orders';
 
 export interface DiningTable {
   id: string;
@@ -54,6 +54,11 @@ export interface TableSessionOrder {
 
 export interface TableSessionDetail extends TableSessionSummary {
   orders: TableSessionOrder[];
+}
+
+export interface MerchantOrderMutationResult {
+  order: MerchantOrder;
+  session: TableSessionDetail;
 }
 
 export type TableOperationalStatus =
