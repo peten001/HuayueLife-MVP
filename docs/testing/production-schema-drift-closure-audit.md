@@ -2,17 +2,17 @@
 
 审计日期：2026-07-17
 
-本地目标：`main@f0f1d71c2e0e08be815c465f1a8bd94f5b34033d`
+最终应用提交：`main@a5f1ee790e885c607a2eebbf2466814b060ccbc7`
 
-生产代码：`main@b7f056609996635ca235965c3662916a3150e052`
+生产发布前代码：`main@b7f056609996635ca235965c3662916a3150e052`
 
 原审计结论：Drift 收口候选已在 MySQL 8.0.46 生产结构克隆库验证通过，但当时因 `OrderStatusLog` 新动作在商家后台、平台后台和顾客时间线中存在错误或重复展示而标记为 `NOT_READY_FOR_PRODUCTION`。
 
-2026-07-17 收口更新：**7 项 Prisma 声明、三端动作日志兼容和测试变量名均已完成本地修复；历史 16 个 migration 与功能第 17 个 migration 的隔离验证、最终空 diff 及全量回归全部通过。原动作日志阻断已关闭，进入生产备份与同批发布 Gate。**
+2026-07-17 收口更新：**7 项 Prisma 声明、三端动作日志兼容和测试变量名均已完成修复；历史 16 个 migration 与功能第 17 个 migration 的隔离验证、全量回归、生产备份、同批发布及生产最终空 diff 全部通过。原动作日志阻断已关闭。**
 
-本轮只执行生产只读查询和本地隔离库写入。生产数据库、环境变量、API、Cashier、Admin、PM2 和 Nginx 均未修改。
+下文第 1 至 13 节保留原只读审计轮次的历史事实；当时只执行生产只读查询和本地隔离库写入。最终生产收口结果单独记录在第 15 节，不用后来的状态覆盖原审计证据。
 
-## 1. 当前状态
+## 1. 原只读审计时状态（历史快照）
 
 | 项目 | 结果 |
 |---|---|
@@ -458,7 +458,7 @@ huayue_schema_drift_prodclone_20260717
 - 已产生 action 日志时：保留结构化字段，不能伪装成普通状态日志；
 - 任何场景都不自动删除列、索引或强行把员工订单归给顾客。
 
-## 12. 下一步发布 Gate
+## 12. 原审计时发布计划（现已完成）
 
 已完成：
 
@@ -469,7 +469,7 @@ huayue_schema_drift_prodclone_20260717
 5. 为三端增加同状态动作日志契约和 UI 测试。
 6. 在修复后重新运行 Prisma、API、Cashier、Admin、Miniapp 全量回归。
 
-仍待本轮生产阶段完成：
+原审计时仍待完成、现已由第 15 节关闭：
 
 1. 重新执行生产只读 Gate，确认 schema/data/环境变量未变化。
 2. 正式部署前创建完整生产数据库、环境、PM2、Nginx 和静态 release 备份。
@@ -539,4 +539,46 @@ huayue_schema_drift_prodclone_20260717
 
 测试代码中的错误变量 `PRINTING_AUTO_TASKS_ENABLED` 已修正为真实的 `PRINTING_AUTO_CREATE_ENABLED`。自动任务创建、自动打印与旧服务器 LAN 直打仍保持关闭；执行端状态未修改。
 
-> 7 项 Schema 声明与动作日志兼容的本地 Gate 已通过。生产数据库尚未在本段记录时执行功能 migration；必须继续遵守完整备份、同批部署和最终空 diff Gate。
+> 本段保留发布前结论：7 项 Schema 声明与动作日志兼容的本地 Gate 已通过，当时生产功能 migration 尚未执行。最终生产结果见第 15 节。
+
+## 15. 生产发布收口结果
+
+### 15.1 Git、备份与构建
+
+- 应用提交：`a5f1ee790e885c607a2eebbf2466814b060ccbc7`；生产由 `b7f056609996635ca235965c3662916a3150e052` fast-forward；
+- 备份目录：`/opt/backups/huayue-item-adjustments-20260717-125138`；目录 `700`、文件 `600`；
+- 数据库备份：`production-huayueyouxuan-20260717-125138.sql`，589,386 bytes，SHA-256 `c64725a20c773b61956a19e5562742ec42ca6f8dfc2c49cb91ab23fc7d490a22`；
+- 34 张表、0 trigger、0 routine、0 event 与生产对象数一致；CREATE TABLE、业务 INSERT、结束标记和全部 SHA-256 校验通过；
+- API `.env`、PM2、Nginx、旧 Commit、旧 Cashier release 与旧 Admin dist 均已备份；敏感内容未输出；
+- 锁文件安装、Prisma Client 生成及 API/Cashier/Admin 生产构建全部通过；Admin 仅保留既有 chunk-size warning。
+
+### 15.2 Migration 与最终结构
+
+- 只执行既有功能 migration `20260717000000_add_staff_order_origin_and_item_audit`；
+- 17/17 migration finished，0 pending，0 rolled back；
+- `orders.user_id` nullable，`created_by_staff_id`、员工外键和幂等索引存在；
+- `order_status_logs.action/metadata/request_key` 及动作/requestKey 索引存在；
+- 发布前计数为 `orders=142`、`order_status_logs=627`、`user_id IS NULL=0`；最终计数为 `orders=143`、`order_status_logs=628`、`user_id IS NULL=0`；新增 1 单/1 普通日志来自同批发布期间正常线上流量，旧数据没有减少；
+- 功能尚未在生产写入员工订单或动作日志：`created_by_staff_id IS NOT NULL=0`、`action IS NOT NULL=0`；
+- 7 项 Drift 只通过 Prisma 声明收口，没有 Drift migration，没有对应生产 DDL 或数据改写；
+- 生产数据库到当前 datamodel 的最终结果为 `-- This is an empty migration.`。
+
+### 15.3 同批发布与兼容
+
+- API 已从提交 `a5f1ee7` 构建并只重启既有 `huayue-api` 一次；PM2 `online`，`unstable_restarts=0`，没有新 Prisma/migration error；
+- Cashier release：`/var/www/huayue-cashier-releases/20260717-130330-a5f1ee7-item-adjustments`，通过软链原子切换；
+- Admin 构建产物：`/opt/huayue-item-adjustments-staging-20260717-125138/merchant-admin`，哈希资源先就位、`index.html` 最后原子替换；
+- API、Cashier、Admin 在服务器与外部网络均为 HTTPS 200，新 JS/CSS 资源均为 200；
+- Merchant Admin 生产 bundle 包含中、越、英三语动作呈现；Platform 与顾客 API 使用服务端过滤；Cashier 生产 bundle 包含点菜和菜品调整接口；
+- 无凭据探测的新接口返回 401 而非 404；没有使用生产账号执行写操作；
+- 因没有用户明确指定的安全测试桌台，生产点菜、减菜、退菜与 TableSession 写验收为 `NOT EXECUTED`，未创建真实营业数据；隔离库和 API E2E 已覆盖相同业务链路。
+
+### 15.4 冻结边界与打印状态
+
+- 小程序源码未修改，也未重新发布；顾客端兼容由 API 过滤保证；
+- Android 未修改，APK 未重建；
+- 自动任务创建有效值为关闭；启用且自动打印的 PrintRule 数量为 0；
+- 旧服务器 LAN 直打有效值为关闭；执行端保持发布前既有状态；
+- 没有创建 PrintJob，没有修改商家打印总开关、OrderStatus、订单状态机或任何超范围业务。
+
+生产收口结论：`PASS`。

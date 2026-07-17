@@ -4,7 +4,7 @@
 
 发布基线：`main@f0f1d71c2e0e08be815c465f1a8bd94f5b34033d`
 
-目标提交：本报告与 Schema/动作日志兼容修复所在的 `fix(orders): align schema and action log timelines` 提交；实际 SHA 由提交 Gate 与生产部署记录确认。
+目标应用提交：`a5f1ee790e885c607a2eebbf2466814b060ccbc7`（`fix(orders): align schema and action log timelines`）。
 
 生产发布前基线：`b7f056609996635ca235965c3662916a3150e052`
 
@@ -130,21 +130,29 @@
 
 ## 7. 生产备份与发布记录
 
-本节在完成生产 Gate 后记录，不以占位内容代替验证：
-
 | 项目 | 结果 |
 |---|---|
-| 生产只读 Gate | 待执行 |
-| 备份目录 | 待执行 |
-| 数据库备份及 SHA-256 | 待执行 |
-| API env / PM2 / Nginx 备份 | 待执行 |
-| Cashier/Admin release 备份 | 待执行 |
-| 功能 migration | 待执行 |
-| API source commit | 待执行 |
-| Cashier release | 待执行 |
-| Admin release | 待执行 |
-| 最终生产 Prisma diff | 待执行 |
-| API/Cashier/Admin/PM2 | 待执行 |
+| 生产只读 Gate | PASS：工作区干净；生产基线 `b7f056609996635ca235965c3662916a3150e052`；MySQL `8.0.46`；16/16 migration finished；0 failed/pending；仅有已知 7 项声明差异，无未知 drift |
+| 发布前数据基线 | `orders=142`、`order_status_logs=627`、`orders.user_id IS NULL=0` |
+| 备份目录 | `/opt/backups/huayue-item-adjustments-20260717-125138`；目录 `700`、文件 `600` |
+| 数据库备份及 SHA-256 | `production-huayueyouxuan-20260717-125138.sql`，589,386 bytes，SHA-256 `c64725a20c773b61956a19e5562742ec42ca6f8dfc2c49cb91ab23fc7d490a22` |
+| 数据库备份完整性 | PASS：`mysqldump` 正常完成；34 张表；CREATE TABLE、业务 INSERT 与结束标记存在；trigger/routine/event 均为 0，与生产对象数一致 |
+| API env / PM2 / Nginx 备份 | PASS：`api.env`、`pm2-dump.json`、`nginx-config.tar.gz` 均已进入校验清单，未输出敏感内容 |
+| Cashier/Admin release 备份 | PASS：`cashier-release.tar.gz`、`cashier-release-path.txt`、`merchant-admin-dist.tar.gz`；旧 Cashier release 为 `/var/www/huayue-cashier-releases/20260716-211151` |
+| 全部备份校验 | PASS：`SHA256SUMS.txt` 对 8 个备份对象逐项验证成功 |
+| 生产构建 | PASS：锁文件安装、Prisma Client、API、Cashier、Admin 全部构建成功；Admin 仅有既有 chunk-size warning |
+| 功能 migration | PASS：只执行 `20260717000000_add_staff_order_origin_and_item_audit`；17/17 finished，0 pending，0 rolled back |
+| Migration 后结构 | PASS：nullable `user_id`、`created_by_staff_id`、外键、员工幂等索引、动作字段与 4 个索引均存在 |
+| Migration 后旧数据 | PASS：发布后只读计数 `orders=143`、`order_status_logs=628`，均未减少；新增 1 单/1 普通状态日志来自同期正常线上流量；`user_id IS NULL=0`、员工订单与动作日志仍为 0 |
+| API source commit | `a5f1ee790e885c607a2eebbf2466814b060ccbc7`；仅重启既有 `huayue-api` 一次 |
+| Cashier release | `/var/www/huayue-cashier-releases/20260717-130330-a5f1ee7-item-adjustments`，由 `/var/www/huayue-cashier` 原子软链切换 |
+| Admin release | 构建产物 `/opt/huayue-item-adjustments-staging-20260717-125138/merchant-admin`；先铺设哈希资源，最后原子替换线上 `index.html` |
+| 最终生产 Prisma diff | PASS：`-- This is an empty migration.` |
+| API/Cashier/Admin | PASS：生产服务器与外部网络均为 HTTPS 200；两站新 JS/CSS 均为 200 |
+| PM2 / 错误日志 | PASS：`huayue-api` online，`unstable_restarts=0`；error log 在本次重启前最后更新，未出现新 Prisma 或 migration error |
+| 打印安全状态 | 有效值：任务中心开启、自动任务创建关闭、执行端保持原有开启状态、旧服务器直打关闭；启用且自动打印的 PrintRule 数量为 0 |
+
+新写接口仅做未认证路由探测，均返回 `401` 而非 `404`。没有使用生产账号、没有创建员工订单、没有写动作日志，也没有创建 PrintJob。
 
 ## 8. 回滚边界
 
@@ -166,4 +174,6 @@
 
 本地 Schema、兼容代码和全量回归：`PASS`。
 
-生产状态：必须完成只读复核、完整备份、同批 migration/API/Cashier/Admin 发布、最终空 diff 与兼容冒烟后才能标记完成。
+生产只读 Gate、完整备份、功能 migration、API/Cashier/Admin 同批发布、最终空 diff 与无凭据兼容冒烟：`PASS`。
+
+没有用户明确指定的安全测试桌台，因此生产点菜、减菜、退菜写操作标记为 `NOT EXECUTED`；没有创建真实营业数据。相关业务链路已由隔离库和 API E2E 完成验证，等待用户在明确测试桌台上人工验收。
