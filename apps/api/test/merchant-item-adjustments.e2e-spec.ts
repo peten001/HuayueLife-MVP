@@ -24,7 +24,7 @@ describe('Merchant add/decrease/return items', () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
-    process.env.PRINTING_AUTO_TASKS_ENABLED = 'false';
+    process.env.PRINTING_AUTO_CREATE_ENABLED = 'false';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();

@@ -20,6 +20,7 @@ import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
 import { OrderCreatorInvariantService } from './order-creator-invariant.service';
 import { PendingOrderCancellationService } from './pending-order-cancellation.service';
+import { isInternalOrderStatusLogAction } from './order-status-log-visibility';
 
 @Injectable()
 export class OrdersService {
@@ -462,15 +463,17 @@ export class OrdersService {
 
     return {
       ...withoutCreator,
-      statusLogs: order.statusLogs.map((log) => {
-        const {
-          action: _action,
-          metadata: _metadata,
-          requestKey: _requestKey,
-          ...publicLog
-        } = log;
-        return publicLog;
-      }),
+      statusLogs: order.statusLogs
+        .filter((log) => !isInternalOrderStatusLogAction(log.action))
+        .map((log) => {
+          const {
+            action: _action,
+            metadata: _metadata,
+            requestKey: _requestKey,
+            ...publicLog
+          } = log;
+          return publicLog;
+        }),
     };
   }
 

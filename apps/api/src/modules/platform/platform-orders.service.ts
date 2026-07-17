@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ListPlatformOrdersQueryDto } from './dto/list-platform-orders-query.dto';
+import { isInternalOrderStatusLogAction } from '../orders/order-status-log-visibility';
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
@@ -143,14 +144,16 @@ export class PlatformOrdersService {
         subtotalVnd: item.subtotalVnd.toString(),
         remark: item.remark,
       })),
-      statusLogs: order.statusLogs.map((log) => ({
-        id: log.id.toString(),
-        fromStatus: log.fromStatus,
-        toStatus: log.toStatus,
-        operatorType: log.operatorType,
-        remark: log.remark,
-        createdAt: log.createdAt.toISOString(),
-      })),
+      statusLogs: order.statusLogs
+        .filter((log) => !isInternalOrderStatusLogAction(log.action))
+        .map((log) => ({
+          id: log.id.toString(),
+          fromStatus: log.fromStatus,
+          toStatus: log.toStatus,
+          operatorType: log.operatorType,
+          remark: log.remark,
+          createdAt: log.createdAt.toISOString(),
+        })),
     };
   }
 
@@ -175,6 +178,15 @@ export class PlatformOrdersService {
       orderBy: { id: 'asc' as const },
     },
     statusLogs: {
+      select: {
+        id: true,
+        fromStatus: true,
+        toStatus: true,
+        operatorType: true,
+        action: true,
+        remark: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'asc' as const },
     },
   };

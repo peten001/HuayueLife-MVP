@@ -121,6 +121,129 @@ describe('Merchant order workflow', () => {
       .expect(404);
   });
 
+  it('returns only allowlisted action metadata and never exposes request keys', async () => {
+    const order = await createOrder(merchantOneId, 'DINE_IN');
+    const requestKeyPrefix = `merchant_api_secret_${suffix}_${order.id}`;
+    await prisma.orderStatusLog.createMany({
+      data: [
+        {
+          orderId: order.id,
+          fromStatus: 'PENDING_ACCEPTANCE',
+          toStatus: 'PENDING_ACCEPTANCE',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffOneId,
+          action: 'MERCHANT_ADD_ITEMS',
+          requestKey: `${requestKeyPrefix}_add`,
+          metadata: {
+            actorId: staffOneId.toString(),
+            actorRole: 'OWNER',
+            tableId: 'internal-table-id',
+            items: [{ productId: 'internal-product-id', quantity: 2 }],
+          },
+          remark: '商家点菜创建追加订单',
+        },
+        {
+          orderId: order.id,
+          fromStatus: 'PENDING_ACCEPTANCE',
+          toStatus: 'PENDING_ACCEPTANCE',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffOneId,
+          action: 'ORDER_ITEM_DECREASED',
+          requestKey: `${requestKeyPrefix}_decrease`,
+          metadata: {
+            orderItemId: 'internal-order-item-id',
+            productId: 'internal-product-id',
+            productNameSnapshot: '测试减菜',
+            beforeQuantity: 3,
+            afterQuantity: 1,
+            decreasedQuantity: 2,
+            beforeOrderAmountVnd: '999999',
+            actorId: staffOneId.toString(),
+          },
+          remark: '商家减少未接单菜品',
+        },
+        {
+          orderId: order.id,
+          fromStatus: 'PENDING_ACCEPTANCE',
+          toStatus: 'PENDING_ACCEPTANCE',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffOneId,
+          action: 'ORDER_ITEM_RETURNED',
+          requestKey: `${requestKeyPrefix}_return`,
+          metadata: {
+            orderItemId: 'internal-return-item-id',
+            productId: 'internal-return-product-id',
+            productNameSnapshot: '测试退菜',
+            beforeQuantity: 2,
+            afterQuantity: 1,
+            returnedQuantity: 1,
+            afterOrderAmountVnd: '888888',
+            actorId: staffOneId.toString(),
+          },
+          remark: '商家退菜',
+        },
+      ],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/merchant/orders/${order.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+    const logs = response.body.data.statusLogs as Array<Record<string, unknown>>;
+
+    expect(logs[0]).toEqual(
+      expect.objectContaining({
+        orderId: order.id.toString(),
+        operatorUserId: userId.toString(),
+        action: null,
+        metadata: null,
+        updatedAt: expect.any(String),
+      }),
+    );
+    expect(logs[0]).not.toHaveProperty('requestKey');
+    const addLog = logs.find((log) => log.action === 'MERCHANT_ADD_ITEMS');
+    const decreaseLog = logs.find(
+      (log) => log.action === 'ORDER_ITEM_DECREASED',
+    );
+    const returnLog = logs.find((log) => log.action === 'ORDER_ITEM_RETURNED');
+    expect(addLog).toBeDefined();
+    expect(decreaseLog).toBeDefined();
+    expect(returnLog).toBeDefined();
+    expect(addLog).toEqual(
+      expect.not.objectContaining({ metadata: expect.anything() }),
+    );
+    expect(decreaseLog).toEqual(
+      expect.objectContaining({
+        metadata: {
+          productName: '测试减菜',
+          beforeQuantity: 3,
+          afterQuantity: 1,
+        },
+      }),
+    );
+    expect(returnLog).toEqual(
+      expect.objectContaining({
+        metadata: {
+          productName: '测试退菜',
+          returnedQuantity: 1,
+        },
+      }),
+    );
+    for (const log of [addLog!, decreaseLog!, returnLog!]) {
+      expect(log).not.toHaveProperty('requestKey');
+      expect(log).not.toHaveProperty('orderId');
+      expect(log).not.toHaveProperty('operatorUserId');
+      expect(log).not.toHaveProperty('operatorStaffId');
+      expect(log.operatorStaff).toEqual({ displayName: 'Day5 甲店员' });
+    }
+    const serialized = JSON.stringify(response.body.data);
+    expect(serialized).not.toContain(requestKeyPrefix);
+    expect(serialized).not.toContain('internal-order-item-id');
+    expect(serialized).not.toContain('internal-product-id');
+    expect(serialized).not.toContain('999999');
+    expect(serialized).not.toContain('888888');
+  });
+
   it('completes the dine-in state machine and records staff logs', async () => {
     const order = await createOrder(merchantOneId, 'DINE_IN');
     await act(order.id, 'accept', 201);

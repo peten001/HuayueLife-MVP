@@ -291,7 +291,7 @@ model Merchant {
   nameVi                   String?             @map("name_vi") @db.VarChar(120)
   nameEn                   String?             @map("name_en") @db.VarChar(120)
   merchantType             MerchantType        @default(RESTAURANT) @map("merchant_type")
-  merchantMode             MerchantMode        @default(DISPLAY_ONLY) @map("merchant_mode")
+  merchantMode             MerchantMode        @default(DISPLAY) @map("merchant_mode")
   claimStatus              MerchantClaimStatus @default(UNCLAIMED) @map("claim_status")
   ownerUserId              BigInt?             @map("owner_user_id")
   logoUrl                  String?             @map("logo_url") @db.VarChar(500)
@@ -378,10 +378,10 @@ model MerchantBusinessType {
   sortOrder           Int          @default(0) @map("sort_order")
   showOnHome          Boolean      @default(true) @map("show_on_home")
   enabled             Boolean      @default(true)
-  defaultMerchantMode MerchantMode @default(DISPLAY_ONLY) @map("default_merchant_mode")
+  defaultMerchantMode MerchantMode @default(DISPLAY) @map("default_merchant_mode")
   defaultCapabilities Json?        @map("default_capabilities")
   createdAt           DateTime     @default(now()) @map("created_at")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
+  updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at")
 
   parent    MerchantBusinessType?  @relation("BusinessTypeTree", fields: [parentId], references: [id], onDelete: SetNull)
   children  MerchantBusinessType[] @relation("BusinessTypeTree")
@@ -405,7 +405,7 @@ model PromotionTag {
   sortOrder   Int      @default(0) @map("sort_order")
   enabled     Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
   merchants MerchantPromotionTag[]
 
@@ -427,7 +427,7 @@ model Capability {
   defaultValue Boolean  @default(false) @map("default_value")
   sortOrder    Int      @default(0) @map("sort_order")
   createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
   merchants MerchantCapability[]
 
@@ -453,7 +453,7 @@ model MerchantCapability {
   capabilityId BigInt   @map("capability_id")
   isEnabled    Boolean  @default(false) @map("is_enabled")
   createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
   merchant   Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   capability Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
@@ -474,7 +474,7 @@ model MerchantImage {
   sortOrder  Int      @default(0) @map("sort_order")
   isVisible  Boolean  @default(true) @map("is_visible")
   createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
 
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 

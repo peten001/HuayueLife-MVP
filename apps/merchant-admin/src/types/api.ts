@@ -821,14 +821,28 @@ export interface OrderItem {
   remark?: string;
 }
 
+export type OrderStatusLogAction =
+  | 'MERCHANT_ADD_ITEMS'
+  | 'ORDER_ITEM_DECREASED'
+  | 'ORDER_ITEM_RETURNED';
+
+export interface OrderStatusLogActionMetadata {
+  productName?: string | null;
+  beforeQuantity?: number | null;
+  afterQuantity?: number | null;
+  returnedQuantity?: number | null;
+}
+
 export interface OrderStatusLog {
   id: string;
-  fromStatus?: OrderStatus;
+  fromStatus?: OrderStatus | null;
   toStatus: OrderStatus;
+  action?: OrderStatusLogAction | null;
+  metadata?: OrderStatusLogActionMetadata | null;
   operatorType: 'USER' | 'MERCHANT_STAFF' | 'SYSTEM';
   operatorStaffId?: string;
   operatorStaff?: {
-    id: string;
+    id?: string;
     displayName: string;
   };
   remark?: string;

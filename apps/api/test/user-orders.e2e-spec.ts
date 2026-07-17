@@ -104,6 +104,72 @@ describe('User order records', () => {
     expectLegacyCustomerOrderContract(detail.body.data);
   });
 
+  it('filters every internal merchant action row from the customer timeline', async () => {
+    const order = await createOrder(userOneId, 'DINE_IN', 'ACCEPTED');
+    await prisma.orderStatusLog.createMany({
+      data: [
+        {
+          orderId: order.id,
+          fromStatus: 'ACCEPTED',
+          toStatus: 'ACCEPTED',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffId,
+          action: 'MERCHANT_ADD_ITEMS',
+          requestKey: `customer_hidden_add_${suffix}_${order.id}`,
+          metadata: { actorId: staffId.toString(), tableId: 'secret-table-id' },
+          remark: '内部点菜动作',
+        },
+        {
+          orderId: order.id,
+          fromStatus: 'ACCEPTED',
+          toStatus: 'ACCEPTED',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffId,
+          action: 'ORDER_ITEM_DECREASED',
+          requestKey: `customer_hidden_decrease_${suffix}_${order.id}`,
+          metadata: {
+            orderItemId: 'secret-item-id',
+            productNameSnapshot: '内部减菜',
+            beforeQuantity: 2,
+            afterQuantity: 1,
+          },
+          remark: '内部减菜动作',
+        },
+        {
+          orderId: order.id,
+          fromStatus: 'ACCEPTED',
+          toStatus: 'ACCEPTED',
+          operatorType: 'MERCHANT_STAFF',
+          operatorStaffId: staffId,
+          action: 'ORDER_ITEM_RETURNED',
+          requestKey: `customer_hidden_return_${suffix}_${order.id}`,
+          metadata: {
+            orderItemId: 'secret-return-item-id',
+            productNameSnapshot: '内部退菜',
+            returnedQuantity: 1,
+          },
+          remark: '内部退菜动作',
+        },
+      ],
+    });
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/v1/orders/${order.id}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(200);
+
+    expect(detail.body.data.statusLogs).toHaveLength(1);
+    expect(detail.body.data.statusLogs[0]).toEqual(
+      expect.objectContaining({
+        fromStatus: null,
+        toStatus: 'ACCEPTED',
+        remark: 'Day6 测试订单',
+      }),
+    );
+    expectLegacyCustomerOrderContract(detail.body.data);
+    expect(JSON.stringify(detail.body.data)).not.toContain('secret-');
+  });
+
   it('returns 404 when another user reads or operates an order', async () => {
     const order = await createOrder(userOneId, 'PICKUP', 'PENDING_ACCEPTANCE');
     await request(app.getHttpServer())

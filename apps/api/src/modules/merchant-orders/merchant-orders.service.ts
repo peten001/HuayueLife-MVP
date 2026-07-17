@@ -21,6 +21,7 @@ import { PendingOrderCancellationService } from '../orders/pending-order-cancell
 import { CreateTableOrderDto } from './dto/create-table-order.dto';
 import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
 import { ReturnOrderItemDto } from './dto/return-order-item.dto';
+import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -138,7 +139,7 @@ export class MerchantOrdersService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
-    return order;
+    return this.serializeMerchantOrder(order);
   }
 
   async createTableOrder(
@@ -526,7 +527,7 @@ export class MerchantOrdersService {
         );
       }
     }
-    return transitioned.order;
+    return this.serializeMerchantOrder(transitioned.order);
   }
 
   private async adjustOrderItem(
@@ -921,7 +922,10 @@ export class MerchantOrdersService {
           merchantId,
           sessionId,
         );
-        return { order, session: sessionResult.session };
+        return {
+          order: this.serializeMerchantOrder(order),
+          session: sessionResult.session,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -950,7 +954,9 @@ export class MerchantOrdersService {
           data: { settlementStatus: 'SETTLED' },
         });
       }
-      return this.requireOrder(tx, merchantId, id);
+      return this.serializeMerchantOrder(
+        await this.requireOrder(tx, merchantId, id),
+      );
     });
   }
 
@@ -986,6 +992,28 @@ export class MerchantOrdersService {
       where: { id, merchantId },
       include: this.detailInclude,
     });
+  }
+
+  private serializeMerchantOrder<
+    T extends {
+      statusLogs?: ReadonlyArray<{
+        action: string | null;
+        metadata: Prisma.JsonValue | null;
+        requestKey?: string | null;
+        orderId?: bigint;
+        operatorUserId?: bigint | null;
+        operatorStaffId?: bigint | null;
+        operatorStaff?: { id: bigint; displayName: string } | null;
+      }>;
+    },
+  >(order: T) {
+    if (!order.statusLogs) {
+      return order;
+    }
+    return {
+      ...order,
+      statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
+    };
   }
 
   private dateRange(date: string): Prisma.DateTimeFilter {
@@ -1059,7 +1087,19 @@ export class MerchantOrdersService {
       orderBy: { id: 'asc' as const },
     },
     statusLogs: {
-      include: {
+      select: {
+        id: true,
+        orderId: true,
+        fromStatus: true,
+        toStatus: true,
+        operatorType: true,
+        operatorUserId: true,
+        operatorStaffId: true,
+        action: true,
+        metadata: true,
+        remark: true,
+        createdAt: true,
+        updatedAt: true,
         operatorStaff: {
           select: { id: true, displayName: true },
         },

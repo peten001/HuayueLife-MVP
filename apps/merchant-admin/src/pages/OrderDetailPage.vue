@@ -12,6 +12,7 @@ import type { MerchantOrder, OrderStatus, OrderStatusLog, PrinterSetting } from 
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
+import { orderStatusLogActionPresentation } from '@/utils/order-status-log-presentation';
 
 const route = useRoute();
 const { locale, t } = useI18n();
@@ -164,6 +165,13 @@ function operatorLabel(type: OrderStatusLog['operatorType']) {
   };
   return t(labels[type]);
 }
+
+const statusTimeline = computed(() =>
+  (order.value?.statusLogs ?? []).map((log) => ({
+    log,
+    action: orderStatusLogActionPresentation(log),
+  })),
+);
 
 function money(value: string) {
   return `${Number(value).toLocaleString()} ₫`;
@@ -394,14 +402,15 @@ type Action =
     <section class="card status-log-card">
       <h2>{{ t('statusLog') }}</h2>
       <ol class="status-timeline">
-        <li v-for="log in order.statusLogs" :key="log.id">
+        <li v-for="row in statusTimeline" :key="row.log.id">
           <span class="timeline-dot" />
           <div>
-            <strong>{{ statusLabel(log.fromStatus) }} → {{ statusLabel(log.toStatus) }}</strong>
-            <p>{{ log.remark || '-' }}</p>
+            <strong v-if="row.action">{{ t(row.action.labelKey, row.action.params) }}</strong>
+            <strong v-else>{{ statusLabel(row.log.fromStatus ?? undefined) }} → {{ statusLabel(row.log.toStatus) }}</strong>
+            <p>{{ row.log.remark || '-' }}</p>
             <small>
-              {{ new Date(log.createdAt).toLocaleString() }}
-              · {{ log.operatorStaff?.displayName || operatorLabel(log.operatorType) }}
+              {{ new Date(row.log.createdAt).toLocaleString() }}
+              · {{ row.log.operatorStaff?.displayName || operatorLabel(row.log.operatorType) }}
             </small>
           </div>
         </li>
