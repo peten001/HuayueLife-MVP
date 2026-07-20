@@ -36,6 +36,13 @@ const product = {
   productType: 'FOOD' as const,
   category,
 };
+const longNameProduct = {
+  ...product,
+  id: 'product-long',
+  nameZh: '非常长的牛肉粉菜名用于验证两行截断与可读性',
+  nameVi: 'Phở bò với cà chua sốt đen và rau thơm nhiều món để測試長文本',
+  description: 'A very long product description that validates Vietnamese wrapping and line handling in compact card layouts.',
+};
 const result: MerchantOrderMutationResult = {
   order: {
     id: 'order-added',
@@ -114,11 +121,11 @@ describe('TableOrderingWorkspace', () => {
     expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeDefined();
 
     await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    expect(wrapper.get('output').text()).toBe('1');
+    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity output').text()).toBe('1');
     expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeUndefined();
 
     await wrapper.get('[aria-label="减少数量"]').trigger('click');
-    expect(wrapper.get('output').text()).toBe('0');
+    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity').findAll('output')).toHaveLength(0);
     expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeDefined();
 
     await wrapper.get('input[type="search"]').setValue('不存在');
@@ -159,6 +166,54 @@ describe('TableOrderingWorkspace', () => {
     const wrapper = mountWorkspace({ sessionId: '' });
 
     expect(wrapper.get('[data-testid="confirm-table-order"]').text()).toContain(label);
+  });
+
+  it('shows only add button when quantity is zero', async () => {
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    const quantityControl = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
+
+    expect(quantityControl.findAll('button')).toHaveLength(1);
+    expect(quantityControl.findAll('output')).toHaveLength(0);
+    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(false);
+    expect(quantityControl.text()).toBe('');
+  });
+
+  it('shows minus, quantity and add controls when quantity is greater than zero', async () => {
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    await wrapper.get('[aria-label="增加数量"]').trigger('click');
+
+    const quantityControl = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
+    const buttons = quantityControl.findAll('button');
+
+    expect(buttons).toHaveLength(2);
+    expect(quantityControl.findAll('output')).toHaveLength(1);
+    expect(quantityControl.find('output').text()).toBe('1');
+    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(true);
+  });
+
+  it('returns to single add button when quantity decreases to zero', async () => {
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    const productQuantity = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
+    await wrapper.get('[aria-label="增加数量"]').trigger('click');
+    await wrapper.get('[aria-label="减少数量"]').trigger('click');
+
+    expect(productQuantity.findAll('button')).toHaveLength(1);
+    expect(productQuantity.findAll('output')).toHaveLength(0);
+    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(false);
+  });
+
+  it.each([
+    ['zh', longNameProduct.nameZh],
+    ['vi', longNameProduct.nameVi],
+  ])('renders long %s dish names in card copy', async (locale, expectedName) => {
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([longNameProduct]);
+    setLocale(locale as 'zh' | 'vi');
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    expect(wrapper.get('.table-ordering-product__copy strong').text()).toContain(expectedName);
   });
 
   it.each([

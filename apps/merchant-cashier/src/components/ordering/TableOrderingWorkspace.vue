@@ -129,6 +129,10 @@ function selectionFor(productId: string): Selection {
   return selections.value[productId] ?? { quantity: 0, remark: '' };
 }
 
+function quantityFor(productId: string) {
+  return selectionFor(productId).quantity;
+}
+
 function changeQuantity(productId: string, delta: number) {
   if (props.disabled || submitting.value || submittedPayload.value) return;
   const current = selectionFor(productId);
@@ -311,7 +315,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
               v-for="product in filteredProducts"
               :key="product.id"
               class="table-ordering-product"
-              :class="{ 'is-selected': selectionFor(product.id).quantity > 0 }"
+              :class="{ 'is-selected': quantityFor(product.id) > 0 }"
               :data-product-id="product.id"
             >
               <span class="table-ordering-product__image" aria-hidden="true">
@@ -329,23 +333,37 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
                 <small v-if="product.description">{{ product.description }}</small>
                 <b>{{ formatVnd(product.priceVnd, locale) }}</b>
               </div>
-              <div class="table-ordering-quantity" :aria-label="t('ordering.quantityFor', { name: productName(product) })">
-                <button
-                  type="button"
-                  :aria-label="t('ordering.decreaseQuantity')"
-                  :disabled="selectionFor(product.id).quantity === 0 || disabled || submitting || Boolean(submittedPayload)"
-                  @click="changeQuantity(product.id, -1)"
-                ><Minus :size="18" aria-hidden="true" /></button>
-                <output>{{ selectionFor(product.id).quantity }}</output>
-                <button
-                  type="button"
-                  :aria-label="t('ordering.increaseQuantity')"
-                  :disabled="disabled || submitting || Boolean(submittedPayload) || selectionFor(product.id).quantity >= 99"
-                  @click="changeQuantity(product.id, 1)"
-                ><Plus :size="18" aria-hidden="true" /></button>
+              <div
+                class="table-ordering-quantity"
+                :class="{ 'is-empty': quantityFor(product.id) === 0, 'has-quantity': quantityFor(product.id) > 0 }"
+                :aria-label="t('ordering.quantityFor', { name: productName(product) })"
+              >
+                <template v-if="quantityFor(product.id) > 0">
+                  <button
+                    type="button"
+                    :aria-label="t('ordering.decreaseQuantity')"
+                    :disabled="quantityFor(product.id) === 0 || disabled || submitting || Boolean(submittedPayload)"
+                    @click="changeQuantity(product.id, -1)"
+                  ><Minus :size="18" aria-hidden="true" /></button>
+                  <output>{{ quantityFor(product.id) }}</output>
+                  <button
+                    type="button"
+                    :aria-label="t('ordering.increaseQuantity')"
+                    :disabled="disabled || submitting || Boolean(submittedPayload) || quantityFor(product.id) >= 99"
+                    @click="changeQuantity(product.id, 1)"
+                  ><Plus :size="18" aria-hidden="true" /></button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    :aria-label="t('ordering.increaseQuantity')"
+                    :disabled="disabled || submitting || Boolean(submittedPayload)"
+                    @click="changeQuantity(product.id, 1)"
+                  ><Plus :size="18" aria-hidden="true" /></button>
+                </template>
               </div>
               <input
-                v-if="selectionFor(product.id).quantity > 0"
+                v-if="quantityFor(product.id) > 0"
                 class="table-ordering-product__remark"
                 :value="selectionFor(product.id).remark"
                 maxlength="200"
