@@ -261,6 +261,26 @@ describe('real merchant API contracts', () => {
     });
   });
 
+  it('supports an open-only table order with a null order in the API contract', async () => {
+    const { api } = await loadApi();
+    const openOnlyResult = {
+      order: null,
+      session: { ...session, status: 'OPEN', closedAt: null },
+    };
+    fetchMock.mockResolvedValueOnce(apiResponse(openOnlyResult));
+
+    await expect(api.createMerchantTableOrder('table-1', {
+      idempotencyKey: 'open-only-request-1',
+      items: [],
+    })).resolves.toEqual(openOnlyResult);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe('/api/v1/merchant/tables/table-1/orders');
+    expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(JSON.parse(String(requestInit(fetchMock.mock.calls[0]).body))).toEqual({
+      idempotencyKey: 'open-only-request-1',
+      items: [],
+    });
+  });
+
   it('uses the API by default and fixtures only after explicit activation', async () => {
     const real = await loadApi('false');
     fetchMock.mockResolvedValueOnce(apiResponse([table]));

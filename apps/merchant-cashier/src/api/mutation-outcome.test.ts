@@ -35,4 +35,10 @@ describe('cashier mutation outcome classification', () => {
       code: 'ORDER_TABLE_SESSION_MISMATCH', message: 'mismatch', status: 409,
     }))).toBe('itemAdjustment.tableSessionMismatch');
   });
+
+  it('maps TABLE_ALREADY_OPEN to a specific ordering message', () => {
+    expect(apiErrorTranslationKey(new CashierApiError({
+      code: 'TABLE_ALREADY_OPEN', message: 'already open', status: 409,
+    }))).toBe('itemAdjustment.tableAlreadyOpen');
+  });
 });

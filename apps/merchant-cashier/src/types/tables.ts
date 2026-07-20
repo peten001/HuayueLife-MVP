@@ -57,7 +57,7 @@ export interface TableSessionDetail extends TableSessionSummary {
 }
 
 export interface MerchantOrderMutationResult {
-  order: MerchantOrder;
+  order: MerchantOrder | null;
   session: TableSessionDetail;
 }
 

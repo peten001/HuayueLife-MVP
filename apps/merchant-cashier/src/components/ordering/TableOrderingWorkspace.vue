@@ -84,16 +84,22 @@ const selectedQuantity = computed(() => selectedLines.value.reduce(
   (total, line) => total + line.quantity,
   0,
 ));
+const hasOpenSession = computed(() => Boolean(props.sessionId));
 const selectedTotal = computed(() => selectedLines.value.reduce(
   (total, line) => total + BigInt(line.product.priceVnd) * BigInt(line.quantity),
   0n,
 ).toString());
 const canSubmit = computed(() =>
-  selectedQuantity.value > 0
+  (!hasOpenSession.value || selectedQuantity.value > 0)
   && !props.disabled
   && !loading.value
   && !submitting.value,
 );
+const submitLabel = computed(() => {
+  if (outcomeUncertain.value) return t('mutation.retrySameRequest');
+  if (selectedQuantity.value === 0) return t('ordering.openTableOnly');
+  return t('ordering.openTableAndAddItems');
+});
 
 watch(mutationLocked, (locked) => emit('mutationLockChanged', locked), {
   immediate: true,
@@ -369,18 +375,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
         >
           {{ t('common.cancel') }}
         </button>
-        <button
-          type="button"
-          class="primary-action"
-          data-testid="confirm-table-order"
-          :disabled="!canSubmit"
-          @click="submit"
-        >{{ submitting
-          ? t('ordering.submitting')
-          : outcomeUncertain
-            ? t('mutation.retrySameRequest')
-            : t('ordering.confirm') }}</button>
-      </footer>
-    </section>
+    <button
+      type="button"
+      class="primary-action"
+      data-testid="confirm-table-order"
+      :disabled="!canSubmit"
+      @click="submit"
+    >{{ submitting
+      ? t('ordering.submitting')
+      : submitLabel }}</button>
+  </footer>
+  </section>
   </Teleport>
 </template>

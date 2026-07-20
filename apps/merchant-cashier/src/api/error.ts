@@ -51,6 +51,7 @@ const ITEM_ADJUSTMENT_ERROR_KEYS: Record<string, string> = {
   ORDER_ITEM_QUANTITY_CHANGED: 'itemAdjustment.quantityChanged',
   TABLE_SESSION_NOT_OPEN: 'itemAdjustment.tableSessionClosed',
   TABLE_SESSION_CLOSED: 'itemAdjustment.tableSessionClosed',
+  TABLE_ALREADY_OPEN: 'itemAdjustment.tableAlreadyOpen',
   TABLE_NOT_AVAILABLE: 'itemAdjustment.tableSessionClosed',
   TABLE_NOT_FOUND: 'itemAdjustment.tableSessionClosed',
   ORDER_NOT_IN_TABLE_SESSION: 'itemAdjustment.orderStatusChanged',
@@ -88,6 +89,7 @@ export function shouldRefreshAfterItemAdjustmentError(error: unknown) {
     error.status === 409
     || error.code === 'ORDER_ITEM_NOT_FOUND'
     || error.code === 'TABLE_SESSION_NOT_OPEN'
+    || error.code === 'TABLE_ALREADY_OPEN'
     || error.code === 'TABLE_SESSION_CLOSED'
     || error.code === 'TABLE_NOT_AVAILABLE'
     || error.code === 'TABLE_NOT_FOUND'

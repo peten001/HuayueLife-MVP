@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
+import { setLocale } from '@/i18n';
 import type { MerchantOrderMutationResult } from '@/types';
 
 const apiMocks = vi.hoisted(() => ({
@@ -76,13 +77,13 @@ const result: MerchantOrderMutationResult = {
   },
 };
 
-function mountWorkspace() {
+function mountWorkspace(overrides?: { sessionId?: string }) {
   return mount(TableOrderingWorkspace, {
     props: {
       open: true,
       tableId: 'table-1',
       tableLabel: 'A01',
-      sessionId: 'session-1',
+      sessionId: overrides?.sessionId ?? 'session-1',
     },
     global: {
       plugins: [createPinia()],
@@ -92,6 +93,8 @@ function mountWorkspace() {
 }
 
 describe('TableOrderingWorkspace', () => {
+  afterEach(() => setLocale('zh'));
+
   beforeEach(() => {
     apiMocks.listCashierMenuCategories.mockReset().mockResolvedValue([category]);
     apiMocks.listCashierMenuProducts.mockReset().mockResolvedValue([
@@ -120,6 +123,56 @@ describe('TableOrderingWorkspace', () => {
 
     await wrapper.get('input[type="search"]').setValue('不存在');
     expect(wrapper.text()).toContain('暂无可点菜品');
+  });
+
+  it('submits one open-only request when no session exists', async () => {
+    const deferred = createDeferred<MerchantOrderMutationResult>();
+    const openOnlyResult: MerchantOrderMutationResult = {
+      ...result,
+      order: null,
+    };
+    apiMocks.createMerchantTableOrder.mockReturnValueOnce(deferred.promise);
+    const wrapper = mountWorkspace({ sessionId: '' });
+    await flushPromises();
+
+    const confirm = wrapper.get('[data-testid="confirm-table-order"]');
+    expect(confirm.text()).toContain('仅开台');
+    expect(confirm.attributes('disabled')).toBeUndefined();
+    await confirm.trigger('click');
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledWith('table-1', {
+      idempotencyKey: expect.stringMatching(/^add-/),
+      items: [],
+    });
+
+    deferred.resolve(openOnlyResult);
+    await flushPromises();
+    expect(wrapper.emitted('created')).toEqual([[openOnlyResult]]);
+  });
+
+  it.each([
+    ['zh', '仅开台'],
+    ['vi', 'Chỉ mở bàn'],
+    ['en', 'Open table only'],
+  ])('shows open-only submit label in %s locale', (locale, label) => {
+    setLocale(locale as 'zh' | 'vi' | 'en');
+    const wrapper = mountWorkspace({ sessionId: '' });
+
+    expect(wrapper.get('[data-testid="confirm-table-order"]').text()).toContain(label);
+  });
+
+  it.each([
+    ['zh', '增加数量', '确认开台并点菜'],
+    ['vi', 'Tăng số lượng', 'Mở bàn và gọi món'],
+    ['en', 'Increase quantity', 'Open Table & Add Items'],
+  ])('shows open+add submit label in %s locale', async (locale, increaseLabel, label) => {
+    setLocale(locale as 'zh' | 'vi' | 'en');
+    const wrapper = mountWorkspace({ sessionId: '' });
+    await flushPromises();
+
+    const increaseButton = wrapper.get(`[aria-label="${increaseLabel}"]`);
+    await increaseButton.trigger('click');
+    expect(wrapper.get('[data-testid="confirm-table-order"]').text()).toContain(label);
   });
 
   it('submits one new order with one stable idempotency key despite repeated clicks', async () => {

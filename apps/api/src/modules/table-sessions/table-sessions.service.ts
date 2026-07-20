@@ -36,7 +36,7 @@ export class TableSessionsService {
     tx: Prisma.TransactionClient,
     merchantId: bigint,
     tableId: bigint,
-  ): Promise<{ id: bigint }> {
+  ): Promise<{ id: bigint; created: boolean }> {
     await this.lockTableRow(tx, merchantId, tableId);
 
     const existingId = await this.findOpenSessionId(tx, merchantId, tableId);
@@ -48,12 +48,12 @@ export class TableSessionsService {
         existingId,
       );
       if (currentId) {
-        return { id: currentId };
+        return { id: currentId, created: false };
       }
     }
 
     try {
-      return await tx.tableSession.create({
+      const created = await tx.tableSession.create({
         data: {
           merchantId,
           tableId,
@@ -61,6 +61,7 @@ export class TableSessionsService {
           sessionNo: this.generateSessionNo(),
         },
       });
+      return { id: created.id, created: true };
     } catch (error) {
       if (!this.isOpenSessionUniqueViolation(error)) {
         throw error;
@@ -72,7 +73,7 @@ export class TableSessionsService {
         tableId,
       );
       if (sessionId) {
-        return { id: sessionId };
+        return { id: sessionId, created: false };
       }
 
       throw new InternalServerErrorException({

@@ -85,6 +85,10 @@ export const demoRepository = {
     );
     if (existing) return mutationResult(existing);
 
+    if (!input.items.length) {
+      return { order: null, session: buildSessionDetail() };
+    }
+
     const selected = input.items
       .filter((item) => item.quantity > 0)
       .map((item, index) => {
@@ -105,7 +109,6 @@ export const demoRepository = {
           remark: item.remark?.trim() || null,
         };
       });
-    if (!selected.length) throw conflict('INVALID_ITEM_QUANTITY', 'Select at least one item');
     const total = selected.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n).toString();
     const now = new Date().toISOString();
     const sequence = nextAddedOrder++;

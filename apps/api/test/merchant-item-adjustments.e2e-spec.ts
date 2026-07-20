@@ -14,16 +14,28 @@ describe('Merchant add/decrease/return items', () => {
   let staffId: bigint;
   let token: string;
   let otherToken: string;
+  let customerToken: string;
   let tableId: bigint;
   let sessionId: bigint;
   let raceTableId: bigint;
   let raceSessionId: bigint;
   let parallelTableId: bigint;
+  let openOnlyTableId: bigint;
+  let openOnlyRaceTableId: bigint;
+  let orderFirstTimeTableId: bigint;
+  let rollbackTableId: bigint;
+  let customerRaceTableId: bigint;
+  let customerRaceTableToken: string;
+  let customerRaceFirstTableId: bigint;
+  let customerRaceFirstTableToken: string;
   let productId: bigint;
+  let previousPlatformOrderingEnabled: string | undefined;
   const suffix = `${Date.now()}_${randomBytes(3).toString('hex')}`;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
+    previousPlatformOrderingEnabled = process.env.PLATFORM_ORDERING_ENABLED;
+    process.env.PLATFORM_ORDERING_ENABLED = 'true';
     process.env.PRINTING_AUTO_CREATE_ENABLED = 'false';
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -85,7 +97,7 @@ describe('Merchant add/decrease/return items', () => {
     });
     productId = product.id;
 
-    const [table, raceTable, parallelTable] = await Promise.all([
+    const [table, raceTable, parallelTable, openOnlyTable, openOnlyRaceTable, orderFirstTimeTable, rollbackTable, customerTable, customerRaceFirstTable] = await Promise.all([
       prisma.diningTable.create({
         data: {
           merchantId,
@@ -107,10 +119,60 @@ describe('Merchant add/decrease/return items', () => {
           qrToken: randomBytes(32).toString('hex'),
         },
       }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `OP-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `OC-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `OF-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `OR-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `CR-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `CRR-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
     ]);
     tableId = table.id;
     raceTableId = raceTable.id;
     parallelTableId = parallelTable.id;
+    openOnlyTableId = openOnlyTable.id;
+    openOnlyRaceTableId = openOnlyRaceTable.id;
+    orderFirstTimeTableId = orderFirstTimeTable.id;
+    rollbackTableId = rollbackTable.id;
+    customerRaceTableId = customerTable.id;
+    customerRaceTableToken = customerTable.qrToken;
+    customerRaceFirstTableId = customerRaceFirstTable.id;
+    customerRaceFirstTableToken = customerRaceFirstTable.qrToken;
     const [session, , raceSession] = await Promise.all([
       prisma.tableSession.create({
         data: {
@@ -139,14 +201,31 @@ describe('Merchant add/decrease/return items', () => {
     ]);
     sessionId = session.id;
     raceSessionId = raceSession.id;
+
+    const customerLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/wechat/login')
+      .send({
+        code: `day6-customer-${suffix}`,
+        nickname: 'Day6 Open Table Customer',
+      })
+      .expect(201);
+    customerToken = customerLogin.body.data.accessToken;
   });
 
   afterAll(async () => {
+    if (previousPlatformOrderingEnabled === undefined) {
+      delete process.env.PLATFORM_ORDERING_ENABLED;
+    } else {
+      process.env.PLATFORM_ORDERING_ENABLED = previousPlatformOrderingEnabled;
+    }
     if (!prisma || !merchantId) {
       await app?.close();
       return;
     }
     await prisma.printTriggerOutbox.deleteMany({ where: { merchantId } });
+    await prisma.cartItem.deleteMany({
+      where: { product: { merchantId } },
+    });
     await prisma.orderStatusLog.deleteMany({
       where: { order: { merchantId } },
     });
@@ -231,6 +310,151 @@ describe('Merchant add/decrease/return items', () => {
       .set('Authorization', `Bearer ${token}`)
       .send(createBody(body.idempotencyKey, 1))
       .expect(409);
+  });
+
+  it('creates one open-only staff table action with no order and a table session', async () => {
+    const response = await createTableOrder(createOpenOnlyBody('e2e_add_open_only_01'), openOnlyTableId);
+
+    expect(response.order).toBeNull();
+    expect(response.session).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        status: 'OPEN',
+      }),
+    );
+    expect(
+      await prisma.order.count({
+        where: {
+          merchantId,
+          createdByStaffId: staffId,
+          idempotencyKey: 'e2e_add_open_only_01',
+        },
+      }),
+      ).toBe(0);
+  });
+
+  it('creates a table session and first staff order together when an empty table has items', async () => {
+    const response = await createTableOrder(createBody('e2e_add_open_with_items_01', 2), orderFirstTimeTableId);
+
+    expect(response.order).toMatchObject({
+      tableId: orderFirstTimeTableId.toString(),
+      createdByStaffId: staffId.toString(),
+      userId: null,
+      status: 'PENDING_ACCEPTANCE',
+      itemAmountVnd: '12000',
+      totalAmountVnd: '12000',
+    });
+    expect(response.session).toEqual(expect.objectContaining({ status: 'OPEN' }));
+    expect(
+      await prisma.order.count({
+        where: {
+          merchantId,
+          createdByStaffId: staffId,
+          tableId: orderFirstTimeTableId,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.tableSession.count({
+        where: {
+          tableId: orderFirstTimeTableId,
+          status: 'OPEN',
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it('rejects open-only ordering when an OPEN session already exists', async () => {
+    const response = await createTableOrderRaw(createOpenOnlyBody('e2e_add_open_only_conflict'));
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('TABLE_ALREADY_OPEN');
+  });
+
+  it('rolls back created session when order validation fails', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { status: 'SOLD_OUT' } });
+    try {
+      const response = await createTableOrderRaw(
+        createBody('e2e_add_fail_rollback', 1),
+        rollbackTableId,
+      );
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('PRODUCT_NOT_AVAILABLE');
+      expect(
+        await prisma.tableSession.count({
+          where: { tableId: rollbackTableId, status: 'OPEN' },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.product.update({ where: { id: productId }, data: { status: 'ON_SALE' } });
+    }
+  });
+
+  it('serializes concurrent open-only staff attempts to the same table session', async () => {
+    const [first, second] = await Promise.all([
+      createTableOrderRaw(createOpenOnlyBody('e2e_add_open_only_concurrent_a'), openOnlyRaceTableId),
+      createTableOrderRaw(createOpenOnlyBody('e2e_add_open_only_concurrent_b'), openOnlyRaceTableId),
+    ]);
+    const statusCodes = [first.status, second.status];
+    expect(statusCodes.filter((status) => status === 201)).toHaveLength(1);
+    expect(statusCodes).toContain(409);
+    const conflictResponse = [first, second].find((response) => response.status === 409);
+    expect(conflictResponse?.body.code).toBe('TABLE_ALREADY_OPEN');
+    expect(
+      await prisma.tableSession.count({
+        where: { tableId: openOnlyRaceTableId, status: 'OPEN' },
+      }),
+    ).toBe(1);
+  });
+
+  it('allows staff open-only first and customer first-order reuses the same session', async () => {
+    await addCustomerDineItem(customerRaceTableToken);
+    const staffOnly = await createTableOrderRaw(
+      createOpenOnlyBody(`e2e_staff_first_open_${suffix}`),
+      customerRaceTableId,
+    );
+    expect(staffOnly.status).toBe(201);
+    expect(staffOnly.body.data.order).toBeNull();
+    const sessionId = staffOnly.body.data.session.id;
+
+    const customerOrder = await createCustomerOrderRaw(
+      `e2e_customer_after_staff_open_${suffix}`,
+      customerRaceTableToken,
+    );
+    expect(customerOrder.status).toBe(201);
+    expect(customerOrder.body.data.tableSessionId).toBe(sessionId);
+
+    expect(
+      await prisma.tableSession.count({
+        where: { tableId: customerRaceTableId, status: 'OPEN' },
+      }),
+    ).toBe(1);
+  });
+
+  it('returns TABLE_ALREADY_OPEN when customer opens first, then staff open-only hits duplicate', async () => {
+    await addCustomerDineItem(customerRaceFirstTableToken);
+    const customerFirst = await createCustomerOrderRaw(
+      `e2e_customer_first_open_${suffix}`,
+      customerRaceFirstTableToken,
+    );
+    expect(customerFirst.status).toBe(201);
+    expect(customerFirst.body.data.tableSessionId).toBeTruthy();
+    const tableSessionId = customerFirst.body.data.tableSessionId;
+
+    const staffOnly = await createTableOrderRaw(
+      createOpenOnlyBody(`e2e_staff_after_customer_open_${suffix}`),
+      customerRaceFirstTableId,
+    );
+    expect(staffOnly.status).toBe(409);
+    expect(staffOnly.body.code).toBe('TABLE_ALREADY_OPEN');
+    expect(
+      await prisma.tableSession.count({
+        where: {
+          id: BigInt(tableSessionId),
+          tableId: customerRaceFirstTableId,
+          status: 'OPEN',
+        },
+      }),
+    ).toBe(1);
   });
 
   it('collapses concurrent identical add-order requests to one order', async () => {
@@ -593,8 +817,28 @@ describe('Merchant add/decrease/return items', () => {
     };
   }
 
+  function createOpenOnlyBody(idempotencyKey: string) {
+    return {
+      idempotencyKey,
+      items: [],
+    };
+  }
+
+  function addCustomerDineItem(tableToken: string) {
+    return request(app.getHttpServer())
+      .post('/api/v1/cart/items')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        merchantId: merchantId.toString(),
+        orderType: 'DINE_IN',
+        tableToken,
+        productId: productId.toString(),
+      })
+      .expect(201);
+  }
+
   async function createTableOrder(
-    body: ReturnType<typeof createBody>,
+    body: ReturnType<typeof createBody> | ReturnType<typeof createOpenOnlyBody>,
     targetTableId = tableId,
   ) {
     const response = await request(app.getHttpServer())
@@ -606,6 +850,28 @@ describe('Merchant add/decrease/return items', () => {
       order: Record<string, any>;
       session: Record<string, any>;
     };
+  }
+
+  async function createTableOrderRaw(
+    body: ReturnType<typeof createBody> | ReturnType<typeof createOpenOnlyBody>,
+    targetTableId = tableId,
+  ) {
+    return request(app.getHttpServer())
+      .post(`/api/v1/merchant/tables/${targetTableId}/orders`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+  }
+
+  async function createCustomerOrderRaw(idempotencyKey: string, tableToken: string = customerRaceTableToken) {
+    return request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({
+        merchantId: merchantId.toString(),
+        orderType: 'DINE_IN',
+        tableToken,
+      });
   }
 
   function decrease(

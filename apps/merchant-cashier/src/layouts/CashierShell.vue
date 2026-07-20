@@ -174,9 +174,12 @@ async function logout() {
 
 function openOrdering() {
   if (!networkWriteAvailable()) return;
-  if (!selectedTable.value || selectedSessionDetail.value?.status !== 'OPEN') {
+  if (!selectedTable.value) {
     uiStore.pushToast(t('itemAdjustment.tableSessionClosed'), 'error');
-    void tablesStore.fetchTables();
+    return;
+  }
+  if (selectedTable.value.status === 'DISABLED') {
+    uiStore.pushToast(t('table.disabledHint'), 'warning');
     return;
   }
   orderingOpen.value = true;
@@ -191,17 +194,21 @@ function closeOrdering() {
 }
 
 function applyItemMutation(result: MerchantOrderMutationResult) {
-  ordersStore.applyOrderSnapshot(result.order);
+  if (result.order) ordersStore.applyOrderSnapshot(result.order);
   tablesStore.applySessionSnapshot(result.session);
 }
 
 async function handleTableOrderCreated(result: MerchantOrderMutationResult) {
   applyItemMutation(result);
   orderingOpen.value = false;
-  await router.push('/orders/new');
-  ordersStore.applyOrderSnapshot(result.order, true);
-  uiStore.openDetail('order', result.order.id);
-  uiStore.pushToast(t('ordering.success'), 'success');
+  if (result.order) {
+    await router.push('/orders/new');
+    ordersStore.applyOrderSnapshot(result.order, true);
+    uiStore.openDetail('order', result.order.id);
+  }
+  uiStore.pushToast(t(
+    result.order ? 'ordering.openTableAndOrderSuccess' : 'ordering.openSuccess',
+  ), 'success');
   void refreshAdjustmentContext();
 }
 
@@ -218,6 +225,7 @@ async function handleOrderingFailure(error: unknown) {
   );
   if (error instanceof CashierApiError && [
     'TABLE_SESSION_NOT_OPEN',
+    'TABLE_ALREADY_OPEN',
     'TABLE_SESSION_CLOSED',
     'TABLE_NOT_AVAILABLE',
     'TABLE_NOT_FOUND',

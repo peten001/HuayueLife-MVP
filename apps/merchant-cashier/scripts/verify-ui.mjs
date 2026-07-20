@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 
+if (!process.env.VITE_CASHIER_USE_FIXTURES) {
+  process.env.VITE_CASHIER_USE_FIXTURES = 'true';
+}
+
 const baseUrl = process.env.CASHIER_BASE_URL || 'http://127.0.0.1:5176';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({
@@ -11,6 +15,32 @@ const context = await browser.newContext({
 const page = await context.newPage();
 const browserErrors = [];
 let deliberateOffline = false;
+const orderingLocaleCopy = {
+  zh: {
+    openTable: '开台点菜',
+    openTableOnly: '仅开台',
+    openTableAndAddItems: '确认开台并点菜',
+    openSuccess: '开台成功。',
+    openAndAddSuccess: '开台并点菜成功。',
+    increaseQuantity: '增加数量',
+  },
+  vi: {
+    openTable: 'Mở bàn và gọi món',
+    openTableOnly: 'Chỉ mở bàn',
+    openTableAndAddItems: 'Mở bàn và gọi món',
+    openSuccess: 'Đã mở bàn.',
+    openAndAddSuccess: 'Đã mở bàn và tạo đơn.',
+    increaseQuantity: 'Tăng số lượng',
+  },
+  en: {
+    openTable: 'Open Table & Order',
+    openTableOnly: 'Open table only',
+    openTableAndAddItems: 'Open Table & Add Items',
+    openSuccess: 'Table opened.',
+    openAndAddSuccess: 'Open and add items succeeded.',
+    increaseQuantity: 'Increase quantity',
+  },
+};
 
 page.on('console', (message) => {
   if (message.type() === 'error') {
@@ -82,7 +112,8 @@ async function enterFixtureDemo() {
 async function openTables() {
   await page.setViewportSize({ width: 1280, height: 800 });
   if (new URL(page.url()).pathname !== '/tables') {
-    await page.locator('a[href="/tables"]:visible').first().click();
+    const tableNav = page.locator('a[href="/tables"]:visible').first();
+    await tableNav.click();
     await page.waitForURL('**/tables');
   }
   await page.getByTestId('table-toolbar').waitFor();
@@ -92,6 +123,32 @@ async function selectFixtureTable() {
   await openTables();
   await page.getByTestId('table-card-demo-table-1').click();
   await page.getByTestId('table-detail').waitFor();
+}
+
+async function selectAvailableTableCard() {
+  await openTables();
+  const available = page.locator('.table-card[data-status="AVAILABLE"]');
+  const count = await available.count();
+  assert.ok(count > 0, 'Need at least one AVAILABLE fixture table');
+  for (let index = 0; index < Math.min(count, 4); index += 1) {
+    const card = available.nth(index);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    try {
+      await page.getByTestId('table-detail').waitFor({ timeout: 3000 });
+      return;
+    } catch {
+      if (index === count - 1 || index === 3) break;
+    }
+    await card.click({ force: true });
+    try {
+      await page.getByTestId('table-detail').waitFor({ timeout: 3000 });
+      return;
+    } catch {
+      // continue trying another table card
+    }
+  }
+  throw new Error('Unable to open an AVAILABLE table detail card');
 }
 
 async function verifyFixtureFacts() {
@@ -529,16 +586,26 @@ async function verifyTableOrderingWorkspace() {
 
   const confirm = workspace.getByTestId('confirm-table-order');
   assert.equal(await confirm.isDisabled(), true, 'Zero quantity must not be submitted');
+  assert.equal(
+    (await confirm.textContent())?.trim(),
+    orderingLocaleCopy.zh.openTableOnly,
+    'Existing open table default submit action should be open-only',
+  );
   const beef = workspace.locator('.table-ordering-product').filter({ hasText: '演示牛肉粉' });
   await beef.getByRole('button', { name: '增加数量' }).click();
   await beef.getByRole('button', { name: '增加数量' }).click();
   await workspace.getByRole('button', { name: '饮品', exact: true }).click();
   const tea = workspace.locator('.table-ordering-product').filter({ hasText: '演示柠檬茶' });
   await tea.getByRole('button', { name: '增加数量' }).click();
+  assert.equal(
+    (await confirm.textContent())?.trim(),
+    orderingLocaleCopy.zh.openTableAndAddItems,
+    'Open table with selected menu should use open+add label',
+  );
   assert.equal(await confirm.isDisabled(), false, 'Selected menu item must enable confirmation');
   await confirm.click();
   await page.waitForURL('**/orders/new');
-  await page.getByText('点菜成功，新订单已创建。', { exact: true }).waitFor();
+  await page.getByText(orderingLocaleCopy.zh.openAndAddSuccess, { exact: true }).waitFor();
   const createdCard = page.locator('.order-card').filter({ hasText: 'DEMO-ADD-001' });
   assert.equal(await createdCard.count(), 1, 'Fixture ordering must create one new pending order');
   assert.match((await page.locator('.order-detail-panel').textContent()) || '', /166[.,]?000/);
@@ -661,8 +728,37 @@ async function verifyLocales() {
     assert.equal(await tableDetail.getByTestId('table-summary-tab').isVisible(), true);
     assert.equal(await tableDetail.getByTestId('table-orders-tab').isVisible(), true);
     assert.equal(await tableDetail.getByTestId('table-detail-actions').locator('button').count(), 3);
+    const tableOrderItems = tableDetail.getByTestId('table-order-items');
+    await tableOrderItems.click();
+    const workspace = page.getByTestId('table-ordering-workspace');
+    await workspace.waitFor();
+    const workspaceConfirm = workspace.getByTestId('confirm-table-order');
+    assert.equal(await workspaceConfirm.isDisabled(), true, 'Locale ordering workspace should start disabled on zero selection');
+    assert.equal(
+      (await workspaceConfirm.textContent())?.trim(),
+      orderingLocaleCopy[locale].openTableOnly,
+      `${locale} zero-item submit label should require open-only`,
+    );
+    await workspace.getByRole('button', { name: orderingLocaleCopy[locale].increaseQuantity }).first().click();
+    assert.equal(
+      (await workspaceConfirm.textContent())?.trim(),
+      orderingLocaleCopy[locale].openTableAndAddItems,
+      `${locale} should switch to open-table-and-add-items when items selected`,
+    );
+    await assertOverlayWithinViewport(workspace, `${locale} D10 ordering workspace`);
+    await workspace.locator('.table-ordering-close').click();
+    await workspace.waitFor({ state: 'hidden' });
+
+    await selectAvailableTableCard();
+    const emptyAction = page.getByTestId('table-detail').getByTestId('table-order-items');
+    assert.equal(
+      (await emptyAction.textContent())?.trim(),
+      orderingLocaleCopy[locale].openTable,
+      `${locale} empty table must show open table entry`,
+    );
 
     if (locale === 'vi' || locale === 'en') {
+      await openTables();
       await tableDetail.getByTestId('table-order-items').click();
       const workspace = page.getByTestId('table-ordering-workspace');
       await workspace.waitFor();

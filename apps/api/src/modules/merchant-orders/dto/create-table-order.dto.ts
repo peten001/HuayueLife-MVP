@@ -36,7 +36,7 @@ export class CreateTableOrderDto {
   idempotencyKey: string;
 
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(0)
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => CreateTableOrderItemDto)

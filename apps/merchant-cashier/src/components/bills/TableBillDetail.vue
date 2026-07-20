@@ -30,7 +30,9 @@ const activeTab = ref<'items' | 'orders'>('items');
 const canClose = computed(
   () => props.session?.status === 'OPEN' && Number(props.session.unfinishedOrderCount || 0) === 0,
 );
-const canOrderItems = computed(() => props.session?.status === 'OPEN');
+const canOrderItems = computed(() => props.session
+  ? props.session.status === 'OPEN' && props.table?.status !== 'DISABLED'
+  : props.table?.status === 'ACTIVE');
 const duration = computed(() => elapsedDuration(props.session?.openedAt));
 const itemSummary = computed(() => summarizeTableSessionItems(props.session));
 const durationLabel = computed(() => {
@@ -165,7 +167,7 @@ watch(
     </div>
   </div>
 
-  <div v-else-if="table" class="detail-panel-content table-empty-detail">
+  <div v-else-if="table" class="detail-panel-content table-empty-detail" data-testid="table-detail">
     <header class="table-detail-header">
       <span>{{ t('table.currentTable') }}</span>
       <div class="table-detail-header__title">
@@ -177,6 +179,18 @@ watch(
       :title="t('table.selectedEmptyTitle')"
       :description="t('table.selectedEmptyDescription')"
     />
+    <div v-if="canOrderItems" class="detail-action-stack table-detail-actions">
+      <button
+        type="button"
+        class="secondary-action table-order-items-action"
+        data-testid="table-order-items"
+        :disabled="actionsDisabled"
+        @click="emit('orderItems')"
+      >
+        <UtensilsCrossed :size="18" aria-hidden="true" />
+        {{ t('table.openTable') }}
+      </button>
+    </div>
   </div>
 
   <EmptyState

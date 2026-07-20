@@ -149,7 +149,7 @@ export class MerchantOrdersService {
     dto: CreateTableOrderDto,
   ) {
     const normalizedItems = this.normalizeCreateItems(dto);
-    let result: { orderId: bigint; sessionId: bigint };
+    let result: { orderId: bigint | null; sessionId: bigint };
     try {
       result = await this.prisma.$transaction(async (tx) => {
         const creator = await this.creatorInvariant.assertValid(tx, {
@@ -220,29 +220,24 @@ export class MerchantOrdersService {
         if (table.status !== 'ACTIVE') {
           throw new ConflictException({
             code: 'TABLE_NOT_AVAILABLE',
-            message: '桌台当前不可用',
-          });
+          message: '桌台当前不可用',
+        });
         }
 
-        const sessionRows = await tx.$queryRaw<
-          Array<{ id: bigint; table_id: bigint }>
-        >`
-          SELECT id, table_id
-          FROM table_sessions
-          WHERE merchant_id = ${merchantId}
-            AND table_id = ${tableId}
-            AND status = 'OPEN'
-            AND open_table_id = ${tableId}
-          ORDER BY opened_at DESC, id DESC
-          LIMIT 1
-          FOR UPDATE
-        `;
-        const session = sessionRows[0];
-        if (!session) {
-          throw new ConflictException({
-            code: 'TABLE_SESSION_NOT_OPEN',
-            message: '该桌当前没有用餐中的桌账，不能点菜',
-          });
+        const session = await this.tableSessions.getOrCreateOpenSession(
+          tx,
+          merchantId,
+          tableId,
+        );
+
+        if (normalizedItems.length === 0) {
+          if (!session.created) {
+            throw new ConflictException({
+              code: 'TABLE_ALREADY_OPEN',
+              message: '桌台已由其他人员开台，请刷新后继续点菜',
+            });
+          }
+          return { orderId: null, sessionId: session.id };
         }
 
         const productIds = [
@@ -911,19 +906,20 @@ export class MerchantOrdersService {
 
   private async buildMutationResponse(
     merchantId: bigint,
-    orderId: bigint,
+    orderId: bigint | null,
     sessionId: bigint,
   ) {
     return this.prisma.$transaction(
       async (tx) => {
-        const order = await this.requireOrder(tx, merchantId, orderId);
         const sessionResult = await this.tableSessions.getSessionDetailWithClient(
           tx,
           merchantId,
           sessionId,
         );
         return {
-          order: this.serializeMerchantOrder(order),
+          order: orderId ? this.serializeMerchantOrder(
+            await this.requireOrder(tx, merchantId, orderId),
+          ) : null,
           session: sessionResult.session,
         };
       },

@@ -8,6 +8,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     outsideOrder?: unknown;
     creator?: Record<string, unknown>;
     cancellation?: Record<string, unknown>;
+    sessionCreateResult?: { id: bigint; created: boolean };
   }) {
     const txOrder = tx.order as Record<string, unknown> | undefined;
     if (txOrder && !txOrder.findFirstOrThrow) {
@@ -26,6 +27,9 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       getSessionDetailWithClient: jest
         .fn()
         .mockResolvedValue({ session: sessionResult }),
+      getOrCreateOpenSession: jest.fn().mockResolvedValue(
+        overrides?.sessionCreateResult ?? { id: sessionResult.id, created: false },
+      ),
     };
     const creator = overrides?.creator ?? {
       assertValid: jest.fn().mockResolvedValue({ staffRole: 'STAFF' }),
@@ -54,7 +58,6 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
         ])
-        .mockResolvedValueOnce([{ id: 51n, table_id: 11n }])
         .mockResolvedValueOnce([
           {
             id: 61n,
@@ -164,25 +167,122 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
-  it('rejects staff ordering when the table has no OPEN session', async () => {
+  it('auto-opens a table session for open-only staff ordering', async () => {
     const tx = {
-      order: { findUnique: jest.fn().mockResolvedValue(null) },
+      order: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
       $queryRaw: jest
         .fn()
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
+        ]),
+    };
+    const { service, tableSessions } = buildService(tx, {
+      sessionCreateResult: { id: sessionResult.id, created: true },
+    });
+    await expect(
+      service.createTableOrder(7n, 3n, 11n, {
+        idempotencyKey: 'staff_add_0002',
+        items: [],
+      }),
+    ).resolves.toEqual({ order: null, session: sessionResult });
+    expect(tableSessions.getOrCreateOpenSession).toHaveBeenCalledWith(tx, 7n, 11n);
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('opens a new session and creates an order when table is idle', async () => {
+    const tx = {
+      order: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 41n, tableSessionId: 51n }),
+      },
+      $queryRaw: jest.fn()
+        .mockResolvedValueOnce([
+          { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
         ])
-        .mockResolvedValueOnce([]),
+        .mockResolvedValueOnce([
+          {
+            id: 61n,
+            name_zh: '鱼香茄子',
+            image_url: null,
+            price_vnd: 6000n,
+            product_type: 'FOOD',
+            status: 'ON_SALE',
+            category_active: 1,
+          },
+        ]),
+    };
+    const { service } = buildService(tx, {
+      sessionCreateResult: { id: sessionResult.id, created: true },
+    });
+    await expect(
+      service.createTableOrder(7n, 3n, 11n, {
+        idempotencyKey: 'staff_add_0005',
+        items: [{ productId: '61', quantity: 1 }],
+      }),
+    ).resolves.toEqual({ order: orderResult, session: sessionResult });
+    expect(tx.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tableSessionId: sessionResult.id,
+        }),
+      }),
+    );
+  });
+
+  it('rejects open-only ordering when a session is already open', async () => {
+    const tx = {
+      order: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      $queryRaw: jest.fn().mockResolvedValueOnce([
+        { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
+      ]),
     };
     const { service } = buildService(tx);
     await expect(
       service.createTableOrder(7n, 3n, 11n, {
-        idempotencyKey: 'staff_add_0002',
-        items: [{ productId: '61', quantity: 1 }],
+        idempotencyKey: 'staff_add_0003',
+        items: [],
       }),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'TABLE_SESSION_NOT_OPEN' }),
+      response: expect.objectContaining({ code: 'TABLE_ALREADY_OPEN' }),
     });
+  });
+
+  it('rolls back if order creation fails after opening a new session', async () => {
+    const tx = {
+      order: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockRejectedValue(new Error('db create failed')),
+      },
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' }])
+        .mockResolvedValueOnce([
+          {
+            id: 61n,
+            name_zh: '鱼香茄子',
+            image_url: null,
+            price_vnd: 6000n,
+            product_type: 'FOOD',
+            status: 'ON_SALE',
+            category_active: 1,
+          },
+        ]),
+    };
+    const { service } = buildService(tx, {
+      sessionCreateResult: { id: sessionResult.id, created: true },
+    });
+    await expect(
+      service.createTableOrder(7n, 3n, 11n, {
+        idempotencyKey: 'staff_add_0004',
+        items: [{ productId: '61', quantity: 2 }],
+      }),
+    ).rejects.toThrow('db create failed');
+    expect(tx.order.create).toHaveBeenCalled();
   });
 
   function adjustmentTx(status: string, options?: {

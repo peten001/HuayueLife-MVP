@@ -1,7 +1,8 @@
 import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import { describe, expect, it } from 'vitest';
-import type { TableSessionDetail } from '@/types';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { TableCardView, TableSessionDetail } from '@/types';
+import { setLocale } from '@/i18n';
 import TableBillDetail from './TableBillDetail.vue';
 
 function session(unfinishedOrderCount = 0): TableSessionDetail {
@@ -48,14 +49,30 @@ function session(unfinishedOrderCount = 0): TableSessionDetail {
   };
 }
 
-function mountDetail(detail = session()) {
+function emptyTable(): TableCardView {
+  return {
+    id: 'table-2',
+    merchantId: 'merchant-1',
+    tableNo: 'B05',
+    qrToken: 'table-2-qr',
+    qrVersion: 1,
+    status: 'ACTIVE',
+    currentSession: null,
+    operationalStatus: 'AVAILABLE',
+    canCloseSession: false,
+  };
+}
+
+function mountDetail(detail: TableSessionDetail | null = session(), table?: TableCardView) {
   return mount(TableBillDetail, {
-    props: { session: detail },
+    props: { session: detail, table },
     global: { plugins: [createPinia()] },
   });
 }
 
 describe('TableBillDetail final panel', () => {
+  afterEach(() => setLocale('zh'));
+
   it('defaults to aggregated items and switches to existing order details', async () => {
     const wrapper = mountDetail();
 
@@ -89,6 +106,28 @@ describe('TableBillDetail final panel', () => {
 
     await wrapper.setProps({ session: { ...session(), status: 'CLOSED' } });
     expect(wrapper.find('[data-testid="table-order-items"]').exists()).toBe(false);
+  });
+
+  it('shows open-table action for an empty table and emits order context', async () => {
+    const wrapper = mountDetail(null, emptyTable());
+
+    const openAction = wrapper.get('[data-testid="table-order-items"]');
+    expect(openAction.text()).toContain('开台点菜');
+    await openAction.trigger('click');
+    expect(wrapper.emitted('orderItems')).toEqual([[]]);
+
+    await wrapper.setProps({ table: { ...emptyTable(), status: 'DISABLED' } });
+    expect(wrapper.find('[data-testid="table-order-items"]').exists()).toBe(false);
+  });
+
+  it.each([
+    ['zh', '开台点菜'],
+    ['vi', 'Mở bàn và gọi món'],
+    ['en', 'Open Table & Order'],
+  ])('renders empty-table open action label in %s locale', (locale, label) => {
+    setLocale(locale as 'zh' | 'vi' | 'en');
+    const wrapper = mountDetail(null, emptyTable());
+    expect(wrapper.get('[data-testid="table-order-items"]').text()).toContain(label);
   });
 
   it('keeps the unfinished-order close gate and compact warning', async () => {
