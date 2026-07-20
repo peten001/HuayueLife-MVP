@@ -62,6 +62,8 @@ const submittedContext = ref<{
   tableLabel: string;
 } | null>(null);
 const targetTableLabel = computed(() => submittedContext.value?.tableLabel ?? props.tableLabel);
+const remarkDialogProductId = ref<string | null>(null);
+const remarkDraft = ref('');
 
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
@@ -133,8 +135,30 @@ function quantityFor(productId: string) {
   return selectionFor(productId).quantity;
 }
 
+function openRemarkDialog(productId: string) {
+  if (controlsDisabled()) return;
+  const selection = selectionFor(productId);
+  remarkDialogProductId.value = productId;
+  remarkDraft.value = selection.remark;
+}
+
+function saveRemark() {
+  if (!remarkDialogProductId.value) return;
+  updateRemark(remarkDialogProductId.value, remarkDraft.value);
+  closeRemarkDialog();
+}
+
+function closeRemarkDialog() {
+  remarkDialogProductId.value = null;
+  remarkDraft.value = '';
+}
+
+function controlsDisabled() {
+  return props.disabled || submitting.value || Boolean(submittedPayload.value);
+}
+
 function changeQuantity(productId: string, delta: number) {
-  if (props.disabled || submitting.value || submittedPayload.value) return;
+  if (controlsDisabled()) return;
   const current = selectionFor(productId);
   const quantity = Math.max(0, Math.min(99, current.quantity + delta));
   selections.value = {
@@ -315,7 +339,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
               v-for="product in filteredProducts"
               :key="product.id"
               class="table-ordering-product"
-              :class="{ 'is-selected': quantityFor(product.id) > 0 }"
+              :class="{
+                'is-selected': quantityFor(product.id) > 0,
+                'has-remark': Boolean(selectionFor(product.id).remark.trim()),
+              }"
               :data-product-id="product.id"
             >
               <span class="table-ordering-product__image" aria-hidden="true">
@@ -334,46 +361,85 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
                 <b>{{ formatVnd(product.priceVnd, locale) }}</b>
               </div>
               <div
-                class="table-ordering-quantity"
-                :class="{ 'is-empty': quantityFor(product.id) === 0, 'has-quantity': quantityFor(product.id) > 0 }"
+                class="table-ordering-product__actions"
                 :aria-label="t('ordering.quantityFor', { name: productName(product) })"
               >
                 <template v-if="quantityFor(product.id) > 0">
                   <button
                     type="button"
-                    :aria-label="t('ordering.decreaseQuantity')"
-                    :disabled="quantityFor(product.id) === 0 || disabled || submitting || Boolean(submittedPayload)"
-                    @click="changeQuantity(product.id, -1)"
-                  ><Minus :size="18" aria-hidden="true" /></button>
-                  <output>{{ quantityFor(product.id) }}</output>
-                  <button
-                    type="button"
-                    :aria-label="t('ordering.increaseQuantity')"
-                    :disabled="disabled || submitting || Boolean(submittedPayload) || quantityFor(product.id) >= 99"
-                    @click="changeQuantity(product.id, 1)"
-                  ><Plus :size="18" aria-hidden="true" /></button>
+                    class="table-ordering-remark-button"
+                    :disabled="controlsDisabled()"
+                    @click="openRemarkDialog(product.id)"
+                  >{{ selectionFor(product.id).remark ? t('ordering.remarkSaved') : t('ordering.remark') }}</button>
+                  <div
+                    class="table-ordering-quantity has-quantity"
+                  >
+                    <button
+                      type="button"
+                      :aria-label="t('ordering.decreaseQuantity')"
+                      :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
+                      @click="changeQuantity(product.id, -1)"
+                    ><Minus :size="18" aria-hidden="true" /></button>
+                    <output>{{ quantityFor(product.id) }}</output>
+                    <button
+                      type="button"
+                      :aria-label="t('ordering.increaseQuantity')"
+                      :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
+                      @click="changeQuantity(product.id, 1)"
+                    ><Plus :size="18" aria-hidden="true" /></button>
+                  </div>
                 </template>
                 <template v-else>
-                  <button
-                    type="button"
-                    :aria-label="t('ordering.increaseQuantity')"
-                    :disabled="disabled || submitting || Boolean(submittedPayload)"
-                    @click="changeQuantity(product.id, 1)"
-                  ><Plus :size="18" aria-hidden="true" /></button>
+                  <div class="table-ordering-quantity is-empty">
+                    <button
+                      type="button"
+                      :aria-label="t('ordering.increaseQuantity')"
+                      :disabled="controlsDisabled()"
+                      @click="changeQuantity(product.id, 1)"
+                    ><Plus :size="18" aria-hidden="true" /></button>
+                  </div>
                 </template>
               </div>
-              <input
-                v-if="quantityFor(product.id) > 0"
-                class="table-ordering-product__remark"
-                :value="selectionFor(product.id).remark"
-                maxlength="200"
-                :placeholder="t('ordering.remarkPlaceholder')"
-                :disabled="disabled || submitting || Boolean(submittedPayload)"
-                @input="updateRemark(product.id, ($event.target as HTMLInputElement).value)"
-              />
             </article>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="remarkDialogProductId"
+        class="dialog-backdrop"
+        role="presentation"
+        @click.self="closeRemarkDialog"
+      >
+        <section
+          class="confirm-dialog table-ordering-remark-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          :aria-label="t('ordering.remarkDialogTitle')"
+          data-testid="table-ordering-item-remark-dialog"
+        >
+          <span class="confirm-dialog__icon" aria-hidden="true">🍽️</span>
+          <div>
+            <h3>{{ t('ordering.remarkDialogTitle') }}</h3>
+            <textarea
+              v-model="remarkDraft"
+              maxlength="200"
+              :placeholder="t('ordering.remarkPlaceholder')"
+            ></textarea>
+          </div>
+          <footer>
+            <button
+              type="button"
+              class="secondary-action"
+              @click="closeRemarkDialog"
+            >{{ t('common.cancel') }}</button>
+            <button
+              type="button"
+              class="primary-action"
+              @click="saveRemark"
+            >{{ t('ordering.remarkSave') }}</button>
+          </footer>
+        </section>
       </div>
 
       <footer class="table-ordering-footer">

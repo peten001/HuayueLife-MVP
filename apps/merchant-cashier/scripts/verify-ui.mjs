@@ -591,12 +591,46 @@ async function verifyTableOrderingWorkspace() {
     orderingLocaleCopy.zh.openTableOnly,
     'Existing open table default submit action should be open-only',
   );
-  const beef = workspace.locator('.table-ordering-product').filter({ hasText: '演示牛肉粉' });
-  await beef.getByRole('button', { name: '增加数量' }).click();
-  await beef.getByRole('button', { name: '增加数量' }).click();
+  const orderingGridColumns = await workspace.locator('.table-ordering-product-grid').evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return style.gridTemplateColumns.split(' ').filter(Boolean).length;
+  });
+  assert.equal(orderingGridColumns, 3, 'D10 ordering workspace should use 3 columns');
+
+  const firstProduct = workspace.locator('.table-ordering-product').first();
+  const firstProductHasRemarkButton = await firstProduct.locator('.table-ordering-remark-button').count();
+  assert.equal(firstProductHasRemarkButton, 0, 'First product should not show remark button when quantity is zero');
+  await firstProduct.getByRole('button', { name: '增加数量' }).click();
+  await firstProduct.getByRole('button', { name: '增加数量' }).click();
   await workspace.getByRole('button', { name: '饮品', exact: true }).click();
-  const tea = workspace.locator('.table-ordering-product').filter({ hasText: '演示柠檬茶' });
+  const tea = workspace.locator('.table-ordering-product').nth(0);
   await tea.getByRole('button', { name: '增加数量' }).click();
+
+  const beefRemark = firstProduct.locator('.table-ordering-remark-button');
+  await beefRemark.click();
+  const remarkDialog = page.getByTestId('table-ordering-item-remark-dialog');
+  await remarkDialog.waitFor();
+  assert.equal(await remarkDialog.locator('textarea').isVisible(), true, 'Remark modal should expose textarea input');
+  await remarkDialog.locator('button', { hasText: '取消' }).click();
+
+  const firstProductLayout = await firstProduct.evaluate((element) => {
+    const copy = element.querySelector('.table-ordering-product__copy');
+    const price = copy?.querySelector('b');
+    const actions = element.querySelector('.table-ordering-product__actions');
+    if (!copy || !price || !actions) {
+      return { overlap: false, priceBottom: 0, actionTop: 0 };
+    }
+    const priceRect = price.getBoundingClientRect();
+    const actionRect = actions.getBoundingClientRect();
+    return {
+      overlap: priceRect.bottom > actionRect.top,
+      priceBottom: priceRect.bottom,
+      actionTop: actionRect.top,
+    };
+  });
+  assert.equal(firstProductLayout.overlap, false, 'Price must not overlap action controls');
+  assert.ok(firstProductLayout.priceBottom <= firstProductLayout.actionTop, 'Price should stay above action controls');
+
   assert.equal(
     (await confirm.textContent())?.trim(),
     orderingLocaleCopy.zh.openTableAndAddItems,
@@ -749,6 +783,26 @@ async function verifyLocales() {
     await workspace.locator('.table-ordering-close').click();
     await workspace.waitFor({ state: 'hidden' });
 
+    if (locale === 'vi') {
+      await tableDetail.getByTestId('table-order-items').click();
+      const viWorkspace = page.getByTestId('table-ordering-workspace');
+      await viWorkspace.waitFor();
+      const firstProductCopy = viWorkspace.locator('.table-ordering-product__copy strong').first();
+      await viWorkspace.evaluate(() => {
+        const firstCopy = document.querySelector('.table-ordering-product__copy strong');
+        if (firstCopy) {
+          firstCopy.textContent = 'Thịt lợn quay giòn ngoài giòn thơm, thịt mềm bên trong, rau thơm và gia vị đặc trưng miền Nam';
+        }
+      });
+      const viClamp = await firstProductCopy.evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return style.getPropertyValue('-webkit-line-clamp') || style.lineClamp;
+      });
+      assert.equal(viClamp, '3', 'D10 Vietnamese dish name should be clamped to max three lines');
+      await viWorkspace.locator('.table-ordering-close').click();
+      await viWorkspace.waitFor({ state: 'hidden' });
+    }
+
     await selectAvailableTableCard();
     const emptyAction = page.getByTestId('table-detail').getByTestId('table-order-items');
     assert.equal(
@@ -785,6 +839,18 @@ async function verifyLocales() {
     ]) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(100);
+      if (width <= 1180) {
+        await page.getByTestId('table-detail').getByTestId('table-order-items').click();
+        const narrowWorkspace = page.getByTestId('table-ordering-workspace');
+        await narrowWorkspace.waitFor();
+        const narrowColumns = await narrowWorkspace.locator('.table-ordering-product-grid').evaluate((element) => {
+          const style = window.getComputedStyle(element);
+          return style.gridTemplateColumns.split(' ').filter(Boolean).length;
+        });
+        assert.equal(narrowColumns, 2, `${locale} ${width}x${height}: ordering workspace should use two columns`);
+        await narrowWorkspace.locator('.table-ordering-close').click();
+        await narrowWorkspace.waitFor({ state: 'hidden' });
+      }
       const overflow = await page.evaluate(() => {
         const horizontalOverflow = (element) => element instanceof HTMLElement
           ? element.scrollWidth - element.clientWidth
