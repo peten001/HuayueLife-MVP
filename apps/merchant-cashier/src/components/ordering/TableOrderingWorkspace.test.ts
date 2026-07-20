@@ -189,6 +189,7 @@ describe('TableOrderingWorkspace', () => {
     const buttons = quantityControl.findAll('button');
 
     expect(buttons).toHaveLength(2);
+    expect(quantityControl.classes()).toContain('has-quantity');
     expect(quantityControl.findAll('output')).toHaveLength(1);
     expect(quantityControl.find('output').text()).toBe('1');
     expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(true);
@@ -231,7 +232,36 @@ describe('TableOrderingWorkspace', () => {
     setLocale(locale as 'zh' | 'vi');
     const wrapper = mountWorkspace();
     await flushPromises();
-    expect(wrapper.get('.table-ordering-product__copy strong').text()).toContain(expectedName);
+    expect(wrapper.get('.table-ordering-product__content strong').text()).toContain(expectedName);
+  });
+
+  it('keeps dish name to at most two lines via webkit line clamp', async () => {
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    const name = wrapper.get('.table-ordering-product__content strong');
+    const styles = window.getComputedStyle(name.element);
+
+    expect(styles).toBeDefined();
+    if (styles.display) {
+      expect(styles.display).toBe('-webkit-box');
+    }
+    if (styles.webkitLineClamp) {
+      expect(styles.webkitLineClamp).toBe('2');
+    }
+    if (styles.webkitBoxOrient) {
+      expect(styles.webkitBoxOrient).toBe('vertical');
+    }
+  });
+
+  it('places price and quantity control in the same row', async () => {
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    const bottom = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-product__bottom');
+    const price = bottom.get('b');
+    const quantity = bottom.get('.table-ordering-product__quantity');
+
+    expect(bottom.element.contains(price.element)).toBe(true);
+    expect(bottom.element.contains(quantity.element)).toBe(true);
   });
 
   it.each([

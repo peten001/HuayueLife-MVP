@@ -599,7 +599,8 @@ async function verifyTableOrderingWorkspace() {
 
   const firstProduct = workspace.locator('.table-ordering-product').first();
   const zeroControls = await firstProduct.evaluate((element) => {
-    const action = element.querySelector('.table-ordering-product__actions');
+    const action = element.querySelector('.table-ordering-product__quantity')
+      || element.querySelector('.table-ordering-product__actions');
     const quantity = element.querySelector('.table-ordering-quantity');
     if (!action || !quantity) {
       return {
@@ -629,14 +630,16 @@ async function verifyTableOrderingWorkspace() {
   await tea.getByRole('button', { name: '增加数量' }).click();
 
   const firstProductLayout = await firstProduct.evaluate((element) => {
-    const copy = element.querySelector('.table-ordering-product__copy');
+    const copy = element.querySelector('.table-ordering-product__content');
     const price = copy?.querySelector('b');
-    const actions = element.querySelector('.table-ordering-product__actions');
+    const actions = element.querySelector('.table-ordering-product__quantity')
+      || element.querySelector('.table-ordering-product__actions');
     if (!copy || !price || !actions) {
       return {
-        overlap: false,
         priceBottom: 0,
         actionTop: 0,
+        actionBottom: 0,
+        priceTop: 0,
         cardRight: 0,
         actionRight: 0,
         quantityButtonCount: 0,
@@ -650,9 +653,11 @@ async function verifyTableOrderingWorkspace() {
     const quantity = actions.querySelector('.table-ordering-quantity.has-quantity');
     const quantityRect = quantity?.getBoundingClientRect();
     return {
-      overlap: priceRect.bottom > actionRect.top,
+      sameRowCenterGap: Math.abs((priceRect.top + (priceRect.height / 2)) - (actionRect.top + (actionRect.height / 2))),
       priceBottom: priceRect.bottom,
       actionTop: actionRect.top,
+      actionBottom: actionRect.bottom,
+      priceTop: priceRect.top,
       cardRight: cardRect.right,
       actionRight: actionRect.right,
       quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
@@ -660,8 +665,8 @@ async function verifyTableOrderingWorkspace() {
       quantityRectLeft: quantityRect?.left ?? 0,
     };
   });
-  assert.equal(firstProductLayout.overlap, false, 'Price must not overlap action controls');
-  assert.ok(firstProductLayout.priceBottom <= firstProductLayout.actionTop, 'Price should stay above action controls');
+  assert.ok(firstProductLayout.sameRowCenterGap < 20, 'Price and actions should be aligned on the same row');
+  assert.ok(firstProductLayout.actionTop <= firstProductLayout.priceBottom, 'Action controls should align with price row');
   assert.equal(firstProductLayout.quantityButtonCount, 2, 'Selected product must expose minus/plus pair');
   assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 1, true, 'Actions must remain inside product card');
   assert.equal(firstProductLayout.actionInside, true, 'Actions must stay in card bounds');
@@ -822,9 +827,9 @@ async function verifyLocales() {
       await tableDetail.getByTestId('table-order-items').click();
       const viWorkspace = page.getByTestId('table-ordering-workspace');
       await viWorkspace.waitFor();
-      const firstProductCopy = viWorkspace.locator('.table-ordering-product__copy strong').first();
+      const firstProductCopy = viWorkspace.locator('.table-ordering-product__content strong').first();
       await viWorkspace.evaluate(() => {
-        const firstCopy = document.querySelector('.table-ordering-product__copy strong');
+      const firstCopy = document.querySelector('.table-ordering-product__content strong');
         if (firstCopy) {
           firstCopy.textContent = 'Thịt lợn quay giòn ngoài giòn thơm, thịt mềm bên trong, rau thơm và gia vị đặc trưng miền Nam';
         }
@@ -833,7 +838,7 @@ async function verifyLocales() {
         const style = window.getComputedStyle(element);
         return style.getPropertyValue('-webkit-line-clamp') || style.lineClamp;
       });
-      assert.equal(viClamp, '3', 'D10 Vietnamese dish name should be clamped to max three lines');
+      assert.equal(viClamp, '2', 'D10 Vietnamese dish name should be clamped to max two lines');
       await viWorkspace.locator('.table-ordering-close').click();
       await viWorkspace.waitFor({ state: 'hidden' });
     }
@@ -1036,7 +1041,8 @@ async function verifyAndroidWebViewLandscape() {
     assert.equal(webViewColumns, 3, 'Android WebView ordering workspace should use 3 columns');
     const webViewFirstProduct = workspace.locator('.table-ordering-product').first();
     const webViewZeroControls = await webViewFirstProduct.evaluate((element) => {
-      const action = element.querySelector('.table-ordering-product__actions');
+      const action = element.querySelector('.table-ordering-product__quantity')
+        || element.querySelector('.table-ordering-product__actions');
       const quantity = element.querySelector('.table-ordering-quantity');
       if (!action || !quantity) {
         return {
@@ -1062,7 +1068,8 @@ async function verifyAndroidWebViewLandscape() {
     await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
     await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
     const webViewSelectedLayout = await webViewFirstProduct.evaluate((element) => {
-      const action = element.querySelector('.table-ordering-product__actions');
+      const action = element.querySelector('.table-ordering-product__quantity')
+        || element.querySelector('.table-ordering-product__actions');
       if (!action) {
         return {
           cardRight: 0,
