@@ -24,7 +24,6 @@ import LoadingState from '@/components/common/LoadingState.vue';
 
 interface Selection {
   quantity: number;
-  remark: string;
 }
 
 const props = defineProps<{
@@ -62,8 +61,6 @@ const submittedContext = ref<{
   tableLabel: string;
 } | null>(null);
 const targetTableLabel = computed(() => submittedContext.value?.tableLabel ?? props.tableLabel);
-const remarkDialogProductId = ref<string | null>(null);
-const remarkDraft = ref('');
 
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
@@ -128,29 +125,11 @@ function categoryName(category: CashierMenuCategory) {
 }
 
 function selectionFor(productId: string): Selection {
-  return selections.value[productId] ?? { quantity: 0, remark: '' };
+  return selections.value[productId] ?? { quantity: 0 };
 }
 
 function quantityFor(productId: string) {
   return selectionFor(productId).quantity;
-}
-
-function openRemarkDialog(productId: string) {
-  if (controlsDisabled()) return;
-  const selection = selectionFor(productId);
-  remarkDialogProductId.value = productId;
-  remarkDraft.value = selection.remark;
-}
-
-function saveRemark() {
-  if (!remarkDialogProductId.value) return;
-  updateRemark(remarkDialogProductId.value, remarkDraft.value);
-  closeRemarkDialog();
-}
-
-function closeRemarkDialog() {
-  remarkDialogProductId.value = null;
-  remarkDraft.value = '';
 }
 
 function controlsDisabled() {
@@ -164,15 +143,6 @@ function changeQuantity(productId: string, delta: number) {
   selections.value = {
     ...selections.value,
     [productId]: { ...current, quantity },
-  };
-}
-
-function updateRemark(productId: string, value: string) {
-  if (submittedPayload.value) return;
-  const current = selectionFor(productId);
-  selections.value = {
-    ...selections.value,
-    [productId]: { ...current, remark: value },
   };
 }
 
@@ -211,10 +181,9 @@ async function submit() {
   try {
     const payload = submittedPayload.value ?? {
       idempotencyKey: idempotencyKey.value,
-      items: selectedLines.value.map(({ product, quantity, remark }) => ({
+      items: selectedLines.value.map(({ product, quantity }) => ({
         productId: product.id,
         quantity,
-        ...(remark.trim() ? { remark: remark.trim() } : {}),
       })),
     };
     submittedPayload.value = payload;
@@ -341,7 +310,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
               class="table-ordering-product"
               :class="{
                 'is-selected': quantityFor(product.id) > 0,
-                'has-remark': Boolean(selectionFor(product.id).remark.trim()),
               }"
               :data-product-id="product.id"
             >
@@ -365,12 +333,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
                 :aria-label="t('ordering.quantityFor', { name: productName(product) })"
               >
                 <template v-if="quantityFor(product.id) > 0">
-                  <button
-                    type="button"
-                    class="table-ordering-remark-button"
-                    :disabled="controlsDisabled()"
-                    @click="openRemarkDialog(product.id)"
-                  >{{ selectionFor(product.id).remark ? t('ordering.remarkSaved') : t('ordering.remark') }}</button>
                   <div
                     class="table-ordering-quantity has-quantity"
                   >
@@ -403,43 +365,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
             </article>
           </div>
         </div>
-      </div>
-
-      <div
-        v-if="remarkDialogProductId"
-        class="dialog-backdrop"
-        role="presentation"
-        @click.self="closeRemarkDialog"
-      >
-        <section
-          class="confirm-dialog table-ordering-remark-dialog"
-          role="alertdialog"
-          aria-modal="true"
-          :aria-label="t('ordering.remarkDialogTitle')"
-          data-testid="table-ordering-item-remark-dialog"
-        >
-          <span class="confirm-dialog__icon" aria-hidden="true">🍽️</span>
-          <div>
-            <h3>{{ t('ordering.remarkDialogTitle') }}</h3>
-            <textarea
-              v-model="remarkDraft"
-              maxlength="200"
-              :placeholder="t('ordering.remarkPlaceholder')"
-            ></textarea>
-          </div>
-          <footer>
-            <button
-              type="button"
-              class="secondary-action"
-              @click="closeRemarkDialog"
-            >{{ t('common.cancel') }}</button>
-            <button
-              type="button"
-              class="primary-action"
-              @click="saveRemark"
-            >{{ t('ordering.remarkSave') }}</button>
-          </footer>
-        </section>
       </div>
 
       <footer class="table-ordering-footer">

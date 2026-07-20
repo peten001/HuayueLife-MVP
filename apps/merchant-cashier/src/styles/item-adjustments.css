@@ -212,9 +212,10 @@
 }
 
 .table-ordering-product {
+  position: relative;
   display: grid;
   grid-template-columns: clamp(80px, 8vw, 84px) minmax(0, 1fr);
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   align-items: start;
   gap: 8px 10px;
   min-width: 0;
@@ -248,10 +249,12 @@
 .table-ordering-product__image img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
 .table-ordering-product__copy {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   display: grid;
   gap: 4px;
   min-width: 0;
+  padding-right: 124px;
+  padding-bottom: 46px;
 }
 .table-ordering-product__copy strong {
   overflow: hidden;
@@ -266,6 +269,7 @@
   -webkit-box-orient: vertical;
 }
 .table-ordering-product__copy small {
+  display: none !important;
   display: -webkit-box;
   overflow: hidden;
   color: #718692;
@@ -277,27 +281,19 @@
 .table-ordering-product__copy b { color: #09845a; font-size: 13px; }
 
 .table-ordering-product__actions {
-  grid-column: 1 / -1;
-  grid-row: 3;
+  position: absolute;
+  right: 10px;
+  bottom: 2px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
+  pointer-events: none;
 }
 
-.table-ordering-remark-button {
-  flex: 0 0 auto;
-  width: 72px;
-  max-width: 72px;
-  min-height: 44px;
-  padding: 0 11px;
-  border: 1px solid #c4d4df;
-  border-radius: 8px;
-  color: #355a71;
-  background: #f4f8fa;
-  font-size: 12px;
-  white-space: nowrap;
-}
+.table-ordering-product__actions,
+.table-ordering-product__actions .table-ordering-quantity,
+.table-ordering-product__actions button { pointer-events: auto; }
 
 .table-ordering-quantity,
 .item-return-quantity {
@@ -306,7 +302,6 @@
   align-items: center;
   justify-content: end;
   gap: 4px;
-  margin-left: auto;
 }
 
 .table-ordering-quantity.is-empty {
@@ -354,24 +349,6 @@
 
 @container ordering-products (max-width: 899px) {
   .table-ordering-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-.table-ordering-remark-dialog {
-  width: min(430px, calc(100vw - 28px));
-}
-
-.table-ordering-remark-dialog textarea {
-  width: 100%;
-  min-height: 90px;
-  margin-top: 9px;
-  padding: 8px 10px;
-  border: 1px solid #d4dfe4;
-  border-radius: 7px;
-  color: #173042;
-  background: #f8fafb;
-  font-size: 12px;
-  font-family: inherit;
-  resize: vertical;
 }
 
 .table-ordering-footer {

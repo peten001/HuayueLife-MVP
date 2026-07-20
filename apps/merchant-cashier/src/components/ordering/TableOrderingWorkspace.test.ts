@@ -1,5 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
 import { createPinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
@@ -186,7 +185,7 @@ describe('TableOrderingWorkspace', () => {
     await wrapper.get('[aria-label="增加数量"]').trigger('click');
 
     const quantityControl = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
-    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-remark-button').text()).toBe('备注');
+    expect(wrapper.findAll('.table-ordering-product[data-product-id="product-1"] .table-ordering-remark-button')).toHaveLength(0);
     const buttons = quantityControl.findAll('button');
 
     expect(buttons).toHaveLength(2);
@@ -207,27 +206,21 @@ describe('TableOrderingWorkspace', () => {
     expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(false);
   });
 
-  it('opens remark dialog and saves remark without expanding card content', async () => {
+  it('keeps compact card height when adding and removing items', async () => {
     const wrapper = mountWorkspace();
     await flushPromises();
     await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    await nextTick();
-    await flushPromises();
 
     const product = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
-
     const beforeHeight = product.element.getBoundingClientRect().height;
-
-    await product.get('button.table-ordering-remark-button').trigger('click');
-    const dialog = wrapper.get('[data-testid="table-ordering-item-remark-dialog"]');
-    await dialog.get('textarea').setValue('少辣');
-    await dialog.get('button.primary-action').trigger('click');
-    await nextTick();
     const updatedProduct = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
 
-    expect(updatedProduct.text()).toContain('已备注');
-    expect(wrapper.find('[data-testid="table-ordering-item-remark-dialog"]').exists()).toBe(false);
     expect(updatedProduct.element.getBoundingClientRect().height).toBe(beforeHeight);
+
+    await wrapper.get('[aria-label="减少数量"]').trigger('click');
+    const zeroQuantityProduct = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
+    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity').findAll('output')).toHaveLength(0);
+    expect(zeroQuantityProduct.element.getBoundingClientRect().height).toBe(beforeHeight);
   });
 
   it.each([
@@ -262,10 +255,6 @@ describe('TableOrderingWorkspace', () => {
     await flushPromises();
     await wrapper.get('[aria-label="增加数量"]').trigger('click');
     await flushPromises();
-    await wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-remark-button').trigger('click');
-    const dialog = wrapper.get('[data-testid="table-ordering-item-remark-dialog"]');
-    await dialog.get('textarea').setValue('少辣');
-    await dialog.get('button.primary-action').trigger('click');
 
     const confirm = wrapper.get('[data-testid="confirm-table-order"]');
     await confirm.trigger('click');
@@ -275,7 +264,7 @@ describe('TableOrderingWorkspace', () => {
     expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
     expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledWith('table-1', {
       idempotencyKey: expect.stringMatching(/^add-/),
-      items: [{ productId: 'product-1', quantity: 1, remark: '少辣' }],
+      items: [{ productId: 'product-1', quantity: 1 }],
     });
 
     deferred.resolve(result);
@@ -302,7 +291,6 @@ describe('TableOrderingWorkspace', () => {
     await flushPromises();
     expect(wrapper.get('[aria-label="增加数量"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[aria-label="减少数量"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-remark-button').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[data-testid="ordering-outcome-uncertain"]').text()).toContain('结果尚未确认');
     expect(wrapper.get('.table-ordering-close').attributes('disabled')).toBeDefined();
     expect(wrapper.get('button.secondary-action').attributes('disabled')).toBeDefined();
