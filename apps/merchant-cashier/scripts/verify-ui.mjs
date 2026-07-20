@@ -598,6 +598,33 @@ async function verifyTableOrderingWorkspace() {
   assert.equal(orderingGridColumns, 3, 'D10 ordering workspace should use 3 columns');
 
   const firstProduct = workspace.locator('.table-ordering-product').first();
+  const zeroControls = await firstProduct.evaluate((element) => {
+    const action = element.querySelector('.table-ordering-product__actions');
+    const quantity = element.querySelector('.table-ordering-quantity');
+    if (!action || !quantity) {
+      return {
+        cardRight: 0,
+        actionRight: 0,
+        quantityButtonCount: 0,
+        quantityHasOutput: false,
+        hasRemarkButton: false,
+      };
+    }
+    const cardRect = element.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    return {
+      cardRight: cardRect.right,
+      actionRight: actionRect.right,
+      quantityButtonCount: quantity.querySelectorAll('button').length,
+      quantityHasOutput: Boolean(quantity.querySelector('output')),
+      hasRemarkButton: Boolean(action.querySelector('.table-ordering-remark-button')),
+    };
+  });
+  assert.equal(zeroControls.quantityButtonCount, 1, 'Zero quantity should render exactly one plus button');
+  assert.equal(zeroControls.quantityHasOutput, false, 'Zero quantity should hide output text');
+  assert.equal(zeroControls.hasRemarkButton, false, 'Zero quantity should not show remark button');
+  assert.equal(zeroControls.actionRight <= zeroControls.cardRight, true, 'Zero quantity actions must stay inside card');
+
   const firstProductHasRemarkButton = await firstProduct.locator('.table-ordering-remark-button').count();
   assert.equal(firstProductHasRemarkButton, 0, 'First product should not show remark button when quantity is zero');
   await firstProduct.getByRole('button', { name: '增加数量' }).click();
@@ -618,18 +645,49 @@ async function verifyTableOrderingWorkspace() {
     const price = copy?.querySelector('b');
     const actions = element.querySelector('.table-ordering-product__actions');
     if (!copy || !price || !actions) {
-      return { overlap: false, priceBottom: 0, actionTop: 0 };
+      return {
+        overlap: false,
+        priceBottom: 0,
+        actionTop: 0,
+        cardRight: 0,
+        actionRight: 0,
+        quantityButtonCount: 0,
+        hasRemarkButton: false,
+        actionInside: true,
+        remarkRectRight: 0,
+        quantityRectLeft: 0,
+      };
     }
     const priceRect = price.getBoundingClientRect();
     const actionRect = actions.getBoundingClientRect();
+    const cardRect = element.getBoundingClientRect();
+    const quantity = actions.querySelector('.table-ordering-quantity.has-quantity');
+    const remark = actions.querySelector('.table-ordering-remark-button');
+    const quantityRect = quantity?.getBoundingClientRect();
+    const remarkRect = remark?.getBoundingClientRect();
     return {
       overlap: priceRect.bottom > actionRect.top,
       priceBottom: priceRect.bottom,
       actionTop: actionRect.top,
+      cardRight: cardRect.right,
+      actionRight: actionRect.right,
+      quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
+      hasRemarkButton: Boolean(remark),
+      actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
+      remarkRectRight: remarkRect?.right ?? 0,
+      quantityRectLeft: quantityRect?.left ?? 0,
     };
   });
   assert.equal(firstProductLayout.overlap, false, 'Price must not overlap action controls');
   assert.ok(firstProductLayout.priceBottom <= firstProductLayout.actionTop, 'Price should stay above action controls');
+  assert.equal(firstProductLayout.quantityButtonCount, 2, 'Selected product must expose minus/plus pair');
+  assert.equal(firstProductLayout.hasRemarkButton, true, 'Selected product should expose remark button');
+  assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 1, true, 'Actions must remain inside product card');
+  assert.equal(firstProductLayout.actionInside, true, 'Actions must stay in card bounds');
+  assert.ok(
+    firstProductLayout.remarkRectRight <= firstProductLayout.quantityRectLeft,
+    'Remark button should remain left of quantity controls',
+  );
 
   assert.equal(
     (await confirm.textContent())?.trim(),
@@ -845,9 +903,22 @@ async function verifyLocales() {
         await narrowWorkspace.waitFor();
         const narrowColumns = await narrowWorkspace.locator('.table-ordering-product-grid').evaluate((element) => {
           const style = window.getComputedStyle(element);
-          return style.gridTemplateColumns.split(' ').filter(Boolean).length;
+          return {
+            columns: style.gridTemplateColumns.split(' ').filter(Boolean).length,
+            containerWidth: (element.parentElement instanceof HTMLElement
+              ? element.parentElement.getBoundingClientRect().width : 0),
+          };
         });
-        assert.equal(narrowColumns, 2, `${locale} ${width}x${height}: ordering workspace should use two columns`);
+        const narrowExpected = narrowColumns.containerWidth >= 1320
+          ? 4
+          : narrowColumns.containerWidth >= 900
+            ? 3
+            : 2;
+        assert.equal(
+          narrowColumns.columns,
+          narrowExpected,
+          `${locale} ${width}x${height}: ordering workspace should align to container width`,
+        );
         await narrowWorkspace.locator('.table-ordering-close').click();
         await narrowWorkspace.waitFor({ state: 'hidden' });
       }
@@ -981,6 +1052,75 @@ async function verifyAndroidWebViewLandscape() {
     await detail.getByTestId('table-order-items').click();
     const workspace = webViewPage.getByTestId('table-ordering-workspace');
     await workspace.waitFor();
+    const webViewColumns = await workspace.locator('.table-ordering-product-grid').evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      return style.gridTemplateColumns.split(' ').filter(Boolean).length;
+    });
+    assert.equal(webViewColumns, 3, 'Android WebView ordering workspace should use 3 columns');
+    const webViewFirstProduct = workspace.locator('.table-ordering-product').first();
+    const webViewZeroControls = await webViewFirstProduct.evaluate((element) => {
+      const action = element.querySelector('.table-ordering-product__actions');
+      const quantity = element.querySelector('.table-ordering-quantity');
+      if (!action || !quantity) {
+        return {
+          cardRight: 0,
+          actionRight: 0,
+          quantityButtonCount: 0,
+          quantityHasOutput: false,
+          hasRemarkButton: false,
+        };
+      }
+      const cardRect = element.getBoundingClientRect();
+      const actionRect = action.getBoundingClientRect();
+      return {
+        cardRight: cardRect.right,
+        actionRight: actionRect.right,
+        quantityButtonCount: quantity.querySelectorAll('button').length,
+        quantityHasOutput: Boolean(quantity.querySelector('output')),
+        hasRemarkButton: Boolean(action.querySelector('.table-ordering-remark-button')),
+      };
+    });
+    assert.equal(webViewZeroControls.quantityButtonCount, 1, 'Android zero quantity should show one add button');
+    assert.equal(webViewZeroControls.quantityHasOutput, false, 'Android zero quantity should hide output');
+    assert.equal(webViewZeroControls.hasRemarkButton, false, 'Android zero quantity should hide remark button');
+    assert.equal(webViewZeroControls.actionRight <= webViewZeroControls.cardRight, true, 'Android controls must stay inside card');
+
+    await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
+    await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
+    const webViewSelectedLayout = await webViewFirstProduct.evaluate((element) => {
+      const action = element.querySelector('.table-ordering-product__actions');
+      if (!action) {
+        return {
+          cardRight: 0,
+          actionRight: 0,
+          quantityButtonCount: 0,
+          hasRemarkButton: false,
+          actionInside: true,
+          remarkRectRight: 0,
+          quantityRectLeft: 0,
+        };
+      }
+      const cardRect = element.getBoundingClientRect();
+      const actionRect = action.getBoundingClientRect();
+      const quantity = action.querySelector('.table-ordering-quantity.has-quantity');
+      const remark = action.querySelector('.table-ordering-remark-button');
+      const quantityRect = quantity?.getBoundingClientRect();
+      const remarkRect = remark?.getBoundingClientRect();
+      return {
+        cardRight: cardRect.right,
+        actionRight: actionRect.right,
+        quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
+        hasRemarkButton: Boolean(remark),
+        actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
+        remarkRectRight: remarkRect?.right ?? 0,
+        quantityRectLeft: quantityRect?.left ?? 0,
+      };
+    });
+    assert.equal(webViewSelectedLayout.quantityButtonCount, 2, 'Android selected product should expose minus/plus pair');
+    assert.equal(webViewSelectedLayout.hasRemarkButton, true, 'Android selected product should expose remark button');
+    assert.equal(webViewSelectedLayout.actionRight <= webViewSelectedLayout.cardRight + 1, true, 'Android actions should stay inside card');
+    assert.equal(webViewSelectedLayout.actionInside, true, 'Android actions should stay in card bounds');
+    assert.ok(webViewSelectedLayout.remarkRectRight <= webViewSelectedLayout.quantityRectLeft, 'Remark should remain left of quantity controls');
     await assertOverlayWithinViewport(workspace, 'Android WebView ordering workspace');
     await workspace.locator('.table-ordering-close').click();
 
