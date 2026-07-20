@@ -598,6 +598,58 @@ async function verifyTableOrderingWorkspace() {
   assert.equal(orderingGridColumns, 3, 'D10 ordering workspace should use 3 columns');
 
   const firstProduct = workspace.locator('.table-ordering-product').first();
+  const firstProductDimensions = await firstProduct.evaluate((element) => {
+    const content = element.querySelector('.table-ordering-product__content');
+    const image = element.querySelector('.table-ordering-product__image');
+    const name = content?.querySelector('strong');
+    const price = content?.querySelector('b');
+    const bottom = element.querySelector('.table-ordering-product__bottom');
+    const quantity = content?.querySelector('.table-ordering-product__quantity');
+    if (!content || !image || !name || !price || !quantity) {
+      return {
+        cardHeight: 0,
+        imageWidth: 0,
+        imageHeight: 0,
+        nameGapToPriceRow: 0,
+        priceBottomToCardBottom: 0,
+        quantityBottomToCardBottom: 0,
+        clamp: '',
+      };
+    }
+    const cardRect = element.getBoundingClientRect();
+    const nameRect = name.getBoundingClientRect();
+    const bottomRect = bottom?.getBoundingClientRect();
+    const quantityRect = quantity.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    const nameStyle = getComputedStyle(name);
+    return {
+      cardHeight: cardRect.height,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+      nameGapToPriceRow: bottomRect ? bottomRect.top - nameRect.bottom : 0,
+      priceBottomToCardBottom: cardRect.bottom - (bottomRect?.bottom || price.getBoundingClientRect().bottom),
+      quantityBottomToCardBottom: cardRect.bottom - quantityRect.bottom,
+      clamp: nameStyle.getPropertyValue('-webkit-line-clamp'),
+    };
+  });
+  assertBetween(firstProductDimensions.cardHeight, 126, 132, 'D10 product card height');
+  assertBetween(firstProductDimensions.imageWidth, 92, 96, 'D10 product image width');
+  assertBetween(firstProductDimensions.imageHeight, 92, 96, 'D10 product image height');
+  assert.equal(firstProductDimensions.clamp, '2', 'D10 product name line clamp should be two lines');
+  assert.ok(
+    firstProductDimensions.nameGapToPriceRow >= 6
+    && firstProductDimensions.nameGapToPriceRow <= 10,
+    'D10 product name and price gap should be compact',
+  );
+  assert.ok(
+    firstProductDimensions.priceBottomToCardBottom >= 8 && firstProductDimensions.priceBottomToCardBottom <= 16,
+    'D10 price row should not leave excessive bottom whitespace',
+  );
+  assert.ok(
+    firstProductDimensions.quantityBottomToCardBottom >= 8 && firstProductDimensions.quantityBottomToCardBottom <= 16,
+    'D10 quantity control should stay within expected bottom spacing',
+  );
+
   const zeroControls = await firstProduct.evaluate((element) => {
     const action = element.querySelector('.table-ordering-product__quantity')
       || element.querySelector('.table-ordering-product__actions');
@@ -1040,6 +1092,56 @@ async function verifyAndroidWebViewLandscape() {
     });
     assert.equal(webViewColumns, 3, 'Android WebView ordering workspace should use 3 columns');
     const webViewFirstProduct = workspace.locator('.table-ordering-product').first();
+  const webViewFirstProductDimensions = await webViewFirstProduct.evaluate((element) => {
+    const content = element.querySelector('.table-ordering-product__content');
+    const image = element.querySelector('.table-ordering-product__image');
+    const name = content?.querySelector('strong');
+    const quantity = content?.querySelector('.table-ordering-product__quantity');
+    const price = content?.querySelector('b');
+    const bottom = element.querySelector('.table-ordering-product__bottom');
+    if (!content || !image || !name || !quantity || !price) {
+      return {
+        cardHeight: 0,
+        imageWidth: 0,
+        imageHeight: 0,
+        clamp: '',
+        nameGapToPriceRow: 0,
+        quantityBottomToCardBottom: 0,
+      };
+    }
+    const cardRect = element.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    const nameStyle = getComputedStyle(name);
+    const priceRect = price.getBoundingClientRect();
+    const quantityRect = quantity.getBoundingClientRect();
+    const bottomRect = bottom?.getBoundingClientRect();
+    return {
+      cardHeight: cardRect.height,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+      clamp: nameStyle.getPropertyValue('-webkit-line-clamp'),
+      nameGapToPriceRow: bottomRect ? bottomRect.top - name.getBoundingClientRect().bottom : 0,
+      priceBottomToCardBottom: cardRect.bottom - priceRect.bottom,
+      quantityBottomToCardBottom: cardRect.bottom - quantityRect.bottom,
+    };
+  });
+    assertBetween(webViewFirstProductDimensions.cardHeight, 126, 132, 'Android product card height');
+    assertBetween(webViewFirstProductDimensions.imageWidth, 92, 96, 'Android product image width');
+    assertBetween(webViewFirstProductDimensions.imageHeight, 92, 96, 'Android product image height');
+    assert.equal(webViewFirstProductDimensions.clamp, '2', 'Android product name line clamp should be two lines');
+    assert.ok(
+      webViewFirstProductDimensions.nameGapToPriceRow >= 6
+      && webViewFirstProductDimensions.nameGapToPriceRow <= 10,
+      'Android product name and price gap should be compact',
+    );
+    assert.ok(
+      webViewFirstProductDimensions.priceBottomToCardBottom >= 8 && webViewFirstProductDimensions.priceBottomToCardBottom <= 16,
+      'Android price row should not leave excessive bottom whitespace',
+    );
+    assert.ok(
+      webViewFirstProductDimensions.quantityBottomToCardBottom >= 8 && webViewFirstProductDimensions.quantityBottomToCardBottom <= 16,
+      'Android quantity control should stay within expected bottom spacing',
+    );
     const webViewZeroControls = await webViewFirstProduct.evaluate((element) => {
       const action = element.querySelector('.table-ordering-product__quantity')
         || element.querySelector('.table-ordering-product__actions');

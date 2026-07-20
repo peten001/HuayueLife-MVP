@@ -216,11 +216,11 @@
   display: grid;
   grid-template-columns: clamp(96px, 28%, 104px) minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  min-height: 150px;
-  height: 150px;
-  padding: 14px;
+  min-height: 130px;
+  height: 130px;
+  padding: 10px;
   border: 1px solid #d4dfe4;
   border-radius: 10px;
   background: #fff;
@@ -236,8 +236,8 @@
 .table-ordering-product__image {
   position: relative;
   display: grid;
-  width: 100px;
-  height: 100px;
+  width: 94px;
+  height: 94px;
   grid-row: 1;
   place-items: center;
   overflow: hidden;
@@ -251,16 +251,17 @@
   grid-column: 2;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   min-height: 0;
+  align-self: end;
 }
 .table-ordering-product__content strong {
   overflow: hidden;
   display: -webkit-box;
   color: #173042;
-  font-size: 14px;
-  line-height: 1.25;
+  font-size: 12px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: normal;
   word-break: break-word;
@@ -268,14 +269,15 @@
   -webkit-box-orient: vertical;
 }
 .table-ordering-product__bottom {
-  gap: 8px;
+  gap: 10px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  margin-top: 0;
   justify-content: space-between;
 }
 .table-ordering-product__bottom b {
   color: #09845a;
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
@@ -288,8 +290,8 @@
   display: grid;
   align-items: center;
   justify-content: end;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border: 1px solid #cdd9df;
   border-radius: 10px;
   overflow: hidden;
@@ -297,13 +299,13 @@
 }
 
 .table-ordering-quantity.is-empty {
-  width: 42px;
-  grid-template-columns: 42px;
+  width: 38px;
+  grid-template-columns: 38px;
 }
 
 .table-ordering-quantity.has-quantity {
-  width: 120px;
-  grid-template-columns: 40px 40px 40px;
+  width: 108px;
+  grid-template-columns: 36px 36px 36px;
 }
 
 .table-ordering-quantity button,
@@ -336,9 +338,9 @@
 
 .table-ordering-quantity output {
   min-width: 0;
-  width: 40px;
+  width: 36px;
   padding-inline: 2px;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   text-align: center;
 }
@@ -402,12 +404,12 @@
   .table-ordering-close { width: 44px; height: 44px; }
   .table-ordering-body { grid-template-columns: 146px minmax(0, 1fr); }
   .table-ordering-product {
-    min-height: 150px;
-    height: 150px;
-    padding: 11px;
+    min-height: 130px;
+    height: 130px;
+    padding: 10px;
     gap: 10px;
   }
-  .table-ordering-product__image { width: clamp(96px, 10vw, 104px); height: clamp(96px, 10vw, 104px); }
+  .table-ordering-product__image { width: 96px; height: 96px; }
   .table-ordering-product__content strong { font-size: 13px; }
   .table-ordering-footer { grid-template-columns: minmax(0, 1fr) 112px 154px; padding: 8px 14px; }
   .table-ordering-footer > button { min-height: 48px; font-size: 12px; }
