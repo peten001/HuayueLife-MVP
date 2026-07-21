@@ -664,21 +664,29 @@ async function verifyTableOrderingWorkspace() {
         cardRight: 0,
         actionRight: 0,
         quantityButtonCount: 0,
+        plusButtonWidth: 0,
+        plusButtonHeight: 0,
         quantityHasOutput: false,
       };
     }
     const cardRect = element.getBoundingClientRect();
     const actionRect = action.getBoundingClientRect();
+    const plus = quantity.querySelector('button');
+    const plusRect = plus?.getBoundingClientRect();
     return {
       cardRight: cardRect.right,
       actionRight: actionRect.right,
       quantityButtonCount: quantity.querySelectorAll('button').length,
+      plusButtonWidth: plusRect?.width ?? 0,
+      plusButtonHeight: plusRect?.height ?? 0,
       quantityHasOutput: Boolean(quantity.querySelector('output')),
     };
   });
   assert.equal(zeroControls.quantityButtonCount, 1, 'Zero quantity should render exactly one plus button');
   assert.equal(zeroControls.quantityHasOutput, false, 'Zero quantity should hide output text');
   assert.equal(zeroControls.actionRight <= zeroControls.cardRight, true, 'Zero quantity actions must stay inside card');
+  assert.ok(zeroControls.plusButtonWidth >= 44, `Zero-state plus button width must be at least 44px, got ${zeroControls.plusButtonWidth}`);
+  assert.ok(zeroControls.plusButtonHeight >= 44, `Zero-state plus button height must be at least 44px, got ${zeroControls.plusButtonHeight}`);
 
   await firstProduct.getByRole('button', { name: '增加数量' }).click();
   await firstProduct.getByRole('button', { name: '增加数量' }).click();
@@ -709,6 +717,9 @@ async function verifyTableOrderingWorkspace() {
     const cardRect = element.getBoundingClientRect();
     const quantity = actions.querySelector('.table-ordering-quantity.has-quantity');
     const quantityRect = quantity?.getBoundingClientRect();
+    const controlButtons = quantity ? [...quantity.querySelectorAll('button')] : [];
+    const minusRect = controlButtons[0]?.getBoundingClientRect();
+    const plusRect = controlButtons[1]?.getBoundingClientRect();
     return {
       sameRowCenterGap: Math.abs((priceRect.top + (priceRect.height / 2)) - (actionRect.top + (actionRect.height / 2))),
       priceBottom: priceRect.bottom,
@@ -718,15 +729,31 @@ async function verifyTableOrderingWorkspace() {
       cardRight: cardRect.right,
       actionRight: actionRect.right,
       quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
-      actionInside: actionRect.left >= cardRect.left - 12 && actionRect.right <= cardRect.right + 12,
+      actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
       quantityRectLeft: quantityRect?.left ?? 0,
+      quantityControlRight: quantityRect?.right ?? 0,
+      actionWidth: actionRect.width,
+      actionHeight: actionRect.height,
+      minusWidth: minusRect?.width ?? 0,
+      minusHeight: minusRect?.height ?? 0,
+      plusWidth: plusRect?.width ?? 0,
+      plusHeight: plusRect?.height ?? 0,
     };
   });
   assert.ok(firstProductLayout.sameRowCenterGap < 20, 'Price and actions should be aligned on the same row');
   assert.ok(firstProductLayout.actionTop <= firstProductLayout.priceBottom, 'Action controls should align with price row');
   assert.equal(firstProductLayout.quantityButtonCount, 2, 'Selected product must expose minus/plus pair');
-  assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 12, true, 'Actions must remain inside product card');
+  assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 1, true, 'Actions must remain inside product card');
   assert.equal(firstProductLayout.actionInside, true, 'Actions must stay in card bounds');
+  assert.ok(
+    firstProductLayout.actionWidth >= 44,
+    `Quantity control container width should be at least 44px, got ${firstProductLayout.actionWidth}`,
+  );
+  assert.ok(firstProductLayout.actionHeight >= 44, `Quantity control container height should be at least 44px, got ${firstProductLayout.actionHeight}`);
+  assert.ok(firstProductLayout.minusWidth >= 44, `Minus button width should be at least 44px, got ${firstProductLayout.minusWidth}`);
+  assert.ok(firstProductLayout.minusHeight >= 44, `Minus button height should be at least 44px, got ${firstProductLayout.minusHeight}`);
+  assert.ok(firstProductLayout.plusWidth >= 44, `Plus button width should be at least 44px, got ${firstProductLayout.plusWidth}`);
+  assert.ok(firstProductLayout.plusHeight >= 44, `Plus button height should be at least 44px, got ${firstProductLayout.plusHeight}`);
 
   assert.equal(
     (await confirm.textContent())?.trim(),
@@ -757,9 +784,9 @@ async function verifyOrderingLayoutShots() {
   const cases = [
     [1280, 800, 'qty0'],
     [1280, 800, 'qty1'],
-    [1024, 768, 'qty0'],
-    [820, 1180, 'qty0'],
+    [820, 1180, 'qty1'],
     [390, 844, 'qty0'],
+    [390, 844, 'qty1'],
   ];
   for (const [width, height, state] of cases) {
     await page.setViewportSize({ width, height });
@@ -1172,10 +1199,10 @@ async function verifyAndroidWebViewLandscape() {
       webViewFirstProductDimensions.quantityBottomToCardBottom >= 8 && webViewFirstProductDimensions.quantityBottomToCardBottom <= 16,
       'Android quantity control should stay within expected bottom spacing',
     );
-    const webViewZeroControls = await webViewFirstProduct.evaluate((element) => {
-      const action = element.querySelector('.table-ordering-product__quantity')
-        || element.querySelector('.table-ordering-product__actions');
-      const quantity = element.querySelector('.table-ordering-quantity');
+  const webViewZeroControls = await webViewFirstProduct.evaluate((element) => {
+    const action = element.querySelector('.table-ordering-product__quantity')
+      || element.querySelector('.table-ordering-product__actions');
+    const quantity = element.querySelector('.table-ordering-quantity');
       if (!action || !quantity) {
         return {
           cardRight: 0,
@@ -1184,18 +1211,24 @@ async function verifyAndroidWebViewLandscape() {
           quantityHasOutput: false,
         };
       }
-      const cardRect = element.getBoundingClientRect();
-      const actionRect = action.getBoundingClientRect();
-      return {
-        cardRight: cardRect.right,
-        actionRight: actionRect.right,
-        quantityButtonCount: quantity.querySelectorAll('button').length,
-        quantityHasOutput: Boolean(quantity.querySelector('output')),
-      };
-    });
+    const cardRect = element.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    const plus = quantity?.querySelector('button');
+    const plusRect = plus?.getBoundingClientRect();
+    return {
+      cardRight: cardRect.right,
+      actionRight: actionRect.right,
+      quantityButtonCount: quantity.querySelectorAll('button').length,
+      plusButtonWidth: plusRect?.width ?? 0,
+      plusButtonHeight: plusRect?.height ?? 0,
+      quantityHasOutput: Boolean(quantity.querySelector('output')),
+    };
+  });
     assert.equal(webViewZeroControls.quantityButtonCount, 1, 'Android zero quantity should show one add button');
-    assert.equal(webViewZeroControls.quantityHasOutput, false, 'Android zero quantity should hide output');
-    assert.equal(webViewZeroControls.actionRight <= webViewZeroControls.cardRight, true, 'Android controls must stay inside card');
+  assert.equal(webViewZeroControls.quantityHasOutput, false, 'Android zero quantity should hide output');
+  assert.equal(webViewZeroControls.actionRight <= webViewZeroControls.cardRight, true, 'Android controls must stay inside card');
+  assert.ok(webViewZeroControls.plusButtonWidth >= 44, `Android zero-state plus button width must be at least 44px, got ${webViewZeroControls.plusButtonWidth}`);
+  assert.ok(webViewZeroControls.plusButtonHeight >= 44, `Android zero-state plus button height must be at least 44px, got ${webViewZeroControls.plusButtonHeight}`);
 
     await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
     await webViewFirstProduct.getByRole('button', { name: '增加数量' }).click();
@@ -1215,17 +1248,32 @@ async function verifyAndroidWebViewLandscape() {
       const actionRect = action.getBoundingClientRect();
       const quantity = action.querySelector('.table-ordering-quantity.has-quantity');
       const quantityRect = quantity?.getBoundingClientRect();
+      const controlButtons = quantity ? [...quantity.querySelectorAll('button')] : [];
+      const minusRect = controlButtons[0]?.getBoundingClientRect();
+      const plusRect = controlButtons[1]?.getBoundingClientRect();
       return {
         cardRight: cardRect.right,
         actionRight: actionRect.right,
         quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
-        actionInside: actionRect.left >= cardRect.left - 12 && actionRect.right <= cardRect.right + 12,
+        actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
         quantityRectLeft: quantityRect?.left ?? 0,
+        minusWidth: minusRect?.width ?? 0,
+        minusHeight: minusRect?.height ?? 0,
+        plusWidth: plusRect?.width ?? 0,
+        plusHeight: plusRect?.height ?? 0,
+        actionWidth: actionRect.width,
+        actionHeight: actionRect.height,
       };
     });
     assert.equal(webViewSelectedLayout.quantityButtonCount, 2, 'Android selected product should expose minus/plus pair');
-    assert.equal(webViewSelectedLayout.actionRight <= webViewSelectedLayout.cardRight + 12, true, 'Android actions should stay inside card');
+    assert.equal(webViewSelectedLayout.actionRight <= webViewSelectedLayout.cardRight + 1, true, 'Android actions should stay inside card');
     assert.equal(webViewSelectedLayout.actionInside, true, 'Android actions should stay in card bounds');
+    assert.ok(webViewSelectedLayout.actionHeight >= 44, `Android quantity control height should be at least 44px, got ${webViewSelectedLayout.actionHeight}`);
+    assert.ok(webViewSelectedLayout.actionWidth >= 44, `Android quantity control width should be at least 44px, got ${webViewSelectedLayout.actionWidth}`);
+    assert.ok(webViewSelectedLayout.minusWidth >= 44, `Android minus button width should be at least 44px, got ${webViewSelectedLayout.minusWidth}`);
+    assert.ok(webViewSelectedLayout.minusHeight >= 44, `Android minus button height should be at least 44px, got ${webViewSelectedLayout.minusHeight}`);
+    assert.ok(webViewSelectedLayout.plusWidth >= 44, `Android plus button width should be at least 44px, got ${webViewSelectedLayout.plusWidth}`);
+    assert.ok(webViewSelectedLayout.plusHeight >= 44, `Android plus button height should be at least 44px, got ${webViewSelectedLayout.plusHeight}`);
     await assertOverlayWithinViewport(workspace, 'Android WebView ordering workspace');
     await workspace.locator('.table-ordering-close').click();
 

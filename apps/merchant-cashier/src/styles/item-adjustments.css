@@ -332,8 +332,10 @@
   display: grid;
   align-items: center;
   justify-content: end;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid #cdd9df;
   border-radius: 10px;
   overflow: hidden;
@@ -341,25 +343,25 @@
 }
 
 .table-ordering-quantity.is-empty {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
-  grid-template-columns: 38px;
+  grid-template-columns: 44px;
 }
 
 .table-ordering-quantity.has-quantity {
-  width: 108px;
-  height: 38px;
-  grid-template-columns: 36px 36px 36px;
+  width: 116px;
+  height: 44px;
+  grid-template-columns: 44px minmax(24px, 28px) 44px;
 }
 
 .table-ordering-quantity button,
 .item-return-quantity button {
   width: 100%;
   height: 100%;
+  min-width: 44px;
+  min-height: 44px;
   display: grid;
-  min-width: 0;
-  min-height: 0;
   padding: 0;
   place-items: center;
   border: 0;
@@ -382,8 +384,8 @@
 .item-return-quantity output { color: #173042; font-size: 16px; font-weight: 700; text-align: center; }
 
 .table-ordering-quantity output {
-  min-width: 0;
-  width: 36px;
+  min-width: 24px;
+  width: 28px;
   padding-inline: 2px;
   font-size: 13px;
   line-height: 1;
@@ -479,8 +481,8 @@
   .table-ordering-product { min-height: 126px; height: 126px; padding: 9px; grid-template-columns: 90px minmax(0, 1fr); gap: 9px; }
   .table-ordering-product__image { width: 86px; height: 86px; }
   .table-ordering-product__bottom b { font-size: 13px; }
-  .table-ordering-quantity.is-empty { width: 38px; height: 38px; }
-  .table-ordering-quantity.has-quantity { width: 108px; height: 38px; grid-template-columns: 36px 36px 36px; }
+  .table-ordering-quantity.is-empty { width: 44px; height: 44px; }
+  .table-ordering-quantity.has-quantity { width: 116px; height: 44px; grid-template-columns: 44px 28px 44px; }
   .table-ordering-product__content strong { font-size: 14px; line-height: 1.24; max-height: calc(2 * 1.24em); }
   .table-ordering-footer { grid-template-columns: 1fr 1fr; padding: 8px; }
   .table-ordering-footer > div { grid-column: 1 / -1; }
@@ -512,7 +514,7 @@
   .table-ordering-header { padding: 10px; gap: 6px; }
   .table-ordering-products { padding: 9px; }
   .table-ordering-product__bottom b { font-size: 12px; }
-  .table-ordering-quantity.has-quantity { width: 104px; height: 38px; grid-template-columns: 35px 38px 35px; }
+  .table-ordering-quantity.has-quantity { width: 112px; height: 44px; grid-template-columns: 44px 24px 44px; }
   .table-ordering-footer { grid-template-columns: 1fr; gap: 8px; }
   .table-ordering-footer > div { grid-column: auto; }
   .table-ordering-footer > button { min-height: 46px; }
