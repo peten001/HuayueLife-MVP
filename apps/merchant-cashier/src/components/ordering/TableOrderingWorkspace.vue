@@ -328,36 +328,39 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
                 <div class="table-ordering-product__bottom">
                   <b>{{ formatVnd(product.priceVnd, locale) }}</b>
                   <div
+                    v-if="quantityFor(product.id) === 0"
                     class="table-ordering-product__quantity"
                     :aria-label="t('ordering.quantityFor', { name: productName(product) })"
                   >
-                    <template v-if="quantityFor(product.id) > 0">
-                      <div class="table-ordering-quantity has-quantity">
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.decreaseQuantity')"
-                          :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
-                          @click="changeQuantity(product.id, -1)"
-                        ><Minus :size="18" aria-hidden="true" /></button>
-                        <output>{{ quantityFor(product.id) }}</output>
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.increaseQuantity')"
-                          :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
-                          @click="changeQuantity(product.id, 1)"
-                        ><Plus :size="18" aria-hidden="true" /></button>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <div class="table-ordering-quantity is-empty">
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.increaseQuantity')"
-                          :disabled="controlsDisabled()"
-                          @click="changeQuantity(product.id, 1)"
-                        ><Plus :size="18" aria-hidden="true" /></button>
-                      </div>
-                    </template>
+                    <div class="table-ordering-quantity is-empty">
+                      <button
+                        type="button"
+                        :aria-label="t('ordering.increaseQuantity')"
+                        :disabled="controlsDisabled()"
+                        @click="changeQuantity(product.id, 1)"
+                      ><Plus :size="18" aria-hidden="true" /></button>
+                    </div>
+                  </div>
+                  <div
+                    v-else
+                    class="table-ordering-product__quantity"
+                    :aria-label="t('ordering.quantityFor', { name: productName(product) })"
+                  >
+                    <div class="table-ordering-quantity has-quantity">
+                      <button
+                        type="button"
+                        :aria-label="t('ordering.decreaseQuantity')"
+                        :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
+                        @click="changeQuantity(product.id, -1)"
+                      ><Minus :size="18" aria-hidden="true" /></button>
+                      <output>{{ quantityFor(product.id) }}</output>
+                      <button
+                        type="button"
+                        :aria-label="t('ordering.increaseQuantity')"
+                        :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
+                        @click="changeQuantity(product.id, 1)"
+                      ><Plus :size="18" aria-hidden="true" /></button>
+                    </div>
                   </div>
                 </div>
               </div>

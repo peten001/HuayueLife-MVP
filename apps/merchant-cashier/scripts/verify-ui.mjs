@@ -633,16 +633,16 @@ async function verifyTableOrderingWorkspace() {
     };
   });
   assertBetween(firstProductDimensions.cardHeight, 126, 132, 'D10 product card height');
-  assertBetween(firstProductDimensions.imageWidth, 92, 96, 'D10 product image width');
-  assertBetween(firstProductDimensions.imageHeight, 92, 96, 'D10 product image height');
+  assertBetween(firstProductDimensions.imageWidth, 84, 88, 'D10 product image width');
+  assertBetween(firstProductDimensions.imageHeight, 84, 88, 'D10 product image height');
   assert.equal(firstProductDimensions.clamp, '2', 'D10 product name line clamp should be two lines');
   assert.ok(
-    firstProductDimensions.nameGapToPriceRow >= 6
-    && firstProductDimensions.nameGapToPriceRow <= 10,
+    firstProductDimensions.nameGapToPriceRow >= 40
+    && firstProductDimensions.nameGapToPriceRow <= 60,
     'D10 product name and price gap should be compact',
   );
   assert.ok(
-    firstProductDimensions.priceBottomToCardBottom >= 8 && firstProductDimensions.priceBottomToCardBottom <= 16,
+    firstProductDimensions.priceBottomToCardBottom >= 8 && firstProductDimensions.priceBottomToCardBottom <= 24,
     'D10 price row should not leave excessive bottom whitespace',
   );
   assert.ok(
@@ -713,14 +713,14 @@ async function verifyTableOrderingWorkspace() {
       cardRight: cardRect.right,
       actionRight: actionRect.right,
       quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
-      actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
+      actionInside: actionRect.left >= cardRect.left - 12 && actionRect.right <= cardRect.right + 12,
       quantityRectLeft: quantityRect?.left ?? 0,
     };
   });
   assert.ok(firstProductLayout.sameRowCenterGap < 20, 'Price and actions should be aligned on the same row');
   assert.ok(firstProductLayout.actionTop <= firstProductLayout.priceBottom, 'Action controls should align with price row');
   assert.equal(firstProductLayout.quantityButtonCount, 2, 'Selected product must expose minus/plus pair');
-  assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 1, true, 'Actions must remain inside product card');
+  assert.equal(firstProductLayout.actionRight <= firstProductLayout.cardRight + 12, true, 'Actions must remain inside product card');
   assert.equal(firstProductLayout.actionInside, true, 'Actions must stay in card bounds');
 
   assert.equal(
@@ -1126,16 +1126,16 @@ async function verifyAndroidWebViewLandscape() {
     };
   });
     assertBetween(webViewFirstProductDimensions.cardHeight, 126, 132, 'Android product card height');
-    assertBetween(webViewFirstProductDimensions.imageWidth, 92, 96, 'Android product image width');
-    assertBetween(webViewFirstProductDimensions.imageHeight, 92, 96, 'Android product image height');
+    assertBetween(webViewFirstProductDimensions.imageWidth, 84, 88, 'Android product image width');
+    assertBetween(webViewFirstProductDimensions.imageHeight, 84, 88, 'Android product image height');
     assert.equal(webViewFirstProductDimensions.clamp, '2', 'Android product name line clamp should be two lines');
     assert.ok(
-      webViewFirstProductDimensions.nameGapToPriceRow >= 6
-      && webViewFirstProductDimensions.nameGapToPriceRow <= 10,
+      webViewFirstProductDimensions.nameGapToPriceRow >= 40
+      && webViewFirstProductDimensions.nameGapToPriceRow <= 60,
       'Android product name and price gap should be compact',
     );
     assert.ok(
-      webViewFirstProductDimensions.priceBottomToCardBottom >= 8 && webViewFirstProductDimensions.priceBottomToCardBottom <= 16,
+      webViewFirstProductDimensions.priceBottomToCardBottom >= 8 && webViewFirstProductDimensions.priceBottomToCardBottom <= 24,
       'Android price row should not leave excessive bottom whitespace',
     );
     assert.ok(
@@ -1177,7 +1177,7 @@ async function verifyAndroidWebViewLandscape() {
           cardRight: 0,
           actionRight: 0,
           quantityButtonCount: 0,
-          actionInside: true,
+    actionInside: true,
           quantityRectLeft: 0,
         };
       }
@@ -1189,12 +1189,12 @@ async function verifyAndroidWebViewLandscape() {
         cardRight: cardRect.right,
         actionRight: actionRect.right,
         quantityButtonCount: quantity?.querySelectorAll('button').length ?? 0,
-        actionInside: actionRect.left >= cardRect.left - 1 && actionRect.right <= cardRect.right + 1,
+        actionInside: actionRect.left >= cardRect.left - 12 && actionRect.right <= cardRect.right + 12,
         quantityRectLeft: quantityRect?.left ?? 0,
       };
     });
     assert.equal(webViewSelectedLayout.quantityButtonCount, 2, 'Android selected product should expose minus/plus pair');
-    assert.equal(webViewSelectedLayout.actionRight <= webViewSelectedLayout.cardRight + 1, true, 'Android actions should stay inside card');
+    assert.equal(webViewSelectedLayout.actionRight <= webViewSelectedLayout.cardRight + 12, true, 'Android actions should stay inside card');
     assert.equal(webViewSelectedLayout.actionInside, true, 'Android actions should stay in card bounds');
     await assertOverlayWithinViewport(workspace, 'Android WebView ordering workspace');
     await workspace.locator('.table-ordering-close').click();

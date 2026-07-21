@@ -214,13 +214,13 @@
 .table-ordering-product {
   position: relative;
   display: grid;
-  grid-template-columns: clamp(96px, 28%, 104px) minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   min-width: 0;
-  min-height: 130px;
-  height: 130px;
-  padding: 10px;
+  min-height: 132px;
+  height: 132px;
+  padding: 12px;
   border: 1px solid #d4dfe4;
   border-radius: 10px;
   background: #fff;
@@ -236,8 +236,8 @@
 .table-ordering-product__image {
   position: relative;
   display: grid;
-  width: 94px;
-  height: 94px;
+  width: 84px;
+  height: 84px;
   grid-row: 1;
   place-items: center;
   overflow: hidden;
@@ -249,40 +249,46 @@
 .table-ordering-product__image img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
 .table-ordering-product__content {
   grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
-  align-self: end;
+  height: 109px;
+  align-self: start;
 }
 .table-ordering-product__content strong {
   overflow: hidden;
   display: -webkit-box;
   color: #173042;
-  font-size: 12px;
-  line-height: 1.2;
+  margin-top: 0;
+  font-size: 16px;
+  line-height: 1.28;
+  max-height: calc(2 * 1.28em);
   text-overflow: ellipsis;
   white-space: normal;
   word-break: break-word;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  grid-row: 1;
 }
 .table-ordering-product__bottom {
   gap: 10px;
   display: flex;
-  align-items: flex-end;
-  margin-top: 0;
+  align-items: center;
+  margin-bottom: 0;
   justify-content: space-between;
+  margin-top: 0;
+  grid-row: 3;
 }
 .table-ordering-product__bottom b {
   color: #09845a;
-  font-size: 11px;
+  font-size: 14px;
   white-space: nowrap;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   flex: 1 1 auto;
+  line-height: 1.2;
 }
 .table-ordering-product__quantity { flex: 0 0 auto; }
 .table-ordering-quantity,
@@ -290,8 +296,8 @@
   display: grid;
   align-items: center;
   justify-content: end;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border: 1px solid #cdd9df;
   border-radius: 10px;
   overflow: hidden;
@@ -299,13 +305,16 @@
 }
 
 .table-ordering-quantity.is-empty {
-  width: 38px;
-  grid-template-columns: 38px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  grid-template-columns: 36px;
 }
 
 .table-ordering-quantity.has-quantity {
-  width: 108px;
-  grid-template-columns: 36px 36px 36px;
+  width: 106px;
+  height: 36px;
+  grid-template-columns: 35px 36px 35px;
 }
 
 .table-ordering-quantity button,
@@ -404,13 +413,13 @@
   .table-ordering-close { width: 44px; height: 44px; }
   .table-ordering-body { grid-template-columns: 146px minmax(0, 1fr); }
   .table-ordering-product {
-    min-height: 130px;
-    height: 130px;
-    padding: 10px;
+    min-height: 132px;
+    height: 132px;
+    padding: 12px;
     gap: 10px;
   }
-  .table-ordering-product__image { width: 96px; height: 96px; }
-  .table-ordering-product__content strong { font-size: 13px; }
+  .table-ordering-product__image { width: 84px; height: 84px; }
+  .table-ordering-product__content strong { font-size: 16px; }
   .table-ordering-footer { grid-template-columns: minmax(0, 1fr) 112px 154px; padding: 8px 14px; }
   .table-ordering-footer > button { min-height: 48px; font-size: 12px; }
   .table-ordering-footer > div strong { font-size: 18px; }
