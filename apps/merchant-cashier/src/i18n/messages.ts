@@ -307,6 +307,13 @@ export const zhMessages = {
   'itemAdjustment.pendingOtherItem': '上一笔菜品调整结果尚未确认，只能先重试同一菜品。',
   'itemAdjustment.decreaseFailed': '减菜失败，请刷新后重试。',
   'itemAdjustment.returnFailed': '退菜失败，请刷新后重试。',
+  'pwa.installTitle': '添加到主屏后可像应用一样使用',
+  'pwa.iosInstallMessage': '在Safari中点击分享，选择“添加到主屏幕”，再从新图标打开收银台。',
+  'pwa.androidInstallMessage': '点击“安装应用”，在Chrome中获得独立页面体验。',
+  'pwa.androidInstallUnavailable': '在Chrome菜单选择“安装应用”（或“添加到主屏幕”）进行安装。',
+  'pwa.installAction': '安装',
+  'pwa.androidFallbackAction': '我知道了',
+  'pwa.dismiss': '关闭',
 } as const;
 
 export type TranslationKey = keyof typeof zhMessages;
@@ -620,6 +627,13 @@ export const viMessages: Record<TranslationKey, string> = {
   'itemAdjustment.pendingOtherItem': 'Điều chỉnh trước chưa xác định. Chỉ có thể thử lại đúng món đó.',
   'itemAdjustment.decreaseFailed': 'Giảm món thất bại. Hãy tải lại và thử lại.',
   'itemAdjustment.returnFailed': 'Trả món thất bại. Hãy tải lại và thử lại.',
+  'pwa.installTitle': 'Thêm vào màn hình chính để dùng như ứng dụng',
+  'pwa.iosInstallMessage': 'Mở menu chia sẻ, chọn “Thêm vào màn hình chính”, rồi mở app từ biểu tượng mới.',
+  'pwa.androidInstallMessage': 'Cài đặt YunQiao Cashier từ Chrome để có trải nghiệm dạng ứng dụng.',
+  'pwa.androidInstallUnavailable': 'Dùng menu Chrome → Cài đặt ứng dụng (hoặc Thêm vào màn hình chính) khi có tùy chọn.',
+  'pwa.installAction': 'Cài đặt',
+  'pwa.androidFallbackAction': 'Đã hiểu',
+  'pwa.dismiss': 'Đóng',
 };
 
 export const enMessages: Record<TranslationKey, string> = {
@@ -931,4 +945,11 @@ export const enMessages: Record<TranslationKey, string> = {
   'itemAdjustment.pendingOtherItem': 'The previous adjustment is unconfirmed. Retry that same item first.',
   'itemAdjustment.decreaseFailed': 'Could not decrease the item. Refresh and try again.',
   'itemAdjustment.returnFailed': 'Could not return the item. Refresh and try again.',
+  'pwa.installTitle': 'Add to Home Screen for standalone use',
+  'pwa.iosInstallMessage': 'Add YunQiao Cashier to Home Screen: open the Share menu, choose "Add to Home Screen", then launch from the new icon.',
+  'pwa.androidInstallMessage': 'Install YunQiao Cashier from Chrome for a standalone experience.',
+  'pwa.androidInstallUnavailable': 'Use Chrome menu → Install app (or Add to Home screen) when available.',
+  'pwa.installAction': 'Install',
+  'pwa.androidFallbackAction': 'Got it',
+  'pwa.dismiss': 'Dismiss',
 };

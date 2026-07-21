@@ -64,6 +64,7 @@ try {
   await verifyFixtureFacts();
   await verifyFinalShellContent();
   await verifyEmployeeMenu();
+  await verifyPwaManifestAndNavigation();
 
     const viewports = [
     [1366, 768],
@@ -1295,6 +1296,108 @@ async function verifyAndroidWebViewLandscape() {
     assert.ok(overflow.y <= 1, 'Android WebView 1280x800 overflows vertically');
   } finally {
     await webViewContext.close();
+  }
+}
+
+async function verifyPwaManifestAndNavigation() {
+  const response = await page.request.get(`${baseUrl}/manifest.webmanifest`);
+  assert.equal(response.status(), 200, 'manifest.webmanifest should return 200');
+  const manifest = await response.json();
+  assert.equal(manifest.name, '云桥 Life 收银台');
+  assert.equal(manifest.short_name, '云桥收银');
+  assert.equal(manifest.start_url, '/tables');
+  assert.equal(manifest.scope, '/');
+  assert.equal(manifest.display, 'standalone');
+
+  const contentType = response.headers()['content-type'] || '';
+  assert.ok(contentType.includes('application/json') || contentType.includes('json'), 'manifest content-type should be JSON');
+
+  assert.equal(
+    await page.locator('link[rel="manifest"]').getAttribute('href'),
+    '/manifest.webmanifest',
+    'manifest link should point to /manifest.webmanifest',
+  );
+  const html = await page.content();
+  assert.ok(html.includes('apple-mobile-web-app-capable'), 'iOS standalone meta is required');
+  assert.ok(html.includes('apple-mobile-web-app-status-bar-style'), 'iOS status-bar meta is required');
+  assert.ok(html.includes('viewport-fit=cover'), 'viewport-fit=cover is required');
+
+  const rootNav = page.locator('.cashier-navigation a');
+  const mobileNav = page.locator('.cashier-mobile-navigation a');
+  const navs = await rootNav.count();
+  const mobileNavs = await mobileNav.count();
+  assert.equal(navs >= 4, true, 'desktop navigation should keep 4 links');
+  assert.equal(mobileNavs >= 4, true, 'mobile navigation should keep 4 links');
+
+  const links = await page.evaluate(() => {
+    const anchors = [...document.querySelectorAll('.cashier-navigation a, .cashier-mobile-navigation a')];
+    const routeSet = new Set(['/tables', '/orders/new', '/orders/active', '/orders/history']);
+    return anchors.map((anchor) => {
+      const element = anchor;
+      return {
+        href: element.getAttribute('href'),
+        target: element.getAttribute('target') || '',
+        rel: element.getAttribute('rel') || '',
+        isRouteRelative: element.getAttribute('href')?.startsWith('/') ?? false,
+        inScope: routeSet.has(element.getAttribute('href') || ''),
+      };
+    });
+  });
+  assert.equal(links.length >= 8, true, 'desktop/mobile navigation should provide 8+ anchors for the 4 canonical routes');
+  links.forEach((link) => {
+    assert.ok(link.inScope, `Navigation link ${link.href} must be inside scope`);
+    assert.ok(!link.target, `Navigation link ${link.href} must not set target`);
+  });
+
+  assert.equal(context.pages().length, 1, 'Navigation should remain in one browser page');
+  const before = await page.evaluate(() => ({
+    pathname: location.pathname,
+    navCount: performance.getEntriesByType('navigation').length,
+    timeOrigin: performance.timeOrigin,
+    hasSentinel: Boolean(window.__cashierUiSentinel?.value),
+    bodyOverflow: getComputedStyle(document.body).overflow,
+    historyLength: window.history.length,
+    standalone: Boolean(
+      navigator.standalone || window.matchMedia('(display-mode: standalone)').matches,
+    ),
+    documentNavigationTypes: performance.getEntriesByType('navigation').map((entry) => entry.entryType),
+  }));
+  assert.equal(before.hasSentinel, true, 'Sentinel should exist before navigation');
+  assert.ok(
+    ['auto', 'hidden'].includes(before.bodyOverflow),
+    `Cashier shell should own body overflow (auto or hidden), got ${before.bodyOverflow}`,
+  );
+  assert.equal(before.standalone, false, 'Test should run in normal browser mode');
+
+  for (const link of [
+    '/orders/new',
+    '/orders/active',
+    '/orders/history',
+    '/tables',
+  ]) {
+    const activeNav = page.locator(`a[href="${link}"]`).first();
+    await activeNav.click();
+    await page.waitForURL(`**${link}`);
+    await page.waitForTimeout(120);
+    assert.equal(context.pages().length, 1, `Navigate ${link}: still one page`);
+
+    const next = await page.evaluate(() => ({
+      path: location.pathname,
+      timeOrigin: performance.timeOrigin,
+      hasSentinel: Boolean(window.__cashierUiSentinel?.value),
+      navigationLength: performance.getEntriesByType('navigation').length,
+      historyLength: window.history.length,
+    }));
+    assert.equal(next.path, link, `Route should end at ${link}`);
+    assert.equal(next.hasSentinel, true, 'Sentinel should remain present');
+    assert.equal(next.timeOrigin, before.timeOrigin, 'SPA navigation must keep same timeOrigin');
+    assert.equal(next.navigationLength, before.navCount, 'SPA navigation should not append page navigation entries');
+    assert.ok(
+      next.historyLength >= before.historyLength && next.historyLength <= before.historyLength + 4,
+      'History should remain stable in shell navigation, no full document reloads',
+    );
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight <= 1), true);
   }
 }
 

@@ -2,6 +2,7 @@
 import { ChevronDown, Languages, LogOut, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n, type Locale } from '@/i18n';
+import PwaInstallBanner from '@/components/pwa/PwaInstallBanner.vue';
 
 const props = defineProps<{
   merchantName?: string;
@@ -93,6 +94,8 @@ onBeforeUnmount(() => {
         <LogOut :size="17" aria-hidden="true" />
         {{ loggingOut ? t('auth.loggingOut') : t('auth.logout') }}
       </button>
+
+      <PwaInstallBanner />
     </section>
   </div>
 </template>

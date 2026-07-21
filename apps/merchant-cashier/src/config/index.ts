@@ -27,6 +27,7 @@ export const cashierStorageKeys = Object.freeze({
   locale: 'yunqiao_cashier_locale',
   pendingOrderSnapshotPrefix: 'yunqiao_cashier_pending_orders',
   printRequestKeys: 'yunqiao_cashier_print_request_keys',
+  pwaInstallPromptDismissedUntil: 'yunqiao_cashier_pwa_install_prompt_dismissed_until',
 });
 
 export const CASHIER_UNAUTHORIZED_EVENT = 'yunqiao-cashier:unauthorized';
