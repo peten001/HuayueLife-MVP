@@ -890,8 +890,8 @@
 
 /* Portrait and compact tablet. */
 @media (max-width: 899px) {
-  :root { --cashier-header-height: 112px; }
-  .cashier-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 112px minmax(0, 1fr) var(--cashier-mobile-nav-height); }
+  :root { --cashier-header-height: calc(112px + env(safe-area-inset-top)); }
+  .cashier-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--cashier-header-height) minmax(0, 1fr) var(--cashier-mobile-nav-height); }
   .cashier-sidebar { display: contents; }
   .cashier-sidebar .cashier-brand { position: absolute; top: 4px; left: 8px; z-index: 40; justify-content: flex-start; width: 138px; height: 50px; padding: 0 4px; gap: 9px; }
   .cashier-sidebar .cashier-brand::after { display: none; }
@@ -906,7 +906,7 @@
   .cashier-employee-menu .account-menu__copy,
   .cashier-employee-menu .account-menu__trigger > svg:last-child { display: none; }
   .cashier-employee-menu .account-menu__popover { top: calc(100% + 8px); right: 0; bottom: auto; left: auto; width: 230px; }
-  .cashier-header { grid-column: 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 52px; height: 112px; padding: 6px 58px 6px 154px; gap: 0; }
+  .cashier-header { grid-column: 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 52px; height: var(--cashier-header-height); padding: max(6px, env(safe-area-inset-top)) 58px 6px 154px; gap: 0; }
   .cashier-top-status { grid-row: 1; grid-template-columns: repeat(5, 38px) 72px; justify-content: end; gap: 2px; height: 48px; }
   .cashier-top-status > * { grid-column: auto; }
   .top-status-item { height: 48px; padding: 2px; border-left: 0; font-size: 0; }
@@ -916,7 +916,7 @@
   .top-status-item--clock > svg,
   .top-status-item--clock small { display: none; }
   .top-status-item--clock strong { font-size: 16px; }
-  .cashier-top-metrics { grid-row: 2; width: calc(100vw - 12px); height: 52px; margin-left: calc(-154px + 6px); }
+  .cashier-top-metrics { grid-row: 2; width: calc(100% - 12px); height: 52px; margin-left: calc(-154px + 6px); }
   .cashier-top-metric { gap: 2px; }
   .cashier-top-metric span { font-size: 9px; }
   .cashier-top-metric strong { font-size: 18px; }

@@ -188,7 +188,7 @@
   --cashier-sidebar-width: 224px;
   --cashier-header-height: 108px;
   --cashier-detail-width: 350px;
-  --cashier-mobile-nav-height: 74px;
+  --cashier-mobile-nav-height: calc(74px + env(safe-area-inset-bottom));
   --cashier-gap: clamp(10px, 1vw, 16px);
 
   font-family:
