@@ -290,100 +290,102 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
         </nav>
 
         <div class="table-ordering-products">
-          <nav
-            class="table-ordering-category-strip"
-            :aria-label="t('ordering.categories')"
-            data-testid="table-ordering-category-strip"
-          >
-            <button
-              type="button"
-              :class="{ 'is-active': activeCategoryId === 'ALL' }"
-              @click="activeCategoryId = 'ALL'"
-            >{{ t('common.all') }}</button>
-            <button
-              v-for="category in activeCategories"
-              :key="`strip-${category.id}`"
-              type="button"
-              :class="{ 'is-active': activeCategoryId === category.id }"
-              @click="activeCategoryId = category.id"
-            >{{ categoryName(category) }}</button>
-          </nav>
-
-          <LoadingState v-if="loading" :label="t('ordering.loading')" />
-          <ErrorState
-            v-else-if="loadErrorKey"
-            :title="t('error.title')"
-            :description="t(loadErrorKey)"
-            :retry-label="t('common.retry')"
-            @retry="loadCatalog"
-          />
-          <EmptyState
-            v-else-if="!filteredProducts.length"
-            :title="t('ordering.emptyTitle')"
-            :description="t('ordering.emptyDescription')"
-          />
-          <div v-else class="table-ordering-product-grid">
-            <article
-              v-for="product in filteredProducts"
-              :key="product.id"
-              class="table-ordering-product"
-              :class="{
-                'is-selected': quantityFor(product.id) > 0,
-              }"
-              :data-product-id="product.id"
+          <div class="table-ordering-products__scroller" data-testid="table-ordering-products-scroller">
+            <nav
+              class="table-ordering-category-strip"
+              :aria-label="t('ordering.categories')"
+              data-testid="table-ordering-category-strip"
             >
-              <span class="table-ordering-product__image" aria-hidden="true">
-                <img
-                  v-if="resolveMediaUrl(product.imageUrl)"
-                  :src="resolveMediaUrl(product.imageUrl)"
-                  alt=""
-                  loading="lazy"
-                  @error="hideBrokenImage"
-                />
-                <ImageIcon :size="24" />
-              </span>
-              <div class="table-ordering-product__content">
-                <strong>{{ productName(product) }}</strong>
-                <div class="table-ordering-product__bottom">
-                  <b>{{ formatVnd(product.priceVnd, locale) }}</b>
-                  <div
-                    v-if="quantityFor(product.id) === 0"
-                    class="table-ordering-product__quantity"
-                    :aria-label="t('ordering.quantityFor', { name: productName(product) })"
-                  >
-                    <div class="table-ordering-quantity is-empty">
-                      <button
-                        type="button"
-                        :aria-label="t('ordering.increaseQuantity')"
-                        :disabled="controlsDisabled()"
-                        @click="changeQuantity(product.id, 1)"
-                      ><Plus :size="18" aria-hidden="true" /></button>
+              <button
+                type="button"
+                :class="{ 'is-active': activeCategoryId === 'ALL' }"
+                @click="activeCategoryId = 'ALL'"
+              >{{ t('common.all') }}</button>
+              <button
+                v-for="category in activeCategories"
+                :key="`strip-${category.id}`"
+                type="button"
+                :class="{ 'is-active': activeCategoryId === category.id }"
+                @click="activeCategoryId = category.id"
+              >{{ categoryName(category) }}</button>
+            </nav>
+
+            <LoadingState v-if="loading" :label="t('ordering.loading')" />
+            <ErrorState
+              v-else-if="loadErrorKey"
+              :title="t('error.title')"
+              :description="t(loadErrorKey)"
+              :retry-label="t('common.retry')"
+              @retry="loadCatalog"
+            />
+            <EmptyState
+              v-else-if="!filteredProducts.length"
+              :title="t('ordering.emptyTitle')"
+              :description="t('ordering.emptyDescription')"
+            />
+            <div v-else class="table-ordering-product-grid">
+              <article
+                v-for="product in filteredProducts"
+                :key="product.id"
+                class="table-ordering-product"
+                :class="{
+                  'is-selected': quantityFor(product.id) > 0,
+                }"
+                :data-product-id="product.id"
+              >
+                <span class="table-ordering-product__image" aria-hidden="true">
+                  <img
+                    v-if="resolveMediaUrl(product.imageUrl)"
+                    :src="resolveMediaUrl(product.imageUrl)"
+                    alt=""
+                    loading="lazy"
+                    @error="hideBrokenImage"
+                  />
+                  <ImageIcon :size="24" />
+                </span>
+                <div class="table-ordering-product__content">
+                  <strong>{{ productName(product) }}</strong>
+                  <div class="table-ordering-product__bottom">
+                    <b>{{ formatVnd(product.priceVnd, locale) }}</b>
+                    <div
+                      v-if="quantityFor(product.id) === 0"
+                      class="table-ordering-product__quantity"
+                      :aria-label="t('ordering.quantityFor', { name: productName(product) })"
+                    >
+                      <div class="table-ordering-quantity is-empty">
+                        <button
+                          type="button"
+                          :aria-label="t('ordering.increaseQuantity')"
+                          :disabled="controlsDisabled()"
+                          @click="changeQuantity(product.id, 1)"
+                        ><Plus :size="18" aria-hidden="true" /></button>
+                      </div>
                     </div>
-                  </div>
-                  <div
-                    v-else
-                    class="table-ordering-product__quantity"
-                    :aria-label="t('ordering.quantityFor', { name: productName(product) })"
-                  >
-                    <div class="table-ordering-quantity has-quantity">
-                      <button
-                        type="button"
-                        :aria-label="t('ordering.decreaseQuantity')"
-                        :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
-                        @click="changeQuantity(product.id, -1)"
-                      ><Minus :size="18" aria-hidden="true" /></button>
-                      <output>{{ quantityFor(product.id) }}</output>
-                      <button
-                        type="button"
-                        :aria-label="t('ordering.increaseQuantity')"
-                        :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
-                        @click="changeQuantity(product.id, 1)"
-                      ><Plus :size="18" aria-hidden="true" /></button>
+                    <div
+                      v-else
+                      class="table-ordering-product__quantity"
+                      :aria-label="t('ordering.quantityFor', { name: productName(product) })"
+                    >
+                      <div class="table-ordering-quantity has-quantity">
+                        <button
+                          type="button"
+                          :aria-label="t('ordering.decreaseQuantity')"
+                          :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
+                          @click="changeQuantity(product.id, -1)"
+                        ><Minus :size="18" aria-hidden="true" /></button>
+                        <output>{{ quantityFor(product.id) }}</output>
+                        <button
+                          type="button"
+                          :aria-label="t('ordering.increaseQuantity')"
+                          :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
+                          @click="changeQuantity(product.id, 1)"
+                        ><Plus :size="18" aria-hidden="true" /></button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </article>
+              </article>
+            </div>
           </div>
         </div>
       </div>
