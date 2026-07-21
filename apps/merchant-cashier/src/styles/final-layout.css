@@ -906,7 +906,7 @@
   .cashier-employee-menu .account-menu__copy,
   .cashier-employee-menu .account-menu__trigger > svg:last-child { display: none; }
   .cashier-employee-menu .account-menu__popover { top: calc(100% + 8px); right: 0; bottom: auto; left: auto; width: 230px; }
-  .cashier-header { grid-column: 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 52px; height: var(--cashier-header-height); padding: max(6px, env(safe-area-inset-top)) 58px 6px 154px; gap: 0; }
+  .cashier-header { grid-column: 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 52px; height: var(--cashier-header-height); padding: 6px 58px 6px 154px; gap: 0; }
   .cashier-top-status { grid-row: 1; grid-template-columns: repeat(5, 38px) 72px; justify-content: end; gap: 2px; height: 48px; }
   .cashier-top-status > * { grid-column: auto; }
   .top-status-item { height: 48px; padding: 2px; border-left: 0; font-size: 0; }
