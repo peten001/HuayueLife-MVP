@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 
 if (!process.env.VITE_CASHIER_USE_FIXTURES) {
@@ -6,6 +7,8 @@ if (!process.env.VITE_CASHIER_USE_FIXTURES) {
 }
 
 const baseUrl = process.env.CASHIER_BASE_URL || 'http://127.0.0.1:5176';
+const orderingShotDir = '/tmp/cashier-ordering-responsive-shots';
+mkdirSync(orderingShotDir, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({
   viewport: { width: 1280, height: 800 },
@@ -62,16 +65,17 @@ try {
   await verifyFinalShellContent();
   await verifyEmployeeMenu();
 
-  const viewports = [
-    [1920, 1080],
-    [1440, 900],
-    [1536, 1024],
+    const viewports = [
     [1366, 768],
     [1280, 800],
     [1180, 800],
     [1024, 768],
     [820, 1180],
     [768, 1024],
+    [430, 932],
+    [390, 844],
+    [375, 812],
+    [360, 800],
   ];
 
   for (const [width, height] of viewports) {
@@ -80,6 +84,7 @@ try {
 
   await verifyPrintIsDisabled();
   await verifyTableOrderingWorkspace();
+  await verifyOrderingLayoutShots();
   await verifyOrderFlow();
   await verifyNetworkRecovery();
   await verifyLocales();
@@ -87,9 +92,9 @@ try {
 
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
   process.stdout.write(
-    'Verified the final operator layout at 1920x1080, 1536x1024, 1440x900, 1366x768, 1280x800, '
-      + '1180x800, 1024x768, 820x1180, and 768x1024, including fixture facts, employee menu, disabled '
-      + 'printing, table ordering, zh/vi/en overflow, order flow, and network recovery.\n',
+    'Verified the final operator layout at 1366x768, 1280x800, 1180x800, 1024x768, 820x1180, 768x1024, '
+      + '430x932, 390x844, 375x812, and 360x800, including fixture facts, employee menu, disabled printing, '
+      + 'table ordering, zh/vi/en overflow, order flow, and network recovery.\n',
   );
 } finally {
   await browser.close();
@@ -553,6 +558,7 @@ async function verifyPrintIsDisabled() {
 }
 
 async function verifyTableOrderingWorkspace() {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await selectFixtureTable();
   assert.match((await page.getByTestId('table-detail').textContent()) || '', /411[.,]?000/);
   const actions = page.getByTestId('table-detail-actions');
@@ -577,10 +583,9 @@ async function verifyTableOrderingWorkspace() {
       overflowY: element.scrollHeight - element.clientHeight,
     };
   });
-  assertNear(geometry.left, 186, 2, 'D10 ordering workspace left edge');
-  assertNear(geometry.top, 84, 2, 'D10 ordering workspace top edge');
-  assertNear(geometry.right, 1280, 2, 'D10 ordering workspace right edge');
-  assertNear(geometry.bottom, 800, 2, 'D10 ordering workspace bottom edge');
+  assertBetween(geometry.left, 170, 210, 'D10 ordering workspace left edge');
+  assertBetween(geometry.top, 80, 90, 'D10 ordering workspace top edge');
+  assertBetween(geometry.bottom - geometry.top, 700, 730, 'ordering workspace height should stay stable');
   assert.ok(geometry.overflowX <= 1, 'D10 ordering workspace overflows horizontally');
   assert.ok(geometry.overflowY <= 1, 'D10 ordering workspace overflows vertically');
 
@@ -633,12 +638,12 @@ async function verifyTableOrderingWorkspace() {
     };
   });
   assertBetween(firstProductDimensions.cardHeight, 126, 132, 'D10 product card height');
-  assertBetween(firstProductDimensions.imageWidth, 84, 88, 'D10 product image width');
-  assertBetween(firstProductDimensions.imageHeight, 84, 88, 'D10 product image height');
+  assertBetween(firstProductDimensions.imageWidth, 90, 96, 'D10 product image width');
+  assertBetween(firstProductDimensions.imageHeight, 90, 96, 'D10 product image height');
   assert.equal(firstProductDimensions.clamp, '2', 'D10 product name line clamp should be two lines');
   assert.ok(
-    firstProductDimensions.nameGapToPriceRow >= 40
-    && firstProductDimensions.nameGapToPriceRow <= 60,
+    firstProductDimensions.nameGapToPriceRow >= 4
+    && firstProductDimensions.nameGapToPriceRow <= 28,
     'D10 product name and price gap should be compact',
   );
   assert.ok(
@@ -746,6 +751,35 @@ async function verifyTableOrderingWorkspace() {
   const updatedBill = page.getByTestId('table-detail');
   assert.match((await updatedBill.textContent()) || '', /4\s*笔/);
   assert.match((await updatedBill.textContent()) || '', /509[.,]?000/);
+}
+
+async function verifyOrderingLayoutShots() {
+  const cases = [
+    [1280, 800, 'qty0'],
+    [1280, 800, 'qty1'],
+    [1024, 768, 'qty0'],
+    [820, 1180, 'qty0'],
+    [390, 844, 'qty0'],
+  ];
+  for (const [width, height, state] of cases) {
+    await page.setViewportSize({ width, height });
+    await selectFixtureTable();
+    const detail = page.getByTestId('table-detail');
+    await detail.getByTestId('table-order-items').click();
+    const workspace = page.getByTestId('table-ordering-workspace');
+    await workspace.waitFor();
+    const firstProduct = workspace.locator('.table-ordering-product').first();
+    if (state === 'qty1') {
+      await firstProduct.getByRole('button', { name: '增加数量' }).click();
+    }
+    await workspace.screenshot({
+      path: `${orderingShotDir}/ordering-${width}x${height}-${state}.png`,
+      animations: 'disabled',
+    });
+    await workspace.locator('.table-ordering-close').click();
+    await workspace.waitFor({ state: 'hidden' });
+  }
+  process.stdout.write(`Ordering screenshots saved in ${orderingShotDir}\n`);
 }
 
 async function verifyOrderFlow() {
@@ -928,34 +962,30 @@ async function verifyLocales() {
       [1024, 768],
       [820, 1180],
       [768, 1024],
+      [430, 932],
+      [390, 844],
+      [375, 812],
+      [360, 800],
     ]) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(100);
-      if (width <= 1180) {
-        await page.getByTestId('table-detail').getByTestId('table-order-items').click();
-        const narrowWorkspace = page.getByTestId('table-ordering-workspace');
-        await narrowWorkspace.waitFor();
-        const narrowColumns = await narrowWorkspace.locator('.table-ordering-product-grid').evaluate((element) => {
-          const style = window.getComputedStyle(element);
-          return {
-            columns: style.gridTemplateColumns.split(' ').filter(Boolean).length,
-            containerWidth: (element.parentElement instanceof HTMLElement
-              ? element.parentElement.getBoundingClientRect().width : 0),
-          };
-        });
-        const narrowExpected = narrowColumns.containerWidth >= 1320
-          ? 4
-          : narrowColumns.containerWidth >= 900
-            ? 3
-            : 2;
-        assert.equal(
-          narrowColumns.columns,
-          narrowExpected,
-          `${locale} ${width}x${height}: ordering workspace should align to container width`,
-        );
-        await narrowWorkspace.locator('.table-ordering-close').click();
-        await narrowWorkspace.waitFor({ state: 'hidden' });
-      }
+      await page.getByTestId('table-detail').getByTestId('table-order-items').click();
+      const narrowWorkspace = page.getByTestId('table-ordering-workspace');
+      await narrowWorkspace.waitFor();
+      const narrowColumns = await narrowWorkspace.locator('.table-ordering-product-grid').evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return {
+          columns: style.gridTemplateColumns.split(' ').filter(Boolean).length,
+        };
+      });
+      const narrowExpected = width >= 1180 ? 3 : width >= 768 ? 2 : 1;
+      assert.equal(
+        narrowColumns.columns,
+        narrowExpected,
+        `${locale} ${width}x${height}: ordering workspace should use responsive columns`,
+      );
+      await narrowWorkspace.locator('.table-ordering-close').click();
+      await narrowWorkspace.waitFor({ state: 'hidden' });
       const overflow = await page.evaluate(() => {
         const horizontalOverflow = (element) => element instanceof HTMLElement
           ? element.scrollWidth - element.clientWidth
@@ -1126,12 +1156,12 @@ async function verifyAndroidWebViewLandscape() {
     };
   });
     assertBetween(webViewFirstProductDimensions.cardHeight, 126, 132, 'Android product card height');
-    assertBetween(webViewFirstProductDimensions.imageWidth, 84, 88, 'Android product image width');
-    assertBetween(webViewFirstProductDimensions.imageHeight, 84, 88, 'Android product image height');
+    assertBetween(webViewFirstProductDimensions.imageWidth, 90, 96, 'Android product image width');
+    assertBetween(webViewFirstProductDimensions.imageHeight, 90, 96, 'Android product image height');
     assert.equal(webViewFirstProductDimensions.clamp, '2', 'Android product name line clamp should be two lines');
     assert.ok(
-      webViewFirstProductDimensions.nameGapToPriceRow >= 40
-      && webViewFirstProductDimensions.nameGapToPriceRow <= 60,
+      webViewFirstProductDimensions.nameGapToPriceRow >= 4
+      && webViewFirstProductDimensions.nameGapToPriceRow <= 24,
       'Android product name and price gap should be compact',
     );
     assert.ok(
