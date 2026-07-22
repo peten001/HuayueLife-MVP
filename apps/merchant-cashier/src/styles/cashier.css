@@ -1111,8 +1111,8 @@
   }
   .cashier-shell__detail--open { transform: translateY(0); }
   .shell-detail-scrim { display: none; }
-  .shell-detail-close { position: absolute; top: max(9px, env(safe-area-inset-top)); right: 9px; z-index: 4; display: grid; }
-  .cashier-shell__detail-panel .detail-panel-content { padding: calc(58px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom)); }
+  .shell-detail-close { position: absolute; top: calc(9px + var(--cashier-safe-area-top)); right: 9px; z-index: 4; display: grid; }
+  .cashier-shell__detail-panel .detail-panel-content { padding: calc(58px + var(--cashier-safe-area-top)) 14px calc(16px + env(safe-area-inset-bottom)); }
   .cashier-mobile-navigation {
     grid-column: 1;
     grid-row: 3;

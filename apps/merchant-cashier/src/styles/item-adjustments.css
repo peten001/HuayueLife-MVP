@@ -482,7 +482,12 @@
 }
 
 @media (max-width: 899px) {
-  .table-ordering-workspace { inset: 0; }
+  .table-ordering-workspace {
+    inset: 0;
+    box-sizing: border-box;
+    padding-top: var(--cashier-safe-area-top);
+    background: #082031;
+  }
   .table-ordering-header { grid-template-columns: minmax(0, 1fr) 44px; gap: 8px; }
   .table-ordering-header > div { min-width: 0; }
   .table-ordering-header h2 { margin-top: 0; font-size: 20px; }
