@@ -129,6 +129,7 @@ const selectedTagIds = ref<string[]>([]);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
 const merchant = computed(() => detail.value?.merchant);
+const printingSummary = computed(() => detail.value?.printingSummary);
 const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '基础资料' },
@@ -799,6 +800,27 @@ function statusLabel(value: string) {
   );
 }
 
+function printingConfigurationLabel(value: string | undefined) {
+  if (value === 'CONFIGURED') return '已配置';
+  if (value === 'DISABLED') return '已停用';
+  return '未配置';
+}
+
+function printingConnectionLabel(value: string | undefined) {
+  if (value === 'CONNECTED') return '已连接';
+  if (value === 'OFFLINE') return '离线';
+  if (value === 'RECONNECTING') return '正在重连';
+  if (value === 'AWAITING_PERMISSION') return '等待授权';
+  if (value === 'DEVICE_NOT_FOUND') return '未检测到设备';
+  return '状态未知';
+}
+
+function printingTimeLabel(value: string | null | undefined) {
+  if (!value) return '未上报';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '未上报' : parsed.toLocaleString();
+}
+
 function modeLabel(value: string) {
   return (
     {
@@ -1022,6 +1044,42 @@ function backToList() {
             <span class="capabilities-banner-icon">!</span>
             <p>平台已关闭经营能力总开关，当前商家的经营/订单能力暂不可编辑；平台打印总能力仍可独立开通或关闭。</p>
           </div>
+          <section v-if="printingSummary" class="platform-printing-summary" aria-label="商家打印状态">
+            <header>
+              <div>
+                <h3>打印配置状态</h3>
+                <p>平台仅查看能力、配置与连接摘要；USB 设备参数由商家终端管理。</p>
+              </div>
+            </header>
+            <div class="platform-printing-summary-grid">
+              <article>
+                <span>平台打印能力</span>
+                <strong :class="{ 'is-positive': printingSummary.capabilityEnabled }">
+                  {{ printingSummary.capabilityEnabled ? '已开通' : '未开通' }}
+                </strong>
+              </article>
+              <article>
+                <span>打印机配置</span>
+                <strong :class="{ 'is-positive': printingSummary.configurationState === 'CONFIGURED' }">
+                  {{ printingConfigurationLabel(printingSummary.configurationState) }}
+                </strong>
+              </article>
+              <article>
+                <span>自动打印</span>
+                <strong :class="{ 'is-positive': printingSummary.automaticPrintingEnabled }">
+                  {{ printingSummary.automaticPrintingEnabled ? '已启用' : '未启用' }}
+                </strong>
+              </article>
+              <article>
+                <span>最近终端连接</span>
+                <strong :class="{ 'is-positive': printingSummary.connectionState === 'CONNECTED' }">
+                  {{ printingConnectionLabel(printingSummary.connectionState) }}
+                </strong>
+                <small>最近上报：{{ printingTimeLabel(printingSummary.lastReportedAt) }}</small>
+                <small>最近成功连接：{{ printingTimeLabel(printingSummary.lastConnectedAt) }}</small>
+              </article>
+            </div>
+          </section>
           <div class="capability-groups">
             <article class="capability-group-card">
               <div class="capability-group-head">
@@ -1430,6 +1488,64 @@ function backToList() {
   color: #7a5b11;
 }
 
+.platform-printing-summary {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #cfe7d4;
+  border-radius: 16px;
+  background: #f8fcf9;
+}
+
+.platform-printing-summary header h3,
+.platform-printing-summary header p {
+  margin: 0;
+}
+
+.platform-printing-summary header h3 {
+  color: #13351f;
+  font-size: 16px;
+}
+
+.platform-printing-summary header p {
+  margin-top: 4px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.platform-printing-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.platform-printing-summary-grid article {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dce9df;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.platform-printing-summary-grid span,
+.platform-printing-summary-grid small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.platform-printing-summary-grid strong {
+  color: #9a6700;
+  font-size: 15px;
+}
+
+.platform-printing-summary-grid strong.is-positive {
+  color: #17693c;
+}
+
 .capability-groups {
   display: grid;
   gap: 16px;
@@ -1709,6 +1825,7 @@ function backToList() {
   .merchant-workbench-hero,
   .merchant-dashboard-grid,
   .merchant-image-row,
+  .platform-printing-summary-grid,
   .capability-grid--display,
   .capability-grid--operation {
     grid-template-columns: 1fr;

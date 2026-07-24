@@ -33,10 +33,7 @@ class ConnectorApiClient(
             merchantPrintingEnabled = data.optBoolean("merchantPrintingEnabled", false),
             executionEnabled = data.optBoolean("executionEnabled", false),
             taskCenterEnabled = data.optBoolean("taskCenterEnabled", false),
-            automaticPrintingEnabled = data.optBoolean(
-                "automaticCreationEnabled",
-                data.optBoolean("automaticPrintingEnabled", false),
-            ),
+            automaticPrintingEnabled = data.optBoolean("automaticPrintingEnabled", false),
             pollIntervalMs = pollSeconds * 1_000,
             configRefreshIntervalMs = configRefreshSeconds * 1_000,
             boundPrinterId = printer?.optString("id")?.takeIf(String::isNotBlank)?.take(128),

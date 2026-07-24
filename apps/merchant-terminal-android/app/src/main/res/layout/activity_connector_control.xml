@@ -43,22 +43,16 @@
             android:paddingBottom="20dp">
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/connector_controls_section"
-                android:textColor="@color/terminal_text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/connector_toggle_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:clickable="true"
-                android:focusable="false"
-                android:importantForAccessibility="no"
-                android:minHeight="68dp"
+                android:text="@string/connector_read_only_summary"
+                android:textColor="@color/terminal_text_secondary"
+                android:textSize="14sp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 app:cardBackgroundColor="@color/terminal_surface"
                 app:cardCornerRadius="10dp"
                 app:cardElevation="0dp"
@@ -68,154 +62,190 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:minHeight="68dp"
-                    android:orientation="horizontal"
-                    android:paddingStart="16dp"
-                    android:paddingTop="8dp"
-                    android:paddingEnd="16dp"
-                    android:paddingBottom="8dp">
-
-                    <TextView
-                        android:id="@+id/connector_enabled_label"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:labelFor="@id/connector_enabled_switch"
-                        android:text="@string/connector_enabled_label"
-                        android:textColor="@color/terminal_text_primary"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/connector_enabled_switch"
-                        android:layout_width="76dp"
-                        android:layout_height="48dp"
-                        android:clickable="true"
-                        android:contentDescription="@string/connector_enabled_label"
-                        android:focusable="true"
-                        android:gravity="center"
-                        android:showText="false"
-                        app:thumbTint="@color/connector_switch_thumb_tint"
-                        app:trackTint="@color/connector_switch_track_tint" />
-
-                    <TextView
-                        android:id="@+id/connector_state_text"
-                        android:layout_width="104dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:accessibilityLiveRegion="polite"
-                        android:gravity="center"
-                        android:text="@string/connector_state_off"
-                        android:textColor="@color/terminal_text_secondary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/automatic_toggle_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:clickable="false"
-                android:focusable="false"
-                android:minHeight="68dp"
-                app:cardBackgroundColor="@color/terminal_surface"
-                app:cardCornerRadius="10dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/terminal_outline"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:minHeight="68dp"
-                    android:orientation="horizontal"
-                    android:paddingStart="16dp"
-                    android:paddingTop="8dp"
-                    android:paddingEnd="16dp"
-                    android:paddingBottom="8dp">
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
                     <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
                         <TextView
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:labelFor="@id/automatic_printing_switch"
-                            android:text="@string/connector_auto_enabled_label"
-                            android:textColor="@color/terminal_text_secondary"
+                            android:layout_weight="1"
+                            android:text="@string/connector_platform_capability_label"
+                            android:textColor="@color/terminal_text_primary"
                             android:textSize="16sp" />
 
                         <TextView
-                            android:layout_width="match_parent"
+                            android:id="@+id/platform_capability_value"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/connector_auto_unavailable_note"
-                            android:textColor="@color/terminal_error"
-                            android:textSize="13sp" />
+                            android:text="@string/connector_state_unknown"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/automatic_printing_switch"
-                        android:layout_width="76dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:checked="false"
-                        android:clickable="false"
-                        android:contentDescription="@string/connector_auto_enabled_label"
-                        android:enabled="false"
-                        android:gravity="center"
-                        android:showText="false"
-                        app:thumbTint="@color/connector_switch_thumb_tint"
-                        app:trackTint="@color/connector_switch_track_tint" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/connector_merchant_configuration_label"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/merchant_configuration_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/connector_state_unknown"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/connector_usb_connection_label"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/usb_connection_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/connector_state_unknown"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/connector_automatic_printing_label"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/automatic_printing_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/connector_state_unknown"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/connector_last_connection_label"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/last_connection_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/connector_never_connected"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/connector_last_error_label"
+                            android:textColor="@color/terminal_text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/last_error_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:maxLength="120"
+                            android:text="@string/connector_no_recorded_error"
+                            android:textColor="@color/terminal_text_secondary"
+                            android:textSize="15sp" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/open_usb_diagnostics_button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:text="@string/connector_open_usb_diagnostics" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/refresh_connector_status_button"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="48dp"
-                    android:layout_marginStart="8dp"
                     android:text="@string/connector_refresh_status" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/reconnect_connector_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/connector_reconnect" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/open_usb_diagnostics_button"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/connector_open_usb_diagnostics" />
             </LinearLayout>
 
             <TextView
                 android:id="@+id/connector_message_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/connector_session_note"
+                android:layout_marginTop="10dp"
+                android:text="@string/connector_read_only_note"
                 android:textColor="@color/terminal_text_secondary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/connector_status_text"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/diagnostics_panel_background"
-                android:fontFamily="monospace"
-                android:padding="12dp"
-                android:textColor="@color/terminal_text_primary"
-                android:textIsSelectable="true"
                 android:textSize="13sp" />
 
             <TextView

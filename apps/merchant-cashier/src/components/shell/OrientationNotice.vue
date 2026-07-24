@@ -2,16 +2,17 @@
 import { RotateCcw, X } from '@lucide/vue';
 import { ref } from 'vue';
 import { useI18n } from '@/i18n';
+import { readCashierStorage, writeCashierStorage } from '@/platform/safe-storage';
 
 const { t } = useI18n();
 const storageKey = 'yunqiao_cashier_orientation_notice_dismissed';
 const dismissed = ref(
-  typeof window !== 'undefined' && window.sessionStorage.getItem(storageKey) === 'true',
+  readCashierStorage('session', storageKey) === 'true',
 );
 
 function dismiss() {
   dismissed.value = true;
-  window.sessionStorage.setItem(storageKey, 'true');
+  writeCashierStorage('session', storageKey, 'true');
 }
 </script>
 

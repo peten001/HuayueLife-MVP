@@ -1,31 +1,72 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '@/api/http';
-import { getPrintingFeatureState } from '@/api/printing';
+import {
+  getPrintingFeatureState,
+  getPrintingPrinters,
+  getPrintingRules,
+} from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
-import type { PrintingFeatureState } from '@/types/printing';
+import type {
+  PrintingFeatureState,
+  PrintingPrinter,
+  PrintingRule,
+} from '@/types/printing';
+import {
+  PRINTING_STATE_CHANGED_EVENT,
+  resolvePrintingCenterSummary,
+} from '@/utils/printing-status';
 
 const { p } = usePrintingI18n();
-const route = useRoute();
-const router = useRouter();
-const showLegacyRedirectNotice = ref(false);
-const legacyNoticePath = ref('');
 const featureState = ref<PrintingFeatureState | null>(null);
+const printers = ref<PrintingPrinter[]>([]);
+const rules = ref<PrintingRule[]>([]);
 const featureLoading = ref(true);
 const featureError = ref('');
+const now = ref(Date.now());
 const platformPrintingEnabled = computed(
   () => featureState.value?.merchantPrintingEnabled === true,
 );
+const summary = computed(() =>
+  resolvePrintingCenterSummary(
+    printers.value,
+    rules.value,
+    platformPrintingEnabled.value &&
+      featureState.value?.automaticCreationEnabled === true,
+    now.value,
+  ),
+);
 
-const executionLabel = computed(() => {
+const platformCapabilityLabel = computed(() => {
   if (featureLoading.value) return p('loading');
   if (featureError.value) return p('stateUnavailable');
-  if (!featureState.value?.merchantPrintingEnabled) return p('merchantPrintingOff');
-  return featureState.value.executionEnabled
-    ? p('merchantPrintingOn')
-    : p('merchantEnabledExecutionOff');
+  return platformPrintingEnabled.value ? p('capabilityEnabled') : p('capabilityDisabled');
 });
+const localChannelLabel = computed(() =>
+  summary.value.localChannel === 'AVAILABLE'
+    ? p('localChannelAvailable')
+    : p('localChannelNotConfigured'),
+);
+const automaticPrintingLabel = computed(() =>
+  summary.value.automaticPrinting === 'ENABLED'
+    ? p('automaticPrintingEnabled')
+    : p('automaticPrintingDisabled'),
+);
+const recentTerminalLabel = computed(() => {
+  if (summary.value.recentTerminalConnection === 'ONLINE') return p('recentTerminalOnline');
+  if (summary.value.recentTerminalConnection === 'OFFLINE') return p('recentTerminalOffline');
+  return p('recentTerminalNotReported');
+});
+const lastEvidenceLabel = computed(() =>
+  summary.value.lastEvidenceAt
+    ? `${p('lastReportedAt')} ${new Date(summary.value.lastEvidenceAt).toLocaleString()}`
+    : p('connectionNotReported'),
+);
+const lastConnectedLabel = computed(() =>
+  summary.value.lastConnectedAt
+    ? `${p('lastConnectedAt')} ${new Date(summary.value.lastConnectedAt).toLocaleString()}`
+    : `${p('lastConnectedAt')} ${p('connectionNotReported')}`,
+);
 
 const tabs = [
   { path: '/printing-center/printers', label: 'printers' },
@@ -34,90 +75,99 @@ const tabs = [
   { path: '/printing-center/jobs', label: 'jobs' },
 ] as const;
 
-watch(
-  () => route.fullPath,
-  () => {
-    if (route.query.from === 'legacy') {
-      showLegacyRedirectNotice.value = true;
-      legacyNoticePath.value = route.path;
-      const query = { ...route.query };
-      delete query.from;
-      void router.replace({ path: route.path, query, hash: route.hash });
-      return;
-    }
-    if (showLegacyRedirectNotice.value && route.path !== legacyNoticePath.value) {
-      showLegacyRedirectNotice.value = false;
-    }
-  },
-  { immediate: true },
-);
+let statusClock: number | undefined;
 
-async function loadFeatureState() {
-  featureLoading.value = true;
+async function loadFeatureState(showLoading = true) {
+  if (showLoading) featureLoading.value = true;
   featureError.value = '';
   try {
     featureState.value = await getPrintingFeatureState();
+    if (featureState.value.merchantPrintingEnabled) {
+      [printers.value, rules.value] = await Promise.all([
+        getPrintingPrinters(),
+        getPrintingRules(),
+      ]);
+    } else {
+      printers.value = [];
+      rules.value = [];
+    }
   } catch (error) {
-    featureState.value = null;
     featureError.value = errorMessage(error);
   } finally {
-    featureLoading.value = false;
+    if (showLoading) featureLoading.value = false;
   }
 }
 
-onMounted(loadFeatureState);
+function refreshPrintingState() {
+  void loadFeatureState(false);
+}
+
+onMounted(() => {
+  void loadFeatureState();
+  window.addEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
+  statusClock = window.setInterval(() => {
+    now.value = Date.now();
+  }, 30_000);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
+  if (statusClock !== undefined) window.clearInterval(statusClock);
+});
 </script>
 
 <template>
   <section class="printing-center">
     <header class="printing-center__header">
       <div>
-        <span class="printing-center__eyebrow">BETA</span>
         <h1>{{ p('title') }}</h1>
         <p>{{ p('description') }}</p>
       </div>
       <span
         :class="[
-          'printing-center__execution-status',
+          'printing-center__capability-status',
           {
-            'printing-center__execution-status--enabled':
-              featureState?.merchantPrintingEnabled && featureState?.executionEnabled,
+            'printing-center__capability-status--enabled': platformPrintingEnabled,
           },
         ]"
       >
-        {{ executionLabel }}
+        {{ platformCapabilityLabel }}
       </span>
     </header>
 
-    <div v-if="showLegacyRedirectNotice" class="printing-center__notice printing-center__notice--legacy" role="status">
-      <span aria-hidden="true">↪</span>
-      <strong>{{ p('legacyRedirectNotice') }}</strong>
-    </div>
-
     <div class="printing-center__notice" role="status">
       <span aria-hidden="true">ⓘ</span>
-      <strong>{{ p('betaNotice') }}</strong>
+      <strong>{{ p('formalNotice') }}</strong>
     </div>
 
-    <section class="printing-safety-gates" :aria-label="p('merchantMasterSwitch')">
-      <div class="printing-safety-gates__summary">
-        <div>
-          <strong>{{ p('merchantMasterSwitch') }}</strong>
-          <p>{{ p('masterSwitchHint') }}</p>
-        </div>
-        <span class="printing-safety-gates__readonly">{{ p('platformManaged') }}</span>
-      </div>
-      <div v-if="featureState" class="printing-safety-gates__flags">
+    <section v-if="!featureLoading && !featureError" class="printing-status-grid" :aria-label="p('printingStatusSummary')">
+      <article class="printing-status-card">
+        <span>{{ p('platformCapability') }}</span>
+        <strong :class="{ 'is-active': platformPrintingEnabled }">{{ platformCapabilityLabel }}</strong>
+      </article>
+      <article class="printing-status-card">
+        <span>{{ p('localPrintChannel') }}</span>
+        <strong :class="{ 'is-active': summary.localChannel === 'AVAILABLE' }">{{ localChannelLabel }}</strong>
+      </article>
+      <article class="printing-status-card">
+        <span>{{ p('automaticPrinting') }}</span>
+        <strong :class="{ 'is-active': summary.automaticPrinting === 'ENABLED' }">{{ automaticPrintingLabel }}</strong>
+      </article>
+      <article class="printing-status-card">
+        <span>{{ p('recentTerminalConnection') }}</span>
+        <strong :class="{ 'is-active': summary.recentTerminalConnection === 'ONLINE' }">{{ recentTerminalLabel }}</strong>
+        <small>{{ lastEvidenceLabel }}</small>
+        <small>{{ lastConnectedLabel }}</small>
+      </article>
+    </section>
+
+    <details v-if="featureState" class="printing-diagnostics">
+      <summary>{{ p('advancedDiagnostics') }}</summary>
+      <div class="printing-safety-gates__flags">
         <span class="printing-gate">
           {{ p('taskCenterSwitch') }}
           <b :class="featureState?.taskCenterEnabled ? 'is-active' : 'is-danger'">
             {{ featureState?.taskCenterEnabled ? p('enabled') : p('disabled') }}
-          </b>
-        </span>
-        <span class="printing-gate">
-          {{ p('merchantMasterSwitch') }}
-          <b :class="featureState?.merchantPrintingEnabled ? 'is-active' : 'is-safe'">
-            {{ featureState?.merchantPrintingEnabled ? p('enabled') : p('disabled') }}
           </b>
         </span>
         <span class="printing-gate">
@@ -139,7 +189,7 @@ onMounted(loadFeatureState);
           </b>
         </span>
       </div>
-    </section>
+    </details>
 
     <section v-if="featureLoading" class="printing-platform-gate" role="status">
       <strong>{{ p('loading') }}</strong>
@@ -148,7 +198,7 @@ onMounted(loadFeatureState);
     <section v-else-if="featureError" class="printing-platform-gate printing-platform-gate--error" role="alert">
       <strong>{{ p('stateUnavailable') }}</strong>
       <p>{{ featureError }}</p>
-      <button class="printing-button printing-button--secondary" type="button" @click="loadFeatureState">
+      <button class="printing-button printing-button--secondary" type="button" @click="loadFeatureState()">
         {{ p('refresh') }}
       </button>
     </section>
@@ -189,7 +239,7 @@ onMounted(loadFeatureState);
 }
 
 .printing-center__header h1 {
-  margin: 4px 0 4px;
+  margin: 0 0 4px;
   color: var(--printing-ink);
   font-size: 28px;
   line-height: 1.2;
@@ -201,18 +251,7 @@ onMounted(loadFeatureState);
   line-height: 1.5;
 }
 
-.printing-center__eyebrow {
-  display: inline-flex;
-  padding: 3px 8px;
-  border-radius: 999px;
-  color: #15642c;
-  background: #dcf3e1;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.printing-center__execution-status {
+.printing-center__capability-status {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -226,39 +265,59 @@ onMounted(loadFeatureState);
   white-space: nowrap;
 }
 
-.printing-center__execution-status--enabled {
+.printing-center__capability-status--enabled {
   color: #17693c;
   background: #e4f4e9;
 }
 
-.printing-safety-gates {
+.printing-status-grid {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.printing-status-card {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--printing-border);
   border-radius: 14px;
   background: #fff;
 }
 
-.printing-safety-gates__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+.printing-status-card span,
+.printing-status-card small {
+  color: var(--printing-muted);
+  font-size: 12px;
 }
 
-.printing-safety-gates__readonly {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid #c9ded0;
-  border-radius: 999px;
-  color: #365542;
-  background: #f5faf6;
+.printing-status-card strong {
+  color: #81570d;
+  font-size: 15px;
+}
+
+.printing-status-card strong.is-active {
+  color: #17693c;
+}
+
+.printing-diagnostics {
+  padding: 10px 14px;
+  border: 1px solid var(--printing-border);
+  border-radius: 12px;
+  color: var(--printing-muted);
+  background: #f8faf9;
   font-size: 12px;
-  font-weight: 750;
+}
+
+.printing-diagnostics summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.printing-diagnostics[open] summary {
+  margin-bottom: 10px;
 }
 
 .printing-platform-gate {
@@ -285,18 +344,6 @@ onMounted(loadFeatureState);
   border-color: #efc7c7;
   color: #8b2b2b;
   background: #fff3f3;
-}
-
-.printing-safety-gates__summary strong {
-  color: var(--printing-ink);
-  font-size: 14px;
-}
-
-.printing-safety-gates__summary p {
-  margin: 4px 0 0;
-  color: var(--printing-muted);
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .printing-safety-gates__flags {
@@ -339,17 +386,11 @@ onMounted(loadFeatureState);
   gap: 10px;
   min-height: 48px;
   padding: 12px 16px;
-  border: 1px solid #f0d899;
+  border: 1px solid #c9ded0;
   border-radius: 12px;
-  color: #72510d;
-  background: #fff9e9;
+  color: #31543c;
+  background: #f5faf6;
   font-size: 14px;
-}
-
-.printing-center__notice--legacy {
-  border-color: #b8d5f4;
-  color: #1c5185;
-  background: #eef6ff;
 }
 
 .printing-center__tabs {
@@ -746,9 +787,8 @@ onMounted(loadFeatureState);
     padding: 8px 12px;
   }
 
-  .printing-safety-gates__summary {
-    align-items: stretch;
-    flex-direction: column;
+  .printing-status-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .printing-panel {

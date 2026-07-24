@@ -4,6 +4,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    // Android terminals use the system WebView provider. Keep the production
+    // bundle inside the oldest provider that the cashier officially supports.
+    target: 'chrome83',
+    cssTarget: 'chrome83',
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

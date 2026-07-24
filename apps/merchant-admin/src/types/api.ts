@@ -363,6 +363,21 @@ export interface PlatformMerchantListItem {
 
 export type PlatformBusinessHours = Record<string, string[]>;
 
+export interface PlatformPrintingSummary {
+  capabilityEnabled: boolean;
+  configurationState: 'CONFIGURED' | 'NOT_CONFIGURED' | 'DISABLED';
+  connectionState:
+    | 'CONNECTED'
+    | 'OFFLINE'
+    | 'RECONNECTING'
+    | 'AWAITING_PERMISSION'
+    | 'DEVICE_NOT_FOUND'
+    | 'UNKNOWN';
+  automaticPrintingEnabled: boolean;
+  lastReportedAt: string | null;
+  lastConnectedAt: string | null;
+}
+
 export interface PlatformMerchantDetailResponse {
   merchant: {
     id: string;
@@ -434,6 +449,7 @@ export interface PlatformMerchantDetailResponse {
     tableCount: number;
     activeTableCount: number;
   };
+  printingSummary: PlatformPrintingSummary;
   recentOrders: Array<{
     id: string;
     orderNo: string;

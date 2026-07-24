@@ -5,6 +5,7 @@ import {
   cashierStorageKeys,
 } from '@/config';
 import type { ApiActivityDetail, ApiResponse } from '@/types';
+import { readCashierStorage } from '@/platform/safe-storage';
 import { CashierApiError, normalizeApiErrorPayload } from './error';
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -120,8 +121,8 @@ async function readJson(response: Response) {
 
 function readAccessToken() {
   if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(cashierStorageKeys.accessToken)
-    ?? window.sessionStorage.getItem(cashierStorageKeys.accessToken)
+  return readCashierStorage('local', cashierStorageKeys.accessToken)
+    ?? readCashierStorage('session', cashierStorageKeys.accessToken)
     ?? '';
 }
 

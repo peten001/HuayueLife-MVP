@@ -19,6 +19,7 @@ import type {
   PrintingRulePayload,
   PrintingTriggerEvent,
 } from '@/types/printing';
+import { PRINTING_STATE_CHANGED_EVENT } from '@/utils/printing-status';
 
 const { p } = usePrintingI18n();
 const rows = ref<PrintingRule[]>([]);
@@ -144,6 +145,7 @@ async function save() {
     }
     closeModal();
     await load();
+    notifyPrintingStateChanged();
     showSuccess(p('ruleSaved'));
   } catch (error) {
     showError(error);
@@ -159,6 +161,7 @@ async function toggle(row: PrintingRule) {
   try {
     await setPrintingRuleEnabled(row.id, !row.enabled);
     await load();
+    notifyPrintingStateChanged();
     showSuccess(row.enabled ? p('disabled') : p('ruleEnabledHint'));
   } catch (error) {
     showError(error);
@@ -173,6 +176,10 @@ function showError(error: unknown) {
 function showSuccess(value: string) {
   success.value = true;
   message.value = value;
+}
+
+function notifyPrintingStateChanged() {
+  window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
 }
 
 onMounted(load);

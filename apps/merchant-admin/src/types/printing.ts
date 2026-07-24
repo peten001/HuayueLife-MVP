@@ -55,6 +55,9 @@ export interface PrintingPrinter {
     channelImplemented: boolean;
     configValid: boolean;
     statusReady: boolean;
+    executionEvidenceReady?: boolean;
+    evidenceUpdatedAt?: string | null;
+    evidenceTtlMs?: number;
   };
   adapterStatus?: string;
   executionState?: string;

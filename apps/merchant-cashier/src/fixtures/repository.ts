@@ -20,30 +20,37 @@ import {
   initialDemoOrders,
 } from './data';
 
-let orders = structuredClone(initialDemoOrders);
+function cloneFixture<T>(value: T): T {
+  // Fixture values are JSON data (no Date, Map, Set, Blob or cyclic values).
+  // JSON cloning keeps demo mode compatible with Chromium 83 without adding a
+  // global polyfill to the real cashier runtime.
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+let orders = cloneFixture(initialDemoOrders);
 let sessionClosed = false;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 
 export function resetDemoRepository() {
-  orders = structuredClone(initialDemoOrders);
+  orders = cloneFixture(initialDemoOrders);
   sessionClosed = false;
   nextAddedOrder = 1;
   adjustmentResults = new Map();
 }
 
 export const demoRepository = {
-  staff: () => structuredClone(demoStaffSession),
-  profile: () => structuredClone(demoMerchantProfile),
-  categories: () => structuredClone(demoMenuCategories),
-  products: () => structuredClone(demoMenuProducts),
-  orders: (filters: MerchantOrderFilters = {}) => structuredClone(
+  staff: () => cloneFixture(demoStaffSession),
+  profile: () => cloneFixture(demoMerchantProfile),
+  categories: () => cloneFixture(demoMenuCategories),
+  products: () => cloneFixture(demoMenuProducts),
+  orders: (filters: MerchantOrderFilters = {}) => cloneFixture(
     orders.filter((order) =>
       (!filters.status || order.status === filters.status) &&
       (!filters.orderType || order.orderType === filters.orderType),
     ),
   ),
-  order: (id: string) => structuredClone(requireOrder(id)),
+  order: (id: string) => cloneFixture(requireOrder(id)),
   runOrderAction(id: string, action: MerchantOrderAction) {
     const order = requireOrder(id);
     if (!canRunOrderAction(order, action)) {
@@ -55,9 +62,9 @@ export const demoRepository = {
     if (order.status === 'READY') order.readyAt = order.updatedAt;
     if (order.status === 'COMPLETED') order.completedAt = order.updatedAt;
     if (order.status === 'CANCELLED') order.cancelledAt = order.updatedAt;
-    return structuredClone(order);
+    return cloneFixture(order);
   },
-  tables: () => structuredClone(demoTables),
+  tables: () => cloneFixture(demoTables),
   openSessions: () => sessionClosed ? [] : [buildSessionSummary()],
   currentSession: (tableId: string) =>
     tableId === 'demo-table-1' && !sessionClosed ? buildSessionSummary() : null,
@@ -142,7 +149,7 @@ export const demoRepository = {
     input: DecreaseMerchantOrderItemInput,
   ): MerchantOrderMutationResult {
     const cached = adjustmentResults.get(`${orderId}:${input.requestKey}`);
-    if (cached) return structuredClone(cached);
+    if (cached) return cloneFixture(cached);
     const order = requireOrder(orderId);
     requireOpenDemoSession(order);
     if (order.status !== 'PENDING_ACCEPTANCE') {
@@ -168,7 +175,7 @@ export const demoRepository = {
     input: ReturnMerchantOrderItemInput,
   ): MerchantOrderMutationResult {
     const cached = adjustmentResults.get(`${orderId}:${input.requestKey}`);
-    if (cached) return structuredClone(cached);
+    if (cached) return cloneFixture(cached);
     const order = requireOrder(orderId);
     requireOpenDemoSession(order);
     if (!['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
@@ -224,12 +231,12 @@ function recalculateDemoOrder(order: MerchantOrder) {
 }
 
 function mutationResult(order: MerchantOrder): MerchantOrderMutationResult {
-  return { order: structuredClone(order), session: buildSessionDetail() };
+  return { order: cloneFixture(order), session: buildSessionDetail() };
 }
 
 function cacheAdjustmentResult(order: MerchantOrder, requestKey: string) {
   const result = mutationResult(order);
-  adjustmentResults.set(`${order.id}:${requestKey}`, structuredClone(result));
+  adjustmentResults.set(`${order.id}:${requestKey}`, cloneFixture(result));
   return result;
 }
 
@@ -254,8 +261,9 @@ function buildSessionSummary(): TableSessionSummary {
   const related = tableOrders();
   const billable = related.filter((order) => order.status !== 'CANCELLED');
   const unfinished = related.filter((order) => !['COMPLETED', 'CANCELLED'].includes(order.status));
+  const firstOpenedOrder = related[related.length - 1];
   return {
-    id: 'demo-session-1', sessionNo: 'DEMO-SESSION-1', merchantId: 'demo-merchant', tableId: 'demo-table-1', tableNo: 'A01', tableName: '演示桌 A01', status: sessionClosed ? 'CLOSED' : 'OPEN', openedAt: related.at(-1)?.createdAt ?? new Date().toISOString(), closedAt: sessionClosed ? new Date().toISOString() : null,
+    id: 'demo-session-1', sessionNo: 'DEMO-SESSION-1', merchantId: 'demo-merchant', tableId: 'demo-table-1', tableNo: 'A01', tableName: '演示桌 A01', status: sessionClosed ? 'CLOSED' : 'OPEN', openedAt: firstOpenedOrder?.createdAt ?? new Date().toISOString(), closedAt: sessionClosed ? new Date().toISOString() : null,
     orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: String(billable.reduce((sum, order) => sum + Number(order.totalAmountVnd), 0)), latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
 }

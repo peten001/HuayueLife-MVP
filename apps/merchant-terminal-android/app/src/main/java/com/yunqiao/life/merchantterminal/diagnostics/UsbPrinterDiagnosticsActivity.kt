@@ -26,6 +26,7 @@ import com.yunqiao.life.merchantterminal.connector.ConnectorApiClient
 import com.yunqiao.life.merchantterminal.connector.ConnectorApiConfig
 import com.yunqiao.life.merchantterminal.connector.ConnectorApiException
 import com.yunqiao.life.merchantterminal.connector.ConnectorPrintExecutionPolicy
+import com.yunqiao.life.merchantterminal.connector.ConnectorServiceStarter
 import com.yunqiao.life.merchantterminal.connector.ConnectorStartGate
 import com.yunqiao.life.merchantterminal.connector.ConnectorRuntimeState
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
@@ -790,6 +791,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                 snapshot,
                 MerchantSessionTokenStore(applicationContext).hasCredential(),
             )
+            ConnectorServiceStarter.startIfEligible(applicationContext)
             withContext(Dispatchers.Main) {
                 binding.usbActionResultText.text = getString(R.string.usb_configuration_saved)
             }

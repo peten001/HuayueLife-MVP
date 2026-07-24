@@ -151,6 +151,44 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it('enables automatic connector polling only for the bound printer with an active rule', async () => {
+    settings.get.mockResolvedValue({
+      printingEnabled: true,
+      featureFlags: {
+        taskCenterEnabled: true,
+        executionEnabled: true,
+        automaticCreationEnabled: true,
+        legacyPrintingEnabled: false,
+      },
+    });
+    prisma.printer.findMany.mockResolvedValue([enabledPrinter()]);
+    prisma.printRule.findFirst.mockResolvedValue({ id: ruleId });
+
+    await expect(service.merchantConnectorConfig(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        automaticCreationEnabled: true,
+        automaticPrintingEnabled: true,
+      }),
+    );
+    expect(prisma.printRule.findFirst).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        printerId,
+        enabled: true,
+        autoPrint: true,
+      },
+      select: { id: true },
+    });
+
+    prisma.printRule.findFirst.mockResolvedValue(null);
+    await expect(service.merchantConnectorConfig(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        automaticCreationEnabled: true,
+        automaticPrintingEnabled: false,
+      }),
+    );
+  });
+
   it('promotes CONNECTED to ONLINE only with complete positive USB evidence', async () => {
     const base = enabledPrinter({ status: 'UNKNOWN', capabilities: {} });
     prisma.printer.findFirst.mockResolvedValue(base);
@@ -184,6 +222,63 @@ describe('PrintJobsService', () => {
     expect(prisma.printer.update).toHaveBeenLastCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'ONLINE' }) }),
     );
+  });
+
+  it('preserves the last successful connection time across later offline reports', async () => {
+    jest.useFakeTimers();
+    try {
+      const base = enabledPrinter({ status: 'UNKNOWN', capabilities: {} });
+      prisma.printer.findFirst.mockResolvedValue(base);
+      prisma.printer.update.mockImplementation(
+        async ({ data }: { data: Record<string, unknown> }) => ({
+          ...base,
+          ...data,
+        }),
+      );
+      jest.setSystemTime(new Date('2026-07-24T03:00:00.000Z'));
+
+      await service.reportMerchantConnectorPrinterStatus(merchantId, {
+        printerId: printerId.toString(),
+        status: 'CONNECTED',
+        capabilities: positiveUsbEvidenceRecord(),
+      });
+      const connectedCapabilities = prisma.printer.update.mock.calls[0][0].data
+        .capabilities as Record<string, unknown>;
+      expect(connectedCapabilities).toEqual(
+        expect.objectContaining({
+          connectorStatusUpdatedAt: '2026-07-24T03:00:00.000Z',
+          lastConnectedAt: '2026-07-24T03:00:00.000Z',
+        }),
+      );
+
+      prisma.printer.findFirst.mockResolvedValue({
+        ...base,
+        status: 'ONLINE',
+        capabilities: connectedCapabilities,
+      });
+      jest.setSystemTime(new Date('2026-07-24T03:05:00.000Z'));
+      await service.reportMerchantConnectorPrinterStatus(merchantId, {
+        printerId: printerId.toString(),
+        status: 'DISCONNECTED',
+        capabilities: {
+          usbDeviceRecognized: false,
+          usbPermissionGranted: false,
+          usbInterfaceValid: false,
+          usbEndpointValid: false,
+          appExecutionReady: false,
+        },
+      });
+      const offlineCapabilities = prisma.printer.update.mock.calls[1][0].data
+        .capabilities as Record<string, unknown>;
+      expect(offlineCapabilities).toEqual(
+        expect.objectContaining({
+          connectorStatusUpdatedAt: '2026-07-24T03:05:00.000Z',
+          lastConnectedAt: '2026-07-24T03:00:00.000Z',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('deduplicates automatic jobs and returns the original jobs after P2002', async () => {
@@ -890,13 +985,17 @@ function enabledPrinter(overrides: Record<string, unknown> = {}) {
 function positiveUsbCapabilities() {
   return {
     connectorStatusUpdatedAt: new Date().toISOString(),
-    connectorStatus: {
-      usbDeviceRecognized: true,
-      usbPermissionGranted: true,
-      usbInterfaceValid: true,
-      usbEndpointValid: true,
-      appExecutionReady: true,
-    },
+    connectorStatus: positiveUsbEvidenceRecord(),
+  };
+}
+
+function positiveUsbEvidenceRecord() {
+  return {
+    usbDeviceRecognized: true,
+    usbPermissionGranted: true,
+    usbInterfaceValid: true,
+    usbEndpointValid: true,
+    appExecutionReady: true,
   };
 }
 

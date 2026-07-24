@@ -85,12 +85,13 @@
 | ID / 来源编号 | 状态 | 影响 | 小程序审核影响 / 是否需重新上传 | 推荐时机 | 处理前 Gate | 当前真实验证状态 |
 |---|---|---|---|---|---|---|
 | P1-01 / D06、R07 | <code>已确认待修 / MUST_FIX P1</code> | 可枚举 scene 的公开 resolver 缺少专用应用层限流，可能产生垃圾订单和枚举流量 | 有条件影响；若严格保持 scene/API/错误契约则否 / 否，否则必须新版 Gate | 独立纯后端安全发布 | 正常门店峰值、IP/设备/scene 阈值、统一错误、监控和回滚；冻结小程序契约 | 当前 resolver 公开，格式校验存在；未见专用限流；尚未修复 |
-| P1-02 / D10、R08 | <code>权限表达待复核</code> | STAFF 对 PrintJob、retry、Connector 等权限面可能宽于最终产品矩阵 | 否 / 否 | 下一次打印权限发布前 | settings/printers/rules/templates/jobs/retry/cancel/connector 逐 API 矩阵和角色测试 | 顶层 Controller 允许 ACTIVE STAFF，部分配置另限 OWNER/MANAGER；产品边界已确认，代码尚未逐项收口 |
+| P1-02 / D10、R08 | <code>已收口 / VERIFIED</code> | STAFF 仅保留读取、手动打印/补打和终端执行权限，不得修改打印机、规则、模板、测试任务或平台能力 | 否 / 否 | 已完成；后续打印 API 变更持续回归 | settings/printers/rules/templates/jobs/retry/cancel/connector 逐 API 矩阵和角色测试 | mutation 使用 OWNER/MANAGER 方法级 Guard；ActiveMerchantStaffGuard 每请求复核数据库角色；STAFF 直调配置返回 403 |
 | P1-03 / D11、R11、L02/L03 | <code>Legacy 正式关闭，保护待复核</code> | 若误开 Legacy Flag，旧 Socket/TCP/LAN 可绕过平台打印总能力并真实出纸 | 否 / 否 | 下一次打印后端或运维 Flag 变更前 | 永久关闭保护、启动互斥、Merchant Gate、路由可达性和回滚分析 | 生产 Legacy Flag 关闭；旧代码仍在；不是当前现场阻断 |
 | P1-04 / 第一轮 R02 | <code>部署加固</code> | 未显式设置 JWT secret 时代码存在 development fallback，错误部署可能使用弱 secret | 否 / 否 | 下一次 API 配置发布前 | 生产启动 fail-fast、secret 存在性测试、不得输出 secret | 生产报告确认 JWT_SECRET 已设置；代码 fallback 仍存在 |
 | P1-05 / 第一轮 R03 | <code>输入验证待加固</code> | capability 嵌套布尔若被宽松转换，字符串 false 可能被误作 true | 可能影响页面能力 / 通常否，若响应契约不变 | 下一次平台能力 API 发布 | 严格 DTO、布尔边界单测、平台 UI 回归、生产数据不改写 | 代码审计确认风险；无生产误写数据证据 |
 | P1-06 / D13、第一轮 R04 | <code>显示一致性债</code> | auth/profile 旧 capability 可能显示与 <code>Merchant.printingEnabled</code> 不一致，造成用户误判 | 否 / 否 | 下一次商家后台兼容发布 | serializer 统一但不改变执行权威；旧会话与页面刷新回归 | 新打印执行链实时查 Merchant；属于显示债，不是执行绕过 |
 | P1-07 / 第一轮 U01 | <code>制品 provenance UNKNOWN</code> | 无法以逐字 SHA 证明生产全部静态 bundle 与目标源码完全一致 | 否 / 否 | 下一次 Web 发布流程建设 | build revision、manifest、release SHA、服务器原子切换和回滚校验 | Cashier release 路径与特征已确认；完整逐字证明仍 UNKNOWN |
+| P1-08 / 本地 USB 收口 V1 | <code>代码已修 / 待真机回归</code> | Android 曾把本地 connector/auto 布尔作为第二套权威；会话清理写 false 后，重启和 USB 重插均无法由后台配置恢复 | 否 / 需要后续 Android 测试版 | 新 Android 测试包现场窗口 | P10/D10、SUNMI D2 执行重启、拔插、授权、测试打印、真实订单和自动打印；旧配置不得丢失 | 本地开关已从启动/执行 Gate 移除，终端改为只读托管恢复；本轮未发布 APK、真机结果待补 |
 
 P1-01 证据：
 [qr.controller.ts](../../apps/api/src/modules/qr/qr.controller.ts#L5)。

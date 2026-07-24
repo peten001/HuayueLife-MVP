@@ -200,10 +200,10 @@ Cart 读取证据见
 
 | 字段 | 决策 |
 |---|---|
-| 最终状态 | <code>LOCKED / P1 权限表达复核</code> |
+| 最终状态 | <code>LOCKED / VERIFIED</code> |
 | 正式决策 | 平台控制打印总能力；OWNER/MANAGER 配置；STAFF 按权限查看、手动打印和补打，不默认有配置权限 |
-| 当前事实 | 新打印 Controller 顶层允许 ACTIVE STAFF，部分配置接口另限 OWNER/MANAGER |
-| 实施 Gate | 对 settings/printers/rules/templates/jobs/retry/cancel/connector 逐 API 建立权限矩阵和测试 |
+| 当前事实 | 新打印 Controller 顶层允许 ACTIVE STAFF 读取和执行；打印机、规则、模板、测试任务及设置 mutation 另限 OWNER/MANAGER；ActiveMerchantStaffGuard 每次从数据库复核角色 |
+| 实施 Gate | 保持逐 API 权限矩阵与角色测试；前端隐藏不能替代服务端 Guard |
 | 小程序影响 | 无 |
 
 Controller 证据见
@@ -254,6 +254,8 @@ schema 证据见
 [schema.prisma](../../apps/api/prisma/schema.prisma#L324)，
 商家写入拒绝证据见
 [printing-settings.service.ts](../../apps/api/src/modules/printing/services/printing-settings.service.ts#L31)。
+
+Android 执行端的固定边界：本地不再提供打印总开关或自动打印规则开关；连接器启动与领取只服从当前商家会话、<code>Merchant.printingEnabled</code>、服务端 Feature Gate、Printer/PrintRule 和本机 USB 正向证据。SignedOut 只停止当前会话执行，不删除 USB 绑定、纸宽、用途或自动打印规则；USB 离线只改变连接状态，不得关闭能力或配置。
 
 ### D14：完成桌账不等于支付成功
 

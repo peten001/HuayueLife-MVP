@@ -354,7 +354,8 @@ D14 已固化上述语义，不得自行把 <code>settlementStatus</code> 变成
 - OWNER/MANAGER 在授权范围内配置 Printer、PrintRule、模板和相关参数；
 - STAFF 按权限查看、手动打印和补打，不默认具有配置权限；
 - Web 收银台创建和查看受控 PrintJob；
-- Android 使用同一商家会话执行本地 USB；
+- Android 使用同一商家会话执行本地 USB，只读取平台能力和商家配置；
+- Android 不拥有打印总能力或自动打印规则的本地开关；已有配置在 App、设备重启和 USB 重插后由连接器自动恢复；
 - 打印任务、尝试和结果与订单状态机独立；
 - 打印失败不得改变订单业务状态。
 
@@ -398,6 +399,10 @@ D12 固定平台关闭语义：
 | Web 收银台手动打印 | 已上线；现场真实 USB 手动打印已验证 |
 
 原 <code>USB_BINDING_MISSING</code> 和 <code>PRINTER_STATUS_NOT_READY</code> 现场阻断已经关闭，不得继续列为当前阻断。
+
+<code>LOCAL_USB_ESCPOS</code> 自 V1 起属于正式支持通道，不再标记为 Beta。平台控制总能力，商家 OWNER/MANAGER 配置 Printer、PrintRule 与模板，Android 收银终端只读状态并自动连接/重连。能力、配置和连接是三个独立状态：打印机离线不得改写 <code>Merchant.printingEnabled</code>、<code>Printer.enabled</code> 或自动打印规则。旧服务器 LAN/TCP 直打继续关闭，未来通道只能通过 <code>PrinterAdapter</code> 扩展。
+
+本轮正式收口仅在本地工作区完成，尚未部署 Web/API，也尚未发布包含 Android 托管恢复逻辑的新 APK；P10/D10 与 SUNMI D2 的重启、拔插、真实订单和自动打印仍需以新版本真机回归结果为准。
 
 ### 12.4 Legacy 打印
 
@@ -493,7 +498,7 @@ D12 固定平台关闭语义：
 | 整桌账单 | 不展示 | 诊断 | 查看/关闭 | 查看/关闭 | WebView | TableSession |
 | 点/减/退菜 | 不承担员工操作 | 动作日志过滤 | Admin 显示动作 | 执行操作 | WebView | 统一 Merchant Order API |
 | 打印总能力 | 无 | 唯一开关 | 只读 | 真实状态 | 执行前 Gate | Merchant.printingEnabled |
-| 打印配置 | 无 | 诊断 | OWNER/MANAGER | 不做复杂配置 | 读取本地绑定 | Printer/Rule/Template |
+| 打印配置 | 无 | 查看能力/配置/最近连接摘要 | OWNER/MANAGER | 不做复杂配置 | 只读并自动恢复本地绑定 | Printer/Rule/Template |
 | 手动打印/补打 | 无 | 诊断 | 按角色 | 按角色 | USB 执行 | PrintJob/Attempt |
 
 ## 15. API 与数据库原则

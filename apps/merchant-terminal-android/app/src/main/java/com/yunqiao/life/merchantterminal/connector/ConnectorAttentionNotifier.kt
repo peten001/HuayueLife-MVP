@@ -18,7 +18,7 @@ object ConnectorAttentionNotifier {
     suspend fun showUsbIssueIfNeeded(context: Context) {
         val app = context.applicationContext
         val settings = ConnectorSettings(app).snapshot()
-        if (!settings.connectorEnabled || settings.usbBinding == null ||
+        if (!settings.cachedRemoteStartEligible || settings.usbBinding == null ||
             !MerchantSessionTokenStore(app).hasCredential()
         ) return
         val resolution = UsbBindingResolver.resolve(

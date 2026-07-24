@@ -1,12 +1,12 @@
-# 云桥 Life 打印平台 Gate 与设备 READY 规则（RC2）
+# 云桥 Life 打印平台 Gate 与设备 READY 规则（正式 V1）
 
-校正日期：2026-07-15
+校正日期：2026-07-24
 
 适用范围：统一打印任务中心 V1、电脑/手机商家后台、Web 收银台和 Android USB 本地连接器
 
-实现分支：`fix/printing-platform-gate-and-readiness-v1`
+当前正式通道：`LOCAL_USB_ESCPOS`
 
-本文记录 RC2 对两个既有偏差的校正结果：打印总能力只能由平台控制；设备 READY 只能由明确、当前且完整的正向证据产生。本文描述的是当前代码事实，不代表已经部署到生产环境。
+本文固定 V1 正式产品边界：打印总能力只能由平台控制；打印机与自动打印规则由商家 OWNER/MANAGER 配置；Android 收银终端只读并自动恢复；设备 READY 只能由明确、当前且完整的正向证据产生。本文描述本地工作区代码事实，不代表本轮改动已经部署或 Android APK 已经发布。
 
 ## 1. 唯一权威总开关
 
@@ -48,6 +48,7 @@ Merchant.printingEnabled
 - 平台未开通时，打印中心及直接 URL 显示“打印功能未开通，请联系平台管理员。”；
 - 平台未开通时不挂载打印机、模板、规则或任务 mutation 页面；
 - 平台已开通后，`OWNER/MANAGER` 才能在现有权限范围内配置打印机、模板、规则和自动打印；
+- 普通 `STAFF`/收银员不能通过页面或直接 API 修改上述配置；
 - 历史和已有配置保留。
 
 服务端不依赖前端隐藏：`PATCH /merchant/printing/settings` 即使由 `OWNER`、`MANAGER` 或手工请求提交 `printingEnabled=true`，也返回现有权限错误且不更新数据库。
@@ -93,16 +94,17 @@ Merchant.printingEnabled
 - `apps/api/src/modules/printing/services/print-jobs.service.ts`
 - `apps/api/src/modules/printing/services/print-attempts.service.ts`
 
-## 4. 全平台四态
+## 4. 正式状态模型
 
-| 状态 | 对外文案 | 判定 |
+对外展示必须拆分，禁止用“已启用”表示“在线”：
+
+| 维度 | 状态 | 权威 |
 |---|---|---|
-| `NOT_ENABLED` | 打印功能未开通 | `Merchant.printingEnabled` 不为 `true`，或平台状态读取失败 |
-| `NOT_CONFIGURED` | 打印机未配置 | 平台已开通，但没有适用的启用打印机，或已实现通道的必要配置无效 |
-| `DEVICE_OFFLINE` | 打印设备离线 | 配置存在，但通道未实现、状态非明确在线、执行证据缺失/过期、USB/APP 不可用或当前账号不允许执行 |
-| `READY` | 可以打印 | 平台 Gate、现有账号权限、已实现通道、有效配置、启用状态和当前设备证据全部正向成立 |
+| 能力 | 已开通 / 未开通 | `Merchant.printingEnabled` |
+| 配置 | 已配置 / 未配置 / 已停用 | Printer 是否存在、`enabled`、通道与配置合法性 |
+| 连接 | 已连接 / 离线 / 正在重连 / 等待授权 / 未检测到设备 / 状态未知 | Android USB 实况、Printer status 和新鲜 connector evidence |
 
-这是 fail-closed 模型。状态查询失败会清除旧 READY，不允许用缓存的“可以打印”继续创建任务。
+执行 READY 仍是以上状态之上的 fail-closed 正向白名单。状态查询失败、证据缺失或过期会清除旧 READY，不允许用缓存的“可以打印”继续创建或领取任务；但连接离线不得反向写成能力关闭或配置停用。
 
 ## 5. READY 正向白名单
 
@@ -174,7 +176,11 @@ Android 继续使用 WebView 中同一商家主账号或员工账号会话。连
 
 任一条件失败时不发送 ESC/POS、不把任务标记成功，也不改变订单状态。平台关闭、会话失效或员工被停用时停止领取/执行；本地历史和待回报事实保留。
 
-状态遥测只报告实际 USB/APP 可执行证据，不注册终端、不建立独立设备身份。
+终端不再提供“启用本地打印连接器”或“允许自动打印任务”的收银员开关。启动、App/设备重启和 USB 重插时，连接器依据服务器能力与商家配置恢复最后成功的 USB Binding；USB 暂时离线只报告离线/重连，不清除 Printer ID、VID/PID、Device Name、纸宽、用途或自动打印规则。USB Permission Token、登录 Token、Cookie、订单正文和敏感商家数据不得写入本地打印配置。
+
+状态遥测只报告实际 USB/APP 可执行证据、最近上报与最近成功连接，不注册终端、不建立独立设备身份。旧服务器 LAN/TCP 直打继续停用；未来通道通过 `PrinterAdapter` 扩展。
+
+V1 的每个 Android APP 实例只保留一个当前 USB Binding；商家后台可以保留多条打印机记录，但同一实例的物理执行必须收敛到一个有效的 `LOCAL_USB_ESCPOS` Printer。多终端、多物理打印机的稳定 Terminal↔Printer 路由属于后续多打印机阶段，本轮不得宣称已经支持。标准 USB Printer Class 7 可由 attach receiver 唤醒；厂商自定义 BULK OUT 设备的重插恢复必须在 P10/D10、SUNMI D2 真机 Gate 中验证，不能用全 USB 通配符换取表面兼容。
 
 证据：
 

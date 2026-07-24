@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import { cashierStorageKeys } from '@/config';
+import { readCashierStorage, writeCashierStorage } from '@/platform/safe-storage';
 import {
   enMessages,
   viMessages,
@@ -15,14 +16,14 @@ const locale = ref<Locale>(readLocale());
 
 function readLocale(): Locale {
   if (typeof window === 'undefined') return 'zh';
-  const stored = window.localStorage.getItem(cashierStorageKeys.locale);
+  const stored = readCashierStorage('local', cashierStorageKeys.locale);
   return stored === 'vi' || stored === 'en' || stored === 'zh' ? stored : 'zh';
 }
 
 function setLocale(nextLocale: Locale) {
   locale.value = nextLocale;
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(cashierStorageKeys.locale, nextLocale);
+    writeCashierStorage('local', cashierStorageKeys.locale, nextLocale);
     document.documentElement.lang = nextLocale === 'zh' ? 'zh-CN' : nextLocale;
   }
 }

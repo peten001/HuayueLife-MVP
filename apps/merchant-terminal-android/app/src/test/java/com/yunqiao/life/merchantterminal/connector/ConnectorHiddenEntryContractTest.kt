@@ -5,13 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.view.View
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
-import com.google.android.material.switchmaterial.SwitchMaterial
 import com.yunqiao.life.merchantterminal.MainActivity
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -83,60 +82,58 @@ class ConnectorHiddenEntryContractTest {
         assertFalse(cashierPublicSource.contains("USB打印连接器"))
         assertFalse(cashierPublicSource.contains("ConnectorControlActivity"))
 
-        val switchListenerBlock = connectorActivitySource
-            .substringAfter("binding.connectorEnabledSwitch.setOnCheckedChangeListener")
-            .substringBefore("// This UI-only refinement")
-        assertTrue(switchListenerBlock.contains("ConnectorToggleAction.ENABLE"))
-        assertTrue(switchListenerBlock.contains("requestEnableConnector()"))
-        assertTrue(switchListenerBlock.contains("ConnectorToggleAction.DISABLE"))
-        assertTrue(switchListenerBlock.contains("disableConnector()"))
-        assertFalse(switchListenerBlock.contains("!checked"))
-        assertFalse(switchListenerBlock.contains("!enabled"))
-        assertFalse(switchListenerBlock.contains("setConnectorEnabled(!"))
+        val connectorLayout = repositoryFile(
+            "apps/merchant-terminal-android/app/src/main/res/layout/activity_connector_control.xml",
+        ).readText()
+        assertFalse(connectorLayout.contains("SwitchMaterial"))
+        assertFalse(connectorLayout.contains("connector_enabled_switch"))
+        assertFalse(connectorLayout.contains("automatic_printing_switch"))
+        assertFalse(connectorActivitySource.contains("setConnectorEnabled"))
+        assertFalse(connectorActivitySource.contains("setAutomaticPrintingEnabled"))
+        assertTrue(connectorActivitySource.contains("reconnectConnectorButton"))
     }
 
     @Test
-    fun `close page only finishes hidden activity and reopening mirrors retained connector state`() {
+    fun `close page only finishes hidden activity and reopening mirrors retained remote state`() {
         val settings = ConnectorSettings(context)
         try {
-            runBlocking(Dispatchers.IO) { settings.setConnectorEnabled(true) }
+            runBlocking {
+                settings.applyRemoteConfig(
+                    merchantPrintingEnabled = true,
+                    executionEnabled = true,
+                    printerConfigured = true,
+                    printerEnabled = true,
+                    automaticPrintingEnabled = true,
+                    pollIntervalMs = 7_000,
+                    configRefreshIntervalMs = 30_000,
+                )
+            }
 
             val first = Robolectric.buildActivity(ConnectorControlActivity::class.java).setup()
             try {
-                val snapshot = runBlocking(Dispatchers.IO) { settings.snapshot() }
-                first.get().renderConnectorControls(
-                    connectorControlUi(snapshot = snapshot, serviceActive = true),
-                )
-                assertTrue(
-                    first.get()
-                        .findViewById<SwitchMaterial>(R.id.connector_enabled_switch)
-                        .isChecked,
-                )
-
                 first.get().findViewById<View>(R.id.close_connector_control_button).performClick()
 
                 assertTrue(first.get().isFinishing)
-                assertTrue(runBlocking(Dispatchers.IO) { settings.snapshot().connectorEnabled })
+                assertTrue(runBlocking { settings.snapshot().remoteMerchantPrintingEnabled })
             } finally {
                 first.pause().stop().destroy()
             }
 
             val reopened = Robolectric.buildActivity(ConnectorControlActivity::class.java).setup()
             try {
-                val retained = runBlocking(Dispatchers.IO) { settings.snapshot() }
+                val retained = runBlocking { settings.snapshot() }
                 reopened.get().renderConnectorControls(
                     connectorControlUi(snapshot = retained, serviceActive = true),
                 )
                 assertTrue(
-                    reopened.get()
-                        .findViewById<SwitchMaterial>(R.id.connector_enabled_switch)
-                        .isChecked,
+                    reopened.get().findViewById<TextView>(R.id.platform_capability_value)
+                        .text.toString().isNotBlank(),
                 )
             } finally {
                 reopened.pause().stop().destroy()
             }
         } finally {
-            runBlocking(Dispatchers.IO) { settings.setConnectorEnabled(false) }
+            runBlocking { settings.disableForSignedOutSession() }
         }
     }
 

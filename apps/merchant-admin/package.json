@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.json && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
-    "test": "node scripts/order-status-log-presentation.test.mjs",
+    "test": "node scripts/order-status-log-presentation.test.mjs && node scripts/printing-status.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

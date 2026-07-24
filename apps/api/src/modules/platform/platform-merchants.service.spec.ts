@@ -10,6 +10,7 @@ import {
 import {
   PlatformMerchantsService,
   serializeCapabilityRefs,
+  summarizePlatformPrinting,
 } from './platform-merchants.service';
 import { MERCHANT_IMPORT_TEMPLATE_FIELD_KEYS } from './merchant-import-fields';
 
@@ -19,6 +20,12 @@ function buildAppConfigMock(platformOrderingEnabled = true) {
     merchantOperationEditDisabledMessage: jest
       .fn()
       .mockReturnValue('平台经营能力总开关已关闭，暂不可修改商家经营能力。'),
+  };
+}
+
+function buildPrintingFlagsMock(automaticCreationEnabled = true) {
+  return {
+    automaticCreationEnabled: jest.fn().mockReturnValue(automaticCreationEnabled),
   };
 }
 
@@ -47,6 +54,7 @@ describe('PlatformMerchantsService list filters', () => {
       dictionaries as never,
       {} as never,
       buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
     );
     jest.spyOn(service as any, 'loadOperationStats').mockResolvedValue(new Map());
   });
@@ -174,6 +182,7 @@ describe('PlatformMerchantsService platform ordering switch', () => {
       { ensureDefaults: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       buildAppConfigMock(false) as never,
+      buildPrintingFlagsMock() as never,
     );
     jest.spyOn(service as any, 'requireMerchant').mockResolvedValue({ id: 2n } as never);
     jest.spyOn(service as any, 'loadCapabilities').mockResolvedValue([
@@ -199,6 +208,7 @@ describe('PlatformMerchantsService platform ordering switch', () => {
       { ensureDefaults: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       buildAppConfigMock(true) as never,
+      buildPrintingFlagsMock() as never,
     );
     jest.spyOn(service as any, 'requireMerchant').mockResolvedValue({ id: 2n } as never);
     jest.spyOn(service as any, 'loadCapabilities').mockResolvedValue([
@@ -299,6 +309,160 @@ describe('PlatformMerchantsService printing capability serialization', () => {
   });
 });
 
+describe('PlatformMerchantsService printing summary', () => {
+  const now = new Date('2026-07-24T03:00:00.000Z');
+
+  it('separates platform capability, configuration and automatic-rule state', () => {
+    expect(summarizePlatformPrinting(false, [], now)).toEqual({
+      capabilityEnabled: false,
+      configurationState: 'NOT_CONFIGURED',
+      connectionState: 'UNKNOWN',
+      automaticPrintingEnabled: false,
+      lastReportedAt: null,
+      lastConnectedAt: null,
+    });
+
+    expect(
+      summarizePlatformPrinting(
+        true,
+        [platformUsbPrinter({ enabled: false, rules: [{ id: 1n }] })] as never,
+        now,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        capabilityEnabled: true,
+        configurationState: 'DISABLED',
+        connectionState: 'UNKNOWN',
+        automaticPrintingEnabled: false,
+      }),
+    );
+
+    expect(
+      summarizePlatformPrinting(
+        true,
+        [
+          platformUsbPrinter({
+            connectionConfig: { vendorId: 1234 },
+          }),
+        ] as never,
+        now,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        configurationState: 'NOT_CONFIGURED',
+      }),
+    );
+  });
+
+  it('returns a connected, configured summary without exposing raw device data', () => {
+    const summary = summarizePlatformPrinting(
+      true,
+      [
+        platformUsbPrinter({
+          status: 'ONLINE',
+          capabilities: {
+            connectorStatusUpdatedAt: '2026-07-24T02:59:59.000Z',
+            lastConnectedAt: '2026-07-24T02:59:58.000Z',
+            connectorStatus: positiveConnectorEvidence(),
+          },
+          rules: [{ id: 9n }],
+        }),
+      ] as never,
+      now,
+      true,
+    );
+
+    expect(summary).toEqual({
+      capabilityEnabled: true,
+      configurationState: 'CONFIGURED',
+      connectionState: 'CONNECTED',
+      automaticPrintingEnabled: true,
+      lastReportedAt: '2026-07-24T02:59:59.000Z',
+      lastConnectedAt: '2026-07-24T02:59:58.000Z',
+    });
+    expect(summary).not.toHaveProperty('capabilities');
+    expect(summary).not.toHaveProperty('connectionConfig');
+  });
+
+  it('reports automatic printing off when the global automatic creation gate is off', () => {
+    const summary = summarizePlatformPrinting(
+      true,
+      [platformUsbPrinter({ rules: [{ id: 9n }] })] as never,
+      now,
+      false,
+    );
+
+    expect(summary.automaticPrintingEnabled).toBe(false);
+  });
+
+  it.each([
+    [
+      'DEVICE_NOT_FOUND',
+      'OFFLINE',
+      { usbDeviceRecognized: false, usbPermissionGranted: false },
+    ],
+    [
+      'AWAITING_PERMISSION',
+      'UNKNOWN',
+      { usbDeviceRecognized: true, usbPermissionGranted: false },
+    ],
+    [
+      'RECONNECTING',
+      'UNKNOWN',
+      {
+        usbDeviceRecognized: true,
+        usbPermissionGranted: true,
+        usbInterfaceValid: false,
+        usbEndpointValid: false,
+        appExecutionReady: false,
+      },
+    ],
+    ['OFFLINE', 'OFFLINE', positiveConnectorEvidence()],
+    ['UNKNOWN', 'UNKNOWN', {}],
+  ] as const)(
+    'maps current connector evidence to %s',
+    (expected, status, connectorStatus) => {
+      const summary = summarizePlatformPrinting(
+        true,
+        [
+          platformUsbPrinter({
+            status,
+            capabilities: {
+              connectorStatusUpdatedAt: '2026-07-24T02:59:59.000Z',
+              connectorStatus,
+            },
+          }),
+        ] as never,
+        now,
+      );
+
+      expect(summary.connectionState).toBe(expected);
+    },
+  );
+});
+
+function platformUsbPrinter(overrides: Record<string, unknown> = {}) {
+  return {
+    channelType: 'LOCAL_USB_ESCPOS',
+    enabled: true,
+    status: 'UNKNOWN',
+    connectionConfig: {},
+    capabilities: {},
+    rules: [],
+    ...overrides,
+  };
+}
+
+function positiveConnectorEvidence() {
+  return {
+    usbDeviceRecognized: true,
+    usbPermissionGranted: true,
+    usbInterfaceValid: true,
+    usbEndpointValid: true,
+    appExecutionReady: true,
+  };
+}
+
 describe('PlatformMerchantsService merchant import', () => {
   const businessTypes = [
     {
@@ -377,6 +541,7 @@ describe('PlatformMerchantsService merchant import', () => {
       dictionaries as never,
       uploads as never,
       buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
     );
   });
 
@@ -735,6 +900,7 @@ describe('PlatformMerchantsService merchant account phone', () => {
       { ensureDefaults: jest.fn() } as never,
       {} as never,
       buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
     );
   });
 
@@ -858,6 +1024,7 @@ describe('PlatformMerchantsService platform business hours', () => {
       { ensureDefaults: jest.fn() } as never,
       {} as never,
       buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
     );
     jest.spyOn(service, 'detail').mockResolvedValue({
       merchant: {

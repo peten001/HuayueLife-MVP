@@ -19,9 +19,10 @@ import { PlatformUsersController } from './platform-users.controller';
 import { PlatformUsersService } from './platform-users.service';
 import { PlatformSettingsController } from './platform-settings.controller';
 import { AppConfigModule } from '../app-config/app-config.module';
+import { PrintingModule } from '../printing/printing.module';
 
 @Module({
-  imports: [AppConfigModule],
+  imports: [AppConfigModule, PrintingModule],
   controllers: [
     PlatformAuthController,
     PlatformDashboardController,

@@ -76,6 +76,7 @@ class ConnectorApiClientTest {
                     .put("taskCenterEnabled", true)
                     .put("executionEnabled", true)
                     .put("automaticCreationEnabled", false)
+                    .put("automaticPrintingEnabled", true)
                     .put("merchantPrintingEnabled", true)
                     .put("printerEnabled", true)
                     .put("pollIntervalSeconds", 5)
@@ -112,12 +113,36 @@ class ConnectorApiClientTest {
         assertEquals("ONLINE", config.boundPrinterStatus)
         assertEquals("READY", config.boundPrinterReadinessState)
         assertTrue(config.boundPrinterConnectionConfigValid)
-        assertFalse(config.automaticPrintingEnabled)
+        assertTrue(config.automaticPrintingEnabled)
         assertEquals("9", config.boundPrinterId)
         assertEquals("LOCAL_USB_ESCPOS", config.boundPrinterChannelType)
         assertEquals(5_000L, config.pollIntervalMs)
         assertEquals(10_000L, config.configRefreshIntervalMs)
         assertEquals(12L, config.configVersion)
+    }
+
+    @Test
+    fun `config fails closed when printer automatic rule is absent`() {
+        val response = JSONObject()
+            .put("code", "OK")
+            .put(
+                "data",
+                JSONObject()
+                    .put("merchantId", "7")
+                    .put("automaticCreationEnabled", true),
+            )
+        val api = ConnectorApiClient(
+            merchantTokenProvider = { "merchant.jwt.session-token" },
+            endpointResolver = { "https://api.example.test/api/v1$it" },
+            connectionFactory = {
+                FakeConnection(
+                    URL("https://api.example.test/api/v1/merchant/printing/connector/config"),
+                    response,
+                )
+            },
+        )
+
+        assertFalse(api.config().automaticPrintingEnabled)
     }
 
     @Test

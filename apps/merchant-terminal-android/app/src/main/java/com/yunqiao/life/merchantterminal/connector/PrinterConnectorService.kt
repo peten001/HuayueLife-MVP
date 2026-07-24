@@ -97,6 +97,7 @@ class PrinterConnectorService : Service() {
     private suspend fun connectorLoop() {
         var localRecoveryComplete = false
         var lastConfigAt = 0L
+        var usbReadyPreviously = false
         while (scope.isActive) {
             if (!localRecoveryComplete) {
                 try {
@@ -112,7 +113,7 @@ class PrinterConnectorService : Service() {
             }
             val settings = settingsStore.snapshot()
             ConnectorStartGate.update(applicationContext, settings, credentialStore.hasCredential())
-            if (!settings.connectorEnabled || !credentialStore.hasCredential()) {
+            if (!credentialStore.hasCredential()) {
                 stopSelf()
                 return
             }
@@ -125,43 +126,39 @@ class PrinterConnectorService : Service() {
             try {
                 if (now - lastConfigAt >= settings.configRefreshIntervalMs) {
                     val remote = withContext(Dispatchers.IO) { api.config() }
-                    if (!settingsStore.bindMerchantScopeIfAbsent(remote.merchantId)) {
-                        settingsStore.recordError("MERCHANT_SCOPE_MISMATCH")
-                        updateNotification("商家账号与本地打印配置不匹配，请重置连接器")
+                    val applied = applyConnectorRemoteConfig(
+                        applicationContext,
+                        settingsStore,
+                        remote,
+                    )
+                    if (!applied.settings.cachedRemoteStartEligible) {
+                        ConnectorStartGate.update(
+                            applicationContext,
+                            applied.settings,
+                            credentialStore.hasCredential(),
+                        )
+                        updateNotification(
+                            when {
+                                !applied.settings.remoteMerchantPrintingEnabled -> "打印功能未开通"
+                                !applied.settings.remoteExecutionEnabled -> "打印服务暂不可用"
+                                !applied.settings.remotePrinterConfigured -> "商家尚未配置本地 USB 打印机"
+                                else -> "商家打印机已停用"
+                            },
+                        )
                         stopSelf()
                         return
                     }
-                    val scopedSettings = settingsStore.snapshot()
-                    val remoteBlock = ConnectorPrintExecutionPolicy.remoteBlockCode(
-                        remote = remote,
-                        expectedMerchantId = scopedSettings.merchantId,
-                        expectedPrinterId = scopedSettings.usbBinding?.printerId,
-                    )
-                    settingsStore.applyRemoteConfig(
-                        executionEnabled = remoteBlock == null,
-                        printerEnabled = remoteBlock == null,
-                        automaticPrintingEnabled = remote.automaticPrintingEnabled,
-                        pollIntervalMs = remote.pollIntervalMs,
-                        configRefreshIntervalMs = remote.configRefreshIntervalMs,
-                    )
-                    settingsStore.recordError(remoteBlock)
-                    settingsStore.associatePrinterId(remote.boundPrinterId)
-                    printingDao.printerBinding()?.let { localBinding ->
-                        printingDao.savePrinterBinding(
-                            localBinding.copy(
-                                printerId = remote.boundPrinterId,
-                                updatedAt = System.currentTimeMillis(),
-                            ),
+                    if (applied.settings.usbBinding == null) {
+                        ConnectorStartGate.update(
+                            applicationContext,
+                            applied.settings,
+                            credentialStore.hasCredential(),
                         )
+                        updateNotification("本机尚未配置 USB 打印机")
+                        stopSelf()
+                        return
                     }
-                    remote.resetUsbConfigVersion?.let { resetVersion ->
-                        if ((settingsStore.snapshot().appliedConfigVersion ?: -1) < resetVersion) {
-                            settingsStore.clearUsbBinding()
-                            printingDao.clearPrinterBinding()
-                            settingsStore.markConfigApplied(resetVersion)
-                        }
-                    }
-                    reportUsbConnectionState(settingsStore.snapshot(), remote)
+                    usbReadyPreviously = reportUsbConnectionState(applied.settings, remote)
                     lastConfigAt = now
                 }
                 val refreshed = settingsStore.snapshot()
@@ -170,7 +167,7 @@ class PrinterConnectorService : Service() {
                         when (refreshed.lastErrorCode) {
                             "PRINTING_NOT_ENABLED", "MERCHANT_PRINTING_DISABLED" ->
                                 "打印功能未开通"
-                            else -> "打印连接器待启用；执行开关或 USB 配置尚未就绪"
+                            else -> "打印配置或本机 USB 绑定尚未就绪"
                         },
                     )
                     delay(refreshed.pollIntervalMs)
@@ -182,6 +179,7 @@ class PrinterConnectorService : Service() {
                     UsbDeviceInspector(applicationContext).scan(),
                 )
                 if (usbAvailability !is UsbBindingResolution.Ready) {
+                    usbReadyPreviously = false
                     val errorCode = (usbAvailability as UsbBindingResolution.Unavailable).errorCode
                     settingsStore.recordError(errorCode)
                     updateNotification(
@@ -195,6 +193,8 @@ class PrinterConnectorService : Service() {
                     delay(refreshed.pollIntervalMs)
                     continue
                 }
+                if (!usbReadyPreviously) settingsStore.recordConnectionSuccess()
+                usbReadyPreviously = true
                 if (ProcessUsbIoOwnership.gate.isBusy()) {
                     updateNotification("USB 诊断操作尚未结束，暂不领取打印任务")
                     delay(refreshed.pollIntervalMs)
@@ -238,9 +238,15 @@ class PrinterConnectorService : Service() {
                     error.printingDisabled
                 ) {
                     settingsStore.applyRemoteConfig(
+                        merchantPrintingEnabled = settings.remoteMerchantPrintingEnabled &&
+                            error.errorCode !in setOf(
+                                "PRINTING_NOT_ENABLED",
+                                "MERCHANT_PRINTING_DISABLED",
+                            ),
                         executionEnabled = false,
+                        printerConfigured = settings.remotePrinterConfigured,
                         printerEnabled = settings.remotePrinterEnabled,
-                        automaticPrintingEnabled = false,
+                        automaticPrintingEnabled = settings.remoteAutomaticPrintingEnabled,
                         pollIntervalMs = settings.pollIntervalMs,
                         configRefreshIntervalMs = settings.configRefreshIntervalMs,
                     )
@@ -255,8 +261,13 @@ class PrinterConnectorService : Service() {
                             "远程打印已停用；等待重新启用"
                         },
                     )
-                    delay(settings.configRefreshIntervalMs)
-                    continue
+                    ConnectorStartGate.update(
+                        applicationContext,
+                        settingsStore.snapshot(),
+                        credentialStore.hasCredential(),
+                    )
+                    stopSelf()
+                    return
                 }
                 delay(API_ERROR_RETRY_MS)
             } catch (error: Throwable) {
@@ -267,12 +278,12 @@ class PrinterConnectorService : Service() {
         }
     }
 
-    private fun reportUsbConnectionState(
+    private suspend fun reportUsbConnectionState(
         settings: com.yunqiao.life.merchantterminal.data.ConnectorSettingsSnapshot,
         remote: ConnectorRemoteConfig,
-    ) {
+    ): Boolean {
         val binding = settings.usbBinding
-        val printerId = binding?.printerId ?: return
+        val printerId = binding?.printerId ?: return false
         val resolution = UsbBindingResolver.resolve(
             binding,
             UsbDeviceInspector(applicationContext).scan(),
@@ -283,6 +294,7 @@ class PrinterConnectorService : Service() {
         if (resolution is UsbBindingResolution.Ready) {
             status = "CONNECTED"
             errorCode = null
+            settingsStore.recordConnectionSuccess()
         } else {
             errorCode = (resolution as UsbBindingResolution.Unavailable).errorCode
             status = if (errorCode == "USB_DEVICE_NOT_FOUND") "DISCONNECTED" else "ERROR"
@@ -299,8 +311,8 @@ class PrinterConnectorService : Service() {
                 usbPermissionGranted = true,
                 usbInterfaceValid = true,
                 usbEndpointValid = true,
-                appExecutionReady = settings.connectorEnabled &&
-                    credentialStore.hasCredential() && remoteAllowsExecutionExceptStatus,
+                appExecutionReady = credentialStore.hasCredential() &&
+                    remoteAllowsExecutionExceptStatus,
             )
             errorCode == "USB_PERMISSION_REQUIRED" -> UsbReadinessEvidence(
                 usbDeviceRecognized = true,
@@ -324,6 +336,7 @@ class PrinterConnectorService : Service() {
             lastErrorCode = errorCode,
             lastErrorMessage = errorCode,
         )
+        return localUsbReady
     }
 
     private fun isNetworkConnected(): Boolean {

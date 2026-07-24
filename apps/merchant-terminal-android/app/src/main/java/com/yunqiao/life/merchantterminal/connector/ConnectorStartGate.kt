@@ -11,8 +11,11 @@ object ConnectorStartGate {
     private const val KEY_MAY_START = "may_start"
 
     fun update(context: Context, settings: ConnectorSettingsSnapshot, hasCredential: Boolean) {
-        val mayStart = hasCredential && settings.connectorEnabled &&
-            settings.usbBinding != null && ConnectorApiConfig.isConfigured
+        val mayStart = connectorMayStart(
+            settings = settings,
+            hasCredential = hasCredential,
+            apiConfigured = ConnectorApiConfig.isConfigured,
+        )
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_MAY_START, mayStart).apply()
     }
@@ -21,6 +24,13 @@ object ConnectorStartGate {
         .getSharedPreferences(NAME, Context.MODE_PRIVATE)
         .getBoolean(KEY_MAY_START, false)
 }
+
+internal fun connectorMayStart(
+    settings: ConnectorSettingsSnapshot,
+    hasCredential: Boolean,
+    apiConfigured: Boolean,
+): Boolean = hasCredential && apiConfigured && settings.cachedRemoteStartEligible &&
+    settings.usbBinding != null
 
 /** Process-local guard preventing WorkManager from classifying an in-flight service write as a crash. */
 object ConnectorRuntimeState {

@@ -19,6 +19,11 @@ import type {
   MerchantProfile,
   MerchantStaffSession,
 } from '@/types';
+import {
+  readCashierStorage,
+  removeCashierStorage,
+  writeCashierStorage,
+} from '@/platform/safe-storage';
 
 export const useAuthStore = defineStore('cashier-auth', () => {
   const session = ref<MerchantStaffSession | null>(readStoredSession());
@@ -162,36 +167,41 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     profile.value = null;
     profileError.value = '';
     if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(cashierStorageKeys.accessToken);
-      window.localStorage.removeItem(cashierStorageKeys.staffSession);
-      window.sessionStorage.removeItem(cashierStorageKeys.accessToken);
-      window.sessionStorage.removeItem(cashierStorageKeys.staffSession);
+      removeCashierStorage('local', cashierStorageKeys.accessToken);
+      removeCashierStorage('local', cashierStorageKeys.staffSession);
+      removeCashierStorage('session', cashierStorageKeys.accessToken);
+      removeCashierStorage('session', cashierStorageKeys.staffSession);
     }
   }
 
   function persistSession() {
     if (typeof window === 'undefined' || demoMode.value) return;
     if (!rememberSession.value) {
-      window.localStorage.removeItem(cashierStorageKeys.accessToken);
-      window.localStorage.removeItem(cashierStorageKeys.staffSession);
+      removeCashierStorage('local', cashierStorageKeys.accessToken);
+      removeCashierStorage('local', cashierStorageKeys.staffSession);
       if (accessToken.value) {
-        window.sessionStorage.setItem(cashierStorageKeys.accessToken, accessToken.value);
+        writeCashierStorage('session', cashierStorageKeys.accessToken, accessToken.value);
       }
       if (session.value) {
-        window.sessionStorage.setItem(
+        writeCashierStorage(
+          'session',
           cashierStorageKeys.staffSession,
           JSON.stringify(session.value),
         );
       }
       return;
     }
-    window.sessionStorage.removeItem(cashierStorageKeys.accessToken);
-    window.sessionStorage.removeItem(cashierStorageKeys.staffSession);
+    removeCashierStorage('session', cashierStorageKeys.accessToken);
+    removeCashierStorage('session', cashierStorageKeys.staffSession);
     if (accessToken.value) {
-      window.localStorage.setItem(cashierStorageKeys.accessToken, accessToken.value);
+      writeCashierStorage('local', cashierStorageKeys.accessToken, accessToken.value);
     }
     if (session.value) {
-      window.localStorage.setItem(cashierStorageKeys.staffSession, JSON.stringify(session.value));
+      writeCashierStorage(
+        'local',
+        cashierStorageKeys.staffSession,
+        JSON.stringify(session.value),
+      );
     }
   }
 
@@ -237,15 +247,15 @@ export const useAuthStore = defineStore('cashier-auth', () => {
 
 function readStoredToken() {
   if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(cashierStorageKeys.accessToken)
-    ?? window.sessionStorage.getItem(cashierStorageKeys.accessToken)
+  return readCashierStorage('local', cashierStorageKeys.accessToken)
+    ?? readCashierStorage('session', cashierStorageKeys.accessToken)
     ?? '';
 }
 
 function readStoredSession(): MerchantStaffSession | null {
   if (typeof window === 'undefined') return null;
-  const value = window.localStorage.getItem(cashierStorageKeys.staffSession)
-    ?? window.sessionStorage.getItem(cashierStorageKeys.staffSession);
+  const value = readCashierStorage('local', cashierStorageKeys.staffSession)
+    ?? readCashierStorage('session', cashierStorageKeys.staffSession);
   if (!value) return null;
   try {
     return JSON.parse(value) as MerchantStaffSession;
@@ -256,7 +266,7 @@ function readStoredSession(): MerchantStaffSession | null {
 
 function hasPersistentStoredToken() {
   if (typeof window === 'undefined') return true;
-  return Boolean(window.localStorage.getItem(cashierStorageKeys.accessToken));
+  return Boolean(readCashierStorage('local', cashierStorageKeys.accessToken));
 }
 
 function sessionFromMe(

@@ -13,6 +13,8 @@ import {
   MerchantStatus,
   OrderStatus,
   OrderType,
+  PrinterChannelType,
+  PrintingPrinterStatus,
   Prisma,
   ProductStatus,
   StaffRole,
@@ -36,6 +38,11 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { AppConfigService } from '../app-config/app-config.service';
 import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
+import {
+  hasExplicitUsbExecutionEvidence,
+  printerReadiness,
+} from '../printing/utils/printer-readiness';
+import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
 import { CreatePlatformMerchantDto } from './dto/create-platform-merchant.dto';
 import { UpdateMerchantBusinessHoursDto } from './dto/update-merchant-business-hours.dto';
 import { UpdateMerchantAccountPhoneDto } from './dto/update-merchant-account-phone.dto';
@@ -242,6 +249,7 @@ type PlatformMerchantDetailResponse = {
     tableCount: number;
     activeTableCount: number;
   };
+  printingSummary: PlatformPrintingSummary;
   recentOrders: Array<{
     id: string;
     orderNo: string;
@@ -251,6 +259,30 @@ type PlatformMerchantDetailResponse = {
     contactPhone: string | null;
     createdAt: string;
   }>;
+};
+
+type PlatformPrintingSummary = {
+  capabilityEnabled: boolean;
+  configurationState: 'CONFIGURED' | 'NOT_CONFIGURED' | 'DISABLED';
+  connectionState:
+    | 'CONNECTED'
+    | 'OFFLINE'
+    | 'RECONNECTING'
+    | 'AWAITING_PERMISSION'
+    | 'DEVICE_NOT_FOUND'
+    | 'UNKNOWN';
+  automaticPrintingEnabled: boolean;
+  lastReportedAt: string | null;
+  lastConnectedAt: string | null;
+};
+
+type PlatformPrintingPrinter = {
+  channelType: PrinterChannelType;
+  enabled: boolean;
+  status: PrintingPrinterStatus;
+  connectionConfig: Prisma.JsonValue;
+  capabilities: Prisma.JsonValue;
+  rules: Array<{ id: bigint }>;
 };
 
 type DictionaryRef = {
@@ -342,6 +374,7 @@ export class PlatformMerchantsService {
     private readonly dictionaries: PlatformDictionariesService,
     private readonly uploads: PlatformUploadsService,
     private readonly appConfig: AppConfigService,
+    private readonly printingFlags: PrintingFeatureFlagsService,
   ) {}
 
   async list(query: ListPlatformMerchantsQueryDto = {}) {
@@ -415,6 +448,7 @@ export class PlatformMerchantsService {
       activeTableCount,
       lastOrder,
       trendOrders,
+      printingPrinters,
     ] = await Promise.all([
       this.prisma.order.aggregate({
         where: {
@@ -505,6 +539,25 @@ export class PlatformMerchantsService {
           createdAt: true,
         },
       }),
+      this.prisma.printer.findMany({
+        where: {
+          merchantId: id,
+          channelType: 'LOCAL_USB_ESCPOS',
+          deletedAt: null,
+        },
+        select: {
+          channelType: true,
+          enabled: true,
+          status: true,
+          connectionConfig: true,
+          capabilities: true,
+          rules: {
+            where: { enabled: true, autoPrint: true },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      }),
     ]);
 
     const activeCount = Number(allTimeStats._count._all ?? 0);
@@ -588,6 +641,12 @@ export class PlatformMerchantsService {
         tableCount,
         activeTableCount,
       },
+      printingSummary: summarizePlatformPrinting(
+        Boolean(merchant.printingEnabled),
+        printingPrinters,
+        now,
+        this.printingFlags.automaticCreationEnabled(),
+      ),
       recentOrders: recentOrders.map((order) => ({
         id: order.id.toString(),
         orderNo: order.orderNo,
@@ -2162,6 +2221,139 @@ export function serializeCapabilityRefs(merchant: MerchantWithOwner) {
       };
     })
     .filter((item): item is DictionaryRef & { isEnabled: boolean } => Boolean(item));
+}
+
+export function summarizePlatformPrinting(
+  capabilityEnabled: boolean,
+  printers: PlatformPrintingPrinter[],
+  now = new Date(),
+  automaticCreationEnabled = false,
+): PlatformPrintingSummary {
+  const usbPrinters = printers.filter(
+    (printer) => printer.channelType === PrinterChannelType.LOCAL_USB_ESCPOS,
+  );
+  const enabledPrinters = usbPrinters.filter((printer) => printer.enabled);
+  const hasValidEnabledConfiguration = enabledPrinters.some(
+    (printer) => printerReadiness(printer, now).configValid,
+  );
+  const configurationState: PlatformPrintingSummary['configurationState'] =
+    usbPrinters.length === 0
+      ? 'NOT_CONFIGURED'
+      : enabledPrinters.length === 0
+        ? 'DISABLED'
+        : hasValidEnabledConfiguration
+          ? 'CONFIGURED'
+          : 'NOT_CONFIGURED';
+  const reportedPrinters = enabledPrinters
+    .map((printer) => ({
+      printer,
+      reportAt: printingCapabilityTimestamp(
+        printer.capabilities,
+        'connectorStatusUpdatedAt',
+      ),
+      evidence: printingConnectorEvidence(printer.capabilities),
+    }))
+    .filter(
+      (
+        item,
+      ): item is typeof item & { reportAt: Date } => item.reportAt !== null,
+    )
+    .sort((left, right) => right.reportAt.getTime() - left.reportAt.getTime());
+
+  let connectionState: PlatformPrintingSummary['connectionState'] = 'UNKNOWN';
+  if (
+    enabledPrinters.some(
+      (printer) => printerReadiness(printer, now).state === 'READY',
+    )
+  ) {
+    connectionState = 'CONNECTED';
+  } else if (reportedPrinters.length > 0) {
+    const latest = reportedPrinters[0];
+    if (latest.evidence?.usbDeviceRecognized === false) {
+      connectionState = 'DEVICE_NOT_FOUND';
+    } else if (
+      latest.evidence?.usbDeviceRecognized === true &&
+      latest.evidence.usbPermissionGranted === false
+    ) {
+      connectionState = 'AWAITING_PERMISSION';
+    } else if (
+      latest.evidence?.usbDeviceRecognized === true &&
+      latest.evidence.usbPermissionGranted === true &&
+      !hasExplicitUsbExecutionEvidence(latest.evidence)
+    ) {
+      connectionState = 'RECONNECTING';
+    } else if (
+      latest.printer.status === PrintingPrinterStatus.OFFLINE ||
+      latest.printer.status === PrintingPrinterStatus.ERROR ||
+      latest.printer.status === PrintingPrinterStatus.ONLINE
+    ) {
+      // ONLINE without fresh positive evidence is deliberately treated as stale.
+      connectionState = 'OFFLINE';
+    }
+  }
+
+  const lastReportedAt = latestPrintingTimestamp(
+    usbPrinters.map((printer) =>
+      printingCapabilityTimestamp(printer.capabilities, 'connectorStatusUpdatedAt'),
+    ),
+  );
+  const lastConnectedAt = latestPrintingTimestamp(
+    usbPrinters.flatMap((printer) => {
+      const explicit = printingCapabilityTimestamp(
+        printer.capabilities,
+        'lastConnectedAt',
+      );
+      const evidence = printingConnectorEvidence(printer.capabilities);
+      const legacyOnlineReport =
+        printer.status === PrintingPrinterStatus.ONLINE &&
+        hasExplicitUsbExecutionEvidence(evidence)
+          ? printingCapabilityTimestamp(
+              printer.capabilities,
+              'connectorStatusUpdatedAt',
+            )
+          : null;
+      return [explicit ?? legacyOnlineReport];
+    }),
+  );
+
+  return {
+    capabilityEnabled,
+    configurationState,
+    connectionState,
+    automaticPrintingEnabled:
+      capabilityEnabled &&
+      automaticCreationEnabled &&
+      enabledPrinters.some((printer) => printer.rules.length > 0),
+    lastReportedAt: lastReportedAt?.toISOString() ?? null,
+    lastConnectedAt: lastConnectedAt?.toISOString() ?? null,
+  };
+}
+
+function printingConnectorEvidence(value: Prisma.JsonValue) {
+  if (!isPrintingJsonObject(value)) return undefined;
+  const evidence = value.connectorStatus;
+  return isPrintingJsonObject(evidence) ? evidence : undefined;
+}
+
+function printingCapabilityTimestamp(
+  value: Prisma.JsonValue,
+  key: 'connectorStatusUpdatedAt' | 'lastConnectedAt',
+) {
+  if (!isPrintingJsonObject(value) || typeof value[key] !== 'string') return null;
+  const timestamp = new Date(value[key]);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp;
+}
+
+function latestPrintingTimestamp(values: Array<Date | null>) {
+  return values.reduce<Date | null>(
+    (latest, value) =>
+      value && (!latest || value.getTime() > latest.getTime()) ? value : latest,
+    null,
+  );
+}
+
+function isPrintingJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function serializeCapabilityDictionaryRef(

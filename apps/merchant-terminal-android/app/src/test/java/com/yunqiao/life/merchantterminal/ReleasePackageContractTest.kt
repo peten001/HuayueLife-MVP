@@ -35,6 +35,28 @@ class ReleasePackageContractTest {
         assertFalse(BuildConfig.DEBUG)
     }
 
+    @Test
+    fun `print closure test package is isolated production flow`() {
+        assumeTrue(BuildConfig.BUILD_TYPE == "printClosureTest")
+
+        assertEquals(
+            "com.yunqiao.life.merchantterminal.printclosuretest1",
+            BuildConfig.APPLICATION_ID,
+        )
+        assertEquals("1.0.0-print-closure-test1", BuildConfig.VERSION_NAME)
+        assertEquals(7, BuildConfig.VERSION_CODE)
+        assertEquals("https://cashier.huayueyouxuan.com/", BuildConfig.CASHIER_WEB_URL)
+        assertEquals("https://cashier.huayueyouxuan.com", BuildConfig.TRUSTED_PAGE_ORIGIN)
+        assertEquals("api.huayueyouxuan.com", BuildConfig.TRUSTED_RESOURCE_HOSTS)
+        assertEquals("https://api.huayueyouxuan.com/api/v1", BuildConfig.CONNECTOR_API_BASE_URL)
+        assertEquals("release", BuildConfig.BUILD_CHANNEL)
+        assertEquals(
+            "YunQiao Terminal Print Closure Test",
+            context.applicationInfo.loadLabel(context.packageManager),
+        )
+        assertFalse(BuildConfig.DEBUG)
+    }
+
     @Suppress("DEPRECATION")
     @Test
     fun `manifest exposes only the current USB connector control activity`() {

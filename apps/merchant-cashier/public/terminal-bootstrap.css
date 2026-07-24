@@ -1,0 +1,114 @@
+html,
+body,
+#app {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #061522;
+}
+
+.cashier-boot {
+  display: table;
+  width: 100%;
+  height: 100vh;
+  color: #f4fafc;
+  background: #061522;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.cashier-boot__center {
+  display: table-cell;
+  padding: 24px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.cashier-boot__card {
+  display: inline-block;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  padding: 24px;
+  border: 1px solid rgba(124, 171, 191, 0.24);
+  border-radius: 12px;
+  background: #081d2c;
+  box-shadow: 0 14px 40px rgba(1, 13, 22, 0.32);
+}
+
+.cashier-boot__spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 16px;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #19c37d;
+  border-radius: 50%;
+  animation: cashier-bootstrap-spin 0.9s linear infinite;
+}
+
+.cashier-boot[data-state="error"] .cashier-boot__spinner {
+  border-color: #f04454;
+  animation: none;
+}
+
+.cashier-boot__title,
+.cashier-boot__message {
+  display: block;
+}
+
+.cashier-boot__title {
+  margin-bottom: 8px;
+  font-size: 20px;
+}
+
+.cashier-boot__message {
+  color: #9dafbb;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cashier-boot__retry {
+  min-height: 42px;
+  margin-top: 18px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  color: #061522;
+  background: #19c37d;
+  font: inherit;
+  font-weight: 700;
+}
+
+.cashier-boot__retry[hidden] {
+  display: none;
+}
+
+.terminal-debug-panel {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 2147483647;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid #5f7d8c;
+  border-radius: 6px;
+  color: #f4fafc;
+  background: #18252d;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+@keyframes cashier-bootstrap-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cashier-boot__spinner { animation: none; }
+}

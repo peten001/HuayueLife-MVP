@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
   createPrintingPrinter,
@@ -17,6 +17,14 @@ import type {
   PrintingPrinter,
   PrintingPrinterPayload,
 } from '@/types/printing';
+import {
+  printerConfigurationState,
+  printerConnectionState,
+  printerLastConnectedAt,
+  PRINTING_STATE_CHANGED_EVENT,
+  type PrinterConfigurationState,
+  type PrinterConnectionState,
+} from '@/utils/printing-status';
 
 const { p } = usePrintingI18n();
 const rows = ref<PrintingPrinter[]>([]);
@@ -27,24 +35,7 @@ const actionId = ref('');
 const message = ref('');
 const success = ref(false);
 const modalOpen = ref(false);
-const capabilitiesText = ref('{}');
 const TEST_JOB_REQUEST_KEYS_STORAGE = 'yunqiao.printing.testJobRequestKeys.v1';
-const printingAvailability = computed(() => {
-  if (!settings.value?.printingEnabled) return 'NOT_ENABLED';
-  const enabledRows = rows.value.filter((row) => row.enabled);
-  if (
-    !enabledRows.length
-    || enabledRows.every((row) => printerAvailability(row) === 'NOT_CONFIGURED')
-  ) return 'NOT_CONFIGURED';
-  if (enabledRows.some((row) => printerAvailability(row) === 'READY')) return 'READY';
-  return 'DEVICE_OFFLINE';
-});
-const printingAvailabilityLabel = computed(() => {
-  if (printingAvailability.value === 'READY') return p('printerReady');
-  if (printingAvailability.value === 'NOT_CONFIGURED') return p('printerNotConfigured');
-  if (printingAvailability.value === 'DEVICE_OFFLINE') return p('printerDeviceOffline');
-  return p('printingNotEnabled');
-});
 
 const form = reactive({
   id: '',
@@ -62,7 +53,6 @@ function resetForm() {
     paperWidth: 'MM80',
     purpose: 'FRONT_DESK',
   });
-  capabilitiesText.value = '{}';
 }
 
 function openCreate() {
@@ -81,7 +71,6 @@ function openEdit(row: PrintingPrinter) {
     paperWidth: row.paperWidth,
     purpose: row.purpose,
   });
-  capabilitiesText.value = JSON.stringify(row.capabilities ?? {}, null, 2);
   modalOpen.value = true;
 }
 
@@ -90,15 +79,7 @@ function closeModal() {
   resetForm();
 }
 
-function parseCapabilities(): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(capabilitiesText.value || '{}');
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error(p('invalidJson'));
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function buildPayload(): PrintingPrinterPayload {
+function buildCreatePayload(): PrintingPrinterPayload {
   return {
     name: form.name.trim(),
     channelType: 'LOCAL_USB_ESCPOS',
@@ -108,7 +89,14 @@ function buildPayload(): PrintingPrinterPayload {
     enabled: false,
     // USB identity/interface/endpoint are discovered and stored by the Android connector.
     connectionConfig: {},
-    capabilities: parseCapabilities(),
+  };
+}
+
+function buildUpdatePayload(): Partial<PrintingPrinterPayload> {
+  return {
+    name: form.name.trim(),
+    paperWidth: form.paperWidth,
+    purpose: form.purpose,
   };
 }
 
@@ -129,16 +117,15 @@ async function load() {
 async function save() {
   try {
     saving.value = true;
-    const payload = buildPayload();
     if (form.id) {
-      // Enabling is deliberately a separate, confirmed action in the inventory table.
-      const { enabled: _enabled, ...safeUpdate } = payload;
-      await updatePrintingPrinter(form.id, safeUpdate);
+      // Runtime USB evidence belongs to the connector and is never overwritten by this form.
+      await updatePrintingPrinter(form.id, buildUpdatePayload());
     } else {
-      await createPrintingPrinter(payload);
+      await createPrintingPrinter(buildCreatePayload());
     }
     closeModal();
     await load();
+    notifyPrintingStateChanged();
     showSuccess(p('printerSaved'));
   } catch (error) {
     showError(error);
@@ -160,6 +147,7 @@ async function toggleEnabled(row: PrintingPrinter) {
       showSuccess(p('printerEnabled'));
     }
     await load();
+    notifyPrintingStateChanged();
   } catch (error) {
     showError(error);
   } finally {
@@ -169,31 +157,59 @@ async function toggleEnabled(row: PrintingPrinter) {
 
 function canCreateTestJob(row: PrintingPrinter) {
   return Boolean(
-    printerAvailability(row) === 'READY' &&
+    printerConnectionState(row) === 'CONNECTED' &&
+      printerConfigurationState(row) === 'CONFIGURED' &&
       settings.value?.printingEnabled &&
       settings.value.featureFlags.taskCenterEnabled &&
       settings.value.featureFlags.executionEnabled,
   );
 }
 
-function printerAvailability(row: PrintingPrinter) {
-  if (!row.enabled || row.readiness?.state === 'NOT_CONFIGURED') return 'NOT_CONFIGURED';
-  if (
-    row.channelType === 'LOCAL_USB_ESCPOS'
-    && row.status === 'ONLINE'
-    && row.readiness?.state === 'READY'
-    && row.readiness.channelImplemented
-    && row.readiness.configValid
-    && row.readiness.statusReady
-  ) return 'READY';
-  return 'DEVICE_OFFLINE';
+function capabilityLabel() {
+  if (!settings.value) return p('stateUnavailable');
+  return settings.value.printingEnabled ? p('capabilityEnabled') : p('capabilityDisabled');
 }
 
-function printerAvailabilityLabel(row: PrintingPrinter) {
-  const state = printerAvailability(row);
-  if (state === 'READY') return p('printerReady');
-  if (state === 'NOT_CONFIGURED') return p('printerNotConfigured');
-  return p('printerDeviceOffline');
+function configurationLabel(state: PrinterConfigurationState) {
+  if (state === 'CONFIGURED') return p('configurationConfigured');
+  if (state === 'DISABLED') return p('configurationDisabled');
+  return p('configurationNotConfigured');
+}
+
+function connectionLabel(state: PrinterConnectionState) {
+  const labels = {
+    CONNECTED: p('connectionConnected'),
+    OFFLINE: p('connectionOffline'),
+    RECONNECTING: p('connectionReconnecting'),
+    WAITING_PERMISSION: p('connectionWaitingPermission'),
+    DEVICE_NOT_DETECTED: p('connectionDeviceNotDetected'),
+    UNKNOWN: p('connectionUnknown'),
+  };
+  return labels[state];
+}
+
+function connectionBadgeClass(state: PrinterConnectionState) {
+  if (state === 'CONNECTED') return 'printing-badge--success';
+  if (state === 'OFFLINE' || state === 'DEVICE_NOT_DETECTED') {
+    return 'printing-badge--danger';
+  }
+  return 'printing-badge--warning';
+}
+
+function evidenceLabel(row: PrintingPrinter) {
+  const value = row.readiness?.evidenceUpdatedAt;
+  return value ? `${p('lastReportedAt')} ${new Date(value).toLocaleString()}` : p('connectionNotReported');
+}
+
+function lastConnectedLabel(row: PrintingPrinter) {
+  const value = printerLastConnectedAt(row);
+  return value
+    ? `${p('lastConnectedAt')} ${new Date(value).toLocaleString()}`
+    : `${p('lastConnectedAt')} ${p('connectionNotReported')}`;
+}
+
+function notifyPrintingStateChanged() {
+  window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
 }
 
 async function createTestJob(row: PrintingPrinter) {
@@ -257,7 +273,7 @@ function writeTestJobRequestKeys(keys: Record<string, string>) {
 
 function showError(error: unknown) {
   success.value = false;
-  message.value = error instanceof SyntaxError ? p('invalidJson') : errorMessage(error);
+  message.value = errorMessage(error);
 }
 
 function showSuccess(value: string) {
@@ -286,9 +302,6 @@ onMounted(load);
     </div>
 
     <p class="printing-hint">{{ p('testJobPrerequisite') }}</p>
-    <p class="printing-message" data-testid="merchant-printing-availability">
-      {{ printingAvailabilityLabel }}
-    </p>
     <p :class="['printing-message', { 'printing-message--success': success }]">{{ message }}</p>
 
     <div class="printing-table-wrap">
@@ -299,8 +312,9 @@ onMounted(load);
             <th>{{ p('channelType') }}</th>
             <th>{{ p('paperWidth') }}</th>
             <th>{{ p('purpose') }}</th>
-            <th>{{ p('config') }}</th>
-            <th>{{ p('status') }}</th>
+            <th>{{ p('capabilityStatus') }}</th>
+            <th>{{ p('configurationStatus') }}</th>
+            <th>{{ p('connectionStatus') }}</th>
             <th>{{ p('actions') }}</th>
           </tr>
         </thead>
@@ -313,12 +327,22 @@ onMounted(load);
             </td>
             <td>{{ row.paperWidth === 'MM58' ? '58 mm' : '80 mm' }}</td>
             <td>{{ row.purpose }}</td>
-            <td>{{ row.channelType === 'LOCAL_USB_ESCPOS' ? p('usbConfiguredOnTerminal') : p('notImplementedChannel') }}</td>
             <td>
-              <span :class="['printing-badge', printerAvailability(row) === 'READY' ? 'printing-badge--success' : 'printing-badge--warning']">
-                {{ printerAvailabilityLabel(row) }}
+              <span :class="['printing-badge', settings?.printingEnabled ? 'printing-badge--success' : 'printing-badge--warning']">
+                {{ capabilityLabel() }}
               </span>
-              <small>{{ row.status }} · {{ row.enabled ? p('enabled') : p('disabled') }}</small>
+            </td>
+            <td>
+              <span :class="['printing-badge', printerConfigurationState(row) === 'CONFIGURED' ? 'printing-badge--success' : 'printing-badge--warning']">
+                {{ configurationLabel(printerConfigurationState(row)) }}
+              </span>
+            </td>
+            <td>
+              <span :class="['printing-badge', connectionBadgeClass(printerConnectionState(row))]">
+                {{ connectionLabel(printerConnectionState(row)) }}
+              </span>
+              <small>{{ evidenceLabel(row) }}</small>
+              <small>{{ lastConnectedLabel(row) }}</small>
             </td>
             <td>
               <div class="printing-actions">
@@ -350,8 +374,8 @@ onMounted(load);
               </div>
             </td>
           </tr>
-          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="7">{{ p('printerNotConfigured') }}</td></tr>
-          <tr v-if="loading"><td class="printing-empty" colspan="7">{{ p('loading') }}</td></tr>
+          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="8">{{ p('printerNotConfigured') }}</td></tr>
+          <tr v-if="loading"><td class="printing-empty" colspan="8">{{ p('loading') }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -380,12 +404,7 @@ onMounted(load);
           </select>
         </label>
         <p class="printing-hint">{{ p('usbConfiguredOnTerminal') }}</p>
-        <label class="printing-field printing-field--full">
-          {{ p('capabilities') }}
-          <textarea v-model="capabilitiesText" spellcheck="false"></textarea>
-        </label>
         <p class="printing-hint printing-field--full">{{ p('usbOnlyHint') }}</p>
-        <p class="printing-hint printing-field--full">{{ p('ruleDefaultOffHint') }}</p>
       </div>
       <footer class="printing-modal__footer">
         <button class="printing-button printing-button--secondary" type="button" @click="closeModal">{{ p('cancel') }}</button>

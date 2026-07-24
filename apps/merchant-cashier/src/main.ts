@@ -1,8 +1,15 @@
 import { createPinia } from 'pinia';
-import { createApp } from 'vue';
+import { createApp, nextTick } from 'vue';
 
 import App from './App.vue';
 import router from './router';
+import {
+  completeCashierBoot,
+  failCashierBoot,
+  markTerminalStep,
+  reportTerminalError,
+  sanitizeDiagnosticError,
+} from './diagnostics/terminal-debug';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/cashier.css';
@@ -54,7 +61,71 @@ if (typeof window !== 'undefined') {
 }
 
 const app = createApp(App);
+let initialMountInProgress = false;
+let initialMountFailed = false;
+
+app.config.errorHandler = (error, _instance, info) => {
+  reportTerminalError('javascriptError', error);
+  markTerminalStep('VUE_ERROR');
+  if (initialMountInProgress) initialMountFailed = true;
+  console.error('[cashier] Vue error:', info, sanitizeDiagnosticError(error));
+};
 
 app.use(createPinia());
 app.use(router);
-app.mount('#app');
+
+router.onError((error, to) => {
+  reportTerminalError('unhandledPromiseRejection', error);
+  markTerminalStep('ROUTER_ERROR', {
+    currentRoute: to.path,
+    routerReady: false,
+  });
+  failCashierBoot('ROUTER_ERROR');
+  console.error('[cashier] Router error:', sanitizeDiagnosticError(error));
+});
+
+markTerminalStep('MAIN_MODULE_READY', {
+  currentRoute: window.location.pathname,
+  documentReadyState: document.readyState,
+});
+
+async function bootstrap() {
+  try {
+    markTerminalStep('ROUTER_WAITING');
+    await router.isReady();
+    markTerminalStep('ROUTER_READY', {
+      routerReady: true,
+      currentRoute: router.currentRoute.value.path,
+    });
+
+    initialMountInProgress = true;
+    app.mount('#app');
+    initialMountInProgress = false;
+    if (initialMountFailed) throw new Error('Vue failed during initial mount');
+
+    markTerminalStep('VUE_MOUNTED', {
+      vueMounted: true,
+      appRootChildrenCount: document.getElementById('app')?.children.length ?? 0,
+    });
+    await nextTick();
+    const appRootChildrenCount = document.getElementById('app')?.children.length ?? 0;
+    if (appRootChildrenCount === 0) {
+      app.unmount();
+      markTerminalStep('EMPTY_APP_ROOT', {
+        vueMounted: false,
+        appRootChildrenCount,
+      });
+      failCashierBoot('EMPTY_APP_ROOT');
+      return;
+    }
+    completeCashierBoot();
+  } catch (error) {
+    initialMountInProgress = false;
+    reportTerminalError('unhandledPromiseRejection', error);
+    markTerminalStep('BOOT_FAILED');
+    failCashierBoot('BOOT_FAILED');
+    console.error('[cashier] Bootstrap failed:', sanitizeDiagnosticError(error));
+  }
+}
+
+void bootstrap();

@@ -231,6 +231,18 @@ export class PrintJobsService {
       printersWithReadiness.find((printer) => printer.enabled) ??
       printersWithReadiness[0] ??
       null;
+    const automaticRule =
+      flags.automaticCreationEnabled && boundPrinter?.enabled
+        ? await this.prisma.printRule.findFirst({
+            where: {
+              merchantId,
+              printerId: boundPrinter.id,
+              enabled: true,
+              autoPrint: true,
+            },
+            select: { id: true },
+          })
+        : null;
     return {
       merchantId: merchantId.toString(),
       taskCenterEnabled: flags.taskCenterEnabled,
@@ -239,7 +251,7 @@ export class PrintJobsService {
       legacyPrintingEnabled: flags.legacyPrintingEnabled,
       merchantPrintingEnabled: settings.printingEnabled,
       pollIntervalSeconds: 7,
-      automaticPrintingEnabled: flags.automaticCreationEnabled,
+      automaticPrintingEnabled: Boolean(automaticRule),
       printerEnabled: boundPrinter?.enabled ?? false,
       boundPrinter,
       printers: printersWithReadiness,
@@ -1261,17 +1273,19 @@ export class PrintJobsService {
     const currentCapabilities = isPlainObject(printer.capabilities)
       ? printer.capabilities
       : {};
+    const reportedAt = new Date().toISOString();
     const updated = await this.prisma.printer.update({
       where: { id: printer.id },
       data: {
         status: persistedStatus,
-        capabilities: capabilities
-          ? normalizeConnectorJson({
-              ...currentCapabilities,
-              connectorStatus: capabilities,
-              connectorStatusUpdatedAt: new Date().toISOString(),
-            })
-          : undefined,
+        capabilities: normalizeConnectorJson({
+          ...currentCapabilities,
+          ...(capabilities ? { connectorStatus: capabilities } : {}),
+          connectorStatusUpdatedAt: reportedAt,
+          ...(persistedStatus === 'ONLINE'
+            ? { lastConnectedAt: reportedAt }
+            : {}),
+        }),
       },
     });
     return { ...updated, readiness: printerReadiness(updated) };

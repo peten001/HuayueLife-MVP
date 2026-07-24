@@ -113,4 +113,18 @@ describe('cashier authentication storage', () => {
     expect(window.localStorage.getItem(cashierStorageKeys.accessToken)).toBeNull();
     expect(window.sessionStorage.getItem(cashierStorageKeys.accessToken)).toBeNull();
   });
+
+  it('falls back to a recoverable signed-out state when Web Storage is unavailable', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage is unavailable', 'SecurityError');
+    });
+    setActivePinia(createPinia());
+
+    const store = useAuthStore();
+    await store.hydrate();
+
+    expect(store.hydrated).toBe(true);
+    expect(store.isAuthenticated).toBe(false);
+    expect(apiMocks.getMerchantMe).not.toHaveBeenCalled();
+  });
 });
