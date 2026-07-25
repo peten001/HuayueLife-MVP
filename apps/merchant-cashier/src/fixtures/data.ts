@@ -24,6 +24,9 @@ export const demoStaffSession: MerchantStaffSession = {
     merchantMode: 'QR_ORDER',
     capabilities: [
       { code: 'onlineOrderEnabled', nameZh: '在线下单', isEnabled: true },
+      { code: 'pickupEnabled', nameZh: '到店自取', isEnabled: true },
+      { code: 'deliveryEnabled', nameZh: '商家配送', isEnabled: true },
+      { code: 'qrOrderEnabled', nameZh: '到店扫码点餐', isEnabled: true },
       { code: 'tableManagementEnabled', nameZh: '桌台管理', isEnabled: true },
       { code: 'voiceNotifyEnabled', nameZh: '语音提醒', isEnabled: true },
     ],
@@ -100,15 +103,15 @@ export const demoTables: DiningTable[] = [
 ];
 
 export const initialDemoOrders: MerchantOrder[] = [
-  makeOrder('demo-order-1001', 'DEMO-1001', 'PENDING_ACCEPTANCE', 'DINE_IN', 3, 168000, 'A01', 2),
+  makeOrder('demo-order-1001', 'DEMO-1001', 'PENDING_ACCEPTANCE', 'DINE_IN', 3, 171000, 'A01', 3),
   makeOrder('demo-order-1004', 'DEMO-1004', 'PENDING_ACCEPTANCE', 'PICKUP', 6, 76000, undefined, 2),
   makeOrder('demo-order-1005', 'DEMO-1005', 'PENDING_ACCEPTANCE', 'DELIVERY', 9, 245000, undefined, 4),
   makeOrder('demo-order-1002', 'DEMO-1002', 'PREPARING', 'PICKUP', 14, 92000, undefined, 2),
   makeOrder('demo-order-1003', 'DEMO-1003', 'READY', 'DELIVERY', 28, 215000, undefined, 3),
-  makeOrder('demo-order-1006', 'DEMO-1006', 'ACCEPTED', 'DINE_IN', 18, 118000, 'A01', 2),
+  makeOrder('demo-order-1006', 'DEMO-1006', 'ACCEPTED', 'DINE_IN', 18, 171000, 'A01', 2),
   makeOrder('demo-order-1007', 'DEMO-1007', 'PREPARING', 'DELIVERY', 24, 156000, undefined, 3),
   makeOrder('demo-order-1008', 'DEMO-1008', 'READY', 'PICKUP', 31, 88000, undefined, 2),
-  makeOrder('demo-order-0999', 'DEMO-0999', 'COMPLETED', 'DINE_IN', 90, 125000, 'A01', 2),
+  makeOrder('demo-order-0999', 'DEMO-0999', 'COMPLETED', 'DINE_IN', 90, 171000, 'A01', 2),
   makeOrder('demo-order-0998', 'DEMO-0998', 'CANCELLED', 'PICKUP', 125, 65000, undefined, 1),
   makeOrder('demo-order-0997', 'DEMO-0997', 'COMPLETED', 'DELIVERY', 160, 230000, undefined, 4),
   makeOrder('demo-order-0996', 'DEMO-0996', 'COMPLETED', 'PICKUP', 190, 54000, undefined, 1),
@@ -125,10 +128,22 @@ function makeOrder(
   quantity = 1,
 ): MerchantOrder {
   return {
-    id, orderNo, merchantId: 'demo-merchant', tableId: tableNo ? 'demo-table-1' : null, tableSessionId: tableNo ? 'demo-session-1' : null, tableNoSnapshot: tableNo ?? null, orderType, status,
+    id, orderNo, userId: orderType === 'DINE_IN' ? null : `demo-user-${id}`, merchantId: 'demo-merchant', tableId: tableNo ? 'demo-table-1' : null, tableSessionId: tableNo ? 'demo-session-1' : null, tableNoSnapshot: tableNo ?? null, orderType, status,
     contactName: orderType === 'DINE_IN' ? null : 'Demo Customer', contactPhone: orderType === 'DINE_IN' ? null : '000-000-000', deliveryAddress: orderType === 'DELIVERY' ? 'Demo address (not real)' : null,
     customerRemark: '演示数据 / Dữ liệu demo / Demo data', itemAmountVnd: String(total), deliveryFeeVnd: '0', totalAmountVnd: String(total), settlementStatus: 'UNSETTLED', createdAt: isoMinutesAgo(minutesAgo), updatedAt: isoMinutesAgo(minutesAgo),
+    acceptedAt: status === 'PENDING_ACCEPTANCE' ? null : isoMinutesAgo(Math.max(0, minutesAgo - 2)),
+    readyAt: ['READY', 'DELIVERING', 'COMPLETED'].includes(status) ? isoMinutesAgo(Math.max(0, minutesAgo - 5)) : null,
+    pickupCode: orderType === 'PICKUP' ? orderNo.replace(/\D/g, '').slice(-4) : null,
+    estimatedReadyAt: orderType === 'PICKUP' ? new Date(Date.parse(isoMinutesAgo(minutesAgo)) + 30 * 60_000).toISOString() : null,
     table: tableNo ? { id: 'demo-table-1', tableNo, tableName: '演示桌 A01' } : null,
     items: [{ id: `${id}-item`, productNameZhSnapshot: '演示菜品（非真实）', quantity, unitPriceVnd: String(Math.floor(total / quantity)), subtotalVnd: String(total), remark: 'Demo' }],
+    chatConversation: orderType === 'DINE_IN' ? null : {
+      id: `demo-chat-${id}`,
+      status: ['COMPLETED', 'CANCELLED'].includes(status) ? 'CLOSED' : 'ACTIVE',
+      merchantUnreadCount: ['PENDING_ACCEPTANCE', 'PREPARING', 'READY'].includes(status) ? 2 : 0,
+      customerUnreadCount: 0,
+      lastMessageAt: isoMinutesAgo(Math.max(0, minutesAgo - 1)),
+      lastMessageId: `demo-message-${id}`,
+    },
   };
 }

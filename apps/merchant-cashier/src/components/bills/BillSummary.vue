@@ -4,8 +4,11 @@ import { formatVnd } from '@/domain';
 
 defineProps<{
   itemAmount?: string | number;
+  packingFee?: string | number;
   deliveryFee?: string | number;
   totalAmount?: string | number;
+  showPackingFee?: boolean;
+  showDeliveryFee?: boolean;
 }>();
 
 const { t, locale } = useI18n();
@@ -17,7 +20,11 @@ const { t, locale } = useI18n();
       <dt>{{ t('bill.itemsSubtotal') }}</dt>
       <dd>{{ formatVnd(itemAmount, locale) }}</dd>
     </div>
-    <div v-if="Number(deliveryFee || 0) > 0">
+    <div v-if="showPackingFee || Number(packingFee || 0) > 0">
+      <dt>{{ t('bill.packingFee') }}</dt>
+      <dd>{{ formatVnd(packingFee, locale) }}</dd>
+    </div>
+    <div v-if="showDeliveryFee || Number(deliveryFee || 0) > 0">
       <dt>{{ t('bill.deliveryFee') }}</dt>
       <dd>{{ formatVnd(deliveryFee, locale) }}</dd>
     </div>

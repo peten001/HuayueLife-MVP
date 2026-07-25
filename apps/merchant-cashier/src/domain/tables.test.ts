@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { DiningTable, TableSessionDetail, TableSessionSummary } from '@/types';
-import { buildTableCards, canCloseTableSession, summarizeTableSessionItems } from './tables';
+import {
+  buildTableCards,
+  canCheckoutTableSession,
+  canCloseTableSession,
+  summarizeTableSessionItems,
+} from './tables';
 
 function table(id: string, status: DiningTable['status'] = 'ACTIVE'): DiningTable {
   return {
@@ -128,5 +133,33 @@ describe('table session closing conditions', () => {
     });
 
     expect(canCloseTableSession(completedButUnsettledSession)).toBe(true);
+  });
+});
+
+describe('table session checkout conditions', () => {
+  it('allows empty and all-cancelled open sessions to be released', () => {
+    expect(canCheckoutTableSession(session('empty', {
+      status: 'OPEN',
+      orderCount: 0,
+      pendingOrderCount: 0,
+      unfinishedOrderCount: 0,
+    }))).toBe(true);
+    expect(canCheckoutTableSession(session('all-cancelled', {
+      status: 'OPEN',
+      orderCount: 0,
+      pendingOrderCount: 0,
+      unfinishedOrderCount: 0,
+    }))).toBe(true);
+  });
+
+  it('blocks checkout only while an order is still unaccepted or the session is closed', () => {
+    expect(canCheckoutTableSession(session('pending', {
+      status: 'OPEN',
+      pendingOrderCount: 1,
+    }))).toBe(false);
+    expect(canCheckoutTableSession(session('closed', {
+      status: 'CLOSED',
+      pendingOrderCount: 0,
+    }))).toBe(false);
   });
 });

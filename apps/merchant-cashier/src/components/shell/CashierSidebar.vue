@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AccountMenu from './AccountMenu.vue';
-import CashierBrand from './CashierBrand.vue';
 import CashierMerchantPanel from './CashierMerchantPanel.vue';
 import CashierNavigation from './CashierNavigation.vue';
 
@@ -12,8 +11,12 @@ defineProps<{
   demoMode?: boolean;
   role?: string;
   loggingOut?: boolean;
-  newOrderCount: number;
-  activeOrderCount: number;
+  tableAttentionCount: number;
+  pickupAttentionCount: number;
+  deliveryAttentionCount: number;
+  showTables?: boolean;
+  showPickup?: boolean;
+  showDelivery?: boolean;
 }>();
 
 defineEmits<{
@@ -23,8 +26,6 @@ defineEmits<{
 
 <template>
   <aside class="cashier-sidebar" data-testid="cashier-sidebar">
-    <CashierBrand />
-
     <CashierMerchantPanel
       :merchant-name="merchantName"
       :merchant-logo-url="merchantLogoUrl"
@@ -34,8 +35,12 @@ defineEmits<{
     />
 
     <CashierNavigation
-      :new-order-count="newOrderCount"
-      :active-order-count="activeOrderCount"
+      :table-attention-count="tableAttentionCount"
+      :pickup-attention-count="pickupAttentionCount"
+      :delivery-attention-count="deliveryAttentionCount"
+      :show-tables="showTables"
+      :show-pickup="showPickup"
+      :show-delivery="showDelivery"
     />
 
     <AccountMenu

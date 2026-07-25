@@ -22,6 +22,7 @@ import { CreateTableOrderDto } from './dto/create-table-order.dto';
 import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
 import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
+import { withPickupFulfillmentFields } from '../orders/order-fulfillment-fields';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -117,9 +118,9 @@ export class MerchantOrdersService {
     private readonly pendingCancellation: PendingOrderCancellationService,
   ) {}
 
-  list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
+  async list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
     const createdAt = query.date ? this.dateRange(query.date) : undefined;
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: {
         merchantId,
         status: query.status,
@@ -129,6 +130,7 @@ export class MerchantOrdersService {
       include: this.listInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+    return orders.map((order) => this.serializeMerchantOrder(order));
   }
 
   async get(merchantId: bigint, id: bigint) {
@@ -340,6 +342,10 @@ export class MerchantOrdersService {
           },
           select: { id: true, tableSessionId: true },
         });
+        // Any order mutation invalidates a previously calculated table
+        // rounding amount. Clear it atomically so refresh/checkout/printing
+        // cannot reuse a discount calculated from an older bill total.
+        await this.clearSessionRounding(tx, session.id);
         return { orderId: created.id, sessionId: created.tableSessionId! };
       });
     } catch (error) {
@@ -801,6 +807,8 @@ export class MerchantOrdersService {
         });
       }
 
+      await this.clearSessionRounding(tx, orderRef.tableSessionId);
+
       return { orderId, sessionId: orderRef.tableSessionId };
     });
 
@@ -904,6 +912,22 @@ export class MerchantOrdersService {
     }
   }
 
+  private async clearSessionRounding(
+    tx: Prisma.TransactionClient,
+    sessionId: bigint,
+  ) {
+    await tx.tableSession.updateMany({
+      where: {
+        id: sessionId,
+        roundingAppliedByStaffId: { not: null },
+      },
+      data: {
+        roundingAmountVnd: 0n,
+        roundingAppliedByStaffId: null,
+      },
+    });
+  }
+
   private async buildMutationResponse(
     merchantId: bigint,
     orderId: bigint | null,
@@ -992,6 +1016,10 @@ export class MerchantOrdersService {
 
   private serializeMerchantOrder<
     T extends {
+      orderType: OrderType;
+      orderNo: string;
+      createdAt: Date;
+      readyAt: Date | null;
       statusLogs?: ReadonlyArray<{
         action: string | null;
         metadata: Prisma.JsonValue | null;
@@ -1004,12 +1032,12 @@ export class MerchantOrdersService {
     },
   >(order: T) {
     if (!order.statusLogs) {
-      return order;
+      return withPickupFulfillmentFields(order);
     }
-    return {
+    return withPickupFulfillmentFields({
       ...order,
       statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
-    };
+    });
   }
 
   private dateRange(date: string): Prisma.DateTimeFilter {

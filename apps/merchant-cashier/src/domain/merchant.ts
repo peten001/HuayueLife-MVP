@@ -1,4 +1,68 @@
 import { cashierConfig } from '@/config';
+import type { MerchantProfile, MerchantSessionSummary } from '@/types';
+
+export interface CashierWorkspaceCapabilities {
+  tables: boolean;
+  pickup: boolean;
+  delivery: boolean;
+}
+
+export type CashierWorkspaceRouteName =
+  | 'tables'
+  | 'pickup-orders'
+  | 'delivery-orders'
+  | 'order-history';
+
+export function resolveCashierWorkspaceCapabilities(
+  profile: MerchantProfile | null | undefined,
+  sessionMerchant: MerchantSessionSummary | null | undefined,
+): CashierWorkspaceCapabilities {
+  const values = profile?.capabilities?.length
+    ? profile.capabilities
+    : sessionMerchant?.capabilities?.length
+      ? sessionMerchant.capabilities
+      : null;
+  if (values) {
+    const enabled = (code: string) => values.some(
+      (capability) => capability.code === code && capability.isEnabled,
+    );
+    return {
+      tables: enabled('qrOrderEnabled'),
+      pickup: enabled('pickupEnabled'),
+      delivery: enabled('deliveryEnabled'),
+    };
+  }
+  if (profile) {
+    return {
+      tables: Boolean(profile.dineInEnabled),
+      pickup: Boolean(profile.pickupEnabled),
+      delivery: Boolean(profile.deliveryEnabled),
+    };
+  }
+  // A profile failure must not reopen platform-disabled order channels. The
+  // authenticated /me session normally carries capabilities; an old cached
+  // session without them falls back to history until capability data recovers.
+  return { tables: false, pickup: false, delivery: false };
+}
+
+export function cashierWorkspaceEnabled(
+  routeName: string | symbol | null | undefined,
+  capabilities: CashierWorkspaceCapabilities,
+) {
+  if (routeName === 'tables') return capabilities.tables;
+  if (routeName === 'pickup-orders') return capabilities.pickup;
+  if (routeName === 'delivery-orders') return capabilities.delivery;
+  return true;
+}
+
+export function firstEnabledCashierWorkspace(
+  capabilities: CashierWorkspaceCapabilities,
+): CashierWorkspaceRouteName {
+  if (capabilities.tables) return 'tables';
+  if (capabilities.pickup) return 'pickup-orders';
+  if (capabilities.delivery) return 'delivery-orders';
+  return 'order-history';
+}
 
 export function isWithinBusinessHours(
   schedule: Record<string, string[]> | null | undefined,

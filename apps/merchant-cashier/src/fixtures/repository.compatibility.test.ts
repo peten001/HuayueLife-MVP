@@ -20,4 +20,36 @@ describe('fixture repository WebView compatibility', () => {
     expect(demoRepository.orders()[0]?.orderNo).toBe(originalOrderNo);
     expect(demoRepository.openSessions()[0]?.openedAt).toBeTruthy();
   });
+
+  it('keeps demo checkout isolated while matching the accepted-before-checkout rule', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+
+    expect(() => demoRepository.checkoutSession('demo-session-1')).toThrowError();
+    demoRepository.runOrderAction('demo-order-1001', 'accept');
+    demoRepository.setSessionRounding('demo-session-1', true);
+    expect(demoRepository.session('demo-session-1')).toEqual(expect.objectContaining({
+      originalAmountVnd: '513000',
+      roundingAmountVnd: '3000',
+      payableAmountVnd: '510000',
+    }));
+    const result = demoRepository.checkoutSession('demo-session-1');
+
+    expect(result.session.status).toBe('CLOSED');
+    expect(result.session).toEqual(expect.objectContaining({
+      originalAmountVnd: '513000',
+      roundingAmountVnd: '3000',
+      payableAmountVnd: '510000',
+    }));
+    expect(result.orders.filter((order) => order.status !== 'CANCELLED').every((order) => order.status === 'COMPLETED')).toBe(true);
+    expect(result.orders.filter((order) => order.status !== 'CANCELLED').every((order) => order.totalAmountVnd === '171000')).toBe(true);
+    const checkedOrders = result.orders.filter((order) => order.statusLogs?.some((log) => log.action === 'TABLE_SESSION_CHECKOUT'));
+    expect(checkedOrders).toHaveLength(2);
+    expect(checkedOrders.every((order) =>
+      order.statusLogs?.some((log) => log.action === 'TABLE_SESSION_CHECKOUT' && log.metadata?.originalAmountVnd === '513000' && log.metadata.roundingAmountVnd === '3000' && log.metadata.payableAmountVnd === '510000'),
+    )).toBe(true);
+    expect(result.orders.every((order) => order.settlementStatus === 'UNSETTLED')).toBe(true);
+    expect(demoRepository.openSessions()).toEqual([]);
+  });
 });

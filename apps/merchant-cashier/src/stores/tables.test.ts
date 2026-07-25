@@ -7,6 +7,7 @@ const apiMocks = vi.hoisted(() => ({
   listOpenTableSessions: vi.fn(),
   getTableSessionDetail: vi.fn(),
   closeTableSession: vi.fn(),
+  checkoutTableSession: vi.fn(),
 }));
 
 vi.mock('@/api', async (importOriginal) => ({
@@ -56,6 +57,7 @@ describe('cashier table store real-session refresh', () => {
     apiMocks.listOpenTableSessions.mockReset().mockResolvedValue([summary]);
     apiMocks.getTableSessionDetail.mockReset().mockResolvedValue(detail);
     apiMocks.closeTableSession.mockReset();
+    apiMocks.checkoutTableSession.mockReset();
   });
 
   it('refreshes the selected TableSession without dropping the selection', async () => {
@@ -162,6 +164,31 @@ describe('cashier table store real-session refresh', () => {
     expect(apiMocks.listOpenTableSessions).toHaveBeenCalledTimes(2);
     expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
     expect(store.loading).toBe(false);
+  });
+
+  it('checks out an accepted table session and removes it from the open-session list', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+    const closed = { ...detail, status: 'CLOSED' as const, closedAt: '2026-07-15T01:00:00.000Z', unfinishedOrderCount: 0 };
+    apiMocks.checkoutTableSession.mockResolvedValueOnce({ session: closed, orders: [] });
+    apiMocks.listOpenTableSessions.mockResolvedValueOnce([]);
+
+    await expect(store.checkoutSelectedSession()).resolves.toEqual({ session: closed, orders: [] });
+
+    expect(apiMocks.checkoutTableSession).toHaveBeenCalledWith(detail.id);
+    expect(store.openSessions).toEqual([]);
+    expect(store.selectedTable?.operationalStatus).toBe('AVAILABLE');
+  });
+
+  it('blocks checkout locally while any order is still awaiting acceptance', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    apiMocks.getTableSessionDetail.mockResolvedValueOnce({ ...detail, pendingOrderCount: 1 });
+    await store.selectTable(table.id);
+
+    await expect(store.checkoutSelectedSession()).rejects.toThrow('unaccepted');
+    expect(apiMocks.checkoutTableSession).not.toHaveBeenCalled();
   });
 });
 

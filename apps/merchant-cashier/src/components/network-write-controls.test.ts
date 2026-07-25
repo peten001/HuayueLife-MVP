@@ -1,59 +1,84 @@
 import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { describe, expect, it } from 'vitest';
-import type { CashierOrderView } from '@/components/common/view-models';
-import type { TableSessionDetail } from '@/types';
+import type { MerchantOrder } from '@/types';
 import ConfirmDialog from './common/ConfirmDialog.vue';
-import TableBillDetail from './bills/TableBillDetail.vue';
-import OrderActionBar from './orders/OrderActionBar.vue';
+import DineInActionDock from '@/features/dine-in/DineInActionDock.vue';
+import FulfillmentActionDock from '@/features/fulfillment/FulfillmentActionDock.vue';
+
+const pickupOrder: MerchantOrder = {
+  id: 'order-1',
+  orderNo: 'TEST-1',
+  merchantId: 'merchant-1',
+  orderType: 'PICKUP',
+  status: 'PENDING_ACCEPTANCE',
+  itemAmountVnd: '50000',
+  deliveryFeeVnd: '0',
+  totalAmountVnd: '50000',
+  settlementStatus: 'UNSETTLED',
+  createdAt: '2026-07-24T00:00:00.000Z',
+  updatedAt: '2026-07-24T00:00:00.000Z',
+  items: [],
+};
 
 describe('network write controls', () => {
-  it('disables every available order action while writes are disabled', async () => {
-    const order: CashierOrderView = {
-      id: 'order-1',
-      status: 'PENDING_ACCEPTANCE',
-      orderType: 'DINE_IN',
-    };
-    const wrapper = mount(OrderActionBar, {
-      props: { order, disabled: true },
+  it('keeps printing independent while disabling accept and checkout writes', async () => {
+    const wrapper = mount(DineInActionDock, {
+      props: {
+        sessionId: 'session-1',
+        actionsDisabled: true,
+      },
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          PrintJobActions: {
+            props: ['disabled'],
+            template: '<button data-testid="print-primary" :disabled="disabled">Print</button>',
+          },
+        },
+      },
     });
 
-    const buttons = wrapper.findAll('button');
-    expect(buttons).toHaveLength(2);
-    buttons.forEach((button) => expect(button.attributes('disabled')).toBeDefined());
-    await buttons[0]?.trigger('click');
+    expect(wrapper.get('[data-testid="print-primary"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('[data-testid="dinein-accept"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="dinein-checkout"]').attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="dinein-accept"]').trigger('click');
+    await wrapper.get('[data-testid="dinein-checkout"]').trigger('click');
+    expect(wrapper.emitted('accept')).toBeUndefined();
+    expect(wrapper.emitted('checkout')).toBeUndefined();
+  });
+
+  it('disables the current pickup workflow action while writes are unavailable', async () => {
+    const wrapper = mount(FulfillmentActionDock, {
+      props: { order: pickupOrder, disabled: true },
+      global: {
+        stubs: {
+          PrintJobActions: {
+            template: '<button data-testid="print-primary">Print</button>',
+          },
+        },
+      },
+    });
+    const action = wrapper.findAll('button').at(-1)!;
+    expect(action.attributes('disabled')).toBeDefined();
+    await action.trigger('click');
     expect(wrapper.emitted('action')).toBeUndefined();
   });
 
-  it('disables TableSession ordering and closing while writes are disabled', async () => {
-    const session: TableSessionDetail = {
-      id: 'session-1',
-      sessionNo: 'TS-1',
-      merchantId: 'merchant-1',
-      tableId: 'table-1',
-      tableNo: 'A01',
-      status: 'OPEN',
-      openedAt: new Date().toISOString(),
-      orderCount: 0,
-      itemCount: 0,
-      totalAmountVnd: '0',
-      pendingOrderCount: 0,
-      unfinishedOrderCount: 0,
-      orders: [],
-    };
-    const wrapper = mount(TableBillDetail, {
-      props: { session, actionsDisabled: true },
-      global: { plugins: [createPinia()] },
+  it('uses the cashier-confirmed pickup and delivery completion labels', () => {
+    const pickup = mount(FulfillmentActionDock, {
+      props: { order: { ...pickupOrder, status: 'READY' } },
+      global: { stubs: { PrintJobActions: true } },
+    });
+    const delivery = mount(FulfillmentActionDock, {
+      props: {
+        order: { ...pickupOrder, orderType: 'DELIVERY', status: 'DELIVERING' },
+      },
+      global: { stubs: { PrintJobActions: true } },
     });
 
-    const closeButton = wrapper.find<HTMLButtonElement>('.table-close-action');
-    const orderButton = wrapper.find<HTMLButtonElement>('[data-testid="table-order-items"]');
-    expect(orderButton.attributes('disabled')).toBeDefined();
-    expect(closeButton.attributes('disabled')).toBeDefined();
-    await orderButton.trigger('click');
-    await closeButton.trigger('click');
-    expect(wrapper.emitted('orderItems')).toBeUndefined();
-    expect(wrapper.emitted('closeSession')).toBeUndefined();
+    expect(pickup.text()).toContain('确认取餐');
+    expect(delivery.text()).toContain('配送完成');
   });
 
   it('disables only the confirming write action while the network is degraded', async () => {
@@ -67,7 +92,6 @@ describe('network write controls', () => {
         confirmDisabled: true,
       },
     });
-
     const [cancelButton, confirmButton] = wrapper.findAll('button');
     expect(cancelButton?.attributes('disabled')).toBeUndefined();
     expect(confirmButton?.attributes('disabled')).toBeDefined();

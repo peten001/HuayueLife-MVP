@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
@@ -18,6 +18,7 @@ import { PrintingFeatureFlagsService } from '../printing/services/printing-featu
 import { PrintJobsService } from '../printing/services/print-jobs.service';
 import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { OrderRequestDto } from './dto/order-request.dto';
+import { withPickupFulfillmentFields } from './order-fulfillment-fields';
 import { OrderCreatorInvariantService } from './order-creator-invariant.service';
 import { PendingOrderCancellationService } from './pending-order-cancellation.service';
 import { isInternalOrderStatusLogAction } from './order-status-log-visibility';
@@ -449,6 +450,10 @@ export class OrdersService {
   private serializeCustomerOrder<
     T extends {
       createdByStaffId: bigint | null;
+      orderType: OrderType;
+      orderNo: string;
+      createdAt: Date;
+      readyAt: Date | null;
       statusLogs?: ReadonlyArray<{
         action: string | null;
         metadata: Prisma.JsonValue | null;
@@ -458,10 +463,10 @@ export class OrdersService {
   >(order: T) {
     const { createdByStaffId: _createdByStaffId, ...withoutCreator } = order;
     if (!order.statusLogs) {
-      return withoutCreator;
+      return withPickupFulfillmentFields(withoutCreator);
     }
 
-    return {
+    return withPickupFulfillmentFields({
       ...withoutCreator,
       statusLogs: order.statusLogs
         .filter((log) => !isInternalOrderStatusLogAction(log.action))
@@ -474,7 +479,7 @@ export class OrdersService {
           } = log;
           return publicLog;
         }),
-    };
+    });
   }
 
   private generateOrderNo() {

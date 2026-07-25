@@ -1,24 +1,37 @@
 <script setup lang="ts">
-import { Bell, ClipboardList, History, LayoutGrid } from '@lucide/vue';
+import { Bike, History, LayoutGrid, ShoppingBag } from '@lucide/vue';
+import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 
 const props = defineProps<{
-  newOrderCount?: number;
-  activeOrderCount?: number;
+  tableAttentionCount?: number;
+  pickupAttentionCount?: number;
+  deliveryAttentionCount?: number;
+  showTables?: boolean;
+  showPickup?: boolean;
+  showDelivery?: boolean;
 }>();
 
 const { t } = useI18n();
 
-const items = [
-  { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid, countKey: 'none' },
-  { to: '/orders/new', labelKey: 'nav.newOrders', icon: Bell, countKey: 'new' },
-  { to: '/orders/active', labelKey: 'nav.activeOrders', icon: ClipboardList, countKey: 'active' },
+const allItems = [
+  { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid, countKey: 'tables' },
+  { to: '/pickup', labelKey: 'nav.pickup', icon: ShoppingBag, countKey: 'pickup' },
+  { to: '/delivery', labelKey: 'nav.delivery', icon: Bike, countKey: 'delivery' },
   { to: '/orders/history', labelKey: 'nav.history', icon: History, countKey: 'history' },
 ] as const;
 
-function badge(item: (typeof items)[number]) {
-  if (item.countKey === 'new') return props.newOrderCount || 0;
-  if (item.countKey === 'active') return props.activeOrderCount || 0;
+const items = computed(() => allItems.filter((item) => {
+  if (item.countKey === 'tables') return props.showTables !== false;
+  if (item.countKey === 'pickup') return props.showPickup !== false;
+  if (item.countKey === 'delivery') return props.showDelivery !== false;
+  return true;
+}));
+
+function badge(item: (typeof allItems)[number]) {
+  if (item.countKey === 'tables') return props.tableAttentionCount || 0;
+  if (item.countKey === 'pickup') return props.pickupAttentionCount || 0;
+  if (item.countKey === 'delivery') return props.deliveryAttentionCount || 0;
   return 0;
 }
 </script>

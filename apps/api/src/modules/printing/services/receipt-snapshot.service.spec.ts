@@ -194,6 +194,57 @@ describe('ReceiptSnapshotService validation', () => {
       expect.objectContaining({ where: { id: 37n, merchantId } }),
     );
   });
+
+  it('prints a rounded 513,000 VND table bill with a 510,000 VND final total', async () => {
+    prisma.tableSession.findFirst.mockResolvedValue({
+      id: 47n,
+      sessionNo: 'TS-47',
+      openedAt: new Date('2026-07-15T00:00:00.000Z'),
+      closedAt: null,
+      roundingAmountVnd: 3_000n,
+      roundingAppliedByStaffId: 11n,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        addressZh: '测试地址',
+        addressDetail: null,
+        contactPhone: '0900000000',
+      },
+      table: { tableNo: 'A01', tableName: null },
+      orders: [
+        {
+          orderNo: 'TEST-TABLE-ORDER',
+          itemAmountVnd: 513_000n,
+          totalAmountVnd: 513_000n,
+          items: [
+            {
+              productNameZhSnapshot: '抹零验收菜品',
+              product: { nameVi: 'Mon kiem thu' },
+              quantity: 1,
+              unitPriceVnd: 513_000n,
+              subtotalVnd: 513_000n,
+              remark: null,
+            },
+          ],
+        },
+      ],
+    });
+
+    const snapshot = await service.fromTableSession(merchantId, 47n);
+
+    expect(snapshot.totals).toEqual({
+      subtotal: 513_000,
+      discount: 3_000,
+      originalAmount: 513_000,
+      roundingAmount: 3_000,
+      receivedAmount: 510_000,
+      total: 510_000,
+      currency: 'VND',
+    });
+    expect(prisma.tableSession.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 47n, merchantId } }),
+    );
+  });
 });
 
 function validReceipt(): ReceiptDocument {

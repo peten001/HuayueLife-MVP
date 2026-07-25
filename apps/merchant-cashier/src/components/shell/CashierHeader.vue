@@ -6,6 +6,7 @@ import {
   Maximize,
   Minimize,
   Printer,
+  RefreshCw,
   Volume2,
   VolumeX,
   Wifi,
@@ -27,12 +28,16 @@ const props = defineProps<{
   soundEnabled: boolean;
   soundSupported: boolean;
   printingAvailability: CashierPrintingAvailability;
+  activeTableFilter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED';
+  refreshingTables?: boolean;
 }>();
 
 const emit = defineEmits<{
   openNewOrders: [];
   toggleSound: [];
   fullscreenError: [];
+  selectTableFilter: [filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'];
+  refreshTables: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -89,10 +94,10 @@ const printingStatus = computed(() => {
   return { label: t('print.disabled'), shortLabel: t('print.disabledShort'), tone: 'muted' } as const;
 });
 const stats = computed(() => [
-  { key: 'all', label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
-  { key: 'available', label: t('stats.availableTables'), value: props.availableTableCount, tone: 'success' },
-  { key: 'in-use', label: t('stats.inUseTables'), value: props.inUseTableCount, tone: 'info' },
-  { key: 'disabled', label: t('stats.disabledTables'), value: props.disabledTableCount, tone: 'muted' },
+  { key: 'all', filter: 'ALL' as const, label: t('stats.totalTables'), value: props.totalTableCount, tone: 'neutral' },
+  { key: 'available', filter: 'AVAILABLE' as const, label: t('stats.availableTables'), value: props.availableTableCount, tone: 'success' },
+  { key: 'in-use', filter: 'IN_USE' as const, label: t('stats.inUseTables'), value: props.inUseTableCount, tone: 'info' },
+  { key: 'disabled', filter: 'DISABLED' as const, label: t('stats.disabledTables'), value: props.disabledTableCount, tone: 'muted' },
 ]);
 
 async function toggleFullscreen() {
@@ -124,15 +129,33 @@ onBeforeUnmount(() => {
 <template>
   <header class="cashier-header" data-testid="cashier-topbar">
     <section class="cashier-top-metrics" :aria-label="t('stats.title')" data-testid="top-metrics">
-      <article
+      <button
         v-for="item in stats"
         :key="item.key"
-        :class="`cashier-top-metric cashier-top-metric--${item.tone}`"
+        type="button"
+        :class="[
+          `cashier-top-metric cashier-top-metric--${item.tone}`,
+          { 'is-active': activeTableFilter === item.filter },
+        ]"
         :data-testid="`top-metric-${item.key}`"
+        :aria-pressed="activeTableFilter === item.filter"
+        @click="$emit('selectTableFilter', item.filter)"
       >
         <span>{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
-      </article>
+      </button>
+      <button
+        type="button"
+        class="cashier-top-metrics__refresh"
+        data-testid="top-table-refresh"
+        :title="t('common.refresh')"
+        :aria-label="t('common.refresh')"
+        :aria-busy="refreshingTables"
+        :disabled="refreshingTables"
+        @click="$emit('refreshTables')"
+      >
+        <RefreshCw :size="20" :class="{ spinning: refreshingTables }" aria-hidden="true" />
+      </button>
     </section>
 
     <section class="cashier-top-status" data-testid="top-status">

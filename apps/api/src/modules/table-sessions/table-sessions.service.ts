@@ -3,13 +3,24 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
+import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
+import { PrintJobsService } from '../printing/services/print-jobs.service';
+import { calculateTableSessionRoundingAmount } from './table-session.constants';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
+
+type CheckoutOrderRow = {
+  id: bigint;
+  status: OrderStatus;
+  order_type: OrderType;
+  total_amount_vnd: bigint;
+};
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -30,14 +41,19 @@ const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
 
 @Injectable()
 export class TableSessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(TableSessionsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly printJobs: PrintJobsService,
+  ) {}
 
   async getOrCreateOpenSession(
     tx: Prisma.TransactionClient,
     merchantId: bigint,
     tableId: bigint,
   ): Promise<{ id: bigint; created: boolean }> {
-    await this.lockTableRow(tx, merchantId, tableId);
+    await this.lockActiveTableRow(tx, merchantId, tableId);
 
     const existingId = await this.findOpenSessionId(tx, merchantId, tableId);
     if (existingId) {
@@ -192,6 +208,220 @@ export class TableSessionsService {
     return this.getSessionDetail(merchantId, result.sessionId);
   }
 
+  private async getCheckoutSnapshot(merchantId: bigint, sessionId: bigint) {
+    const [detail, orders] = await Promise.all([
+      this.getSessionDetail(merchantId, sessionId),
+      this.prisma.order.findMany({
+        where: { merchantId, tableSessionId: sessionId },
+        include: this.checkoutOrderInclude,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+    return {
+      ...detail,
+      orders: orders.map((order) => ({
+        ...order,
+        statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
+      })),
+    };
+  }
+
+  async checkoutSession(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+  ) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
+      await this.lockTableRow(tx, merchantId, sessionRef.tableId);
+
+      const session = await this.requireOwnedSessionRowForUpdate(
+        tx,
+        merchantId,
+        sessionId,
+      );
+      if (session.status === 'CLOSED') {
+        return { sessionId, printTriggerIds: [] as bigint[] };
+      }
+
+      // The dining-table lock serializes checkout against new orders. Locking
+      // every bound order then makes completion, status logs, and session close
+      // one atomic state change for retries and concurrent checkout requests.
+      const sessionOrders = await tx.$queryRaw<CheckoutOrderRow[]>`
+        SELECT id, status, order_type, total_amount_vnd
+        FROM orders
+        WHERE table_session_id = ${sessionId}
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      if (sessionOrders.some((order) => order.order_type !== 'DINE_IN')) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_HAS_NON_DINE_IN_ORDERS',
+          message: '桌账包含非堂食订单，无法完成结账。',
+        });
+      }
+      if (sessionOrders.some((order) => order.status === 'PENDING_ACCEPTANCE')) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_HAS_UNACCEPTED_ORDERS',
+          message: '该桌仍有未接单订单，无法完成结账。',
+        });
+      }
+
+      const allowedStatuses: OrderStatus[] = [
+        'ACCEPTED',
+        'PREPARING',
+        'READY',
+        'COMPLETED',
+        'CANCELLED',
+      ];
+      if (sessionOrders.some((order) => !allowedStatuses.includes(order.status))) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_HAS_UNSUPPORTED_ORDER_STATUS',
+          message: '桌账包含无法结账的订单状态，请刷新后重试。',
+        });
+      }
+
+      const originalAmountVnd = sessionOrders
+        .filter((order) => BILLABLE_ORDER_STATUSES.includes(order.status))
+        .reduce((sum, order) => sum + order.total_amount_vnd, 0n);
+      const roundingApplied = session.rounding_applied_by_staff_id !== null;
+      // setRounding persists the exact amount applied by the cashier. Keep
+      // that historical value for checkout/print/order association so all
+      // consumers agree even after a refresh.
+      const roundingAmountVnd = roundingApplied
+        ? session.rounding_amount_vnd
+        : 0n;
+      const payableAmountVnd = originalAmountVnd - roundingAmountVnd;
+      const completedAt = new Date();
+      const printTriggerIds: bigint[] = [];
+      for (const order of sessionOrders) {
+        if (!['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) continue;
+
+        const updated = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            merchantId,
+            tableSessionId: sessionId,
+            orderType: 'DINE_IN',
+            status: order.status,
+          },
+          data: {
+            status: 'COMPLETED',
+            completedAt,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException({
+            code: 'TABLE_SESSION_ORDER_STATUS_CHANGED',
+            message: '桌台订单状态已变化，请刷新后重试。',
+          });
+        }
+
+        const statusLog = await tx.orderStatusLog.create({
+          data: {
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: 'COMPLETED',
+            operatorType: 'MERCHANT_STAFF',
+            operatorStaffId: staffId,
+            action: 'TABLE_SESSION_CHECKOUT',
+            metadata: {
+              tableSessionId: sessionId.toString(),
+              originalAmountVnd: originalAmountVnd.toString(),
+              roundingAmountVnd: roundingAmountVnd.toString(),
+              payableAmountVnd: payableAmountVnd.toString(),
+            },
+            remark: '桌台结账，订单自动完成',
+          },
+        });
+        const triggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(
+          tx,
+          {
+            merchantId,
+            orderId: order.id,
+            orderStatusLogId: statusLog.id,
+            orderType: 'DINE_IN',
+            status: 'COMPLETED',
+          },
+        );
+        printTriggerIds.push(...triggers.map(({ id }) => id));
+      }
+
+      const closed = await tx.tableSession.updateMany({
+        where: { id: sessionId, merchantId, status: 'OPEN' },
+        data: {
+          openTableId: null,
+          status: 'CLOSED',
+          closedAt: completedAt,
+          roundingAmountVnd,
+        },
+      });
+      if (closed.count !== 1) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_STATUS_CHANGED',
+          message: '桌账状态已变化，请刷新后重试。',
+        });
+      }
+
+      return { sessionId, printTriggerIds };
+    });
+
+    if (result.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs.processAutomaticTriggerIds(result.printTriggerIds);
+      } catch (error) {
+        // The outbox rows were committed with the checkout transaction and can
+        // be recovered by the connector even if this immediate attempt fails.
+        this.logger.warn(
+          `Checkout print trigger processing deferred merchant=${merchantId} session=${sessionId} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
+    }
+
+    return this.getCheckoutSnapshot(merchantId, result.sessionId);
+  }
+
+  async setRounding(merchantId: bigint, staffId: bigint, sessionId: bigint, enabled: boolean) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
+      await this.lockTableRow(tx, merchantId, sessionRef.tableId);
+      const session = await this.requireOwnedSessionRowForUpdate(tx, merchantId, sessionId);
+      if (session.status !== 'OPEN') throw new ConflictException({ code: 'TABLE_SESSION_CLOSED', message: '桌账已关闭。' });
+      const orders = await tx.$queryRaw<Array<{
+        status: OrderStatus;
+        order_type: OrderType;
+        total_amount_vnd: bigint;
+      }>>`
+        SELECT status, order_type, total_amount_vnd
+        FROM orders
+        WHERE table_session_id = ${sessionId}
+        ORDER BY id
+        FOR UPDATE
+      `;
+      if (orders.some((order) => order.order_type !== 'DINE_IN')) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_HAS_NON_DINE_IN_ORDERS',
+          message: '桌账包含非堂食订单，无法抹零。',
+        });
+      }
+      const total = orders
+        .filter((order) => BILLABLE_ORDER_STATUSES.includes(order.status))
+        .reduce((sum, order) => sum + order.total_amount_vnd, 0n);
+      await tx.tableSession.update({
+        where: { id: sessionId },
+        data: {
+          roundingAmountVnd: enabled
+            ? calculateTableSessionRoundingAmount(total)
+            : 0n,
+          roundingAppliedByStaffId: enabled ? staffId : null,
+        },
+      });
+      return { sessionId };
+    });
+    return this.getSessionDetail(merchantId, result.sessionId);
+  }
+
   private async requireOwnedTable(
     client: DbClient,
     merchantId: bigint,
@@ -246,8 +476,11 @@ export class TableSessionsService {
       status: string;
       open_table_id: bigint | null;
       closed_at: Date | null;
+      rounding_amount_vnd: bigint;
+      rounding_applied_by_staff_id: bigint | null;
     }>>`
-      SELECT id, merchant_id, table_id, status, open_table_id, closed_at
+      SELECT id, merchant_id, table_id, status, open_table_id, closed_at,
+             rounding_amount_vnd, rounding_applied_by_staff_id
       FROM table_sessions
       WHERE id = ${sessionId} AND merchant_id = ${merchantId}
       FOR UPDATE
@@ -349,6 +582,8 @@ export class TableSessionsService {
     merchantId: bigint,
     tableId: bigint,
   ) {
+    // Closing paths use this ownership lock directly so an administratively
+    // disabled table can still release its existing session.
     const rows = await tx.$queryRaw<Array<{ id: bigint; status: string }>>`
       SELECT id, status
       FROM dining_tables
@@ -362,6 +597,15 @@ export class TableSessionsService {
         message: '桌台不存在',
       });
     }
+    return table;
+  }
+
+  private async lockActiveTableRow(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    tableId: bigint,
+  ) {
+    const table = await this.lockTableRow(tx, merchantId, tableId);
     if (table.status !== 'ACTIVE') {
       throw new BadRequestException({
         code: 'TABLE_NOT_AVAILABLE',
@@ -445,6 +689,10 @@ export class TableSessionsService {
     table: { id: bigint; tableNo: string; tableName: string | null },
   ) {
     const summary = this.summarizeOrders(session.orders);
+    const roundingApplied = session.roundingAppliedByStaffId !== null;
+    const roundingAmountVnd = roundingApplied
+      ? session.roundingAmountVnd
+      : 0n;
     return {
       id: session.id,
       sessionNo: session.sessionNo,
@@ -455,6 +703,10 @@ export class TableSessionsService {
       status: session.status,
       openedAt: session.openedAt,
       closedAt: session.closedAt,
+      roundingApplied,
+      roundingAmountVnd,
+      payableAmountVnd: summary.totalAmountVnd - roundingAmountVnd,
+      originalAmountVnd: summary.totalAmountVnd,
       ...summary,
     };
   }
@@ -463,6 +715,10 @@ export class TableSessionsService {
     session: Awaited<ReturnType<typeof this.requireOwnedSession>>,
   ) {
     const summary = this.summarizeOrders(session.orders);
+    const roundingApplied = session.roundingAppliedByStaffId !== null;
+    const roundingAmountVnd = roundingApplied
+      ? session.roundingAmountVnd
+      : 0n;
     return {
       id: session.id,
       sessionNo: session.sessionNo,
@@ -473,6 +729,10 @@ export class TableSessionsService {
       status: session.status,
       openedAt: session.openedAt,
       closedAt: session.closedAt,
+      roundingApplied,
+      roundingAmountVnd,
+      payableAmountVnd: summary.totalAmountVnd - roundingAmountVnd,
+      originalAmountVnd: summary.totalAmountVnd,
       ...summary,
       orders: session.orders.map((order) => ({
         id: order.id,
@@ -515,6 +775,64 @@ export class TableSessionsService {
         },
       },
       orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
+    },
+  };
+
+  // Keep checkout snapshots compatible with the merchant order detail contract
+  // without injecting MerchantOrdersService back into TableSessionsModule.
+  private readonly checkoutOrderInclude = {
+    merchant: {
+      select: { id: true, nameZh: true },
+    },
+    chatConversation: {
+      select: {
+        id: true,
+        status: true,
+        merchantUnreadCount: true,
+        customerUnreadCount: true,
+        lastMessageAt: true,
+        lastMessageId: true,
+        merchantLastReadAt: true,
+        customerLastReadAt: true,
+      },
+    },
+    user: {
+      select: { id: true, nickname: true, phone: true },
+    },
+    table: {
+      select: { id: true, tableNo: true, tableName: true },
+    },
+    items: {
+      orderBy: { id: 'asc' as const },
+    },
+    statusLogs: {
+      select: {
+        id: true,
+        orderId: true,
+        fromStatus: true,
+        toStatus: true,
+        operatorType: true,
+        operatorUserId: true,
+        operatorStaffId: true,
+        action: true,
+        metadata: true,
+        remark: true,
+        createdAt: true,
+        updatedAt: true,
+        operatorStaff: {
+          select: { id: true, displayName: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' as const },
+    },
+    printLogs: {
+      include: {
+        printer: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' as const },
+      take: 10,
     },
   };
 }

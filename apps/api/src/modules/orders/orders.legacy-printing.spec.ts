@@ -7,7 +7,15 @@ describe('OrdersService legacy printing gate', () => {
   ])(
     'creates the order normally with legacy enabled=%s and invokes it %s time(s)',
     async (legacyEnabled, expectedCalls) => {
-      const createdOrder = { id: 91n, merchantId: 7n };
+      const createdAt = new Date('2026-07-24T08:00:00.000Z');
+      const createdOrder = {
+        id: 91n,
+        merchantId: 7n,
+        orderType: 'PICKUP',
+        orderNo: 'HY20260724A091',
+        createdAt,
+        readyAt: null,
+      };
       const storedOrder = { ...createdOrder, createdByStaffId: null };
       const tx = {
         order: {
@@ -66,7 +74,11 @@ describe('OrdersService legacy printing gate', () => {
           contactName: 'Test',
           contactPhone: '00000000',
         } as never),
-      ).resolves.toEqual(createdOrder);
+      ).resolves.toEqual({
+        ...createdOrder,
+        pickupCode: 'A091',
+        estimatedReadyAt: new Date('2026-07-24T08:30:00.000Z'),
+      });
 
       expect(tx.order.create).toHaveBeenCalledTimes(1);
       expect(creatorInvariant.assertValid).toHaveBeenCalledWith(tx, {
@@ -83,7 +95,15 @@ describe('OrdersService legacy printing gate', () => {
   );
 
   it('does not let a legacy print failure affect a completed order creation', async () => {
-    const createdOrder = { id: 92n, merchantId: 7n };
+    const createdAt = new Date('2026-07-24T09:00:00.000Z');
+    const createdOrder = {
+      id: 92n,
+      merchantId: 7n,
+      orderType: 'PICKUP',
+      orderNo: 'HY20260724A092',
+      createdAt,
+      readyAt: null,
+    };
     const storedOrder = { ...createdOrder, createdByStaffId: null };
     const tx = {
       order: {
@@ -135,7 +155,11 @@ describe('OrdersService legacy printing gate', () => {
         contactName: 'Test',
         contactPhone: '00000000',
       } as never),
-    ).resolves.toEqual(createdOrder);
+    ).resolves.toEqual({
+      ...createdOrder,
+      pickupCode: 'A092',
+      estimatedReadyAt: new Date('2026-07-24T09:30:00.000Z'),
+    });
     expect(printers.printOrder).toHaveBeenCalledTimes(1);
   });
 });

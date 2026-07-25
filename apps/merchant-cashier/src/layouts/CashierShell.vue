@@ -1,30 +1,17 @@
 <script setup lang="ts">
-import { X } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
 import {
+  cashierWorkspaceEnabled,
   currentBusinessHoursRange,
-  getOrCreatePendingDecreaseMutation,
-  getOrCreatePendingReturnMutation,
-  hasUnresolvedCashierMutation,
-  isPendingDecreaseInlineRetryReachable,
+  firstEnabledCashierWorkspace,
   isWithinBusinessHours,
+  resolveCashierWorkspaceCapabilities,
   resolveMediaUrl,
-  shouldBlockCashierMutationNavigation,
-  type PendingDecreaseMutation,
-  type PendingReturnMutation,
 } from '@/domain';
-import {
-  apiErrorTranslationKey,
-  CashierApiError,
-  decreaseMerchantOrderItem,
-  isDefinitiveMutationRejection,
-  isMutationOutcomeUncertain,
-  returnMerchantOrderItem,
-  shouldRefreshAfterItemAdjustmentError,
-} from '@/api';
+import { resolveOrderLocation } from '@/domain/order-location';
 import {
   useAuthStore,
   useNetworkStore,
@@ -34,26 +21,14 @@ import {
   useTablesStore,
   useUiStore,
 } from '@/stores';
-import type {
-  CashierOrderAction,
-  CashierOrderItemView,
-} from '@/components/common/view-models';
-import type { MerchantOrderMutationResult, TableSessionOrder } from '@/types';
+import type { MerchantOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
 import OrientationNotice from '@/components/shell/OrientationNotice.vue';
-import OrderDetailPanel from '@/components/orders/OrderDetailPanel.vue';
-import PendingDecreaseRecovery from '@/components/orders/PendingDecreaseRecovery.vue';
-import TableBillDetail from '@/components/bills/TableBillDetail.vue';
-import EmptyState from '@/components/common/EmptyState.vue';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
-import TableOrderingWorkspace from '@/components/ordering/TableOrderingWorkspace.vue';
-import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
-import { guardNetworkWrite, networkWritesDisabled } from './network-write-guard';
+import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
 
-const route = useRoute();
 const router = useRouter();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
@@ -64,22 +39,14 @@ const networkStore = useNetworkStore();
 const soundStore = useSoundStore();
 const uiStore = useUiStore();
 const { session, profile, isAuthenticated, demoMode } = storeToRefs(authStore);
-const { pendingOrders, activeOrders, selectedOrder, actionLoadingId } = storeToRefs(ordersStore);
-const { tableCards, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
+const { pendingOrders } = storeToRefs(ordersStore);
+const { tableCards } = storeToRefs(tablesStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
 const { availability: printingAvailability } = storeToRefs(printingStore);
-const { detailOpen } = storeToRefs(uiStore);
 const loggingOut = ref(false);
-const closingSession = ref(false);
-const closeDialogOpen = ref(false);
-const pendingOrderAction = ref<CashierOrderAction | null>(null);
-const orderingOpen = ref(false);
-const orderingMutationLocked = ref(false);
-const adjustmentLoadingId = ref('');
-const pendingDecreaseMutation = ref<PendingDecreaseMutation | null>(null);
-const returnDialogItem = ref<CashierOrderItemView | null>(null);
-const pendingReturnMutation = ref<PendingReturnMutation | null>(null);
+const inboxOpen = ref(false);
+const refreshingTables = ref(false);
 let printingStatusTimer: number | undefined;
 
 const identity = computed(() => ({
@@ -91,68 +58,30 @@ const identity = computed(() => ({
   role: session.value?.role,
   merchantLogoUrl: resolveMediaUrl(profile.value?.logoUrl),
 }));
-const availableTableCount = computed(
-  () => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length,
-);
-const inUseTableCount = computed(
-  () => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length,
-);
-const disabledTableCount = computed(
-  () => tableCards.value.filter((table) => table.operationalStatus === 'DISABLED').length,
-);
-const showingTableDetail = computed(() => route.path === '/tables');
+const capabilities = computed(() => resolveCashierWorkspaceCapabilities(
+  profile.value,
+  session.value?.merchant,
+));
+const availableTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length);
+const inUseTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length);
+const disabledTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'DISABLED').length);
+const tableAttentionCount = computed(() => tableCards.value.filter((table) => Number(table.currentSession?.pendingOrderCount || 0) > 0).length);
+const pickupAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'PICKUP').length);
+const deliveryAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'DELIVERY').length);
 const plannedHoursRange = computed(() => currentBusinessHoursRange(profile.value?.businessHours));
-const plannedBusinessOpen = computed<boolean | null>(() =>
-  profile.value ? isWithinBusinessHours(profile.value.businessHours) : null,
-);
-const writeActionsDisabled = computed(() =>
-  !demoMode.value && networkWritesDisabled(online.value, apiReachable.value),
-);
-const returnOutcomeUncertain = computed(() =>
-  Boolean(pendingReturnMutation.value) && !adjustmentLoadingId.value,
-);
-const decreaseOutcomeUncertain = computed(() =>
-  Boolean(pendingDecreaseMutation.value) && !adjustmentLoadingId.value,
-);
-const decreaseInlineRetryReachable = computed(() => {
-  if (!decreaseOutcomeUncertain.value) return false;
-  return isPendingDecreaseInlineRetryReachable({
-    pending: pendingDecreaseMutation.value,
-    selectedOrder: selectedOrder.value,
-    detailOpen: detailOpen.value,
-    showingTableDetail: showingTableDetail.value,
-  });
-});
-const showPendingDecreaseRecovery = computed(() =>
-  decreaseOutcomeUncertain.value && !decreaseInlineRetryReachable.value,
-);
-const mutationNavigationBlocked = computed(() =>
-  hasUnresolvedCashierMutation({
-    orderingLocked: orderingMutationLocked.value,
-    pendingDecrease: pendingDecreaseMutation.value,
-    pendingReturn: pendingReturnMutation.value,
-  }),
-);
+const plannedBusinessOpen = computed<boolean | null>(() => profile.value ? isWithinBusinessHours(profile.value.businessHours) : null);
 const businessHoursLabel = computed(() => {
   if (!profile.value) return t('shell.businessHoursUnknown');
   if (!plannedHoursRange.value) return t('shell.businessClosed');
   return `${t(plannedBusinessOpen.value ? 'shell.businessOpen' : 'shell.businessClosed')} · ${plannedHoursRange.value}`;
 });
-const confirmationTitle = computed(() => {
-  if (closeDialogOpen.value) return t('table.closeConfirmTitle');
-  return t(pendingOrderAction.value === 'reject' ? 'order.rejectConfirmTitle' : 'order.completeConfirmTitle');
-});
-const confirmationDescription = computed(() => {
-  if (closeDialogOpen.value) return t('table.closeConfirmDescription');
-  return t(pendingOrderAction.value === 'reject' ? 'order.rejectConfirmDescription' : 'order.completeConfirmDescription');
+const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(() => {
+  const filter = router.currentRoute.value.query.status;
+  return filter === 'AVAILABLE' || filter === 'IN_USE' || filter === 'DISABLED' ? filter : 'ALL';
 });
 
 async function logout() {
   if (loggingOut.value) return;
-  if (mutationNavigationBlocked.value) {
-    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
-    return;
-  }
   loggingOut.value = true;
   try {
     ordersStore.stopLivePolling();
@@ -160,11 +89,7 @@ async function logout() {
     ordersStore.clear();
     tablesStore.clear();
     printingStore.clear();
-    uiStore.closeDetail();
-    orderingOpen.value = false;
-    pendingDecreaseMutation.value = null;
-    returnDialogItem.value = null;
-    pendingReturnMutation.value = null;
+    inboxOpen.value = false;
     await authStore.logout();
     await router.replace('/login');
   } finally {
@@ -172,268 +97,24 @@ async function logout() {
   }
 }
 
-function openOrdering() {
-  if (!networkWriteAvailable()) return;
-  if (!selectedTable.value) {
-    uiStore.pushToast(t('itemAdjustment.tableSessionClosed'), 'error');
-    return;
-  }
-  if (selectedTable.value.status === 'DISABLED') {
-    uiStore.pushToast(t('table.disabledHint'), 'warning');
-    return;
-  }
-  orderingOpen.value = true;
-}
-
-function closeOrdering() {
-  if (orderingMutationLocked.value) {
-    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
-    return;
-  }
-  orderingOpen.value = false;
-}
-
-function applyItemMutation(result: MerchantOrderMutationResult) {
-  if (result.order) ordersStore.applyOrderSnapshot(result.order);
-  tablesStore.applySessionSnapshot(result.session);
-}
-
-async function handleTableOrderCreated(result: MerchantOrderMutationResult) {
-  applyItemMutation(result);
-  orderingOpen.value = false;
-  if (result.order) {
-    await router.push('/orders/new');
-    ordersStore.applyOrderSnapshot(result.order, true);
-    uiStore.openDetail('order', result.order.id);
-  }
-  uiStore.pushToast(t(
-    result.order ? 'ordering.openTableAndOrderSuccess' : 'ordering.openSuccess',
-  ), 'success');
-  void refreshAdjustmentContext();
-}
-
-async function refreshAdjustmentContext(force = false) {
-  await Promise.allSettled([
-    ordersStore.refreshLiveOrders({ force }),
-    tablesStore.fetchTables({ force }),
-  ]);
-}
-
-async function handleOrderingFailure(error: unknown) {
-  await refreshAdjustmentContext(
-    isMutationOutcomeUncertain(error) || shouldRefreshAfterItemAdjustmentError(error),
-  );
-  if (error instanceof CashierApiError && [
-    'TABLE_SESSION_NOT_OPEN',
-    'TABLE_ALREADY_OPEN',
-    'TABLE_SESSION_CLOSED',
-    'TABLE_NOT_AVAILABLE',
-    'TABLE_NOT_FOUND',
-  ].includes(error.code)) {
-    orderingOpen.value = false;
-  }
-}
-
-async function decreaseItem(item: CashierOrderItemView) {
-  const order = selectedOrder.value;
-  const expectedQuantity = Number(item.quantity || 0);
-  if (!order || adjustmentLoadingId.value || expectedQuantity < 1) return;
-  if (!networkWriteAvailable()) return;
-  const mutation = getOrCreatePendingDecreaseMutation(pendingDecreaseMutation.value, {
-    orderId: order.id,
-    itemId: item.id,
-    expectedQuantity,
-  });
-  if (!mutation) {
-    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
-    return;
-  }
-  pendingDecreaseMutation.value = mutation;
-  await executePendingDecrease(mutation);
-}
-
-async function retryPendingDecrease() {
-  const mutation = pendingDecreaseMutation.value;
-  if (!mutation || adjustmentLoadingId.value) return;
-  if (!networkWriteAvailable()) return;
-  await executePendingDecrease(mutation);
-}
-
-async function executePendingDecrease(mutation: PendingDecreaseMutation) {
-  adjustmentLoadingId.value = mutation.itemId;
-  try {
-    const result = await decreaseMerchantOrderItem(mutation.orderId, mutation.itemId, {
-      requestKey: mutation.requestKey,
-      expectedQuantity: mutation.expectedQuantity,
-      targetQuantity: mutation.targetQuantity,
-    });
-    applyItemMutation(result);
-    pendingDecreaseMutation.value = null;
-    uiStore.pushToast(t('itemAdjustment.decreaseSuccess'), 'success');
-  } catch (error) {
-    if (!isDefinitiveMutationRejection(error)) {
-      await refreshAdjustmentContext(true);
-      uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
-    } else {
-      pendingDecreaseMutation.value = null;
-      uiStore.pushToast(t(apiErrorTranslationKey(error, 'itemAdjustment.decreaseFailed')), 'error');
-      if (shouldRefreshAfterItemAdjustmentError(error)) await refreshAdjustmentContext(true);
-    }
-  } finally {
-    adjustmentLoadingId.value = '';
-  }
-}
-
-function requestReturnItem(item: CashierOrderItemView) {
-  if (!networkWriteAvailable()) return;
-  if (pendingDecreaseMutation.value) {
-    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
-    return;
-  }
-  returnDialogItem.value = item;
-  pendingReturnMutation.value = null;
-}
-
-function cancelReturnItem() {
-  if (adjustmentLoadingId.value) return;
-  if (pendingReturnMutation.value) {
-    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
-    return;
-  }
-  returnDialogItem.value = null;
-}
-
-async function confirmReturnItem(returnQuantity: number) {
-  const order = selectedOrder.value;
-  const item = returnDialogItem.value;
-  const expectedQuantity = Number(item?.quantity || 0);
-  if (!order || !item || adjustmentLoadingId.value || expectedQuantity < 1) return;
-  if (!networkWriteAvailable()) return;
-  const mutation = getOrCreatePendingReturnMutation(pendingReturnMutation.value, {
-    orderId: order.id,
-    itemId: item.id,
-    expectedQuantity,
-    returnQuantity,
-  });
-  if (!mutation) {
-    uiStore.pushToast(t('itemAdjustment.pendingOtherItem'), 'warning');
-    return;
-  }
-  pendingReturnMutation.value = mutation;
-  adjustmentLoadingId.value = item.id;
-  try {
-    const result = await returnMerchantOrderItem(order.id, item.id, {
-      requestKey: mutation.requestKey,
-      expectedQuantity: mutation.expectedQuantity,
-      returnQuantity: mutation.returnQuantity,
-    });
-    applyItemMutation(result);
-    returnDialogItem.value = null;
-    pendingReturnMutation.value = null;
-    uiStore.pushToast(t('itemAdjustment.returnSuccess'), 'success');
-  } catch (error) {
-    if (!isDefinitiveMutationRejection(error)) {
-      await refreshAdjustmentContext(true);
-      uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
-    } else {
-      uiStore.pushToast(t(apiErrorTranslationKey(error, 'itemAdjustment.returnFailed')), 'error');
-      if (shouldRefreshAfterItemAdjustmentError(error)) await refreshAdjustmentContext(true);
-      returnDialogItem.value = null;
-      pendingReturnMutation.value = null;
-    }
-  } finally {
-    adjustmentLoadingId.value = '';
-  }
-}
-
 async function toggleSound() {
-  if (soundEnabled.value) {
-    soundStore.disable();
-    return;
-  }
-  await soundStore.enable();
-}
-
-function networkWriteAvailable() {
-  if (demoMode.value) return true;
-  return guardNetworkWrite(online.value, apiReachable.value, () => {
-    uiStore.pushToast(t('error.network'), 'error');
-  });
-}
-
-function requestOrderAction(action: CashierOrderAction) {
-  if (!networkWriteAvailable()) return;
-  if (action === 'reject' || action === 'complete') {
-    pendingOrderAction.value = action;
-    return;
-  }
-  void executeOrderAction(action);
-}
-
-async function executeOrderAction(action: CashierOrderAction) {
-  if (!selectedOrder.value || actionLoadingId.value) return;
-  if (!networkWriteAvailable()) return;
-  try {
-    await ordersStore.runAction(selectedOrder.value.id, action);
-    await Promise.allSettled([ordersStore.refreshLiveOrders(), tablesStore.fetchTables()]);
-    uiStore.pushToast(t('order.actionSuccess'), 'success');
-  } catch (caught) {
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.actionFailed')), 'error');
-  } finally {
-    pendingOrderAction.value = null;
-  }
-}
-
-function requestCloseSession() {
-  if (!networkWriteAvailable()) return;
-  closeDialogOpen.value = true;
-}
-
-async function closeSession() {
-  if (closingSession.value) return;
-  if (!networkWriteAvailable()) return;
-  closingSession.value = true;
-  try {
-    await tablesStore.closeSelectedSession();
-    closeDialogOpen.value = false;
-    tablesStore.clearSelection();
-    uiStore.closeDetail();
-    await router.replace({ path: '/tables', query: {} });
-    uiStore.pushToast(t('table.closeSuccess'), 'success');
-  } catch (caught) {
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.closeFailed')), 'error');
-  } finally {
-    closingSession.value = false;
-  }
-}
-
-async function confirmCurrentAction() {
-  if (closeDialogOpen.value) await closeSession();
-  else if (pendingOrderAction.value) await executeOrderAction(pendingOrderAction.value);
-}
-
-function cancelConfirmation() {
-  closeDialogOpen.value = false;
-  pendingOrderAction.value = null;
+  if (soundEnabled.value) soundStore.disable();
+  else await soundStore.enable();
 }
 
 async function openNewOrders() {
-  await router.push('/orders/new');
+  if (!pendingOrders.value.length) return;
+  const [onlyOrder] = pendingOrders.value;
+  if (pendingOrders.value.length === 1 && onlyOrder) {
+    await openInboxOrder(onlyOrder);
+    return;
+  }
+  inboxOpen.value = true;
 }
 
-async function openTableOrder(order: TableSessionOrder) {
-  const path = order.status === 'PENDING_ACCEPTANCE'
-    ? '/orders/new'
-    : ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'].includes(order.status)
-      ? '/orders/active'
-      : '/orders/history';
-  await router.push(path);
-  try {
-    await ordersStore.selectOrder(order.id);
-    uiStore.openDetail('order', order.id);
-  } catch {
-    uiStore.pushToast(t('error.operationFailed'), 'error');
-  }
+async function openInboxOrder(order: MerchantOrder) {
+  inboxOpen.value = false;
+  await router.push(resolveOrderLocation(order));
 }
 
 async function recoverData() {
@@ -445,17 +126,33 @@ async function recoverData() {
   ]);
 }
 
-function protectUnresolvedMutation(event: BeforeUnloadEvent) {
-  if (!mutationNavigationBlocked.value) return;
-  event.preventDefault();
-  event.returnValue = '';
+async function selectTableFilter(filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED') {
+  await router.push({
+    name: 'tables',
+    query: filter === 'ALL' ? {} : { status: filter },
+  });
+}
+
+async function refreshTables() {
+  if (refreshingTables.value) return;
+  refreshingTables.value = true;
+  try {
+    await Promise.all([
+      tablesStore.fetchTables({ force: true }),
+      ordersStore.refreshLiveOrders({ force: true }),
+    ]);
+  } catch {
+    uiStore.pushToast(t('error.refreshFailed'), 'error');
+  } finally {
+    refreshingTables.value = false;
+  }
 }
 
 watch(isAuthenticated, async (authenticated) => {
   if (!authenticated && !loggingOut.value) {
     ordersStore.clear();
     tablesStore.clear();
-    uiStore.closeDetail();
+    inboxOpen.value = false;
     await router.replace({ path: '/login', query: { expired: '1' } });
   }
 });
@@ -468,42 +165,33 @@ watch(
   },
 );
 
-function guardUnresolvedMutationNavigation(destinationName: string | symbol | null | undefined) {
-  const blocked = shouldBlockCashierMutationNavigation({
-    unresolvedMutation: mutationNavigationBlocked.value,
-    authenticated: isAuthenticated.value,
-    destinationName,
-  });
-  if (!blocked) return true;
-  uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
-  return false;
-}
-
-onBeforeRouteUpdate((to) => guardUnresolvedMutationNavigation(to.name));
-onBeforeRouteLeave((to) => guardUnresolvedMutationNavigation(to.name));
-
 watch(soundError, (error) => {
   if (error) uiStore.pushToast(t('sound.unlockFailed'), 'warning');
 });
 
 watch(
-  () => route.path,
-  (nextPath, previousPath) => {
-    if (nextPath === previousPath) return;
-    uiStore.closeDetail();
-    if (nextPath !== '/tables') void ordersStore.selectOrder(null);
-    if (nextPath !== '/tables') orderingOpen.value = false;
+  () => [
+    capabilities.value.tables,
+    capabilities.value.pickup,
+    capabilities.value.delivery,
+    router.currentRoute.value.name,
+  ] as const,
+  ([tables, pickup, delivery, routeName]) => {
+    const nextCapabilities = { tables, pickup, delivery };
+    if (!cashierWorkspaceEnabled(routeName, nextCapabilities)) {
+      void router.replace({ name: firstEnabledCashierWorkspace(nextCapabilities) });
+    }
   },
+  { immediate: true },
 );
 
 onMounted(async () => {
-  window.addEventListener('beforeunload', protectUnresolvedMutation);
   networkStore.start();
   ordersStore.startLivePolling();
   tablesStore.startLivePolling();
   await Promise.allSettled([
     ordersStore.refreshLiveOrders(),
-    ordersStore.fetchHistory(),
+    tablesStore.fetchTables(),
     printingStore.refreshStatus(),
   ]);
   printingStatusTimer = window.setInterval(() => {
@@ -512,7 +200,6 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('beforeunload', protectUnresolvedMutation);
   ordersStore.stopLivePolling();
   tablesStore.stopLivePolling();
   networkStore.stop();
@@ -521,7 +208,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="cashier-shell">
+  <div class="cashier-shell cashier-shell--workflow">
     <CashierSidebar
       :merchant-name="identity.merchantName"
       :merchant-logo-url="identity.merchantLogoUrl"
@@ -530,8 +217,12 @@ onBeforeUnmount(() => {
       :demo-mode="demoMode"
       :role="identity.role"
       :logging-out="loggingOut"
-      :new-order-count="pendingOrders.length"
-      :active-order-count="activeOrders.length"
+      :table-attention-count="tableAttentionCount"
+      :pickup-attention-count="pickupAttentionCount"
+      :delivery-attention-count="deliveryAttentionCount"
+      :show-tables="capabilities.tables"
+      :show-pickup="capabilities.pickup"
+      :show-delivery="capabilities.delivery"
       @logout="logout"
     />
 
@@ -547,104 +238,26 @@ onBeforeUnmount(() => {
       :sound-enabled="soundEnabled"
       :sound-supported="soundSupported"
       :printing-availability="printingAvailability"
+      :active-table-filter="activeTableFilter"
+      :refreshing-tables="refreshingTables"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
+      @select-table-filter="selectTableFilter"
+      @refresh-tables="refreshTables"
     />
 
-    <main class="cashier-shell__route">
+    <main class="cashier-shell__route cashier-shell__route--workflow">
       <OrientationNotice />
       <RouterView />
     </main>
 
-    <aside class="cashier-shell__detail" :class="{ 'cashier-shell__detail--open': detailOpen }">
-      <button
-        v-if="detailOpen"
-        type="button"
-        class="shell-detail-scrim"
-        :aria-label="t('common.closeDetail')"
-        @click="uiStore.closeDetail()"
-      />
-      <div class="cashier-shell__detail-panel">
-        <button
-          type="button"
-          class="detail-close-button shell-detail-close"
-          :aria-label="t('common.closeDetail')"
-          @click="uiStore.closeDetail()"
-        ><X :size="18" aria-hidden="true" /></button>
-        <TableBillDetail
-          v-if="showingTableDetail"
-          :table="selectedTable"
-          :session="selectedSessionDetail"
-          :closing="closingSession"
-          :actions-disabled="writeActionsDisabled"
-          @close-session="requestCloseSession"
-          @open-order="openTableOrder"
-          @order-items="openOrdering"
-        />
-        <OrderDetailPanel
-          v-else-if="selectedOrder"
-          :order="selectedOrder"
-          :action-loading="actionLoadingId === selectedOrder.id"
-          :actions-disabled="writeActionsDisabled"
-          :adjustment-loading-id="adjustmentLoadingId"
-          :pending-adjustment-item-id="pendingDecreaseMutation?.itemId"
-          @action="requestOrderAction"
-          @decrease-item="decreaseItem"
-          @return-item="requestReturnItem"
-        />
-        <EmptyState
-          v-else
-          :title="t('common.detailEmptyTitle')"
-          :description="t('common.detailEmptyDescription')"
-        />
-      </div>
-    </aside>
-
-    <CashierMobileNavigation />
-
+    <CashierMobileNavigation
+      :show-tables="capabilities.tables"
+      :show-pickup="capabilities.pickup"
+      :show-delivery="capabilities.delivery"
+    />
+    <NewOrderInbox :open="inboxOpen" :orders="pendingOrders" @close="inboxOpen = false" @select="openInboxOrder" />
     <ToastRegion />
-
-    <PendingDecreaseRecovery
-      :open="showPendingDecreaseRecovery"
-      :loading="Boolean(adjustmentLoadingId)"
-      :disabled="writeActionsDisabled"
-      @retry="retryPendingDecrease"
-    />
-
-    <TableOrderingWorkspace
-      :open="orderingOpen"
-      :table-id="selectedTable?.id || ''"
-      :table-label="selectedSessionDetail?.tableNo || selectedTable?.tableNo || t('table.numberFallback')"
-      :session-id="selectedSessionDetail?.id || ''"
-      :disabled="writeActionsDisabled"
-      @close="closeOrdering"
-      @created="handleTableOrderCreated"
-      @failed="handleOrderingFailure"
-      @mutation-lock-changed="orderingMutationLocked = $event"
-    />
-
-    <ReturnItemDialog
-      :open="Boolean(returnDialogItem)"
-      :item="returnDialogItem"
-      :loading="Boolean(adjustmentLoadingId)"
-      :disabled="writeActionsDisabled"
-      :outcome-uncertain="returnOutcomeUncertain"
-      :fixed-quantity="pendingReturnMutation?.returnQuantity"
-      @cancel="cancelReturnItem"
-      @confirm="confirmReturnItem"
-    />
-
-    <ConfirmDialog
-      :open="closeDialogOpen || Boolean(pendingOrderAction)"
-      :title="confirmationTitle"
-      :description="confirmationDescription"
-      :cancel-label="t('common.cancel')"
-      :confirm-label="t('common.confirm')"
-      :loading="closingSession || Boolean(actionLoadingId)"
-      :confirm-disabled="writeActionsDisabled"
-      @cancel="cancelConfirmation"
-      @confirm="confirmCurrentAction"
-    />
   </div>
 </template>

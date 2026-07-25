@@ -17,6 +17,7 @@ import './styles/responsive.css';
 import './styles/final-layout.css';
 import './styles/item-adjustments.css';
 import './styles/pwa-install.css';
+import './styles/workflow.css';
 
 declare global {
   interface Window {

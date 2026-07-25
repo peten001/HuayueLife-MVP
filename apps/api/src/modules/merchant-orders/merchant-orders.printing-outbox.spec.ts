@@ -79,10 +79,14 @@ describe('MerchantOrdersService printing outbox', () => {
   });
 
   it('returns the accepted order when immediate processing fails because intent is durable', async () => {
+    const createdAt = new Date('2026-07-24T08:00:00.000Z');
     const accepted = {
       id: 38n,
       merchantId: 7n,
       orderType: 'PICKUP',
+      orderNo: 'HY20260724A038',
+      createdAt,
+      readyAt: null,
       status: 'ACCEPTED',
     };
     const tx = {
@@ -117,9 +121,11 @@ describe('MerchantOrdersService printing outbox', () => {
       {} as never,
     );
 
-    await expect(service.transition(7n, 3n, 38n, 'ACCEPT')).resolves.toBe(
-      accepted,
-    );
+    await expect(service.transition(7n, 3n, 38n, 'ACCEPT')).resolves.toEqual({
+      ...accepted,
+      pickupCode: 'A038',
+      estimatedReadyAt: new Date('2026-07-24T08:30:00.000Z'),
+    });
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([502n]);
   });
 });

@@ -1,6 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { markTerminalStep, reportTerminalError } from '@/diagnostics/terminal-debug';
+import {
+  cashierWorkspaceEnabled,
+  firstEnabledCashierWorkspace,
+  resolveCashierWorkspaceCapabilities,
+} from '@/domain';
 import { useAuthStore } from '@/stores/auth';
 
 declare module 'vue-router' {
@@ -35,22 +40,34 @@ const router = createRouter({
           redirect: '/tables',
         },
         {
-          path: 'tables',
+          path: 'tables/:tableId?',
           name: 'tables',
           component: () => import('@/pages/TableOverviewPage.vue'),
         },
         {
+          path: 'pickup/:orderId?',
+          name: 'pickup-orders',
+          component: () => import('@/pages/PickupOrdersPage.vue'),
+        },
+        {
+          path: 'delivery/:orderId?',
+          name: 'delivery-orders',
+          component: () => import('@/pages/DeliveryOrdersPage.vue'),
+        },
+        {
           path: 'orders/new',
-          name: 'new-orders',
-          component: () => import('@/pages/NewOrdersPage.vue'),
+          name: 'legacy-new-orders',
+          component: () => import('@/pages/LegacyOrderRedirectPage.vue'),
+          props: { collection: 'pending' },
         },
         {
           path: 'orders/active',
-          name: 'active-orders',
-          component: () => import('@/pages/ActiveOrdersPage.vue'),
+          name: 'legacy-active-orders',
+          component: () => import('@/pages/LegacyOrderRedirectPage.vue'),
+          props: { collection: 'active' },
         },
         {
-          path: 'orders/history',
+          path: 'orders/history/:orderId?',
           name: 'order-history',
           component: () => import('@/pages/OrderHistoryPage.vue'),
         },
@@ -113,6 +130,13 @@ router.beforeEach(async (to) => {
     to.name === 'change-password'
   ) {
     return { name: 'tables' };
+  }
+
+  if (auth.isAuthenticated && !auth.mustChangePassword) {
+    const capabilities = resolveCashierWorkspaceCapabilities(auth.profile, auth.merchant);
+    if (!cashierWorkspaceEnabled(to.name, capabilities)) {
+      return { name: firstEnabledCashierWorkspace(capabilities) };
+    }
   }
 
   return true;

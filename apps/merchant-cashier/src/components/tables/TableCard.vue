@@ -17,7 +17,10 @@ const { t } = useI18n();
 const status = computed(() => props.table.operationalStatus ?? (
   props.table.status === 'DISABLED' ? 'DISABLED' : props.table.currentSession ? 'IN_USE' : 'AVAILABLE'
 ));
-const disabled = computed(() => status.value === 'DISABLED');
+// A table can be disabled administratively while an already-open session still
+// owns it. Keep that session reachable so the cashier can print, accept and
+// checkout; once released, the disabled table becomes non-interactive again.
+const disabled = computed(() => status.value === 'DISABLED' && !props.table.currentSession);
 const duration = computed(() => elapsedDuration(props.table.currentSession?.openedAt));
 const stateLabel = computed(() => {
   if (status.value === 'DISABLED') return t('table.status.disabled');

@@ -1,5 +1,10 @@
 import { demoRepository, isDemoSessionActive } from '@/fixtures';
-import type { DiningTable, TableSessionDetail, TableSessionSummary } from '@/types';
+import type {
+  DiningTable,
+  TableSessionCheckoutResult,
+  TableSessionDetail,
+  TableSessionSummary,
+} from '@/types';
 import { requestApi } from './http';
 
 export function listDiningTables(): Promise<DiningTable[]> {
@@ -36,5 +41,19 @@ export async function closeTableSession(sessionId: string): Promise<TableSession
     `/merchant/table-sessions/${encodeURIComponent(sessionId)}/close`,
     { method: 'POST', body: {} },
   );
+  return result.session;
+}
+
+export async function checkoutTableSession(sessionId: string): Promise<TableSessionCheckoutResult> {
+  if (isDemoSessionActive()) return demoRepository.checkoutSession(sessionId);
+  return requestApi<TableSessionCheckoutResult>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/checkout`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function setTableSessionRounding(sessionId: string, enabled: boolean): Promise<TableSessionDetail> {
+  if (isDemoSessionActive()) return demoRepository.setSessionRounding(sessionId, enabled);
+  const result = await requestApi<{ session: TableSessionDetail }>(`/merchant/table-sessions/${encodeURIComponent(sessionId)}/rounding`, { method: 'POST', body: { enabled } });
   return result.session;
 }

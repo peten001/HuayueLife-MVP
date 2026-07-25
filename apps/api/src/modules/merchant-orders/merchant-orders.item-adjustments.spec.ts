@@ -10,6 +10,11 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     cancellation?: Record<string, unknown>;
     sessionCreateResult?: { id: bigint; created: boolean };
   }) {
+    if (!tx.tableSession) {
+      tx.tableSession = {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      };
+    }
     const txOrder = tx.order as Record<string, unknown> | undefined;
     if (txOrder && !txOrder.findFirstOrThrow) {
       txOrder.findFirstOrThrow = jest.fn().mockResolvedValue(

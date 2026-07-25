@@ -603,6 +603,8 @@ model TableSession {
   status      TableSessionStatus @default(OPEN)
   openedAt    DateTime           @default(now()) @map("opened_at")
   closedAt    DateTime?          @map("closed_at")
+  roundingAmountVnd BigInt       @default(0) @map("rounding_amount_vnd")
+  roundingAppliedByStaffId BigInt? @map("rounding_applied_by_staff_id")
   createdAt   DateTime           @default(now()) @map("created_at")
   updatedAt   DateTime           @updatedAt @map("updated_at")
 

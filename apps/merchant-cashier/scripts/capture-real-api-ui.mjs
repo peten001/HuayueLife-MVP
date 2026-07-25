@@ -68,59 +68,43 @@ try {
   await signInThroughRealClient();
   await capture('02-table-overview-real-1280x800.png');
 
-  await openRoute('/orders/new');
-  await page.locator('.order-card').first().waitFor();
-  assert.equal(await page.locator('.order-card').count(), 2, 'New-order UI must render API results');
-  await capture('03-new-orders-real-1280x800.png');
+  await openRoute('/pickup');
+  await page.getByTestId('pickup-order-safe-order-pending-2').click();
+  await page.waitForURL('**/pickup/safe-order-pending-2');
+  await page.locator('.pickup-order-detail').waitFor();
+  assert.match((await page.locator('.pickup-order-detail').textContent()) || '', /LOCAL-1002/);
+  await capture('03-pickup-real-1280x800.png');
 
-  await openRoute('/orders/active');
-  await page.locator('.order-card').first().waitFor();
-  assert.equal(await page.locator('.order-card').count(), 4, 'Active-order UI must merge real statuses');
-  await capture('04-active-orders-real-1280x800.png');
+  await openRoute('/delivery');
+  await page.getByTestId('delivery-order-safe-order-delivering').click();
+  await page.waitForURL('**/delivery/safe-order-delivering');
+  await page.locator('.delivery-order-detail').waitFor();
+  assert.match((await page.locator('.delivery-order-detail').textContent()) || '', /LOCAL-1006/);
+  await capture('04-delivery-real-1280x800.png');
 
-  await openRoute('/orders/new');
-  await page.locator('.order-card').filter({ hasText: 'LOCAL-1001' }).click();
-  await page.locator('.order-detail-panel').waitFor();
-  assert.match((await page.locator('.order-detail-panel').textContent()) || '', /LOCAL-1001/);
-  await capture('05-order-detail-real-1280x800.png');
+  await openRoute('/orders/history');
+  await page.locator('.history-queue__list button').first().click();
+  await page.locator('.history-detail__content').waitFor();
+  assert.match((await page.locator('.history-detail__content').textContent()) || '', /LOCAL-/);
+  await capture('05-order-history-real-1280x800.png');
 
   await openRoute('/tables');
   await page.getByTestId('table-card-safe-table-1').click();
   await page.getByTestId('table-detail').waitFor();
+  await page.getByTestId('table-orders-tab').click();
   assert.equal(await page.getByTestId('table-detail').locator('.bill-order-row').count(), 3);
   await capture('06-table-session-real-1280x800.png');
-
-  await openRoute('/orders/new');
-  state.emptyPendingOrders = true;
-  await refreshCurrentOrderPage();
-  await page.locator('.cashier-workspace .state-panel--empty').waitFor();
-  assert.equal(await page.locator('.cashier-workspace .order-card').count(), 0);
-  await capture('07-empty-state-real-1280x800.png');
-
-  state.serviceUnavailable = true;
-  await refreshCurrentOrderPage();
-  await page.locator('.cashier-workspace .state-panel--error').waitFor();
-  assert.doesNotMatch(
-    (await page.locator('.cashier-workspace .state-panel--error').textContent()) || '',
-    /error\.server/,
-  );
-  await capture('08-network-error-1280x800.png');
-
-  state.serviceUnavailable = false;
-  state.emptyPendingOrders = false;
-  await page.locator('.cashier-workspace .state-panel--error .workspace-action-button').click();
-  await page.locator('.order-card').first().waitFor();
 
   await openRoute('/tables');
   await page.getByTestId('table-card-safe-table-1').click();
   await page.getByTestId('table-detail').waitFor();
   await setLocale('vi');
   await assertNoRawTranslationKeys();
-  await capture('09-vietnamese-real-1280x800.png');
+  await capture('07-vietnamese-real-1280x800.png');
 
   await setLocale('en');
   await assertNoRawTranslationKeys();
-  await capture('10-english-real-1280x800.png');
+  await capture('08-english-real-1280x800.png');
 
   await verifyRealApiEvidence();
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
@@ -155,7 +139,9 @@ async function signInThroughRealClient() {
 
   const shellText = (await page.locator('.cashier-shell').textContent()) || '';
   assert.match(shellText, /本地测试餐厅/);
-  assert.match(shellText, /测试员工/);
+  // The shell intentionally shows the role/account label instead of a
+  // personal staff name; the login contract still carries the test identity.
+  assert.match(shellText, /经理|测试员工/);
   assert.doesNotMatch(shellText, /演示数据|演示员工|DEMO/i);
   assert.equal(await page.locator('.demo-badge').count(), 0);
 }
@@ -167,15 +153,6 @@ async function openRoute(href) {
     await page.waitForURL(`**${href}`);
   }
   await page.waitForTimeout(180);
-}
-
-async function refreshCurrentOrderPage() {
-  const button = page.locator('.cashier-workspace .workspace-action-button').first();
-  await button.click();
-  await page.waitForFunction(() => {
-    const refresh = document.querySelector('.cashier-workspace .workspace-action-button');
-    return refresh instanceof HTMLButtonElement && !refresh.disabled;
-  });
 }
 
 async function setLocale(locale) {
@@ -235,7 +212,7 @@ async function verifyRealApiEvidence() {
     'The real merchant orders endpoint was not called',
   );
   assert.ok(
-    calls.some((request) => request.path === '/merchant/orders/safe-order-pending-1'),
+    calls.some((request) => request.path === '/merchant/orders/safe-order-pending-2'),
     'The real order-detail endpoint was not called',
   );
   assert.ok(
@@ -289,6 +266,7 @@ function createApiMock() {
           merchantId: fixture.staff.merchant.id,
           role: fixture.staff.role,
           username: fixture.staff.username,
+          displayName: fixture.staff.displayName,
           mustChangePassword: false,
           merchant: fixture.staff.merchant,
         },
@@ -304,6 +282,21 @@ function createApiMock() {
 
     if (path === '/merchant/profile' && method === 'GET') {
       await requireAuthentication(route, authorization, fixture.profile);
+      return;
+    }
+    if (path === '/merchant/printing/feature-state' && method === 'GET') {
+      await requireAuthentication(route, authorization, {
+        taskCenterEnabled: false,
+        automaticCreationEnabled: false,
+        executionEnabled: false,
+        legacyPrintingEnabled: false,
+        merchantPrintingEnabled: false,
+        executionState: 'CONNECTOR_PENDING',
+      });
+      return;
+    }
+    if (path === '/merchant/printing/printers' && method === 'GET') {
+      await requireAuthentication(route, authorization, []);
       return;
     }
     if (path === '/merchant/tables' && method === 'GET') {
@@ -444,6 +437,8 @@ function createRedactedApiData() {
     capabilities: [
       { code: 'qrOrderEnabled', groupCode: 'RESTAURANT', isEnabled: true },
       { code: 'tableManagementEnabled', groupCode: 'RESTAURANT', isEnabled: true },
+      { code: 'pickupEnabled', groupCode: 'RESTAURANT', isEnabled: true },
+      { code: 'deliveryEnabled', groupCode: 'RESTAURANT', isEnabled: true },
       { code: 'voiceNotifyEnabled', groupCode: 'RESTAURANT', isEnabled: true },
     ],
   };

@@ -1,18 +1,27 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { IsBoolean } from 'class-validator';
 import { StaffRole } from '@prisma/client';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MerchantId } from '../../common/decorators/merchant-id.decorator';
 import { MerchantRoles } from '../../common/decorators/merchant-roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
+import { AuthUser } from '../../common/types/auth-user.type';
 import { TableIdParamDto } from './dto/table-id-param.dto';
 import { TableSessionsService } from './table-sessions.service';
+
+class TableSessionRoundingDto {
+  @IsBoolean()
+  enabled!: boolean;
+}
 
 @Controller('merchant')
 @UseGuards(JwtAuthGuard, MerchantRoleGuard)
@@ -47,5 +56,28 @@ export class MerchantTableSessionsController {
     @Param() params: IdParamDto,
   ) {
     return this.service.closeSession(merchantId, BigInt(params.id));
+  }
+
+  @Post('table-sessions/:id/checkout')
+  checkoutSession(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.checkoutSession(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+    );
+  }
+
+  @Post('table-sessions/:id/rounding')
+  setRounding(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() body: TableSessionRoundingDto,
+  ) {
+    return this.service.setRounding(merchantId, BigInt(staff.sub), BigInt(params.id), body.enabled);
   }
 }

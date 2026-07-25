@@ -4,6 +4,7 @@ export const INTERNAL_ORDER_STATUS_LOG_ACTIONS = [
   'MERCHANT_ADD_ITEMS',
   'ORDER_ITEM_DECREASED',
   'ORDER_ITEM_RETURNED',
+  'TABLE_SESSION_CHECKOUT',
 ] as const;
 
 export type InternalOrderStatusLogAction =
@@ -14,6 +15,10 @@ export type MerchantVisibleOrderActionMetadata = {
   beforeQuantity?: number;
   afterQuantity?: number;
   returnedQuantity?: number;
+  tableSessionId?: string;
+  originalAmountVnd?: string;
+  roundingAmountVnd?: string;
+  payableAmountVnd?: string;
 };
 
 export function isInternalOrderStatusLogAction(
@@ -79,6 +84,27 @@ function toMerchantVisibleActionMetadata(
   }
   if (!isJsonObject(metadata)) {
     return undefined;
+  }
+
+  if (action === 'TABLE_SESSION_CHECKOUT') {
+    const tableSessionId = stringValue(metadata.tableSessionId);
+    const originalAmountVnd = stringValue(metadata.originalAmountVnd);
+    const roundingAmountVnd = stringValue(metadata.roundingAmountVnd);
+    const payableAmountVnd = stringValue(metadata.payableAmountVnd);
+    if (
+      tableSessionId === undefined ||
+      originalAmountVnd === undefined ||
+      roundingAmountVnd === undefined ||
+      payableAmountVnd === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      tableSessionId,
+      originalAmountVnd,
+      roundingAmountVnd,
+      payableAmountVnd,
+    };
   }
 
   const productName = stringValue(metadata.productNameSnapshot);

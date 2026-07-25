@@ -470,6 +470,261 @@ describe('Table session workflow', () => {
     expect(reopened.tableSessionId).not.toBe(tableOneFirstSessionId);
   });
 
+  it('rejects checkout while the table still has an unaccepted order', async () => {
+    const table = await createDiningTable('CHECKOUT-PENDING');
+    await addDineInItem(userOneToken, table.qrToken, 1);
+    const order = await createDineInOrder(
+      userOneToken,
+      `table_checkout_pending_${suffix}`,
+      table.qrToken,
+    );
+    if (!order.tableSessionId) {
+      throw new Error('Expected pending checkout order to bind a table session');
+    }
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/table-sessions/${order.tableSessionId}/checkout`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(409);
+
+    expect(response.body.code).toBe('TABLE_SESSION_HAS_UNACCEPTED_ORDERS');
+    const [storedOrder, storedSession] = await Promise.all([
+      prisma.order.findUniqueOrThrow({ where: { id: BigInt(order.id) } }),
+      prisma.tableSession.findUniqueOrThrow({
+        where: { id: BigInt(order.tableSessionId) },
+      }),
+    ]);
+    expect(storedOrder.status).toBe('PENDING_ACCEPTANCE');
+    expect(storedOrder.settlementStatus).toBe('UNSETTLED');
+    expect(storedSession.status).toBe('OPEN');
+    expect(storedSession.openTableId).toBe(table.id);
+  });
+
+  it('persists the 10,000 VND downward-rounding policy through refresh, checkout, and order logs', async () => {
+    const table = await createDiningTable('ROUNDING-POLICY');
+    const existingProduct = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    await prisma.product.update({ where: { id: productId }, data: { priceVnd: 171000n } });
+    try {
+      await addDineInItem(userOneToken, table.qrToken, 3);
+      const order = await createDineInOrder(
+        userOneToken,
+        `table_rounding_policy_${suffix}`,
+        table.qrToken,
+      );
+      if (!order.tableSessionId) throw new Error('Expected rounding test order to bind a table session');
+      const createdOrder = await prisma.order.findUniqueOrThrow({ where: { id: BigInt(order.id) } });
+      expect(createdOrder.totalAmountVnd).toBe(513000n);
+
+      await merchantOrderAction(order.id, 'accept');
+      const rounded = await request(app.getHttpServer())
+        .post(`/api/v1/merchant/table-sessions/${order.tableSessionId}/rounding`)
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .send({ enabled: true })
+        .expect(201);
+      expect(rounded.body.data.session).toEqual(expect.objectContaining({
+        originalAmountVnd: '513000',
+        roundingAmountVnd: '3000',
+        payableAmountVnd: '510000',
+      }));
+
+      const refreshed = await request(app.getHttpServer())
+        .get(`/api/v1/merchant/table-sessions/${order.tableSessionId}`)
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .expect(200);
+      expect(refreshed.body.data.session).toEqual(expect.objectContaining({
+        originalAmountVnd: '513000',
+        roundingAmountVnd: '3000',
+        payableAmountVnd: '510000',
+      }));
+
+      const checkout = await request(app.getHttpServer())
+        .post(`/api/v1/merchant/table-sessions/${order.tableSessionId}/checkout`)
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .expect(201);
+      expect(checkout.body.data.session).toEqual(expect.objectContaining({
+        originalAmountVnd: '513000',
+        roundingAmountVnd: '3000',
+        payableAmountVnd: '510000',
+      }));
+      expect(checkout.body.data.orders[0]).toEqual(expect.objectContaining({
+        totalAmountVnd: '513000',
+        statusLogs: expect.arrayContaining([
+          expect.objectContaining({
+            action: 'TABLE_SESSION_CHECKOUT',
+            metadata: {
+              tableSessionId: order.tableSessionId,
+              originalAmountVnd: '513000',
+              roundingAmountVnd: '3000',
+              payableAmountVnd: '510000',
+            },
+          }),
+        ]),
+      }));
+    } finally {
+      await prisma.product.update({
+        where: { id: productId },
+        data: { priceVnd: existingProduct.priceVnd },
+      });
+    }
+  });
+
+  it('atomically completes accepted dine-in orders and closes checkout idempotently', async () => {
+    const table = await createDiningTable('CHECKOUT-COMPLETE');
+    const orders = [] as Array<{ id: string; tableSessionId: string | null }>;
+    for (let index = 0; index < 3; index += 1) {
+      await addDineInItem(userOneToken, table.qrToken, 1);
+      orders.push(
+        await createDineInOrder(
+          userOneToken,
+          `table_checkout_complete_${index}_${suffix}`,
+          table.qrToken,
+        ),
+      );
+    }
+    const sessionId = orders[0]?.tableSessionId;
+    if (!sessionId || orders.some((order) => order.tableSessionId !== sessionId)) {
+      throw new Error('Expected checkout orders to share one table session');
+    }
+
+    await merchantOrderAction(orders[0]!.id, 'accept');
+    await merchantOrderAction(orders[1]!.id, 'accept');
+    await merchantOrderAction(orders[1]!.id, 'start-preparing');
+    await merchantOrderAction(orders[2]!.id, 'accept');
+    await merchantOrderAction(orders[2]!.id, 'start-preparing');
+    await merchantOrderAction(orders[2]!.id, 'ready');
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/v1/merchant/table-sessions/${sessionId}/checkout`)
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/v1/merchant/table-sessions/${sessionId}/checkout`)
+        .set('Authorization', `Bearer ${tokenOne}`)
+        .expect(201),
+    ]);
+
+    expect(first.body.data.session.status).toBe('CLOSED');
+    expect(second.body.data.session.status).toBe('CLOSED');
+    expect(first.body.data.session.closedAt).toBeTruthy();
+    expect(second.body.data.session.closedAt).toBe(first.body.data.session.closedAt);
+    expect(first.body.data.session.orders).toHaveLength(3);
+    expect(
+      first.body.data.session.orders.every(
+        (order: { status: string }) => order.status === 'COMPLETED',
+      ),
+    ).toBe(true);
+    expect(first.body.data.orders).toHaveLength(3);
+    expect(second.body.data.orders).toHaveLength(3);
+    for (const order of first.body.data.orders as Array<Record<string, unknown>>) {
+      expect(order).toEqual(
+        expect.objectContaining({
+          merchantId: merchantOneId.toString(),
+          tableId: table.id.toString(),
+          tableSessionId: sessionId,
+          orderType: 'DINE_IN',
+          status: 'COMPLETED',
+          settlementStatus: 'UNSETTLED',
+          completedAt: expect.any(String),
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              productNameZhSnapshot: '桌台测试菜品',
+              quantity: 1,
+            }),
+          ]),
+          statusLogs: expect.arrayContaining([
+            expect.objectContaining({
+              toStatus: 'COMPLETED',
+              operatorType: 'MERCHANT_STAFF',
+            }),
+          ]),
+        }),
+      );
+    }
+
+    const [storedSession, storedOrders, checkoutLogs, staff] = await Promise.all([
+      prisma.tableSession.findUniqueOrThrow({ where: { id: BigInt(sessionId) } }),
+      prisma.order.findMany({
+        where: { id: { in: orders.map((order) => BigInt(order.id)) } },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.orderStatusLog.findMany({
+        where: {
+          orderId: { in: orders.map((order) => BigInt(order.id)) },
+          action: 'TABLE_SESSION_CHECKOUT',
+        },
+        orderBy: { orderId: 'asc' },
+      }),
+      prisma.merchantStaff.findFirstOrThrow({
+        where: { merchantId: merchantOneId, username: `table_staff_a_${suffix}` },
+      }),
+    ]);
+    expect(storedSession.status).toBe('CLOSED');
+    expect(storedSession.openTableId).toBeNull();
+    expect(storedSession.closedAt?.toISOString()).toBe(first.body.data.session.closedAt);
+    expect(storedOrders).toHaveLength(3);
+    expect(storedOrders.every((order) => order.status === 'COMPLETED')).toBe(true);
+    expect(storedOrders.every((order) => order.completedAt !== null)).toBe(true);
+    expect(storedOrders.every((order) => order.settlementStatus === 'UNSETTLED')).toBe(true);
+    expect(checkoutLogs).toHaveLength(3);
+    expect(checkoutLogs.map((log) => log.fromStatus)).toEqual([
+      'ACCEPTED',
+      'PREPARING',
+      'READY',
+    ]);
+    expect(checkoutLogs.every((log) => log.toStatus === 'COMPLETED')).toBe(true);
+    expect(checkoutLogs.every((log) => log.operatorType === 'MERCHANT_STAFF')).toBe(true);
+    expect(checkoutLogs.every((log) => log.operatorStaffId === staff.id)).toBe(true);
+  });
+
+  it('refuses checkout if a corrupted table session contains a non-dine-in order', async () => {
+    const table = await createDiningTable('CHECKOUT-TYPE');
+    await addDineInItem(userOneToken, table.qrToken, 1);
+    const dineInOrder = await createDineInOrder(
+      userOneToken,
+      `table_checkout_type_${suffix}`,
+      table.qrToken,
+    );
+    if (!dineInOrder.tableSessionId) {
+      throw new Error('Expected checkout type order to bind a table session');
+    }
+    await merchantOrderAction(dineInOrder.id, 'accept');
+
+    const pickupOrder = await prisma.order.create({
+      data: {
+        orderNo: `CTYPE${Date.now()}${Math.random().toString().slice(2, 8)}`,
+        idempotencyKey: `checkout_type_${Date.now()}_${Math.random().toString().slice(2, 10)}`,
+        userId: userOneId,
+        merchantId: merchantOneId,
+        tableId: table.id,
+        tableSessionId: BigInt(dineInOrder.tableSessionId),
+        tableNoSnapshot: table.tableNo,
+        orderType: 'PICKUP',
+        contactName: '错误绑定测试',
+        contactPhone: '0900000000',
+        itemAmountVnd: 50000n,
+        totalAmountVnd: 50000n,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/table-sessions/${dineInOrder.tableSessionId}/checkout`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .expect(409);
+    expect(response.body.code).toBe('TABLE_SESSION_HAS_NON_DINE_IN_ORDERS');
+
+    const [storedDineIn, storedPickup, storedSession] = await Promise.all([
+      prisma.order.findUniqueOrThrow({ where: { id: BigInt(dineInOrder.id) } }),
+      prisma.order.findUniqueOrThrow({ where: { id: pickupOrder.id } }),
+      prisma.tableSession.findUniqueOrThrow({
+        where: { id: BigInt(dineInOrder.tableSessionId) },
+      }),
+    ]);
+    expect(storedDineIn.status).toBe('ACCEPTED');
+    expect(storedPickup.status).toBe('PENDING_ACCEPTANCE');
+    expect(storedSession.status).toBe('OPEN');
+  });
+
   it('keeps order creation and close mutually exclusive on the same table', async () => {
     const { sessionId: originalSessionId } = await createCompletedSession(
       userOneToken,
@@ -561,7 +816,7 @@ describe('Table session workflow', () => {
     expect(stored.closedAt?.toISOString()).toBe(first.body.data.session.closedAt);
   });
 
-  it('enforces merchant ownership for current-session, detail, and close APIs', async () => {
+  it('enforces merchant ownership for current-session, detail, close, and checkout APIs', async () => {
     const listResponse = await request(app.getHttpServer())
       .get('/api/v1/merchant/table-sessions/open')
       .set('Authorization', `Bearer ${tokenTwo}`)
@@ -580,6 +835,11 @@ describe('Table session workflow', () => {
 
     await request(app.getHttpServer())
       .post(`/api/v1/merchant/table-sessions/${tableOneFirstSessionId}/close`)
+      .set('Authorization', `Bearer ${tokenTwo}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/merchant/table-sessions/${tableOneFirstSessionId}/checkout`)
       .set('Authorization', `Bearer ${tokenTwo}`)
       .expect(404);
   });
@@ -768,6 +1028,27 @@ describe('Table session workflow', () => {
       orderId: order.id,
       sessionId: order.tableSessionId,
     };
+  }
+
+  async function createDiningTable(label: string) {
+    const qrToken = randomBytes(32).toString('hex');
+    const table = await prisma.diningTable.create({
+      data: {
+        merchantId: merchantOneId,
+        tableNo: `TS-${label.slice(0, 8)}-${randomBytes(4).toString('hex')}`,
+        tableName: label,
+        qrToken,
+      },
+    });
+    return { ...table, qrToken };
+  }
+
+  async function merchantOrderAction(orderId: string, action: string) {
+    await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${orderId}/${action}`)
+      .set('Authorization', `Bearer ${tokenOne}`)
+      .send({})
+      .expect(201);
   }
 });
 

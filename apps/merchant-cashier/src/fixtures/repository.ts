@@ -1,4 +1,4 @@
-import { canRunOrderAction } from '@/domain';
+import { canRunOrderAction, calculateTableSessionRoundingAmount } from '@/domain';
 import type {
   CreateMerchantTableOrderInput,
   DecreaseMerchantOrderItemInput,
@@ -7,6 +7,7 @@ import type {
   MerchantOrderFilters,
   MerchantOrderMutationResult,
   ReturnMerchantOrderItemInput,
+  TableSessionCheckoutResult,
   TableSessionDetail,
   TableSessionSummary,
 } from '@/types';
@@ -19,6 +20,7 @@ import {
   demoTables,
   initialDemoOrders,
 } from './data';
+import { resetDemoChatRepository } from './chat';
 
 function cloneFixture<T>(value: T): T {
   // Fixture values are JSON data (no Date, Map, Set, Blob or cyclic values).
@@ -29,14 +31,17 @@ function cloneFixture<T>(value: T): T {
 
 let orders = cloneFixture(initialDemoOrders);
 let sessionClosed = false;
+let roundingApplied = false;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 
 export function resetDemoRepository() {
   orders = cloneFixture(initialDemoOrders);
   sessionClosed = false;
+  roundingApplied = false;
   nextAddedOrder = 1;
   adjustmentResults = new Map();
+  resetDemoChatRepository();
 }
 
 export const demoRepository = {
@@ -72,6 +77,12 @@ export const demoRepository = {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     return buildSessionDetail();
   },
+  setSessionRounding: (id: string, enabled: boolean) => {
+    if (id !== 'demo-session-1') throw notFound('Demo table session not found');
+    if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
+    roundingApplied = enabled;
+    return buildSessionDetail();
+  },
   closeSession: (id: string) => {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     const detail = buildSessionDetail();
@@ -80,6 +91,52 @@ export const demoRepository = {
     }
     sessionClosed = true;
     return buildSessionDetail();
+  },
+  checkoutSession: (id: string): TableSessionCheckoutResult => {
+    if (id !== 'demo-session-1') throw notFound('Demo table session not found');
+    if (sessionClosed) {
+      return { session: buildSessionDetail(), orders: cloneFixture(tableOrders()) };
+    }
+    if (tableOrders().some((order) => order.status === 'PENDING_ACCEPTANCE')) {
+      throw conflict('TABLE_SESSION_HAS_UNACCEPTED_ORDERS', 'Demo table has unaccepted orders');
+    }
+    const originalAmountVnd = tableOrders()
+      .filter((order) => order.status !== 'CANCELLED')
+      .reduce((sum, order) => sum + BigInt(order.totalAmountVnd), 0n);
+    const roundingAmountVnd = roundingApplied
+      ? calculateTableSessionRoundingAmount(originalAmountVnd)
+      : 0n;
+    const payableAmountVnd = originalAmountVnd - roundingAmountVnd;
+    const completedAt = new Date().toISOString();
+    for (const order of tableOrders()) {
+      if (['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
+        const fromStatus = order.status;
+        order.status = 'COMPLETED';
+        order.completedAt = completedAt;
+        order.updatedAt = completedAt;
+        order.statusLogs = [
+          ...(order.statusLogs ?? []),
+          {
+            id: `${order.id}-table-checkout`,
+            action: 'TABLE_SESSION_CHECKOUT',
+            fromStatus,
+            toStatus: 'COMPLETED',
+            operatorType: 'MERCHANT_STAFF',
+            operatorStaffId: demoStaffSession.id,
+            remark: '桌台结账，订单自动完成',
+            createdAt: completedAt,
+            metadata: {
+              tableSessionId: 'demo-session-1',
+              originalAmountVnd: originalAmountVnd.toString(),
+              roundingAmountVnd: roundingAmountVnd.toString(),
+              payableAmountVnd: payableAmountVnd.toString(),
+            },
+          },
+        ];
+      }
+    }
+    sessionClosed = true;
+    return { session: buildSessionDetail(), orders: cloneFixture(tableOrders()) };
   },
   createTableOrder(
     tableId: string,
@@ -95,6 +152,8 @@ export const demoRepository = {
     if (!input.items.length) {
       return { order: null, session: buildSessionDetail() };
     }
+
+    clearDemoSessionRounding();
 
     const selected = input.items
       .filter((item) => item.quantity > 0)
@@ -162,6 +221,7 @@ export const demoRepository = {
     if (input.targetQuantity < 0 || input.targetQuantity >= item.quantity) {
       throw conflict('INVALID_ITEM_QUANTITY', 'Invalid demo target quantity');
     }
+    clearDemoSessionRounding();
     item.quantity = input.targetQuantity;
     item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
     if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
@@ -191,6 +251,7 @@ export const demoRepository = {
     if (order.items.length === 1 && input.returnQuantity === item.quantity) {
       throw conflict('LAST_ORDER_ITEM_RETURN_NOT_ALLOWED', 'Cannot return the last demo item');
     }
+    clearDemoSessionRounding();
     item.quantity -= input.returnQuantity;
     item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
     if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
@@ -257,14 +318,22 @@ function tableOrders() {
   return orders.filter((order) => order.tableSessionId === 'demo-session-1');
 }
 
+function clearDemoSessionRounding() {
+  roundingApplied = false;
+}
+
 function buildSessionSummary(): TableSessionSummary {
   const related = tableOrders();
   const billable = related.filter((order) => order.status !== 'CANCELLED');
   const unfinished = related.filter((order) => !['COMPLETED', 'CANCELLED'].includes(order.status));
   const firstOpenedOrder = related[related.length - 1];
+  const totalAmountVnd = billable.reduce((sum, order) => sum + BigInt(order.totalAmountVnd), 0n);
+  const roundingAmountVnd = roundingApplied
+    ? calculateTableSessionRoundingAmount(totalAmountVnd)
+    : 0n;
   return {
     id: 'demo-session-1', sessionNo: 'DEMO-SESSION-1', merchantId: 'demo-merchant', tableId: 'demo-table-1', tableNo: 'A01', tableName: '演示桌 A01', status: sessionClosed ? 'CLOSED' : 'OPEN', openedAt: firstOpenedOrder?.createdAt ?? new Date().toISOString(), closedAt: sessionClosed ? new Date().toISOString() : null,
-    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: String(billable.reduce((sum, order) => sum + Number(order.totalAmountVnd), 0)), latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
+    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), roundingApplied, roundingAmountVnd: roundingAmountVnd.toString(), payableAmountVnd: (totalAmountVnd - roundingAmountVnd).toString(), latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
 }
 

@@ -21,6 +21,7 @@ import { usePollingTask } from '@/composables';
 import type {
   MerchantOrder,
   MerchantOrderAction,
+  MerchantOrderChatConversation,
   MerchantOrderFilters,
 } from '@/types';
 import { useAuthStore } from './auth';
@@ -320,6 +321,24 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     ).find((order) => order.id === id);
   }
 
+  async function ensureOrder(id: string) {
+    const cached = findCachedOrder(id);
+    if (cached?.items?.length) return cached;
+    return getMerchantOrder(id).then((order) => {
+      updateCachedOrder(order);
+      return order;
+    });
+  }
+
+  function updateChatSummary(id: string, conversation: MerchantOrderChatConversation | null) {
+    const order = findCachedOrder(id);
+    if (!order) return;
+    updateCachedOrder({ ...order, chatConversation: conversation });
+    if (selectedOrder.value?.id === id) {
+      selectedOrder.value = { ...selectedOrder.value, chatConversation: conversation };
+    }
+  }
+
   function invalidateLiveRequests() {
     liveQueryRevision += 1;
     pendingRequest = null;
@@ -387,6 +406,9 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     refreshLiveOrders,
     fetchHistory,
     selectOrder,
+    findCachedOrder,
+    ensureOrder,
+    updateChatSummary,
     applyOrderSnapshot,
     runAction,
     startLivePolling,

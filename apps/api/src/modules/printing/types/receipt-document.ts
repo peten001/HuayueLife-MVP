@@ -41,6 +41,9 @@ export interface ReceiptDocument {
   totals: {
     subtotal: number;
     discount?: number;
+    originalAmount?: number;
+    roundingAmount?: number;
+    receivedAmount?: number;
     serviceFee?: number;
     total: number;
     currency: 'VND';
@@ -201,6 +204,9 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
     !hasOnlyKeys(document.totals, [
       'subtotal',
       'discount',
+      'originalAmount',
+      'roundingAmount',
+      'receivedAmount',
       'serviceFee',
       'total',
       'currency',
@@ -211,6 +217,12 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
     document.totals.total < 0 ||
     (document.totals.discount !== undefined &&
       (!Number.isSafeInteger(document.totals.discount) || document.totals.discount < 0)) ||
+    (document.totals.originalAmount !== undefined &&
+      (!Number.isSafeInteger(document.totals.originalAmount) || document.totals.originalAmount < 0)) ||
+    (document.totals.roundingAmount !== undefined &&
+      (!Number.isSafeInteger(document.totals.roundingAmount) || document.totals.roundingAmount < 0)) ||
+    (document.totals.receivedAmount !== undefined &&
+      (!Number.isSafeInteger(document.totals.receivedAmount) || document.totals.receivedAmount < 0)) ||
     (document.totals.serviceFee !== undefined &&
       (!Number.isSafeInteger(document.totals.serviceFee) ||
         document.totals.serviceFee < 0)) ||

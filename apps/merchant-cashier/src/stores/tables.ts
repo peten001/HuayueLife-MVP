@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import {
   apiErrorTranslationKey,
   CashierApiError,
+  checkoutTableSession,
   closeTableSession,
   getTableSessionDetail,
   listDiningTables,
@@ -27,6 +28,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   const loading = ref(false);
   const detailLoading = ref(false);
   const closing = ref(false);
+  const checkingOut = ref(false);
   const error = ref('');
   const errorKey = ref('');
   const lastRefreshAt = ref<string | null>(null);
@@ -140,6 +142,34 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     }
   }
 
+  async function checkoutSelectedSession() {
+    const session = selectedSessionDetail.value;
+    if (!session) throw new Error('No table session selected');
+    if (Number(session.pendingOrderCount || 0) > 0) {
+      throw new Error('Table session still has unaccepted orders');
+    }
+    const generation = dataGeneration;
+    checkingOut.value = true;
+    error.value = '';
+    errorKey.value = '';
+    try {
+      const result = await checkoutTableSession(session.id);
+      if (generation === dataGeneration) {
+        applySessionSnapshot(result.session);
+        await fetchTables({ force: true });
+      }
+      return result;
+    } catch (caught) {
+      if (generation === dataGeneration) {
+        error.value = messageFromApiError(caught);
+        errorKey.value = apiErrorTranslationKey(caught, 'table.checkoutFailed');
+      }
+      throw caught;
+    } finally {
+      if (generation === dataGeneration) checkingOut.value = false;
+    }
+  }
+
   function clearSelection() {
     detailRequestSequence += 1;
     selectedTableId.value = '';
@@ -216,6 +246,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     errorKey.value = '';
     loading.value = false;
     closing.value = false;
+    checkingOut.value = false;
     lastRefreshAt.value = null;
     livePolling.stop();
   }
@@ -246,6 +277,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     loading,
     detailLoading,
     closing,
+    checkingOut,
     error,
     errorKey,
     lastRefreshAt,
@@ -254,6 +286,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     fetchTables,
     selectTable,
     closeSelectedSession,
+    checkoutSelectedSession,
     applySessionSnapshot,
     startLivePolling,
     stopLivePolling,

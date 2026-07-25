@@ -125,6 +125,9 @@ export class ReceiptSnapshotService {
       (sum, order) => sum + order.totalAmountVnd,
       0n,
     );
+    const rounding = session.roundingAppliedByStaffId != null
+      ? session.roundingAmountVnd
+      : 0n;
     const tableItems = aggregateReceiptItems(
       session.orders.flatMap((order) =>
         order.items.map((item) => ({
@@ -159,7 +162,11 @@ export class ReceiptSnapshotService {
       items: tableItems,
       totals: {
         subtotal: safeVnd(subtotal),
-        total: safeVnd(total),
+        ...(rounding > 0n ? { discount: safeVnd(rounding) } : {}),
+        originalAmount: safeVnd(total),
+        roundingAmount: safeVnd(rounding),
+        receivedAmount: safeVnd(total - rounding),
+        total: safeVnd(total - rounding),
         currency: 'VND',
       },
       verificationCode: `YQ:TABLE:${session.id}:${session.sessionNo}`,

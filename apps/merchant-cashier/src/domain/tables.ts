@@ -56,3 +56,11 @@ export function canCloseTableSession(
 ) {
   return session?.status === 'OPEN' && session.unfinishedOrderCount === 0;
 }
+
+export function canCheckoutTableSession(
+  session: TableSessionSummary | TableSessionDetail | null | undefined,
+) {
+  // Empty and all-cancelled sessions are still real open table sessions and
+  // must be releasable. Only an unaccepted order blocks cashier checkout.
+  return session?.status === 'OPEN' && Number(session.pendingOrderCount || 0) === 0;
+}

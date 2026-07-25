@@ -72,6 +72,10 @@ export interface MerchantOrder {
   deliveryLatitude?: string | null;
   deliveryLongitude?: string | null;
   customerRemark?: string | null;
+  /** Stable collection code returned by the API for pickup orders. */
+  pickupCode?: string | null;
+  /** Server-owned system estimate; it is not a payment or settlement field. */
+  estimatedReadyAt?: string | null;
   itemAmountVnd: string;
   deliveryFeeVnd: string;
   totalAmountVnd: string;
@@ -93,6 +97,7 @@ export interface MerchantOrder {
 
 export interface OrderStatusLog {
   id: string;
+  action?: string | null;
   fromStatus?: OrderStatus | null;
   toStatus: OrderStatus;
   operatorType: 'USER' | 'MERCHANT_STAFF' | 'SYSTEM';
@@ -100,6 +105,12 @@ export interface OrderStatusLog {
   operatorStaff?: { id: string; displayName: string } | null;
   remark?: string | null;
   createdAt: string;
+  metadata?: {
+    tableSessionId?: string;
+    originalAmountVnd?: string;
+    roundingAmountVnd?: string;
+    payableAmountVnd?: string;
+  } | null;
 }
 
 export interface MerchantOrderChatConversation {

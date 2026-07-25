@@ -27,6 +27,10 @@ export interface TableSessionSummary {
   orderCount: number;
   itemCount: number;
   totalAmountVnd: string;
+  originalAmountVnd?: string;
+  roundingApplied?: boolean;
+  roundingAmountVnd?: string;
+  payableAmountVnd?: string;
   latestOrderAt?: string | null;
   pendingOrderCount: number;
   unfinishedOrderCount: number;
@@ -59,6 +63,11 @@ export interface TableSessionDetail extends TableSessionSummary {
 export interface MerchantOrderMutationResult {
   order: MerchantOrder | null;
   session: TableSessionDetail;
+}
+
+export interface TableSessionCheckoutResult {
+  session: TableSessionDetail;
+  orders: MerchantOrder[];
 }
 
 export type TableOperationalStatus =

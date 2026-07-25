@@ -130,7 +130,7 @@ onBeforeUnmount(() => {
     @click="print"
   >
     <Printer :size="18" aria-hidden="true" />
-    {{ orderId ? t('print.action') : t('bill.printTableBill') }}
+    {{ t('print.action') }}
   </button>
 
   <section v-else class="print-job-actions" :aria-label="t('print.sectionTitle')">

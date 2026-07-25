@@ -198,6 +198,32 @@ describe('real merchant API contracts', () => {
     });
   });
 
+  it('uses the dedicated TableSession checkout contract without falling back to close', async () => {
+    const { api } = await loadApi();
+    const checkoutResult = {
+      session,
+      orders: [{ ...order, status: 'COMPLETED', settlementStatus: 'UNSETTLED' }],
+    };
+    fetchMock.mockResolvedValueOnce(apiResponse(checkoutResult));
+
+    await expect(api.checkoutTableSession(session.id)).resolves.toEqual(checkoutResult);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe(
+      '/api/v1/merchant/table-sessions/session-1/checkout',
+    );
+    expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(checkoutResult.orders[0]?.settlementStatus).toBe('UNSETTLED');
+
+    fetchMock.mockResolvedValueOnce(apiError(
+      409,
+      'TABLE_SESSION_HAS_UNACCEPTED_ORDERS',
+      'Table session has unaccepted orders',
+    ));
+    await expect(api.checkoutTableSession(session.id)).rejects.toMatchObject({
+      status: 409,
+      code: 'TABLE_SESSION_HAS_UNACCEPTED_ORDERS',
+    });
+  });
+
   it('loads the existing merchant menu APIs with only on-sale products', async () => {
     const { api } = await loadApi();
     const category = { id: 'category-1', nameZh: '主食', sortOrder: 1, isActive: true };
