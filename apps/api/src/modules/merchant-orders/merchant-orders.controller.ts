@@ -22,6 +22,7 @@ import { RejectOrderDto } from './dto/reject-order.dto';
 import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
 import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { OrderItemParamsDto } from './dto/order-item-params.dto';
+import { OrderRoundingDto } from './dto/order-rounding.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
@@ -170,6 +171,21 @@ export class MerchantOrdersController {
   @Post(':id/settle')
   settle(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.service.settle(merchantId, BigInt(params.id));
+  }
+
+  @Post(':id/rounding')
+  rounding(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: OrderRoundingDto,
+  ) {
+    return this.service.setRounding(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto.enabled,
+    );
   }
 
   @Post(':id/print')

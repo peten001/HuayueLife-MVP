@@ -5,6 +5,10 @@ export const INTERNAL_ORDER_STATUS_LOG_ACTIONS = [
   'ORDER_ITEM_DECREASED',
   'ORDER_ITEM_RETURNED',
   'TABLE_SESSION_CHECKOUT',
+  'PICKUP_ORDER_ROUNDING_APPLIED',
+  'PICKUP_ORDER_ROUNDING_CANCELLED',
+  'DELIVERY_ORDER_ROUNDING_APPLIED',
+  'DELIVERY_ORDER_ROUNDING_CANCELLED',
 ] as const;
 
 export type InternalOrderStatusLogAction =
@@ -19,6 +23,7 @@ export type MerchantVisibleOrderActionMetadata = {
   originalAmountVnd?: string;
   roundingAmountVnd?: string;
   payableAmountVnd?: string;
+  beforeRoundingAmountVnd?: string;
 };
 
 export function isInternalOrderStatusLogAction(
@@ -102,6 +107,34 @@ function toMerchantVisibleActionMetadata(
     return {
       tableSessionId,
       originalAmountVnd,
+      roundingAmountVnd,
+      payableAmountVnd,
+    };
+  }
+
+  if (
+    action === 'PICKUP_ORDER_ROUNDING_APPLIED' ||
+    action === 'PICKUP_ORDER_ROUNDING_CANCELLED' ||
+    action === 'DELIVERY_ORDER_ROUNDING_APPLIED' ||
+    action === 'DELIVERY_ORDER_ROUNDING_CANCELLED'
+  ) {
+    const originalAmountVnd = stringValue(metadata.originalAmountVnd);
+    const beforeRoundingAmountVnd = stringValue(
+      metadata.beforeRoundingAmountVnd,
+    );
+    const roundingAmountVnd = stringValue(metadata.roundingAmountVnd);
+    const payableAmountVnd = stringValue(metadata.payableAmountVnd);
+    if (
+      originalAmountVnd === undefined ||
+      beforeRoundingAmountVnd === undefined ||
+      roundingAmountVnd === undefined ||
+      payableAmountVnd === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      originalAmountVnd,
+      beforeRoundingAmountVnd,
       roundingAmountVnd,
       payableAmountVnd,
     };
