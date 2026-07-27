@@ -41,6 +41,11 @@
   /* Semantic accents */
   --cashier-green: #19c37d;
   --cashier-green-strong: #079a5a;
+  --cashier-money-strong: #146b3a;
+  --cashier-action-primary: #146b3a;
+  --cashier-action-primary-hover: #0d552d;
+  --cashier-action-danger: #b4233a;
+  --cashier-action-danger-soft: #fff1f2;
   --cashier-green-soft: #eaf9f1;
   --cashier-green-glow: rgb(25 195 125 / 20%);
   --cashier-blue: #3b82f6;
@@ -189,6 +194,9 @@
   --cashier-header-height: 108px;
   --cashier-detail-width: 350px;
   --cashier-mobile-nav-height: calc(74px + env(safe-area-inset-bottom));
+  --cashier-mobile-navigation-inset: var(--cashier-mobile-nav-height);
+  --cashier-fulfillment-action-dock-height: 68px;
+  --cashier-fulfillment-content-bottom-gap: 12px;
   --cashier-gap: clamp(10px, 1vw, 16px);
 
   font-family:

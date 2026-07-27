@@ -103,7 +103,7 @@ export const demoTables: DiningTable[] = [
 ];
 
 export const initialDemoOrders: MerchantOrder[] = [
-  makeOrder('demo-order-1001', 'DEMO-1001', 'PENDING_ACCEPTANCE', 'DINE_IN', 3, 171000, 'A01', 3),
+  makeOrder('demo-order-1001', 'DEMO-1001', 'ACCEPTED', 'DINE_IN', 3, 171000, 'A01', 3),
   makeOrder('demo-order-1004', 'DEMO-1004', 'PENDING_ACCEPTANCE', 'PICKUP', 6, 76000, undefined, 2),
   makeOrder('demo-order-1005', 'DEMO-1005', 'PENDING_ACCEPTANCE', 'DELIVERY', 9, 245000, undefined, 4),
   makeOrder('demo-order-1002', 'DEMO-1002', 'PREPARING', 'PICKUP', 14, 92000, undefined, 2),
@@ -111,10 +111,11 @@ export const initialDemoOrders: MerchantOrder[] = [
   makeOrder('demo-order-1006', 'DEMO-1006', 'ACCEPTED', 'DINE_IN', 18, 171000, 'A01', 2),
   makeOrder('demo-order-1007', 'DEMO-1007', 'PREPARING', 'DELIVERY', 24, 156000, undefined, 3),
   makeOrder('demo-order-1008', 'DEMO-1008', 'READY', 'PICKUP', 31, 88000, undefined, 2),
-  makeOrder('demo-order-0999', 'DEMO-0999', 'COMPLETED', 'DINE_IN', 90, 171000, 'A01', 2),
+  makeOrder('demo-order-0999', 'DEMO-0999', 'ACCEPTED', 'DINE_IN', 90, 171000, 'A01', 2),
   makeOrder('demo-order-0998', 'DEMO-0998', 'CANCELLED', 'PICKUP', 125, 65000, undefined, 1),
+  makeOrder('demo-order-0995', 'DEMO-0995', 'COMPLETED', 'DINE_IN', 175, 513000, 'A01', 4),
   makeOrder('demo-order-0997', 'DEMO-0997', 'COMPLETED', 'DELIVERY', 160, 230000, undefined, 4),
-  makeOrder('demo-order-0996', 'DEMO-0996', 'COMPLETED', 'PICKUP', 190, 54000, undefined, 1),
+  makeOrder('demo-order-0996', 'DEMO-0996', 'COMPLETED', 'PICKUP', 190, 513000, undefined, 1),
 ];
 
 function makeOrder(
@@ -127,16 +128,24 @@ function makeOrder(
   tableNo?: string,
   quantity = 1,
 ): MerchantOrder {
+  const fixtureAmount = orderType === 'DELIVERY' && id === 'demo-order-0997'
+    ? 99_999_999
+    : import.meta.env.VITE_CASHIER_LARGE_AMOUNT_FIXTURE === 'true' && orderType === 'DINE_IN'
+      ? id === 'demo-order-1001' ? 14_000_000 : id === 'demo-order-1006' ? 99_999_999 : total
+      : total;
+  const fixtureRounding = id === 'demo-order-0996' ? 3000 : 0;
+  const fixtureQuantity = fixtureAmount === 14_000_000 ? 2 : quantity;
+  const activeTableLink = tableNo && status !== 'COMPLETED';
   return {
-    id, orderNo, userId: orderType === 'DINE_IN' ? null : `demo-user-${id}`, merchantId: 'demo-merchant', tableId: tableNo ? 'demo-table-1' : null, tableSessionId: tableNo ? 'demo-session-1' : null, tableNoSnapshot: tableNo ?? null, orderType, status,
-    contactName: orderType === 'DINE_IN' ? null : 'Demo Customer', contactPhone: orderType === 'DINE_IN' ? null : '000-000-000', deliveryAddress: orderType === 'DELIVERY' ? 'Demo address (not real)' : null,
-    customerRemark: '演示数据 / Dữ liệu demo / Demo data', itemAmountVnd: String(total), deliveryFeeVnd: '0', totalAmountVnd: String(total), settlementStatus: 'UNSETTLED', createdAt: isoMinutesAgo(minutesAgo), updatedAt: isoMinutesAgo(minutesAgo),
+    id, orderNo, userId: orderType === 'DINE_IN' ? null : `demo-user-${id}`, createdByStaffId: id === 'demo-order-1006' ? 'demo-staff-1' : null, merchantId: 'demo-merchant', tableId: activeTableLink ? 'demo-table-1' : null, tableSessionId: activeTableLink ? 'demo-session-1' : null, tableNoSnapshot: tableNo ?? null, orderType, status,
+    contactName: orderType === 'DINE_IN' ? null : 'Demo Customer', contactPhone: orderType === 'DINE_IN' ? null : '000-000-000', deliveryAddress: orderType === 'DELIVERY' ? id === 'demo-order-1005' ? '12 Nguyễn Huệ, phường Bến Nghé, quận 1, Thành phố Hồ Chí Minh, Việt Nam' : 'Demo address (not real)' : null,
+    customerRemark: '演示数据 / Dữ liệu demo / Demo data', itemAmountVnd: String(fixtureAmount), deliveryFeeVnd: '0', totalAmountVnd: String(fixtureAmount), originalAmountVnd: String(fixtureAmount), roundingAmountVnd: String(fixtureRounding), payableAmountVnd: String(fixtureAmount - fixtureRounding), roundingApplied: fixtureRounding > 0, roundingAppliedByStaffId: fixtureRounding > 0 ? 'demo-staff' : null, roundingAppliedAt: fixtureRounding > 0 ? isoMinutesAgo(Math.max(0, minutesAgo - 1)) : null, settlementStatus: 'UNSETTLED', createdAt: isoMinutesAgo(minutesAgo), updatedAt: isoMinutesAgo(minutesAgo),
     acceptedAt: status === 'PENDING_ACCEPTANCE' ? null : isoMinutesAgo(Math.max(0, minutesAgo - 2)),
     readyAt: ['READY', 'DELIVERING', 'COMPLETED'].includes(status) ? isoMinutesAgo(Math.max(0, minutesAgo - 5)) : null,
     pickupCode: orderType === 'PICKUP' ? orderNo.replace(/\D/g, '').slice(-4) : null,
     estimatedReadyAt: orderType === 'PICKUP' ? new Date(Date.parse(isoMinutesAgo(minutesAgo)) + 30 * 60_000).toISOString() : null,
     table: tableNo ? { id: 'demo-table-1', tableNo, tableName: '演示桌 A01' } : null,
-    items: [{ id: `${id}-item`, productNameZhSnapshot: '演示菜品（非真实）', quantity, unitPriceVnd: String(Math.floor(total / quantity)), subtotalVnd: String(total), remark: 'Demo' }],
+    items: [{ id: `${id}-item`, productNameZhSnapshot: fixtureAmount === 14_000_000 ? '演示大额菜品（非真实）' : '演示菜品（非真实）', quantity: fixtureQuantity, unitPriceVnd: String(fixtureAmount / fixtureQuantity), subtotalVnd: String(fixtureAmount), remark: 'Demo' }],
     chatConversation: orderType === 'DINE_IN' ? null : {
       id: `demo-chat-${id}`,
       status: ['COMPLETED', 'CANCELLED'].includes(status) ? 'CLOSED' : 'ACTIVE',

@@ -79,6 +79,12 @@ export interface MerchantOrder {
   itemAmountVnd: string;
   deliveryFeeVnd: string;
   totalAmountVnd: string;
+  originalAmountVnd?: string;
+  roundingAmountVnd?: string;
+  payableAmountVnd?: string;
+  roundingApplied?: boolean;
+  roundingAppliedByStaffId?: string | null;
+  roundingAppliedAt?: string | null;
   settlementStatus: SettlementStatus;
   acceptedAt?: string | null;
   readyAt?: string | null;

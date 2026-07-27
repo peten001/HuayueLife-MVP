@@ -25,7 +25,6 @@ import type { MerchantOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
-import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
 import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
 
@@ -79,6 +78,7 @@ const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(
   const filter = router.currentRoute.value.query.status;
   return filter === 'AVAILABLE' || filter === 'IN_USE' || filter === 'DISABLED' ? filter : 'ALL';
 });
+const showOrientationNotice = computed(() => router.currentRoute.value.name !== 'tables');
 
 async function logout() {
   if (loggingOut.value) return;
@@ -98,7 +98,7 @@ async function logout() {
 }
 
 async function toggleSound() {
-  if (soundEnabled.value) soundStore.disable();
+  if (soundEnabled.value && soundStore.unlocked) soundStore.disable();
   else await soundStore.enable();
 }
 
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
     />
 
     <main class="cashier-shell__route cashier-shell__route--workflow">
-      <OrientationNotice />
+      <OrientationNotice v-if="showOrientationNotice" />
       <RouterView />
     </main>
 

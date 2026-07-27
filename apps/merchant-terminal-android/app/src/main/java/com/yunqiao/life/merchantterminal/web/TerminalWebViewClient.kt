@@ -25,6 +25,7 @@ class TerminalWebViewClient(
         fun onMainPageLoaded(url: String)
         fun onMainPageError(error: TerminalLoadError)
         fun onExternalHttpsRequested(uri: Uri)
+        fun onDialRequested(uri: Uri)
         fun onNavigationBlocked(uri: Uri?)
         fun onRendererGone(view: WebView, didCrash: Boolean)
     }
@@ -36,7 +37,9 @@ class TerminalWebViewClient(
         if (originPolicy.isTrustedPage(uri)) return false
 
         if (!request.isForMainFrame) return true
-        if (originPolicy.isSafeExternalHttps(uri)) {
+        if (uri.scheme.equals("tel", ignoreCase = true)) {
+            listener.onDialRequested(uri)
+        } else if (originPolicy.isSafeExternalHttps(uri)) {
             listener.onExternalHttpsRequested(uri)
         } else {
             listener.onNavigationBlocked(uri)
@@ -59,7 +62,9 @@ class TerminalWebViewClient(
     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
         val uri = runCatching { Uri.parse(url) }.getOrNull()
         if (uri != null && originPolicy.isTrustedPage(uri)) return false
-        if (uri != null && originPolicy.isSafeExternalHttps(uri)) {
+        if (uri != null && uri.scheme.equals("tel", ignoreCase = true)) {
+            listener.onDialRequested(uri)
+        } else if (uri != null && originPolicy.isSafeExternalHttps(uri)) {
             listener.onExternalHttpsRequested(uri)
         } else {
             listener.onNavigationBlocked(uri)

@@ -123,9 +123,12 @@ onBeforeUnmount(() => {
     :class="[
       'secondary-action',
       'detail-print-action',
+      'dinein-action-button',
       orderId ? 'order-print-action' : 'table-print-action',
     ]"
     data-testid="print-primary"
+    :title="statusLabel"
+    :aria-label="`${t('print.action')} · ${statusLabel}`"
     :disabled="!canSubmit || !selectedPrinterId"
     @click="print"
   >

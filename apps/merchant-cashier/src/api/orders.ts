@@ -45,6 +45,18 @@ export function runMerchantOrderAction(
   );
 }
 
+export function setMerchantOrderRounding(
+  id: string,
+  enabled: boolean,
+): Promise<MerchantOrder> {
+  return isDemoSessionActive()
+    ? Promise.resolve(demoRepository.setOrderRounding(id, enabled))
+    : requestApi<MerchantOrder>(
+      `/merchant/orders/${encodeURIComponent(id)}/rounding`,
+      { method: 'POST', body: { enabled } },
+    );
+}
+
 export function createMerchantTableOrder(
   tableId: string,
   input: CreateMerchantTableOrderInput,

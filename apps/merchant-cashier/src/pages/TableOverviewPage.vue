@@ -46,26 +46,33 @@ const tablesStore = useTablesStore();
 const uiStore = useUiStore();
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
-const { selectedOrder, actionLoadingId } = storeToRefs(ordersStore);
+const { selectedOrder } = storeToRefs(ordersStore);
 const checkoutConfirmOpen = ref(false);
 const orderingOpen = ref(false);
 const orderingMutationLocked = ref(false);
 const adjustmentLoadingId = ref('');
 const pendingDecreaseMutation = ref<PendingDecreaseMutation | null>(null);
 const returnDialogItem = ref<CashierOrderItemView | null>(null);
+const returnDialogOrderId = ref('');
 const pendingReturnMutation = ref<PendingReturnMutation | null>(null);
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
-const session = computed(() => selectedSessionDetail.value);
+const session = computed(() => {
+  const current = selectedSessionDetail.value;
+  if (!current) return null;
+  return {
+    ...current,
+    orders: current.orders.filter((order) => order.status !== 'COMPLETED'),
+  };
+});
 const dineInOrder = computed(() => {
   const order = selectedOrder.value;
   if (!order || order.orderType !== 'DINE_IN') return null;
+  if (order.status === 'COMPLETED') return null;
   if (order.tableId !== selectedTableId.value || order.tableSessionId !== session.value?.id) return null;
   return order;
 });
-const sessionOrders = computed(() => session.value?.orders || []);
-const pendingSessionOrders = computed(() => sessionOrders.value.filter((order) => order.status === 'PENDING_ACCEPTANCE'));
 const canCheckout = computed(() => canCheckoutTableSession(session.value));
 const unresolvedMutation = computed(() => hasUnresolvedCashierMutation({
   orderingLocked: orderingMutationLocked.value,
@@ -153,29 +160,6 @@ async function syncRouteSelection() {
   }
 }
 
-async function acceptNextOrder() {
-  if (writeDisabled.value || actionLoadingId.value) return;
-  try {
-    const target = dineInOrder.value?.status === 'PENDING_ACCEPTANCE'
-      ? dineInOrder.value
-      : pendingSessionOrders.value[0]
-        ? await ordersStore.ensureOrder(pendingSessionOrders.value[0].id)
-        : null;
-    if (!target) return;
-    await ordersStore.runAction(target.id, 'accept');
-    await Promise.all([tablesStore.fetchTables({ force: true }), ordersStore.refreshLiveOrders({ force: true })]);
-    const next = selectedSessionDetail.value?.orders.find((order) => order.status === 'PENDING_ACCEPTANCE');
-    if (next) await selectSessionOrder(next);
-    else {
-      const current = selectedSessionDetail.value?.orders.find((order) => order.id === target.id) || selectedSessionDetail.value?.orders[0];
-      if (current) await selectSessionOrder(current);
-    }
-    uiStore.pushToast(t('table.acceptSuccess'), 'success');
-  } catch (caught) {
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.actionFailed')), 'error');
-  }
-}
-
 async function checkout() {
   if (!canCheckout.value || writeDisabled.value || checkingOut.value) return;
   try {
@@ -227,10 +211,11 @@ async function handleOrderingFailure(caught: unknown) {
   if (caught instanceof CashierApiError && ['TABLE_SESSION_NOT_OPEN', 'TABLE_ALREADY_OPEN', 'TABLE_SESSION_CLOSED', 'TABLE_NOT_AVAILABLE', 'TABLE_NOT_FOUND'].includes(caught.code)) orderingOpen.value = false;
 }
 
-async function decreaseItem(item: OrderItem) {
-  if (!dineInOrder.value || adjustmentLoadingId.value || writeDisabled.value) return;
+async function decreaseItem(item: OrderItem, sourceOrder?: TableSessionOrder) {
+  const order = sourceOrder || dineInOrder.value;
+  if (!order || adjustmentLoadingId.value || writeDisabled.value) return;
   const mutation = getOrCreatePendingDecreaseMutation(pendingDecreaseMutation.value, {
-    orderId: dineInOrder.value.id,
+    orderId: order.id,
     itemId: item.id,
     expectedQuantity: Number(item.quantity || 0),
   });
@@ -267,9 +252,10 @@ async function executeDecrease(mutation: PendingDecreaseMutation) {
   }
 }
 
-function requestReturn(item: OrderItem) {
+function requestReturn(item: OrderItem, sourceOrder?: TableSessionOrder) {
   if (writeDisabled.value || pendingDecreaseMutation.value) return;
   returnDialogItem.value = item;
+  returnDialogOrderId.value = sourceOrder?.id || dineInOrder.value?.id || '';
   pendingReturnMutation.value = null;
 }
 
@@ -280,14 +266,15 @@ function cancelReturn() {
     return;
   }
   returnDialogItem.value = null;
+  returnDialogOrderId.value = '';
 }
 
 async function confirmReturn(returnQuantity: number) {
-  const order = dineInOrder.value;
+  const orderId = returnDialogOrderId.value || dineInOrder.value?.id;
   const item = returnDialogItem.value;
-  if (!order || !item || adjustmentLoadingId.value || writeDisabled.value) return;
+  if (!orderId || !item || adjustmentLoadingId.value || writeDisabled.value) return;
   const mutation = getOrCreatePendingReturnMutation(pendingReturnMutation.value, {
-    orderId: order.id,
+    orderId,
     itemId: item.id,
     expectedQuantity: Number(item.quantity || 0),
     returnQuantity,
@@ -296,13 +283,14 @@ async function confirmReturn(returnQuantity: number) {
   pendingReturnMutation.value = mutation;
   adjustmentLoadingId.value = item.id;
   try {
-    const result = await returnMerchantOrderItem(order.id, item.id, {
+    const result = await returnMerchantOrderItem(orderId, item.id, {
       requestKey: mutation.requestKey,
       expectedQuantity: mutation.expectedQuantity,
       returnQuantity: mutation.returnQuantity,
     });
     applyItemMutation(result);
     returnDialogItem.value = null;
+    returnDialogOrderId.value = '';
     pendingReturnMutation.value = null;
     uiStore.pushToast(t('itemAdjustment.returnSuccess'), 'success');
   } catch (caught) {
@@ -312,6 +300,7 @@ async function confirmReturn(returnQuantity: number) {
     } else {
       uiStore.pushToast(t(apiErrorTranslationKey(caught, 'itemAdjustment.returnFailed')), 'error');
       returnDialogItem.value = null;
+      returnDialogOrderId.value = '';
       pendingReturnMutation.value = null;
     }
   } finally {
@@ -351,6 +340,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
   <section
     class="cashier-workspace cashier-workspace--table-overview table-overview-route"
     :class="{ 'has-selection': Boolean(selectedTableId) }"
+    data-page="TableOverviewPage"
     data-testid="table-overview-workspace"
   >
     <div class="cashier-workspace__content cashier-workspace__content--table-overview">
@@ -372,22 +362,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         v-else
         :table="selectedTable"
         :session="session"
-        :order="dineInOrder"
-        :accept-disabled="!pendingSessionOrders.length"
         :checkout-disabled="!canCheckout"
-        :accepting="Boolean(actionLoadingId)"
         :checking-out="checkingOut"
         :actions-disabled="writeDisabled || Boolean(adjustmentLoadingId)"
         :adjustment-loading-id="adjustmentLoadingId"
         :pending-adjustment-item-id="pendingDecreaseMutation?.itemId"
         :rounding-applied="session?.roundingApplied"
-        :rounding-amount="session?.roundingAmountVnd || '0'"
         :payable-amount="session?.payableAmountVnd || session?.totalAmountVnd || '0'"
         @order-items="openOrdering"
-        @open-order="selectSessionOrder"
         @decrease-item="decreaseItem"
         @return-item="requestReturn"
-        @accept="acceptNextOrder"
         @checkout="checkoutConfirmOpen = true"
         @rounding="toggleRounding"
       />

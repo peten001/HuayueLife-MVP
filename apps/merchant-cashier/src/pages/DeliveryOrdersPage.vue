@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, MessageCircle, RefreshCw, Search, XCircle } from '@lucide/vue';
+import { ArrowLeft, MessageCircle, RefreshCw, XCircle } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
@@ -20,12 +20,11 @@ import LoadingState from '@/components/common/LoadingState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import DeliveryOrderCard from '@/features/delivery/DeliveryOrderCard.vue';
 import DeliveryOrderDetail from '@/features/delivery/DeliveryOrderDetail.vue';
-import DeliveryContactPanel from '@/features/delivery/DeliveryContactPanel.vue';
 import FulfillmentActionDock from '@/features/fulfillment/FulfillmentActionDock.vue';
 import { OrderChatWorkspace } from '@/features/chat';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 
-type DeliveryFilter = 'ALL' | 'PENDING_ACCEPTANCE' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED';
+type DeliveryFilter = 'ALL' | 'PENDING_ACCEPTANCE' | 'PREPARING' | 'READY' | 'DELIVERING';
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
@@ -33,9 +32,8 @@ const authStore = useAuthStore();
 const ordersStore = useOrdersStore();
 const networkStore = useNetworkStore();
 const uiStore = useUiStore();
-const { pendingOrders, activeOrders, historyOrders, selectedOrder, detailLoading, actionLoadingId, error, activeErrorKey } = storeToRefs(ordersStore);
+const { pendingOrders, activeOrders, selectedOrder, detailLoading, actionLoadingId, error, activeErrorKey } = storeToRefs(ordersStore);
 const { online, apiReachable } = storeToRefs(networkStore);
-const query = ref('');
 const filter = ref<DeliveryFilter>('ALL');
 const activePane = ref<'detail' | 'chat'>('detail');
 const refreshing = ref(false);
@@ -43,25 +41,30 @@ const rejectOpen = ref(false);
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
-const allOrders = computed(() => mergeOrders(pendingOrders.value, activeOrders.value, historyOrders.value)
+const allOrders = computed(() => mergeOrders(pendingOrders.value, activeOrders.value)
   .filter((order) => order.orderType === 'DELIVERY'));
 const filteredOrders = computed(() => allOrders.value.filter((order) => {
-  const keyword = query.value.trim().toLocaleLowerCase();
   const statusMatches = filter.value === 'ALL'
     || order.status === filter.value
     || (filter.value === 'PREPARING' && order.status === 'ACCEPTED');
-  if (!statusMatches) return false;
-  return !keyword || `${order.orderNo} ${order.contactName || ''} ${order.contactPhone || ''} ${order.deliveryAddress || ''}`.toLocaleLowerCase().includes(keyword);
+  return statusMatches;
 }));
 const order = computed(() => selectedOrder.value?.orderType === 'DELIVERY' ? selectedOrder.value : null);
 const chatActive = computed(() => Boolean(order.value) && activePane.value === 'chat');
+const roundingDisabledReasonKey = computed(() => {
+  if (!order.value) return '';
+  if (!['PICKUP', 'DELIVERY'].includes(order.value.orderType)) return 'order.roundingTypeNotAllowed';
+  if (order.value.settlementStatus === 'SETTLED') return 'order.roundingAlreadySettled';
+  if (!['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'].includes(order.value.status)) return 'order.roundingStatusNotAllowed';
+  return '';
+});
+const roundingDisabled = computed(() => Boolean(roundingDisabledReasonKey.value));
 const filters: Array<{ value: DeliveryFilter; key: string }> = [
-  { value: 'ALL', key: 'common.all' },
-  { value: 'PENDING_ACCEPTANCE', key: 'order.status.pendingAcceptance' },
-  { value: 'PREPARING', key: 'order.status.preparing' },
-  { value: 'READY', key: 'fulfillment.deliveryReady' },
-  { value: 'DELIVERING', key: 'order.status.delivering' },
-  { value: 'COMPLETED', key: 'order.status.completed' },
+  { value: 'ALL', key: 'fulfillment.deliveryAll' },
+  { value: 'PENDING_ACCEPTANCE', key: 'fulfillment.deliveryPending' },
+  { value: 'PREPARING', key: 'fulfillment.deliveryPreparing' },
+  { value: 'READY', key: 'fulfillment.deliveryReadyShort' },
+  { value: 'DELIVERING', key: 'fulfillment.deliveryEnRoute' },
 ];
 
 async function refresh(showToast = true) {
@@ -91,6 +94,16 @@ async function runFulfillmentAction(action: FulfillmentWorkflowAction) {
 
 async function rejectOrder() {
   await runActionSequence(['reject']);
+}
+
+async function toggleRounding() {
+  if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
+  try {
+    await ordersStore.setRounding(order.value.id, !order.value.roundingApplied);
+    uiStore.pushToast(t('order.actionSuccess'), 'success');
+  } catch (caught) {
+    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.roundingStatusNotAllowed')), 'error');
+  }
 }
 
 async function runActionSequence(actions: readonly MerchantOrderAction[]) {
@@ -139,15 +152,15 @@ onMounted(() => void refresh(false));
 
 <template>
   <section class="fulfillment-page delivery-page" :class="{ 'has-selection': Boolean(order), 'pane-chat': activePane === 'chat' }">
-    <header class="workflow-page-header">
-      <div><span>{{ t('orders.eyebrow') }}</span><h1>{{ t('nav.delivery') }}</h1><p>{{ t('orders.deliveryDescription') }}</p></div>
-      <button type="button" class="workspace-action-button" :disabled="refreshing" @click="refresh()"><RefreshCw :size="18" :class="{ spinning: refreshing }" aria-hidden="true" />{{ t('common.refresh') }}</button>
-    </header>
     <div class="fulfillment-workspace">
       <aside class="fulfillment-queue">
-        <label class="workflow-search"><Search :size="17" aria-hidden="true" /><input v-model="query" :placeholder="t('orders.searchPlaceholder')" /></label>
-        <div class="workflow-filter-chips">
-          <button v-for="item in filters" :key="item.value" type="button" :class="{ 'is-active': filter === item.value }" @click="filter = item.value">{{ t(item.key) }}</button>
+        <div class="pickup-queue-toolbar delivery-queue-toolbar">
+          <div class="workflow-filter-chips">
+            <button v-for="item in filters" :key="item.value" type="button" :class="{ 'is-active': filter === item.value }" @click="filter = item.value">{{ t(item.key) }}</button>
+          </div>
+          <button type="button" class="workflow-refresh-button" :aria-label="t('common.refresh')" :title="t('common.refresh')" :disabled="refreshing" @click="refresh()">
+            <RefreshCw :size="17" :class="{ spinning: refreshing }" aria-hidden="true" />
+          </button>
         </div>
         <LoadingState v-if="refreshing && !allOrders.length" :label="t('orders.loading')" />
         <ErrorState v-else-if="activeErrorKey && !allOrders.length" :title="t('error.title')" :description="t(activeErrorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
@@ -172,12 +185,11 @@ onMounted(() => void refresh(false));
             <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
           </template>
           <div v-if="order" v-show="activePane === 'chat'" class="fulfillment-chat-pane">
-            <DeliveryContactPanel :order="order" compact />
-            <OrderChatWorkspace :order="order" :active="chatActive" @conversation-updated="ordersStore.updateChatSummary(order.id, $event)" />
+            <OrderChatWorkspace :order="order" :active="chatActive" compact-context @conversation-updated="ordersStore.updateChatSummary(order.id, $event)" />
           </div>
         </div>
 
-        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled" @action="runFulfillmentAction">
+        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled" :rounding-loading="actionLoadingId === order.id" :rounding-disabled="roundingDisabled" :rounding-disabled-reason="roundingDisabledReasonKey ? t(roundingDisabledReasonKey) : ''" @action="runFulfillmentAction" @rounding="toggleRounding">
           <template #secondary><button v-if="order.status === 'PENDING_ACCEPTANCE'" type="button" class="secondary-action secondary-action--danger" :disabled="writeDisabled" @click="rejectOpen = true"><XCircle :size="18" aria-hidden="true" />{{ t('order.action.reject') }}</button></template>
         </FulfillmentActionDock>
       </section>

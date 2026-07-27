@@ -74,7 +74,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     private var networkCallbackRegistered = false
     private var merchantSessionSignalInstalled = false
     private var lastBackPressAt = 0L
-    private val versionTapUnlock = VersionTapUnlock()
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -192,7 +191,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onPause() {
-        versionTapUnlock.reset()
         syncMerchantSessionTokenFromWebView()
         terminalWebView?.flushSessionState()
         terminalWebView?.onPause()
@@ -200,7 +198,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onStop() {
-        versionTapUnlock.reset()
         unregisterNetworkCallback()
         super.onStop()
     }
@@ -216,7 +213,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onDestroy() {
-        versionTapUnlock.reset()
         cancelPendingFileChooser()
         terminalChromeClient?.destroyTransientWindows()
         terminalChromeClient = null
@@ -268,6 +264,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
             terminalSettings.recordPageLoadSuccess(sanitizedUrl)
         }
         installMerchantSessionLogoutObserver()
+        installMerchantPrinterDiagnosticsObserver()
         syncMerchantSessionTokenFromWebView()
     }
 
@@ -286,6 +283,15 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         }
         try {
             startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, R.string.external_link_blocked, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onDialRequested(uri: Uri) {
+        val dialUri = uri.buildUpon().scheme("tel").build()
+        try {
+            startActivity(Intent(Intent.ACTION_DIAL, dialUri))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.external_link_blocked, Toast.LENGTH_SHORT).show()
         }
@@ -430,6 +436,14 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
                         message.data == MerchantWebSessionContract.SIGN_OUT_MESSAGE
                     ) {
                         applyMerchantSessionSnapshot(MerchantWebSessionSnapshot.SignedOut)
+                    } else if (
+                        isMainFrame &&
+                        originPolicy.isTrustedPage(sourceOrigin) &&
+                        message.type == WebMessageCompat.TYPE_STRING &&
+                        message.data == MerchantWebSessionContract.OPEN_PRINTER_DIAGNOSTICS_MESSAGE &&
+                        merchantSessionTokenStore.hasCredential()
+                    ) {
+                        startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
                     }
                 },
             )
@@ -440,6 +454,12 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         val webView = terminalWebView ?: return
         if (!merchantSessionSignalInstalled || !originPolicy.isTrustedPage(webView.url)) return
         webView.evaluateJavascript(MerchantWebSessionContract.logoutObserverScript(), null)
+    }
+
+    private fun installMerchantPrinterDiagnosticsObserver() {
+        val webView = terminalWebView ?: return
+        if (!merchantSessionSignalInstalled || !originPolicy.isTrustedPage(webView.url)) return
+        webView.evaluateJavascript(MerchantWebSessionContract.printerDiagnosticsObserverScript(), null)
     }
 
     private fun openInitialPage() {
@@ -499,15 +519,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
 
     private fun configureVersionUnlock() {
         binding.appVersion.text = getString(R.string.app_version_format, BuildConfig.VERSION_NAME)
-        binding.appVersion.setOnClickListener {
-            if (!merchantSessionTokenStore.hasCredential()) {
-                versionTapUnlock.reset()
-                return@setOnClickListener
-            }
-            if (versionTapUnlock.registerTap(SystemClock.elapsedRealtime())) {
-                startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
-            }
-        }
     }
 
     private fun configureSwipeRefresh() {
