@@ -524,6 +524,7 @@ model MerchantStaff {
   merchant           Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   operatedStatusLogs OrderStatusLog[]   @relation("StaffStatusLogOperator")
   createdOrders      Order[]            @relation("StaffCreatedOrders")
+  roundedOrders      Order[]            @relation("OrderRoundingStaff")
   createdPrintJobs   PrintJob[]         @relation("PrintJobCreatedBy")
   printingAuditLogs  PrintingAuditLog[] @relation("PrintingAuditActor")
 
@@ -677,6 +678,9 @@ model Order {
   itemAmountVnd     BigInt           @map("item_amount_vnd")
   deliveryFeeVnd    BigInt           @default(0) @map("delivery_fee_vnd")
   totalAmountVnd    BigInt           @map("total_amount_vnd")
+  roundingAmountVnd BigInt           @default(0) @map("rounding_amount_vnd")
+  roundingAppliedByStaffId BigInt?   @map("rounding_applied_by_staff_id")
+  roundingAppliedAt DateTime?        @map("rounding_applied_at")
   settlementStatus  SettlementStatus @default(UNSETTLED) @map("settlement_status")
   acceptedAt        DateTime?        @map("accepted_at")
   readyAt           DateTime?        @map("ready_at")
@@ -691,6 +695,7 @@ model Order {
   merchant           Merchant               @relation(fields: [merchantId], references: [id])
   table              DiningTable?           @relation(fields: [tableId], references: [id], onDelete: SetNull)
   tableSession       TableSession?          @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  roundingAppliedByStaff MerchantStaff?     @relation("OrderRoundingStaff", fields: [roundingAppliedByStaffId], references: [id], onDelete: SetNull)
   items              OrderItem[]
   statusLogs         OrderStatusLog[]
   chatConversation   OrderChatConversation?

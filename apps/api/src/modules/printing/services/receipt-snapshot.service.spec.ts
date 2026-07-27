@@ -185,6 +185,9 @@ describe('ReceiptSnapshotService validation', () => {
       ],
       itemAmountVnd: 1000n,
       totalAmountVnd: 1000n,
+      roundingAmountVnd: 0n,
+      roundingAppliedByStaffId: null,
+      roundingAppliedAt: null,
       customerRemark: null,
     });
 
@@ -193,6 +196,80 @@ describe('ReceiptSnapshotService validation', () => {
     expect(prisma.order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 37n, merchantId } }),
     );
+  });
+
+  it('prints pickup rounding from the persisted order amount fields', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 38n,
+      merchantId,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        addressZh: '测试地址',
+        addressDetail: null,
+        contactPhone: '0900000000',
+      },
+      table: null,
+      tableNoSnapshot: null,
+      orderNo: 'TEST-PICKUP-38',
+      orderType: 'PICKUP',
+      createdAt: new Date('2026-07-15T00:00:00.000Z'),
+      completedAt: null,
+      items: [
+        {
+          productNameZhSnapshot: '抹零自取菜品',
+          product: { nameVi: 'Mon tu lay' },
+          quantity: 1,
+          unitPriceVnd: 513_000n,
+          subtotalVnd: 513_000n,
+          remark: null,
+        },
+      ],
+      itemAmountVnd: 513_000n,
+      totalAmountVnd: 513_000n,
+      roundingAmountVnd: 3_000n,
+      roundingAppliedByStaffId: 11n,
+      roundingAppliedAt: new Date('2026-07-15T00:01:00.000Z'),
+      customerRemark: null,
+    });
+
+    const snapshot = await service.fromOrder(merchantId, 38n);
+
+    expect(snapshot.totals).toEqual({
+      subtotal: 513_000,
+      discount: 3_000,
+      originalAmount: 513_000,
+      roundingAmount: 3_000,
+      receivedAmount: 510_000,
+      total: 510_000,
+      currency: 'VND',
+    });
+  });
+
+  it('prints delivery rounding from the same persisted order fields', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 39n,
+      merchantId,
+      merchant: { id: merchantId, nameZh: '测试商家', addressZh: '测试地址', addressDetail: null, contactPhone: '0900000000' },
+      table: null,
+      tableNoSnapshot: null,
+      orderNo: 'TEST-DELIVERY-39',
+      orderType: 'DELIVERY',
+      createdAt: new Date('2026-07-15T00:00:00.000Z'),
+      completedAt: null,
+      items: [{ productNameZhSnapshot: '配送抹零菜品', product: { nameVi: 'Mon giao hang' }, quantity: 1, unitPriceVnd: 513_000n, subtotalVnd: 513_000n, remark: null }],
+      itemAmountVnd: 513_000n,
+      totalAmountVnd: 513_000n,
+      roundingAmountVnd: 3_000n,
+      roundingAppliedByStaffId: 11n,
+      roundingAppliedAt: new Date('2026-07-15T00:01:00.000Z'),
+      customerRemark: null,
+    });
+
+    const snapshot = await service.fromOrder(merchantId, 39n);
+
+    expect(snapshot.order?.orderType).toBe('DELIVERY');
+    expect(snapshot.totals).toMatchObject({ originalAmount: 513_000, roundingAmount: 3_000, receivedAmount: 510_000, total: 510_000 });
   });
 
   it('prints a rounded 513,000 VND table bill with a 510,000 VND final total', async () => {

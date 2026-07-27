@@ -11,6 +11,7 @@ import {
   immutableJsonSnapshot,
   ReceiptDocument,
 } from '../types/receipt-document';
+import { withOrderSettlementFields } from '../../orders/order-settlement-fields';
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -46,6 +47,7 @@ export class ReceiptSnapshotService {
       },
     });
     if (!order) this.notFound('订单不存在');
+    const settlement = withOrderSettlementFields(order);
 
     const document: ReceiptDocument = {
       schemaVersion: 1,
@@ -77,7 +79,13 @@ export class ReceiptSnapshotService {
       })),
       totals: {
         subtotal: safeVnd(order.itemAmountVnd),
-        total: safeVnd(order.totalAmountVnd),
+        ...(settlement.roundingAmountVnd > 0n
+          ? { discount: safeVnd(settlement.roundingAmountVnd) }
+          : {}),
+        originalAmount: safeVnd(settlement.originalAmountVnd),
+        roundingAmount: safeVnd(settlement.roundingAmountVnd),
+        receivedAmount: safeVnd(settlement.payableAmountVnd),
+        total: safeVnd(settlement.payableAmountVnd),
         currency: 'VND',
       },
       note: order.customerRemark ?? undefined,
