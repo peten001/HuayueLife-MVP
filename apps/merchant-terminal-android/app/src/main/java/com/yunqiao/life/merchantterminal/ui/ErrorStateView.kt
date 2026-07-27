@@ -18,12 +18,10 @@ class ErrorStateView @JvmOverloads constructor(
 
     var onRetry: (() -> Unit)? = null
     var onOpenNetworkSettings: (() -> Unit)? = null
-    var onOpenDiagnostics: (() -> Unit)? = null
 
     init {
         binding.retryButton.setOnClickListener { onRetry?.invoke() }
         binding.networkSettingsButton.setOnClickListener { onOpenNetworkSettings?.invoke() }
-        binding.diagnosticsButton.setOnClickListener { onOpenDiagnostics?.invoke() }
     }
 
     fun show(error: TerminalLoadError) {

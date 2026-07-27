@@ -45,6 +45,9 @@ data class ReceiptItem(
 data class ReceiptTotals(
     val subtotal: Long,
     val discount: Long?,
+    val originalAmount: Long?,
+    val roundingAmount: Long?,
+    val receivedAmount: Long?,
     val serviceFee: Long?,
     val total: Long,
     val currency: String,
@@ -62,12 +65,26 @@ data class ReceiptDocumentV1(
     val verificationCode: String?,
 )
 
+class ReceiptSchemaException(
+    val path: String,
+    val unsupportedFields: List<String>,
+) : IllegalArgumentException(
+    "Receipt contains unsupported fields at $path: ${unsupportedFields.joinToString(",")}.",
+) {
+    val code: String = ERROR_CODE
+
+    companion object {
+        const val ERROR_CODE = "RECEIPT_SCHEMA_UNSUPPORTED"
+    }
+}
+
 /** Strict parser: rejects unknown/oversized fields and never accepts HTML or printer bytes. */
 object ReceiptDocumentParser {
     fun parse(json: String): ReceiptDocumentV1 {
         require(json.length in 2..MAX_JSON_CHARS) { "Receipt snapshot size is invalid." }
         val root = JSONObject(json)
         root.requireOnly(
+            "$",
             "schemaVersion", "receiptType", "generatedAt", "merchant", "order",
             "tableSession", "items", "totals", "note", "verificationCode",
         )
@@ -75,7 +92,7 @@ object ReceiptDocumentParser {
         val receiptType = enumValueOf<ReceiptType>(root.requiredText("receiptType", 32))
         val generatedAt = root.requiredInstant("generatedAt")
         val merchantObject = root.requiredObject("merchant").also {
-            it.requireOnly("id", "name", "address", "phone")
+            it.requireOnly("$.merchant", "id", "name", "address", "phone")
         }
         val merchant = ReceiptMerchant(
             id = merchantObject.requiredNumericId("id"),
@@ -94,6 +111,7 @@ object ReceiptDocumentParser {
         val items = (0 until itemArray.length()).map { index ->
             val item = itemArray.optJSONObject(index) ?: error("Receipt item is invalid.")
             item.requireOnly(
+                "$.items[$index]",
                 "name", "nameVi", "nameEn", "quantity", "unitPrice", "lineTotal",
                 "specification", "note",
             )
@@ -109,11 +127,18 @@ object ReceiptDocumentParser {
             )
         }
         val totalsObject = root.requiredObject("totals").also {
-            it.requireOnly("subtotal", "discount", "serviceFee", "total", "currency")
+            it.requireOnly(
+                "$.totals",
+                "subtotal", "discount", "originalAmount", "roundingAmount", "receivedAmount",
+                "serviceFee", "total", "currency",
+            )
         }
         val totals = ReceiptTotals(
             subtotal = totalsObject.requiredNonNegativeLong("subtotal"),
             discount = totalsObject.optionalNonNegativeLong("discount"),
+            originalAmount = totalsObject.optionalNonNegativeLong("originalAmount"),
+            roundingAmount = totalsObject.optionalNonNegativeLong("roundingAmount"),
+            receivedAmount = totalsObject.optionalNonNegativeLong("receivedAmount"),
             serviceFee = totalsObject.optionalNonNegativeLong("serviceFee"),
             total = totalsObject.requiredNonNegativeLong("total"),
             currency = totalsObject.requiredText("currency", 8).also { require(it == "VND") },
@@ -133,6 +158,7 @@ object ReceiptDocumentParser {
 
     private fun parseOrder(value: JSONObject): ReceiptOrder {
         value.requireOnly(
+            "$.order",
             "id", "orderNo", "orderType", "tableName", "guestCount", "createdAt", "completedAt",
         )
         return ReceiptOrder(
@@ -147,7 +173,10 @@ object ReceiptDocumentParser {
     }
 
     private fun parseTableSession(value: JSONObject): ReceiptTableSession {
-        value.requireOnly("id", "sessionNo", "tableName", "openedAt", "closedAt", "orderNos")
+        value.requireOnly(
+            "$.tableSession",
+            "id", "sessionNo", "tableName", "openedAt", "closedAt", "orderNos",
+        )
         val orderNosArray = value.optJSONArray("orderNos") ?: error("orderNos are missing.")
         require(orderNosArray.length() <= 1_000)
         return ReceiptTableSession(
@@ -162,9 +191,15 @@ object ReceiptDocumentParser {
         )
     }
 
-    private fun JSONObject.requireOnly(vararg allowed: String) {
+    private fun JSONObject.requireOnly(path: String, vararg allowed: String) {
         val allowedSet = allowed.toSet()
-        require(keys().asSequence().all { it in allowedSet }) { "Receipt contains unsupported fields." }
+        val unsupported = keys().asSequence()
+            .filterNot(allowedSet::contains)
+            .sorted()
+            .toList()
+        if (unsupported.isNotEmpty()) {
+            throw ReceiptSchemaException(path, unsupported)
+        }
     }
 
     private fun JSONObject.requiredObject(key: String): JSONObject = optJSONObject(key)

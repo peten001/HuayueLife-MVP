@@ -25,7 +25,16 @@ object UsbBindingResolver {
         val identityMatches = devices.filter {
             it.vendorId == binding.vendorId && it.productId == binding.productId
         }
-        val device = exact ?: identityMatches.singleOrNull()
+        val stableMatches = identityMatches.filter { device ->
+            UsbEndpointSelector.select(
+                device = device,
+                preferredInterfaceIndex = binding.interfaceIndex,
+                preferredInterfaceId = binding.interfaceId,
+                preferredAlternateSetting = binding.alternateSetting,
+                preferredEndpointAddress = binding.endpointAddress,
+            ) != null
+        }
+        val device = exact ?: stableMatches.singleOrNull()
             ?: return UsbBindingResolution.Unavailable(
                 if (identityMatches.size > 1) "USB_DEVICE_AMBIGUOUS" else "USB_DEVICE_NOT_FOUND",
             )

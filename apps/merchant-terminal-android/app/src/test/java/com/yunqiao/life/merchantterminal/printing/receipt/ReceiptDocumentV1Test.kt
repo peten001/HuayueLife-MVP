@@ -40,11 +40,56 @@ class ReceiptDocumentV1Test {
         val receipt = ReceiptDocumentParser.parse(tableJson())
         assertEquals(ReceiptType.TABLE_BILL, receipt.receiptType)
         assertEquals(listOf("A-1", "A-2"), receipt.tableSession?.orderNos)
+        assertEquals(20_000L, receipt.totals.originalAmount)
+        assertEquals(3_000L, receipt.totals.roundingAmount)
+        assertEquals(17_000L, receipt.totals.receivedAmount)
+        assertEquals(17_000L, receipt.totals.total)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
+    fun `renders opaque server job identifiers without bitmap failure`() {
+        val bitmap = ReceiptDocumentRenderer.render(
+            ReceiptDocumentParser.parse(orderJson()),
+            ProductionReceiptRenderConfig(
+                paperWidth = PaperWidth.MM_80,
+                customDots = null,
+                jobId = "1dce9c92-b8d7-4b7f-bd67-8ce390e7e2ee",
+                contentHash = "b".repeat(64),
+                printedAtEpochMs = 1_700_000_000_000,
+            ),
+        )
+        bitmap.recycle()
+    }
+
+    @Test
     fun `rejects unknown fields instead of treating snapshot as commands`() {
-        ReceiptDocumentParser.parse(orderJson().replace("\"note\":\"少辣\"", "\"note\":\"少辣\",\"escpos\":\"1b40\""))
+        val error = org.junit.Assert.assertThrows(ReceiptSchemaException::class.java) {
+            ReceiptDocumentParser.parse(
+                orderJson().replace(
+                    "\"verificationCode\":",
+                    "\"escpos\":\"1b40\",\"verificationCode\":",
+                ),
+            )
+        }
+
+        assertEquals(ReceiptSchemaException.ERROR_CODE, error.code)
+        assertEquals("$", error.path)
+        assertEquals(listOf("escpos"), error.unsupportedFields)
+    }
+
+    @Test
+    fun `rejects unrecognized nested fields with a safe schema path`() {
+        val error = org.junit.Assert.assertThrows(ReceiptSchemaException::class.java) {
+            ReceiptDocumentParser.parse(
+                tableJson().replace(
+                    "\"currency\":\"VND\"",
+                    "\"currency\":\"VND\",\"rawBytes\":\"1b40\"",
+                ),
+            )
+        }
+
+        assertEquals("$.totals", error.path)
+        assertEquals(listOf("rawBytes"), error.unsupportedFields)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -107,7 +152,7 @@ class ReceiptDocumentV1Test {
           "merchant":{"id":"10","name":"云桥餐厅"},
           "tableSession":{"id":"30","sessionNo":"TS-1","tableName":"A01","openedAt":"2026-07-15T09:00:00.000Z","orderNos":["A-1","A-2"]},
           "items":[{"name":"茶","quantity":2,"unitPrice":10000,"lineTotal":20000}],
-          "totals":{"subtotal":20000,"total":20000,"currency":"VND"}
+          "totals":{"subtotal":20000,"discount":3000,"originalAmount":20000,"roundingAmount":3000,"receivedAmount":17000,"total":17000,"currency":"VND"}
         }
     """.trimIndent()
 }

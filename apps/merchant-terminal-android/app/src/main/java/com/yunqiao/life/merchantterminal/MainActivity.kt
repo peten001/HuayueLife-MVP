@@ -12,7 +12,6 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
-import android.view.Menu
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.ValueCallback
@@ -22,7 +21,6 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -36,12 +34,10 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.yunqiao.life.merchantterminal.data.TerminalSettings
-import com.yunqiao.life.merchantterminal.connector.ConnectorControlActivity
 import com.yunqiao.life.merchantterminal.connector.MerchantSessionShutdown
 import com.yunqiao.life.merchantterminal.connector.ConnectorServiceStarter
 import com.yunqiao.life.merchantterminal.databinding.ActivityMainBinding
 import com.yunqiao.life.merchantterminal.diagnostics.DeviceDiagnostics
-import com.yunqiao.life.merchantterminal.diagnostics.DiagnosticsActivity
 import com.yunqiao.life.merchantterminal.diagnostics.UsbPrinterDiagnosticsActivity
 import com.yunqiao.life.merchantterminal.security.MerchantSessionCoordinator
 import com.yunqiao.life.merchantterminal.security.MerchantSessionProcessScope
@@ -78,6 +74,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     private var networkCallbackRegistered = false
     private var merchantSessionSignalInstalled = false
     private var lastBackPressAt = 0L
+    private val versionTapUnlock = VersionTapUnlock()
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -138,7 +135,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         merchantSessionCoordinator = MerchantSessionCoordinator(
             tokenStore = merchantSessionTokenStore,
             startConnector = {
-                ConnectorServiceStarter.startIfEligible(appContext)
+                ConnectorServiceStarter.refreshRemoteConfigAndStart(appContext)
                 Unit
             },
             shutdown = { MerchantSessionShutdown.clear(appContext) },
@@ -146,7 +143,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         configureWindowForTerminal()
         configureErrorState()
-        configureTerminalMenu()
+        configureVersionUnlock()
         configureSwipeRefresh()
         configureBackNavigation()
         observeTerminalSettings()
@@ -195,6 +192,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onPause() {
+        versionTapUnlock.reset()
         syncMerchantSessionTokenFromWebView()
         terminalWebView?.flushSessionState()
         terminalWebView?.onPause()
@@ -202,6 +200,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onStop() {
+        versionTapUnlock.reset()
         unregisterNetworkCallback()
         super.onStop()
     }
@@ -217,6 +216,7 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     }
 
     override fun onDestroy() {
+        versionTapUnlock.reset()
         cancelPendingFileChooser()
         terminalChromeClient?.destroyTransientWindows()
         terminalChromeClient = null
@@ -495,45 +495,17 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
     private fun configureErrorState() {
         binding.errorState.onRetry = ::reloadCurrentPage
         binding.errorState.onOpenNetworkSettings = ::openNetworkSettings
-        binding.errorState.onOpenDiagnostics = {
-            startActivity(Intent(this, DiagnosticsActivity::class.java))
-        }
     }
 
-    private fun configureTerminalMenu() {
-        binding.terminalMenuButton.setOnClickListener { anchor ->
-            PopupMenu(this, anchor).apply {
-                menu.add(Menu.NONE, MENU_CASHIER, Menu.NONE, R.string.menu_cashier)
-                menu.add(Menu.NONE, MENU_DEVICE_DIAGNOSTICS, Menu.NONE, R.string.menu_device_diagnostics)
-                menu.add(Menu.NONE, MENU_USB_DIAGNOSTICS, Menu.NONE, R.string.menu_usb_diagnostics)
-                menu.add(Menu.NONE, MENU_CONNECTOR_CONTROL, Menu.NONE, R.string.menu_connector_control)
-                setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        MENU_CASHIER -> {
-                            reloadCurrentPage()
-                            true
-                        }
-                        MENU_DEVICE_DIAGNOSTICS -> {
-                            startActivity(Intent(this@MainActivity, DiagnosticsActivity::class.java))
-                            true
-                        }
-                        MENU_USB_DIAGNOSTICS -> {
-                            startActivity(
-                                Intent(
-                                    this@MainActivity,
-                                    UsbPrinterDiagnosticsActivity::class.java,
-                                ),
-                            )
-                            true
-                        }
-                        MENU_CONNECTOR_CONTROL -> {
-                            startActivity(Intent(this@MainActivity, ConnectorControlActivity::class.java))
-                            true
-                        }
-                        else -> false
-                    }
-                }
-                show()
+    private fun configureVersionUnlock() {
+        binding.appVersion.text = getString(R.string.app_version_format, BuildConfig.VERSION_NAME)
+        binding.appVersion.setOnClickListener {
+            if (!merchantSessionTokenStore.hasCredential()) {
+                versionTapUnlock.reset()
+                return@setOnClickListener
+            }
+            if (versionTapUnlock.registerTap(SystemClock.elapsedRealtime())) {
+                startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
             }
         }
     }
@@ -762,10 +734,6 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         const val NETWORK_RECOVERY_DEBOUNCE_MS = 700L
         const val MAX_FILE_SELECTION_COUNT = 10
         const val MAX_ACCEPTED_MIME_TYPES = 32
-        const val MENU_CASHIER = 1
-        const val MENU_DEVICE_DIAGNOSTICS = 2
-        const val MENU_USB_DIAGNOSTICS = 3
-        const val MENU_CONNECTOR_CONTROL = 4
         const val MERCHANT_SESSION_SYNC_INTERVAL_MS = 2_000L
         const val ANY_MIME_TYPE = "*/*"
         val MIME_TOKEN = Regex("^[a-z0-9][a-z0-9!#$&^_.+\\-]*$")

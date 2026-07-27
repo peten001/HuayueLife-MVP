@@ -24,21 +24,56 @@ class ChunkedUsbWriterTest {
     }
 
     @Test
-    fun `partial write stops without retrying remaining or entire document`() {
-        var callCount = 0
+    fun `partial write continues with the remaining bytes`() {
+        val calls = mutableListOf<Pair<Int, Int>>()
         val result = ChunkedUsbWriter.write(
             data = ByteArray(5_000),
             maxPacketSize = 64,
             timeoutMs = 5_000,
-            transport = BulkTransferTransport { _, _, length, _ ->
-                callCount++
-                length - 5
+            transport = BulkTransferTransport { _, offset, length, _ ->
+                calls += offset to length
+                if (calls.size == 1) length - 5 else length
+            },
+        )
+
+        assertEquals(BulkWriteOutcome.Complete(5_000), result)
+        assertEquals(
+            listOf(0 to 4_096, 4_091 to 5, 4_096 to 904),
+            calls,
+        )
+    }
+
+    @Test
+    fun `zero write retries until the bounded timeout`() {
+        var now = 0L
+        val result = ChunkedUsbWriter.write(
+            data = ByteArray(64),
+            maxPacketSize = 64,
+            timeoutMs = 500,
+            transport = BulkTransferTransport { _, _, _, _ -> 0 },
+            nanoTime = { now.also { now += 500_000_000L } },
+        ) as BulkWriteOutcome.Failed
+
+        assertEquals(UsbPrintErrorCode.USB_WRITE_TIMEOUT, result.code)
+        assertEquals(0, result.writtenBytes)
+        assertTrue(result.ioAttempted)
+    }
+
+    @Test
+    fun `partial progress followed by negative result is recorded as partial write`() {
+        val calls = mutableListOf<Pair<Int, Int>>()
+        val result = ChunkedUsbWriter.write(
+            data = ByteArray(64),
+            maxPacketSize = 64,
+            timeoutMs = 5_000,
+            transport = BulkTransferTransport { _, offset, length, _ ->
+                calls += offset to length
+                if (calls.size == 1) length - 1 else -1
             },
         ) as BulkWriteOutcome.Failed
 
-        assertEquals(1, callCount)
         assertEquals(UsbPrintErrorCode.USB_PARTIAL_WRITE, result.code)
-        assertEquals(4_091, result.writtenBytes)
+        assertEquals(63, result.writtenBytes)
         assertTrue(result.ioAttempted)
     }
 

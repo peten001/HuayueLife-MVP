@@ -20,14 +20,11 @@ import kotlinx.coroutines.runBlocking
 @RunWith(RobolectricTestRunner::class)
 class ConnectorSafetyPolicyTest {
     @Test
-    fun `legacy local switches do not gate execution and automatic follows remote authority`() {
+    fun `execution requires merchant session printer association and automatic requires both switches`() {
         val base = ConnectorSettingsSnapshot(
-            connectorEnabled = false,
-            automaticPrintingEnabled = false,
-            remoteConfigKnown = true,
-            remoteMerchantPrintingEnabled = true,
+            connectorEnabled = true,
+            automaticPrintingEnabled = true,
             remoteExecutionEnabled = true,
-            remotePrinterConfigured = true,
             remotePrinterEnabled = true,
             remoteAutomaticPrintingEnabled = false,
             usbBinding = binding(printerId = null),
@@ -97,6 +94,8 @@ class ConnectorSafetyPolicyTest {
     fun `local USB errors map to the controlled server vocabulary`() {
         assertEquals("USB_INTERFACE_CLAIM_FAILED", ServerPrintErrorMapper.map("USB_BULK_OUT_NOT_FOUND"))
         assertEquals("PRINTER_OFFLINE", ServerPrintErrorMapper.map("USB_OPEN_FAILED"))
+        assertEquals("TEMPLATE_INVALID", ServerPrintErrorMapper.map("RECEIPT_SCHEMA_UNSUPPORTED"))
+        assertEquals("TEMPLATE_INVALID", ServerPrintErrorMapper.map("RECEIPT_SCHEMA_INVALID"))
         assertEquals("UNKNOWN", ServerPrintErrorMapper.map("UNRECOGNIZED_LOCAL_DETAIL"))
     }
 
@@ -126,16 +125,16 @@ class ConnectorSafetyPolicyTest {
     }
 
     @Test
-    fun `Web sign out closes remote session gates but preserves USB evidence`() = runBlocking {
+    fun `Web sign out closes all execution gates but preserves USB evidence`() = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val settings = ConnectorSettings(context)
         val usbBinding = binding(printerId = "41")
         settings.bindMerchantScopeIfAbsent("7")
         settings.saveUsbBinding(usbBinding)
+        settings.setConnectorEnabled(true)
+        settings.setAutomaticPrintingEnabled(true)
         settings.applyRemoteConfig(
-            merchantPrintingEnabled = true,
             executionEnabled = true,
-            printerConfigured = true,
             printerEnabled = true,
             automaticPrintingEnabled = true,
             pollIntervalMs = 7_000,
@@ -145,29 +144,13 @@ class ConnectorSafetyPolicyTest {
         settings.disableForSignedOutSession()
         val stopped = settings.snapshot()
 
-        assertFalse(stopped.remoteConfigKnown)
-        assertFalse(stopped.remoteMerchantPrintingEnabled)
+        assertFalse(stopped.connectorEnabled)
+        assertFalse(stopped.automaticPrintingEnabled)
         assertFalse(stopped.remoteExecutionEnabled)
-        assertFalse(stopped.remotePrinterConfigured)
         assertFalse(stopped.remotePrinterEnabled)
         assertFalse(stopped.remoteAutomaticPrintingEnabled)
         assertEquals("7", stopped.merchantId)
         assertEquals(usbBinding, stopped.usbBinding)
-    }
-
-    @Test
-    fun `successful connection and print retain the last failure evidence`() = runBlocking {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val settings = ConnectorSettings(context)
-        settings.recordError("USB_DEVICE_NOT_FOUND")
-        settings.recordConnectionSuccess(1_234L)
-        settings.recordPrintSuccess(2_345L)
-
-        val snapshot = settings.snapshot()
-
-        assertEquals("USB_DEVICE_NOT_FOUND", snapshot.lastErrorCode)
-        assertEquals(1_234L, snapshot.lastSuccessfulConnectionAt)
-        assertEquals(2_345L, snapshot.lastSuccessfulPrintAt)
     }
 
     private fun binding(printerId: String?) = UsbPrinterBinding(

@@ -71,6 +71,7 @@ sealed interface PrintResult {
     data class Success(
         val plannedBytes: Int,
         val writtenBytes: Int,
+        val technicalDetail: String? = null,
     ) : PrintResult
 
     data class Failure(

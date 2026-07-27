@@ -48,15 +48,12 @@ data class UsbPrinterBinding(
 
 data class ConnectorSettingsSnapshot(
     val merchantId: String? = null,
-    /** Legacy RC preference retained only so existing installs can be read without migration. */
     val connectorEnabled: Boolean = false,
-    /** Legacy RC preference retained only so existing installs can be read without migration. */
     val automaticPrintingEnabled: Boolean = false,
-    val remoteConfigKnown: Boolean = false,
-    val remoteMerchantPrintingEnabled: Boolean = false,
     val remoteExecutionEnabled: Boolean = false,
-    val remotePrinterConfigured: Boolean = false,
     val remotePrinterEnabled: Boolean = false,
+    /** Server capability to attempt the connector; independent of transient USB status. */
+    val remoteStartAllowed: Boolean = false,
     val remoteAutomaticPrintingEnabled: Boolean = false,
     val pollIntervalMs: Long = 7_000,
     val configRefreshIntervalMs: Long = 30_000,
@@ -64,19 +61,16 @@ data class ConnectorSettingsSnapshot(
     /** Server printer association is retained even before the USB descriptor is saved. */
     val boundPrinterId: String? = null,
     val lastErrorCode: String? = null,
-    val lastSuccessfulConnectionAt: Long? = null,
     val lastSuccessfulPrintAt: Long? = null,
+    val lastUsbConnectedAt: Long? = null,
     val appliedConfigVersion: Long? = null,
 ) {
-    val cachedRemoteStartEligible: Boolean
-        get() = remoteConfigKnown && remoteMerchantPrintingEnabled && remoteExecutionEnabled &&
-            remotePrinterConfigured && remotePrinterEnabled
-
     val canExecute: Boolean
-        get() = cachedRemoteStartEligible && usbBinding?.printerId != null
+        get() = (remoteStartAllowed || connectorEnabled) && remoteExecutionEnabled &&
+            remotePrinterEnabled && usbBinding?.printerId != null
 
     val canClaimAutomatic: Boolean
-        get() = canExecute && remoteAutomaticPrintingEnabled
+        get() = canExecute && automaticPrintingEnabled && remoteAutomaticPrintingEnabled
 }
 
 class ConnectorSettings(context: Context) {
@@ -90,16 +84,24 @@ class ConnectorSettings(context: Context) {
 
     suspend fun snapshot(): ConnectorSettingsSnapshot = values.first()
 
-    /** Clears session-scoped remote authority while retaining USB config and legacy preferences. */
+    /** Stops native execution after Web sign-out while retaining USB config and local evidence. */
     suspend fun disableForSignedOutSession() {
         dataStore.edit { preferences ->
-            preferences[Keys.REMOTE_CONFIG_KNOWN] = false
-            preferences[Keys.REMOTE_MERCHANT_PRINTING_ENABLED] = false
+            preferences[Keys.CONNECTOR_ENABLED] = false
+            preferences[Keys.AUTO_PRINTING_ENABLED] = false
             preferences[Keys.REMOTE_EXECUTION_ENABLED] = false
-            preferences[Keys.REMOTE_PRINTER_CONFIGURED] = false
             preferences[Keys.REMOTE_PRINTER_ENABLED] = false
+            preferences[Keys.REMOTE_START_ALLOWED] = false
             preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = false
         }
+    }
+
+    suspend fun setConnectorEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.CONNECTOR_ENABLED] = enabled }
+    }
+
+    suspend fun setAutomaticPrintingEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTO_PRINTING_ENABLED] = enabled }
     }
 
     /**
@@ -119,21 +121,20 @@ class ConnectorSettings(context: Context) {
     }
 
     suspend fun applyRemoteConfig(
-        merchantPrintingEnabled: Boolean,
         executionEnabled: Boolean,
-        printerConfigured: Boolean,
         printerEnabled: Boolean,
+        startAllowed: Boolean = executionEnabled,
         automaticPrintingEnabled: Boolean,
         pollIntervalMs: Long,
         configRefreshIntervalMs: Long,
     ) {
         dataStore.edit { preferences ->
-            preferences[Keys.REMOTE_CONFIG_KNOWN] = true
-            preferences[Keys.REMOTE_MERCHANT_PRINTING_ENABLED] = merchantPrintingEnabled
             preferences[Keys.REMOTE_EXECUTION_ENABLED] = executionEnabled
-            preferences[Keys.REMOTE_PRINTER_CONFIGURED] = printerConfigured
             preferences[Keys.REMOTE_PRINTER_ENABLED] = printerEnabled
+            preferences[Keys.REMOTE_START_ALLOWED] = startAllowed
             preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] = automaticPrintingEnabled
+            preferences[Keys.AUTO_PRINTING_ENABLED] =
+                preferences[Keys.AUTO_PRINTING_ENABLED] == true && automaticPrintingEnabled
             preferences[Keys.POLL_INTERVAL_MS] = pollIntervalMs.coerceIn(5_000, 30_000)
             preferences[Keys.CONFIG_REFRESH_INTERVAL_MS] =
                 configRefreshIntervalMs.coerceIn(10_000, 60_000)
@@ -156,7 +157,20 @@ class ConnectorSettings(context: Context) {
                 ?: preferences.remove(Keys.CUSTOM_DOTS)
             preferences[Keys.IMAGE_THRESHOLD] = binding.threshold
             preferences[Keys.CUT_MODE] = binding.cutMode.name
-            // Platform and merchant-admin authority remains independent from this USB descriptor.
+            // Saving a device never enables execution or automatic printing.
+        }
+    }
+
+    /** Updates only the runtime USB path after Android re-enumerates the same device. */
+    suspend fun updateRuntimeUsbDeviceName(binding: UsbPrinterBinding, deviceName: String) {
+        if (deviceName.isBlank()) return
+        dataStore.edit { preferences ->
+            if (
+                preferences[Keys.USB_VENDOR_ID] == binding.vendorId &&
+                preferences[Keys.USB_PRODUCT_ID] == binding.productId
+            ) {
+                preferences[Keys.USB_DEVICE_NAME] = deviceName.take(MAX_DEVICE_NAME_LENGTH)
+            }
         }
     }
 
@@ -182,6 +196,7 @@ class ConnectorSettings(context: Context) {
             preferences.remove(Keys.CUSTOM_DOTS)
             preferences.remove(Keys.IMAGE_THRESHOLD)
             preferences.remove(Keys.CUT_MODE)
+            preferences[Keys.AUTO_PRINTING_ENABLED] = false
         }
     }
 
@@ -191,21 +206,27 @@ class ConnectorSettings(context: Context) {
     }
 
     suspend fun recordError(code: String?) {
-        if (code.isNullOrBlank()) return
         dataStore.edit { preferences ->
-            preferences[Keys.LAST_ERROR_CODE] = code.take(120)
-        }
-    }
-
-    suspend fun recordConnectionSuccess(timestamp: Long = System.currentTimeMillis()) {
-        dataStore.edit { preferences ->
-            preferences[Keys.LAST_SUCCESSFUL_CONNECTION_AT] = timestamp
+            code?.takeIf(String::isNotBlank)?.let {
+                preferences[Keys.LAST_ERROR_CODE] = it.take(120)
+            } ?: preferences.remove(Keys.LAST_ERROR_CODE)
         }
     }
 
     suspend fun recordPrintSuccess(timestamp: Long = System.currentTimeMillis()) {
         dataStore.edit { preferences ->
             preferences[Keys.LAST_SUCCESSFUL_PRINT_AT] = timestamp
+            preferences.remove(Keys.LAST_ERROR_CODE)
+        }
+    }
+
+    /** Records local open+claim evidence without changing any server printing capability flag. */
+    suspend fun recordUsbConnectionSuccess(timestamp: Long = System.currentTimeMillis()) {
+        dataStore.edit { preferences ->
+            preferences[Keys.LAST_USB_CONNECTED_AT] = timestamp
+            if (preferences[Keys.LAST_ERROR_CODE] == "PRINTER_READINESS_EXPIRED") {
+                preferences.remove(Keys.LAST_ERROR_CODE)
+            }
         }
     }
 
@@ -247,12 +268,10 @@ class ConnectorSettings(context: Context) {
             merchantId = preferences[Keys.MERCHANT_ID],
             connectorEnabled = preferences[Keys.CONNECTOR_ENABLED] ?: false,
             automaticPrintingEnabled = preferences[Keys.AUTO_PRINTING_ENABLED] ?: false,
-            remoteConfigKnown = preferences[Keys.REMOTE_CONFIG_KNOWN] ?: false,
-            remoteMerchantPrintingEnabled =
-                preferences[Keys.REMOTE_MERCHANT_PRINTING_ENABLED] ?: false,
             remoteExecutionEnabled = preferences[Keys.REMOTE_EXECUTION_ENABLED] ?: false,
-            remotePrinterConfigured = preferences[Keys.REMOTE_PRINTER_CONFIGURED] ?: false,
             remotePrinterEnabled = preferences[Keys.REMOTE_PRINTER_ENABLED] ?: false,
+            remoteStartAllowed = preferences[Keys.REMOTE_START_ALLOWED]
+                ?: (preferences[Keys.CONNECTOR_ENABLED] ?: false),
             remoteAutomaticPrintingEnabled =
                 preferences[Keys.REMOTE_AUTO_PRINTING_ENABLED] ?: false,
             pollIntervalMs = preferences[Keys.POLL_INTERVAL_MS] ?: 7_000,
@@ -260,8 +279,8 @@ class ConnectorSettings(context: Context) {
             usbBinding = binding,
             boundPrinterId = preferences[Keys.PRINTER_ID],
             lastErrorCode = preferences[Keys.LAST_ERROR_CODE],
-            lastSuccessfulConnectionAt = preferences[Keys.LAST_SUCCESSFUL_CONNECTION_AT],
             lastSuccessfulPrintAt = preferences[Keys.LAST_SUCCESSFUL_PRINT_AT],
+            lastUsbConnectedAt = preferences[Keys.LAST_USB_CONNECTED_AT],
             appliedConfigVersion = preferences[Keys.APPLIED_CONFIG_VERSION],
         )
     }
@@ -270,12 +289,9 @@ class ConnectorSettings(context: Context) {
         val MERCHANT_ID = stringPreferencesKey("merchant_id")
         val CONNECTOR_ENABLED = booleanPreferencesKey("connector_enabled")
         val AUTO_PRINTING_ENABLED = booleanPreferencesKey("automatic_printing_enabled")
-        val REMOTE_CONFIG_KNOWN = booleanPreferencesKey("remote_config_known")
-        val REMOTE_MERCHANT_PRINTING_ENABLED =
-            booleanPreferencesKey("remote_merchant_printing_enabled")
         val REMOTE_EXECUTION_ENABLED = booleanPreferencesKey("remote_execution_enabled")
-        val REMOTE_PRINTER_CONFIGURED = booleanPreferencesKey("remote_printer_configured")
         val REMOTE_PRINTER_ENABLED = booleanPreferencesKey("remote_printer_enabled")
+        val REMOTE_START_ALLOWED = booleanPreferencesKey("remote_start_allowed")
         val REMOTE_AUTO_PRINTING_ENABLED = booleanPreferencesKey("remote_automatic_printing_enabled")
         val POLL_INTERVAL_MS = longPreferencesKey("poll_interval_ms")
         val CONFIG_REFRESH_INTERVAL_MS = longPreferencesKey("config_refresh_interval_ms")
@@ -292,8 +308,8 @@ class ConnectorSettings(context: Context) {
         val IMAGE_THRESHOLD = intPreferencesKey("image_threshold")
         val CUT_MODE = stringPreferencesKey("cut_mode")
         val LAST_ERROR_CODE = stringPreferencesKey("last_error_code")
-        val LAST_SUCCESSFUL_CONNECTION_AT = longPreferencesKey("last_successful_connection_at")
         val LAST_SUCCESSFUL_PRINT_AT = longPreferencesKey("last_successful_print_at")
+        val LAST_USB_CONNECTED_AT = longPreferencesKey("last_usb_connected_at")
         val APPLIED_CONFIG_VERSION = longPreferencesKey("applied_config_version")
     }
 

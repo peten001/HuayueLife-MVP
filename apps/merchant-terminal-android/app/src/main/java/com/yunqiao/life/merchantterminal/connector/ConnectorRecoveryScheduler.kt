@@ -64,9 +64,18 @@ class ConnectorRecoveryWorker(
     workerParams: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
-        if (!ConnectorStartGate.mayAttemptStart(applicationContext)) return Result.success()
         val credentials = MerchantSessionTokenStore(applicationContext)
         if (!credentials.hasCredential() || !ConnectorApiConfig.isConfigured) return Result.success()
+        if (!ConnectorRuntimeState.serviceActive) {
+            return when (ConnectorServiceStarter.refreshRemoteConfigAndStart(applicationContext)) {
+                ConnectorStartResult.STARTED -> Result.success()
+                ConnectorStartResult.NOT_CONFIGURED,
+                ConnectorStartResult.NOT_ELIGIBLE -> Result.success()
+                ConnectorStartResult.USB_UNAVAILABLE,
+                ConnectorStartResult.START_BLOCKED ->
+                    if (runAttemptCount < MAX_ONE_TIME_RETRIES) Result.retry() else Result.failure()
+            }
+        }
         val dao = LocalPrintingDatabase.get(applicationContext).printingDao()
         val api = ConnectorApiClient(credentials::read)
         val executor = UsbPrintJobExecutor(
@@ -97,7 +106,7 @@ class ConnectorRecoveryWorker(
             if (error.printingDisabled) return Result.success()
             return if (runAttemptCount < MAX_ONE_TIME_RETRIES) Result.retry() else Result.failure()
         }
-        if (!recoveryPerformed) return Result.success()
+        if (!recoveryPerformed) return Result.retry()
         val pendingReports = dao.jobsWithStatuses(
             listOf(
                 LocalJobStatus.PRINTED_PENDING_REPORT,
@@ -123,12 +132,12 @@ class ConnectorRecoveryWorker(
 
 class ConnectorBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action !in SUPPORTED_ACTIONS || !ConnectorStartGate.mayAttemptStart(context)) return
+        if (intent.action !in SUPPORTED_ACTIONS) return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 ConnectorRecoveryScheduler.enable(context)
-                handleRecoveryStart(context, ConnectorServiceStarter.startIfEligible(context))
+                handleRecoveryStart(context, ConnectorServiceStarter.refreshRemoteConfigAndStart(context))
             } finally {
                 pending.finish()
             }
@@ -145,14 +154,12 @@ class ConnectorBootReceiver : BroadcastReceiver() {
 
 class ConnectorUsbAttachReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED ||
-            !ConnectorStartGate.mayAttemptStart(context)
-        ) return
+        if (intent.action != android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 ConnectorRecoveryScheduler.enqueueNetworkRecovery(context)
-                handleRecoveryStart(context, ConnectorServiceStarter.startIfEligible(context))
+                handleRecoveryStart(context, ConnectorServiceStarter.refreshRemoteConfigAndStart(context))
             } finally {
                 pending.finish()
             }

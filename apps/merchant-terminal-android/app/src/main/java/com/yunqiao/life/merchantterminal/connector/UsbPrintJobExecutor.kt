@@ -1,6 +1,8 @@
 package com.yunqiao.life.merchantterminal.connector
 
 import android.content.Context
+import android.util.Log
+import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.data.ConnectorSettingsSnapshot
 import com.yunqiao.life.merchantterminal.data.local.ClaimRegistration
 import com.yunqiao.life.merchantterminal.data.local.LocalJobStatus
@@ -11,8 +13,10 @@ import com.yunqiao.life.merchantterminal.printing.PrintableDocument
 import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.printing.escpos.EscPosRasterEncoder
 import com.yunqiao.life.merchantterminal.printing.receipt.ProductionReceiptRenderConfig
+import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentV1
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentParser
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentRenderer
+import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptSchemaException
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolution
 import com.yunqiao.life.merchantterminal.printing.usb.UsbBindingResolver
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
@@ -31,6 +35,7 @@ class UsbPrintJobExecutor(
     },
 ) {
     @Volatile private var activeAdapter: UsbEscPosAdapter? = null
+    private val usbRuntimeOwnerToken = Any()
 
     suspend fun execute(job: ClaimedPrintJob, settings: ConnectorSettingsSnapshot): String {
         ConnectorPrintExecutionPolicy.claimedJobBlockCode(job, settings)?.let { return it }
@@ -116,10 +121,12 @@ class UsbPrintJobExecutor(
 
     fun onDeviceDetached(deviceName: String?) {
         activeAdapter?.notifyDeviceDetached(deviceName)
+        ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
     }
 
     fun stopActiveIo() {
         activeAdapter?.closeConnectionImmediately()
+        ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
     }
 
     private suspend fun executeReady(
@@ -161,9 +168,52 @@ class UsbPrintJobExecutor(
                 reportPending(printingJob)
                 return@withContext localCode
             }
-            val bytes = try {
-                renderControlledSnapshot(serverJob, settings)
+            val receipt = try {
+                ReceiptDocumentParser.parse(serverJob.receiptSnapshotJson).also {
+                    require(it.receiptType.name == serverJob.receiptType) {
+                        "Receipt type mismatch."
+                    }
+                }
             } catch (error: Throwable) {
+                val schemaError = error as? ReceiptSchemaException
+                val localCode = schemaError?.code ?: RECEIPT_SCHEMA_INVALID
+                val unsupported = schemaError?.unsupportedFields
+                    ?.joinToString(separator = ",", prefix = "[", postfix = "]")
+                    ?: "[]"
+                val origin = error.stackTrace
+                    .firstOrNull { it.className.startsWith("com.yunqiao.life.merchantterminal.") }
+                    ?.let { "${it.fileName ?: "unknown"}:${it.lineNumber}" }
+                    ?: "unknown"
+                Log.e(
+                    TAG,
+                    "receipt_parse_failed jobHash=${serverJob.contentHash.takeLast(12)} " +
+                        "stage=receipt_parse code=$localCode " +
+                        "path=${schemaError?.path ?: "unknown"} unsupportedFields=$unsupported " +
+                        "cause=${error.javaClass.simpleName.take(64)} origin=$origin",
+                )
+                printingJob = ledger.markUsbFailed(
+                    printingJob,
+                    localCode,
+                    0,
+                    retryable = false,
+                    uncertain = false,
+                )
+                reportPending(printingJob)
+                return@withContext localCode
+            }
+            val bytes = try {
+                renderControlledSnapshot(receipt, serverJob, settings)
+            } catch (error: Throwable) {
+                Log.e(
+                    TAG,
+                    "bitmap_render_failed jobHash=${serverJob.contentHash.takeLast(12)} " +
+                        "width=${binding.paperWidth.name} customDots=${binding.customDots ?: 0} " +
+                        "itemCount=${receipt.items.size} " +
+                        "hasVerification=${!receipt.verificationCode.isNullOrBlank()} " +
+                        "stage=receipt_bitmap cause=${error.javaClass.simpleName.take(64)} " +
+                        "message=${error.message?.replace(Regex("[\\r\\n\\t]"), " ")?.take(160)}",
+                    error,
+                )
                 val localCode = if (
                     error is com.yunqiao.life.merchantterminal.printing.UsbPrinterException
                 ) {
@@ -261,6 +311,11 @@ class UsbPrintJobExecutor(
                 reportPending(printingJob)
                 return@withContext code.name
             }
+            // This is local open+claim evidence only; final print success still requires a
+            // complete bulkTransfer and is recorded by the ledger below.
+            ProcessUsbConnectionRuntime.tracker.markConnectionOpen(usbRuntimeOwnerToken)
+            ProcessUsbConnectionRuntime.tracker.markInterfaceClaimed(usbRuntimeOwnerToken)
+            ConnectorSettings(context).recordUsbConnectionSuccess()
             when (val result = adapter.print(PrintableDocument(bytes, "server-receipt-v1"))) {
                 is PrintResult.Success -> {
                     printingJob = ledger.markUsbComplete(printingJob, result.writtenBytes)
@@ -303,19 +358,22 @@ class UsbPrintJobExecutor(
             "UNCERTAIN"
         } finally {
             withContext(NonCancellable) {
-                activeAdapter?.disconnect()
-                activeAdapter = null
+                try {
+                    activeAdapter?.disconnect()
+                } finally {
+                    ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
+                    activeAdapter = null
+                }
             }
         }
     }
 
     private fun renderControlledSnapshot(
+        receipt: ReceiptDocumentV1,
         job: ClaimedPrintJob,
         settings: ConnectorSettingsSnapshot,
     ): ByteArray {
         val binding = requireNotNull(settings.usbBinding)
-        val receipt = ReceiptDocumentParser.parse(job.receiptSnapshotJson)
-        require(receipt.receiptType.name == job.receiptType) { "Receipt type mismatch." }
         val bitmap = ReceiptDocumentRenderer.render(
             receipt,
             ProductionReceiptRenderConfig(
@@ -334,7 +392,9 @@ class UsbPrintJobExecutor(
     }
 
     private companion object {
+        const val TAG = "UsbPrintJobExecutor"
         const val PRINT_LEASE_MS = 120_000L
+        const val RECEIPT_SCHEMA_INVALID = "RECEIPT_SCHEMA_INVALID"
         val REMOTE_EXECUTION_STOP_CODES = setOf(
             "PRINTING_NOT_ENABLED",
             "PRINTING_TASK_CENTER_DISABLED",

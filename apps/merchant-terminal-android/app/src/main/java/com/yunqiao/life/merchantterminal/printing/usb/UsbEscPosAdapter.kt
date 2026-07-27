@@ -38,6 +38,9 @@ class UsbEscPosAdapter(
     private var connectedConfig: PrinterConnectionConfig.Usb? = null
 
     @Volatile
+    private var ioDiagnostics: UsbIoDiagnostics? = null
+
+    @Volatile
     private var detachedDeviceName: String? = null
 
     override suspend fun discover(): List<PrinterCandidate> = withContext(ioDispatcher) {
@@ -101,10 +104,20 @@ class UsbEscPosAdapter(
                 is BulkWriteOutcome.Complete -> PrintResult.Success(
                     plannedBytes = document.bytes.size,
                     writtenBytes = outcome.writtenBytes,
+                    technicalDetail = ioDiagnostics?.summary(
+                        requestedBytes = document.bytes.size,
+                        writtenBytes = outcome.writtenBytes,
+                    ),
                 )
                 is BulkWriteOutcome.Failed -> PrintResult.Failure(
                     code = outcome.code,
-                    technicalDetail = outcome.detail,
+                    technicalDetail = buildString {
+                        append(outcome.detail)
+                        ioDiagnostics?.summary(
+                            requestedBytes = document.bytes.size,
+                            writtenBytes = outcome.writtenBytes,
+                        )?.let { append(" | ").append(it) }
+                    },
                     plannedBytes = document.bytes.size,
                     writtenBytes = outcome.writtenBytes,
                     ioAttempted = outcome.ioAttempted,
@@ -129,15 +142,14 @@ class UsbEscPosAdapter(
         detachedDeviceName = deviceName
         // close() is safe to call while bulkTransfer is blocked and helps it return promptly.
         runCatching { connection?.close() }
-        connection = null
     }
 
     /** Stops a foreground-only diagnostic action when its Activity leaves the screen. */
     fun closeConnectionImmediately() {
         runCatching { connection?.close() }
-        connection = null
-        // Do not release here: a blocked bulkTransfer may not have unwound yet. The owning
-        // coroutine must call disconnect() from NonCancellable after the I/O frame exits.
+        // Keep the closed handle and claimed interface until disconnect() runs. This lets the
+        // owning coroutine release the interface and the process-wide ownership token after a
+        // blocked bulkTransfer unwinds.
     }
 
     private fun connectLocked(config: PrinterConnectionConfig.Usb) {
@@ -291,6 +303,16 @@ class UsbEscPosAdapter(
         claimedInterface = usbInterface
         bulkOutEndpoint = endpoint
         connectedConfig = config
+        ioDiagnostics = UsbIoDiagnostics(
+            vendorId = device.vendorId,
+            productId = device.productId,
+            interfaceIndex = config.interfaceIndex,
+            interfaceId = config.interfaceId,
+            alternateSetting = config.alternateSetting,
+            endpointAddress = endpoint.address,
+            maxPacketSize = endpoint.maxPacketSize,
+            timeoutMs = config.transferTimeoutMs,
+        )
     }
 
     private inline fun <T> runConnectionStage(
@@ -352,7 +374,26 @@ class UsbEscPosAdapter(
         claimedInterface = null
         bulkOutEndpoint = null
         connectedConfig = null
+        ioDiagnostics = null
     }
+}
+
+private data class UsbIoDiagnostics(
+    val vendorId: Int,
+    val productId: Int,
+    val interfaceIndex: Int,
+    val interfaceId: Int,
+    val alternateSetting: Int,
+    val endpointAddress: Int,
+    val maxPacketSize: Int,
+    val timeoutMs: Int,
+) {
+    fun summary(requestedBytes: Int, writtenBytes: Int): String =
+        "VID=$vendorId PID=$productId interfaceIndex=$interfaceIndex " +
+            "interfaceId=$interfaceId alternateSetting=$alternateSetting " +
+            "endpoint=0x${endpointAddress.toString(16).uppercase().padStart(2, '0')} " +
+            "maxPacketSize=$maxPacketSize timeoutMs=$timeoutMs " +
+            "requestedBytes=$requestedBytes writtenBytes=$writtenBytes"
 }
 
 fun interface BulkTransferTransport {
@@ -392,44 +433,95 @@ object ChunkedUsbWriter {
                 )
             }
             val length = minOf(chunkSize, data.size - offset)
-            val startedAt = nanoTime()
-            val transferred = runCatching {
-                transport.transfer(data, offset, length, timeoutMs)
-            }.getOrElse { throwable ->
-                return BulkWriteOutcome.Failed(
-                    if (detached()) {
-                        UsbPrintErrorCode.USB_DEVICE_DETACHED
-                    } else {
-                        UsbPrintErrorCode.USB_WRITE_FAILED
-                    },
-                    offset,
-                    throwable::class.java.simpleName.take(80),
-                    ioAttempted = true,
-                )
-            }
-            val elapsedMs = (nanoTime() - startedAt).coerceAtLeast(0L) / 1_000_000L
-            if (transferred < 0) {
-                val code = when {
-                    detached() -> UsbPrintErrorCode.USB_DEVICE_DETACHED
-                    elapsedMs >= timeoutMs.toLong() -> UsbPrintErrorCode.USB_WRITE_TIMEOUT
-                    else -> UsbPrintErrorCode.USB_WRITE_FAILED
+            val chunkStartedAt = nanoTime()
+            var chunkWritten = 0
+            var ioAttempted = false
+            while (chunkWritten < length) {
+                if (detached()) {
+                    return BulkWriteOutcome.Failed(
+                        UsbPrintErrorCode.USB_DEVICE_DETACHED,
+                        offset + chunkWritten,
+                        "USB device detached during write.",
+                        ioAttempted,
+                    )
                 }
-                return BulkWriteOutcome.Failed(
-                    code = code,
-                    writtenBytes = offset,
-                    detail = "bulkTransfer returned $transferred after ${elapsedMs}ms.",
-                    ioAttempted = true,
-                )
+                val callStartedAt = nanoTime()
+                val transferred = runCatching {
+                    ioAttempted = true
+                    transport.transfer(
+                        data,
+                        offset + chunkWritten,
+                        length - chunkWritten,
+                        timeoutMs.coerceAtLeast(1),
+                    )
+                }.getOrElse { throwable ->
+                    return BulkWriteOutcome.Failed(
+                        if (detached()) {
+                            UsbPrintErrorCode.USB_DEVICE_DETACHED
+                        } else {
+                            UsbPrintErrorCode.USB_WRITE_FAILED
+                        },
+                        offset + chunkWritten,
+                        throwable::class.java.simpleName.take(80),
+                        ioAttempted = true,
+                    )
+                }
+                val elapsedMs = (nanoTime() - callStartedAt).coerceAtLeast(0L) / 1_000_000L
+                val totalElapsedMs = (nanoTime() - chunkStartedAt).coerceAtLeast(0L) / 1_000_000L
+                if (transferred < 0) {
+                    val code = when {
+                        detached() -> UsbPrintErrorCode.USB_DEVICE_DETACHED
+                        chunkWritten > 0 -> UsbPrintErrorCode.USB_PARTIAL_WRITE
+                        totalElapsedMs >= timeoutMs.toLong() || elapsedMs >= timeoutMs.toLong() ->
+                            UsbPrintErrorCode.USB_WRITE_TIMEOUT
+                        else -> UsbPrintErrorCode.USB_WRITE_FAILED
+                    }
+                    return BulkWriteOutcome.Failed(
+                        code = code,
+                        writtenBytes = offset + chunkWritten,
+                        detail = "bulkTransfer returned $transferred after ${totalElapsedMs}ms.",
+                        ioAttempted = true,
+                    )
+                }
+                if (transferred > length - chunkWritten) {
+                    return BulkWriteOutcome.Failed(
+                        code = UsbPrintErrorCode.USB_WRITE_FAILED,
+                        writtenBytes = offset + chunkWritten,
+                        detail = "bulkTransfer returned $transferred beyond requested bytes.",
+                        ioAttempted = true,
+                    )
+                }
+                if (transferred == 0) {
+                    if (totalElapsedMs >= timeoutMs.toLong()) {
+                        return BulkWriteOutcome.Failed(
+                            code = if (chunkWritten > 0) {
+                                UsbPrintErrorCode.USB_PARTIAL_WRITE
+                            } else {
+                                UsbPrintErrorCode.USB_WRITE_TIMEOUT
+                            },
+                            writtenBytes = offset + chunkWritten,
+                            detail = if (chunkWritten > 0) {
+                                "bulkTransfer made partial progress then returned 0 until the " +
+                                    "${timeoutMs}ms deadline."
+                            } else {
+                                "bulkTransfer returned 0 until the ${timeoutMs}ms deadline."
+                            },
+                            ioAttempted = true,
+                        )
+                    }
+                    continue
+                }
+                chunkWritten += transferred
+                if (totalElapsedMs >= timeoutMs.toLong() && chunkWritten < length) {
+                    return BulkWriteOutcome.Failed(
+                        code = UsbPrintErrorCode.USB_WRITE_TIMEOUT,
+                        writtenBytes = offset + chunkWritten,
+                        detail = "Partial bulkTransfer progress reached the ${timeoutMs}ms deadline.",
+                        ioAttempted = true,
+                    )
             }
-            if (transferred != length) {
-                return BulkWriteOutcome.Failed(
-                    code = UsbPrintErrorCode.USB_PARTIAL_WRITE,
-                    writtenBytes = offset + max(0, transferred),
-                    detail = "Planned chunk $length bytes, wrote $transferred bytes.",
-                    ioAttempted = true,
-                )
             }
-            offset += transferred
+            offset += length
         }
         return BulkWriteOutcome.Complete(offset)
     }

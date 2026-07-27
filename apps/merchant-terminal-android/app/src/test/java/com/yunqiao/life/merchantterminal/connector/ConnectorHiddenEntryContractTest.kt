@@ -5,12 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.view.View
-import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.yunqiao.life.merchantterminal.MainActivity
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,7 +28,7 @@ class ConnectorHiddenEntryContractTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun `existing top-right time-area entry opens connector page and other content does not`() {
+    fun `version entry hides diagnostics and only opens the USB page through the protected path`() {
         // MainActivity owns a real WebView, which Robolectric cannot reliably create on every
         // SDK image. Keep this as a source/layout contract so the existing hidden entry cannot
         // accidentally move into the public cashier UI while this page is refined.
@@ -46,31 +47,39 @@ class ConnectorHiddenEntryContractTest {
             "apps/merchant-cashier/src/components/shell/CashierHeader.vue",
         ).readText()
 
-        assertTrue(mainActivitySource.contains("private fun configureTerminalMenu()"))
+        assertTrue(mainActivitySource.contains("private fun configureVersionUnlock()"))
         assertTrue(mainActivitySource.contains("private fun configureSwipeRefresh()"))
-        val terminalMenuBlock = mainActivitySource
-            .substringAfter("private fun configureTerminalMenu()")
+        val versionUnlockBlock = mainActivitySource
+            .substringAfter("private fun configureVersionUnlock()")
             .substringBefore("private fun configureSwipeRefresh()")
         assertTrue(cashierHeader.contains("class=\"top-status-item top-status-item--clock\""))
         val clockBlock = cashierHeader
             .substringAfter("class=\"top-status-item top-status-item--clock\"")
             .substringBefore("</div>")
 
-        assertTrue(mainLayout.contains("android:id=\"@+id/terminal_menu_button\""))
+        assertTrue(mainLayout.contains("android:id=\"@+id/app_version\""))
         assertTrue(mainLayout.contains("android:layout_gravity=\"top|end\""))
         assertTrue(mainLayout.contains("android:layout_height=\"48dp\""))
-        assertTrue(terminalMenuBlock.contains("binding.terminalMenuButton.setOnClickListener"))
-        assertTrue(terminalMenuBlock.contains("MENU_CONNECTOR_CONTROL ->"))
+        assertFalse(mainLayout.contains("terminal_menu_button"))
+        assertTrue(versionUnlockBlock.contains("binding.appVersion.setOnClickListener"))
+        assertTrue(versionUnlockBlock.contains("merchantSessionTokenStore.hasCredential()"))
+        assertTrue(versionUnlockBlock.contains("versionTapUnlock.registerTap(SystemClock.elapsedRealtime())"))
         assertTrue(
-            terminalMenuBlock.contains(
-                "startActivity(Intent(this@MainActivity, ConnectorControlActivity::class.java))",
+            versionUnlockBlock.contains(
+                "startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))",
             ),
         )
-        assertFalse(terminalMenuBlock.contains("binding.rootContainer.setOnClickListener"))
+        assertFalse(mainActivitySource.contains("PopupMenu"))
+        assertFalse(mainActivitySource.contains("ConnectorControlActivity::class.java"))
+        assertFalse(mainActivitySource.contains("Intent(this, DiagnosticsActivity::class.java)"))
         assertTrue(
-            mainActivitySource.windowed("ConnectorControlActivity::class.java".length)
-                .count { it == "ConnectorControlActivity::class.java" } == 1,
+            mainActivitySource.windowed("versionTapUnlock.reset()".length)
+                .count { it == "versionTapUnlock.reset()" } >= 4,
         )
+        val errorLayout = repositoryFile(
+            "apps/merchant-terminal-android/app/src/main/res/layout/view_error_state.xml",
+        ).readText()
+        assertFalse(errorLayout.contains("diagnostics_button"))
 
         assertTrue(clockBlock.contains("data-testid=\"top-clock\""))
         assertFalse(clockBlock.contains("@click"))
@@ -82,58 +91,60 @@ class ConnectorHiddenEntryContractTest {
         assertFalse(cashierPublicSource.contains("USB打印连接器"))
         assertFalse(cashierPublicSource.contains("ConnectorControlActivity"))
 
-        val connectorLayout = repositoryFile(
-            "apps/merchant-terminal-android/app/src/main/res/layout/activity_connector_control.xml",
-        ).readText()
-        assertFalse(connectorLayout.contains("SwitchMaterial"))
-        assertFalse(connectorLayout.contains("connector_enabled_switch"))
-        assertFalse(connectorLayout.contains("automatic_printing_switch"))
-        assertFalse(connectorActivitySource.contains("setConnectorEnabled"))
-        assertFalse(connectorActivitySource.contains("setAutomaticPrintingEnabled"))
-        assertTrue(connectorActivitySource.contains("reconnectConnectorButton"))
+        val switchListenerBlock = connectorActivitySource
+            .substringAfter("binding.connectorEnabledSwitch.setOnCheckedChangeListener")
+            .substringBefore("// This UI-only refinement")
+        assertTrue(switchListenerBlock.contains("ConnectorToggleAction.ENABLE"))
+        assertTrue(switchListenerBlock.contains("requestEnableConnector()"))
+        assertTrue(switchListenerBlock.contains("ConnectorToggleAction.DISABLE"))
+        assertTrue(switchListenerBlock.contains("disableConnector()"))
+        assertFalse(switchListenerBlock.contains("!checked"))
+        assertFalse(switchListenerBlock.contains("!enabled"))
+        assertFalse(switchListenerBlock.contains("setConnectorEnabled(!"))
     }
 
     @Test
-    fun `close page only finishes hidden activity and reopening mirrors retained remote state`() {
+    fun `close page only finishes hidden activity and reopening mirrors retained connector state`() {
         val settings = ConnectorSettings(context)
         try {
-            runBlocking {
-                settings.applyRemoteConfig(
-                    merchantPrintingEnabled = true,
-                    executionEnabled = true,
-                    printerConfigured = true,
-                    printerEnabled = true,
-                    automaticPrintingEnabled = true,
-                    pollIntervalMs = 7_000,
-                    configRefreshIntervalMs = 30_000,
-                )
-            }
+            runBlocking(Dispatchers.IO) { settings.setConnectorEnabled(true) }
 
             val first = Robolectric.buildActivity(ConnectorControlActivity::class.java).setup()
             try {
+                val snapshot = runBlocking(Dispatchers.IO) { settings.snapshot() }
+                first.get().renderConnectorControls(
+                    connectorControlUi(snapshot = snapshot, serviceActive = true),
+                )
+                assertTrue(
+                    first.get()
+                        .findViewById<SwitchMaterial>(R.id.connector_enabled_switch)
+                        .isChecked,
+                )
+
                 first.get().findViewById<View>(R.id.close_connector_control_button).performClick()
 
                 assertTrue(first.get().isFinishing)
-                assertTrue(runBlocking { settings.snapshot().remoteMerchantPrintingEnabled })
+                assertTrue(runBlocking(Dispatchers.IO) { settings.snapshot().connectorEnabled })
             } finally {
                 first.pause().stop().destroy()
             }
 
             val reopened = Robolectric.buildActivity(ConnectorControlActivity::class.java).setup()
             try {
-                val retained = runBlocking { settings.snapshot() }
+                val retained = runBlocking(Dispatchers.IO) { settings.snapshot() }
                 reopened.get().renderConnectorControls(
                     connectorControlUi(snapshot = retained, serviceActive = true),
                 )
                 assertTrue(
-                    reopened.get().findViewById<TextView>(R.id.platform_capability_value)
-                        .text.toString().isNotBlank(),
+                    reopened.get()
+                        .findViewById<SwitchMaterial>(R.id.connector_enabled_switch)
+                        .isChecked,
                 )
             } finally {
                 reopened.pause().stop().destroy()
             }
         } finally {
-            runBlocking { settings.disableForSignedOutSession() }
+            runBlocking(Dispatchers.IO) { settings.setConnectorEnabled(false) }
         }
     }
 

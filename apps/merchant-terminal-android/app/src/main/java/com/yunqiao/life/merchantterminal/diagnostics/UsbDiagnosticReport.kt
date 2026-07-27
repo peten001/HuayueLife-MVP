@@ -30,6 +30,7 @@ object UsbDiagnosticReport {
     fun build(
         activity: Activity,
         usbHostSupported: Boolean,
+        runtimeStatus: UsbDiagnosticsStatus,
         devices: List<UsbDeviceDescriptor>,
         selectedDeviceName: String?,
         selectedInterfaceIndex: Int?,
@@ -61,6 +62,11 @@ object UsbDiagnosticReport {
         )
         appendLine("Current time: ${formatTimestamp(System.currentTimeMillis())}")
         appendLine("USB Host: ${if (usbHostSupported) "supported" else "not supported"}")
+        appendLine("serviceActive: ${runtimeStatus.serviceActive}")
+        appendLine("usbOwnershipActive: ${runtimeStatus.usbOwnershipActive}")
+        appendLine("connectionOpen: ${runtimeStatus.connectionOpen}")
+        appendLine("interfaceClaimed: ${runtimeStatus.interfaceClaimed}")
+        appendLine("permissionState: ${runtimeStatus.permissionState.name}")
         appendLine("USB device count: ${devices.size}")
         appendLine("Selected device: ${selectedDeviceName ?: "none"}")
         appendLine("Selected interface index: ${selectedInterfaceIndex ?: "none"}")

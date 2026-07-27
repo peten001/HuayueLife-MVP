@@ -10,20 +10,24 @@ import org.junit.Test
 
 class ConnectorPrintExecutionPolicyTest {
     @Test
-    fun `live connection readiness is separate from platform and printer configuration`() {
+    fun `only explicit ONLINE printer status passes remote readiness`() {
         assertNull(ConnectorPrintExecutionPolicy.remoteBlockCode(remote(), "7", "9"))
         listOf("UNKNOWN", "UNVERIFIED", "OFFLINE", "ERROR", "DISABLED", null).forEach { status ->
-            val remote = remote(status = status)
-            assertNull(ConnectorPrintExecutionPolicy.remoteBlockCode(remote, "7", "9"))
             assertEquals(
                 "PRINTER_STATUS_NOT_READY",
-                ConnectorPrintExecutionPolicy.connectionBlockCode(remote),
+                ConnectorPrintExecutionPolicy.remoteBlockCode(
+                    remote(status = status),
+                    "7",
+                    "9",
+                ),
             )
         }
         assertEquals(
             "PRINTER_READINESS_EXPIRED",
-            ConnectorPrintExecutionPolicy.connectionBlockCode(
+            ConnectorPrintExecutionPolicy.remoteBlockCode(
                 remote(readinessState = "DEVICE_OFFLINE"),
+                "7",
+                "9",
             ),
         )
     }
@@ -133,10 +137,8 @@ class ConnectorPrintExecutionPolicyTest {
 
     private fun settings() = ConnectorSettingsSnapshot(
         merchantId = "7",
-        remoteConfigKnown = true,
-        remoteMerchantPrintingEnabled = true,
+        connectorEnabled = true,
         remoteExecutionEnabled = true,
-        remotePrinterConfigured = true,
         remotePrinterEnabled = true,
         usbBinding = binding(),
     )

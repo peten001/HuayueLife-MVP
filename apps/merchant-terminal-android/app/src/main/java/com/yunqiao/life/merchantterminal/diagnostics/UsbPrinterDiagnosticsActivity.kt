@@ -26,7 +26,7 @@ import com.yunqiao.life.merchantterminal.connector.ConnectorApiClient
 import com.yunqiao.life.merchantterminal.connector.ConnectorApiConfig
 import com.yunqiao.life.merchantterminal.connector.ConnectorApiException
 import com.yunqiao.life.merchantterminal.connector.ConnectorPrintExecutionPolicy
-import com.yunqiao.life.merchantterminal.connector.ConnectorServiceStarter
+import com.yunqiao.life.merchantterminal.connector.ProcessUsbConnectionRuntime
 import com.yunqiao.life.merchantterminal.connector.ConnectorStartGate
 import com.yunqiao.life.merchantterminal.connector.ConnectorRuntimeState
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
@@ -52,6 +52,7 @@ import com.yunqiao.life.merchantterminal.printing.usb.UsbConnectionOption
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceDescriptor
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.UsbEscPosAdapter
+import com.yunqiao.life.merchantterminal.printing.usb.ProcessUsbIoOwnership
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionController
 import com.yunqiao.life.merchantterminal.printing.userMessageResource
 import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
@@ -84,6 +85,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
     private var suppressSpinnerCallbacks = false
     private val printActionGate = PrintActionGate()
     private val confirmedUnrecognizedDevices = mutableSetOf<String>()
+    private val usbRuntimeOwnerToken = Any()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,6 +140,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             activeAction?.cancel()
             activeAction = null
             printerAdapter.closeConnectionImmediately()
+            ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
             printActionGate.release()
             setBusy(false)
         }
@@ -146,6 +149,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         printerAdapter.closeConnectionImmediately()
+        ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
         super.onDestroy()
     }
 
@@ -226,7 +230,9 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         }
         binding.printAsciiTestButton.setOnClickListener {
             afterUnrecognizedDeviceConfirmation {
-                runSingleAction(::printAsciiSmokeReceipt, requiresPlatformPrinting = true)
+                // ASCII smoke printing validates only the local USB path. Production order
+                // printing keeps its remote policy gate in UsbPrintJobExecutor.
+                runSingleAction(::printAsciiSmokeReceipt)
             }
         }
         binding.printImageTestButton.setOnClickListener {
@@ -285,8 +291,6 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             },
         )
         binding.usbEndpointSpinner.setSelection(0, false)
-        binding.usbDeviceDetailsText.text = device?.let(::formatDeviceDetails)
-            ?: getString(R.string.usb_no_devices)
         updateControlAvailability()
     }
 
@@ -327,6 +331,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
 
     private fun handleDeviceDetached(deviceName: String?) {
         printerAdapter.notifyDeviceDetached(deviceName)
+        ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
         attachmentState = attachmentState.onDetached(deviceName)
         if (deviceName != null && deviceName == selectedDeviceName) {
             showFailure(UsbPrintErrorCode.USB_DEVICE_DETACHED)
@@ -338,7 +343,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         action: suspend (TestSelection) -> Unit,
         requiresPlatformPrinting: Boolean = false,
     ) {
-        if (ConnectorRuntimeState.serviceActive) {
+        if (ProcessUsbIoOwnership.gate.isBusy()) {
             showFailure(UsbPrintErrorCode.USB_IO_BUSY)
             updateControlAvailability()
             return
@@ -374,7 +379,13 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                     throwable::class.java.simpleName,
                 )
             } finally {
-                withContext(NonCancellable) { printerAdapter.disconnect() }
+                withContext(NonCancellable) {
+                    try {
+                        printerAdapter.disconnect()
+                    } finally {
+                        ProcessUsbConnectionRuntime.tracker.markClosed(usbRuntimeOwnerToken)
+                    }
+                }
                 printActionGate.release()
                 activeAction = null
                 setBusy(false)
@@ -447,7 +458,9 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             showConnectionFailure(result.exceptionOrNull())
             return
         }
+        markConnectionOpenAndClaimed()
         val message = getString(R.string.usb_interface_opened)
+        connectorSettings.recordUsbConnectionSuccess()
         lastTest = UsbTestRecord(
             timestampEpochMs = System.currentTimeMillis(),
             result = message,
@@ -502,6 +515,8 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
             showConnectionFailure(connectionResult.exceptionOrNull())
             return
         }
+        markConnectionOpenAndClaimed()
+        connectorSettings.recordUsbConnectionSuccess()
         when (val result = printerAdapter.print(document)) {
             is PrintResult.Success -> {
                 val message = getString(
@@ -613,34 +628,56 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
 
     private fun updateControlAvailability() {
         val device = selectedDevice()
-        val connectorOwnsUsb = ConnectorRuntimeState.serviceActive
-        val ready = inspector.isUsbHostSupported &&
-            device?.hasPermission == true &&
-            endpointOptions.isNotEmpty() &&
-            !isBusy &&
-            !connectorOwnsUsb
-        if (connectorOwnsUsb && !isBusy) {
+        val status = currentDiagnosticsStatus(device)
+        val controls = UsbDiagnosticsStateModel.controls(
+            status = status,
+            usbHostSupported = inspector.isUsbHostSupported,
+            devicePresent = device != null,
+            endpointAvailable = endpointOptions.isNotEmpty(),
+            actionBusy = isBusy,
+            permissionRequestPending = permissionController.hasPendingRequest(),
+        )
+        binding.usbDeviceDetailsText.text = device?.let { formatDeviceDetails(it, status) }
+            ?: getString(R.string.usb_no_devices)
+        if (status.usbOwnershipActive && !isBusy) {
             binding.usbActionResultText.setText(R.string.usb_connector_active_diagnostics_blocked)
         }
-        binding.requestUsbPermissionButton.isEnabled =
-            !isBusy && !connectorOwnsUsb && device != null && !device.hasPermission &&
-            !permissionController.hasPendingRequest()
+        binding.requestUsbPermissionButton.isEnabled = controls.requestPermissionEnabled
         binding.requestUsbPermissionButton.text = getString(
-            if (device?.hasPermission == true) R.string.usb_permission_granted
-            else R.string.usb_request_permission,
+            when (status.permissionState) {
+                UsbPermissionState.GRANTED -> R.string.usb_permission_granted
+                UsbPermissionState.WAITING_PERMISSION -> R.string.usb_request_permission
+                UsbPermissionState.UNVERIFIED -> R.string.usb_permission_unverified
+            },
         )
-        binding.testUsbConnectionButton.isEnabled = ready
-        binding.printAsciiTestButton.isEnabled = ready
-        binding.printImageTestButton.isEnabled = ready
-        binding.saveUsbConfigurationButton.isEnabled = ready
-        binding.refreshUsbDevicesButton.isEnabled = !isBusy
-        binding.usbDeviceSpinner.isEnabled = !isBusy && !connectorOwnsUsb && devices.isNotEmpty()
+        binding.testUsbConnectionButton.isEnabled = controls.localUsbActionEnabled
+        binding.printAsciiTestButton.isEnabled = controls.localUsbActionEnabled
+        binding.printImageTestButton.isEnabled = controls.localUsbActionEnabled
+        binding.saveUsbConfigurationButton.isEnabled = controls.localUsbActionEnabled
+        binding.refreshUsbDevicesButton.isEnabled = controls.refreshEnabled
+        binding.usbDeviceSpinner.isEnabled = controls.selectionEnabled && devices.isNotEmpty()
         binding.usbEndpointSpinner.isEnabled =
-            !isBusy && !connectorOwnsUsb && endpointOptions.isNotEmpty()
-        binding.paperWidthSpinner.isEnabled = !isBusy && !connectorOwnsUsb
-        binding.customPrintDotsInput.isEnabled = !isBusy && !connectorOwnsUsb
-        binding.cutModeSpinner.isEnabled = !isBusy && !connectorOwnsUsb
-        binding.imageThresholdSeekbar.isEnabled = !isBusy && !connectorOwnsUsb
+            controls.selectionEnabled && endpointOptions.isNotEmpty()
+        binding.paperWidthSpinner.isEnabled = controls.selectionEnabled
+        binding.customPrintDotsInput.isEnabled = controls.selectionEnabled
+        binding.cutModeSpinner.isEnabled = controls.selectionEnabled
+        binding.imageThresholdSeekbar.isEnabled = controls.selectionEnabled
+    }
+
+    private fun currentDiagnosticsStatus(
+        device: UsbDeviceDescriptor? = selectedDevice(),
+    ): UsbDiagnosticsStatus = UsbDiagnosticsStateModel.status(
+        serviceActive = ConnectorRuntimeState.serviceActive,
+        usbOwnershipActive = ProcessUsbIoOwnership.gate.isBusy(),
+        connection = ProcessUsbConnectionRuntime.tracker.snapshot(),
+        devicePresent = device != null,
+        hasPermission = device?.hasPermission == true,
+    )
+
+    private fun markConnectionOpenAndClaimed() {
+        ProcessUsbConnectionRuntime.tracker.markConnectionOpen(usbRuntimeOwnerToken)
+        ProcessUsbConnectionRuntime.tracker.markInterfaceClaimed(usbRuntimeOwnerToken)
+        updateControlAvailability()
     }
 
     private fun setBusy(value: Boolean) {
@@ -654,6 +691,7 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         val report = UsbDiagnosticReport.build(
             activity = this,
             usbHostSupported = inspector.isUsbHostSupported,
+            runtimeStatus = currentDiagnosticsStatus(),
             devices = devices,
             selectedDeviceName = selectedDeviceName,
             selectedInterfaceIndex = selectedEndpointOption()?.interfaceIndex,
@@ -791,7 +829,6 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
                 snapshot,
                 MerchantSessionTokenStore(applicationContext).hasCredential(),
             )
-            ConnectorServiceStarter.startIfEligible(applicationContext)
             withContext(Dispatchers.Main) {
                 binding.usbActionResultText.text = getString(R.string.usb_configuration_saved)
             }
@@ -802,7 +839,15 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
-    private fun formatDeviceDetails(device: UsbDeviceDescriptor): String = buildString {
+    private fun formatDeviceDetails(
+        device: UsbDeviceDescriptor,
+        status: UsbDiagnosticsStatus,
+    ): String = buildString {
+        appendLine("serviceActive: ${status.serviceActive}")
+        appendLine("usbOwnershipActive: ${status.usbOwnershipActive}")
+        appendLine("connectionOpen: ${status.connectionOpen}")
+        appendLine("interfaceClaimed: ${status.interfaceClaimed}")
+        appendLine("permissionState: ${status.permissionState.name}")
         appendLine("deviceName: ${device.deviceName}")
         appendLine("manufacturer: ${device.manufacturerName ?: "unknown"}")
         appendLine("product: ${device.productName ?: "unknown"}")

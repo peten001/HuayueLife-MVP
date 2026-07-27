@@ -7,6 +7,7 @@
     <string name="usb_refresh_devices">刷新设备 / Làm mới</string>
     <string name="usb_request_permission">请求 USB 权限 / Yêu cầu quyền</string>
     <string name="usb_permission_granted">USB 已授权 / Đã cấp quyền USB</string>
+    <string name="usb_permission_unverified">USB 权限未验证 / Chưa xác minh quyền USB</string>
     <string name="usb_endpoint_section">BULK OUT 接口与端点（可手动选择）</string>
     <string name="usb_select_endpoint">选择 BULK OUT 端点</string>
     <string name="usb_test_config_section">本地测试配置（不含订单数据）</string>
@@ -51,7 +52,7 @@
     <string name="usb_error_open_failed">无法打开 USB 设备。</string>
     <string name="usb_error_claim_failed">无法独占所选 USB 接口或切换 alternateSetting。</string>
     <string name="usb_error_io_busy">USB 打印通道正在被正式连接器使用，请先关闭连接器再运行诊断。</string>
-    <string name="usb_connector_active_diagnostics_blocked">正式打印连接器正在运行。为防止两路数据交错，连接、测试打印、授权和保存配置已禁用；请先在终端设置中关闭连接器。</string>
+    <string name="usb_connector_active_diagnostics_blocked">USB 打印通道当前正在执行 I/O。为防止两路数据交错，本地连接与测试暂时禁用；I/O 结束后可重试。</string>
     <string name="usb_error_device_detached">写入期间 USB 设备被拔出。</string>
     <string name="usb_error_write_timeout">USB 写入超时。</string>
     <string name="usb_error_partial_write">USB 只写入了部分数据；为防重复，本次不会自动重试。</string>

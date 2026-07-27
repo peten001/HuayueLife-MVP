@@ -28,7 +28,9 @@ data class ProductionReceiptRenderConfig(
 /** Bitmap renderer for the two controlled V1 receipt schemas. */
 object ReceiptDocumentRenderer {
     fun render(document: ReceiptDocumentV1, config: ProductionReceiptRenderConfig): Bitmap {
-        require(config.jobId.matches(Regex("^[1-9][0-9]{0,38}$")))
+        // Server job identifiers are opaque (UUIDs are valid); only constrain their printable
+        // representation instead of incorrectly treating a non-numeric id as a bitmap failure.
+        require(config.jobId.length in 1..128 && config.jobId.none { it.isISOControl() })
         require(config.contentHash.matches(Regex("^[0-9a-f]{64}$")))
         val width = PrintWidthValidator.resolve(config.paperWidth, config.customDots)
         if (width > MAX_PRODUCTION_WIDTH) {

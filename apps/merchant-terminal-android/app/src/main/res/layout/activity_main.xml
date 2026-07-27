@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -59,15 +60,22 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/terminal_menu_button"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+    <TextView
+        android:id="@+id/app_version"
         android:layout_width="wrap_content"
         android:layout_height="48dp"
         android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:contentDescription="@string/terminal_menu_description"
-        android:minWidth="96dp"
-        android:text="@string/terminal_menu_label" />
+        android:layout_margin="8dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:clickable="true"
+        android:contentDescription="@string/app_version_description"
+        android:focusable="true"
+        android:gravity="center"
+        android:minWidth="72dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:textColor="@color/terminal_text_secondary"
+        android:textSize="12sp"
+        tools:text="v1.0.0-rc4" />
 
 </FrameLayout>

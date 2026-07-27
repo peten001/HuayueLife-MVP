@@ -14,8 +14,8 @@ fun configValue(
     .orElse(providers.environmentVariable(environmentName))
     .orElse(fallback)
 
-val terminalVersionCode = providers.provider { 7 }
-val terminalVersionName = providers.provider { "1.0.0-rc3" }
+val terminalVersionCode = providers.provider { 11 }
+val terminalVersionName = providers.provider { "1.0.0-rc4" }
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -164,14 +164,6 @@ android {
                 releaseConnectorApiBaseUrl.get().asBuildConfigString(),
             )
         }
-        create("printClosureTest") {
-            initWith(getByName("release"))
-            applicationIdSuffix = ".printclosuretest1"
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-            proguardFile("proguard-print-closure-test.pro")
-            resValue("string", "app_name", "YunQiao Terminal Print Closure Test")
-        }
     }
 
     buildFeatures {
@@ -199,14 +191,6 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-    }
-}
-
-androidComponents {
-    onVariants(selector().withBuildType("printClosureTest")) { variant ->
-        variant.outputs.forEach { output ->
-            output.versionName.set("1.0.0-print-closure-test1")
-        }
     }
 }
 
