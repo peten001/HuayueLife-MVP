@@ -83,7 +83,7 @@ export class OrdersService {
           },
           include: this.orderInclude,
         });
-        if (duplicate) return duplicate;
+        if (duplicate) return { order: duplicate, printTriggerIds: [] };
 
         const preview = await this.validateAndPrice(tx, userId, dto);
         await this.creatorInvariant.assertValid(tx, {
@@ -99,6 +99,8 @@ export class OrdersService {
                 preview.table.id,
               )
             : null;
+        const autoAcceptDineIn = dto.orderType === 'DINE_IN';
+        const acceptedAt = autoAcceptDineIn ? new Date() : undefined;
         const order = await tx.order.create({
           data: {
             orderNo: this.generateOrderNo(),
@@ -122,6 +124,8 @@ export class OrdersService {
             itemAmountVnd: preview.itemAmountVnd,
             deliveryFeeVnd: preview.deliveryFeeVnd,
             totalAmountVnd: preview.totalAmountVnd,
+            status: autoAcceptDineIn ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
+            acceptedAt,
             items: {
               create: preview.items.map((item) => ({
                 productId: item.product.id,
@@ -136,35 +140,57 @@ export class OrdersService {
             statusLogs: {
               create: {
                 fromStatus: null,
-                toStatus: 'PENDING_ACCEPTANCE',
-                operatorType: 'USER',
-                operatorUserId: userId,
-                remark: '用户提交订单',
+                toStatus: autoAcceptDineIn ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
+                operatorType: autoAcceptDineIn ? 'SYSTEM' : 'USER',
+                operatorUserId: autoAcceptDineIn ? undefined : userId,
+                action: autoAcceptDineIn ? 'DINE_IN_AUTO_ACCEPTED' : undefined,
+                remark: autoAcceptDineIn ? '堂食顾客扫码订单自动接单' : '用户提交订单',
               },
             },
           },
           include: this.orderInclude,
         });
+        const printTriggers = autoAcceptDineIn && this.printJobs
+          ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+              merchantId: order.merchantId,
+              orderId: order.id,
+              orderStatusLogId: order.statusLogs[0].id,
+              orderType: order.orderType,
+              status: 'ACCEPTED',
+            })
+          : [];
         shouldAutoPrint = true;
 
         await tx.cart.update({
           where: { id: preview.cartId },
           data: { status: 'CHECKED_OUT' },
         });
-        return order;
+        return {
+          order,
+          printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+        };
       });
+      if (order.printTriggerIds.length > 0) {
+        try {
+          await this.printJobs?.processAutomaticTriggerIds(order.printTriggerIds);
+        } catch (error) {
+          this.logger.warn(
+            `Print trigger processing deferred merchant=${order.order.merchantId} order=${order.order.id} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+          );
+        }
+      }
       if (shouldAutoPrint && this.printingFlags.legacyPrintingEnabled()) {
         void this.printersService
-          .printOrder(order.merchantId, order.id, 'SYSTEM')
+          .printOrder(order.order.merchantId, order.order.id, 'SYSTEM')
           .catch((error) => {
             this.logger.warn(
-              `Auto print failed for order ${order.id.toString()}: ${
+              `Auto print failed for order ${order.order.id.toString()}: ${
                 error instanceof Error ? error.message : String(error)
               }`,
             );
           });
       }
-      return this.serializeCustomerOrder(order);
+      return this.serializeCustomerOrder(order.order);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

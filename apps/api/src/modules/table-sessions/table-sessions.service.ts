@@ -737,6 +737,7 @@ export class TableSessionsService {
       orders: session.orders.map((order) => ({
         id: order.id,
         orderNo: order.orderNo,
+        createdByStaffId: order.createdByStaffId,
         status: order.status,
         createdAt: order.createdAt,
         itemAmountVnd: order.itemAmountVnd,

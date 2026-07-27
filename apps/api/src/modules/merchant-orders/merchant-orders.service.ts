@@ -151,7 +151,7 @@ export class MerchantOrdersService {
     dto: CreateTableOrderDto,
   ) {
     const normalizedItems = this.normalizeCreateItems(dto);
-    let result: { orderId: bigint | null; sessionId: bigint };
+    let result: { orderId: bigint | null; sessionId: bigint; printTriggerIds: bigint[] };
     try {
       result = await this.prisma.$transaction(async (tx) => {
         const creator = await this.creatorInvariant.assertValid(tx, {
@@ -196,7 +196,7 @@ export class MerchantOrdersService {
               message: '点菜请求标识已用于其他桌台',
             });
           }
-          return { orderId: duplicate.id, sessionId: duplicate.tableSessionId };
+          return { orderId: duplicate.id, sessionId: duplicate.tableSessionId, printTriggerIds: [] };
         }
 
         const tableRows = await tx.$queryRaw<
@@ -239,7 +239,7 @@ export class MerchantOrdersService {
               message: '桌台已由其他人员开台，请刷新后继续点菜',
             });
           }
-          return { orderId: null, sessionId: session.id };
+          return { orderId: null, sessionId: session.id, printTriggerIds: [] };
         }
 
         const productIds = [
@@ -293,6 +293,8 @@ export class MerchantOrdersService {
             itemAmountVnd,
             deliveryFeeVnd: 0n,
             totalAmountVnd: itemAmountVnd,
+            status: 'ACCEPTED',
+            acceptedAt: new Date(),
             items: {
               create: pricedItems.map((item) => ({
                 productId: item.product.id,
@@ -308,14 +310,7 @@ export class MerchantOrdersService {
               create: [
                 {
                   fromStatus: null,
-                  toStatus: 'PENDING_ACCEPTANCE',
-                  operatorType: OperatorType.MERCHANT_STAFF,
-                  operatorStaffId: staffId,
-                  remark: '商家员工创建追加订单',
-                },
-                {
-                  fromStatus: 'PENDING_ACCEPTANCE',
-                  toStatus: 'PENDING_ACCEPTANCE',
+                  toStatus: 'ACCEPTED',
                   operatorType: OperatorType.MERCHANT_STAFF,
                   operatorStaffId: staffId,
                   action: 'MERCHANT_ADD_ITEMS',
@@ -335,18 +330,37 @@ export class MerchantOrdersService {
                       subtotalVnd: item.subtotalVnd.toString(),
                     })),
                   },
-                  remark: '商家点菜创建追加订单',
+                  remark: '商家点菜创建追加订单并自动接单',
                 },
               ],
             },
           },
-          select: { id: true, tableSessionId: true },
+          select: {
+            id: true,
+            tableSessionId: true,
+            statusLogs: {
+              where: { action: 'MERCHANT_ADD_ITEMS', requestKey: dto.idempotencyKey },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        });
+        const printTriggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+          merchantId,
+          orderId: created.id,
+          orderStatusLogId: created.statusLogs[0].id,
+          orderType: 'DINE_IN',
+          status: 'ACCEPTED',
         });
         // Any order mutation invalidates a previously calculated table
         // rounding amount. Clear it atomically so refresh/checkout/printing
         // cannot reuse a discount calculated from an older bill total.
         await this.clearSessionRounding(tx, session.id);
-        return { orderId: created.id, sessionId: created.tableSessionId! };
+        return {
+          orderId: created.id,
+          sessionId: created.tableSessionId!,
+          printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+        };
       });
     } catch (error) {
       if (
@@ -393,7 +407,17 @@ export class MerchantOrdersService {
           message: '点菜请求标识已用于其他请求',
         });
       }
-      result = { orderId: duplicate.id, sessionId: duplicate.tableSessionId };
+      result = { orderId: duplicate.id, sessionId: duplicate.tableSessionId, printTriggerIds: [] };
+    }
+
+    if (result.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs.processAutomaticTriggerIds(result.printTriggerIds);
+      } catch (error) {
+        this.logger.warn(
+          `Print trigger processing deferred merchant=${merchantId} order=${result.orderId} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
     }
 
     return this.buildMutationResponse(merchantId, result.orderId, result.sessionId);
