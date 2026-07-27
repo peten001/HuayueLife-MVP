@@ -28,7 +28,7 @@ class ConnectorHiddenEntryContractTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun `version entry hides diagnostics and only opens the USB page through the protected path`() {
+    fun `printer icon hides diagnostics and only opens the USB page through the protected path`() {
         // MainActivity owns a real WebView, which Robolectric cannot reliably create on every
         // SDK image. Keep this as a source/layout contract so the existing hidden entry cannot
         // accidentally move into the public cashier UI while this page is refined.
@@ -46,6 +46,10 @@ class ConnectorHiddenEntryContractTest {
         val cashierHeader = repositoryFile(
             "apps/merchant-cashier/src/components/shell/CashierHeader.vue",
         ).readText()
+        val sessionContract = repositoryFile(
+            "apps/merchant-terminal-android/app/src/main/java/" +
+                "com/yunqiao/life/merchantterminal/security/MerchantSessionTokenStore.kt",
+        ).readText()
 
         assertTrue(mainActivitySource.contains("private fun configureVersionUnlock()"))
         assertTrue(mainActivitySource.contains("private fun configureSwipeRefresh()"))
@@ -61,21 +65,23 @@ class ConnectorHiddenEntryContractTest {
         assertTrue(mainLayout.contains("android:layout_gravity=\"top|end\""))
         assertTrue(mainLayout.contains("android:layout_height=\"48dp\""))
         assertFalse(mainLayout.contains("terminal_menu_button"))
-        assertTrue(versionUnlockBlock.contains("binding.appVersion.setOnClickListener"))
-        assertTrue(versionUnlockBlock.contains("merchantSessionTokenStore.hasCredential()"))
-        assertTrue(versionUnlockBlock.contains("versionTapUnlock.registerTap(SystemClock.elapsedRealtime())"))
+        assertTrue(versionUnlockBlock.contains("binding.appVersion.text"))
+        assertTrue(mainActivitySource.contains("installMerchantPrinterDiagnosticsObserver()"))
+        assertTrue(mainActivitySource.contains("merchantSessionTokenStore.hasCredential()"))
+        assertTrue(mainActivitySource.contains("OPEN_PRINTER_DIAGNOSTICS_MESSAGE"))
+        assertTrue(cashierHeader.contains("data-terminal-action=\"printer-diagnostics\""))
         assertTrue(
-            versionUnlockBlock.contains(
+            mainActivitySource.contains(
                 "startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))",
             ),
         )
         assertFalse(mainActivitySource.contains("PopupMenu"))
         assertFalse(mainActivitySource.contains("ConnectorControlActivity::class.java"))
         assertFalse(mainActivitySource.contains("Intent(this, DiagnosticsActivity::class.java)"))
-        assertTrue(
-            mainActivitySource.windowed("versionTapUnlock.reset()".length)
-                .count { it == "versionTapUnlock.reset()" } >= 4,
-        )
+        assertTrue(mainActivitySource.contains("printerDiagnosticsObserverScript()"))
+        assertTrue(sessionContract.contains("visibilitychange"))
+        assertTrue(sessionContract.contains("popstate"))
+        assertTrue(sessionContract.contains("5000"))
         val errorLayout = repositoryFile(
             "apps/merchant-terminal-android/app/src/main/res/layout/view_error_state.xml",
         ).readText()

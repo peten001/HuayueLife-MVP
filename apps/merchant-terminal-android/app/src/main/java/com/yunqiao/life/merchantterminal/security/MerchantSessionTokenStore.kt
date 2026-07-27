@@ -122,13 +122,14 @@ sealed class MerchantWebSessionSnapshot {
 /**
  * Contract between the trusted cashier document and the native connector session.
  *
- * The WebMessage signal is deliberately one-way and carries only a fixed sign-out event. Tokens
- * are read by the existing native polling path and are never posted through the exposed object.
+ * The WebMessage signal is deliberately one-way. Tokens are read by the existing native polling
+ * path and are never posted through the exposed object.
  */
 object MerchantWebSessionContract {
     const val STORAGE_KEY = "yunqiao_cashier_access_token"
     const val SIGNAL_OBJECT_NAME = "YunQiaoMerchantSession"
     const val SIGN_OUT_MESSAGE = "SIGNED_OUT"
+    const val OPEN_PRINTER_DIAGNOSTICS_MESSAGE = "OPEN_PRINTER_DIAGNOSTICS"
 
     private val merchantJwt =
         Regex("^[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}$")
@@ -157,6 +158,29 @@ object MerchantWebSessionContract {
             "if(previous&&!current){bridge.postMessage('$SIGN_OUT_MESSAGE');}" +
             "previous=current;" +
             "},250);" +
+            "})()"
+
+    fun printerDiagnosticsObserverScript(): String =
+        """(function(){""" +
+            "if(window.top!==window||window.__yunqiaoPrinterTapObserver){return;}" +
+            "var bridge=window.$SIGNAL_OBJECT_NAME;" +
+            "if(!bridge||typeof bridge.postMessage!=='function'){return;}" +
+            "var taps=0;var reset=0;var currentUrl=location.href;var attach=function(){" +
+            "if(window.__yunqiaoPrinterTapObserver){return true;}" +
+            "var target=document.querySelector('[data-testid=\\\"top-print-status\\\"]');" +
+            "if(!target){return false;}" +
+            "target.addEventListener('click',function(){" +
+            "taps+=1;window.clearTimeout(reset);" +
+            "reset=window.setTimeout(function(){taps=0;},5000);" +
+            "if(taps>=7){taps=0;bridge.postMessage('$OPEN_PRINTER_DIAGNOSTICS_MESSAGE');}" +
+            "});" +
+            "window.__yunqiaoPrinterTapObserver=true;" +
+            "var clear=function(){taps=0;window.clearTimeout(reset);};" +
+            "document.addEventListener('visibilitychange',function(){if(document.hidden){clear();}});" +
+            "window.addEventListener('pagehide',clear);window.addEventListener('popstate',clear);" +
+            "window.setInterval(function(){if(location.href!==currentUrl){currentUrl=location.href;clear();}},250);" +
+            "return true;};" +
+            "if(!attach()){new MutationObserver(attach).observe(document.documentElement,{childList:true,subtree:true});}" +
             "})()"
 
     fun decodeSnapshot(value: String?): MerchantWebSessionSnapshot {
