@@ -69,6 +69,28 @@ export const demoRepository = {
     if (order.status === 'CANCELLED') order.cancelledAt = order.updatedAt;
     return cloneFixture(order);
   },
+  setOrderRounding(id: string, enabled: boolean) {
+    const order = requireOrder(id);
+    if (!['PICKUP', 'DELIVERY'].includes(order.orderType)) {
+      throw conflict('ORDER_ROUNDING_ORDER_TYPE_NOT_ALLOWED', 'Only pickup and delivery orders can be rounded');
+    }
+    if (!['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
+      throw conflict('ORDER_ROUNDING_STATUS_NOT_ALLOWED', 'This order cannot be rounded');
+    }
+    const originalAmountVnd = BigInt(order.totalAmountVnd);
+    const roundingAmountVnd = enabled
+      ? calculateTableSessionRoundingAmount(originalAmountVnd)
+      : 0n;
+    const now = new Date().toISOString();
+    order.originalAmountVnd = originalAmountVnd.toString();
+    order.roundingAmountVnd = roundingAmountVnd.toString();
+    order.payableAmountVnd = (originalAmountVnd - roundingAmountVnd).toString();
+    order.roundingApplied = enabled;
+    order.roundingAppliedByStaffId = enabled ? demoStaffSession.id : null;
+    order.roundingAppliedAt = enabled ? now : null;
+    order.updatedAt = now;
+    return cloneFixture(order);
+  },
   tables: () => cloneFixture(demoTables),
   openSessions: () => sessionClosed ? [] : [buildSessionSummary()],
   currentSession: (tableId: string) =>
@@ -189,7 +211,7 @@ export const demoRepository = {
       tableSessionId: 'demo-session-1',
       tableNoSnapshot: 'A01',
       orderType: 'DINE_IN',
-      status: 'PENDING_ACCEPTANCE',
+      status: 'ACCEPTED',
       itemAmountVnd: total,
       deliveryFeeVnd: '0',
       totalAmountVnd: total,
@@ -315,7 +337,10 @@ function nextStatus(order: MerchantOrder, action: MerchantOrderAction): Merchant
 }
 
 function tableOrders() {
-  return orders.filter((order) => order.tableSessionId === 'demo-session-1');
+  const sessionOrders = orders.filter((order) => order.tableSessionId === 'demo-session-1');
+    return import.meta.env.VITE_CASHIER_LARGE_AMOUNT_FIXTURE === 'true'
+    ? sessionOrders.filter((order) => ['demo-order-1001', 'demo-order-1006'].includes(order.id))
+    : sessionOrders;
 }
 
 function clearDemoSessionRounding() {
@@ -340,7 +365,7 @@ function buildSessionSummary(): TableSessionSummary {
 function buildSessionDetail(): TableSessionDetail {
   return {
     ...buildSessionSummary(),
-    orders: tableOrders().map((order) => ({ id: order.id, orderNo: order.orderNo, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productNameZhSnapshot: item.productNameZhSnapshot, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
+    orders: tableOrders().map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productNameZhSnapshot: item.productNameZhSnapshot, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
   };
 }
 

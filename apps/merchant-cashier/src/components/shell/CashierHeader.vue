@@ -217,6 +217,7 @@ onBeforeUnmount(() => {
         :title="printingStatus.label"
         aria-disabled="true"
         data-testid="top-print-status"
+        data-terminal-action="printer-diagnostics"
       >
         <span class="top-status-item__icon"><Printer :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
         <span class="top-status-item__label top-status-item__label--full">{{ printingStatus.label }}</span>

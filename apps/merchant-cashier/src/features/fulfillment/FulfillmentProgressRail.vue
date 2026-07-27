@@ -3,8 +3,9 @@ import { Check } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder, OrderStatus } from '@/types';
+import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 
-const props = defineProps<{ order: MerchantOrder }>();
+const props = defineProps<{ order: MerchantOrder; showCurrentStatus?: boolean }>();
 const { t } = useI18n();
 const pickupSteps: OrderStatus[] = ['PENDING_ACCEPTANCE', 'PREPARING', 'READY', 'COMPLETED'];
 const deliverySteps: OrderStatus[] = ['PENDING_ACCEPTANCE', 'PREPARING', 'READY', 'DELIVERING', 'COMPLETED'];
@@ -25,7 +26,10 @@ function label(status: OrderStatus) {
 
 <template>
   <section class="workflow-section fulfillment-progress">
-    <header><h3>{{ t('fulfillment.progress') }}</h3></header>
+    <header>
+      <h3>{{ t('fulfillment.progress') }}</h3>
+      <OrderStatusBadge v-if="showCurrentStatus" :status="order.status" />
+    </header>
     <p v-if="order.status === 'CANCELLED'" class="fulfillment-progress__cancelled">{{ t('order.status.cancelled') }}</p>
     <ol v-else>
       <li v-for="(step, index) in steps" :key="step" :class="{ 'is-current': index === currentIndex, 'is-complete': index < currentIndex }">
