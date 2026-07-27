@@ -2,9 +2,10 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import { cashierStorageKeys } from '@/config';
 import { t, useI18n } from '@/i18n';
+import { readCashierStorage, writeCashierStorage } from '@/platform/safe-storage';
 
 export const useSoundStore = defineStore('cashier-sound', () => {
-  const enabled = ref(false);
+  const enabled = ref(readCashierStorage('local', cashierStorageKeys.soundEnabled) === '1');
   const unlocked = ref(false);
   const supported = ref(typeof window !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window));
   const lastError = ref('');
@@ -21,10 +22,12 @@ export const useSoundStore = defineStore('cashier-sound', () => {
       playBeep(context, 0.08, 0.12);
       unlocked.value = context.state === 'running';
       enabled.value = unlocked.value;
+      persistEnabled(enabled.value);
       return enabled.value;
     } catch (error) {
       enabled.value = false;
       unlocked.value = false;
+      persistEnabled(false);
       lastError.value = error instanceof Error ? error.message : String(error);
       return false;
     }
@@ -32,6 +35,7 @@ export const useSoundStore = defineStore('cashier-sound', () => {
 
   function disable() {
     enabled.value = false;
+    persistEnabled(false);
   }
 
   function notifyNewOrders(orderIds: string[], merchantId: string) {
@@ -103,6 +107,10 @@ function playBeep(context: AudioContext, volume: number, duration: number) {
   gain.connect(context.destination);
   oscillator.start();
   oscillator.stop(context.currentTime + duration);
+}
+
+function persistEnabled(value: boolean) {
+  writeCashierStorage('local', cashierStorageKeys.soundEnabled, value ? '1' : '0');
 }
 
 function snapshotKey(merchantId: string) {
