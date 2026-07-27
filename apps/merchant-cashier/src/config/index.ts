@@ -26,6 +26,7 @@ export const cashierStorageKeys = Object.freeze({
   staffSession: 'yunqiao_cashier_staff_session',
   locale: 'yunqiao_cashier_locale',
   pendingOrderSnapshotPrefix: 'yunqiao_cashier_pending_orders',
+  soundEnabled: 'yunqiao_cashier_sound_enabled',
   printRequestKeys: 'yunqiao_cashier_print_request_keys',
   pwaInstallPromptDismissedUntil: 'yunqiao_cashier_pwa_install_prompt_dismissed_until',
 });

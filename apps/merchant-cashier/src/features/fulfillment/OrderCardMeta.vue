@@ -23,7 +23,7 @@ const totalQuantity = computed(() => props.order.items
     <p>
       <PackageOpen :size="15" aria-hidden="true" />
       {{ t('fulfillment.itemCount', { count: totalQuantity }) }}
-      <strong>{{ formatVnd(order.totalAmountVnd, locale) }}</strong>
+      <strong>{{ formatVnd(order.payableAmountVnd || order.totalAmountVnd, locale) }}</strong>
     </p>
     <div>
       <span><Clock3 :size="15" aria-hidden="true" />{{ t('fulfillment.orderedAt', { time: formatVietnamDateTime(order.createdAt, locale) }) }}</span>

@@ -11,12 +11,14 @@ import { CashierApiError, normalizeApiErrorPayload } from './error';
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   authenticated?: boolean;
+  trackNetworkActivity?: boolean;
   query?: Record<string, string | number | boolean | null | undefined>;
 }
 
 export async function requestApi<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const {
     authenticated = true,
+    trackNetworkActivity = true,
     body: requestBody,
     headers: requestHeaders,
     query,
@@ -60,7 +62,7 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
         requestId: errorBody?.requestId,
         details: errorBody,
       });
-      reportFailure(error);
+      if (trackNetworkActivity) reportFailure(error);
       if (response.status === 401 && authenticated) {
         dispatchWindowEvent(CASHIER_UNAUTHORIZED_EVENT);
       }
@@ -74,10 +76,10 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
         status: response.status,
         code: 'INVALID_API_RESPONSE',
       });
-      reportFailure(error);
+      if (trackNetworkActivity) reportFailure(error);
       throw error;
     }
-    reportSuccess();
+    if (trackNetworkActivity) reportSuccess();
     return envelope.data;
   } catch (error) {
     if (error instanceof CashierApiError) throw error;
@@ -87,7 +89,7 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
       code: aborted ? 'REQUEST_ABORTED' : 'NETWORK_ERROR',
       details: error,
     });
-    reportFailure(normalized);
+    if (trackNetworkActivity) reportFailure(normalized);
     throw normalized;
   } finally {
     window.clearTimeout(timeout);

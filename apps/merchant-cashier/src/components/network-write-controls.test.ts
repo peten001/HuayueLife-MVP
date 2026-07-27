@@ -22,7 +22,7 @@ const pickupOrder: MerchantOrder = {
 };
 
 describe('network write controls', () => {
-  it('keeps printing independent while disabling accept and checkout writes', async () => {
+  it('keeps printing independent while disabling checkout writes', async () => {
     const wrapper = mount(DineInActionDock, {
       props: {
         sessionId: 'session-1',
@@ -40,11 +40,8 @@ describe('network write controls', () => {
     });
 
     expect(wrapper.get('[data-testid="print-primary"]').attributes('disabled')).toBeUndefined();
-    expect(wrapper.get('[data-testid="dinein-accept"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[data-testid="dinein-checkout"]').attributes('disabled')).toBeDefined();
-    await wrapper.get('[data-testid="dinein-accept"]').trigger('click');
     await wrapper.get('[data-testid="dinein-checkout"]').trigger('click');
-    expect(wrapper.emitted('accept')).toBeUndefined();
     expect(wrapper.emitted('checkout')).toBeUndefined();
   });
 

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { formatVnd } from './format';
+import { formatVnd, formatVietnamDateFilter, formatVietnamDateFilterAria } from './format';
+
+describe('history date filter formatting', () => {
+  it('shows month/day while retaining a full accessible date', () => {
+    expect(formatVietnamDateFilter('2026-07-27', 'zh')).toBe('07/27');
+    expect(formatVietnamDateFilter('2026-07-27', 'vi')).toBe('27/07');
+    expect(formatVietnamDateFilter('2026-07-27', 'en')).toBe('07/27');
+    expect(formatVietnamDateFilterAria('2026-07-27', 'zh')).toBe('2026年7月27日');
+    expect(formatVietnamDateFilterAria('2026-07-27', 'vi')).toBe('27/07/2026');
+    expect(formatVietnamDateFilterAria('2026-07-27', 'en')).toBe('July 27, 2026');
+  });
+});
 
 describe('VND formatting', () => {
   it('formats string, number and bigint amounts without decimal currency units', () => {

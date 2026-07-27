@@ -60,4 +60,27 @@ describe('cashier translation dictionaries', () => {
       expect(messages['print.terminalOffline']).not.toBe(messages['print.ready']);
     }
   });
+
+  it('keeps active and history filter labels compact and unambiguous', () => {
+    expect(zhMessages['filter.orderTypeAll']).toBe('全部订单');
+    expect(zhMessages['filter.orderStatusAll']).toBe('全部状态');
+    expect(viMessages['filter.orderTypeAll']).toBe('Mọi đơn');
+    expect(viMessages['filter.orderStatusAll']).toBe('Tất cả');
+    expect(enMessages['filter.orderTypeAll']).toBe('All orders');
+    expect(enMessages['filter.orderStatusAll']).toBe('All status');
+    expect([
+      viMessages['fulfillment.deliveryAll'],
+      viMessages['fulfillment.deliveryPending'],
+      viMessages['fulfillment.deliveryPreparing'],
+      viMessages['fulfillment.deliveryReadyShort'],
+      viMessages['fulfillment.deliveryEnRoute'],
+    ]).toEqual(['Tất cả', 'Chờ nhận', 'Đang làm', 'Chờ giao', 'Đang giao']);
+    expect(enMessages['filter.orderStatusAll']).toBe('All status');
+    expect(enMessages['fulfillment.pickupPreparing']).toBe('Making');
+    expect(enMessages['fulfillment.deliveryPreparing']).toBe('Making');
+  });
+
+  it('keeps the Vietnamese date filter label complete for accessibility', () => {
+    expect(viMessages['orders.filterDate']).toBe('Ngày đơn hàng');
+  });
 });

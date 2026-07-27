@@ -23,6 +23,8 @@ import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
 import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 import { withPickupFulfillmentFields } from '../orders/order-fulfillment-fields';
+import { withOrderSettlementFields } from '../orders/order-settlement-fields';
+import { calculateRoundingAmounts } from '../table-sessions/table-session.constants';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -70,6 +72,14 @@ type LockedProductRow = {
   status: string;
   category_active: number | boolean;
 };
+
+const ORDER_ROUNDING_STATUSES: OrderStatus[] = [
+  'PENDING_ACCEPTANCE',
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'DELIVERING',
+];
 
 const TRANSITIONS: Record<MerchantOrderAction, TransitionRule> = {
   ACCEPT: {
@@ -151,7 +161,7 @@ export class MerchantOrdersService {
     dto: CreateTableOrderDto,
   ) {
     const normalizedItems = this.normalizeCreateItems(dto);
-    let result: { orderId: bigint | null; sessionId: bigint };
+    let result: { orderId: bigint | null; sessionId: bigint; printTriggerIds: bigint[] };
     try {
       result = await this.prisma.$transaction(async (tx) => {
         const creator = await this.creatorInvariant.assertValid(tx, {
@@ -196,7 +206,7 @@ export class MerchantOrdersService {
               message: '点菜请求标识已用于其他桌台',
             });
           }
-          return { orderId: duplicate.id, sessionId: duplicate.tableSessionId };
+          return { orderId: duplicate.id, sessionId: duplicate.tableSessionId, printTriggerIds: [] };
         }
 
         const tableRows = await tx.$queryRaw<
@@ -239,7 +249,7 @@ export class MerchantOrdersService {
               message: '桌台已由其他人员开台，请刷新后继续点菜',
             });
           }
-          return { orderId: null, sessionId: session.id };
+          return { orderId: null, sessionId: session.id, printTriggerIds: [] };
         }
 
         const productIds = [
@@ -293,6 +303,8 @@ export class MerchantOrdersService {
             itemAmountVnd,
             deliveryFeeVnd: 0n,
             totalAmountVnd: itemAmountVnd,
+            status: 'ACCEPTED',
+            acceptedAt: new Date(),
             items: {
               create: pricedItems.map((item) => ({
                 productId: item.product.id,
@@ -308,14 +320,7 @@ export class MerchantOrdersService {
               create: [
                 {
                   fromStatus: null,
-                  toStatus: 'PENDING_ACCEPTANCE',
-                  operatorType: OperatorType.MERCHANT_STAFF,
-                  operatorStaffId: staffId,
-                  remark: '商家员工创建追加订单',
-                },
-                {
-                  fromStatus: 'PENDING_ACCEPTANCE',
-                  toStatus: 'PENDING_ACCEPTANCE',
+                  toStatus: 'ACCEPTED',
                   operatorType: OperatorType.MERCHANT_STAFF,
                   operatorStaffId: staffId,
                   action: 'MERCHANT_ADD_ITEMS',
@@ -335,18 +340,37 @@ export class MerchantOrdersService {
                       subtotalVnd: item.subtotalVnd.toString(),
                     })),
                   },
-                  remark: '商家点菜创建追加订单',
+                  remark: '商家点菜创建追加订单并自动接单',
                 },
               ],
             },
           },
-          select: { id: true, tableSessionId: true },
+          select: {
+            id: true,
+            tableSessionId: true,
+            statusLogs: {
+              where: { action: 'MERCHANT_ADD_ITEMS', requestKey: dto.idempotencyKey },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        });
+        const printTriggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+          merchantId,
+          orderId: created.id,
+          orderStatusLogId: created.statusLogs[0].id,
+          orderType: 'DINE_IN',
+          status: 'ACCEPTED',
         });
         // Any order mutation invalidates a previously calculated table
         // rounding amount. Clear it atomically so refresh/checkout/printing
         // cannot reuse a discount calculated from an older bill total.
         await this.clearSessionRounding(tx, session.id);
-        return { orderId: created.id, sessionId: created.tableSessionId! };
+        return {
+          orderId: created.id,
+          sessionId: created.tableSessionId!,
+          printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+        };
       });
     } catch (error) {
       if (
@@ -393,7 +417,17 @@ export class MerchantOrdersService {
           message: '点菜请求标识已用于其他请求',
         });
       }
-      result = { orderId: duplicate.id, sessionId: duplicate.tableSessionId };
+      result = { orderId: duplicate.id, sessionId: duplicate.tableSessionId, printTriggerIds: [] };
+    }
+
+    if (result.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs.processAutomaticTriggerIds(result.printTriggerIds);
+      } catch (error) {
+        this.logger.warn(
+          `Print trigger processing deferred merchant=${merchantId} order=${result.orderId} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
     }
 
     return this.buildMutationResponse(merchantId, result.orderId, result.sessionId);
@@ -980,6 +1014,107 @@ export class MerchantOrdersService {
     });
   }
 
+  async setRounding(
+    merchantId: bigint,
+    staffId: bigint,
+    id: bigint,
+    enabled: boolean,
+  ) {
+    const order = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.order.findFirst({
+        where: { id, merchantId },
+        select: {
+          id: true,
+          orderType: true,
+          status: true,
+          settlementStatus: true,
+          totalAmountVnd: true,
+          roundingAmountVnd: true,
+          roundingAppliedByStaffId: true,
+          roundingAppliedAt: true,
+          updatedAt: true,
+        },
+      });
+      if (!current) {
+        throw new NotFoundException('Order not found');
+      }
+      if (!['PICKUP', 'DELIVERY'].includes(current.orderType)) {
+        throw new ConflictException({
+          code: 'ORDER_ROUNDING_ORDER_TYPE_NOT_ALLOWED',
+          message: '仅到店自取和商家配送订单可以抹零。',
+        });
+      }
+      if (!ORDER_ROUNDING_STATUSES.includes(current.status)) {
+        throw new ConflictException({
+          code: 'ORDER_ROUNDING_STATUS_NOT_ALLOWED',
+          message: '当前订单状态不允许抹零。',
+        });
+      }
+      if (current.settlementStatus !== 'UNSETTLED') {
+        throw new ConflictException({
+          code: 'ORDER_ROUNDING_ALREADY_SETTLED',
+          message: '订单已经结算，不能修改抹零。',
+        });
+      }
+
+      const nextRoundingAmountVnd = enabled
+        ? calculateRoundingAmounts(current.totalAmountVnd).roundingAmountVnd
+        : 0n;
+      const currentlyApplied = current.roundingAppliedByStaffId !== null;
+      if ((enabled && currentlyApplied) || (!enabled && !currentlyApplied)) {
+        return this.requireOrder(tx, merchantId, id);
+      }
+
+      const now = new Date();
+      const updated = await tx.order.updateMany({
+        where: {
+          id,
+          merchantId,
+          orderType: current.orderType,
+          status: current.status,
+          settlementStatus: 'UNSETTLED',
+          updatedAt: current.updatedAt,
+        },
+        data: {
+          roundingAmountVnd: nextRoundingAmountVnd,
+          roundingAppliedByStaffId: enabled ? staffId : null,
+          roundingAppliedAt: enabled ? now : null,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException({
+          code: 'ORDER_ROUNDING_CONCURRENT_UPDATE',
+          message: '订单金额已被其他终端修改，请刷新后重试。',
+        });
+      }
+
+      await tx.orderStatusLog.create({
+        data: {
+          orderId: id,
+          fromStatus: current.status,
+          toStatus: current.status,
+          operatorType: OperatorType.MERCHANT_STAFF,
+          operatorStaffId: staffId,
+          action: enabled
+            ? `${current.orderType}_ORDER_ROUNDING_APPLIED`
+            : `${current.orderType}_ORDER_ROUNDING_CANCELLED`,
+          metadata: {
+            originalAmountVnd: current.totalAmountVnd.toString(),
+            beforeRoundingAmountVnd: current.roundingAmountVnd.toString(),
+            roundingAmountVnd: nextRoundingAmountVnd.toString(),
+            payableAmountVnd: (
+              current.totalAmountVnd - nextRoundingAmountVnd
+            ).toString(),
+          },
+          remark: enabled ? '自取订单抹零' : '取消自取订单抹零',
+        },
+      });
+
+      return this.requireOrder(tx, merchantId, id);
+    });
+    return this.serializeMerchantOrder(order);
+  }
+
   private resolveRule(
     action: MerchantOrderAction,
     orderType: OrderType,
@@ -1020,6 +1155,10 @@ export class MerchantOrdersService {
       orderNo: string;
       createdAt: Date;
       readyAt: Date | null;
+      totalAmountVnd?: bigint | number;
+      roundingAmountVnd?: bigint | null;
+      roundingAppliedByStaffId?: bigint | null;
+      roundingAppliedAt?: Date | null;
       statusLogs?: ReadonlyArray<{
         action: string | null;
         metadata: Prisma.JsonValue | null;
@@ -1031,13 +1170,23 @@ export class MerchantOrdersService {
       }>;
     },
   >(order: T) {
-    if (!order.statusLogs) {
-      return withPickupFulfillmentFields(order);
+    const pickupProjection = withPickupFulfillmentFields(order);
+    if (
+      !['PICKUP', 'DELIVERY'].includes(pickupProjection.orderType) ||
+      pickupProjection.totalAmountVnd === undefined
+    ) {
+      return pickupProjection;
     }
-    return withPickupFulfillmentFields({
+    const settlementOrder = pickupProjection as typeof pickupProjection & {
+      totalAmountVnd: bigint | number;
+    };
+    if (!order.statusLogs) {
+      return withOrderSettlementFields(settlementOrder);
+    }
+    return withOrderSettlementFields({
       ...order,
       statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
-    });
+    } as typeof settlementOrder);
   }
 
   private dateRange(date: string): Prisma.DateTimeFilter {

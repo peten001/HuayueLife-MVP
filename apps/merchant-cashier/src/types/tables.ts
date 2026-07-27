@@ -47,6 +47,7 @@ export interface TableSessionOrderItem {
 export interface TableSessionOrder {
   id: string;
   orderNo: string;
+  createdByStaffId?: string | null;
   status: OrderStatus;
   createdAt: string;
   itemAmountVnd: string;

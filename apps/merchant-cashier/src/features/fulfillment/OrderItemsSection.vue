@@ -17,7 +17,7 @@ function itemName(item: OrderItem) {
 
 <template>
   <section class="workflow-section order-items-section">
-    <header>
+    <header class="order-items-section__heading">
       <h3>{{ t('order.itemsTitle') }}</h3>
       <span>{{ t('table.itemCount', { count: totalQuantity }) }}</span>
     </header>

@@ -532,7 +532,7 @@
 .table-detail-header__meta { min-width: 0; overflow: hidden; color: var(--cashier-shell-muted); font-size: 13px; text-overflow: clip; white-space: nowrap; }
 .table-bill-total-row { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; }
 .table-bill-total-row .secondary-action { min-width: 0; min-height: 40px; padding: 0 10px; flex: 0 0 auto; gap: 5px; white-space: nowrap; }
-.table-bill-total-row strong { min-width: 0; margin-left: auto; color: var(--cashier-green); font-size: 18px; overflow: visible; white-space: nowrap; }
+.table-bill-total-row strong { min-width: 0; flex: 0 0 auto; margin-left: auto; color: var(--cashier-green); font-size: 18px; letter-spacing: -0.03em; overflow: visible; white-space: nowrap; }
 .table-settlement-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; }
 .table-settlement-summary div { min-width: 0; padding: 8px 9px; border: 1px solid var(--cashier-shell-border); border-radius: 8px; background: var(--cashier-white-alpha-03); }
 .table-settlement-summary dt { overflow: hidden; color: var(--cashier-shell-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -996,6 +996,91 @@
   .toast-region { right: 10px; }
 }
 
+/* D2/P10 compact operator geometry: preserve the right-side bill as the primary
+   work surface while letting its content absorb older WebView width limits. */
+@media (min-width: 900px) and (max-width: 1179px) {
+  :root {
+    --cashier-sidebar-width: 72px;
+    --cashier-detail-width: clamp(292px, 31vw, 336px);
+    --cashier-header-height: 70px;
+  }
+
+  .cashier-shell--workflow .table-overview-route {
+    grid-template-columns: minmax(0, 1fr) var(--cashier-detail-width);
+  }
+
+  .cashier-shell--workflow .table-route-detail { width: auto; }
+  .table-bill-detail { gap: 8px; }
+  .table-bill-detail .detail-panel-content { padding: 10px; }
+  .table-settlement-summary { gap: 4px; }
+  .table-settlement-summary div { padding: 6px; }
+  .table-settlement-summary dd { font-size: 11px; }
+  .table-bill-total-row { gap: 4px; }
+  .table-bill-total-row .secondary-action { min-height: 38px; padding-inline: 7px; font-size: 10px; }
+  .table-bill-total-row strong { font-size: clamp(14px, 1.55vw, 18px); }
+}
+
+@media (max-width: 767px) {
+  .table-settlement-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .table-settlement-summary dt { font-size: 9px; }
+  .table-settlement-summary dd { font-size: clamp(10px, 2.8vw, 13px); letter-spacing: -0.02em; }
+  .table-bill-total-row .secondary-action { padding-inline: 6px; font-size: 10px; }
+  .table-bill-total-row strong { font-size: clamp(13px, 3.8vw, 17px); }
+}
+
+@media (max-width: 390px) {
+  .table-bill-total-row { gap: 3px; }
+  .table-bill-total-row .secondary-action { min-height: 36px; padding-inline: 5px; font-size: 9px; }
+  .table-bill-total-row strong { font-size: 12px; }
+}
+
+/* Compact dine-in detail: reserve the middle row for the scrollable order/item work area. */
+.table-bill-detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+}
+.table-detail-header { min-height: 0; padding-bottom: 8px; }
+.table-detail-header__meta { font-size: 11px; text-overflow: ellipsis; }
+.table-bill-content { min-height: 0; }
+.table-bill-scroll { min-width: 0; overflow-x: hidden; }
+.table-bill-scroll .bill-order-list { max-height: 144px; overflow-y: auto; }
+.table-bill-scroll .bill-order-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.table-bill-scroll .bill-order-row__heading,
+.table-bill-scroll .bill-order-row__meta { display: contents; }
+.table-bill-scroll .bill-order-row__heading strong { min-width: 0; font-size: 11px; }
+.table-bill-scroll .bill-order-row__meta span:first-child { color: var(--cashier-shell-muted); font-size: 10px; }
+.table-bill-scroll .bill-order-row__meta span:last-child { display: none; }
+.table-bill-scroll .bill-order-row__meta b { color: var(--cashier-green); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-selected-order__item { grid-template-columns: minmax(0, 1fr) auto auto; padding: 6px 8px; border-radius: 0; }
+.table-selected-order__item > span,
+.table-selected-order__item > b { font-variant-numeric: tabular-nums; }
+.table-bill-total-row { min-width: 0; gap: 5px; overflow: hidden; white-space: nowrap; }
+.table-bill-total-row .secondary-action { min-width: 44px; min-height: 44px; padding-inline: 8px; flex: 0 0 auto; }
+.table-bill-total-row strong { min-width: 0; flex: 1 1 auto; font-size: clamp(13px, 1.45vw, 18px); font-variant-numeric: tabular-nums; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 899px) {
+  .table-bill-detail { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
+  .table-bill-total-row .secondary-action { min-height: 44px; padding-inline: 6px; }
+}
+
+@media (max-width: 390px) {
+  .table-bill-total-row { gap: 3px; }
+  .table-bill-total-row .secondary-action { min-width: 44px; padding-inline: 5px; font-size: 10px; }
+  .table-bill-total-row strong { font-size: 13px; }
+}
+
+.table-selected-order__item > span,
+.table-selected-order__item > b { min-width: max-content; }
+
 :root {
   --cashier-safe-area-top: 0px;
 }
@@ -1261,4 +1346,808 @@
 @media (max-width: 1179px) {
   .detail-panel-header,
   .table-detail-header { padding-right: 48px; }
+}
+
+/* Responsive hardening for D2 WebView 83 and narrow phone widths.
+   These rules constrain content by available width, rather than by device model. */
+.cashier-sidebar .cashier-brand,
+.cashier-sidebar .cashier-merchant-panel {
+  left: 12px;
+  width: calc(100% - 24px);
+  max-width: calc(var(--cashier-sidebar-width) - 24px);
+}
+
+.cashier-sidebar .cashier-brand::after { width: 100%; }
+.cashier-sidebar .cashier-navigation {
+  left: 8px;
+  width: calc(100% - 16px);
+  max-width: calc(var(--cashier-sidebar-width) - 16px);
+}
+.cashier-sidebar .cashier-navigation__item { min-width: 0; padding-inline: 10px; }
+.cashier-sidebar .cashier-navigation__item > span:not(.cashier-navigation__icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cashier-employee-menu {
+  left: 12px;
+  width: calc(100% - 24px);
+  max-width: calc(var(--cashier-sidebar-width) - 24px);
+}
+.cashier-employee-menu .account-menu__trigger { min-width: 0; padding-inline: 8px; gap: 7px; }
+.cashier-employee-menu .account-menu__copy { min-width: 0; }
+
+.cashier-workspace__content,
+.cashier-workspace__content--table-overview,
+.history-workspace,
+.history-detail,
+.history-detail__content,
+.workflow-section,
+.workflow-item-list > article { min-width: 0; }
+.table-card,
+.order-card,
+.workflow-item-list > article,
+.print-job-actions__buttons > button { min-width: 0; }
+.table-card__meta,
+.table-card__topline,
+.workflow-item-list > article { overflow-wrap: anywhere; }
+.table-card__meta span { white-space: normal; }
+.workflow-item-list > article strong { overflow-wrap: anywhere; white-space: normal; }
+.workflow-item-list > article > span,
+.workflow-item-list > article > b { white-space: nowrap; }
+
+@media (min-width: 900px) and (max-width: 1399px) {
+  .cashier-shell:not(.cashier-shell--workflow) {
+    grid-template-columns: var(--cashier-sidebar-width) minmax(0, 1fr) var(--cashier-detail-width);
+  }
+  .cashier-header { min-width: 0; }
+  .cashier-top-status { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .top-status-item { min-width: 0; }
+  .top-status-item--clock strong { font-size: clamp(17px, 1.8vw, 26px); }
+  .search-filter-bar--tables .cashier-search { flex-basis: clamp(180px, 24vw, 310px); width: auto; min-width: 0; }
+}
+
+@media (max-width: 899px) {
+  .cashier-shell,
+  .cashier-shell--workflow { min-height: 0; }
+  .cashier-shell__route,
+  .cashier-shell__route--workflow { min-height: 0; padding-bottom: 0; }
+  .cashier-workspace__content,
+  .cashier-workspace__content--table-overview { padding-bottom: calc(10px + var(--cashier-mobile-nav-height) + env(safe-area-inset-bottom, 0px)); }
+  .cashier-mobile-navigation { padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)); }
+  .table-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .table-card { height: auto; min-height: 132px; }
+  .table-card__topline > strong,
+  .table-card__state,
+  .table-card__amount { min-width: 0; }
+  .table-card__topline > strong { white-space: normal; overflow-wrap: anywhere; }
+  .history-workspace { padding-bottom: calc(8px + var(--cashier-mobile-nav-height) + env(safe-area-inset-bottom, 0px)); }
+  .history-detail { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .history-detail__content > header { align-items: flex-start; }
+  .history-detail__content h2 { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+  .history-detail__content header p { overflow-wrap: anywhere; }
+  .workflow-item-list > article { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+  .workflow-item-list > article > b { grid-column: 2; grid-row: 1; }
+  .workflow-item-list > article > span { grid-column: 1 / -1; grid-row: 2; }
+  .detail-print-action,
+  .print-job-actions__buttons > button { width: 100%; }
+  .print-job-actions__buttons { display: grid; grid-template-columns: 1fr; }
+  .workflow-page-header { min-width: 0; }
+  .workflow-page-header h1,
+  .workflow-page-header p { overflow-wrap: anywhere; white-space: normal; }
+}
+
+@media (max-width: 430px) {
+  .cashier-workspace__content,
+  .cashier-workspace__content--table-overview { padding-inline: 8px; }
+  .table-grid { grid-template-columns: 1fr; gap: 8px; }
+  .table-card { min-height: 118px; padding: 12px; }
+  .search-filter-bar--tables { gap: 6px; }
+  .search-filter-bar--tables .status-filters button { min-width: 44px; padding-inline: 8px; }
+  .history-detail__content > header { flex-direction: column; gap: 7px; }
+  .workflow-section { padding: 12px; }
+}
+
+/* Dine-in is one merged item stream: source, item, qty, amount, adjustment. */
+.table-bill-detail { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.table-bill-content { grid-template-rows: minmax(0, 1fr); }
+.table-bill-scroll { overflow-x: hidden; overflow-y: auto; }
+.table-item-summary-list { gap: 2px; }
+.table-item-summary-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  min-width: 0;
+  min-height: 48px;
+  gap: 7px;
+  padding: 2px 4px 2px 2px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+}
+.table-item-summary-row__source {
+  min-width: 34px;
+  color: var(--cashier-shell-muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.table-item-summary-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-item-summary-row > span:not(.table-item-summary-row__source),
+.table-item-summary-row > b { min-width: max-content; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-item-summary-row > b { color: var(--cashier-green); text-align: right; }
+.table-item-summary-row .order-item-adjustment {
+  width: 58px;
+  min-width: 58px;
+  height: 44px;
+  min-height: 44px;
+  padding-inline: 7px;
+  border-radius: 7px;
+}
+.table-bill-total-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.table-bill-total-row .secondary-action { min-width: 44px; min-height: 44px; }
+.table-bill-total-row strong {
+  min-width: 0;
+  overflow: visible;
+  text-align: right;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: clamp(13px, 1.45vw, 18px);
+  font-variant-numeric: tabular-nums;
+}
+.table-bill-detail .table-detail-tabs,
+.table-bill-detail .dinein-checkout-notice,
+.table-bill-detail .table-order-browser,
+.table-bill-detail .table-selected-order { display: none; }
+
+@media (max-width: 520px) {
+  .table-item-summary-row { grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 4px; }
+  .table-item-summary-row__source { min-width: 30px; font-size: 9px; }
+  .table-item-summary-row .order-item-adjustment { width: 52px; min-width: 52px; height: 44px; padding-inline: 4px; font-size: 9px; }
+  .table-bill-total-row { gap: 4px; }
+  .table-bill-total-row strong { font-size: clamp(12px, 3.8vw, 16px); }
+}
+
+/* Dine-in action sizing: the summary row and bottom dock share one responsive grid. */
+.table-bill-detail {
+  --dinein-action-height: 52px;
+  --dinein-action-radius: 8px;
+  --dinein-action-padding: 4px 8px;
+  --dinein-action-font-size: 11px;
+  --dinein-action-icon-size: 18px;
+  --dinein-action-gap: 6px;
+}
+.dinein-action-button {
+  box-sizing: border-box;
+  height: var(--dinein-action-height);
+  min-height: var(--dinein-action-height);
+  padding: var(--dinein-action-padding);
+  border-radius: var(--dinein-action-radius);
+  font-size: var(--dinein-action-font-size);
+  font-weight: 800;
+  gap: var(--dinein-action-gap);
+  white-space: nowrap;
+}
+.dinein-action-button svg { width: var(--dinein-action-icon-size); height: var(--dinein-action-icon-size); }
+.dinein-summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: var(--dinein-action-gap);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.dinein-summary-row .dinein-action-button { grid-column: 1; width: 100%; min-width: 0; }
+.dinein-summary-row strong {
+  grid-column: 2 / 4;
+  min-width: 0;
+  margin: 0;
+  overflow: visible;
+  text-align: right;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: clamp(13px, 1.45vw, 18px);
+  font-variant-numeric: tabular-nums;
+}
+.dinein-action-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dinein-action-gap); }
+.dinein-action-dock > .dinein-action-button { width: 100%; min-width: 0; }
+
+@media (max-width: 520px) {
+  .table-bill-detail {
+    --dinein-action-padding: 4px 6px;
+    --dinein-action-font-size: 10px;
+    --dinein-action-gap: 4px;
+  }
+}
+
+/* Table overview is a collection surface, not an empty master-detail split.
+   Keep one explicit content row so the grid receives the full remaining height. */
+.table-overview-route:not(.has-selection) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.table-overview-route:not(.has-selection) > .table-route-detail {
+  display: none;
+}
+
+.cashier-workspace__content--table-overview {
+  grid-template-rows: minmax(0, 1fr) !important;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cashier-workspace__content--table-overview > .table-grid {
+  align-content: start;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.table-card {
+  height: auto;
+  min-height: 132px;
+  overflow: visible;
+}
+
+@media (min-width: 768px) and (max-width: 899px) {
+  .cashier-workspace__content--table-overview > .table-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .cashier-workspace__content--table-overview > .table-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  .cashier-workspace__content--table-overview > .table-grid {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+  .table-card { min-height: 132px; }
+}
+
+/* Keep legacy shell overrides from changing the shared dine-in control metrics. */
+.table-bill-detail .dinein-action-button {
+  height: var(--dinein-action-height);
+  min-height: var(--dinein-action-height);
+  padding: var(--dinein-action-padding);
+  border-radius: var(--dinein-action-radius);
+  font-size: var(--dinein-action-font-size);
+  gap: var(--dinein-action-gap);
+}
+.table-route-detail .table-bill-detail .dinein-action-dock > .dinein-action-button {
+  height: var(--dinein-action-height);
+  min-height: var(--dinein-action-height);
+  padding: var(--dinein-action-padding);
+  border-radius: var(--dinein-action-radius);
+  font-size: var(--dinein-action-font-size);
+  gap: var(--dinein-action-gap);
+}
+.table-route-detail .table-bill-detail .dinein-action-dock {
+  gap: var(--dinein-action-gap);
+}
+
+/* Pickup workflow: let the queue and selected order start immediately below
+   the global shell, with compact controls that preserve touch targets. */
+.pickup-page .fulfillment-workspace {
+  padding-top: 8px;
+}
+
+.pickup-page .fulfillment-queue {
+  gap: 6px;
+  padding: 8px;
+}
+
+.pickup-queue-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pickup-queue-toolbar .workflow-filter-chips {
+  min-width: 0;
+  gap: 5px;
+}
+
+.pickup-queue-toolbar .workflow-filter-chips button {
+  min-height: 44px;
+  padding-inline: 10px;
+  font-size: 11px;
+}
+
+.workflow-refresh-button {
+  display: inline-flex;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dce5df;
+  border-radius: 9px;
+  padding: 0;
+  color: #52665a;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.workflow-refresh-button:hover:not(:disabled),
+.workflow-refresh-button:focus-visible { border-color: #9ab8a4; color: #285d3e; background: #f4faf6; }
+.workflow-refresh-button:disabled { cursor: wait; opacity: .62; }
+.workflow-refresh-button svg { flex: 0 0 auto; }
+
+.pickup-page .fulfillment-order-card {
+  gap: 3px;
+  border-radius: 8px;
+  padding: 7px 8px;
+  box-shadow: none;
+}
+
+.pickup-page .fulfillment-order-card__heading > strong {
+  font-size: 16px;
+}
+
+.pickup-page .fulfillment-order-card__identity,
+.pickup-page .fulfillment-order-card__timing {
+  gap: 5px;
+  font-size: 10px;
+}
+
+.pickup-page .fulfillment-order-card__summary {
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.pickup-page .fulfillment-main__topbar {
+  padding: 6px 8px;
+}
+
+.pickup-page .fulfillment-pane-tabs {
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px;
+  background: transparent;
+}
+
+.pickup-page .fulfillment-pane-tabs button {
+  min-height: 40px;
+  border: 1px solid #e1e8e3;
+  border-radius: 7px;
+  background: #f7faf8;
+}
+
+.pickup-page .fulfillment-pane-tabs button.is-active {
+  border-color: #b8d2c0;
+  box-shadow: none;
+}
+
+.pickup-page .fulfillment-main__body {
+  padding: 8px 10px var(--cashier-fulfillment-content-bottom-gap);
+}
+
+.pickup-page .pickup-order-detail {
+  gap: 8px;
+  max-width: none;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-detail__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-detail__header h2 strong {
+  margin-left: 5px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  font-size: 28px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-facts {
+  gap: 5px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-facts > div {
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-facts dt,
+.pickup-page .pickup-order-detail .fulfillment-facts dd {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-facts dt {
+  overflow: visible;
+  color: #6b786f;
+  font-size: 10px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-facts dd {
+  overflow: visible;
+  color: #263a2d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-progress {
+  border-radius: 10px;
+  padding: 9px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-progress > header {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-progress > header h3 {
+  margin: 0;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-progress > header .status-badge {
+  flex: 0 0 auto;
+}
+
+.pickup-page .pickup-order-detail .order-items-section__heading {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.pickup-page .pickup-order-detail .order-items-section__heading > span {
+  flex: 0 0 auto;
+  color: #6b786f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pickup-page .pickup-order-detail .workflow-item-list b,
+.pickup-page .pickup-order-detail .bill-summary dd {
+  color: var(--cashier-money-strong);
+}
+
+.pickup-page .pickup-order-detail .bill-summary__total dd {
+  color: var(--cashier-money-strong);
+}
+
+.pickup-page .pickup-settlement-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--cashier-border);
+  border-radius: 9px;
+  background: var(--cashier-surface-soft);
+}
+
+.pickup-page .pickup-settlement-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pickup-page .pickup-settlement-summary dt,
+.pickup-page .pickup-settlement-summary dd {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.pickup-page .pickup-settlement-summary dt {
+  overflow: hidden;
+  color: var(--cashier-text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.pickup-page .pickup-settlement-summary dd {
+  flex: 0 0 auto;
+  overflow: visible;
+  color: var(--cashier-money-strong);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.pickup-page .pickup-settlement-summary__rounding {
+  color: var(--cashier-action-danger) !important;
+}
+
+.pickup-page .pickup-settlement-summary__payable {
+  margin-top: 3px;
+  padding-top: 5px;
+  border-top: 1px solid var(--cashier-border);
+}
+
+.pickup-page .pickup-settlement-summary__payable dt {
+  color: var(--cashier-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pickup-page .pickup-settlement-summary__payable dd {
+  font-size: clamp(14px, 1.5vw, 20px);
+  font-weight: 850;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-customer {
+  padding: 9px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-customer > header {
+  margin-bottom: 7px;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-customer p {
+  margin: 4px 0;
+}
+
+.pickup-page .pickup-order-detail .fulfillment-customer__remark span:last-child {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+.delivery-page .delivery-order-detail .workflow-item-list b,
+.delivery-page .delivery-order-detail .pickup-settlement-summary dd {
+  color: var(--cashier-money-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--cashier-border);
+  border-radius: 9px;
+  background: var(--cashier-surface-soft);
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary dt,
+.delivery-page .delivery-order-detail .pickup-settlement-summary dd {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary dt {
+  overflow: hidden;
+  color: var(--cashier-text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary dd {
+  flex: 0 0 auto;
+  overflow: visible;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary__rounding {
+  color: var(--cashier-action-danger) !important;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary__payable {
+  margin-top: 3px;
+  padding-top: 5px;
+  border-top: 1px solid var(--cashier-border);
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary__payable dt {
+  color: var(--cashier-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.delivery-page .delivery-order-detail .pickup-settlement-summary__payable dd {
+  font-size: clamp(14px, 1.5vw, 20px);
+  font-weight: 850;
+}
+
+.delivery-page .fulfillment-action-dock {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.delivery-page .fulfillment-action-dock > button {
+  flex: 0 1 clamp(86px, 11vw, 148px);
+  box-sizing: border-box;
+  height: 50px;
+  min-height: 48px;
+  min-width: 0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.delivery-page .fulfillment-action-dock > button svg { width: 18px; height: 18px; }
+.delivery-page .fulfillment-action-dock .detail-print-action { border-color: #9aa8a0; color: #263a30; background: #f7faf8; }
+.delivery-page .fulfillment-action-dock .detail-print-action:disabled { border-color: #aab6bf; color: #526275; background: #eef2f5; opacity: 1; }
+.delivery-page .fulfillment-action-dock .secondary-action--danger { border-color: #d26a78; color: var(--cashier-action-danger); background: var(--cashier-action-danger-soft); }
+.delivery-page .fulfillment-action-dock .primary-action { color: #fff; background: var(--cashier-action-primary); }
+.delivery-page .fulfillment-action-dock__rounding { border-color: #c98d37; color: #805615; background: #fff8eb; }
+.delivery-page .fulfillment-action-dock__rounding.is-applied { border-color: #b77920; color: #71450e; background: #ffefca; }
+
+.pickup-page .fulfillment-action-dock {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.pickup-page .fulfillment-action-dock > button {
+  flex: 0 1 clamp(92px, 12vw, 148px);
+  box-sizing: border-box;
+  height: 50px;
+  min-height: 48px;
+  min-width: 0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.pickup-page .fulfillment-action-dock > button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.pickup-page .fulfillment-action-dock .detail-print-action {
+  border-color: #9aa8a0;
+  color: #263a30;
+  background: #f7faf8;
+}
+
+.pickup-page .fulfillment-action-dock .detail-print-action:hover:not(:disabled) {
+  border-color: #6f8276;
+  background: #edf3ef;
+}
+
+.pickup-page .fulfillment-action-dock .detail-print-action:disabled {
+  border-color: #aab6bf;
+  color: #526275;
+  background: #eef2f5;
+  opacity: 1;
+}
+
+.pickup-page .fulfillment-action-dock .secondary-action--danger {
+  border-color: #d26a78;
+  color: var(--cashier-action-danger);
+  background: var(--cashier-action-danger-soft);
+}
+
+.pickup-page .fulfillment-action-dock .primary-action {
+  color: #fff;
+  background: var(--cashier-action-primary);
+}
+
+.pickup-page .fulfillment-action-dock .primary-action:hover:not(:disabled) {
+  background: var(--cashier-action-primary-hover);
+}
+
+.pickup-page .fulfillment-action-dock__rounding {
+  border-color: #c98d37;
+  color: #805615;
+  background: #fff8eb;
+}
+
+.pickup-page .fulfillment-action-dock__rounding.is-applied {
+  border-color: #b77920;
+  color: #71450e;
+  background: #ffefca;
+  box-shadow: inset 0 0 0 1px rgb(183 121 32 / 14%);
+}
+
+.pickup-page .fulfillment-main__body.is-chat {
+  padding: 6px;
+}
+
+@media (max-width: 899px) {
+  .pickup-page .fulfillment-workspace {
+    padding-top: 5px;
+  }
+
+  .pickup-page .fulfillment-main__body {
+    padding: 8px 8px var(--cashier-fulfillment-content-bottom-gap);
+  }
+
+  .pickup-page .fulfillment-main__body.is-chat {
+    padding: 5px;
+  }
+}
+
+@media (max-width: 520px) {
+  .pickup-page .fulfillment-queue {
+    padding: 6px;
+  }
+
+  .pickup-page .fulfillment-main__topbar {
+    padding: 5px 7px;
+  }
+
+  .pickup-page .fulfillment-main__body {
+    padding: 7px 7px var(--cashier-fulfillment-content-bottom-gap);
+  }
+
+  .pickup-page .fulfillment-action-dock {
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 6px 7px max(6px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .pickup-page .fulfillment-action-dock > button {
+    flex-basis: clamp(72px, 23vw, 116px);
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 11px;
+  }
+
+  .pickup-page .pickup-order-detail .fulfillment-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-page .fulfillment-action-dock {
+    gap: 4px;
+    padding: 6px 7px max(6px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .delivery-page .fulfillment-action-dock > button {
+    flex-basis: clamp(72px, 23vw, 116px);
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 11px;
+  }
+
+  .delivery-page .delivery-order-detail .fulfillment-facts { grid-template-columns: 1fr; }
+
+  .pickup-page .fulfillment-main__body.is-chat {
+    padding: 3px;
+  }
 }

@@ -6,11 +6,11 @@ import type {
 import { requestApi } from './http';
 
 export function getCashierPrintingFeatureState() {
-  return requestApi<CashierPrintingFeatureState>('/merchant/printing/feature-state');
+  return requestApi<CashierPrintingFeatureState>('/merchant/printing/feature-state', { trackNetworkActivity: false });
 }
 
 export function listCashierPrintingPrinters() {
-  return requestApi<CashierPrintingPrinter[]>('/merchant/printing/printers');
+  return requestApi<CashierPrintingPrinter[]>('/merchant/printing/printers', { trackNetworkActivity: false });
 }
 
 export function listCashierPrintJobs(filters: {

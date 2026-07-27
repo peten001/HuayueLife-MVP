@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useI18n } from '@/i18n';
 
 const props = defineProps<{
@@ -12,17 +13,29 @@ const emit = defineEmits<{
 
 const draft = defineModel<string>({ default: '' });
 const { t } = useI18n();
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 function submit() {
   const content = draft.value.trim();
   if (!content || props.disabled || props.sending) return;
   emit('send', content);
 }
+
+function focus() {
+  inputRef.value?.focus({ preventScroll: true });
+}
+
+function blur() {
+  inputRef.value?.blur();
+}
+
+defineExpose({ focus, blur });
 </script>
 
 <template>
   <form class="chat-composer" @submit.prevent="submit">
     <textarea
+      ref="inputRef"
       v-model="draft"
       class="chat-composer__input"
       rows="3"

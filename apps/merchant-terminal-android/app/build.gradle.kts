@@ -14,8 +14,8 @@ fun configValue(
     .orElse(providers.environmentVariable(environmentName))
     .orElse(fallback)
 
-val terminalVersionCode = providers.provider { 11 }
-val terminalVersionName = providers.provider { "1.0.0-rc4" }
+val terminalVersionCode = providers.provider { 12 }
+val terminalVersionName = providers.provider { "1.0.0-rc5" }
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""

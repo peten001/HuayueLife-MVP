@@ -8,6 +8,8 @@ import type { MerchantOrder } from '@/types';
 import DeliveryContactPanel from '@/features/delivery/DeliveryContactPanel.vue';
 import DeliveryOrderCard from '@/features/delivery/DeliveryOrderCard.vue';
 import PickupOrderCard from '@/features/pickup/PickupOrderCard.vue';
+import PickupOrderDetail from '@/features/pickup/PickupOrderDetail.vue';
+import OrderChatWorkspace from '@/features/chat/OrderChatWorkspace.vue';
 import OrderItemsSection from './OrderItemsSection.vue';
 import FulfillmentActionDock from './FulfillmentActionDock.vue';
 import FulfillmentProgressRail from './FulfillmentProgressRail.vue';
@@ -110,6 +112,42 @@ describe('cashier fulfilment V2 components', () => {
     expect(pickup.get('li.is-current').text()).toContain('制作中');
   });
 
+  it('keeps the pickup status beside the fulfillment progress title', () => {
+    const pickup = mount(PickupOrderDetail, { props: { order } });
+
+    expect(pickup.find('.fulfillment-progress .status-badge').exists()).toBe(true);
+    expect(pickup.find('.fulfillment-detail__header .status-badge').exists()).toBe(false);
+    expect(pickup.findAll('.fulfillment-facts > div')[1]?.text()).toContain('等待时长');
+    expect(pickup.find('.order-items-section__heading').text()).toContain('菜品明细');
+    expect(pickup.find('.order-items-section__heading').text()).toContain('3 份');
+  });
+
+  it('uses the pickup code as the only primary detail heading', () => {
+    const wrapper = mount(PickupOrderDetail, { props: { order } });
+
+    expect(wrapper.text()).toContain('取餐码');
+    expect(wrapper.text()).toContain('A018');
+    expect(wrapper.text()).not.toContain('#YQ-1001');
+  });
+
+  it('keeps pickup chat compact without a duplicate detail return action', async () => {
+    const wrapper = mount(OrderChatWorkspace, {
+      props: { order, active: false, compactContext: true },
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+        },
+      },
+    });
+
+    expect(wrapper.find('.order-chat-workspace--compact').exists()).toBe(true);
+    expect(wrapper.text()).toContain('A018');
+    expect(wrapper.text()).not.toContain('查看订单');
+    expect(wrapper.text()).not.toContain('#YQ-1001');
+  });
+
   it('offers preparation completion directly for a recoverable ACCEPTED snapshot', async () => {
     const wrapper = mount(FulfillmentActionDock, {
       props: { order },
@@ -122,7 +160,64 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.emitted('action')).toEqual([['finish-preparing']]);
   });
 
-  it('copies both the full address and phone and reports localized success', async () => {
+  it('renders pickup rounding as a fourth action and switches to cancel', async () => {
+    const wrapper = mount(FulfillmentActionDock, {
+      props: {
+        order: { ...order, roundingApplied: true, roundingAmountVnd: '3000', payableAmountVnd: '137000' },
+      },
+      global: { stubs: { PrintJobActions: true } },
+    });
+
+    expect(wrapper.findAll('footer > button')).toHaveLength(2);
+    expect(wrapper.get('[data-testid="pickup-rounding"]').text()).toContain('取消');
+    await wrapper.get('[data-testid="pickup-rounding"]').trigger('click');
+    expect(wrapper.emitted('rounding')).toHaveLength(1);
+  });
+
+  it('orders pending pickup actions as reject, print, accept, then rounding', () => {
+    const wrapper = mount(FulfillmentActionDock, {
+      props: { order: { ...order, status: 'PENDING_ACCEPTANCE' } },
+      slots: {
+        secondary: '<button class="reject-stub">拒单</button>',
+      },
+      global: {
+        stubs: { PrintJobActions: { template: '<button class="print-stub">打印</button>' } },
+      },
+    });
+
+    expect(wrapper.findAll('footer > button').map((button) => button.text())).toEqual([
+      '拒单',
+      '打印',
+      '接单',
+      '抹零',
+    ]);
+  });
+
+  it('keeps delivery pending actions in the same reject, print, accept, rounding order', () => {
+    const wrapper = mount(FulfillmentActionDock, {
+      props: { order: { ...order, orderType: 'DELIVERY', status: 'PENDING_ACCEPTANCE' } },
+      slots: { secondary: '<button class="reject-stub">拒单</button>' },
+      global: { stubs: { PrintJobActions: { template: '<button class="print-stub">打印</button>' } } },
+    });
+
+    expect(wrapper.findAll('footer > button').map((button) => button.text())).toEqual(['拒单', '打印', '接单', '抹零']);
+  });
+
+  it('keeps completed pickup rounding disabled while leaving print available', () => {
+    const wrapper = mount(FulfillmentActionDock, {
+      props: {
+        order: { ...order, status: 'COMPLETED' },
+        roundingDisabled: true,
+        roundingDisabledReason: '当前订单状态不允许抹零。',
+      },
+      global: { stubs: { PrintJobActions: true } },
+    });
+
+    expect(wrapper.get('[data-testid="pickup-rounding"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="pickup-rounding"]').attributes('title')).toContain('当前订单状态');
+  });
+
+  it('copies the address and exposes a safe dial action instead of copying the phone', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -134,14 +229,13 @@ describe('cashier fulfilment V2 components', () => {
     });
 
     await wrapper.get('[data-testid="copy-delivery-address"]').trigger('click');
-    await wrapper.get('[data-testid="copy-delivery-phone"]').trigger('click');
     await flushPromises();
 
     expect(writeText).toHaveBeenNthCalledWith(1, '12 Test Street, District 1');
-    expect(writeText).toHaveBeenNthCalledWith(2, '0912345678');
-    expect(useUiStore().toasts.map((toast) => toast.message)).toEqual([
-      '地址已复制。',
-      '电话已复制。',
-    ]);
+    expect(wrapper.get('[data-testid="call-delivery-phone"]').text()).toContain('拨打电话');
+    expect(wrapper.find('.delivery-contact-panel__phone').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'SPAN', 'A']);
+    expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('aria-disabled')).toBe('true');
+    expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('title')).toContain('不支持拨号');
+    expect(useUiStore().toasts.map((toast) => toast.message)).toEqual(['地址已复制。']);
   });
 });

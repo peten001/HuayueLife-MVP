@@ -9,6 +9,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     creator?: Record<string, unknown>;
     cancellation?: Record<string, unknown>;
     sessionCreateResult?: { id: bigint; created: boolean };
+    printJobs?: Record<string, unknown>;
   }) {
     if (!tx.tableSession) {
       tx.tableSession = {
@@ -44,7 +45,10 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     };
     const service = new MerchantOrdersService(
       prisma as never,
-      {} as never,
+      (overrides?.printJobs ?? {
+        enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
+        processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
+      }) as never,
       tableSessions as never,
       creator as never,
       cancellation as never,
@@ -56,7 +60,11 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     const tx = {
       order: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 41n, tableSessionId: 51n }),
+        create: jest.fn().mockResolvedValue({
+          id: 41n,
+          tableSessionId: 51n,
+          statusLogs: [{ id: 700n }],
+        }),
       },
       $queryRaw: jest
         .fn()
@@ -94,6 +102,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         data: expect.objectContaining({
           userId: null,
           createdByStaffId: 3n,
+          status: 'ACCEPTED',
+          acceptedAt: expect.any(Date),
           merchantId: 7n,
           tableId: 11n,
           tableSessionId: 51n,
@@ -107,6 +117,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
               expect.objectContaining({
                 action: 'MERCHANT_ADD_ITEMS',
                 requestKey: 'staff_add_0001',
+                fromStatus: null,
+                toStatus: 'ACCEPTED',
               }),
             ]),
           },
@@ -201,7 +213,11 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     const tx = {
       order: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 41n, tableSessionId: 51n }),
+        create: jest.fn().mockResolvedValue({
+          id: 41n,
+          tableSessionId: 51n,
+          statusLogs: [{ id: 701n }],
+        }),
       },
       $queryRaw: jest.fn()
         .mockResolvedValueOnce([
