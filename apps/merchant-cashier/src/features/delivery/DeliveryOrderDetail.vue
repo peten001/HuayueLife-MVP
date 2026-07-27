@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
-import { formatVietnamDateTime, packingFeeVnd } from '@/domain';
+import { formatVietnamDateTime, formatVnd, packingFeeVnd } from '@/domain';
 import type { MerchantOrder } from '@/types';
-import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
-import BillSummary from '@/components/bills/BillSummary.vue';
 import OrderItemsSection from '@/features/fulfillment/OrderItemsSection.vue';
 import WaitDuration from '@/features/fulfillment/WaitDuration.vue';
 import FulfillmentProgressRail from '@/features/fulfillment/FulfillmentProgressRail.vue';
@@ -13,21 +11,32 @@ import DeliveryContactPanel from './DeliveryContactPanel.vue';
 const props = defineProps<{ order: MerchantOrder }>();
 const { t, locale } = useI18n();
 const packingFee = computed(() => packingFeeVnd(props.order));
+const originalAmount = computed(() => props.order.originalAmountVnd || props.order.totalAmountVnd);
+const roundingAmount = computed(() => props.order.roundingAmountVnd || '0');
+const payableAmount = computed(() => props.order.payableAmountVnd || props.order.totalAmountVnd);
 </script>
 
 <template>
   <article class="fulfillment-detail delivery-order-detail">
     <header class="fulfillment-detail__header">
-      <div><span>{{ t('order.type.delivery') }}</span><h2>#{{ order.orderNo }}</h2></div>
-      <OrderStatusBadge :status="order.status" />
+      <div><h2>#{{ order.orderNo }}</h2></div>
     </header>
     <DeliveryContactPanel :order="order" />
     <dl class="fulfillment-facts">
       <div><dt>{{ t('fulfillment.waiting') }}</dt><dd><WaitDuration :created-at="order.createdAt" /></dd></div>
       <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
     </dl>
-    <FulfillmentProgressRail :order="order" />
+    <FulfillmentProgressRail :order="order" show-current-status />
     <OrderItemsSection :order="order" />
-    <BillSummary :item-amount="order.itemAmountVnd" :packing-fee="packingFee" :delivery-fee="order.deliveryFeeVnd" :total-amount="order.totalAmountVnd" show-packing-fee show-delivery-fee />
+    <dl class="pickup-settlement-summary delivery-settlement-summary">
+      <div><dt>{{ t('bill.itemsSubtotal') }}</dt><dd>{{ formatVnd(order.itemAmountVnd, locale) }}</dd></div>
+      <div><dt>{{ t('bill.packingFee') }}</dt><dd>{{ formatVnd(packingFee, locale) }}</dd></div>
+      <div><dt>{{ t('bill.deliveryFee') }}</dt><dd>{{ formatVnd(order.deliveryFeeVnd, locale) }}</dd></div>
+      <template v-if="order.roundingApplied">
+        <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(originalAmount, locale) }}</dd></div>
+        <div><dt>{{ t('table.roundingAmount') }}</dt><dd class="pickup-settlement-summary__rounding">−{{ formatVnd(roundingAmount, locale) }}</dd></div>
+      </template>
+      <div class="pickup-settlement-summary__payable"><dt>{{ order.roundingApplied ? t('table.receivedAmount') : t('bill.total') }}</dt><dd>{{ formatVnd(payableAmount, locale) }}</dd></div>
+    </dl>
   </article>
 </template>

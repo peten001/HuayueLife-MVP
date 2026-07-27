@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   loadMore: [];
+  surfaceInteraction: [];
 }>();
 
 const { locale, t } = useI18n();
@@ -59,6 +60,12 @@ function handleScroll() {
   if (!element) return;
   nearBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
   if (nearBottom.value) showNewMessages.value = false;
+}
+
+function handleSurfaceClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, a, input, textarea, select, [role="button"]')) return;
+  emit('surfaceInteraction');
 }
 
 async function scrollToBottom() {
@@ -112,10 +119,9 @@ defineExpose({ scrollToBottom });
 
 <template>
   <div class="chat-message-list-shell">
-    <div class="chat-message-list__toolbar">
-      <span>{{ t('cashier.chat.history') }}</span>
+    <div v-if="loading || refreshing" class="chat-message-list__toolbar" aria-live="polite">
       <span v-if="loading">{{ t('cashier.chat.loading') }}</span>
-      <span v-else-if="refreshing">{{ t('cashier.chat.refreshing') }}</span>
+      <span v-else>{{ t('cashier.chat.refreshing') }}</span>
     </div>
 
     <div
@@ -125,6 +131,7 @@ defineExpose({ scrollToBottom });
       aria-live="polite"
       :aria-label="t('cashier.chat.messageListLabel')"
       @scroll="handleScroll"
+      @click="handleSurfaceClick"
     >
       <button
         v-if="hasMore"

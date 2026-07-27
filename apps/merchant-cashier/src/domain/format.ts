@@ -55,3 +55,20 @@ export function todayInVietnam(value = new Date()) {
     day: '2-digit',
   }).format(value);
 }
+
+export function formatVietnamDateFilter(value: string, locale: Locale = 'vi') {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, , month, day] = match;
+  return locale === 'vi' ? `${day}/${month}` : `${month}/${day}`;
+}
+
+export function formatVietnamDateFilterAria(value: string, locale: Locale = 'vi') {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  if (locale === 'zh') return `${year}年${Number(month)}月${Number(day)}日`;
+  if (locale === 'vi') return `${day}/${month}/${year}`;
+  return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    .format(new Date(Number(year), Number(month) - 1, Number(day), 12));
+}

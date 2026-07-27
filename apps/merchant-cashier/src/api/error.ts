@@ -39,6 +39,10 @@ export function apiErrorTranslationKey(
   if (itemAdjustmentKey) return itemAdjustmentKey;
   if (error.code === 'NETWORK_ERROR') return 'error.network';
   if (error.code === 'REQUEST_ABORTED') return 'error.requestTimeout';
+  if (error.code === 'ORDER_ROUNDING_ORDER_TYPE_NOT_ALLOWED') return 'order.roundingTypeNotAllowed';
+  if (error.code === 'ORDER_ROUNDING_STATUS_NOT_ALLOWED') return 'order.roundingStatusNotAllowed';
+  if (error.code === 'ORDER_ROUNDING_ALREADY_SETTLED') return 'order.roundingAlreadySettled';
+  if (error.code === 'ORDER_ROUNDING_CONCURRENT_UPDATE') return 'order.roundingConcurrentUpdate';
   if (error.status === 401) return 'error.unauthorized';
   if (error.status === 403) return 'error.forbidden';
   if (error.status === 409) return 'error.conflict';

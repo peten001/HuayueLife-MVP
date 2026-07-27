@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCheck, ChefHat, Truck } from '@lucide/vue';
+import { CheckCheck, ChefHat, CircleDollarSign, LoaderCircle, Truck } from '@lucide/vue';
 import { computed } from 'vue';
 import {
   nextFulfillmentAction,
@@ -13,8 +13,14 @@ const props = defineProps<{
   order: MerchantOrder;
   loading?: boolean;
   disabled?: boolean;
+  roundingLoading?: boolean;
+  roundingDisabled?: boolean;
+  roundingDisabledReason?: string;
 }>();
-defineEmits<{ action: [action: FulfillmentWorkflowAction] }>();
+const emit = defineEmits<{
+  action: [action: FulfillmentWorkflowAction];
+  rounding: [];
+}>();
 const { t } = useI18n();
 const action = computed(() => nextFulfillmentAction(props.order));
 const labelKey = computed(() => {
@@ -34,9 +40,16 @@ const icon = computed(() => {
 </script>
 
 <template>
-  <footer class="fulfillment-action-dock">
-    <PrintJobActions compact :order-id="order.id" />
-    <slot name="secondary" />
+  <footer class="fulfillment-action-dock" :class="{ 'fulfillment-action-dock--pickup': ['PICKUP', 'DELIVERY'].includes(order.orderType) }">
+    <template v-if="['PICKUP', 'DELIVERY'].includes(order.orderType)">
+      <slot v-if="order.status === 'PENDING_ACCEPTANCE'" name="secondary" />
+      <PrintJobActions compact :order-id="order.id" />
+      <slot v-if="order.status !== 'PENDING_ACCEPTANCE'" name="secondary" />
+    </template>
+    <template v-else>
+      <PrintJobActions compact :order-id="order.id" />
+      <slot name="secondary" />
+    </template>
     <button
       v-if="action"
       type="button"
@@ -47,6 +60,20 @@ const icon = computed(() => {
       <component :is="icon" :size="20" aria-hidden="true" />
       {{ loading ? t('common.processing') : t(labelKey) }}
     </button>
-    <span v-else class="fulfillment-action-dock__done">{{ t('fulfillment.noPendingAction') }}</span>
+    <span v-else-if="!['PICKUP', 'DELIVERY'].includes(order.orderType)" class="fulfillment-action-dock__done">{{ t('fulfillment.noPendingAction') }}</span>
+    <button
+      v-if="['PICKUP', 'DELIVERY'].includes(order.orderType)"
+      type="button"
+      class="secondary-action fulfillment-action-dock__rounding"
+      data-testid="pickup-rounding"
+      :class="{ 'is-applied': order.roundingApplied }"
+      :disabled="roundingLoading || disabled || roundingDisabled"
+      :title="roundingDisabledReason"
+      @click="emit('rounding')"
+    >
+      <LoaderCircle v-if="roundingLoading" :size="18" class="spinning" aria-hidden="true" />
+      <CircleDollarSign v-else :size="18" aria-hidden="true" />
+      {{ roundingLoading ? t('common.processing') : order.roundingApplied ? t('table.cancelRoundingShort') : t('table.rounding') }}
+    </button>
   </footer>
 </template>

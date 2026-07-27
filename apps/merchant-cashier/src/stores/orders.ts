@@ -7,6 +7,7 @@ import {
   listMerchantOrders,
   messageFromApiError,
   runMerchantOrderAction,
+  setMerchantOrderRounding,
 } from '@/api';
 import { cashierConfig } from '@/config';
 import {
@@ -244,6 +245,37 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     }
   }
 
+  async function setRounding(id: string, enabled: boolean) {
+    const order = findCachedOrder(id) ?? selectedOrder.value;
+    if (!order || order.id !== id) throw new Error('Order not loaded');
+    if (!['PICKUP', 'DELIVERY'].includes(order.orderType)) throw new Error('Only pickup and delivery orders can be rounded');
+    const generation = dataGeneration;
+    invalidateLiveRequests();
+    detailRequestSequence += 1;
+    actionLoadingId.value = id;
+    error.value = '';
+    try {
+      const updated = await setMerchantOrderRounding(id, enabled);
+      if (generation === dataGeneration) {
+        selectedOrder.value = updated;
+        updateCachedOrder(updated);
+      }
+      return updated;
+    } catch (caught) {
+      if (generation === dataGeneration) {
+        error.value = messageFromApiError(caught);
+        try {
+          await selectOrder(id);
+        } catch {
+          // Preserve the rounding error; the refresh is best effort.
+        }
+      }
+      throw caught;
+    } finally {
+      if (generation === dataGeneration) actionLoadingId.value = '';
+    }
+  }
+
   async function refreshSelectedOrder() {
     const id = selectedOrder.value?.id;
     if (!id) return null;
@@ -411,6 +443,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     updateChatSummary,
     applyOrderSnapshot,
     runAction,
+    setRounding,
     startLivePolling,
     stopLivePolling,
     clear,

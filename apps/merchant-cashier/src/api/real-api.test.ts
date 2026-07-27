@@ -177,6 +177,26 @@ describe('real merchant API contracts', () => {
     });
   });
 
+  it('applies pickup rounding with only the enabled flag', async () => {
+    const { api } = await loadApi();
+    const rounded = {
+      ...order,
+      orderType: 'PICKUP',
+      originalAmountVnd: '513000',
+      roundingAmountVnd: '3000',
+      payableAmountVnd: '510000',
+      roundingApplied: true,
+    };
+    fetchMock.mockResolvedValueOnce(apiResponse(rounded));
+
+    await expect(api.setMerchantOrderRounding(order.id, true)).resolves.toEqual(rounded);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe('/api/v1/merchant/orders/order-1/rounding');
+    expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(requestInit(fetchMock.mock.calls[0]).body).toBe(JSON.stringify({ enabled: true }));
+    expect(requestInit(fetchMock.mock.calls[0]).body).not.toContain('payableAmountVnd');
+    expect(requestInit(fetchMock.mock.calls[0]).body).not.toContain('roundingAmountVnd');
+  });
+
   it('reports TableSession close success and failure', async () => {
     const { api } = await loadApi();
     fetchMock.mockResolvedValueOnce(apiResponse({ session }));
