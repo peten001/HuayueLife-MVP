@@ -1697,6 +1697,16 @@
   }
 }
 
+/* Standalone iOS has a more specific legacy rule; keep its action row fluid too. */
+@media (max-width: 899px) {
+  :root.cashier-standalone .cashier-top-status {
+    width: 100%;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 0;
+  }
+}
+
 /* Table overview is a collection surface, not an empty master-detail split.
    Keep one explicit content row so the grid receives the full remaining height. */
 .table-overview-route:not(.has-selection) {
