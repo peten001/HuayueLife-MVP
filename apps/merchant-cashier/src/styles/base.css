@@ -26,6 +26,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Keep the legacy viewport fallback for WebView 83, then prefer the
+   visual viewport on browsers that expose the newer units. */
+@supports (height: 100svh) {
+  html,
+  body,
+  #app {
+    min-height: 100svh;
+    height: 100svh;
+  }
+}
+
+@supports (height: 100dvh) {
+  html,
+  body,
+  #app {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+}
+
 button,
 input,
 select,

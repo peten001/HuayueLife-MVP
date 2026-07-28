@@ -414,8 +414,8 @@
   }
   .fulfillment-action-dock > button { min-width: 0; flex: 1; }
   .fulfillment-queue__list {
-    padding-bottom: calc(var(--cashier-mobile-navigation-inset) + var(--cashier-fulfillment-content-bottom-gap));
-    scroll-padding-bottom: calc(var(--cashier-mobile-navigation-inset) + var(--cashier-fulfillment-content-bottom-gap));
+    padding-bottom: var(--cashier-fulfillment-content-bottom-gap);
+    scroll-padding-bottom: var(--cashier-fulfillment-content-bottom-gap);
   }
   .fulfillment-facts { grid-template-columns: 1fr 1fr; }
   .fulfillment-facts > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
