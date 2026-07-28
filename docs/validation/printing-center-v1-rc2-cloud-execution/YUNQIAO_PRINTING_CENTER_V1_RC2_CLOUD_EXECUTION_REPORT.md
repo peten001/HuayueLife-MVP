@@ -134,14 +134,17 @@ Merchant Admin 将真实执行状态展示为：等待执行、提交中、已�
 - `d523e46867a76cf3487816f57d9d32a83849fb5d` — `feat(printing): execute cloud print jobs server-side`
 - `9d4ee7a87d0ad6e1f28dc459a8848b57ac74700c` — `test(printing): cover cloud execution contracts`
 - `1b630dabfd1875b83a9156a4c6db598124508ea2` — `feat(merchant-admin): show real cloud print states`
-- 本报告 Commit：将在报告精准暂存后补充。
+- `e2abceefe689c15317421278eaa636a07cccf534` — `docs(printing): add RC2 cloud execution validation`
+- Push 结果回填 Commit 即包含本文件的最终报告同步 Commit；为避免文件自引用，其精确 Hash 以远程分支 HEAD、交付目录报告和最终回复为准。
 
 ## 16. Push 结果
 
-- 当前 Gate：READY。
+- 结果：PASS。
 - 目标仓库：`git@github-peter001:peten001/HuayueLife-MVP.git`
 - 目标分支：`release/printing-center-v1-rc5-forward-rc2`
-- 当前状态：报告提交完成后执行非强制 Push，并在 Push 后回填本节。
+- 首次普通 Push：成功，远程已接收 `e2abceefe689c15317421278eaa636a07cccf534`。
+- 本 Push 结果回填随报告同步 Commit 使用普通 fast-forward Push 送达同一 RC2 分支；最终远程 HEAD 在 Push 后通过 `git ls-remote` 验证。
+- 未修改 origin，未 Force Push，未 Push main。
 
 ## 17. 真实凭据与设备 Gate
 
