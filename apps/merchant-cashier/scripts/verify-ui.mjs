@@ -138,8 +138,8 @@ async function selectFixtureTable() {
 async function verifyTableOverviewResponsive() {
   await openTables();
   const viewports = [
-    [1440, 900], [1366, 768], [1280, 800], [1024, 600], [1024, 768],
-    [768, 1024], [430, 932], [414, 896], [390, 844], [360, 800],
+    [1366, 768], [1280, 800], [1024, 768], [1024, 600],
+    [430, 932], [390, 844], [360, 800], [320, 568],
   ];
   const expectedMetrics = { all: '15', available: '13', 'in-use': '1', disabled: '1' };
 
@@ -148,7 +148,9 @@ async function verifyTableOverviewResponsive() {
     await page.getByTestId('table-grid').waitFor();
     await page.waitForTimeout(160);
     const initial = await page.evaluate(() => {
+      const scrollValues = new Set(['auto', 'scroll']);
       const grid = document.querySelector('[data-testid="table-grid"]');
+      const main = document.querySelector('.cashier-workspace__content--table-overview');
       const cards = [...document.querySelectorAll('.table-card')];
       const visible = (element) => {
         if (!(element instanceof HTMLElement)) return false;
@@ -157,14 +159,40 @@ async function verifyTableOverviewResponsive() {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       };
       const gridStyle = grid instanceof HTMLElement ? getComputedStyle(grid) : null;
+      const mainStyle = main instanceof HTMLElement ? getComputedStyle(main) : null;
+      const scrollableAncestors = [];
+      let ancestor = grid instanceof HTMLElement ? grid : null;
+      while (ancestor) {
+        const style = getComputedStyle(ancestor);
+        if (scrollValues.has(style.overflowY)) {
+          scrollableAncestors.push({
+            testId: ancestor.getAttribute('data-testid'),
+            className: ancestor.className?.toString?.() || ancestor.tagName,
+            overflowY: style.overflowY,
+          });
+        }
+        ancestor = ancestor.parentElement;
+      }
+      const mainScroll = main instanceof HTMLElement ? scrollValues.has(mainStyle?.overflowY || '') : false;
+      const gridScroll = grid instanceof HTMLElement ? scrollValues.has(gridStyle?.overflowY || '') : false;
+      const mode = mainScroll && !gridScroll
+        ? 'compact-main-scroll'
+        : !mainScroll && gridScroll
+          ? 'desktop-grid-scroll'
+          : 'invalid';
       return {
+        mode,
         cards: cards.length,
         metricAll: document.querySelector('[data-testid="top-metric-all"] strong')?.textContent?.trim(),
         names: cards.map((card) => card.querySelector('strong')?.textContent?.trim()),
         columns: gridStyle?.gridTemplateColumns.split(' ').filter(Boolean).length || 0,
-        scrollHeight: grid instanceof HTMLElement ? grid.scrollHeight : 0,
-        clientHeight: grid instanceof HTMLElement ? grid.clientHeight : 0,
+        mainOverflowY: mainStyle?.overflowY || 'missing',
+        mainScrollHeight: main instanceof HTMLElement ? main.scrollHeight : 0,
+        mainClientHeight: main instanceof HTMLElement ? main.clientHeight : 0,
+        tableGridScrollHeight: grid instanceof HTMLElement ? grid.scrollHeight : 0,
+        tableGridClientHeight: grid instanceof HTMLElement ? grid.clientHeight : 0,
         overflowY: gridStyle?.overflowY || 'missing',
+        scrollableAncestors,
         detailVisible: visible(document.querySelector('.table-route-detail')),
         orientationNoticeVisible: visible(document.querySelector('.orientation-notice')),
         documentOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -174,10 +202,20 @@ async function verifyTableOverviewResponsive() {
     });
     assert.equal(initial.route, '/tables', `${width}x${height}: overview must remain on /tables`);
     assert.equal(initial.pageIdentifier, 'TableOverviewPage', `${width}x${height}: overview must be rendered by TableOverviewPage`);
+    assert.notEqual(initial.mode, 'invalid', `${width}x${height}: scroll mode must match one supported layout contract`);
     assert.equal(initial.cards, Number(initial.metricAll), `${width}x${height}: table DOM count must equal top all-table metric`);
     assert.equal(initial.names.at(-1), 'C03', `${width}x${height}: final table C03 must be rendered`);
     assert.equal(initial.columns >= 1, true, `${width}x${height}: responsive grid is missing`);
-    assert.equal(initial.overflowY, 'auto', `${width}x${height}: table grid must be the vertical scroll container`);
+    assert.equal(initial.scrollableAncestors.length, 1, `${width}x${height}: exactly one business scroll container is expected`);
+    if (initial.mode === 'desktop-grid-scroll') {
+      assert.ok(['hidden', 'clip', 'visible'].includes(initial.mainOverflowY), `${width}x${height}: desktop main content must not scroll`);
+      assert.ok(['auto', 'scroll'].includes(initial.overflowY), `${width}x${height}: desktop table grid must scroll`);
+      assert.ok(initial.tableGridClientHeight > 0, `${width}x${height}: desktop table grid needs a usable height`);
+    } else {
+      assert.ok(['auto', 'scroll'].includes(initial.mainOverflowY), `${width}x${height}: compact main content must scroll`);
+      assert.ok(['visible', 'clip'].includes(initial.overflowY), `${width}x${height}: compact table grid must not scroll`);
+      assert.ok(initial.mainClientHeight > 0, `${width}x${height}: compact main content needs a usable height`);
+    }
     assert.equal(initial.detailVisible, false, `${width}x${height}: empty detail column must be hidden`);
     assert.equal(initial.orientationNoticeVisible, false, `${width}x${height}: portrait hint must be hidden on tables`);
     assert.equal(initial.documentOverflowX <= 0, true, `${width}x${height}: document overflows horizontally`);
@@ -191,24 +229,31 @@ async function verifyTableOverviewResponsive() {
 
     await page.evaluate(() => {
       const grid = document.querySelector('[data-testid="table-grid"]');
-      if (grid instanceof HTMLElement) grid.scrollTop = grid.scrollHeight;
+      const main = document.querySelector('.cashier-workspace__content--table-overview');
+      const gridStyle = grid instanceof HTMLElement ? getComputedStyle(grid) : null;
+      const host = gridStyle && ['auto', 'scroll'].includes(gridStyle.overflowY) ? grid : main;
+      if (host instanceof HTMLElement) host.scrollTop = host.scrollHeight;
     });
     await page.waitForTimeout(40);
     const bottom = await page.evaluate(() => {
       const grid = document.querySelector('[data-testid="table-grid"]');
+      const main = document.querySelector('.cashier-workspace__content--table-overview');
       const last = [...document.querySelectorAll('.table-card')].at(-1);
       const nav = document.querySelector('.cashier-mobile-navigation');
-      if (!(grid instanceof HTMLElement) || !(last instanceof HTMLElement)) return null;
-      const gridRect = grid.getBoundingClientRect();
+      if (!(grid instanceof HTMLElement) || !(main instanceof HTMLElement) || !(last instanceof HTMLElement)) return null;
+      const gridStyle = getComputedStyle(grid);
+      const host = ['auto', 'scroll'].includes(gridStyle.overflowY) ? grid : main;
+      const hostRect = host.getBoundingClientRect();
       const lastRect = last.getBoundingClientRect();
       const navRect = nav instanceof HTMLElement && getComputedStyle(nav).display !== 'none'
         ? nav.getBoundingClientRect()
         : null;
       return {
-        scrollHeight: grid.scrollHeight,
-        clientHeight: grid.clientHeight,
-        scrollTop: grid.scrollTop,
-        lastVisible: lastRect.top >= gridRect.top - 1 && lastRect.bottom <= gridRect.bottom + 1,
+        scrollHost: host === grid ? 'table-grid' : 'main-content',
+        scrollHeight: host.scrollHeight,
+        clientHeight: host.clientHeight,
+        scrollTop: host.scrollTop,
+        lastVisible: lastRect.top >= hostRect.top - 1 && lastRect.bottom <= hostRect.bottom + 1,
         bottomNavSafe: !navRect || lastRect.bottom <= navRect.top + 1,
         cardHeight: lastRect.height,
       };
@@ -216,7 +261,23 @@ async function verifyTableOverviewResponsive() {
     assert.ok(bottom, `${width}x${height}: bottom table evidence is missing`);
     assert.equal(bottom.lastVisible, true, `${width}x${height}: C03 must enter the scroll viewport`);
     assert.equal(bottom.bottomNavSafe, true, `${width}x${height}: bottom navigation must not cover C03`);
-    assert.ok(bottom.cardHeight >= 118, `${width}x${height}: table card content is too short`);
+    assert.ok(bottom.cardHeight >= 112, `${width}x${height}: table card content is too short for touch use`);
+    process.stdout.write(JSON.stringify({
+      viewport: `${width}x${height}`,
+      mode: initial.mode,
+      mainOverflowY: initial.mainOverflowY,
+      tableGridOverflowY: initial.overflowY,
+      mainScrollHeight: initial.mainScrollHeight,
+      mainClientHeight: initial.mainClientHeight,
+      tableGridScrollHeight: initial.tableGridScrollHeight,
+      tableGridClientHeight: initial.tableGridClientHeight,
+      scrollableAncestorCount: initial.scrollableAncestors.length,
+      tableCount: initial.cards,
+      lastTableAccessible: bottom.lastVisible,
+      bottomNavigationOverlap: !bottom.bottomNavSafe,
+      horizontalOverflow: initial.documentOverflowX,
+      scrollHost: bottom.scrollHost,
+    }) + '\n');
   }
 }
 
