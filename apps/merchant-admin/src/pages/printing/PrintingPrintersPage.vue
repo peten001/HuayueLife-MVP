@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import { createPrintingPrinter, createPrintingTestJob, disablePrintingPrinter, getCloudPrintingExecutionState, getMerchantPrintingSettings, getPrintingPrinters, getPrintingRules, updatePrintingPrinter } from '@/api/printing';
+import { printingReleasePolicy } from '@/config/printing-release-policy';
 import { usePrintingI18n } from '@/i18n/printing';
 import type { PrintingPaperWidth, PrintingPrinter, PrintingPrinterPayload, PrintingRule } from '@/types/printing';
 import { printerConnectionState, PRINTING_STATE_CHANGED_EVENT, type PrinterConnectionState } from '@/utils/printing-status';
@@ -20,6 +21,7 @@ const modalOpen = ref(false);
 const step = ref(1);
 const pendingDisable = ref<PrintingPrinter | null>(null);
 const TEST_JOB_REQUEST_KEYS_STORAGE = 'yunqiao.printing.testJobRequestKeys.v1';
+const lanExecutionEnabled = printingReleasePolicy.lanExecutionEnabled;
 
 const form = reactive({
   id: '', name: '', channelType: 'LOCAL_USB_ESCPOS' as PrintingPrinter['channelType'],
@@ -59,14 +61,20 @@ function connectionConfig() {
   return form.channelType === 'CLOUD_FEIE' ? { printerSn: form.deviceId.trim() } : { machineCode: form.deviceId.trim() };
 }
 function payload(): PrintingPrinterPayload {
-  return { name: form.name.trim(), channelType: form.channelType, paperWidth: form.paperWidth, enabled: true, connectionConfig: connectionConfig() };
+  return { name: form.name.trim(), channelType: form.channelType, paperWidth: form.paperWidth, enabled: form.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled, connectionConfig: connectionConfig() };
 }
 // Keep the public edit surface narrow; capabilityStatus, configurationStatus,
 // and connectionStatus remain API/readiness concepts, not merchant-facing columns.
 function buildUpdatePayload(): Partial<PrintingPrinterPayload> {
   return { name: form.name.trim(), paperWidth: form.paperWidth };
 }
-function updatePayload(): Partial<PrintingPrinterPayload> { return { ...buildUpdatePayload(), connectionConfig: connectionConfig() }; }
+function updatePayload(): Partial<PrintingPrinterPayload> {
+  return {
+    ...buildUpdatePayload(),
+    connectionConfig: connectionConfig(),
+    ...(form.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled ? { enabled: false } : {}),
+  };
+}
 function canNext() {
   if (step.value === 1) return Boolean(form.channelType);
   if (step.value === 2) return Boolean(form.name.trim()) && (form.channelType === 'LOCAL_USB_ESCPOS' || (form.channelType === 'LOCAL_LAN_ESCPOS' ? form.host.trim() : form.deviceId.trim()));
@@ -88,6 +96,10 @@ function testPrintAvailable(row: PrintingPrinter) { if (!row.enabled || !setting
 function testPrintUnavailableHint(row: PrintingPrinter) { if (row.channelType === 'LOCAL_LAN_ESCPOS') return p('lanExecutionNotAvailable'); if (!settings.value?.featureFlags.executionEnabled) return p('printingExecutionUnavailable'); if ((row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !cloudProviderConfigured(row)) return p('cloudProviderContactAdmin'); if ((row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !cloudExecution.value?.enabled) return p('cloudWorkerUnavailable'); return ''; }
 async function testPrint(row: PrintingPrinter) { if (!testPrintAvailable(row)) return; const requestKey = getOrCreateTestJobRequestKey(row.id); try { actionId.value = row.id; const job = await createPrintingTestJob(row.id, requestKey); clearTestJobRequestKey(row.id); showSuccess(`${p('testPrintCreated')} · #${job.id}`); } catch (error) { showError(error); } finally { actionId.value = ''; } }
 function requestToggle(row: PrintingPrinter) {
+  if (!row.enabled && row.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled) {
+    showError(new Error(p('lanCompatibilityTestingHint')));
+    return;
+  }
   if (row.enabled) {
     pendingDisable.value = row;
     return;
@@ -102,6 +114,10 @@ async function confirmDisable() {
 }
 
 async function setEnabled(row: PrintingPrinter, enabled: boolean) {
+  if (enabled && row.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled) {
+    showError(new Error(p('lanCompatibilityTestingHint')));
+    return;
+  }
   try {
     actionId.value = row.id;
     if (enabled) await updatePrintingPrinter(row.id, { enabled: true });
@@ -129,7 +145,8 @@ onMounted(load);
       <article v-for="row in rows" :key="row.id" class="printing-printer-row">
         <div class="printing-printer-row__identity"><div class="printing-printer-row__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 9h12v9H6zM8 9V5h8v4m-5 4h4m-5 3h6" /></svg></div><div><strong>{{ row.name }}</strong><span>{{ channelLabel(row.channelType) }} · {{ printerUsageLabel(row) }}</span></div></div>
         <span :class="['printing-badge', statusClass(printerConnectionState(row))]">{{ statusLabel(printerConnectionState(row)) }}</span>
-        <div class="printing-actions"><button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id || !testPrintAvailable(row)" :title="testPrintAvailable(row) ? p('testPrint') : testPrintUnavailableHint(row)" @click="testPrint(row)">{{ p('testPrint') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id" @click="requestToggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button></div>
+        <div class="printing-actions"><button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id || !testPrintAvailable(row)" :title="testPrintAvailable(row) ? p('testPrint') : testPrintUnavailableHint(row)" @click="testPrint(row)">{{ p('testPrint') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id || (!row.enabled && row.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled)" :title="!row.enabled && row.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled ? p('lanCompatibilityTestingHint') : ''" @click="requestToggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button></div>
+        <p v-if="row.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled" class="printing-hint printing-printer-row__notice"><strong>{{ p('lanCompatibilityTesting') }}</strong> · {{ p('lanCompatibilityTestingHint') }}</p>
         <p v-if="(row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !testPrintAvailable(row)" class="printing-hint printing-printer-row__notice">{{ testPrintUnavailableHint(row) }}</p>
       </article>
     </div>
@@ -142,19 +159,20 @@ onMounted(load);
       <div class="printing-modal__body">
         <template v-if="step === 1">
           <div class="printing-step-copy"><span class="printing-step-kicker">{{ p('stepOne') }}</span><h3>{{ p('choosePrintingMethod') }}</h3><p>{{ p('choosePrintingMethodHint') }}</p></div>
-          <div class="printing-method-grid printing-field--full"><button v-for="method in (['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS', 'CLOUD_FEIE'] as const)" :key="method" :class="['printing-method-card', { 'is-selected': form.channelType === method || (method === 'CLOUD_FEIE' && isCloud) }]" type="button" @click="selectMethod(method)"><span class="printing-method-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path v-if="method === 'LOCAL_USB_ESCPOS'" d="M12 4v12m0-8 3-3m-3 3L9 5m3 11v3m-3-3h6" /><path v-else-if="method === 'LOCAL_LAN_ESCPOS'" d="M5 5h14v14H5zM9 9h.01M15 9h.01M9 15h.01M15 15h.01M9 9l6 6M15 9l-6 6" /><path v-else d="M7 17h10a3 3 0 0 0 .2-6A5.5 5.5 0 0 0 6.5 9.5 3.5 3.5 0 0 0 7 17Z" /></svg></span><strong>{{ methodTitle(method) }}</strong><small>{{ methodHint(method) }}</small><i v-if="form.channelType === method || (method === 'CLOUD_FEIE' && isCloud)">✓</i></button></div>
+          <div class="printing-method-grid printing-field--full"><button v-for="method in (['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS', 'CLOUD_FEIE'] as const)" :key="method" :class="['printing-method-card', { 'is-selected': form.channelType === method || (method === 'CLOUD_FEIE' && isCloud) }]" type="button" @click="selectMethod(method)"><span class="printing-method-card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path v-if="method === 'LOCAL_USB_ESCPOS'" d="M12 4v12m0-8 3-3m-3 3L9 5m3 11v3m-3-3h6" /><path v-else-if="method === 'LOCAL_LAN_ESCPOS'" d="M5 5h14v14H5zM9 9h.01M15 9h.01M9 15h.01M15 15h.01M9 9l6 6M15 9l-6 6" /><path v-else d="M7 17h10a3 3 0 0 0 .2-6A5.5 5.5 0 0 0 6.5 9.5 3.5 3.5 0 0 0 7 17Z" /></svg></span><strong>{{ methodTitle(method) }}</strong><small>{{ methodHint(method) }}</small><small v-if="method === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled">{{ p('lanCompatibilityTesting') }}</small><i v-if="form.channelType === method || (method === 'CLOUD_FEIE' && isCloud)">✓</i></button></div>
         </template>
         <template v-else-if="step === 2">
           <div class="printing-step-copy printing-field--full"><span class="printing-step-kicker">{{ p('stepTwo') }}</span><h3>{{ p('deviceInformation') }}</h3><p>{{ p('printerConnectionInfoHint') }}</p></div>
           <label class="printing-field printing-field--full">{{ p('printerName') }}<input v-model="form.name" required maxlength="80" :placeholder="p('printerNamePlaceholder')" /></label>
           <div v-if="form.channelType === 'LOCAL_USB_ESCPOS'" class="printing-inline-note printing-field--full"><strong>{{ p('connectedDevice') }}</strong><span>{{ p('usbAutoDetectHint') }}</span></div>
           <label v-if="form.channelType === 'LOCAL_LAN_ESCPOS'" class="printing-field printing-field--full">{{ p('lanIpAddress') }}<input v-model="form.host" required placeholder="192.168.1.100" inputmode="decimal" /></label>
+          <div v-if="form.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled" class="printing-inline-note printing-field--full"><strong>{{ p('lanCompatibilityTesting') }}</strong><span>{{ p('lanCompatibilityTestingHint') }} {{ p('lanCompatibilitySaveHint') }}</span></div>
           <template v-if="isCloud"><label class="printing-field">{{ p('cloudProvider') }}<select v-model="form.provider" @change="form.channelType = form.provider"><option value="CLOUD_FEIE">{{ p('feieCloudPrinting') }}</option><option value="CLOUD_YILIAN">{{ p('yilianCloudPrinting') }}</option></select></label><label class="printing-field">{{ form.provider === 'CLOUD_FEIE' ? p('printerNumber') : p('terminalNumber') }}<input v-model="form.deviceId" required /></label><div class="printing-inline-note printing-field--full"><strong>{{ p('cloudSecretLabel') }}</strong><span>{{ p('cloudSecretServerHint') }}</span></div></template>
           <label v-if="form.channelType === 'LOCAL_LAN_ESCPOS'" class="printing-field">{{ p('lanPort') }}<input v-model.number="form.port" type="number" min="1" max="65535" /></label>
           <label class="printing-field">{{ p('paperWidth') }}<select v-model="form.paperWidth"><option value="MM58">58 mm</option><option value="MM80">80 mm</option></select></label>
         </template>
         <template v-else>
-          <div class="printing-step-copy printing-field--full"><span class="printing-step-kicker">{{ p('stepThree') }}</span><h3>{{ p('testAndSave') }}</h3><p>{{ p('testAndSaveHint') }}</p></div><div class="printing-review-card printing-field--full"><div><span>{{ p('printerName') }}</span><strong>{{ form.name || '—' }}</strong></div><div><span>{{ p('printingMethod') }}</span><strong>{{ isCloud ? (form.provider === 'CLOUD_FEIE' ? p('feieCloudPrinting') : p('yilianCloudPrinting')) : methodTitle(form.channelType) }}</strong></div><div><span>{{ p('paperWidth') }}</span><strong>{{ form.paperWidth === 'MM58' ? '58 mm' : '80 mm' }}</strong></div></div><div class="printing-test-actions printing-field--full"><button class="printing-button printing-button--secondary" type="button" disabled>{{ isCloud ? p('verifyDevice') : form.channelType === 'LOCAL_LAN_ESCPOS' ? p('testConnection') : p('testPrint') }}</button><span>{{ p('testBeforeSaveHint') }}</span></div></template>
+          <div class="printing-step-copy printing-field--full"><span class="printing-step-kicker">{{ p('stepThree') }}</span><h3>{{ p('testAndSave') }}</h3><p>{{ p('testAndSaveHint') }}</p></div><div class="printing-review-card printing-field--full"><div><span>{{ p('printerName') }}</span><strong>{{ form.name || '—' }}</strong></div><div><span>{{ p('printingMethod') }}</span><strong>{{ isCloud ? (form.provider === 'CLOUD_FEIE' ? p('feieCloudPrinting') : p('yilianCloudPrinting')) : methodTitle(form.channelType) }}</strong></div><div><span>{{ p('paperWidth') }}</span><strong>{{ form.paperWidth === 'MM58' ? '58 mm' : '80 mm' }}</strong></div></div><div class="printing-test-actions printing-field--full"><button class="printing-button printing-button--secondary" type="button" disabled>{{ isCloud ? p('verifyDevice') : form.channelType === 'LOCAL_LAN_ESCPOS' ? p('testConnection') : p('testPrint') }}</button><span>{{ form.channelType === 'LOCAL_LAN_ESCPOS' && !lanExecutionEnabled ? p('lanCompatibilitySaveHint') : p('testBeforeSaveHint') }}</span></div></template>
       </div>
       <footer class="printing-modal__footer"><button class="printing-button printing-button--secondary" type="button" @click="step === 1 ? closeModal() : previousStep()">{{ step === 1 ? p('cancel') : p('previousStep') }}</button><button class="printing-button" type="submit" :disabled="saving || !canNext()">{{ saving ? p('saving') : step === 3 ? p('savePrinter') : p('nextStep') }}</button></footer>
     </form>

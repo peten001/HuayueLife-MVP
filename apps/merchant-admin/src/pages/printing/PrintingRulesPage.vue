@@ -10,6 +10,7 @@ import {
   updatePrintingPrinter,
   updatePrintingRule,
 } from '@/api/printing';
+import { printingReleasePolicy } from '@/config/printing-release-policy';
 import { usePrintingI18n } from '@/i18n/printing';
 import type {
   PrintingOrderType,
@@ -31,6 +32,7 @@ const saving = ref(false);
 const modalOpen = ref(false);
 const message = ref('');
 const success = ref(false);
+const lanExecutionEnabled = printingReleasePolicy.lanExecutionEnabled;
 
 const form = reactive({
   id: '',
@@ -47,11 +49,22 @@ const form = reactive({
 
 const printerNames = computed(() => new Map(printers.value.map((printer) => [printer.id, printer.name])));
 const rulePrinters = computed(() =>
-  printers.value.filter((printer) => printer.enabled),
+  printers.value.filter(
+    (printer) => printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
+  ),
 );
 const hasAnyPrinters = computed(() => printers.value.length > 0);
-const allPrintersDisabled = computed(() => hasAnyPrinters.value && rulePrinters.value.length === 0);
-const firstDisabledPrinter = computed(() => printers.value.find((printer) => !printer.enabled) ?? null);
+const hasOnlyBlockedLanPrinters = computed(() =>
+  !lanExecutionEnabled
+  && hasAnyPrinters.value
+  && printers.value.every((printer) => printer.channelType === 'LOCAL_LAN_ESCPOS'),
+);
+const allPrintersDisabled = computed(() =>
+  hasAnyPrinters.value && !hasOnlyBlockedLanPrinters.value && rulePrinters.value.length === 0,
+);
+const firstDisabledPrinter = computed(() => printers.value.find(
+  (printer) => !printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
+) ?? null);
 const matchingTemplates = computed(() => {
   const printer = printers.value.find((item) => item.id === form.printerId);
   return templates.value.filter(
@@ -281,6 +294,9 @@ onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, r
     <section v-if="!hasAnyPrinters" class="printing-auto-empty-state">
       <strong>{{ p('noPrinters') }}</strong><p>{{ p('pleaseAddPrinter') }}</p><RouterLink class="printing-button" to="/printing-center/printers">{{ p('addPrinter') }}</RouterLink>
     </section>
+    <section v-else-if="hasOnlyBlockedLanPrinters" class="printing-auto-empty-state printing-auto-empty-state--disabled">
+      <strong>{{ p('lanCompatibilityTesting') }}</strong><p>{{ p('lanCompatibilityTestingHint') }}</p><RouterLink class="printing-button printing-button--secondary" to="/printing-center/printers">{{ p('settings') }}</RouterLink>
+    </section>
     <section v-else-if="allPrintersDisabled" class="printing-auto-empty-state printing-auto-empty-state--disabled">
       <strong>{{ p('printersNotEnabled') }}</strong><p>{{ p('enablePrinterBeforeAutoPrintPrefix') }}“{{ firstDisabledPrinter?.name }}”{{ p('enablePrinterBeforeAutoPrintSuffix') }}</p><button class="printing-button" type="button" :disabled="saving || !firstDisabledPrinter" @click="firstDisabledPrinter && enablePrinter(firstDisabledPrinter.id)">{{ p('enablePrinterAction') }}</button>
     </section>
@@ -295,7 +311,7 @@ onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, r
       </article>
     </section>
 
-    <p v-if="!rulePrinters.length" class="printing-inline-note"><strong>{{ p('pleaseAddPrinter') }}</strong><span>{{ p('addPrinterBeforeAutoPrint') }}</span></p>
+    <p v-if="!rulePrinters.length && !hasOnlyBlockedLanPrinters" class="printing-inline-note"><strong>{{ p('pleaseAddPrinter') }}</strong><span>{{ p('addPrinterBeforeAutoPrint') }}</span></p>
 
     <details class="printing-advanced-rules">
       <summary><strong>{{ p('advancedRules') }}</strong><span>{{ p('advancedRulesHint') }}</span></summary>
