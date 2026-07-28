@@ -260,6 +260,13 @@ export class PrintRulesService {
     ) {
       this.referenceError('订单状态自动触发只支持订单客单');
     }
+    if (triggerEvent === 'TABLE_SESSION_SETTLED' && receiptType !== 'TABLE_BILL') {
+      this.referenceError('桌台结账事件只支持结账小票');
+    }
+    if (receiptType === 'TABLE_BILL' &&
+      !['TABLE_SESSION_SETTLED', 'MANUAL'].includes(triggerEvent)) {
+      this.referenceError('结账小票需使用堂食结账事件');
+    }
     if (autoPrint && triggerEvent === 'MANUAL') {
       this.referenceError('手动触发规则不能开启自动打印');
     }

@@ -79,6 +79,18 @@ export function isConnectionConfigValid(
   value: Prisma.JsonValue,
 ) {
   if (!isPlainObject(value)) return false;
+  if (channelType === 'LOCAL_LAN_ESCPOS') {
+    if (!isPlainObject(value)) return false;
+    const host = value.host;
+    const port = value.port;
+    return typeof host === 'string' && isPrivateIpv4(host) && Number.isInteger(port) && Number(port) >= 1 && Number(port) <= 65535;
+  }
+  if (channelType === 'CLOUD_FEIE') {
+    return isPlainObject(value) && typeof value.printerSn === 'string' && value.printerSn.length > 0;
+  }
+  if (channelType === 'CLOUD_YILIAN') {
+    return isPlainObject(value) && typeof value.machineCode === 'string' && value.machineCode.length > 0;
+  }
   if (channelType !== 'LOCAL_USB_ESCPOS') return false;
   const allowed = new Set(['paperWidthDots', 'threshold', 'cutMode']);
   if (Object.keys(value).some((key) => !allowed.has(key))) return false;
@@ -134,6 +146,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
       !Array.isArray(value) &&
       Object.getPrototypeOf(value) === Object.prototype,
   );
+}
+
+function isPrivateIpv4(value: string) {
+  const octets = value.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((item) => !Number.isInteger(item) || item < 0 || item > 255)) return false;
+  return octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168);
 }
 
 function connectorEvidence(value: Prisma.JsonValue) {

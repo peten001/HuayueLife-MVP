@@ -171,6 +171,7 @@ enum PrinterChannelType {
   LOCAL_LAN_ESCPOS
   LOCAL_USB_ESCPOS
   CLOUD_FEIE
+  CLOUD_YILIAN
   CLOUD_XINYE
   CLOUD_GPRINTER
   BUILTIN_SUNMI
@@ -212,6 +213,7 @@ enum ReceiptLanguageMode {
 enum PrintTriggerEvent {
   ORDER_ACCEPTED
   ORDER_COMPLETED
+  TABLE_SESSION_SETTLED
   MANUAL
 }
 
@@ -613,6 +615,7 @@ model TableSession {
   table     DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
   orders    Order[]
   printJobs PrintJob[]
+  printTriggerOutbox PrintTriggerOutbox[]
 
   @@index([merchantId, status])
   @@index([tableId, openedAt])
@@ -962,8 +965,9 @@ model PrintRule {
 model PrintTriggerOutbox {
   id                BigInt                   @id @default(autoincrement())
   merchantId        BigInt                   @map("merchant_id")
-  orderId           BigInt                   @map("order_id")
-  orderStatusLogId  BigInt                   @map("order_status_log_id")
+  orderId           BigInt?                  @map("order_id")
+  orderStatusLogId  BigInt?                  @map("order_status_log_id")
+  tableSessionId    BigInt?                  @map("table_session_id")
   printRuleId       BigInt                   @map("print_rule_id")
   printerId         BigInt                   @map("printer_id")
   receiptTemplateId BigInt?                  @map("receipt_template_id")
@@ -987,8 +991,9 @@ model PrintTriggerOutbox {
   updatedAt         DateTime                 @updatedAt @map("updated_at")
 
   merchant        Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict, map: "fk_pto_merchant")
-  order           Order            @relation(fields: [orderId], references: [id], onDelete: Restrict, map: "fk_pto_order")
-  orderStatusLog  OrderStatusLog   @relation(fields: [orderStatusLogId], references: [id], onDelete: Restrict, map: "fk_pto_status_log")
+  order           Order?           @relation(fields: [orderId], references: [id], onDelete: Restrict, map: "fk_pto_order")
+  orderStatusLog  OrderStatusLog?  @relation(fields: [orderStatusLogId], references: [id], onDelete: Restrict, map: "fk_pto_status_log")
+  tableSession    TableSession?    @relation(fields: [tableSessionId], references: [id], onDelete: Restrict, map: "fk_pto_table_session")
   printRule       PrintRule        @relation(fields: [printRuleId], references: [id], onDelete: Restrict, map: "fk_pto_rule")
   printer         Printer          @relation(fields: [printerId], references: [id], onDelete: Restrict, map: "fk_pto_printer")
   receiptTemplate ReceiptTemplate? @relation(fields: [receiptTemplateId], references: [id], onDelete: Restrict, map: "fk_pto_template")
@@ -997,6 +1002,7 @@ model PrintTriggerOutbox {
   @@index([status, leaseExpiresAt], map: "ix_pto_lease")
   @@index([orderId, createdAt], map: "ix_pto_order")
   @@index([orderStatusLogId], map: "ix_pto_status_log")
+  @@index([tableSessionId, createdAt], map: "ix_pto_table_session")
   @@index([printRuleId, createdAt], map: "ix_pto_rule")
   @@index([printerId], map: "ix_pto_printer")
   @@index([receiptTemplateId], map: "ix_pto_template")

@@ -63,6 +63,7 @@ describe('TableSessionsService checkout', () => {
       enqueueAutomaticTriggersForOrderTransition: jest
         .fn()
         .mockResolvedValue([{ id: triggerId }]),
+      enqueueAutomaticTableSessionCheckout: jest.fn().mockResolvedValue([]),
       processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
     };
     const service = new TableSessionsService(prisma as never, printJobs as never);
@@ -120,6 +121,10 @@ describe('TableSessionsService checkout', () => {
       orderType: 'DINE_IN',
       status: 'COMPLETED',
     });
+    expect(printJobs.enqueueAutomaticTableSessionCheckout).toHaveBeenCalledWith(
+      transaction,
+      { merchantId, tableSessionId: sessionId },
+    );
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([triggerId]);
     expect(transaction.tableSession.updateMany).toHaveBeenCalledWith({
       where: { id: sessionId, merchantId, status: 'OPEN' },
@@ -533,6 +538,7 @@ function checkoutHarness(
   };
   const printJobs = {
     enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
+    enqueueAutomaticTableSessionCheckout: jest.fn().mockResolvedValue([]),
     processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
   };
   const service = new TableSessionsService(prisma as never, printJobs as never);
