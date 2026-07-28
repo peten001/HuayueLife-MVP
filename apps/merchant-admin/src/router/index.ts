@@ -26,6 +26,7 @@ import PrintingPrintersPage from '@/pages/printing/PrintingPrintersPage.vue';
 import PrintingRulesPage from '@/pages/printing/PrintingRulesPage.vue';
 import PrintingTemplatesPage from '@/pages/printing/PrintingTemplatesPage.vue';
 import PrintingJobsPage from '@/pages/printing/PrintingJobsPage.vue';
+import AndroidTerminalPage from '@/pages/printing/AndroidTerminalPage.vue';
 import { getMerchantMe } from '@/api/merchant';
 import {
   getMerchantStaff,
@@ -137,6 +138,11 @@ const router = createRouter({
           redirect: '/merchant/profile',
         },
         {
+          path: 'settings/android-terminal',
+          redirect: '/printing-center/android-terminal',
+          meta: { roles: ['OWNER', 'MANAGER'] },
+        },
+        {
           path: 'merchant/business-settings',
           redirect: '/merchant/profile',
         },
@@ -159,6 +165,7 @@ const router = createRouter({
             { path: 'rules', component: PrintingRulesPage },
             { path: 'templates', component: PrintingTemplatesPage },
             { path: 'jobs', component: PrintingJobsPage },
+            { path: 'android-terminal', component: AndroidTerminalPage },
           ],
         },
         {

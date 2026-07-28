@@ -34,6 +34,34 @@ const statuses: PrintJobStatus[] = [
 ];
 const sources: PrintJobSource[] = ['AUTOMATIC', 'MANUAL', 'MANUAL_REPRINT', 'TEST'];
 
+function statusLabel(status: PrintJobStatus) {
+  const labels: Record<PrintJobStatus, string> = {
+    PENDING: p('pending'), CLAIMED: p('claimed'), PRINTING: p('printing'), SUCCEEDED: p('printSucceeded'),
+    RETRY_WAIT: p('retryWaiting'), FAILED: p('printFailed'), CANCELLED: p('cancelled'),
+  };
+  return labels[status];
+}
+
+function sourceLabel(source: PrintJobSource) {
+  const labels: Record<PrintJobSource, string> = {
+    AUTOMATIC: p('automatic'), MANUAL: p('manual'), MANUAL_REPRINT: p('manualReprint'), TEST: p('testSource'),
+  };
+  return labels[source];
+}
+
+function receiptTypeLabel(type: string) {
+  return type === 'TABLE_BILL' ? p('checkoutReceipt') : p('customerReceipt');
+}
+
+function errorLabel(code: string | null | undefined, messageText: string | null | undefined) {
+  if (messageText) return messageText;
+  const labels: Record<string, string> = {
+    PRINTER_NOT_CONNECTED: p('printerNotConnectedError'), PRINTER_OFFLINE: p('printerOfflineError'), USB_PERMISSION_REQUIRED: p('usbUnauthorizedError'),
+    LAN_CONNECTION_FAILED: p('lanConnectionError'), CLOUD_PROVIDER_UNAVAILABLE: p('cloudUnavailableError'), DEVICE_INFO_INVALID: p('deviceInfoError'), PRINT_TIMEOUT: p('printTimeoutError'), PRINT_OUTCOME_UNKNOWN: p('printOutcomeUnknownError'),
+  };
+  return code ? labels[code] || p('printErrorUnknown') : '—';
+}
+
 async function load() {
   try {
     loading.value = true;
@@ -144,14 +172,14 @@ onMounted(load);
         {{ p('filterStatus') }}
         <select v-model="filters.status" class="printing-filter" @change="load">
           <option value="">{{ p('all') }}</option>
-          <option v-for="status in statuses" :key="status" :value="status">{{ status }}</option>
+          <option value="PENDING">{{ p('waitingPrint') }}</option><option value="PRINTING">{{ p('printing') }}</option><option value="SUCCEEDED">{{ p('printSucceeded') }}</option><option value="FAILED">{{ p('printFailed') }}</option>
         </select>
       </label>
       <label class="printing-field">
         {{ p('filterSource') }}
         <select v-model="filters.source" class="printing-filter" @change="load">
           <option value="">{{ p('all') }}</option>
-          <option v-for="source in sources" :key="source" :value="source">{{ source }}</option>
+          <option v-for="source in sources" :key="source" :value="source">{{ sourceLabel(source) }}</option>
         </select>
       </label>
     </div>
@@ -162,30 +190,21 @@ onMounted(load);
       <table class="printing-table">
         <thead>
           <tr>
-            <th>{{ p('status') }}</th>
-            <th>{{ p('orderId') }}</th>
-            <th>{{ p('printer') }}</th>
-            <th>{{ p('receiptType') }}</th>
-            <th>{{ p('source') }}</th>
-            <th>{{ p('attempts') }}</th>
             <th>{{ p('createdAt') }}</th>
-            <th>{{ p('lastError') }}</th>
+            <th>{{ p('orderId') }}</th>
+            <th>{{ p('receiptType') }}</th>
+            <th>{{ p('printer') }}</th>
+            <th>{{ p('status') }}</th>
             <th>{{ p('actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in rows" :key="row.id">
-            <td>
-              <span :class="['printing-badge', statusClass(row.status)]">{{ row.status }}</span>
-              <small v-if="row.retryBlocked" class="printing-text-danger">{{ p('outcomeUnknown') }}</small>
-            </td>
-            <td><strong>{{ orderReference(row) }}</strong><small><code>{{ row.id }}</code></small></td>
-            <td>{{ row.printer?.name || row.printerId }}</td>
-            <td>{{ row.receiptType }}</td>
-            <td>{{ row.source }}</td>
-            <td>{{ row.attemptCount }} / {{ row.maxAttempts }}</td>
             <td>{{ new Date(row.createdAt).toLocaleString() }}</td>
-            <td>{{ row.lastErrorCode || '—' }}<small v-if="row.lastErrorMessage">{{ row.lastErrorMessage }}</small></td>
+            <td><strong>{{ orderReference(row) }}</strong></td>
+            <td>{{ receiptTypeLabel(row.receiptType) }}</td>
+            <td>{{ row.printer?.name || row.printerId }}</td>
+            <td><span :class="['printing-badge', statusClass(row.status)]">{{ statusLabel(row.status) }}</span><small v-if="row.lastErrorCode">{{ errorLabel(row.lastErrorCode, row.lastErrorMessage) }}</small></td>
             <td>
               <div class="printing-actions">
                 <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openDetail(row)">{{ p('view') }}</button>
@@ -194,8 +213,8 @@ onMounted(load);
               </div>
             </td>
           </tr>
-          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="9">{{ p('noData') }}</td></tr>
-          <tr v-if="loading"><td class="printing-empty" colspan="9">{{ p('loading') }}</td></tr>
+          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="6">{{ p('noData') }}</td></tr>
+          <tr v-if="loading"><td class="printing-empty" colspan="6">{{ p('loading') }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -209,19 +228,16 @@ onMounted(load);
         <template v-if="selected">
           <dl class="printing-detail-grid printing-field--full">
             <dt>{{ p('jobId') }}</dt><dd>{{ selected.id }}</dd>
-            <dt>{{ p('status') }}</dt><dd>{{ selected.status }}</dd>
+            <dt>{{ p('status') }}</dt><dd>{{ statusLabel(selected.status) }}</dd>
             <dt>{{ p('orderId') }}</dt><dd>{{ selected.orderId || '—' }}</dd>
             <dt>{{ p('printer') }}</dt><dd>{{ selected.printer?.name || selected.printerId }}</dd>
-            <dt>{{ p('source') }}</dt><dd>{{ selected.source }}</dd>
-            <dt>{{ p('triggerEvent') }}</dt><dd>{{ selected.triggerEvent }}</dd>
+            <dt>{{ p('source') }}</dt><dd>{{ sourceLabel(selected.source) }}</dd>
+            <dt>{{ p('triggerEvent') }}</dt><dd>{{ selected.triggerEvent === 'ORDER_COMPLETED' ? p('orderCompleted') : p('orderAccepted') }}</dd>
             <dt>{{ p('attempts') }}</dt><dd>{{ selected.attemptCount }} / {{ selected.maxAttempts }}</dd>
-            <dt>{{ p('lastError') }}</dt><dd>{{ selected.lastErrorCode || '—' }} {{ selected.lastErrorMessage || '' }}</dd>
+            <dt>{{ p('lastError') }}</dt><dd>{{ errorLabel(selected.lastErrorCode, selected.lastErrorMessage) }}</dd>
             <dt v-if="selected.retryBlocked">{{ p('status') }}</dt><dd v-if="selected.retryBlocked" class="printing-text-danger">{{ p('outcomeUnknownHint') }}</dd>
           </dl>
-          <label class="printing-field printing-field--full">
-            {{ p('snapshot') }}
-            <pre class="printing-json">{{ JSON.stringify(selected.receiptSnapshot ?? {}, null, 2) }}</pre>
-          </label>
+          <details class="printing-advanced-template printing-field--full"><summary>{{ p('advancedRecordDetails') }}</summary><p class="printing-hint">{{ p('advancedRecordDetailsHint') }}</p><pre class="printing-json">{{ JSON.stringify(selected.receiptSnapshot ?? {}, null, 2) }}</pre></details>
         </template>
       </div>
       <footer class="printing-modal__footer">

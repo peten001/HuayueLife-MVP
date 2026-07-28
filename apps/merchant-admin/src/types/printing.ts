@@ -2,6 +2,7 @@ export type PrinterChannelType =
   | 'LOCAL_LAN_ESCPOS'
   | 'LOCAL_USB_ESCPOS'
   | 'CLOUD_FEIE'
+  | 'CLOUD_YILIAN'
   | 'CLOUD_XINYE'
   | 'CLOUD_GPRINTER'
   | 'BUILTIN_SUNMI'
@@ -11,7 +12,7 @@ export type PrintingPaperWidth = 'MM58' | 'MM80';
 export type PrinterPurpose = 'FRONT_DESK' | 'KITCHEN' | 'BAR' | 'LABEL';
 export type PrintingReceiptType = 'ORDER_CUSTOMER' | 'TABLE_BILL';
 export type ReceiptLanguageMode = 'MERCHANT_DEFAULT' | 'ZH' | 'VI' | 'EN';
-export type PrintingTriggerEvent = 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'MANUAL';
+export type PrintingTriggerEvent = 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'TABLE_SESSION_SETTLED' | 'MANUAL';
 export type PrintingOrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export type PrintJobSource = 'AUTOMATIC' | 'MANUAL' | 'MANUAL_REPRINT' | 'TEST';
 export type PrintJobStatus =
@@ -70,8 +71,8 @@ export interface PrintingPrinterPayload {
   name: string;
   channelType: PrinterChannelType;
   paperWidth: PrintingPaperWidth;
-  purpose: PrinterPurpose;
-  enabled: boolean;
+  purpose?: PrinterPurpose;
+  enabled?: boolean;
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
 }
