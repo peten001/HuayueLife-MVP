@@ -1677,16 +1677,17 @@
 
   .cashier-top-status {
     width: 100%;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     justify-content: stretch;
     gap: 0;
   }
 
+  /* The avatar owns the first column; the four useful mobile actions fill the rest. */
   .cashier-top-status > :nth-child(1) { grid-column: 2; }
   .cashier-top-status > :nth-child(2) { grid-column: 3; }
   .cashier-top-status > :nth-child(3) { grid-column: 4; }
   .cashier-top-status > :nth-child(4) { grid-column: 5; }
-  .cashier-top-status > :nth-child(5) { grid-column: 6; }
+  .cashier-top-status .top-status-item--fullscreen { display: none; }
   .cashier-top-status .top-status-item--clock { display: none; }
 
   .cashier-top-metrics {
