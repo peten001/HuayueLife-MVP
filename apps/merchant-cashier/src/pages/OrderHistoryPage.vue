@@ -128,16 +128,18 @@ onMounted(async () => { await refresh(false); initialized.value = true; });
     <div class="history-workspace">
       <aside class="history-queue">
         <div class="history-toolbar">
-          <div class="history-filters">
+          <div class="history-mobile-filter-row--date">
             <label class="history-date-control" @click="openDatePicker">
               <CalendarDays :size="16" aria-hidden="true" />
               <span>{{ dateFilterLabel }}</span>
               <input ref="dateInput" v-model="date" type="date" :aria-label="dateFilterAriaLabel" />
             </label>
+            <button type="button" class="workflow-refresh-button" :disabled="historyLoading" :aria-label="t('common.refresh')" :title="t('common.refresh')" @click="refresh()"><RefreshCw :size="17" :class="{ spinning: historyLoading }" aria-hidden="true" /></button>
+          </div>
+          <div class="history-mobile-filter-row--selects">
             <label><select v-model="orderType" :aria-label="t('orders.filterType')"><option value="">{{ t('filter.orderTypeAll') }}</option><option value="DINE_IN">{{ t('order.type.dineIn') }}</option><option value="PICKUP">{{ t('order.type.pickup') }}</option><option value="DELIVERY">{{ t('order.type.delivery') }}</option></select></label>
             <label><select v-model="status" :aria-label="t('orders.filterStatus')" :title="t('filter.orderStatusAll')"><option value="ALL">{{ t('filter.orderStatusAll') }}</option><option value="COMPLETED">{{ t('order.status.completed') }}</option><option value="CANCELLED">{{ t('order.status.cancelled') }}</option></select></label>
           </div>
-          <button type="button" class="workflow-refresh-button" :disabled="historyLoading" :aria-label="t('common.refresh')" :title="t('common.refresh')" @click="refresh()"><RefreshCw :size="17" :class="{ spinning: historyLoading }" aria-hidden="true" /></button>
         </div>
         <LoadingState v-if="historyLoading && !historyOrders.length" :label="t('orders.loading')" />
         <ErrorState v-else-if="historyErrorKey && !historyOrders.length" :title="t('error.title')" :description="t(historyErrorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />

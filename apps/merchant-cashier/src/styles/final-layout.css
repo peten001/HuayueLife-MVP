@@ -1558,6 +1558,32 @@
   .table-bill-total-row strong { font-size: clamp(12px, 3.8vw, 16px); }
 }
 
+/* Final mobile overrides must remain after the legacy sidebar geometry rules. */
+@media (max-width: 899px) {
+  .cashier-employee-menu {
+    top: calc(7px + var(--cashier-safe-area-top));
+    right: auto;
+    bottom: auto;
+    left: 8px;
+    width: 52px;
+    height: 52px;
+  }
+  .cashier-employee-menu .account-menu__trigger {
+    width: 52px;
+    min-width: 52px;
+    height: 52px;
+    min-height: 44px;
+    padding: 4px;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .cashier-employee-menu .account-menu__avatar { width: 32px; height: 32px; }
+  .cashier-header { padding-right: 8px; padding-left: 68px; }
+  .cashier-top-status { grid-template-columns: repeat(5, 38px); justify-content: end; gap: 2px; }
+  .cashier-top-status .top-status-item--clock { display: none; }
+  .cashier-top-metrics { margin-left: -62px; }
+}
+
 /* Dine-in action sizing: the summary row and bottom dock share one responsive grid. */
 .table-bill-detail {
   --dinein-action-height: 52px;
