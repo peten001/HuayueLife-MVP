@@ -47,6 +47,7 @@ import {
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PrintAttemptsService } from '../services/print-attempts.service';
+import { CloudPrintExecutionService } from '../services/cloud-print-execution.service';
 import { PrintJobsService } from '../services/print-jobs.service';
 import { PrintRulesService } from '../services/print-rules.service';
 import { PrintingFeatureFlagsService } from '../services/printing-feature-flags.service';
@@ -74,6 +75,7 @@ export class MerchantPrintingController {
     private readonly attempts: PrintAttemptsService,
     private readonly flags: PrintingFeatureFlagsService,
     private readonly settings: PrintingSettingsService,
+    private readonly cloudExecution: CloudPrintExecutionService,
   ) {}
 
   @Get('feature-state')
@@ -83,6 +85,12 @@ export class MerchantPrintingController {
       ...this.flags.status(),
       merchantPrintingEnabled: settings.printingEnabled,
     };
+  }
+
+  @Get('cloud-execution-state')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  cloudExecutionState() {
+    return this.cloudExecution.status();
   }
 
   @Get('settings')
@@ -170,7 +178,7 @@ export class MerchantPrintingController {
     @Param() params: IdParamDto,
     @Body() dto: CreatePrinterTestJobDto,
   ) {
-    return this.jobs.createSafeUsbTestJob(
+    return this.jobs.createSafeTestJob(
       merchantId,
       BigInt(params.id),
       BigInt(staff.sub),

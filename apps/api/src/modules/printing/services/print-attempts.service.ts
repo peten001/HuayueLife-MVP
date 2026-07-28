@@ -109,6 +109,7 @@ export class PrintAttemptsService {
           claimedByTerminalId: input.terminalId,
           leaseVersion: input.leaseVersion,
           leaseExpiresAt: { gt: new Date() },
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
         },
         data: {
           status: 'PRINTING',
@@ -152,6 +153,8 @@ export class PrintAttemptsService {
             jobId: job.id,
             attemptNo: input.attemptNo,
             terminalId: input.terminalId,
+            executorType: 'TERMINAL',
+            adapter: 'ANDROID_USB_ESCPOS',
             result: 'SUCCEEDED',
           },
         });
@@ -176,6 +179,7 @@ export class PrintAttemptsService {
           claimedByTerminalId: input.terminalId,
           leaseVersion: input.leaseVersion,
           leaseExpiresAt: { gt: now },
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
         },
         data: {
           status: 'SUCCEEDED',
@@ -196,6 +200,8 @@ export class PrintAttemptsService {
           attemptNo: input.attemptNo,
           terminalId: input.terminalId,
           finishedAt: null,
+          executorType: 'TERMINAL',
+          adapter: 'ANDROID_USB_ESCPOS',
         },
         data: {
           finishedAt: now,
@@ -232,6 +238,8 @@ export class PrintAttemptsService {
           attemptNo: input.attemptNo,
           terminalId: input.terminalId,
           finishedAt: { not: null },
+          executorType: 'TERMINAL',
+          adapter: 'ANDROID_USB_ESCPOS',
         },
       });
       if (completedAttempt) {
@@ -264,6 +272,7 @@ export class PrintAttemptsService {
           claimedByTerminalId: input.terminalId,
           leaseVersion: input.leaseVersion,
           leaseExpiresAt: { gt: now },
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
         },
         data: {
           status: nextStatus,
@@ -285,6 +294,8 @@ export class PrintAttemptsService {
           attemptNo: input.attemptNo,
           terminalId: input.terminalId,
           finishedAt: null,
+          executorType: 'TERMINAL',
+          adapter: 'ANDROID_USB_ESCPOS',
         },
         data: {
           finishedAt: now,
@@ -337,6 +348,7 @@ export class PrintAttemptsService {
         claimedByTerminalId: terminalId,
         leaseVersion: expectedLeaseVersion,
         leaseExpiresAt: { gt: now },
+        printer: { channelType: 'LOCAL_USB_ESCPOS' },
       },
       data: {
         leaseExpiresAt: new Date(now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs))),
@@ -387,6 +399,7 @@ export class PrintAttemptsService {
         where: {
           id: printerId,
           merchantId,
+          channelType: 'LOCAL_USB_ESCPOS',
           deletedAt: null,
         },
         select: {
@@ -439,6 +452,7 @@ export class PrintAttemptsService {
       terminal.boundPrinterId !== printerId ||
       !terminal.boundPrinter ||
       terminal.boundPrinter.deletedAt ||
+      terminal.boundPrinter.channelType !== 'LOCAL_USB_ESCPOS' ||
       !isReadyPrinter(terminal.boundPrinter)
     ) {
       throw new BadRequestException({

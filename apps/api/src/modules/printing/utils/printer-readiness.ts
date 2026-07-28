@@ -2,6 +2,8 @@ import { PrinterChannelType, PrintingPrinterStatus, Prisma } from '@prisma/clien
 
 export const IMPLEMENTED_PRINTING_CHANNELS = new Set<PrinterChannelType>([
   'LOCAL_USB_ESCPOS',
+  'CLOUD_FEIE',
+  'CLOUD_YILIAN',
 ]);
 
 export const PRINTER_EXECUTION_EVIDENCE_TTL_MS = 120_000;
@@ -26,20 +28,29 @@ export function printerReadiness(
   const channelImplemented = IMPLEMENTED_PRINTING_CHANNELS.has(
     record.channelType,
   );
+  const usb = record.channelType === 'LOCAL_USB_ESCPOS';
+  const cloud =
+    record.channelType === 'CLOUD_FEIE' ||
+    record.channelType === 'CLOUD_YILIAN';
   const configValid = isConnectionConfigValid(
     record.channelType,
     record.connectionConfig,
   );
   const statusReady = record.status === 'ONLINE';
   const evidence = connectorEvidence(record.capabilities);
-  const evidenceUpdatedAt = connectorEvidenceUpdatedAt(record.capabilities);
+  const evidenceUpdatedAt = usb
+    ? connectorEvidenceUpdatedAt(record.capabilities)
+    : cloud
+      ? cloudEvidenceUpdatedAt(record.capabilities)
+      : null;
   const evidenceTimestamp = evidenceUpdatedAt?.getTime() ?? Number.NaN;
   const evidenceFresh =
     Number.isFinite(evidenceTimestamp) &&
     evidenceTimestamp >= now.getTime() - PRINTER_EXECUTION_EVIDENCE_TTL_MS &&
     evidenceTimestamp <= now.getTime() + 30_000;
   const executionEvidenceReady =
-    evidenceFresh && hasExplicitUsbExecutionEvidence(evidence);
+    evidenceFresh &&
+    (usb ? hasExplicitUsbExecutionEvidence(evidence) : cloud);
   const state: PrinterReadinessState =
     !record.enabled
       ? 'NOT_CONFIGURED'
@@ -164,6 +175,14 @@ function connectorEvidence(value: Prisma.JsonValue) {
 function connectorEvidenceUpdatedAt(value: Prisma.JsonValue) {
   if (!isPlainObject(value)) return null;
   const raw = value.connectorStatusUpdatedAt;
+  if (typeof raw !== 'string') return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function cloudEvidenceUpdatedAt(value: Prisma.JsonValue) {
+  if (!isPlainObject(value)) return null;
+  const raw = value.cloudStatusUpdatedAt;
   if (typeof raw !== 'string') return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;

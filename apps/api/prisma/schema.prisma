@@ -252,6 +252,19 @@ enum PrintAttemptResult {
   OUTCOME_UNKNOWN
 }
 
+enum CloudPrintExecutionStatus {
+  PENDING
+  CLAIMED
+  SUBMITTING
+  SUBMITTED
+  ACCEPTED
+  PRINTED
+  FAILED
+  UNKNOWN
+  NOT_CONFIGURED
+  CANCELLED
+}
+
 enum MerchantTerminalPlatform {
   ANDROID
   WEB
@@ -1068,30 +1081,40 @@ model PrintJob {
 }
 
 model PrintAttempt {
-  id              BigInt                   @id @default(autoincrement())
-  jobId           BigInt                   @map("job_id")
-  attemptNo       Int                      @map("attempt_no")
-  executorType    PrintAttemptExecutorType @map("executor_type")
-  terminalId      BigInt?                  @map("terminal_id")
-  adapter         String                   @db.VarChar(80)
-  startedAt       DateTime                 @default(now()) @map("started_at")
-  finishedAt      DateTime?                @map("finished_at")
-  result          PrintAttemptResult?
-  errorCode       String?                  @map("error_code") @db.VarChar(64)
-  errorMessage    String?                  @map("error_message") @db.VarChar(500)
-  printerResponse String?                  @map("printer_response") @db.VarChar(500)
-  appVersion      String?                  @map("app_version") @db.VarChar(64)
-  networkInfo     Json?                    @map("network_info")
-  contentHash     String?                  @map("content_hash") @db.VarChar(64)
-  bytesWritten    Int?                     @map("bytes_written")
-  createdAt       DateTime                 @default(now()) @map("created_at")
+  id                  BigInt                     @id @default(autoincrement())
+  jobId               BigInt                     @map("job_id")
+  attemptNo           Int                        @map("attempt_no")
+  executorType        PrintAttemptExecutorType   @map("executor_type")
+  terminalId          BigInt?                    @map("terminal_id")
+  adapter             String                     @db.VarChar(80)
+  startedAt           DateTime                   @default(now()) @map("started_at")
+  finishedAt          DateTime?                  @map("finished_at")
+  result              PrintAttemptResult?
+  cloudStatus         CloudPrintExecutionStatus? @map("cloud_status")
+  executorId          String?                    @map("executor_id") @db.VarChar(128)
+  providerRequestId   String?                    @map("provider_request_id") @db.VarChar(64)
+  providerTaskId      String?                    @map("provider_task_id") @db.VarChar(191)
+  providerSubmittedAt DateTime?                  @map("provider_submitted_at")
+  providerCheckedAt   DateTime?                  @map("provider_checked_at")
+  providerCheckCount  Int                        @default(0) @map("provider_check_count")
+  errorCode           String?                    @map("error_code") @db.VarChar(64)
+  errorMessage        String?                    @map("error_message") @db.VarChar(500)
+  printerResponse     String?                    @map("printer_response") @db.VarChar(500)
+  appVersion          String?                    @map("app_version") @db.VarChar(64)
+  networkInfo         Json?                      @map("network_info")
+  contentHash         String?                    @map("content_hash") @db.VarChar(64)
+  bytesWritten        Int?                       @map("bytes_written")
+  createdAt           DateTime                   @default(now()) @map("created_at")
 
   job      PrintJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
   terminal MerchantTerminal? @relation(fields: [terminalId], references: [id], onDelete: SetNull)
 
   @@unique([jobId, attemptNo], map: "uq_pa_job_attempt")
+  @@unique([adapter, providerRequestId], map: "uq_pa_adapter_request")
+  @@unique([adapter, providerTaskId], map: "uq_pa_adapter_task")
   @@index([terminalId, startedAt], map: "ix_pa_terminal_started")
   @@index([result, startedAt], map: "ix_pa_result_started")
+  @@index([cloudStatus, providerCheckedAt], map: "ix_pa_cloud_poll")
   @@map("print_attempts")
 }
 

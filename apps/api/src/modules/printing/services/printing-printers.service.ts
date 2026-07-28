@@ -11,7 +11,10 @@ import {
   UpdatePrintingPrinterDto,
 } from '../dto/printer.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
-import { printerReadiness } from '../utils/printer-readiness';
+import {
+  IMPLEMENTED_PRINTING_CHANNELS,
+  printerReadiness,
+} from '../utils/printer-readiness';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
@@ -314,12 +317,14 @@ export class PrintingPrintersService {
       capabilities: Prisma.JsonValue;
     },
   >(printer: T) {
-    const usb = printer.channelType === 'LOCAL_USB_ESCPOS';
+    const channelImplemented = IMPLEMENTED_PRINTING_CHANNELS.has(
+      printer.channelType,
+    );
     const readiness = printerReadiness(printer);
     return {
       ...printer,
       readiness,
-      adapterStatus: usb
+      adapterStatus: channelImplemented
         ? !this.flags.executionEnabled()
           ? PRINTING_ERROR_CODES.EXECUTION_DISABLED
           : readiness.state === 'READY'
