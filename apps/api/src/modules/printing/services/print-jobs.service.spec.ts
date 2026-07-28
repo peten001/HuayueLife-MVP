@@ -132,6 +132,52 @@ describe('PrintJobsService', () => {
     expect(snapshots.fromOrder).not.toHaveBeenCalled();
   });
 
+  it('creates one durable TABLE_SESSION_SETTLED outbox intent for an enabled checkout rule', async () => {
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    prisma.merchant.findUnique.mockResolvedValue({ status: 'ACTIVE', printingEnabled: true });
+    prisma.printRule.findMany.mockResolvedValue([
+      automaticRule({ receiptType: 'TABLE_BILL', triggerEvent: 'TABLE_SESSION_SETTLED' }),
+    ]);
+    prisma.printTriggerOutbox.createMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findMany.mockResolvedValue([{ id: 901n }]);
+
+    await expect(
+      service.enqueueAutomaticTableSessionCheckout(prisma as never, {
+        merchantId,
+        tableSessionId,
+      }),
+    ).resolves.toEqual([{ id: 901n }]);
+
+    expect(prisma.printTriggerOutbox.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        merchantId,
+        orderId: null,
+        orderStatusLogId: null,
+        tableSessionId,
+        receiptType: 'TABLE_BILL',
+        triggerEvent: 'TABLE_SESSION_SETTLED',
+      })],
+      skipDuplicates: true,
+    });
+    const eventKey = prisma.printTriggerOutbox.createMany.mock.calls[0][0].data[0].eventKey;
+    expect(eventKey).toMatch(/^auto-trigger:[a-f0-9]{64}$/);
+    expect(prisma.printTriggerOutbox.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { eventKey: { in: [eventKey] } },
+    }));
+  });
+
+  it('does not create a table checkout intent when automatic printing is disabled', async () => {
+    flags.automaticCreationEnabled.mockReturnValue(false);
+
+    await expect(
+      service.enqueueAutomaticTableSessionCheckout(prisma as never, {
+        merchantId,
+        tableSessionId,
+      }),
+    ).resolves.toEqual([]);
+    expect(prisma.printTriggerOutbox.createMany).not.toHaveBeenCalled();
+  });
+
   it('returns merchant-scoped connector configuration with explicit printer readiness', async () => {
     prisma.printer.findMany.mockResolvedValue([
       enabledPrinter({ id: 18n, name: '未验证 USB', status: 'UNVERIFIED' }),

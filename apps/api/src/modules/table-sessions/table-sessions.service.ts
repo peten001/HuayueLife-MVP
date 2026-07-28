@@ -364,6 +364,13 @@ export class TableSessionsService {
         });
       }
 
+      const checkoutTriggers =
+        await this.printJobs.enqueueAutomaticTableSessionCheckout(tx, {
+          merchantId,
+          tableSessionId: sessionId,
+        });
+      printTriggerIds.push(...checkoutTriggers.map(({ id }) => id));
+
       return { sessionId, printTriggerIds };
     });
 

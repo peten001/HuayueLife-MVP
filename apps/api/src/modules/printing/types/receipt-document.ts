@@ -8,6 +8,7 @@ export interface ReceiptDocument {
   merchant: {
     id: string;
     name: string;
+    nameVi?: string;
     address?: string;
     phone?: string;
   };
@@ -50,6 +51,10 @@ export interface ReceiptDocument {
   };
   note?: string;
   verificationCode?: string;
+  footer?: {
+    zh: string;
+    vi: string;
+  };
 }
 
 export const RECEIPT_TEMPLATE_SECTION_TYPES = [
@@ -63,6 +68,9 @@ export const RECEIPT_TEMPLATE_SECTION_TYPES = [
 
 export interface ReceiptTemplateDefinition {
   schemaVersion: 1;
+  footerText?: string;
+  footerTextZh?: string;
+  footerTextVi?: string;
   sections: Array<{
     type: (typeof RECEIPT_TEMPLATE_SECTION_TYPES)[number];
     enabled?: boolean;
@@ -86,6 +94,7 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
       'totals',
       'note',
       'verificationCode',
+      'footer',
     ])
   ) {
     throw new Error('Receipt document contains unsupported fields');
@@ -104,9 +113,10 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
     throw new Error('Receipt document does not match schema version 1');
   }
   if (
-    !hasOnlyKeys(document.merchant, ['id', 'name', 'address', 'phone']) ||
+    !hasOnlyKeys(document.merchant, ['id', 'name', 'nameVi', 'address', 'phone']) ||
     !/^\d+$/.test(document.merchant.id) ||
     !isBoundedText(document.merchant.name, 1, 120) ||
+    (document.merchant.nameVi !== undefined && !isBoundedText(document.merchant.nameVi, 0, 120)) ||
     (document.merchant.address !== undefined &&
       !isBoundedText(document.merchant.address, 0, 300)) ||
     (document.merchant.phone !== undefined &&
@@ -227,6 +237,7 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
       (!Number.isSafeInteger(document.totals.serviceFee) ||
         document.totals.serviceFee < 0)) ||
     (document.note !== undefined && !isBoundedText(document.note, 0, 500)) ||
+    (document.footer !== undefined && (!isPlainObject(document.footer) || !hasOnlyKeys(document.footer, ['zh', 'vi']) || !isBoundedText(document.footer.zh, 1, 60) || !isBoundedText(document.footer.vi, 1, 60))) ||
     (document.verificationCode !== undefined &&
       !isBoundedText(document.verificationCode, 1, 128))
   ) {
@@ -244,11 +255,17 @@ export function assertReceiptTemplateDefinition(
   if (!isPlainObject(value)) {
     throw new Error('Template definition must be an object');
   }
-  if (!hasOnlyKeys(value, ['schemaVersion', 'sections'])) {
+  if (!hasOnlyKeys(value, ['schemaVersion', 'footerText', 'footerTextZh', 'footerTextVi', 'sections'])) {
     throw new Error('Template definition contains unsupported fields');
   }
   const definition = value as Partial<ReceiptTemplateDefinition>;
-  if (definition.schemaVersion !== 1 || !Array.isArray(definition.sections)) {
+  if (
+    definition.schemaVersion !== 1 ||
+    !Array.isArray(definition.sections) ||
+    (definition.footerText !== undefined && !isBoundedText(definition.footerText, 0, 120)) ||
+    (definition.footerTextZh !== undefined && !isBoundedText(definition.footerTextZh, 0, 60)) ||
+    (definition.footerTextVi !== undefined && !isBoundedText(definition.footerTextVi, 0, 60))
+  ) {
     throw new Error('Template definition must use schemaVersion 1 and sections');
   }
   if (

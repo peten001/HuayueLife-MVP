@@ -233,6 +233,13 @@ export class PrintingPrintersService {
         ...(cutMode === undefined ? {} : { cutMode: String(cutMode) }),
       } satisfies Prisma.InputJsonObject;
     }
+    if (channelType === 'CLOUD_FEIE' || channelType === 'CLOUD_YILIAN') {
+      const requiredKey = channelType === 'CLOUD_FEIE' ? 'printerSn' : 'machineCode';
+      if (Object.keys(value).some((key) => key !== requiredKey) || (value[requiredKey] !== undefined && (typeof value[requiredKey] !== 'string' || !String(value[requiredKey]).trim()))) {
+        this.configError(`${requiredKey} 是必填的设备标识`);
+      }
+      return value[requiredKey] === undefined ? {} as Prisma.InputJsonObject : { [requiredKey]: String(value[requiredKey]).trim() } satisfies Prisma.InputJsonObject;
+    }
     if (channelType !== 'LOCAL_LAN_ESCPOS') {
       if (Object.keys(value).length > 0) {
         throw new BadRequestException({
@@ -250,7 +257,7 @@ export class PrintingPrintersService {
       });
     }
     const host = value.host;
-    const port = value.port;
+    const port = value.port ?? 9100;
     if (typeof host !== 'string' || !isPrivateIpv4(host)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,

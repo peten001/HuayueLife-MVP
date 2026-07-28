@@ -27,6 +27,22 @@ describe('ReceiptSnapshotService validation', () => {
     expect(Object.isFrozen(snapshot.items[0])).toBe(true);
   });
 
+  it('adds the stable bilingual footer without changing the receipt schema version', () => {
+    const snapshot = service.withTemplate(validReceipt(), {
+      schemaVersion: 1,
+      sections: [{ type: 'FOOTER' }],
+      footerTextZh: '谢谢惠顾，欢迎再次光临',
+      footerTextVi: 'Cảm ơn quý khách, hẹn gặp lại!',
+    });
+
+    expect(snapshot.schemaVersion).toBe(1);
+    expect(snapshot.footer).toEqual({
+      zh: '谢谢惠顾，欢迎再次光临',
+      vi: 'Cảm ơn quý khách, hẹn gặp lại!',
+    });
+    expect(Object.isFrozen(snapshot.footer)).toBe(true);
+  });
+
   it.each([
     {
       name: 'wrong context for receipt type',

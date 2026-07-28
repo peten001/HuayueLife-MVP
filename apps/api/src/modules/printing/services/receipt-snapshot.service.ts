@@ -11,6 +11,7 @@ import {
   immutableJsonSnapshot,
   ReceiptDocument,
 } from '../types/receipt-document';
+import { footerFromTemplateDefinition } from '../types/bilingual-receipt';
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -33,6 +34,7 @@ export class ReceiptSnapshotService {
           select: {
             id: true,
             nameZh: true,
+            nameVi: true,
             addressZh: true,
             addressDetail: true,
             contactPhone: true,
@@ -54,6 +56,7 @@ export class ReceiptSnapshotService {
       merchant: {
         id: order.merchant.id.toString(),
         name: order.merchant.nameZh,
+        nameVi: order.merchant.nameVi ?? undefined,
         address:
           order.merchant.addressZh ?? order.merchant.addressDetail ?? undefined,
         phone: order.merchant.contactPhone ?? undefined,
@@ -97,6 +100,7 @@ export class ReceiptSnapshotService {
           select: {
             id: true,
             nameZh: true,
+            nameVi: true,
             addressZh: true,
             addressDetail: true,
             contactPhone: true,
@@ -147,6 +151,7 @@ export class ReceiptSnapshotService {
       merchant: {
         id: session.merchant.id.toString(),
         name: session.merchant.nameZh,
+        nameVi: session.merchant.nameVi ?? undefined,
         address:
           session.merchant.addressZh ?? session.merchant.addressDetail ?? undefined,
         phone: session.merchant.contactPhone ?? undefined,
@@ -176,6 +181,13 @@ export class ReceiptSnapshotService {
 
   cloneAndValidate(document: ReceiptDocument) {
     return this.validateAndFreeze(document);
+  }
+
+  withTemplate(document: ReceiptDocument, definition?: unknown) {
+    return this.validateAndFreeze({
+      ...document,
+      footer: footerFromTemplateDefinition(definition),
+    });
   }
 
   private validateAndFreeze(document: ReceiptDocument) {

@@ -59,6 +59,11 @@ export interface EnqueueAutomaticTriggerInput {
   status: 'ACCEPTED' | 'COMPLETED';
 }
 
+export interface EnqueueTableSessionCheckoutInput {
+  merchantId: bigint;
+  tableSessionId: bigint;
+}
+
 interface AutomaticRuleSnapshot {
   id: bigint;
   printerId: bigint;
@@ -369,6 +374,77 @@ export class PrintJobsService {
     });
   }
 
+  /**
+   * Records one independent table-checkout intent after the session settlement
+   * has been persisted in the same transaction. A checkout has no order
+   * status-log owner, so the outbox is keyed by tableSessionId instead.
+   */
+  async enqueueAutomaticTableSessionCheckout(
+    tx: Prisma.TransactionClient,
+    input: EnqueueTableSessionCheckoutInput,
+  ) {
+    if (!this.automaticTriggeringEnabled()) return [];
+    const merchant = await tx.merchant.findUnique({
+      where: { id: input.merchantId },
+      select: { status: true, printingEnabled: true },
+    });
+    if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) return [];
+    const rules = await tx.printRule.findMany({
+      where: {
+        merchantId: input.merchantId,
+        enabled: true,
+        autoPrint: true,
+        triggerEvent: 'TABLE_SESSION_SETTLED',
+        receiptType: 'TABLE_BILL',
+        orderType: null,
+        printer: {
+          enabled: true,
+          deletedAt: null,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+      },
+      select: {
+        id: true,
+        printerId: true,
+        receiptTemplateId: true,
+        receiptType: true,
+        triggerEvent: true,
+        copies: true,
+        priority: true,
+        updatedAt: true,
+      },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+    if (rules.length === 0) return [];
+    const records = rules.map((rule) => ({
+      merchantId: input.merchantId,
+      orderId: null,
+      orderStatusLogId: null,
+      tableSessionId: input.tableSessionId,
+      printRuleId: rule.id,
+      printerId: rule.printerId,
+      receiptTemplateId: rule.receiptTemplateId,
+      eventKey: this.outboxEventKey(
+        input.merchantId,
+        input.tableSessionId,
+        rule.triggerEvent,
+        rule.id,
+        rule.updatedAt.toISOString(),
+      ),
+      triggerEvent: rule.triggerEvent,
+      ruleVersion: rule.updatedAt.toISOString(),
+      receiptType: rule.receiptType,
+      copies: Math.max(1, Math.min(3, rule.copies)),
+      priority: rule.priority,
+    }));
+    await tx.printTriggerOutbox.createMany({ data: records, skipDuplicates: true });
+    return tx.printTriggerOutbox.findMany({
+      where: { eventKey: { in: records.map((record) => record.eventKey) } },
+      select: { id: true },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   async processAutomaticTriggerIds(ids: bigint[]) {
     if (!this.automaticTriggeringEnabled() || ids.length === 0) return [];
     const results = [];
@@ -432,7 +508,8 @@ export class PrintJobsService {
       await this.settings.assertMerchantPrintingEnabled(trigger.merchantId);
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
-        orderId: trigger.orderId,
+        orderId: trigger.orderId ?? undefined,
+        tableSessionId: trigger.tableSessionId ?? undefined,
         eventKey: trigger.eventKey,
         rule: {
           id: trigger.printRuleId,
@@ -1427,6 +1504,9 @@ export class PrintJobsService {
       });
       if (!session) this.referenceError('桌台账单不存在或不属于当前商家');
     }
+    const snapshot = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
+      ? this.snapshots.withTemplate(input.snapshot, template?.definition)
+      : input.snapshot;
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -1446,8 +1526,8 @@ export class PrintJobsService {
         status: 'PENDING',
         priority: input.priority,
         dedupeKey: input.dedupeKey,
-        receiptSnapshot: input.snapshot as unknown as Prisma.InputJsonValue,
-        receiptSnapshotHash: receiptSnapshotHash(input.snapshot),
+        receiptSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+        receiptSnapshotHash: receiptSnapshotHash(snapshot),
         createdByStaffId: input.createdByStaffId,
       },
     });
@@ -1615,14 +1695,14 @@ export class PrintJobsService {
 
   private outboxEventKey(
     merchantId: bigint,
-    orderStatusLogId: bigint,
+    eventSubjectId: bigint,
     triggerEvent: PrintTriggerEvent,
     ruleId: bigint,
     ruleVersion: string,
   ) {
     const digest = createHash('sha256')
       .update(
-        ['trigger-v1', merchantId, orderStatusLogId, triggerEvent, ruleId, ruleVersion].join(
+        ['trigger-v1', merchantId, eventSubjectId, triggerEvent, ruleId, ruleVersion].join(
           ':',
         ),
       )
