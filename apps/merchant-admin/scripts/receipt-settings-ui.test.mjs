@@ -55,14 +55,28 @@ assert.match(rulesPage, /printer\.channelType !== 'LOCAL_LAN_ESCPOS' \|\| lanExe
 assert.match(printingReleasePolicy, /VITE_LAN_PRINTING_ENABLED === 'true'/);
 assert.match(androidRelease, /versionName: '1\.0\.0-rc6'/);
 assert.match(androidRelease, /versionCode: 13/);
-assert.match(androidRelease, /releaseType: 'RELEASE_CANDIDATE'/);
+assert.match(androidRelease, /releaseType: 'OFFICIAL_OPTIONAL_UPGRADE'/);
 assert.match(androidRelease, /8970fb3ef649fe0795f6313febf10a2355cfa56807011f524c11bb2691c8cb26/);
 assert.match(androidRelease, /YunQiao-Merchant-Terminal-v1\.0\.0-rc6-signed\.apk/);
-assert.match(androidPage, /androidTerminalReleaseCandidate/);
-assert.match(androidPage, /androidTerminalDeviceValidationPending/);
+assert.match(androidPage, /androidTerminalReleaseStatus/);
+assert.match(androidPage, /androidTerminalReleaseCompleted/);
+assert.match(androidPage, /pendingAcceptanceKeys/);
 assert.match(androidPage, /androidTerminalRelease\.versionCode/);
-for (const key of ['androidTerminalVersionCode', 'androidTerminalReleaseCandidate', 'androidTerminalDeviceValidationPending']) {
+for (const key of [
+  'androidTerminalVersionCode',
+  'androidTerminalReleaseStatus',
+  'androidTerminalReleaseNoteRc5Supported',
+  'androidTerminalReleaseNoteOptionalUpgrade',
+  'androidTerminalReleaseCompleted',
+  'androidTerminalPendingAcceptance',
+  'androidTerminalPendingDeviceValidation',
+  'androidTerminalPendingCloudDeviceValidation',
+  'androidTerminalPendingLanCompatibility',
+]) {
   assert.equal((appI18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
+assert.match(appI18n, /正式发布 · 按需升级/);
+assert.match(appI18n, /现有 RC5 设备如运行稳定，可继续使用，无需强制升级/);
+assert.doesNotMatch(appI18n, /候选版本：|Bản ứng viên:|Release Candidate:/);
 
 console.log('merchant-admin receipt settings UI: PASS');

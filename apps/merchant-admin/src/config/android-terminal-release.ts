@@ -4,7 +4,7 @@ export const androidTerminalRelease = {
   appName: 'YunQiao Merchant Terminal',
   versionName: '1.0.0-rc6',
   versionCode: 13,
-  releaseType: 'RELEASE_CANDIDATE',
+  releaseType: 'OFFICIAL_OPTIONAL_UPGRADE',
   packageName: 'com.yunqiao.life.merchantterminal',
   fileName: 'YunQiao-Merchant-Terminal-v1.0.0-rc6-signed.apk',
   fileSizeBytes: 2_051_509,
@@ -15,7 +15,13 @@ export const androidTerminalRelease = {
     'androidTerminalReleaseNoteBilingual',
     'androidTerminalReleaseNoteUsb',
     'androidTerminalReleaseNotePrintingCenter',
-    'androidTerminalReleaseNoteDevicePending',
+    'androidTerminalReleaseNoteRc5Supported',
+    'androidTerminalReleaseNoteOptionalUpgrade',
+  ],
+  pendingAcceptanceKeys: [
+    'androidTerminalPendingDeviceValidation',
+    'androidTerminalPendingCloudDeviceValidation',
+    'androidTerminalPendingLanCompatibility',
   ],
 } as const;
 

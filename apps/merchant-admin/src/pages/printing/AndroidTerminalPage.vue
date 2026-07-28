@@ -13,7 +13,7 @@ const { t } = useI18n();
         <h2>{{ t('androidTerminal') }}</h2>
         <p>{{ t('androidTerminalDescription') }}</p>
       </div>
-      <span class="android-terminal-page__badge">{{ t('androidTerminalReleaseCandidate') }}</span>
+      <span class="android-terminal-page__badge">{{ t('androidTerminalReleaseStatus') }}</span>
     </header>
 
     <section class="android-terminal-card" aria-labelledby="android-terminal-release-title">
@@ -25,7 +25,7 @@ const { t } = useI18n();
         <div><dt>{{ t('androidTerminalAppName') }}</dt><dd>{{ androidTerminalRelease.appName }}</dd></div>
         <div><dt>{{ t('androidTerminalVersion') }}</dt><dd>{{ androidTerminalRelease.versionName }}</dd></div>
         <div><dt>{{ t('androidTerminalVersionCode') }}</dt><dd>{{ androidTerminalRelease.versionCode }}</dd></div>
-        <div><dt>{{ t('androidTerminalReleaseType') }}</dt><dd>{{ t('androidTerminalReleaseCandidate') }}</dd></div>
+        <div><dt>{{ t('androidTerminalReleaseType') }}</dt><dd>{{ t('androidTerminalReleaseStatus') }}</dd></div>
         <div><dt>{{ t('androidTerminalSupportedDevices') }}</dt><dd>{{ t('androidTerminalDeviceList') }}</dd></div>
         <div><dt>{{ t('androidTerminalFileSize') }}</dt><dd>{{ formatAndroidTerminalFileSize(androidTerminalRelease.fileSizeBytes) }}</dd></div>
         <div><dt>{{ t('androidTerminalUpdatedAt') }}</dt><dd>{{ androidTerminalRelease.updatedAt }}</dd></div>
@@ -40,7 +40,11 @@ const { t } = useI18n();
       <ul class="android-terminal-release-notes">
         <li v-for="noteKey in androidTerminalRelease.releaseNoteKeys" :key="noteKey">{{ t(noteKey) }}</li>
       </ul>
-      <p class="android-terminal-page__candidate-notice">{{ t('androidTerminalDeviceValidationPending') }}</p>
+      <p class="android-terminal-page__release-notice">{{ t('androidTerminalReleaseCompleted') }}</p>
+      <h4>{{ t('androidTerminalPendingAcceptance') }}</h4>
+      <ul class="android-terminal-pending-acceptance">
+        <li v-for="pendingKey in androidTerminalRelease.pendingAcceptanceKeys" :key="pendingKey">{{ t(pendingKey) }}</li>
+      </ul>
     </section>
 
     <section class="android-terminal-card">
@@ -69,6 +73,8 @@ const { t } = useI18n();
 .android-terminal-download:hover, .android-terminal-download:focus-visible { background: #146a32; }
 .android-terminal-card ol { margin: 14px 0; padding-left: 20px; color: #5f6f65; line-height: 1.8; }
 .android-terminal-release-notes { margin: 14px 0; padding-left: 20px; color: #43564a; line-height: 1.8; }
-.android-terminal-page__candidate-notice { margin: 12px 0 0; padding: 12px 14px; border-radius: 9px; color: #6b4c10; background: #fff8e8; line-height: 1.6; }
+.android-terminal-page__release-notice { margin: 12px 0 18px; padding: 12px 14px; border-radius: 9px; color: #245d34; background: #edf8f0; line-height: 1.6; }
+.android-terminal-card h4 { margin: 0 0 6px; font-size: 14px; }
+.android-terminal-pending-acceptance { margin: 8px 0 0; padding-left: 20px; color: #6b4c10; line-height: 1.8; }
 @media (max-width: 640px) { .android-terminal-page__header, .android-terminal-card__heading { flex-direction: column; gap: 10px; } .android-terminal-page__header h2 { font-size: 26px; } .android-terminal-card { padding: 16px; } .android-terminal-details { grid-template-columns: 1fr; } .android-terminal-details__wide { grid-column: auto; } }
 </style>
