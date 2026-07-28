@@ -239,7 +239,14 @@ describe('PrintAttemptsService', () => {
       }),
     ).resolves.toBe(succeeded);
     expect(prisma.printAttempt.findFirst).toHaveBeenCalledWith({
-      where: { jobId, attemptNo: 1, terminalId, result: 'SUCCEEDED' },
+      where: {
+        jobId,
+        attemptNo: 1,
+        terminalId,
+        executorType: 'TERMINAL',
+        adapter: 'ANDROID_USB_ESCPOS',
+        result: 'SUCCEEDED',
+      },
     });
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
@@ -346,6 +353,8 @@ describe('PrintAttemptsService', () => {
         jobId,
         attemptNo: 1,
         terminalId,
+        executorType: 'TERMINAL',
+        adapter: 'ANDROID_USB_ESCPOS',
         finishedAt: { not: null },
       },
     });
@@ -628,6 +637,37 @@ describe('PrintAttemptsService', () => {
       service.extendLease(merchantId, terminalId, jobId, 2),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps merchant-session USB completion calls from mutating cloud worker jobs', async () => {
+    const cloudJob = job({
+      status: 'PRINTING',
+      claimedByTerminalId: null,
+      attemptCount: 1,
+    });
+    prisma.printJob.findFirst.mockResolvedValue(cloudJob);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 0 });
+    prisma.printAttempt.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.markSucceeded({
+        merchantId,
+        terminalId: null,
+        jobId,
+        attemptNo: 1,
+        leaseVersion: 2,
+        bytesWritten: 64,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
   });
 });
 

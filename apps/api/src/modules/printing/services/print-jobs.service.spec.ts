@@ -164,7 +164,55 @@ describe('PrintJobsService', () => {
     expect(prisma.printTriggerOutbox.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { eventKey: { in: [eventKey] } },
     }));
+    expect(prisma.printRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          printer: expect.objectContaining({
+            channelType: {
+              in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+            },
+          }),
+        }),
+      }),
+    );
   });
+
+  it.each(['DINE_IN', 'PICKUP', 'DELIVERY'] as const)(
+    'keeps %s automatic routing eligible for USB, Feie, and Yilian printers',
+    async (orderType) => {
+      flags.automaticCreationEnabled.mockReturnValue(true);
+      prisma.merchant.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        printingEnabled: true,
+      });
+      prisma.printRule.findMany.mockResolvedValue([automaticRule()]);
+      prisma.printTriggerOutbox.createMany.mockResolvedValue({ count: 1 });
+      prisma.printTriggerOutbox.findMany.mockResolvedValue([{ id: 902n }]);
+
+      await expect(
+        service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {
+          merchantId,
+          orderId,
+          orderStatusLogId: 9100n,
+          orderType,
+          status: 'ACCEPTED',
+        }),
+      ).resolves.toEqual([{ id: 902n }]);
+
+      expect(prisma.printRule.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ orderType }, { orderType: null }],
+            printer: expect.objectContaining({
+              channelType: {
+                in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+              },
+            }),
+          }),
+        }),
+      );
+    },
+  );
 
   it('does not create a table checkout intent when automatic printing is disabled', async () => {
     flags.automaticCreationEnabled.mockReturnValue(false);
@@ -356,6 +404,110 @@ describe('PrintJobsService', () => {
       },
       orderBy: { copyIndex: 'asc' },
     });
+  });
+
+  it.each([
+    ['CLOUD_FEIE', { printerSn: 'FEIE-SN-1' }],
+    ['CLOUD_YILIAN', { machineCode: 'YILIAN-MACHINE-1' }],
+  ] as const)(
+    'creates an automatic job routed to %s without requiring USB readiness evidence',
+    async (channelType, connectionConfig) => {
+      prisma.printRule.findFirst.mockResolvedValue(automaticRule());
+      prisma.printer.findFirst.mockResolvedValue(
+        enabledPrinter({
+          channelType,
+          connectionConfig,
+          status: 'UNKNOWN',
+          capabilities: {},
+        }),
+      );
+      prisma.receiptTemplate.findFirst.mockResolvedValue(template());
+      prisma.order.findFirst.mockResolvedValue({ id: orderId });
+      prisma.printJob.create.mockResolvedValue({ id: 120n, printerId });
+
+      await service.createAutomaticJob({
+        merchantId,
+        ruleId,
+        orderId,
+        eventKey: `order-status-log:cloud-${channelType}`,
+      });
+
+      expect(prisma.printJob.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            printerId,
+            source: 'AUTOMATIC',
+            triggerEvent: 'ORDER_ACCEPTED',
+          }),
+        }),
+      );
+    },
+  );
+
+  it('creates a TableSession checkout cloud task from the immutable whole-table snapshot', async () => {
+    const tableReceipt = {
+      ...receipt,
+      receiptType: 'TABLE_BILL' as const,
+      order: undefined,
+      tableSession: {
+        id: tableSessionId.toString(),
+        tableName: 'A01',
+        settledAt: '2026-07-28T10:00:00.000Z',
+        orderCount: 2,
+      },
+      totals: {
+        subtotal: 513_000,
+        originalTotal: 513_000,
+        roundingAmount: 3_000,
+        finalAmount: 510_000,
+        total: 510_000,
+        currency: 'VND',
+      },
+    };
+    prisma.printRule.findFirst.mockResolvedValue(
+      automaticRule({
+        receiptType: 'TABLE_BILL',
+        triggerEvent: 'TABLE_SESSION_SETTLED',
+      }),
+    );
+    prisma.printer.findFirst.mockResolvedValue(
+      enabledPrinter({
+        channelType: 'CLOUD_FEIE',
+        connectionConfig: { printerSn: 'FEIE-SN-1' },
+        status: 'UNKNOWN',
+        capabilities: {},
+      }),
+    );
+    prisma.receiptTemplate.findFirst.mockResolvedValue(
+      template({ receiptType: 'TABLE_BILL' }),
+    );
+    prisma.tableSession.findFirst.mockResolvedValue({ id: tableSessionId });
+    snapshots.fromTableSession.mockResolvedValue(tableReceipt);
+    prisma.printJob.create.mockResolvedValue({ id: 121n, printerId });
+
+    await service.createAutomaticJob({
+      merchantId,
+      ruleId,
+      tableSessionId,
+      eventKey: 'table-session-settled:cloud-47',
+    });
+
+    expect(prisma.printJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tableSessionId,
+          receiptType: 'TABLE_BILL',
+          triggerEvent: 'TABLE_SESSION_SETTLED',
+          receiptSnapshot: expect.objectContaining({
+            totals: expect.objectContaining({
+              originalTotal: 513_000,
+              roundingAmount: 3_000,
+              finalAmount: 510_000,
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it('captures the selected template version and expands each configured copy into its own job', async () => {
@@ -553,6 +705,36 @@ describe('PrintJobsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(snapshots.fromOrder).not.toHaveBeenCalled();
     expect(prisma.printJob.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a manual cloud job without treating provider connectivity as USB readiness', async () => {
+    prisma.printer.findFirst.mockResolvedValue(
+      enabledPrinter({
+        channelType: 'CLOUD_YILIAN',
+        connectionConfig: { machineCode: 'YILIAN-MACHINE-1' },
+        status: 'UNKNOWN',
+        capabilities: {},
+      }),
+    );
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 220n, printerId });
+
+    await expect(
+      service.createManualPrintJob({
+        merchantId,
+        createdByStaffId: 3n,
+        requestKey: 'manual-cloud-1',
+        printerId,
+        orderId,
+        receiptType: 'ORDER_CUSTOMER',
+      }),
+    ).resolves.toEqual({ id: 220n, printerId });
+
+    expect(prisma.printJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ source: 'MANUAL', printerId }),
+      }),
+    );
   });
 
   it('rejects an automatic snapshot whose merchant scope does not match the job', async () => {

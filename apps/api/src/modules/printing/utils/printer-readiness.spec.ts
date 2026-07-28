@@ -47,6 +47,50 @@ describe('printerReadiness', () => {
     ).toBe('DEVICE_OFFLINE');
   });
 
+  it.each([
+    ['CLOUD_FEIE', { printerSn: 'FEIE-SN-1' }],
+    ['CLOUD_YILIAN', { machineCode: 'YILIAN-MACHINE-1' }],
+  ] as const)(
+    'uses fresh provider evidence for implemented cloud channel %s',
+    (channelType, connectionConfig) => {
+      const ready = printerReadiness(
+        printer({
+          channelType,
+          connectionConfig,
+          capabilities: {
+            cloudStatusUpdatedAt: now.toISOString(),
+            cloudStatus: { status: 'ONLINE' },
+          },
+        }),
+        now,
+      );
+      expect(ready).toEqual(
+        expect.objectContaining({
+          state: 'READY',
+          channelImplemented: true,
+          configValid: true,
+          statusReady: true,
+          executionEvidenceReady: true,
+        }),
+      );
+    },
+  );
+
+  it('does not keep a stale cloud ONLINE flag in READY state', () => {
+    expect(
+      printerReadiness(
+        printer({
+          channelType: 'CLOUD_FEIE',
+          connectionConfig: { printerSn: 'FEIE-SN-1' },
+          capabilities: {
+            cloudStatusUpdatedAt: new Date(now.getTime() - 120_001).toISOString(),
+          },
+        }),
+        now,
+      ).state,
+    ).toBe('DEVICE_OFFLINE');
+  });
+
   it('expires positive connector evidence after 120 seconds without using a terminal heartbeat', () => {
     expect(
       printerReadiness(
