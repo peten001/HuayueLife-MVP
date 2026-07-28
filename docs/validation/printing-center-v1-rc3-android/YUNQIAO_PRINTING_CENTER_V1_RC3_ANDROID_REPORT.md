@@ -184,14 +184,17 @@ Codex 不创建生产订单，不点击生产结账，只可在用户手工触�
 ## 25. Commit 列表
 
 - `6e4a770e44e8c41dbca2a0fe87131d5111629935` — `build(android): prepare printing center RC APK`
-- 报告 Commit：完成精准暂存后补充。
+- `76114af28b4c1d2032706bfde1b5fc1958a3ce84` — `docs(android): add D10 printing RC validation`
+- Push 结果回填 Commit 即包含本文件的最终报告同步 Commit；为避免文件自引用，其精确 Hash 以远程分支 HEAD、交付目录报告和最终回复为准。
 
 ## 26. Push 结果
 
-- Gate：READY，待报告 Commit 与最终范围审计完成后执行普通 Push。
+- 结果：PASS。
 - 目标仓库：`git@github-peter001:peten001/HuayueLife-MVP.git`
 - 目标分支：`release/printing-center-v1-rc5-forward-rc3-android`
-- 禁止 Push main 和 Force Push。
+- 首次普通 Push：成功，远程已接收 `76114af28b4c1d2032706bfde1b5fc1958a3ce84`。
+- 本结果回填随报告同步 Commit 使用普通 fast-forward Push 送达同一 RC3 分支；最终远程 HEAD 在 Push 后通过 `git ls-remote` 验证。
+- 未修改 origin，未 Push main，未 Force Push。
 
 ## 27. LAN 边界
 
