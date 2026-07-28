@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
   createPrintingRule,
@@ -7,8 +7,10 @@ import {
   getPrintingRules,
   getPrintingTemplates,
   setPrintingRuleEnabled,
+  updatePrintingPrinter,
   updatePrintingRule,
 } from '@/api/printing';
+import { printingReleasePolicy } from '@/config/printing-release-policy';
 import { usePrintingI18n } from '@/i18n/printing';
 import type {
   PrintingOrderType,
@@ -30,6 +32,7 @@ const saving = ref(false);
 const modalOpen = ref(false);
 const message = ref('');
 const success = ref(false);
+const lanExecutionEnabled = printingReleasePolicy.lanExecutionEnabled;
 
 const form = reactive({
   id: '',
@@ -46,8 +49,22 @@ const form = reactive({
 
 const printerNames = computed(() => new Map(printers.value.map((printer) => [printer.id, printer.name])));
 const rulePrinters = computed(() =>
-  printers.value.filter((printer) => printer.channelType === 'LOCAL_USB_ESCPOS'),
+  printers.value.filter(
+    (printer) => printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
+  ),
 );
+const hasAnyPrinters = computed(() => printers.value.length > 0);
+const hasOnlyBlockedLanPrinters = computed(() =>
+  !lanExecutionEnabled
+  && hasAnyPrinters.value
+  && printers.value.every((printer) => printer.channelType === 'LOCAL_LAN_ESCPOS'),
+);
+const allPrintersDisabled = computed(() =>
+  hasAnyPrinters.value && !hasOnlyBlockedLanPrinters.value && rulePrinters.value.length === 0,
+);
+const firstDisabledPrinter = computed(() => printers.value.find(
+  (printer) => !printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
+) ?? null);
 const matchingTemplates = computed(() => {
   const printer = printers.value.find((item) => item.id === form.printerId);
   return templates.value.filter(
@@ -57,11 +74,37 @@ const matchingTemplates = computed(() => {
       (!printer || template.paperWidth === printer.paperWidth),
   );
 });
-// V1 automatic creation hooks exist only for these two durable order events.
-// The MANUAL enum remains readable for historical rows but is not offered as
-// an automatic rule configuration.
-const triggerEvents: PrintingTriggerEvent[] = ['ORDER_ACCEPTED', 'ORDER_COMPLETED'];
+// Automatic creation has durable order events plus the independent table
+// settlement event. MANUAL remains readable for historical rows only.
+const triggerEvents: PrintingTriggerEvent[] = ['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'TABLE_SESSION_SETTLED'];
 const orderTypes: PrintingOrderType[] = ['DINE_IN', 'PICKUP', 'DELIVERY'];
+const scenarios = [
+  { key: 'DINE_IN', title: 'dineInScenario', hint: 'dineInScenarioHint', receiptType: 'ORDER_CUSTOMER' as PrintingReceiptType },
+  { key: 'PICKUP', title: 'pickupScenario', hint: 'pickupScenarioHint', receiptType: 'ORDER_CUSTOMER' as PrintingReceiptType },
+  { key: 'DELIVERY', title: 'deliveryScenario', hint: 'deliveryScenarioHint', receiptType: 'ORDER_CUSTOMER' as PrintingReceiptType },
+  { key: 'TABLE_BILL', title: 'checkoutScenario', hint: 'checkoutScenarioHintFinal', receiptType: 'TABLE_BILL' as PrintingReceiptType },
+] as const;
+
+const scenarioRules = computed(() => scenarios.map((scenario) => ({
+  ...scenario,
+  rule: scenario.key === 'TABLE_BILL'
+    ? rows.value.find((row) => row.receiptType === scenario.receiptType)
+    : rows.value.find((row) => row.orderType === scenario.key),
+})));
+
+function triggerEventLabel(event: PrintingTriggerEvent) {
+  if (event === 'TABLE_SESSION_SETTLED') return p('tableSessionSettled');
+  return event === 'ORDER_COMPLETED' ? p('orderCompleted') : p('orderAccepted');
+}
+
+function orderTypeLabel(type: PrintingOrderType | null | '' | undefined) {
+  if (!type) return p('allOrderTypes');
+  return type === 'DINE_IN' ? p('dineInOrder') : type === 'PICKUP' ? p('pickupOrder') : p('deliveryOrder');
+}
+
+function receiptTypeLabel(type: PrintingReceiptType) {
+  return type === 'TABLE_BILL' ? p('checkoutReceipt') : p('customerReceipt');
+}
 
 function resetForm() {
   Object.assign(form, {
@@ -168,6 +211,48 @@ async function toggle(row: PrintingRule) {
   }
 }
 
+async function toggleScenario(rule: PrintingRule | undefined) {
+  if (rule) await toggle(rule);
+}
+
+type ScenarioRule = (typeof scenarios)[number] & { rule?: PrintingRule };
+
+async function changeScenarioPrinter(scenario: ScenarioRule, event: Event) {
+  const printerId = (event.target as HTMLSelectElement).value;
+  if (!printerId) return;
+  try {
+    saving.value = true;
+    if (scenario.rule) {
+      await updatePrintingRule(scenario.rule.id, { printerId });
+    } else {
+      await createPrintingRule({
+        name: p(scenario.title),
+        orderType: scenario.key === 'TABLE_BILL' ? null : scenario.key as PrintingOrderType,
+        triggerEvent: scenario.key === 'TABLE_BILL' ? 'TABLE_SESSION_SETTLED' : 'ORDER_ACCEPTED',
+        receiptType: scenario.receiptType,
+        printerId,
+        copies: 1,
+        autoPrint: false,
+        enabled: false,
+        priority: 100,
+      });
+    }
+    await load();
+    notifyPrintingStateChanged();
+    showSuccess(p('ruleSaved'));
+  } catch (error) { showError(error); } finally { saving.value = false; }
+}
+
+async function enablePrinter(printerId: string) {
+  try {
+    saving.value = true;
+    await updatePrintingPrinter(printerId, { enabled: true });
+    await load();
+    notifyPrintingStateChanged();
+    showSuccess(p('printerEnabled'));
+  } catch (error) { showError(error); } finally { saving.value = false; }
+}
+
 function showError(error: unknown) {
   success.value = false;
   message.value = errorMessage(error);
@@ -182,7 +267,13 @@ function notifyPrintingStateChanged() {
   window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
 }
 
-onMounted(load);
+function refreshRules() { void load(); }
+
+onMounted(() => {
+  void load();
+  window.addEventListener(PRINTING_STATE_CHANGED_EVENT, refreshRules);
+});
+onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, refreshRules));
 </script>
 
 <template>
@@ -190,17 +281,41 @@ onMounted(load);
     <div class="printing-toolbar">
       <div class="printing-toolbar__copy">
         <h2>{{ p('rules') }}</h2>
-        <p>{{ p('ruleDefaultOffHint') }}</p>
+        <p>{{ p('automaticPrintDescription') }}</p>
       </div>
       <div class="printing-toolbar__actions">
         <button class="printing-button printing-button--secondary" type="button" @click="load">{{ p('refresh') }}</button>
-        <button class="printing-button" type="button" :disabled="!rulePrinters.length" @click="openCreate">{{ p('addRule') }}</button>
+        <span class="printing-hint">{{ p('automaticPrintSetupHint') }}</span>
       </div>
     </div>
 
     <p :class="['printing-message', { 'printing-message--success': success }]">{{ message }}</p>
 
-    <div class="printing-table-wrap">
+    <section v-if="!hasAnyPrinters" class="printing-auto-empty-state">
+      <strong>{{ p('noPrinters') }}</strong><p>{{ p('pleaseAddPrinter') }}</p><RouterLink class="printing-button" to="/printing-center/printers">{{ p('addPrinter') }}</RouterLink>
+    </section>
+    <section v-else-if="hasOnlyBlockedLanPrinters" class="printing-auto-empty-state printing-auto-empty-state--disabled">
+      <strong>{{ p('lanCompatibilityTesting') }}</strong><p>{{ p('lanCompatibilityTestingHint') }}</p><RouterLink class="printing-button printing-button--secondary" to="/printing-center/printers">{{ p('settings') }}</RouterLink>
+    </section>
+    <section v-else-if="allPrintersDisabled" class="printing-auto-empty-state printing-auto-empty-state--disabled">
+      <strong>{{ p('printersNotEnabled') }}</strong><p>{{ p('enablePrinterBeforeAutoPrintPrefix') }}“{{ firstDisabledPrinter?.name }}”{{ p('enablePrinterBeforeAutoPrintSuffix') }}</p><button class="printing-button" type="button" :disabled="saving || !firstDisabledPrinter" @click="firstDisabledPrinter && enablePrinter(firstDisabledPrinter.id)">{{ p('enablePrinterAction') }}</button>
+    </section>
+    <section v-else class="printing-scenario-grid" aria-label="自动打印场景">
+      <article v-for="scenario in scenarioRules" :key="scenario.key" class="printing-scenario-card">
+        <div><h3>{{ p(scenario.title) }}</h3><p>{{ p(scenario.hint) }}</p></div>
+        <div class="printing-scenario-card__controls">
+          <span :class="['printing-badge', scenario.rule?.enabled ? 'printing-badge--success' : 'printing-badge--warning']">{{ scenario.rule ? (scenario.rule.enabled ? p('enabled') : p('disabled')) : p('notConfigured') }}</span>
+          <select :value="scenario.rule?.printerId || ''" :disabled="saving" :aria-label="p('targetPrinter')" @change="changeScenarioPrinter(scenario, $event)"><option value="">{{ scenario.rule?.printer?.name || p('choosePrinter') }}</option><option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printer.name }}</option></select>
+          <button class="printing-toggle" type="button" :disabled="!scenario.rule" :aria-pressed="Boolean(scenario.rule?.enabled)" @click="toggleScenario(scenario.rule)"><span>{{ scenario.rule?.enabled ? p('enabled') : p('enable') }}</span></button>
+        </div>
+      </article>
+    </section>
+
+    <p v-if="!rulePrinters.length && !hasOnlyBlockedLanPrinters" class="printing-inline-note"><strong>{{ p('pleaseAddPrinter') }}</strong><span>{{ p('addPrinterBeforeAutoPrint') }}</span></p>
+
+    <details class="printing-advanced-rules">
+      <summary><strong>{{ p('advancedRules') }}</strong><span>{{ p('advancedRulesHint') }}</span></summary>
+      <div class="printing-table-wrap">
       <table class="printing-table">
         <thead>
           <tr>
@@ -219,9 +334,9 @@ onMounted(load);
         <tbody>
           <tr v-for="row in rows" :key="row.id">
             <td><strong>{{ row.name }}</strong><small>#{{ row.priority }}</small></td>
-            <td><code>{{ row.triggerEvent }}</code></td>
-            <td>{{ row.orderType || p('allOrderTypes') }}</td>
-            <td>{{ row.receiptType }}</td>
+            <td>{{ triggerEventLabel(row.triggerEvent) }}</td>
+            <td>{{ orderTypeLabel(row.orderType) }}</td>
+            <td>{{ receiptTypeLabel(row.receiptType) }}</td>
             <td>{{ row.printer?.name || printerNames.get(row.printerId) || row.printerId }}</td>
             <td>{{ row.receiptTemplate?.name || row.receiptTemplateId || '—' }}</td>
             <td>{{ row.copies }}</td>
@@ -238,7 +353,8 @@ onMounted(load);
           <tr v-if="loading"><td class="printing-empty" colspan="10">{{ p('loading') }}</td></tr>
         </tbody>
       </table>
-    </div>
+      </div>
+    </details>
   </section>
 
   <div v-if="modalOpen" class="printing-modal-backdrop" @click.self="closeModal">
@@ -258,7 +374,7 @@ onMounted(load);
         <label class="printing-field">
           {{ p('triggerEvent') }}
           <select v-model="form.triggerEvent">
-            <option v-for="event in triggerEvents" :key="event" :value="event">{{ event }}</option>
+            <option v-for="event in triggerEvents" :key="event" :value="event">{{ triggerEventLabel(event) }}</option>
           </select>
         </label>
         <label class="printing-field">
@@ -271,15 +387,15 @@ onMounted(load);
         <label class="printing-field">
           {{ p('receiptType') }}
           <select v-model="form.receiptType">
-            <option value="ORDER_CUSTOMER">ORDER_CUSTOMER</option>
-            <option value="TABLE_BILL">TABLE_BILL</option>
+            <option value="ORDER_CUSTOMER">{{ p('customerReceipt') }}</option>
+            <option value="TABLE_BILL">{{ p('checkoutReceipt') }}</option>
           </select>
         </label>
         <label class="printing-field">
           {{ p('orderType') }}
           <select v-model="form.orderType">
             <option value="">{{ p('allOrderTypes') }}</option>
-            <option v-for="type in orderTypes" :key="type" :value="type">{{ type }}</option>
+            <option v-for="type in orderTypes" :key="type" :value="type">{{ orderTypeLabel(type) }}</option>
           </select>
         </label>
         <label class="printing-field">

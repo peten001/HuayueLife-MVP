@@ -2,6 +2,8 @@ import { PrinterChannelType, PrintingPrinterStatus, Prisma } from '@prisma/clien
 
 export const IMPLEMENTED_PRINTING_CHANNELS = new Set<PrinterChannelType>([
   'LOCAL_USB_ESCPOS',
+  'CLOUD_FEIE',
+  'CLOUD_YILIAN',
 ]);
 
 export const PRINTER_EXECUTION_EVIDENCE_TTL_MS = 120_000;
@@ -26,20 +28,29 @@ export function printerReadiness(
   const channelImplemented = IMPLEMENTED_PRINTING_CHANNELS.has(
     record.channelType,
   );
+  const usb = record.channelType === 'LOCAL_USB_ESCPOS';
+  const cloud =
+    record.channelType === 'CLOUD_FEIE' ||
+    record.channelType === 'CLOUD_YILIAN';
   const configValid = isConnectionConfigValid(
     record.channelType,
     record.connectionConfig,
   );
   const statusReady = record.status === 'ONLINE';
   const evidence = connectorEvidence(record.capabilities);
-  const evidenceUpdatedAt = connectorEvidenceUpdatedAt(record.capabilities);
+  const evidenceUpdatedAt = usb
+    ? connectorEvidenceUpdatedAt(record.capabilities)
+    : cloud
+      ? cloudEvidenceUpdatedAt(record.capabilities)
+      : null;
   const evidenceTimestamp = evidenceUpdatedAt?.getTime() ?? Number.NaN;
   const evidenceFresh =
     Number.isFinite(evidenceTimestamp) &&
     evidenceTimestamp >= now.getTime() - PRINTER_EXECUTION_EVIDENCE_TTL_MS &&
     evidenceTimestamp <= now.getTime() + 30_000;
   const executionEvidenceReady =
-    evidenceFresh && hasExplicitUsbExecutionEvidence(evidence);
+    evidenceFresh &&
+    (usb ? hasExplicitUsbExecutionEvidence(evidence) : cloud);
   const state: PrinterReadinessState =
     !record.enabled
       ? 'NOT_CONFIGURED'
@@ -79,6 +90,18 @@ export function isConnectionConfigValid(
   value: Prisma.JsonValue,
 ) {
   if (!isPlainObject(value)) return false;
+  if (channelType === 'LOCAL_LAN_ESCPOS') {
+    if (!isPlainObject(value)) return false;
+    const host = value.host;
+    const port = value.port;
+    return typeof host === 'string' && isPrivateIpv4(host) && Number.isInteger(port) && Number(port) >= 1 && Number(port) <= 65535;
+  }
+  if (channelType === 'CLOUD_FEIE') {
+    return isPlainObject(value) && typeof value.printerSn === 'string' && value.printerSn.length > 0;
+  }
+  if (channelType === 'CLOUD_YILIAN') {
+    return isPlainObject(value) && typeof value.machineCode === 'string' && value.machineCode.length > 0;
+  }
   if (channelType !== 'LOCAL_USB_ESCPOS') return false;
   const allowed = new Set(['paperWidthDots', 'threshold', 'cutMode']);
   if (Object.keys(value).some((key) => !allowed.has(key))) return false;
@@ -136,6 +159,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
+function isPrivateIpv4(value: string) {
+  const octets = value.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((item) => !Number.isInteger(item) || item < 0 || item > 255)) return false;
+  return octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168);
+}
+
 function connectorEvidence(value: Prisma.JsonValue) {
   if (!isPlainObject(value)) return undefined;
   return isPlainObject(value.connectorStatus)
@@ -146,6 +175,14 @@ function connectorEvidence(value: Prisma.JsonValue) {
 function connectorEvidenceUpdatedAt(value: Prisma.JsonValue) {
   if (!isPlainObject(value)) return null;
   const raw = value.connectorStatusUpdatedAt;
+  if (typeof raw !== 'string') return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function cloudEvidenceUpdatedAt(value: Prisma.JsonValue) {
+  if (!isPlainObject(value)) return null;
+  const raw = value.cloudStatusUpdatedAt;
   if (typeof raw !== 'string') return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;

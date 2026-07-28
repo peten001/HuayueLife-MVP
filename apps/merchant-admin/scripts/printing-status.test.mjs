@@ -109,6 +109,39 @@ try {
   assert.equal(printerConfigurationState(disabledButConnected), 'DISABLED');
   assert.equal(printerConnectionState(disabledButConnected, now), 'CONNECTED');
 
+  const cloudPrinter = printer({
+    channelType: 'CLOUD_FEIE',
+    connectionConfig: { printerSn: 'FEIE-SN-1' },
+    capabilities: { cloudStatusUpdatedAt: evidenceUpdatedAt },
+    readiness: {
+      state: 'READY',
+      channelImplemented: true,
+      configValid: true,
+      statusReady: true,
+      executionEvidenceReady: true,
+      evidenceUpdatedAt,
+      evidenceTtlMs: 120_000,
+    },
+  });
+  assert.equal(printerConfigurationState(cloudPrinter), 'CONFIGURED');
+  assert.equal(printerConnectionState(cloudPrinter, now), 'CONNECTED');
+  assert.equal(
+    printerConnectionState(
+      {
+        ...cloudPrinter,
+        capabilities: { cloudStatusUpdatedAt: '2026-07-24T09:50:00.000Z' },
+        readiness: {
+          ...cloudPrinter.readiness,
+          state: 'DEVICE_OFFLINE',
+          executionEvidenceReady: false,
+          evidenceUpdatedAt: '2026-07-24T09:50:00.000Z',
+        },
+      },
+      now,
+    ),
+    'UNKNOWN',
+  );
+
   assert.deepEqual(
     resolvePrintingCenterSummary(
       [printer()],

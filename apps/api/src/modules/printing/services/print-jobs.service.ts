@@ -41,6 +41,11 @@ const RETRYABLE_MANUAL_ERROR_CODES: string[] = [
   PRINTING_ERROR_CODES.PRINTER_OFFLINE,
   PRINTING_ERROR_CODES.LEASE_EXPIRED,
   PRINTING_ERROR_CODES.UNKNOWN,
+  PRINTING_ERROR_CODES.CLOUD_PROVIDER_NOT_CONFIGURED,
+  PRINTING_ERROR_CODES.CLOUD_CREDENTIALS_INVALID,
+  PRINTING_ERROR_CODES.CLOUD_DEVICE_INVALID,
+  PRINTING_ERROR_CODES.CLOUD_PROVIDER_REJECTED,
+  PRINTING_ERROR_CODES.CLOUD_PROVIDER_UNAVAILABLE,
 ];
 
 export interface CreateAutomaticJobInput {
@@ -57,6 +62,11 @@ export interface EnqueueAutomaticTriggerInput {
   orderStatusLogId: bigint;
   orderType: OrderType;
   status: 'ACCEPTED' | 'COMPLETED';
+}
+
+export interface EnqueueTableSessionCheckoutInput {
+  merchantId: bigint;
+  tableSessionId: bigint;
 }
 
 interface AutomaticRuleSnapshot {
@@ -150,13 +160,35 @@ export class PrintJobsService {
         updatedAt: true,
         printer: { select: { id: true, name: true, channelType: true } },
         order: { select: { orderNo: true } },
+        attempts: {
+          orderBy: { attemptNo: 'desc' },
+          take: 1,
+          select: {
+            attemptNo: true,
+            executorType: true,
+            cloudStatus: true,
+            providerTaskId: true,
+            providerSubmittedAt: true,
+            providerCheckedAt: true,
+            providerCheckCount: true,
+            result: true,
+            errorCode: true,
+            errorMessage: true,
+          },
+        },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit ?? 100,
     });
-    return jobs.map((job) => ({
+    return jobs.map(({ attempts, ...job }) => ({
       ...job,
       lastErrorMessage: sanitizePrintingError(job.lastErrorMessage),
+      latestAttempt: attempts[0]
+        ? {
+            ...attempts[0],
+            errorMessage: sanitizePrintingError(attempts[0].errorMessage),
+          }
+        : null,
     }));
   }
 
@@ -179,6 +211,12 @@ export class PrintJobsService {
             startedAt: true,
             finishedAt: true,
             result: true,
+            executorType: true,
+            cloudStatus: true,
+            providerTaskId: true,
+            providerSubmittedAt: true,
+            providerCheckedAt: true,
+            providerCheckCount: true,
             errorCode: true,
             errorMessage: true,
           },
@@ -325,7 +363,9 @@ export class PrintJobsService {
         printer: {
           enabled: true,
           deletedAt: null,
-          channelType: 'LOCAL_USB_ESCPOS',
+          channelType: {
+            in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+          },
         },
       },
       select: {
@@ -356,6 +396,79 @@ export class PrintJobsService {
         rule.updatedAt.toISOString(),
       ),
       triggerEvent,
+      ruleVersion: rule.updatedAt.toISOString(),
+      receiptType: rule.receiptType,
+      copies: Math.max(1, Math.min(3, rule.copies)),
+      priority: rule.priority,
+    }));
+    await tx.printTriggerOutbox.createMany({ data: records, skipDuplicates: true });
+    return tx.printTriggerOutbox.findMany({
+      where: { eventKey: { in: records.map((record) => record.eventKey) } },
+      select: { id: true },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  /**
+   * Records one independent table-checkout intent after the session settlement
+   * has been persisted in the same transaction. A checkout has no order
+   * status-log owner, so the outbox is keyed by tableSessionId instead.
+   */
+  async enqueueAutomaticTableSessionCheckout(
+    tx: Prisma.TransactionClient,
+    input: EnqueueTableSessionCheckoutInput,
+  ) {
+    if (!this.automaticTriggeringEnabled()) return [];
+    const merchant = await tx.merchant.findUnique({
+      where: { id: input.merchantId },
+      select: { status: true, printingEnabled: true },
+    });
+    if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) return [];
+    const rules = await tx.printRule.findMany({
+      where: {
+        merchantId: input.merchantId,
+        enabled: true,
+        autoPrint: true,
+        triggerEvent: 'TABLE_SESSION_SETTLED',
+        receiptType: 'TABLE_BILL',
+        orderType: null,
+        printer: {
+          enabled: true,
+          deletedAt: null,
+          channelType: {
+            in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+          },
+        },
+      },
+      select: {
+        id: true,
+        printerId: true,
+        receiptTemplateId: true,
+        receiptType: true,
+        triggerEvent: true,
+        copies: true,
+        priority: true,
+        updatedAt: true,
+      },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+    if (rules.length === 0) return [];
+    const records = rules.map((rule) => ({
+      merchantId: input.merchantId,
+      orderId: null,
+      orderStatusLogId: null,
+      tableSessionId: input.tableSessionId,
+      printRuleId: rule.id,
+      printerId: rule.printerId,
+      receiptTemplateId: rule.receiptTemplateId,
+      eventKey: this.outboxEventKey(
+        input.merchantId,
+        input.tableSessionId,
+        rule.triggerEvent,
+        rule.id,
+        rule.updatedAt.toISOString(),
+      ),
+      triggerEvent: rule.triggerEvent,
       ruleVersion: rule.updatedAt.toISOString(),
       receiptType: rule.receiptType,
       copies: Math.max(1, Math.min(3, rule.copies)),
@@ -432,7 +545,8 @@ export class PrintJobsService {
       await this.settings.assertMerchantPrintingEnabled(trigger.merchantId);
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
-        orderId: trigger.orderId,
+        orderId: trigger.orderId ?? undefined,
+        tableSessionId: trigger.tableSessionId ?? undefined,
         eventKey: trigger.eventKey,
         rule: {
           id: trigger.printRuleId,
@@ -571,7 +685,10 @@ export class PrintJobsService {
   async createManualPrintJob(input: CreateManualPrintJobInput) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(input.merchantId);
-    await this.requireReadyUsbPrinter(input.merchantId, input.printerId);
+    await this.requireReadyPrinterForMerchantOperation(
+      input.merchantId,
+      input.printerId,
+    );
     await this.requireOwnedStaff(
       this.prisma,
       input.merchantId,
@@ -651,7 +768,7 @@ export class PrintJobsService {
           where: { id: input.originalJobId, merchantId: input.merchantId },
         });
         if (!original) this.notFound();
-        await this.requireReadyUsbPrinter(
+        await this.requireReadyPrinterForMerchantOperation(
           input.merchantId,
           input.printerId ?? original.printerId,
           tx,
@@ -712,7 +829,10 @@ export class PrintJobsService {
   async createTestJob(input: CreateTestJobInput) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(input.merchantId);
-    await this.requireReadyUsbPrinter(input.merchantId, input.printerId);
+    await this.requireReadyPrinterForMerchantOperation(
+      input.merchantId,
+      input.printerId,
+    );
     const snapshot = this.snapshots.cloneAndValidate(input.document);
     this.assertSnapshotMerchant(input.merchantId, snapshot);
     const dedupeKey = this.manualDedupeKey(
@@ -831,6 +951,85 @@ export class PrintJobsService {
     });
   }
 
+  async createSafeTestJob(
+    merchantId: bigint,
+    printerId: bigint,
+    createdByStaffId: bigint,
+    requestId?: string,
+    requestKey: string = randomUUID(),
+  ) {
+    const printer = await this.prisma.printer.findFirst({
+      where: { id: printerId, merchantId, deletedAt: null },
+      select: { channelType: true },
+    });
+    if (!printer) this.referenceError('测试打印机不存在或不属于当前商家');
+    if (printer.channelType === 'LOCAL_USB_ESCPOS') {
+      return this.createSafeUsbTestJob(
+        merchantId,
+        printerId,
+        createdByStaffId,
+        requestId,
+        requestKey,
+      );
+    }
+    if (!['CLOUD_FEIE', 'CLOUD_YILIAN'].includes(printer.channelType)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+        message: '当前阶段仅支持 USB、飞鹅和易联云测试打印',
+      });
+    }
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: {
+        id: true,
+        nameZh: true,
+        nameVi: true,
+        addressZh: true,
+        contactPhone: true,
+      },
+    });
+    if (!merchant) this.referenceError('商家不存在');
+    const generatedAt = new Date().toISOString();
+    const providerName = printer.channelType === 'CLOUD_FEIE' ? '飞鹅' : '易联云';
+    return this.createTestJob({
+      merchantId,
+      printerId,
+      createdByStaffId,
+      requestId,
+      requestKey,
+      document: {
+        schemaVersion: 1,
+        receiptType: 'ORDER_CUSTOMER',
+        generatedAt,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.nameZh,
+          nameVi: merchant.nameVi ?? undefined,
+          address: merchant.addressZh ?? undefined,
+          phone: merchant.contactPhone,
+        },
+        order: {
+          id: '0',
+          orderNo: `CLOUD-TEST-${Date.now()}`.slice(0, 32),
+          orderType: 'TEST',
+          createdAt: generatedAt,
+        },
+        items: [
+          {
+            name: `云桥${providerName}云打印测试`,
+            nameVi: `Kiểm tra in đám mây ${providerName} YunQiao`,
+            quantity: 1,
+            unitPrice: 0,
+            lineTotal: 0,
+          },
+        ],
+        totals: { subtotal: 0, total: 0, currency: 'VND' },
+        note: '云桥测试小票 / Phiếu in thử YunQiao',
+        verificationCode: `YQ:CLOUD-TEST:${Date.now()}`,
+      },
+    });
+  }
+
   async cancel(
     merchantId: bigint,
     actorStaffId: bigint,
@@ -897,7 +1096,7 @@ export class PrintJobsService {
     ) {
       this.stateConflict('该错误不可安全重试，请修复配置后创建新的补打任务');
     }
-    await this.requireReadyUsbPrinter(merchantId, job.printerId);
+    await this.requireReadyPrinterForMerchantOperation(merchantId, job.printerId);
     return this.prisma.$transaction(async (tx) => {
       const changed = await tx.printJob.updateMany({
         where: { id, merchantId, status: { in: ['FAILED', 'RETRY_WAIT'] } },
@@ -1155,6 +1354,7 @@ export class PrintJobsService {
         merchantId,
         claimedByTerminalId: null,
         printerId,
+        printer: { channelType: 'LOCAL_USB_ESCPOS' },
         status: { in: ['CLAIMED', 'PRINTING'] },
         leaseExpiresAt: { gt: new Date() },
       },
@@ -1296,7 +1496,11 @@ export class PrintJobsService {
     this.flags.assertExecutionEnabled();
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.printJob.updateMany({
-        where: { status: 'CLAIMED', leaseExpiresAt: { lte: now } },
+        where: {
+          status: 'CLAIMED',
+          leaseExpiresAt: { lte: now },
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
+        },
         data: {
           status: 'PENDING',
           claimedAt: null,
@@ -1308,13 +1512,22 @@ export class PrintJobsService {
         },
       });
       const printingJobs = await tx.printJob.findMany({
-        where: { status: 'PRINTING', leaseExpiresAt: { lte: now } },
+        where: {
+          status: 'PRINTING',
+          leaseExpiresAt: { lte: now },
+          printer: { channelType: 'LOCAL_USB_ESCPOS' },
+        },
         select: { id: true, attemptCount: true, maxAttempts: true },
       });
       let printing = 0;
       for (const job of printingJobs) {
         const changed = await tx.printJob.updateMany({
-          where: { id: job.id, status: 'PRINTING', leaseExpiresAt: { lte: now } },
+          where: {
+            id: job.id,
+            status: 'PRINTING',
+            leaseExpiresAt: { lte: now },
+            printer: { channelType: 'LOCAL_USB_ESCPOS' },
+          },
           data: {
             status: 'FAILED',
             claimedAt: null,
@@ -1427,6 +1640,9 @@ export class PrintJobsService {
       });
       if (!session) this.referenceError('桌台账单不存在或不属于当前商家');
     }
+    const snapshot = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
+      ? this.snapshots.withTemplate(input.snapshot, template?.definition)
+      : input.snapshot;
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -1446,8 +1662,8 @@ export class PrintJobsService {
         status: 'PENDING',
         priority: input.priority,
         dedupeKey: input.dedupeKey,
-        receiptSnapshot: input.snapshot as unknown as Prisma.InputJsonValue,
-        receiptSnapshotHash: receiptSnapshotHash(input.snapshot),
+        receiptSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+        receiptSnapshotHash: receiptSnapshotHash(snapshot),
         createdByStaffId: input.createdByStaffId,
       },
     });
@@ -1513,16 +1729,20 @@ export class PrintJobsService {
         message: '打印机已停用，不能创建或重试任务',
       });
     }
-    if (printer.channelType !== 'LOCAL_USB_ESCPOS') {
+    if (
+      !['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'].includes(
+        printer.channelType,
+      )
+    ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-        message: '当前 Release Candidate 仅允许 USB ESC/POS 打印任务',
+        message: '当前阶段仅允许 USB、飞鹅或易联云打印任务',
       });
     }
     if (!isConnectionConfigValid(printer.channelType, printer.connectionConfig)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
-        message: 'USB 打印机连接配置不完整或无效',
+        message: '打印机连接配置不完整或无效',
       });
     }
     return printer;
@@ -1538,7 +1758,28 @@ export class PrintJobsService {
       printerId,
       client,
     );
+    if (printer.channelType !== 'LOCAL_USB_ESCPOS') {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
+        message: '该领取入口只允许 USB ESC/POS 打印机',
+      });
+    }
     if (!isReadyPrinter(printer)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+        message: 'USB 打印设备尚无明确可用证据',
+      });
+    }
+    return printer;
+  }
+
+  private async requireReadyPrinterForMerchantOperation(
+    merchantId: bigint,
+    printerId: bigint,
+    client: DbClient = this.prisma,
+  ) {
+    const printer = await this.requireEnabledPrinter(merchantId, printerId, client);
+    if (printer.channelType === 'LOCAL_USB_ESCPOS' && !isReadyPrinter(printer)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
         message: 'USB 打印设备尚无明确可用证据',
@@ -1615,14 +1856,14 @@ export class PrintJobsService {
 
   private outboxEventKey(
     merchantId: bigint,
-    orderStatusLogId: bigint,
+    eventSubjectId: bigint,
     triggerEvent: PrintTriggerEvent,
     ruleId: bigint,
     ruleVersion: string,
   ) {
     const digest = createHash('sha256')
       .update(
-        ['trigger-v1', merchantId, orderStatusLogId, triggerEvent, ruleId, ruleVersion].join(
+        ['trigger-v1', merchantId, eventSubjectId, triggerEvent, ruleId, ruleVersion].join(
           ':',
         ),
       )

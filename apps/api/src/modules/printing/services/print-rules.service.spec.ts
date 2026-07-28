@@ -112,6 +112,34 @@ describe('PrintRulesService', () => {
     expect(prisma.printRule.create).not.toHaveBeenCalled();
   });
 
+  it('accepts TABLE_BILL automatic printing only on the table settlement event', async () => {
+    prisma.printer.findFirst.mockResolvedValue(printer());
+    prisma.receiptTemplate.findFirst.mockResolvedValue(
+      template({ receiptType: 'TABLE_BILL' }),
+    );
+    prisma.printRule.create.mockImplementation(async ({ data }: { data: object }) => ({
+      id: 102n,
+      ...data,
+    }));
+
+    await service.create(merchantId, 3n, undefined, {
+      name: '堂食结账规则',
+      triggerEvent: 'TABLE_SESSION_SETTLED',
+      receiptType: 'TABLE_BILL',
+      printerId: printerId.toString(),
+      receiptTemplateId: templateId.toString(),
+      autoPrint: true,
+    });
+
+    expect(prisma.printRule.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        triggerEvent: 'TABLE_SESSION_SETTLED',
+        receiptType: 'TABLE_BILL',
+        autoPrint: true,
+      }),
+    });
+  });
+
   it('rejects automatic printing on a MANUAL trigger when creating a rule', async () => {
     await expect(
       service.create(merchantId, 3n, undefined, {

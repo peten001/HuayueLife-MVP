@@ -11,7 +11,10 @@ import {
   UpdatePrintingPrinterDto,
 } from '../dto/printer.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
-import { printerReadiness } from '../utils/printer-readiness';
+import {
+  IMPLEMENTED_PRINTING_CHANNELS,
+  printerReadiness,
+} from '../utils/printer-readiness';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
@@ -233,6 +236,13 @@ export class PrintingPrintersService {
         ...(cutMode === undefined ? {} : { cutMode: String(cutMode) }),
       } satisfies Prisma.InputJsonObject;
     }
+    if (channelType === 'CLOUD_FEIE' || channelType === 'CLOUD_YILIAN') {
+      const requiredKey = channelType === 'CLOUD_FEIE' ? 'printerSn' : 'machineCode';
+      if (Object.keys(value).some((key) => key !== requiredKey) || (value[requiredKey] !== undefined && (typeof value[requiredKey] !== 'string' || !String(value[requiredKey]).trim()))) {
+        this.configError(`${requiredKey} 是必填的设备标识`);
+      }
+      return value[requiredKey] === undefined ? {} as Prisma.InputJsonObject : { [requiredKey]: String(value[requiredKey]).trim() } satisfies Prisma.InputJsonObject;
+    }
     if (channelType !== 'LOCAL_LAN_ESCPOS') {
       if (Object.keys(value).length > 0) {
         throw new BadRequestException({
@@ -250,7 +260,7 @@ export class PrintingPrintersService {
       });
     }
     const host = value.host;
-    const port = value.port;
+    const port = value.port ?? 9100;
     if (typeof host !== 'string' || !isPrivateIpv4(host)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
@@ -307,12 +317,14 @@ export class PrintingPrintersService {
       capabilities: Prisma.JsonValue;
     },
   >(printer: T) {
-    const usb = printer.channelType === 'LOCAL_USB_ESCPOS';
+    const channelImplemented = IMPLEMENTED_PRINTING_CHANNELS.has(
+      printer.channelType,
+    );
     const readiness = printerReadiness(printer);
     return {
       ...printer,
       readiness,
-      adapterStatus: usb
+      adapterStatus: channelImplemented
         ? !this.flags.executionEnabled()
           ? PRINTING_ERROR_CODES.EXECUTION_DISABLED
           : readiness.state === 'READY'

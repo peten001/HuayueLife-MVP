@@ -8,6 +8,7 @@ enum class ReceiptType { ORDER_CUSTOMER, TABLE_BILL }
 data class ReceiptMerchant(
     val id: String,
     val name: String,
+    val nameVi: String?,
     val address: String?,
     val phone: String?,
 )
@@ -63,7 +64,10 @@ data class ReceiptDocumentV1(
     val totals: ReceiptTotals,
     val note: String?,
     val verificationCode: String?,
+    val footer: ReceiptFooter?,
 )
+
+data class ReceiptFooter(val zh: String, val vi: String)
 
 class ReceiptSchemaException(
     val path: String,
@@ -86,17 +90,18 @@ object ReceiptDocumentParser {
         root.requireOnly(
             "$",
             "schemaVersion", "receiptType", "generatedAt", "merchant", "order",
-            "tableSession", "items", "totals", "note", "verificationCode",
+            "tableSession", "items", "totals", "note", "verificationCode", "footer",
         )
         require(root.optInt("schemaVersion", -1) == 1) { "Unsupported receipt schema." }
         val receiptType = enumValueOf<ReceiptType>(root.requiredText("receiptType", 32))
         val generatedAt = root.requiredInstant("generatedAt")
         val merchantObject = root.requiredObject("merchant").also {
-            it.requireOnly("$.merchant", "id", "name", "address", "phone")
+            it.requireOnly("$.merchant", "id", "name", "nameVi", "address", "phone")
         }
         val merchant = ReceiptMerchant(
             id = merchantObject.requiredNumericId("id"),
             name = merchantObject.requiredText("name", 120),
+            nameVi = merchantObject.optionalText("nameVi", 120),
             address = merchantObject.optionalText("address", 300),
             phone = merchantObject.optionalText("phone", 32),
         )
@@ -143,6 +148,9 @@ object ReceiptDocumentParser {
             total = totalsObject.requiredNonNegativeLong("total"),
             currency = totalsObject.requiredText("currency", 8).also { require(it == "VND") },
         )
+        val footer = root.optJSONObject("footer")?.also {
+            it.requireOnly("$.footer", "zh", "vi")
+        }?.let { ReceiptFooter(it.requiredText("zh", 60), it.requiredText("vi", 60)) }
         return ReceiptDocumentV1(
             receiptType = receiptType,
             generatedAt = generatedAt,
@@ -153,6 +161,7 @@ object ReceiptDocumentParser {
             totals = totals,
             note = root.optionalText("note", 500),
             verificationCode = root.optionalText("verificationCode", 128),
+            footer = footer,
         )
     }
 

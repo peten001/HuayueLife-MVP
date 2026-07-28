@@ -4,6 +4,7 @@ import type {
   MerchantTerminal,
   MerchantTerminalPayload,
   MerchantPrintingSettings,
+  CloudPrintingExecutionState,
   PrintJobSource,
   PrintJobStatus,
   PrintingJob,
@@ -27,6 +28,13 @@ function normalizeCollection<T>(value: CollectionResponse<T>): T[] {
 export async function getPrintingFeatureState() {
   const response = await http.get<ApiResponse<PrintingFeatureState>>(
     '/merchant/printing/feature-state',
+  );
+  return response.data.data;
+}
+
+export async function getCloudPrintingExecutionState() {
+  const response = await http.get<ApiResponse<CloudPrintingExecutionState>>(
+    '/merchant/printing/cloud-execution-state',
   );
   return response.data.data;
 }
@@ -176,6 +184,18 @@ export async function retryPrintingJob(id: string) {
   const response = await http.post<ApiResponse<PrintingJob>>(
     `/merchant/printing/jobs/${id}/retry`,
     {},
+  );
+  return response.data.data;
+}
+
+export async function reprintPrintingJob(
+  id: string,
+  requestKey: string,
+  reason: string,
+) {
+  const response = await http.post<ApiResponse<PrintingJob>>(
+    `/merchant/printing/jobs/${id}/reprint`,
+    { requestKey, reason },
   );
   return response.data.data;
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "corepack pnpm -r --if-present build",
     "typecheck": "corepack pnpm -r --if-present typecheck",
+    "test:deploy-contract": "node deploy/scripts/deployment-contract.test.mjs",
     "dev:api": "corepack pnpm --filter @huayue-life/api start:dev",
     "dev:miniapp": "corepack pnpm --filter @huayue-life/miniapp dev:mp-weixin",
     "dev:merchant-admin": "corepack pnpm --filter @huayue-life/merchant-admin dev",

@@ -26,8 +26,8 @@ export class CreatePrintRuleDto {
   @IsIn(['DINE_IN', 'PICKUP', 'DELIVERY'])
   orderType?: 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 
-  @IsIn(['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'MANUAL'])
-  triggerEvent: 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'MANUAL';
+  @IsIn(['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'TABLE_SESSION_SETTLED', 'MANUAL'])
+  triggerEvent: 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'TABLE_SESSION_SETTLED' | 'MANUAL';
 
   @IsIn(['ORDER_CUSTOMER', 'TABLE_BILL'])
   receiptType: 'ORDER_CUSTOMER' | 'TABLE_BILL';
@@ -75,8 +75,8 @@ export class UpdatePrintRuleDto {
   orderType?: 'DINE_IN' | 'PICKUP' | 'DELIVERY' | null;
 
   @IsOptional()
-  @IsIn(['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'MANUAL'])
-  triggerEvent?: 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'MANUAL';
+  @IsIn(['ORDER_ACCEPTED', 'ORDER_COMPLETED', 'TABLE_SESSION_SETTLED', 'MANUAL'])
+  triggerEvent?: 'ORDER_ACCEPTED' | 'ORDER_COMPLETED' | 'TABLE_SESSION_SETTLED' | 'MANUAL';
 
   @IsOptional()
   @IsIn(['ORDER_CUSTOMER', 'TABLE_BILL'])

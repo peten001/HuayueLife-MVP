@@ -42,6 +42,7 @@ describe('MerchantPrintingController contract', () => {
       expect.arrayContaining([
         ['GET', 'printers'],
         ['GET', 'feature-state'],
+        ['GET', 'cloud-execution-state'],
         ['GET', 'settings'],
         ['PATCH', 'settings'],
         ['POST', 'printers'],
@@ -102,6 +103,15 @@ describe('MerchantPrintingController contract', () => {
     const settings = {
       get: jest.fn().mockResolvedValue({ printingEnabled: false }),
     };
+    const cloudExecution = {
+      status: jest.fn().mockReturnValue({
+        enabled: true,
+        providers: {
+          FEIE: { enabled: true, configured: true },
+          YILIAN: { enabled: false, configured: false },
+        },
+      }),
+    };
     printers.list.mockResolvedValue([]);
     jobs.retry.mockResolvedValue({ id: 301n });
     const controller = new MerchantPrintingController(
@@ -112,6 +122,7 @@ describe('MerchantPrintingController contract', () => {
       attempts as never,
       flags as never,
       settings as never,
+      cloudExecution as never,
     );
 
     await controller.listPrinters(7n);
@@ -137,6 +148,13 @@ describe('MerchantPrintingController contract', () => {
       legacyPrintingEnabled: false,
       merchantPrintingEnabled: false,
     });
+    expect(controller.cloudExecutionState()).toEqual({
+      enabled: true,
+      providers: {
+        FEIE: { enabled: true, configured: true },
+        YILIAN: { enabled: false, configured: false },
+      },
+    });
   });
 
   it('keeps the new printing API available while legacy printing is disabled', async () => {
@@ -153,6 +171,7 @@ describe('MerchantPrintingController contract', () => {
       serviceMock([]) as never,
       flags as never,
       { get: jest.fn() } as never,
+      { status: jest.fn() } as never,
     );
 
     await expect(controller.listPrinters(7n)).resolves.toEqual([{ id: 1n }]);
@@ -174,6 +193,7 @@ describe('MerchantPrintingController contract', () => {
       'disableRule',
       'cancelJob',
       'updateSettings',
+      'cloudExecutionState',
     ] as const) {
       expect(
         Reflect.getMetadata(

@@ -15,6 +15,8 @@ import { ReceiptTemplatesService } from './services/receipt-templates.service';
 import { TerminalsService } from './services/terminals.service';
 import { TerminalConnectorService } from './services/terminal-connector.service';
 import { TerminalCredentialsService } from './services/terminal-credentials.service';
+import { CloudPrintingService } from './services/cloud-printing.service';
+import { CloudPrintExecutionService } from './services/cloud-print-execution.service';
 
 @Module({
   controllers: [MerchantPrintingController],
@@ -30,6 +32,8 @@ import { TerminalCredentialsService } from './services/terminal-credentials.serv
     TerminalsService,
     PrintingSettingsService,
     TerminalCredentialsService,
+    CloudPrintingService,
+    CloudPrintExecutionService,
     TerminalConnectorService,
     TerminalAuthGuard,
     ActiveMerchantStaffGuard,
