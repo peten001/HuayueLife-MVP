@@ -55,6 +55,9 @@ object ReceiptDocumentRenderer {
         val divider = "-".repeat(if (width <= 384) 30 else 44)
         val rows = mutableListOf<ReceiptRow>()
         rows.wrap(document.merchant.name, title, contentWidth, centered = true)
+        document.merchant.nameVi?.takeIf { it.isNotBlank() && it != document.merchant.name }?.let {
+            rows.wrap(it, normal, contentWidth, centered = true)
+        }
         document.merchant.address?.takeIf(String::isNotBlank)?.let { rows.wrap(it, normal, contentWidth, true) }
         document.merchant.phone?.takeIf(String::isNotBlank)?.let {
             rows.wrap(it, normal, contentWidth, centered = true)
@@ -77,7 +80,17 @@ object ReceiptDocumentRenderer {
                 rows.wrap("   规格 / Quy cách: $it", normal, contentWidth)
             }
             rows.wrap(
-                "   ${item.quantity} x ${vnd(item.unitPrice)} = ${vnd(item.lineTotal)} VND",
+                "   数量 / Số lượng: ${item.quantity}",
+                normal,
+                contentWidth,
+            )
+            rows.wrap(
+                "   单价 / Đơn giá: ${vnd(item.unitPrice)} VND",
+                normal,
+                contentWidth,
+            )
+            rows.wrap(
+                "   金额 / Thành tiền: ${vnd(item.lineTotal)} VND",
                 normal,
                 contentWidth,
             )
@@ -94,12 +107,28 @@ object ReceiptDocumentRenderer {
             rows += ReceiptRow("服务费 / Phí dịch vụ: ${vnd(it)} VND", normal)
         }
         rows += ReceiptRow("合计 / Tổng cộng: ${vnd(document.totals.total)} VND", bold)
+        document.totals.originalAmount?.let {
+            rows += ReceiptRow("原金额 / Tổng tiền ban đầu: ${vnd(it)} VND", normal)
+        }
+        document.totals.roundingAmount?.takeIf { it > 0 }?.let {
+            rows += ReceiptRow("抹零 / Làm tròn: ${vnd(it)} VND", normal)
+        }
+        document.totals.receivedAmount?.let {
+            rows += ReceiptRow("实收 / Thực thu: ${vnd(it)} VND", bold)
+        }
         document.note?.takeIf(String::isNotBlank)?.let {
             rows.wrap("订单备注 / Ghi chú: $it", normal, contentWidth)
         }
         rows += ReceiptRow(divider, normal)
         rows += ReceiptRow("生成 / Tạo: ${formatTime(document.generatedAt)}", normal)
         rows += ReceiptRow("打印 / In: ${formatTime(config.printedAtEpochMs)}", normal)
+        val footer = document.footer ?: ReceiptFooter(
+            zh = "谢谢惠顾，欢迎再次光临",
+            vi = "Cảm ơn quý khách, hẹn gặp lại!",
+        )
+        rows += ReceiptRow(divider, normal)
+        rows += ReceiptRow(footer.zh, normal, centered = true)
+        rows += ReceiptRow(footer.vi, normal, centered = true)
 
         val gap = (6f * scale).coerceAtLeast(4f)
         val textHeight = rows.sumOf { ceil(it.paint.fontSpacing + gap).toInt() }
