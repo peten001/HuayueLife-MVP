@@ -27,8 +27,7 @@ export function printerConfigurationState(
 ): PrinterConfigurationState {
   if (!printer.enabled) return 'DISABLED';
   if (
-    printer.channelType === 'LOCAL_USB_ESCPOS'
-    && printer.readiness?.channelImplemented === true
+    printer.readiness?.channelImplemented === true
     && printer.readiness.configValid === true
   ) {
     return 'CONFIGURED';
@@ -43,6 +42,22 @@ export function printerConnectionState(
   const evidenceAt = evidenceTimestamp(printer);
   const evidence = connectorEvidence(printer);
   const evidenceFresh = isEvidenceFresh(printer, evidenceAt, now);
+  const cloud =
+    printer.channelType === 'CLOUD_FEIE' ||
+    printer.channelType === 'CLOUD_YILIAN';
+
+  if (cloud) {
+    if (!evidenceFresh) return 'UNKNOWN';
+    if (
+      printer.status === 'ONLINE' &&
+      printer.readiness?.state === 'READY' &&
+      printer.readiness.executionEvidenceReady === true
+    ) {
+      return 'CONNECTED';
+    }
+    if (printer.status === 'OFFLINE' || printer.status === 'ERROR') return 'OFFLINE';
+    return 'UNKNOWN';
+  }
 
   if (evidenceFresh && evidence) {
     if (evidence.usbDeviceRecognized === false) return 'DEVICE_NOT_DETECTED';

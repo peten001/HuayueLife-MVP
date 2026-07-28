@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
-import { createPrintingPrinter, createPrintingTestJob, disablePrintingPrinter, getMerchantPrintingSettings, getPrintingPrinters, getPrintingRules, updatePrintingPrinter } from '@/api/printing';
+import { createPrintingPrinter, createPrintingTestJob, disablePrintingPrinter, getCloudPrintingExecutionState, getMerchantPrintingSettings, getPrintingPrinters, getPrintingRules, updatePrintingPrinter } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
 import type { PrintingPaperWidth, PrintingPrinter, PrintingPrinterPayload, PrintingRule } from '@/types/printing';
 import { printerConnectionState, PRINTING_STATE_CHANGED_EVENT, type PrinterConnectionState } from '@/utils/printing-status';
@@ -10,6 +10,7 @@ const { p } = usePrintingI18n();
 const rows = ref<PrintingPrinter[]>([]);
 const rules = ref<PrintingRule[]>([]);
 const settings = ref<Awaited<ReturnType<typeof getMerchantPrintingSettings>> | null>(null);
+const cloudExecution = ref<Awaited<ReturnType<typeof getCloudPrintingExecutionState>> | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const actionId = ref('');
@@ -74,14 +75,18 @@ function canNext() {
 function nextStep() { if (canNext()) step.value = Math.min(3, step.value + 1); }
 function previousStep() { step.value = Math.max(1, step.value - 1); }
 
-async function load() { try { loading.value = true; [rows.value, settings.value, rules.value] = await Promise.all([getPrintingPrinters(), getMerchantPrintingSettings(), getPrintingRules()]); } catch (error) { showError(error); } finally { loading.value = false; } }
+async function load() { try { loading.value = true; [rows.value, settings.value, rules.value, cloudExecution.value] = await Promise.all([getPrintingPrinters(), getMerchantPrintingSettings(), getPrintingRules(), getCloudPrintingExecutionState()]); } catch (error) { showError(error); } finally { loading.value = false; } }
 async function save() {
   if (saving.value || !canNext()) return;
   try { saving.value = true; if (form.id) await updatePrintingPrinter(form.id, updatePayload()); else await createPrintingPrinter(payload()); closeModal(); await load(); window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT)); showSuccess(`${p('printerSaved')} · ${p('printerSavedHint')}`); } catch (error) { showError(error); } finally { saving.value = false; }
 }
 function getOrCreateTestJobRequestKey(printerId: string) { const keys = readKeys(); if (keys[printerId]) return keys[printerId]; const key = `admin.${crypto.randomUUID()}`; keys[printerId] = key; localStorage.setItem(TEST_JOB_REQUEST_KEYS_STORAGE, JSON.stringify(keys)); return key; }
 function readKeys(): Record<string, string> { try { const value = JSON.parse(localStorage.getItem(TEST_JOB_REQUEST_KEYS_STORAGE) || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch { return {}; } }
-async function testPrint(row: PrintingPrinter) { if (row.channelType !== 'LOCAL_USB_ESCPOS' || !settings.value?.featureFlags.executionEnabled) return; try { actionId.value = row.id; const job = await createPrintingTestJob(row.id, getOrCreateTestJobRequestKey(row.id)); showSuccess(`${p('testPrintCreated')} · #${job.id}`); } catch (error) { showError(error); } finally { actionId.value = ''; } }
+function clearTestJobRequestKey(printerId: string) { const keys = readKeys(); delete keys[printerId]; localStorage.setItem(TEST_JOB_REQUEST_KEYS_STORAGE, JSON.stringify(keys)); }
+function cloudProviderConfigured(row: PrintingPrinter) { const provider = row.channelType === 'CLOUD_FEIE' ? 'FEIE' : row.channelType === 'CLOUD_YILIAN' ? 'YILIAN' : null; return provider ? cloudExecution.value?.providers[provider].configured === true : false; }
+function testPrintAvailable(row: PrintingPrinter) { if (!row.enabled || !settings.value?.featureFlags.executionEnabled) return false; if (row.channelType === 'LOCAL_USB_ESCPOS') return true; if (row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') return cloudExecution.value?.enabled === true && cloudProviderConfigured(row); return false; }
+function testPrintUnavailableHint(row: PrintingPrinter) { if (row.channelType === 'LOCAL_LAN_ESCPOS') return p('lanExecutionNotAvailable'); if (!settings.value?.featureFlags.executionEnabled) return p('printingExecutionUnavailable'); if ((row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !cloudProviderConfigured(row)) return p('cloudProviderContactAdmin'); if ((row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !cloudExecution.value?.enabled) return p('cloudWorkerUnavailable'); return ''; }
+async function testPrint(row: PrintingPrinter) { if (!testPrintAvailable(row)) return; const requestKey = getOrCreateTestJobRequestKey(row.id); try { actionId.value = row.id; const job = await createPrintingTestJob(row.id, requestKey); clearTestJobRequestKey(row.id); showSuccess(`${p('testPrintCreated')} · #${job.id}`); } catch (error) { showError(error); } finally { actionId.value = ''; } }
 function requestToggle(row: PrintingPrinter) {
   if (row.enabled) {
     pendingDisable.value = row;
@@ -124,7 +129,8 @@ onMounted(load);
       <article v-for="row in rows" :key="row.id" class="printing-printer-row">
         <div class="printing-printer-row__identity"><div class="printing-printer-row__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 9h12v9H6zM8 9V5h8v4m-5 4h4m-5 3h6" /></svg></div><div><strong>{{ row.name }}</strong><span>{{ channelLabel(row.channelType) }} · {{ printerUsageLabel(row) }}</span></div></div>
         <span :class="['printing-badge', statusClass(printerConnectionState(row))]">{{ statusLabel(printerConnectionState(row)) }}</span>
-        <div class="printing-actions"><button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id" @click="testPrint(row)">{{ p('testPrint') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id" @click="requestToggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button></div>
+        <div class="printing-actions"><button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id || !testPrintAvailable(row)" :title="testPrintAvailable(row) ? p('testPrint') : testPrintUnavailableHint(row)" @click="testPrint(row)">{{ p('testPrint') }}</button><button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id" @click="requestToggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button></div>
+        <p v-if="(row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') && !testPrintAvailable(row)" class="printing-hint printing-printer-row__notice">{{ testPrintUnavailableHint(row) }}</p>
       </article>
     </div>
   </section>

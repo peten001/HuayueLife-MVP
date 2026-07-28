@@ -837,6 +837,7 @@ onBeforeUnmount(() => {
 .printing-printer-row__identity > div:last-child { display: grid; gap: 3px; min-width: 0; }
 .printing-printer-row__identity strong { overflow: hidden; color: var(--printing-ink); text-overflow: ellipsis; white-space: nowrap; }
 .printing-printer-row__identity span { overflow: hidden; color: var(--printing-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.printing-printer-row__notice { grid-column: 1 / -1; margin: -7px 0 0 44px; }
 .printing-printer-row__icon, .printing-method-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; color: var(--printing-green); background: var(--printing-green-soft); font-size: 19px; }
 .printing-icon-button, .printing-modal__close { border: 0; color: #66756b; background: transparent; font-size: 20px; cursor: pointer; }
 .printing-modal--printer-flow { width: min(780px, 100%); max-height: min(720px, calc(100vh - 40px)); }
@@ -960,6 +961,8 @@ onBeforeUnmount(() => {
   .printing-printer-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .printing-printer-row > .printing-badge { grid-column: 2; grid-row: 1; }
   .printing-printer-row > .printing-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .printing-printer-row__notice { margin-left: 0; }
+  .printing-jobs-page .printing-button--small { min-height: 44px; }
   .printing-modal--printer-flow { min-height: 100vh; }
   .printing-flow-steps { padding: 9px 14px; }
   .printing-flow-step { flex: 1; }

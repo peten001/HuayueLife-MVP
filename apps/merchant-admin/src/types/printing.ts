@@ -23,7 +23,29 @@ export type PrintJobStatus =
   | 'RETRY_WAIT'
   | 'FAILED'
   | 'CANCELLED';
+export type CloudPrintExecutionStatus =
+  | 'PENDING'
+  | 'CLAIMED'
+  | 'SUBMITTING'
+  | 'SUBMITTED'
+  | 'ACCEPTED'
+  | 'PRINTED'
+  | 'FAILED'
+  | 'UNKNOWN'
+  | 'NOT_CONFIGURED'
+  | 'CANCELLED';
 export type MerchantTerminalPlatform = 'ANDROID' | 'WEB' | 'SERVER';
+
+export interface CloudPrintingExecutionState {
+  enabled: boolean;
+  pollIntervalMs: number;
+  leaseTimeoutMs: number;
+  maxBatch: number;
+  providers: Record<
+    'FEIE' | 'YILIAN',
+    { enabled: boolean; configured: boolean }
+  >;
+}
 
 export interface PrintingFeatureState {
   taskCenterEnabled: boolean;
@@ -139,7 +161,7 @@ export interface PrintingJob {
   order?: { orderNo: string } | null;
   tableSessionId?: string | null;
   printerId: string;
-  printer?: Pick<PrintingPrinter, 'id' | 'name'>;
+  printer?: Pick<PrintingPrinter, 'id' | 'name' | 'channelType' | 'enabled'>;
   receiptTemplateId?: string | null;
   receiptTemplateVersion?: number | null;
   receiptType: PrintingReceiptType;
@@ -160,9 +182,27 @@ export interface PrintingJob {
   cancelledAt?: string | null;
   lastErrorCode?: string | null;
   lastErrorMessage?: string | null;
+  latestAttempt?: PrintingAttemptSummary | null;
+  attempts?: PrintingAttemptSummary[];
   receiptSnapshot?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PrintingAttemptSummary {
+  id?: string;
+  attemptNo: number;
+  executorType?: string | null;
+  cloudStatus?: CloudPrintExecutionStatus | null;
+  providerTaskId?: string | null;
+  providerSubmittedAt?: string | null;
+  providerCheckedAt?: string | null;
+  providerCheckCount?: number;
+  startedAt?: string;
+  finishedAt?: string | null;
+  result?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }
 
 export type MerchantTerminalStatus = 'UNPAIRED' | 'ACTIVE' | 'DISABLED' | 'REVOKED';
