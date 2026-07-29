@@ -297,7 +297,7 @@ D14 已固化上述语义，不得自行把 <code>settlementStatus</code> 变成
 | 点菜 | 在当前 ACTIVE 桌台的 OPEN TableSession 中创建新的普通 DINE_IN、PENDING_ACCEPTANCE Order；<code>userId=null</code>、<code>createdByStaffId=当前员工</code>；不修改顾客原订单 | 已上线待人工验证 |
 | 顾客复用服务员Session | 顾客首单若遇到员工已开会话，复用同一 `TableSession` 并继续下单，不触发 `TABLE_ALREADY_OPEN` | 自动化E2E验证PASS，待现场联合验证 |
 | 减菜 | 仅 <code>PENDING_ACCEPTANCE</code>；只允许减少数量；重算订单与桌账金额 | 已上线待人工验证 |
-| 退菜 | 仅 <code>ACCEPTED / PREPARING / READY</code>；只做数量和确认；无原因、无审批、无退款字段、无退菜单；已送厨房订单最后一个有效菜品不得全部退为 0 | 已上线待人工验证 |
+| 退菜 | 仅 <code>ACCEPTED / PREPARING / READY</code>；只做数量和危险确认；无原因、无审批、无退款字段、无退菜单；允许退掉订单最后一个有效菜，订单退空后自动取消，且整桌无其他有效菜品时在同一事务关闭 <code>TableSession</code>、清空 <code>openTableId</code> 并释放桌台；不产生结账、支付、收款或打印语义 | 本地自动化与 fixture UI 验证通过，待兼容数据库的真实 API 与人工验证，尚未发布 |
 
 接口证据：
 

@@ -84,7 +84,6 @@ async function print() {
         : null;
     if (!job) return;
     jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)];
-    uiStore.pushToast(t('print.jobCreated'), 'success');
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'print.createFailed')), 'error');
   }
@@ -101,7 +100,6 @@ async function reprint() {
     jobs.value = [job, ...jobs.value];
     reprintReason.value = '';
     reprintOpen.value = false;
-    uiStore.pushToast(t('print.reprintCreated'), 'success');
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'print.createFailed')), 'error');
   }

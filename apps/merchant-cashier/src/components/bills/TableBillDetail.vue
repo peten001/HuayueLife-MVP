@@ -62,14 +62,23 @@ function itemName(item: OrderItem) {
   return resolveLocalizedOrderItemName(item, locale.value, t('order.itemNameFallback'));
 }
 
-function canAdjust(order: TableSessionOrder) {
+function canAdjust(item: OrderItem, order: TableSessionOrder) {
   if (props.session?.status !== 'OPEN') return false;
+  if (Number(item.quantity || 0) <= 0) return false;
   const context = { orderType: 'DINE_IN' as const, tableSessionId: props.session.id, status: order.status };
   return canDecreaseOrderItems(context) || canReturnOrderItems(context);
 }
 
+function adjustmentTitle(item: OrderItem, order: TableSessionOrder) {
+  if (Number(item.quantity || 0) <= 0) return t('itemAdjustment.noReturnableQuantity');
+  return canAdjust(item, order)
+    ? t('itemAdjustment.decrease')
+    : t('itemAdjustment.unavailable');
+}
+
 function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
-  if (canReturnOrderItems({ orderType: 'DINE_IN', tableSessionId: order.id, status: order.status })) {
+  if (!canAdjust(item, order) || !props.session) return;
+  if (canReturnOrderItems({ orderType: 'DINE_IN', tableSessionId: props.session.id, status: order.status })) {
     emit('returnItem', item, order);
     return;
   }
@@ -102,8 +111,8 @@ function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
               class="order-item-adjustment order-item-adjustment--decrease"
               data-testid="decrease-order-item"
               :aria-label="`${t('itemAdjustment.decrease')} ${itemName(entry.item)}`"
-              :disabled="adjustmentDisabled(entry.item.id) || !canAdjust(entry.order)"
-              :title="canAdjust(entry.order) ? t('itemAdjustment.decrease') : t('itemAdjustment.unavailable')"
+              :disabled="adjustmentDisabled(entry.item.id) || !canAdjust(entry.item, entry.order)"
+              :title="adjustmentTitle(entry.item, entry.order)"
               @click="emitItemAdjustment(entry.item, entry.order)"
             ><Minus :size="14" aria-hidden="true" />{{ t('itemAdjustment.decrease') }}</button>
           </article>

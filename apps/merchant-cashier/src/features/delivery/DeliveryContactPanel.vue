@@ -21,10 +21,9 @@ const isDialSupported = computed(() => {
 
 async function copyAddress() {
   const copied = await copyPlainText(props.order.deliveryAddress || '');
-  uiStore.pushToast(
-    t(copied ? 'fulfillment.addressCopied' : 'fulfillment.addressCopyFailed'),
-    copied ? 'success' : 'error',
-  );
+  if (!copied) {
+    uiStore.pushToast(t('fulfillment.addressCopyFailed'), 'error');
+  }
 }
 
 </script>

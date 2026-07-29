@@ -270,14 +270,21 @@ export const demoRepository = {
     if (input.returnQuantity < 1 || input.returnQuantity > item.quantity) {
       throw conflict('INVALID_ITEM_QUANTITY', 'Invalid demo return quantity');
     }
-    if (order.items.length === 1 && input.returnQuantity === item.quantity) {
-      throw conflict('LAST_ORDER_ITEM_RETURN_NOT_ALLOWED', 'Cannot return the last demo item');
-    }
     clearDemoSessionRounding();
     item.quantity -= input.returnQuantity;
     item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
     if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
     recalculateDemoOrder(order);
+    if (!order.items.length) {
+      order.status = 'CANCELLED';
+      order.cancelledAt = order.updatedAt;
+      order.cancelReason = 'Demo order automatically cancelled after its final item was returned';
+    }
+    const effectiveQuantity = tableOrders()
+      .filter((candidate) => candidate.status !== 'CANCELLED')
+      .flatMap((candidate) => candidate.items)
+      .reduce((sum, candidate) => sum + candidate.quantity, 0);
+    if (effectiveQuantity === 0) sessionClosed = true;
     return cacheAdjustmentResult(order, input.requestKey);
   },
 };

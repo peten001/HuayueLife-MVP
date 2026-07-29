@@ -101,7 +101,6 @@ async function toggleRounding() {
   if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
   try {
     await ordersStore.setRounding(order.value.id, !order.value.roundingApplied);
-    uiStore.pushToast(t('order.actionSuccess'), 'success');
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.roundingStatusNotAllowed')), 'error');
   }
@@ -117,7 +116,6 @@ async function runActionSequence(actions: readonly MerchantOrderAction[]) {
       updated = await ordersStore.runAction(orderId, action);
     }
     await ordersStore.refreshLiveOrders();
-    uiStore.pushToast(t('order.actionSuccess'), 'success');
     if (['COMPLETED', 'CANCELLED'].includes(updated.status)) {
       await router.replace(resolveOrderLocation(updated));
     }

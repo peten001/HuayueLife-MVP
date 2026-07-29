@@ -15,6 +15,13 @@ const context = await browser.newContext({
   deviceScaleFactor: 1,
   reducedMotion: 'reduce',
 });
+await context.route('http://localhost:3001/api/v1/uploads/merchants/**', (route) =>
+  route.fulfill({
+    status: 200,
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" rx="18" fill="#19c37d"/><path d="M20 42h40M28 30h24M25 42v18M55 42v18" stroke="white" stroke-width="6" stroke-linecap="round"/></svg>',
+  }),
+);
 const page = await context.newPage();
 const browserErrors = [];
 let deliberateOffline = false;
@@ -28,24 +35,18 @@ const orderingLocaleCopy = {
     openTable: '开台点菜',
     openTableOnly: '仅开台',
     openTableAndAddItems: '确认开台并点菜',
-    openSuccess: '开台成功。',
-    openAndAddSuccess: '开台并点菜成功。',
     increaseQuantity: '增加数量',
   },
   vi: {
     openTable: 'Mở bàn và gọi món',
     openTableOnly: 'Chỉ mở bàn',
     openTableAndAddItems: 'Mở bàn và gọi món',
-    openSuccess: 'Đã mở bàn.',
-    openAndAddSuccess: 'Đã mở bàn và tạo đơn.',
     increaseQuantity: 'Tăng số lượng',
   },
   en: {
     openTable: 'Open Table & Order',
     openTableOnly: 'Open table only',
     openTableAndAddItems: 'Open Table & Add Items',
-    openSuccess: 'Table opened.',
-    openAndAddSuccess: 'Open and add items succeeded.',
     increaseQuantity: 'Increase quantity',
   },
 };
@@ -858,7 +859,8 @@ async function verifyTableOrderingWorkspace() {
   );
   assert.equal(await confirm.isDisabled(), false, 'Selected menu item must enable confirmation');
   await confirm.click();
-  await page.getByText(orderingLocaleCopy.zh.openAndAddSuccess, { exact: true }).waitFor();
+  await workspace.waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.cashier-toast--success').count(), 0, 'Open-and-order success must stay silent');
   await selectFixtureTable();
   const updatedBill = page.getByTestId('table-detail');
   assert.match((await updatedBill.textContent()) || '', /\d[\d.,]*\s*VND/);
@@ -920,10 +922,10 @@ async function verifyOrderFlow() {
   await page.getByRole('alertdialog').waitFor();
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '接单', exact: true }).click();
-  await page.getByText('订单状态已更新。').waitFor();
   const acceptedBeefRow = page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' });
   const returnButton = acceptedBeefRow.getByTestId('return-order-item');
   await returnButton.waitFor();
+  assert.equal(await page.locator('.cashier-toast--success').count(), 0, 'Accept success must stay silent');
   assert.ok(
     await returnButton.evaluate((button) => button.getBoundingClientRect().height) >= 44,
     'Return controls must keep a 44px minimum touch target',
@@ -934,8 +936,8 @@ async function verifyOrderFlow() {
   await returnDialog.waitFor();
   assert.equal(await returnDialog.locator('input, textarea').count(), 0, 'Simple return must not ask for a reason');
   await returnDialog.getByRole('button', { name: '确认退菜', exact: true }).click();
-  await page.getByText('退菜成功。', { exact: true }).waitFor();
-  assert.equal(await page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' }).count(), 0);
+  await page.locator('.order-item-row').filter({ hasText: '演示牛肉粉' }).waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.cashier-toast--success').count(), 0, 'Return success must stay silent');
   assert.match((await page.locator('.order-detail-panel').textContent()) || '', /\d[\d.,]*\s*VND/);
 
   await selectFixtureTable();
@@ -1362,8 +1364,10 @@ async function verifyAndroidWebViewLandscape() {
     await webViewPage.waitForURL('**/orders/new');
     await webViewPage.locator('.order-card').filter({ hasText: 'DEMO-1001' }).click();
     await webViewPage.getByRole('button', { name: '接单', exact: true }).click();
-    await webViewPage.getByText('订单状态已更新。').waitFor();
-    await webViewPage.getByTestId('return-order-item').click();
+    const webViewReturnButton = webViewPage.getByTestId('return-order-item');
+    await webViewReturnButton.waitFor();
+    assert.equal(await webViewPage.locator('.cashier-toast--success').count(), 0, 'Android accept success must stay silent');
+    await webViewReturnButton.click();
     const returnDialog = webViewPage.getByTestId('return-item-dialog');
     await returnDialog.waitFor();
     await assertOverlayWithinViewport(returnDialog, 'Android WebView return dialog');

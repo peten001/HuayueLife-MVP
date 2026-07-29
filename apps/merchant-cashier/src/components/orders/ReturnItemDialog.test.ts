@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { setLocale } from '@/i18n';
 import ReturnItemDialog from './ReturnItemDialog.vue';
 
 const item = {
@@ -11,6 +12,8 @@ const item = {
 };
 
 describe('ReturnItemDialog', () => {
+  afterEach(() => setLocale('zh'));
+
   it('asks only for a bounded return quantity and never renders a reason field', async () => {
     const wrapper = mount(ReturnItemDialog, { props: { open: true, item } });
 
@@ -61,5 +64,51 @@ describe('ReturnItemDialog', () => {
     expect(wrapper.emitted('cancel')).toBeUndefined();
     await wrapper.get('button.primary-action').trigger('click');
     expect(wrapper.emitted('confirm')).toEqual([[2]]);
+  });
+
+  it('shows a localized danger confirmation when the full return empties the table', async () => {
+    const wrapper = mount(ReturnItemDialog, {
+      props: {
+        open: true,
+        item: { ...item, quantity: 1 },
+        lastOrderItem: true,
+        lastTableItem: true,
+      },
+    });
+
+    expect(wrapper.get('[data-testid="last-item-return-danger"]').text())
+      .toContain('桌账会自动关闭并释放桌台');
+    expect(wrapper.get('h3').text()).toContain('最后一份');
+
+    setLocale('vi');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="last-item-return-danger"]').text())
+      .toContain('phiên bàn sẽ tự đóng');
+
+    setLocale('en');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="last-item-return-danger"]').text())
+      .toContain('table bill will close');
+
+    await wrapper.get('button.primary-action').trigger('click');
+    expect(wrapper.emitted('confirm')).toEqual([[1]]);
+  });
+
+  it('uses the normal confirmation for a partial return and warns only at the full quantity', async () => {
+    const wrapper = mount(ReturnItemDialog, {
+      props: { open: true, item, lastOrderItem: true, lastTableItem: false },
+    });
+
+    expect(wrapper.find('[data-testid="last-item-return-danger"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('确定退菜？');
+
+    await wrapper.get('[aria-label="增加数量"]').trigger('click');
+    await wrapper.get('[aria-label="增加数量"]').trigger('click');
+    expect(wrapper.get('[data-testid="last-item-return-danger"]').text())
+      .toContain('其他订单不受影响');
+
+    await wrapper.get('button.secondary-action').trigger('click');
+    expect(wrapper.emitted('cancel')).toEqual([[]]);
+    expect(wrapper.emitted('confirm')).toBeUndefined();
   });
 });

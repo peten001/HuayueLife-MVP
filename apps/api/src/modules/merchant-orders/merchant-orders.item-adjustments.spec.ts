@@ -43,17 +43,18 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     const cancellation = overrides?.cancellation ?? {
       cancel: jest.fn().mockResolvedValue({ id: 99n }),
     };
+    const printJobs = overrides?.printJobs ?? {
+      enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
+      processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
+    };
     const service = new MerchantOrdersService(
       prisma as never,
-      (overrides?.printJobs ?? {
-        enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
-        processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
-      }) as never,
+      printJobs as never,
       tableSessions as never,
       creator as never,
       cancellation as never,
     );
-    return { service, prisma, tableSessions, creator, cancellation };
+    return { service, prisma, tableSessions, creator, cancellation, printJobs };
   }
 
   it('creates a separate staff order with server-side product pricing', async () => {
@@ -309,14 +310,22 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
   function adjustmentTx(status: string, options?: {
     itemQuantity?: number;
     otherItemCount?: number;
+    otherOrders?: Array<{
+      id: bigint;
+      status: string;
+      itemQuantity: number;
+    }>;
     priorRequest?: unknown;
     openSession?: boolean;
+    sessionCloseCount?: number;
   }) {
     const itemQuantity = options?.itemQuantity ?? 2;
+    const otherOrders = options?.otherOrders ?? [];
     return {
       order: {
         findFirst: jest.fn().mockResolvedValue({
           id: 41n,
+          tableId: 11n,
           tableSessionId: 51n,
           orderType: 'DINE_IN',
         }),
@@ -329,8 +338,14 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         update: jest.fn().mockResolvedValue({}),
         delete: jest.fn().mockResolvedValue({}),
       },
+      tableSession: {
+        updateMany: jest.fn().mockResolvedValue({
+          count: options?.sessionCloseCount ?? 1,
+        }),
+      },
       $queryRaw: jest
         .fn()
+        .mockResolvedValueOnce([{ id: 11n }])
         .mockResolvedValueOnce(
           options?.openSession === false
             ? [{ id: 51n, table_id: 11n, status: 'CLOSED', open_table_id: null }]
@@ -347,6 +362,16 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
             delivery_fee_vnd: 0n,
             total_amount_vnd: 12000n,
           },
+          ...otherOrders.map((other) => ({
+            id: other.id,
+            status: other.status,
+            order_type: 'DINE_IN',
+            table_id: 11n,
+            table_session_id: 51n,
+            item_amount_vnd: BigInt(other.itemQuantity * 1000),
+            delivery_fee_vnd: 0n,
+            total_amount_vnd: BigInt(other.itemQuantity * 1000),
+          })),
         ])
         .mockResolvedValueOnce(
           options?.priorRequest ? [options.priorRequest] : [],
@@ -354,6 +379,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .mockResolvedValueOnce([
           {
             id: 71n,
+            order_id: 41n,
             product_id: 61n,
             product_name_zh_snapshot: '鱼香茄子',
             unit_price_vnd: 6000n,
@@ -362,11 +388,21 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
           },
           ...Array.from({ length: options?.otherItemCount ?? 0 }, (_, index) => ({
             id: BigInt(80 + index),
+            order_id: 41n,
             product_id: BigInt(70 + index),
             product_name_zh_snapshot: `其他菜品${index}`,
             unit_price_vnd: 1000n,
             quantity: 1,
             subtotal_vnd: 1000n,
+          })),
+          ...otherOrders.map((other, index) => ({
+            id: BigInt(180 + index),
+            order_id: other.id,
+            product_id: BigInt(170 + index),
+            product_name_zh_snapshot: `其他订单菜品${index}`,
+            unit_price_vnd: 1000n,
+            quantity: other.itemQuantity,
+            subtotal_vnd: BigInt(other.itemQuantity * 1000),
           })),
         ]),
     };
@@ -446,19 +482,127 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     expect(tx.order.updateMany).not.toHaveBeenCalled();
   });
 
-  it('forbids returning the last effective item in an accepted order', async () => {
-    const tx = adjustmentTx('ACCEPTED', { otherItemCount: 0 });
+  it.each(['ACCEPTED', 'PREPARING', 'READY'])(
+    'returns the final table item in %s, cancels the empty order, and releases the table',
+    async (status) => {
+      const tx = adjustmentTx(status, { otherItemCount: 0 });
+      const { service, cancellation, printJobs } = buildService(tx);
+
+      await expect(
+        service.returnOrderItem(7n, 3n, 41n, 71n, {
+          requestKey: `return_last_${status}`,
+          expectedQuantity: 2,
+          returnQuantity: 2,
+        }),
+      ).resolves.toEqual({ order: orderResult, session: sessionResult });
+
+      expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 41n,
+          merchantId: 7n,
+          status,
+          tableSessionId: 51n,
+        },
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          cancelledAt: expect.any(Date),
+          itemAmountVnd: 0n,
+          totalAmountVnd: 0n,
+        }),
+      });
+      expect(tx.tableSession.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 51n,
+          merchantId: 7n,
+          status: 'OPEN',
+          openTableId: 11n,
+        },
+        data: expect.objectContaining({
+          status: 'CLOSED',
+          openTableId: null,
+          closedAt: expect.any(Date),
+          roundingAmountVnd: 0n,
+          roundingAppliedByStaffId: null,
+        }),
+      });
+      expect(tx.orderStatusLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+          fromStatus: status,
+          toStatus: 'CANCELLED',
+          metadata: expect.objectContaining({
+            tableSessionAutoClosed: true,
+            tableReleased: true,
+            effectiveQuantityAfterAdjustment: 0,
+          }),
+        }),
+      });
+      expect(cancellation.cancel).not.toHaveBeenCalled();
+      expect(printJobs.enqueueAutomaticTriggersForOrderTransition).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cancels only the emptied order while another effective order keeps the table open', async () => {
+    const tx = adjustmentTx('ACCEPTED', {
+      otherOrders: [{ id: 42n, status: 'PREPARING', itemQuantity: 1 }],
+    });
     const { service } = buildService(tx);
+
+    await service.returnOrderItem(7n, 3n, 41n, 71n, {
+      requestKey: 'return_empty_one_order',
+      expectedQuantity: 2,
+      returnQuantity: 2,
+    });
+
+    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'CANCELLED' }),
+    }));
+    expect(tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ openTableId: 11n }),
+    }));
+    expect(tx.orderStatusLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+        metadata: expect.objectContaining({
+          tableSessionAutoClosed: false,
+          tableReleased: false,
+          effectiveQuantityAfterAdjustment: 1,
+        }),
+      }),
+    });
+  });
+
+  it('ignores residual rows from cancelled orders when deciding to release the table', async () => {
+    const tx = adjustmentTx('READY', {
+      otherOrders: [{ id: 42n, status: 'CANCELLED', itemQuantity: 4 }],
+    });
+    const { service } = buildService(tx);
+
+    await service.returnOrderItem(7n, 3n, 41n, 71n, {
+      requestKey: 'return_last_with_cancelled_history',
+      expectedQuantity: 2,
+      returnQuantity: 2,
+    });
+
+    expect(tx.tableSession.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ openTableId: 11n }),
+      data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
+    }));
+  });
+
+  it('rolls back the final return when the locked session cannot be closed', async () => {
+    const tx = adjustmentTx('ACCEPTED', { sessionCloseCount: 0 });
+    const { service } = buildService(tx);
+
     await expect(
       service.returnOrderItem(7n, 3n, 41n, 71n, {
-        requestKey: 'return_last_01',
+        requestKey: 'return_close_conflict',
         expectedQuantity: 2,
         returnQuantity: 2,
       }),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        code: 'LAST_ORDER_ITEM_RETURN_NOT_ALLOWED',
-      }),
+      response: expect.objectContaining({ code: 'TABLE_SESSION_STATUS_CHANGED' }),
     });
   });
 
@@ -526,7 +670,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         targetQuantity: 1,
       }),
     ).resolves.toEqual({ order: orderResult, session: sessionResult });
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(4);
     expect(tx.orderItem.update).not.toHaveBeenCalled();
   });
 
@@ -552,7 +696,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         returnQuantity: 1,
       }),
     ).resolves.toEqual({ order: orderResult, session: sessionResult });
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(4);
     expect(tx.orderItem.update).not.toHaveBeenCalled();
   });
 
@@ -600,6 +744,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
   it('rejects an inconsistent order-to-table-session association', async () => {
     const tx = adjustmentTx('PENDING_ACCEPTANCE');
     tx.$queryRaw.mockReset()
+      .mockResolvedValueOnce([{ id: 11n }])
       .mockResolvedValueOnce([
         { id: 51n, table_id: 11n, status: 'OPEN', open_table_id: 11n },
       ])

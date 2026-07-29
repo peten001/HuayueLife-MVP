@@ -147,6 +147,29 @@ describe('cashier table store real-session refresh', () => {
     expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
   });
 
+  it('keeps the table selected and shows it as available after an item mutation closes the session', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+
+    store.applySessionSnapshot({
+      ...detail,
+      status: 'CLOSED',
+      closedAt: '2026-07-29T06:00:00.000Z',
+      orderCount: 0,
+      itemCount: 0,
+      totalAmountVnd: '0',
+      originalAmountVnd: '0',
+      payableAmountVnd: '0',
+      unfinishedOrderCount: 0,
+    });
+
+    expect(store.selectedTableId).toBe(table.id);
+    expect(store.selectedSessionDetail).toBeNull();
+    expect(store.openSessions).toEqual([]);
+    expect(store.selectedTable?.operationalStatus).toBe('AVAILABLE');
+  });
+
   it('does not let an older polling response overwrite a session snapshot', async () => {
     const store = useTablesStore();
     await store.fetchTables();

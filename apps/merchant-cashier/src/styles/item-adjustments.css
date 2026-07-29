@@ -430,7 +430,30 @@
 .table-ordering-footer > button { min-height: 52px; font-size: 14px; }
 
 .item-return-dialog { width: min(440px, calc(100vw - 28px)); }
-.item-return-dialog .item-return-quantity { margin-top: 18px; }
+.item-return-dialog .item-return-quantity {
+  grid-template-columns: repeat(3, 44px);
+  justify-content: stretch;
+  width: 132px;
+  margin-top: 18px;
+}
+.item-return-quantity button:disabled { color: #95a7b3; }
+.item-return-quantity button + output,
+.item-return-quantity output + button { border-left: 1px solid #d7e3e8; }
+.item-return-dialog--danger .confirm-dialog__icon {
+  color: #a84019;
+  background: #fff0e8;
+}
+.item-return-danger-description {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgb(194 76 36 / 32%);
+  border-radius: 8px;
+  color: #8d3518;
+  background: #fff4ed;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+}
 .mutation-outcome-warning {
   margin-top: 12px;
   padding: 9px 11px;

@@ -56,6 +56,7 @@ type LockedOrderRow = {
 
 type LockedOrderItemRow = {
   id: bigint;
+  order_id: bigint;
   product_id: bigint | null;
   product_name_zh_snapshot: string;
   unit_price_vnd: bigint;
@@ -80,6 +81,15 @@ const ORDER_ROUNDING_STATUSES: OrderStatus[] = [
   'READY',
   'DELIVERING',
 ];
+
+const EFFECTIVE_TABLE_ORDER_STATUSES = new Set<OrderStatus>([
+  'PENDING_ACCEPTANCE',
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'DELIVERING',
+  'COMPLETED',
+]);
 
 const TRANSITIONS: Record<MerchantOrderAction, TransitionRule> = {
   ACCEPT: {
@@ -587,6 +597,7 @@ export class MerchantOrdersService {
         where: { id: orderId, merchantId },
         select: {
           id: true,
+          tableId: true,
           tableSessionId: true,
           orderType: true,
         },
@@ -603,11 +614,32 @@ export class MerchantOrdersService {
           message: '只有用餐中桌台订单可以调整菜品',
         });
       }
+      if (!orderRef.tableId) {
+        throw new ConflictException({
+          code: 'ORDER_TABLE_SESSION_MISMATCH',
+          message: '订单与桌账关联不一致，不能调整菜品',
+        });
+      }
 
       const expectedAction =
         input.kind === 'DECREASE'
           ? 'ORDER_ITEM_DECREASED'
           : 'ORDER_ITEM_RETURNED';
+      // Keep the same lock order used by table opening and checkout. The table
+      // lock prevents a concurrent add-on order from entering the session
+      // while this transaction decides whether the table has become empty.
+      const tableRows = await tx.$queryRaw<Array<{ id: bigint }>>`
+        SELECT id
+        FROM dining_tables
+        WHERE id = ${orderRef.tableId} AND merchant_id = ${merchantId}
+        FOR UPDATE
+      `;
+      if (!tableRows[0]) {
+        throw new NotFoundException({
+          code: 'TABLE_NOT_FOUND',
+          message: '桌台不存在',
+        });
+      }
       const sessionRows = await tx.$queryRaw<
         Array<{
           id: bigint;
@@ -630,14 +662,18 @@ export class MerchantOrdersService {
         });
       }
 
+      // Lock every order in deterministic order so the whole-session effective
+      // quantity below is a current, transactionally stable value.
       const orderRows = await tx.$queryRaw<LockedOrderRow[]>`
         SELECT id, status, order_type, table_id, table_session_id,
                item_amount_vnd, delivery_fee_vnd, total_amount_vnd
         FROM orders
-        WHERE id = ${orderId} AND merchant_id = ${merchantId}
+        WHERE table_session_id = ${orderRef.tableSessionId}
+          AND merchant_id = ${merchantId}
+        ORDER BY id
         FOR UPDATE
       `;
-      const order = orderRows[0];
+      const order = orderRows.find(({ id }) => id === orderId);
       if (
         !order ||
         order.table_session_id !== orderRef.tableSessionId ||
@@ -704,19 +740,22 @@ export class MerchantOrdersService {
         });
       }
 
-      // Lock every current item in deterministic order. This avoids stale
-      // snapshot count/aggregate reads after a concurrent request waited on the
-      // order lock under MySQL REPEATABLE READ.
+      // Lock every item in the session, not only the target order. This avoids
+      // stale aggregate reads after a concurrent request waited on the table
+      // lock under MySQL REPEATABLE READ.
       const itemRows = await tx.$queryRaw<LockedOrderItemRow[]>`
-        SELECT id, product_id, product_name_zh_snapshot, unit_price_vnd,
-               quantity, subtotal_vnd
-        FROM order_items
-        WHERE order_id = ${orderId}
-        ORDER BY id
+        SELECT oi.id, oi.order_id, oi.product_id,
+               oi.product_name_zh_snapshot, oi.unit_price_vnd,
+               oi.quantity, oi.subtotal_vnd
+        FROM order_items oi
+        INNER JOIN orders o ON o.id = oi.order_id
+        WHERE o.table_session_id = ${orderRef.tableSessionId}
+          AND o.merchant_id = ${merchantId}
+        ORDER BY oi.order_id, oi.id
         FOR UPDATE
       `;
       const item = itemRows.find(({ id }) => id === itemId);
-      if (!item) {
+      if (!item || item.order_id !== orderId) {
         throw new NotFoundException({
           code: 'ORDER_ITEM_NOT_FOUND',
           message: '订单菜品不存在',
@@ -738,17 +777,9 @@ export class MerchantOrdersService {
         });
       }
 
-      const otherItemCount = itemRows.length - 1;
-      if (
-        input.kind === 'RETURN' &&
-        input.targetQuantity === 0 &&
-        otherItemCount === 0
-      ) {
-        throw new ConflictException({
-          code: 'LAST_ORDER_ITEM_RETURN_NOT_ALLOWED',
-          message: '该订单仅剩此菜品，暂不能整单退菜',
-        });
-      }
+      const orderItemRows = itemRows.filter(
+        ({ order_id: currentOrderId }) => currentOrderId === orderId,
+      );
 
       const afterItemAmountVnd =
         item.unit_price_vnd * BigInt(input.targetQuantity);
@@ -764,7 +795,7 @@ export class MerchantOrdersService {
         });
       }
 
-      const afterOrderItemAmountVnd = itemRows.reduce((sum, current) => {
+      const afterOrderItemAmountVnd = orderItemRows.reduce((sum, current) => {
         if (current.id === itemId) {
           return sum + afterItemAmountVnd;
         }
@@ -772,12 +803,23 @@ export class MerchantOrdersService {
       }, 0n);
       const afterOrderAmountVnd =
         afterOrderItemAmountVnd + order.delivery_fee_vnd;
-      const cancelEmptyPendingOrder =
-        input.kind === 'DECREASE' &&
-        input.targetQuantity === 0 &&
-        otherItemCount === 0;
+      const cancelEmptyOrder = orderItemRows.every((current) =>
+        current.id === itemId ? input.targetQuantity === 0 : current.quantity === 0,
+      );
+      const ordersById = new Map(orderRows.map((current) => [current.id, current]));
+      const effectiveQuantityAfterAdjustment = itemRows.reduce((sum, current) => {
+        const currentOrder = ordersById.get(current.order_id);
+        if (!currentOrder || !EFFECTIVE_TABLE_ORDER_STATUSES.has(currentOrder.status)) {
+          return sum;
+        }
+        return sum + (current.id === itemId ? input.targetQuantity : current.quantity);
+      }, 0);
+      const closeEmptySession =
+        input.kind === 'RETURN' &&
+        cancelEmptyOrder &&
+        effectiveQuantityAfterAdjustment === 0;
 
-      if (!cancelEmptyPendingOrder) {
+      if (!cancelEmptyOrder) {
         const updated = await tx.order.updateMany({
           where: {
             id: orderId,
@@ -822,6 +864,13 @@ export class MerchantOrdersService {
             afterItemAmountVnd: afterItemAmountVnd.toString(),
             beforeOrderAmountVnd: order.total_amount_vnd.toString(),
             afterOrderAmountVnd: afterOrderAmountVnd.toString(),
+            orderAutoCancelled: cancelEmptyOrder,
+            tableSessionAutoClosed: closeEmptySession,
+            tableReleased: closeEmptySession,
+            merchantId: merchantId.toString(),
+            orderId: orderId.toString(),
+            tableSessionId: orderRef.tableSessionId.toString(),
+            tableId: orderRef.tableId.toString(),
             actorId: staffId.toString(),
             actorRole: creator.staffRole,
           },
@@ -830,18 +879,92 @@ export class MerchantOrdersService {
         },
       });
 
-      if (cancelEmptyPendingOrder) {
-        await this.pendingCancellation.cancel(tx, {
-          orderId,
-          merchantId,
-          operatorStaffId: staffId,
-          reason: '商家将未接单订单全部减为零，订单已取消',
-          itemAmountVnd: afterOrderItemAmountVnd,
-          totalAmountVnd: afterOrderAmountVnd,
-        });
+      if (cancelEmptyOrder) {
+        if (input.kind === 'DECREASE') {
+          await this.pendingCancellation.cancel(tx, {
+            orderId,
+            merchantId,
+            operatorStaffId: staffId,
+            reason: '商家将未接单订单全部减为零，订单已取消',
+            itemAmountVnd: afterOrderItemAmountVnd,
+            totalAmountVnd: afterOrderAmountVnd,
+          });
+        } else {
+          const cancelledAt = new Date();
+          const cancelled = await tx.order.updateMany({
+            where: {
+              id: orderId,
+              merchantId,
+              status: order.status,
+              tableSessionId: orderRef.tableSessionId,
+            },
+            data: {
+              status: 'CANCELLED',
+              cancelledAt,
+              cancelReason: '商家退空订单全部菜品，订单已自动取消',
+              itemAmountVnd: afterOrderItemAmountVnd,
+              totalAmountVnd: afterOrderAmountVnd,
+            },
+          });
+          if (cancelled.count !== 1) {
+            throw new ConflictException({
+              code: 'ORDER_STATUS_CHANGED',
+              message: '订单状态已变化，请刷新后重试',
+            });
+          }
+
+          if (closeEmptySession) {
+            const closed = await tx.tableSession.updateMany({
+              where: {
+                id: orderRef.tableSessionId,
+                merchantId,
+                status: 'OPEN',
+                openTableId: orderRef.tableId,
+              },
+              data: {
+                status: 'CLOSED',
+                openTableId: null,
+                closedAt: cancelledAt,
+                roundingAmountVnd: 0n,
+                roundingAppliedByStaffId: null,
+              },
+            });
+            if (closed.count !== 1) {
+              throw new ConflictException({
+                code: 'TABLE_SESSION_STATUS_CHANGED',
+                message: '桌账状态已变化，请刷新后重试',
+              });
+            }
+          }
+
+          await tx.orderStatusLog.create({
+            data: {
+              orderId,
+              fromStatus: order.status,
+              toStatus: 'CANCELLED',
+              operatorType: OperatorType.MERCHANT_STAFF,
+              operatorStaffId: staffId,
+              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              metadata: {
+                merchantId: merchantId.toString(),
+                orderId: orderId.toString(),
+                tableSessionId: orderRef.tableSessionId.toString(),
+                tableId: orderRef.tableId.toString(),
+                tableSessionAutoClosed: closeEmptySession,
+                tableReleased: closeEmptySession,
+                effectiveQuantityAfterAdjustment,
+              },
+              remark: closeEmptySession
+                ? '订单退空自动取消，桌账已自动关闭并释放桌台'
+                : '订单退空，订单已自动取消',
+            },
+          });
+        }
       }
 
-      await this.clearSessionRounding(tx, orderRef.tableSessionId);
+      if (!closeEmptySession) {
+        await this.clearSessionRounding(tx, orderRef.tableSessionId);
+      }
 
       return { orderId, sessionId: orderRef.tableSessionId };
     });

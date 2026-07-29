@@ -236,6 +236,32 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.find('.delivery-contact-panel__phone').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'SPAN', 'A']);
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('aria-disabled')).toBe('true');
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('title')).toContain('不支持拨号');
-    expect(useUiStore().toasts.map((toast) => toast.message)).toEqual(['地址已复制。']);
+    expect(useUiStore().toasts).toEqual([]);
+  });
+
+  it('keeps an error prompt when copying the delivery address fails', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')) },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+    const wrapper = mount(DeliveryContactPanel, {
+      props: { order: { ...order, orderType: 'DELIVERY' } },
+      global: { plugins: [createPinia()] },
+    });
+
+    await wrapper.get('[data-testid="copy-delivery-address"]').trigger('click');
+    await flushPromises();
+
+    expect(useUiStore().toasts.map((toast) => ({
+      message: toast.message,
+      tone: toast.tone,
+    }))).toEqual([{
+      message: '无法复制地址，请手动选择复制。',
+      tone: 'error',
+    }]);
   });
 });

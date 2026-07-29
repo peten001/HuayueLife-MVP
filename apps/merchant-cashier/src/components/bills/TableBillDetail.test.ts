@@ -155,6 +155,44 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(button.attributes('title')).toContain('订单状态');
   });
 
+  it('keeps the last returnable quantity enabled and blocks a zero-quantity row', async () => {
+    const base = session();
+    const lastQuantitySession = {
+      ...base,
+      itemCount: 1,
+      orders: [{
+        ...base.orders[0]!,
+        items: [{ ...base.orders[0]!.items[0]!, quantity: 1, subtotalVnd: '60000' }],
+      }],
+    };
+    const wrapper = mountDetail({ session: lastQuantitySession });
+    const button = wrapper.get('[data-testid="decrease-order-item"]');
+
+    expect(button.attributes('disabled')).toBeUndefined();
+    await button.trigger('click');
+    expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({
+      id: 'item-1',
+      quantity: 1,
+    });
+
+    await wrapper.setProps({
+      session: {
+        ...lastQuantitySession,
+        itemCount: 0,
+        orders: [{
+          ...lastQuantitySession.orders[0]!,
+          items: [{
+            ...lastQuantitySession.orders[0]!.items[0]!,
+            quantity: 0,
+            subtotalVnd: '0',
+          }],
+        }],
+      },
+    });
+    expect(button.attributes('disabled')).toBeDefined();
+    expect(button.attributes('title')).toContain('没有可退数量');
+  });
+
   it('updates item names immediately when the locale changes', async () => {
     const localizedSession = session();
     localizedSession.orders[0]!.items[0] = {

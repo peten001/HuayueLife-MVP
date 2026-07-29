@@ -233,7 +233,12 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     openSessions.value = session.status === 'OPEN'
       ? [...openSessions.value.filter((candidate) => candidate.id !== session.id), session]
       : openSessions.value.filter((candidate) => candidate.id !== session.id);
-    if (selectedTableId.value === session.tableId) selectedSessionDetail.value = session;
+    if (selectedTableId.value === session.tableId) {
+      // An item return can close and release the table in the same mutation.
+      // Keep the table selected while switching the right panel to its existing
+      // idle/open-table state instead of retaining a stale closed bill.
+      selectedSessionDetail.value = session.status === 'OPEN' ? session : null;
+    }
   }
 
   function clear() {

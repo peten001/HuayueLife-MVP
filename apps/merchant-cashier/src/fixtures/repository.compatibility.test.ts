@@ -50,4 +50,93 @@ describe('fixture repository WebView compatibility', () => {
     expect(result.orders.every((order) => order.settlementStatus === 'UNSETTLED')).toBe(true);
     expect(demoRepository.openSessions()).toEqual([]);
   });
+
+  it('cancels an order returned to empty while other table orders remain effective', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+    const order = demoRepository.order('demo-order-1001');
+    const item = order.items[0]!;
+
+    const result = demoRepository.returnOrderItem(order.id, item.id, {
+      requestKey: 'fixture-return-one-order',
+      expectedQuantity: item.quantity,
+      returnQuantity: item.quantity,
+    });
+
+    expect(result.order).toEqual(expect.objectContaining({
+      status: 'CANCELLED',
+      itemAmountVnd: '0',
+      totalAmountVnd: '0',
+      items: [],
+    }));
+    expect(result.session).toEqual(expect.objectContaining({
+      status: 'OPEN',
+      itemCount: 4,
+      orderCount: 2,
+    }));
+    expect(demoRepository.openSessions()).toHaveLength(1);
+  });
+
+  it('returns the final table item, closes the session, and replays the same key idempotently', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+
+    for (const orderId of ['demo-order-1001', 'demo-order-1006']) {
+      const order = demoRepository.order(orderId);
+      const item = order.items[0]!;
+      demoRepository.returnOrderItem(order.id, item.id, {
+        requestKey: `fixture-empty-${order.id}`,
+        expectedQuantity: item.quantity,
+        returnQuantity: item.quantity,
+      });
+    }
+
+    const lastOrder = demoRepository.order('demo-order-0999');
+    const lastItem = lastOrder.items[0]!;
+    const input = {
+      requestKey: 'fixture-return-final-table-item',
+      expectedQuantity: lastItem.quantity,
+      returnQuantity: lastItem.quantity,
+    };
+    const first = demoRepository.returnOrderItem(lastOrder.id, lastItem.id, input);
+    const replay = demoRepository.returnOrderItem(lastOrder.id, lastItem.id, input);
+
+    expect(first).toEqual(replay);
+    expect(first.order).toEqual(expect.objectContaining({
+      status: 'CANCELLED',
+      settlementStatus: 'UNSETTLED',
+      items: [],
+    }));
+    expect(first.session).toEqual(expect.objectContaining({
+      status: 'CLOSED',
+      itemCount: 0,
+      totalAmountVnd: '0',
+    }));
+    expect(demoRepository.openSessions()).toEqual([]);
+    expect(() => demoRepository.returnOrderItem(lastOrder.id, lastItem.id, {
+      ...input,
+      requestKey: 'fixture-return-after-close',
+    })).toThrowError(expect.objectContaining({ code: 'TABLE_SESSION_CLOSED' }));
+  });
+
+  it('keeps the order and table open after a partial return', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+    const order = demoRepository.order('demo-order-1001');
+    const item = order.items[0]!;
+
+    const result = demoRepository.returnOrderItem(order.id, item.id, {
+      requestKey: 'fixture-partial-return',
+      expectedQuantity: item.quantity,
+      returnQuantity: 1,
+    });
+
+    expect(result.order).toEqual(expect.objectContaining({ status: 'ACCEPTED' }));
+    expect(result.order?.items[0]?.quantity).toBe(item.quantity - 1);
+    expect(result.session.status).toBe('OPEN');
+    expect(result.session.itemCount).toBe(6);
+  });
 });

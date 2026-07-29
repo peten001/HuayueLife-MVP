@@ -19,11 +19,15 @@ describe('Merchant add/decrease/return items', () => {
   let sessionId: bigint;
   let raceTableId: bigint;
   let raceSessionId: bigint;
+  let returnRaceTableId: bigint;
+  let returnRaceSessionId: bigint;
   let parallelTableId: bigint;
   let openOnlyTableId: bigint;
   let openOnlyRaceTableId: bigint;
   let orderFirstTimeTableId: bigint;
   let rollbackTableId: bigint;
+  let returnRollbackMarkerTableId: bigint;
+  let lastReturnTableId: bigint;
   let customerRaceTableId: bigint;
   let customerRaceTableToken: string;
   let customerRaceFirstTableId: bigint;
@@ -97,7 +101,7 @@ describe('Merchant add/decrease/return items', () => {
     });
     productId = product.id;
 
-    const [table, raceTable, parallelTable, openOnlyTable, openOnlyRaceTable, orderFirstTimeTable, rollbackTable, customerTable, customerRaceFirstTable] = await Promise.all([
+    const [table, raceTable, returnRaceTable, parallelTable, openOnlyTable, openOnlyRaceTable, orderFirstTimeTable, rollbackTable, returnRollbackMarkerTable, lastReturnTable, customerTable, customerRaceFirstTable] = await Promise.all([
       prisma.diningTable.create({
         data: {
           merchantId,
@@ -109,6 +113,13 @@ describe('Merchant add/decrease/return items', () => {
         data: {
           merchantId,
           tableNo: `R-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `RR-${suffix}`,
           qrToken: randomBytes(32).toString('hex'),
         },
       }),
@@ -150,6 +161,20 @@ describe('Merchant add/decrease/return items', () => {
       prisma.diningTable.create({
         data: {
           merchantId,
+          tableNo: `RM-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
+          tableNo: `LR-${suffix}`,
+          qrToken: randomBytes(32).toString('hex'),
+        },
+      }),
+      prisma.diningTable.create({
+        data: {
+          merchantId,
           tableNo: `CR-${suffix}`,
           qrToken: randomBytes(32).toString('hex'),
         },
@@ -164,16 +189,19 @@ describe('Merchant add/decrease/return items', () => {
     ]);
     tableId = table.id;
     raceTableId = raceTable.id;
+    returnRaceTableId = returnRaceTable.id;
     parallelTableId = parallelTable.id;
     openOnlyTableId = openOnlyTable.id;
     openOnlyRaceTableId = openOnlyRaceTable.id;
     orderFirstTimeTableId = orderFirstTimeTable.id;
     rollbackTableId = rollbackTable.id;
+    returnRollbackMarkerTableId = returnRollbackMarkerTable.id;
+    lastReturnTableId = lastReturnTable.id;
     customerRaceTableId = customerTable.id;
     customerRaceTableToken = customerTable.qrToken;
     customerRaceFirstTableId = customerRaceFirstTable.id;
     customerRaceFirstTableToken = customerRaceFirstTable.qrToken;
-    const [session, , raceSession] = await Promise.all([
+    const [session, , raceSession, returnRaceSession] = await Promise.all([
       prisma.tableSession.create({
         data: {
           merchantId,
@@ -198,9 +226,18 @@ describe('Merchant add/decrease/return items', () => {
           sessionNo: `ADJ${Date.now()}R`,
         },
       }),
+      prisma.tableSession.create({
+        data: {
+          merchantId,
+          tableId: returnRaceTableId,
+          openTableId: returnRaceTableId,
+          sessionNo: `ADJ${Date.now()}RR`,
+        },
+      }),
     ]);
     sessionId = session.id;
     raceSessionId = raceSession.id;
+    returnRaceSessionId = returnRaceSession.id;
 
     const customerLogin = await request(app.getHttpServer())
       .post('/api/v1/auth/wechat/login')
@@ -283,7 +320,7 @@ describe('Merchant add/decrease/return items', () => {
         userId: null,
         createdByStaffId: staffId.toString(),
         tableSessionId: sessionId.toString(),
-        status: 'PENDING_ACCEPTANCE',
+        status: 'ACCEPTED',
         itemAmountVnd: '12000',
         totalAmountVnd: '12000',
       }),
@@ -340,7 +377,7 @@ describe('Merchant add/decrease/return items', () => {
       tableId: orderFirstTimeTableId.toString(),
       createdByStaffId: staffId.toString(),
       userId: null,
-      status: 'PENDING_ACCEPTANCE',
+      status: 'ACCEPTED',
       itemAmountVnd: '12000',
       totalAmountVnd: '12000',
     });
@@ -568,7 +605,7 @@ describe('Merchant add/decrease/return items', () => {
   });
 
   it('serializes concurrent quantity changes and emits no print outbox', async () => {
-    const created = await createTableOrder(createBody('e2e_decrease_01', 3));
+    const created = await createPendingOrder('e2e_decrease_01', 3);
     const itemId = created.order.items[0].id as string;
     const calls = [
       decrease(created.order.id, itemId, 'e2e_decrease_req_a', 3, 2),
@@ -597,7 +634,7 @@ describe('Merchant add/decrease/return items', () => {
   });
 
   it('returns the same successful result for concurrent identical adjustment retries', async () => {
-    const created = await createTableOrder(createBody('e2e_decrease_retry', 3));
+    const created = await createPendingOrder('e2e_decrease_retry', 3);
     const itemId = created.order.items[0].id as string;
     const [first, second] = await Promise.all([
       decrease(
@@ -640,7 +677,7 @@ describe('Merchant add/decrease/return items', () => {
   });
 
   it('safely cancels a pending order when its last item is decreased to zero', async () => {
-    const created = await createTableOrder(createBody('e2e_decrease_last', 1));
+    const created = await createPendingOrder('e2e_decrease_last', 1);
     const response = await decrease(
       created.order.id,
       created.order.items[0].id,
@@ -665,14 +702,27 @@ describe('Merchant add/decrease/return items', () => {
     expect(response.body.data.session.status).toBe('OPEN');
   });
 
-  it('returns an accepted item, blocks a full last-item return, and emits no return outbox', async () => {
+  it('returns an accepted item, cancels the emptied order, keeps a non-empty session open, and emits no outbox', async () => {
     const created = await createTableOrder(createBody('e2e_return_01', 2));
-    await request(app.getHttpServer())
-      .post(`/api/v1/merchant/orders/${created.order.id}/accept`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({})
-      .expect(201);
     const itemId = created.order.items[0].id as string;
+    await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${created.order.id}/items/${itemId}/return`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({
+        requestKey: 'e2e_return_wrong_merchant',
+        expectedQuantity: 2,
+        returnQuantity: 1,
+      })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${created.order.id}/items/${itemId}/return`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        requestKey: 'e2e_return_zero_quantity',
+        expectedQuantity: 2,
+        returnQuantity: 0,
+      })
+      .expect(400);
     const returned = await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${created.order.id}/items/${itemId}/return`)
       .set('Authorization', `Bearer ${token}`)
@@ -697,7 +747,7 @@ describe('Merchant add/decrease/return items', () => {
       }),
     ).toBe(0);
 
-    const blocked = await request(app.getHttpServer())
+    const emptied = await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${created.order.id}/items/${itemId}/return`)
       .set('Authorization', `Bearer ${token}`)
       .send({
@@ -705,8 +755,287 @@ describe('Merchant add/decrease/return items', () => {
         expectedQuantity: 1,
         returnQuantity: 1,
       })
+      .expect(201);
+    expect(emptied.body.data.order).toEqual(expect.objectContaining({
+      status: 'CANCELLED',
+      settlementStatus: 'UNSETTLED',
+      itemAmountVnd: '0',
+      totalAmountVnd: '0',
+      items: [],
+    }));
+    expect(emptied.body.data.session.status).toBe('OPEN');
+    expect(
+      await prisma.orderStatusLog.count({
+        where: {
+          orderId: BigInt(created.order.id),
+          action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it('returns the only table item, closes the session, releases the table, and replays idempotently', async () => {
+    const created = await createTableOrder(
+      createBody('e2e_return_final_table_item', 1),
+      lastReturnTableId,
+    );
+    const orderId = created.order.id as string;
+    const itemId = created.order.items[0].id as string;
+    const body = {
+      requestKey: 'e2e_return_final_table_item_req',
+      expectedQuantity: 1,
+      returnQuantity: 1,
+    };
+    const first = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${orderId}/items/${itemId}/return`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body)
+      .expect(201);
+    const replay = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${orderId}/items/${itemId}/return`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body)
+      .expect(201);
+
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(first.body.data.order).toEqual(expect.objectContaining({
+      status: 'CANCELLED',
+      settlementStatus: 'UNSETTLED',
+      itemAmountVnd: '0',
+      totalAmountVnd: '0',
+      items: [],
+    }));
+    expect(first.body.data.session).toEqual(expect.objectContaining({
+      status: 'CLOSED',
+      itemCount: 0,
+      totalAmountVnd: '0',
+    }));
+    const storedSession = await prisma.tableSession.findUniqueOrThrow({
+      where: { id: BigInt(created.session.id) },
+    });
+    expect(storedSession).toEqual(expect.objectContaining({
+      status: 'CLOSED',
+      openTableId: null,
+      closedAt: expect.any(Date),
+      roundingAmountVnd: 0n,
+      roundingAppliedByStaffId: null,
+    }));
+    expect(
+      await prisma.printTriggerOutbox.count({ where: { orderId: BigInt(orderId) } }),
+    ).toBe(0);
+    expect(
+      await prisma.orderStatusLog.count({
+        where: {
+          orderId: BigInt(orderId),
+          requestKey: body.requestKey,
+          action: 'ORDER_ITEM_RETURNED',
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.orderStatusLog.count({
+        where: {
+          orderId: BigInt(orderId),
+          action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+        },
+      }),
+    ).toBe(1);
+
+    const afterClose = await request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${orderId}/items/${itemId}/return`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...body, requestKey: 'e2e_return_after_close' })
       .expect(409);
-    expect(blocked.body.code).toBe('LAST_ORDER_ITEM_RETURN_NOT_ALLOWED');
+    expect(afterClose.body.code).toBe('TABLE_SESSION_CLOSED');
+  });
+
+  it('rolls back item, order, session, rounding, and logs when the final session close conflicts', async () => {
+    // Deliberately point openTableId at a separate marker table. The locked
+    // session remains OPEN long enough for the return transaction to mutate
+    // the item/order and then fail its guarded close, exercising real database
+    // rollback without adding a test-only production hook.
+    const rollbackSession = await prisma.tableSession.create({
+      data: {
+        merchantId,
+        tableId: rollbackTableId,
+        openTableId: returnRollbackMarkerTableId,
+        sessionNo: `RB${Date.now()}${randomBytes(2).toString('hex')}`,
+        roundingAmountVnd: 3000n,
+        roundingAppliedByStaffId: staffId,
+      },
+    });
+    const rollbackOrder = await prisma.order.create({
+      data: {
+        orderNo: `RB${Date.now()}${randomBytes(2).toString('hex')}`,
+        idempotencyKey: `e2e_return_rollback_${suffix}`,
+        userId: null,
+        createdByStaffId: staffId,
+        merchantId,
+        tableId: rollbackTableId,
+        tableSessionId: rollbackSession.id,
+        tableNoSnapshot: `OR-${suffix}`,
+        orderType: 'DINE_IN',
+        status: 'ACCEPTED',
+        acceptedAt: new Date(),
+        itemAmountVnd: 6000n,
+        totalAmountVnd: 6000n,
+        items: {
+          create: {
+            productId,
+            productNameZhSnapshot: '事务回滚菜品',
+            unitPriceVnd: 6000n,
+            quantity: 1,
+            subtotalVnd: 6000n,
+          },
+        },
+      },
+      include: { items: true },
+    });
+    const requestKey = 'e2e_return_close_conflict_rollback';
+
+    const response = await request(app.getHttpServer())
+      .post(
+        `/api/v1/merchant/orders/${rollbackOrder.id}/items/${rollbackOrder.items[0]!.id}/return`,
+      )
+      .set('Authorization', `Bearer ${token}`)
+      .send({ requestKey, expectedQuantity: 1, returnQuantity: 1 })
+      .expect(409);
+
+    expect(response.body.code).toBe('TABLE_SESSION_STATUS_CHANGED');
+    await expect(
+      prisma.orderItem.findUniqueOrThrow({
+        where: { id: rollbackOrder.items[0]!.id },
+      }),
+    ).resolves.toEqual(expect.objectContaining({ quantity: 1, subtotalVnd: 6000n }));
+    await expect(
+      prisma.order.findUniqueOrThrow({ where: { id: rollbackOrder.id } }),
+    ).resolves.toEqual(expect.objectContaining({
+      status: 'ACCEPTED',
+      settlementStatus: 'UNSETTLED',
+      itemAmountVnd: 6000n,
+      totalAmountVnd: 6000n,
+      cancelledAt: null,
+      cancelReason: null,
+    }));
+    await expect(
+      prisma.tableSession.findUniqueOrThrow({ where: { id: rollbackSession.id } }),
+    ).resolves.toEqual(expect.objectContaining({
+      status: 'OPEN',
+      openTableId: returnRollbackMarkerTableId,
+      closedAt: null,
+      roundingAmountVnd: 3000n,
+      roundingAppliedByStaffId: staffId,
+    }));
+    expect(
+      await prisma.orderStatusLog.count({
+        where: {
+          orderId: rollbackOrder.id,
+          OR: [
+            { requestKey },
+            { action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN' },
+          ],
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.printTriggerOutbox.count({ where: { orderId: rollbackOrder.id } }),
+    ).toBe(0);
+  });
+
+  it('keeps the session open when a concurrently committed add-on order wins the table lock', async () => {
+    const target = await createTableOrder(
+      createBody('e2e_return_add_race_target', 1),
+      returnRaceTableId,
+    );
+    const targetItemId = target.order.items[0].id as string;
+    let releaseCreator!: () => void;
+    let tableLocked!: () => void;
+    const allowCreate = new Promise<void>((resolve) => {
+      releaseCreator = resolve;
+    });
+    const locked = new Promise<void>((resolve) => {
+      tableLocked = resolve;
+    });
+    const creator = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM dining_tables WHERE id = ${returnRaceTableId} FOR UPDATE
+      `;
+      tableLocked();
+      await allowCreate;
+      const added = await tx.order.create({
+        data: {
+          orderNo: `RADD${Date.now()}${randomBytes(2).toString('hex')}`,
+          idempotencyKey: `e2e_return_add_race_winner_${suffix}`,
+          userId: null,
+          createdByStaffId: staffId,
+          merchantId,
+          tableId: returnRaceTableId,
+          tableSessionId: returnRaceSessionId,
+          tableNoSnapshot: `RR-${suffix}`,
+          orderType: 'DINE_IN',
+          status: 'ACCEPTED',
+          acceptedAt: new Date(),
+          itemAmountVnd: 6000n,
+          totalAmountVnd: 6000n,
+          items: {
+            create: {
+              productId,
+              productNameZhSnapshot: '并发新增菜品',
+              unitPriceVnd: 6000n,
+              quantity: 1,
+              subtotalVnd: 6000n,
+            },
+          },
+        },
+      });
+      return added.id;
+    });
+    // The transaction above is intentionally paused at the table lock. Start
+    // the return now; it must wait, then observe the committed add-on order.
+    await Promise.race([
+      locked,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('concurrent add lock was not acquired')), 2_000);
+      }),
+    ]).catch((error) => {
+      releaseCreator?.();
+      throw error;
+    });
+    let returnCompleted = false;
+    const returning = request(app.getHttpServer())
+      .post(`/api/v1/merchant/orders/${target.order.id}/items/${targetItemId}/return`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        requestKey: 'e2e_return_add_race_return',
+        expectedQuantity: 1,
+        returnQuantity: 1,
+      })
+      .expect(201)
+      .then((response) => {
+        returnCompleted = true;
+        return response;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(returnCompleted).toBe(false);
+    } finally {
+      releaseCreator();
+    }
+    const addedOrderId = await creator;
+    const returned = await returning;
+
+    expect(returned.body.data.order.status).toBe('CANCELLED');
+    expect(returned.body.data.session.status).toBe('OPEN');
+    expect(returned.body.data.session.itemCount).toBeGreaterThanOrEqual(1);
+    expect(
+      await prisma.order.findUniqueOrThrow({ where: { id: addedOrderId } }),
+    ).toEqual(expect.objectContaining({ status: 'ACCEPTED' }));
+    expect(
+      await prisma.tableSession.findUniqueOrThrow({ where: { id: returnRaceSessionId } }),
+    ).toEqual(expect.objectContaining({
+      status: 'OPEN',
+      openTableId: returnRaceTableId,
+    }));
   });
 
   it('does not close a session after waiting for a concurrently committed pending order', async () => {
@@ -860,6 +1189,42 @@ describe('Merchant add/decrease/return items', () => {
       .post(`/api/v1/merchant/tables/${targetTableId}/orders`)
       .set('Authorization', `Bearer ${token}`)
       .send(body);
+  }
+
+  async function createPendingOrder(idempotencyKey: string, quantity: number) {
+    const subtotalVnd = 6000n * BigInt(quantity);
+    const created = await prisma.order.create({
+      data: {
+        orderNo: `PEND${Date.now()}${randomBytes(3).toString('hex')}`,
+        idempotencyKey,
+        userId: null,
+        createdByStaffId: staffId,
+        merchantId,
+        tableId,
+        tableSessionId: sessionId,
+        tableNoSnapshot: `A-${suffix}`,
+        orderType: 'DINE_IN',
+        status: 'PENDING_ACCEPTANCE',
+        itemAmountVnd: subtotalVnd,
+        totalAmountVnd: subtotalVnd,
+        items: {
+          create: {
+            productId,
+            productNameZhSnapshot: '服务端定价菜品',
+            unitPriceVnd: 6000n,
+            quantity,
+            subtotalVnd,
+          },
+        },
+      },
+      include: { items: true },
+    });
+    return {
+      order: {
+        id: created.id.toString(),
+        items: created.items.map((item) => ({ id: item.id.toString() })),
+      },
+    };
   }
 
   async function createCustomerOrderRaw(idempotencyKey: string, tableToken: string = customerRaceTableToken) {
