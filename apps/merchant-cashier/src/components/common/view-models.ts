@@ -23,6 +23,9 @@ export interface CashierOrderItemView {
   productNameZhSnapshot?: string;
   productNameViSnapshot?: string | null;
   productNameEnSnapshot?: string | null;
+  productNameZh?: string | null;
+  productNameVi?: string | null;
+  productNameEn?: string | null;
   imageUrlSnapshot?: string | null;
   quantity?: number;
   unitPriceVnd?: string | number;

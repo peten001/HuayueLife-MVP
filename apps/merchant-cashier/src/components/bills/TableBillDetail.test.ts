@@ -70,6 +70,11 @@ function session(pendingOrderCount = 0): TableSessionDetail {
       items: order.items.map((item) => ({
         id: item.id,
         productNameZhSnapshot: item.productNameZhSnapshot,
+        productNameViSnapshot: item.productNameViSnapshot,
+        productNameEnSnapshot: item.productNameEnSnapshot,
+        productNameZh: item.productNameZh,
+        productNameVi: item.productNameVi,
+        productNameEn: item.productNameEn,
         quantity: item.quantity,
         unitPriceVnd: item.unitPriceVnd || '0',
         subtotalVnd: item.subtotalVnd,
@@ -148,6 +153,24 @@ describe('TableBillDetail V2 table workspace', () => {
     const button = wrapper.get('[data-testid="decrease-order-item"]');
     expect(button.attributes('disabled')).toBeDefined();
     expect(button.attributes('title')).toContain('订单状态');
+  });
+
+  it('updates item names immediately when the locale changes', async () => {
+    const localizedSession = session();
+    localizedSession.orders[0]!.items[0] = {
+      ...localizedSession.orders[0]!.items[0]!,
+      productNameVi: 'Phở bò',
+    };
+    const wrapper = mountDetail({ session: localizedSession });
+    expect(wrapper.get('[data-testid="table-item-summary"]').text()).toContain('牛肉粉');
+
+    setLocale('vi');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="table-item-summary"]').text()).toContain('Phở bò');
+
+    setLocale('en');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-testid="table-item-summary"]').text()).toContain('Beef pho');
   });
 
   it('keeps only the payable total in the compact settlement row', () => {

@@ -4,18 +4,23 @@ import { useI18n } from '@/i18n';
 
 const props = defineProps<{
   merchantName?: string;
-  merchantLogoUrl?: string;
+  merchantImageUrls?: string[];
   businessOpen: boolean | null;
   businessHoursLabel?: string;
   demoMode?: boolean;
 }>();
 
 const { t } = useI18n();
-const logoFailed = ref(false);
+const imageIndex = ref(0);
 const logoText = computed(() => props.merchantName?.trim().slice(0, 1).toLocaleUpperCase() || 'Y');
-watch(() => props.merchantLogoUrl, () => {
-  logoFailed.value = false;
+const activeImageUrl = computed(() => props.merchantImageUrls?.[imageIndex.value] || '');
+watch(() => props.merchantImageUrls, () => {
+  imageIndex.value = 0;
 });
+
+function showNextImage() {
+  imageIndex.value += 1;
+}
 </script>
 
 <template>
@@ -27,10 +32,10 @@ watch(() => props.merchantLogoUrl, () => {
     <span class="cashier-merchant-panel__identity">
       <span class="cashier-merchant-panel__logo" aria-hidden="true">
         <img
-          v-if="merchantLogoUrl && !logoFailed"
-          :src="merchantLogoUrl"
+          v-if="activeImageUrl"
+          :src="activeImageUrl"
           alt=""
-          @error="logoFailed = true"
+          @error="showNextImage"
         />
         <b v-else>{{ logoText }}</b>
       </span>

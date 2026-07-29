@@ -2,6 +2,7 @@
 import { Minus, Plus, RotateCcw } from '@lucide/vue';
 import { ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
+import { resolveLocalizedOrderItemName } from '@/domain';
 import type { CashierOrderItemView } from '@/components/common/view-models';
 
 const props = defineProps<{
@@ -31,13 +32,7 @@ watch(
 
 function itemName() {
   if (!props.item) return t('order.itemNameFallback');
-  if (locale.value === 'vi') {
-    return props.item.productNameViSnapshot || props.item.productNameZhSnapshot || t('order.itemNameFallback');
-  }
-  if (locale.value === 'en') {
-    return props.item.productNameEnSnapshot || props.item.productNameZhSnapshot || t('order.itemNameFallback');
-  }
-  return props.item.productNameZhSnapshot || t('order.itemNameFallback');
+  return resolveLocalizedOrderItemName(props.item, locale.value, t('order.itemNameFallback'));
 }
 
 function update(delta: number) {

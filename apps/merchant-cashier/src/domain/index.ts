@@ -2,6 +2,7 @@ export * from './format';
 export * from './clipboard';
 export * from './fulfillment';
 export * from './item-adjustments';
+export * from './localized-order-item';
 export * from './media';
 export * from './merchant';
 export * from './orders';

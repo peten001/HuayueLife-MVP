@@ -221,6 +221,7 @@ export class TableSessionsService {
       ...detail,
       orders: orders.map((order) => ({
         ...order,
+        items: this.serializeLocalizedOrderItems(order.items),
         statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
       })),
     };
@@ -754,6 +755,8 @@ export class TableSessionsService {
         items: order.items.map((item) => ({
           id: item.id,
           productNameZhSnapshot: item.productNameZhSnapshot,
+          productNameZh: item.product?.nameZh ?? null,
+          productNameVi: item.product?.nameVi ?? null,
           quantity: item.quantity,
           unitPriceVnd: item.unitPriceVnd,
           subtotalVnd: item.subtotalVnd,
@@ -776,6 +779,9 @@ export class TableSessionsService {
           select: {
             id: true,
             productNameZhSnapshot: true,
+            product: {
+              select: { nameZh: true, nameVi: true },
+            },
             quantity: true,
             unitPriceVnd: true,
             subtotalVnd: true,
@@ -812,6 +818,9 @@ export class TableSessionsService {
     },
     items: {
       orderBy: { id: 'asc' as const },
+      include: {
+        product: { select: { nameZh: true, nameVi: true } },
+      },
     },
     statusLogs: {
       select: {
@@ -843,4 +852,18 @@ export class TableSessionsService {
       take: 10,
     },
   };
+
+  private serializeLocalizedOrderItems<
+    T extends { product?: { nameZh: string; nameVi: string | null } | null },
+  >(items: readonly T[]) {
+    return items.map((item) => {
+      if (!Object.prototype.hasOwnProperty.call(item, 'product')) return item;
+      const { product, ...snapshot } = item;
+      return {
+        ...snapshot,
+        productNameZh: product?.nameZh ?? null,
+        productNameVi: product?.nameVi ?? null,
+      };
+    });
+  }
 }

@@ -1,6 +1,59 @@
 import { TableSessionsService } from './table-sessions.service';
 
 describe('TableSessionsService checkout', () => {
+  it('passes through the existing related Chinese and Vietnamese product names for cashier display', async () => {
+    const prisma = {
+      tableSession: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 17n,
+          sessionNo: 'TS-17',
+          merchantId: 7n,
+          tableId: 13n,
+          status: 'OPEN',
+          openedAt: new Date('2026-07-29T00:00:00.000Z'),
+          closedAt: null,
+          roundingAppliedByStaffId: null,
+          roundingAmountVnd: 0n,
+          table: { id: 13n, tableNo: 'A01', tableName: null },
+          orders: [{
+            id: 19n,
+            orderNo: 'YQ-19',
+            status: 'ACCEPTED',
+            createdAt: new Date('2026-07-29T00:01:00.000Z'),
+            itemAmountVnd: 50_000n,
+            deliveryFeeVnd: 0n,
+            totalAmountVnd: 50_000n,
+            tableNoSnapshot: 'A01',
+            items: [{
+              id: 23n,
+              productNameZhSnapshot: '小炒肉',
+              product: { nameZh: '小炒肉', nameVi: 'Thịt xào' },
+              quantity: 1,
+              unitPriceVnd: 50_000n,
+              subtotalVnd: 50_000n,
+            }],
+          }],
+        }),
+      },
+    };
+    const service = new TableSessionsService(prisma as never, {} as never);
+
+    const result = await service.getSessionDetail(7n, 17n);
+
+    expect(result.session.orders[0]?.items[0]).toMatchObject({
+      productNameZhSnapshot: '小炒肉',
+      productNameZh: '小炒肉',
+      productNameVi: 'Thịt xào',
+    });
+    expect(prisma.tableSession.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        orders: expect.objectContaining({
+          include: expect.objectContaining({ items: expect.any(Object) }),
+        }),
+      }),
+    }));
+  });
+
   it('enqueues the existing COMPLETED print trigger without changing settlement', async () => {
     const merchantId = 7n;
     const staffId = 11n;

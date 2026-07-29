@@ -24,6 +24,9 @@ export interface OrderItem {
   productNameZhSnapshot: string;
   productNameViSnapshot?: string | null;
   productNameEnSnapshot?: string | null;
+  productNameZh?: string | null;
+  productNameVi?: string | null;
+  productNameEn?: string | null;
   imageUrlSnapshot?: string | null;
   unitPriceVnd?: string;
   quantity: number;

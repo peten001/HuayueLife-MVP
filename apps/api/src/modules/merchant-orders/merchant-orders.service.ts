@@ -1159,6 +1159,10 @@ export class MerchantOrdersService {
       roundingAmountVnd?: bigint | null;
       roundingAppliedByStaffId?: bigint | null;
       roundingAppliedAt?: Date | null;
+      items?: ReadonlyArray<{
+        product?: { nameZh: string; nameVi: string | null } | null;
+        [key: string]: unknown;
+      }>;
       statusLogs?: ReadonlyArray<{
         action: string | null;
         metadata: Prisma.JsonValue | null;
@@ -1170,7 +1174,21 @@ export class MerchantOrdersService {
       }>;
     },
   >(order: T) {
-    const pickupProjection = withPickupFulfillmentFields(order);
+    const localizedOrder = {
+      ...order,
+      ...(order.items ? {
+        items: order.items.map((item) => {
+          if (!Object.prototype.hasOwnProperty.call(item, 'product')) return item;
+          const { product, ...snapshot } = item;
+          return {
+            ...snapshot,
+            productNameZh: product?.nameZh ?? null,
+            productNameVi: product?.nameVi ?? null,
+          };
+        }),
+      } : {}),
+    };
+    const pickupProjection = withPickupFulfillmentFields(localizedOrder);
     if (
       !['PICKUP', 'DELIVERY'].includes(pickupProjection.orderType) ||
       pickupProjection.totalAmountVnd === undefined
@@ -1184,7 +1202,7 @@ export class MerchantOrdersService {
       return withOrderSettlementFields(settlementOrder);
     }
     return withOrderSettlementFields({
-      ...order,
+      ...localizedOrder,
       statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
     } as typeof settlementOrder);
   }
@@ -1216,6 +1234,9 @@ export class MerchantOrdersService {
       select: {
         id: true,
         productNameZhSnapshot: true,
+        product: {
+          select: { nameZh: true, nameVi: true },
+        },
         quantity: true,
         subtotalVnd: true,
       },
@@ -1258,6 +1279,9 @@ export class MerchantOrdersService {
     },
     items: {
       orderBy: { id: 'asc' as const },
+      include: {
+        product: { select: { nameZh: true, nameVi: true } },
+      },
     },
     statusLogs: {
       select: {

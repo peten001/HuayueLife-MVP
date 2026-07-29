@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { formatVnd } from '@/domain';
+import { formatVnd, resolveLocalizedOrderItemName } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder, OrderItem } from '@/types';
 
@@ -9,9 +9,7 @@ const { t, locale } = useI18n();
 const totalQuantity = computed(() => props.order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
 
 function itemName(item: OrderItem) {
-  if (locale.value === 'vi') return item.productNameViSnapshot || item.productNameZhSnapshot || t('order.itemNameFallback');
-  if (locale.value === 'en') return item.productNameEnSnapshot || item.productNameZhSnapshot || t('order.itemNameFallback');
-  return item.productNameZhSnapshot || t('order.itemNameFallback');
+  return resolveLocalizedOrderItemName(item, locale.value, t('order.itemNameFallback'));
 }
 </script>
 

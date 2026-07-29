@@ -9,6 +9,7 @@ import {
   firstEnabledCashierWorkspace,
   isWithinBusinessHours,
   resolveCashierWorkspaceCapabilities,
+  resolveMerchantImageCandidates,
   resolveMediaUrl,
 } from '@/domain';
 import { resolveOrderLocation } from '@/domain/order-location';
@@ -55,7 +56,7 @@ const identity = computed(() => ({
     || session.value?.merchant.nameZh
     || '',
   role: session.value?.role,
-  merchantLogoUrl: resolveMediaUrl(profile.value?.logoUrl),
+  merchantImageUrls: resolveMerchantImageCandidates(profile.value).map(resolveMediaUrl).filter(Boolean),
 }));
 const capabilities = computed(() => resolveCashierWorkspaceCapabilities(
   profile.value,
@@ -211,7 +212,7 @@ onBeforeUnmount(() => {
   <div class="cashier-shell cashier-shell--workflow">
     <CashierSidebar
       :merchant-name="identity.merchantName"
-      :merchant-logo-url="identity.merchantLogoUrl"
+      :merchant-image-urls="identity.merchantImageUrls"
       :business-open="plannedBusinessOpen"
       :business-hours-label="businessHoursLabel"
       :demo-mode="demoMode"

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { MerchantProfile } from '@/types';
 import {
   cashierWorkspaceEnabled,
   currentBusinessHoursRange,
   firstEnabledCashierWorkspace,
   isWithinBusinessHours,
   resolveCashierWorkspaceCapabilities,
+  resolveMerchantImageCandidates,
 } from './merchant';
 
 const schedule = {
@@ -50,5 +52,43 @@ describe('cashier workspace capabilities', () => {
 
     expect(capabilities).toEqual({ tables: false, pickup: false, delivery: false });
     expect(firstEnabledCashierWorkspace(capabilities)).toBe('order-history');
+  });
+});
+
+function profile(overrides: Partial<MerchantProfile> = {}): MerchantProfile {
+  return {
+    id: 'merchant-1', nameZh: '很长的越南语商家名称', merchantType: 'RESTAURANT',
+    contactName: '', contactPhone: '', province: '', city: '', addressDetail: '',
+    latitude: '0', longitude: '0', businessHours: {}, minimumDeliveryAmountVnd: '0',
+    deliveryFeeVnd: '0', deliveryRadiusKm: '0', dineInEnabled: true, pickupEnabled: true,
+    deliveryEnabled: true, isVisibleOnClient: true, status: 'ACTIVE', ...overrides,
+  };
+}
+
+describe('resolveMerchantImageCandidates', () => {
+  it('prioritizes storefront, cover and logo imagery', () => {
+    expect(resolveMerchantImageCandidates(profile({
+      coverUrl: '/legacy-cover.jpg', logoUrl: '/legacy-logo.jpg',
+      images: [
+        { id: '3', imageType: 'LOGO', imageUrl: '/logo.jpg', sortOrder: 0, isVisible: true },
+        { id: '2', imageType: 'COVER', imageUrl: '/cover.jpg', sortOrder: 0, isVisible: true },
+        { id: '1', imageType: 'STORE', imageUrl: '/store.jpg', sortOrder: 0, isVisible: true },
+      ],
+    }))).toEqual(['/store.jpg', '/cover.jpg', '/legacy-cover.jpg', '/logo.jpg', '/legacy-logo.jpg']);
+  });
+
+  it('falls back to logo when no storefront image exists', () => {
+    expect(resolveMerchantImageCandidates(profile({ logoUrl: '/logo.jpg' }))).toEqual(['/logo.jpg']);
+  });
+
+  it('returns no image when storefront and logo are both absent', () => {
+    expect(resolveMerchantImageCandidates(profile())).toEqual([]);
+  });
+
+  it('ignores hidden images and removes duplicate URLs', () => {
+    expect(resolveMerchantImageCandidates(profile({ coverUrl: '/cover.jpg', images: [
+      { id: '1', imageType: 'STORE', imageUrl: '/hidden.jpg', sortOrder: 0, isVisible: false },
+      { id: '2', imageType: 'COVER', imageUrl: '/cover.jpg', sortOrder: 0, isVisible: true },
+    ] }))).toEqual(['/cover.jpg']);
   });
 });

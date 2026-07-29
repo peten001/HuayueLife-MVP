@@ -5,7 +5,7 @@ import CashierNavigation from './CashierNavigation.vue';
 
 defineProps<{
   merchantName?: string;
-  merchantLogoUrl?: string;
+  merchantImageUrls?: string[];
   businessOpen: boolean | null;
   businessHoursLabel?: string;
   demoMode?: boolean;
@@ -28,7 +28,7 @@ defineEmits<{
   <aside class="cashier-sidebar" data-testid="cashier-sidebar">
     <CashierMerchantPanel
       :merchant-name="merchantName"
-      :merchant-logo-url="merchantLogoUrl"
+      :merchant-image-urls="merchantImageUrls"
       :business-open="businessOpen"
       :business-hours-label="businessHoursLabel"
       :demo-mode="demoMode"

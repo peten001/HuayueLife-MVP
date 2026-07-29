@@ -76,6 +76,25 @@ describe('cashier table store real-session refresh', () => {
     expect(store.selectedSessionDetail?.totalAmountVnd).toBe('75000');
   });
 
+  it('keeps the last successful detail visible during a background refresh and on failure', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+    const deferred = createDeferred<TableSessionDetail>();
+    apiMocks.getTableSessionDetail.mockReturnValueOnce(deferred.promise);
+
+    const refresh = store.fetchTables();
+    await Promise.resolve();
+    expect(store.selectedSessionDetail).toEqual(detail);
+    expect(store.detailLoading).toBe(false);
+    deferred.reject(new Error('temporary polling failure'));
+    await refresh;
+
+    expect(store.selectedTableId).toBe(table.id);
+    expect(store.selectedSessionDetail).toEqual(detail);
+    expect(store.detailLoading).toBe(false);
+  });
+
   it('keeps the table selected but clears a session closed by another terminal', async () => {
     const store = useTablesStore();
     await store.fetchTables();
@@ -194,8 +213,10 @@ describe('cashier table store real-session refresh', () => {
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }

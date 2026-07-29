@@ -1,0 +1,11 @@
+{
+  "observedMs": 70000,
+  "expectedPollingCycles": 7,
+  "loadingAppearances": 0,
+  "detailDisappearances": 0,
+  "mutationCallbacks": 0,
+  "initialScrollTop": 0,
+  "finalScrollTop": 0,
+  "selectedPath": "/tables/demo-table-1",
+  "browserErrors": []
+}

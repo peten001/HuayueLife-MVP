@@ -7,6 +7,18 @@ export interface CashierWorkspaceCapabilities {
   delivery: boolean;
 }
 
+export function resolveMerchantImageCandidates(profile: MerchantProfile | null | undefined) {
+  const visibleImages = (profile?.images ?? []).filter((image) => image.isVisible);
+  const values = [
+    ...visibleImages.filter((image) => image.imageType === 'STORE').map((image) => image.imageUrl),
+    ...visibleImages.filter((image) => image.imageType === 'COVER').map((image) => image.imageUrl),
+    profile?.coverUrl,
+    ...visibleImages.filter((image) => image.imageType === 'LOGO').map((image) => image.imageUrl),
+    profile?.logoUrl,
+  ];
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
 export type CashierWorkspaceRouteName =
   | 'tables'
   | 'pickup-orders'

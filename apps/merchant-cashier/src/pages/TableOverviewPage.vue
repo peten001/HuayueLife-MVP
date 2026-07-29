@@ -357,7 +357,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         :aria-label="t('fulfillment.backToTables')"
         @click="router.push('/tables')"
       ><ArrowLeft :size="20" aria-hidden="true" /></button>
-      <LoadingState v-if="detailLoading" :label="t('table.loading')" />
+      <LoadingState v-if="detailLoading && !selectedSessionDetail" :label="t('table.loading')" />
       <TableBillDetail
         v-else
         :table="selectedTable"

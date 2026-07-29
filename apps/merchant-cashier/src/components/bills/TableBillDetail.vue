@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Minus, UtensilsCrossed } from '@lucide/vue';
 import { computed } from 'vue';
-import { canDecreaseOrderItems, canReturnOrderItems, formatVietnamTime, formatVnd } from '@/domain';
+import { canDecreaseOrderItems, canReturnOrderItems, formatVietnamTime, formatVnd, resolveLocalizedOrderItemName } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { OrderItem, TableCardView, TableSessionDetail, TableSessionOrder } from '@/types';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -58,6 +58,10 @@ function sourceDescription(order: TableSessionOrder) {
   return order.createdByStaffId ? t('table.orderSource.staff') : t('table.orderSource.qr');
 }
 
+function itemName(item: OrderItem) {
+  return resolveLocalizedOrderItemName(item, locale.value, t('order.itemNameFallback'));
+}
+
 function canAdjust(order: TableSessionOrder) {
   if (props.session?.status !== 'OPEN') return false;
   const context = { orderType: 'DINE_IN' as const, tableSessionId: props.session.id, status: order.status };
@@ -90,14 +94,14 @@ function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
         <div class="table-item-summary-list" data-testid="table-item-summary">
           <article v-for="entry in sessionItems" :key="`${entry.order.id}-${entry.item.id}`" class="table-item-summary-row">
             <span class="table-item-summary-row__source" :title="sourceDescription(entry.order)" :aria-label="sourceDescription(entry.order)">{{ sourceLabel(entry.order) }}</span>
-            <strong :title="entry.item.productNameZhSnapshot">{{ entry.item.productNameZhSnapshot || t('order.itemNameFallback') }}</strong>
+            <strong :title="itemName(entry.item)">{{ itemName(entry.item) }}</strong>
             <span>{{ t('order.quantity', { count: entry.item.quantity }) }}</span>
             <b>{{ formatVnd(entry.item.subtotalVnd, locale) }}</b>
             <button
               type="button"
               class="order-item-adjustment order-item-adjustment--decrease"
               data-testid="decrease-order-item"
-              :aria-label="`${t('itemAdjustment.decrease')} ${entry.item.productNameZhSnapshot}`"
+              :aria-label="`${t('itemAdjustment.decrease')} ${itemName(entry.item)}`"
               :disabled="adjustmentDisabled(entry.item.id) || !canAdjust(entry.order)"
               :title="canAdjust(entry.order) ? t('itemAdjustment.decrease') : t('itemAdjustment.unavailable')"
               @click="emitItemAdjustment(entry.item, entry.order)"

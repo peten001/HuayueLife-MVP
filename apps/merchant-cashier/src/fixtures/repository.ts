@@ -365,7 +365,7 @@ function buildSessionSummary(): TableSessionSummary {
 function buildSessionDetail(): TableSessionDetail {
   return {
     ...buildSessionSummary(),
-    orders: tableOrders().map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productNameZhSnapshot: item.productNameZhSnapshot, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
+    orders: tableOrders().map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productNameZhSnapshot: item.productNameZhSnapshot, productNameViSnapshot: item.productNameViSnapshot, productNameEnSnapshot: item.productNameEnSnapshot, productNameZh: item.productNameZh, productNameVi: item.productNameVi, productNameEn: item.productNameEn, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
   };
 }
 

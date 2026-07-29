@@ -196,7 +196,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     const requestSequence = ++detailRequestSequence;
     const changedSession = selectedSessionDetail.value?.id !== sessionId;
     if (changedSession) selectedSessionDetail.value = null;
-    detailLoading.value = true;
+    detailLoading.value = selectedSessionDetail.value === null;
     try {
       const detail = await getTableSessionDetail(sessionId);
       if (

@@ -92,13 +92,13 @@
 
 .cashier-merchant-panel__logo {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
   place-items: center;
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 8px;
+  border-radius: 11px;
   color: var(--cashier-green);
   background: rgb(255 255 255 / 6%);
   font-size: 13px;
@@ -748,7 +748,7 @@
   .cashier-merchant-panel { top: 10px; left: 14px; width: 158px; height: 82px; padding: 10px 0; gap: 8px; }
   .cashier-merchant-panel__identity { gap: 7px; }
   .cashier-merchant-panel__identity > strong { font-size: 15px; }
-  .cashier-merchant-panel__logo { width: 26px; height: 26px; flex-basis: 26px; border-radius: 7px; }
+  .cashier-merchant-panel__logo { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; }
   .cashier-merchant-panel .business-state { font-size: 12px; }
   .cashier-merchant-panel .demo-badge { font-size: 10px; }
   .cashier-sidebar .cashier-navigation { top: 112px; left: 8px; width: 170px; gap: 7px; }

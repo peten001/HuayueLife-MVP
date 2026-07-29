@@ -4,6 +4,8 @@ import type {
   TableSessionDetail,
   TableSessionSummary,
 } from '@/types';
+import type { Locale } from '@/i18n';
+import { resolveLocalizedOrderItemName } from './localized-order-item';
 
 export function buildTableCards(
   tables: readonly DiningTable[],
@@ -29,13 +31,15 @@ export function buildTableCards(
 
 export function summarizeTableSessionItems(
   session: TableSessionDetail | null | undefined,
+  locale: Locale = 'zh',
+  fallback = '—',
 ) {
   const itemsByName = new Map<string, { name: string; quantity: number; subtotalVnd: bigint }>();
   session?.orders
     .filter((order) => order.status !== 'CANCELLED')
     .flatMap((order) => order.items ?? [])
     .forEach((item) => {
-      const name = item.productNameZhSnapshot?.trim() || '—';
+      const name = resolveLocalizedOrderItemName(item, locale, fallback);
       const current = itemsByName.get(name) ?? { name, quantity: 0, subtotalVnd: 0n };
       current.quantity += Number(item.quantity || 0);
       try {
