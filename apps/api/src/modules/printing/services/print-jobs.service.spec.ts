@@ -737,6 +737,97 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it.each([
+    ['front-desk order receipt', 'FRONT_DESK'],
+    ['kitchen receipt', 'KITCHEN'],
+  ])('stores an RC5-compatible USB payload for a %s', async (_label, purpose) => {
+    const current = currentExtendedReceipt(receipt);
+    snapshots.fromOrder.mockResolvedValue(current);
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({ purpose }));
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 221n, printerId });
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: `manual-${purpose}`,
+      printerId,
+      orderId,
+      receiptType: 'ORDER_CUSTOMER',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data
+      .receiptSnapshot as ReceiptDocument;
+    expect(snapshot.schemaVersion).toBe(1);
+    expect(snapshot).not.toHaveProperty('footer');
+    expect(snapshot.merchant).not.toHaveProperty('nameVi');
+    expect(snapshot.items[0].nameVi).toBe('Món thử nghiệm');
+  });
+
+  it('stores an RC5-compatible USB checkout receipt without changing settlement amounts', async () => {
+    const current = currentExtendedReceipt({
+      ...receipt,
+      receiptType: 'TABLE_BILL',
+      order: undefined,
+      tableSession: {
+        id: tableSessionId.toString(),
+        sessionNo: 'TS-47',
+        tableName: 'A07',
+        openedAt: '2026-07-29T00:00:00.000Z',
+        orderNos: ['ORDER-47'],
+      },
+    });
+    snapshots.fromTableSession.mockResolvedValue(current);
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.tableSession.findFirst.mockResolvedValue({ id: tableSessionId });
+    prisma.printJob.create.mockResolvedValue({ id: 222n, printerId });
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'manual-table-bill-rc5',
+      printerId,
+      tableSessionId,
+      receiptType: 'TABLE_BILL',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data
+      .receiptSnapshot as ReceiptDocument;
+    expect(snapshot).not.toHaveProperty('footer');
+    expect(snapshot.totals).toEqual(
+      expect.objectContaining({
+        originalAmount: 513_000,
+        roundingAmount: 3_000,
+        receivedAmount: 510_000,
+      }),
+    );
+  });
+
+  it('creates an RC5-compatible USB test receipt without changing printer readiness', async () => {
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.merchant.findUnique.mockResolvedValue({
+      id: merchantId,
+      nameZh: '测试商家',
+      addressZh: null,
+      contactPhone: null,
+    });
+    prisma.printJob.create.mockResolvedValue({ id: 223n, printerId });
+
+    await service.createSafeUsbTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-usb-test',
+      'usb-test-rc5',
+    );
+
+    const data = prisma.printJob.create.mock.calls[0][0].data;
+    expect(data.receiptSnapshot).toEqual(
+      expect.objectContaining({ schemaVersion: 1, receiptType: 'ORDER_CUSTOMER' }),
+    );
+    expect(prisma.printer.update).not.toHaveBeenCalled();
+  });
+
   it('rejects an automatic snapshot whose merchant scope does not match the job', async () => {
     prisma.printRule.findFirst.mockResolvedValue(automaticRule());
     snapshots.fromOrder.mockResolvedValue({
@@ -1064,7 +1155,7 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
   });
 
-  it('schedules a safe manual retry without expanding the fixed attempt ceiling', async () => {
+  it('schedules an ordinary safe manual retry without expanding the fixed attempt ceiling', async () => {
     const failed = {
       ...pendingJob(),
       status: 'FAILED',
@@ -1098,6 +1189,92 @@ describe('PrintJobsService', () => {
     );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PRINT_JOB_RETRIED', reason: '排除故障后重试' }),
+      prisma,
+    );
+  });
+
+  it('creates a new RC5-compatible job for a schema failure without mutating the failed snapshot or attempt', async () => {
+    const incompatible: ReceiptDocument = {
+      ...receipt,
+      merchant: {
+        ...receipt.merchant,
+        nameVi: 'Nhà hàng thử nghiệm',
+      },
+      totals: {
+        subtotal: 513_000,
+        originalAmount: 513_000,
+        roundingAmount: 3_000,
+        receivedAmount: 510_000,
+        total: 510_000,
+        currency: 'VND',
+      },
+      footer: { zh: '谢谢惠顾', vi: 'Cảm ơn quý khách' },
+    };
+    const failed = {
+      ...pendingJob(),
+      orderId,
+      tableSessionId: null,
+      printRuleId: null,
+      ruleVersion: null,
+      requestGroupId: 'original-group',
+      copyIndex: 1,
+      copyCount: 1,
+      receiptTemplateId: null,
+      receiptType: 'ORDER_CUSTOMER',
+      triggerEvent: 'MANUAL',
+      source: 'MANUAL',
+      createdByStaffId: 3n,
+      receiptSnapshot: incompatible,
+      receiptSnapshotHash: 'original-snapshot-hash',
+      status: 'FAILED',
+      attemptCount: 1,
+      retryBlocked: false,
+      lastErrorCode: 'TEMPLATE_INVALID',
+      lastErrorMessage: 'RECEIPT_SCHEMA_UNSUPPORTED',
+    };
+    prisma.printJob.findFirst
+      .mockResolvedValueOnce(failed)
+      .mockResolvedValueOnce(failed);
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 302n, merchantId });
+
+    await expect(
+      service.retry(merchantId, 3n, 'req-schema', failed.id, '兼容重试'),
+    ).resolves.toEqual({ id: 302n, merchantId });
+
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'MANUAL_REPRINT',
+          status: 'PENDING',
+          receiptSnapshot: expect.not.objectContaining({ footer: expect.anything() }),
+        }),
+      }),
+    );
+    const createdSnapshot = prisma.printJob.create.mock.calls[0][0].data
+      .receiptSnapshot as ReceiptDocument;
+    expect(createdSnapshot.merchant).not.toHaveProperty('nameVi');
+    expect(createdSnapshot.totals).toEqual(
+      expect.objectContaining({
+        originalAmount: 513_000,
+        roundingAmount: 3_000,
+        receivedAmount: 510_000,
+      }),
+    );
+    expect(failed.receiptSnapshot).toEqual(incompatible);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PRINT_JOB_SAFE_RETRY_CREATED',
+        resourceId: 302n,
+        beforeData: expect.objectContaining({
+          sourceJobId: failed.id.toString(),
+          sourceAttemptCount: 1,
+          sourceSnapshotHash: 'original-snapshot-hash',
+        }),
+      }),
       prisma,
     );
   });
@@ -1251,6 +1428,29 @@ function pendingJob(overrides: Record<string, unknown> = {}) {
     attemptCount: 0,
     maxAttempts: 3,
     ...overrides,
+  };
+}
+
+function currentExtendedReceipt(document: ReceiptDocument): ReceiptDocument {
+  return {
+    ...document,
+    merchant: {
+      ...document.merchant,
+      nameVi: 'Nhà hàng thử nghiệm',
+    },
+    items: document.items.map((item) => ({
+      ...item,
+      nameVi: 'Món thử nghiệm',
+    })),
+    totals: {
+      subtotal: 513_000,
+      originalAmount: 513_000,
+      roundingAmount: 3_000,
+      receivedAmount: 510_000,
+      total: 510_000,
+      currency: 'VND',
+    },
+    footer: { zh: '谢谢惠顾', vi: 'Cảm ơn quý khách' },
   };
 }
 

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  PrintJob,
   PrintJobSource,
   PrintJobStatus,
   PrintTriggerEvent,
@@ -21,6 +22,7 @@ import {
   PRINTING_ERROR_CODES,
   sanitizePrintingError,
 } from '../types/printing-errors';
+import { receiptDocumentForChannel } from '../types/receipt-compatibility';
 import { ReceiptDocument } from '../types/receipt-document';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import {
@@ -1086,6 +1088,15 @@ export class PrintJobsService {
     if (job.retryBlocked || job.lastErrorCode === PRINTING_ERROR_CODES.PRINT_OUTCOME_UNKNOWN) {
       this.stateConflict('任务可能已经出纸，不能重试原任务；请人工确认后创建补打任务');
     }
+    if (isReceiptSchemaCompatibilityFailure(job)) {
+      return this.createReceiptCompatibilityRetry(
+        merchantId,
+        actorStaffId,
+        requestId,
+        job,
+        reason,
+      );
+    }
     if (job.attemptCount >= job.maxAttempts) {
       this.stateConflict('任务已达到最大尝试次数，不能继续重试原任务');
     }
@@ -1640,9 +1651,13 @@ export class PrintJobsService {
       });
       if (!session) this.referenceError('桌台账单不存在或不属于当前商家');
     }
-    const snapshot = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
+    const templatedSnapshot = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
       ? this.snapshots.withTemplate(input.snapshot, template?.definition)
       : input.snapshot;
+    const snapshot = receiptDocumentForChannel(
+      templatedSnapshot,
+      printer.channelType,
+    );
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -1667,6 +1682,97 @@ export class PrintJobsService {
         createdByStaffId: input.createdByStaffId,
       },
     });
+  }
+
+  private async createReceiptCompatibilityRetry(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    job: PrintJob,
+    reason?: string,
+  ) {
+    await this.requireReadyPrinterForMerchantOperation(
+      merchantId,
+      job.printerId,
+    );
+    const dedupeKey = this.manualDedupeKey(
+      merchantId,
+      actorStaffId,
+      `safe-retry:${job.id}`,
+      'rc5-usb-compat-v1',
+    );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const original = await tx.printJob.findFirst({
+          where: {
+            id: job.id,
+            merchantId,
+            status: { in: ['FAILED', 'RETRY_WAIT'] },
+            retryBlocked: false,
+          },
+        });
+        if (!original || !isReceiptSchemaCompatibilityFailure(original)) {
+          this.stateConflict('原失败任务状态已变化，请刷新后重试');
+        }
+        const snapshot = this.snapshots.cloneAndValidate(
+          original.receiptSnapshot as unknown as ReceiptDocument,
+        );
+        this.assertSnapshotMerchant(merchantId, snapshot);
+        const created = await this.createJob(
+          {
+            merchantId,
+            orderId: original.orderId ?? undefined,
+            tableSessionId: original.tableSessionId ?? undefined,
+            printerId: original.printerId,
+            printRuleId: original.printRuleId ?? undefined,
+            ruleVersion: original.ruleVersion ?? undefined,
+            requestGroupId: randomUUID(),
+            copyIndex: 1,
+            copyCount: 1,
+            receiptTemplateId: original.receiptTemplateId ?? undefined,
+            receiptType: original.receiptType,
+            triggerEvent: 'MANUAL',
+            source: 'MANUAL_REPRINT',
+            priority: original.priority,
+            dedupeKey,
+            snapshot,
+            createdByStaffId: actorStaffId,
+            allowHistoricalTemplate: true,
+          },
+          tx,
+        );
+        await this.audit.record(
+          {
+            merchantId,
+            actorStaffId,
+            action: 'PRINT_JOB_SAFE_RETRY_CREATED',
+            resourceType: 'PrintJob',
+            resourceId: created.id,
+            beforeData: {
+              sourceJobId: original.id.toString(),
+              sourceStatus: original.status,
+              sourceAttemptCount: original.attemptCount,
+              sourceSnapshotHash: original.receiptSnapshotHash,
+            },
+            afterData: {
+              retryJobId: created.id.toString(),
+              compatibilityProfile: 'RC5_USB_SCHEMA_V1',
+            },
+            reason,
+            requestId,
+          },
+          tx,
+        );
+        return created;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.printJob.findUnique({
+        where: { dedupeKey },
+      });
+      if (!existing || existing.merchantId !== merchantId) throw error;
+      return existing;
+    }
   }
 
   private async createSnapshot(
@@ -1949,6 +2055,16 @@ export class PrintJobsService {
 
 function isUniqueViolation(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+function isReceiptSchemaCompatibilityFailure(job: {
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+}) {
+  return (
+    job.lastErrorCode === PRINTING_ERROR_CODES.TEMPLATE_INVALID &&
+    job.lastErrorMessage === 'RECEIPT_SCHEMA_UNSUPPORTED'
+  );
 }
 
 function errorCode(error: unknown) {
