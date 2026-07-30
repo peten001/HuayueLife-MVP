@@ -18,7 +18,6 @@ for required in \
   "$RELEASE_ROOT/package.json" \
   "$RELEASE_ROOT/pnpm-workspace.yaml" \
   "$RELEASE_ROOT/pnpm-lock.yaml" \
-  "$RELEASE_ROOT/node_modules" \
   "$RELEASE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" \
   "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; do
   if [[ ! -e "$required" ]]; then
@@ -29,6 +28,11 @@ done
 
 if ! grep -qx 'platform=Linux' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
   printf 'BLOCKED: candidate lacks Linux-native dependency attestation\n' >&2
+  exit 1
+fi
+
+if ! grep -q 'deploy --prod' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
+  printf 'BLOCKED: candidate lacks pnpm production deployment attestation\n' >&2
   exit 1
 fi
 

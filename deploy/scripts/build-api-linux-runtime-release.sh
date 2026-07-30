@@ -43,15 +43,11 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm --filter @huayue-life/api prisma:generate
 corepack pnpm --filter @huayue-life/api build
 
-# Prune in the Linux staging tree only. The resulting tree is copied into the
-# candidate and is never referenced by the candidate at runtime.
-corepack pnpm install --frozen-lockfile --prod --force
-
 {
   printf 'platform=Linux\n'
   printf 'node=%s\n' "$(node --version)"
   printf 'pnpm=%s\n' "$(corepack pnpm --version)"
-  printf 'install=corepack pnpm install --frozen-lockfile --prod --force\n'
+  printf 'install=corepack pnpm install --frozen-lockfile; corepack pnpm --filter @huayue-life/api deploy --prod\n'
 } >"$MARKER"
 
 "$SOURCE_ROOT/deploy/scripts/assemble-api-runtime-release.sh" "$RELEASE_ROOT"

@@ -63,15 +63,14 @@ for (const requiredSnippet of [
   '"$LINUX_INSTALL_MARKER"',
   'readonly SOURCE_COMMIT="${SOURCE_COMMIT:-}"',
   'SOURCE_COMMIT must be the exact 40-character source revision',
-  'cp -a "$SOURCE_ROOT/node_modules" "$RELEASE_ROOT/node_modules"',
-  'cp -a "$API_SOURCE/node_modules" "$API_RELEASE/node_modules"',
+  'corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"',
   'RUNTIME_RELEASE_MANIFEST.txt',
 ]) {
   assert.ok(assembleRuntime.includes(requiredSnippet), `runtime assembler missing: ${requiredSnippet}`);
 }
 assert.match(assembleRuntime, /verify-api-runtime-release\.sh/);
 assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile/);
-assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile --prod --force/);
+assert.match(buildLinuxRuntime, /deploy --prod/);
 assert.match(buildLinuxRuntime, /source staging tree is not clean/);
 assert.match(buildLinuxRuntime, /Linux-native runtime installation is required/);
 assert.match(buildLinuxRuntime, /SOURCE_COMMIT must be the exact 40-character source revision/);

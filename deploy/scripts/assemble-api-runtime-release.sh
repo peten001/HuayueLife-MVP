@@ -35,7 +35,6 @@ for required in \
   "$SOURCE_ROOT/package.json" \
   "$SOURCE_ROOT/pnpm-workspace.yaml" \
   "$SOURCE_ROOT/pnpm-lock.yaml" \
-  "$SOURCE_ROOT/node_modules" \
   "$API_SOURCE/node_modules" \
   "$LINUX_INSTALL_MARKER"; do
   if [[ ! -e "$required" ]]; then
@@ -49,14 +48,15 @@ if ! grep -qx 'platform=Linux' "$LINUX_INSTALL_MARKER"; then
   exit 1
 fi
 
-mkdir -p "$API_RELEASE" "$RELEASE_ROOT/deploy/scripts"
-cp -a "$API_SOURCE/dist" "$API_RELEASE/dist"
-cp -a "$API_SOURCE/package.json" "$API_RELEASE/package.json"
+mkdir -p "$RELEASE_ROOT/deploy/scripts"
 cp -a "$SOURCE_ROOT/package.json" "$RELEASE_ROOT/package.json"
 cp -a "$SOURCE_ROOT/pnpm-workspace.yaml" "$RELEASE_ROOT/pnpm-workspace.yaml"
 cp -a "$SOURCE_ROOT/pnpm-lock.yaml" "$RELEASE_ROOT/pnpm-lock.yaml"
-cp -a "$SOURCE_ROOT/node_modules" "$RELEASE_ROOT/node_modules"
-cp -a "$API_SOURCE/node_modules" "$API_RELEASE/node_modules"
+
+# pnpm deploy creates an API-only production dependency closure. It cannot
+# retain links to another workspace, staging, an old release, or macOS.
+corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"
+
 cp -a "$SOURCE_ROOT/deploy/scripts/verify-api-runtime-release.sh" "$RELEASE_ROOT/deploy/scripts/verify-api-runtime-release.sh"
 cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT/deploy/scripts/shadow-api-runtime-release.sh"
 
@@ -67,4 +67,4 @@ cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT
 } >"$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"
 
 "$RELEASE_ROOT/deploy/scripts/verify-api-runtime-release.sh" "$RELEASE_ROOT"
-printf 'PASS: Linux-native, self-contained API runtime release assembled at %s\n' "$RELEASE_ROOT"
+printf 'PASS: Linux-native, pnpm-deployed self-contained API runtime release assembled at %s\n' "$RELEASE_ROOT"
