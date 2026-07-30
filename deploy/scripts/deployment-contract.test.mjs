@@ -61,6 +61,8 @@ for (const requiredSnippet of [
   '"$SOURCE_ROOT/pnpm-workspace.yaml"',
   '"$SOURCE_ROOT/pnpm-lock.yaml"',
   '"$LINUX_INSTALL_MARKER"',
+  'readonly SOURCE_COMMIT="${SOURCE_COMMIT:-}"',
+  'SOURCE_COMMIT must be the exact 40-character source revision',
   'cp -a "$SOURCE_ROOT/node_modules" "$RELEASE_ROOT/node_modules"',
   'cp -a "$API_SOURCE/node_modules" "$API_RELEASE/node_modules"',
   'RUNTIME_RELEASE_MANIFEST.txt',
@@ -72,6 +74,7 @@ assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile/);
 assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile --prod/);
 assert.match(buildLinuxRuntime, /source staging tree is not clean/);
 assert.match(buildLinuxRuntime, /Linux-native runtime installation is required/);
+assert.match(buildLinuxRuntime, /SOURCE_COMMIT must be the exact 40-character source revision/);
 for (const packageName of ['@nestjs/common', '@nestjs/core', '@prisma/client', 'uid']) {
   assert.match(verifyRuntime, new RegExp(packageName.replace('/', '\\/')));
 }

@@ -12,6 +12,7 @@ fi
 readonly SOURCE_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 readonly RELEASE_ROOT="$1"
 readonly MARKER="$SOURCE_ROOT/.linux-native-runtime-install"
+readonly SOURCE_COMMIT="${SOURCE_COMMIT:-}"
 
 if [[ "$(uname -s)" != 'Linux' ]]; then
   printf 'BLOCKED: Linux-native runtime installation is required; refusing this host.\n' >&2
@@ -20,6 +21,11 @@ fi
 
 if [[ -e "$RELEASE_ROOT" ]]; then
   printf 'BLOCKED: release destination already exists: %s\n' "$RELEASE_ROOT" >&2
+  exit 1
+fi
+
+if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'BLOCKED: SOURCE_COMMIT must be the exact 40-character source revision.\n' >&2
   exit 1
 fi
 
@@ -48,4 +54,4 @@ corepack pnpm install --frozen-lockfile --prod
   printf 'install=corepack pnpm install --frozen-lockfile --prod\n'
 } >"$MARKER"
 
-"$SOURCE_ROOT/deploy/scripts/assemble-api-runtime-release.sh" "$RELEASE_ROOT"
+SOURCE_COMMIT="$SOURCE_COMMIT" "$SOURCE_ROOT/deploy/scripts/assemble-api-runtime-release.sh" "$RELEASE_ROOT"

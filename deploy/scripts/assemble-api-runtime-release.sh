@@ -12,6 +12,7 @@ readonly RELEASE_ROOT="$1"
 readonly API_SOURCE="$SOURCE_ROOT/apps/api"
 readonly API_RELEASE="$RELEASE_ROOT/apps/api"
 readonly LINUX_INSTALL_MARKER="$SOURCE_ROOT/.linux-native-runtime-install"
+readonly SOURCE_COMMIT="${SOURCE_COMMIT:-}"
 
 if [[ "$(uname -s)" != 'Linux' ]]; then
   printf 'BLOCKED: API runtime releases may only be assembled on Linux; refusing this host.\n' >&2
@@ -20,6 +21,11 @@ fi
 
 if [[ -e "$RELEASE_ROOT" ]]; then
   printf 'BLOCKED: release destination already exists: %s\n' "$RELEASE_ROOT" >&2
+  exit 1
+fi
+
+if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'BLOCKED: SOURCE_COMMIT must be the exact 40-character source revision.\n' >&2
   exit 1
 fi
 
@@ -56,7 +62,7 @@ cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT
 
 # Keep runtime provenance with the candidate, but never copy .env or credentials.
 {
-  printf 'source_commit=%s\n' "$(git -C "$SOURCE_ROOT" rev-parse HEAD)"
+  printf 'source_commit=%s\n' "$SOURCE_COMMIT"
   cat "$LINUX_INSTALL_MARKER"
 } >"$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"
 
