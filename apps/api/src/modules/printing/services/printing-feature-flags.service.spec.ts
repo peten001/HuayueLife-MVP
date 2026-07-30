@@ -20,9 +20,21 @@ describe('PrintingFeatureFlagsService safe defaults', () => {
       taskCenterEnabled: true,
       automaticCreationEnabled: false,
       executionEnabled: false,
+      lanPrintingEnabled: true,
       legacyPrintingEnabled: false,
       executionState: 'CONNECTOR_PENDING',
     });
+  });
+
+  it('keeps LAN available to all merchants by default and supports an explicit emergency stop', () => {
+    expect(service.lanPrintingEnabled()).toBe(true);
+    expect(() => service.assertLanPrintingEnabled()).not.toThrow();
+
+    values.set('LAN_PRINTING_ENABLED', 'false');
+    expect(service.lanPrintingEnabled()).toBe(false);
+    expect(() => service.assertLanPrintingEnabled()).toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it('blocks automatic task creation and execution unless explicitly enabled', () => {

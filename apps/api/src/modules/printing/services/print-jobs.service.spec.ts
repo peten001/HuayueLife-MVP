@@ -40,6 +40,10 @@ describe('PrintJobsService', () => {
   };
   let audit: { record: jest.Mock };
   let settings: { assertMerchantPrintingEnabled: jest.Mock; get: jest.Mock };
+  let lanBindings: {
+    requireTestable: jest.Mock;
+    requireClaimable: jest.Mock;
+  };
   let service: PrintJobsService;
 
   beforeEach(() => {
@@ -67,12 +71,17 @@ describe('PrintJobsService', () => {
     };
     prisma.printJob.findMany.mockResolvedValue([]);
     prisma.merchantStaff.findFirst.mockResolvedValue({ id: 3n });
+    lanBindings = {
+      requireTestable: jest.fn().mockResolvedValue({}),
+      requireClaimable: jest.fn().mockResolvedValue({}),
+    };
     service = new PrintJobsService(
       prisma as never,
       flags as never,
       snapshots as never,
       audit as never,
       settings as never,
+      lanBindings as never,
     );
   });
 
@@ -169,7 +178,12 @@ describe('PrintJobsService', () => {
         where: expect.objectContaining({
           printer: expect.objectContaining({
             channelType: {
-              in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+              in: [
+                'LOCAL_USB_ESCPOS',
+                'LOCAL_LAN_ESCPOS',
+                'CLOUD_FEIE',
+                'CLOUD_YILIAN',
+              ],
             },
           }),
         }),
@@ -178,7 +192,7 @@ describe('PrintJobsService', () => {
   });
 
   it.each(['DINE_IN', 'PICKUP', 'DELIVERY'] as const)(
-    'keeps %s automatic routing eligible for USB, Feie, and Yilian printers',
+    'keeps %s automatic routing eligible for USB, LAN, Feie, and Yilian printers',
     async (orderType) => {
       flags.automaticCreationEnabled.mockReturnValue(true);
       prisma.merchant.findUnique.mockResolvedValue({
@@ -205,7 +219,12 @@ describe('PrintJobsService', () => {
             OR: [{ orderType }, { orderType: null }],
             printer: expect.objectContaining({
               channelType: {
-                in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+                in: [
+                  'LOCAL_USB_ESCPOS',
+                  'LOCAL_LAN_ESCPOS',
+                  'CLOUD_FEIE',
+                  'CLOUD_YILIAN',
+                ],
               },
             }),
           }),
@@ -828,6 +847,72 @@ describe('PrintJobsService', () => {
     expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
+  it('creates a synthetic LAN TEST job while the printer is disabled and deduplicates active tests', async () => {
+    const printer = enabledLanPrinter({ enabled: false, status: 'UNVERIFIED' });
+    prisma.printer.findFirst.mockResolvedValue(printer);
+    prisma.merchant.findUnique.mockResolvedValue({
+      id: merchantId,
+      nameZh: '测试商家',
+      nameVi: null,
+      addressZh: null,
+      contactPhone: null,
+    });
+    prisma.printJob.findUnique.mockResolvedValue(null);
+    prisma.printJob.findFirst.mockResolvedValue(null);
+    prisma.printJob.create.mockResolvedValue({
+      id: 224n,
+      merchantId,
+      printerId,
+      source: 'TEST',
+    });
+
+    await service.createSafeTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-lan-test',
+      'lan-test-1',
+    );
+
+    expect(lanBindings.requireTestable).toHaveBeenCalledWith(
+      merchantId,
+      printerId,
+    );
+    expect(prisma.printJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          merchantId,
+          printerId,
+          source: 'TEST',
+          status: 'PENDING',
+          receiptSnapshot: expect.objectContaining({
+            note: 'Synthetic LAN test only - no customer data',
+          }),
+        }),
+      }),
+    );
+
+    const active = {
+      id: 224n,
+      merchantId,
+      printerId,
+      source: 'TEST',
+      status: 'PENDING',
+    };
+    prisma.printJob.create.mockClear();
+    prisma.printJob.findFirst.mockResolvedValue(active);
+    await expect(
+      service.createSafeTestJob(
+        merchantId,
+        printerId,
+        3n,
+        'req-lan-test-2',
+        'lan-test-2',
+      ),
+    ).resolves.toBe(active);
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
+  });
+
   it('rejects an automatic snapshot whose merchant scope does not match the job', async () => {
     prisma.printRule.findFirst.mockResolvedValue(automaticRule());
     snapshots.fromOrder.mockResolvedValue({
@@ -1027,6 +1112,223 @@ describe('PrintJobsService', () => {
           leaseVersion: { increment: 1 },
         }),
       }),
+    );
+  });
+
+  it('claims a first-sync LAN TEST by the exact printer, terminal, and local binding tuple', async () => {
+    const printer = enabledLanPrinter({ enabled: false, status: 'UNVERIFIED' });
+    const candidate = pendingJob({ source: 'TEST' });
+    prisma.printer.findFirst.mockResolvedValue(printer);
+    jest.spyOn(service, 'releaseExpiredLeases').mockResolvedValue({
+      claimed: 0,
+      printing: 0,
+    });
+    jest.spyOn(service, 'releaseAvailableRetries').mockResolvedValue(0);
+    prisma.printJob.findFirst.mockImplementation(
+      async ({ where }: { where: { status?: unknown } }) =>
+        where.status === 'PENDING' ? candidate : null,
+    );
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUnique.mockResolvedValue({
+      ...candidate,
+      status: 'CLAIMED',
+      claimedByTerminalId: terminalId,
+    });
+
+    await expect(
+      service.claimNextMerchantJob(
+        merchantId,
+        printerId,
+        30_000,
+        false,
+        terminalId,
+        'lan-binding-1',
+        1,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: 'CLAIMED',
+        claimedByTerminalId: terminalId,
+      }),
+    );
+
+    expect(lanBindings.requireClaimable).toHaveBeenCalledWith(
+      merchantId,
+      printerId,
+      terminalId,
+      'lan-binding-1',
+      1,
+      true,
+    );
+    const candidateCall = prisma.printJob.findFirst.mock.calls.find(
+      ([argument]) => argument.where.status === 'PENDING',
+    )?.[0];
+    expect(candidateCall.where).toEqual(
+      expect.objectContaining({
+        printerId,
+        printer: expect.objectContaining({
+          merchantId,
+          channelType: 'LOCAL_LAN_ESCPOS',
+        }),
+      }),
+    );
+    expect(candidateCall.where.printer).not.toHaveProperty('status');
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          claimedByTerminalId: terminalId,
+        }),
+      }),
+    );
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      lanBindings.requireClaimable.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it('rejects a LAN claim when terminal or local binding validation fails', async () => {
+    prisma.printer.findFirst.mockResolvedValue(enabledLanPrinter());
+    lanBindings.requireClaimable.mockRejectedValue(
+      new ConflictException({ code: 'PERMISSION_DENIED' }),
+    );
+
+    await expect(
+      service.claimNextMerchantJob(
+        merchantId,
+        printerId,
+        30_000,
+        false,
+        terminalId + 1n,
+        'wrong-binding',
+        1,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('routes an enabled automatic LAN job to the same bound terminal', async () => {
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    const candidate = pendingJob({ source: 'AUTOMATIC' });
+    prisma.printer.findFirst.mockResolvedValue(enabledLanPrinter());
+    jest.spyOn(service, 'releaseExpiredLeases').mockResolvedValue({
+      claimed: 0,
+      printing: 0,
+    });
+    jest.spyOn(service, 'releaseAvailableRetries').mockResolvedValue(0);
+    jest.spyOn(service, 'processPendingAutomaticTriggers').mockResolvedValue([]);
+    prisma.printJob.findFirst.mockImplementation(
+      async ({ where }: { where: { status?: unknown } }) =>
+        where.status === 'PENDING' ? candidate : null,
+    );
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUnique.mockResolvedValue({
+      ...candidate,
+      status: 'CLAIMED',
+      claimedByTerminalId: terminalId,
+    });
+
+    await service.claimNextMerchantJob(
+      merchantId,
+      printerId,
+      30_000,
+      true,
+      terminalId,
+      'lan-binding-1',
+      1,
+    );
+
+    const candidateCall = prisma.printJob.findFirst.mock.calls.find(
+      ([argument]) => argument.where.status === 'PENDING',
+    )?.[0];
+    expect(candidateCall.where.OR).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'AUTOMATIC',
+          printer: { enabled: true, status: 'ONLINE' },
+        }),
+      ]),
+    );
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ claimedByTerminalId: terminalId }),
+      }),
+    );
+  });
+
+  it('delegates LAN claim lease, automatic gate, terminal and binding tuple without argument drift', async () => {
+    const delegated = jest
+      .spyOn(service, 'claimNextMerchantJob')
+      .mockResolvedValue({ id: 301n } as never);
+
+    await service.claimNextLanTerminalJob(
+      merchantId,
+      terminalId,
+      printerId,
+      'lan-binding-1',
+      4,
+      45_000,
+      true,
+    );
+
+    expect(delegated).toHaveBeenCalledWith(
+      merchantId,
+      printerId,
+      45_000,
+      true,
+      terminalId,
+      'lan-binding-1',
+      4,
+    );
+  });
+
+  it('returns a canonical LAN payload route only after validating the complete tuple', async () => {
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob({
+        status: 'CLAIMED',
+        source: 'TEST',
+        claimedByTerminalId: terminalId,
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        receiptType: 'ORDER_CUSTOMER',
+        triggerEvent: 'MANUAL_TEST',
+        copyIndex: 1,
+        copyCount: 1,
+        receiptSnapshot: receipt,
+        receiptSnapshotHash: 'a'.repeat(64),
+      }),
+      printer: {
+        ...enabledLanPrinter({ enabled: false }),
+        name: 'LAN 前台打印机',
+        purpose: 'FRONT_DESK',
+      },
+      attempts: [],
+    });
+
+    await expect(
+      service.connectorJobPayload(
+        merchantId,
+        terminalId,
+        301n,
+        printerId,
+        'lan-binding-1',
+        1,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        route: {
+          printerId,
+          localBindingId: 'lan-binding-1',
+          bindingVersion: 1,
+          adapter: 'ANDROID_LAN_ESCPOS',
+        },
+      }),
+    );
+    expect(lanBindings.requireClaimable).toHaveBeenCalledWith(
+      merchantId,
+      printerId,
+      terminalId,
+      'lan-binding-1',
+      1,
+      true,
     );
   });
 
@@ -1349,6 +1651,7 @@ function createPrismaMock() {
       findUniqueOrThrow: jest.fn(),
       updateMany: jest.fn(),
     },
+    $queryRaw: jest.fn().mockResolvedValue([{ id: merchantId }]),
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
@@ -1385,6 +1688,31 @@ function enabledPrinter(overrides: Record<string, unknown> = {}) {
     deletedAt: null,
     ...overrides,
   };
+}
+
+function enabledLanPrinter(overrides: Record<string, unknown> = {}) {
+  return enabledPrinter({
+    channelType: 'LOCAL_LAN_ESCPOS',
+    connectionConfig: { host: '192.168.1.20', port: 9100 },
+    capabilities: {
+      lanBinding: {
+        terminalId: terminalId.toString(),
+        localBindingId: 'lan-binding-1',
+        terminalInstanceId: 'terminal-instance-1',
+        executor: 'TERMINAL',
+        adapter: 'ANDROID_LAN_ESCPOS',
+        bindingVersion: 1,
+        bindingUpdatedAt: '2026-07-30T00:00:00.000Z',
+      },
+      connectorStatus: {
+        status: 'CONNECTED',
+        serviceRunning: true,
+        executionEnabled: true,
+      },
+      connectorStatusUpdatedAt: new Date().toISOString(),
+    },
+    ...overrides,
+  });
 }
 
 function positiveUsbCapabilities() {

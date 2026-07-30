@@ -9,6 +9,7 @@ import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
+import { lanBindingMetadata } from '../types/lan-terminal-binding';
 
 @Injectable()
 export class PrintRulesService {
@@ -111,6 +112,7 @@ export class PrintRulesService {
       printerId,
       receiptTemplateId,
       dto.receiptType ?? existing.receiptType,
+      existing.enabled,
     );
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.printRule.update({
@@ -220,11 +222,42 @@ export class PrintRulesService {
         message: '目标打印机已停用',
       });
     }
-    if (requireEnabledPrinter && printer.channelType !== 'LOCAL_USB_ESCPOS') {
+    if (
+      requireEnabledPrinter &&
+      !['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'].includes(printer.channelType)
+    ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-        message: '当前 Release Candidate 只能启用 USB ESC/POS 规则',
+        message: '当前只能启用 Android USB 或 LAN ESC/POS 规则',
       });
+    }
+    if (
+      requireEnabledPrinter &&
+      printer.channelType === 'LOCAL_LAN_ESCPOS'
+    ) {
+      this.flags.assertLanPrintingEnabled();
+      const binding = lanBindingMetadata(printer.capabilities);
+      if (!binding) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.LAN_BINDING_MISSING,
+          message: 'LAN 打印机缺少 Android 终端 Binding',
+        });
+      }
+      const terminal = await this.prisma.merchantTerminal.findFirst({
+        where: {
+          id: BigInt(binding.terminalId),
+          merchantId,
+          status: 'ACTIVE',
+          revokedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!terminal) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.LAN_BINDING_MISSING,
+          message: 'LAN Binding 终端不存在、已停用或不属于当前商家',
+        });
+      }
     }
     if (templateId && !template) this.referenceError('小票模板不存在');
     if (template && !template.enabled) {

@@ -79,6 +79,14 @@ export async function disablePrintingPrinter(id: string) {
   return response.data.data;
 }
 
+export async function enablePrintingPrinter(id: string) {
+  const response = await http.post<ApiResponse<PrintingPrinter>>(
+    `/merchant/printing/printers/${id}/enable`,
+    {},
+  );
+  return response.data.data;
+}
+
 export async function createPrintingTestJob(printerId: string, requestKey: string) {
   const response = await http.post<ApiResponse<PrintingJob>>(
     `/merchant/printing/printers/${printerId}/test-job`,

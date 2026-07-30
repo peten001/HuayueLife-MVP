@@ -55,7 +55,7 @@ describe('MerchantOrdersService printing outbox', () => {
       {} as never,
     );
 
-    await expect(service.transition(7n, 3n, 37n, 'ACCEPT')).resolves.toBe(
+    await expect(service.transition(7n, 3n, 37n, 'ACCEPT')).resolves.toEqual(
       accepted,
     );
 

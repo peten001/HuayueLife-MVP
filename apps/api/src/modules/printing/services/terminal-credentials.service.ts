@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   ServiceUnavailableException,
@@ -14,8 +15,12 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { PrismaService } from '../../../database/prisma.service';
+import { BootstrapLanTerminalDto } from '../dto/lan-terminal-bootstrap.dto';
 import { PairTerminalDto } from '../dto/terminal.dto';
-import { PRINTING_ERROR_CODES } from '../types/printing-errors';
+import {
+  containsPrintingCredentialMaterial,
+  PRINTING_ERROR_CODES,
+} from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
@@ -31,6 +36,284 @@ export class TerminalCredentialsService {
     private readonly flags: PrintingFeatureFlagsService,
     private readonly audit: PrintingAuditService,
   ) {}
+
+  /**
+   * Establishes a Terminal credential for an already authenticated merchant
+   * Android installation. Android owns the random secret. Only its HMAC is
+   * persisted, and neither the derived credential nor the secret leaves this
+   * method in a response, error, audit event, or capability payload.
+   */
+  async bootstrapLanTerminal(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    dto: BootstrapLanTerminalDto,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    this.flags.assertLanPrintingEnabled();
+    this.assertBootstrapSecret(dto.terminalSecret);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // A merchant-row lock serializes first registration and idempotent
+        // retries without introducing a new table or migration.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM merchants WHERE id = ${merchantId} FOR UPDATE`,
+        );
+        const merchant = await tx.merchant.findUnique({
+          where: { id: merchantId },
+          select: { id: true, status: true, printingEnabled: true },
+        });
+        if (!merchant || merchant.status !== 'ACTIVE' || !merchant.printingEnabled) {
+          throw new ConflictException({
+            code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+            message: '当前商家未启用打印能力',
+          });
+        }
+
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM merchant_terminals WHERE device_identifier = ${dto.terminalInstanceId} FOR UPDATE`,
+        );
+
+        let terminal = await tx.merchantTerminal.findUnique({
+          where: { deviceIdentifier: dto.terminalInstanceId },
+        });
+        if (terminal && terminal.merchantId !== merchantId) {
+          this.deviceConflict();
+        }
+        if (
+          terminal &&
+          (terminal.status !== 'ACTIVE' || terminal.revokedAt !== null)
+        ) {
+          this.deviceConflict();
+        }
+
+        const now = new Date();
+        const capabilities = bootstrapCapabilities(
+          terminal?.capabilities,
+          dto.deviceModel,
+          dto.appVersionCode,
+          now,
+        );
+        if (!terminal) {
+          terminal = await tx.merchantTerminal.create({
+            data: {
+              merchantId,
+              name:
+                dto.terminalName ?? dto.deviceModel ?? 'Android 商家终端',
+              platform: 'ANDROID',
+              status: 'ACTIVE',
+              capabilities,
+              deviceIdentifier: dto.terminalInstanceId,
+              appVersion: dto.appVersion,
+              lastSeenAt: now,
+              pairedAt: now,
+            },
+          });
+        }
+
+        const derivedCredential = `yt1.${terminal.id}.${dto.terminalSecret}`;
+        const expectedHash = this.hashTerminalToken(derivedCredential);
+
+        if (terminal.tokenHash) {
+          if (!safeHexEqual(terminal.tokenHash, expectedHash)) {
+            this.deviceConflict();
+          }
+          if (!terminal.tokenExpiresAt) {
+            this.deviceConflict();
+          }
+
+          await tx.merchantTerminal.update({
+            where: { id: terminal.id },
+            data: {
+              name: dto.terminalName ?? terminal.name,
+              capabilities,
+              appVersion: dto.appVersion,
+              lastSeenAt: now,
+            },
+          });
+          await this.audit.record(
+            {
+              merchantId,
+              actorStaffId,
+              action: 'LAN_TERMINAL_BOOTSTRAP_REUSED',
+              resourceType: 'MerchantTerminal',
+              resourceId: terminal.id,
+              afterData: {
+                platform: 'ANDROID',
+                appVersion: dto.appVersion,
+                credentialVersion: terminal.tokenVersion,
+              },
+              requestId,
+            },
+            tx,
+          );
+          return bootstrapResponse(
+            terminal.id,
+            terminal.tokenVersion,
+            terminal.tokenExpiresAt,
+          );
+        }
+
+        const tokenExpiresAt = new Date(now.getTime() + this.tokenLifetimeMs());
+        const claimed = await tx.merchantTerminal.updateMany({
+          where: {
+            id: terminal.id,
+            merchantId,
+            status: 'ACTIVE',
+            revokedAt: null,
+            tokenHash: null,
+          },
+          data: {
+            name: dto.terminalName ?? terminal.name,
+            capabilities,
+            appVersion: dto.appVersion,
+            lastSeenAt: now,
+            pairedAt: terminal.pairedAt ?? now,
+            tokenHash: expectedHash,
+            tokenVersion: { increment: 1 },
+            tokenIssuedAt: now,
+            tokenExpiresAt,
+          },
+        });
+        if (claimed.count !== 1) {
+          // A credential written by any other flow is never overwritten.
+          this.deviceConflict();
+        }
+        const registered = await tx.merchantTerminal.findUniqueOrThrow({
+          where: { id: terminal.id },
+        });
+        await this.audit.record(
+          {
+            merchantId,
+            actorStaffId,
+            action: 'LAN_TERMINAL_BOOTSTRAPPED',
+            resourceType: 'MerchantTerminal',
+            resourceId: terminal.id,
+            afterData: {
+              platform: 'ANDROID',
+              appVersion: dto.appVersion,
+              credentialVersion: registered.tokenVersion,
+              credentialExpiresAt: tokenExpiresAt.toISOString(),
+            },
+            requestId,
+          },
+          tx,
+        );
+        return bootstrapResponse(
+          registered.id,
+          registered.tokenVersion,
+          tokenExpiresAt,
+        );
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        this.deviceConflict();
+      }
+      throw error;
+    }
+  }
+
+  async renewLanTerminalCredential(
+    terminal: AuthenticatedTerminal,
+    requestId?: string,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    this.flags.assertLanPrintingEnabled();
+    const current = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminal.id,
+        merchantId: terminal.merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+        tokenVersion: terminal.tokenVersion,
+      },
+      select: {
+        id: true,
+        merchantId: true,
+        tokenHash: true,
+        tokenVersion: true,
+        tokenExpiresAt: true,
+        merchant: { select: { status: true, printingEnabled: true } },
+      },
+    });
+    const now = new Date();
+    if (
+      !current ||
+      !current.tokenHash ||
+      !current.tokenExpiresAt ||
+      current.tokenExpiresAt <= now
+    ) {
+      this.authRejected();
+    }
+    if (
+      current.merchant.status !== 'ACTIVE' ||
+      !current.merchant.printingEnabled
+    ) {
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+        message: '当前商家未启用打印能力',
+      });
+    }
+
+    const renewAfter = new Date(
+      current.tokenExpiresAt.getTime() - this.tokenRenewBeforeMs(),
+    );
+    if (now < renewAfter) {
+      return credentialRenewalResponse(
+        current.id,
+        current.tokenVersion,
+        current.tokenExpiresAt,
+        false,
+      );
+    }
+
+    const tokenExpiresAt = new Date(now.getTime() + this.tokenLifetimeMs());
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.merchantTerminal.updateMany({
+        where: {
+          id: current.id,
+          merchantId: current.merchantId,
+          status: 'ACTIVE',
+          revokedAt: null,
+          tokenVersion: current.tokenVersion,
+          tokenHash: current.tokenHash,
+          tokenExpiresAt: current.tokenExpiresAt,
+        },
+        data: { tokenExpiresAt },
+      });
+      if (updated.count !== 1) {
+        this.conflict('终端凭据状态已变化，请停止续期并重新认证');
+      }
+      await this.audit.record(
+        {
+          merchantId: current.merchantId,
+          action: 'LAN_TERMINAL_CREDENTIAL_RENEWED',
+          resourceType: 'MerchantTerminal',
+          resourceId: current.id,
+          afterData: {
+            credentialVersion: current.tokenVersion,
+            credentialExpiresAt: tokenExpiresAt.toISOString(),
+          },
+          requestId,
+        },
+        tx,
+      );
+      return updated;
+    });
+    if (changed.count !== 1) {
+      this.conflict('终端凭据状态已变化，请停止续期并重新认证');
+    }
+    return credentialRenewalResponse(
+      current.id,
+      current.tokenVersion,
+      tokenExpiresAt,
+      true,
+    );
+  }
 
   async generatePairingCode(
     merchantId: bigint,
@@ -245,9 +528,10 @@ export class TerminalCredentialsService {
 
   async authenticate(token: string): Promise<AuthenticatedTerminal> {
     this.flags.assertTaskCenterEnabled();
-    const match = token.match(/^yt1\.([0-9]+)\.([A-Za-z0-9_-]{32,})$/);
+    const match = token.match(/^yt1\.([1-9][0-9]{0,18})\.([A-Za-z0-9_-]{43})$/);
     if (!match) this.authRejected();
     const terminalId = BigInt(match[1]);
+    if (terminalId > 9_223_372_036_854_775_807n) this.authRejected();
     const terminal = await this.prisma.merchantTerminal.findUnique({
       where: { id: terminalId },
       select: {
@@ -321,6 +605,39 @@ export class TerminalCredentialsService {
     const value = Number(this.config.get<string>('TERMINAL_TOKEN_TTL_DAYS'));
     const days = Number.isInteger(value) ? Math.min(730, Math.max(1, value)) : DEFAULT_TOKEN_DAYS;
     return days * 24 * 60 * 60 * 1_000;
+  }
+
+  private tokenRenewBeforeMs() {
+    const configured = Number(
+      this.config.get('TERMINAL_TOKEN_RENEW_BEFORE_DAYS') ?? 30,
+    );
+    const days = Number.isFinite(configured)
+      ? Math.min(90, Math.max(1, Math.floor(configured)))
+      : 30;
+    return days * 24 * 60 * 60 * 1_000;
+  }
+
+  private assertBootstrapSecret(value: string) {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(value)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '终端密钥格式无效',
+      });
+    }
+    const decoded = Buffer.from(value, 'base64url');
+    if (decoded.byteLength !== 32 || decoded.toString('base64url') !== value) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '终端密钥格式无效',
+      });
+    }
+  }
+
+  private deviceConflict(): never {
+    throw new ConflictException({
+      code: PRINTING_ERROR_CODES.TERMINAL_DEVICE_CONFLICT,
+      message: '该终端已完成注册，已拒绝覆盖现有凭据',
+    });
   }
 
   private notFound(): never {
@@ -412,6 +729,15 @@ function normalizeSafeJson(value: Record<string, unknown>) {
 }
 
 function assertNoSecrets(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    containsPrintingCredentialMaterial(value)
+  ) {
+    throw new ConflictException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: '终端能力信息不允许包含敏感字段',
+    });
+  }
   if (!value || typeof value !== 'object') return;
   for (const [key, nested] of Object.entries(value)) {
     if (/password|secret|token|cookie|authorization|credential|api[_-]?key/i.test(key)) {
@@ -427,6 +753,54 @@ function assertNoSecrets(value: unknown) {
 function safeHexEqual(expected: string, actual: string) {
   if (!/^[a-f0-9]{64}$/.test(expected) || !/^[a-f0-9]{64}$/.test(actual)) return false;
   return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'));
+}
+
+function bootstrapCapabilities(
+  existing: Prisma.JsonValue | null | undefined,
+  deviceModel: string | undefined,
+  appVersionCode: number | undefined,
+  reportedAt: Date,
+) {
+  const safeExisting =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? existing
+      : {};
+  return normalizeSafeJson({
+    ...safeExisting,
+    lanTerminalBootstrap: {
+      deviceModel,
+      appVersionCode,
+      reportedAt: reportedAt.toISOString(),
+    },
+  });
+}
+
+function bootstrapResponse(
+  terminalId: bigint,
+  tokenVersion: number,
+  tokenExpiresAt: Date,
+) {
+  return {
+    terminalId: terminalId.toString(),
+    tokenVersion,
+    tokenExpiresAt: tokenExpiresAt.toISOString(),
+    authorizationScheme: 'Terminal' as const,
+  };
+}
+
+function credentialRenewalResponse(
+  terminalId: bigint,
+  tokenVersion: number,
+  tokenExpiresAt: Date,
+  renewed: boolean,
+) {
+  return {
+    terminalId: terminalId.toString(),
+    tokenVersion,
+    tokenExpiresAt: tokenExpiresAt.toISOString(),
+    authorizationScheme: 'Terminal' as const,
+    renewed,
+  };
 }
 
 function publicTerminal(terminal: {

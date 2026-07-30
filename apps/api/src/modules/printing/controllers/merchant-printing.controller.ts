@@ -47,6 +47,7 @@ import {
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PrintAttemptsService } from '../services/print-attempts.service';
+import { BootstrapLanTerminalDto } from '../dto/lan-terminal-bootstrap.dto';
 import { CloudPrintExecutionService } from '../services/cloud-print-execution.service';
 import { PrintJobsService } from '../services/print-jobs.service';
 import { PrintRulesService } from '../services/print-rules.service';
@@ -55,6 +56,7 @@ import { PrintingPrintersService } from '../services/printing-printers.service';
 import { PrintingSettingsService } from '../services/printing-settings.service';
 import { ReceiptTemplatesService } from '../services/receipt-templates.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
+import { TerminalCredentialsService } from '../services/terminal-credentials.service';
 
 const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -76,6 +78,7 @@ export class MerchantPrintingController {
     private readonly flags: PrintingFeatureFlagsService,
     private readonly settings: PrintingSettingsService,
     private readonly cloudExecution: CloudPrintExecutionService,
+    private readonly terminalCredentials: TerminalCredentialsService,
   ) {}
 
   @Get('feature-state')
@@ -162,6 +165,22 @@ export class MerchantPrintingController {
     @Param() params: IdParamDto,
   ) {
     return this.printers.disable(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+    );
+  }
+
+  @Post('printers/:id/enable')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  enablePrinter(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+  ) {
+    return this.printers.enable(
       merchantId,
       BigInt(staff.sub),
       request.requestId,
@@ -416,11 +435,31 @@ export class MerchantPrintingController {
     return this.jobs.merchantConnectorConfig(merchantId);
   }
 
+  @Post('connector/lan-terminal/bootstrap')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  bootstrapLanTerminal(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: BootstrapLanTerminalDto,
+  ) {
+    return this.terminalCredentials.bootstrapLanTerminal(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      dto,
+    );
+  }
+
   @Get('connector/jobs/active')
-  async activeConnectorJob(@MerchantId() merchantId: bigint, @Query('printerId') printerId?: string) {
+  async activeConnectorJob(
+    @MerchantId() merchantId: bigint,
+    @Query('printerId') printerId?: string,
+  ) {
     const active = await this.jobs.findActiveMerchantConnectorJob(
       merchantId,
       optionalNumericId(printerId, 'printerId'),
+      null,
     );
     return {
       job: active

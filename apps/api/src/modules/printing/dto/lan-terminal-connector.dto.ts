@@ -1,18 +1,15 @@
 import { Transform } from 'class-transformer';
 import {
-  ArrayMaxSize,
-  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsNumberString,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
-  Matches,
   Min,
 } from 'class-validator';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
@@ -20,61 +17,28 @@ import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
-export class TerminalHeartbeatDto {
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  heartbeatSeq?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  appliedConfigVersion?: number;
+class LanRouteIdentityDto {
+  @Matches(/^[1-9][0-9]{0,18}$/)
+  printerId: string;
 
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(64)
-  appVersion: string;
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9._:-]+$/)
+  localBindingId: string;
 
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MaxLength(64)
-  buildRevision?: string;
-
-  @IsOptional()
-  @IsObject()
-  capabilities?: Record<string, unknown>;
-
-  @IsOptional()
-  @IsObject()
-  diagnostics?: Record<string, unknown>;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  lastErrorCode?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  lastErrorMessage?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @IsNumberString({ no_symbols: true }, { each: true })
-  activeJobIds?: string[];
+  @IsInt()
+  @Min(1)
+  @Max(2_147_483_647)
+  bindingVersion: number;
 }
 
-export class ClaimPrintJobDto {
+export class LanActiveJobQueryDto extends LanRouteIdentityDto {}
+
+export class ClaimLanPrintJobDto extends LanRouteIdentityDto {
   @IsBoolean()
   allowAutomatic: boolean;
-
-  @IsOptional()
-  @IsNumberString({ no_symbols: true })
-  printerId?: string;
 
   @IsOptional()
   @IsInt()
@@ -83,16 +47,10 @@ export class ClaimPrintJobDto {
   leaseMs?: number;
 }
 
-export class MarkPrintingDto {
+export class MarkLanPrintingDto extends LanRouteIdentityDto {
   @IsInt()
   @Min(0)
   leaseVersion: number;
-
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(80)
-  adapter: string;
 
   @IsString()
   @Matches(/^[a-f0-9]{64}$/)
@@ -107,10 +65,9 @@ export class MarkPrintingDto {
   @IsOptional()
   @IsObject()
   networkInfo?: Record<string, unknown>;
-
 }
 
-export class FinishPrintingDto {
+export class FinishLanPrintingDto extends LanRouteIdentityDto {
   @IsInt()
   @Min(1)
   attemptNo: number;
@@ -132,10 +89,9 @@ export class FinishPrintingDto {
   @IsString()
   @Matches(/^[a-f0-9]{64}$/)
   contentHash: string;
-
 }
 
-export class FailPrintingDto extends FinishPrintingDto {
+export class FailLanPrintingDto extends FinishLanPrintingDto {
   @IsBoolean()
   retryable: boolean;
 
@@ -151,7 +107,7 @@ export class FailPrintingDto extends FinishPrintingDto {
   outcome: 'FAILED' | 'UNCERTAIN';
 }
 
-export class ExtendPrintJobLeaseDto {
+export class ExtendLanPrintJobLeaseDto extends LanRouteIdentityDto {
   @IsInt()
   @Min(0)
   leaseVersion: number;
@@ -161,32 +117,25 @@ export class ExtendPrintJobLeaseDto {
   @Min(5_000)
   @Max(120_000)
   leaseMs?: number;
-
 }
 
-export class ReportTerminalPrinterStatusDto {
-  @IsNumberString({ no_symbols: true })
-  printerId: string;
-
+export class ReportLanPrinterStatusDto extends LanRouteIdentityDto {
   @IsIn(['UNKNOWN', 'CONNECTED', 'DISCONNECTED', 'ERROR'])
   status: 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+
+  @IsBoolean()
+  serviceRunning: boolean;
+
+  @IsBoolean()
+  executionEnabled: boolean;
 
   @IsOptional()
   @IsObject()
   capabilities?: Record<string, unknown>;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  lastErrorCode?: string;
-
-  @IsOptional()
+  @Transform(trim)
   @IsString()
   @MaxLength(500)
-  lastErrorMessage?: string;
-}
-
-export class UpdateMerchantPrintingSettingsDto {
-  @IsBoolean()
-  printingEnabled: boolean;
+  lastError?: string;
 }

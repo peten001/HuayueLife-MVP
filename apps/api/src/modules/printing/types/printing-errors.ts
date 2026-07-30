@@ -34,14 +34,36 @@ export const PRINTING_ERROR_CODES = {
   CLOUD_PROVIDER_UNAVAILABLE: 'CLOUD_PROVIDER_UNAVAILABLE',
   CLOUD_RESULT_PENDING: 'CLOUD_RESULT_PENDING',
   CLOUD_TASK_CANCELLED: 'CLOUD_TASK_CANCELLED',
+  LAN_PRINTING_DISABLED: 'LAN_PRINTING_DISABLED',
+  LAN_BINDING_MISSING: 'LAN_BINDING_MISSING',
+  TERMINAL_OFFLINE: 'TERMINAL_OFFLINE',
+  CONNECTOR_SERVICE_STOPPED: 'CONNECTOR_SERVICE_STOPPED',
+  TEST_PRINT_REQUIRED: 'TEST_PRINT_REQUIRED',
 } as const;
 
 export type PrintingErrorCode =
   (typeof PRINTING_ERROR_CODES)[keyof typeof PRINTING_ERROR_CODES];
 
+export function containsPrintingCredentialMaterial(value: string) {
+  return (
+    /\byt1\.[1-9][0-9]{0,18}\.[A-Za-z0-9_-]{43}\b/i.test(value) ||
+    /\bBearer\s+[^\s,;]+/i.test(value) ||
+    /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(value)
+  );
+}
+
 export function sanitizePrintingError(message: string | null | undefined) {
   if (!message) return null;
   return message
+    .replace(
+      /\byt1\.[1-9][0-9]{0,18}\.[A-Za-z0-9_-]{43}\b/gi,
+      '[redacted-terminal-credential]',
+    )
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(
+      /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+      '[redacted-jwt]',
+    )
     .replace(
       /(token|password|secret|cookie|authorization|credential|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
       '$1=[redacted]',
