@@ -15,6 +15,7 @@ for required in \
   "$ENTRYPOINT" \
   "$API_ROOT/package.json" \
   "$API_ROOT/node_modules" \
+  "$API_ROOT/node_modules/@prisma/client" \
   "$RELEASE_ROOT/package.json" \
   "$RELEASE_ROOT/pnpm-workspace.yaml" \
   "$RELEASE_ROOT/pnpm-lock.yaml" \
@@ -33,6 +34,11 @@ fi
 
 if ! grep -q 'deploy --prod' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
   printf 'BLOCKED: candidate lacks pnpm production deployment attestation\n' >&2
+  exit 1
+fi
+
+if ! grep -q '^prisma_target=' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
+  printf 'BLOCKED: candidate lacks Linux-generated Prisma Client provenance\n' >&2
   exit 1
 fi
 
@@ -93,7 +99,14 @@ function requireFromCandidate(packageName) {
 
 const commonEntry = requireFromCandidate('@nestjs/common');
 requireFromCandidate('@nestjs/core');
-requireFromCandidate('@prisma/client');
+const prismaEntry = requireFromCandidate('@prisma/client');
+const prismaGenerated = path.join(path.dirname(path.dirname(path.dirname(prismaEntry))), '.prisma', 'client', 'default.js');
+require('node:fs').accessSync(prismaGenerated);
+const { PrismaClient } = candidateRequire('@prisma/client');
+const prismaClient = new PrismaClient();
+if (!prismaClient) throw new Error('PrismaClient construction returned an empty value');
+prismaClient.$disconnect();
+console.log(`PASS: PrismaClient constructor -> ${prismaGenerated}`);
 
 // uid is a nested NestJS runtime dependency. Resolve and execute it in the
 // same CommonJS context that NestJS uses, rather than relying on global hoists.

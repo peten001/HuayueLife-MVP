@@ -41,6 +41,17 @@ done
 cd "$SOURCE_ROOT"
 corepack pnpm install --frozen-lockfile
 corepack pnpm --filter @huayue-life/api prisma:generate
+node - <<'NODE'
+const { createRequire } = require('node:module');
+const path = require('node:path');
+const apiRequire = createRequire(path.resolve('apps/api/package.json'));
+const client = apiRequire('@prisma/client');
+if (!client.PrismaClient) throw new Error('PrismaClient export is missing after Linux generate');
+const clientEntry = apiRequire.resolve('@prisma/client');
+const generated = path.join(path.dirname(path.dirname(path.dirname(clientEntry))), '.prisma', 'client', 'default.js');
+require('node:fs').accessSync(generated);
+console.log(`PASS: Linux Prisma generate -> ${generated}`);
+NODE
 corepack pnpm --filter @huayue-life/api build
 
 {

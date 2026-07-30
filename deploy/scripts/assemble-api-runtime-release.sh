@@ -57,6 +57,24 @@ cp -a "$SOURCE_ROOT/pnpm-lock.yaml" "$RELEASE_ROOT/pnpm-lock.yaml"
 # retain links to another workspace, staging, an old release, or macOS.
 corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"
 
+# pnpm deploy creates a fresh @prisma/client package and does not retain the
+# generated sibling .prisma/client directory. Copy only the client generated
+# in this same Linux staging tree into the matching candidate package location.
+readonly PRISMA_SOURCE_MODULE="$(readlink -f "$API_SOURCE/node_modules/@prisma/client")"
+readonly PRISMA_SOURCE_GENERATED="$(dirname "$(dirname "$PRISMA_SOURCE_MODULE")")/.prisma/client"
+readonly PRISMA_TARGET_MODULE="$(readlink -f "$API_RELEASE/node_modules/@prisma/client")"
+readonly PRISMA_TARGET_GENERATED="$(dirname "$(dirname "$PRISMA_TARGET_MODULE")")/.prisma/client"
+if [[ ! -f "$PRISMA_SOURCE_GENERATED/default.js" || ! -f "$PRISMA_SOURCE_GENERATED/schema.prisma" ]]; then
+  printf 'BLOCKED: Linux staging Prisma Client is incomplete: %s\n' "$PRISMA_SOURCE_GENERATED" >&2
+  exit 1
+fi
+mkdir -p "$(dirname "$PRISMA_TARGET_GENERATED")"
+cp -a "$PRISMA_SOURCE_GENERATED" "$PRISMA_TARGET_GENERATED"
+if [[ ! -f "$PRISMA_TARGET_GENERATED/default.js" || ! -f "$PRISMA_TARGET_GENERATED/schema.prisma" ]]; then
+  printf 'BLOCKED: candidate Prisma Client copy is incomplete: %s\n' "$PRISMA_TARGET_GENERATED" >&2
+  exit 1
+fi
+
 # pnpm deploy leaves one workspace-self convenience link under .pnpm. The
 # release already is that package, so this link is not a runtime dependency and
 # must not point back to the disposable staging tree.
@@ -84,6 +102,9 @@ cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT
 {
   printf 'source_commit=%s\n' "$SOURCE_COMMIT"
   cat "$LINUX_INSTALL_MARKER"
+  printf 'prisma_source=%s\n' "$PRISMA_SOURCE_GENERATED"
+  printf 'prisma_target=%s\n' "$PRISMA_TARGET_GENERATED"
+  printf 'prisma_client_sha256=%s\n' "$(find "$PRISMA_TARGET_GENERATED" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
 } >"$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"
 
 "$RELEASE_ROOT/deploy/scripts/verify-api-runtime-release.sh" "$RELEASE_ROOT"

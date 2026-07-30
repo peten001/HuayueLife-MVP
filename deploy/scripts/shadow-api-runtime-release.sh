@@ -14,8 +14,20 @@ readonly SHADOW_PORT="${2:-3901}"
 readonly LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/huayue-api-shadow.XXXXXX")"
 readonly OUT_LOG="$LOG_DIR/shadow.out.log"
 readonly ERR_LOG="$LOG_DIR/shadow.err.log"
+readonly API_RUNTIME_ENV_FILE="${API_RUNTIME_ENV_FILE:-}"
 
 "$SCRIPT_ROOT/verify-api-runtime-release.sh" "$RELEASE_ROOT"
+
+if [[ -n "$API_RUNTIME_ENV_FILE" ]]; then
+  if [[ ! -f "$API_RUNTIME_ENV_FILE" ]]; then
+    printf 'BLOCKED: shadow runtime env file is missing: %s\n' "$API_RUNTIME_ENV_FILE" >&2
+    exit 1
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  . "$API_RUNTIME_ENV_FILE"
+  set +a
+fi
 
 port_is_listening() {
   if command -v ss >/dev/null 2>&1; then

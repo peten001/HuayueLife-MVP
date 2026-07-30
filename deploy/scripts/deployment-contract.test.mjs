@@ -66,6 +66,9 @@ for (const requiredSnippet of [
   'corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"',
   'readonly WORKSPACE_SELF_LINK="$API_RELEASE/node_modules/.pnpm/node_modules/@huayue-life/api"',
   'unexpected workspace self link',
+  'PRISMA_SOURCE_GENERATED',
+  'PRISMA_TARGET_GENERATED',
+  'prisma_client_sha256=',
   "-name '.env.*'",
   'rm -f -- "$prohibited_file"',
   'RUNTIME_RELEASE_MANIFEST.txt',
@@ -78,6 +81,7 @@ assert.match(buildLinuxRuntime, /deploy --prod/);
 assert.match(buildLinuxRuntime, /source staging tree is not clean/);
 assert.match(buildLinuxRuntime, /Linux-native runtime installation is required/);
 assert.match(buildLinuxRuntime, /SOURCE_COMMIT must be the exact 40-character source revision/);
+assert.match(buildLinuxRuntime, /PASS: Linux Prisma generate/);
 for (const packageName of ['@nestjs/common', '@nestjs/core', '@prisma/client', 'uid']) {
   assert.match(verifyRuntime, new RegExp(packageName.replace('/', '\\/')));
 }
@@ -87,11 +91,14 @@ assert.match(verifyRuntime, /Mach-O/);
 assert.match(verifyRuntime, /require\('uid'\)/);
 assert.match(verifyRuntime, /export RELEASE_ROOT API_ROOT/);
 assert.match(verifyRuntime, /createRequire\(path\.join\(apiRoot, 'package\.json'\)\)/);
+assert.match(verifyRuntime, /PrismaClient constructor/);
+assert.match(verifyRuntime, /lacks Linux-generated Prisma Client provenance/);
 assert.match(verifyRuntime, /-name '\.env'/);
 assert.match(shadowRuntime, /API_SHADOW_DIAGNOSTIC_MODE=true/);
 assert.match(shadowRuntime, /HOST=127\.0\.0\.1/);
 assert.match(shadowRuntime, /PRINTING_AUTO_CREATE_ENABLED=false/);
 assert.match(shadowRuntime, /CLOUD_PRINT_WORKER_ENABLED=false/);
 assert.match(shadowRuntime, /api\/v1\/health/);
+assert.match(shadowRuntime, /API_RUNTIME_ENV_FILE/);
 
 console.log('deployment runtime contract: PASS');
