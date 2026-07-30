@@ -57,6 +57,13 @@ cp -a "$SOURCE_ROOT/pnpm-lock.yaml" "$RELEASE_ROOT/pnpm-lock.yaml"
 # retain links to another workspace, staging, an old release, or macOS.
 corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"
 
+# A deployed package may include tracked examples. Runtime candidates carry no
+# configuration or credentials: production configuration stays at the canonical
+# API path and is injected only at launch.
+while IFS= read -r -d '' prohibited_file; do
+  rm -f -- "$prohibited_file"
+done < <(find "$API_RELEASE" -type f \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa*' \) -print0)
+
 cp -a "$SOURCE_ROOT/deploy/scripts/verify-api-runtime-release.sh" "$RELEASE_ROOT/deploy/scripts/verify-api-runtime-release.sh"
 cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT/deploy/scripts/shadow-api-runtime-release.sh"
 
