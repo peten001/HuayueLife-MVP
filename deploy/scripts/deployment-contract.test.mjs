@@ -64,6 +64,8 @@ for (const requiredSnippet of [
   'readonly SOURCE_COMMIT="${SOURCE_COMMIT:-}"',
   'SOURCE_COMMIT must be the exact 40-character source revision',
   'corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"',
+  'readonly WORKSPACE_SELF_LINK="$API_RELEASE/node_modules/.pnpm/node_modules/@huayue-life/api"',
+  'unexpected workspace self link',
   "-name '.env.*'",
   'rm -f -- "$prohibited_file"',
   'RUNTIME_RELEASE_MANIFEST.txt',

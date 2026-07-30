@@ -57,6 +57,19 @@ cp -a "$SOURCE_ROOT/pnpm-lock.yaml" "$RELEASE_ROOT/pnpm-lock.yaml"
 # retain links to another workspace, staging, an old release, or macOS.
 corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"
 
+# pnpm deploy leaves one workspace-self convenience link under .pnpm. The
+# release already is that package, so this link is not a runtime dependency and
+# must not point back to the disposable staging tree.
+readonly WORKSPACE_SELF_LINK="$API_RELEASE/node_modules/.pnpm/node_modules/@huayue-life/api"
+if [[ -L "$WORKSPACE_SELF_LINK" ]]; then
+  workspace_self_target="$(readlink -f "$WORKSPACE_SELF_LINK")"
+  if [[ "$workspace_self_target" != "$API_SOURCE" ]]; then
+    printf 'BLOCKED: unexpected workspace self link: %s -> %s\n' "$WORKSPACE_SELF_LINK" "$workspace_self_target" >&2
+    exit 1
+  fi
+  rm -f -- "$WORKSPACE_SELF_LINK"
+fi
+
 # A deployed package may include tracked examples. Runtime candidates carry no
 # configuration or credentials: production configuration stays at the canonical
 # API path and is injected only at launch.
