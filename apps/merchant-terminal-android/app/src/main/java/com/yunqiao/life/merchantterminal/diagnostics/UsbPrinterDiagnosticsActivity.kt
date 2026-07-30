@@ -29,6 +29,7 @@ import com.yunqiao.life.merchantterminal.connector.ConnectorPrintExecutionPolicy
 import com.yunqiao.life.merchantterminal.connector.ProcessUsbConnectionRuntime
 import com.yunqiao.life.merchantterminal.connector.ConnectorStartGate
 import com.yunqiao.life.merchantterminal.connector.ConnectorRuntimeState
+import com.yunqiao.life.merchantterminal.connector.ConnectorControlActivity
 import com.yunqiao.life.merchantterminal.data.ConnectorSettings
 import com.yunqiao.life.merchantterminal.data.UsbPrinterBinding
 import com.yunqiao.life.merchantterminal.data.local.LocalPrintingDatabase
@@ -242,6 +243,9 @@ class UsbPrinterDiagnosticsActivity : AppCompatActivity() {
         }
         binding.saveUsbConfigurationButton.setOnClickListener {
             afterUnrecognizedDeviceConfirmation(::saveSelectedConfiguration)
+        }
+        binding.openLocalPrintServiceButton.setOnClickListener {
+            startActivity(Intent(this, ConnectorControlActivity::class.java))
         }
     }
 

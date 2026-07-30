@@ -28,10 +28,10 @@ class ConnectorHiddenEntryContractTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun `printer icon hides diagnostics and only opens the USB page through the protected path`() {
+    fun `formal printer settings replaces the retired hidden entry`() {
         // MainActivity owns a real WebView, which Robolectric cannot reliably create on every
-        // SDK image. Keep this as a source/layout contract so the existing hidden entry cannot
-        // accidentally move into the public cashier UI while this page is refined.
+        // SDK image. Keep this as a source/layout contract so the retired hidden entry cannot
+        // return and the formal message boundary remains visible to regression tests.
         val mainActivitySource = repositoryFile(
             "apps/merchant-terminal-android/app/src/main/java/" +
                 "com/yunqiao/life/merchantterminal/MainActivity.kt",
@@ -66,22 +66,19 @@ class ConnectorHiddenEntryContractTest {
         assertTrue(mainLayout.contains("android:layout_height=\"48dp\""))
         assertFalse(mainLayout.contains("terminal_menu_button"))
         assertTrue(versionUnlockBlock.contains("binding.appVersion.text"))
-        assertTrue(mainActivitySource.contains("installMerchantPrinterDiagnosticsObserver()"))
-        assertTrue(mainActivitySource.contains("merchantSessionTokenStore.hasCredential()"))
-        assertTrue(mainActivitySource.contains("OPEN_PRINTER_DIAGNOSTICS_MESSAGE"))
-        assertTrue(cashierHeader.contains("data-terminal-action=\"printer-diagnostics\""))
+        assertTrue(mainActivitySource.contains("installMerchantPrinterSettingsMenuObserver()"))
+        assertTrue(mainActivitySource.contains("routeWebMessage("))
         assertTrue(
             mainActivitySource.contains(
                 "startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))",
             ),
         )
         assertFalse(mainActivitySource.contains("PopupMenu"))
-        assertFalse(mainActivitySource.contains("ConnectorControlActivity::class.java"))
+        assertTrue(mainActivitySource.contains("ConnectorControlActivity::class.java"))
         assertFalse(mainActivitySource.contains("Intent(this, DiagnosticsActivity::class.java)"))
-        assertTrue(mainActivitySource.contains("printerDiagnosticsObserverScript()"))
-        assertTrue(sessionContract.contains("visibilitychange"))
-        assertTrue(sessionContract.contains("popstate"))
-        assertTrue(sessionContract.contains("5000"))
+        assertFalse(mainActivitySource.contains("printerDiagnosticsObserverScript"))
+        assertFalse(sessionContract.contains("top-print-status"))
+        assertFalse(sessionContract.contains("taps>=7"))
         val errorLayout = repositoryFile(
             "apps/merchant-terminal-android/app/src/main/res/layout/view_error_state.xml",
         ).readText()

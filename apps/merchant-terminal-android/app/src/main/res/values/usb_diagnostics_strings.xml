@@ -25,6 +25,7 @@
     <string name="usb_print_ascii">打印 ASCII 测试</string>
     <string name="usb_print_image">打印中越英图片测试</string>
     <string name="usb_save_configuration">保存 USB 配置</string>
+    <string name="usb_local_print_service">本地打印服务</string>
     <string name="usb_configuration_saved">USB 配置已保存；打印服务仍需单独启用。</string>
     <string name="usb_no_test_result">尚未执行测试。测试连接只打开接口，不代表已成功出纸。</string>
     <string name="usb_no_devices">未检测到 USB 设备 / Không tìm thấy thiết bị USB</string>

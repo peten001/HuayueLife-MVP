@@ -92,6 +92,58 @@ class MerchantWebSessionContractTest {
         assertTrue(script.indexOf("localStorage") < script.indexOf("sessionStorage"))
     }
 
+    @Test
+    fun `printer settings menu uses fixed trusted diagnostics message without credential access`() {
+        val script = MerchantWebSessionContract.printerSettingsMenuObserverScript()
+        assertTrue(script.contains("employee-menu-popover"))
+        assertTrue(script.contains("data-yunqiao-printer-settings"))
+        assertTrue(script.contains("bridge.postMessage('OPEN_PRINTER_SETTINGS')"))
+        assertTrue(script.contains("min-height:44px"))
+        assertFalse(script.contains("localStorage"))
+        assertFalse(script.contains("document.cookie"))
+    }
+
+    @Test
+    fun `session sync script has an executable JWT regular expression`() {
+        val script = MerchantWebSessionContract.sessionSyncObserverScript()
+
+        assertTrue(script.contains("!/^[A-Za-z0-9_-]{8,"))
+        assertFalse(script.contains("!^[A-Za-z0-9_-]{8,"))
+    }
+
+    @Test
+    fun `trusted main frame accepts authenticated and connector messages`() {
+        val authenticated = sessionMessage("SESSION_AUTHENTICATED", "PERSISTENT", token)
+        val connector = sessionMessage("OPEN_CONNECTOR_CONTROL", "PROCESS", token)
+
+        assertTrue(
+            MerchantWebSessionContract.routeWebMessage(true, true, true, authenticated)
+                is MerchantWebSessionMessageAction.Synchronize,
+        )
+        assertTrue(
+            MerchantWebSessionContract.routeWebMessage(true, true, true, connector)
+                is MerchantWebSessionMessageAction.OpenConnectorControl,
+        )
+    }
+
+    @Test
+    fun `untrusted origin iframe and malformed credential are rejected`() {
+        val valid = sessionMessage("SESSION_AUTHENTICATED", "PERSISTENT", token)
+        val malformed = sessionMessage("SESSION_AUTHENTICATED", "PERSISTENT", "not-a-jwt")
+
+        assertEquals(MerchantWebSessionMessageAction.Ignore, MerchantWebSessionContract.routeWebMessage(false, true, true, valid))
+        assertEquals(MerchantWebSessionMessageAction.Ignore, MerchantWebSessionContract.routeWebMessage(true, false, true, valid))
+        assertEquals(MerchantWebSessionMessageAction.Ignore, MerchantWebSessionContract.routeWebMessage(true, true, true, malformed))
+    }
+
+    @Test
+    fun `trusted sign out is routed without a credential`() {
+        assertEquals(
+            MerchantWebSessionMessageAction.SignedOut,
+            MerchantWebSessionContract.routeWebMessage(true, true, true, "SIGNED_OUT"),
+        )
+    }
+
     private fun encodedResult(
         state: String,
         persistence: String? = null,
@@ -102,4 +154,10 @@ class MerchantWebSessionContractTest {
         credential?.let { payload.put("token", it) }
         return JSONObject.quote(payload.toString())
     }
+
+    private fun sessionMessage(type: String, persistence: String, credential: String): String = JSONObject()
+        .put("type", type)
+        .put("persistence", persistence)
+        .put("token", credential)
+        .toString()
 }

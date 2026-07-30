@@ -36,12 +36,14 @@ import androidx.webkit.WebViewFeature
 import com.yunqiao.life.merchantterminal.data.TerminalSettings
 import com.yunqiao.life.merchantterminal.connector.MerchantSessionShutdown
 import com.yunqiao.life.merchantterminal.connector.ConnectorServiceStarter
+import com.yunqiao.life.merchantterminal.connector.ConnectorControlActivity
 import com.yunqiao.life.merchantterminal.databinding.ActivityMainBinding
 import com.yunqiao.life.merchantterminal.diagnostics.DeviceDiagnostics
 import com.yunqiao.life.merchantterminal.diagnostics.UsbPrinterDiagnosticsActivity
 import com.yunqiao.life.merchantterminal.security.MerchantSessionCoordinator
 import com.yunqiao.life.merchantterminal.security.MerchantSessionProcessScope
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionContract
+import com.yunqiao.life.merchantterminal.security.MerchantWebSessionMessageAction
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionSnapshot
 import com.yunqiao.life.merchantterminal.security.MerchantSessionTokenStore
 import com.yunqiao.life.merchantterminal.web.OriginPolicy
@@ -264,7 +266,8 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
             terminalSettings.recordPageLoadSuccess(sanitizedUrl)
         }
         installMerchantSessionLogoutObserver()
-        installMerchantPrinterDiagnosticsObserver()
+        installMerchantPrinterSettingsMenuObserver()
+        installMerchantSessionSyncObserver()
         syncMerchantSessionTokenFromWebView()
     }
 
@@ -429,21 +432,26 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
                 MerchantWebSessionContract.SIGNAL_OBJECT_NAME,
                 setOf(exactOrigin),
                 WebViewCompat.WebMessageListener { _, message, sourceOrigin, isMainFrame, _ ->
-                    if (
-                        isMainFrame &&
-                        originPolicy.isTrustedPage(sourceOrigin) &&
-                        message.type == WebMessageCompat.TYPE_STRING &&
-                        message.data == MerchantWebSessionContract.SIGN_OUT_MESSAGE
-                    ) {
-                        applyMerchantSessionSnapshot(MerchantWebSessionSnapshot.SignedOut)
-                    } else if (
-                        isMainFrame &&
-                        originPolicy.isTrustedPage(sourceOrigin) &&
-                        message.type == WebMessageCompat.TYPE_STRING &&
-                        message.data == MerchantWebSessionContract.OPEN_PRINTER_DIAGNOSTICS_MESSAGE &&
-                        merchantSessionTokenStore.hasCredential()
-                    ) {
-                        startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
+                    when (val action = MerchantWebSessionContract.routeWebMessage(
+                        isTrustedOrigin = originPolicy.isTrustedPage(sourceOrigin),
+                        isMainFrame = isMainFrame,
+                        isStringMessage = message.type == WebMessageCompat.TYPE_STRING,
+                        value = message.data,
+                    )) {
+                        MerchantWebSessionMessageAction.OpenPrinterSettings -> {
+                            startActivity(Intent(this, UsbPrinterDiagnosticsActivity::class.java))
+                        }
+                        MerchantWebSessionMessageAction.SignedOut -> {
+                            applyMerchantSessionSnapshot(MerchantWebSessionSnapshot.SignedOut)
+                        }
+                        is MerchantWebSessionMessageAction.Synchronize -> {
+                            applyMerchantSessionSnapshot(action.snapshot)
+                        }
+                        is MerchantWebSessionMessageAction.OpenConnectorControl -> {
+                            applyMerchantSessionSnapshot(action.snapshot)
+                            startActivity(Intent(this, ConnectorControlActivity::class.java))
+                        }
+                        MerchantWebSessionMessageAction.Ignore -> Unit
                     }
                 },
             )
@@ -456,10 +464,16 @@ class MainActivity : AppCompatActivity(), TerminalWebViewClient.Listener, Termin
         webView.evaluateJavascript(MerchantWebSessionContract.logoutObserverScript(), null)
     }
 
-    private fun installMerchantPrinterDiagnosticsObserver() {
+    private fun installMerchantPrinterSettingsMenuObserver() {
         val webView = terminalWebView ?: return
         if (!merchantSessionSignalInstalled || !originPolicy.isTrustedPage(webView.url)) return
-        webView.evaluateJavascript(MerchantWebSessionContract.printerDiagnosticsObserverScript(), null)
+        webView.evaluateJavascript(MerchantWebSessionContract.printerSettingsMenuObserverScript(), null)
+    }
+
+    private fun installMerchantSessionSyncObserver() {
+        val webView = terminalWebView ?: return
+        if (!merchantSessionSignalInstalled || !originPolicy.isTrustedPage(webView.url)) return
+        webView.evaluateJavascript(MerchantWebSessionContract.sessionSyncObserverScript(), null)
     }
 
     private fun openInitialPage() {

@@ -23,8 +23,8 @@ class ReleasePackageContractTest {
         assumeTrue(BuildConfig.BUILD_TYPE == "release")
 
         assertEquals("com.yunqiao.life.merchantterminal", BuildConfig.APPLICATION_ID)
-        assertEquals("1.0.0-rc6", BuildConfig.VERSION_NAME)
-        assertEquals(13, BuildConfig.VERSION_CODE)
+        assertEquals("1.0.0-rc6.2", BuildConfig.VERSION_NAME)
+        assertEquals(20, BuildConfig.VERSION_CODE)
         assertEquals("云桥 Life 商家终端", context.applicationInfo.loadLabel(context.packageManager))
         assertEquals("https://cashier.huayueyouxuan.com/", BuildConfig.CASHIER_WEB_URL)
         assertEquals("https://cashier.huayueyouxuan.com", BuildConfig.TRUSTED_PAGE_ORIGIN)
@@ -67,5 +67,29 @@ class ReleasePackageContractTest {
             val applicationInfo = requireNotNull(packageInfo.applicationInfo)
             assertTrue(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0)
         }
+    }
+
+    @Test
+    fun `clean RC6 point 1 has no temporary bottom buttons and keeps USB page private`() {
+        val source = repositoryFile(
+            "apps/merchant-terminal-android/app/src/main/java/" +
+                "com/yunqiao/life/merchantterminal/security/MerchantSessionTokenStore.kt",
+        ).readText()
+        val layout = repositoryFile(
+            "apps/merchant-terminal-android/app/src/main/res/layout/activity_main.xml",
+        ).readText()
+        assertTrue(source.contains("employee-menu-popover"))
+        assertTrue(source.contains("data-yunqiao-printer-settings"))
+        assertTrue(source.contains("OPEN_PRINTER_SETTINGS"))
+        assertFalse(layout.contains("usb_diagnostics_hotfix_button"))
+        assertFalse(layout.contains("usb_connector_hotfix_button"))
+    }
+
+    private fun repositoryFile(relativePath: String): java.io.File {
+        val workingDirectory = requireNotNull(System.getProperty("user.dir"))
+        return generateSequence(java.io.File(workingDirectory)) { it.parentFile }
+            .map { root -> java.io.File(root, relativePath) }
+            .firstOrNull(java.io.File::isFile)
+            ?: error("Repository file not found: $relativePath")
     }
 }

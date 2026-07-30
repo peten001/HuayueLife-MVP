@@ -120,16 +120,31 @@ sealed class MerchantWebSessionSnapshot {
 }
 
 /**
+ * Pure, fail-closed routing for messages received from the WebView bridge.
+ * Keeping the origin and frame checks here makes the native boundary testable
+ * without a physical terminal or a real merchant credential.
+ */
+sealed class MerchantWebSessionMessageAction {
+    data object OpenPrinterSettings : MerchantWebSessionMessageAction()
+    data object SignedOut : MerchantWebSessionMessageAction()
+    data class Synchronize(val snapshot: MerchantWebSessionSnapshot.Authenticated) : MerchantWebSessionMessageAction()
+    data class OpenConnectorControl(val snapshot: MerchantWebSessionSnapshot.Authenticated) : MerchantWebSessionMessageAction()
+    data object Ignore : MerchantWebSessionMessageAction()
+}
+
+/**
  * Contract between the trusted cashier document and the native connector session.
  *
- * The WebMessage signal is deliberately one-way. Tokens are read by the existing native polling
- * path and are never posted through the exposed object.
+ * The bridge accepts messages only from the configured trusted origin's main frame. The native
+ * polling path remains available as a fallback for the same storage contract.
  */
 object MerchantWebSessionContract {
     const val STORAGE_KEY = "yunqiao_cashier_access_token"
     const val SIGNAL_OBJECT_NAME = "YunQiaoMerchantSession"
     const val SIGN_OUT_MESSAGE = "SIGNED_OUT"
-    const val OPEN_PRINTER_DIAGNOSTICS_MESSAGE = "OPEN_PRINTER_DIAGNOSTICS"
+    const val OPEN_PRINTER_SETTINGS_MESSAGE = "OPEN_PRINTER_SETTINGS"
+    const val SESSION_AUTHENTICATED_MESSAGE = "SESSION_AUTHENTICATED"
+    const val OPEN_CONNECTOR_CONTROL_MESSAGE = "OPEN_CONNECTOR_CONTROL"
 
     private val merchantJwt =
         Regex("^[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}$")
@@ -160,28 +175,65 @@ object MerchantWebSessionContract {
             "},250);" +
             "})()"
 
-    fun printerDiagnosticsObserverScript(): String =
+    /** Adds the merchant-facing USB settings entry only inside the stable account-menu panel. */
+    fun printerSettingsMenuObserverScript(): String =
         """(function(){""" +
-            "if(window.top!==window||window.__yunqiaoPrinterTapObserver){return;}" +
-            "var bridge=window.$SIGNAL_OBJECT_NAME;" +
-            "if(!bridge||typeof bridge.postMessage!=='function'){return;}" +
-            "var taps=0;var reset=0;var currentUrl=location.href;var attach=function(){" +
-            "if(window.__yunqiaoPrinterTapObserver){return true;}" +
-            "var target=document.querySelector('[data-testid=\\\"top-print-status\\\"]');" +
-            "if(!target){return false;}" +
-            "target.addEventListener('click',function(){" +
-            "taps+=1;window.clearTimeout(reset);" +
-            "reset=window.setTimeout(function(){taps=0;},5000);" +
-            "if(taps>=7){taps=0;bridge.postMessage('$OPEN_PRINTER_DIAGNOSTICS_MESSAGE');}" +
-            "});" +
-            "window.__yunqiaoPrinterTapObserver=true;" +
-            "var clear=function(){taps=0;window.clearTimeout(reset);};" +
-            "document.addEventListener('visibilitychange',function(){if(document.hidden){clear();}});" +
-            "window.addEventListener('pagehide',clear);window.addEventListener('popstate',clear);" +
-            "window.setInterval(function(){if(location.href!==currentUrl){currentUrl=location.href;clear();}},250);" +
-            "return true;};" +
-            "if(!attach()){new MutationObserver(attach).observe(document.documentElement,{childList:true,subtree:true});}" +
+            "if(window.top!==window||window.__yunqiaoPrinterSettingsMenuObserver){return;}" +
+            "var bridge=window.$SIGNAL_OBJECT_NAME;if(!bridge||typeof bridge.postMessage!=='function'){return;}" +
+            "var attach=function(){var panel=document.querySelector('[data-testid=\"employee-menu-popover\"]');" +
+            "if(!panel||panel.querySelector('[data-yunqiao-printer-settings]')){return;}" +
+            "var language=panel.querySelector('label select[aria-label]');if(!language){return;}" +
+            "var button=document.createElement('button');button.type='button';" +
+            "button.setAttribute('data-yunqiao-printer-settings','true');button.textContent='打印机与设备';" +
+            "button.style.cssText='min-height:44px;width:100%;margin-top:8px;text-align:left;';" +
+            "button.addEventListener('click',function(){bridge.postMessage('$OPEN_PRINTER_SETTINGS_MESSAGE');});" +
+            "var row=language.parentElement;row.parentElement.insertBefore(button,row.nextSibling);};" +
+            "new MutationObserver(attach).observe(document.documentElement,{childList:true,subtree:true});attach();" +
+            "window.__yunqiaoPrinterSettingsMenuObserver=true;" +
             "})()"
+
+    fun sessionSyncObserverScript(): String =
+        """(function(){try{var bridge=window.$SIGNAL_OBJECT_NAME;if(window.top!==window||!bridge||typeof bridge.postMessage!=='function'){return;}""" +
+            "var key='$STORAGE_KEY';var token=window.localStorage.getItem(key);var persistence='PERSISTENT';" +
+            "if(!token){token=window.sessionStorage.getItem(key);persistence='PROCESS';}" +
+            "if(!token||token.length<24||token.length>4096||!/^[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}$/.test(token)){return;}" +
+            "bridge.postMessage(JSON.stringify({type:'$SESSION_AUTHENTICATED_MESSAGE',persistence:persistence,token:token}));}catch(e){}})()"
+
+    fun decodeSessionMessage(value: String): MerchantWebSessionSnapshot? {
+        val json = runCatching { JSONObject(value) }.getOrNull() ?: return null
+        if (json.optString("type") !in setOf(SESSION_AUTHENTICATED_MESSAGE, OPEN_CONNECTOR_CONTROL_MESSAGE)) return null
+        return decodeSnapshot(JSONObject.quote(JSONObject()
+            .put("state", "AUTHENTICATED")
+            .put("persistence", json.optString("persistence"))
+            .put("token", json.optString("token")).toString()))
+    }
+
+    fun routeWebMessage(
+        isTrustedOrigin: Boolean,
+        isMainFrame: Boolean,
+        isStringMessage: Boolean,
+        value: String?,
+    ): MerchantWebSessionMessageAction {
+        if (!isTrustedOrigin || !isMainFrame || !isStringMessage || value == null) {
+            return MerchantWebSessionMessageAction.Ignore
+        }
+        return when (value) {
+            OPEN_PRINTER_SETTINGS_MESSAGE -> MerchantWebSessionMessageAction.OpenPrinterSettings
+            SIGN_OUT_MESSAGE -> MerchantWebSessionMessageAction.SignedOut
+            else -> {
+                val json = runCatching { JSONObject(value) }.getOrNull()
+                    ?: return MerchantWebSessionMessageAction.Ignore
+                val type = json.optString("type")
+                val snapshot = decodeSessionMessage(value) as? MerchantWebSessionSnapshot.Authenticated
+                    ?: return MerchantWebSessionMessageAction.Ignore
+                when (type) {
+                    SESSION_AUTHENTICATED_MESSAGE -> MerchantWebSessionMessageAction.Synchronize(snapshot)
+                    OPEN_CONNECTOR_CONTROL_MESSAGE -> MerchantWebSessionMessageAction.OpenConnectorControl(snapshot)
+                    else -> MerchantWebSessionMessageAction.Ignore
+                }
+            }
+        }
+    }
 
     fun decodeSnapshot(value: String?): MerchantWebSessionSnapshot {
         val payload = runCatching {
