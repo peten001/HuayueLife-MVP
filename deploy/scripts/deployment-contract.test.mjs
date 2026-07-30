@@ -85,6 +85,7 @@ assert.match(verifyRuntime, /resolved outside candidate/);
 assert.match(verifyRuntime, /candidate symlink escapes release/);
 assert.match(verifyRuntime, /Mach-O/);
 assert.match(verifyRuntime, /require\('uid'\)/);
+assert.match(verifyRuntime, /export RELEASE_ROOT API_ROOT/);
 assert.match(verifyRuntime, /-name '\.env'/);
 assert.match(shadowRuntime, /API_SHADOW_DIAGNOSTIC_MODE=true/);
 assert.match(shadowRuntime, /HOST=127\.0\.0\.1/);

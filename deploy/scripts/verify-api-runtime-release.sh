@@ -71,7 +71,8 @@ fi
 
 node --check "$ENTRYPOINT"
 
-RELEASE_ROOT="$RELEASE_ROOT" API_ROOT="$API_ROOT" node <<'NODE'
+export RELEASE_ROOT API_ROOT
+node <<'NODE'
 const { createRequire } = require('node:module');
 const path = require('node:path');
 
