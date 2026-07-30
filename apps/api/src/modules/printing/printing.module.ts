@@ -17,9 +17,11 @@ import { TerminalConnectorService } from './services/terminal-connector.service'
 import { TerminalCredentialsService } from './services/terminal-credentials.service';
 import { CloudPrintingService } from './services/cloud-printing.service';
 import { CloudPrintExecutionService } from './services/cloud-print-execution.service';
+import { LanTerminalBindingsService } from './services/lan-terminal-bindings.service';
+import { LanTerminalConnectorController } from './controllers/lan-terminal-connector.controller';
 
 @Module({
-  controllers: [MerchantPrintingController],
+  controllers: [MerchantPrintingController, LanTerminalConnectorController],
   providers: [
     PrintingFeatureFlagsService,
     PrintingAuditService,
@@ -35,6 +37,7 @@ import { CloudPrintExecutionService } from './services/cloud-print-execution.ser
     CloudPrintingService,
     CloudPrintExecutionService,
     TerminalConnectorService,
+    LanTerminalBindingsService,
     TerminalAuthGuard,
     ActiveMerchantStaffGuard,
     ActiveTerminalGuard,

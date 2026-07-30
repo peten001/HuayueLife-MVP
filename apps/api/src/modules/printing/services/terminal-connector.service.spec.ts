@@ -142,9 +142,64 @@ describe('TerminalConnectorService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.printer.updateMany).not.toHaveBeenCalled();
   });
+
+  it('returns LAN-only global gates without requiring a USB bound printer', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      status: 'ACTIVE',
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    const service = createService(prisma);
+
+    await expect(service.lanConfigFor(terminal)).resolves.toEqual({
+      taskCenterEnabled: true,
+      executionEnabled: false,
+      lanPrintingEnabled: true,
+      automaticCreationEnabled: false,
+      merchantPrintingEnabled: true,
+      terminalEnabled: true,
+      terminalStatus: 'ACTIVE',
+      pollIntervalSeconds: 5,
+    });
+  });
+
+  it('exposes disabled, LAN emergency-stop, and merchant printing gates as false', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      status: 'DISABLED',
+      merchant: { status: 'ACTIVE', printingEnabled: false },
+    });
+    const service = createService(prisma, {
+      lanPrintingEnabled: jest.fn().mockReturnValue(false),
+    });
+
+    await expect(
+      service.lanConfigFor({ ...terminal, status: 'DISABLED' }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        lanPrintingEnabled: false,
+        merchantPrintingEnabled: false,
+        terminalEnabled: false,
+        terminalStatus: 'DISABLED',
+      }),
+    );
+  });
+
+  it('fails closed when an expired or revoked terminal is no longer readable', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue(null);
+    const service = createService(prisma);
+
+    await expect(service.lanConfigFor(terminal)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
 });
 
-function createService(prisma: ReturnType<typeof createPrismaMock>) {
+function createService(
+  prisma: ReturnType<typeof createPrismaMock>,
+  flagOverrides: Record<string, unknown> = {},
+) {
   return new TerminalConnectorService(
     prisma as never,
     new ConfigService({
@@ -157,6 +212,8 @@ function createService(prisma: ReturnType<typeof createPrismaMock>) {
       executionEnabled: jest.fn().mockReturnValue(false),
       automaticCreationEnabled: jest.fn().mockReturnValue(false),
       legacyPrintingEnabled: jest.fn().mockReturnValue(false),
+      lanPrintingEnabled: jest.fn().mockReturnValue(true),
+      ...flagOverrides,
     } as never,
   );
 }

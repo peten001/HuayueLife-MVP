@@ -18,6 +18,7 @@ import {
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
+import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 
 @Injectable()
 export class PrintingPrintersService {
@@ -26,6 +27,7 @@ export class PrintingPrintersService {
     private readonly flags: PrintingFeatureFlagsService,
     private readonly audit: PrintingAuditService,
     private readonly settings: PrintingSettingsService,
+    private readonly lanBindings: LanTerminalBindingsService,
   ) {}
 
   async list(merchantId: bigint) {
@@ -34,7 +36,7 @@ export class PrintingPrintersService {
       where: { merchantId, deletedAt: null },
       orderBy: [{ enabled: 'desc' }, { createdAt: 'desc' }],
     });
-    return printers.map((printer) => this.serialize(printer));
+    return Promise.all(printers.map((printer) => this.serialize(printer)));
   }
 
   async get(merchantId: bigint, id: bigint) {
@@ -50,6 +52,12 @@ export class PrintingPrintersService {
   ) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    if (dto.channelType === 'LOCAL_LAN_ESCPOS') {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '请从 Android 打印机与设备添加 LAN 打印机',
+      });
+    }
     const connectionConfig = this.normalizeConnectionConfig(
       dto.channelType,
       dto.connectionConfig,
@@ -63,7 +71,8 @@ export class PrintingPrintersService {
           channelType: dto.channelType,
           paperWidth: dto.paperWidth,
           purpose: dto.purpose ?? 'FRONT_DESK',
-          enabled: dto.enabled ?? false,
+          enabled:
+            dto.channelType === 'LOCAL_LAN_ESCPOS' ? false : dto.enabled ?? false,
           status: 'UNVERIFIED',
           connectionConfig,
           capabilities,
@@ -97,6 +106,46 @@ export class PrintingPrintersService {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
     const channelType = dto.channelType ?? existing.channelType;
+    if (
+      dto.channelType === 'LOCAL_LAN_ESCPOS' &&
+      existing.channelType !== 'LOCAL_LAN_ESCPOS'
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '请从 Android 打印机与设备添加 LAN 打印机',
+      });
+    }
+    if (
+      existing.channelType === 'LOCAL_LAN_ESCPOS' &&
+      dto.channelType !== undefined &&
+      dto.channelType !== 'LOCAL_LAN_ESCPOS'
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: 'Android 同步的 LAN 打印机不能在后台切换通道',
+      });
+    }
+    if (
+      existing.channelType === 'LOCAL_LAN_ESCPOS' &&
+      dto.enabled === true
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.TEST_PRINT_REQUIRED,
+        message: 'LAN 打印机必须通过专用启用接口并完成后台测试打印',
+      });
+    }
+    if (
+      existing.channelType === 'LOCAL_LAN_ESCPOS' &&
+      (dto.connectionConfig !== undefined ||
+        dto.capabilities !== undefined ||
+        dto.paperWidth !== undefined)
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message:
+          'LAN 连接、纸宽与 Binding 只能在对应 Android 商家终端中修改',
+      });
+    }
     if (
       dto.channelType !== undefined &&
       dto.channelType !== existing.channelType &&
@@ -178,6 +227,56 @@ export class PrintingPrintersService {
       return updated;
     });
     return this.serialize(printer);
+  }
+
+  async enable(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    id: bigint,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
+    const { printer: existing } = await this.lanBindings.requireEnableable(
+      merchantId,
+      id,
+    );
+    if (existing.enabled) return this.serialize(existing);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.printer.updateMany({
+        where: {
+          id,
+          merchantId,
+          channelType: 'LOCAL_LAN_ESCPOS',
+          enabled: false,
+          updatedAt: existing.updatedAt,
+          deletedAt: null,
+        },
+        data: { enabled: true },
+      });
+      if (changed.count !== 1) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '打印机状态已变化，请刷新后重试',
+        });
+      }
+      const printer = await tx.printer.findUniqueOrThrow({ where: { id } });
+      await this.audit.record(
+        {
+          merchantId,
+          actorStaffId,
+          action: 'LAN_PRINTER_ENABLED',
+          resourceType: 'Printer',
+          resourceId: id,
+          beforeData: this.auditView(existing),
+          afterData: this.auditView(printer),
+          requestId,
+        },
+        tx,
+      );
+      return printer;
+    });
+    return this.serialize(updated);
   }
 
   async requireOwned(merchantId: bigint, id: bigint) {
@@ -308,7 +407,7 @@ export class PrintingPrintersService {
     }
   }
 
-  private serialize<
+  private async serialize<
     T extends {
       channelType: PrinterChannelType;
       enabled: boolean;
@@ -335,6 +434,9 @@ export class PrintingPrintersService {
         this.flags.executionEnabled() && readiness.state === 'READY'
           ? 'READY'
           : 'CONNECTOR_PENDING',
+      ...(printer.channelType === 'LOCAL_LAN_ESCPOS'
+        ? { lan: await this.lanBindings.describe(printer as unknown as import('@prisma/client').Printer) }
+        : {}),
     };
   }
 

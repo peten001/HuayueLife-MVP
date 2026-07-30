@@ -17,7 +17,7 @@ export class PrintingFeatureFlagsService implements OnModuleInit {
   onModuleInit() {
     const status = this.status();
     this.logger.log(
-      `Feature flags: taskCenter=${status.taskCenterEnabled}, autoCreate=${status.automaticCreationEnabled}, execution=${status.executionEnabled}, legacy=${status.legacyPrintingEnabled}`,
+      `Feature flags: taskCenter=${status.taskCenterEnabled}, autoCreate=${status.automaticCreationEnabled}, execution=${status.executionEnabled}, lan=${status.lanPrintingEnabled}, legacy=${status.legacyPrintingEnabled}`,
     );
   }
 
@@ -37,12 +37,17 @@ export class PrintingFeatureFlagsService implements OnModuleInit {
     return this.readBoolean('LEGACY_PRINTING_ENABLED', false);
   }
 
+  lanPrintingEnabled() {
+    return this.readBoolean('LAN_PRINTING_ENABLED', true);
+  }
+
   status() {
     this.assertSafeConfiguration();
     return {
       taskCenterEnabled: this.taskCenterEnabled(),
       automaticCreationEnabled: this.automaticCreationEnabled(),
       executionEnabled: this.executionEnabled(),
+      lanPrintingEnabled: this.lanPrintingEnabled(),
       legacyPrintingEnabled: this.legacyPrintingEnabled(),
       executionState: this.executionEnabled()
         ? 'READY_FOR_CONNECTOR'
@@ -87,6 +92,15 @@ export class PrintingFeatureFlagsService implements OnModuleInit {
       throw new ServiceUnavailableException({
         code: PRINTING_ERROR_CODES.EXECUTION_DISABLED,
         message: '打印执行端尚未接入',
+      });
+    }
+  }
+
+  assertLanPrintingEnabled() {
+    if (!this.lanPrintingEnabled()) {
+      throw new ServiceUnavailableException({
+        code: PRINTING_ERROR_CODES.LAN_PRINTING_DISABLED,
+        message: '局域网打印已被全局紧急开关关闭',
       });
     }
   }

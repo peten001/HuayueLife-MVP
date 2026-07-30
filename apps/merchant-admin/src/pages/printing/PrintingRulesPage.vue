@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
   createPrintingRule,
@@ -7,10 +7,8 @@ import {
   getPrintingRules,
   getPrintingTemplates,
   setPrintingRuleEnabled,
-  updatePrintingPrinter,
   updatePrintingRule,
 } from '@/api/printing';
-import { printingReleasePolicy } from '@/config/printing-release-policy';
 import { usePrintingI18n } from '@/i18n/printing';
 import type {
   PrintingOrderType,
@@ -22,6 +20,10 @@ import type {
   PrintingTriggerEvent,
 } from '@/types/printing';
 import { PRINTING_STATE_CHANGED_EVENT } from '@/utils/printing-status';
+import {
+  lanPrinterIsOnline,
+  normalizedLanSummary,
+} from '@/utils/lan-printer-admin-state';
 
 const { p } = usePrintingI18n();
 const rows = ref<PrintingRule[]>([]);
@@ -32,7 +34,8 @@ const saving = ref(false);
 const modalOpen = ref(false);
 const message = ref('');
 const success = ref(false);
-const lanExecutionEnabled = printingReleasePolicy.lanExecutionEnabled;
+const ruleNameInput = ref<HTMLInputElement | null>(null);
+let ruleDialogReturnFocus: HTMLElement | null = null;
 
 const form = reactive({
   id: '',
@@ -50,21 +53,19 @@ const form = reactive({
 const printerNames = computed(() => new Map(printers.value.map((printer) => [printer.id, printer.name])));
 const rulePrinters = computed(() =>
   printers.value.filter(
-    (printer) => printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
+    (printer) => printer.enabled && (
+      printer.channelType !== 'LOCAL_LAN_ESCPOS'
+      || Boolean(
+        normalizedLanSummary(printer)?.terminalId
+        && normalizedLanSummary(printer)?.localBindingId,
+      )
+    ),
   ),
 );
 const hasAnyPrinters = computed(() => printers.value.length > 0);
-const hasOnlyBlockedLanPrinters = computed(() =>
-  !lanExecutionEnabled
-  && hasAnyPrinters.value
-  && printers.value.every((printer) => printer.channelType === 'LOCAL_LAN_ESCPOS'),
-);
 const allPrintersDisabled = computed(() =>
-  hasAnyPrinters.value && !hasOnlyBlockedLanPrinters.value && rulePrinters.value.length === 0,
+  hasAnyPrinters.value && rulePrinters.value.length === 0,
 );
-const firstDisabledPrinter = computed(() => printers.value.find(
-  (printer) => !printer.enabled && (printer.channelType !== 'LOCAL_LAN_ESCPOS' || lanExecutionEnabled),
-) ?? null);
 const matchingTemplates = computed(() => {
   const printer = printers.value.find((item) => item.id === form.printerId);
   return templates.value.filter(
@@ -106,6 +107,13 @@ function receiptTypeLabel(type: PrintingReceiptType) {
   return type === 'TABLE_BILL' ? p('checkoutReceipt') : p('customerReceipt');
 }
 
+function printerOptionLabel(printer: PrintingPrinter) {
+  if (printer.channelType !== 'LOCAL_LAN_ESCPOS') return printer.name;
+  const terminalName = normalizedLanSummary(printer)?.terminal?.name || p('notReported');
+  const onlineLabel = lanPrinterIsOnline(printer) ? p('online') : p('offline');
+  return `${printer.name} · ${p('lanPrinting')} · ${terminalName} · ${onlineLabel}`;
+}
+
 function resetForm() {
   Object.assign(form, {
     id: '',
@@ -121,12 +129,21 @@ function resetForm() {
   });
 }
 
+function rememberRuleDialogFocus() {
+  ruleDialogReturnFocus = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+}
+
 function openCreate() {
+  rememberRuleDialogFocus();
   resetForm();
   modalOpen.value = true;
+  void nextTick(() => ruleNameInput.value?.focus());
 }
 
 function openEdit(row: PrintingRule) {
+  rememberRuleDialogFocus();
   Object.assign(form, {
     id: row.id,
     name: row.name,
@@ -140,11 +157,17 @@ function openEdit(row: PrintingRule) {
     priority: row.priority,
   });
   modalOpen.value = true;
+  void nextTick(() => ruleNameInput.value?.focus());
 }
 
 function closeModal() {
   modalOpen.value = false;
   resetForm();
+  const target = ruleDialogReturnFocus;
+  ruleDialogReturnFocus = null;
+  void nextTick(() => {
+    if (target?.isConnected) target.focus();
+  });
 }
 
 function payload(): PrintingRulePayload {
@@ -198,8 +221,6 @@ async function save() {
 }
 
 async function toggle(row: PrintingRule) {
-  const printer = printers.value.find((item) => item.id === row.printerId);
-  if (!row.enabled && printer?.channelType !== 'LOCAL_USB_ESCPOS') return;
   if (!row.enabled && !window.confirm(p('enableRuleConfirm'))) return;
   try {
     await setPrintingRuleEnabled(row.id, !row.enabled);
@@ -240,16 +261,6 @@ async function changeScenarioPrinter(scenario: ScenarioRule, event: Event) {
     await load();
     notifyPrintingStateChanged();
     showSuccess(p('ruleSaved'));
-  } catch (error) { showError(error); } finally { saving.value = false; }
-}
-
-async function enablePrinter(printerId: string) {
-  try {
-    saving.value = true;
-    await updatePrintingPrinter(printerId, { enabled: true });
-    await load();
-    notifyPrintingStateChanged();
-    showSuccess(p('printerEnabled'));
   } catch (error) { showError(error); } finally { saving.value = false; }
 }
 
@@ -294,24 +305,21 @@ onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, r
     <section v-if="!hasAnyPrinters" class="printing-auto-empty-state">
       <strong>{{ p('noPrinters') }}</strong><p>{{ p('pleaseAddPrinter') }}</p><RouterLink class="printing-button" to="/printing-center/printers">{{ p('addPrinter') }}</RouterLink>
     </section>
-    <section v-else-if="hasOnlyBlockedLanPrinters" class="printing-auto-empty-state printing-auto-empty-state--disabled">
-      <strong>{{ p('lanCompatibilityTesting') }}</strong><p>{{ p('lanCompatibilityTestingHint') }}</p><RouterLink class="printing-button printing-button--secondary" to="/printing-center/printers">{{ p('settings') }}</RouterLink>
-    </section>
     <section v-else-if="allPrintersDisabled" class="printing-auto-empty-state printing-auto-empty-state--disabled">
-      <strong>{{ p('printersNotEnabled') }}</strong><p>{{ p('enablePrinterBeforeAutoPrintPrefix') }}“{{ firstDisabledPrinter?.name }}”{{ p('enablePrinterBeforeAutoPrintSuffix') }}</p><button class="printing-button" type="button" :disabled="saving || !firstDisabledPrinter" @click="firstDisabledPrinter && enablePrinter(firstDisabledPrinter.id)">{{ p('enablePrinterAction') }}</button>
+      <strong>{{ p('printersNotEnabled') }}</strong><p>{{ p('enablePrinterFromDetailsHint') }}</p><RouterLink class="printing-button" to="/printing-center/printers">{{ p('viewPrinters') }}</RouterLink>
     </section>
     <section v-else class="printing-scenario-grid" aria-label="自动打印场景">
       <article v-for="scenario in scenarioRules" :key="scenario.key" class="printing-scenario-card">
         <div><h3>{{ p(scenario.title) }}</h3><p>{{ p(scenario.hint) }}</p></div>
         <div class="printing-scenario-card__controls">
           <span :class="['printing-badge', scenario.rule?.enabled ? 'printing-badge--success' : 'printing-badge--warning']">{{ scenario.rule ? (scenario.rule.enabled ? p('enabled') : p('disabled')) : p('notConfigured') }}</span>
-          <select :value="scenario.rule?.printerId || ''" :disabled="saving" :aria-label="p('targetPrinter')" @change="changeScenarioPrinter(scenario, $event)"><option value="">{{ scenario.rule?.printer?.name || p('choosePrinter') }}</option><option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printer.name }}</option></select>
+          <select :value="scenario.rule?.printerId || ''" :disabled="saving" :aria-label="p('targetPrinter')" @change="changeScenarioPrinter(scenario, $event)"><option value="">{{ scenario.rule?.printer?.name || p('choosePrinter') }}</option><option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printerOptionLabel(printer) }}</option></select>
           <button class="printing-toggle" type="button" :disabled="!scenario.rule" :aria-pressed="Boolean(scenario.rule?.enabled)" @click="toggleScenario(scenario.rule)"><span>{{ scenario.rule?.enabled ? p('enabled') : p('enable') }}</span></button>
         </div>
       </article>
     </section>
 
-    <p v-if="!rulePrinters.length && !hasOnlyBlockedLanPrinters" class="printing-inline-note"><strong>{{ p('pleaseAddPrinter') }}</strong><span>{{ p('addPrinterBeforeAutoPrint') }}</span></p>
+    <p v-if="!rulePrinters.length" class="printing-inline-note"><strong>{{ p('pleaseAddPrinter') }}</strong><span>{{ p('addPrinterBeforeAutoPrint') }}</span></p>
 
     <details class="printing-advanced-rules">
       <summary><strong>{{ p('advancedRules') }}</strong><span>{{ p('advancedRulesHint') }}</span></summary>
@@ -344,8 +352,8 @@ onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, r
             <td><span :class="['printing-badge', row.enabled ? 'printing-badge--success' : 'printing-badge--warning']">{{ row.enabled ? p('enabled') : p('disabled') }}</span></td>
             <td>
               <div class="printing-actions">
-                <button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="printers.find((printer) => printer.id === row.printerId)?.channelType !== 'LOCAL_USB_ESCPOS'" @click="openEdit(row)">{{ p('edit') }}</button>
-                <button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="!row.enabled && printers.find((printer) => printer.id === row.printerId)?.channelType !== 'LOCAL_USB_ESCPOS'" @click="toggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button>
+                <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('edit') }}</button>
+                <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="toggle(row)">{{ row.enabled ? p('disable') : p('enable') }}</button>
               </div>
             </td>
           </tr>
@@ -357,18 +365,19 @@ onBeforeUnmount(() => window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, r
     </details>
   </section>
 
-  <div v-if="modalOpen" class="printing-modal-backdrop" @click.self="closeModal">
-    <form class="printing-modal" @submit.prevent="save">
-      <header class="printing-modal__header"><h2>{{ form.id ? p('editRule') : p('addRule') }}</h2></header>
+  <div v-if="modalOpen" class="printing-modal-backdrop" @click.self="closeModal" @keydown.esc="closeModal">
+    <form class="printing-modal" role="dialog" aria-modal="true" aria-labelledby="printing-rule-form-title" @submit.prevent="save">
+      <header class="printing-modal__header"><h2 id="printing-rule-form-title">{{ form.id ? p('editRule') : p('addRule') }}</h2></header>
       <div class="printing-modal__body">
         <label class="printing-field">
           {{ p('name') }}
-          <input v-model="form.name" required maxlength="80" />
+          <input ref="ruleNameInput" v-model="form.name" required maxlength="80" />
         </label>
         <label class="printing-field">
           {{ p('targetPrinter') }}
           <select v-model="form.printerId" required>
-            <option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printer.name }} · {{ printer.enabled ? p('enabled') : p('disabled') }}</option>
+            <option v-if="form.printerId && !rulePrinters.some((printer) => printer.id === form.printerId)" :value="form.printerId" disabled>{{ printerNames.get(form.printerId) || form.printerId }} · {{ p('currentlyUnavailable') }}</option>
+            <option v-for="printer in rulePrinters" :key="printer.id" :value="printer.id">{{ printerOptionLabel(printer) }}</option>
           </select>
         </label>
         <label class="printing-field">

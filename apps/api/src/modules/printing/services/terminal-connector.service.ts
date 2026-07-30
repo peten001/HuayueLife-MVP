@@ -11,6 +11,7 @@ import {
   TerminalHeartbeatDto,
 } from '../dto/terminal-connector.dto';
 import {
+  containsPrintingCredentialMaterial,
   PRINTING_ERROR_CODES,
   sanitizePrintingError,
 } from '../types/printing-errors';
@@ -155,6 +156,34 @@ export class TerminalConnectorService {
     };
   }
 
+  async lanConfigFor(terminal: AuthenticatedTerminal) {
+    const record = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminal.id,
+        merchantId: terminal.merchantId,
+        status: { in: ['ACTIVE', 'DISABLED'] },
+        revokedAt: null,
+        tokenVersion: terminal.tokenVersion,
+      },
+      select: {
+        status: true,
+        merchant: { select: { status: true, printingEnabled: true } },
+      },
+    });
+    if (!record) this.disabled();
+    return {
+      taskCenterEnabled: this.flags.taskCenterEnabled(),
+      executionEnabled: this.flags.executionEnabled(),
+      lanPrintingEnabled: this.flags.lanPrintingEnabled(),
+      automaticCreationEnabled: this.flags.automaticCreationEnabled(),
+      merchantPrintingEnabled:
+        record.merchant.status === 'ACTIVE' && record.merchant.printingEnabled,
+      terminalEnabled: record.status === 'ACTIVE',
+      terminalStatus: record.status,
+      pollIntervalSeconds: this.pollIntervalSeconds(),
+    };
+  }
+
   async reportPrinterStatus(
     terminal: AuthenticatedTerminal,
     dto: ReportTerminalPrinterStatusDto,
@@ -283,6 +312,15 @@ function normalizeSafeJson(value: Record<string, unknown>) {
 }
 
 function assertNoSecrets(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    containsPrintingCredentialMaterial(value)
+  ) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: '终端诊断信息不允许包含敏感字段',
+    });
+  }
   if (!value || typeof value !== 'object') return;
   for (const [key, nested] of Object.entries(value)) {
     if (/password|secret|token|cookie|authorization|credential|api[_-]?key/i.test(key)) {

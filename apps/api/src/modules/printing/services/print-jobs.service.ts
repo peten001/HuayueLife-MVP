@@ -19,6 +19,7 @@ import { PrismaService } from '../../../database/prisma.service';
 import { ListPrintJobsQueryDto } from '../dto/print-job.dto';
 import { ReportTerminalPrinterStatusDto } from '../dto/terminal-connector.dto';
 import {
+  containsPrintingCredentialMaterial,
   PRINTING_ERROR_CODES,
   sanitizePrintingError,
 } from '../types/printing-errors';
@@ -35,6 +36,11 @@ import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import { ReceiptSnapshotService } from './receipt-snapshot.service';
+import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
+import {
+  ANDROID_LAN_ESCPOS_ADAPTER,
+  lanBindingMetadata,
+} from '../types/lan-terminal-binding';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -123,6 +129,7 @@ export class PrintJobsService {
     private readonly snapshots: ReceiptSnapshotService,
     private readonly audit: PrintingAuditService,
     private readonly settings: PrintingSettingsService,
+    private readonly lanBindings: LanTerminalBindingsService,
   ) {}
 
   async list(merchantId: bigint, query: ListPrintJobsQueryDto) {
@@ -366,7 +373,12 @@ export class PrintJobsService {
           enabled: true,
           deletedAt: null,
           channelType: {
-            in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+            in: [
+              'LOCAL_USB_ESCPOS',
+              'LOCAL_LAN_ESCPOS',
+              'CLOUD_FEIE',
+              'CLOUD_YILIAN',
+            ],
           },
         },
       },
@@ -438,7 +450,12 @@ export class PrintJobsService {
           enabled: true,
           deletedAt: null,
           channelType: {
-            in: ['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'],
+            in: [
+              'LOCAL_USB_ESCPOS',
+              'LOCAL_LAN_ESCPOS',
+              'CLOUD_FEIE',
+              'CLOUD_YILIAN',
+            ],
           },
         },
       },
@@ -831,7 +848,7 @@ export class PrintJobsService {
   async createTestJob(input: CreateTestJobInput) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(input.merchantId);
-    await this.requireReadyPrinterForMerchantOperation(
+    const testPrinter = await this.requirePrinterForTest(
       input.merchantId,
       input.printerId,
     );
@@ -843,6 +860,28 @@ export class PrintJobsService {
       `test:${input.printerId}`,
       input.requestKey,
     );
+    const sameRequest = await this.prisma.printJob.findUnique({
+      where: { dedupeKey },
+    });
+    if (sameRequest) {
+      if (sameRequest.merchantId !== input.merchantId) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '测试任务幂等键冲突',
+        });
+      }
+      return sameRequest;
+    }
+    const activeTest = await this.prisma.printJob.findFirst({
+      where: {
+        merchantId: input.merchantId,
+        printerId: input.printerId,
+        source: 'TEST',
+        status: { in: ['PENDING', 'CLAIMED', 'PRINTING'] },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    if (activeTest) return activeTest;
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (input.createdByStaffId) {
@@ -863,6 +902,8 @@ export class PrintJobsService {
             dedupeKey,
             snapshot,
             createdByStaffId: input.createdByStaffId,
+            allowDisabledPrinter:
+              testPrinter.channelType === 'LOCAL_LAN_ESCPOS',
           },
           tx,
         );
@@ -973,6 +1014,59 @@ export class PrintJobsService {
         requestId,
         requestKey,
       );
+    }
+    if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      await this.lanBindings.requireTestable(merchantId, printerId);
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: {
+          id: true,
+          nameZh: true,
+          nameVi: true,
+          addressZh: true,
+          contactPhone: true,
+        },
+      });
+      if (!merchant) this.referenceError('商家不存在');
+      const generatedAt = new Date().toISOString();
+      return this.createTestJob({
+        merchantId,
+        printerId,
+        createdByStaffId,
+        requestId,
+        requestKey,
+        document: {
+          schemaVersion: 1,
+          receiptType: 'ORDER_CUSTOMER',
+          generatedAt,
+          merchant: {
+            id: merchant.id.toString(),
+            name: merchant.nameZh,
+            nameVi: merchant.nameVi ?? undefined,
+            address: merchant.addressZh ?? undefined,
+            phone: merchant.contactPhone,
+          },
+          order: {
+            id: '0',
+            orderNo: `LAN-TEST-${Date.now()}`.slice(0, 32),
+            orderType: 'TEST',
+            createdAt: generatedAt,
+          },
+          items: [
+            {
+              name: '云桥局域网打印测试',
+              nameVi: 'Kiểm tra máy in LAN YunQiao',
+              nameEn: 'YunQiao LAN print test',
+              quantity: 1,
+              unitPrice: 0,
+              lineTotal: 0,
+            },
+          ],
+          totals: { subtotal: 0, total: 0, currency: 'VND' },
+          note: 'Synthetic LAN test only - no customer data',
+          verificationCode: `YQ:LAN-TEST:${Date.now()}`,
+        },
+      });
     }
     if (!['CLOUD_FEIE', 'CLOUD_YILIAN'].includes(printer.channelType)) {
       throw new BadRequestException({
@@ -1268,13 +1362,49 @@ export class PrintJobsService {
     printerId?: bigint,
     leaseMs = 30_000,
     allowAutomatic = false,
+    terminalId: bigint | null = null,
+    localBindingId?: string,
+    bindingVersion?: number,
   ) {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     const printer = printerId
-      ? await this.requireReadyUsbPrinter(merchantId, printerId)
+      ? await this.requireUsablePrinter(merchantId, printerId, true)
       : await this.requireDefaultReadyUsbPrinter(merchantId);
+    if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      if (
+        terminalId === null ||
+        !localBindingId ||
+        !Number.isInteger(bindingVersion)
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.LAN_BINDING_MISSING,
+          message:
+            'LAN 任务领取必须提供可信 terminal、localBindingId 和 bindingVersion',
+        });
+      }
+      await this.lanBindings.requireClaimable(
+        merchantId,
+        printer.id,
+        terminalId,
+        localBindingId,
+        bindingVersion,
+        true,
+      );
+    } else {
+      if (
+        terminalId !== null ||
+        localBindingId !== undefined ||
+        bindingVersion !== undefined
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+          message: 'USB merchant-session 领取不接受 LAN 终端参数',
+        });
+      }
+      await this.requireReadyUsbPrinter(merchantId, printer.id);
+    }
     const automaticAllowed =
       allowAutomatic && this.flags.automaticCreationEnabled();
 
@@ -1284,11 +1414,24 @@ export class PrintJobsService {
       await this.processPendingAutomaticTriggers(merchantId);
     }
 
-    const active = await this.findActiveMerchantConnectorJob(merchantId, printer.id);
+    const active = await this.findActiveMerchantConnectorJob(
+      merchantId,
+      printer.id,
+      terminalId,
+    );
     if (active) return active;
 
     for (let round = 0; round < 3; round += 1) {
       const claimed = await this.prisma.$transaction(async (tx) => {
+        if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+          // Binding sync uses the same merchant-row lock. Taking it before the
+          // in-transaction route recheck makes "no active job -> rebind" and
+          // "validate route -> claim" mutually exclusive, so a job can never
+          // be leased against an endpoint/version that sync just replaced.
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM merchants WHERE id = ${merchantId} FOR UPDATE`,
+          );
+        }
         const now = new Date();
         const candidate = await tx.printJob.findFirst({
           where: {
@@ -1297,12 +1440,17 @@ export class PrintJobsService {
             availableAt: { lte: now },
             retryBlocked: false,
             OR: [
-              { source: { in: ['MANUAL', 'MANUAL_REPRINT', 'TEST'] } },
+              { source: 'TEST' },
+              {
+                source: { in: ['MANUAL', 'MANUAL_REPRINT'] },
+                printer: { enabled: true, status: 'ONLINE' },
+              },
               ...(automaticAllowed
                 ? [
                     {
                       source: 'AUTOMATIC' as const,
                       printRule: { enabled: true, autoPrint: true },
+                      printer: { enabled: true, status: 'ONLINE' as const },
                     },
                   ]
                 : []),
@@ -1310,15 +1458,27 @@ export class PrintJobsService {
             printerId: printer.id,
             printer: {
               merchantId,
-              enabled: true,
-              status: 'ONLINE',
               deletedAt: null,
-              channelType: 'LOCAL_USB_ESCPOS',
+              channelType: printer.channelType,
+              ...(printer.channelType === 'LOCAL_USB_ESCPOS'
+                ? { status: 'ONLINE' as const }
+                : {}),
             },
           },
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
+        if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+          await this.lanBindings.requireClaimable(
+            merchantId,
+            printer.id,
+            terminalId!,
+            localBindingId,
+            bindingVersion,
+            candidate.source === 'TEST',
+            tx,
+          );
+        }
         const leaseExpiresAt = new Date(
           now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
         );
@@ -1333,7 +1493,7 @@ export class PrintJobsService {
           data: {
             status: 'CLAIMED',
             claimedAt: now,
-            claimedByTerminalId: null,
+            claimedByTerminalId: terminalId,
             leaseExpiresAt,
             leaseVersion: { increment: 1 },
           },
@@ -1344,6 +1504,26 @@ export class PrintJobsService {
       if (claimed) return claimed;
     }
     return null;
+  }
+
+  claimNextLanTerminalJob(
+    merchantId: bigint,
+    terminalId: bigint,
+    printerId: bigint,
+    localBindingId: string,
+    bindingVersion: number,
+    leaseMs = 30_000,
+    allowAutomatic = false,
+  ) {
+    return this.claimNextMerchantJob(
+      merchantId,
+      printerId,
+      leaseMs,
+      allowAutomatic,
+      terminalId,
+      localBindingId,
+      bindingVersion,
+    );
   }
 
   findActiveTerminalJob(merchantId: bigint, terminalId: bigint) {
@@ -1358,14 +1538,21 @@ export class PrintJobsService {
     });
   }
 
-  async findActiveMerchantConnectorJob(merchantId: bigint, printerId?: bigint) {
+  async findActiveMerchantConnectorJob(
+    merchantId: bigint,
+    printerId?: bigint,
+    terminalId: bigint | null = null,
+  ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
-        claimedByTerminalId: null,
+        claimedByTerminalId: terminalId,
         printerId,
-        printer: { channelType: 'LOCAL_USB_ESCPOS' },
+        printer: {
+          channelType:
+            terminalId === null ? 'LOCAL_USB_ESCPOS' : 'LOCAL_LAN_ESCPOS',
+        },
         status: { in: ['CLAIMED', 'PRINTING'] },
         leaseExpiresAt: { gt: new Date() },
       },
@@ -1373,10 +1560,36 @@ export class PrintJobsService {
     });
   }
 
+  async findActiveLanTerminalJob(
+    merchantId: bigint,
+    terminalId: bigint,
+    printerId: bigint,
+    localBindingId: string,
+    bindingVersion: number,
+  ) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
+    await this.lanBindings.requireClaimable(
+      merchantId,
+      printerId,
+      terminalId,
+      localBindingId,
+      bindingVersion,
+      true,
+    );
+    return this.findActiveMerchantConnectorJob(
+      merchantId,
+      printerId,
+      terminalId,
+    );
+  }
+
   async connectorJobPayload(
     merchantId: bigint,
     terminalId: bigint | null,
     jobId: bigint,
+    printerId?: bigint,
+    localBindingId?: string,
+    bindingVersion?: number,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     const job = await this.prisma.printJob.findFirst({
@@ -1415,7 +1628,30 @@ export class PrintJobsService {
       },
     });
     if (!job) this.notFound();
-    await this.requireReadyUsbPrinter(merchantId, job.printerId);
+    if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      if (terminalId === null) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.LAN_BINDING_MISSING,
+          message: 'LAN 任务缺少绑定终端',
+        });
+      }
+      await this.lanBindings.requireClaimable(
+        merchantId,
+        job.printerId,
+        terminalId,
+        localBindingId,
+        bindingVersion,
+        job.source === 'TEST',
+      );
+      if (printerId === undefined || printerId !== job.printerId) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+          message: '任务打印机与 LAN route 不匹配',
+        });
+      }
+    } else {
+      await this.requireReadyUsbPrinter(merchantId, job.printerId);
+    }
     const contentHash =
       job.receiptSnapshotHash ?? receiptSnapshotHash(job.receiptSnapshot);
     if (!job.receiptSnapshotHash) {
@@ -1425,6 +1661,10 @@ export class PrintJobsService {
       });
     }
     const snapshot = job.receiptSnapshot as Record<string, unknown>;
+    const binding =
+      job.printer.channelType === 'LOCAL_LAN_ESCPOS'
+        ? lanBindingMetadata(job.printer.capabilities)
+        : null;
     return {
       id: job.id,
       merchantId: merchantId.toString(),
@@ -1445,6 +1685,16 @@ export class PrintJobsService {
       receiptSnapshot: job.receiptSnapshot,
       printer: job.printer,
       currentAttempt: job.attempts[0] ?? null,
+      ...(binding
+        ? {
+            route: {
+              printerId: job.printerId,
+              localBindingId: binding.localBindingId,
+              bindingVersion: binding.bindingVersion,
+              adapter: ANDROID_LAN_ESCPOS_ADAPTER,
+            },
+          }
+        : {}),
     };
   }
 
@@ -1510,7 +1760,9 @@ export class PrintJobsService {
         where: {
           status: 'CLAIMED',
           leaseExpiresAt: { lte: now },
-          printer: { channelType: 'LOCAL_USB_ESCPOS' },
+          printer: {
+            channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+          },
         },
         data: {
           status: 'PENDING',
@@ -1526,7 +1778,9 @@ export class PrintJobsService {
         where: {
           status: 'PRINTING',
           leaseExpiresAt: { lte: now },
-          printer: { channelType: 'LOCAL_USB_ESCPOS' },
+          printer: {
+            channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+          },
         },
         select: { id: true, attemptCount: true, maxAttempts: true },
       });
@@ -1537,7 +1791,9 @@ export class PrintJobsService {
             id: job.id,
             status: 'PRINTING',
             leaseExpiresAt: { lte: now },
-            printer: { channelType: 'LOCAL_USB_ESCPOS' },
+            printer: {
+              channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+            },
           },
           data: {
             status: 'FAILED',
@@ -1627,6 +1883,7 @@ export class PrintJobsService {
     snapshot: ReceiptDocument;
     createdByStaffId?: bigint;
     allowHistoricalTemplate?: boolean;
+    allowDisabledPrinter?: boolean;
   }, client: DbClient = this.prisma) {
     await this.settings.assertMerchantPrintingEnabled(input.merchantId, client);
     const { printer, template } = await this.validateJobReferences(
@@ -1635,6 +1892,7 @@ export class PrintJobsService {
       input.receiptTemplateId,
       input.receiptType,
       input.allowHistoricalTemplate ?? false,
+      input.allowDisabledPrinter ?? false,
       client,
     );
     if (input.orderId) {
@@ -1796,10 +2054,16 @@ export class PrintJobsService {
     templateId: bigint | undefined,
     receiptType: ReceiptType,
     allowHistoricalTemplate: boolean,
+    allowDisabledPrinter: boolean,
     client: DbClient = this.prisma,
   ) {
     const [printer, template] = await Promise.all([
-      this.requireEnabledPrinter(merchantId, printerId, client),
+      this.requireUsablePrinter(
+        merchantId,
+        printerId,
+        allowDisabledPrinter,
+        client,
+      ),
       templateId
         ? client.receiptTemplate.findFirst({
             where: {
@@ -1820,29 +2084,35 @@ export class PrintJobsService {
     return { printer, template };
   }
 
-  private async requireEnabledPrinter(
+  private async requireUsablePrinter(
     merchantId: bigint,
     printerId: bigint,
+    allowDisabled: boolean,
     client: DbClient = this.prisma,
   ) {
     const printer = await client.printer.findFirst({
       where: { id: printerId, merchantId, deletedAt: null },
     });
     if (!printer) this.referenceError('打印机不存在或不属于当前商家');
-    if (!printer.enabled) {
+    if (!allowDisabled && !printer.enabled) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PRINTER_DISABLED,
         message: '打印机已停用，不能创建或重试任务',
       });
     }
     if (
-      !['LOCAL_USB_ESCPOS', 'CLOUD_FEIE', 'CLOUD_YILIAN'].includes(
+      ![
+        'LOCAL_USB_ESCPOS',
+        'LOCAL_LAN_ESCPOS',
+        'CLOUD_FEIE',
+        'CLOUD_YILIAN',
+      ].includes(
         printer.channelType,
       )
     ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-        message: '当前阶段仅允许 USB、飞鹅或易联云打印任务',
+        message: '当前阶段仅允许 USB、LAN、飞鹅或易联云打印任务',
       });
     }
     if (!isConnectionConfigValid(printer.channelType, printer.connectionConfig)) {
@@ -1859,9 +2129,10 @@ export class PrintJobsService {
     printerId: bigint,
     client: DbClient = this.prisma,
   ) {
-    const printer = await this.requireEnabledPrinter(
+    const printer = await this.requireUsablePrinter(
       merchantId,
       printerId,
+      false,
       client,
     );
     if (printer.channelType !== 'LOCAL_USB_ESCPOS') {
@@ -1884,14 +2155,34 @@ export class PrintJobsService {
     printerId: bigint,
     client: DbClient = this.prisma,
   ) {
-    const printer = await this.requireEnabledPrinter(merchantId, printerId, client);
+    const printer = await this.requireUsablePrinter(
+      merchantId,
+      printerId,
+      false,
+      client,
+    );
     if (printer.channelType === 'LOCAL_USB_ESCPOS' && !isReadyPrinter(printer)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
         message: 'USB 打印设备尚无明确可用证据',
       });
     }
+    if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      await this.lanBindings.requireTestable(merchantId, printerId);
+    }
     return printer;
+  }
+
+  private async requirePrinterForTest(merchantId: bigint, printerId: bigint) {
+    const printer = await this.prisma.printer.findFirst({
+      where: { id: printerId, merchantId, deletedAt: null },
+    });
+    if (!printer) this.referenceError('测试打印机不存在或不属于当前商家');
+    if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      await this.lanBindings.requireTestable(merchantId, printerId);
+      return printer;
+    }
+    return this.requireReadyPrinterForMerchantOperation(merchantId, printerId);
   }
 
   private async requireDefaultReadyUsbPrinter(merchantId: bigint) {
@@ -2105,6 +2396,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function assertNoSensitiveConnectorKeys(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    containsPrintingCredentialMaterial(value)
+  ) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: '打印连接器诊断信息不允许包含敏感字段',
+    });
+  }
   if (!value || typeof value !== 'object') return;
   for (const [key, nested] of Object.entries(value)) {
     if (/password|secret|token|cookie|authorization|credential|api[_-]?key/i.test(key)) {

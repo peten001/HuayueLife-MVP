@@ -1,7 +1,13 @@
 import { PrinterChannelType, PrintingPrinterStatus, Prisma } from '@prisma/client';
+import {
+  isFresh,
+  lanBindingMetadata,
+  lanConnectorEvidence,
+} from '../types/lan-terminal-binding';
 
 export const IMPLEMENTED_PRINTING_CHANNELS = new Set<PrinterChannelType>([
   'LOCAL_USB_ESCPOS',
+  'LOCAL_LAN_ESCPOS',
   'CLOUD_FEIE',
   'CLOUD_YILIAN',
 ]);
@@ -29,6 +35,7 @@ export function printerReadiness(
     record.channelType,
   );
   const usb = record.channelType === 'LOCAL_USB_ESCPOS';
+  const lan = record.channelType === 'LOCAL_LAN_ESCPOS';
   const cloud =
     record.channelType === 'CLOUD_FEIE' ||
     record.channelType === 'CLOUD_YILIAN';
@@ -38,7 +45,7 @@ export function printerReadiness(
   );
   const statusReady = record.status === 'ONLINE';
   const evidence = connectorEvidence(record.capabilities);
-  const evidenceUpdatedAt = usb
+  const evidenceUpdatedAt = usb || lan
     ? connectorEvidenceUpdatedAt(record.capabilities)
     : cloud
       ? cloudEvidenceUpdatedAt(record.capabilities)
@@ -50,7 +57,11 @@ export function printerReadiness(
     evidenceTimestamp <= now.getTime() + 30_000;
   const executionEvidenceReady =
     evidenceFresh &&
-    (usb ? hasExplicitUsbExecutionEvidence(evidence) : cloud);
+    (usb
+      ? hasExplicitUsbExecutionEvidence(evidence)
+      : lan
+        ? hasExplicitLanExecutionEvidence(record.capabilities, now)
+        : cloud);
   const state: PrinterReadinessState =
     !record.enabled
       ? 'NOT_CONFIGURED'
@@ -147,6 +158,21 @@ export function hasExplicitUsbExecutionEvidence(
       value.usbInterfaceValid === true &&
       value.usbEndpointValid === true &&
       value.appExecutionReady === true,
+  );
+}
+
+export function hasExplicitLanExecutionEvidence(
+  capabilities: Prisma.JsonValue,
+  now = new Date(),
+) {
+  const binding = lanBindingMetadata(capabilities);
+  const evidence = lanConnectorEvidence(capabilities);
+  return Boolean(
+    binding &&
+      evidence?.status === 'CONNECTED' &&
+      evidence.serviceRunning &&
+      evidence.executionEnabled &&
+      isFresh(evidence.updatedAt, now),
   );
 }
 

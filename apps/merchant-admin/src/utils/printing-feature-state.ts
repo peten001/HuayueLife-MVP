@@ -5,6 +5,7 @@ const SAFE_DISABLED_STATE: Readonly<PrintingFeatureState> = Object.freeze({
   taskCenterEnabled: true,
   automaticCreationEnabled: false,
   executionEnabled: false,
+  lanPrintingEnabled: false,
   legacyPrintingEnabled: false,
   merchantPrintingEnabled: false,
   executionState: 'CONNECTOR_PENDING',
@@ -41,6 +42,7 @@ function normalizeState(value: PrintingFeatureState): PrintingFeatureState {
     typeof value?.taskCenterEnabled !== 'boolean'
     || typeof value?.automaticCreationEnabled !== 'boolean'
     || typeof value?.executionEnabled !== 'boolean'
+    || typeof value?.lanPrintingEnabled !== 'boolean'
     || typeof value?.legacyPrintingEnabled !== 'boolean'
     || typeof value?.merchantPrintingEnabled !== 'boolean'
     || !['CONNECTOR_PENDING', 'READY_FOR_CONNECTOR'].includes(value.executionState)
@@ -53,6 +55,7 @@ function normalizeState(value: PrintingFeatureState): PrintingFeatureState {
     taskCenterEnabled: value.taskCenterEnabled,
     automaticCreationEnabled: value.automaticCreationEnabled,
     executionEnabled: value.executionEnabled,
+    lanPrintingEnabled: value.lanPrintingEnabled,
     legacyPrintingEnabled: value.legacyPrintingEnabled,
     merchantPrintingEnabled: value.merchantPrintingEnabled,
     executionState: value.executionState,

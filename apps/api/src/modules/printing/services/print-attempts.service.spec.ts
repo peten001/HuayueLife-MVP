@@ -12,6 +12,7 @@ describe('PrintAttemptsService', () => {
     assertExecutionEnabled: jest.Mock;
   };
   let settings: { assertMerchantPrintingEnabled: jest.Mock };
+  let lanBindings: { requireClaimable: jest.Mock };
   let service: PrintAttemptsService;
 
   beforeEach(() => {
@@ -23,11 +24,15 @@ describe('PrintAttemptsService', () => {
     settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
     };
+    lanBindings = {
+      requireClaimable: jest.fn().mockResolvedValue({}),
+    };
     prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminal());
     service = new PrintAttemptsService(
       prisma as never,
       flags as never,
       settings as never,
+      lanBindings as never,
     );
   });
 
@@ -147,6 +152,13 @@ describe('PrintAttemptsService', () => {
       adapter: 'ANDROID_USB_ESCPOS',
       networkInfo: { nested: { apiKey: 'must-not-be-logged' } },
       caseName: 'sensitive network field',
+    },
+    {
+      adapter: 'ANDROID_USB_ESCPOS',
+      networkInfo: {
+        diagnostic: `authorization: Terminal yt1.67.${'a'.repeat(43)}`,
+      },
+      caseName: 'terminal credential embedded in network information',
     },
     {
       adapter: 'ANDROID_USB_ESCPOS',
@@ -669,6 +681,209 @@ describe('PrintAttemptsService', () => {
     );
     expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
   });
+
+  it('starts a LAN test only on the bound terminal with the canonical adapter', async () => {
+    const claimed = lanJob({ status: 'CLAIMED', source: 'TEST' });
+    prisma.printJob.findFirst.mockResolvedValue(claimed);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.create.mockResolvedValue({ id: 901n, attemptNo: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...claimed,
+      status: 'PRINTING',
+      attemptCount: 1,
+    });
+
+    await service.markPrinting({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 1,
+      jobId,
+      leaseVersion: claimed.leaseVersion,
+      adapter: 'ANDROID_LAN_ESCPOS',
+    });
+
+    expect(lanBindings.requireClaimable).toHaveBeenCalledWith(
+      merchantId,
+      88n,
+      terminalId,
+      'lan-binding-1',
+      1,
+      true,
+      prisma,
+    );
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          claimedByTerminalId: terminalId,
+          printer: { channelType: 'LOCAL_LAN_ESCPOS' },
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        terminalId,
+        adapter: 'ANDROID_LAN_ESCPOS',
+      }),
+    });
+  });
+
+  it.each([
+    {
+      printerId: 88n,
+      localBindingId: 'wrong-binding',
+      bindingVersion: 1,
+      adapter: 'ANDROID_LAN_ESCPOS',
+      expected: ConflictException,
+    },
+    {
+      printerId: 99n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 1,
+      adapter: 'ANDROID_LAN_ESCPOS',
+      expected: ConflictException,
+    },
+    {
+      printerId: 88n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 2,
+      adapter: 'ANDROID_LAN_ESCPOS',
+      expected: ConflictException,
+    },
+    {
+      printerId: 88n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 1,
+      adapter: 'ANDROID_USB_ESCPOS',
+      expected: BadRequestException,
+    },
+  ])(
+    'rejects a LAN start with mismatched route identity %#',
+    async ({ printerId, localBindingId, bindingVersion, adapter, expected }) => {
+      prisma.printJob.findFirst.mockResolvedValue(
+        lanJob({ status: 'CLAIMED', source: 'TEST' }),
+      );
+
+      await expect(
+        service.markPrinting({
+          merchantId,
+          terminalId,
+          printerId,
+          localBindingId,
+          bindingVersion,
+          jobId,
+          leaseVersion: 2,
+          adapter,
+        }),
+      ).rejects.toBeInstanceOf(expected);
+      expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts LAN success with the same terminal and binding and records the LAN adapter', async () => {
+    const printing = lanJob({ status: 'PRINTING', attemptCount: 1 });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...printing,
+      status: 'SUCCEEDED',
+    });
+
+    await service.markSucceeded({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      bytesWritten: 128,
+    });
+
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          terminalId,
+          adapter: 'ANDROID_LAN_ESCPOS',
+        }),
+        data: expect.objectContaining({
+          result: 'SUCCEEDED',
+          bytesWritten: 128,
+        }),
+      }),
+    );
+  });
+
+  it('records an uncertain LAN outcome without making it retryable', async () => {
+    const printing = lanJob({ status: 'PRINTING', attemptCount: 1 });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...printing,
+      status: 'FAILED',
+    });
+
+    await service.markFailed({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'lan-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      retryable: false,
+      errorCode: 'PRINT_OUTCOME_UNKNOWN',
+      errorMessage: 'result unknown',
+      bytesWritten: 32,
+    });
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'FAILED',
+          retryBlocked: true,
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ adapter: 'ANDROID_LAN_ESCPOS' }),
+        data: expect.objectContaining({ result: 'OUTCOME_UNKNOWN' }),
+      }),
+    );
+  });
+
+  it('extends a LAN lease only for the same terminal and local binding', async () => {
+    const claimed = lanJob({ status: 'CLAIMED' });
+    prisma.printJob.findFirst.mockResolvedValue(claimed);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue(claimed);
+
+    await service.extendLease(
+      merchantId,
+      terminalId,
+      jobId,
+      claimed.leaseVersion,
+      30_000,
+      'lan-binding-1',
+      1,
+      88n,
+    );
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          claimedByTerminalId: terminalId,
+          printer: { channelType: 'LOCAL_LAN_ESCPOS' },
+        }),
+      }),
+    );
+  });
 });
 
 function createPrismaMock() {
@@ -706,6 +921,16 @@ function job(overrides: Record<string, unknown> = {}) {
     attemptCount: 0,
     maxAttempts: 3,
     printerId: 88n,
+    source: 'MANUAL',
+    printer: {
+      id: 88n,
+      enabled: true,
+      status: 'ONLINE',
+      deletedAt: null,
+      channelType: 'LOCAL_USB_ESCPOS',
+      connectionConfig: {},
+      capabilities: {},
+    },
     receiptSnapshot: { schemaVersion: 1 },
     receiptSnapshotHash: null,
     ...overrides,
@@ -738,4 +963,30 @@ function activeTerminal(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
+}
+
+function lanJob(overrides: Record<string, unknown> = {}) {
+  return job({
+    claimedByTerminalId: terminalId,
+    printer: {
+      id: 88n,
+      enabled: false,
+      status: 'ONLINE',
+      deletedAt: null,
+      channelType: 'LOCAL_LAN_ESCPOS',
+      connectionConfig: { host: '192.168.1.20', port: 9100 },
+      capabilities: {
+        lanBinding: {
+          terminalId: terminalId.toString(),
+          localBindingId: 'lan-binding-1',
+          terminalInstanceId: 'terminal-instance-1',
+          executor: 'TERMINAL',
+          adapter: 'ANDROID_LAN_ESCPOS',
+          bindingVersion: 1,
+          bindingUpdatedAt: '2026-07-30T00:00:00.000Z',
+        },
+      },
+    },
+    ...overrides,
+  });
 }

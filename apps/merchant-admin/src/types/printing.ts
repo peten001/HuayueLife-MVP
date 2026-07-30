@@ -51,6 +51,7 @@ export interface PrintingFeatureState {
   taskCenterEnabled: boolean;
   automaticCreationEnabled: boolean;
   executionEnabled: boolean;
+  lanPrintingEnabled: boolean;
   legacyPrintingEnabled: boolean;
   merchantPrintingEnabled: boolean;
   executionState: 'CONNECTOR_PENDING' | 'READY_FOR_CONNECTOR';
@@ -60,6 +61,54 @@ export interface MerchantPrintingSettings {
   id: string;
   printingEnabled: boolean;
   featureFlags: Omit<PrintingFeatureState, 'merchantPrintingEnabled'>;
+}
+
+export type LanPrinterAdminState =
+  | 'WAITING_TERMINAL'
+  | 'TERMINAL_OFFLINE'
+  | 'WAITING_TEST'
+  | 'ONLINE_DISABLED'
+  | 'ENABLED';
+
+export interface LanPrinterTerminalSummary {
+  id: string;
+  name: string;
+  deviceModel?: string | null;
+  appVersion?: string | null;
+  lastSeenAt?: string | null;
+  online: boolean;
+}
+
+export interface LanPrinterTestSummary {
+  id: string;
+  status: PrintJobStatus;
+  completedAt?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  attemptResult?: string | null;
+}
+
+/**
+ * Server-normalized LAN management state. The Admin must not reconstruct
+ * safety gates from arbitrary capability JSON.
+ */
+export interface LanPrinterAdminSummary {
+  adminState: LanPrinterAdminState;
+  terminalId: string | null;
+  localBindingId: string | null;
+  endpoint: {
+    host: string;
+    port: number;
+  } | null;
+  terminal: LanPrinterTerminalSummary | null;
+  serviceRunning: boolean;
+  executionEnabled: boolean;
+  statusUpdatedAt?: string | null;
+  lastConnectedAt?: string | null;
+  lastTest: LanPrinterTestSummary | null;
+  canTest: boolean;
+  canEnable: boolean;
+  enableBlockReason?: string | null;
 }
 
 export interface PrintingPrinter {
@@ -73,6 +122,7 @@ export interface PrintingPrinter {
   status: string;
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
+  lan?: LanPrinterAdminSummary | null;
   readiness?: {
     state: 'READY' | 'DEVICE_OFFLINE' | 'NOT_CONFIGURED';
     channelImplemented: boolean;

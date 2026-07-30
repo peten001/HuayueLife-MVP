@@ -85,8 +85,11 @@ const tabs = [
 ] as const;
 
 let statusClock: number | undefined;
+let featureRequestInFlight = false;
 
 async function loadFeatureState(showLoading = true) {
+  if (featureRequestInFlight) return;
+  featureRequestInFlight = true;
   if (showLoading) featureLoading.value = true;
   featureError.value = '';
   try {
@@ -103,6 +106,7 @@ async function loadFeatureState(showLoading = true) {
   } catch (error) {
     featureError.value = errorMessage(error);
   } finally {
+    featureRequestInFlight = false;
     if (showLoading) featureLoading.value = false;
   }
 }
@@ -116,6 +120,7 @@ onMounted(() => {
   window.addEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
   statusClock = window.setInterval(() => {
     now.value = Date.now();
+    if (document.visibilityState === 'visible') void loadFeatureState(false);
   }, 30_000);
 });
 
@@ -220,8 +225,8 @@ onBeforeUnmount(() => {
         </span>
         <span class="printing-gate">
           {{ p('compatibilityChannelStatus') }}
-          <b :class="featureState?.legacyPrintingEnabled ? 'is-danger' : 'is-safe'">
-            {{ featureState?.legacyPrintingEnabled ? p('enabled') : p('disabled') }}
+          <b :class="featureState?.lanPrintingEnabled ? 'is-active' : 'is-safe'">
+            {{ featureState?.lanPrintingEnabled ? p('enabled') : p('disabled') }}
           </b>
         </span>
       </div></details>
@@ -271,8 +276,8 @@ onBeforeUnmount(() => {
 .printing-scenario-card { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--printing-border); border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(18,45,29,.04); }
 .printing-scenario-card h3 { margin: 0; font-size: 15px; } .printing-scenario-card p { margin: 4px 0 0; color: var(--printing-muted); font-size: 13px; line-height: 1.5; }
 .printing-scenario-card__controls { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; }
-.printing-scenario-card__controls select { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--printing-border); border-radius: 9px; background: #fff; color: var(--printing-ink); }
-.printing-toggle { min-height: 40px; padding: 0 10px; border: 1px solid #cfe7d6; border-radius: 9px; color: var(--printing-green); background: #eaf6ee; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.printing-scenario-card__controls select { min-width: 0; min-height: 44px; padding: 0 10px; border: 1px solid var(--printing-border); border-radius: 9px; background: #fff; color: var(--printing-ink); }
+.printing-toggle { min-height: 44px; padding: 0 10px; border: 1px solid #cfe7d6; border-radius: 9px; color: var(--printing-green); background: #eaf6ee; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .printing-toggle:disabled { color: #a2aca6; background: #f0f3f1; cursor: not-allowed; }
 .printing-advanced-rules, .printing-advanced-template { border: 1px solid var(--printing-border); border-radius: 10px; background: #fff; }
 .printing-advanced-rules > summary, .printing-advanced-template > summary { display: flex; justify-content: space-between; gap: 12px; padding: 13px 16px; cursor: pointer; list-style-position: inside; }
@@ -539,6 +544,10 @@ onBeforeUnmount(() => {
   color: #17693c;
 }
 
+.printing-message--info {
+  color: #245a86;
+}
+
 .printing-text-danger {
   color: #9c2e2e !important;
   font-weight: 700;
@@ -641,6 +650,12 @@ onBeforeUnmount(() => {
   background: #1d6730;
 }
 
+.printing-button:focus-visible,
+.printing-modal__close:focus-visible {
+  outline: 3px solid rgb(36 120 58 / 28%);
+  outline-offset: 2px;
+}
+
 .printing-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -666,6 +681,10 @@ onBeforeUnmount(() => {
   min-height: 30px;
   padding: 5px 9px;
   font-size: 12px;
+}
+
+.printing-center .printing-button {
+  min-height: 44px;
 }
 
 .printing-modal-backdrop {
@@ -837,9 +856,9 @@ onBeforeUnmount(() => {
 .printing-printer-row__identity > div:last-child { display: grid; gap: 3px; min-width: 0; }
 .printing-printer-row__identity strong { overflow: hidden; color: var(--printing-ink); text-overflow: ellipsis; white-space: nowrap; }
 .printing-printer-row__identity span { overflow: hidden; color: var(--printing-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.printing-printer-row__notice { grid-column: 1 / -1; margin: -7px 0 0 44px; }
+.printing-printer-row__notice { grid-column: 1 / -1; min-width: 0; margin: -7px 0 0 44px; overflow-wrap: anywhere; }
 .printing-printer-row__icon, .printing-method-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; color: var(--printing-green); background: var(--printing-green-soft); font-size: 19px; }
-.printing-icon-button, .printing-modal__close { border: 0; color: #66756b; background: transparent; font-size: 20px; cursor: pointer; }
+.printing-icon-button, .printing-modal__close { display: inline-grid; place-items: center; width: 44px; min-width: 44px; height: 44px; border: 0; color: #66756b; background: transparent; font-size: 20px; cursor: pointer; }
 .printing-modal--printer-flow { width: min(780px, 100%); max-height: min(720px, calc(100vh - 40px)); }
 .printing-modal__eyebrow, .printing-step-kicker { display: block; margin-bottom: 3px; color: var(--printing-green); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .printing-modal__header { padding: 14px 18px; }
@@ -854,6 +873,7 @@ onBeforeUnmount(() => {
 .printing-step-copy h3 { margin: 0; color: var(--printing-ink); font-size: 17px; }
 .printing-step-copy p { margin: 0; color: var(--printing-muted); font-size: 13px; line-height: 1.45; }
 .printing-method-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.printing-method-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .printing-method-card { position: relative; display: grid; justify-items: start; gap: 7px; min-height: 150px; padding: 13px; border: 1px solid #dce7df; border-radius: 12px; color: var(--printing-ink); background: #fff; text-align: left; cursor: pointer; }
 .printing-method-card:hover, .printing-method-card.is-selected { border-color: #74ad83; background: #f4fbf5; }
 .printing-method-card strong { font-size: 14px; }
@@ -878,6 +898,7 @@ onBeforeUnmount(() => {
 .printing-review-card strong { overflow: hidden; color: var(--printing-ink); text-overflow: ellipsis; white-space: nowrap; }
 .printing-test-actions { display: flex; align-items: center; gap: 10px; }
 .printing-test-actions span { color: var(--printing-muted); font-size: 12px; }
+.printing-printers-page .printing-button--small { min-height: 44px; }
 
 @media (min-width: 761px) and (max-width: 1400px) and (max-height: 900px) {
   .printing-center {

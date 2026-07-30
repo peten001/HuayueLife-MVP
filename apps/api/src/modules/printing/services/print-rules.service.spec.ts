@@ -9,6 +9,10 @@ describe('PrintRulesService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let audit: { record: jest.Mock };
   let settings: { assertMerchantPrintingEnabled: jest.Mock };
+  let flags: {
+    assertTaskCenterEnabled: jest.Mock;
+    assertLanPrintingEnabled: jest.Mock;
+  };
   let service: PrintRulesService;
 
   beforeEach(() => {
@@ -17,9 +21,13 @@ describe('PrintRulesService', () => {
     settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
     };
+    flags = {
+      assertTaskCenterEnabled: jest.fn(),
+      assertLanPrintingEnabled: jest.fn(),
+    };
     service = new PrintRulesService(
       prisma as never,
-      { assertTaskCenterEnabled: jest.fn() } as never,
+      flags as never,
       audit as never,
       settings as never,
     );
@@ -215,6 +223,74 @@ describe('PrintRulesService', () => {
     expect(prisma.printRule.update).not.toHaveBeenCalled();
   });
 
+  it('allows an enabled Android LAN printer to be selected while automatic printing stays explicit', async () => {
+    const existing = rule({ autoPrint: false, enabled: false });
+    prisma.printRule.findFirst.mockResolvedValue(existing);
+    prisma.printer.findFirst.mockResolvedValue(
+      printer({
+        channelType: 'LOCAL_LAN_ESCPOS',
+        enabled: true,
+        capabilities: lanCapabilities(),
+      }),
+    );
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ id: 67n });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(template());
+    prisma.printRule.update.mockResolvedValue({ ...existing, enabled: true });
+
+    await service.enable(merchantId, 3n, 'request-lan-rule', existing.id);
+
+    expect(flags.assertLanPrintingEnabled).toHaveBeenCalled();
+    expect(prisma.printRule.update).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: { enabled: true },
+    });
+    expect(prisma.printRule.update.mock.calls[0][0].data).not.toHaveProperty(
+      'autoPrint',
+    );
+  });
+
+  it('rejects an enabled historical LAN placeholder without a valid merchant terminal binding', async () => {
+    const existing = rule({ autoPrint: true, enabled: false });
+    prisma.printRule.findFirst.mockResolvedValue(existing);
+    prisma.printer.findFirst.mockResolvedValue(
+      printer({
+        channelType: 'LOCAL_LAN_ESCPOS',
+        enabled: true,
+        capabilities: {},
+      }),
+    );
+
+    await expect(
+      service.enable(merchantId, 3n, undefined, existing.id),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'LAN_BINDING_MISSING' }),
+    });
+    expect(prisma.printRule.update).not.toHaveBeenCalled();
+
+    prisma.printer.findFirst.mockResolvedValue(
+      printer({
+        channelType: 'LOCAL_LAN_ESCPOS',
+        enabled: true,
+        capabilities: lanCapabilities(),
+      }),
+    );
+    prisma.merchantTerminal.findFirst.mockResolvedValue(null);
+    await expect(
+      service.enable(merchantId, 3n, undefined, existing.id),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'LAN_BINDING_MISSING' }),
+    });
+    expect(prisma.merchantTerminal.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 67n,
+        merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+      },
+      select: { id: true },
+    });
+  });
+
   it('returns not found instead of updating another merchant rule', async () => {
     prisma.printRule.findFirst.mockResolvedValue(null);
 
@@ -228,6 +304,7 @@ describe('PrintRulesService', () => {
 function createPrismaMock() {
   const prisma = {
     printer: { findFirst: jest.fn() },
+    merchantTerminal: { findFirst: jest.fn() },
     receiptTemplate: { findFirst: jest.fn() },
     printRule: {
       findFirst: jest.fn(),
@@ -283,5 +360,19 @@ function rule(overrides: Record<string, unknown> = {}) {
     enabled: false,
     priority: 100,
     ...overrides,
+  };
+}
+
+function lanCapabilities() {
+  return {
+    lanBinding: {
+      terminalId: '67',
+      localBindingId: 'lan-binding-1',
+      terminalInstanceId: 'terminal-instance-1',
+      executor: 'TERMINAL',
+      adapter: 'ANDROID_LAN_ESCPOS',
+      bindingVersion: 1,
+      bindingUpdatedAt: '2026-07-30T00:00:00.000Z',
+    },
   };
 }

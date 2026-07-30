@@ -198,9 +198,9 @@ try {
   assert.doesNotMatch(source, /\bBETA\b|打印中心 Beta|\bRC\d*\b|到店前|到店验证/);
   assert.doesNotMatch(sourceFiles[1], /capabilitiesText|parseCapabilities/);
   assert.doesNotMatch(sourceFiles[1], /row\.status\s*}}\s*·/);
-  assert.match(sourceFiles[1], /capabilityStatus/);
-  assert.match(sourceFiles[1], /configurationStatus/);
-  assert.match(sourceFiles[1], /connectionStatus/);
+  assert.match(sourceFiles[1], /lanPrinterActionMatrix/);
+  assert.match(sourceFiles[1], /normalizedLanSummary/);
+  assert.match(sourceFiles[1], /lanModifyOnTerminalHint/);
   const updatePayload = sourceFiles[1].match(
     /function buildUpdatePayload\(\)[\s\S]*?\n}/,
   )?.[0] ?? '';

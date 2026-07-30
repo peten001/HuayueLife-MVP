@@ -6,12 +6,20 @@ const merchantId = 7n;
 describe('PrintingPrintersService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let settings: { assertMerchantPrintingEnabled: jest.Mock };
+  let lanBindings: {
+    describe: jest.Mock;
+    requireEnableable: jest.Mock;
+  };
   let service: PrintingPrintersService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    lanBindings = {
+      describe: jest.fn().mockResolvedValue(null),
+      requireEnableable: jest.fn(),
     };
     service = new PrintingPrintersService(
       prisma as never,
@@ -21,6 +29,7 @@ describe('PrintingPrintersService', () => {
       } as never,
       { record: jest.fn().mockResolvedValue({ id: 1n }) } as never,
       settings as never,
+      lanBindings as never,
     );
   });
 
@@ -48,36 +57,21 @@ describe('PrintingPrintersService', () => {
     expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
-  it('stores only a private IPv4 LAN endpoint and remains disabled by default', async () => {
-    prisma.printer.create.mockImplementation(async ({ data }: { data: object }) => ({
-      id: 17n,
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: null,
-    }));
-
-    const result = await service.create(merchantId, 3n, 'request-1', {
-      name: '前台打印机',
-      channelType: 'LOCAL_LAN_ESCPOS',
-      paperWidth: 'MM80',
-      connectionConfig: { host: '192.168.10.25', port: 9100 },
-    });
-
-    expect(prisma.printer.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        merchantId,
-        enabled: false,
-        status: 'UNVERIFIED',
+  it('rejects generic Admin creation of a LAN placeholder', async () => {
+    await expect(
+      service.create(merchantId, 3n, 'request-1', {
+        name: '前台打印机',
+        channelType: 'LOCAL_LAN_ESCPOS',
+        paperWidth: 'MM80',
         connectionConfig: { host: '192.168.10.25', port: 9100 },
       }),
-    });
-    expect(result).toEqual(
-      expect.objectContaining({
-        adapterStatus: 'CHANNEL_NOT_IMPLEMENTED',
-        executionState: 'CONNECTOR_PENDING',
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'CONFIG_INVALID',
+        message: expect.stringContaining('Android'),
       }),
-    );
+    });
+    expect(prisma.printer.create).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -169,7 +163,7 @@ describe('PrintingPrintersService', () => {
     expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
-  it('requires an explicit new config and clears stale LAN fields when switching channel', async () => {
+  it('does not let Admin switch an Android-synced LAN printer to another channel', async () => {
     const existing = printer();
     prisma.printer.findFirst.mockResolvedValue(existing);
 
@@ -180,25 +174,27 @@ describe('PrintingPrintersService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.printer.update).not.toHaveBeenCalled();
 
-    prisma.printer.update.mockResolvedValue({
-      ...existing,
-      channelType: 'CLOUD_FEIE',
-      connectionConfig: {},
-      status: 'UNVERIFIED',
-    });
-    await service.update(merchantId, 3n, 'request-switch', existing.id, {
-      channelType: 'CLOUD_FEIE',
-      connectionConfig: {},
-    });
-
-    expect(prisma.printer.update).toHaveBeenCalledWith({
-      where: { id: existing.id },
-      data: expect.objectContaining({
+    await expect(
+      service.update(merchantId, 3n, 'request-switch', existing.id, {
         channelType: 'CLOUD_FEIE',
         connectionConfig: {},
-        status: 'UNVERIFIED',
       }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printer.update).not.toHaveBeenCalled();
+  });
+
+  it('does not let Admin bypass binding versioning by changing LAN paper width', async () => {
+    const existing = printer({ enabled: true, paperWidth: 'MM80' });
+    prisma.printer.findFirst.mockResolvedValue(existing);
+
+    await expect(
+      service.update(merchantId, 3n, 'request-paper', existing.id, {
+        paperWidth: 'MM58',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CONFIG_INVALID' }),
     });
+    expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
   it('disables an owned printer without deleting legacy or task records', async () => {
@@ -217,6 +213,61 @@ describe('PrintingPrintersService', () => {
     });
     expect(result).toEqual(expect.objectContaining({ enabled: false }));
   });
+
+  it('rejects generic enabled=true and enables LAN only through the tested-binding gate', async () => {
+    const existing = printer({ enabled: false, status: 'ONLINE' });
+    prisma.printer.findFirst.mockResolvedValue(existing);
+
+    await expect(
+      service.update(merchantId, 3n, undefined, existing.id, { enabled: true }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'TEST_PRINT_REQUIRED' }),
+    });
+
+    lanBindings.requireEnableable.mockResolvedValue({ printer: existing });
+    prisma.printer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printer.findUniqueOrThrow.mockResolvedValue({
+      ...existing,
+      enabled: true,
+    });
+
+    await expect(
+      service.enable(merchantId, 3n, 'request-enable', existing.id),
+    ).resolves.toEqual(expect.objectContaining({ enabled: true }));
+    expect(lanBindings.requireEnableable).toHaveBeenCalledWith(
+      merchantId,
+      existing.id,
+    );
+    expect(prisma.printer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: existing.id,
+        merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        enabled: false,
+        updatedAt: existing.updatedAt,
+        deletedAt: null,
+      },
+      data: { enabled: true },
+    });
+  });
+
+  it('fails enable when Android changes the binding after the test gate', async () => {
+    const existing = printer({ enabled: false, status: 'ONLINE' });
+    lanBindings.requireEnableable.mockResolvedValue({ printer: existing });
+    prisma.printer.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.enable(merchantId, 3n, 'request-race', existing.id),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PRINT_JOB_STATE_CONFLICT' }),
+    });
+    expect(prisma.printer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ updatedAt: existing.updatedAt }),
+      }),
+    );
+    expect(prisma.printer.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
 });
 
 function createPrismaMock() {
@@ -224,7 +275,9 @@ function createPrismaMock() {
     printer: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       findFirst: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
     },
     $transaction: jest.fn(),
   };

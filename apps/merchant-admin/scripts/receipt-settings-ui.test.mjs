@@ -13,7 +13,6 @@ const i18n = fs.readFileSync(path.join(root, 'src/i18n/printing.ts'), 'utf8');
 const appI18n = fs.readFileSync(path.join(root, 'src/i18n/index.ts'), 'utf8');
 const androidRelease = fs.readFileSync(path.join(root, 'src/config/android-terminal-release.ts'), 'utf8');
 const androidPage = fs.readFileSync(path.join(root, 'src/pages/printing/AndroidTerminalPage.vue'), 'utf8');
-const printingReleasePolicy = fs.readFileSync(path.join(root, 'src/config/printing-release-policy.ts'), 'utf8');
 
 for (const key of ['merchantInfoGroup', 'orderInfoGroup', 'productsAmountsGroup', 'receiptFooterGroup']) assert.match(page, new RegExp(key));
 assert.match(page, /receipt-setting-row/);
@@ -46,13 +45,23 @@ for (const key of ['receiptSettingsSubtitle', 'restoreDefaults', 'cancelChanges'
 for (const key of ['footerZhLabel', 'footerViLabel', 'bilingualReceipt', 'bilingualReceiptHint', 'printerConnectionInfoHint']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
-for (const key of ['lanCompatibilityTesting', 'lanCompatibilityTestingHint', 'lanCompatibilitySaveHint']) {
+for (const key of [
+  'lanWaitingTerminal',
+  'lanTerminalOffline',
+  'lanWaitingTest',
+  'lanOnline',
+  'lanEnabledState',
+  'lanModifyOnTerminalHint',
+  'testPrintUncertain',
+]) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
-assert.match(printersPage, /printingReleasePolicy/);
-assert.match(printersPage, /enabled: form\.channelType !== 'LOCAL_LAN_ESCPOS' \|\| lanExecutionEnabled/);
-assert.match(rulesPage, /printer\.channelType !== 'LOCAL_LAN_ESCPOS' \|\| lanExecutionEnabled/);
-assert.match(printingReleasePolicy, /VITE_LAN_PRINTING_ENABLED === 'true'/);
+assert.doesNotMatch(printersPage, /printingReleasePolicy|VITE_LAN_PRINTING_ENABLED|v-model="form\.host"/);
+assert.doesNotMatch(rulesPage, /printingReleasePolicy|lanExecutionEnabled/);
+assert.match(printersPage, /normalizedLanSummary/);
+assert.match(printersPage, /enablePrintingPrinter/);
+assert.match(printersPage, /lanModifyOnTerminalHint/);
+assert.match(rulesPage, /printerOptionLabel/);
 assert.match(androidRelease, /versionName: '1\.0\.0-rc6'/);
 assert.match(androidRelease, /versionCode: 13/);
 assert.match(androidRelease, /releaseType: 'OFFICIAL_OPTIONAL_UPGRADE'/);
