@@ -78,14 +78,14 @@ const path = require('node:path');
 
 const releaseRoot = process.env.RELEASE_ROOT;
 const apiRoot = process.env.API_ROOT;
-process.chdir(apiRoot);
+const candidateRequire = createRequire(path.join(apiRoot, 'package.json'));
 
 function requireFromCandidate(packageName) {
-  const resolved = require.resolve(packageName);
+  const resolved = candidateRequire.resolve(packageName);
   if (!resolved.startsWith(`${releaseRoot}${path.sep}`)) {
     throw new Error(`${packageName} resolved outside candidate: ${resolved}`);
   }
-  const loaded = require(packageName);
+  const loaded = candidateRequire(packageName);
   if (!loaded) throw new Error(`${packageName} loaded an empty export`);
   console.log(`PASS: require(${JSON.stringify(packageName)}) -> ${resolved}`);
   return resolved;
