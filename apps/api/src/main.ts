@@ -5,12 +5,13 @@ import * as express from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { createCorsOptions } from './common/config/cors';
+import { resolveListenOptions } from './common/config/listen-options';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
-  const port = Number(process.env.PORT ?? 3001);
+  const { port, host } = resolveListenOptions();
 
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: 't/:token', method: RequestMethod.GET }],
@@ -36,8 +37,12 @@ async function bootstrap() {
   );
   app.enableShutdownHooks();
 
-  await app.listen(port);
-  Logger.log(`API listening on http://localhost:${port}/api/v1`, 'Bootstrap');
+  if (host) {
+    await app.listen(port, host);
+  } else {
+    await app.listen(port);
+  }
+  Logger.log(`API listening on http://${host ?? 'localhost'}:${port}/api/v1`, 'Bootstrap');
 }
 
 void bootstrap();

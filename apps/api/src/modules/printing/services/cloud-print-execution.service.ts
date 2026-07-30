@@ -13,6 +13,7 @@ import {
   sanitizePrintingError,
 } from '../types/printing-errors';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
+import { isApiShadowDiagnosticMode } from '../../../common/config/shadow-diagnostic';
 import {
   CloudPrintingService,
   CloudProvider,
@@ -896,6 +897,7 @@ export class CloudPrintExecutionService implements OnModuleDestroy {
   }
 
   private workerEnabled() {
+    if (isApiShadowDiagnosticMode()) return false;
     return process.env.CLOUD_PRINT_WORKER_ENABLED?.trim().toLowerCase() === 'true';
   }
 

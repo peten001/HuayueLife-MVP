@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
+import { isApiShadowDiagnosticMode } from '../../common/config/shadow-diagnostic';
 import { getVietnamCurrentTime, MerchantReportsService } from './merchant-reports.service';
 
 @Injectable()
@@ -14,6 +15,10 @@ export class DailyReportSchedulerService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async scanDailyReports() {
+    if (isApiShadowDiagnosticMode()) {
+      this.logger.log('Daily report scheduler disabled by API shadow diagnostic mode');
+      return;
+    }
     const vietnamNow = getVietnamCurrentTime();
     this.logger.log(`Scanning daily reports at Asia/Ho_Chi_Minh ${vietnamNow.hhmm}`);
 
