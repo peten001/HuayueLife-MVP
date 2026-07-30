@@ -18,29 +18,90 @@ for required in \
   "$RELEASE_ROOT/package.json" \
   "$RELEASE_ROOT/pnpm-workspace.yaml" \
   "$RELEASE_ROOT/pnpm-lock.yaml" \
-  "$RELEASE_ROOT/node_modules"; do
+  "$RELEASE_ROOT/node_modules" \
+  "$RELEASE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" \
+  "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; do
   if [[ ! -e "$required" ]]; then
     printf 'BLOCKED: incomplete API runtime release, missing %s\n' "$required" >&2
     exit 1
   fi
 done
 
+if ! grep -qx 'platform=Linux' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
+  printf 'BLOCKED: candidate lacks Linux-native dependency attestation\n' >&2
+  exit 1
+fi
+
 if find "$RELEASE_ROOT" -type f \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa*' \) -print -quit | grep -q .; then
   printf 'BLOCKED: release contains a prohibited secret/configuration file\n' >&2
   exit 1
 fi
 
-node --check "$ENTRYPOINT"
+broken_link="$(find "$RELEASE_ROOT" -xtype l -print -quit)"
+if [[ -n "$broken_link" ]]; then
+  printf 'BLOCKED: candidate has a broken symlink: %s\n' "$broken_link" >&2
+  exit 1
+fi
 
-for package_name in '@nestjs/common' '@nestjs/core' '@prisma/client'; do
-  resolved_path="$(cd "$API_ROOT" && node -e "process.stdout.write(require.resolve('$package_name'))")"
-  case "$resolved_path" in
-    "$RELEASE_ROOT"/*) printf 'PASS: %s -> %s\n' "$package_name" "$resolved_path" ;;
+while IFS= read -r -d '' link_path; do
+  resolved_link="$(readlink -f "$link_path")"
+  case "$resolved_link" in
+    "$RELEASE_ROOT"/*) ;;
     *)
-      printf 'BLOCKED: %s resolved outside the candidate release: %s\n' "$package_name" "$resolved_path" >&2
+      printf 'BLOCKED: candidate symlink escapes release: %s -> %s\n' "$link_path" "$resolved_link" >&2
       exit 1
       ;;
   esac
-done
+done < <(find "$RELEASE_ROOT" -type l -print0)
+
+if find "$RELEASE_ROOT" -type f -name '*.node' -print0 | xargs -0 -r file | grep -E 'Mach-O|Apple' >/dev/null; then
+  printf 'BLOCKED: macOS native binary detected in Linux candidate\n' >&2
+  exit 1
+fi
+
+if find "$RELEASE_ROOT" -type f -name '*.node' -print0 | xargs -0 -r file | grep -q . && \
+  ! find "$RELEASE_ROOT" -type f -name '*.node' -print0 | xargs -0 -r file | grep -q 'ELF'; then
+  printf 'BLOCKED: Linux candidate native modules are not ELF binaries\n' >&2
+  exit 1
+fi
+
+node --check "$ENTRYPOINT"
+
+RELEASE_ROOT="$RELEASE_ROOT" API_ROOT="$API_ROOT" node <<'NODE'
+const { createRequire } = require('node:module');
+const path = require('node:path');
+
+const releaseRoot = process.env.RELEASE_ROOT;
+const apiRoot = process.env.API_ROOT;
+process.chdir(apiRoot);
+
+function requireFromCandidate(packageName) {
+  const resolved = require.resolve(packageName);
+  if (!resolved.startsWith(`${releaseRoot}${path.sep}`)) {
+    throw new Error(`${packageName} resolved outside candidate: ${resolved}`);
+  }
+  const loaded = require(packageName);
+  if (!loaded) throw new Error(`${packageName} loaded an empty export`);
+  console.log(`PASS: require(${JSON.stringify(packageName)}) -> ${resolved}`);
+  return resolved;
+}
+
+const commonEntry = requireFromCandidate('@nestjs/common');
+requireFromCandidate('@nestjs/core');
+requireFromCandidate('@prisma/client');
+
+// uid is a nested NestJS runtime dependency. Resolve and execute it in the
+// same CommonJS context that NestJS uses, rather than relying on global hoists.
+{
+  const require = createRequire(commonEntry);
+  const uid = require('uid');
+  if (!uid) throw new Error('uid loaded an empty export');
+  const uidEntry = require.resolve('uid');
+  if (!uidEntry.startsWith(`${releaseRoot}${path.sep}`)) {
+    throw new Error(`uid resolved outside candidate: ${uidEntry}`);
+  }
+  console.log(`PASS: require('uid') -> ${uidEntry}`);
+}
+NODE
 
 printf 'PASS: API runtime release contract verified: %s\n' "$RELEASE_ROOT"

@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const ecosystem = require(resolve(deployRoot, 'pm2/ecosystem.config.cjs'));
 const preflight = readFileSync(resolve(currentDir, 'api-runtime-preflight.sh'), 'utf8');
 const assembleRuntime = readFileSync(resolve(currentDir, 'assemble-api-runtime-release.sh'), 'utf8');
+const buildLinuxRuntime = readFileSync(resolve(currentDir, 'build-api-linux-runtime-release.sh'), 'utf8');
 const verifyRuntime = readFileSync(resolve(currentDir, 'verify-api-runtime-release.sh'), 'utf8');
 const shadowRuntime = readFileSync(resolve(currentDir, 'shadow-api-runtime-release.sh'), 'utf8');
 const cashierBoundary = readFileSync(
@@ -54,20 +55,30 @@ assert.doesNotMatch(
 
 for (const requiredSnippet of [
   'readonly API_SOURCE="$SOURCE_ROOT/apps/api"',
+  '"$(uname -s)" != \'Linux\'',
   '"$API_SOURCE/dist/src/main.js"',
   '"$API_SOURCE/package.json"',
   '"$SOURCE_ROOT/pnpm-workspace.yaml"',
   '"$SOURCE_ROOT/pnpm-lock.yaml"',
+  '"$LINUX_INSTALL_MARKER"',
   'cp -a "$SOURCE_ROOT/node_modules" "$RELEASE_ROOT/node_modules"',
   'cp -a "$API_SOURCE/node_modules" "$API_RELEASE/node_modules"',
+  'RUNTIME_RELEASE_MANIFEST.txt',
 ]) {
   assert.ok(assembleRuntime.includes(requiredSnippet), `runtime assembler missing: ${requiredSnippet}`);
 }
 assert.match(assembleRuntime, /verify-api-runtime-release\.sh/);
-for (const packageName of ['@nestjs/common', '@nestjs/core', '@prisma/client']) {
+assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile/);
+assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile --prod/);
+assert.match(buildLinuxRuntime, /source staging tree is not clean/);
+assert.match(buildLinuxRuntime, /Linux-native runtime installation is required/);
+for (const packageName of ['@nestjs/common', '@nestjs/core', '@prisma/client', 'uid']) {
   assert.match(verifyRuntime, new RegExp(packageName.replace('/', '\\/')));
 }
-assert.match(verifyRuntime, /resolved outside the candidate release/);
+assert.match(verifyRuntime, /resolved outside candidate/);
+assert.match(verifyRuntime, /candidate symlink escapes release/);
+assert.match(verifyRuntime, /Mach-O/);
+assert.match(verifyRuntime, /require\('uid'\)/);
 assert.match(verifyRuntime, /-name '\.env'/);
 assert.match(shadowRuntime, /API_SHADOW_DIAGNOSTIC_MODE=true/);
 assert.match(shadowRuntime, /HOST=127\.0\.0\.1/);
