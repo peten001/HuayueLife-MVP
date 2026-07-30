@@ -71,7 +71,7 @@ for (const requiredSnippet of [
 }
 assert.match(assembleRuntime, /verify-api-runtime-release\.sh/);
 assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile/);
-assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile --prod/);
+assert.match(buildLinuxRuntime, /corepack pnpm install --frozen-lockfile --prod --force/);
 assert.match(buildLinuxRuntime, /source staging tree is not clean/);
 assert.match(buildLinuxRuntime, /Linux-native runtime installation is required/);
 assert.match(buildLinuxRuntime, /SOURCE_COMMIT must be the exact 40-character source revision/);
