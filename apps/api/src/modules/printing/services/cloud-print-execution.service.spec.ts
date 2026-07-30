@@ -7,6 +7,7 @@ import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 
 describe('CloudPrintExecutionService state machine', () => {
   const originalEnvironment = {
+    API_SHADOW_DIAGNOSTIC_MODE: process.env.API_SHADOW_DIAGNOSTIC_MODE,
     CLOUD_PRINT_WORKER_ENABLED: process.env.CLOUD_PRINT_WORKER_ENABLED,
     CLOUD_PRINT_POLL_INTERVAL_MS: process.env.CLOUD_PRINT_POLL_INTERVAL_MS,
     CLOUD_PRINT_LEASE_TIMEOUT_MS: process.env.CLOUD_PRINT_LEASE_TIMEOUT_MS,
@@ -55,6 +56,19 @@ describe('CloudPrintExecutionService state machine', () => {
       expect(providers.submit).not.toHaveBeenCalled();
     },
   );
+
+  it('does not read, claim, submit, poll, or create attempts in shadow diagnostic mode', async () => {
+    process.env.API_SHADOW_DIAGNOSTIC_MODE = 'true';
+    const prisma = new FakeCloudPrisma('CLOUD_FEIE');
+    const providers = providerMock();
+
+    await service(prisma, providers).runOnce();
+
+    expect(prisma.printJob.findMany).not.toHaveBeenCalled();
+    expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+    expect(providers.submit).not.toHaveBeenCalled();
+    expect(providers.queryTask).not.toHaveBeenCalled();
+  });
 
   it('does not claim a pending cloud job after its printer is disabled', async () => {
     const prisma = new FakeCloudPrisma('CLOUD_FEIE');
