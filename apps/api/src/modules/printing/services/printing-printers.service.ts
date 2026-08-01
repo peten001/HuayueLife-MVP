@@ -34,6 +34,11 @@ export class PrintingPrintersService {
     this.flags.assertTaskCenterEnabled();
     const printers = await this.prisma.printer.findMany({
       where: { merchantId, deletedAt: null },
+      include: {
+        boundTerminal: {
+          select: { id: true, name: true, platform: true },
+        },
+      },
       orderBy: [{ enabled: 'desc' }, { createdAt: 'desc' }],
     });
     return Promise.all(printers.map((printer) => this.serialize(printer)));
@@ -277,6 +282,101 @@ export class PrintingPrintersService {
       return printer;
     });
     return this.serialize(updated);
+  }
+
+  async archive(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    id: bigint,
+    reason?: string,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.printer.findFirst({
+        where: { id, merchantId },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          code: PRINTING_ERROR_CODES.RESOURCE_NOT_FOUND,
+          message: '打印机不存在',
+        });
+      }
+      if (existing.deletedAt) {
+        return {
+          printerId: existing.id,
+          archived: true,
+          archivedAt: existing.deletedAt,
+          status: 'OFFLINE' as const,
+        };
+      }
+
+      const activeJob = await tx.printJob.findFirst({
+        where: {
+          merchantId,
+          printerId: id,
+          status: { in: ['PENDING', 'CLAIMED', 'PRINTING', 'RETRY_WAIT'] },
+        },
+        select: { id: true },
+      });
+      if (activeJob) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTER_HAS_ACTIVE_JOBS,
+          message: '该打印机仍有正在处理的打印任务，暂时无法移除',
+        });
+      }
+
+      const archivedAt = new Date();
+      await tx.printRule.updateMany({
+        where: { merchantId, printerId: id, enabled: true },
+        data: { enabled: false, autoPrint: false },
+      });
+      await tx.merchantTerminal.updateMany({
+        where: { merchantId, boundPrinterId: id },
+        data: { boundPrinterId: null },
+      });
+      const changed = await tx.printer.updateMany({
+        where: { id, merchantId, deletedAt: null },
+        data: {
+          enabled: false,
+          status: 'OFFLINE',
+          deletedAt: archivedAt,
+        },
+      });
+      if (changed.count !== 1) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '打印机状态已变化，请刷新后重试',
+        });
+      }
+      await this.audit.record(
+        {
+          merchantId,
+          actorStaffId,
+          action: 'PRINTER_ARCHIVED',
+          resourceType: 'Printer',
+          resourceId: id,
+          beforeData: this.auditView(existing),
+          afterData: {
+            ...this.auditView({
+              ...existing,
+              enabled: false,
+              status: 'OFFLINE',
+            }),
+            archivedAt,
+          },
+          reason,
+          requestId,
+        },
+        tx,
+      );
+      return {
+        printerId: id,
+        archived: true,
+        archivedAt,
+        status: 'OFFLINE' as const,
+      };
+    });
   }
 
   async requireOwned(merchantId: bigint, id: bigint) {

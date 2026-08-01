@@ -92,6 +92,28 @@ export class LanTerminalBindingsService {
             });
           }
 
+          const archivedPrinters = await tx.printer.findMany({
+            where: {
+              merchantId,
+              channelType: 'LOCAL_LAN_ESCPOS',
+              deletedAt: { not: null },
+            },
+            orderBy: { id: 'asc' },
+          });
+          const archivedExactBinding = archivedPrinters.find((printer) => {
+            const binding = lanBindingMetadata(printer.capabilities);
+            return Boolean(
+              printer.deletedAt && binding?.localBindingId === dto.localBindingId,
+            );
+          });
+          if (archivedExactBinding) {
+            throw new ConflictException({
+              code: PRINTING_ERROR_CODES.PRINTER_ARCHIVED_READD_REQUIRED,
+              message:
+                '该本地打印机记录已在后台移除，请先在收银机删除旧记录后重新添加',
+            });
+          }
+
           const now = new Date();
           const terminalCapabilities = this.normalizeSafeJson({
             ...(isPlainObject(terminal.capabilities)

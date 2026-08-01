@@ -219,6 +219,51 @@ describe('LanTerminalBindingsService', () => {
     expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
+  it('rejects an archived localBindingId without restoring or duplicating its printer', async () => {
+    const archived = lanPrinter({
+      deletedAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    prisma.printer.findMany.mockResolvedValue([archived]);
+
+    await expect(
+      service.sync(terminalAuth(), undefined, syncDto()),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'PRINTER_ARCHIVED_READD_REQUIRED',
+      }),
+    });
+    expect(prisma.printer.create).not.toHaveBeenCalled();
+    expect(prisma.printer.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a new localBindingId to recreate the same endpoint after archive', async () => {
+    const archived = lanPrinter({
+      deletedAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    prisma.printer.findMany
+      .mockResolvedValueOnce([archived])
+      .mockResolvedValueOnce([]);
+
+    const result = await service.sync(
+      terminalAuth(),
+      undefined,
+      syncDto({ localBindingId: 'binding-2' }),
+    );
+
+    expect(prisma.printer.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        merchantId,
+        connectionConfig: { host: '192.168.1.20', port: 9100 },
+        capabilities: expect.objectContaining({
+          lanBinding: expect.objectContaining({ localBindingId: 'binding-2' }),
+        }),
+      }),
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ localBindingId: 'binding-2', printerId }),
+    );
+  });
+
   it('reports the exact Admin states and enables only after the current binding test succeeds', async () => {
     const printer = lanPrinter();
     prisma.printer.findFirst.mockResolvedValue(printer);

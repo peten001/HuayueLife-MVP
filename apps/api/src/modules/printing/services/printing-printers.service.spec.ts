@@ -268,17 +268,123 @@ describe('PrintingPrintersService', () => {
     );
     expect(prisma.printer.findUniqueOrThrow).not.toHaveBeenCalled();
   });
+
+  it('archives atomically, disables rules, unbinds terminals, and preserves history', async () => {
+    const existing = printer();
+    prisma.printer.findFirst.mockResolvedValue(existing);
+    prisma.printJob.findFirst.mockResolvedValue(null);
+    prisma.printer.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.archive(
+      merchantId,
+      3n,
+      'request-archive',
+      existing.id,
+      '用户移除打印机',
+    );
+
+    expect(prisma.printJob.findFirst).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        printerId: existing.id,
+        status: { in: ['PENDING', 'CLAIMED', 'PRINTING', 'RETRY_WAIT'] },
+      },
+      select: { id: true },
+    });
+    expect(prisma.printRule.updateMany).toHaveBeenCalledWith({
+      where: { merchantId, printerId: existing.id, enabled: true },
+      data: { enabled: false, autoPrint: false },
+    });
+    expect(prisma.merchantTerminal.updateMany).toHaveBeenCalledWith({
+      where: { merchantId, boundPrinterId: existing.id },
+      data: { boundPrinterId: null },
+    });
+    expect(prisma.printer.updateMany).toHaveBeenCalledWith({
+      where: { id: existing.id, merchantId, deletedAt: null },
+      data: {
+        enabled: false,
+        status: 'OFFLINE',
+        deletedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      printerId: existing.id,
+      archived: true,
+      archivedAt: expect.any(Date),
+      status: 'OFFLINE',
+    });
+  });
+
+  it('rejects archive while any queued or executing job remains', async () => {
+    const existing = printer();
+    prisma.printer.findFirst.mockResolvedValue(existing);
+    prisma.printJob.findFirst.mockResolvedValue({ id: 301n });
+
+    await expect(
+      service.archive(merchantId, 3n, undefined, existing.id),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PRINTER_HAS_ACTIVE_JOBS' }),
+    });
+    expect(prisma.printRule.updateMany).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+    expect(prisma.printer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('returns an idempotent archive result and rejects cross-merchant ids', async () => {
+    const archivedAt = new Date('2026-08-01T00:00:00.000Z');
+    prisma.printer.findFirst.mockResolvedValueOnce(printer({ deletedAt: archivedAt }));
+
+    await expect(
+      service.archive(merchantId, 3n, undefined, 17n),
+    ).resolves.toEqual({
+      printerId: 17n,
+      archived: true,
+      archivedAt,
+      status: 'OFFLINE',
+    });
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+
+    prisma.printer.findFirst.mockResolvedValueOnce(null);
+    await expect(
+      service.archive(merchantId, 3n, undefined, 999n),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('lists only active printers so summary counts exclude archived records', async () => {
+    prisma.printer.findMany.mockResolvedValue([]);
+
+    await expect(service.list(merchantId)).resolves.toEqual([]);
+    expect(prisma.printer.findMany).toHaveBeenCalledWith({
+      where: { merchantId, deletedAt: null },
+      include: {
+        boundTerminal: {
+          select: { id: true, name: true, platform: true },
+        },
+      },
+      orderBy: [{ enabled: 'desc' }, { createdAt: 'desc' }],
+    });
+  });
 });
 
 function createPrismaMock() {
   const prisma = {
     printer: {
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
       findFirst: jest.fn(),
       findUniqueOrThrow: jest.fn(),
     },
+    printRule: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    merchantTerminal: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    printJob: {
+      findFirst: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    printAttempt: { updateMany: jest.fn() },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>

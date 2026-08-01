@@ -137,6 +137,11 @@ export interface PrintingPrinter {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
+  boundTerminal?: {
+    id: string;
+    name: string;
+    platform: string;
+  } | null;
 }
 
 export interface PrintingPrinterPayload {
