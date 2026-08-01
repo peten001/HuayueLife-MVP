@@ -5,13 +5,9 @@ import com.yunqiao.life.merchantterminal.model.LocalPrinterBinding
 data class V2BootstrapResponse(
     val merchantId: String,
     val terminalId: String,
-    val authorizationScheme: String,
-    val token: String,
+    val terminalBearer: String,
     val tokenVersion: Long,
     val tokenExpiresAt: Long,
-    val heartbeatSeconds: Long,
-    val pollIntervalSeconds: Long,
-    val configVersion: Long,
 )
 
 data class V2TerminalConfig(
@@ -29,6 +25,8 @@ data class V2TerminalConfig(
     val canClaimJobs: Boolean
         get() = merchantPrintingEnabled && terminalEnabled && executionEnabled
 }
+
+data class V2LanConfig(val terminalEnabled: Boolean, val lanPrintingEnabled: Boolean)
 
 data class V2RemotePrinter(
     val printerId: String,
@@ -58,6 +56,7 @@ data class V2RouteIdentity(
     val printerId: String,
     val localBindingId: String,
     val bindingVersion: Long,
+    val transport: String = "UNKNOWN",
 ) {
     init {
         require(NUMERIC_ID.matches(printerId))
@@ -72,6 +71,7 @@ data class V2RouteIdentity(
             printerId = requireNotNull(binding.printerId),
             localBindingId = binding.localBindingId,
             bindingVersion = binding.bindingVersion,
+            transport = binding.transport.name,
         )
     }
 }

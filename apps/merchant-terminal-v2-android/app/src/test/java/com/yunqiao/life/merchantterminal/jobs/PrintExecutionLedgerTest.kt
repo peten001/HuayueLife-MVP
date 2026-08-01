@@ -74,7 +74,7 @@ class PrintExecutionLedgerTest {
         contentHash = "a".repeat(64),
         snapshotSchemaVersion = 1,
         receiptSnapshotJson = "{}",
-        route = V2RouteIdentity("123", "binding-one", 1),
+        route = V2RouteIdentity("123", "binding-one", 1, transport = "LAN"),
         adapter = "ANDROID_LAN_ESCPOS",
     )
 }

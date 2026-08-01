@@ -29,6 +29,11 @@
     <string name="printer_devices_title">打印机与设备</string>
     <string name="printer_devices_subtitle">管理这台收银机连接的 USB、局域网和蓝牙打印机</string>
     <string name="local_print_service">本地打印服务</string>
+    <string name="simple_service_connecting">正在连接</string>
+    <string name="simple_service_error">连接异常</string>
+    <string name="simple_service_running_body">终端状态：已登录\n自动打印规则由商家后台统一管理。</string>
+    <string name="simple_service_error_body">暂时无法连接平台。</string>
+    <string name="simple_reconnect_service">重新连接</string>
     <string name="service_running">运行中</string>
     <string name="service_unavailable">暂不可用</string>
     <string name="service_logged_in">终端状态：已登录</string>
@@ -106,6 +111,7 @@
     <string name="platform_sync">平台同步</string>
     <string name="test_passed">已通过</string>
     <string name="sync_complete">已同步</string>
+    <string name="sync_waiting">等待同步</string>
     <string name="continue_adding">继续添加</string>
     <string name="test_failure_title">本地测试未完成</string>
     <string name="test_failure_body">请检查纸张、电源和连接后重试。平台不会把本次失败当作已打印。</string>

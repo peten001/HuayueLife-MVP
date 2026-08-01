@@ -16,6 +16,7 @@ import com.yunqiao.life.merchantterminal.printing.escpos.EscPosRasterEncoder
 import com.yunqiao.life.merchantterminal.printing.receipt.ProductionReceiptRenderConfig
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentParser
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentRenderer
+import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import com.yunqiao.life.merchantterminal.storage.PrintExecutionLedgerEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -86,10 +87,12 @@ class V2PrintJobExecutor(
             return JobExecutionResult.LEASE_PENDING
         }
         val started = try {
+            log(job, "PRINT_MARK_PRINTING phase=start")
             beginServerAttempt(token, job, lease.leaseVersion)
         } catch (_: V2ApiException) {
             return JobExecutionResult.LEASE_PENDING
         }
+        log(job, "PRINT_MARK_PRINTING phase=success attemptNo=${started.attemptNo}")
         if (started.attemptNo != claimedEntry.attemptNo) {
             return JobExecutionResult.REQUIRES_OPERATOR
         }
@@ -99,12 +102,17 @@ class V2PrintJobExecutor(
             plannedBytes = bytes.size,
         )
         return try {
+            log(job, "PRINT_EXECUTE_START attemptNo=${started.attemptNo}")
             val result = transportExecutor.printOnce(
                 binding,
                 PrintableDocument(bytes, "server-receipt-v1"),
             )
             when (result) {
                 is PrintResult.Success -> {
+                    log(
+                        job,
+                        "PRINT_EXECUTE_RESULT attemptNo=${started.attemptNo} bytesWritten=${result.writtenBytes} outcome=SUCCEEDED",
+                    )
                     printing = ledger.complete(
                         printing,
                         PrintExecutionState.SUCCEEDED,
@@ -114,6 +122,7 @@ class V2PrintJobExecutor(
                         errorCode = null,
                     )
                     if (reportPending(printing)) {
+                        log(job, "PRINT_RESULT_REPORTED attemptNo=${started.attemptNo} outcome=SUCCEEDED")
                         JobExecutionResult.SUCCEEDED
                     } else {
                         JobExecutionResult.REPORT_PENDING
@@ -137,10 +146,21 @@ class V2PrintJobExecutor(
                         disposition.retryable,
                         result.code.name,
                     )
-                    reportPending(printing)
+                    val outcome = if (disposition.uncertain) "UNCERTAIN" else "FAILED"
+                    log(
+                        job,
+                        "PRINT_EXECUTE_RESULT attemptNo=${started.attemptNo} bytesWritten=${result.writtenBytes} outcome=$outcome",
+                    )
+                    val reported = reportPending(printing)
                     if (disposition.uncertain) {
+                        if (reported) {
+                            log(job, "PRINT_RESULT_REPORTED attemptNo=${started.attemptNo} outcome=UNCERTAIN")
+                        }
                         JobExecutionResult.UNCERTAIN
                     } else {
+                        if (reported) {
+                            log(job, "PRINT_RESULT_REPORTED attemptNo=${started.attemptNo} outcome=FAILED")
+                        }
                         JobExecutionResult.FAILED
                     }
                 }
@@ -155,7 +175,13 @@ class V2PrintJobExecutor(
                     retryable = false,
                     errorCode = "PRINT_EXECUTION_EXCEPTION",
                 )
-                reportPending(printing)
+                if (reportPending(printing)) {
+                    log(job, "PRINT_RESULT_REPORTED attemptNo=${started.attemptNo} outcome=UNCERTAIN")
+                }
+                log(
+                    job,
+                    "PRINT_EXECUTE_RESULT attemptNo=${started.attemptNo} bytesWritten=${printing.bytesWritten} outcome=UNCERTAIN",
+                )
             }
             if (error is CancellationException) throw error
             JobExecutionResult.UNCERTAIN
@@ -169,8 +195,10 @@ class V2PrintJobExecutor(
     ): JobExecutionResult {
         val token = terminalBearer() ?: return JobExecutionResult.LEASE_PENDING
         val start = runCatching {
+            log(job, "PRINT_MARK_PRINTING phase=start")
             beginServerAttempt(token, job, job.leaseVersion)
         }.getOrElse { return JobExecutionResult.LEASE_PENDING }
+        log(job, "PRINT_MARK_PRINTING phase=success attemptNo=${start.attemptNo}")
         if (start.attemptNo != claimedEntry.attemptNo) {
             return JobExecutionResult.REQUIRES_OPERATOR
         }
@@ -194,7 +222,9 @@ class V2PrintJobExecutor(
             retryable = false,
             errorCode = localCode,
         )
-        reportPending(failed)
+        if (reportPending(failed)) {
+            log(job, "PRINT_RESULT_REPORTED attemptNo=${start.attemptNo} bytesWritten=0 outcome=FAILED")
+        }
         return JobExecutionResult.FAILED
     }
 
@@ -229,6 +259,7 @@ class V2PrintJobExecutor(
             entry.printerId,
             entry.localBindingId,
             entry.bindingVersion,
+            transport = if (entry.adapter == "ANDROID_LAN_ESCPOS") "LAN" else "UNKNOWN",
         )
         return try {
             if (entry.state == PrintExecutionState.SUCCEEDED.name) {
@@ -297,6 +328,12 @@ class V2PrintJobExecutor(
         require(!binding.deletedPending)
         require(binding.syncStatus == BindingSyncStatus.SYNCED)
         require(JobBindingExecutionPolicy.canExecute(job.source, binding.enabled))
+    }
+
+    private fun log(job: ClaimedV2PrintJob, message: String) {
+        StartupTrace.event(
+            "$message channel=${job.route.transport} jobId=${job.id} printerId=${job.printerId} bindingVersion=${job.route.bindingVersion}",
+        )
     }
 
     private companion object {

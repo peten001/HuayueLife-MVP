@@ -47,6 +47,7 @@ import com.yunqiao.life.merchantterminal.ui.PrinterDevicesRoot
 import com.yunqiao.life.merchantterminal.ui.PrinterTransportUi
 import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainActivity :
     ComponentActivity(),
@@ -155,9 +156,12 @@ class MainActivity :
     override fun onResume() {
         super.onResume()
         hideSystemBars()
-        if (graph.merchantSessionTokenStore.hasCredential()) {
+        if (graph.credentialStore.readCredential()?.isUsable() == true ||
+            graph.merchantSessionTokenStore.hasCredential()
+        ) {
             V2RecoveryScheduler.schedule(this, "activity-resumed")
         }
+        observeMerchantSession()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -195,6 +199,10 @@ class MainActivity :
     override fun onMainPageLoaded(url: String) {
         val webView = terminalWebView ?: return
         webView.evaluateJavascript(MerchantWebSessionContract.logoutObserverScript(), null)
+        webView.evaluateJavascript(PRINTER_DEVICES_ENTRY_COMPAT_SCRIPT, null)
+        webView.evaluateJavascript("(document.documentElement.lang || 'zh').slice(0,2)") { value ->
+            applyWebLanguage(value.trim('"').lowercase(Locale.ROOT))
+        }
         observeMerchantSession()
     }
 
@@ -282,10 +290,9 @@ class MainActivity :
             onSessionChanged = {
                 runOnUiThread(::observeMerchantSession)
             },
+            onLanguageChanged = { language -> runOnUiThread { applyWebLanguage(language) } },
             onOpenPrinterDevices = {
-                if (graph.merchantSessionTokenStore.hasCredential()) {
-                    printerDevicesController.open()
-                }
+                printerDevicesController.open()
             },
         ).install(webView)
         root.addView(
@@ -311,7 +318,6 @@ class MainActivity :
                         actions = PrinterDevicesActions(
                             onBack = printerDevicesController::back,
                             onClose = printerDevicesController::close,
-                            onOpenService = printerDevicesController::openService,
                             onAddPrinter = printerDevicesController::startAdd,
                             onManagePrinter = printerDevicesController::openBinding,
                             onSelectTransport = { printerDevicesController.selectTransport(it.toCore()) },
@@ -377,14 +383,33 @@ class MainActivity :
 
     private fun observeMerchantSession() {
         val webView = terminalWebView ?: return
-        if (!originPolicy.isTrustedPage(webView.url)) return
+        if (!originPolicy.isTrustedPage(webView.url)) {
+            com.yunqiao.life.merchantterminal.runtime.StartupTrace.event("WEB_SESSION_REJECTED")
+            return
+        }
         val sequence = merchantSessionCoordinator.beginObservation()
         webView.evaluateJavascript(MerchantWebSessionContract.snapshotScript()) { encoded ->
             val snapshot = MerchantWebSessionContract.decodeSnapshot(encoded)
+            when (snapshot) {
+                is MerchantWebSessionSnapshot.Authenticated ->
+                    com.yunqiao.life.merchantterminal.runtime.StartupTrace.event("WEB_SESSION_RECEIVED")
+                else -> com.yunqiao.life.merchantterminal.runtime.StartupTrace.event("WEB_SESSION_REJECTED")
+            }
             lifecycleScope.launch {
                 merchantSessionCoordinator.applyObservation(sequence, snapshot)
             }
         }
+    }
+
+    private fun applyWebLanguage(language: String) {
+        val locale = when (language) {
+            "vi" -> Locale("vi", "VN")
+            "en" -> Locale.ENGLISH
+            else -> Locale.SIMPLIFIED_CHINESE
+        }
+        val configuration = resources.configuration
+        configuration.setLocale(locale)
+        resources.updateConfiguration(configuration, resources.displayMetrics)
     }
 
     private fun openInitialPage() {
@@ -427,12 +452,38 @@ class MainActivity :
         }
     }
 
+    private companion object {
+        const val PRINTER_DEVICES_ENTRY_COMPAT_SCRIPT = """
+            (function(){
+              if(window.__yunqiaoPrinterEntryCompat){return;}
+              window.__yunqiaoPrinterEntryCompat=true;
+              var add=function(){
+                var pop=document.querySelector('.account-menu__popover');
+                if(!pop||pop.querySelector('[data-testid="printer-devices-entry"]'))return;
+                var language=pop.querySelector('select');
+                var copy=language&&language.value==='vi'?'Máy in và thiết bị':language&&language.value==='en'?'Printers & Devices':'打印机与设备';
+                var button=document.createElement('button');
+                button.type='button';
+                button.setAttribute('data-testid','printer-devices-entry');
+                button.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg><span>'+copy+'</span><span aria-hidden="true" style="margin-left:auto">›</span>';
+                button.addEventListener('click',function(){
+                  if(window.YunQiaoMerchantTerminal&&typeof window.YunQiaoMerchantTerminal.postMessage==='function'){
+                    window.YunQiaoMerchantTerminal.postMessage('{"type":"OPEN_PRINTER_DEVICES","version":1}');
+                  }
+                });
+                var logout=Array.prototype.find.call(pop.querySelectorAll('button'),function(item){return /退出登录|Đăng xuất|Log out/.test(item.textContent||'');});
+                if(logout)pop.insertBefore(button,logout);else pop.appendChild(button);
+              };
+              new MutationObserver(add).observe(document.documentElement,{childList:true,subtree:true});
+              add();
+            })();
+        """
+        val MIME_TYPE = Regex("^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+*-]+$")
+    }
+
     private fun isNetworkAvailable(): Boolean =
         getSystemService(ConnectivityManager::class.java)?.activeNetwork != null
 
-    private companion object {
-        val MIME_TYPE = Regex("^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+*-]+$")
-    }
 }
 
 private fun PrinterTransportUi.toCore(): PrinterTransport = PrinterTransport.valueOf(name)

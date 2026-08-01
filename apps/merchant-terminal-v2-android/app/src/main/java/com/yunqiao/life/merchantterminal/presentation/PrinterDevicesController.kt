@@ -51,7 +51,6 @@ import java.util.UUID
 
 enum class PrinterDevicesCoreRoute {
     OVERVIEW,
-    LOCAL_SERVICE,
     CONNECTION_TYPE,
     LAN_DISCOVERY,
     LAN_SUCCESS,
@@ -141,6 +140,7 @@ class PrinterDevicesController(
                     serviceRunning = runtime.status in setOf(
                         ConnectorRuntimeStatus.STARTING,
                         ConnectorRuntimeStatus.ONLINE,
+                        ConnectorRuntimeStatus.RUNNING,
                         ConnectorRuntimeStatus.DEGRADED,
                     ),
                     terminalAuthenticated = runtime.merchantId != null,
@@ -176,7 +176,6 @@ class PrinterDevicesController(
                 close()
                 return
             }
-            PrinterDevicesCoreRoute.LOCAL_SERVICE,
             PrinterDevicesCoreRoute.CONNECTION_TYPE,
             PrinterDevicesCoreRoute.PRINTER_DETAIL,
             -> PrinterDevicesCoreRoute.OVERVIEW
@@ -187,10 +186,6 @@ class PrinterDevicesController(
             PrinterDevicesCoreRoute.LAN_SUCCESS -> PrinterDevicesCoreRoute.OVERVIEW
         }
         mutableState.value = mutableState.value.copy(route = previous, userMessage = null)
-    }
-
-    fun openService() {
-        mutableState.value = mutableState.value.copy(route = PrinterDevicesCoreRoute.LOCAL_SERVICE)
     }
 
     fun startAdd() {

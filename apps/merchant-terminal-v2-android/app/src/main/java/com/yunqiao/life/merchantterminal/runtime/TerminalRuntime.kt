@@ -11,13 +11,21 @@ enum class ConnectorRuntimeStatus {
     ONLINE,
     DEGRADED,
     SESSION_REQUIRED,
+    RUNNING,
 }
+
+enum class UsbChannelState { NOT_CONFIGURED, CONNECTING, READY, OFFLINE, ERROR }
+enum class LanChannelState { NOT_CONFIGURED, CONNECTING, READY, OFFLINE, ERROR }
+enum class BluetoothChannelState { NOT_CONFIGURED, CONNECTING, READY_LOCAL, OFFLINE, ERROR, BACKEND_NOT_SUPPORTED }
 
 data class TerminalRuntimeSnapshot(
     val status: ConnectorRuntimeStatus = ConnectorRuntimeStatus.STOPPED,
     val merchantId: String? = null,
     val config: V2TerminalConfig? = null,
     val lastErrorCode: String? = null,
+    val usbChannel: UsbChannelState = UsbChannelState.NOT_CONFIGURED,
+    val lanChannel: LanChannelState = LanChannelState.NOT_CONFIGURED,
+    val bluetoothChannel: BluetoothChannelState = BluetoothChannelState.BACKEND_NOT_SUPPORTED,
     val updatedAt: Long = 0,
 )
 
@@ -38,5 +46,13 @@ object TerminalRuntime {
             lastErrorCode = lastErrorCode?.take(80),
             updatedAt = System.currentTimeMillis(),
         )
+    }
+
+    fun updateChannels(
+        usb: UsbChannelState = mutable.value.usbChannel,
+        lan: LanChannelState = mutable.value.lanChannel,
+        bluetooth: BluetoothChannelState = mutable.value.bluetoothChannel,
+    ) {
+        mutable.value = mutable.value.copy(usbChannel = usb, lanChannel = lan, bluetoothChannel = bluetooth, updatedAt = System.currentTimeMillis())
     }
 }

@@ -21,4 +21,5 @@
     <string name="controller_printer_saved_pending_sync">Đã lưu máy in và đang chờ đồng bộ nền tảng</string>
     <string name="controller_printer_save_failed">Lưu thất bại. Hãy kiểm tra máy in đã được thêm trước đó chưa.</string>
     <string name="controller_printer_archive_pending_sync">Đã gỡ máy in; thao tác lưu trữ sẽ đồng bộ khi có mạng</string>
+    <string name="sync_waiting">Đang chờ đồng bộ</string>
 </resources>

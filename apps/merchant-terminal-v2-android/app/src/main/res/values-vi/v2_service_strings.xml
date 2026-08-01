@@ -1,0 +1,8 @@
+<resources>
+    <string name="simple_service_connecting">Đang kết nối</string>
+    <string name="simple_service_error">Lỗi kết nối</string>
+    <string name="simple_service_running_body">Trạng thái thiết bị: Đã đăng nhập
+Quy tắc in tự động được quản lý trong Merchant Admin.</string>
+    <string name="simple_service_error_body">Tạm thời không thể kết nối nền tảng.</string>
+    <string name="simple_reconnect_service">Kết nối lại</string>
+</resources>

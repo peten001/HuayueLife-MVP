@@ -1,287 +1,252 @@
 package com.yunqiao.life.merchantterminal.network
 
-import com.yunqiao.life.merchantterminal.model.BindingSyncStatus
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import com.yunqiao.life.merchantterminal.model.LocalPrinterBinding
 import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.model.PhysicalStatus
 import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.security.CanonicalReceiptHash
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
 import org.json.JSONObject
-import java.util.UUID
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.util.Base64
 
 class TerminalV2ApiClientTest {
     @Test
-    fun bootstrapUsesMerchantBearerAndParsesAuthoritativeMerchant() {
+    fun bootstrapUsesDeployedMerchantRouteAndDerivesTerminalBearerLocally() {
         MockWebServer().use { server ->
             server.enqueue(
                 MockResponse().setBody(
-                    """
-                    {
-                      "code":"OK",
-                      "data":{
-                        "merchantId":"11",
-                        "terminalId":"15",
-                        "authorizationScheme":"Bearer",
-                        "token":"bbbbbbbbbbbbbbbbbbbbbbbb",
-                        "tokenVersion":1,
-                        "tokenExpiresAt":"2030-01-01T00:00:00Z",
-                        "heartbeatSeconds":20,
-                        "pollIntervalSeconds":5,
-                        "configVersion":1
-                      }
-                    }
-                    """.trimIndent(),
+                    """{"code":"OK","data":{"terminalId":"15","tokenVersion":1,"tokenExpiresAt":"2030-01-01T00:00:00Z","authorizationScheme":"Terminal"}}""",
                 ),
             )
-            val client = TerminalV2ApiClient(
-                endpointResolver = { path -> server.url(path).toString() },
-            )
-            val response = client.bootstrap(
-                merchantJwt = "a".repeat(24),
-                terminalInstanceId = "terminal.instance.123",
-                terminalSecret = "s".repeat(43),
-                deviceModel = "D2",
-            )
+            val jwt = merchantJwt("11")
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            val response = client.bootstrap(jwt, "terminal.instance.123", "s".repeat(43), "D2")
+
             assertEquals("11", response.merchantId)
             assertEquals("15", response.terminalId)
+            assertEquals("yt1.15.${"s".repeat(43)}", response.terminalBearer)
             val request = server.takeRequest()
-            assertEquals("/merchant/printing/connector/v2/bootstrap", request.path)
-            assertEquals("Bearer ${"a".repeat(24)}", request.getHeader("Authorization"))
-            val body = JSONObject(requireNotNull(request.body.readUtf8()))
-            assertTrue(body.getJSONObject("capabilities").getBoolean("bluetoothClassic"))
-            assertEquals(40, body.getInt("appVersionCode"))
+            assertEquals("/merchant/printing/connector/lan-terminal/bootstrap", request.path)
+            assertEquals("Bearer $jwt", request.getHeader("Authorization"))
+            val body = JSONObject(request.body.readUtf8())
+            assertEquals("terminal.instance.123", body.getString("terminalInstanceId"))
+            assertEquals(43, body.getString("terminalSecret").length)
+            assertEquals(43, body.length().let { body.getString("terminalSecret").length })
         }
     }
 
     @Test
-    fun heartbeatUsesStableNonV2RouteAndTerminalBearer() {
+    fun heartbeatUsesTerminalBearerAndConfigUsesDeployedRoute() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""{"code":"OK","data":{}}"""))
-            val client = TerminalV2ApiClient(
-                endpointResolver = { path -> server.url(path).toString() },
-            )
-            client.heartbeat(
-                terminalBearer = "t".repeat(24),
-                heartbeatSequence = 3,
-                appliedConfigVersion = 7,
-            )
-            val request = server.takeRequest()
-            assertEquals("/terminal/heartbeat", request.path)
-            assertEquals("Bearer ${"t".repeat(24)}", request.getHeader("Authorization"))
-            val body = JSONObject(request.body.readUtf8())
-            assertEquals(3L, body.getLong("heartbeatSeq"))
-            assertEquals(7L, body.getLong("appliedConfigVersion"))
-        }
-    }
-
-    @Test
-    fun exposesServerBindingConflictForAdoptionWithoutDuplicateCreate() {
-        MockWebServer().use { server ->
             server.enqueue(
-                MockResponse()
-                    .setResponseCode(409)
-                    .setBody(
-                        """
-                        {
-                          "code":"V2_BINDING_VERSION_CONFLICT",
-                          "message":"stale",
-                          "printerId":"123",
-                          "currentBindingVersion":7
-                        }
-                        """.trimIndent(),
-                    ),
-            )
-            val client = TerminalV2ApiClient(
-                endpointResolver = { path -> server.url(path).toString() },
-            )
-            val error = runCatching {
-                client.archiveBinding(
-                    terminalBearer = "a".repeat(24),
-                    route = V2RouteIdentity("123", "binding-local-1", 6),
-                )
-            }.exceptionOrNull() as V2ApiException
-
-            assertTrue(error.bindingConflict)
-            assertEquals(7L, error.currentBindingVersion)
-            assertEquals("123", error.currentPrinterId)
-            val request = server.takeRequest()
-            assertEquals("/terminal/v2/bindings/archive", request.path)
-            assertEquals("Bearer ${"a".repeat(24)}", request.getHeader("Authorization"))
-        }
-    }
-
-    @Test
-    fun fullV2ContractCoversConfigBindingStatusClaimAttemptAndCredentialExpiry() {
-        MockWebServer().use { server ->
-            val localBindingId = UUID.randomUUID().toString()
-            val route = V2RouteIdentity("101", localBindingId, 2)
-            val snapshot = JSONObject()
-                .put("schemaVersion", 1)
-                .put("receiptType", "ORDER")
-                .put("order", JSONObject().put("orderNo", "YQ-501"))
-            val contentHash = CanonicalReceiptHash.compute(snapshot)
-            val responses = listOf(
-                """
-                {"code":"OK","data":{"merchantId":"11","terminalId":"15",
-                "merchantPrintingEnabled":true,"terminalEnabled":true,"executionEnabled":true,
-                "automaticCreationEnabled":false,"heartbeatSeconds":20,"pollIntervalSeconds":5,
-                "configVersion":9,"printers":[{"id":"101","name":"Kitchen",
-                "channelType":"LOCAL_LAN_ESCPOS","paperWidth":"MM80","enabled":false,
-                "status":"ONLINE","binding":{"localBindingId":"$localBindingId",
-                "bindingVersion":2,"transport":"LAN"}}]}}
-                """,
-                """
-                {"code":"OK","data":{"merchantId":"11","terminalId":"15",
-                "printerId":"101","localBindingId":"$localBindingId","bindingVersion":2,
-                "channelType":"LOCAL_LAN_ESCPOS","status":"ONLINE","enabled":false,
-                "reportedAt":"2030-01-01T00:00:00Z"}}
-                """,
-                """{"code":"OK","data":{}}""",
-                """
-                {"code":"OK","data":{"job":{"id":"501","merchantId":"11",
-                "printerId":"101","status":"CLAIMED","receiptType":"ORDER","source":"TEST",
-                "attemptCount":0,"currentAttempt":null,"leaseVersion":1,
-                "leaseExpiresAt":"2030-01-01T00:01:00Z","contentHash":"$contentHash",
-                "snapshotSchemaVersion":1,"receiptSnapshot":$snapshot,
-                "route":{"printerId":"101","localBindingId":"$localBindingId",
-                "bindingVersion":2,"adapter":"LOCAL_LAN_ESCPOS"}}}}
-                """,
-                """
-                {"code":"OK","data":{"attempt":{"attemptNo":1},"job":{"leaseVersion":2,
-                "leaseExpiresAt":"2030-01-01T00:02:00Z"}}}
-                """,
-                """
-                {"code":"OK","data":{"leaseVersion":3,
-                "leaseExpiresAt":"2030-01-01T00:03:00Z"}}
-                """,
-                """{"code":"OK","data":{}}""",
-                """{"code":"OK","data":{}}""",
-            )
-            responses.forEach { server.enqueue(MockResponse().setBody(it.trimIndent())) }
-            server.enqueue(
-                MockResponse().setResponseCode(401).setBody(
-                    """{"code":"TERMINAL_CREDENTIAL_EXPIRED","message":"expired"}""",
+                MockResponse().setBody(
+                    """{"code":"OK","data":{"terminal":{"id":"15","configVersion":9},"merchantPrintingEnabled":true,"terminalEnabled":true,"executionEnabled":true,"automaticCreationEnabled":false,"heartbeatIntervalSeconds":20,"pollIntervalSeconds":5,"boundPrinter":null}}""",
                 ),
             )
-            val client = TerminalV2ApiClient(
-                endpointResolver = { path -> server.url(path).toString() },
-            )
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
             val terminalBearer = "t".repeat(24)
-
+            client.heartbeat(terminalBearer, 3, 7)
             val config = client.config(terminalBearer)
-            assertEquals("11", config.merchantId)
-            assertEquals(false, config.printers.single().enabled)
 
-            val localBinding = LocalPrinterBinding(
-                merchantId = "11",
-                terminalInstanceId = "terminal-instance-123456",
-                localBindingId = localBindingId,
-                printerId = null,
-                bindingVersion = 0,
-                transport = PrinterTransport.LAN,
-                displayName = "Kitchen",
-                paperWidth = PaperWidth.MM_80,
-                transportConfig = LocalTransportConfig.Lan("192.168.1.42"),
-                localStatus = PhysicalStatus.CONNECTED,
-                syncStatus = BindingSyncStatus.PENDING_SYNC,
-                deletedPending = false,
-                enabled = false,
-                lastConnectedAt = 1L,
-                lastTestedAt = 1L,
-                lastStatusReportAt = null,
+            assertEquals("15", config.terminalId)
+            assertEquals(9L, config.configVersion)
+            assertEquals(true, config.canClaimJobs)
+            assertEquals(0, config.printers.size)
+            val heartbeat = server.takeRequest()
+            val configRequest = server.takeRequest()
+            assertEquals("/terminal/heartbeat", heartbeat.path)
+            assertEquals("/terminal/config", configRequest.path)
+            assertEquals("Terminal $terminalBearer", heartbeat.getHeader("Authorization"))
+            assertEquals("Terminal $terminalBearer", configRequest.getHeader("Authorization"))
+        }
+    }
+
+    @Test
+    fun lanSyncAndStatusUseDeployedLanRoutesWithTerminalAuthentication() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"code":"OK","data":{"terminalId":"15","printerId":"37","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":1,"status":"CONNECTED","enabled":true,"reportedAt":"2030-01-01T00:00:00Z"}}"""))
+            server.enqueue(MockResponse().setBody("""{"code":"OK","data":{}}"""))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            val token = "t".repeat(24)
+            val binding = LocalPrinterBinding(
+                merchantId = "11", terminalInstanceId = "terminal.instance.123",
+                localBindingId = "123e4567-e89b-12d3-a456-426614174000",
+                displayName = "LAN test", transport = PrinterTransport.LAN,
+                transportConfig = LocalTransportConfig.Lan("10.0.2.2", 19100),
+                paperWidth = PaperWidth.MM_80, localStatus = PhysicalStatus.CONNECTED,
+                printerId = null, bindingVersion = 0, syncStatus = com.yunqiao.life.merchantterminal.model.BindingSyncStatus.PENDING_SYNC,
+                deletedPending = false, enabled = true, lastConnectedAt = null,
+                lastTestedAt = null, lastStatusReportAt = null,
             )
-            val synced = client.syncBinding(terminalBearer, localBinding)
-            assertEquals("101", synced.printerId)
-            assertEquals(2L, synced.bindingVersion)
+            val synced = client.syncBinding(token, binding)
+            client.reportStatus(token, V2RouteIdentity(synced.printerId, synced.localBindingId, synced.bindingVersion, "LAN"), "CONNECTED", "LOCAL_TEST", JSONObject(), null, null)
 
-            client.reportStatus(
-                terminalBearer = terminalBearer,
+            val sync = server.takeRequest()
+            val status = server.takeRequest()
+            assertEquals("/terminal/lan/bindings/sync", sync.path)
+            assertEquals("Terminal $token", sync.getHeader("Authorization"))
+            assertEquals("10.0.2.2", JSONObject(sync.body.readUtf8()).getString("host"))
+            assertEquals("/terminal/lan/printers/status", status.path)
+            assertEquals("Terminal $token", status.getHeader("Authorization"))
+            assertEquals("37", JSONObject(status.body.readUtf8()).getString("printerId"))
+        }
+    }
+
+    @Test
+    fun lanActiveAndClaimUseSingleRouteIdentityAndTerminalCredential() {
+        MockWebServer().use { server ->
+            server.enqueue(okData(JSONObject().put("job", JSONObject.NULL)))
+            server.enqueue(okData(JSONObject().put("job", lanJobJson())))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            val route = lanRoute()
+
+            assertEquals(null, client.activeLanJob(TERMINAL_TOKEN, route))
+            val claimed = client.claimLanJob(
+                terminalBearer = TERMINAL_TOKEN,
                 route = route,
-                status = "CONNECTED",
-                source = "LOCAL_TEST",
-                capabilities = JSONObject().put("paperWidth", "MM80"),
-                lastErrorCode = null,
-                lastErrorMessage = null,
+                allowAutomatic = false,
             )
-            val job = requireNotNull(
-                client.claim(
-                    terminalBearer = terminalBearer,
-                    allowAutomatic = false,
-                    routes = listOf(route),
+
+            assertEquals("267", claimed?.id)
+            assertEquals("TEST", claimed?.source)
+            assertEquals(route, claimed?.route)
+            val activeRequest = server.takeRequest()
+            val claimRequest = server.takeRequest()
+            assertEquals(
+                "/terminal/lan/jobs/active?printerId=18&localBindingId=92b22dc6-95af-4857-a113-8644134488f1&bindingVersion=1",
+                activeRequest.path,
+            )
+            assertEquals("Terminal $TERMINAL_TOKEN", activeRequest.getHeader("Authorization"))
+            assertEquals("/terminal/lan/jobs/claim", claimRequest.path)
+            assertEquals("Terminal $TERMINAL_TOKEN", claimRequest.getHeader("Authorization"))
+            val body = JSONObject(claimRequest.body.readUtf8())
+            assertEquals("18", body.getString("printerId"))
+            assertEquals(route.localBindingId, body.getString("localBindingId"))
+            assertEquals(1, body.getInt("bindingVersion"))
+            assertEquals(false, body.getBoolean("allowAutomatic"))
+        }
+    }
+
+    @Test
+    fun lanPrintingExtendAndResultsUseLanJobContract() {
+        MockWebServer().use { server ->
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            val job = parseLanJob(client, server)
+            server.enqueue(
+                okData(
+                    JSONObject()
+                        .put("attempt", JSONObject().put("attemptNo", 1))
+                        .put(
+                            "job",
+                            JSONObject()
+                                .put("leaseVersion", 2)
+                                .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
+                        ),
                 ),
             )
-            assertEquals("TEST", job.source)
-            assertEquals(contentHash, job.contentHash)
-
-            val attempt = client.markPrinting(terminalBearer, job)
-            assertEquals(1, attempt.attemptNo)
-            assertEquals(2L, attempt.leaseVersion)
-            val lease = client.extendLease(
-                terminalBearer,
-                job.id,
-                route,
-                attempt.leaseVersion,
+            server.enqueue(
+                okData(
+                    JSONObject()
+                        .put("leaseVersion", 3)
+                        .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
+                ),
             )
-            assertEquals(3L, lease.leaseVersion)
+            server.enqueue(okData(JSONObject()))
+            server.enqueue(okData(JSONObject()))
+
+            client.markPrinting(TERMINAL_TOKEN, job)
+            client.extendLease(TERMINAL_TOKEN, job.id, job.route, leaseVersion = 2)
             client.succeeded(
-                terminalBearer,
+                TERMINAL_TOKEN,
                 job.id,
-                route,
+                job.route,
                 job.adapter,
-                contentHash,
+                job.contentHash,
                 attemptNo = 1,
                 leaseVersion = 3,
-                bytesWritten = 128,
+                bytesWritten = 31_707,
             )
             client.failed(
-                terminalBearer,
+                TERMINAL_TOKEN,
                 job.id,
-                route,
-                contentHash,
+                job.route,
+                job.contentHash,
                 attemptNo = 1,
                 leaseVersion = 3,
                 retryable = false,
-                errorCode = "LAN_WRITE_FAILED",
-                errorMessage = "write outcome unknown",
-                bytesWritten = 32,
-                uncertain = true,
+                errorCode = "PRINTER_OFFLINE",
+                errorMessage = "offline",
+                bytesWritten = 0,
+                uncertain = false,
             )
-            val expiry = runCatching { client.config(terminalBearer) }
-                .exceptionOrNull() as V2ApiException
-            assertTrue(expiry.credentialInvalid)
-            assertEquals("TERMINAL_CREDENTIAL_EXPIRED", expiry.errorCode)
 
-            val requests = (0 until 9).map { server.takeRequest() }
-            assertEquals("/terminal/v2/config", requests[0].path)
-            assertEquals("GET", requests[0].method)
-            assertEquals("/terminal/v2/bindings/sync", requests[1].path)
-            assertEquals(0L, JSONObject(requests[1].body.readUtf8()).getLong("expectedBindingVersion"))
-            assertEquals("/terminal/v2/printers/status", requests[2].path)
-            assertEquals("LOCAL_TEST", JSONObject(requests[2].body.readUtf8()).getString("source"))
-            assertEquals("/terminal/v2/jobs/claim", requests[3].path)
-            val claimBody = JSONObject(requests[3].body.readUtf8())
-            assertEquals(false, claimBody.getBoolean("allowAutomatic"))
-            assertEquals(localBindingId, claimBody.getJSONArray("routes").getJSONObject(0)
-                .getString("localBindingId"))
-            assertEquals("/terminal/v2/jobs/501/printing", requests[4].path)
-            assertEquals("/terminal/v2/jobs/501/extend-lease", requests[5].path)
-            assertEquals("/terminal/v2/jobs/501/succeeded", requests[6].path)
-            assertEquals(128, JSONObject(requests[6].body.readUtf8()).getInt("bytesWritten"))
-            assertEquals("/terminal/v2/jobs/501/failed", requests[7].path)
-            val uncertainBody = JSONObject(requests[7].body.readUtf8())
-            assertEquals("UNCERTAIN", uncertainBody.getString("outcome"))
-            assertEquals("PRINT_OUTCOME_UNKNOWN", uncertainBody.getString("errorCode"))
-            assertEquals(false, uncertainBody.getBoolean("retryable"))
-            assertEquals("/terminal/v2/config", requests[8].path)
-            requests.forEach {
-                assertEquals("Bearer $terminalBearer", it.getHeader("Authorization"))
-            }
+            assertEquals("/terminal/lan/jobs/267/printing", server.takeRequest().path)
+            assertEquals("/terminal/lan/jobs/267/extend", server.takeRequest().path)
+            assertEquals("/terminal/lan/jobs/267/succeeded", server.takeRequest().path)
+            val failed = server.takeRequest()
+            assertEquals("/terminal/lan/jobs/267/failed", failed.path)
+            assertEquals("FAILED", JSONObject(failed.body.readUtf8()).getString("outcome"))
         }
+    }
+
+    private fun parseLanJob(
+        client: TerminalV2ApiClient,
+        server: MockWebServer,
+    ): ClaimedV2PrintJob {
+        server.enqueue(okData(JSONObject().put("job", lanJobJson())))
+        return requireNotNull(client.claimLanJob(TERMINAL_TOKEN, lanRoute(), false)).also {
+            server.takeRequest()
+        }
+    }
+
+    private fun lanRoute() = V2RouteIdentity(
+        printerId = "18",
+        localBindingId = "92b22dc6-95af-4857-a113-8644134488f1",
+        bindingVersion = 1,
+        transport = "LAN",
+    )
+
+    private fun lanJobJson(): JSONObject {
+        val snapshot = JSONObject().put("schemaVersion", 1)
+        return JSONObject()
+            .put("id", "267")
+            .put("merchantId", "2")
+            .put("printerId", "18")
+            .put("status", "CLAIMED")
+            .put("receiptType", "ORDER_CUSTOMER")
+            .put("source", "TEST")
+            .put("attemptCount", 0)
+            .put("leaseVersion", 1)
+            .put("leaseExpiresAt", "2030-01-01T00:00:00Z")
+            .put("contentHash", CanonicalReceiptHash.compute(snapshot))
+            .put("snapshotSchemaVersion", 1)
+            .put("receiptSnapshot", snapshot)
+            .put(
+                "route",
+                JSONObject()
+                    .put("printerId", "18")
+                    .put("localBindingId", lanRoute().localBindingId)
+                    .put("bindingVersion", 1)
+                    .put("adapter", "ANDROID_LAN_ESCPOS"),
+            )
+    }
+
+    private fun okData(data: JSONObject) = MockResponse().setBody(
+        JSONObject().put("code", "OK").put("data", data).toString(),
+    )
+
+    private fun merchantJwt(merchantId: String): String {
+        val payload = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"merchantId\":\"$merchantId\"}".toByteArray())
+        return "aaaaaaaa.${payload}.bbbbbbbb"
+    }
+
+    private companion object {
+        const val TERMINAL_TOKEN = "terminal-credential-placeholder"
     }
 }

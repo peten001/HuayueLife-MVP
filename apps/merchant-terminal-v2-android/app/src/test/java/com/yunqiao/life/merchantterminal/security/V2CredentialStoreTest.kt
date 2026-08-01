@@ -42,7 +42,7 @@ class V2CredentialStoreTest {
         val credential = TerminalCredential(
             merchantId = "11",
             terminalId = "15",
-            authorizationScheme = "Bearer",
+            authorizationScheme = "Terminal",
             token = "t".repeat(24),
             tokenVersion = 1,
             tokenExpiresAt = System.currentTimeMillis() + 3_600_000,

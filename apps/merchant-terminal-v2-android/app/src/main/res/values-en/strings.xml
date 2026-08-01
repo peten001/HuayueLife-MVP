@@ -13,7 +13,7 @@
     <string name="common_connecting">Connecting…</string><string name="common_syncing">Syncing…</string><string name="common_testing">Printing a test receipt…</string>
     <string name="common_recovering">Restoring connection…</string><string name="common_retry_action">Try again</string><string name="paper_width_value">%1$dmm</string>
     <string name="printer_devices_title">Printers &amp; devices</string><string name="printer_devices_subtitle">Manage USB, LAN, and Bluetooth printers connected to this terminal</string>
-    <string name="local_print_service">Local printing service</string><string name="service_running">Running</string><string name="service_unavailable">Unavailable</string>
+    <string name="local_print_service">Local printing service</string><string name="service_running">Running</string><string name="simple_service_connecting">Connecting</string><string name="simple_service_error">Connection error</string><string name="simple_service_running_body">Terminal status: Signed in&#10;Automatic print rules are managed in Merchant Admin.</string><string name="simple_service_error_body">Unable to connect to the platform.</string><string name="simple_reconnect_service">Reconnect</string><string name="service_unavailable">Unavailable</string>
     <string name="service_logged_in">Terminal: signed in</string><string name="service_not_logged_in">Terminal: waiting for sign-in</string>
     <string name="automatic_rules_admin">Automatic print rules are managed in Merchant Admin</string><string name="view_service_details">View service details</string>
     <string name="added_printers">Added printers</string><string name="add_printer">Add printer</string><string name="no_printers_title">No printers yet</string>
@@ -42,7 +42,7 @@
     <string name="add_lan_step_three">Add LAN printer · Step 3/3</string><string name="step_fill_information">Printer details</string>
     <string name="printer_added_success">Printer added</string><string name="printer_added_success_body">This terminal saved the printer. You can manage it or add another device.</string>
     <string name="printer_name">Printer name</string><string name="paper_width">Paper width</string><string name="connection_type">Connection</string>
-    <string name="local_test">Local test</string><string name="platform_sync">Platform sync</string><string name="test_passed">Passed</string><string name="sync_complete">Synced</string>
+    <string name="local_test">Local test</string><string name="platform_sync">Platform sync</string><string name="test_passed">Passed</string><string name="sync_complete">Synced</string><string name="sync_waiting">Waiting to sync</string>
     <string name="continue_adding">Add another</string><string name="test_failure_title">Local test did not finish</string><string name="test_failure_body">Check power, paper, and the connection before retrying. The platform will not count this failure as printed.</string>
     <string name="test_uncertain_title">Check the printed paper</string><string name="test_uncertain_body">The printer may have produced paper. To prevent a duplicate, the system will not retry automatically.</string>
     <string name="sync_failure_title">Platform sync failed</string><string name="sync_failure_body">The local test passed, but the binding is not synced. It is safe to retry sync after the network returns.</string>

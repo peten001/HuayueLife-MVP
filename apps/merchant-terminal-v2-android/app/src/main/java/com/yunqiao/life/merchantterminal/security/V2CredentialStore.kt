@@ -26,7 +26,7 @@ data class TerminalCredential(
     init {
         require(NUMERIC_ID.matches(merchantId))
         require(NUMERIC_ID.matches(terminalId))
-        require(authorizationScheme == "Bearer")
+        require(authorizationScheme == "Terminal")
         require(token.length in 24..4_096 && token.none(Char::isWhitespace))
         require(tokenVersion >= 1)
         require(tokenExpiresAt > 0)

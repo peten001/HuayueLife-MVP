@@ -130,6 +130,7 @@ object MerchantWebSessionContract {
     const val SIGNAL_OBJECT_NAME = "YunQiaoMerchantSession"
     const val SIGN_OUT_MESSAGE = "SIGNED_OUT"
     const val SESSION_CHANGED_MESSAGE = "SESSION_CHANGED"
+    const val LANGUAGE_CHANGED_PREFIX = "LANGUAGE_CHANGED:"
     const val PRINTER_DEVICES_OBJECT_NAME = "YunQiaoMerchantTerminal"
 
     private val merchantJwt =
@@ -204,6 +205,11 @@ object MerchantWebSessionContract {
         SIGN_OUT_MESSAGE,
         SESSION_CHANGED_MESSAGE,
     )
+
+    fun languageFromSignal(value: String?): String? = value
+        ?.takeIf { it.startsWith(LANGUAGE_CHANGED_PREFIX) }
+        ?.removePrefix(LANGUAGE_CHANGED_PREFIX)
+        ?.takeIf { it in setOf("zh", "vi", "en") }
 
     private const val MIN_TOKEN_LENGTH = 24
     private const val MAX_TOKEN_LENGTH = 4_096

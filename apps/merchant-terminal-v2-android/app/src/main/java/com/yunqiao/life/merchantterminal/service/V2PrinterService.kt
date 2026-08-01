@@ -10,8 +10,15 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.yunqiao.life.merchantterminal.R
 import com.yunqiao.life.merchantterminal.TerminalApplication
+import com.yunqiao.life.merchantterminal.jobs.LanReadinessCoordinator
+import com.yunqiao.life.merchantterminal.jobs.LanReadinessProbe
+import com.yunqiao.life.merchantterminal.jobs.LanReadinessRecorder
 import com.yunqiao.life.merchantterminal.jobs.PrintExecutionLedger
-import com.yunqiao.life.merchantterminal.jobs.JobBindingExecutionPolicy
+import com.yunqiao.life.merchantterminal.jobs.PrintChannelAdapter
+import com.yunqiao.life.merchantterminal.jobs.PrintJobOrchestrator
+import com.yunqiao.life.merchantterminal.jobs.SinglePrintOrchestratorGate
+import com.yunqiao.life.merchantterminal.jobs.TerminalLanJobApiAdapter
+import com.yunqiao.life.merchantterminal.jobs.TerminalUsbJobApiAdapter
 import com.yunqiao.life.merchantterminal.jobs.V2PrintJobExecutor
 import com.yunqiao.life.merchantterminal.model.BindingSyncStatus
 import com.yunqiao.life.merchantterminal.model.PendingBindingOperationType
@@ -25,6 +32,10 @@ import com.yunqiao.life.merchantterminal.recovery.V2RecoveryScheduler
 import com.yunqiao.life.merchantterminal.recovery.BootstrapRecoveryDisposition
 import com.yunqiao.life.merchantterminal.recovery.BootstrapRecoveryPolicy
 import com.yunqiao.life.merchantterminal.runtime.ConnectorRuntimeStatus
+import com.yunqiao.life.merchantterminal.runtime.UsbChannelState
+import com.yunqiao.life.merchantterminal.runtime.LanChannelState
+import com.yunqiao.life.merchantterminal.runtime.ConnectorSessionGate
+import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import com.yunqiao.life.merchantterminal.runtime.TerminalRuntime
 import com.yunqiao.life.merchantterminal.security.TerminalCredential
 import com.yunqiao.life.merchantterminal.security.CredentialRefreshGate
@@ -41,20 +52,41 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 class V2PrinterService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var connectorJob: Job? = null
+    private val orchestratorGate = SinglePrintOrchestratorGate()
+    private val wakeSignals = Channel<Unit>(Channel.CONFLATED)
+    private val forceLanReadiness = AtomicBoolean(true)
 
     override fun onCreate() {
         super.onCreate()
         startForeground(NOTIFICATION_ID, notification())
+        StartupTrace.event("CONNECTOR_SERVICE_STARTED")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (connectorJob?.isActive != true) {
-            connectorJob = scope.launch { runConnector() }
+        if (!ConnectorSessionGate.isAllowed()) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        forceLanReadiness.set(true)
+        wakeSignals.trySend(Unit)
+        if (connectorJob?.isActive != true && orchestratorGate.tryStart()) {
+            connectorJob = scope.launch {
+                StartupTrace.event("PRINT_ORCHESTRATOR_STARTED")
+                try {
+                    runConnector()
+                } finally {
+                    StartupTrace.event("PRINT_ORCHESTRATOR_STOPPED")
+                    orchestratorGate.stopped()
+                }
+            }
         }
         return START_STICKY
     }
@@ -73,11 +105,26 @@ class V2PrinterService : Service() {
         val graph = application.graph
         val repository = graph.printingRepository
         val ledger = PrintExecutionLedger(repository.executionDao())
+        val transportExecutor = LocalTransportExecutor(application)
         val executor = V2PrintJobExecutor(
             api = graph.api,
             ledger = ledger,
-            transportExecutor = LocalTransportExecutor(application),
+            transportExecutor = transportExecutor,
             terminalBearer = { graph.credentialStore.readCredential()?.token },
+        )
+        val orchestrator = PrintJobOrchestrator()
+        val usbJobApi = TerminalUsbJobApiAdapter(graph.api, executor)
+        val lanJobApi = TerminalLanJobApiAdapter(graph.api, executor)
+        val lanReadiness = LanReadinessCoordinator(
+            probe = LanReadinessProbe(transportExecutor::probe),
+            recorder = LanReadinessRecorder { binding, status, errorCode ->
+                repository.recordPhysicalStatus(
+                    binding = binding,
+                    status = status,
+                    source = StatusSource.PROBE,
+                    lastErrorCode = errorCode,
+                )
+            },
         )
         executor.recoverInterrupted()
         var heartbeatSequence = 0L
@@ -85,16 +132,18 @@ class V2PrinterService : Service() {
         var lastConfigVersion = 0L
         var networkBackoffMs = 2_000L
         val credentialRefreshGate = CredentialRefreshGate()
-        while (scope.isActive) {
+        try {
+            while (scope.isActive && ConnectorSessionGate.isAllowed()) {
             val merchantJwt = graph.merchantSessionTokenStore.read()
-            if (merchantJwt == null) {
-                TerminalRuntime.update(ConnectorRuntimeStatus.SESSION_REQUIRED)
-                stopSelf()
-                return
-            }
             var credential = graph.credentialStore.readCredential()
                 ?.takeIf(TerminalCredential::isUsable)
+                ?.also { StartupTrace.event("TERMINAL_CREDENTIAL_RESTORED") }
             if (credential == null) {
+                if (merchantJwt == null) {
+                    TerminalRuntime.update(ConnectorRuntimeStatus.SESSION_REQUIRED)
+                    stopSelf()
+                    return
+                }
                 when (
                     val refresh = refreshCredentialOnce(
                         graph,
@@ -130,36 +179,96 @@ class V2PrinterService : Service() {
             try {
                 val now = System.currentTimeMillis()
                 if (now - lastHeartbeatAt >= credential.heartbeatSeconds * 1_000L) {
+                    StartupTrace.event("HEARTBEAT_START")
                     graph.api.heartbeat(
                         terminalBearer = credential.token,
                         heartbeatSequence = heartbeatSequence++,
                         appliedConfigVersion = lastConfigVersion,
                     )
+                    StartupTrace.event("HEARTBEAT_SUCCESS")
                     lastHeartbeatAt = now
+                    TerminalRuntime.update(ConnectorRuntimeStatus.RUNNING, merchantId = credential.merchantId)
+                    // LAN has its own production contract and must not wait for USB config.
+                    processBindingOperations(graph.api, repository, credential)
+                    processStatusReports(graph.api, repository, credential)
                 }
-                val config = graph.api.config(credential.token)
-                check(config.merchantId == credential.merchantId)
+                StartupTrace.event("USB_CONFIG_START")
+                val config = graph.api.config(credential.token).copy(merchantId = credential.merchantId)
                 check(config.terminalId == credential.terminalId)
+                StartupTrace.event("CONFIG_SUCCESS")
+                TerminalRuntime.updateChannels(usb = UsbChannelState.READY)
+                StartupTrace.event("LAN_CONFIG_START")
+                runCatching { graph.api.lanConfig(credential.token) }
+                    .onSuccess { TerminalRuntime.updateChannels(lan = if (it.terminalEnabled && it.lanPrintingEnabled) LanChannelState.READY else LanChannelState.NOT_CONFIGURED) }
+                    .onFailure { TerminalRuntime.updateChannels(lan = LanChannelState.ERROR) }
                 credentialRefreshGate.markHealthy()
                 lastConfigVersion = config.configVersion
                 repository.applyRemotePrinters(config.merchantId, config.printers)
-                processBindingOperations(graph.api, repository, credential)
+                val lanBindings = eligibleBindings(
+                    repository,
+                    credential,
+                    com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN,
+                    requireConnected = false,
+                )
+                lanReadiness.refreshDue(
+                    lanBindings,
+                    force = forceLanReadiness.getAndSet(false),
+                )
                 processStatusReports(graph.api, repository, credential)
-                probeBindings(repository, credential)
-                processStatusReports(graph.api, repository, credential)
-                executor.recoverPendingReports(credential.merchantId)
                 TerminalRuntime.update(
-                    ConnectorRuntimeStatus.ONLINE,
+                    ConnectorRuntimeStatus.RUNNING,
                     merchantId = credential.merchantId,
                     config = config,
                 )
+                StartupTrace.event("CONNECTOR_RUNNING")
+                val readyLanBindings = eligibleBindings(
+                    repository,
+                    credential,
+                    com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN,
+                )
+                val readyUsbBindings = eligibleBindings(
+                    repository,
+                    credential,
+                    com.yunqiao.life.merchantterminal.model.PrinterTransport.USB,
+                )
+                orchestrator.reconcileRoutes(
+                    listOf(lanJobApi to readyLanBindings, usbJobApi to readyUsbBindings),
+                )
                 if (config.canClaimJobs) {
-                    executeOneJob(graph.api, repository, executor, credential, config.automaticCreationEnabled)
+                    executor.recoverPendingReports(credential.merchantId)
+                    pollChannel(
+                        orchestrator,
+                        lanJobApi,
+                        readyLanBindings,
+                        credential,
+                        config.automaticCreationEnabled,
+                    )
+                    pollChannel(
+                        orchestrator,
+                        usbJobApi,
+                        readyUsbBindings,
+                        credential,
+                        config.automaticCreationEnabled,
+                    )
                 }
                 networkBackoffMs = 2_000L
-                delay(config.pollIntervalSeconds * 1_000L)
+                awaitWakeOrTimeout(
+                    minOf(
+                        config.pollIntervalSeconds * 1_000L,
+                        LanReadinessCoordinator.LAN_READINESS_INTERVAL_MS,
+                    ),
+                )
             } catch (error: V2ApiException) {
+                if (error.errorCode == "NETWORK_IO_ERROR") StartupTrace.event("HEARTBEAT_FAILED")
+                else StartupTrace.event("CONFIG_FAILED")
+                StartupTrace.event("CONNECTOR_RECONNECTING")
                 if (error.credentialInvalid) {
+                    if (merchantJwt == null) {
+                        graph.credentialStore.clearBearerCredential()
+                        TerminalRuntime.update(ConnectorRuntimeStatus.SESSION_REQUIRED)
+                        stopSelf()
+                        return
+                    }
                     when (val refreshed = refreshCredentialOnce(
                         graph,
                         merchantJwt,
@@ -203,24 +312,31 @@ class V2PrinterService : Service() {
                         }
                     }
                 }
+                TerminalRuntime.updateChannels(usb = UsbChannelState.ERROR)
                 TerminalRuntime.update(
-                    ConnectorRuntimeStatus.DEGRADED,
+                    if (lastHeartbeatAt > 0) ConnectorRuntimeStatus.RUNNING else ConnectorRuntimeStatus.DEGRADED,
                     merchantId = credential.merchantId,
                     lastErrorCode = error.errorCode,
                 )
-                delay(networkBackoffMs)
+                awaitWakeOrTimeout(networkBackoffMs)
                 networkBackoffMs = (networkBackoffMs * 2).coerceAtMost(60_000L)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                StartupTrace.event("CONFIG_FAILED")
+                StartupTrace.event("CONNECTOR_RECONNECTING")
+                TerminalRuntime.updateChannels(usb = UsbChannelState.ERROR)
                 TerminalRuntime.update(
-                    ConnectorRuntimeStatus.DEGRADED,
+                    if (lastHeartbeatAt > 0) ConnectorRuntimeStatus.RUNNING else ConnectorRuntimeStatus.DEGRADED,
                     merchantId = credential.merchantId,
                     lastErrorCode = error.javaClass.simpleName.take(80),
                 )
-                delay(networkBackoffMs)
+                awaitWakeOrTimeout(networkBackoffMs)
                 networkBackoffMs = (networkBackoffMs * 2).coerceAtMost(60_000L)
             }
+            }
+        } finally {
+            orchestrator.stop()
         }
     }
 
@@ -259,6 +375,7 @@ class V2PrinterService : Service() {
                 repository.markArchiveComplete(operation.merchantId, operation.localBindingId)
                 return@forEach
             }
+            if (binding.transport != com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN) return@forEach
             try {
                 when (enumValueOf<PendingBindingOperationType>(operation.operationType)) {
                     PendingBindingOperationType.SYNC -> {
@@ -307,35 +424,20 @@ class V2PrinterService : Service() {
         repository.adoptConflictAndRetry(operation, remote)
     }
 
-    private suspend fun probeBindings(
+    private suspend fun eligibleBindings(
         repository: PrintingRepository,
         credential: TerminalCredential,
-    ) {
-        val transport = LocalTransportExecutor(applicationContext)
-        val probeCutoff = System.currentTimeMillis() - PHYSICAL_PROBE_INTERVAL_MS
-        repository.activeBindings(credential.merchantId)
+        transport: com.yunqiao.life.merchantterminal.model.PrinterTransport,
+        requireConnected: Boolean = true,
+    ) = repository.activeBindings(credential.merchantId)
             .filter {
+                it.transport == transport &&
+                    (!requireConnected || it.localStatus == PhysicalStatus.CONNECTED) &&
                 it.printerId != null &&
                     it.bindingVersion > 0 &&
-                    !it.deletedPending &&
-                    (it.lastStatusReportAt == null || it.lastStatusReportAt < probeCutoff)
+                    it.syncStatus == BindingSyncStatus.SYNCED &&
+                    !it.deletedPending
             }
-            .forEach { binding ->
-                if (
-                    repository.hasPendingStatusReport(
-                        binding.merchantId,
-                        binding.localBindingId,
-                    )
-                ) return@forEach
-                val connected = transport.probe(binding).isSuccess
-                repository.recordPhysicalStatus(
-                    binding,
-                    if (connected) PhysicalStatus.CONNECTED else PhysicalStatus.DISCONNECTED,
-                    StatusSource.PROBE,
-                    lastErrorCode = if (connected) null else "PRINTER_OFFLINE",
-                )
-            }
-    }
 
     private suspend fun processStatusReports(
         api: TerminalV2ApiClient,
@@ -343,6 +445,9 @@ class V2PrinterService : Service() {
         credential: TerminalCredential,
     ) {
         repository.dueStatusReports(credential.merchantId).forEach { report ->
+            val binding = repository.binding(report.merchantId, report.localBindingId)
+                ?: return@forEach
+            if (binding.transport != com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN) return@forEach
             try {
                 api.reportStatus(
                     terminalBearer = credential.token,
@@ -350,6 +455,7 @@ class V2PrinterService : Service() {
                         report.printerId,
                         report.localBindingId,
                         report.bindingVersion,
+                        transport = binding.transport.name,
                     ),
                     status = report.status,
                     source = report.source,
@@ -360,42 +466,51 @@ class V2PrinterService : Service() {
                     lastErrorMessage = report.lastErrorMessage,
                 )
                 repository.markStatusReported(report)
+                StartupTrace.event(
+                    "LAN_STATUS_REPORT_SUCCESS printerId=${report.printerId} bindingVersion=${report.bindingVersion}",
+                )
             } catch (error: V2ApiException) {
                 repository.reschedule(report)
+                StartupTrace.event(
+                    "LAN_STATUS_REPORT_FAILED printerId=${report.printerId} bindingVersion=${report.bindingVersion} httpStatus=${error.statusCode} errorType=${error.errorCode}",
+                )
             }
         }
     }
 
-    private suspend fun executeOneJob(
-        api: TerminalV2ApiClient,
-        repository: PrintingRepository,
-        executor: V2PrintJobExecutor,
+    private suspend fun pollChannel(
+        orchestrator: PrintJobOrchestrator,
+        adapter: PrintChannelAdapter,
+        bindings: List<com.yunqiao.life.merchantterminal.model.LocalPrinterBinding>,
         credential: TerminalCredential,
         allowAutomatic: Boolean,
     ) {
-        val bindings = repository.activeBindings(credential.merchantId)
-            .filter {
-                it.localStatus == PhysicalStatus.CONNECTED &&
-                    it.printerId != null &&
-                    it.bindingVersion > 0 &&
-                    it.syncStatus == BindingSyncStatus.SYNCED &&
-                    !it.deletedPending
-            }
         if (bindings.isEmpty()) return
-        val routes = bindings.map(V2RouteIdentity::from)
-        val active = api.activeJob(credential.token)
-        val job = active ?: api.claim(
-            credential.token,
-            allowAutomatic = allowAutomatic,
-            routes = routes,
-        ) ?: return
-        val binding = bindings.firstOrNull {
-            it.localBindingId == job.route.localBindingId &&
-                it.printerId == job.route.printerId &&
-                it.bindingVersion == job.route.bindingVersion
-        } ?: return
-        if (!JobBindingExecutionPolicy.canExecute(job.source, binding.enabled)) return
-        executor.execute(job, binding)
+        try {
+            orchestrator.poll(
+                adapter = adapter,
+                terminalBearer = credential.token,
+                bindings = bindings,
+                allowAutomatic = allowAutomatic,
+            )
+        } catch (error: V2ApiException) {
+            if (error.credentialInvalid) throw error
+            StartupTrace.event(
+                "PRINT_EXECUTE_RESULT channel=${adapter.channel} printerId=${bindings.first().printerId} bindingVersion=${bindings.first().bindingVersion} outcome=${error.errorCode}",
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            StartupTrace.event(
+                "PRINT_EXECUTE_RESULT channel=${adapter.channel} printerId=${bindings.first().printerId} bindingVersion=${bindings.first().bindingVersion} outcome=${error.javaClass.simpleName.take(80)}",
+            )
+        }
+    }
+
+    private suspend fun awaitWakeOrTimeout(timeoutMs: Long) {
+        withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+            wakeSignals.receive()
+        }
     }
 
     private fun notification(): Notification {
@@ -426,7 +541,6 @@ class V2PrinterService : Service() {
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "terminal_v2_local_printing"
         private const val NOTIFICATION_ID = 20_040
-        private const val PHYSICAL_PROBE_INTERVAL_MS = 30_000L
     }
 
     private sealed interface CredentialRefreshResult {

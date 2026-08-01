@@ -65,16 +65,15 @@ class V2ConnectorRecoveryWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val application = applicationContext as? TerminalApplication ?: return Result.failure()
-        val merchantJwt = application.graph.merchantSessionTokenStore.read()
-            ?: return Result.success()
         return try {
-            if (application.graph.credentialStore.readCredential()?.isUsable() != true) {
+            val credential = application.graph.credentialStore.readCredential()
+                ?.takeIf { it.isUsable() }
+            if (credential == null) {
+                val merchantJwt = application.graph.merchantSessionTokenStore.read()
+                    ?: return Result.success()
                 application.graph.sessionController.refreshCredential(merchantJwt)
             }
-            androidx.core.content.ContextCompat.startForegroundService(
-                applicationContext,
-                Intent(applicationContext, V2PrinterService::class.java),
-            )
+            application.graph.sessionController.requestConnectorServiceStart()
             Result.success()
         } catch (error: Throwable) {
             when (BootstrapRecoveryPolicy.classify(error)) {

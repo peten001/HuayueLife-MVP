@@ -16,7 +16,7 @@ class TerminalApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = TerminalGraph(this)
-        if (graph.merchantSessionTokenStore.hasCredential()) {
+        if (graph.credentialStore.readCredential()?.isUsable() == true) {
             V2RecoveryScheduler.schedule(this, "application-start")
         }
     }

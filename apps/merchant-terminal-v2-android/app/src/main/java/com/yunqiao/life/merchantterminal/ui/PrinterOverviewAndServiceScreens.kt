@@ -151,31 +151,32 @@ private fun LocalServiceSummaryCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.local_print_service), style = YunQiaoUiTokens.ItemTitle)
                     Spacer(Modifier.width(13.dp))
+                    val status = when {
+                        state.serviceRunning -> R.string.service_running
+                        state.operation == PrinterOperationUi.RECOVERING || state.operation == PrinterOperationUi.CONNECTING -> R.string.simple_service_connecting
+                        else -> R.string.simple_service_error
+                    }
                     StatusPill(
-                        text = stringResource(if (state.serviceRunning) R.string.service_running else R.string.service_unavailable),
+                        text = stringResource(status),
                         color = if (state.serviceRunning) YunQiaoUiTokens.Overview.Green else YunQiaoUiTokens.Warning,
                     )
                 }
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    buildString {
-                        append(stringResource(if (state.terminalAuthenticated) R.string.service_logged_in else R.string.service_not_logged_in))
-                        append("   |   ")
-                        append(stringResource(R.string.automatic_rules_admin))
-                    },
+                    stringResource(if (state.serviceRunning) R.string.simple_service_running_body else R.string.simple_service_error_body),
                     style = YunQiaoUiTokens.Body,
-                    maxLines = if (compact) 2 else 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (!compact) {
+            if (!state.serviceRunning && state.operation != PrinterOperationUi.CONNECTING && state.operation != PrinterOperationUi.RECOVERING) {
                 Spacer(Modifier.width(18.dp))
                 YunQiaoButton(
-                    text = stringResource(R.string.view_service_details),
-                    onClick = actions.onOpenService,
-                    modifier = Modifier.width(166.dp),
+                    text = stringResource(R.string.simple_reconnect_service),
+                    onClick = actions.onRetry,
+                    modifier = Modifier.width(140.dp),
                     visualHeight = 44.dp,
-                    icon = YunQiaoIconKind.CHEVRON_RIGHT,
+                    icon = YunQiaoIconKind.REFRESH,
                     accent = YunQiaoUiTokens.BodyColor,
                 )
             }
@@ -191,7 +192,7 @@ private fun EmptyPrinterCard(
 ) {
     val isRecovery = operation == PrinterOperationUi.RECOVERING || operation == PrinterOperationUi.FAILURE
     ReferenceCard(
-        modifier = Modifier.fillMaxWidth().height(if (compact) 220.dp else 210.dp),
+        modifier = Modifier.fillMaxWidth().height(if (compact) 176.dp else 168.dp),
         radius = 10.dp,
         borderColor = YunQiaoUiTokens.Overview.Border,
         shadow = 2.dp,
@@ -209,14 +210,6 @@ private fun EmptyPrinterCard(
                 stringResource(if (isRecovery) R.string.overview_recovery_body else R.string.no_printers_body),
                 style = YunQiaoUiTokens.Body,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            Spacer(Modifier.height(15.dp))
-            YunQiaoButton(
-                text = stringResource(if (isRecovery) R.string.common_retry_action else R.string.add_printer),
-                onClick = if (isRecovery) actions.onRetry else actions.onAddPrinter,
-                modifier = Modifier.width(180.dp),
-                style = YunQiaoButtonStyle.PRIMARY,
-                accent = YunQiaoUiTokens.Overview.Green,
             )
         }
     }

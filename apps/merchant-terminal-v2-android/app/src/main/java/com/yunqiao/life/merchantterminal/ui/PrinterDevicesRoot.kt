@@ -29,7 +29,6 @@ fun PrinterDevicesRoot(
         val compact = maxWidth < 900.dp
         when (state.route) {
             PrinterDevicesRoute.OVERVIEW -> PrinterDevicesOverviewScreen(state, actions, compact)
-            PrinterDevicesRoute.LOCAL_SERVICE -> LocalPrintServiceScreen(state, actions, compact)
             PrinterDevicesRoute.CONNECTION_TYPE -> AddPrinterTypeScreen(state, actions, compact)
             PrinterDevicesRoute.LAN_DISCOVERY -> LanDiscoveryScreen(state, actions, compact)
             PrinterDevicesRoute.LAN_SUCCESS -> LanSuccessScreen(state, actions, compact)

@@ -4,7 +4,6 @@ import androidx.compose.runtime.Immutable
 
 enum class PrinterDevicesRoute {
     OVERVIEW,
-    LOCAL_SERVICE,
     CONNECTION_TYPE,
     LAN_DISCOVERY,
     LAN_SUCCESS,

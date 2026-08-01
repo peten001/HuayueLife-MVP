@@ -596,7 +596,18 @@ private fun PrinterFactTable(printer: PrinterSummaryUi?, state: PrinterDevicesUi
         Triple(YunQiaoIconKind.PAPER, R.string.paper_width, stringResource(R.string.paper_width_value, printer?.paperWidthMm ?: 80)),
         Triple(YunQiaoIconKind.LAN, R.string.connection_type, stringResource(R.string.lan_printer)),
         Triple(YunQiaoIconKind.CHECK, R.string.local_test, stringResource(if (state.operation == PrinterOperationUi.TESTING) R.string.common_testing else R.string.test_passed)),
-        Triple(YunQiaoIconKind.SYNC, R.string.platform_sync, stringResource(if (state.operation == PrinterOperationUi.SYNCING) R.string.common_syncing else R.string.sync_complete)),
+        Triple(
+            YunQiaoIconKind.SYNC,
+            R.string.platform_sync,
+            stringResource(
+                when {
+                    state.operation == PrinterOperationUi.SYNCING -> R.string.common_syncing
+                    printer?.platformSynced == true -> R.string.sync_complete
+                    state.operation == PrinterOperationUi.FAILURE -> R.string.sync_failure_title
+                    else -> R.string.sync_waiting
+                },
+            ),
+        ),
     )
     ReferenceCard(
         Modifier.fillMaxWidth().height(202.dp), radius = 10.dp,
