@@ -1,6 +1,7 @@
 export type PrinterChannelType =
   | 'LOCAL_LAN_ESCPOS'
   | 'LOCAL_USB_ESCPOS'
+  | 'LOCAL_BLUETOOTH_ESCPOS'
   | 'CLOUD_FEIE'
   | 'CLOUD_YILIAN'
   | 'CLOUD_XINYE'
@@ -111,6 +112,24 @@ export interface LanPrinterAdminSummary {
   enableBlockReason?: string | null;
 }
 
+export interface V2LocalPrinterAdminSummary {
+  terminalId: string;
+  localBindingId: string;
+  bindingVersion: number;
+  transport: 'USB' | 'LAN' | 'BLUETOOTH';
+  bindingUpdatedAt: string;
+  endpointKey: string;
+  archivedAt?: string | null;
+  physicalStatus?: Record<string, unknown> | null;
+  terminal?: {
+    id: string;
+    name: string;
+    status: string;
+    appVersion?: string | null;
+    lastSeenAt?: string | null;
+  } | null;
+}
+
 export interface PrintingPrinter {
   id: string;
   merchantId?: string;
@@ -123,6 +142,7 @@ export interface PrintingPrinter {
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
   lan?: LanPrinterAdminSummary | null;
+  v2?: V2LocalPrinterAdminSummary | null;
   readiness?: {
     state: 'READY' | 'DEVICE_OFFLINE' | 'NOT_CONFIGURED';
     channelImplemented: boolean;

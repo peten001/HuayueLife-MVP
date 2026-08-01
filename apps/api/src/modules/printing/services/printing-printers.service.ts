@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrinterChannelType, PrintingPrinterStatus, Prisma } from '@prisma/client';
 import { isIP } from 'node:net';
@@ -19,6 +20,8 @@ import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
+import { V2TerminalBindingsService } from './v2-terminal-bindings.service';
+import { v2BindingMetadata } from '../types/v2-terminal-binding';
 
 @Injectable()
 export class PrintingPrintersService {
@@ -28,6 +31,8 @@ export class PrintingPrintersService {
     private readonly audit: PrintingAuditService,
     private readonly settings: PrintingSettingsService,
     private readonly lanBindings: LanTerminalBindingsService,
+    @Optional()
+    private readonly v2Bindings?: V2TerminalBindingsService,
   ) {}
 
   async list(merchantId: bigint) {
@@ -52,10 +57,14 @@ export class PrintingPrintersService {
   ) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
-    if (dto.channelType === 'LOCAL_LAN_ESCPOS') {
+    this.assertNoV2ReservedCapabilities(dto.capabilities);
+    if (
+      dto.channelType === 'LOCAL_LAN_ESCPOS' ||
+      dto.channelType === 'LOCAL_BLUETOOTH_ESCPOS'
+    ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
-        message: '请从 Android 打印机与设备添加 LAN 打印机',
+        message: '请从 Android 打印机与设备添加本地打印机',
       });
     }
     const connectionConfig = this.normalizeConnectionConfig(
@@ -105,7 +114,37 @@ export class PrintingPrintersService {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     const existing = await this.requireOwned(merchantId, id);
+    this.assertNoV2ReservedCapabilities(dto.capabilities);
+    const v2Managed = Boolean(v2BindingMetadata(existing.capabilities));
     const channelType = dto.channelType ?? existing.channelType;
+    if (
+      dto.channelType === 'LOCAL_BLUETOOTH_ESCPOS' &&
+      existing.channelType !== 'LOCAL_BLUETOOTH_ESCPOS'
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '请从 Android 打印机与设备添加经典蓝牙打印机',
+      });
+    }
+    if (
+      v2Managed &&
+      (dto.channelType !== undefined ||
+        dto.connectionConfig !== undefined ||
+        dto.capabilities !== undefined ||
+        dto.paperWidth !== undefined ||
+        dto.enabled === true)
+    ) {
+      throw new BadRequestException({
+        code:
+          dto.enabled === true
+            ? PRINTING_ERROR_CODES.TEST_PRINT_REQUIRED
+            : PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message:
+          dto.enabled === true
+            ? 'V2 本地打印机必须通过专用启用接口并完成测试打印'
+            : 'V2 本地连接、纸宽与 Binding 只能在对应 Android 终端中修改',
+      });
+    }
     if (
       dto.channelType === 'LOCAL_LAN_ESCPOS' &&
       existing.channelType !== 'LOCAL_LAN_ESCPOS'
@@ -237,6 +276,51 @@ export class PrintingPrintersService {
   ) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    const owned = this.v2Bindings
+      ? await this.requireOwned(merchantId, id)
+      : null;
+    if (owned && v2BindingMetadata(owned.capabilities) && this.v2Bindings) {
+      const { printer: existing } = await this.v2Bindings.requireEnableable(
+        merchantId,
+        id,
+      );
+      if (existing.enabled) return this.serialize(existing);
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const changed = await tx.printer.updateMany({
+          where: {
+            id,
+            merchantId,
+            channelType: existing.channelType,
+            enabled: false,
+            updatedAt: existing.updatedAt,
+            deletedAt: null,
+          },
+          data: { enabled: true },
+        });
+        if (changed.count !== 1) {
+          throw new BadRequestException({
+            code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+            message: '打印机状态已变化，请刷新后重试',
+          });
+        }
+        const printer = await tx.printer.findUniqueOrThrow({ where: { id } });
+        await this.audit.record(
+          {
+            merchantId,
+            actorStaffId,
+            action: 'V2_LOCAL_PRINTER_ENABLED',
+            resourceType: 'Printer',
+            resourceId: id,
+            beforeData: this.auditView(existing),
+            afterData: this.auditView(printer),
+            requestId,
+          },
+          tx,
+        );
+        return printer;
+      });
+      return this.serialize(updated);
+    }
     const { printer: existing } = await this.lanBindings.requireEnableable(
       merchantId,
       id,
@@ -407,6 +491,15 @@ export class PrintingPrintersService {
     }
   }
 
+  private assertNoV2ReservedCapabilities(value: Record<string, unknown> | undefined) {
+    if (value && ('v2Binding' in value || 'v2Status' in value)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: 'v2Binding 与 v2Status 只能由 V2 终端接口维护',
+      });
+    }
+  }
+
   private async serialize<
     T extends {
       channelType: PrinterChannelType;
@@ -434,7 +527,9 @@ export class PrintingPrintersService {
         this.flags.executionEnabled() && readiness.state === 'READY'
           ? 'READY'
           : 'CONNECTOR_PENDING',
-      ...(printer.channelType === 'LOCAL_LAN_ESCPOS'
+      ...(v2BindingMetadata(printer.capabilities) && this.v2Bindings
+        ? { v2: await this.v2Bindings.describe(printer as unknown as import('@prisma/client').Printer) }
+        : printer.channelType === 'LOCAL_LAN_ESCPOS'
         ? { lan: await this.lanBindings.describe(printer as unknown as import('@prisma/client').Printer) }
         : {}),
     };

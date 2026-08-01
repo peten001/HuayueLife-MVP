@@ -4,12 +4,14 @@ import {
   lanBindingMetadata,
   lanConnectorEvidence,
 } from '../types/lan-terminal-binding';
+import { v2BindingMetadata } from '../types/v2-terminal-binding';
 
 export const IMPLEMENTED_PRINTING_CHANNELS = new Set<PrinterChannelType>([
   'LOCAL_USB_ESCPOS',
   'LOCAL_LAN_ESCPOS',
   'CLOUD_FEIE',
   'CLOUD_YILIAN',
+  'LOCAL_BLUETOOTH_ESCPOS',
 ]);
 
 export const PRINTER_EXECUTION_EVIDENCE_TTL_MS = 120_000;
@@ -36,6 +38,8 @@ export function printerReadiness(
   );
   const usb = record.channelType === 'LOCAL_USB_ESCPOS';
   const lan = record.channelType === 'LOCAL_LAN_ESCPOS';
+  const bluetooth = record.channelType === 'LOCAL_BLUETOOTH_ESCPOS';
+  const v2 = Boolean(v2BindingMetadata(record.capabilities));
   const cloud =
     record.channelType === 'CLOUD_FEIE' ||
     record.channelType === 'CLOUD_YILIAN';
@@ -45,8 +49,10 @@ export function printerReadiness(
   );
   const statusReady = record.status === 'ONLINE';
   const evidence = connectorEvidence(record.capabilities);
-  const evidenceUpdatedAt = usb || lan
-    ? connectorEvidenceUpdatedAt(record.capabilities)
+  const evidenceUpdatedAt = v2
+    ? v2StatusReportedAt(record.capabilities)
+    : usb || lan
+      ? connectorEvidenceUpdatedAt(record.capabilities)
     : cloud
       ? cloudEvidenceUpdatedAt(record.capabilities)
       : null;
@@ -57,11 +63,13 @@ export function printerReadiness(
     evidenceTimestamp <= now.getTime() + 30_000;
   const executionEvidenceReady =
     evidenceFresh &&
-    (usb
+    (v2
+      ? hasExplicitV2ExecutionEvidence(record.capabilities, now)
+      : usb
       ? hasExplicitUsbExecutionEvidence(evidence)
       : lan
         ? hasExplicitLanExecutionEvidence(record.capabilities, now)
-        : cloud);
+        : cloud || bluetooth);
   const state: PrinterReadinessState =
     !record.enabled
       ? 'NOT_CONFIGURED'
@@ -113,7 +121,39 @@ export function isConnectionConfigValid(
   if (channelType === 'CLOUD_YILIAN') {
     return isPlainObject(value) && typeof value.machineCode === 'string' && value.machineCode.length > 0;
   }
+  if (channelType === 'LOCAL_BLUETOOTH_ESCPOS') {
+    return (
+      typeof value.macAddress === 'string' &&
+      /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(value.macAddress) &&
+      typeof value.deviceName === 'string' &&
+      value.deviceName.length > 0 &&
+      typeof value.serviceUuid === 'string' &&
+      /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/.test(
+        value.serviceUuid,
+      )
+    );
+  }
   if (channelType !== 'LOCAL_USB_ESCPOS') return false;
+  if ('vendorId' in value || 'productId' in value) {
+    const allowed = new Set([
+      'vendorId',
+      'productId',
+      'deviceName',
+      'interfaceClass',
+      'endpointAddress',
+    ]);
+    return (
+      !Object.keys(value).some((key) => !allowed.has(key)) &&
+      isIntegerInRange(value.vendorId, 0, 65_535) &&
+      isIntegerInRange(value.productId, 0, 65_535) &&
+      (value.deviceName === undefined ||
+        (typeof value.deviceName === 'string' && value.deviceName.length > 0)) &&
+      (value.interfaceClass === undefined ||
+        isIntegerInRange(value.interfaceClass, 0, 255)) &&
+      (value.endpointAddress === undefined ||
+        isIntegerInRange(value.endpointAddress, 0, 255))
+    );
+  }
   const allowed = new Set(['paperWidthDots', 'threshold', 'cutMode']);
   if (Object.keys(value).some((key) => !allowed.has(key))) return false;
   const paperWidthDots = value.paperWidthDots;
@@ -176,6 +216,23 @@ export function hasExplicitLanExecutionEvidence(
   );
 }
 
+export function hasExplicitV2ExecutionEvidence(
+  capabilities: Prisma.JsonValue,
+  now = new Date(),
+) {
+  if (!isPlainObject(capabilities) || !isPlainObject(capabilities.v2Status)) {
+    return false;
+  }
+  const reportedAt = capabilities.v2Status.reportedAt;
+  const parsed = typeof reportedAt === 'string' ? new Date(reportedAt) : null;
+  return Boolean(
+    parsed &&
+      !Number.isNaN(parsed.getTime()) &&
+      isFresh(parsed, now) &&
+      capabilities.v2Status.status === 'CONNECTED',
+  );
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(
     value &&
@@ -212,4 +269,18 @@ function cloudEvidenceUpdatedAt(value: Prisma.JsonValue) {
   if (typeof raw !== 'string') return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function v2StatusReportedAt(value: Prisma.JsonValue) {
+  if (!isPlainObject(value) || !isPlainObject(value.v2Status)) return null;
+  const raw = value.v2Status.reportedAt;
+  if (typeof raw !== 'string') return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number) {
+  return (
+    Number.isInteger(value) && Number(value) >= min && Number(value) <= max
+  );
 }

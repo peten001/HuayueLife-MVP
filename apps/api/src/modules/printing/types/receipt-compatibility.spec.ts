@@ -69,7 +69,12 @@ describe('receipt schema compatibility', () => {
     );
   });
 
-  it.each(['CLOUD_FEIE', 'CLOUD_YILIAN', 'LOCAL_LAN_ESCPOS'] as PrinterChannelType[])(
+  it.each([
+    'CLOUD_FEIE',
+    'CLOUD_YILIAN',
+    'LOCAL_LAN_ESCPOS',
+    'LOCAL_BLUETOOTH_ESCPOS',
+  ] as PrinterChannelType[])(
     'leaves %s on the current RC6-compatible document',
     (channelType) => {
       expect(RC6_RECEIPT_SCHEMA_VERSION).toBe(1);

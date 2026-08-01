@@ -54,6 +54,40 @@ const usbPrinter = {
   },
 };
 
+const lanPrinter = {
+  ...usbPrinter,
+  id: 'printer-lan-1',
+  name: 'Kitchen LAN',
+  channelType: 'LOCAL_LAN_ESCPOS',
+  connectionConfig: { host: '192.168.10.25', port: 9100 },
+  v2: {
+    terminalId: 'terminal-1',
+    localBindingId: 'binding-lan-1',
+    bindingVersion: 1,
+    transport: 'LAN' as const,
+    physicalStatus: { status: 'CONNECTED' as const },
+  },
+};
+
+const bluetoothPrinter = {
+  ...usbPrinter,
+  id: 'printer-bt-1',
+  name: 'Front Bluetooth',
+  channelType: 'LOCAL_BLUETOOTH_ESCPOS',
+  connectionConfig: {
+    macAddress: 'AA:BB:CC:DD:EE:FF',
+    deviceName: 'BT Printer',
+    serviceUuid: '00001101-0000-1000-8000-00805F9B34FB',
+  },
+  v2: {
+    terminalId: 'terminal-1',
+    localBindingId: 'binding-bt-1',
+    bindingVersion: 1,
+    transport: 'BLUETOOTH' as const,
+    physicalStatus: { status: 'CONNECTED' as const },
+  },
+};
+
 function authenticate() {
   const auth = useAuthStore();
   auth.$patch({
@@ -103,6 +137,19 @@ describe('cashier printing gate', () => {
     expect(store.availability).toBe('NOT_ENABLED');
   });
 
+  it.each([
+    ['USB', usbPrinter],
+    ['LAN', lanPrinter],
+    ['classic Bluetooth', bluetoothPrinter],
+  ])('treats an enabled and physically online %s local printer as ready', async (_name, printer) => {
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([printer]);
+    const store = usePrintingStore();
+    await store.refreshStatus();
+
+    expect(store.availability).toBe('READY');
+    expect(store.readyLocalPrinters.map((item) => item.id)).toEqual([printer.id]);
+  });
+
   it.each(['UNKNOWN', 'UNVERIFIED', 'OFFLINE', 'ERROR', 'DISABLED'] as const)(
     'does not treat %s as ready',
     async (status) => {
@@ -134,13 +181,15 @@ describe('cashier printing gate', () => {
     expect(store.availability).toBe('DEVICE_OFFLINE');
   });
 
-  it('treats a disabled printer as not configured for execution', async () => {
+  it('keeps configured-but-disabled separate from missing configuration', async () => {
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       { ...usbPrinter, enabled: false },
     ]);
     const store = usePrintingStore();
     await store.refreshStatus();
-    expect(store.availability).toBe('NOT_CONFIGURED');
+    expect(store.configuredLocalPrinters).toHaveLength(1);
+    expect(store.enabledLocalPrinters).toHaveLength(0);
+    expect(store.availability).toBe('DEVICE_OFFLINE');
   });
 
   it.each([
@@ -175,7 +224,7 @@ describe('cashier printing gate', () => {
     expect(store.availability).toBe('NOT_CONFIGURED');
   });
 
-  it('treats an enabled but unimplemented channel as offline, not unconfigured', async () => {
+  it('does not count an unimplemented cloud channel as a configured local printer', async () => {
     apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
       {
         ...usbPrinter,
@@ -191,7 +240,28 @@ describe('cashier printing gate', () => {
     ]);
     const store = usePrintingStore();
     await store.refreshStatus();
-    expect(store.availability).toBe('DEVICE_OFFLINE');
+    expect(store.availability).toBe('NOT_CONFIGURED');
+  });
+
+  it('filters soft-archived bindings before readiness and printer selection', async () => {
+    apiMocks.listCashierPrintingPrinters.mockResolvedValueOnce([
+      {
+        ...bluetoothPrinter,
+        v2: { ...bluetoothPrinter.v2, archivedAt: '2026-08-01T00:00:00.000Z' },
+      },
+      {
+        ...lanPrinter,
+        capabilities: {
+          v2Binding: { archivedAt: '2026-08-01T00:00:00.000Z' },
+        },
+      },
+    ]);
+    const store = usePrintingStore();
+    await store.refreshStatus();
+
+    expect(store.printers).toEqual([]);
+    expect(store.readyLocalPrinters).toEqual([]);
+    expect(store.availability).toBe('NOT_CONFIGURED');
   });
 
   it('fails closed when execution or the existing account permission is unavailable', async () => {

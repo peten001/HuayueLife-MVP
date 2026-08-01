@@ -85,26 +85,6 @@ body {
   display: none;
 }
 
-.terminal-debug-panel {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 2147483647;
-  width: 360px;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 16px);
-  padding: 10px 12px;
-  overflow: auto;
-  border: 1px solid #5f7d8c;
-  border-radius: 6px;
-  color: #f4fafc;
-  background: #18252d;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
-  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  pointer-events: none;
-  white-space: pre-wrap;
-}
-
 @keyframes cashier-bootstrap-spin {
   to { transform: rotate(360deg); }
 }

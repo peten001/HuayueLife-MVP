@@ -9,7 +9,7 @@ describe('pre-Vue terminal bootstrap', () => {
   });
 
   it('reports resource failures immediately and never replaces a mounted Vue app', () => {
-    window.history.replaceState(null, '', '/?terminalDebug=1');
+    window.history.replaceState(null, '', '/');
     document.body.innerHTML = `
       <div id="app">
         <main id="cashier-boot" data-state="loading">

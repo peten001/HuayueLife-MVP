@@ -18,7 +18,7 @@ const { t } = useI18n();
 const printingStore = usePrintingStore();
 const networkStore = useNetworkStore();
 const uiStore = useUiStore();
-const { readyUsbPrinters, availability, submitting } = storeToRefs(printingStore);
+const { readyLocalPrinters, availability, submitting } = storeToRefs(printingStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const selectedPrinterId = ref('');
 const jobs = ref<CashierPrintJob[]>([]);
@@ -45,7 +45,7 @@ const latestStatusLabel = computed(() =>
 );
 
 watch(
-  readyUsbPrinters,
+  readyLocalPrinters,
   (available) => {
     if (!available.some((printer) => printer.id === selectedPrinterId.value)) {
       selectedPrinterId.value = available[0]?.id || '';
@@ -149,10 +149,10 @@ onBeforeUnmount(() => {
       {{ statusLabel }}
     </p>
 
-    <label v-if="readyUsbPrinters.length > 1">
+    <label v-if="readyLocalPrinters.length > 1">
       {{ t('print.printer') }}
       <select v-model="selectedPrinterId" :disabled="submitting">
-        <option v-for="printer in readyUsbPrinters" :key="printer.id" :value="printer.id">
+        <option v-for="printer in readyLocalPrinters" :key="printer.id" :value="printer.id">
           {{ printer.name }} · {{ printer.paperWidth === 'MM58' ? '58mm' : '80mm' }}
         </option>
       </select>

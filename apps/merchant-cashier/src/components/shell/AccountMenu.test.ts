@@ -22,7 +22,10 @@ const roleCopies = {
 } as const;
 
 describe('AccountMenu merchant role identity', () => {
-  afterEach(() => setLocale('zh'));
+  afterEach(() => {
+    setLocale('zh');
+    delete (window as Window & { YunQiaoMerchantTerminal?: unknown }).YunQiaoMerchantTerminal;
+  });
 
   for (const [role, copies] of Object.entries(roleCopies)) {
     for (const [locale, [title, subtitle]] of Object.entries(copies)) {
@@ -53,5 +56,33 @@ describe('AccountMenu merchant role identity', () => {
       '[cashier] Unrecognized merchant role; using the STAFF display fallback.',
     );
     expect(warning.mock.calls.flat().join(' ')).not.toContain('UNEXPECTED_ROLE');
+  });
+
+  it('shows the printer entry only for the trusted native bridge and sends the strict contract', async () => {
+    const postMessage = vi.fn();
+    (window as Window & {
+      YunQiaoMerchantTerminal?: { postMessage(message: string): void };
+    }).YunQiaoMerchantTerminal = { postMessage };
+    const wrapper = mount(AccountMenu, {
+      props: { role: 'STAFF', merchantName: 'Test merchant' },
+    });
+
+    await wrapper.get('[data-testid="employee-menu-trigger"]').trigger('click');
+    await wrapper.get('[data-testid="printer-devices-entry"]').trigger('click');
+
+    expect(postMessage).toHaveBeenCalledOnce();
+    expect(postMessage).toHaveBeenCalledWith(
+      '{"type":"OPEN_PRINTER_DEVICES","version":1}',
+    );
+    expect(wrapper.find('[data-testid="employee-menu-popover"]').exists()).toBe(false);
+  });
+
+  it('does not expose a hidden or browser-only printer entry without the native bridge', async () => {
+    const wrapper = mount(AccountMenu, {
+      props: { role: 'STAFF', merchantName: 'Test merchant' },
+    });
+
+    await wrapper.get('[data-testid="employee-menu-trigger"]').trigger('click');
+    expect(wrapper.find('[data-testid="printer-devices-entry"]').exists()).toBe(false);
   });
 });

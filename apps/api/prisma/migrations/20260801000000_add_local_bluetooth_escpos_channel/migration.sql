@@ -1,0 +1,12 @@
+ALTER TABLE `printers`
+  MODIFY `channel_type` ENUM(
+    'LOCAL_LAN_ESCPOS',
+    'LOCAL_USB_ESCPOS',
+    'CLOUD_FEIE',
+    'CLOUD_YILIAN',
+    'CLOUD_XINYE',
+    'CLOUD_GPRINTER',
+    'BUILTIN_SUNMI',
+    'BUILTIN_IMIN',
+    'LOCAL_BLUETOOTH_ESCPOS'
+  ) NOT NULL;

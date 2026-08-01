@@ -4,7 +4,6 @@
   // Auth restore can legitimately make two sequential requests, each with a
   // 15-second transport timeout. Leave enough room for the initial chunks too.
   var BOOT_TIMEOUT_MS = 40000;
-  var debugEnabled = /(?:^|[?&])terminalDebug=1(?:&|$)/.test(window.location.search.slice(1));
   var state = {
     vueMounted: false,
     routerReady: false,
@@ -23,7 +22,6 @@
     unhandledPromiseRejection: 'NONE',
     lastSuccessfulStep: 'HTML_READY'
   };
-  var debugPanel = null;
   var bootTimer = 0;
 
   function safeText(value) {
@@ -35,41 +33,6 @@
       .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redacted]')
       .replace(/(https?:\/\/[^\s?#]+)[^\s]*/gi, '$1')
       .slice(0, 180);
-  }
-
-  function yesNo(value) {
-    return value ? 'YES' : 'NO';
-  }
-
-  function renderDebug() {
-    if (!debugEnabled) return;
-    if (!debugPanel) {
-      debugPanel = document.createElement('pre');
-      debugPanel.id = 'terminal-debug-panel';
-      debugPanel.className = 'terminal-debug-panel';
-      debugPanel.setAttribute('role', 'status');
-      debugPanel.setAttribute('aria-live', 'polite');
-      document.body.appendChild(debugPanel);
-    }
-    debugPanel.textContent = [
-      'Terminal Debug',
-      'Vue Mounted: ' + yesNo(state.vueMounted),
-      'Router Ready: ' + yesNo(state.routerReady),
-      'Current Route: ' + state.currentRoute,
-      'Auth Init Started: ' + yesNo(state.authInitStarted),
-      'Auth Init Finished: ' + yesNo(state.authInitFinished),
-      'Session State: ' + state.sessionState,
-      'Loading Overlay Visible: ' + yesNo(state.loadingOverlayVisible),
-      'App Root Children Count: ' + state.appRootChildrenCount,
-      'document.readyState: ' + state.documentReadyState,
-      'window.innerWidth: ' + state.innerWidth,
-      'window.innerHeight: ' + state.innerHeight,
-      'devicePixelRatio: ' + state.devicePixelRatio,
-      'User Agent: ' + state.userAgent,
-      'JavaScript Error: ' + state.javascriptError,
-      'Unhandled Promise Rejection: ' + state.unhandledPromiseRejection,
-      'Last Successful Step: ' + state.lastSuccessfulStep
-    ].join('\n');
   }
 
   function update(patch) {
@@ -84,7 +47,6 @@
     state.devicePixelRatio = window.devicePixelRatio || 1;
     var root = document.getElementById('app');
     state.appRootChildrenCount = root ? root.children.length : 0;
-    renderDebug();
   }
 
   function createBootElement() {
@@ -175,7 +137,7 @@
   }
 
   window.__cashierTerminalDebug = {
-    enabled: debugEnabled,
+    enabled: false,
     state: state,
     update: update
   };

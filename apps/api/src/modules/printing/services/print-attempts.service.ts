@@ -14,13 +14,21 @@ import {
 } from '../types/printing-errors';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
-import { isReadyPrinter } from '../utils/printer-readiness';
+import {
+  hasExplicitV2ExecutionEvidence,
+  isReadyPrinter,
+} from '../utils/printer-readiness';
 import { PrintingSettingsService } from './printing-settings.service';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
 } from '../types/lan-terminal-binding';
+import {
+  isV2LocalChannel,
+  V2_TERMINAL_ADAPTERS,
+  v2BindingMetadata,
+} from '../types/v2-terminal-binding';
 
 export interface StartPrintingInput {
   merchantId: bigint;
@@ -488,6 +496,46 @@ export class PrintAttemptsService {
     bindingVersion?: number,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId, client);
+    const v2Binding = v2BindingMetadata(job.printer.capabilities);
+    const v2RouteRequested =
+      terminalId !== null &&
+      printerId !== undefined &&
+      localBindingId !== undefined &&
+      bindingVersion !== undefined &&
+      Boolean(v2Binding);
+    if (v2RouteRequested) {
+      if (
+        !v2Binding ||
+        v2Binding.archivedAt ||
+        job.printer.deletedAt ||
+        !isV2LocalChannel(job.printer.channelType) ||
+        job.printerId !== printerId ||
+        v2Binding.terminalId !== terminalId.toString() ||
+        v2Binding.localBindingId !== localBindingId ||
+        v2Binding.bindingVersion !== bindingVersion
+      ) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+          message: '任务终端与 V2 Binding 不匹配',
+        });
+      }
+      if (job.source !== 'TEST' && !job.printer.enabled) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTER_DISABLED,
+          message: 'V2 打印机尚未启用',
+        });
+      }
+      if (
+        job.printer.status !== 'ONLINE' ||
+        !hasExplicitV2ExecutionEvidence(job.printer.capabilities)
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+          message: 'V2 打印机缺少当前 CONNECTED 物理状态',
+        });
+      }
+      return;
+    }
     if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
       if (terminalId === null) {
         throw new BadRequestException({
@@ -575,10 +623,7 @@ export class PrintAttemptsService {
   }
 
   private expectedTerminalAdapter(channelType: PrinterChannelType) {
-    if (channelType === 'LOCAL_USB_ESCPOS') return 'ANDROID_USB_ESCPOS';
-    if (channelType === 'LOCAL_LAN_ESCPOS') {
-      return ANDROID_LAN_ESCPOS_ADAPTER;
-    }
+    if (isV2LocalChannel(channelType)) return V2_TERMINAL_ADAPTERS[channelType];
     throw new BadRequestException({
       code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
       message: '当前任务不支持 Android 终端执行',
@@ -598,6 +643,30 @@ export class PrintAttemptsService {
     localBindingId: string | undefined,
     bindingVersion: number | undefined,
   ) {
+    const v2Binding = v2BindingMetadata(job.printer.capabilities);
+    const v2RouteRequested =
+      terminalId !== null &&
+      printerId !== undefined &&
+      localBindingId !== undefined &&
+      bindingVersion !== undefined &&
+      Boolean(v2Binding);
+    if (v2RouteRequested) {
+      if (
+        !v2Binding ||
+        v2Binding.archivedAt ||
+        !isV2LocalChannel(job.printer.channelType) ||
+        job.printerId !== printerId ||
+        v2Binding.terminalId !== terminalId.toString() ||
+        v2Binding.localBindingId !== localBindingId ||
+        v2Binding.bindingVersion !== bindingVersion
+      ) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+          message: '任务终端与 V2 Binding 不匹配',
+        });
+      }
+      return;
+    }
     if (job.printer.channelType !== 'LOCAL_LAN_ESCPOS') {
       if (localBindingId !== undefined || bindingVersion !== undefined) {
         throw new BadRequestException({

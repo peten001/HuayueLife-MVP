@@ -56,10 +56,12 @@ export class TerminalConnectorController {
     private readonly attempts: PrintAttemptsService,
   ) {}
 
-  @Post('heartbeat')
+  // Kept as a non-routed compatibility method for direct callers and legacy
+  // unit contracts. HTTP POST /terminal/heartbeat is owned by the dedicated
+  // dual-scheme TerminalHeartbeatController.
   heartbeat(
-    @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Body() dto: TerminalHeartbeatDto,
+    terminal: AuthenticatedTerminal,
+    dto: TerminalHeartbeatDto,
   ) {
     return this.connector.heartbeat(terminal, dto);
   }

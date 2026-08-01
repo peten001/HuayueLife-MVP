@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '../../../database/prisma.service';
 import { BootstrapLanTerminalDto } from '../dto/lan-terminal-bootstrap.dto';
 import { PairTerminalDto } from '../dto/terminal.dto';
+import { BootstrapV2TerminalDto } from '../dto/v2-terminal-connector.dto';
 import {
   containsPrintingCredentialMaterial,
   PRINTING_ERROR_CODES,
@@ -205,6 +206,186 @@ export class TerminalCredentialsService {
           registered.tokenVersion,
           tokenExpiresAt,
         );
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        this.deviceConflict();
+      }
+      throw error;
+    }
+  }
+
+  async bootstrapV2Terminal(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    dto: BootstrapV2TerminalDto,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    this.assertBootstrapSecret(dto.terminalSecret);
+    const reportedCapabilities = normalizeV2BootstrapCapabilities(
+      dto.capabilities,
+    );
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM merchants WHERE id = ${merchantId} FOR UPDATE`,
+        );
+        const merchant = await tx.merchant.findUnique({
+          where: { id: merchantId },
+          select: { id: true, status: true, printingEnabled: true },
+        });
+        if (!merchant || merchant.status !== 'ACTIVE' || !merchant.printingEnabled) {
+          throw new ConflictException({
+            code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+            message: '当前商家未启用打印能力',
+          });
+        }
+
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM merchant_terminals WHERE device_identifier = ${dto.terminalInstanceId} FOR UPDATE`,
+        );
+        let terminal = await tx.merchantTerminal.findUnique({
+          where: { deviceIdentifier: dto.terminalInstanceId },
+        });
+        if (
+          terminal &&
+          (terminal.merchantId !== merchantId ||
+            terminal.status !== 'ACTIVE' ||
+            terminal.revokedAt !== null)
+        ) {
+          this.deviceConflict();
+        }
+
+        const now = new Date();
+        const provisionalCapabilities = v2BootstrapCapabilities(
+          terminal?.capabilities,
+          dto.deviceModel,
+          dto.appVersionCode,
+          reportedCapabilities,
+          now,
+        );
+        if (!terminal) {
+          terminal = await tx.merchantTerminal.create({
+            data: {
+              merchantId,
+              name:
+                dto.terminalName ?? dto.deviceModel ?? 'YunQiao Merchant Terminal',
+              platform: 'ANDROID',
+              status: 'ACTIVE',
+              capabilities: provisionalCapabilities,
+              deviceIdentifier: dto.terminalInstanceId,
+              appVersion: dto.appVersion,
+              lastSeenAt: now,
+              pairedAt: now,
+              configVersion: 1,
+            },
+          });
+        }
+
+        const capabilities = v2BootstrapCapabilities(
+          terminal.capabilities,
+          dto.deviceModel,
+          dto.appVersionCode,
+          reportedCapabilities,
+          now,
+          this.v2RegistrationProof(
+            merchantId,
+            terminal.id,
+            dto.terminalInstanceId,
+          ),
+        );
+
+        const token = `yt1.${terminal.id}.${dto.terminalSecret}`;
+        const expectedHash = this.hashTerminalToken(token);
+        if (terminal.tokenHash && !safeHexEqual(terminal.tokenHash, expectedHash)) {
+          this.deviceConflict();
+        }
+
+        const existingTokenExpiresAt = terminal.tokenExpiresAt;
+        const tokenExpired =
+          !existingTokenExpiresAt || existingTokenExpiresAt <= now;
+        const tokenExpiresAt: Date = tokenExpired
+          ? new Date(now.getTime() + this.tokenLifetimeMs())
+          : existingTokenExpiresAt;
+        const tokenVersion = terminal.tokenHash
+          ? tokenExpired
+            ? terminal.tokenVersion + 1
+            : terminal.tokenVersion
+          : terminal.tokenVersion + 1;
+        const changed = await tx.merchantTerminal.updateMany({
+          where: {
+            id: terminal.id,
+            merchantId,
+            status: 'ACTIVE',
+            revokedAt: null,
+            tokenVersion: terminal.tokenVersion,
+            tokenHash: terminal.tokenHash,
+          },
+          data: {
+            name: dto.terminalName ?? terminal.name,
+            capabilities,
+            appVersion: dto.appVersion,
+            lastSeenAt: now,
+            pairedAt: terminal.pairedAt ?? now,
+            configVersion: Math.max(1, terminal.configVersion),
+            tokenHash: expectedHash,
+            tokenVersion,
+            tokenIssuedAt:
+              !terminal.tokenHash || tokenExpired ? now : terminal.tokenIssuedAt,
+            tokenExpiresAt,
+          },
+        });
+        if (changed.count !== 1) this.deviceConflict();
+
+        const registered = await tx.merchantTerminal.findUniqueOrThrow({
+          where: { id: terminal.id },
+        });
+        await this.audit.record(
+          {
+            merchantId,
+            actorStaffId,
+            action: terminal.tokenHash
+              ? 'V2_TERMINAL_BOOTSTRAP_REUSED'
+              : 'V2_TERMINAL_BOOTSTRAPPED',
+            resourceType: 'MerchantTerminal',
+            resourceId: terminal.id,
+            afterData: {
+              platform: 'ANDROID',
+              appVersion: dto.appVersion,
+              credentialVersion: registered.tokenVersion,
+              credentialExpiresAt: tokenExpiresAt.toISOString(),
+              configVersion: registered.configVersion,
+            },
+            requestId,
+          },
+          tx,
+        );
+        return {
+          merchantId: merchantId.toString(),
+          terminalId: registered.id.toString(),
+          authorizationScheme: 'Bearer' as const,
+          token,
+          tokenVersion: registered.tokenVersion,
+          tokenExpiresAt: tokenExpiresAt.toISOString(),
+          heartbeatSeconds: boundedInteger(
+            this.config.get('TERMINAL_HEARTBEAT_SECONDS'),
+            10,
+            60,
+            20,
+          ),
+          pollIntervalSeconds: boundedInteger(
+            this.config.get('TERMINAL_JOB_POLL_SECONDS'),
+            5,
+            10,
+            5,
+          ),
+          configVersion: registered.configVersion,
+        };
       });
     } catch (error) {
       if (
@@ -570,6 +751,34 @@ export class TerminalCredentialsService {
     };
   }
 
+  async authenticateV2(token: string): Promise<AuthenticatedTerminal> {
+    const terminal = await this.authenticate(token);
+    const registered = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminal.id,
+        merchantId: terminal.merchantId,
+        status: { in: ['ACTIVE', 'DISABLED'] },
+        revokedAt: null,
+        tokenVersion: terminal.tokenVersion,
+      },
+      select: { capabilities: true, deviceIdentifier: true },
+    });
+    if (
+      !registered?.deviceIdentifier ||
+      !hasV2BootstrapCapability(
+        registered.capabilities,
+        this.v2RegistrationProof(
+          terminal.merchantId,
+          terminal.id,
+          registered.deviceIdentifier,
+        ),
+      )
+    ) {
+      this.authRejected();
+    }
+    return terminal;
+  }
+
   private issueToken(terminalId: bigint) {
     return `yt1.${terminalId}.${randomBytes(32).toString('base64url')}`;
   }
@@ -583,6 +792,18 @@ export class TerminalCredentialsService {
   private hashTerminalToken(token: string) {
     return createHmac('sha256', this.pepper())
       .update(`terminal-token:v1:${token}`)
+      .digest('hex');
+  }
+
+  private v2RegistrationProof(
+    merchantId: bigint,
+    terminalId: bigint,
+    terminalInstanceId: string,
+  ) {
+    return createHmac('sha256', this.pepper())
+      .update(
+        `terminal-v2-registration:v1:${merchantId}:${terminalId}:${terminalInstanceId}`,
+      )
       .digest('hex');
   }
 
@@ -773,6 +994,82 @@ function bootstrapCapabilities(
       reportedAt: reportedAt.toISOString(),
     },
   });
+}
+
+function v2BootstrapCapabilities(
+  existing: Prisma.JsonValue | null | undefined,
+  deviceModel: string | undefined,
+  appVersionCode: number | undefined,
+  reportedCapabilities: Record<string, boolean>,
+  reportedAt: Date,
+  registrationProof?: string,
+) {
+  const safeExisting =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? existing
+      : {};
+  return normalizeSafeJson({
+    ...safeExisting,
+    v2TerminalBootstrap: {
+      deviceModel,
+      appVersionCode,
+      capabilities: reportedCapabilities,
+      reportedAt: reportedAt.toISOString(),
+      ...(registrationProof ? { registrationProof } : {}),
+    },
+  });
+}
+
+function normalizeV2BootstrapCapabilities(value: Record<string, unknown>) {
+  const allowed = ['usb', 'lan', 'bluetoothClassic'];
+  if (
+    Object.keys(value).some((key) => !allowed.includes(key)) ||
+    allowed.some((key) => typeof value[key] !== 'boolean')
+  ) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: 'V2 终端能力必须明确声明 usb、lan 和 bluetoothClassic',
+    });
+  }
+  return {
+    usb: value.usb as boolean,
+    lan: value.lan as boolean,
+    bluetoothClassic: value.bluetoothClassic as boolean,
+  };
+}
+
+function hasV2BootstrapCapability(
+  value: Prisma.JsonValue | undefined,
+  expectedRegistrationProof: string,
+) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const bootstrap = value.v2TerminalBootstrap;
+  if (!bootstrap || typeof bootstrap !== 'object' || Array.isArray(bootstrap)) {
+    return false;
+  }
+  const capabilities = bootstrap.capabilities;
+  return Boolean(
+    typeof bootstrap.registrationProof === 'string' &&
+      safeHexEqual(bootstrap.registrationProof, expectedRegistrationProof) &&
+    capabilities &&
+      typeof capabilities === 'object' &&
+      !Array.isArray(capabilities) &&
+      typeof capabilities.usb === 'boolean' &&
+      typeof capabilities.lan === 'boolean' &&
+      typeof capabilities.bluetoothClassic === 'boolean',
+  );
+}
+
+function boundedInteger(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: number,
+) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed)
+    ? Math.min(maximum, Math.max(minimum, parsed))
+    : fallback;
 }
 
 function bootstrapResponse(

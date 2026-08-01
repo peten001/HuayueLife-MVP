@@ -46,6 +46,16 @@ export function printerConnectionState(
     printer.channelType === 'CLOUD_FEIE' ||
     printer.channelType === 'CLOUD_YILIAN';
 
+  if (printer.v2) {
+    const physical = asRecord(printer.v2.physicalStatus);
+    if (!evidenceFresh) return evidenceAt === null ? 'UNKNOWN' : 'OFFLINE';
+    if (physical?.status === 'CONNECTED') return 'CONNECTED';
+    if (physical?.status === 'DISCONNECTED' || physical?.status === 'ERROR') {
+      return 'OFFLINE';
+    }
+    return 'UNKNOWN';
+  }
+
   if (cloud) {
     if (!evidenceFresh) return 'UNKNOWN';
     if (
@@ -141,14 +151,29 @@ export function latestPrinterEvidenceAt(printers: PrintingPrinter[]) {
 }
 
 export function latestPrinterConnectedAt(printers: PrintingPrinter[]) {
-  return latestCapabilityTimestamp(printers, 'lastConnectedAt');
+  let latest: { value: string; timestamp: number } | null = null;
+  for (const printer of printers) {
+    const value = printerLastConnectedAt(printer);
+    if (!value) continue;
+    const timestamp = Date.parse(value);
+    if (!latest || timestamp > latest.timestamp) latest = { value, timestamp };
+  }
+  return latest?.value ?? null;
 }
 
 export function printerLastConnectedAt(printer: PrintingPrinter) {
   const capabilities = asRecord(printer.capabilities);
-  const value = capabilities?.lastConnectedAt;
+  const v2Status = asRecord(capabilities?.v2Status);
+  const value = v2Status?.lastConnectedAt ?? capabilities?.lastConnectedAt;
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return null;
   return value;
+}
+
+export function isActivePrintingPrinter(printer: PrintingPrinter) {
+  if (printer.deletedAt || printer.v2?.archivedAt) return false;
+  const capabilities = asRecord(printer.capabilities);
+  const binding = asRecord(capabilities?.v2Binding);
+  return typeof binding?.archivedAt !== 'string';
 }
 
 function latestCapabilityTimestamp(

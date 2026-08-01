@@ -10,6 +10,7 @@ import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import { lanBindingMetadata } from '../types/lan-terminal-binding';
+import { v2BindingMetadata } from '../types/v2-terminal-binding';
 
 @Injectable()
 export class PrintRulesService {
@@ -224,16 +225,39 @@ export class PrintRulesService {
     }
     if (
       requireEnabledPrinter &&
-      !['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'].includes(printer.channelType)
+      ![
+        'LOCAL_USB_ESCPOS',
+        'LOCAL_LAN_ESCPOS',
+        'LOCAL_BLUETOOTH_ESCPOS',
+      ].includes(printer.channelType)
     ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-        message: '当前只能启用 Android USB 或 LAN ESC/POS 规则',
+        message: '当前只能启用 Android USB、LAN 或经典蓝牙 ESC/POS 规则',
       });
+    }
+    const v2Binding = v2BindingMetadata(printer.capabilities);
+    if (requireEnabledPrinter && v2Binding) {
+      const terminal = await this.prisma.merchantTerminal.findFirst({
+        where: {
+          id: BigInt(v2Binding.terminalId),
+          merchantId,
+          status: 'ACTIVE',
+          revokedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!terminal) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.TERMINAL_OFFLINE,
+          message: 'V2 Binding 终端不存在、已停用或不属于当前商家',
+        });
+      }
     }
     if (
       requireEnabledPrinter &&
-      printer.channelType === 'LOCAL_LAN_ESCPOS'
+      printer.channelType === 'LOCAL_LAN_ESCPOS' &&
+      !v2Binding
     ) {
       this.flags.assertLanPrintingEnabled();
       const binding = lanBindingMetadata(printer.capabilities);

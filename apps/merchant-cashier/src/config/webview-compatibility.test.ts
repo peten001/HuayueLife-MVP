@@ -21,18 +21,19 @@ describe('Chromium 83 cashier compatibility contract', () => {
     expect(repository).not.toMatch(/\.at\s*\(/);
   });
 
-  it('ships a pre-Vue recovery surface and opt-in terminal diagnostics', () => {
+  it('ships a pre-Vue recovery surface without a hidden diagnostic entry', () => {
     const html = readProjectFile('index.html');
     const bootstrap = readProjectFile('public/terminal-bootstrap.js');
+    const bootstrapCss = readProjectFile('public/terminal-bootstrap.css');
 
     expect(html).toContain('id="cashier-boot"');
     expect(html).toContain('/terminal-bootstrap.js');
     expect(html).toContain('id="cashier-boot-retry"');
-    expect(bootstrap).toContain('terminalDebug=1');
+    expect(bootstrap).not.toContain('terminalDebug=1');
+    expect(bootstrap).not.toContain('terminal-debug-panel');
+    expect(bootstrap).not.toContain('Terminal Debug');
+    expect(bootstrapCss).not.toContain('terminal-debug-panel');
     expect(bootstrap).toContain("window.addEventListener('error'");
     expect(bootstrap).toContain("window.addEventListener('unhandledrejection'");
-    expect(bootstrap).toContain('Vue Mounted:');
-    expect(bootstrap).toContain('Auth Init Finished:');
-    expect(bootstrap).toContain('Loading Overlay Visible:');
   });
 });

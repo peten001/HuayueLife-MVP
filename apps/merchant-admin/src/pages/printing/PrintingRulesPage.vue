@@ -54,6 +54,8 @@ const printerNames = computed(() => new Map(printers.value.map((printer) => [pri
 const rulePrinters = computed(() =>
   printers.value.filter(
     (printer) => printer.enabled && (
+      Boolean(printer.v2)
+      ||
       printer.channelType !== 'LOCAL_LAN_ESCPOS'
       || Boolean(
         normalizedLanSummary(printer)?.terminalId
@@ -108,6 +110,16 @@ function receiptTypeLabel(type: PrintingReceiptType) {
 }
 
 function printerOptionLabel(printer: PrintingPrinter) {
+  if (printer.v2) {
+    const channel = printer.channelType === 'LOCAL_USB_ESCPOS'
+      ? p('usbPrinting')
+      : printer.channelType === 'LOCAL_LAN_ESCPOS'
+        ? p('lanPrinting')
+        : p('bluetoothPrinting');
+    const terminalName = printer.v2.terminal?.name || p('notReported');
+    const onlineLabel = printer.status === 'ONLINE' ? p('online') : p('offline');
+    return `${printer.name} · ${channel} · ${terminalName} · ${onlineLabel}`;
+  }
   if (printer.channelType !== 'LOCAL_LAN_ESCPOS') return printer.name;
   const terminalName = normalizedLanSummary(printer)?.terminal?.name || p('notReported');
   const onlineLabel = lanPrinterIsOnline(printer) ? p('online') : p('offline');

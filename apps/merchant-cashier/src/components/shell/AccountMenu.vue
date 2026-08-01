@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Languages, LogOut, UserRound } from '@lucide/vue';
+import { ChevronDown, Languages, LogOut, Printer, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n, type Locale } from '@/i18n';
 import PwaInstallBanner from '@/components/pwa/PwaInstallBanner.vue';
@@ -17,6 +17,8 @@ defineEmits<{
 const { t, locale, setLocale } = useI18n();
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
+const printerDevicesAvailable = ref(false);
+const OPEN_PRINTER_DEVICES_MESSAGE = '{"type":"OPEN_PRINTER_DEVICES","version":1}';
 const normalizedRole = computed(() => {
   if (props.role === 'OWNER' || props.role === 'MANAGER' || props.role === 'STAFF') {
     return props.role;
@@ -47,7 +49,25 @@ function closeOnEscape(event: KeyboardEvent) {
   if (event.key === 'Escape') open.value = false;
 }
 
+function merchantTerminalBridge() {
+  if (typeof window === 'undefined') return null;
+  const terminalWindow = window as Window & {
+    YunQiaoMerchantTerminal?: { postMessage?: (message: string) => void };
+  };
+  return typeof terminalWindow.YunQiaoMerchantTerminal?.postMessage === 'function'
+    ? terminalWindow.YunQiaoMerchantTerminal
+    : null;
+}
+
+function openPrinterDevices() {
+  const bridge = merchantTerminalBridge();
+  if (!bridge?.postMessage) return;
+  bridge.postMessage(OPEN_PRINTER_DEVICES_MESSAGE);
+  open.value = false;
+}
+
 onMounted(() => {
+  printerDevicesAvailable.value = Boolean(merchantTerminalBridge());
   document.addEventListener('pointerdown', closeOnOutside);
   document.addEventListener('keydown', closeOnEscape);
 });
@@ -90,6 +110,15 @@ onBeforeUnmount(() => {
           <option value="en">{{ t('language.en') }}</option>
         </select>
       </label>
+      <button
+        v-if="printerDevicesAvailable"
+        type="button"
+        data-testid="printer-devices-entry"
+        @click="openPrinterDevices"
+      >
+        <Printer :size="17" aria-hidden="true" />
+        <span>{{ t('account.printerDevices') }}</span>
+      </button>
       <button type="button" :disabled="loggingOut" @click="$emit('logout')">
         <LogOut :size="17" aria-hidden="true" />
         {{ loggingOut ? t('auth.loggingOut') : t('auth.logout') }}

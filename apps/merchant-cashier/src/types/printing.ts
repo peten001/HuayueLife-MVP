@@ -16,6 +16,28 @@ export interface CashierPrintingFeatureState {
   executionState: 'CONNECTOR_PENDING' | 'READY_FOR_CONNECTOR';
 }
 
+export type CashierLocalPrinterChannel =
+  | 'LOCAL_USB_ESCPOS'
+  | 'LOCAL_LAN_ESCPOS'
+  | 'LOCAL_BLUETOOTH_ESCPOS';
+
+export interface CashierV2PrinterBinding {
+  terminalId: string;
+  localBindingId: string;
+  bindingVersion: number;
+  transport: 'USB' | 'LAN' | 'BLUETOOTH';
+  bindingUpdatedAt?: string;
+  endpointKey?: string;
+  archivedAt?: string | null;
+  physicalStatus?: {
+    status?: 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+    source?: 'PROBE' | 'LOCAL_TEST' | 'PRINT_RESULT';
+    reportedAt?: string;
+    lastConnectedAt?: string;
+    lastTestedAt?: string;
+  } | null;
+}
+
 export interface CashierPrintingPrinter {
   id: string;
   name: string;
@@ -25,6 +47,7 @@ export interface CashierPrintingPrinter {
   status: 'UNVERIFIED' | 'UNKNOWN' | 'ONLINE' | 'OFFLINE' | 'ERROR' | 'DISABLED';
   connectionConfig: Record<string, unknown>;
   capabilities?: Record<string, unknown> | null;
+  v2?: CashierV2PrinterBinding | null;
   readiness?: {
     state: 'READY' | 'DEVICE_OFFLINE' | 'NOT_CONFIGURED';
     channelImplemented: boolean;

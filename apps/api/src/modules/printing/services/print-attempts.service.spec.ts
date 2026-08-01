@@ -884,6 +884,253 @@ describe('PrintAttemptsService', () => {
       }),
     );
   });
+
+  it('starts a disabled V2 Bluetooth TEST job on the exact current route', async () => {
+    const claimed = v2Job({
+      status: 'CLAIMED',
+      source: 'TEST',
+      printer: v2Printer('LOCAL_BLUETOOTH_ESCPOS', { enabled: false }),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(claimed);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.create.mockResolvedValue({ id: 902n, attemptNo: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...claimed,
+      status: 'PRINTING',
+      attemptCount: 1,
+    });
+
+    await service.markPrinting({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      leaseVersion: claimed.leaseVersion,
+      adapter: 'ANDROID_BLUETOOTH_ESCPOS',
+    });
+
+    expect(lanBindings.requireClaimable).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          merchantId,
+          claimedByTerminalId: terminalId,
+          printer: { channelType: 'LOCAL_BLUETOOTH_ESCPOS' },
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        terminalId,
+        adapter: 'ANDROID_BLUETOOTH_ESCPOS',
+      }),
+    });
+  });
+
+  it('does not start a V2 attempt from stale CONNECTED evidence', async () => {
+    const claimed = v2Job({
+      status: 'CLAIMED',
+      source: 'TEST',
+      printer: v2Printer('LOCAL_USB_ESCPOS', {
+        capabilities: v2Capabilities('USB', '2020-01-01T00:00:00.000Z'),
+      }),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(claimed);
+
+    await expect(service.markPrinting({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      leaseVersion: claimed.leaseVersion,
+      adapter: 'ANDROID_USB_ESCPOS',
+    })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PRINTER_OFFLINE' }),
+    });
+    expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('persists V2 Bluetooth success with bytes and the server-selected adapter', async () => {
+    const printing = v2Job({
+      status: 'PRINTING',
+      attemptCount: 1,
+      printer: v2Printer('LOCAL_BLUETOOTH_ESCPOS'),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...printing,
+      status: 'SUCCEEDED',
+    });
+
+    await service.markSucceeded({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      bytesWritten: 128,
+    });
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'SUCCEEDED' }) }),
+    );
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ adapter: 'ANDROID_BLUETOOTH_ESCPOS' }),
+        data: expect.objectContaining({ result: 'SUCCEEDED', bytesWritten: 128 }),
+      }),
+    );
+  });
+
+  it('persists a retryable V2 LAN failure as RETRY_WAIT on the exact route', async () => {
+    const printing = v2Job({
+      status: 'PRINTING',
+      attemptCount: 1,
+      maxAttempts: 3,
+      printer: v2Printer('LOCAL_LAN_ESCPOS'),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...printing,
+      status: 'RETRY_WAIT',
+    });
+
+    await service.markFailed({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      retryable: true,
+      errorCode: 'NETWORK_TIMEOUT',
+      errorMessage: 'connection timed out',
+      bytesWritten: 0,
+    });
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'RETRY_WAIT', retryBlocked: false }),
+      }),
+    );
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ adapter: 'ANDROID_LAN_ESCPOS' }),
+        data: expect.objectContaining({ result: 'FAILED', bytesWritten: 0 }),
+      }),
+    );
+  });
+
+  it('persists a V2 USB uncertain result as terminal and non-retryable', async () => {
+    const printing = v2Job({
+      status: 'PRINTING',
+      attemptCount: 1,
+      printer: v2Printer('LOCAL_USB_ESCPOS'),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...printing,
+      status: 'FAILED',
+      retryBlocked: true,
+    });
+
+    await service.markFailed({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      retryable: false,
+      errorCode: 'PRINT_OUTCOME_UNKNOWN',
+      errorMessage: 'connection lost after write',
+      bytesWritten: 32,
+    });
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'FAILED',
+          retryBlocked: true,
+          lastErrorCode: 'PRINT_OUTCOME_UNKNOWN',
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ adapter: 'ANDROID_USB_ESCPOS' }),
+        data: expect.objectContaining({ result: 'OUTCOME_UNKNOWN', bytesWritten: 32 }),
+      }),
+    );
+  });
+
+  it('rejects stale V2 binding versions and stale lease updates before an attempt mutation', async () => {
+    const printing = v2Job({ status: 'PRINTING', attemptCount: 1 });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+
+    await expect(service.markSucceeded({
+      merchantId,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 2,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      bytesWritten: 64,
+    })).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+
+    prisma.printJob.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.extendLease(
+      merchantId,
+      terminalId,
+      jobId,
+      1,
+      30_000,
+      'v2-binding-1',
+      1,
+      88n,
+    )).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps V2 completion lookups merchant-isolated', async () => {
+    prisma.merchantTerminal.findFirst.mockImplementation(async ({ where }: { where: { merchantId: bigint } }) =>
+      where.merchantId === merchantId ? activeTerminal() : null,
+    );
+
+    await expect(service.markSucceeded({
+      merchantId: 99n,
+      terminalId,
+      printerId: 88n,
+      localBindingId: 'v2-binding-1',
+      bindingVersion: 1,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: 2,
+      bytesWritten: 64,
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+  });
 });
 
 function createPrismaMock() {
@@ -989,4 +1236,55 @@ function lanJob(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   });
+}
+
+function v2Job(overrides: Record<string, unknown> = {}) {
+  return job({
+    claimedByTerminalId: terminalId,
+    printer: v2Printer('LOCAL_USB_ESCPOS'),
+    ...overrides,
+  });
+}
+
+function v2Printer(
+  channelType: 'LOCAL_USB_ESCPOS' | 'LOCAL_LAN_ESCPOS' | 'LOCAL_BLUETOOTH_ESCPOS',
+  overrides: Record<string, unknown> = {},
+) {
+  const transport = channelType === 'LOCAL_USB_ESCPOS'
+    ? 'USB'
+    : channelType === 'LOCAL_LAN_ESCPOS'
+      ? 'LAN'
+      : 'BLUETOOTH';
+  return {
+    id: 88n,
+    enabled: true,
+    status: 'ONLINE',
+    deletedAt: null,
+    channelType,
+    connectionConfig: {},
+    capabilities: v2Capabilities(transport),
+    ...overrides,
+  };
+}
+
+function v2Capabilities(
+  transport: 'USB' | 'LAN' | 'BLUETOOTH',
+  reportedAt = new Date().toISOString(),
+) {
+  return {
+      v2Binding: {
+        terminalId: terminalId.toString(),
+        terminalInstanceId: 'd2.install-1',
+        localBindingId: 'v2-binding-1',
+        bindingVersion: 1,
+        transport,
+        endpointKey: `${transport.toLowerCase()}:endpoint-1`,
+        bindingUpdatedAt: '2026-08-01T00:00:00.000Z',
+      },
+      v2Status: {
+        status: 'CONNECTED',
+        source: 'PROBE',
+        reportedAt,
+      },
+  };
 }

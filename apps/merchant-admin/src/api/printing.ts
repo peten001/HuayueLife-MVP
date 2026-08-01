@@ -18,6 +18,7 @@ import type {
   PrintingRulePayload,
   TerminalPairingCodeResult,
 } from '@/types/printing';
+import { isActivePrintingPrinter } from '@/utils/printing-status';
 
 type CollectionResponse<T> = T[] | PrintingListEnvelope<T>;
 
@@ -50,7 +51,7 @@ export async function getPrintingPrinters() {
   const response = await http.get<ApiResponse<CollectionResponse<PrintingPrinter>>>(
     '/merchant/printing/printers',
   );
-  return normalizeCollection(response.data.data);
+  return normalizeCollection(response.data.data).filter(isActivePrintingPrinter);
 }
 
 export async function createPrintingPrinter(payload: PrintingPrinterPayload) {

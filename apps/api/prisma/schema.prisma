@@ -176,6 +176,7 @@ enum PrinterChannelType {
   CLOUD_GPRINTER
   BUILTIN_SUNMI
   BUILTIN_IMIN
+  LOCAL_BLUETOOTH_ESCPOS
 }
 
 enum PrintingPaperWidth {

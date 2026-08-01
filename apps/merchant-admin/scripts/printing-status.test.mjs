@@ -13,6 +13,7 @@ try {
     printerConfigurationState,
     printerConnectionState,
     printerLastConnectedAt,
+    isActivePrintingPrinter,
     resolvePrintingCenterSummary,
   } = await server.ssrLoadModule('/src/utils/printing-status.ts');
 
@@ -108,6 +109,37 @@ try {
   const disabledButConnected = printer({ enabled: false });
   assert.equal(printerConfigurationState(disabledButConnected), 'DISABLED');
   assert.equal(printerConnectionState(disabledButConnected, now), 'CONNECTED');
+
+  const bluetoothPrinter = printer({
+    channelType: 'LOCAL_BLUETOOTH_ESCPOS',
+    enabled: false,
+    connectionConfig: {
+      macAddress: 'AA:BB:CC:DD:EE:FF',
+      deviceName: 'BT Printer',
+      serviceUuid: '00001101-0000-1000-8000-00805F9B34FB',
+    },
+    capabilities: {
+      v2Status: { status: 'CONNECTED', lastConnectedAt: connectedAt },
+    },
+    v2: {
+      terminalId: 'terminal-1',
+      localBindingId: 'binding-bt-1',
+      bindingVersion: 1,
+      transport: 'BLUETOOTH',
+      bindingUpdatedAt: evidenceUpdatedAt,
+      endpointKey: 'bluetooth:AA:BB:CC:DD:EE:FF',
+      physicalStatus: { status: 'CONNECTED', lastConnectedAt: connectedAt },
+    },
+  });
+  assert.equal(printerConfigurationState(bluetoothPrinter), 'DISABLED');
+  assert.equal(printerConnectionState(bluetoothPrinter, now), 'CONNECTED');
+  assert.equal(printerLastConnectedAt(bluetoothPrinter), connectedAt);
+  assert.equal(isActivePrintingPrinter(bluetoothPrinter), true);
+  assert.equal(isActivePrintingPrinter({ ...bluetoothPrinter, deletedAt: evidenceUpdatedAt }), false);
+  assert.equal(isActivePrintingPrinter({
+    ...bluetoothPrinter,
+    capabilities: { v2Binding: { archivedAt: evidenceUpdatedAt } },
+  }), false);
 
   const cloudPrinter = printer({
     channelType: 'CLOUD_FEIE',

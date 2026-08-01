@@ -87,7 +87,15 @@ const isCloud = computed(
 const stepLabels = computed(() => [p('chooseMethod'), p('deviceInformation'), p('testAndSave')]);
 
 function isLan(row: PrintingPrinter) {
-  return row.channelType === 'LOCAL_LAN_ESCPOS';
+  return row.channelType === 'LOCAL_LAN_ESCPOS' && !row.v2;
+}
+
+function isV2Local(row: PrintingPrinter) {
+  return Boolean(row.v2) && [
+    'LOCAL_USB_ESCPOS',
+    'LOCAL_LAN_ESCPOS',
+    'LOCAL_BLUETOOTH_ESCPOS',
+  ].includes(row.channelType);
 }
 
 function resetForm() {
@@ -116,7 +124,7 @@ function openCreate() {
 }
 
 function openEdit(row: PrintingPrinter) {
-  if (isLan(row)) {
+  if (isLan(row) || isV2Local(row)) {
     openDetail(row);
     return;
   }
@@ -150,7 +158,7 @@ function closeModal() {
 }
 
 function selectMethod(channel: PrintingPrinter['channelType']) {
-  if (channel === 'LOCAL_LAN_ESCPOS') return;
+  if (channel === 'LOCAL_LAN_ESCPOS' || channel === 'LOCAL_BLUETOOTH_ESCPOS') return;
   form.channelType = channel;
   form.provider = channel === 'CLOUD_YILIAN' ? 'CLOUD_YILIAN' : 'CLOUD_FEIE';
   step.value = 2;
@@ -159,18 +167,21 @@ function selectMethod(channel: PrintingPrinter['channelType']) {
 function methodTitle(channel: PrintingPrinter['channelType']) {
   if (channel === 'LOCAL_USB_ESCPOS') return p('usbPrinting');
   if (channel === 'LOCAL_LAN_ESCPOS') return p('lanPrinting');
+  if (channel === 'LOCAL_BLUETOOTH_ESCPOS') return p('bluetoothPrinting');
   return p('cloudPrinting');
 }
 
 function methodHint(channel: PrintingPrinter['channelType']) {
   if (channel === 'LOCAL_USB_ESCPOS') return p('usbPrintingHint');
   if (channel === 'LOCAL_LAN_ESCPOS') return p('lanPrintingHint');
+  if (channel === 'LOCAL_BLUETOOTH_ESCPOS') return p('bluetoothPrintingHint');
   return p('cloudPrintingHint');
 }
 
 function channelLabel(channel: PrintingPrinter['channelType']) {
   if (channel === 'LOCAL_USB_ESCPOS') return p('usbPrinting');
   if (channel === 'LOCAL_LAN_ESCPOS') return p('lanPrinting');
+  if (channel === 'LOCAL_BLUETOOTH_ESCPOS') return p('bluetoothPrinting');
   if (channel === 'CLOUD_FEIE') return p('feieCloudPrinting');
   return p('yilianCloudPrinting');
 }
@@ -368,6 +379,9 @@ function cloudProviderConfigured(row: PrintingPrinter) {
 
 function testPrintAvailable(row: PrintingPrinter) {
   if (isLan(row)) return lanPrinterActionMatrix(row)?.canTest === true;
+  if (isV2Local(row)) {
+    return row.status === 'ONLINE' && settings.value?.featureFlags.executionEnabled === true;
+  }
   if (!row.enabled || !settings.value?.featureFlags.executionEnabled) return false;
   if (row.channelType === 'LOCAL_USB_ESCPOS') return true;
   if (row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN') {
@@ -388,6 +402,7 @@ function lanBlockReason(row: PrintingPrinter) {
 
 function testPrintUnavailableHint(row: PrintingPrinter) {
   if (isLan(row)) return lanBlockReason(row);
+  if (isV2Local(row) && row.status !== 'ONLINE') return p('printerOfflineError');
   if (!settings.value?.featureFlags.executionEnabled) return p('printingExecutionUnavailable');
   if (
     (row.channelType === 'CLOUD_FEIE' || row.channelType === 'CLOUD_YILIAN')
@@ -542,7 +557,7 @@ async function setEnabled(row: PrintingPrinter, enabled: boolean) {
   try {
     actionId.value = row.id;
     if (enabled) {
-      if (isLan(row)) await enablePrintingPrinter(row.id);
+      if (isLan(row) || isV2Local(row)) await enablePrintingPrinter(row.id);
       else await updatePrintingPrinter(row.id, { enabled: true });
     } else {
       await disablePrintingPrinter(row.id);
@@ -706,7 +721,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else class="printing-actions">
-          <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button>
+          <button v-if="!isV2Local(row)" class="printing-button printing-button--secondary printing-button--small" type="button" @click="openEdit(row)">{{ p('settings') }}</button>
           <button
             class="printing-button printing-button--secondary printing-button--small"
             type="button"
@@ -768,7 +783,7 @@ onBeforeUnmount(() => {
               <i v-if="form.channelType === method || (method === 'CLOUD_FEIE' && isCloud)">✓</i>
             </button>
           </div>
-          <div class="printing-inline-note printing-field--full"><strong>{{ p('lanPrinting') }}</strong><span>{{ p('lanAddOnTerminalHint') }}</span></div>
+          <div class="printing-inline-note printing-field--full"><strong>{{ p('lanPrinting') }} / {{ p('bluetoothPrinting') }}</strong><span>{{ p('localAddOnTerminalHint') }}</span></div>
         </template>
 
         <template v-else-if="step === 2">
@@ -842,8 +857,8 @@ onBeforeUnmount(() => {
         <p class="printing-hint printing-field--full">{{ p('confirmTestPrint') }}</p>
         <dl class="printing-detail-grid printing-field--full">
           <dt>{{ p('printerName') }}</dt><dd>{{ pendingTest.name }}</dd>
-          <template v-if="isLan(pendingTest)">
-            <dt>{{ p('targetTerminal') }}</dt><dd>{{ normalizedLanSummary(pendingTest)?.terminal?.name || p('notReported') }}</dd>
+          <template v-if="isLan(pendingTest) || isV2Local(pendingTest)">
+            <dt>{{ p('targetTerminal') }}</dt><dd>{{ normalizedLanSummary(pendingTest)?.terminal?.name || pendingTest.v2?.terminal?.name || p('notReported') }}</dd>
           </template>
         </dl>
       </div>

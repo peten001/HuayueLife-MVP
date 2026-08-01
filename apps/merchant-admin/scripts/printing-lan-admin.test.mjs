@@ -137,6 +137,20 @@ try {
     assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3);
   }
 
+  for (const copy of [
+    '管理 USB、局域网、经典蓝牙和云打印机',
+    'Quản lý máy in USB, LAN, Bluetooth cổ điển và đám mây',
+    'Manage USB, LAN, classic Bluetooth, and cloud printers',
+  ]) assert.match(i18n, new RegExp(copy));
+
+  for (const key of [
+    'bluetoothPrinting',
+    'bluetoothPrintingHint',
+    'localAddOnTerminalHint',
+  ]) {
+    assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3);
+  }
+
   console.log('merchant-admin LAN management: PASS');
 } finally {
   await server.close();

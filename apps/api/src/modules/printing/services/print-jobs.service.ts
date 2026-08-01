@@ -28,6 +28,7 @@ import { ReceiptDocument } from '../types/receipt-document';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import {
   hasExplicitUsbExecutionEvidence,
+  hasExplicitV2ExecutionEvidence,
   isConnectionConfigValid,
   isReadyPrinter,
   printerReadiness,
@@ -41,6 +42,11 @@ import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
 } from '../types/lan-terminal-binding';
+import {
+  isV2LocalChannel,
+  V2_TERMINAL_ADAPTERS,
+  v2BindingMetadata,
+} from '../types/v2-terminal-binding';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -1611,6 +1617,7 @@ export class PrintJobsService {
             status: true,
             connectionConfig: true,
             capabilities: true,
+            deletedAt: true,
           },
         },
         attempts: {
@@ -1628,7 +1635,30 @@ export class PrintJobsService {
       },
     });
     if (!job) this.notFound();
-    if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
+    const v2Binding = v2BindingMetadata(job.printer.capabilities);
+    const v2RouteRequested =
+      terminalId !== null &&
+      printerId !== undefined &&
+      localBindingId !== undefined &&
+      bindingVersion !== undefined &&
+      Boolean(v2Binding);
+    if (v2RouteRequested) {
+      if (
+        !v2Binding ||
+        v2Binding.archivedAt ||
+        job.printer.deletedAt ||
+        !isV2LocalChannel(job.printer.channelType) ||
+        printerId !== job.printerId ||
+        v2Binding.terminalId !== terminalId.toString() ||
+        v2Binding.localBindingId !== localBindingId ||
+        v2Binding.bindingVersion !== bindingVersion
+      ) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+          message: '任务打印机与 V2 route 不匹配',
+        });
+      }
+    } else if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
       if (terminalId === null) {
         throw new BadRequestException({
           code: PRINTING_ERROR_CODES.LAN_BINDING_MISSING,
@@ -1661,8 +1691,9 @@ export class PrintJobsService {
       });
     }
     const snapshot = job.receiptSnapshot as Record<string, unknown>;
-    const binding =
-      job.printer.channelType === 'LOCAL_LAN_ESCPOS'
+    const binding = v2RouteRequested
+      ? v2Binding
+      : job.printer.channelType === 'LOCAL_LAN_ESCPOS'
         ? lanBindingMetadata(job.printer.capabilities)
         : null;
     return {
@@ -1691,7 +1722,10 @@ export class PrintJobsService {
               printerId: job.printerId,
               localBindingId: binding.localBindingId,
               bindingVersion: binding.bindingVersion,
-              adapter: ANDROID_LAN_ESCPOS_ADAPTER,
+              adapter:
+                v2RouteRequested && isV2LocalChannel(job.printer.channelType)
+                  ? V2_TERMINAL_ADAPTERS[job.printer.channelType]
+                  : ANDROID_LAN_ESCPOS_ADAPTER,
             },
           }
         : {}),
@@ -1761,7 +1795,13 @@ export class PrintJobsService {
           status: 'CLAIMED',
           leaseExpiresAt: { lte: now },
           printer: {
-            channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+            channelType: {
+              in: [
+                'LOCAL_USB_ESCPOS',
+                'LOCAL_LAN_ESCPOS',
+                'LOCAL_BLUETOOTH_ESCPOS',
+              ],
+            },
           },
         },
         data: {
@@ -1779,7 +1819,13 @@ export class PrintJobsService {
           status: 'PRINTING',
           leaseExpiresAt: { lte: now },
           printer: {
-            channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+            channelType: {
+              in: [
+                'LOCAL_USB_ESCPOS',
+                'LOCAL_LAN_ESCPOS',
+                'LOCAL_BLUETOOTH_ESCPOS',
+              ],
+            },
           },
         },
         select: { id: true, attemptCount: true, maxAttempts: true },
@@ -1792,7 +1838,13 @@ export class PrintJobsService {
             status: 'PRINTING',
             leaseExpiresAt: { lte: now },
             printer: {
-              channelType: { in: ['LOCAL_USB_ESCPOS', 'LOCAL_LAN_ESCPOS'] },
+              channelType: {
+                in: [
+                  'LOCAL_USB_ESCPOS',
+                  'LOCAL_LAN_ESCPOS',
+                  'LOCAL_BLUETOOTH_ESCPOS',
+                ],
+              },
             },
           },
           data: {
@@ -2104,6 +2156,7 @@ export class PrintJobsService {
       ![
         'LOCAL_USB_ESCPOS',
         'LOCAL_LAN_ESCPOS',
+        'LOCAL_BLUETOOTH_ESCPOS',
         'CLOUD_FEIE',
         'CLOUD_YILIAN',
       ].includes(
@@ -2112,7 +2165,7 @@ export class PrintJobsService {
     ) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CHANNEL_NOT_IMPLEMENTED,
-        message: '当前阶段仅允许 USB、LAN、飞鹅或易联云打印任务',
+        message: '当前阶段仅允许 USB、LAN、经典蓝牙、飞鹅或易联云打印任务',
       });
     }
     if (!isConnectionConfigValid(printer.channelType, printer.connectionConfig)) {
@@ -2161,6 +2214,15 @@ export class PrintJobsService {
       false,
       client,
     );
+    if (v2BindingMetadata(printer.capabilities)) {
+      if (!isReadyPrinter(printer)) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+          message: 'V2 本地打印设备尚无明确可用证据',
+        });
+      }
+      return printer;
+    }
     if (printer.channelType === 'LOCAL_USB_ESCPOS' && !isReadyPrinter(printer)) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
@@ -2178,6 +2240,19 @@ export class PrintJobsService {
       where: { id: printerId, merchantId, deletedAt: null },
     });
     if (!printer) this.referenceError('测试打印机不存在或不属于当前商家');
+    if (v2BindingMetadata(printer.capabilities)) {
+      if (
+        printer.status !== 'ONLINE' ||
+        !isConnectionConfigValid(printer.channelType, printer.connectionConfig) ||
+        !hasExplicitV2ExecutionEvidence(printer.capabilities)
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTER_OFFLINE,
+          message: 'V2 本地打印设备尚无当前 CONNECTED 证据',
+        });
+      }
+      return printer;
+    }
     if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
       await this.lanBindings.requireTestable(merchantId, printerId);
       return printer;

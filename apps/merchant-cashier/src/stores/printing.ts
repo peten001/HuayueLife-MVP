@@ -11,6 +11,7 @@ import {
 } from '@/api';
 import { cashierStorageKeys } from '@/config';
 import type {
+  CashierLocalPrinterChannel,
   CashierPrintJob,
   CashierPrintingAvailability,
   CashierPrintingFeatureState,
@@ -27,18 +28,26 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   const statusError = ref('');
   const lastRefreshAt = ref<string | null>(null);
 
-  const configuredUsbPrinters = computed(() =>
-    printers.value.filter(isConfiguredUsbPrinter),
+  const localPrinters = computed(() =>
+    printers.value.filter(isActiveLocalPrinter),
+  );
+  const configuredLocalPrinters = computed(() =>
+    localPrinters.value.filter(isConfiguredLocalPrinter),
   );
   const enabledPrinters = computed(() =>
     printers.value.filter((printer) => printer.enabled),
   );
-  const enabledUsbPrinters = computed(() =>
-    configuredUsbPrinters.value.filter((printer) => printer.enabled),
+  const enabledLocalPrinters = computed(() =>
+    configuredLocalPrinters.value.filter((printer) => printer.enabled),
   );
-  const readyUsbPrinters = computed(() =>
-    enabledUsbPrinters.value.filter(isReadyUsbPrinter),
+  const readyLocalPrinters = computed(() =>
+    enabledLocalPrinters.value.filter(isReadyLocalPrinter),
   );
+  // Keep the RC5 aliases available while all new selection/readiness logic is
+  // explicitly based on the three V2 local channels.
+  const configuredUsbPrinters = configuredLocalPrinters;
+  const enabledUsbPrinters = enabledLocalPrinters;
+  const readyUsbPrinters = readyLocalPrinters;
 
   const availability = computed<CashierPrintingAvailability>(() => {
     const auth = useAuthStore();
@@ -50,8 +59,8 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
     if (featureState.value?.merchantPrintingEnabled !== true) return 'NOT_ENABLED';
     if (statusError.value) return 'DEVICE_OFFLINE';
     if (
-      !enabledPrinters.value.length
-      || enabledPrinters.value.every(isPrinterNotConfigured)
+      !configuredLocalPrinters.value.length
+      || localPrinters.value.every(isPrinterNotConfigured)
     ) return 'NOT_CONFIGURED';
     if (
       !auth.isAuthenticated
@@ -59,7 +68,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       || !isExistingPrintingRole(auth.role)
       || !featureState.value.taskCenterEnabled
       || !featureState.value.executionEnabled
-      || !readyUsbPrinters.value.length
+      || !readyLocalPrinters.value.length
     ) return 'DEVICE_OFFLINE';
     return 'READY';
   });
@@ -81,7 +90,7 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
         listCashierPrintingPrinters(),
       ]);
       featureState.value = feature;
-      printers.value = nextPrinters;
+      printers.value = nextPrinters.filter((printer) => !isArchivedPrinter(printer));
       lastRefreshAt.value = new Date().toISOString();
     } catch (caught) {
       statusError.value = messageFromApiError(caught);
@@ -175,9 +184,13 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
   return {
     featureState,
     printers,
+    localPrinters,
+    configuredLocalPrinters,
     configuredUsbPrinters,
     enabledPrinters,
+    enabledLocalPrinters,
     enabledUsbPrinters,
+    readyLocalPrinters,
     readyUsbPrinters,
     availability,
     ready,
@@ -196,12 +209,40 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
 });
 
 const USB_CHANNEL = 'LOCAL_USB_ESCPOS';
+const LAN_CHANNEL = 'LOCAL_LAN_ESCPOS';
+const BLUETOOTH_CHANNEL = 'LOCAL_BLUETOOTH_ESCPOS';
+const LOCAL_CHANNELS = new Set<CashierLocalPrinterChannel>([
+  USB_CHANNEL,
+  LAN_CHANNEL,
+  BLUETOOTH_CHANNEL,
+]);
 const USB_CUT_MODES = new Set(['NONE', 'HALF', 'FULL']);
 const EXISTING_PRINTING_ROLES = new Set(['OWNER', 'MANAGER', 'STAFF']);
 
+function isActiveLocalPrinter(printer: CashierPrintingPrinter) {
+  return LOCAL_CHANNELS.has(printer.channelType as CashierLocalPrinterChannel)
+    && !isArchivedPrinter(printer);
+}
+
+function isArchivedPrinter(printer: CashierPrintingPrinter) {
+  if (printer.v2?.archivedAt) return true;
+  if (!isPlainObject(printer.capabilities)) return false;
+  const binding = printer.capabilities.v2Binding;
+  return isPlainObject(binding) && typeof binding.archivedAt === 'string';
+}
+
+function isConfiguredLocalPrinter(printer: CashierPrintingPrinter) {
+  if (!isActiveLocalPrinter(printer) || !isPlainObject(printer.connectionConfig)) return false;
+  if (printer.channelType === USB_CHANNEL) return isConfiguredUsbPrinter(printer);
+  if (printer.channelType === LAN_CHANNEL) return isConfiguredLanPrinter(printer);
+  return isConfiguredBluetoothPrinter(printer);
+}
+
 function isConfiguredUsbPrinter(printer: CashierPrintingPrinter) {
-  if (printer.channelType !== USB_CHANNEL || !isPlainObject(printer.connectionConfig)) {
-    return false;
+  if (printer.v2) {
+    const { vendorId, productId } = printer.connectionConfig;
+    return isIntegerInRange(vendorId, 0, 65_535)
+      && isIntegerInRange(productId, 0, 65_535);
   }
   const keys = Object.keys(printer.connectionConfig);
   if (keys.some((key) => !['paperWidthDots', 'threshold', 'cutMode'].includes(key))) {
@@ -215,7 +256,24 @@ function isConfiguredUsbPrinter(printer: CashierPrintingPrinter) {
   );
 }
 
-function isReadyUsbPrinter(printer: CashierPrintingPrinter) {
+function isConfiguredLanPrinter(printer: CashierPrintingPrinter) {
+  const { host, port } = printer.connectionConfig;
+  return typeof host === 'string'
+    && isPrivateIpv4(host)
+    && isIntegerInRange(port, 1, 65_535);
+}
+
+function isConfiguredBluetoothPrinter(printer: CashierPrintingPrinter) {
+  const { macAddress, deviceName, serviceUuid } = printer.connectionConfig;
+  return typeof macAddress === 'string'
+    && /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(macAddress)
+    && typeof deviceName === 'string'
+    && deviceName.trim().length > 0
+    && typeof serviceUuid === 'string'
+    && /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(serviceUuid);
+}
+
+function isReadyLocalPrinter(printer: CashierPrintingPrinter) {
   return printer.status === 'ONLINE'
     && printer.readiness?.state === 'READY'
     && printer.readiness.channelImplemented === true
@@ -225,7 +283,17 @@ function isReadyUsbPrinter(printer: CashierPrintingPrinter) {
 
 function isPrinterNotConfigured(printer: CashierPrintingPrinter) {
   if (printer.readiness?.state === 'NOT_CONFIGURED') return true;
-  return printer.channelType === USB_CHANNEL && !isConfiguredUsbPrinter(printer);
+  return !isConfiguredLocalPrinter(printer);
+}
+
+function isPrivateIpv4(value: string) {
+  const parts = value.trim().split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+  return parts[0] === 10
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168);
 }
 
 function isExistingPrintingRole(role: string | null) {

@@ -139,6 +139,38 @@ describe('PrintingPrintersService', () => {
     expect(prisma.printer.create).not.toHaveBeenCalled();
   });
 
+  it.each(['v2Binding', 'v2Status'])(
+    'reserves the %s capability namespace for authenticated V2 terminal routes',
+    async (reservedKey) => {
+      await expect(
+        service.create(merchantId, 3n, undefined, {
+          name: '伪造 V2 打印机',
+          channelType: 'LOCAL_USB_ESCPOS',
+          paperWidth: 'MM80',
+          connectionConfig: {},
+          capabilities: { [reservedKey]: {} },
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'CONFIG_INVALID' }),
+      });
+      expect(prisma.printer.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not let Admin inject reserved V2 metadata into an existing printer', async () => {
+    const existing = printer({ channelType: 'LOCAL_USB_ESCPOS' });
+    prisma.printer.findFirst.mockResolvedValue(existing);
+
+    await expect(
+      service.update(merchantId, 3n, undefined, existing.id, {
+        capabilities: { v2Binding: { terminalId: '67' } },
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CONFIG_INVALID' }),
+    });
+    expect(prisma.printer.update).not.toHaveBeenCalled();
+  });
+
   it('keeps reserved channels configuration-only and rejects adapter settings', async () => {
     await expect(
       service.create(merchantId, 3n, undefined, {

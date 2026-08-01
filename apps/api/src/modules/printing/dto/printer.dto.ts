@@ -18,6 +18,7 @@ const CHANNEL_TYPES = [
   'CLOUD_GPRINTER',
   'BUILTIN_SUNMI',
   'BUILTIN_IMIN',
+  'LOCAL_BLUETOOTH_ESCPOS',
 ] as const;
 
 const trim = ({ value }: { value: unknown }) =>
