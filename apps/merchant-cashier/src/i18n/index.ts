@@ -25,6 +25,14 @@ function setLocale(nextLocale: Locale) {
   if (typeof window !== 'undefined') {
     writeCashierStorage('local', cashierStorageKeys.locale, nextLocale);
     document.documentElement.lang = nextLocale === 'zh' ? 'zh-CN' : nextLocale;
+    const bridge = (window as Window & {
+      YunQiaoMerchantSession?: { postMessage?: (message: string) => void };
+    }).YunQiaoMerchantSession;
+    try {
+      bridge?.postMessage?.(`LANGUAGE_CHANGED:${nextLocale}`);
+    } catch {
+      // Native locale sync is best-effort and must not block the Web Cashier.
+    }
   }
 }
 

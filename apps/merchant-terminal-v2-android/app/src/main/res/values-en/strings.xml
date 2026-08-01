@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YunQiao Merchant Terminal</string>
+    <string name="service_channel_name">Local printing service</string>
+    <string name="service_notification_title">YunQiao local printing service</string>
+    <string name="service_notification_text">Securely connecting printers to YunQiao</string>
+    <string name="web_dialog_ok">OK</string>
+    <string name="web_dialog_cancel">Cancel</string>
+    <string name="common_back">Back</string><string name="common_close">Close</string><string name="common_cancel">Cancel</string>
+    <string name="common_next">Next</string><string name="common_previous">Previous</string><string name="common_finish">Finish</string>
+    <string name="common_refresh">Refresh</string><string name="common_retry">Retry</string><string name="common_save">Save printer</string>
+    <string name="common_test">Local test</string><string name="common_manage">Manage</string><string name="common_available">Available</string>
+    <string name="common_connecting">Connecting…</string><string name="common_syncing">Syncing…</string><string name="common_testing">Printing a test receipt…</string>
+    <string name="common_recovering">Restoring connection…</string><string name="common_retry_action">Try again</string><string name="paper_width_value">%1$dmm</string>
+    <string name="printer_devices_title">Printers &amp; devices</string><string name="printer_devices_subtitle">Manage USB, LAN, and Bluetooth printers connected to this terminal</string>
+    <string name="local_print_service">Local printing service</string><string name="service_running">Running</string><string name="simple_service_connecting">Connecting</string><string name="simple_service_error">Connection error</string><string name="simple_service_running_body">Terminal status: Signed in&#10;Automatic print rules are managed in Merchant Admin.</string><string name="simple_service_error_body">Unable to connect to the platform.</string><string name="simple_reconnect_service">Reconnect</string><string name="service_unavailable">Unavailable</string>
+    <string name="service_logged_in">Terminal: signed in</string><string name="service_not_logged_in">Terminal: waiting for sign-in</string>
+    <string name="automatic_rules_admin">Automatic print rules are managed in Merchant Admin</string><string name="view_service_details">View service details</string>
+    <string name="added_printers">Added printers</string><string name="add_printer">Add printer</string><string name="no_printers_title">No printers yet</string>
+    <string name="no_printers_body">Add a USB, LAN, or Classic Bluetooth printer to see status and run local tests here.</string>
+    <string name="status_configured">Configured</string><string name="status_connected">Connected</string><string name="status_paired">Paired</string>
+    <string name="status_offline">Device offline</string><string name="status_error">Connection error</string><string name="status_unknown">Status pending</string>
+    <string name="status_synced">Synced</string><string name="status_archived">Archived</string><string name="overview_recovery_body">When the connection returns, device identity and platform binding are checked again without automatically reprinting.</string>
+    <string name="service_page_subtitle">View this terminal\'s local printing connection to the platform</string><string name="service_running_body">The service is running and uses the merchant session to sync. It never reads or stores the account password.</string>
+    <string name="service_failure_body">The service cannot reach the platform right now. Check the network and retry.</string><string name="service_status">Service status</string>
+    <string name="platform_authentication">Platform authentication</string><string name="merchant_session">Merchant session</string><string name="automatic_printing">Automatic printing</string>
+    <string name="usb_print_support">USB printing</string><string name="lan_print_support">LAN printing</string><string name="bluetooth_print_support">Bluetooth printing</string>
+    <string name="last_status_update">Last status update</string><string name="state_available">Available</string><string name="state_configured">Configured</string>
+    <string name="state_logged_in">Signed in</string><string name="state_just_now">Just now</string><string name="state_waiting">Waiting</string>
+    <string name="refresh_service_status">Refresh service status</string><string name="back_to_printers">Back to printers &amp; devices</string>
+    <string name="service_info">If a printer is offline, first confirm that its local test succeeds, then return to the home screen to check platform sync.</string>
+    <string name="add_printer_step_one">Add printer · Step 1/3</string><string name="choose_connection_type">Choose a connection</string>
+    <string name="step_connection">Connection</string><string name="step_choose_device">Choose device</string><string name="step_test_save">Test &amp; save</string>
+    <string name="usb_printer">USB printer</string><string name="usb_printer_description">For a thermal printer connected directly to this terminal</string>
+    <string name="lan_printer">LAN printer</string><string name="lan_printer_description">For a printer on the same wired or Wi-Fi network</string>
+    <string name="bluetooth_printer">Classic Bluetooth printer</string><string name="bluetooth_printer_description">For a receipt printer paired over Classic Bluetooth</string>
+    <string name="add_lan_step_two">Add LAN printer · Step 2/3</string><string name="current_network">Current network: %1$s</string>
+    <string name="discovering_printers">Discovered printers</string><string name="searching">Searching…</string><string name="search_again">Search again</string>
+    <string name="manual_ip_hint">Cannot find it? Add the printer manually with its IP address</string><string name="manual_ip">Enter IP manually</string>
+    <string name="manual_ip_title">Enter printer address</string><string name="host_address">IP address</string><string name="port_number">Port</string><string name="manual_ip_submit">Use this address</string>
+    <string name="no_lan_printers">No LAN printers found yet</string><string name="lan_search_failure">Search failed. Make sure the terminal and printer are on the same network, then search again.</string>
+    <string name="add_lan_step_three">Add LAN printer · Step 3/3</string><string name="step_fill_information">Printer details</string>
+    <string name="printer_added_success">Printer added</string><string name="printer_added_success_body">This terminal saved the printer. You can manage it or add another device.</string>
+    <string name="printer_name">Printer name</string><string name="paper_width">Paper width</string><string name="connection_type">Connection</string>
+    <string name="local_test">Local test</string><string name="platform_sync">Platform sync</string><string name="test_passed">Passed</string><string name="sync_complete">Synced</string><string name="sync_waiting">Waiting to sync</string>
+    <string name="continue_adding">Add another</string><string name="test_failure_title">Local test did not finish</string><string name="test_failure_body">Check power, paper, and the connection before retrying. The platform will not count this failure as printed.</string>
+    <string name="test_uncertain_title">Check the printed paper</string><string name="test_uncertain_body">The printer may have produced paper. To prevent a duplicate, the system will not retry automatically.</string>
+    <string name="sync_failure_title">Platform sync failed</string><string name="sync_failure_body">The local test passed, but the binding is not synced. It is safe to retry sync after the network returns.</string>
+    <string name="add_usb_printer">Add USB printer</string><string name="usb_setup_subtitle">Connect a USB thermal printer and the system will detect it automatically</string>
+    <string name="usb_step_connect">Connect printer</string><string name="usb_step_connect_body">Connect through USB</string><string name="usb_step_recognize">Automatic detection</string><string name="usb_step_recognize_body">The system detects the device</string>
+    <string name="usb_step_ready">Ready</string><string name="usb_step_ready_body">Configure and use it</string><string name="usb_detected_count">%1$d USB printer detected</string><string name="usb_not_detected">No USB printer detected</string>
+    <string name="usb_permission_hint">For the first connection, allow USB access in the system prompt</string><string name="usb_permission_waiting">Waiting for USB access</string><string name="usb_permission_denied">USB access was not granted. Reconnect the device and allow access in the system prompt.</string><string name="printer_settings">Printer settings</string>
+    <string name="add_bluetooth_printer">Add Bluetooth printer</string><string name="bluetooth_setup_subtitle">Scan for nearby receipt printers that can be paired</string>
+    <string name="bluetooth_on">Bluetooth on</string><string name="bluetooth_off">Bluetooth off</string><string name="paired_devices">Paired devices</string><string name="nearby_devices">Nearby devices</string><string name="scanning">Scanning…</string>
+    <string name="pair">Pair</string><string name="paired">Paired</string><string name="signal_good">Good signal</string><string name="signal_fair">Fair signal</string><string name="selected_printer_settings">Selected printer settings</string>
+    <string name="bluetooth_test_hint">After pairing, run a local test before saving the printer</string><string name="bluetooth_not_found">Not found? Make sure the printer is on and in pairing mode</string>
+    <string name="bluetooth_empty">No Classic Bluetooth printers found yet</string><string name="bluetooth_permission_denied">Bluetooth scanning is unavailable. Grant Nearby devices permission and retry.</string>
+    <string name="printer_detail">Printer details</string><string name="ip_port">IP:port</string><string name="last_successful_connection">Last connected</string><string name="last_test_print">Last test print</string>
+    <string name="enabled_status">Enabled status</string><string name="enabled_read_only">Enabled</string><string name="disabled_read_only">Disabled</string>
+    <string name="connection_read_only">Connection details are read-only. To change the IP or paper width, remove and add the printer again, or update it through management.</string>
+    <string name="edit_name">Edit name</string><string name="archive_printer">Remove printer</string><string name="archive_confirm_title">Remove and archive this printer?</string>
+    <string name="archive_confirm_body">The printer will leave this device list, but historical print jobs and attempts are retained. This action will not reprint anything.</string>
+    <string name="archive_confirm_action">Remove &amp; archive</string><string name="archive_success">Printer archived</string><string name="merchant_admin_read_only">Enabled state and automatic print rules are read-only here. Change them in Merchant Admin.</string>
+    <string name="controller_bluetooth_pairing_started">Complete pairing in the Android system dialog</string>
+    <string name="controller_bluetooth_pairing_unavailable">Could not start system pairing. Check the device and permissions.</string>
+    <string name="controller_bluetooth_enable_declined">Bluetooth is still off. Turn it on and retry.</string>
+    <string name="controller_bluetooth_unavailable">Classic Bluetooth is unavailable on this device.</string>
+    <string name="controller_lan_address_invalid">The LAN address is invalid</string>
+    <string name="controller_select_printer">Select a printer first</string>
+    <string name="controller_test_write_complete">The test data was fully written to the printer. Check the paper.</string>
+    <string name="controller_printer_saved_pending_sync">Printer saved and waiting for platform sync</string>
+    <string name="controller_printer_save_failed">Save failed. Check whether this printer was already added.</string>
+    <string name="controller_printer_archive_pending_sync">Printer removed; archive will sync when the network returns</string>
+</resources>
