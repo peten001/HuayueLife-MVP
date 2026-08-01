@@ -56,6 +56,7 @@ cp -a "$SOURCE_ROOT/pnpm-lock.yaml" "$RELEASE_ROOT/pnpm-lock.yaml"
 # pnpm deploy creates an API-only production dependency closure. It cannot
 # retain links to another workspace, staging, an old release, or macOS.
 corepack pnpm --dir "$SOURCE_ROOT" --filter @huayue-life/api deploy --prod "$API_RELEASE"
+readonly DEPLOY_MODE='pnpm deploy --prod'
 
 # pnpm deploy creates a fresh @prisma/client package and does not retain the
 # generated sibling .prisma/client directory. Copy only the client generated
@@ -102,6 +103,7 @@ cp -a "$SOURCE_ROOT/deploy/scripts/shadow-api-runtime-release.sh" "$RELEASE_ROOT
 {
   printf 'source_commit=%s\n' "$SOURCE_COMMIT"
   cat "$LINUX_INSTALL_MARKER"
+  printf 'deploy_mode=%s\n' "$DEPLOY_MODE"
   printf 'prisma_source=%s\n' "$PRISMA_SOURCE_GENERATED"
   printf 'prisma_target=%s\n' "$PRISMA_TARGET_GENERATED"
   printf 'prisma_client_sha256=%s\n' "$(find "$PRISMA_TARGET_GENERATED" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
