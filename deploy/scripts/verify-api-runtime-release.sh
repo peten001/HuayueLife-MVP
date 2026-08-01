@@ -32,7 +32,7 @@ if ! grep -qx 'platform=Linux' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; the
   exit 1
 fi
 
-if ! grep -q 'deploy --prod' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
+if ! grep -qx 'deploy_mode=pnpm deploy --prod' "$RELEASE_ROOT/RUNTIME_RELEASE_MANIFEST.txt"; then
   printf 'BLOCKED: candidate lacks pnpm production deployment attestation\n' >&2
   exit 1
 fi
