@@ -19,9 +19,10 @@ import { CloudPrintingService } from './services/cloud-printing.service';
 import { CloudPrintExecutionService } from './services/cloud-print-execution.service';
 import { LanTerminalBindingsService } from './services/lan-terminal-bindings.service';
 import { LanTerminalConnectorController } from './controllers/lan-terminal-connector.controller';
+import { TerminalConnectorController } from './controllers/terminal-connector.controller';
 
 @Module({
-  controllers: [MerchantPrintingController, LanTerminalConnectorController],
+  controllers: [MerchantPrintingController, LanTerminalConnectorController, TerminalConnectorController],
   providers: [
     PrintingFeatureFlagsService,
     PrintingAuditService,
