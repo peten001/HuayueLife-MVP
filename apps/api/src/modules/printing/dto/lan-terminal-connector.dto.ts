@@ -34,7 +34,10 @@ class LanRouteIdentityDto {
   bindingVersion: number;
 }
 
-export class LanActiveJobQueryDto extends LanRouteIdentityDto {}
+export class LanActiveJobQueryDto extends LanRouteIdentityDto {
+  @Transform(({ value }) => Number(value))
+  bindingVersion: number;
+}
 
 export class ClaimLanPrintJobDto extends LanRouteIdentityDto {
   @IsBoolean()

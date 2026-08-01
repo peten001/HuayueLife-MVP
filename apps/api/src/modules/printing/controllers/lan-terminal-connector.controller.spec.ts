@@ -4,6 +4,8 @@ import {
   METHOD_METADATA,
   PATH_METADATA,
 } from '@nestjs/common/constants';
+import { plainToInstance } from 'class-transformer';
+import { LanActiveJobQueryDto } from '../dto/lan-terminal-connector.dto';
 import { ActiveTerminalGuard } from '../guards/active-terminal.guard';
 import { TerminalAuthGuard } from '../guards/terminal-auth.guard';
 import { ANDROID_LAN_ESCPOS_ADAPTER } from '../types/lan-terminal-binding';
@@ -20,6 +22,28 @@ const terminal = {
 };
 
 describe('LanTerminalConnectorController contract', () => {
+  it('passes a numeric query bindingVersion to the active-job service', async () => {
+    const { controller, jobs } = createController();
+    jobs.findActiveLanTerminalJob.mockResolvedValue(null);
+    const query = plainToInstance(LanActiveJobQueryDto, {
+      printerId: '17',
+      localBindingId: 'binding-1',
+      bindingVersion: '1',
+    });
+
+    await controller.activeJob(terminal, query);
+
+    expect(query.bindingVersion).toBe(1);
+    expect(typeof query.bindingVersion).toBe('number');
+    expect(jobs.findActiveLanTerminalJob).toHaveBeenCalledWith(
+      7n,
+      67n,
+      17n,
+      'binding-1',
+      1,
+    );
+  });
+
   it('exposes only the narrow Terminal-authenticated LAN namespace', () => {
     expect(
       Reflect.getMetadata(PATH_METADATA, LanTerminalConnectorController),

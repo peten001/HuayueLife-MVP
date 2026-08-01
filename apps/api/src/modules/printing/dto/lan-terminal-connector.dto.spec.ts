@@ -3,11 +3,36 @@ import { validate } from 'class-validator';
 import { SyncLanTerminalBindingDto } from './lan-terminal-binding.dto';
 import {
   ClaimLanPrintJobDto,
+  LanActiveJobQueryDto,
   MarkLanPrintingDto,
   ReportLanPrinterStatusDto,
 } from './lan-terminal-connector.dto';
 
 describe('LAN Terminal DTO security contract', () => {
+  it('transforms an integer active-job query bindingVersion to a number', async () => {
+    for (const bindingVersion of ['1', '10']) {
+      const dto = plainToInstance(LanActiveJobQueryDto, {
+        ...routePayload(),
+        bindingVersion,
+      });
+
+      await expect(validateDto(dto)).resolves.toHaveLength(0);
+      expect(dto.bindingVersion).toBe(Number(bindingVersion));
+      expect(typeof dto.bindingVersion).toBe('number');
+    }
+  });
+
+  it('rejects invalid active-job query bindingVersion values', async () => {
+    for (const bindingVersion of ['1.5', 'abc', '', undefined, '0', '-1']) {
+      const dto = plainToInstance(LanActiveJobQueryDto, {
+        ...routePayload(),
+        bindingVersion,
+      });
+
+      await expect(validateDto(dto)).resolves.not.toHaveLength(0);
+    }
+  });
+
   it('accepts the frozen binding sync contract and requires expectedBindingVersion', async () => {
     await expect(errors(SyncLanTerminalBindingDto, syncPayload())).resolves.toHaveLength(
       0,
@@ -124,7 +149,11 @@ function errors(
   Dto: new () => object,
   payload: Record<string, unknown>,
 ) {
-  return validate(plainToInstance(Dto, payload), {
+  return validateDto(plainToInstance(Dto, payload));
+}
+
+function validateDto(dto: object) {
+  return validate(dto, {
     whitelist: true,
     forbidNonWhitelisted: true,
   });
