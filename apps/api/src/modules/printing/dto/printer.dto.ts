@@ -84,3 +84,11 @@ export class UpdatePrintingPrinterDto {
   @IsObject()
   capabilities?: Record<string, unknown>;
 }
+
+export class ArchivePrintingPrinterDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255)
+  reason?: string;
+}

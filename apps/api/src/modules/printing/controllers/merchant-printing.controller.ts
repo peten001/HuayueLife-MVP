@@ -39,6 +39,7 @@ import {
 import { ActiveMerchantStaffGuard } from '../guards/active-merchant-staff.guard';
 import { CreatePrintRuleDto, UpdatePrintRuleDto } from '../dto/print-rule.dto';
 import {
+  ArchivePrintingPrinterDto,
   CreatePrintingPrinterDto,
   UpdatePrintingPrinterDto,
 } from '../dto/printer.dto';
@@ -185,6 +186,24 @@ export class MerchantPrintingController {
       BigInt(staff.sub),
       request.requestId,
       BigInt(params.id),
+    );
+  }
+
+  @Post('printers/:id/archive')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  archivePrinter(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Param() params: IdParamDto,
+    @Body() dto: ArchivePrintingPrinterDto,
+  ) {
+    return this.printers.archive(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      BigInt(params.id),
+      dto.reason,
     );
   }
 

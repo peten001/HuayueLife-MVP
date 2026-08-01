@@ -55,6 +55,7 @@ describe('MerchantPrintingController contract', () => {
         ['PATCH', 'printers/:id'],
         ['POST', 'printers/:id/enable'],
         ['POST', 'printers/:id/disable'],
+        ['POST', 'printers/:id/archive'],
         ['POST', 'printers/:id/test-job'],
         ['GET', 'templates'],
         ['POST', 'templates'],
@@ -364,6 +365,7 @@ describe('MerchantPrintingController contract', () => {
       'updatePrinter',
       'enablePrinter',
       'disablePrinter',
+      'archivePrinter',
       'createTemplate',
       'updateTemplate',
       'duplicateTemplate',
@@ -410,6 +412,28 @@ describe('MerchantPrintingController contract', () => {
     );
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it.each([
+    [StaffRole.OWNER, true],
+    [StaffRole.MANAGER, true],
+    [StaffRole.STAFF, false],
+  ] as const)('enforces printer archive permission for %s', (role, allowed) => {
+    const guard = new MerchantRoleGuard(new Reflector());
+    const context = executionContext(
+      {
+        user: {
+          sub: '3',
+          accountType: 'MERCHANT_STAFF',
+          merchantId: '7',
+          role,
+        },
+      },
+      MerchantPrintingController.prototype.archivePrinter,
+    );
+
+    if (allowed) expect(guard.canActivate(context)).toBe(true);
+    else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it.each([StaffRole.OWNER, StaffRole.MANAGER])(

@@ -9,6 +9,7 @@ import {
 } from 'vue';
 import { errorMessage } from '@/api/http';
 import {
+  archivePrintingPrinter,
   createPrintingPrinter,
   createPrintingTestJob,
   disablePrintingPrinter,
@@ -41,6 +42,7 @@ import {
   PRINTING_STATE_CHANGED_EVENT,
   type PrinterConnectionState,
 } from '@/utils/printing-status';
+import { getMerchantStaff } from '@/utils/storage';
 
 const { p } = usePrintingI18n();
 const rows = ref<PrintingPrinter[]>([]);
@@ -55,11 +57,16 @@ const messageKind = ref<'error' | 'info' | 'success'>('info');
 const modalOpen = ref(false);
 const step = ref(1);
 const pendingDisable = ref<PrintingPrinter | null>(null);
+const pendingArchive = ref<PrintingPrinter | null>(null);
 const pendingTest = ref<PrintingPrinter | null>(null);
 const selectedDetail = ref<PrintingPrinter | null>(null);
 const wizardCloseButton = ref<HTMLButtonElement | null>(null);
 const testConfirmButton = ref<HTMLButtonElement | null>(null);
 const detailCloseButton = ref<HTMLButtonElement | null>(null);
+const archiveConfirmButton = ref<HTMLButtonElement | null>(null);
+const canArchive = computed(() => ['OWNER', 'MANAGER'].includes(
+  getMerchantStaff()?.role ?? 'STAFF',
+));
 
 interface StoredTestJobRequest {
   requestKey: string;
@@ -533,6 +540,55 @@ async function confirmDisable() {
   if (row) await setEnabled(row, false);
 }
 
+function requestArchive(row: PrintingPrinter) {
+  if (!canArchive.value || actionId.value) return;
+  rememberDialogFocus();
+  pendingArchive.value = row;
+  void nextTick(() => archiveConfirmButton.value?.focus());
+}
+
+function closeArchiveConfirmation(restoreFocus = true) {
+  pendingArchive.value = null;
+  if (!restoreFocus) return;
+  const target = dialogReturnFocus;
+  dialogReturnFocus = null;
+  void nextTick(() => {
+    if (target?.isConnected) target.focus();
+  });
+}
+
+function printingErrorCode(error: unknown) {
+  const response = (error as { response?: { data?: { code?: unknown } } })?.response;
+  return typeof response?.data?.code === 'string' ? response.data.code : null;
+}
+
+async function confirmArchive() {
+  const row = pendingArchive.value;
+  if (!row || actionId.value) return;
+  closeArchiveConfirmation(false);
+  try {
+    actionId.value = row.id;
+    await archivePrintingPrinter(row.id, '用户移除打印机');
+    if (selectedDetail.value?.id === row.id) selectedDetail.value = null;
+    await load(false);
+    notifyPrintingStateChanged();
+    showSuccess(p('printerArchived'));
+  } catch (error) {
+    if (printingErrorCode(error) === 'PRINTER_HAS_ACTIVE_JOBS') {
+      showError(new Error(p('archivePrinterActiveJobsError')));
+    } else {
+      showError(error);
+    }
+  } finally {
+    actionId.value = '';
+    const target = dialogReturnFocus;
+    dialogReturnFocus = null;
+    void nextTick(() => {
+      if (target?.isConnected) target.focus();
+    });
+  }
+}
+
 async function setEnabled(row: PrintingPrinter, enabled: boolean) {
   if (actionId.value) return;
   if (enabled && isLan(row) && !lanPrinterActionMatrix(row)?.canEnable) {
@@ -567,6 +623,29 @@ function formatTime(value: string | null | undefined) {
 function lanEndpoint(row: PrintingPrinter) {
   const endpoint = normalizedLanSummary(row)?.endpoint;
   return endpoint ? `${endpoint.host}:${endpoint.port}` : p('notReported');
+}
+
+function archiveTerminalLabel(row: PrintingPrinter) {
+  return normalizedLanSummary(row)?.terminal?.name
+    || row.boundTerminal?.name
+    || p('notReported');
+}
+
+function usbDeviceLabel(row: PrintingPrinter) {
+  const evidence = { ...(row.connectionConfig || {}), ...(row.capabilities || {}) };
+  const parts = [
+    'productName',
+    'manufacturerName',
+    'usbVendorId',
+    'usbProductId',
+    'usbSerialNumber',
+    'vendorId',
+    'productId',
+    'serialNumber',
+  ]
+    .map((key) => evidence[key])
+    .filter((value) => typeof value === 'string' || typeof value === 'number');
+  return parts.length ? parts.join(' / ') : p('usbConfiguredOnTerminal');
 }
 
 function latestTestLabel(row: PrintingPrinter) {
@@ -612,6 +691,7 @@ onMounted(() => {
       && !modalOpen.value
       && !selectedDetail.value
       && !pendingTest.value
+      && !pendingArchive.value
       && !actionId.value
     ) void load(false);
   }, 15_000);
@@ -703,6 +783,15 @@ onBeforeUnmount(() => {
           >
             {{ p('disable') }}
           </button>
+          <button
+            v-if="canArchive"
+            class="printing-button printing-button--danger printing-button--small"
+            type="button"
+            :disabled="actionId === row.id"
+            @click="requestArchive(row)"
+          >
+            {{ p('archivePrinter') }}
+          </button>
         </div>
 
         <div v-else class="printing-actions">
@@ -717,6 +806,15 @@ onBeforeUnmount(() => {
           </button>
           <button class="printing-button printing-button--secondary printing-button--small" type="button" :disabled="actionId === row.id" @click="requestToggle(row)">
             {{ row.enabled ? p('disable') : p('enable') }}
+          </button>
+          <button
+            v-if="canArchive"
+            class="printing-button printing-button--danger printing-button--small"
+            type="button"
+            :disabled="actionId === row.id"
+            @click="requestArchive(row)"
+          >
+            {{ p('archivePrinter') }}
           </button>
         </div>
 
@@ -859,6 +957,33 @@ onBeforeUnmount(() => {
       <header class="printing-modal__header"><div><span class="printing-modal__eyebrow">{{ p('printer') }}</span><h2 :id="`disable-printer-${pendingDisable.id}`">{{ p('disable') }}{{ pendingDisable.name }}</h2></div><button class="printing-modal__close" type="button" :aria-label="p('close')" @click="pendingDisable = null">×</button></header>
       <div class="printing-modal__body"><p class="printing-hint printing-field--full">{{ p('disablePrinterConfirm') }}</p></div>
       <footer class="printing-modal__footer"><button class="printing-button printing-button--secondary" type="button" @click="pendingDisable = null">{{ p('cancel') }}</button><button class="printing-button printing-button--danger" type="button" @click="confirmDisable">{{ p('confirmAction') }}</button></footer>
+    </section>
+  </div>
+
+  <div v-if="pendingArchive" class="printing-modal-backdrop" @click.self="closeArchiveConfirmation()" @keydown.esc="closeArchiveConfirmation()">
+    <section class="printing-modal printing-confirm-modal" role="dialog" aria-modal="true" :aria-labelledby="`archive-printer-${pendingArchive.id}`">
+      <header class="printing-modal__header">
+        <div><span class="printing-modal__eyebrow">{{ p('dangerousAction') }}</span><h2 :id="`archive-printer-${pendingArchive.id}`">{{ p('archivePrinter') }}</h2></div>
+        <button class="printing-modal__close" type="button" :aria-label="p('close')" @click="closeArchiveConfirmation()">×</button>
+      </header>
+      <div class="printing-modal__body">
+        <p class="printing-hint printing-field--full">{{ p('archivePrinterDescription') }}</p>
+        <dl class="printing-detail-grid printing-field--full">
+          <dt>{{ p('printerName') }}</dt><dd>{{ pendingArchive.name }}</dd>
+          <dt>{{ p('printingMethod') }}</dt><dd>{{ channelLabel(pendingArchive.channelType) }}</dd>
+          <dt>{{ p('targetTerminal') }}</dt><dd>{{ archiveTerminalLabel(pendingArchive) }}</dd>
+          <template v-if="isLan(pendingArchive)">
+            <dt>{{ p('lanEndpoint') }}</dt><dd>{{ lanEndpoint(pendingArchive) }}</dd>
+          </template>
+          <template v-else-if="pendingArchive.channelType === 'LOCAL_USB_ESCPOS'">
+            <dt>{{ p('usbDeviceInformation') }}</dt><dd>{{ usbDeviceLabel(pendingArchive) }}</dd>
+          </template>
+        </dl>
+      </div>
+      <footer class="printing-modal__footer">
+        <button class="printing-button printing-button--secondary" type="button" @click="closeArchiveConfirmation()">{{ p('cancel') }}</button>
+        <button ref="archiveConfirmButton" class="printing-button printing-button--danger" type="button" @click="confirmArchive">{{ p('confirmArchivePrinter') }}</button>
+      </footer>
     </section>
   </div>
 </template>
