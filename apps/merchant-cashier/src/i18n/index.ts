@@ -25,6 +25,10 @@ function setLocale(nextLocale: Locale) {
   if (typeof window !== 'undefined') {
     writeCashierStorage('local', cashierStorageKeys.locale, nextLocale);
     document.documentElement.lang = nextLocale === 'zh' ? 'zh-CN' : nextLocale;
+    const bridge = (window as Window & {
+      YunQiaoMerchantSession?: { postMessage?: (message: string) => void };
+    }).YunQiaoMerchantSession;
+    bridge?.postMessage?.(`LANGUAGE_CHANGED:${nextLocale}`);
   }
 }
 

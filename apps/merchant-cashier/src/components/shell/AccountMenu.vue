@@ -59,6 +59,11 @@ function merchantTerminalBridge() {
     : null;
 }
 
+function isMerchantTerminalWebView() {
+  if (typeof navigator === 'undefined') return false;
+  return /YunQiaoMerchantTerminal\/2(?:\.\d+)?/.test(navigator.userAgent);
+}
+
 function openPrinterDevices() {
   const bridge = merchantTerminalBridge();
   if (!bridge?.postMessage) return;
@@ -67,7 +72,7 @@ function openPrinterDevices() {
 }
 
 onMounted(() => {
-  printerDevicesAvailable.value = Boolean(merchantTerminalBridge());
+  printerDevicesAvailable.value = Boolean(merchantTerminalBridge()) || isMerchantTerminalWebView();
   document.addEventListener('pointerdown', closeOnOutside);
   document.addEventListener('keydown', closeOnEscape);
 });

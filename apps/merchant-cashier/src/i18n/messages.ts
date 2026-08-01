@@ -1062,7 +1062,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'error.server': 'The service is temporarily unavailable. Try again later.',
   'account.menu': 'Account menu',
   'account.language': 'Language',
-  'account.printerDevices': 'Printers & devices',
+  'account.printerDevices': 'Printers & Devices',
   'language.zh': '中文',
   'language.vi': 'Tiếng Việt',
   'language.en': 'English',
