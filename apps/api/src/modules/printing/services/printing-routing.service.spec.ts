@@ -3,6 +3,10 @@ import { PrintingRoutingService } from './printing-routing.service';
 describe('PrintingRoutingService kitchen routing', () => {
   const merchantId = 7n;
   const defaultKitchenPrinterId = 31n;
+  const frontDeskRuleId = 11n;
+  const grillKitchenRuleId = 12n;
+  const hotDishKitchenRuleId = 13n;
+  const defaultKitchenRuleId = 14n;
   const grillPrinterId = 21n;
   const hotDishPrinterId = 22n;
   const bindings = [
@@ -10,17 +14,20 @@ describe('PrintingRoutingService kitchen routing', () => {
     { merchantId, printerId: hotDishPrinterId, categoryId: 102n },
   ];
 
-  function createService(printerId: bigint) {
+  function createService(printerId: bigint, kitchenRuleId: bigint, isKitchen = true) {
     const prisma = {
       merchantPrintingRouting: {
         findUnique: jest.fn().mockResolvedValue({ merchantId, defaultKitchenPrinterId }),
       },
       printer: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: printerId,
-          purpose: 'KITCHEN',
-          enabled: true,
-        }),
+        findFirst: jest.fn(),
+      },
+      printRule: {
+        findFirst: jest.fn().mockImplementation(({ where }) =>
+          isKitchen && where.id === kitchenRuleId && where.name === `__ROUTING_NEW_ORDER__:KITCHEN:${printerId}`
+            ? { id: kitchenRuleId }
+            : null,
+        ),
       },
       printerCategoryBinding: { findMany: jest.fn().mockResolvedValue(bindings) },
       order: {
@@ -41,15 +48,38 @@ describe('PrintingRoutingService kitchen routing', () => {
     );
   }
 
-  it('splits categories by kitchen printer and sends unmatched items to the default once', async () => {
+  it('splits categories by kitchen scene and allows the same physical printer in both scenes', async () => {
     await expect(
-      createService(grillPrinterId).kitchenRoutingForOrder(merchantId, grillPrinterId, 900n),
+      createService(grillPrinterId, grillKitchenRuleId).kitchenRoutingForOrder(
+        merchantId,
+        grillPrinterId,
+        900n,
+        grillKitchenRuleId,
+      ),
     ).resolves.toEqual({ isKitchen: true, categoryIds: [101n] });
     await expect(
-      createService(hotDishPrinterId).kitchenRoutingForOrder(merchantId, hotDishPrinterId, 900n),
+      createService(grillPrinterId, frontDeskRuleId, false).kitchenRoutingForOrder(
+        merchantId,
+        grillPrinterId,
+        900n,
+        frontDeskRuleId,
+      ),
+    ).resolves.toEqual({ isKitchen: false, categoryIds: [] });
+    await expect(
+      createService(hotDishPrinterId, hotDishKitchenRuleId).kitchenRoutingForOrder(
+        merchantId,
+        hotDishPrinterId,
+        900n,
+        hotDishKitchenRuleId,
+      ),
     ).resolves.toEqual({ isKitchen: true, categoryIds: [102n] });
     await expect(
-      createService(defaultKitchenPrinterId).kitchenRoutingForOrder(merchantId, defaultKitchenPrinterId, 900n),
+      createService(defaultKitchenPrinterId, defaultKitchenRuleId).kitchenRoutingForOrder(
+        merchantId,
+        defaultKitchenPrinterId,
+        900n,
+        defaultKitchenRuleId,
+      ),
     ).resolves.toEqual({ isKitchen: true, categoryIds: [103n] });
   });
 });

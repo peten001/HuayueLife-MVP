@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, PrinterPurpose } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { UpdatePrintingRoutingDto } from '../dto/printing-routing.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
@@ -8,8 +8,16 @@ import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 
 export const MANAGED_RULE_PREFIX = '__ROUTING_NEW_ORDER__:';
+export const FRONT_DESK_RULE_PREFIX = `${MANAGED_RULE_PREFIX}FRONT_DESK:`;
+export const KITCHEN_RULE_PREFIX = `${MANAGED_RULE_PREFIX}KITCHEN:`;
 
 type DbClient = PrismaService | Prisma.TransactionClient;
+type RoutingScene = 'FRONT_DESK' | 'KITCHEN';
+type RoutingEntry = {
+  printerId: bigint;
+  newOrderAutoPrint: boolean;
+  categoryIds: bigint[];
+};
 
 @Injectable()
 export class PrintingRoutingService {
@@ -30,7 +38,13 @@ export class PrintingRoutingService {
       }),
       this.prisma.printRule.findMany({
         where: { merchantId, name: { startsWith: MANAGED_RULE_PREFIX } },
-        select: { printerId: true, autoPrint: true, enabled: true },
+        select: {
+          name: true,
+          printerId: true,
+          autoPrint: true,
+          enabled: true,
+          printer: { select: { purpose: true } },
+        },
       }),
     ]);
     const categoryIdsByPrinter = new Map<string, string[]>();
@@ -41,15 +55,32 @@ export class PrintingRoutingService {
         binding.categoryId.toString(),
       ]);
     }
+    const frontDeskPrinters: Array<{ printerId: string; newOrderAutoPrint: boolean; categoryIds: string[] }> = [];
+    const kitchenPrinters: Array<{ printerId: string; newOrderAutoPrint: boolean; categoryIds: string[] }> = [];
+    for (const rule of managedRules) {
+      const explicitScene = this.sceneForRuleName(rule.name);
+      // A disabled legacy rule was retired during conversion. It must not
+      // surface as a second scene entry beside the new explicit rule.
+      if (!explicitScene && !rule.autoPrint && !rule.enabled) continue;
+      // Rules saved before the split-scene contract are rendered once using
+      // their legacy physical-purpose value, then converted on the next save.
+      const scene = explicitScene
+        ?? (rule.printer.purpose === 'KITCHEN' ? 'KITCHEN' : 'FRONT_DESK');
+      const entry = {
+        printerId: rule.printerId.toString(),
+        newOrderAutoPrint: rule.autoPrint && rule.enabled,
+        categoryIds: scene === 'KITCHEN'
+          ? categoryIdsByPrinter.get(rule.printerId.toString()) ?? []
+          : [],
+      };
+      (scene === 'FRONT_DESK' ? frontDeskPrinters : kitchenPrinters).push(entry);
+    }
     return {
       configured: Boolean(routing),
       checkoutDefaultPrinterId: routing?.checkoutDefaultPrinterId?.toString() ?? null,
       defaultKitchenPrinterId: routing?.defaultKitchenPrinterId?.toString() ?? null,
-      printers: managedRules.map((rule) => ({
-        printerId: rule.printerId.toString(),
-        newOrderAutoPrint: rule.autoPrint && rule.enabled,
-        categoryIds: categoryIdsByPrinter.get(rule.printerId.toString()) ?? [],
-      })),
+      frontDeskPrinters,
+      kitchenPrinters,
     };
   }
 
@@ -61,12 +92,16 @@ export class PrintingRoutingService {
   ) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
-    const normalized = this.normalize(dto);
-    const printerIds = normalized.printers.map(({ printerId }) => printerId);
+    const frontDeskPrinters = this.normalizeEntries(dto.frontDeskPrinters, '前台');
+    const kitchenPrinters = this.normalizeEntries(dto.kitchenPrinters, '厨房');
+    const allEntries = [
+      ...frontDeskPrinters.map((entry) => ({ ...entry, scene: 'FRONT_DESK' as const })),
+      ...kitchenPrinters.map((entry) => ({ ...entry, scene: 'KITCHEN' as const })),
+    ];
     const allReferencedIds = [
-      ...printerIds,
-      ...(normalized.checkoutDefaultPrinterId ? [normalized.checkoutDefaultPrinterId] : []),
-      ...(normalized.defaultKitchenPrinterId ? [normalized.defaultKitchenPrinterId] : []),
+      ...allEntries.map(({ printerId }) => printerId),
+      ...(dto.checkoutDefaultPrinterId ? [BigInt(dto.checkoutDefaultPrinterId)] : []),
+      ...(dto.defaultKitchenPrinterId ? [BigInt(dto.defaultKitchenPrinterId)] : []),
     ];
     const printers = await this.prisma.printer.findMany({
       where: {
@@ -74,39 +109,36 @@ export class PrintingRoutingService {
         id: { in: [...new Set(allReferencedIds)] },
         deletedAt: null,
       },
-      select: { id: true, purpose: true, enabled: true },
+      select: { id: true, enabled: true },
     });
     const byId = new Map(printers.map((printer) => [printer.id, printer]));
     if (printers.length !== new Set(allReferencedIds).size) {
       this.invalid('打印机不存在、已删除或不属于当前商家');
     }
-    for (const entry of normalized.printers) {
-      const printer = byId.get(entry.printerId);
-      if (!printer || !['FRONT_DESK', 'KITCHEN'].includes(printer.purpose)) {
-        this.invalid('自动打印只支持前台或厨房打印机');
-      }
-      if (!printer.enabled) this.invalid('已停用的打印机不能配置自动打印');
-      if (printer.purpose !== 'KITCHEN' && entry.categoryIds.length > 0) {
-        this.invalid('只有厨房打印机可以绑定菜品分类');
+    for (const entry of allEntries) {
+      if (!byId.get(entry.printerId)?.enabled) {
+        this.invalid('已停用的打印机不能配置自动打印');
       }
     }
-    this.assertDefaultPrinter(
+    const frontIds = new Set(frontDeskPrinters.map(({ printerId }) => printerId));
+    const kitchenIds = new Set(kitchenPrinters.map(({ printerId }) => printerId));
+    this.assertDefaultInScene(
       byId,
-      normalized.checkoutDefaultPrinterId,
-      'FRONT_DESK',
+      dto.checkoutDefaultPrinterId ? BigInt(dto.checkoutDefaultPrinterId) : null,
+      frontIds,
       '结账默认打印机必须是已启用的前台打印机',
     );
-    this.assertDefaultPrinter(
+    this.assertDefaultInScene(
       byId,
-      normalized.defaultKitchenPrinterId,
-      'KITCHEN',
+      dto.defaultKitchenPrinterId ? BigInt(dto.defaultKitchenPrinterId) : null,
+      kitchenIds,
       '默认厨房打印机必须是已启用的厨房打印机',
     );
-    const categoryIds = normalized.printers.flatMap((entry) => entry.categoryIds);
-    if (new Set(categoryIds).size !== categoryIds.length) {
-      this.invalid('一个菜品分类只能绑定一台厨房打印机');
+    const categoryIds = kitchenPrinters.flatMap((entry) => entry.categoryIds);
+    if (new Set(categoryIds.map(String)).size !== categoryIds.length) {
+      this.invalid('一个菜品分类只能绑定一台启用中的厨房打印机');
     }
-    if (categoryIds.length > 0 && !normalized.defaultKitchenPrinterId) {
+    if (categoryIds.length > 0 && !dto.defaultKitchenPrinterId) {
       this.invalid('启用分类分单前必须设置默认厨房打印机');
     }
     if (categoryIds.length > 0) {
@@ -125,45 +157,52 @@ export class PrintingRoutingService {
         where: { merchantId },
         create: {
           merchantId,
-          checkoutDefaultPrinterId: normalized.checkoutDefaultPrinterId,
-          defaultKitchenPrinterId: normalized.defaultKitchenPrinterId,
+          checkoutDefaultPrinterId: dto.checkoutDefaultPrinterId ? BigInt(dto.checkoutDefaultPrinterId) : null,
+          defaultKitchenPrinterId: dto.defaultKitchenPrinterId ? BigInt(dto.defaultKitchenPrinterId) : null,
         },
         update: {
-          checkoutDefaultPrinterId: normalized.checkoutDefaultPrinterId,
-          defaultKitchenPrinterId: normalized.defaultKitchenPrinterId,
+          checkoutDefaultPrinterId: dto.checkoutDefaultPrinterId ? BigInt(dto.checkoutDefaultPrinterId) : null,
+          defaultKitchenPrinterId: dto.defaultKitchenPrinterId ? BigInt(dto.defaultKitchenPrinterId) : null,
         },
       });
       await tx.printerCategoryBinding.deleteMany({ where: { merchantId } });
-      const bindings = normalized.printers.flatMap((entry) =>
+      const bindings = kitchenPrinters.flatMap((entry) =>
         entry.categoryIds.map((categoryId) => ({ merchantId, printerId: entry.printerId, categoryId })),
       );
       if (bindings.length) await tx.printerCategoryBinding.createMany({ data: bindings });
 
       const managed = await tx.printRule.findMany({
         where: { merchantId, name: { startsWith: MANAGED_RULE_PREFIX } },
-        select: { id: true, printerId: true },
+        select: { id: true, printerId: true, name: true },
       });
-      const configuredIds = new Set(printerIds);
+      const desiredByName = new Map(
+        allEntries.map((entry) => [this.ruleName(entry.scene, entry.printerId), entry]),
+      );
       for (const rule of managed) {
-        if (!configuredIds.has(rule.printerId)) {
-          await tx.printRule.update({ where: { id: rule.id }, data: { autoPrint: false, enabled: false } });
+        // Always retire legacy single-purpose routing rules. They are replaced
+        // by one explicit rule per scene, so a physical printer may be in both.
+        if (!desiredByName.has(rule.name)) {
+          await tx.printRule.update({
+            where: { id: rule.id },
+            data: { autoPrint: false, enabled: false },
+          });
         }
       }
-      for (const entry of normalized.printers) {
+      for (const [name, entry] of desiredByName) {
+        const existing = managed.find((rule) => rule.name === name);
         const data = {
           autoPrint: entry.newOrderAutoPrint,
           enabled: entry.newOrderAutoPrint,
           copies: 1,
           priority: 100,
         };
-        const existing = managed.find((rule) => rule.printerId === entry.printerId);
         if (existing) {
           await tx.printRule.update({ where: { id: existing.id }, data });
         } else {
           await tx.printRule.create({
             data: {
               merchantId,
-              name: `${MANAGED_RULE_PREFIX}${entry.printerId.toString()}`,
+              name,
               orderType: null,
               triggerEvent: 'ORDER_ACCEPTED',
               receiptType: 'ORDER_CUSTOMER',
@@ -188,9 +227,10 @@ export class PrintingRoutingService {
               }
             : null,
           afterData: {
-            checkoutDefaultPrinterId: normalized.checkoutDefaultPrinterId?.toString() ?? null,
-            defaultKitchenPrinterId: normalized.defaultKitchenPrinterId?.toString() ?? null,
-            printerIds: normalized.printers.map((entry) => entry.printerId.toString()),
+            checkoutDefaultPrinterId: dto.checkoutDefaultPrinterId ?? null,
+            defaultKitchenPrinterId: dto.defaultKitchenPrinterId ?? null,
+            frontDeskPrinterIds: frontDeskPrinters.map(({ printerId }) => printerId.toString()),
+            kitchenPrinterIds: kitchenPrinters.map(({ printerId }) => printerId.toString()),
           },
           requestId,
         },
@@ -207,37 +247,48 @@ export class PrintingRoutingService {
   async requireCheckoutDefaultPrinter(merchantId: bigint) {
     const routing = await this.prisma.merchantPrintingRouting.findUnique({ where: { merchantId } });
     if (!routing?.checkoutDefaultPrinterId) this.invalid('请先设置结账默认前台打印机');
-    const printer = await this.prisma.printer.findFirst({
+    const rule = await this.prisma.printRule.findFirst({
       where: {
-        id: routing.checkoutDefaultPrinterId,
         merchantId,
-        purpose: 'FRONT_DESK',
-        enabled: true,
-        deletedAt: null,
+        printerId: routing.checkoutDefaultPrinterId,
+        name: this.ruleName('FRONT_DESK', routing.checkoutDefaultPrinterId),
+        printer: { enabled: true, deletedAt: null },
       },
-      select: { id: true },
+      select: { printerId: true },
     });
-    if (!printer) this.invalid('结账默认前台打印机不可用');
-    return printer.id;
+    if (!rule) this.invalid('结账默认前台打印机不可用');
+    return rule.printerId;
   }
 
   async kitchenRoutingForOrder(
     merchantId: bigint,
     printerId: bigint,
     orderId: bigint,
+    routingRuleId: bigint,
   ): Promise<{ isKitchen: boolean; categoryIds: bigint[] }> {
-    const [routing, printer, bindings, order] = await Promise.all([
+    const [routing, kitchenRule, bindings, order] = await Promise.all([
       this.prisma.merchantPrintingRouting.findUnique({ where: { merchantId } }),
-      this.prisma.printer.findFirst({ where: { id: printerId, merchantId, deletedAt: null }, select: { purpose: true, enabled: true } }),
-      this.prisma.printerCategoryBinding.findMany({ where: { merchantId }, select: { printerId: true, categoryId: true } }),
+      this.prisma.printRule.findFirst({
+        where: {
+          id: routingRuleId,
+          merchantId,
+          printerId,
+          name: this.ruleName('KITCHEN', printerId),
+          enabled: true,
+          printer: { enabled: true, deletedAt: null },
+        },
+        select: { id: true },
+      }),
+      this.prisma.printerCategoryBinding.findMany({
+        where: { merchantId },
+        select: { printerId: true, categoryId: true },
+      }),
       this.prisma.order.findFirst({
         where: { id: orderId, merchantId },
         select: { items: { select: { product: { select: { categoryId: true } } } } },
       }),
     ]);
-    if (!routing || !printer || !printer.enabled || printer.purpose !== 'KITCHEN' || !order) {
-      return { isKitchen: false, categoryIds: [] };
-    }
+    if (!routing || !kitchenRule || !order) return { isKitchen: false, categoryIds: [] };
     const boundCategoryIds = new Set(bindings.map((binding) => binding.categoryId));
     const ownCategoryIds = new Set(
       bindings.filter((binding) => binding.printerId === printerId).map((binding) => binding.categoryId),
@@ -254,12 +305,12 @@ export class PrintingRoutingService {
     return { isKitchen: true, categoryIds: [...assigned] };
   }
 
-  private normalize(dto: UpdatePrintingRoutingDto) {
+  private normalizeEntries(entries: UpdatePrintingRoutingDto['frontDeskPrinters'], label: string): RoutingEntry[] {
     const seen = new Set<string>();
-    const printers = dto.printers.map((entry) => {
+    return entries.map((entry) => {
       const printerId = BigInt(entry.printerId);
       const key = printerId.toString();
-      if (seen.has(key)) this.invalid('同一打印机不能重复提交');
+      if (seen.has(key)) this.invalid(`同一打印机不能重复添加到${label}配置`);
       seen.add(key);
       const categoryIds = (entry.categoryIds ?? []).map((id) => BigInt(id));
       if (new Set(categoryIds.map(String)).size !== categoryIds.length) {
@@ -267,22 +318,26 @@ export class PrintingRoutingService {
       }
       return { printerId, newOrderAutoPrint: entry.newOrderAutoPrint, categoryIds };
     });
-    return {
-      printers,
-      checkoutDefaultPrinterId: dto.checkoutDefaultPrinterId ? BigInt(dto.checkoutDefaultPrinterId) : null,
-      defaultKitchenPrinterId: dto.defaultKitchenPrinterId ? BigInt(dto.defaultKitchenPrinterId) : null,
-    };
   }
 
-  private assertDefaultPrinter(
-    printers: Map<bigint, { purpose: PrinterPurpose; enabled: boolean }>,
+  private assertDefaultInScene(
+    printers: Map<bigint, { enabled: boolean }>,
     id: bigint | null,
-    purpose: PrinterPurpose,
+    scenePrinterIds: Set<bigint>,
     message: string,
   ) {
     if (!id) return;
-    const printer = printers.get(id);
-    if (!printer || printer.purpose !== purpose || !printer.enabled) this.invalid(message);
+    if (!scenePrinterIds.has(id) || !printers.get(id)?.enabled) this.invalid(message);
+  }
+
+  private ruleName(scene: RoutingScene, printerId: bigint) {
+    return `${scene === 'FRONT_DESK' ? FRONT_DESK_RULE_PREFIX : KITCHEN_RULE_PREFIX}${printerId.toString()}`;
+  }
+
+  private sceneForRuleName(name: string): RoutingScene | null {
+    if (name.startsWith(FRONT_DESK_RULE_PREFIX)) return 'FRONT_DESK';
+    if (name.startsWith(KITCHEN_RULE_PREFIX)) return 'KITCHEN';
+    return null;
   }
 
   private invalid(message: string): never {

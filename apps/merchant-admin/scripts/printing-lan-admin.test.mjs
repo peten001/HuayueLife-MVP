@@ -109,8 +109,8 @@ try {
   assert.doesNotMatch(rulesPage, /printingReleasePolicy|lanExecutionEnabled/);
   assert.doesNotMatch(rulesPage, /channelType !== 'LOCAL_USB_ESCPOS'/);
   assert.doesNotMatch(rulesPage, /updatePrintingPrinter/);
-  assert.match(rulesPage, /printerOptionLabel/);
-  assert.match(rulesPage, /normalizedLanSummary/);
+  assert.match(rulesPage, /usageLabel/);
+  assert.match(rulesPage, /lanPrinterIsOnline/);
   assert.match(rulesPage, /role="dialog"/);
 
   for (const forbidden of [

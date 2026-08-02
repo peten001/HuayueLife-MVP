@@ -32,5 +32,10 @@ export class UpdatePrintingRoutingDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PrintingRoutingPrinterDto)
-  printers: PrintingRoutingPrinterDto[];
+  frontDeskPrinters: PrintingRoutingPrinterDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PrintingRoutingPrinterDto)
+  kitchenPrinters: PrintingRoutingPrinterDto[];
 }

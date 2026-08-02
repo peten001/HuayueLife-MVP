@@ -664,6 +664,7 @@ export class PrintJobsService {
           input.merchantId,
           rule.printerId,
           input.orderId,
+          rule.id,
         )
       : null;
     if (kitchenRoute?.isKitchen && kitchenRoute.categoryIds.length === 0) {

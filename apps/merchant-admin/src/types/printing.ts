@@ -73,13 +73,15 @@ export interface PrintingRouting {
   configured: boolean;
   checkoutDefaultPrinterId: string | null;
   defaultKitchenPrinterId: string | null;
-  printers: PrintingRoutingPrinter[];
+  frontDeskPrinters: PrintingRoutingPrinter[];
+  kitchenPrinters: PrintingRoutingPrinter[];
 }
 
 export interface PrintingRoutingPayload {
   checkoutDefaultPrinterId?: string | null;
   defaultKitchenPrinterId?: string | null;
-  printers: PrintingRoutingPrinter[];
+  frontDeskPrinters: PrintingRoutingPrinter[];
+  kitchenPrinters: PrintingRoutingPrinter[];
 }
 
 export type LanPrinterAdminState =
