@@ -15,7 +15,9 @@ const username = ref('');
 const password = ref('');
 const remember = ref(true);
 const loading = ref(false);
-const errorText = ref(route.query.expired === '1' ? t('error.unauthorized') : '');
+const errorText = ref(
+  route.query.expired === '1' ? '登录已过期，本地打印已停止，请重新登录' : '',
+);
 
 async function submit() {
   if (loading.value) return;

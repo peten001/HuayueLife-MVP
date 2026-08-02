@@ -49,6 +49,10 @@ interface WechatIdentity {
   unionid?: string;
 }
 
+// The shared JwtModule default also protects mini-app users and platform admins.
+// Merchant staff sessions are deliberately longer without changing those audiences.
+const MERCHANT_ACCESS_TOKEN_EXPIRES_IN = '30d';
+
 @Injectable()
 export class AuthService {
   private wechatAccessTokenCache: { token: string; expiresAt: number } | null =
@@ -137,7 +141,9 @@ export class AuthService {
     };
 
     return {
-      accessToken: this.jwtService.sign(payload),
+      accessToken: this.jwtService.sign(payload, {
+        expiresIn: MERCHANT_ACCESS_TOKEN_EXPIRES_IN,
+      }),
       staff: {
         id: staff.id,
         displayName: staff.displayName,
@@ -164,8 +170,11 @@ export class AuthService {
         },
       },
     });
-    if (!staff) {
-      throw new NotFoundException('Merchant staff not found');
+    if (!staff || staff.status !== 'ACTIVE' || staff.merchant.status !== 'ACTIVE') {
+      throw new UnauthorizedException({
+        code: 'AUTH_USER_INVALID',
+        message: 'Merchant account is inactive or unavailable',
+      });
     }
     return {
       user: {

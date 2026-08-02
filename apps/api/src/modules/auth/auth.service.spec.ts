@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 
 describe('AuthService WeChat login', () => {
@@ -23,6 +24,10 @@ describe('AuthService WeChat login', () => {
   const prisma = {
     user: {
       upsert: jest.fn(),
+      update: jest.fn(),
+    },
+    merchantStaff: {
+      findMany: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -98,6 +103,57 @@ describe('AuthService WeChat login', () => {
     expect(consoleLog).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
     expect(result.accessToken).toBe('project-jwt');
+  });
+
+  it('signs merchant staff sessions for 30 days without changing user sessions', async () => {
+    const merchantStaff = {
+      id: 9n,
+      merchantId: 7n,
+      username: 'cashier',
+      passwordHash: await bcrypt.hash('merchant-password', 4),
+      displayName: 'Cashier',
+      role: 'CASHIER',
+      mustChangePassword: false,
+      merchant: { id: 7n, status: 'ACTIVE', capabilities: [] },
+    };
+    prisma.merchantStaff.findMany.mockResolvedValue([merchantStaff]);
+    prisma.merchantStaff.update.mockResolvedValue(merchantStaff);
+
+    await service.loginMerchant({ username: 'cashier', password: 'merchant-password' });
+
+    expect(jwtService.sign).toHaveBeenCalledWith(
+      expect.objectContaining({ accountType: 'MERCHANT_STAFF' }),
+      { expiresIn: '30d' },
+    );
+  });
+
+  it('issues merchant JWT claims with a 30-day iat-to-exp interval', async () => {
+    const merchantStaff = {
+      id: 10n,
+      merchantId: 8n,
+      username: 'cashier-30d',
+      passwordHash: await bcrypt.hash('merchant-password', 4),
+      displayName: 'Cashier 30d',
+      role: 'CASHIER',
+      mustChangePassword: false,
+      merchant: { id: 8n, nameZh: 'Test', status: 'ACTIVE', capabilities: [] },
+    };
+    prisma.merchantStaff.findMany.mockResolvedValue([merchantStaff]);
+    prisma.merchantStaff.update.mockResolvedValue(merchantStaff);
+    const realJwtService = new JwtService({ secret: 'test-merchant-session-secret' });
+    const realService = new AuthService(
+      prisma as never,
+      realJwtService,
+      configService as unknown as ConfigService,
+    );
+
+    const result = await realService.loginMerchant({
+      username: 'cashier-30d',
+      password: 'merchant-password',
+    });
+    const claims = realJwtService.decode(result.accessToken) as { iat: number; exp: number };
+
+    expect(claims.exp - claims.iat).toBe(30 * 24 * 60 * 60);
   });
 
   it('rejects WeChat errcode as an invalid or expired code', async () => {

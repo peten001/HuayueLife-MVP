@@ -23,6 +23,7 @@ export const cashierConfig = Object.freeze({
 
 export const cashierStorageKeys = Object.freeze({
   accessToken: 'yunqiao_cashier_access_token',
+  authExitReason: 'yunqiao_cashier_auth_exit_reason',
   staffSession: 'yunqiao_cashier_staff_session',
   locale: 'yunqiao_cashier_locale',
   pendingOrderSnapshotPrefix: 'yunqiao_cashier_pending_orders',

@@ -12,6 +12,7 @@ import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import com.yunqiao.life.merchantterminal.runtime.TerminalRuntime
 import com.yunqiao.life.merchantterminal.security.TerminalCredential
 import com.yunqiao.life.merchantterminal.security.TerminalIdentityStore
+import com.yunqiao.life.merchantterminal.security.MerchantSessionStopReason
 import com.yunqiao.life.merchantterminal.security.V2CredentialStore
 import com.yunqiao.life.merchantterminal.service.V2PrinterService
 import kotlinx.coroutines.Dispatchers
@@ -100,9 +101,12 @@ class TerminalSessionController(
             }
         }
 
-    suspend fun onMerchantSignedOut() = withContext(Dispatchers.IO) {
+    suspend fun onMerchantSignedOut(
+        reason: MerchantSessionStopReason = MerchantSessionStopReason.SIGNED_OUT,
+    ) = withContext(Dispatchers.IO) {
         sessionMutex.withLock {
             sessionEpoch.incrementAndGet()
+            StartupTrace.event("connector_stop_reason=$reason")
             StartupTrace.event("CONNECTOR_STOPPED_ON_SIGN_OUT")
             // Do not stop a service directly while Android is still waiting for its first
             // startForeground call; V2PrinterService observes this gate and self-stops safely.

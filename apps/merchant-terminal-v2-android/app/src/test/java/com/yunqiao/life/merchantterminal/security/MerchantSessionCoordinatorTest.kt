@@ -23,6 +23,7 @@ class MerchantSessionCoordinatorTest {
     private lateinit var store: MerchantSessionTokenStore
     private var starts = 0
     private var shutdowns = 0
+    private var lastStopReason: MerchantSessionStopReason? = null
     private lateinit var coordinator: MerchantSessionCoordinator
 
     @Before
@@ -33,8 +34,9 @@ class MerchantSessionCoordinatorTest {
         coordinator = MerchantSessionCoordinator(
             tokenStore = store,
             startConnector = { starts += 1 },
-            shutdown = {
+            shutdown = { reason ->
                 shutdowns += 1
+                lastStopReason = reason
                 store.clear()
             },
         )
@@ -88,7 +90,7 @@ class MerchantSessionCoordinatorTest {
                 MerchantWebSessionPersistence.PERSISTENT,
             ),
         )
-        coordinator.applyObservation(signOut, MerchantWebSessionSnapshot.SignedOut)
+        coordinator.applyObservation(signOut, MerchantWebSessionSnapshot.SignedOut())
 
         assertEquals(MerchantSessionApplyResult.IGNORED_STALE, staleResult)
         assertNull(store.read())
@@ -114,11 +116,11 @@ class MerchantSessionCoordinatorTest {
     fun `continuous signed out observations perform shutdown only once`() = runBlocking {
         coordinator.applyObservation(
             coordinator.beginObservation(),
-            MerchantWebSessionSnapshot.SignedOut,
+            MerchantWebSessionSnapshot.SignedOut(),
         )
         coordinator.applyObservation(
             coordinator.beginObservation(),
-            MerchantWebSessionSnapshot.SignedOut,
+            MerchantWebSessionSnapshot.SignedOut(),
         )
         coordinator.applyObservation(
             coordinator.beginObservation(),
@@ -127,6 +129,16 @@ class MerchantSessionCoordinatorTest {
 
         assertEquals(1, shutdowns)
         assertEquals(0, starts)
+    }
+
+    @Test
+    fun `auth expiry stops connector with the expiry reason`() = runBlocking {
+        coordinator.applyObservation(
+            coordinator.beginObservation(),
+            MerchantWebSessionSnapshot.SignedOut(MerchantSessionStopReason.AUTH_EXPIRED),
+        )
+
+        assertEquals(MerchantSessionStopReason.AUTH_EXPIRED, lastStopReason)
     }
 
     @Test
@@ -154,7 +166,7 @@ class MerchantSessionCoordinatorTest {
                 startEntered.complete(Unit)
                 finishStart.await()
             },
-            shutdown = {
+            shutdown = { _ ->
                 shutdowns += 1
                 store.clear()
             },
@@ -172,7 +184,7 @@ class MerchantSessionCoordinatorTest {
         startEntered.await()
         val signOut = coordinator.beginObservation()
         val signOutResult = async {
-            coordinator.applyObservation(signOut, MerchantWebSessionSnapshot.SignedOut)
+            coordinator.applyObservation(signOut, MerchantWebSessionSnapshot.SignedOut())
         }
 
         finishStart.complete(Unit)
@@ -196,7 +208,7 @@ class MerchantSessionCoordinatorTest {
                 starts += 1
                 error("USB inspection failed")
             },
-            shutdown = {
+            shutdown = { _ ->
                 shutdowns += 1
                 store.clear()
             },

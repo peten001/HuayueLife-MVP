@@ -66,11 +66,10 @@ class V2WebMessageContractTest {
 
     @Test
     fun `spa signout remains fail closed and unchanged states emit nothing`() {
+        assertTrue(MerchantWebSessionContract.isSignOutMessage("SIGNED_OUT:AUTH_EXPIRED"))
         assertTrue(
-            MerchantWebSessionContract.sessionTransitionSignal(
-                previous = true,
-                current = false,
-            ) == MerchantWebSessionContract.SIGN_OUT_MESSAGE,
+            MerchantWebSessionContract.signOutSnapshotFromSignal("SIGNED_OUT:AUTH_EXPIRED").reason ==
+                MerchantSessionStopReason.AUTH_EXPIRED,
         )
         assertTrue(MerchantWebSessionContract.sessionTransitionSignal(false, false) == null)
         assertTrue(MerchantWebSessionContract.sessionTransitionSignal(true, true) == null)

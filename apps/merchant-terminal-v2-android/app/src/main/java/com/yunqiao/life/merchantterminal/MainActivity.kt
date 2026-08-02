@@ -35,6 +35,7 @@ import com.yunqiao.life.merchantterminal.security.MerchantSessionCoordinator
 import com.yunqiao.life.merchantterminal.security.MerchantSessionProcessScope
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionContract
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionSnapshot
+import com.yunqiao.life.merchantterminal.security.MerchantSessionStopReason
 import com.yunqiao.life.merchantterminal.web.OriginPolicy
 import com.yunqiao.life.merchantterminal.web.TerminalLoadError
 import com.yunqiao.life.merchantterminal.web.TerminalLoadErrorType
@@ -119,10 +120,10 @@ class MainActivity :
                     requireNotNull(graph.merchantSessionTokenStore.read()),
                 )
             },
-            shutdown = {
+            shutdown = { reason ->
                 printerDevicesController.close()
                 graph.merchantSessionTokenStore.clear()
-                graph.sessionController.onMerchantSignedOut()
+                graph.sessionController.onMerchantSignedOut(reason)
             },
         )
         usbPermissionController = UsbPermissionController(
@@ -278,12 +279,12 @@ class MainActivity :
         webView.webChromeClient = chromeClient
         TrustedWebMessageBridge(
             originPolicy = originPolicy,
-            onSignedOut = {
+            onSignedOut = { reason ->
                 val sequence = merchantSessionCoordinator.beginObservation()
                 MerchantSessionProcessScope.launch {
                     merchantSessionCoordinator.applyObservation(
                         sequence,
-                        MerchantWebSessionSnapshot.SignedOut,
+                        MerchantWebSessionSnapshot.SignedOut(reason),
                     )
                 }
             },

@@ -51,9 +51,10 @@ export const useAuthStore = defineStore('cashier-auth', () => {
   function installUnauthorizedListener() {
     if (unauthorizedListenerInstalled || typeof window === 'undefined') return;
     unauthorizedListenerInstalled = true;
-    window.addEventListener(CASHIER_UNAUTHORIZED_EVENT, () => {
+    window.addEventListener(CASHIER_UNAUTHORIZED_EVENT, (event) => {
+      const code = (event as CustomEvent<{ code?: string }>).detail?.code;
       authExpiredAt.value = new Date().toISOString();
-      clearSession();
+      clearSession(code === 'AUTH_TOKEN_EXPIRED' ? 'AUTH_EXPIRED' : 'AUTH_INVALID');
     });
   }
 
@@ -161,12 +162,19 @@ export const useAuthStore = defineStore('cashier-auth', () => {
     error.value = '';
   }
 
-  function clearSession() {
+  function clearSession(exitReason?: 'AUTH_EXPIRED' | 'AUTH_INVALID') {
     accessToken.value = '';
     session.value = null;
     profile.value = null;
     profileError.value = '';
     if (typeof window !== 'undefined') {
+      if (exitReason) {
+        writeCashierStorage('local', cashierStorageKeys.authExitReason, exitReason);
+        writeCashierStorage('session', cashierStorageKeys.authExitReason, exitReason);
+      } else {
+        removeCashierStorage('local', cashierStorageKeys.authExitReason);
+        removeCashierStorage('session', cashierStorageKeys.authExitReason);
+      }
       removeCashierStorage('local', cashierStorageKeys.accessToken);
       removeCashierStorage('local', cashierStorageKeys.staffSession);
       removeCashierStorage('session', cashierStorageKeys.accessToken);
@@ -176,6 +184,8 @@ export const useAuthStore = defineStore('cashier-auth', () => {
 
   function persistSession() {
     if (typeof window === 'undefined' || demoMode.value) return;
+    removeCashierStorage('local', cashierStorageKeys.authExitReason);
+    removeCashierStorage('session', cashierStorageKeys.authExitReason);
     if (!rememberSession.value) {
       removeCashierStorage('local', cashierStorageKeys.accessToken);
       removeCashierStorage('local', cashierStorageKeys.staffSession);

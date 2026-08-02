@@ -8,6 +8,13 @@ import type { ApiActivityDetail, ApiResponse } from '@/types';
 import { readCashierStorage } from '@/platform/safe-storage';
 import { CashierApiError, normalizeApiErrorPayload } from './error';
 
+const AUTH_SIGN_OUT_CODES = new Set([
+  'AUTH_TOKEN_EXPIRED',
+  'AUTH_TOKEN_INVALID',
+  'AUTH_TOKEN_MISSING',
+  'AUTH_USER_INVALID',
+]);
+
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   authenticated?: boolean;
@@ -63,8 +70,8 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
         details: errorBody,
       });
       if (trackNetworkActivity) reportFailure(error);
-      if (response.status === 401 && authenticated) {
-        dispatchWindowEvent(CASHIER_UNAUTHORIZED_EVENT);
+      if (authenticated && AUTH_SIGN_OUT_CODES.has(error.code)) {
+        dispatchWindowEvent(CASHIER_UNAUTHORIZED_EVENT, { code: error.code });
       }
       throw error;
     }

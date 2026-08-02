@@ -6,10 +6,11 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionContract
+import com.yunqiao.life.merchantterminal.security.MerchantSessionStopReason
 
 class TrustedWebMessageBridge(
     private val originPolicy: OriginPolicy,
-    private val onSignedOut: () -> Unit,
+    private val onSignedOut: (MerchantSessionStopReason) -> Unit,
     private val onSessionChanged: () -> Unit,
     private val onLanguageChanged: (String) -> Unit,
     private val onOpenPrinterDevices: () -> Unit,
@@ -35,9 +36,10 @@ class TrustedWebMessageBridge(
                     ) {
                         return@WebMessageListener
                     }
-                    when (message.data) {
-                        MerchantWebSessionContract.SIGN_OUT_MESSAGE -> onSignedOut()
-                        MerchantWebSessionContract.SESSION_CHANGED_MESSAGE -> onSessionChanged()
+                    when {
+                        MerchantWebSessionContract.isSignOutMessage(message.data) ->
+                            onSignedOut(MerchantWebSessionContract.signOutReason(message.data?.substringAfter(':', "")))
+                        message.data == MerchantWebSessionContract.SESSION_CHANGED_MESSAGE -> onSessionChanged()
                         else -> MerchantWebSessionContract.languageFromSignal(message.data)?.let(onLanguageChanged)
                     }
                 },

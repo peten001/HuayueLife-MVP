@@ -115,8 +115,17 @@ sealed class MerchantWebSessionSnapshot {
         val persistence: MerchantWebSessionPersistence,
     ) : MerchantWebSessionSnapshot()
 
-    data object SignedOut : MerchantWebSessionSnapshot()
+    data class SignedOut(
+        val reason: MerchantSessionStopReason = MerchantSessionStopReason.SIGNED_OUT,
+    ) : MerchantWebSessionSnapshot()
     data object Invalid : MerchantWebSessionSnapshot()
+}
+
+enum class MerchantSessionStopReason {
+    AUTH_EXPIRED,
+    AUTH_INVALID,
+    SIGNED_OUT,
+    INVALID_SESSION,
 }
 
 /**
@@ -127,6 +136,7 @@ sealed class MerchantWebSessionSnapshot {
  */
 object MerchantWebSessionContract {
     const val STORAGE_KEY = "yunqiao_cashier_access_token"
+    const val AUTH_EXIT_REASON_KEY = "yunqiao_cashier_auth_exit_reason"
     const val SIGNAL_OBJECT_NAME = "YunQiaoMerchantSession"
     const val SIGN_OUT_MESSAGE = "SIGNED_OUT"
     const val SESSION_CHANGED_MESSAGE = "SESSION_CHANGED"
@@ -143,7 +153,8 @@ object MerchantWebSessionContract {
             "if(local){return JSON.stringify({state:'AUTHENTICATED',persistence:'PERSISTENT',token:local});}" +
             "var session=window.sessionStorage.getItem(key);" +
             "if(session){return JSON.stringify({state:'AUTHENTICATED',persistence:'PROCESS',token:session});}" +
-            "return JSON.stringify({state:'SIGNED_OUT'});" +
+            "var reason=window.localStorage.getItem('$AUTH_EXIT_REASON_KEY')||window.sessionStorage.getItem('$AUTH_EXIT_REASON_KEY');" +
+            "return JSON.stringify({state:'SIGNED_OUT',reason:reason||''});" +
             "}catch(e){return JSON.stringify({state:'INVALID'});}})()"
 
     fun logoutObserverScript(): String =
@@ -152,12 +163,13 @@ object MerchantWebSessionContract {
             "var bridge=window.$SIGNAL_OBJECT_NAME;" +
             "if(!bridge||typeof bridge.postMessage!=='function'){return;}" +
             "var key='$STORAGE_KEY';" +
+            "var reasonKey='$AUTH_EXIT_REASON_KEY';" +
             "var hasSession=function(){try{return !!(window.localStorage.getItem(key)||" +
             "window.sessionStorage.getItem(key));}catch(e){return false;}};" +
             "var previous=hasSession();" +
             "window.__yunqiaoMerchantSessionObserver=window.setInterval(function(){" +
             "var current=hasSession();" +
-            "if(previous&&!current){bridge.postMessage('$SIGN_OUT_MESSAGE');}" +
+            "if(previous&&!current){var reason='';try{reason=window.localStorage.getItem(reasonKey)||window.sessionStorage.getItem(reasonKey)||'';}catch(e){}bridge.postMessage(reason?'$SIGN_OUT_MESSAGE:'+reason:'$SIGN_OUT_MESSAGE');}" +
             "else if(!previous&&current){bridge.postMessage('$SESSION_CHANGED_MESSAGE');}" +
             "previous=current;" +
             "},250);" +
@@ -170,7 +182,7 @@ object MerchantWebSessionContract {
         val json = runCatching { JSONObject(payload) }.getOrNull()
             ?: return MerchantWebSessionSnapshot.Invalid
         return when (json.optString("state")) {
-            "SIGNED_OUT" -> MerchantWebSessionSnapshot.SignedOut
+            "SIGNED_OUT" -> MerchantWebSessionSnapshot.SignedOut(signOutReason(json.optString("reason")))
             "AUTHENTICATED" -> {
                 val token = json.optString("token")
                 val persistence = when (json.optString("persistence")) {
@@ -201,10 +213,20 @@ object MerchantWebSessionContract {
         else -> null
     }
 
-    fun isSessionSignalMessage(value: String?): Boolean = value in setOf(
-        SIGN_OUT_MESSAGE,
-        SESSION_CHANGED_MESSAGE,
-    )
+    fun isSessionSignalMessage(value: String?): Boolean =
+        value == SESSION_CHANGED_MESSAGE || isSignOutMessage(value)
+
+    fun isSignOutMessage(value: String?): Boolean =
+        value == SIGN_OUT_MESSAGE || value?.startsWith("$SIGN_OUT_MESSAGE:") == true
+
+    fun signOutReason(value: String?): MerchantSessionStopReason = when (value) {
+        "AUTH_EXPIRED" -> MerchantSessionStopReason.AUTH_EXPIRED
+        "AUTH_INVALID" -> MerchantSessionStopReason.AUTH_INVALID
+        else -> MerchantSessionStopReason.SIGNED_OUT
+    }
+
+    fun signOutSnapshotFromSignal(value: String?): MerchantWebSessionSnapshot.SignedOut =
+        MerchantWebSessionSnapshot.SignedOut(signOutReason(value?.substringAfter(':', "")))
 
     fun languageFromSignal(value: String?): String? = value
         ?.takeIf { it.startsWith(LANGUAGE_CHANGED_PREFIX) }
@@ -232,7 +254,7 @@ enum class MerchantSessionApplyResult {
 class MerchantSessionCoordinator(
     private val tokenStore: MerchantSessionTokenStore,
     private val startConnector: suspend () -> Unit,
-    private val shutdown: suspend () -> Unit,
+    private val shutdown: suspend (MerchantSessionStopReason) -> Unit,
 ) {
     private val generation = AtomicLong(0)
     private val applyMutex = Mutex()
@@ -269,23 +291,28 @@ class MerchantSessionCoordinator(
                     // win even when it arrived after the pre-start generation check.
                     if (sequence != generation.get()) {
                         lastAuthenticatedSession = null
-                        withContext(NonCancellable) { shutdown() }
+                        withContext(NonCancellable) { shutdown(MerchantSessionStopReason.SIGNED_OUT) }
                         signedOutApplied = true
                         return@withLock MerchantSessionApplyResult.IGNORED_STALE
                     }
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
-                    withContext(NonCancellable) { shutdown() }
+                    withContext(NonCancellable) { shutdown(MerchantSessionStopReason.INVALID_SESSION) }
                     signedOutApplied = true
                     return@withLock MerchantSessionApplyResult.FAILED_CLOSED
                 }
             }
-            MerchantWebSessionSnapshot.Invalid,
-            MerchantWebSessionSnapshot.SignedOut,
-            -> {
+            MerchantWebSessionSnapshot.Invalid -> {
                 lastAuthenticatedSession = null
                 if (!signedOutApplied || tokenStore.hasCredential()) {
-                    shutdown()
+                    shutdown(MerchantSessionStopReason.INVALID_SESSION)
+                    signedOutApplied = true
+                }
+            }
+            is MerchantWebSessionSnapshot.SignedOut -> {
+                lastAuthenticatedSession = null
+                if (!signedOutApplied || tokenStore.hasCredential()) {
+                    shutdown(snapshot.reason)
                     signedOutApplied = true
                 }
             }

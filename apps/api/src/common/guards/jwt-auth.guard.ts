@@ -17,14 +17,26 @@ export class JwtAuthGuard implements CanActivate {
     const authorization = request.header('authorization');
 
     if (!authorization?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing bearer token');
+      throw new UnauthorizedException({
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authentication token missing',
+      });
     }
 
     try {
       request.user = this.jwtService.verify<AuthUser>(authorization.slice(7));
       return true;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TokenExpiredError') {
+        throw new UnauthorizedException({
+          code: 'AUTH_TOKEN_EXPIRED',
+          message: 'Login session expired',
+        });
+      }
+      throw new UnauthorizedException({
+        code: 'AUTH_TOKEN_INVALID',
+        message: 'Invalid authentication token',
+      });
     }
   }
 }

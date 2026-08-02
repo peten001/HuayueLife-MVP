@@ -79,8 +79,8 @@ describe('cashier HTTP client', () => {
     });
   });
 
-  it('normalizes an API error and dispatches the unauthorized event for 401', async () => {
-    fetchMock.mockResolvedValue(apiError(401, 'UNAUTHORIZED', 'Token expired'));
+  it('normalizes an expired token response and dispatches one auth-expired event', async () => {
+    fetchMock.mockResolvedValue(apiError(401, 'AUTH_TOKEN_EXPIRED', 'Login session expired'));
     const unauthorized = vi.fn();
     const activity = vi.fn<(event: Event) => void>();
     window.addEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
@@ -90,20 +90,49 @@ describe('cashier HTTP client', () => {
       await expect(requestApi('/merchant/me')).rejects.toMatchObject({
         name: 'CashierApiError',
         status: 401,
-        code: 'UNAUTHORIZED',
-        message: 'Token expired',
+        code: 'AUTH_TOKEN_EXPIRED',
+        message: 'Login session expired',
         requestId: 'request-error',
       });
       expect(unauthorized).toHaveBeenCalledOnce();
+      expect((unauthorized.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+        code: 'AUTH_TOKEN_EXPIRED',
+      });
       const detail = (activity.mock.calls[0]?.[0] as CustomEvent<ApiActivityDetail>).detail;
       expect(detail).toMatchObject({
         status: 'failure',
-        errorCode: 'UNAUTHORIZED',
+        errorCode: 'AUTH_TOKEN_EXPIRED',
         statusCode: 401,
       });
     } finally {
       window.removeEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
       window.removeEventListener(CASHIER_API_ACTIVITY_EVENT, activity);
+    }
+  });
+
+  it('does not clear a valid session for an unrelated 401 response code', async () => {
+    fetchMock.mockResolvedValue(apiError(401, 'HTTP_401', 'Request failed'));
+    const unauthorized = vi.fn();
+    window.addEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
+
+    try {
+      await expect(requestApi('/merchant/me')).rejects.toMatchObject({ status: 401 });
+      expect(unauthorized).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
+    }
+  });
+
+  it.each([403, 500])('does not sign out for HTTP %s', async (status) => {
+    fetchMock.mockResolvedValue(apiError(status, `HTTP_${status}`, 'Request failed'));
+    const unauthorized = vi.fn();
+    window.addEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
+
+    try {
+      await expect(requestApi('/merchant/tables')).rejects.toMatchObject({ status });
+      expect(unauthorized).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CASHIER_UNAUTHORIZED_EVENT, unauthorized);
     }
   });
 

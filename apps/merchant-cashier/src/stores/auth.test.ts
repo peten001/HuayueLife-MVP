@@ -106,12 +106,15 @@ describe('cashier authentication storage', () => {
     const store = useAuthStore();
     await store.hydrate();
 
-    window.dispatchEvent(new CustomEvent(CASHIER_UNAUTHORIZED_EVENT));
+    window.dispatchEvent(new CustomEvent(CASHIER_UNAUTHORIZED_EVENT, {
+      detail: { code: 'AUTH_TOKEN_EXPIRED' },
+    }));
 
     expect(store.isAuthenticated).toBe(false);
     expect(store.authExpiredAt).not.toBeNull();
     expect(window.localStorage.getItem(cashierStorageKeys.accessToken)).toBeNull();
     expect(window.sessionStorage.getItem(cashierStorageKeys.accessToken)).toBeNull();
+    expect(window.localStorage.getItem(cashierStorageKeys.authExitReason)).toBe('AUTH_EXPIRED');
   });
 
   it('falls back to a recoverable signed-out state when Web Storage is unavailable', async () => {
