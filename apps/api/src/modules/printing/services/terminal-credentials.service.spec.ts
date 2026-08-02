@@ -344,6 +344,7 @@ describe('TerminalCredentialsService', () => {
         tokenHash: terminalHash(service, originalSecret),
         tokenVersion: 2,
         tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(),
       }),
     );
 
@@ -363,6 +364,271 @@ describe('TerminalCredentialsService', () => {
     expect(prisma.merchantTerminal.update).not.toHaveBeenCalled();
     expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
     expect(serialized(error)).not.toContain(differentSecret);
+  });
+
+  it('recovers one stale same-merchant device in place and rotates its credential', async () => {
+    const originalSecret = Buffer.alloc(32, 31).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 37).toString('base64url');
+    const staleSeenAt = new Date(Date.now() - 61_000);
+    const originalHash = terminalHash(service, originalSecret);
+    const existing = terminal({
+      status: 'ACTIVE',
+      deviceIdentifier: 'install-rc73-1',
+      tokenHash: originalHash,
+      tokenVersion: 8,
+      tokenExpiresAt: new Date(Date.now() + 60_000),
+      lastSeenAt: staleSeenAt,
+      pairedAt: new Date(Date.now() - 120_000),
+      appVersion: '1.0.0-rc9',
+    });
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(existing);
+    prisma.printJob.count.mockResolvedValue(0);
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    prisma.merchantTerminal.findUniqueOrThrow.mockImplementation(async () => {
+      const update = prisma.merchantTerminal.updateMany.mock.calls[0][0].data;
+      return terminal({
+        ...existing,
+        ...update,
+        tokenHash: update.tokenHash,
+        tokenVersion: 9,
+      });
+    });
+
+    const result = await service.bootstrapLanTerminal(
+      merchantId,
+      3n,
+      'bootstrap-stale-recovery',
+      bootstrapDto(replacementSecret),
+    );
+
+    expect(result).toEqual({
+      terminalId: terminalId.toString(),
+      tokenVersion: 9,
+      tokenExpiresAt: expect.any(String),
+      authorizationScheme: 'Terminal',
+    });
+    expect(prisma.merchantTerminal.create).not.toHaveBeenCalled();
+    expect(prisma.printJob.count).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+      },
+    });
+    expect(prisma.printer.findMany).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        deletedAt: null,
+      },
+      select: { capabilities: true },
+    });
+    const rotation = prisma.merchantTerminal.updateMany.mock.calls[0][0];
+    expect(rotation.where).toEqual(
+      expect.objectContaining({
+        id: terminalId,
+        merchantId,
+        deviceIdentifier: 'install-rc73-1',
+        platform: 'ANDROID',
+        boundPrinterId: null,
+        tokenHash: originalHash,
+        tokenVersion: 8,
+        lastSeenAt: staleSeenAt,
+      }),
+    );
+    expect(rotation.data.tokenHash).toBe(
+      terminalHash(service, replacementSecret),
+    );
+    expect(rotation.data.tokenHash).not.toBe(originalHash);
+    expect(rotation.data.tokenVersion).toEqual({ increment: 1 });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'LAN_TERMINAL_BOOTSTRAP_STALE_RECOVERED',
+        resourceId: terminalId,
+        beforeData: expect.objectContaining({ credentialVersion: 8 }),
+        afterData: expect.objectContaining({ credentialVersion: 9 }),
+      }),
+      prisma,
+    );
+
+    const rotatedTerminal = {
+      id: terminalId,
+      merchantId,
+      boundPrinterId: null,
+      name: '前台终端',
+      platform: 'ANDROID',
+      status: 'ACTIVE',
+      revokedAt: null,
+      tokenHash: rotation.data.tokenHash,
+      tokenVersion: 9,
+      tokenExpiresAt: rotation.data.tokenExpiresAt,
+    };
+    prisma.merchantTerminal.findUnique.mockResolvedValue(rotatedTerminal);
+    await expect(
+      service.authenticate(`yt1.${terminalId}.${originalSecret}`),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      service.authenticate(`yt1.${terminalId}.${replacementSecret}`),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: terminalId, tokenVersion: 9 }),
+    );
+  });
+
+  it('rejects stale credential recovery while the terminal owns an active job', async () => {
+    const originalSecret = Buffer.alloc(32, 41).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 43).toString('base64url');
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(
+      terminal({
+        status: 'ACTIVE',
+        deviceIdentifier: 'install-rc73-1',
+        tokenHash: terminalHash(service, originalSecret),
+        tokenVersion: 2,
+        tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(Date.now() - 61_000),
+      }),
+    );
+    prisma.printJob.count.mockResolvedValue(1);
+
+    await expect(
+      service.bootstrapLanTerminal(
+        merchantId,
+        3n,
+        'bootstrap-active-job-conflict',
+        bootstrapDto(replacementSecret),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale credential recovery while a printer remains bound', async () => {
+    const originalSecret = Buffer.alloc(32, 47).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 49).toString('base64url');
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(
+      terminal({
+        status: 'ACTIVE',
+        deviceIdentifier: 'install-rc73-1',
+        boundPrinterId: 91n,
+        tokenHash: terminalHash(service, originalSecret),
+        tokenVersion: 2,
+        tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(Date.now() - 61_000),
+      }),
+    );
+
+    await expect(
+      service.bootstrapLanTerminal(
+        merchantId,
+        3n,
+        'bootstrap-bound-printer-conflict',
+        bootstrapDto(replacementSecret),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printJob.count).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale credential recovery while a LAN printer binding remains active', async () => {
+    const originalSecret = Buffer.alloc(32, 61).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 63).toString('base64url');
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(
+      terminal({
+        status: 'ACTIVE',
+        deviceIdentifier: 'install-rc73-1',
+        tokenHash: terminalHash(service, originalSecret),
+        tokenVersion: 2,
+        tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(Date.now() - 61_000),
+      }),
+    );
+    prisma.printer.findMany.mockResolvedValue([
+      {
+        capabilities: {
+          lanBinding: {
+            terminalId: terminalId.toString(),
+            localBindingId: 'lan-binding-1',
+            terminalInstanceId: 'install-rc73-1',
+            executor: 'TERMINAL',
+            adapter: 'ANDROID_LAN_ESCPOS',
+            bindingVersion: 1,
+            bindingUpdatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    ]);
+
+    await expect(
+      service.bootstrapLanTerminal(
+        merchantId,
+        3n,
+        'bootstrap-lan-binding-conflict',
+        bootstrapDto(replacementSecret),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale recovery when the stored device identity is not exact', async () => {
+    const originalSecret = Buffer.alloc(32, 65).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 67).toString('base64url');
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(
+      terminal({
+        status: 'ACTIVE',
+        deviceIdentifier: 'different-installation',
+        tokenHash: terminalHash(service, originalSecret),
+        tokenVersion: 2,
+        tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(Date.now() - 61_000),
+      }),
+    );
+
+    await expect(
+      service.bootstrapLanTerminal(
+        merchantId,
+        3n,
+        'bootstrap-device-identity-conflict',
+        bootstrapDto(replacementSecret),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printJob.count).not.toHaveBeenCalled();
+    expect(prisma.printer.findMany).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when stale credential rotation loses its compare-and-swap', async () => {
+    const originalSecret = Buffer.alloc(32, 51).toString('base64url');
+    const replacementSecret = Buffer.alloc(32, 53).toString('base64url');
+    prisma.merchant.findUnique.mockResolvedValue(activeMerchant());
+    prisma.merchantTerminal.findUnique.mockResolvedValue(
+      terminal({
+        status: 'ACTIVE',
+        deviceIdentifier: 'install-rc73-1',
+        tokenHash: terminalHash(service, originalSecret),
+        tokenVersion: 2,
+        tokenExpiresAt: new Date(Date.now() + 60_000),
+        lastSeenAt: new Date(Date.now() - 61_000),
+      }),
+    );
+    prisma.printJob.count.mockResolvedValue(0);
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.bootstrapLanTerminal(
+        merchantId,
+        3n,
+        'bootstrap-stale-cas-lost',
+        bootstrapDto(replacementSecret),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.merchantTerminal.create).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('rejects a cross-merchant device identifier', async () => {
@@ -699,7 +965,11 @@ function createPrismaMock() {
       updateMany: jest.fn(),
     },
     printJob: {
+      count: jest.fn().mockResolvedValue(0),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    printer: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     printAttempt: { updateMany: jest.fn() },

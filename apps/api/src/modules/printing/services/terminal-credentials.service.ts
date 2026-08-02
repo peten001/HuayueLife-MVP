@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, PrintJobStatus } from '@prisma/client';
 import {
   createHmac,
   randomBytes,
@@ -21,6 +21,7 @@ import {
   containsPrintingCredentialMaterial,
   PRINTING_ERROR_CODES,
 } from '../types/printing-errors';
+import { lanBindingMetadata } from '../types/lan-terminal-binding';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
@@ -117,7 +118,110 @@ export class TerminalCredentialsService {
 
         if (terminal.tokenHash) {
           if (!safeHexEqual(terminal.tokenHash, expectedHash)) {
-            this.deviceConflict();
+            if (
+              terminal.merchantId !== merchantId ||
+              terminal.deviceIdentifier !== dto.terminalInstanceId ||
+              terminal.platform !== 'ANDROID' ||
+              terminal.status !== 'ACTIVE' ||
+              terminal.revokedAt !== null ||
+              terminal.boundPrinterId !== null ||
+              terminal.lastSeenAt === null ||
+              now.getTime() - terminal.lastSeenAt.getTime() <=
+                this.terminalOfflineThresholdMs()
+            ) {
+              this.deviceConflict();
+            }
+
+            const activeJobs = await tx.printJob.count({
+              where: {
+                merchantId,
+                claimedByTerminalId: terminal.id,
+                status: {
+                  in: [PrintJobStatus.CLAIMED, PrintJobStatus.PRINTING],
+                },
+              },
+            });
+            if (activeJobs !== 0) this.deviceConflict();
+
+            const activeLanPrinters = await tx.printer.findMany({
+              where: {
+                merchantId,
+                channelType: 'LOCAL_LAN_ESCPOS',
+                deletedAt: null,
+              },
+              select: { capabilities: true },
+            });
+            if (
+              activeLanPrinters.some(
+                (printer) =>
+                  lanBindingMetadata(printer.capabilities)?.terminalId ===
+                  terminal.id.toString(),
+              )
+            ) {
+              this.deviceConflict();
+            }
+
+            const tokenExpiresAt = new Date(
+              now.getTime() + this.tokenLifetimeMs(),
+            );
+            const recovered = await tx.merchantTerminal.updateMany({
+              where: {
+                id: terminal.id,
+                merchantId,
+                deviceIdentifier: dto.terminalInstanceId,
+                platform: 'ANDROID',
+                status: 'ACTIVE',
+                revokedAt: null,
+                boundPrinterId: null,
+                tokenHash: terminal.tokenHash,
+                tokenVersion: terminal.tokenVersion,
+                lastSeenAt: terminal.lastSeenAt,
+              },
+              data: {
+                name: dto.terminalName ?? terminal.name,
+                capabilities,
+                appVersion: dto.appVersion,
+                lastSeenAt: now,
+                pairedAt: terminal.pairedAt ?? now,
+                tokenHash: expectedHash,
+                tokenVersion: { increment: 1 },
+                tokenIssuedAt: now,
+                tokenExpiresAt,
+              },
+            });
+            if (recovered.count !== 1) this.deviceConflict();
+
+            const registered = await tx.merchantTerminal.findUniqueOrThrow({
+              where: { id: terminal.id },
+            });
+            await this.audit.record(
+              {
+                merchantId,
+                actorStaffId,
+                action: 'LAN_TERMINAL_BOOTSTRAP_STALE_RECOVERED',
+                resourceType: 'MerchantTerminal',
+                resourceId: terminal.id,
+                beforeData: {
+                  platform: terminal.platform,
+                  appVersion: terminal.appVersion,
+                  credentialVersion: terminal.tokenVersion,
+                  lastSeenAt: terminal.lastSeenAt,
+                },
+                afterData: {
+                  platform: 'ANDROID',
+                  appVersion: dto.appVersion,
+                  credentialVersion: registered.tokenVersion,
+                  credentialExpiresAt: tokenExpiresAt.toISOString(),
+                },
+                requestId,
+              },
+              tx,
+            );
+            return bootstrapResponse(
+              registered.id,
+              registered.tokenVersion,
+              tokenExpiresAt,
+            );
           }
           if (!terminal.tokenExpiresAt) {
             this.deviceConflict();
@@ -615,6 +719,16 @@ export class TerminalCredentialsService {
       ? Math.min(90, Math.max(1, Math.floor(configured)))
       : 30;
     return days * 24 * 60 * 60 * 1_000;
+  }
+
+  private terminalOfflineThresholdMs() {
+    const configured = Number(
+      this.config.get<string>('TERMINAL_HEARTBEAT_SECONDS'),
+    );
+    const heartbeatSeconds = Number.isInteger(configured)
+      ? Math.min(60, Math.max(10, configured))
+      : 20;
+    return Math.max(30, heartbeatSeconds * 3) * 1_000;
   }
 
   private assertBootstrapSecret(value: string) {
