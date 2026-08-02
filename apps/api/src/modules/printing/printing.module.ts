@@ -20,6 +20,7 @@ import { CloudPrintExecutionService } from './services/cloud-print-execution.ser
 import { LanTerminalBindingsService } from './services/lan-terminal-bindings.service';
 import { LanTerminalConnectorController } from './controllers/lan-terminal-connector.controller';
 import { TerminalConnectorController } from './controllers/terminal-connector.controller';
+import { PrintingRoutingService } from './services/printing-routing.service';
 
 @Module({
   controllers: [MerchantPrintingController, LanTerminalConnectorController, TerminalConnectorController],
@@ -34,6 +35,7 @@ import { TerminalConnectorController } from './controllers/terminal-connector.co
     PrintAttemptsService,
     TerminalsService,
     PrintingSettingsService,
+    PrintingRoutingService,
     TerminalCredentialsService,
     CloudPrintingService,
     CloudPrintExecutionService,

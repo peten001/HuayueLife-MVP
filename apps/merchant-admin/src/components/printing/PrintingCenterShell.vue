@@ -8,6 +8,7 @@ import {
   getPrintingRules,
 } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
+import { androidTerminalRelease } from '@/config/android-terminal-release';
 import type {
   PrintingFeatureState,
   PrintingPrinter,
@@ -138,11 +139,12 @@ onBeforeUnmount(() => {
         <p>{{ p('description') }}</p>
       </div>
       <div class="printing-center__header-actions">
-        <RouterLink class="printing-center__download-link" to="/printing-center/android-terminal">
+        <!-- legacy route retained for old links: to="/printing-center/android-terminal" -->
+        <a class="printing-center__download-link" :href="androidTerminalRelease.downloadUrl" :download="androidTerminalRelease.fileName">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
           <span class="printing-center__download-label">{{ p('downloadMerchantApp') }}</span>
           <span class="printing-center__download-short">{{ p('downloadAppShort') }}</span>
-        </RouterLink>
+        </a>
         <span
         :class="[
           'printing-center__capability-status',
@@ -268,6 +270,13 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
 }
+:global(.merchant-sidebar + .content) { background: #f9f9f9; }
+.printing-center { margin-top: -14px; }
+.printing-center__title-block h1 { font-size: 34px !important; line-height: 1.12 !important; }
+.printing-center__title-block p { font-size: 17px !important; }
+.printing-scenario-card { gap: 8px; padding: 12px 16px; }
+.printing-scenario-card__controls select, .printing-toggle { min-height: 38px; }
+.printing-scenario-grid { margin-top: -18px; }
 .printing-printer-row__icon svg, .printing-empty-state__icon svg, .printing-method-card__icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .printing-text-link, .printing-method-card__link { color: var(--printing-green); font-size: 13px; font-weight: 600; text-decoration: none; }
 .printing-text-link:hover, .printing-method-card__link:hover { text-decoration: underline; }

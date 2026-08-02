@@ -363,6 +363,8 @@ model Merchant {
   printRules             PrintRule[]
   printJobs              PrintJob[]
   printTriggerOutbox     PrintTriggerOutbox[]
+  printingRouting        MerchantPrintingRouting?
+  printerCategoryBindings PrinterCategoryBinding[]
   merchantTerminals      MerchantTerminal[]
   printingAuditLogs      PrintingAuditLog[]
   merchantReportSetting  MerchantReportSetting?
@@ -560,6 +562,7 @@ model Category {
 
   merchant Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   products Product[]
+  printerCategoryBindings PrinterCategoryBinding[]
 
   @@index([merchantId, isActive, sortOrder])
   @@map("categories")
@@ -912,12 +915,45 @@ model Printer {
   rules              PrintRule[]
   jobs               PrintJob[]
   printTriggerOutbox PrintTriggerOutbox[]
+  categoryBindings   PrinterCategoryBinding[]
   boundTerminal      MerchantTerminal?    @relation("TerminalBoundPrinter")
 
   @@index([merchantId, enabled], map: "ix_printer_merchant_enabled")
   @@index([merchantId, channelType], map: "ix_printer_merchant_channel")
   @@index([merchantId, deletedAt], map: "ix_printer_merchant_deleted")
   @@map("printers")
+}
+
+/// One row per merchant controls the new front-desk/kitchen routing mode.
+/// Printer ownership and purpose are enforced by the API before persisting IDs.
+model MerchantPrintingRouting {
+  merchantId                    BigInt   @id @map("merchant_id")
+  checkoutDefaultPrinterId      BigInt?  @map("checkout_default_printer_id")
+  defaultKitchenPrinterId       BigInt?  @map("default_kitchen_printer_id")
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_printing_routing")
+}
+
+/// A category may be owned by only one kitchen printer for a merchant.
+model PrinterCategoryBinding {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  printerId  BigInt   @map("printer_id")
+  categoryId BigInt   @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  printer  Printer  @relation(fields: [printerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, categoryId], map: "uq_printer_category_binding_merchant_category")
+  @@unique([printerId, categoryId], map: "uq_printer_category_binding_printer_category")
+  @@index([merchantId, printerId], map: "ix_printer_category_binding_merchant_printer")
+  @@map("printer_category_bindings")
 }
 
 model ReceiptTemplate {

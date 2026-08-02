@@ -67,8 +67,9 @@ export class CreateManualTableBillPrintJobDto {
   @IsNumberString({ no_symbols: true })
   tableSessionId: string;
 
+  @IsOptional()
   @IsNumberString({ no_symbols: true })
-  printerId: string;
+  printerId?: string;
 
   @IsString()
   @IsNotEmpty()

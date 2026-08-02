@@ -58,6 +58,8 @@ import { PrintingSettingsService } from '../services/printing-settings.service';
 import { ReceiptTemplatesService } from '../services/receipt-templates.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { TerminalCredentialsService } from '../services/terminal-credentials.service';
+import { PrintingRoutingService } from '../services/printing-routing.service';
+import { UpdatePrintingRoutingDto } from '../dto/printing-routing.dto';
 
 const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -80,6 +82,7 @@ export class MerchantPrintingController {
     private readonly settings: PrintingSettingsService,
     private readonly cloudExecution: CloudPrintExecutionService,
     private readonly terminalCredentials: TerminalCredentialsService,
+    private readonly routing?: PrintingRoutingService,
   ) {}
 
   @Get('feature-state')
@@ -115,6 +118,29 @@ export class MerchantPrintingController {
       BigInt(staff.sub),
       request.requestId,
       dto.printingEnabled,
+    );
+  }
+
+  @Get('routing')
+  getRouting(@MerchantId() merchantId: bigint) {
+    if (!this.routing) throw new BadRequestException('打印路由服务不可用');
+    return this.routing.get(merchantId);
+  }
+
+  @Patch('routing')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  updateRouting(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: UpdatePrintingRoutingDto,
+  ) {
+    if (!this.routing) throw new BadRequestException('打印路由服务不可用');
+    return this.routing.update(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      dto,
     );
   }
 
@@ -373,7 +399,7 @@ export class MerchantPrintingController {
   }
 
   @Post('jobs/table-bill')
-  createTableBillPrintJob(
+  async createTableBillPrintJob(
     @MerchantId() merchantId: bigint,
     @CurrentUser() staff: AuthUser,
     @Req() request: RequestWithContext,
@@ -384,7 +410,11 @@ export class MerchantPrintingController {
       createdByStaffId: BigInt(staff.sub),
       requestId: request.requestId,
       requestKey: dto.requestKey,
-      printerId: BigInt(dto.printerId),
+      printerId: dto.printerId
+        ? BigInt(dto.printerId)
+        : this.routing
+          ? await this.routing.requireCheckoutDefaultPrinter(merchantId)
+          : (() => { throw new BadRequestException('请指定结账打印机'); })(),
       tableSessionId: BigInt(dto.tableSessionId),
       receiptType: 'TABLE_BILL',
     });

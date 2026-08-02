@@ -167,10 +167,47 @@ function validateRequiredUpdateValues(dto: UpdateMerchantProfileDto) {
       'businessHours must be an object and cannot be null or an array',
     );
   }
+  if (dto.businessHours !== undefined) validateBusinessHours(dto.businessHours);
 
   assertNumber(dto.minimumDeliveryAmountVnd, 'minimumDeliveryAmountVnd');
   assertNumber(dto.deliveryFeeVnd, 'deliveryFeeVnd');
   assertNumber(dto.deliveryRadiusKm, 'deliveryRadiusKm');
+}
+
+const WEEKDAYS = new Set([
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+]);
+const TIME_RANGE = /^(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+/** New writes are limited to same-day, sorted, non-overlapping intervals. */
+function validateBusinessHours(hours: Record<string, string[]>) {
+  for (const [weekday, ranges] of Object.entries(hours)) {
+    if (!WEEKDAYS.has(weekday) || !Array.isArray(ranges) || ranges.length > 3) {
+      throw new BadRequestException('businessHours must contain up to three valid daily intervals');
+    }
+    let previousEnd = -1;
+    for (const range of ranges) {
+      if (typeof range !== 'string' || !TIME_RANGE.test(range)) {
+        throw new BadRequestException('businessHours interval must use HH:mm-HH:mm');
+      }
+      const [start, end] = range.split('-').map(timeToMinutes);
+      if (start >= end || start < previousEnd) {
+        throw new BadRequestException('businessHours intervals must be ordered and cannot overlap');
+      }
+      previousEnd = end;
+    }
+  }
+}
+
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
 }
 
 function mergeMerchantEditableHomepageCategoryKeys(

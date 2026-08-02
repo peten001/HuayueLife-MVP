@@ -37,6 +37,7 @@ import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import { ReceiptSnapshotService } from './receipt-snapshot.service';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
+import { MANAGED_RULE_PREFIX, PrintingRoutingService } from './printing-routing.service';
 import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
@@ -130,6 +131,7 @@ export class PrintJobsService {
     private readonly audit: PrintingAuditService,
     private readonly settings: PrintingSettingsService,
     private readonly lanBindings: LanTerminalBindingsService,
+    private readonly routing?: PrintingRoutingService,
   ) {}
 
   async list(merchantId: bigint, query: ListPrintJobsQueryDto) {
@@ -361,9 +363,13 @@ export class PrintJobsService {
     if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) return [];
     const triggerEvent: PrintTriggerEvent =
       input.status === 'ACCEPTED' ? 'ORDER_ACCEPTED' : 'ORDER_COMPLETED';
+    const managedRouting = this.routing
+      ? await this.routing.routingModeEnabled(tx, input.merchantId)
+      : false;
     const rules = await tx.printRule.findMany({
       where: {
         merchantId: input.merchantId,
+        ...(managedRouting ? { name: { startsWith: MANAGED_RULE_PREFIX } } : {}),
         enabled: true,
         autoPrint: true,
         triggerEvent,
@@ -653,11 +659,22 @@ export class PrintJobsService {
       orderBy: { copyIndex: 'asc' },
     });
     if (alreadyCreated.length === dedupeKeys.length) return alreadyCreated;
+    const kitchenRoute = input.orderId && this.routing
+      ? await this.routing.kitchenRoutingForOrder(
+          input.merchantId,
+          rule.printerId,
+          input.orderId,
+        )
+      : null;
+    if (kitchenRoute?.isKitchen && kitchenRoute.categoryIds.length === 0) {
+      return [];
+    }
     const snapshot = await this.createSnapshot(
       input.merchantId,
       rule.receiptType,
       input.orderId,
       input.tableSessionId,
+      kitchenRoute?.isKitchen ? kitchenRoute.categoryIds : undefined,
     );
     this.assertSnapshotMerchant(input.merchantId, snapshot);
     try {
@@ -2038,9 +2055,12 @@ export class PrintJobsService {
     receiptType: ReceiptType,
     orderId?: bigint,
     tableSessionId?: bigint,
+    categoryIds?: bigint[],
   ) {
     if (receiptType === 'ORDER_CUSTOMER' && orderId) {
-      return this.snapshots.fromOrder(merchantId, orderId);
+      return categoryIds
+        ? this.snapshots.fromOrder(merchantId, orderId, categoryIds)
+        : this.snapshots.fromOrder(merchantId, orderId);
     }
     if (receiptType === 'TABLE_BILL' && tableSessionId) {
       return this.snapshots.fromTableSession(merchantId, tableSessionId);

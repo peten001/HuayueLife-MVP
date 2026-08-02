@@ -27,7 +27,11 @@ const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
 export class ReceiptSnapshotService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async fromOrder(merchantId: bigint, orderId: bigint): Promise<ReceiptDocument> {
+  async fromOrder(
+    merchantId: bigint,
+    orderId: bigint,
+    categoryIds?: bigint[],
+  ): Promise<ReceiptDocument> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, merchantId },
       include: {
@@ -44,13 +48,24 @@ export class ReceiptSnapshotService {
         table: { select: { tableNo: true, tableName: true } },
         items: {
           orderBy: { id: 'asc' },
-          include: { product: { select: { nameVi: true } } },
+          include: { product: { select: { nameVi: true, categoryId: true } } },
         },
       },
     });
     if (!order) this.notFound('订单不存在');
     const settlement = withOrderSettlementFields(order);
 
+    const categoryIdSet = categoryIds ? new Set(categoryIds) : null;
+    const items = order.items.filter(
+      (item) => !categoryIdSet || (item.product?.categoryId && categoryIdSet.has(item.product.categoryId)),
+    );
+    if (categoryIdSet && items.length === 0) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '厨房打印路由未匹配到可打印菜品',
+      });
+    }
+    const itemAmountVnd = items.reduce((sum, item) => sum + item.subtotalVnd, 0n);
     const document: ReceiptDocument = {
       schemaVersion: 1,
       receiptType: 'ORDER_CUSTOMER',
@@ -72,7 +87,7 @@ export class ReceiptSnapshotService {
         createdAt: order.createdAt.toISOString(),
         completedAt: order.completedAt?.toISOString(),
       },
-      items: order.items.map((item) => ({
+      items: items.map((item) => ({
         name: item.productNameZhSnapshot,
         nameVi: item.product?.nameVi ?? undefined,
         quantity: item.quantity,
@@ -81,14 +96,14 @@ export class ReceiptSnapshotService {
         note: item.remark ?? undefined,
       })),
       totals: {
-        subtotal: safeVnd(order.itemAmountVnd),
-        ...(settlement.roundingAmountVnd > 0n
+        subtotal: safeVnd(itemAmountVnd),
+        ...(!categoryIdSet && settlement.roundingAmountVnd > 0n
           ? { discount: safeVnd(settlement.roundingAmountVnd) }
           : {}),
-        originalAmount: safeVnd(settlement.originalAmountVnd),
-        roundingAmount: safeVnd(settlement.roundingAmountVnd),
-        receivedAmount: safeVnd(settlement.payableAmountVnd),
-        total: safeVnd(settlement.payableAmountVnd),
+        originalAmount: safeVnd(categoryIdSet ? itemAmountVnd : settlement.originalAmountVnd),
+        roundingAmount: safeVnd(categoryIdSet ? 0n : settlement.roundingAmountVnd),
+        receivedAmount: safeVnd(categoryIdSet ? itemAmountVnd : settlement.payableAmountVnd),
+        total: safeVnd(categoryIdSet ? itemAmountVnd : settlement.payableAmountVnd),
         currency: 'VND',
       },
       note: order.customerRemark ?? undefined,

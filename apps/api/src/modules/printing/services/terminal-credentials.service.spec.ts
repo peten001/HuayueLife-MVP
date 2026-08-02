@@ -20,7 +20,7 @@ describe('TerminalCredentialsService', () => {
     audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
     service = new TerminalCredentialsService(
       prisma as never,
-      new ConfigService({
+      isolatedConfig({
         TERMINAL_AUTH_PEPPER: 'p'.repeat(48),
         TERMINAL_TOKEN_TTL_DAYS: '365',
       }),
@@ -467,7 +467,7 @@ describe('TerminalCredentialsService', () => {
   it('fails closed when a known placeholder is used as the HMAC pepper', async () => {
     const unsafe = new TerminalCredentialsService(
       prisma as never,
-      new ConfigService({
+      isolatedConfig({
         TERMINAL_AUTH_PEPPER: 'REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES',
       }),
       {
@@ -678,6 +678,12 @@ describe('TerminalCredentialsService', () => {
     },
   );
 });
+
+function isolatedConfig(values: Record<string, string>) {
+  const config = new ConfigService(values);
+  jest.spyOn(config, 'get').mockImplementation((key: string) => values[key]);
+  return config;
+}
 
 function createPrismaMock() {
   const prisma = {

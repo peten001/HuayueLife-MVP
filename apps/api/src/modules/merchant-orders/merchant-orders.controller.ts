@@ -45,6 +45,14 @@ export class MerchantOrdersController {
     return this.service.list(merchantId, query);
   }
 
+  @Get('summary')
+  summary(
+    @MerchantId() merchantId: bigint,
+    @Query() query: ListMerchantOrdersQueryDto,
+  ) {
+    return this.service.summary(merchantId, query);
+  }
+
   @Get(':id')
   get(@MerchantId() merchantId: bigint, @Param() params: IdParamDto) {
     return this.service.get(merchantId, BigInt(params.id));

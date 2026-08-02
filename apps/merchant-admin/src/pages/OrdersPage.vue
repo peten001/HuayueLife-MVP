@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getMerchantOrders, runOrderAction } from '@/api/orders';
+import { getMerchantOrderSummary, getMerchantOrders, runOrderAction, type MerchantOrderSummary } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
@@ -51,6 +51,13 @@ const router = useRouter();
 const { locale, t } = useI18n();
 const merchant = getMerchantStaff()?.merchant ?? null;
 const rows = ref<MerchantOrder[]>([]);
+const summary = ref<MerchantOrderSummary>({
+  ALL: { count: 0, amountVnd: '0' },
+  DINE_IN: { count: 0, amountVnd: '0' },
+  PICKUP: { count: 0, amountVnd: '0' },
+  DELIVERY: { count: 0, amountVnd: '0' },
+  ABNORMAL: { count: 0, amountVnd: '0' },
+});
 const message = ref('');
 const operatingId = ref('');
 const highlightedOrderId = ref('');
@@ -110,56 +117,56 @@ const mobileDisplayRows = computed(() => {
 });
 
 const orderCategoryCards = computed(() => {
-  const stats = {
-    ALL: rows.value.length,
-    DINE_IN: rows.value.filter((order) => order.orderType === 'DINE_IN').length,
-    PICKUP: rows.value.filter((order) => order.orderType === 'PICKUP').length,
-    DELIVERY: rows.value.filter((order) => order.orderType === 'DELIVERY').length,
-    ABNORMAL: rows.value.filter((order) => isAbnormalOrder(order)).length,
-  };
+  const stats = summary.value;
   return [
     {
       key: 'ALL' as const,
       icon: 'all' as const,
       accent: 'all',
       title: localLabel({ zh: '全部订单', vi: 'Tat ca don hang', en: 'All orders' }),
-      description: localLabel({ zh: '今日订单总数', vi: 'Tong so don hom nay', en: 'All orders today' }),
-      count: stats.ALL,
+      count: stats.ALL.count,
+      amount: Number(stats.ALL.amountVnd),
     },
     {
       key: 'DINE_IN' as const,
       icon: 'dine' as const,
       accent: 'dine',
       title: localLabel({ zh: '堂食订单', vi: 'Don tai ban', en: 'Dine-in orders' }),
-      description: localLabel({ zh: '店内扫码点餐', vi: 'Khach quet ma tai ban', en: 'Table QR orders' }),
-      count: stats.DINE_IN,
+      count: stats.DINE_IN.count,
+      amount: Number(stats.DINE_IN.amountVnd),
     },
     {
       key: 'PICKUP' as const,
       icon: 'pickup' as const,
       accent: 'pickup',
       title: localLabel({ zh: '自取订单', vi: 'Don tu den lay', en: 'Pickup orders' }),
-      description: localLabel({ zh: '顾客到店自取', vi: 'Khach den cua hang lay', en: 'Customer pickup orders' }),
-      count: stats.PICKUP,
+      count: stats.PICKUP.count,
+      amount: Number(stats.PICKUP.amountVnd),
     },
     {
       key: 'DELIVERY' as const,
       icon: 'delivery' as const,
       accent: 'delivery',
       title: localLabel({ zh: '商家配送', vi: 'Giao hang noi bo', en: 'Merchant delivery' }),
-      description: localLabel({ zh: '商家自行配送', vi: 'Nha hang tu giao', en: 'Delivered by merchant' }),
-      count: stats.DELIVERY,
+      count: stats.DELIVERY.count,
+      amount: Number(stats.DELIVERY.amountVnd),
     },
     {
       key: 'ABNORMAL' as const,
       icon: 'abnormal' as const,
       accent: 'abnormal',
       title: localLabel({ zh: '异常订单', vi: 'Don bat thuong', en: 'Abnormal orders' }),
-      description: localLabel({ zh: '需处理异常订单', vi: 'Can xu ly ngay', en: 'Orders needing attention' }),
-      count: stats.ABNORMAL,
+      count: stats.ABNORMAL.count,
+      amount: Number(stats.ABNORMAL.amountVnd),
     },
   ];
 });
+
+const todayOrderAmount = computed(() => Number(summary.value.ALL.amountVnd));
+
+function moneySummary(value: number) {
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)} VND`;
+}
 
 const quickStatusCards = computed(() => {
   const source = categoryFilteredRows.value;
@@ -354,8 +361,12 @@ function buildSpeechAnnouncement(type: 'enable-sound' | 'new-order'): OrderSpeec
 
 async function load() {
   try {
-    const loadedRows = await getMerchantOrders(filters);
+    const [loadedRows, loadedSummary] = await Promise.all([
+      getMerchantOrders(filters),
+      getMerchantOrderSummary(filters),
+    ]);
     rows.value = loadedRows;
+    summary.value = loadedSummary;
     notifyNewPendingOrders(
       loadedRows
         .filter((order) => order.status === 'PENDING_ACCEPTANCE')
@@ -918,6 +929,10 @@ function todayInVietnam() {
           en: 'Track and process restaurant orders in real time',
         })"
       />
+      <aside class="orders-amount-card" aria-label="今日订单金额">
+        <span class="orders-amount-icon" aria-hidden="true">▣</span>
+        <div><span>今日订单金额</span><strong>{{ moneySummary(todayOrderAmount) }}</strong><small>较昨日&nbsp;--&nbsp;ⓘ</small></div>
+      </aside>
 
       <form class="orders-filter-card" @submit.prevent="applyFilters">
         <label class="orders-filter-field">
@@ -966,27 +981,8 @@ function todayInVietnam() {
           <div class="order-category-copy">
             <strong>{{ card.title }}</strong>
             <span class="order-category-count">{{ card.count }}</span>
-            <small>{{ card.description }}</small>
+            <em>金额&nbsp; {{ moneySummary(card.amount) }}</em>
           </div>
-        </button>
-      </section>
-
-      <section class="order-status-strip">
-        <button
-          v-for="status in quickStatusCards"
-          :key="status.key"
-          type="button"
-          class="order-status-chip"
-          :class="{ active: activeQuickStatus === status.key }"
-          @click="selectQuickStatus(status.key)"
-        >
-          <span class="order-status-chip-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path v-for="segment in iconPaths(status.icon)" :key="segment" :d="segment" />
-            </svg>
-          </span>
-          <span>{{ status.label }}</span>
-          <span class="order-status-chip-badge" :class="`tone-${status.badgeTone}`">{{ status.count }}</span>
         </button>
       </section>
 
@@ -1346,15 +1342,48 @@ function todayInVietnam() {
 .merchant-orders-page {
   display: grid;
   gap: 14px;
-  max-width: 1280px;
+  max-width: none;
   min-width: 0;
   width: 100%;
 }
 
+:global(.merchant-sidebar + .content) { background: #f6f7f7; }
+.merchant-orders-page :deep(.page-header) { min-height: 104px; }
+.merchant-orders-page :deep(.page-header h1) { font-size: 42px; line-height: 1.08; }
+.merchant-orders-page :deep(.page-header p) { margin-top: 12px; font-size: 20px; }
+.orders-filter-card { padding: 42px 26px; gap: 20px; }
+.orders-filter-field input, .orders-filter-field select { height: 56px; }
+.orders-submit-button { min-height: 56px; padding-inline: 24px; }
+.order-category-card { height: 84px; min-height: 84px; padding: 12px 14px; }
+.order-status-strip { margin-top: 8px; }
+.order-status-strip { min-height: 65px; align-items: center; padding: 10px 14px; border: 1px solid #e5ebe8; border-radius: 16px; background: #fff; }
+.order-status-chip { min-height: 42px; }
+
 .orders-desktop-view {
   display: grid;
   gap: 14px;
+  position: relative;
 }
+
+.orders-amount-card {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 248px;
+  min-height: 82px;
+  padding: 12px 18px;
+  border: 1px solid #e5ebe8;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 7%);
+}
+.orders-amount-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #119447; background: #eaf8ef; font-size: 24px; }
+.orders-amount-card div { display: grid; gap: 3px; }
+.orders-amount-card span, .orders-amount-card small { color: #536b8b; font-size: 12px; }
+.orders-amount-card strong { color: #10213d; font-size: 22px; line-height: 1.05; }
 
 .orders-mobile-view {
   display: none;
@@ -1422,6 +1451,25 @@ function todayInVietnam() {
   padding: 16px 18px;
 }
 
+.orders-filter-card {
+  grid-template-columns: minmax(220px, 1.25fr) minmax(190px, 1fr) minmax(190px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+}
+
+.orders-filter-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.orders-filter-field span { flex: 0 0 auto; }
+.orders-filter-field input,
+.orders-filter-field select { width: 100%; height: 38px; min-width: 0; }
+.orders-submit-button { min-height: 38px; }
+
 .orders-filter-field {
   gap: 8px;
   color: #475569;
@@ -1447,9 +1495,10 @@ function todayInVietnam() {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  min-height: 104px;
+  height: 84px;
+  min-height: 84px;
   min-width: 0;
-  padding: 15px 16px 14px;
+  padding: 10px 14px;
   border: 1px solid #edf1ef;
   border-radius: 16px;
   color: #111827;
@@ -1474,16 +1523,16 @@ function todayInVietnam() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   border-radius: 999px;
   color: #fff;
 }
 
 .order-category-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .accent-all .order-category-icon {
@@ -1508,23 +1557,20 @@ function todayInVietnam() {
 
 .order-category-copy {
   display: grid;
-  gap: 4px;
+  gap: 1px;
+  min-width: 0;
 }
 
 .order-category-copy strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
-.order-category-copy small {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.45;
-}
+.order-category-copy em { color: #536b8b; font-size: 11px; font-style: normal; line-height: 1.2; }
 
 .order-category-count {
   color: #111827;
-  font-size: 27px;
+  font-size: 22px;
   font-weight: 800;
   line-height: 1.1;
 }

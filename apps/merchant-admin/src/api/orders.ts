@@ -12,9 +12,31 @@ export interface OrderFilters {
   date?: string;
 }
 
+export interface MerchantOrderSummaryBucket {
+  count: number;
+  amountVnd: string;
+}
+
+export type MerchantOrderSummary = Record<
+  'ALL' | 'DINE_IN' | 'PICKUP' | 'DELIVERY' | 'ABNORMAL',
+  MerchantOrderSummaryBucket
+>;
+
 export async function getMerchantOrders(filters: OrderFilters = {}) {
   const response = await http.get<ApiResponse<MerchantOrder[]>>(
     '/merchant/orders',
+    {
+      params: Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => Boolean(value)),
+      ),
+    },
+  );
+  return response.data.data;
+}
+
+export async function getMerchantOrderSummary(filters: OrderFilters = {}) {
+  const response = await http.get<ApiResponse<MerchantOrderSummary>>(
+    '/merchant/orders/summary',
     {
       params: Object.fromEntries(
         Object.entries(filters).filter(([, value]) => Boolean(value)),

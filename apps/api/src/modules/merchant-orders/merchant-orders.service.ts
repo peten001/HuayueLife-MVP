@@ -153,6 +153,59 @@ export class MerchantOrdersService {
     return orders.map((order) => this.serializeMerchantOrder(order));
   }
 
+  /**
+   * Dashboard totals intentionally query the complete filtered set on the
+   * server. They never derive monetary figures from the paged/displayed rows.
+   */
+  async summary(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
+    const createdAt = query.date ? this.dateRange(query.date) : undefined;
+    const orders = await this.prisma.order.findMany({
+      where: {
+        merchantId,
+        status: query.status,
+        orderType: query.orderType,
+        createdAt,
+      },
+      select: {
+        id: true,
+        status: true,
+        orderType: true,
+        totalAmountVnd: true,
+        createdAt: true,
+        printLogs: { select: { status: true } },
+      },
+    });
+    const buckets = {
+      ALL: { count: 0, amountVnd: 0n },
+      DINE_IN: { count: 0, amountVnd: 0n },
+      PICKUP: { count: 0, amountVnd: 0n },
+      DELIVERY: { count: 0, amountVnd: 0n },
+      ABNORMAL: { count: 0, amountVnd: 0n },
+    };
+    const staleBefore = Date.now() - 20 * 60 * 1000;
+    for (const order of orders) {
+      const amount = order.status === 'CANCELLED' ? 0n : order.totalAmountVnd;
+      buckets.ALL.count += 1;
+      buckets.ALL.amountVnd += amount;
+      const typeBucket = buckets[order.orderType];
+      typeBucket.count += 1;
+      typeBucket.amountVnd += amount;
+      const abnormal =
+        (order.status === 'PENDING_ACCEPTANCE' && order.createdAt.getTime() < staleBefore) ||
+        order.printLogs.some((log) => log.status === 'FAILED');
+      if (abnormal) {
+        buckets.ABNORMAL.count += 1;
+        buckets.ABNORMAL.amountVnd += amount;
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(buckets).map(([key, value]) => [
+        key,
+        { count: value.count, amountVnd: value.amountVnd.toString() },
+      ]),
+    );
+  }
+
   async get(merchantId: bigint, id: bigint) {
     const order = await this.prisma.order.findFirst({
       where: { id, merchantId },

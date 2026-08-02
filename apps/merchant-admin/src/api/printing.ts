@@ -16,6 +16,8 @@ import type {
   PrintingReceiptTemplatePayload,
   PrintingRule,
   PrintingRulePayload,
+  PrintingRouting,
+  PrintingRoutingPayload,
   TerminalPairingCodeResult,
 } from '@/types/printing';
 
@@ -42,6 +44,21 @@ export async function getCloudPrintingExecutionState() {
 export async function getMerchantPrintingSettings() {
   const response = await http.get<ApiResponse<MerchantPrintingSettings>>(
     '/merchant/printing/settings',
+  );
+  return response.data.data;
+}
+
+export async function getPrintingRouting() {
+  const response = await http.get<ApiResponse<PrintingRouting>>(
+    '/merchant/printing/routing',
+  );
+  return response.data.data;
+}
+
+export async function updatePrintingRouting(payload: PrintingRoutingPayload) {
+  const response = await http.patch<ApiResponse<PrintingRouting>>(
+    '/merchant/printing/routing',
+    payload,
   );
   return response.data.data;
 }

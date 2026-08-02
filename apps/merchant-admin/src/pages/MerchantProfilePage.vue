@@ -1975,7 +1975,19 @@ function toMinutes(value: string) {
   width: 100%;
   max-width: 120px;
   min-width: 0;
+  appearance: none;
+  font-variant-numeric: tabular-nums;
 }
+
+.hours-table-wrap { overflow-x: hidden; }
+.hours-table { table-layout: fixed; }
+.hours-col-day { width: 72px; }
+.hours-col-status { width: 92px; }
+.hours-col-time { width: auto; }
+.hours-day-cell,.hours-status-cell { white-space: nowrap; }
+.hours-day-cell { text-align: right; padding-right: 12px; }
+.hours-status-cell { text-align: right; padding-right: 14px; }
+.hours-table tbody tr { height: 52px; }
 
 .report-settings-grid {
   display: grid;

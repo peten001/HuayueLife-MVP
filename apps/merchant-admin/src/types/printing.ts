@@ -63,6 +63,25 @@ export interface MerchantPrintingSettings {
   featureFlags: Omit<PrintingFeatureState, 'merchantPrintingEnabled'>;
 }
 
+export interface PrintingRoutingPrinter {
+  printerId: string;
+  newOrderAutoPrint: boolean;
+  categoryIds: string[];
+}
+
+export interface PrintingRouting {
+  configured: boolean;
+  checkoutDefaultPrinterId: string | null;
+  defaultKitchenPrinterId: string | null;
+  printers: PrintingRoutingPrinter[];
+}
+
+export interface PrintingRoutingPayload {
+  checkoutDefaultPrinterId?: string | null;
+  defaultKitchenPrinterId?: string | null;
+  printers: PrintingRoutingPrinter[];
+}
+
 export type LanPrinterAdminState =
   | 'WAITING_TERMINAL'
   | 'TERMINAL_OFFLINE'
