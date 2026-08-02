@@ -13,6 +13,7 @@ const assembleRuntime = readFileSync(resolve(currentDir, 'assemble-api-runtime-r
 const buildLinuxRuntime = readFileSync(resolve(currentDir, 'build-api-linux-runtime-release.sh'), 'utf8');
 const verifyRuntime = readFileSync(resolve(currentDir, 'verify-api-runtime-release.sh'), 'utf8');
 const shadowRuntime = readFileSync(resolve(currentDir, 'shadow-api-runtime-release.sh'), 'utf8');
+const verifyCashier = readFileSync(resolve(currentDir, 'verify-cashier-static-release.sh'), 'utf8');
 const cashierBoundary = readFileSync(
   resolve(deployRoot, 'cashier/RELEASE_BOUNDARY.md'),
   'utf8',
@@ -46,6 +47,10 @@ assert.doesNotMatch(preflight, /rsync\b[^\n]*--delete/);
 assert.match(cashierBoundary, /static-only/i);
 assert.match(cashierBoundary, /must\s+not\s+manage\s+the\s+API\s+process/i);
 assert.doesNotMatch(cashierBoundary, /pm2\s+(?:start|restart|reload|delete)/i);
+assert.match(verifyCashier, /command -v rg/);
+assert.match(verifyCashier, /grep -Eqi/);
+assert.match(verifyCashier, /index\.html does not match release artifact/);
+assert.match(verifyCashier, /index\.html must not be served as immutable/);
 
 const serializedConfig = JSON.stringify(ecosystem);
 assert.doesNotMatch(
