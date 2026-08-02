@@ -31,6 +31,7 @@ describe('terminal connector controller contract', () => {
       expect.arrayContaining([
         'heartbeat',
         'config',
+        'syncUsbBinding',
         'claim',
         'markPrinting',
         'markSucceeded',
@@ -43,6 +44,7 @@ describe('terminal connector controller contract', () => {
 
   it('requires ACTIVE status only on execution and printer mutation routes', () => {
     for (const method of [
+      'syncUsbBinding',
       'activeJob',
       'claim',
       'markPrinting',
@@ -58,6 +60,12 @@ describe('terminal connector controller contract', () => {
         ),
       ).toEqual([ActiveTerminalGuard]);
     }
+    expect(
+      Reflect.getMetadata(
+        PATH_METADATA,
+        TerminalConnectorController.prototype.syncUsbBinding,
+      ),
+    ).toBe('usb/bindings/sync');
     expect(
       Reflect.getMetadata(
         GUARDS_METADATA,

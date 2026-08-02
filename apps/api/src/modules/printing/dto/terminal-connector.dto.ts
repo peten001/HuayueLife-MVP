@@ -68,6 +68,56 @@ export class TerminalHeartbeatDto {
   activeJobIds?: string[];
 }
 
+export class SyncUsbTerminalBindingDto {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9._:-]+$/)
+  localBindingId: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(65_535)
+  vendorId: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(65_535)
+  productId: number;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name: string;
+
+  @IsIn(['MM58', 'MM80'])
+  paperWidth: 'MM58' | 'MM80';
+
+  @IsBoolean()
+  enabled: boolean;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  appVersion: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  appVersionCode?: number;
+
+  @IsOptional()
+  @IsIn(['UNKNOWN', 'CONNECTED', 'DISCONNECTED', 'ERROR'])
+  status?: 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+
+  @IsOptional()
+  @IsObject()
+  capabilities?: Record<string, unknown>;
+}
+
 export class ClaimPrintJobDto {
   @IsBoolean()
   allowAutomatic: boolean;

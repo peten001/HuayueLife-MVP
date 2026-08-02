@@ -4,6 +4,7 @@ import { ListPrintJobsQueryDto } from './print-job.dto';
 import { CreatePrintRuleDto } from './print-rule.dto';
 import { CreatePrintingPrinterDto } from './printer.dto';
 import { CreateReceiptTemplateDto } from './receipt-template.dto';
+import { SyncUsbTerminalBindingDto } from './terminal-connector.dto';
 import { CreateMerchantTerminalDto } from './terminal.dto';
 
 describe('Printing DTO validation contract', () => {
@@ -13,6 +14,7 @@ describe('Printing DTO validation contract', () => {
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
+    [SyncUsbTerminalBindingDto, validUsbBinding()],
   ] as const)('accepts a valid %p payload', async (Dto, payload) => {
     await expect(validationErrors(Dto, payload)).resolves.toHaveLength(0);
   });
@@ -29,6 +31,7 @@ describe('Printing DTO validation contract', () => {
     ['job status', ListPrintJobsQueryDto, { ...validJobQuery(), status: 'UNKNOWN' }],
     ['job source', ListPrintJobsQueryDto, { ...validJobQuery(), source: 'WEB' }],
     ['terminal platform', CreateMerchantTerminalDto, { ...validTerminal(), platform: 'IOS' }],
+    ['USB paper width', SyncUsbTerminalBindingDto, { ...validUsbBinding(), paperWidth: 'MM76' }],
   ] as const)('rejects invalid %s enum', async (_caseName, Dto, payload) => {
     expect(await validationErrors(Dto, payload)).not.toHaveLength(0);
   });
@@ -38,6 +41,7 @@ describe('Printing DTO validation contract', () => {
     ['template', CreateReceiptTemplateDto, validTemplate],
     ['rule', CreatePrintRuleDto, validRule],
     ['terminal', CreateMerchantTerminalDto, validTerminal],
+    ['USB binding', SyncUsbTerminalBindingDto, validUsbBinding],
   ] as const)('trims and rejects empty or overlong %s names', async (_name, Dto, factory) => {
     expect(await validationErrors(Dto, { ...factory(), name: '   ' })).not.toHaveLength(0);
     expect(
@@ -107,6 +111,7 @@ describe('Printing DTO validation contract', () => {
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
+    [SyncUsbTerminalBindingDto, validUsbBinding()],
   ] as const)('forbids non-whitelisted fields on %p', async (Dto, payload) => {
     const errors = await validationErrors(Dto, { ...payload, unexpected: 'blocked' });
     expect(errors).toEqual(
@@ -118,6 +123,24 @@ describe('Printing DTO validation contract', () => {
       ]),
     );
   });
+
+  it.each([-1, 65_536, 1.5, '4070'])(
+    'rejects invalid USB vendor/product ID %p',
+    async (value) => {
+      expect(
+        await validationErrors(SyncUsbTerminalBindingDto, {
+          ...validUsbBinding(),
+          vendorId: value,
+        }),
+      ).not.toHaveLength(0);
+      expect(
+        await validationErrors(SyncUsbTerminalBindingDto, {
+          ...validUsbBinding(),
+          productId: value,
+        }),
+      ).not.toHaveLength(0);
+    },
+  );
 });
 
 function validationErrors(
@@ -182,5 +205,30 @@ function validTerminal(): Record<string, unknown> {
     name: '通用测试终端',
     platform: 'ANDROID',
     capabilities: {},
+  };
+}
+
+function validUsbBinding(): Record<string, unknown> {
+  return {
+    localBindingId: '123e4567-e89b-12d3-a456-426614174000',
+    name: 'USB Printer',
+    vendorId: 0x0fe6,
+    productId: 0x811e,
+    paperWidth: 'MM80',
+    enabled: true,
+    appVersion: '2.0.0-rc10.2',
+    appVersionCode: 51,
+    status: 'CONNECTED',
+    capabilities: readyUsbEvidence(),
+  };
+}
+
+function readyUsbEvidence() {
+  return {
+    usbDeviceRecognized: true,
+    usbPermissionGranted: true,
+    usbInterfaceValid: true,
+    usbEndpointValid: true,
+    appExecutionReady: true,
   };
 }

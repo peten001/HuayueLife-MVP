@@ -48,7 +48,7 @@ describe('TerminalConnectorService', () => {
     );
   });
 
-  it('does not report CONNECTED as verified ONLINE before a successful print', async () => {
+  it('keeps CONNECTED fail-closed without complete USB execution evidence', async () => {
     const prisma = createPrismaMock();
     prisma.printer.findFirst.mockResolvedValue({
       capabilities: { paperSensor: false },
@@ -82,10 +82,222 @@ describe('TerminalConnectorService', () => {
         status: 'UNKNOWN',
         capabilities: {
           paperSensor: false,
-          usbPermission: true,
-          connectorState: 'CONNECTED',
+          connectorStatus: {
+            usbPermission: true,
+            connectionType: 'USB',
+            status: 'CONNECTED',
+          },
+          connectorStatusUpdatedAt: expect.any(String),
         },
       }),
+    });
+  });
+
+  it('promotes CONNECTED to ONLINE only with all five USB execution signals', async () => {
+    const prisma = createPrismaMock();
+    prisma.printer.findFirst.mockResolvedValue({ capabilities: {} });
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminal.id,
+      boundPrinterId: terminal.boundPrinterId,
+    });
+    prisma.printer.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma);
+
+    await expect(
+      service.reportPrinterStatus(terminal, {
+        printerId: '88',
+        status: 'CONNECTED',
+        capabilities: readyUsbEvidence(),
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        reportedStatus: 'CONNECTED',
+        persistedStatus: 'ONLINE',
+      }),
+    );
+    expect(prisma.printer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'ONLINE',
+          capabilities: expect.objectContaining({
+            connectorStatus: expect.objectContaining({
+              ...readyUsbEvidence(),
+              connectionType: 'USB',
+              status: 'CONNECTED',
+            }),
+            connectorStatusUpdatedAt: expect.any(String),
+            lastConnectedAt: expect.any(String),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('creates and binds a Terminal-authenticated USB printer', async () => {
+    const prisma = createPrismaMock();
+    const audit = createAuditMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminalRecord(null));
+    prisma.printer.findMany.mockResolvedValue([]);
+    prisma.printer.create.mockImplementation(async ({ data }) => ({
+      id: 101n,
+      deletedAt: null,
+      ...data,
+    }));
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma, {}, audit);
+
+    await expect(
+      service.syncUsbBinding(terminal, 'request-usb-1', syncDto()),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        merchantId: 7n,
+        terminalId: 67n,
+        printerId: 101n,
+        localBindingId: USB_BINDING_ID,
+        bindingVersion: 1,
+        channelType: 'LOCAL_USB_ESCPOS',
+        status: 'ONLINE',
+        enabled: true,
+      }),
+    );
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.printer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          merchantId: 7n,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+      }),
+    );
+    expect(prisma.printer.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        merchantId: 7n,
+        channelType: 'LOCAL_USB_ESCPOS',
+        name: 'USB Printer',
+        paperWidth: 'MM80',
+        enabled: true,
+        status: 'ONLINE',
+        connectionConfig: {},
+        capabilities: expect.objectContaining({
+          usbBinding: expect.objectContaining({
+            terminalId: '67',
+            localBindingId: USB_BINDING_ID,
+            bindingVersion: 1,
+            vendorId: 0x0fe6,
+            productId: 0x811e,
+          }),
+        }),
+      }),
+    });
+    expect(prisma.merchantTerminal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 67n,
+          merchantId: 7n,
+          boundPrinterId: null,
+        }),
+        data: expect.objectContaining({ boundPrinterId: 101n }),
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        merchantId: 7n,
+        action: 'USB_BINDING_CREATED',
+        resourceId: 101n,
+        requestId: 'request-usb-1',
+      }),
+      prisma,
+    );
+  });
+
+  it('retries the same terminal and localBindingId idempotently', async () => {
+    const prisma = createPrismaMock();
+    const audit = createAuditMock();
+    const created = usbPrinterRecord(101n);
+    prisma.merchantTerminal.findFirst
+      .mockResolvedValueOnce(activeTerminalRecord(null))
+      .mockResolvedValueOnce(activeTerminalRecord(101n))
+      .mockResolvedValueOnce(null);
+    prisma.printer.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([created]);
+    prisma.printer.create.mockResolvedValue(created);
+    prisma.printer.update.mockResolvedValue(created);
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma, {}, audit);
+
+    const first = await service.syncUsbBinding(terminal, 'request-usb-1', syncDto());
+    const retry = await service.syncUsbBinding(terminal, 'request-usb-2', syncDto());
+
+    expect(first.printerId).toBe(101n);
+    expect(retry.printerId).toBe(101n);
+    expect(retry.bindingVersion).toBe(1);
+    expect(prisma.printer.create).toHaveBeenCalledTimes(1);
+    expect(prisma.printer.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an archived localBindingId with the canonical re-add code', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminalRecord(null));
+    prisma.printer.findMany.mockResolvedValue([
+      { ...usbPrinterRecord(101n), deletedAt: new Date('2026-08-02T10:00:00Z') },
+    ]);
+    const service = createService(prisma);
+
+    await expect(
+      service.syncUsbBinding(terminal, 'request-usb-archived', syncDto()),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'PRINTER_ARCHIVED_READD_REQUIRED',
+      }),
+    });
+    expect(prisma.printer.create).not.toHaveBeenCalled();
+    expect(prisma.merchantTerminal.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('blocks the same merchant localBindingId from another terminal', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue(activeTerminalRecord(null));
+    prisma.printer.findMany.mockResolvedValue([
+      usbPrinterRecord(101n, { terminalId: '68' }),
+    ]);
+    const service = createService(prisma);
+
+    await expect(
+      service.syncUsbBinding(terminal, 'request-usb-cross-terminal', syncDto()),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PRINT_JOB_STATE_CONFLICT' }),
+    });
+    expect(prisma.printer.create).not.toHaveBeenCalled();
+  });
+
+  it('scopes USB sync and status lookups to the authenticated merchant', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst
+      .mockResolvedValueOnce(activeTerminalRecord(null))
+      .mockResolvedValueOnce({ id: terminal.id, boundPrinterId: 999n });
+    prisma.printer.findMany.mockResolvedValue([]);
+    prisma.printer.create.mockResolvedValue(usbPrinterRecord(101n));
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printer.findFirst.mockResolvedValue(null);
+    const service = createService(prisma);
+
+    await service.syncUsbBinding(terminal, 'request-usb-scope', syncDto());
+    await expect(
+      service.reportPrinterStatus(terminal, {
+        printerId: '999',
+        status: 'CONNECTED',
+        capabilities: readyUsbEvidence(),
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PRINTING_RESOURCE_NOT_FOUND' }),
+    });
+    expect(prisma.printer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ merchantId: 7n }) }),
+    );
+    expect(prisma.printer.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 999n, merchantId: 7n }),
+      select: { capabilities: true },
     });
   });
 
@@ -199,6 +411,7 @@ describe('TerminalConnectorService', () => {
 function createService(
   prisma: ReturnType<typeof createPrismaMock>,
   flagOverrides: Record<string, unknown> = {},
+  audit: ReturnType<typeof createAuditMock> = createAuditMock(),
 ) {
   return new TerminalConnectorService(
     prisma as never,
@@ -215,6 +428,7 @@ function createService(
       lanPrintingEnabled: jest.fn().mockReturnValue(true),
       ...flagOverrides,
     } as never,
+    audit as never,
   );
 }
 
@@ -225,11 +439,97 @@ function createPrismaMock() {
       updateMany: jest.fn(),
       update: jest.fn().mockResolvedValue({ id: 67n }),
     },
-    printer: { findFirst: jest.fn(), updateMany: jest.fn() },
+    printer: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(
     async (callback: (tx: typeof prisma) => unknown) => callback(prisma),
   );
   return prisma;
+}
+
+function createAuditMock() {
+  return { record: jest.fn().mockResolvedValue({ id: 1n }) };
+}
+
+const USB_BINDING_ID = '123e4567-e89b-12d3-a456-426614174000';
+
+function syncDto() {
+  return {
+    localBindingId: USB_BINDING_ID,
+    name: 'USB Printer',
+    vendorId: 0x0fe6,
+    productId: 0x811e,
+    paperWidth: 'MM80' as const,
+    enabled: true,
+    appVersion: '2.0.0-rc10.2',
+    appVersionCode: 51,
+    status: 'CONNECTED' as const,
+    capabilities: readyUsbEvidence(),
+  };
+}
+
+function readyUsbEvidence() {
+  return {
+    usbDeviceRecognized: true,
+    usbPermissionGranted: true,
+    usbInterfaceValid: true,
+    usbEndpointValid: true,
+    appExecutionReady: true,
+  };
+}
+
+function activeTerminalRecord(boundPrinterId: bigint | null) {
+  return {
+    id: terminal.id,
+    boundPrinterId,
+    deviceIdentifier: 'd2-terminal-device-identifier',
+    merchant: { status: 'ACTIVE', printingEnabled: true },
+  };
+}
+
+function usbPrinterRecord(
+  id: bigint,
+  overrides: { terminalId?: string } = {},
+) {
+  return {
+    id,
+    merchantId: 7n,
+    name: 'USB Printer',
+    channelType: 'LOCAL_USB_ESCPOS',
+    paperWidth: 'MM80',
+    purpose: 'FRONT_DESK',
+    enabled: true,
+    status: 'ONLINE',
+    connectionConfig: {},
+    capabilities: {
+      usbBinding: {
+        terminalId: overrides.terminalId ?? '67',
+        localBindingId: USB_BINDING_ID,
+        terminalInstanceId: 'd2-terminal-device-identifier',
+        executor: 'TERMINAL',
+        adapter: 'ANDROID_USB_ESCPOS',
+        bindingVersion: 1,
+        bindingUpdatedAt: '2026-08-02T10:00:00.000Z',
+        vendorId: 0x0fe6,
+        productId: 0x811e,
+      },
+      connectorStatus: {
+        ...readyUsbEvidence(),
+        connectionType: 'USB',
+        status: 'CONNECTED',
+      },
+      connectorStatusUpdatedAt: '2026-08-02T10:00:00.000Z',
+    },
+    createdAt: new Date('2026-08-02T10:00:00.000Z'),
+    updatedAt: new Date('2026-08-02T10:00:00.000Z'),
+    deletedAt: null,
+  };
 }

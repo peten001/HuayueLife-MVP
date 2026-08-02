@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import {
   ReportTerminalPrinterStatusDto,
+  SyncUsbTerminalBindingDto,
   TerminalHeartbeatDto,
 } from '../dto/terminal-connector.dto';
 import {
@@ -16,7 +17,11 @@ import {
   sanitizePrintingError,
 } from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
+import { hasExplicitUsbExecutionEvidence } from '../utils/printer-readiness';
+import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
+
+const ANDROID_USB_ESCPOS_ADAPTER = 'ANDROID_USB_ESCPOS';
 
 @Injectable()
 export class TerminalConnectorService {
@@ -24,6 +29,7 @@ export class TerminalConnectorService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly flags: PrintingFeatureFlagsService,
+    private readonly audit: PrintingAuditService,
   ) {}
 
   async heartbeat(terminal: AuthenticatedTerminal, dto: TerminalHeartbeatDto) {
@@ -184,6 +190,264 @@ export class TerminalConnectorService {
     };
   }
 
+  async syncUsbBinding(
+    terminal: AuthenticatedTerminal,
+    requestId: string | undefined,
+    dto: SyncUsbTerminalBindingDto,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    if (terminal.status !== 'ACTIVE') this.disabled();
+    const reportedCapabilities = dto.capabilities
+      ? normalizeSafeJson(dto.capabilities)
+      : {};
+    const reportedStatus = dto.status ?? 'UNKNOWN';
+
+    return this.prisma.$transaction(async (tx) => {
+      // localBindingId lives in JSON rather than a unique column. Serializing on
+      // the merchant row keeps retries and two terminals from creating duplicates.
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM merchants WHERE id = ${terminal.merchantId} FOR UPDATE`,
+      );
+      const activeTerminal = await tx.merchantTerminal.findFirst({
+        where: {
+          id: terminal.id,
+          merchantId: terminal.merchantId,
+          status: 'ACTIVE',
+          revokedAt: null,
+          tokenVersion: terminal.tokenVersion,
+        },
+        select: {
+          id: true,
+          boundPrinterId: true,
+          deviceIdentifier: true,
+          merchant: { select: { status: true, printingEnabled: true } },
+        },
+      });
+      if (!activeTerminal?.deviceIdentifier) this.disabled();
+      if (
+        activeTerminal.merchant.status !== 'ACTIVE' ||
+        !activeTerminal.merchant.printingEnabled
+      ) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+          message: '当前商家未启用打印能力',
+        });
+      }
+
+      const printers = await tx.printer.findMany({
+        where: {
+          merchantId: terminal.merchantId,
+          channelType: 'LOCAL_USB_ESCPOS',
+        },
+        orderBy: { id: 'asc' },
+      });
+      const archivedExactBinding = printers.find((printer) => {
+        const binding = usbBindingMetadata(printer.capabilities);
+        return Boolean(
+          printer.deletedAt && binding?.localBindingId === dto.localBindingId,
+        );
+      });
+      if (archivedExactBinding) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.PRINTER_ARCHIVED_READD_REQUIRED,
+          message: '该 USB Binding 已在后台移除，请生成新的本地 Binding 后重新添加',
+        });
+      }
+
+      const activePrinters = printers.filter((printer) => !printer.deletedAt);
+      const exactBinding = activePrinters.find((printer) => {
+        const binding = usbBindingMetadata(printer.capabilities);
+        return (
+          binding?.terminalId === terminal.id.toString() &&
+          binding.localBindingId === dto.localBindingId
+        );
+      });
+      const crossTerminalBinding = activePrinters.find((printer) => {
+        const binding = usbBindingMetadata(printer.capabilities);
+        return (
+          binding?.localBindingId === dto.localBindingId &&
+          binding.terminalId !== terminal.id.toString()
+        );
+      });
+      if (crossTerminalBinding) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '该 USB Binding 已绑定另一终端',
+        });
+      }
+
+      const currentlyBound = activeTerminal.boundPrinterId
+        ? activePrinters.find(
+            (printer) => printer.id === activeTerminal.boundPrinterId,
+          )
+        : undefined;
+      if (activeTerminal.boundPrinterId && !currentlyBound) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '终端当前绑定的 USB 打印机不可用，请先人工核对平台记录',
+        });
+      }
+      if (exactBinding && currentlyBound && exactBinding.id !== currentlyBound.id) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '终端 USB Binding 与当前平台绑定不一致',
+        });
+      }
+
+      const currentBinding = currentlyBound
+        ? usbBindingMetadata(currentlyBound.capabilities)
+        : null;
+      if (
+        currentBinding &&
+        (currentBinding.terminalId !== terminal.id.toString() ||
+          currentBinding.localBindingId !== dto.localBindingId)
+      ) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: '该终端已绑定另一 USB 本地设备',
+        });
+      }
+
+      const existing = exactBinding ?? currentlyBound;
+      const previousBinding = existing
+        ? usbBindingMetadata(existing.capabilities)
+        : null;
+      if (
+        previousBinding &&
+        (previousBinding.vendorId !== dto.vendorId ||
+          previousBinding.productId !== dto.productId ||
+          existing?.paperWidth !== dto.paperWidth)
+      ) {
+        throw new ConflictException({
+          code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+          message: 'USB 物理身份或纸宽已变化，请生成新的本地 Binding 后重新添加',
+        });
+      }
+
+      if (existing) {
+        const occupied = await tx.merchantTerminal.findFirst({
+          where: {
+            merchantId: terminal.merchantId,
+            boundPrinterId: existing.id,
+            id: { not: terminal.id },
+            revokedAt: null,
+          },
+          select: { id: true },
+        });
+        if (occupied) {
+          throw new ConflictException({
+            code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+            message: '该 USB 打印机已绑定另一终端',
+          });
+        }
+      }
+
+      const now = new Date();
+      const bindingVersion = previousBinding?.bindingVersion ?? 1;
+      const persistedStatus = usbPersistedStatus(
+        reportedStatus,
+        reportedCapabilities,
+      );
+      const bindingUpdatedAt =
+        previousBinding?.bindingUpdatedAt ?? now.toISOString();
+      const currentCapabilities =
+        existing && isPlainObject(existing.capabilities)
+          ? existing.capabilities
+          : {};
+      const capabilities = normalizeSafeJson({
+        ...currentCapabilities,
+        usbBinding: {
+          terminalId: terminal.id.toString(),
+          localBindingId: dto.localBindingId,
+          terminalInstanceId: activeTerminal.deviceIdentifier,
+          executor: 'TERMINAL',
+          adapter: ANDROID_USB_ESCPOS_ADAPTER,
+          bindingVersion,
+          bindingUpdatedAt,
+          vendorId: dto.vendorId,
+          productId: dto.productId,
+        },
+        connectorStatus: {
+          ...reportedCapabilities,
+          connectionType: 'USB',
+          status: reportedStatus,
+          localBindingId: dto.localBindingId,
+        },
+        connectorStatusUpdatedAt: now.toISOString(),
+        ...(persistedStatus === 'ONLINE'
+          ? { lastConnectedAt: now.toISOString() }
+          : {}),
+      });
+      const printer = existing
+        ? await tx.printer.update({
+            where: { id: existing.id },
+            data: {
+              name: dto.name,
+              paperWidth: dto.paperWidth,
+              enabled: dto.enabled,
+              capabilities,
+              status: persistedStatus,
+            },
+          })
+        : await tx.printer.create({
+            data: {
+              merchantId: terminal.merchantId,
+              name: dto.name,
+              channelType: 'LOCAL_USB_ESCPOS',
+              paperWidth: dto.paperWidth,
+              purpose: 'FRONT_DESK',
+              enabled: dto.enabled,
+              status: persistedStatus,
+              connectionConfig: {},
+              capabilities,
+            },
+          });
+      const terminalUpdated = await tx.merchantTerminal.updateMany({
+        where: {
+          id: terminal.id,
+          merchantId: terminal.merchantId,
+          status: 'ACTIVE',
+          revokedAt: null,
+          tokenVersion: terminal.tokenVersion,
+          boundPrinterId: activeTerminal.boundPrinterId,
+        },
+        data: {
+          boundPrinterId: printer.id,
+          appVersion: dto.appVersion,
+          lastSeenAt: now,
+        },
+      });
+      if (terminalUpdated.count !== 1) this.disabled();
+      await this.audit.record(
+        {
+          merchantId: terminal.merchantId,
+          action: existing ? 'USB_BINDING_SYNCED' : 'USB_BINDING_CREATED',
+          resourceType: 'Printer',
+          resourceId: printer.id,
+          afterData: {
+            terminalId: terminal.id.toString(),
+            localBindingId: dto.localBindingId,
+            bindingVersion,
+            enabled: printer.enabled,
+          },
+          requestId,
+        },
+        tx,
+      );
+      return {
+        merchantId: terminal.merchantId,
+        terminalId: terminal.id,
+        printerId: printer.id,
+        localBindingId: dto.localBindingId,
+        bindingVersion,
+        channelType: 'LOCAL_USB_ESCPOS' as const,
+        status: printer.status,
+        enabled: printer.enabled,
+        reportedAt: now,
+      };
+    });
+  }
+
   async reportPrinterStatus(
     terminal: AuthenticatedTerminal,
     dto: ReportTerminalPrinterStatusDto,
@@ -191,15 +455,13 @@ export class TerminalConnectorService {
     this.flags.assertTaskCenterEnabled();
     if (terminal.status !== 'ACTIVE') this.disabled();
     const printerId = BigInt(dto.printerId);
-    const capabilities = dto.capabilities
+    const reportedCapabilities = dto.capabilities
       ? normalizeSafeJson(dto.capabilities)
-      : undefined;
-    const persistedStatus =
-      dto.status === 'CONNECTED'
-        ? 'UNKNOWN'
-        : dto.status === 'DISCONNECTED'
-          ? 'OFFLINE'
-          : dto.status;
+      : {};
+    const persistedStatus = usbPersistedStatus(
+      dto.status,
+      reportedCapabilities,
+    );
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const activeTerminal = await tx.merchantTerminal.findFirst({
@@ -248,8 +510,15 @@ export class TerminalConnectorService {
           status: persistedStatus,
           capabilities: normalizeSafeJson({
             ...currentCapabilities,
-            ...(capabilities ?? {}),
-            connectorState: dto.status,
+            connectorStatus: {
+              ...reportedCapabilities,
+              connectionType: 'USB',
+              status: dto.status,
+            },
+            connectorStatusUpdatedAt: now.toISOString(),
+            ...(persistedStatus === 'ONLINE'
+              ? { lastConnectedAt: now.toISOString() }
+              : {}),
           }),
         },
       });
@@ -309,6 +578,69 @@ function normalizeSafeJson(value: Record<string, unknown>) {
       message: '终端诊断信息必须是小于 16KB 的有效 JSON',
     });
   }
+}
+
+type UsbBindingMetadata = {
+  terminalId: string;
+  localBindingId: string;
+  terminalInstanceId: string;
+  executor: 'TERMINAL';
+  adapter: typeof ANDROID_USB_ESCPOS_ADAPTER;
+  bindingVersion: number;
+  bindingUpdatedAt: string;
+  vendorId: number;
+  productId: number;
+};
+
+function usbBindingMetadata(value: Prisma.JsonValue): UsbBindingMetadata | null {
+  if (!isPlainObject(value) || !isPlainObject(value.usbBinding)) return null;
+  const binding = value.usbBinding;
+  if (
+    typeof binding.terminalId !== 'string' ||
+    !/^[1-9][0-9]{0,18}$/.test(binding.terminalId) ||
+    typeof binding.localBindingId !== 'string' ||
+    !/^[A-Za-z0-9._:-]{1,128}$/.test(binding.localBindingId) ||
+    typeof binding.terminalInstanceId !== 'string' ||
+    binding.terminalInstanceId.length < 1 ||
+    binding.terminalInstanceId.length > 128 ||
+    binding.executor !== 'TERMINAL' ||
+    binding.adapter !== ANDROID_USB_ESCPOS_ADAPTER ||
+    !Number.isInteger(binding.bindingVersion) ||
+    Number(binding.bindingVersion) < 1 ||
+    Number(binding.bindingVersion) > 2_147_483_647 ||
+    typeof binding.bindingUpdatedAt !== 'string' ||
+    Number.isNaN(new Date(binding.bindingUpdatedAt).getTime()) ||
+    !validUsbId(binding.vendorId) ||
+    !validUsbId(binding.productId)
+  ) {
+    return null;
+  }
+  return {
+    terminalId: binding.terminalId,
+    localBindingId: binding.localBindingId,
+    terminalInstanceId: binding.terminalInstanceId,
+    executor: 'TERMINAL',
+    adapter: ANDROID_USB_ESCPOS_ADAPTER,
+    bindingVersion: Number(binding.bindingVersion),
+    bindingUpdatedAt: binding.bindingUpdatedAt,
+    vendorId: Number(binding.vendorId),
+    productId: Number(binding.productId),
+  };
+}
+
+function validUsbId(value: unknown) {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 65_535;
+}
+
+function usbPersistedStatus(
+  status: 'UNKNOWN' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR',
+  capabilities: Record<string, unknown>,
+) {
+  if (status === 'CONNECTED') {
+    return hasExplicitUsbExecutionEvidence(capabilities) ? 'ONLINE' : 'UNKNOWN';
+  }
+  if (status === 'DISCONNECTED') return 'OFFLINE';
+  return status;
 }
 
 function assertNoSecrets(value: unknown) {

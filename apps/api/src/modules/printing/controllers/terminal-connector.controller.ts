@@ -18,6 +18,7 @@ import {
   FinishPrintingDto,
   MarkPrintingDto,
   ReportTerminalPrinterStatusDto,
+  SyncUsbTerminalBindingDto,
   TerminalHeartbeatDto,
 } from '../dto/terminal-connector.dto';
 import { PairTerminalDto } from '../dto/terminal.dto';
@@ -55,6 +56,16 @@ export class TerminalConnectorController {
     private readonly jobs: PrintJobsService,
     private readonly attempts: PrintAttemptsService,
   ) {}
+
+  @Post('usb/bindings/sync')
+  @UseGuards(ActiveTerminalGuard)
+  syncUsbBinding(
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
+    @Body() dto: SyncUsbTerminalBindingDto,
+  ) {
+    return this.connector.syncUsbBinding(terminal, request.requestId, dto);
+  }
 
   @Post('heartbeat')
   heartbeat(

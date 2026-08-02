@@ -18,5 +18,6 @@ describe('PrintingModule route registration', () => {
     expect(controllers.filter((controller) => controller === TerminalConnectorController)).toHaveLength(1);
     expect(Reflect.getMetadata(PATH_METADATA, TerminalConnectorController)).toBe('terminal');
     expect(Reflect.getMetadata(PATH_METADATA, TerminalConnectorController.prototype.heartbeat)).toBe('heartbeat');
+    expect(Reflect.getMetadata(PATH_METADATA, TerminalConnectorController.prototype.syncUsbBinding)).toBe('usb/bindings/sync');
   });
 });
