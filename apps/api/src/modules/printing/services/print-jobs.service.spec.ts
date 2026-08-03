@@ -39,7 +39,11 @@ describe('PrintJobsService', () => {
     cloneAndValidate: jest.Mock;
   };
   let audit: { record: jest.Mock };
-  let settings: { assertMerchantPrintingEnabled: jest.Mock; get: jest.Mock };
+  let settings: {
+    assertMerchantPrintingEnabled: jest.Mock;
+    assertMerchantAutomaticCreationEnabled: jest.Mock;
+    get: jest.Mock;
+  };
   let lanBindings: {
     requireTestable: jest.Mock;
     requireClaimable: jest.Mock;
@@ -59,6 +63,7 @@ describe('PrintJobsService', () => {
     audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
     settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+      assertMerchantAutomaticCreationEnabled: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue({
         printingEnabled: true,
         featureFlags: {
@@ -139,6 +144,25 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     expect(prisma.printRule.findFirst).not.toHaveBeenCalled();
     expect(snapshots.fromOrder).not.toHaveBeenCalled();
+  });
+
+  it('does not create automatic work when the merchant preference is disabled', async () => {
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    settings.assertMerchantAutomaticCreationEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'AUTO_CREATE_DISABLED' }),
+    );
+
+    await expect(
+      service.createAutomaticJob({
+        merchantId,
+        ruleId,
+        orderId,
+        eventKey: 'order-status-log:merchant-auto-disabled',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.printRule.findFirst).not.toHaveBeenCalled();
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
   it('creates one durable TABLE_SESSION_SETTLED outbox intent for an enabled checkout rule', async () => {

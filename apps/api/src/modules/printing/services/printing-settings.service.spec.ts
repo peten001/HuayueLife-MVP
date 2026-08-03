@@ -11,6 +11,7 @@ describe('PrintingSettingsService', () => {
       id: 7n,
       status: 'ACTIVE',
       printingEnabled: true,
+      capabilities: [{ isEnabled: false }],
     });
     const flags = createFlagsMock();
     const service = new PrintingSettingsService(prisma as never, flags as never);
@@ -19,6 +20,7 @@ describe('PrintingSettingsService', () => {
       id: 7n,
       status: 'ACTIVE',
       printingEnabled: true,
+      automaticCreationEnabled: false,
       featureFlags: { executionEnabled: false },
     });
   });
@@ -83,6 +85,56 @@ describe('PrintingSettingsService', () => {
       service.assertMerchantPrintingEnabled(7n),
     ).resolves.toBeUndefined();
   });
+
+  it('stores the merchant automatic-creation preference without touching the platform gate', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchant.findUnique
+      .mockResolvedValueOnce({ id: 11n, status: 'ACTIVE', printingEnabled: true })
+      .mockResolvedValueOnce({
+        id: 11n,
+        status: 'ACTIVE',
+        printingEnabled: true,
+        capabilities: [{ isEnabled: true }],
+      });
+    prisma.capability.upsert.mockResolvedValue({ id: 19n });
+    const service = new PrintingSettingsService(
+      prisma as never,
+      createFlagsMock() as never,
+    );
+
+    await expect(service.updateAutomaticCreation(11n, true)).resolves.toEqual(
+      expect.objectContaining({
+        printingEnabled: true,
+        automaticCreationEnabled: true,
+      }),
+    );
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+    expect(prisma.merchantCapability.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ merchantId: 11n, isEnabled: true }),
+        update: { isEnabled: true },
+      }),
+    );
+  });
+
+  it('refuses to enable automatic creation when the platform gate is disabled', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchant.findUnique.mockResolvedValue({
+      id: 7n,
+      status: 'ACTIVE',
+      printingEnabled: false,
+    });
+    const service = new PrintingSettingsService(
+      prisma as never,
+      createFlagsMock() as never,
+    );
+
+    await expect(service.updateAutomaticCreation(7n, true)).rejects.toMatchObject({
+      constructor: ServiceUnavailableException,
+      response: expect.objectContaining({ code: 'PRINTING_NOT_ENABLED' }),
+    });
+    expect(prisma.merchantCapability.upsert).not.toHaveBeenCalled();
+  });
 });
 
 function createFlagsMock() {
@@ -99,5 +151,7 @@ function createPrismaMock() {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    capability: { upsert: jest.fn() },
+    merchantCapability: { upsert: jest.fn() },
   };
 }

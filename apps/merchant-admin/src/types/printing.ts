@@ -60,6 +60,7 @@ export interface PrintingFeatureState {
 export interface MerchantPrintingSettings {
   id: string;
   printingEnabled: boolean;
+  automaticCreationEnabled: boolean;
   featureFlags: Omit<PrintingFeatureState, 'merchantPrintingEnabled'>;
 }
 

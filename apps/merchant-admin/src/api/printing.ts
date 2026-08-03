@@ -48,6 +48,16 @@ export async function getMerchantPrintingSettings() {
   return response.data.data;
 }
 
+export async function updateMerchantAutomaticCreation(
+  automaticCreationEnabled: boolean,
+) {
+  const response = await http.patch<ApiResponse<MerchantPrintingSettings>>(
+    '/merchant/printing/automatic-creation',
+    { automaticCreationEnabled },
+  );
+  return response.data.data;
+}
+
 export async function getPrintingRouting() {
   const response = await http.get<ApiResponse<PrintingRouting>>(
     '/merchant/printing/routing',

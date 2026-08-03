@@ -11,6 +11,8 @@ import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 
 type MerchantReader = Pick<Prisma.TransactionClient, 'merchant'>;
 
+const AUTOMATIC_CREATION_CAPABILITY = 'automaticCreationEnabled';
+
 @Injectable()
 export class PrintingSettingsService {
   constructor(
@@ -22,10 +24,93 @@ export class PrintingSettingsService {
     this.flags.assertTaskCenterEnabled();
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
+      select: {
+        id: true,
+        status: true,
+        printingEnabled: true,
+        capabilities: {
+          where: { capability: { code: AUTOMATIC_CREATION_CAPABILITY } },
+          select: { isEnabled: true },
+        },
+      },
+    });
+    if (!merchant) this.notFound();
+    return {
+      id: merchant.id,
+      status: merchant.status,
+      printingEnabled: merchant.printingEnabled,
+      automaticCreationEnabled: merchant.capabilities[0]?.isEnabled === true,
+      featureFlags: this.flags.status(),
+    };
+  }
+
+  async updateAutomaticCreation(
+    merchantId: bigint,
+    automaticCreationEnabled: boolean,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
       select: { id: true, status: true, printingEnabled: true },
     });
     if (!merchant) this.notFound();
-    return { ...merchant, featureFlags: this.flags.status() };
+    if (
+      automaticCreationEnabled &&
+      (merchant.status !== 'ACTIVE' || !merchant.printingEnabled)
+    ) {
+      throw new ServiceUnavailableException({
+        code: PRINTING_ERROR_CODES.PRINTING_NOT_ENABLED,
+        message: '打印功能未开通，无法开启自动创建打印任务。',
+      });
+    }
+
+    const capability = await this.prisma.capability.upsert({
+      where: { code: AUTOMATIC_CREATION_CAPABILITY },
+      create: {
+        code: AUTOMATIC_CREATION_CAPABILITY,
+        nameZh: '自动创建打印任务',
+        nameVi: 'Tu dong tao tac vu in',
+        nameEn: 'Automatic print task creation',
+        groupCode: 'RESTAURANT',
+        groupNameZh: '餐厅能力',
+        groupNameVi: 'Nha hang',
+        groupNameEn: 'Restaurant',
+        enabled: true,
+        defaultValue: false,
+        sortOrder: 115,
+      },
+      update: {},
+      select: { id: true },
+    });
+    await this.prisma.merchantCapability.upsert({
+      where: {
+        merchantId_capabilityId: { merchantId, capabilityId: capability.id },
+      },
+      create: { merchantId, capabilityId: capability.id, isEnabled: automaticCreationEnabled },
+      update: { isEnabled: automaticCreationEnabled },
+    });
+    return this.get(merchantId);
+  }
+
+  async assertMerchantAutomaticCreationEnabled(
+    merchantId: bigint,
+    client: MerchantReader = this.prisma,
+  ) {
+    const merchant = await client.merchant.findUnique({
+      where: { id: merchantId },
+      select: {
+        capabilities: {
+          where: { capability: { code: AUTOMATIC_CREATION_CAPABILITY } },
+          select: { isEnabled: true },
+        },
+      },
+    });
+    if (merchant?.capabilities[0]?.isEnabled !== true) {
+      throw new ServiceUnavailableException({
+        code: PRINTING_ERROR_CODES.AUTO_CREATE_DISABLED,
+        message: '商家尚未开启自动创建打印任务。',
+      });
+    }
   }
 
   async update(

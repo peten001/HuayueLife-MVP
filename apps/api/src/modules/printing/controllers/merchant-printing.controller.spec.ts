@@ -50,6 +50,7 @@ describe('MerchantPrintingController contract', () => {
         ['GET', 'cloud-execution-state'],
         ['GET', 'settings'],
         ['PATCH', 'settings'],
+        ['PATCH', 'automatic-creation'],
         ['POST', 'printers'],
         ['GET', 'printers/:id'],
         ['PATCH', 'printers/:id'],
@@ -121,6 +122,7 @@ describe('MerchantPrintingController contract', () => {
     const flags = { status: jest.fn() };
     const settings = {
       get: jest.fn().mockResolvedValue({ printingEnabled: false }),
+      updateAutomaticCreation: jest.fn().mockResolvedValue({ automaticCreationEnabled: true }),
     };
     const cloudExecution = {
       status: jest.fn().mockReturnValue({
@@ -196,6 +198,11 @@ describe('MerchantPrintingController contract', () => {
         YILIAN: { enabled: false, configured: false },
       },
     });
+
+    await expect(
+      controller.updateAutomaticCreation(11n, { automaticCreationEnabled: true }),
+    ).resolves.toEqual({ automaticCreationEnabled: true });
+    expect(settings.updateAutomaticCreation).toHaveBeenCalledWith(11n, true);
   });
 
   it('keeps the new printing API available while legacy printing is disabled', async () => {
@@ -375,6 +382,7 @@ describe('MerchantPrintingController contract', () => {
       'disableRule',
       'cancelJob',
       'updateSettings',
+      'updateAutomaticCreation',
       'cloudExecutionState',
       'bootstrapLanTerminal',
     ] as const) {

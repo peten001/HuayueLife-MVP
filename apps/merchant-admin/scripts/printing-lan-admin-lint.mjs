@@ -56,6 +56,8 @@ assert.doesNotMatch(rulesPage, /channelType !== 'LOCAL_USB_ESCPOS'/);
 assert.doesNotMatch(rulesPage, /updatePrintingPrinter/);
 assert.match(rulesPage, /usageLabel/);
 assert.match(rulesPage, /lanPrinterIsOnline/);
+assert.match(rulesPage, /automaticCreationEnabled/);
+assert.match(api, /merchant\/printing\/automatic-creation/);
 assert.match(api, /printers\/\$\{id\}\/enable/);
 
 for (const key of [
