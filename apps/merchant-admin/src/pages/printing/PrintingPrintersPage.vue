@@ -82,7 +82,7 @@ let dialogReturnFocus: HTMLElement | null = null;
 const form = reactive({
   id: '',
   name: '',
-  channelType: 'LOCAL_USB_ESCPOS' as PrintingPrinter['channelType'],
+  channelType: 'CLOUD_FEIE' as PrintingPrinter['channelType'],
   provider: 'CLOUD_FEIE' as 'CLOUD_FEIE' | 'CLOUD_YILIAN',
   deviceId: '',
   paperWidth: 'MM80' as PrintingPaperWidth,
@@ -101,7 +101,7 @@ function resetForm() {
   Object.assign(form, {
     id: '',
     name: '',
-    channelType: 'LOCAL_USB_ESCPOS',
+    channelType: 'CLOUD_FEIE',
     provider: 'CLOUD_FEIE',
     deviceId: '',
     paperWidth: 'MM80',
@@ -852,18 +852,18 @@ onBeforeUnmount(() => {
           <div class="printing-step-copy printing-field--full"><span class="printing-step-kicker">{{ p('stepOne') }}</span><h3>{{ p('choosePrintingMethod') }}</h3><p>{{ p('choosePrintingMethodHint') }}</p></div>
           <div class="printing-method-grid printing-method-grid--two printing-field--full">
             <button
-              v-for="method in (['LOCAL_USB_ESCPOS', 'CLOUD_FEIE'] as const)"
+              v-for="method in (['CLOUD_FEIE'] as const)"
               :key="method"
-              :class="['printing-method-card', { 'is-selected': form.channelType === method || (method === 'CLOUD_FEIE' && isCloud) }]"
+              :class="['printing-method-card', { 'is-selected': isCloud }]"
               type="button"
               @click="selectMethod(method)"
             >
               <span class="printing-method-card__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path v-if="method === 'LOCAL_USB_ESCPOS'" d="M12 4v12m0-8 3-3m-3 3L9 5m3 11v3m-3-3h6" /><path v-else d="M7 17h10a3 3 0 0 0 .2-6A5.5 5.5 0 0 0 6.5 9.5 3.5 3.5 0 0 0 7 17Z" /></svg>
+                <svg viewBox="0 0 24 24"><path d="M7 17h10a3 3 0 0 0 .2-6A5.5 5.5 0 0 0 6.5 9.5 3.5 3.5 0 0 0 7 17Z" /></svg>
               </span>
               <strong>{{ methodTitle(method) }}</strong>
               <small>{{ methodHint(method) }}</small>
-              <i v-if="form.channelType === method || (method === 'CLOUD_FEIE' && isCloud)">✓</i>
+              <i v-if="isCloud">✓</i>
             </button>
           </div>
           <div class="printing-inline-note printing-field--full"><strong>{{ p('lanPrinting') }}</strong><span>{{ p('lanAddOnTerminalHint') }}</span></div>
