@@ -18,6 +18,7 @@ import type {
 import type { Category } from '@/types/api';
 import { PRINTING_STATE_CHANGED_EVENT } from '@/utils/printing-status';
 import { lanPrinterIsOnline } from '@/utils/lan-printer-admin-state';
+import { clearPrintingFeatureStateCache } from '@/utils/printing-feature-state';
 
 type RoutingScene = 'FRONT_DESK' | 'KITCHEN';
 
@@ -232,6 +233,7 @@ async function toggleAutomaticCreation() {
     automaticCreationSaving.value = true;
     message.value = '';
     settings.value = await updateMerchantAutomaticCreation(next);
+    clearPrintingFeatureStateCache();
     await load();
     window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
     messageType.value = 'success';

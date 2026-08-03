@@ -2,11 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
-import {
-  getPrintingFeatureState,
-  getPrintingPrinters,
-  getPrintingRules,
-} from '@/api/printing';
+import { getPrintingPrinters, getPrintingRules } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
 import { androidTerminalRelease } from '@/config/android-terminal-release';
 import type {
@@ -19,6 +15,7 @@ import {
   printerConnectionState,
   resolvePrintingCenterSummary,
 } from '@/utils/printing-status';
+import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 
 const { p } = usePrintingI18n();
 const route = useRoute();
@@ -94,7 +91,7 @@ async function loadFeatureState(showLoading = true) {
   if (showLoading) featureLoading.value = true;
   featureError.value = '';
   try {
-    featureState.value = await getPrintingFeatureState();
+    featureState.value = await resolvePrintingFeatureState();
     if (featureState.value.merchantPrintingEnabled) {
       [printers.value, rules.value] = await Promise.all([
         getPrintingPrinters(),

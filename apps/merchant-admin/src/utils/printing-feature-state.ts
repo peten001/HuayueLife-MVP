@@ -37,6 +37,10 @@ export async function resolvePrintingFeatureState(): Promise<PrintingFeatureStat
   return pendingRequest;
 }
 
+export function clearPrintingFeatureStateCache() {
+  cachedState = null;
+}
+
 function normalizeState(value: PrintingFeatureState): PrintingFeatureState {
   if (
     typeof value?.taskCenterEnabled !== 'boolean'
@@ -46,7 +50,6 @@ function normalizeState(value: PrintingFeatureState): PrintingFeatureState {
     || typeof value?.legacyPrintingEnabled !== 'boolean'
     || typeof value?.merchantPrintingEnabled !== 'boolean'
     || !['CONNECTOR_PENDING', 'READY_FOR_CONNECTOR'].includes(value.executionState)
-    || (value.legacyPrintingEnabled && value.automaticCreationEnabled)
   ) {
     return SAFE_DISABLED_STATE;
   }

@@ -991,6 +991,45 @@ describe('PrintJobsService', () => {
     });
   });
 
+  it('still writes automatic trigger outbox when legacy path is enabled', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    flags.legacyPrintingEnabled.mockReturnValue(true);
+    prisma.merchant.findUnique.mockResolvedValue({
+      status: 'ACTIVE',
+      printingEnabled: true,
+    });
+    prisma.printRule.findMany.mockResolvedValue([automaticRule({ copies: 1 })]);
+    prisma.printTriggerOutbox.createMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findMany.mockResolvedValue([{ id: 901n }]);
+
+    await expect(
+      service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {
+        merchantId,
+        orderId,
+        orderStatusLogId: 9004n,
+        orderType: 'DINE_IN',
+        status: 'COMPLETED',
+      }),
+    ).resolves.toEqual([{ id: 901n }]);
+
+    expect(prisma.printTriggerOutbox.createMany).toHaveBeenCalledWith({
+      skipDuplicates: true,
+      data: [
+        expect.objectContaining({
+          merchantId,
+          orderId,
+          orderStatusLogId: 9004n,
+          printRuleId: ruleId,
+          triggerEvent: 'ORDER_COMPLETED',
+          ruleVersion: '2026-07-15T00:00:00.000Z',
+          copies: 1,
+          eventKey: expect.stringMatching(/^auto-trigger:[a-f0-9]{64}$/),
+        }),
+      ],
+    });
+  });
+
   it('does not touch outbox tables while automatic creation remains disabled', async () => {
     flags.taskCenterEnabled.mockReturnValue(true);
     flags.automaticCreationEnabled.mockReturnValue(false);

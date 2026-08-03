@@ -92,8 +92,7 @@ export class MerchantPrintingController {
     const flags = this.flags.status();
     return {
       ...flags,
-      automaticCreationEnabled:
-        flags.automaticCreationEnabled && settings.automaticCreationEnabled,
+      automaticCreationEnabled: settings.automaticCreationEnabled,
       merchantPrintingEnabled: settings.printingEnabled,
     };
   }

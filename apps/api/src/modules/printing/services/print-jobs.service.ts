@@ -2269,8 +2269,7 @@ export class PrintJobsService {
   private automaticTriggeringEnabled() {
     return (
       this.flags.taskCenterEnabled() &&
-      this.flags.automaticCreationEnabled() &&
-      !this.flags.legacyPrintingEnabled()
+      this.flags.automaticCreationEnabled()
     );
   }
 

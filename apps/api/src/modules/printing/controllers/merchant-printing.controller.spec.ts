@@ -121,7 +121,10 @@ describe('MerchantPrintingController contract', () => {
     const attempts = serviceMock([]);
     const flags = { status: jest.fn() };
     const settings = {
-      get: jest.fn().mockResolvedValue({ printingEnabled: false }),
+      get: jest.fn().mockResolvedValue({
+        printingEnabled: false,
+        automaticCreationEnabled: true,
+      }),
       updateAutomaticCreation: jest.fn().mockResolvedValue({ automaticCreationEnabled: true }),
     };
     const cloudExecution = {
@@ -186,10 +189,22 @@ describe('MerchantPrintingController contract', () => {
       bootstrapDto,
     );
 
-    flags.status.mockReturnValue({ legacyPrintingEnabled: false });
+    flags.status.mockReturnValue({
+      taskCenterEnabled: true,
+      automaticCreationEnabled: false,
+      executionEnabled: true,
+      legacyPrintingEnabled: false,
+      lanPrintingEnabled: true,
+      executionState: 'READY_FOR_CONNECTOR',
+    });
     await expect(controller.featureState(7n)).resolves.toEqual({
       legacyPrintingEnabled: false,
       merchantPrintingEnabled: false,
+      automaticCreationEnabled: true,
+      taskCenterEnabled: true,
+      executionEnabled: true,
+      lanPrintingEnabled: true,
+      executionState: 'READY_FOR_CONNECTOR',
     });
     expect(controller.cloudExecutionState()).toEqual({
       enabled: true,
