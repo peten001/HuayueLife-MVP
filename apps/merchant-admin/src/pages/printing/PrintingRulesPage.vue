@@ -3,11 +3,14 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import { getCategories } from '@/api/merchant';
 import {
+  getMerchantPrintingSettings,
   getPrintingPrinters,
   getPrintingRouting,
+  updateMerchantAutomaticCreation,
   updatePrintingRouting,
 } from '@/api/printing';
 import type {
+  MerchantPrintingSettings,
   PrintingPrinter,
   PrintingRouting,
   PrintingRoutingPrinter,
@@ -21,8 +24,10 @@ type RoutingScene = 'FRONT_DESK' | 'KITCHEN';
 const printers = ref<PrintingPrinter[]>([]);
 const categories = ref<Category[]>([]);
 const routing = ref<PrintingRouting>(emptyRouting());
+const settings = ref<MerchantPrintingSettings | null>(null);
 const loading = ref(true);
 const saving = ref(false);
+const automaticCreationSaving = ref(false);
 const message = ref('');
 const messageType = ref<'success' | 'error'>('success');
 const assignScene = ref<RoutingScene | null>(null);
@@ -40,6 +45,12 @@ const assignablePrinters = computed(() =>
 const kitchenConfigurationIncomplete = computed(() =>
   routing.value.kitchenPrinters.some((entry) => entry.categoryIds.length > 0)
     && !routing.value.defaultKitchenPrinterId,
+);
+const automaticCreationEnabled = computed(() =>
+  settings.value?.automaticCreationEnabled === true,
+);
+const canChangeAutomaticCreation = computed(() =>
+  settings.value?.printingEnabled === true && !automaticCreationSaving.value,
 );
 
 function emptyRouting(): PrintingRouting {
@@ -195,18 +206,43 @@ function removeFromConfiguration(scene: RoutingScene, printer: PrintingPrinter) 
 async function load() {
   try {
     loading.value = true;
-    const [nextPrinters, nextCategories, nextRouting] = await Promise.all([
+    const [nextPrinters, nextCategories, nextRouting, nextSettings] = await Promise.all([
       getPrintingPrinters(),
       getCategories(),
       getPrintingRouting(),
+      getMerchantPrintingSettings(),
     ]);
     printers.value = nextPrinters;
     categories.value = nextCategories;
     routing.value = nextRouting;
+    settings.value = nextSettings;
   } catch (error) {
     showError(error);
   } finally {
     loading.value = false;
+  }
+}
+
+async function toggleAutomaticCreation() {
+  if (!canChangeAutomaticCreation.value || !settings.value) return;
+  const previous = settings.value.automaticCreationEnabled;
+  const next = !previous;
+  settings.value = { ...settings.value, automaticCreationEnabled: next };
+  try {
+    automaticCreationSaving.value = true;
+    message.value = '';
+    settings.value = await updateMerchantAutomaticCreation(next);
+    await load();
+    window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
+    messageType.value = 'success';
+    message.value = next
+      ? '已开启自动创建打印任务。'
+      : '已关闭自动创建打印任务；已存在的打印任务不会被取消。';
+  } catch (error) {
+    settings.value = { ...settings.value, automaticCreationEnabled: previous };
+    showError(error);
+  } finally {
+    automaticCreationSaving.value = false;
   }
 }
 
@@ -258,6 +294,27 @@ onMounted(() => { void load(); });
     </header>
 
     <p v-if="message" :class="['printing-auto-message', `is-${messageType}`]" role="status">{{ message }}</p>
+    <section class="automatic-creation-setting" aria-labelledby="automatic-creation-title">
+      <div>
+        <h3 id="automatic-creation-title">自动创建打印任务</h3>
+        <p v-if="settings?.printingEnabled">订单完成后，按下方已启用的场景路由自动创建打印任务。</p>
+        <p v-else>平台尚未开通打印能力，暂时无法开启自动创建打印任务。</p>
+      </div>
+      <div class="automatic-creation-setting__control">
+        <span :class="['automatic-creation-setting__status', { 'is-on': automaticCreationEnabled }]">
+          {{ automaticCreationEnabled ? '已开启' : '未开启' }}
+        </span>
+        <button
+          :class="['auto-switch', { 'is-on': automaticCreationEnabled }]"
+          type="button"
+          role="switch"
+          :aria-checked="automaticCreationEnabled"
+          :aria-label="automaticCreationEnabled ? '关闭自动创建打印任务' : '开启自动创建打印任务'"
+          :disabled="!canChangeAutomaticCreation"
+          @click="toggleAutomaticCreation"
+        ><i /></button>
+      </div>
+    </section>
     <div v-if="kitchenConfigurationIncomplete" class="printing-auto-warning" role="alert">
       <strong>厨房配置不完整</strong>
       <span>已绑定菜品分类，但尚未设置默认厨房打印机；未匹配菜品不会被静默漏打。</span>
@@ -309,5 +366,5 @@ onMounted(() => { void load(); });
 </template>
 
 <style scoped>
-.printing-auto-page{display:grid;gap:18px}.printing-auto-page__header,.printer-purpose-section__header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.printing-auto-page__header h2,.printer-purpose-section h3{margin:0;color:var(--printing-ink);font-size:20px}.printing-auto-page__header p,.printer-purpose-section p{margin:5px 0 0;color:var(--printing-muted);font-size:13px}.printing-auto-page__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}.printing-auto-message,.printing-auto-warning{display:flex;gap:9px;align-items:flex-start;margin:0;padding:11px 13px;border:1px solid;border-radius:10px;font-size:13px}.printing-auto-message.is-success{border-color:#b9dfc4;color:#17693c;background:#f1faf3}.printing-auto-message.is-error{border-color:#f1c6c2;color:#ab3128;background:#fff7f6}.printing-auto-warning{border-color:#f1d497;color:#8a5a00;background:#fff9eb}.printer-purpose-section{display:grid;gap:13px;padding:18px;border:1px solid var(--printing-border);border-radius:12px;background:#fff}.printer-purpose-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.printer-purpose-card{display:grid;gap:13px;padding:15px;border:1px solid #e1e9e3;border-radius:11px;background:#fbfdfb}.printer-purpose-card--kitchen{background:#fcfefc}.printer-purpose-card>header,.printer-purpose-card__line,.printer-purpose-card__footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.printer-purpose-card__title{min-width:0}.printer-purpose-card__title strong,.printer-purpose-card__title span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.printer-purpose-card__title strong{color:var(--printing-ink);font-size:15px}.printer-purpose-card__title span{margin-top:4px;color:var(--printing-muted);font-size:12px}.printer-status{flex:0 0 auto;color:#8a5a00;font-size:12px;font-weight:700}.printer-status.is-online{color:#168448}.printer-purpose-card__usage span{display:inline-flex;padding:3px 7px;border-radius:999px;color:#17693c;background:#e9f6ed;font-size:11px;font-weight:700}.printer-purpose-card__line{padding-block:2px;color:var(--printing-ink);font-size:13px}.auto-switch{position:relative;width:42px;height:24px;flex:0 0 42px;padding:0;border:0;border-radius:999px;background:#cfd8d2;cursor:pointer;transition:background .16s ease}.auto-switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #10213d33;transition:transform .16s ease}.auto-switch.is-on{background:#159447}.auto-switch.is-on i{transform:translateX(18px)}.auto-switch:disabled{opacity:.48;cursor:not-allowed}.category-binding{display:grid;gap:8px;padding:10px;border:1px dashed #cfdbd2;border-radius:9px}.category-binding>span,.category-binding em{color:var(--printing-muted);font-size:12px;font-style:normal}.category-binding__chips{display:flex;flex-wrap:wrap;gap:7px}.category-chip{border:1px solid #d8e3da;border-radius:999px;background:#fff;color:#4f6155;padding:5px 9px;font-size:12px;cursor:pointer}.category-chip.is-selected{border-color:#9bd1aa;background:#edf8ef;color:#17693c;font-weight:700}.category-chip:disabled{opacity:.55;cursor:not-allowed}.printer-purpose-card__footer{align-items:flex-start;padding-top:2px}.text-action{border:0;background:none;color:#17693c;padding:0;font-size:12px;font-weight:700;line-height:1.45;text-align:left;cursor:pointer}.text-action.is-selected{color:#0f7040}.text-action--danger{color:#a3443d}.text-action:disabled{opacity:.5;cursor:not-allowed}.printer-purpose-empty{display:flex;min-height:92px;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;padding:16px;border:1px dashed #d8e3da;border-radius:10px;color:var(--printing-muted);background:#fbfdfb;font-size:13px}.printer-purpose-empty p{margin:0}.printing-assign-backdrop{position:fixed;z-index:30;inset:0;display:grid;place-items:center;padding:20px;background:#10213d55}.printing-assign-dialog{width:min(560px,100%);max-height:min(640px,calc(100vh - 40px));overflow:auto;border-radius:14px;background:#fff;box-shadow:0 20px 56px #10213d40}.printing-assign-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid #e5ece7}.printing-assign-dialog h2{margin:0;color:var(--printing-ink);font-size:18px}.printing-assign-dialog p{margin:5px 0 0;color:var(--printing-muted);font-size:13px}.printing-assign-dialog>header>button{width:32px;height:32px;border:0;border-radius:8px;color:#52616b;background:#f2f5f3;font-size:22px;line-height:1;cursor:pointer}.printing-assign-list{display:grid;padding:12px}.printing-assign-list>button{display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-radius:9px;background:transparent;padding:12px;text-align:left;cursor:pointer}.printing-assign-list>button:hover,.printing-assign-list>button:focus-visible{background:#edf8ef;outline:none}.printing-assign-list strong,.printing-assign-list small{display:block}.printing-assign-list strong{color:var(--printing-ink);font-size:14px}.printing-assign-list small,.printing-assign-list em{margin-top:3px;color:var(--printing-muted);font-size:12px;font-style:normal}.printing-assign-empty{padding:28px 20px;color:var(--printing-muted);font-size:13px}@media(max-width:900px){.printing-auto-page__header,.printer-purpose-section__header{display:grid}.printing-auto-page__actions{justify-content:flex-start}.printer-purpose-grid{grid-template-columns:1fr}}@media(max-width:560px){.printer-purpose-section{padding:14px}.printer-purpose-card__footer{display:grid}.printing-auto-page__actions .printing-button{width:100%}}
+.printing-auto-page{display:grid;gap:18px}.printing-auto-page__header,.printer-purpose-section__header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.printing-auto-page__header h2,.printer-purpose-section h3,.automatic-creation-setting h3{margin:0;color:var(--printing-ink);font-size:20px}.printing-auto-page__header p,.printer-purpose-section p,.automatic-creation-setting p{margin:5px 0 0;color:var(--printing-muted);font-size:13px}.printing-auto-page__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}.printing-auto-message,.printing-auto-warning{display:flex;gap:9px;align-items:flex-start;margin:0;padding:11px 13px;border:1px solid;border-radius:10px;font-size:13px}.printing-auto-message.is-success{border-color:#b9dfc4;color:#17693c;background:#f1faf3}.printing-auto-message.is-error{border-color:#f1c6c2;color:#ab3128;background:#fff7f6}.printing-auto-warning{border-color:#f1d497;color:#8a5a00;background:#fff9eb}.automatic-creation-setting{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border:1px solid #cfe5d5;border-radius:12px;background:#f7fcf8}.automatic-creation-setting__control{display:flex;align-items:center;gap:10px}.automatic-creation-setting__status{color:#69786e;font-size:13px;font-weight:700}.automatic-creation-setting__status.is-on{color:#17693c}.printer-purpose-section{display:grid;gap:13px;padding:18px;border:1px solid var(--printing-border);border-radius:12px;background:#fff}.printer-purpose-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.printer-purpose-card{display:grid;gap:13px;padding:15px;border:1px solid #e1e9e3;border-radius:11px;background:#fbfdfb}.printer-purpose-card--kitchen{background:#fcfefc}.printer-purpose-card>header,.printer-purpose-card__line,.printer-purpose-card__footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.printer-purpose-card__title{min-width:0}.printer-purpose-card__title strong,.printer-purpose-card__title span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.printer-purpose-card__title strong{color:var(--printing-ink);font-size:15px}.printer-purpose-card__title span{margin-top:4px;color:var(--printing-muted);font-size:12px}.printer-status{flex:0 0 auto;color:#8a5a00;font-size:12px;font-weight:700}.printer-status.is-online{color:#168448}.printer-purpose-card__usage span{display:inline-flex;padding:3px 7px;border-radius:999px;color:#17693c;background:#e9f6ed;font-size:11px;font-weight:700}.printer-purpose-card__line{padding-block:2px;color:var(--printing-ink);font-size:13px}.auto-switch{position:relative;width:42px;height:24px;flex:0 0 42px;padding:0;border:0;border-radius:999px;background:#cfd8d2;cursor:pointer;transition:background .16s ease}.auto-switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #10213d33;transition:transform .16s ease}.auto-switch.is-on{background:#159447}.auto-switch.is-on i{transform:translateX(18px)}.auto-switch:disabled{opacity:.48;cursor:not-allowed}.category-binding{display:grid;gap:8px;padding:10px;border:1px dashed #cfdbd2;border-radius:9px}.category-binding>span,.category-binding em{color:var(--printing-muted);font-size:12px;font-style:normal}.category-binding__chips{display:flex;flex-wrap:wrap;gap:7px}.category-chip{border:1px solid #d8e3da;border-radius:999px;background:#fff;color:#4f6155;padding:5px 9px;font-size:12px;cursor:pointer}.category-chip.is-selected{border-color:#9bd1aa;background:#edf8ef;color:#17693c;font-weight:700}.category-chip:disabled{opacity:.55;cursor:not-allowed}.printer-purpose-card__footer{align-items:flex-start;padding-top:2px}.text-action{border:0;background:none;color:#17693c;padding:0;font-size:12px;font-weight:700;line-height:1.45;text-align:left;cursor:pointer}.text-action.is-selected{color:#0f7040}.text-action--danger{color:#a3443d}.text-action:disabled{opacity:.5;cursor:not-allowed}.printer-purpose-empty{display:flex;min-height:92px;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;padding:16px;border:1px dashed #d8e3da;border-radius:10px;color:var(--printing-muted);background:#fbfdfb;font-size:13px}.printer-purpose-empty p{margin:0}.printing-assign-backdrop{position:fixed;z-index:30;inset:0;display:grid;place-items:center;padding:20px;background:#10213d55}.printing-assign-dialog{width:min(560px,100%);max-height:min(640px,calc(100vh - 40px));overflow:auto;border-radius:14px;background:#fff;box-shadow:0 20px 56px #10213d40}.printing-assign-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid #e5ece7}.printing-assign-dialog h2{margin:0;color:var(--printing-ink);font-size:18px}.printing-assign-dialog p{margin:5px 0 0;color:var(--printing-muted);font-size:13px}.printing-assign-dialog>header>button{width:32px;height:32px;border:0;border-radius:8px;color:#52616b;background:#f2f5f3;font-size:22px;line-height:1;cursor:pointer}.printing-assign-list{display:grid;padding:12px}.printing-assign-list>button{display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-radius:9px;background:transparent;padding:12px;text-align:left;cursor:pointer}.printing-assign-list>button:hover,.printing-assign-list>button:focus-visible{background:#edf8ef;outline:none}.printing-assign-list strong,.printing-assign-list small{display:block}.printing-assign-list strong{color:var(--printing-ink);font-size:14px}.printing-assign-list small,.printing-assign-list em{margin-top:3px;color:var(--printing-muted);font-size:12px;font-style:normal}.printing-assign-empty{padding:28px 20px;color:var(--printing-muted);font-size:13px}@media(max-width:900px){.printing-auto-page__header,.printer-purpose-section__header,.automatic-creation-setting{display:grid}.printing-auto-page__actions{justify-content:flex-start}.printer-purpose-grid{grid-template-columns:1fr}}@media(max-width:560px){.printer-purpose-section{padding:14px}.printer-purpose-card__footer{display:grid}.printing-auto-page__actions .printing-button{width:100%}}
 </style>

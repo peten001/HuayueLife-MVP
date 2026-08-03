@@ -34,6 +34,7 @@ import {
   FinishPrintingDto,
   MarkPrintingDto,
   ReportTerminalPrinterStatusDto,
+  UpdateMerchantAutomaticCreationDto,
   UpdateMerchantPrintingSettingsDto,
 } from '../dto/terminal-connector.dto';
 import { ActiveMerchantStaffGuard } from '../guards/active-merchant-staff.guard';
@@ -88,8 +89,11 @@ export class MerchantPrintingController {
   @Get('feature-state')
   async featureState(@MerchantId() merchantId: bigint) {
     const settings = await this.settings.get(merchantId);
+    const flags = this.flags.status();
     return {
-      ...this.flags.status(),
+      ...flags,
+      automaticCreationEnabled:
+        flags.automaticCreationEnabled && settings.automaticCreationEnabled,
       merchantPrintingEnabled: settings.printingEnabled,
     };
   }
@@ -118,6 +122,18 @@ export class MerchantPrintingController {
       BigInt(staff.sub),
       request.requestId,
       dto.printingEnabled,
+    );
+  }
+
+  @Patch('automatic-creation')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  updateAutomaticCreation(
+    @MerchantId() merchantId: bigint,
+    @Body() dto: UpdateMerchantAutomaticCreationDto,
+  ) {
+    return this.settings.updateAutomaticCreation(
+      merchantId,
+      dto.automaticCreationEnabled,
     );
   }
 

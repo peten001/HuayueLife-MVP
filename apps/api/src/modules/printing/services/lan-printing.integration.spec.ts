@@ -27,6 +27,7 @@ describe('terminal-executed LAN printing service chain', () => {
     };
     const settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
+      assertMerchantAutomaticCreationEnabled: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue({
         printingEnabled: true,
         featureFlags: {

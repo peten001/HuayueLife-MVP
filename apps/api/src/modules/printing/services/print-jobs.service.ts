@@ -312,6 +312,7 @@ export class PrintJobsService {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertAutomaticCreationEnabled();
     await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    await this.settings.assertMerchantAutomaticCreationEnabled(input.merchantId);
     const rule = await this.prisma.printRule.findFirst({
       where: {
         id: input.ruleId,
@@ -356,6 +357,7 @@ export class PrintJobsService {
     input: EnqueueAutomaticTriggerInput,
   ) {
     if (!this.automaticTriggeringEnabled()) return [];
+    if (!(await this.merchantAutomaticCreationEnabled(input.merchantId, tx))) return [];
     const merchant = await tx.merchant.findUnique({
       where: { id: input.merchantId },
       select: { status: true, printingEnabled: true },
@@ -439,6 +441,7 @@ export class PrintJobsService {
     input: EnqueueTableSessionCheckoutInput,
   ) {
     if (!this.automaticTriggeringEnabled()) return [];
+    if (!(await this.merchantAutomaticCreationEnabled(input.merchantId, tx))) return [];
     const merchant = await tx.merchant.findUnique({
       where: { id: input.merchantId },
       select: { status: true, printingEnabled: true },
@@ -568,6 +571,7 @@ export class PrintJobsService {
     });
     try {
       await this.settings.assertMerchantPrintingEnabled(trigger.merchantId);
+      await this.settings.assertMerchantAutomaticCreationEnabled(trigger.merchantId);
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
         orderId: trigger.orderId ?? undefined,
@@ -1281,7 +1285,9 @@ export class PrintJobsService {
     const boundPrinterId = terminal.boundPrinterId;
     await this.requireReadyUsbPrinter(merchantId, boundPrinterId);
     const automaticAllowed =
-      allowAutomatic && this.flags.automaticCreationEnabled();
+      allowAutomatic &&
+      this.flags.automaticCreationEnabled() &&
+      (await this.merchantAutomaticCreationEnabled(merchantId));
 
     await this.releaseExpiredLeases(new Date());
     await this.releaseAvailableRetries(new Date(), merchantId);
@@ -1424,7 +1430,9 @@ export class PrintJobsService {
       await this.requireReadyUsbPrinter(merchantId, printer.id);
     }
     const automaticAllowed =
-      allowAutomatic && this.flags.automaticCreationEnabled();
+      allowAutomatic &&
+      this.flags.automaticCreationEnabled() &&
+      (await this.merchantAutomaticCreationEnabled(merchantId));
 
     await this.releaseExpiredLeases(new Date());
     await this.releaseAvailableRetries(new Date(), merchantId);
@@ -2264,6 +2272,18 @@ export class PrintJobsService {
       this.flags.automaticCreationEnabled() &&
       !this.flags.legacyPrintingEnabled()
     );
+  }
+
+  private async merchantAutomaticCreationEnabled(
+    merchantId: bigint,
+    client?: Prisma.TransactionClient,
+  ) {
+    try {
+      await this.settings.assertMerchantAutomaticCreationEnabled(merchantId, client);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private assertAutomaticEventKey(eventKey: string) {

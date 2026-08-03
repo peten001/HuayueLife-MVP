@@ -240,3 +240,9 @@ export class UpdateMerchantPrintingSettingsDto {
   @IsBoolean()
   printingEnabled: boolean;
 }
+
+/** Merchant-owned preference; the platform printing gate stays read-only. */
+export class UpdateMerchantAutomaticCreationDto {
+  @IsBoolean()
+  automaticCreationEnabled: boolean;
+}
