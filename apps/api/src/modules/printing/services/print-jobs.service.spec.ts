@@ -66,6 +66,7 @@ describe('PrintJobsService', () => {
       assertMerchantAutomaticCreationEnabled: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue({
         printingEnabled: true,
+        automaticCreationEnabled: true,
         featureFlags: {
           taskCenterEnabled: true,
           executionEnabled: true,
@@ -291,6 +292,7 @@ describe('PrintJobsService', () => {
   it('enables automatic connector polling only for the bound printer with an active rule', async () => {
     settings.get.mockResolvedValue({
       printingEnabled: true,
+      automaticCreationEnabled: true,
       featureFlags: {
         taskCenterEnabled: true,
         executionEnabled: true,
@@ -1033,6 +1035,9 @@ describe('PrintJobsService', () => {
   it('does not touch outbox tables while automatic creation remains disabled', async () => {
     flags.taskCenterEnabled.mockReturnValue(true);
     flags.automaticCreationEnabled.mockReturnValue(false);
+    settings.assertMerchantAutomaticCreationEnabled.mockRejectedValue(
+      new BadRequestException({ code: 'AUTO_CREATE_DISABLED' }),
+    );
 
     await expect(
       service.enqueueAutomaticTriggersForOrderTransition(prisma as never, {

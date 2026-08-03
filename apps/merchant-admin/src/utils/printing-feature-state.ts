@@ -39,6 +39,7 @@ export async function resolvePrintingFeatureState(): Promise<PrintingFeatureStat
 
 export function clearPrintingFeatureStateCache() {
   cachedState = null;
+  pendingRequest = null;
 }
 
 function normalizeState(value: PrintingFeatureState): PrintingFeatureState {

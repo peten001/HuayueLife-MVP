@@ -271,6 +271,7 @@ export class PrintJobsService {
       }),
     ]);
     const flags = settings.featureFlags;
+    const automaticCreationEnabled = settings.automaticCreationEnabled;
     const printersWithReadiness = printers.map((printer) => ({
       ...printer,
       readiness: printerReadiness(printer),
@@ -281,7 +282,7 @@ export class PrintJobsService {
       printersWithReadiness[0] ??
       null;
     const automaticRule =
-      flags.automaticCreationEnabled && boundPrinter?.enabled
+      automaticCreationEnabled && boundPrinter?.enabled
         ? await this.prisma.printRule.findFirst({
             where: {
               merchantId,
@@ -296,7 +297,7 @@ export class PrintJobsService {
       merchantId: merchantId.toString(),
       taskCenterEnabled: flags.taskCenterEnabled,
       executionEnabled: flags.executionEnabled,
-      automaticCreationEnabled: flags.automaticCreationEnabled,
+      automaticCreationEnabled,
       legacyPrintingEnabled: flags.legacyPrintingEnabled,
       merchantPrintingEnabled: settings.printingEnabled,
       pollIntervalSeconds: 7,
@@ -1285,9 +1286,7 @@ export class PrintJobsService {
     const boundPrinterId = terminal.boundPrinterId;
     await this.requireReadyUsbPrinter(merchantId, boundPrinterId);
     const automaticAllowed =
-      allowAutomatic &&
-      this.flags.automaticCreationEnabled() &&
-      (await this.merchantAutomaticCreationEnabled(merchantId));
+      allowAutomatic && (await this.merchantAutomaticCreationEnabled(merchantId));
 
     await this.releaseExpiredLeases(new Date());
     await this.releaseAvailableRetries(new Date(), merchantId);
@@ -1430,9 +1429,7 @@ export class PrintJobsService {
       await this.requireReadyUsbPrinter(merchantId, printer.id);
     }
     const automaticAllowed =
-      allowAutomatic &&
-      this.flags.automaticCreationEnabled() &&
-      (await this.merchantAutomaticCreationEnabled(merchantId));
+      allowAutomatic && (await this.merchantAutomaticCreationEnabled(merchantId));
 
     await this.releaseExpiredLeases(new Date());
     await this.releaseAvailableRetries(new Date(), merchantId);
@@ -2267,10 +2264,7 @@ export class PrintJobsService {
   }
 
   private automaticTriggeringEnabled() {
-    return (
-      this.flags.taskCenterEnabled() &&
-      this.flags.automaticCreationEnabled()
-    );
+    return this.flags.taskCenterEnabled();
   }
 
   private async merchantAutomaticCreationEnabled(
