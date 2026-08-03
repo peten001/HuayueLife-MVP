@@ -105,7 +105,20 @@ async function changePassword() {
       <main class="business-settings-left">
         <section class="settings-card notice-card"><h2>商家公告</h2><textarea v-model="form.notice" maxlength="300" @input="dirty = true" /><span class="counter">{{ form.notice.length }} / 300</span></section>
         <section class="settings-card"><h2>配送设置</h2><div class="delivery-fields"><label>起送价（VND）<input v-model.number="form.minimumDeliveryAmountVnd" type="number" min="0" @input="dirty = true" /></label><label>配送费（VND）<input v-model.number="form.deliveryFeeVnd" type="number" min="0" @input="dirty = true" /></label><label>配送半径（公里）<input v-model.number="form.deliveryRadiusKm" type="number" min="0" @input="dirty = true" /></label></div></section>
-        <section class="settings-card password-card"><h2>修改密码</h2><div class="password-fields"><label>当前密码<input v-model="passwordForm.currentPassword" type="password" placeholder="请输入密码" /></label><label>新密码<input v-model="passwordForm.newPassword" type="password" placeholder="请输入密码" /></label><label>确认密码<input v-model="passwordForm.confirmPassword" type="password" placeholder="请输入密码" /></label></div><div class="password-actions"><button type="button" class="save-button" :disabled="passwordSaving" @click="changePassword">{{ passwordSaving ? '修改中' : '修改密码' }}</button></div></section>
+	        <section class="settings-card password-card">
+	          <div class="password-card-title">
+	            <h2>修改密码</h2>
+	            <button type="button" class="password-action-button" :disabled="passwordSaving" @click="changePassword">
+	              <span class="password-action-button__icon" aria-hidden="true">🔒</span>
+	              <span class="password-action-button__text">{{ passwordSaving ? '修改中' : '修改密码' }}</span>
+	            </button>
+	          </div>
+	          <div class="password-fields">
+	            <label>当前密码<input v-model="passwordForm.currentPassword" type="password" placeholder="请输入密码" /></label>
+	            <label>新密码<input v-model="passwordForm.newPassword" type="password" placeholder="请输入密码" /></label>
+	            <label>确认密码<input v-model="passwordForm.confirmPassword" type="password" placeholder="请输入密码" /></label>
+	          </div>
+	        </section>
       </main>
       <section class="settings-card hours-card"><div class="hours-title"><div><h2>营业时间</h2><p>设置每周营业时间，支持多个营业时段。</p></div></div><div class="hours-table"><div class="hours-head"><span>星期</span><span>营业状态</span><span>营业时段</span><span>操作</span></div><div v-for="day in schedule" :key="day.key" class="hours-row"><strong>{{ t(day.key) }}</strong><label class="switch"><input v-model="day.enabled" type="checkbox" @change="dirty = true" /><i /></label><div v-if="day.enabled" class="intervals"><div v-for="(interval, index) in day.intervals" :key="index" class="interval"><input v-model="interval.start" type="time" @change="dirty = true" /><b>–</b><input v-model="interval.end" type="time" @change="dirty = true" /></div><button v-if="day.intervals.length < 3" type="button" class="add-interval" @click="addInterval(day)">＋ 添加时段</button></div><span v-else class="rest">休息（不营业）</span><button v-if="day.enabled" type="button" class="remove-interval" aria-label="删除营业时段" @click="removeInterval(day, day.intervals.length - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button><span v-else>–</span></div></div></section>
     </div><p v-if="message" class="settings-message">{{ message }}</p>
@@ -150,6 +163,11 @@ async function changePassword() {
 .notice-card{min-height:0}
 .notice-card textarea{min-height:112px;margin-top:10px}
 .delivery-fields,.password-fields{gap:12px;margin-top:12px}
+.password-card-title{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.password-action-button{height:38px;padding:0 16px;min-width:94px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #159447;border-radius:11px;background:#fff;color:#159447;font:inherit;font-size:14px;font-weight:700;cursor:pointer;line-height:1.1}
+.password-action-button__icon{font-size:14px;line-height:1}
+.password-action-button:hover:not(:disabled){background:#f4fbf4}
+.password-action-button:disabled{opacity:.72;cursor:not-allowed}
 .hours-card{padding:16px}
 .hours-table{margin-top:12px}
 .hours-head,.hours-row{gap:10px;padding-top:7px;padding-bottom:7px}
