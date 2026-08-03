@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { changeMerchantPassword, getProfile, updateProfile } from '@/api/merchant';
 import { useI18n } from '@/i18n';
 import { resolveMediaUrl } from '@/utils/media';
+import { clearMerchantStaff, clearToken, getMerchantStaff } from '@/utils/storage';
 import type { MerchantProfile } from '@/types/api';
 
 type WeekdayKey = 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday';
@@ -11,12 +13,15 @@ interface Interval { start: string; end: string }
 interface DaySchedule { key: WeekdayKey; enabled: boolean; intervals: Interval[] }
 const keys: WeekdayKey[] = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
 const { t } = useI18n();
-const form = reactive({ notice: '', minimumDeliveryAmountVnd: 0, deliveryFeeVnd: 0, deliveryRadiusKm: 0, currentPassword: '', newPassword: '', confirmPassword: '' });
+const router = useRouter();
+const form = reactive({ notice: '', minimumDeliveryAmountVnd: 0, deliveryFeeVnd: 0, deliveryRadiusKm: 0 });
+const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' });
 const schedule = ref<DaySchedule[]>(keys.map((key) => ({ key, enabled: true, intervals: [{ start: '09:00', end: '14:00' }, { start: '17:00', end: '22:00' }] })));
-const message = ref(''); const saving = ref(false); const dirty = ref(false); const copyOpen = ref(false); const copySource = ref<WeekdayKey>('monday'); const copyTarget = ref<WeekdayKey>('tuesday');
+const message = ref(''); const saving = ref(false); const passwordSaving = ref(false); const dirty = ref(false); const copyOpen = ref(false); const copySource = ref<WeekdayKey>('monday'); const copyTarget = ref<WeekdayKey>('tuesday');
 const profile = ref<MerchantProfile | null>(null);
 const coverPreviewUrl = computed(() => resolveMediaUrl(profile.value?.coverUrl || profile.value?.images?.find((item) => item.imageType === 'COVER')?.imageUrl));
-const passwordEntered = computed(() => Boolean(form.currentPassword || form.newPassword || form.confirmPassword));
+const currentRole = computed(() => getMerchantStaff()?.role ?? 'STAFF');
+const canSaveSettings = computed(() => currentRole.value !== 'STAFF');
 
 onMounted(async () => { try { const p = await getProfile(); profile.value = p; Object.assign(form, { notice: p.notice ?? '', minimumDeliveryAmountVnd: Number(p.minimumDeliveryAmountVnd), deliveryFeeVnd: Number(p.deliveryFeeVnd), deliveryRadiusKm: Number(p.deliveryRadiusKm) }); schedule.value = parseHours(p.businessHours); } catch (e) { message.value = errorMessage(e); } });
 function parseHours(raw: Record<string, string[]> | undefined) { return keys.map((key) => { const values = raw?.[key] ?? []; const intervals = values.map(parseRange).filter(Boolean) as Interval[]; return { key, enabled: intervals.length > 0, intervals: intervals.length ? intervals : [{ start: '09:00', end: '22:00' }] }; }); }
@@ -27,7 +32,62 @@ function payload() { return Object.fromEntries(schedule.value.map((day) => [day.
 function addInterval(day: DaySchedule) { if (day.intervals.length >= 3) return; day.intervals.push({ start: '09:00', end: '12:00' }); dirty.value = true; }
 function removeInterval(day: DaySchedule, index: number) { if (day.intervals.length === 1) { message.value = '如需当天休息，请关闭营业状态'; return; } day.intervals.splice(index, 1); dirty.value = true; }
 function copyIntervals() { const source = schedule.value.find((d) => d.key === copySource.value); const target = schedule.value.find((d) => d.key === copyTarget.value); if (source && target) { target.intervals = source.intervals.map((i) => ({ ...i })); target.enabled = source.enabled; dirty.value = true; } copyOpen.value = false; }
-async function save() { message.value = ''; const invalid = validate(); if (invalid) { message.value = invalid; return; } if (passwordEntered.value && (!form.currentPassword || !form.newPassword || !form.confirmPassword)) { message.value = '请完整填写密码三项内容'; return; } saving.value = true; try { await updateProfile({ notice: form.notice, minimumDeliveryAmountVnd: form.minimumDeliveryAmountVnd, deliveryFeeVnd: form.deliveryFeeVnd, deliveryRadiusKm: form.deliveryRadiusKm, businessHours: payload() }); if (passwordEntered.value) { await changeMerchantPassword({ currentPassword: form.currentPassword, newPassword: form.newPassword, confirmPassword: form.confirmPassword }); } message.value = '设置已保存'; dirty.value = false; } catch (e) { message.value = errorMessage(e); } finally { saving.value = false; } }
+async function save() {
+  message.value = '';
+  if (!canSaveSettings.value) {
+    return;
+  }
+  const invalid = validate();
+  if (invalid) {
+    message.value = invalid;
+    return;
+  }
+  saving.value = true;
+  try {
+    await updateProfile({
+      notice: form.notice,
+      minimumDeliveryAmountVnd: form.minimumDeliveryAmountVnd,
+      deliveryFeeVnd: form.deliveryFeeVnd,
+      deliveryRadiusKm: form.deliveryRadiusKm,
+      businessHours: payload(),
+    });
+    message.value = '设置已保存';
+    dirty.value = false;
+  } catch (e) {
+    message.value = errorMessage(e);
+  } finally {
+    saving.value = false;
+  }
+}
+async function changePassword() {
+  message.value = '';
+  if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+    message.value = '请完整填写密码三项内容';
+    return;
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    message.value = '新密码与确认密码不一致';
+    return;
+  }
+  passwordSaving.value = true;
+  try {
+    await changeMerchantPassword({
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+      confirmPassword: passwordForm.confirmPassword,
+    });
+    passwordForm.currentPassword = '';
+    passwordForm.newPassword = '';
+    passwordForm.confirmPassword = '';
+    clearToken();
+    clearMerchantStaff();
+    await router.push('/login');
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    passwordSaving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -40,12 +100,12 @@ async function save() { message.value = ''; const invalid = validate(); if (inva
         <div><h2>商家封面</h2><div class="profile-cover"><img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="商家封面" /><span v-else>暂无封面图</span></div><p class="profile-maintenance-note">店铺资料由平台维护，如需修改请联系平台管理员。</p></div>
       </div>
     </section>
-    <header class="business-settings-header"><div><h1>经营设置</h1></div><div><button class="save-button" :disabled="saving">{{ saving ? '保存中...' : '▣ 保存设置' }}</button></div></header>
+    <header class="business-settings-header"><div><h1>经营设置</h1></div><div><button class="save-button" :disabled="saving || !canSaveSettings">{{ saving ? '保存中...' : '▣ 保存设置' }}</button></div></header>
     <div class="business-settings-grid">
       <main class="business-settings-left">
         <section class="settings-card notice-card"><h2>商家公告</h2><textarea v-model="form.notice" maxlength="300" @input="dirty = true" /><span class="counter">{{ form.notice.length }} / 300</span></section>
         <section class="settings-card"><h2>配送设置</h2><div class="delivery-fields"><label>起送价（VND）<input v-model.number="form.minimumDeliveryAmountVnd" type="number" min="0" @input="dirty = true" /></label><label>配送费（VND）<input v-model.number="form.deliveryFeeVnd" type="number" min="0" @input="dirty = true" /></label><label>配送半径（公里）<input v-model.number="form.deliveryRadiusKm" type="number" min="0" @input="dirty = true" /></label></div></section>
-        <section class="settings-card password-card"><h2>修改密码</h2><div class="password-fields"><label>当前密码<input v-model="form.currentPassword" type="password" placeholder="请输入密码" @input="dirty = true" /></label><label>新密码<input v-model="form.newPassword" type="password" placeholder="请输入密码" @input="dirty = true" /></label><label>确认密码<input v-model="form.confirmPassword" type="password" placeholder="请输入密码" @input="dirty = true" /></label></div></section>
+        <section class="settings-card password-card"><h2>修改密码</h2><div class="password-fields"><label>当前密码<input v-model="passwordForm.currentPassword" type="password" placeholder="请输入密码" /></label><label>新密码<input v-model="passwordForm.newPassword" type="password" placeholder="请输入密码" /></label><label>确认密码<input v-model="passwordForm.confirmPassword" type="password" placeholder="请输入密码" /></label></div><div class="password-actions"><button type="button" class="save-button" :disabled="passwordSaving" @click="changePassword">{{ passwordSaving ? '修改中' : '修改密码' }}</button></div></section>
       </main>
       <section class="settings-card hours-card"><div class="hours-title"><div><h2>营业时间</h2><p>设置每周营业时间，支持多个营业时段。</p></div></div><div class="hours-table"><div class="hours-head"><span>星期</span><span>营业状态</span><span>营业时段</span><span>操作</span></div><div v-for="day in schedule" :key="day.key" class="hours-row"><strong>{{ t(day.key) }}</strong><label class="switch"><input v-model="day.enabled" type="checkbox" @change="dirty = true" /><i /></label><div v-if="day.enabled" class="intervals"><div v-for="(interval, index) in day.intervals" :key="index" class="interval"><input v-model="interval.start" type="time" @change="dirty = true" /><b>–</b><input v-model="interval.end" type="time" @change="dirty = true" /></div><button v-if="day.intervals.length < 3" type="button" class="add-interval" @click="addInterval(day)">＋ 添加时段</button></div><span v-else class="rest">休息（不营业）</span><button v-if="day.enabled" type="button" class="remove-interval" aria-label="删除营业时段" @click="removeInterval(day, day.intervals.length - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button><span v-else>–</span></div></div></section>
     </div><p v-if="message" class="settings-message">{{ message }}</p>
@@ -55,7 +115,7 @@ async function save() { message.value = ''; const invalid = validate(); if (inva
 
 <style scoped>
 :global(.merchant-sidebar + .content){background:#f6f8f9}
-.business-settings-page{display:grid;gap:14px;max-width:1640px;color:#10213d}.business-settings-header{display:flex;justify-content:space-between;align-items:start}.business-settings-header h1{margin:0;font-size:30px}.business-settings-header p,.settings-card p{margin:6px 0;color:#536b8b}.business-settings-header>div:last-child{display:grid;justify-items:end;gap:6px}.business-settings-header small{color:#536b8b}.save-button{border:0;border-radius:11px;background:#159447;color:#fff;padding:12px 22px;font:inherit;font-weight:700}.save-button:disabled{opacity:.65}.business-settings-grid{display:grid;grid-template-columns:1fr 1.48fr;gap:16px}.business-settings-left{display:grid;gap:16px}.settings-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.settings-card h2{margin:0;font-size:18px}.notice-card{min-height:264px}.notice-card textarea{width:100%;min-height:166px;margin-top:14px;resize:none}.counter{display:block;text-align:right;color:#637491;font-size:12px}.delivery-fields,.password-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}.settings-card label{display:grid;gap:8px;color:#536b8b;font-size:13px;font-weight:600}.settings-card input,.settings-card textarea,.settings-card select{box-sizing:border-box;border:1px solid #dce5e2;border-radius:10px;padding:11px 14px;background:#fff;color:#18263d;font:inherit}.password-hint{display:block;margin-top:18px;color:#159447}.hours-card{padding:20px}.hours-title{display:flex;justify-content:space-between;align-items:start}.copy-button{border:1px solid #bfe2cb;border-radius:9px;background:#f7fcf8;color:#159447;padding:9px 15px;font-weight:700}.hours-table{margin-top:18px;border:1px solid #e0e8e5;border-radius:10px;overflow:hidden}.hours-head,.hours-row{display:grid;grid-template-columns:105px 145px 1fr 58px;align-items:center;gap:14px;padding:12px 16px}.hours-head{background:#f7fafb;color:#536b8b;font-size:13px;font-weight:700}.hours-row{min-height:66px;border-top:1px solid #e5ece9}.switch input{display:none}.switch i{display:block;width:42px;height:24px;border-radius:20px;background:#dfe5e7;position:relative}.switch i:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+i{background:#159447}.switch input:checked+i:after{left:21px}.intervals{display:grid;gap:8px}.interval{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.interval input{width:105px;padding:8px}.interval b{color:#536b8b}.add-interval{border:0;background:none;color:#159447;font-weight:700}.remove-interval{border:0;background:none;color:#536b8b;font-size:20px}.rest{color:#536b8b}.settings-message{margin:0;color:#159447}.copy-modal{position:fixed;inset:0;display:grid;place-items:center;background:#10213d33;z-index:10}.copy-dialog{display:grid;gap:14px;width:340px;padding:22px;border-radius:16px;background:#fff;box-shadow:0 20px 60px #10213d33}.copy-dialog h2{margin:0}.copy-dialog footer{display:flex;justify-content:end;gap:10px}.copy-dialog footer button{padding:10px 14px;border:1px solid #dce5e2;border-radius:9px;background:#fff}@media(max-width:1100px){.business-settings-grid{grid-template-columns:1fr}.hours-card{order:-1}}@media(max-width:700px){.business-settings-header{display:grid;gap:12px}.business-settings-header>div:last-child{justify-items:start}.delivery-fields,.password-fields{grid-template-columns:1fr}.hours-head{display:none}.hours-row{grid-template-columns:70px 50px 1fr 30px;padding:12px 8px}.interval input{width:88px}}
+.business-settings-page{display:grid;gap:14px;max-width:1640px;color:#10213d}.business-settings-header{display:flex;justify-content:space-between;align-items:start}.business-settings-header h1{margin:0;font-size:30px}.business-settings-header p,.settings-card p{margin:6px 0;color:#536b8b}.business-settings-header>div:last-child{display:grid;justify-items:end;gap:6px}.business-settings-header small{color:#536b8b}.save-button{border:0;border-radius:11px;background:#159447;color:#fff;padding:12px 22px;font:inherit;font-weight:700}.save-button:disabled{opacity:.65}.business-settings-grid{display:grid;grid-template-columns:1fr 1.48fr;gap:16px}.business-settings-left{display:grid;gap:16px}.settings-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.settings-card h2{margin:0;font-size:18px}.notice-card{min-height:264px}.notice-card textarea{width:100%;min-height:166px;margin-top:14px;resize:none}.counter{display:block;text-align:right;color:#637491;font-size:12px}.delivery-fields,.password-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}.settings-card label{display:grid;gap:8px;color:#536b8b;font-size:13px;font-weight:600}.settings-card input,.settings-card textarea,.settings-card select{box-sizing:border-box;border:1px solid #dce5e2;border-radius:10px;padding:11px 14px;background:#fff;color:#18263d;font:inherit}.password-hint{display:block;margin-top:18px;color:#159447}.password-actions{display:flex;justify-content:flex-end}.hours-card{padding:20px}.hours-title{display:flex;justify-content:space-between;align-items:start}.copy-button{border:1px solid #bfe2cb;border-radius:9px;background:#f7fcf8;color:#159447;padding:9px 15px;font-weight:700}.hours-table{margin-top:18px;border:1px solid #e0e8e5;border-radius:10px;overflow:hidden}.hours-head,.hours-row{display:grid;grid-template-columns:105px 145px 1fr 58px;align-items:center;gap:14px;padding:12px 16px}.hours-head{background:#f7fafb;color:#536b8b;font-size:13px;font-weight:700}.hours-row{min-height:66px;border-top:1px solid #e5ece9}.switch input{display:none}.switch i{display:block;width:42px;height:24px;border-radius:20px;background:#dfe5e7;position:relative}.switch i:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+i{background:#159447}.switch input:checked+i:after{left:21px}.intervals{display:grid;gap:8px}.interval{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.interval input{width:105px;padding:8px}.interval b{color:#536b8b}.add-interval{border:0;background:none;color:#159447;font-weight:700}.remove-interval{border:0;background:none;color:#536b8b;font-size:20px}.rest{color:#536b8b}.settings-message{margin:0;color:#159447}.copy-modal{position:fixed;inset:0;display:grid;place-items:center;background:#10213d33;z-index:10}.copy-dialog{display:grid;gap:14px;width:340px;padding:22px;border-radius:16px;background:#fff;box-shadow:0 20px 60px #10213d33}.copy-dialog h2{margin:0}.copy-dialog footer{display:flex;justify-content:end;gap:10px}.copy-dialog footer button{padding:10px 14px;border:1px solid #dce5e2;border-radius:9px;background:#fff}@media(max-width:1100px){.business-settings-grid{grid-template-columns:1fr}.hours-card{order:-1}}@media(max-width:700px){.business-settings-header{display:grid;gap:12px}.business-settings-header>div:last-child{justify-items:start}.delivery-fields,.password-fields{grid-template-columns:1fr}.hours-head{display:none}.hours-row{grid-template-columns:70px 50px 1fr 30px;padding:12px 8px}.interval input{width:88px}}
 .store-profile-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.store-profile-card>header{display:flex;justify-content:space-between;align-items:center}.store-profile-card h1{margin:0;font-size:24px}.store-profile-card header p{margin:4px 0 0;color:#536b8b}.profile-badge{padding:6px 10px;border-radius:999px;color:#17693c;background:#e4f4e9;font-size:12px;font-weight:700}.store-profile-grid{display:grid;grid-template-columns:1fr 1fr 240px;gap:28px;margin-top:18px}.store-profile-grid h2{margin:0 0 10px;font-size:16px}.store-profile-grid dl{display:grid;grid-template-columns:88px 1fr;gap:7px 12px;margin:0}.store-profile-grid dt{color:#7a8796;font-size:12px}.store-profile-grid dd{margin:0;color:#18263d;font-size:13px;font-weight:600}.profile-cover{height:110px;display:grid;place-items:center;overflow:hidden;border:1px solid #e0e8e5;border-radius:10px;background:#f7fafb;color:#7a8796;font-size:12px}.profile-cover img{width:100%;height:100%;object-fit:cover}
 .intervals{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 18px}.add-interval{flex-basis:100%;text-align:left}
 .notice-card textarea{min-height:140px}
