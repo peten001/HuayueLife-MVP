@@ -141,13 +141,17 @@ describe('TerminalConnectorService', () => {
     prisma.printer.create.mockImplementation(async ({ data }) => ({
       id: 101n,
       deletedAt: null,
+      enabled: false,
       ...data,
     }));
     prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
     const service = createService(prisma, {}, audit);
 
     await expect(
-      service.syncUsbBinding(terminal, 'request-usb-1', syncDto()),
+      service.syncUsbBinding(terminal, 'request-usb-1', {
+        ...syncDto(),
+        enabled: true,
+      }),
     ).resolves.toEqual(
       expect.objectContaining({
         merchantId: 7n,
@@ -157,7 +161,7 @@ describe('TerminalConnectorService', () => {
         bindingVersion: 1,
         channelType: 'LOCAL_USB_ESCPOS',
         status: 'ONLINE',
-        enabled: true,
+        enabled: false,
       }),
     );
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
@@ -175,7 +179,7 @@ describe('TerminalConnectorService', () => {
         channelType: 'LOCAL_USB_ESCPOS',
         name: 'USB Printer',
         paperWidth: 'MM80',
-        enabled: true,
+        enabled: false,
         status: 'ONLINE',
         connectionConfig: {},
         capabilities: expect.objectContaining({
@@ -199,6 +203,7 @@ describe('TerminalConnectorService', () => {
         data: expect.objectContaining({ boundPrinterId: 101n }),
       }),
     );
+    expect(prisma.printer.create.mock.calls[0][0].data.enabled).toBe(false);
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         merchantId: 7n,
@@ -213,28 +218,69 @@ describe('TerminalConnectorService', () => {
   it('retries the same terminal and localBindingId idempotently', async () => {
     const prisma = createPrismaMock();
     const audit = createAuditMock();
-    const created = usbPrinterRecord(101n);
+    const created = usbPrinterRecord(101n, { enabled: false });
+    const enabledByAdmin = usbPrinterRecord(101n, { enabled: true });
     prisma.merchantTerminal.findFirst
       .mockResolvedValueOnce(activeTerminalRecord(null))
       .mockResolvedValueOnce(activeTerminalRecord(101n))
       .mockResolvedValueOnce(null);
     prisma.printer.findMany
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([created]);
+      .mockResolvedValueOnce([enabledByAdmin]);
     prisma.printer.create.mockResolvedValue(created);
-    prisma.printer.update.mockResolvedValue(created);
+    prisma.printer.update.mockResolvedValue(enabledByAdmin);
     prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
     const service = createService(prisma, {}, audit);
 
-    const first = await service.syncUsbBinding(terminal, 'request-usb-1', syncDto());
-    const retry = await service.syncUsbBinding(terminal, 'request-usb-2', syncDto());
+    const first = await service.syncUsbBinding(terminal, 'request-usb-1', {
+      ...syncDto(),
+      enabled: true,
+    });
+    const retry = await service.syncUsbBinding(terminal, 'request-usb-2', {
+      ...syncDto(),
+      enabled: false,
+    });
 
     expect(first.printerId).toBe(101n);
+    expect(first.enabled).toBe(false);
     expect(retry.printerId).toBe(101n);
     expect(retry.bindingVersion).toBe(1);
+    expect(retry.enabled).toBe(true);
     expect(prisma.printer.create).toHaveBeenCalledTimes(1);
     expect(prisma.printer.update).toHaveBeenCalledTimes(1);
+    expect(prisma.printer.create.mock.calls[0][0].data.enabled).toBe(false);
+    expect(prisma.printer.update.mock.calls[0][0].data).not.toHaveProperty(
+      'enabled',
+    );
   });
+
+  it.each([
+    { requestedEnabled: true, serverEnabled: false },
+    { requestedEnabled: false, serverEnabled: true },
+  ])(
+    'ignores legacy enabled=$requestedEnabled and preserves server enabled=$serverEnabled',
+    async ({ requestedEnabled, serverEnabled }) => {
+    const prisma = createPrismaMock();
+    const existing = usbPrinterRecord(101n, { enabled: serverEnabled });
+    prisma.merchantTerminal.findFirst
+      .mockResolvedValueOnce(activeTerminalRecord(101n))
+      .mockResolvedValueOnce(null);
+    prisma.printer.findMany.mockResolvedValue([existing]);
+    prisma.printer.update.mockResolvedValue(existing);
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma);
+
+    await expect(
+      service.syncUsbBinding(terminal, 'request-usb-enabled', {
+        ...syncDto(),
+        enabled: requestedEnabled,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ enabled: serverEnabled }));
+    expect(prisma.printer.update.mock.calls[0][0].data).not.toHaveProperty(
+      'enabled',
+    );
+    },
+  );
 
   it('rejects an archived localBindingId with the canonical re-add code', async () => {
     const prisma = createPrismaMock();
@@ -468,7 +514,6 @@ function syncDto() {
     vendorId: 0x0fe6,
     productId: 0x811e,
     paperWidth: 'MM80' as const,
-    enabled: true,
     appVersion: '2.0.0-rc10.2',
     appVersionCode: 51,
     status: 'CONNECTED' as const,
@@ -497,7 +542,7 @@ function activeTerminalRecord(boundPrinterId: bigint | null) {
 
 function usbPrinterRecord(
   id: bigint,
-  overrides: { terminalId?: string } = {},
+  overrides: { terminalId?: string; enabled?: boolean } = {},
 ) {
   return {
     id,
@@ -506,7 +551,7 @@ function usbPrinterRecord(
     channelType: 'LOCAL_USB_ESCPOS',
     paperWidth: 'MM80',
     purpose: 'FRONT_DESK',
-    enabled: true,
+    enabled: overrides.enabled ?? true,
     status: 'ONLINE',
     connectionConfig: {},
     capabilities: {

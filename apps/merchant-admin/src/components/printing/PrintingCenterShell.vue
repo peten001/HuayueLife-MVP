@@ -32,7 +32,9 @@ const platformPrintingEnabled = computed(
 const isAndroidTerminalPage = computed(() => route.path === '/printing-center/android-terminal');
 const canRenderCurrentPage = computed(() => platformPrintingEnabled.value || isAndroidTerminalPage.value);
 const onlinePrinterCount = computed(() => printers.value.filter(
-  (printer) => printer.enabled && printerConnectionState(printer, now.value) === 'CONNECTED',
+  (printer) =>
+    (printer.channelType === 'LOCAL_USB_ESCPOS' || printer.enabled)
+    && printerConnectionState(printer, now.value) === 'CONNECTED',
 ).length);
 const summary = computed(() =>
   resolvePrintingCenterSummary(

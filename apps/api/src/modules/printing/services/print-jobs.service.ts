@@ -57,6 +57,8 @@ const RETRYABLE_MANUAL_ERROR_CODES: string[] = [
   PRINTING_ERROR_CODES.CLOUD_PROVIDER_UNAVAILABLE,
 ];
 
+const ANDROID_USB_ESCPOS_ADAPTER = 'ANDROID_USB_ESCPOS';
+
 export interface CreateAutomaticJobInput {
   merchantId: bigint;
   ruleId: bigint;
@@ -1318,6 +1320,8 @@ export class PrintJobsService {
           where: {
             merchantId,
             claimedByTerminalId: terminalId,
+            printerId: boundPrinterId,
+            printer: { channelType: 'LOCAL_USB_ESCPOS' },
             status: { in: ['CLAIMED', 'PRINTING'] },
             leaseExpiresAt: { gt: now },
           },
@@ -1549,11 +1553,23 @@ export class PrintJobsService {
     );
   }
 
-  findActiveTerminalJob(merchantId: bigint, terminalId: bigint) {
+  async findActiveTerminalJob(merchantId: bigint, terminalId: bigint) {
+    const terminal = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminalId,
+        merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+      },
+      select: { boundPrinterId: true },
+    });
+    if (!terminal?.boundPrinterId) return null;
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
         claimedByTerminalId: terminalId,
+        printerId: terminal.boundPrinterId,
+        printer: { channelType: 'LOCAL_USB_ESCPOS' },
         status: { in: ['CLAIMED', 'PRINTING'] },
         leaseExpiresAt: { gt: new Date() },
       },
@@ -1684,10 +1700,21 @@ export class PrintJobsService {
       });
     }
     const snapshot = job.receiptSnapshot as Record<string, unknown>;
-    const binding =
-      job.printer.channelType === 'LOCAL_LAN_ESCPOS'
-        ? lanBindingMetadata(job.printer.capabilities)
+    const binding = job.printer.channelType === 'LOCAL_LAN_ESCPOS'
+      ? lanBindingMetadata(job.printer.capabilities)
+      : terminalId !== null
+        ? usbJobBindingMetadata(job.printer.capabilities)
         : null;
+    if (
+      job.printer.channelType === 'LOCAL_USB_ESCPOS' &&
+      terminalId !== null &&
+      (!binding || binding.terminalId !== terminalId.toString())
+    ) {
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+        message: '任务终端与 USB Binding 不匹配',
+      });
+    }
     return {
       id: job.id,
       merchantId: merchantId.toString(),
@@ -1714,7 +1741,10 @@ export class PrintJobsService {
               printerId: job.printerId,
               localBindingId: binding.localBindingId,
               bindingVersion: binding.bindingVersion,
-              adapter: ANDROID_LAN_ESCPOS_ADAPTER,
+              adapter:
+                job.printer.channelType === 'LOCAL_LAN_ESCPOS'
+                  ? ANDROID_LAN_ESCPOS_ADAPTER
+                  : ANDROID_USB_ESCPOS_ADAPTER,
             },
           }
         : {}),
@@ -2427,6 +2457,36 @@ function normalizeConnectorJson(value: Record<string, unknown>) {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+type UsbJobBindingMetadata = {
+  terminalId: string;
+  localBindingId: string;
+  bindingVersion: number;
+};
+
+function usbJobBindingMetadata(
+  value: Prisma.JsonValue,
+): UsbJobBindingMetadata | null {
+  if (!isPlainObject(value) || !isPlainObject(value.usbBinding)) return null;
+  const binding = value.usbBinding;
+  if (
+    typeof binding.terminalId !== 'string' ||
+    !/^[1-9][0-9]{0,18}$/.test(binding.terminalId) ||
+    typeof binding.localBindingId !== 'string' ||
+    !/^[A-Za-z0-9._:-]{1,128}$/.test(binding.localBindingId) ||
+    !Number.isInteger(binding.bindingVersion) ||
+    Number(binding.bindingVersion) < 1 ||
+    Number(binding.bindingVersion) > 2_147_483_647 ||
+    binding.adapter !== ANDROID_USB_ESCPOS_ADAPTER
+  ) {
+    return null;
+  }
+  return {
+    terminalId: binding.terminalId,
+    localBindingId: binding.localBindingId,
+    bindingVersion: Number(binding.bindingVersion),
+  };
 }
 
 function assertNoSensitiveConnectorKeys(value: unknown) {

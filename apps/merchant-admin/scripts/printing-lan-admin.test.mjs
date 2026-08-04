@@ -98,7 +98,11 @@ try {
 
   assert.doesNotMatch(printerPage, /v-model="form\.host"|v-model\.number="form\.port"/);
   assert.doesNotMatch(printerPage, /printingReleasePolicy|VITE_LAN_PRINTING_ENABLED/);
-  assert.match(printerPage, /\['LOCAL_USB_ESCPOS', 'CLOUD_FEIE'\]/);
+  assert.match(printerPage, /v-for="method in \(\['CLOUD_FEIE'\] as const\)"/);
+  assert.doesNotMatch(
+    printerPage,
+    /v-for="method in \([^\"]*LOCAL_USB_ESCPOS[^\"]*\)"/,
+  );
   assert.match(printerPage, /lanModifyOnTerminalHint/);
   assert.match(printerPage, /pollPrintingTestJob/);
   assert.match(printerPage, /TEST_JOB_REQUESTS_STORAGE/);

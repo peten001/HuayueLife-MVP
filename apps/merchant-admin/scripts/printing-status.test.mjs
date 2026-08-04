@@ -108,6 +108,29 @@ try {
   const disabledButConnected = printer({ enabled: false });
   assert.equal(printerConfigurationState(disabledButConnected), 'DISABLED');
   assert.equal(printerConnectionState(disabledButConnected, now), 'CONNECTED');
+  const disabledReadinessButPhysicallyConnected = printer({
+    enabled: false,
+    readiness: {
+      state: 'NOT_ENABLED',
+      channelImplemented: true,
+      configValid: true,
+      statusReady: false,
+      executionEvidenceReady: false,
+      evidenceUpdatedAt,
+      evidenceTtlMs: 120_000,
+    },
+  });
+  assert.equal(
+    printerConnectionState(disabledReadinessButPhysicallyConnected, now),
+    'CONNECTED',
+  );
+  assert.equal(
+    printerConnectionState(
+      printer({ status: 'OFFLINE' }, { appExecutionReady: false }),
+      now,
+    ),
+    'OFFLINE',
+  );
 
   const cloudPrinter = printer({
     channelType: 'CLOUD_FEIE',
@@ -201,6 +224,13 @@ try {
   assert.match(sourceFiles[1], /lanPrinterActionMatrix/);
   assert.match(sourceFiles[1], /normalizedLanSummary/);
   assert.match(sourceFiles[1], /lanModifyOnTerminalHint/);
+  assert.match(sourceFiles[1], /usbOnlinePendingEnable/);
+  assert.match(sourceFiles[1], /usbOnlineEnabled/);
+  assert.match(sourceFiles[1], /connectionWaitingPermission/);
+  assert.match(
+    sourceFiles[0],
+    /printer\.channelType === 'LOCAL_USB_ESCPOS' \|\| printer\.enabled/,
+  );
   const updatePayload = sourceFiles[1].match(
     /function buildUpdatePayload\(\)[\s\S]*?\n}/,
   )?.[0] ?? '';

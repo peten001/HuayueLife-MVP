@@ -204,8 +204,8 @@ function genericStatusLabel(state: PrinterConnectionState) {
     CONNECTED: p('online'),
     OFFLINE: p('offline'),
     RECONNECTING: p('connecting'),
-    WAITING_PERMISSION: p('notConnected'),
-    DEVICE_NOT_DETECTED: p('notConnected'),
+    WAITING_PERMISSION: p('connectionWaitingPermission'),
+    DEVICE_NOT_DETECTED: p('offline'),
     UNKNOWN: p('statusUnknown'),
   } as Record<PrinterConnectionState, string>)[state];
 }
@@ -229,9 +229,12 @@ function lanStateHint(row: PrintingPrinter) {
 }
 
 function rowStatusLabel(row: PrintingPrinter) {
-  return isLan(row)
-    ? lanStateLabel(row)
-    : genericStatusLabel(printerConnectionState(row));
+  if (isLan(row)) return lanStateLabel(row);
+  const state = printerConnectionState(row);
+  if (row.channelType === 'LOCAL_USB_ESCPOS' && state === 'CONNECTED') {
+    return row.enabled ? p('usbOnlineEnabled') : p('usbOnlinePendingEnable');
+  }
+  return genericStatusLabel(state);
 }
 
 function rowStatusClass(row: PrintingPrinter) {

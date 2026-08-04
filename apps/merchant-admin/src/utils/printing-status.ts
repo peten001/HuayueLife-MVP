@@ -59,6 +59,19 @@ export function printerConnectionState(
     return 'UNKNOWN';
   }
 
+  if (printer.channelType !== 'LOCAL_USB_ESCPOS') {
+    if (!evidenceFresh) return evidenceAt === null ? 'UNKNOWN' : 'OFFLINE';
+    if (
+      printer.readiness?.state === 'READY'
+      && printer.readiness.statusReady === true
+      && printer.readiness.executionEvidenceReady !== false
+    ) {
+      return 'CONNECTED';
+    }
+    if (printer.status === 'OFFLINE' || printer.status === 'ERROR') return 'OFFLINE';
+    return 'UNKNOWN';
+  }
+
   if (evidenceFresh && evidence) {
     if (evidence.usbDeviceRecognized === false) return 'DEVICE_NOT_DETECTED';
     if (
@@ -68,9 +81,12 @@ export function printerConnectionState(
       return 'WAITING_PERMISSION';
     }
     if (
-      printer.readiness?.state === 'READY'
-      && printer.readiness.statusReady === true
-      && printer.readiness.executionEvidenceReady !== false
+      printer.status === 'ONLINE'
+      && evidence.usbDeviceRecognized === true
+      && evidence.usbPermissionGranted === true
+      && evidence.usbInterfaceValid === true
+      && evidence.usbEndpointValid === true
+      && evidence.appExecutionReady === true
     ) {
       return 'CONNECTED';
     }

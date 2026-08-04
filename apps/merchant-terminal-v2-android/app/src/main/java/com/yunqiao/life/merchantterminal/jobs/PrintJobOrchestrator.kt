@@ -56,15 +56,22 @@ internal class TerminalUsbJobApiAdapter(
         terminalBearer: String,
         routes: List<V2RouteIdentity>,
         allowAutomatic: Boolean,
-    ): ClaimedV2PrintJob? = api.claim(terminalBearer, allowAutomatic, routes)
+    ): ClaimedV2PrintJob? = api.claim(terminalBearer, allowAutomatic)
 
     override fun isReady(binding: LocalPrinterBinding): Boolean =
-        binding.transport.name == channel && binding.localStatus.name == "CONNECTED"
+        UsbJobClaimPolicy.isReady(binding)
 
     override suspend fun execute(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): JobExecutionResult = executor.execute(job, binding)
+}
+
+internal object UsbJobClaimPolicy {
+    fun isReady(binding: LocalPrinterBinding): Boolean =
+        binding.transport.name == "USB" &&
+            binding.enabled &&
+            binding.localStatus.name == "CONNECTED"
 }
 
 internal class TerminalLanJobApiAdapter(

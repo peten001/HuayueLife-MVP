@@ -384,7 +384,6 @@ export class TerminalConnectorService {
             data: {
               name: dto.name,
               paperWidth: dto.paperWidth,
-              enabled: dto.enabled,
               capabilities,
               status: persistedStatus,
             },
@@ -396,7 +395,7 @@ export class TerminalConnectorService {
               channelType: 'LOCAL_USB_ESCPOS',
               paperWidth: dto.paperWidth,
               purpose: 'FRONT_DESK',
-              enabled: dto.enabled,
+              enabled: false,
               status: persistedStatus,
               connectionConfig: {},
               capabilities,

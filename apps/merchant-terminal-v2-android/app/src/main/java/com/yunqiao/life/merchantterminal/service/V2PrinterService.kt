@@ -21,13 +21,18 @@ import com.yunqiao.life.merchantterminal.jobs.TerminalLanJobApiAdapter
 import com.yunqiao.life.merchantterminal.jobs.TerminalUsbJobApiAdapter
 import com.yunqiao.life.merchantterminal.jobs.V2PrintJobExecutor
 import com.yunqiao.life.merchantterminal.model.BindingSyncStatus
+import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.model.PendingBindingOperationType
 import com.yunqiao.life.merchantterminal.model.PhysicalStatus
+import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import com.yunqiao.life.merchantterminal.model.StatusSource
 import com.yunqiao.life.merchantterminal.network.TerminalV2ApiClient
 import com.yunqiao.life.merchantterminal.network.V2ApiException
 import com.yunqiao.life.merchantterminal.network.V2RouteIdentity
 import com.yunqiao.life.merchantterminal.printing.LocalTransportExecutor
+import com.yunqiao.life.merchantterminal.printing.UsbPrinterException
+import com.yunqiao.life.merchantterminal.printing.usb.UsbConnectorEvidenceResolver
+import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.recovery.V2RecoveryScheduler
 import com.yunqiao.life.merchantterminal.recovery.BootstrapRecoveryDisposition
 import com.yunqiao.life.merchantterminal.recovery.BootstrapRecoveryPolicy
@@ -106,6 +111,7 @@ class V2PrinterService : Service() {
         val repository = graph.printingRepository
         val ledger = PrintExecutionLedger(repository.executionDao())
         val transportExecutor = LocalTransportExecutor(application)
+        val usbDeviceInspector = UsbDeviceInspector(application)
         val executor = V2PrintJobExecutor(
             api = graph.api,
             ledger = ledger,
@@ -129,6 +135,7 @@ class V2PrinterService : Service() {
         executor.recoverInterrupted()
         var heartbeatSequence = 0L
         var lastHeartbeatAt = 0L
+        var lastUsbStatusRefreshAt = 0L
         var lastConfigVersion = 0L
         var networkBackoffMs = 2_000L
         val credentialRefreshGate = CredentialRefreshGate()
@@ -190,7 +197,18 @@ class V2PrinterService : Service() {
                     TerminalRuntime.update(ConnectorRuntimeStatus.RUNNING, merchantId = credential.merchantId)
                     // LAN has its own production contract and must not wait for USB config.
                     processBindingOperations(graph.api, repository, credential)
-                    processStatusReports(graph.api, repository, credential)
+                    lastUsbStatusRefreshAt = queueUsbStatusReportsIfDue(
+                        repository,
+                        credential,
+                        lastUsbStatusRefreshAt,
+                    )
+                    processStatusReports(
+                        graph.api,
+                        repository,
+                        credential,
+                        usbDeviceInspector,
+                        transportExecutor,
+                    )
                 }
                 StartupTrace.event("USB_CONFIG_START")
                 val config = graph.api.config(credential.token).copy(merchantId = credential.merchantId)
@@ -214,7 +232,18 @@ class V2PrinterService : Service() {
                     lanBindings,
                     force = forceLanReadiness.getAndSet(false),
                 )
-                processStatusReports(graph.api, repository, credential)
+                lastUsbStatusRefreshAt = queueUsbStatusReportsIfDue(
+                    repository,
+                    credential,
+                    lastUsbStatusRefreshAt,
+                )
+                processStatusReports(
+                    graph.api,
+                    repository,
+                    credential,
+                    usbDeviceInspector,
+                    transportExecutor,
+                )
                 TerminalRuntime.update(
                     ConnectorRuntimeStatus.RUNNING,
                     merchantId = credential.merchantId,
@@ -375,9 +404,13 @@ class V2PrinterService : Service() {
                 repository.markArchiveComplete(operation.merchantId, operation.localBindingId)
                 return@forEach
             }
-            if (binding.transport != com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN) return@forEach
             try {
-                when (enumValueOf<PendingBindingOperationType>(operation.operationType)) {
+                val operationType = enumValueOf<PendingBindingOperationType>(operation.operationType)
+                val supported = binding.transport == PrinterTransport.LAN ||
+                    (binding.transport == PrinterTransport.USB &&
+                        operationType == PendingBindingOperationType.SYNC)
+                if (!supported) return@forEach
+                when (operationType) {
                     PendingBindingOperationType.SYNC -> {
                         if (binding.deletedPending) return@forEach
                         val synced = api.syncBinding(credential.token, binding)
@@ -406,6 +439,22 @@ class V2PrinterService : Service() {
                 }
             }
         }
+    }
+
+    private suspend fun queueUsbStatusReportsIfDue(
+        repository: PrintingRepository,
+        credential: TerminalCredential,
+        lastRefreshAt: Long,
+    ): Long {
+        val now = System.currentTimeMillis()
+        if (now - lastRefreshAt < USB_STATUS_REFRESH_INTERVAL_MS) return lastRefreshAt
+        eligibleBindings(
+            repository,
+            credential,
+            PrinterTransport.USB,
+            requireConnected = false,
+        ).forEach { repository.queueStatusProbe(it) }
+        return now
     }
 
     private suspend fun adoptConflict(
@@ -443,11 +492,29 @@ class V2PrinterService : Service() {
         api: TerminalV2ApiClient,
         repository: PrintingRepository,
         credential: TerminalCredential,
+        usbDeviceInspector: UsbDeviceInspector,
+        transportExecutor: LocalTransportExecutor,
     ) {
         repository.dueStatusReports(credential.merchantId).forEach { report ->
             val binding = repository.binding(report.merchantId, report.localBindingId)
                 ?: return@forEach
-            if (binding.transport != com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN) return@forEach
+            if (binding.transport !in setOf(PrinterTransport.USB, PrinterTransport.LAN)) {
+                return@forEach
+            }
+            val usbObservation = if (binding.transport == PrinterTransport.USB) {
+                observeUsbStatus(binding, usbDeviceInspector, transportExecutor).also {
+                    repository.recordPhysicalStatus(
+                        binding = binding,
+                        status = it.status,
+                        source = StatusSource.PROBE,
+                        lastErrorCode = it.errorCode,
+                        lastErrorMessage = it.errorMessage,
+                        capabilities = it.capabilities,
+                    )
+                }
+            } else {
+                null
+            }
             try {
                 api.reportStatus(
                     terminalBearer = credential.token,
@@ -457,25 +524,65 @@ class V2PrinterService : Service() {
                         report.bindingVersion,
                         transport = binding.transport.name,
                     ),
-                    status = report.status,
-                    source = report.source,
-                    capabilities = runCatching {
+                    status = usbObservation?.status?.name ?: report.status,
+                    capabilities = usbObservation?.capabilities ?: runCatching {
                         JSONObject(report.capabilitiesJson)
                     }.getOrDefault(JSONObject()),
-                    lastErrorCode = report.lastErrorCode,
-                    lastErrorMessage = report.lastErrorMessage,
+                    lastErrorCode = usbObservation?.errorCode ?: report.lastErrorCode,
+                    lastErrorMessage = usbObservation?.errorMessage ?: report.lastErrorMessage,
                 )
                 repository.markStatusReported(report)
                 StartupTrace.event(
-                    "LAN_STATUS_REPORT_SUCCESS printerId=${report.printerId} bindingVersion=${report.bindingVersion}",
+                    "${binding.transport.name}_STATUS_REPORT_SUCCESS printerId=${report.printerId} bindingVersion=${report.bindingVersion}",
                 )
             } catch (error: V2ApiException) {
                 repository.reschedule(report)
                 StartupTrace.event(
-                    "LAN_STATUS_REPORT_FAILED printerId=${report.printerId} bindingVersion=${report.bindingVersion} httpStatus=${error.statusCode} errorType=${error.errorCode}",
+                    "${binding.transport.name}_STATUS_REPORT_FAILED printerId=${report.printerId} bindingVersion=${report.bindingVersion} httpStatus=${error.statusCode} errorType=${error.errorCode}",
                 )
             }
         }
+    }
+
+    private suspend fun observeUsbStatus(
+        binding: com.yunqiao.life.merchantterminal.model.LocalPrinterBinding,
+        usbDeviceInspector: UsbDeviceInspector,
+        transportExecutor: LocalTransportExecutor,
+    ): UsbStatusObservation {
+        val config = binding.transportConfig as LocalTransportConfig.Usb
+        val devices = try {
+            withContext(Dispatchers.IO) { usbDeviceInspector.scan() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            val errorCode = "USB_DEVICE_SCAN_FAILED_${error.javaClass.simpleName.uppercase()}"
+                .take(80)
+            return UsbStatusObservation(
+                status = PhysicalStatus.ERROR,
+                errorCode = errorCode,
+                errorMessage = error.javaClass.simpleName.take(160),
+                capabilities = JSONObject().put("usbInspectionErrorCode", errorCode),
+            )
+        }
+        val inspection = UsbConnectorEvidenceResolver.inspect(config, devices)
+        if (!inspection.canProbe) {
+            return UsbStatusObservation(
+                status = inspection.status,
+                errorCode = inspection.errorCode,
+                errorMessage = inspection.errorCode,
+                capabilities = inspection.evidence.toJson(),
+            )
+        }
+        val probe = transportExecutor.probe(binding)
+        val probeError = probe.exceptionOrNull()
+        val connected = probe.isSuccess
+        val errorCode = if (connected) null else probeError.usbProbeErrorCode()
+        return UsbStatusObservation(
+            status = if (connected) PhysicalStatus.CONNECTED else PhysicalStatus.ERROR,
+            errorCode = errorCode,
+            errorMessage = probeError?.javaClass?.simpleName,
+            capabilities = inspection.evidence.withExecutionReady(connected).toJson(),
+        )
     }
 
     private suspend fun pollChannel(
@@ -541,7 +648,15 @@ class V2PrinterService : Service() {
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "terminal_v2_local_printing"
         private const val NOTIFICATION_ID = 20_040
+        private const val USB_STATUS_REFRESH_INTERVAL_MS = 45_000L
     }
+
+    private data class UsbStatusObservation(
+        val status: PhysicalStatus,
+        val errorCode: String?,
+        val errorMessage: String?,
+        val capabilities: JSONObject,
+    )
 
     private sealed interface CredentialRefreshResult {
         data class Success(val credential: TerminalCredential) : CredentialRefreshResult
@@ -549,4 +664,16 @@ class V2PrinterService : Service() {
         data object MerchantSessionRequired : CredentialRefreshResult
         data object Exhausted : CredentialRefreshResult
     }
+}
+
+private fun Throwable?.usbProbeErrorCode(): String = when (this) {
+    is UsbPrinterException -> code.name
+    else -> this?.message
+        ?.takeIf { it.matches(Regex("^[A-Z0-9_]{3,80}$")) }
+        ?.take(80)
+        ?: this?.javaClass?.simpleName
+            ?.uppercase()
+            ?.let { "USB_PROBE_FAILED_$it" }
+            ?.take(80)
+        ?: "USB_PROBE_FAILED"
 }

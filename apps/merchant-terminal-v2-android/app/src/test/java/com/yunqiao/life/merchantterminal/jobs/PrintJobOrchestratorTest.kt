@@ -110,6 +110,45 @@ class PrintJobOrchestratorTest {
         assertTrue(api.claimRoutes.isEmpty())
     }
 
+    @Test
+    fun disabledUsbDoesNotCheckActiveOrClaimTestOrAutomaticJobs() = runBlocking {
+        listOf(false, true).forEach { allowAutomatic ->
+            val disabled = binding(PrinterTransport.USB, enabled = false)
+            val api = FakeApiAdapter(
+                channel = "USB",
+                claimed = job(if (allowAutomatic) "AUTOMATIC" else "TEST", disabled),
+                readiness = UsbJobClaimPolicy::isReady,
+            )
+
+            assertNull(
+                PrintJobOrchestrator().poll(
+                    api,
+                    TOKEN,
+                    listOf(disabled),
+                    allowAutomatic,
+                ),
+            )
+            assertTrue(api.activeRoutes.isEmpty())
+            assertTrue(api.claimRoutes.isEmpty())
+        }
+    }
+
+    @Test
+    fun enabledConnectedUsbCanEnterClaim() = runBlocking {
+        val ready = binding(PrinterTransport.USB, enabled = true)
+        val api = FakeApiAdapter(
+            channel = "USB",
+            claimed = job("TEST", ready),
+            readiness = UsbJobClaimPolicy::isReady,
+        )
+
+        assertEquals(
+            JobExecutionResult.SUCCEEDED,
+            PrintJobOrchestrator().poll(api, TOKEN, listOf(ready), false),
+        )
+        assertEquals(1, api.claimRoutes.size)
+    }
+
     private fun binding(
         transport: PrinterTransport,
         enabled: Boolean = true,
@@ -172,12 +211,13 @@ class PrintJobOrchestratorTest {
         private val active: ClaimedV2PrintJob? = null,
         private val claimed: ClaimedV2PrintJob? = null,
         private val events: MutableList<String> = mutableListOf(),
+        private val readiness: (LocalPrinterBinding) -> Boolean = { true },
     ) : PrintChannelAdapter {
         val activeRoutes = mutableListOf<List<V2RouteIdentity>>()
         val claimRoutes = mutableListOf<List<V2RouteIdentity>>()
         var onExecute: () -> Unit = {}
 
-        override fun isReady(binding: LocalPrinterBinding): Boolean = true
+        override fun isReady(binding: LocalPrinterBinding): Boolean = readiness(binding)
 
         override fun activeJob(
             terminalBearer: String,

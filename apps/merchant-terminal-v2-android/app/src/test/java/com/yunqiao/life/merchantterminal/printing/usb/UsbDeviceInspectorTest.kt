@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
+import com.yunqiao.life.merchantterminal.model.PhysicalStatus
 
 class UsbDeviceInspectorTest {
     @Test
@@ -161,10 +163,77 @@ class UsbDeviceInspectorTest {
         assertFalse(detached.onScan(setOf("usb-a")).selectedDeviceDetached)
     }
 
+    @Test
+    fun `connector evidence is ready only for the real saved device with permission`() {
+        val inspection = UsbConnectorEvidenceResolver.inspect(
+            savedConfig(),
+            listOf(savedDevice(hasPermission = true)),
+        )
+
+        assertTrue(inspection.canProbe)
+        assertEquals(PhysicalStatus.UNKNOWN, inspection.status)
+        assertEquals(null, inspection.errorCode)
+        assertTrue(inspection.evidence.usbDeviceRecognized)
+        assertTrue(inspection.evidence.usbPermissionGranted)
+        assertTrue(inspection.evidence.usbInterfaceValid)
+        assertTrue(inspection.evidence.usbEndpointValid)
+        assertFalse(inspection.evidence.appExecutionReady)
+    }
+
+    @Test
+    fun `connector evidence reports a truly missing device`() {
+        val inspection = UsbConnectorEvidenceResolver.inspect(savedConfig(), emptyList())
+
+        assertEquals(PhysicalStatus.DISCONNECTED, inspection.status)
+        assertEquals("USB_DEVICE_NOT_FOUND", inspection.errorCode)
+        assertFalse(inspection.evidence.usbDeviceRecognized)
+        assertFalse(inspection.canProbe)
+    }
+
+    @Test
+    fun `connector evidence reports permission required without changing physical facts`() {
+        val inspection = UsbConnectorEvidenceResolver.inspect(
+            savedConfig(),
+            listOf(savedDevice(hasPermission = false)),
+        )
+
+        assertEquals(PhysicalStatus.ERROR, inspection.status)
+        assertEquals("USB_PERMISSION_REQUIRED", inspection.errorCode)
+        assertTrue(inspection.evidence.usbDeviceRecognized)
+        assertFalse(inspection.evidence.usbPermissionGranted)
+        assertTrue(inspection.evidence.usbInterfaceValid)
+        assertTrue(inspection.evidence.usbEndpointValid)
+        assertFalse(inspection.canProbe)
+    }
+
+    private fun savedConfig() = LocalTransportConfig.Usb(
+        vendorId = 1,
+        productId = 2,
+        deviceName = "/dev/bus/usb/test",
+        interfaceIndex = 0,
+        interfaceId = 0,
+        alternateSetting = 0,
+        interfaceClass = 7,
+        endpointAddress = 1,
+    )
+
+    private fun savedDevice(hasPermission: Boolean) = device(
+        interfaces = listOf(
+            usbInterface(
+                id = 0,
+                index = 0,
+                interfaceClass = 7,
+                endpoints = listOf(endpoint(address = 1)),
+            ),
+        ),
+        hasPermission = hasPermission,
+    )
+
     private fun device(
         vendorId: Int = 1,
         productId: Int = 2,
         interfaces: List<UsbInterfaceDescriptor>,
+        hasPermission: Boolean = false,
     ) = UsbDeviceDescriptor(
         deviceName = "/dev/bus/usb/test",
         manufacturerName = null,
@@ -175,7 +244,7 @@ class UsbDeviceInspectorTest {
         deviceSubclass = 0,
         deviceProtocol = 0,
         interfaces = interfaces,
-        hasPermission = false,
+        hasPermission = hasPermission,
     )
 
     private fun usbInterface(

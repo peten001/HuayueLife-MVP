@@ -95,8 +95,9 @@ export class SyncUsbTerminalBindingDto {
   @IsIn(['MM58', 'MM80'])
   paperWidth: 'MM58' | 'MM80';
 
+  @IsOptional()
   @IsBoolean()
-  enabled: boolean;
+  enabled?: boolean;
 
   @Transform(trim)
   @IsString()

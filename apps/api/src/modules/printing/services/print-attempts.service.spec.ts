@@ -223,6 +223,7 @@ describe('PrintAttemptsService', () => {
       }),
       data: expect.objectContaining({ result: 'SUCCEEDED' }),
     });
+    expect(prisma.printer.updateMany).not.toHaveBeenCalled();
   });
 
   it('treats only a duplicate success report for the same completed attempt as idempotent', async () => {
@@ -327,6 +328,7 @@ describe('PrintAttemptsService', () => {
         }),
       }),
     );
+    expect(prisma.printer.updateMany).not.toHaveBeenCalled();
   });
 
   it('treats a duplicate matching failure report as idempotent', async () => {

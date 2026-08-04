@@ -1400,6 +1400,64 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it('returns a canonical USB payload route for the authenticated bound terminal', async () => {
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob({
+        status: 'CLAIMED',
+        source: 'TEST',
+        claimedByTerminalId: terminalId,
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        receiptType: 'ORDER_CUSTOMER',
+        triggerEvent: 'MANUAL_TEST',
+        copyIndex: 1,
+        copyCount: 1,
+        receiptSnapshot: receipt,
+        receiptSnapshotHash: 'a'.repeat(64),
+      }),
+      printer: {
+        ...enabledPrinter({ capabilities: usbBoundCapabilities() }),
+        name: 'USB 前台打印机',
+        purpose: 'FRONT_DESK',
+      },
+      attempts: [],
+    });
+
+    await expect(
+      service.connectorJobPayload(merchantId, terminalId, 301n),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        route: {
+          printerId,
+          localBindingId: 'usb-binding-1',
+          bindingVersion: 4,
+          adapter: 'ANDROID_USB_ESCPOS',
+        },
+      }),
+    );
+  });
+
+  it('filters active USB lookup by the current terminal binding and channel', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      boundPrinterId: printerId,
+    });
+    prisma.printJob.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.findActiveTerminalJob(merchantId, terminalId),
+    ).resolves.toBeNull();
+
+    expect(prisma.printJob.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        merchantId,
+        claimedByTerminalId: terminalId,
+        printerId,
+        printer: { channelType: 'LOCAL_USB_ESCPOS' },
+      }),
+      orderBy: { claimedAt: 'asc' },
+    });
+  });
+
   it('blocks claim when the platform has disabled the merchant', async () => {
     settings.assertMerchantPrintingEnabled.mockRejectedValue(
       new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),
@@ -1787,6 +1845,18 @@ function positiveUsbCapabilities() {
   return {
     connectorStatusUpdatedAt: new Date().toISOString(),
     connectorStatus: positiveUsbEvidenceRecord(),
+  };
+}
+
+function usbBoundCapabilities() {
+  return {
+    ...positiveUsbCapabilities(),
+    usbBinding: {
+      terminalId: terminalId.toString(),
+      localBindingId: 'usb-binding-1',
+      adapter: 'ANDROID_USB_ESCPOS',
+      bindingVersion: 4,
+    },
   };
 }
 

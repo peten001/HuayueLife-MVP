@@ -4,7 +4,13 @@ import { ListPrintJobsQueryDto } from './print-job.dto';
 import { CreatePrintRuleDto } from './print-rule.dto';
 import { CreatePrintingPrinterDto } from './printer.dto';
 import { CreateReceiptTemplateDto } from './receipt-template.dto';
-import { SyncUsbTerminalBindingDto } from './terminal-connector.dto';
+import {
+  ExtendPrintJobLeaseDto,
+  FailPrintingDto,
+  FinishPrintingDto,
+  MarkPrintingDto,
+  SyncUsbTerminalBindingDto,
+} from './terminal-connector.dto';
 import { CreateMerchantTerminalDto } from './terminal.dto';
 
 describe('Printing DTO validation contract', () => {
@@ -15,6 +21,10 @@ describe('Printing DTO validation contract', () => {
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
     [SyncUsbTerminalBindingDto, validUsbBinding()],
+    [MarkPrintingDto, validMarkPrinting()],
+    [ExtendPrintJobLeaseDto, validExtendLease()],
+    [FinishPrintingDto, validFinishPrinting()],
+    [FailPrintingDto, validFailPrinting()],
   ] as const)('accepts a valid %p payload', async (Dto, payload) => {
     await expect(validationErrors(Dto, payload)).resolves.toHaveLength(0);
   });
@@ -141,6 +151,29 @@ describe('Printing DTO validation contract', () => {
       ).not.toHaveLength(0);
     },
   );
+
+  it.each([true, false])(
+    'accepts legacy USB sync enabled=%s without weakening the whitelist',
+    async (enabled) => {
+      await expect(
+        validationErrors(SyncUsbTerminalBindingDto, {
+          ...validUsbBinding(),
+          enabled,
+        }),
+      ).resolves.toHaveLength(0);
+    },
+  );
+
+  it('forbids LAN route fields on generic USB job DTOs', async () => {
+    for (const [Dto, payload] of [
+      [MarkPrintingDto, { ...validMarkPrinting(), localBindingId: 'lan-binding', bindingVersion: 1 }],
+      [ExtendPrintJobLeaseDto, { ...validExtendLease(), localBindingId: 'lan-binding', bindingVersion: 1 }],
+      [FinishPrintingDto, { ...validFinishPrinting(), localBindingId: 'lan-binding', bindingVersion: 1 }],
+      [FailPrintingDto, { ...validFailPrinting(), localBindingId: 'lan-binding', bindingVersion: 1 }],
+    ] as const) {
+      expect(await validationErrors(Dto, payload)).not.toHaveLength(0);
+    }
+  });
 });
 
 function validationErrors(
@@ -215,11 +248,44 @@ function validUsbBinding(): Record<string, unknown> {
     vendorId: 0x0fe6,
     productId: 0x811e,
     paperWidth: 'MM80',
-    enabled: true,
     appVersion: '2.0.0-rc10.2',
     appVersionCode: 51,
     status: 'CONNECTED',
     capabilities: readyUsbEvidence(),
+  };
+}
+
+function validMarkPrinting(): Record<string, unknown> {
+  return {
+    leaseVersion: 2,
+    adapter: 'ANDROID_USB_ESCPOS',
+    contentHash: 'a'.repeat(64),
+    appVersion: '2.0.0-rc11',
+  };
+}
+
+function validExtendLease(): Record<string, unknown> {
+  return { leaseVersion: 2, leaseMs: 60_000 };
+}
+
+function validFinishPrinting(): Record<string, unknown> {
+  return {
+    attemptNo: 1,
+    leaseVersion: 3,
+    bytesWritten: 128,
+    contentHash: 'a'.repeat(64),
+    printerResponse: 'ANDROID_USB_ESCPOS_WRITE_COMPLETE',
+  };
+}
+
+function validFailPrinting(): Record<string, unknown> {
+  return {
+    ...validFinishPrinting(),
+    bytesWritten: 0,
+    retryable: false,
+    errorCode: 'PRINTER_OFFLINE',
+    errorMessage: 'offline',
+    outcome: 'FAILED',
   };
 }
 

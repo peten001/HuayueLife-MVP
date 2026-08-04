@@ -248,10 +248,6 @@ export class PrintAttemptsService {
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
-      await tx.printer.updateMany({
-        where: { id: job.printerId, merchantId: input.merchantId, deletedAt: null },
-        data: { status: 'ONLINE' },
-      });
       return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
     });
   }
@@ -354,17 +350,6 @@ export class PrintAttemptsService {
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
-      await tx.printer.updateMany({
-        where: { id: job.printerId, merchantId: input.merchantId, deletedAt: null },
-        data: {
-          status: outcomeUnknown
-            ? 'UNKNOWN'
-            : input.errorCode === PRINTING_ERROR_CODES.PRINTER_OFFLINE ||
-                input.errorCode === PRINTING_ERROR_CODES.USB_DEVICE_DETACHED
-              ? 'OFFLINE'
-              : 'ERROR',
-        },
-      });
       return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
     });
   }

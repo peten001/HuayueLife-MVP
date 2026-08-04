@@ -93,6 +93,8 @@ class TerminalV2ApiClient(
     fun config(terminalBearer: String): V2TerminalConfig {
         val data = request("GET", "/terminal/config", terminalBearer)
         val terminal = data.requiredObject("terminal")
+        val boundPrinter = data.optJSONObject("boundPrinter")
+        val printers = boundPrinter?.let(::parseUsbRemotePrinter)?.let(::listOf).orEmpty()
         return V2TerminalConfig(
             merchantId = "0", // Replaced by the locally validated terminal credential in the service.
             terminalId = terminal.requiredNumericString("id"),
@@ -103,9 +105,7 @@ class TerminalV2ApiClient(
             heartbeatSeconds = data.requiredLongIn("heartbeatIntervalSeconds", 5L..300L),
             pollIntervalSeconds = data.requiredLongIn("pollIntervalSeconds", 2L..120L),
             configVersion = terminal.requiredNonNegativeLong("configVersion"),
-            // The deployed terminal/config contract has no V2 local-binding collection.
-            // Startup must not invent one or turn an empty printer set into a failure.
-            printers = emptyList(),
+            printers = printers,
         )
     }
 
@@ -124,17 +124,17 @@ class TerminalV2ApiClient(
         if (binding.transport == com.yunqiao.life.merchantterminal.model.PrinterTransport.LAN) {
             return syncLanBinding(terminalBearer, binding)
         }
+        val usb = binding.transportConfig as LocalTransportConfig.Usb
         val data = request(
             "POST",
-            "/terminal/v2/bindings/sync",
+            "/terminal/usb/bindings/sync",
             terminalBearer,
             JSONObject()
                 .put("localBindingId", binding.localBindingId)
-                .put("expectedBindingVersion", binding.bindingVersion)
-                .put("transport", binding.transport.name)
-                .put("displayName", binding.displayName.take(80))
+                .put("vendorId", usb.vendorId)
+                .put("productId", usb.productId)
+                .put("name", binding.displayName.take(80))
                 .put("paperWidth", binding.paperWidth.apiValue())
-                .put("transportConfig", binding.transportConfig.apiJson())
                 .put("appVersion", BuildConfig.VERSION_NAME)
                 .put("appVersionCode", BuildConfig.VERSION_CODE)
                 .put("status", binding.localStatus.name)
@@ -171,7 +171,6 @@ class TerminalV2ApiClient(
         terminalBearer: String,
         route: V2RouteIdentity,
         status: String,
-        source: String,
         capabilities: JSONObject,
         lastErrorCode: String?,
         lastErrorMessage: String?,
@@ -182,11 +181,11 @@ class TerminalV2ApiClient(
         }
         request(
             "POST",
-            "/terminal/v2/printers/status",
+            "/terminal/printers/status",
             terminalBearer,
-            route.json()
+            JSONObject()
+                .put("printerId", route.printerId)
                 .put("status", status)
-                .put("source", source)
                 .put("capabilities", capabilities)
                 .put("lastErrorCode", lastErrorCode ?: JSONObject.NULL)
                 .put(
@@ -237,21 +236,18 @@ class TerminalV2ApiClient(
     fun claim(
         terminalBearer: String,
         allowAutomatic: Boolean,
-        routes: List<V2RouteIdentity>,
         leaseMs: Long = 60_000,
     ): ClaimedV2PrintJob? {
-        require(routes.isNotEmpty() && routes.size <= 50)
         val data = request(
             "POST",
-            "/terminal/v2/jobs/claim",
+            "/terminal/jobs/claim",
             terminalBearer,
             JSONObject()
                 .put("allowAutomatic", allowAutomatic)
-                .put("leaseMs", leaseMs.coerceIn(5_000, 120_000))
-                .put("routes", JSONArray(routes.map { it.json() })),
+                .put("leaseMs", leaseMs.coerceIn(5_000, 120_000)),
         )
         val job = data.optJSONObject("job") ?: return null
-        return parseJob(job, allowAutomatic)
+        return parseJob(job, allowAutomatic, transport = "USB")
     }
 
     fun claimLanJob(
@@ -274,8 +270,10 @@ class TerminalV2ApiClient(
     }
 
     fun activeJob(terminalBearer: String): ClaimedV2PrintJob? {
-        val data = request("GET", "/terminal/v2/jobs/active", terminalBearer)
-        return data.optJSONObject("job")?.let { parseJob(it, allowAutomatic = true) }
+        val data = request("GET", "/terminal/jobs/active", terminalBearer)
+        return data.optJSONObject("job")?.let {
+            parseJob(it, allowAutomatic = true, transport = "USB")
+        }
     }
 
     fun activeLanJob(
@@ -298,14 +296,17 @@ class TerminalV2ApiClient(
         job: ClaimedV2PrintJob,
         leaseVersion: Long = job.leaseVersion,
     ): V2StartPrintingResponse {
+        val body = if (job.route.transport == "LAN") job.route.json() else JSONObject()
+        body
+            .put("leaseVersion", leaseVersion)
+            .put("contentHash", job.contentHash)
+            .put("appVersion", BuildConfig.VERSION_NAME)
+        if (job.route.transport != "LAN") body.put("adapter", job.adapter)
         val data = request(
             "POST",
             job.route.jobEndpoint(job.id, "printing"),
             terminalBearer,
-            job.route.json()
-                .put("leaseVersion", leaseVersion)
-                .put("contentHash", job.contentHash)
-                .put("appVersion", BuildConfig.VERSION_NAME),
+            body,
         )
         val attempt = data.requiredObject("attempt")
         val returnedJob = data.requiredObject("job")
@@ -323,6 +324,10 @@ class TerminalV2ApiClient(
         leaseVersion: Long,
         leaseMs: Long = 60_000,
     ): V2LeaseExtension {
+        val body = if (route.transport == "LAN") route.json() else JSONObject()
+        body
+            .put("leaseVersion", leaseVersion)
+            .put("leaseMs", leaseMs.coerceIn(5_000, 120_000))
         val data = request(
             "POST",
             route.jobEndpoint(
@@ -330,9 +335,7 @@ class TerminalV2ApiClient(
                 if (route.transport == "LAN") "extend" else "extend-lease",
             ),
             terminalBearer,
-            route.json()
-                .put("leaseVersion", leaseVersion)
-                .put("leaseMs", leaseMs.coerceIn(5_000, 120_000)),
+            body,
         )
         return V2LeaseExtension(
             leaseVersion = data.requiredPositiveLong("leaseVersion"),
@@ -455,11 +458,31 @@ class TerminalV2ApiClient(
         attemptNo: Int,
         leaseVersion: Long,
         bytesWritten: Int,
-    ) = route.json()
-        .put("attemptNo", attemptNo)
-        .put("leaseVersion", leaseVersion)
-        .put("bytesWritten", bytesWritten.coerceAtLeast(0))
-        .put("contentHash", contentHash)
+    ): JSONObject {
+        val body = if (route.transport == "LAN") route.json() else JSONObject()
+        return body
+            .put("attemptNo", attemptNo)
+            .put("leaseVersion", leaseVersion)
+            .put("bytesWritten", bytesWritten.coerceAtLeast(0))
+            .put("contentHash", contentHash)
+    }
+
+    private fun parseUsbRemotePrinter(printer: JSONObject): V2RemotePrinter? {
+        if (printer.optString("channelType") != "LOCAL_USB_ESCPOS") return null
+        val capabilities = printer.optJSONObject("capabilities") ?: return null
+        val binding = capabilities.optJSONObject("usbBinding") ?: return null
+        return V2RemotePrinter(
+            printerId = printer.requiredNumericString("id"),
+            displayName = printer.requiredString("name", 160),
+            channelType = "LOCAL_USB_ESCPOS",
+            paperWidth = printer.requiredString("paperWidth", 16),
+            enabled = printer.getBoolean("enabled"),
+            status = printer.requiredString("status", 32),
+            localBindingId = binding.requiredString("localBindingId", 128),
+            bindingVersion = binding.requiredPositiveLong("bindingVersion"),
+            transport = "USB",
+        )
+    }
 
     private fun request(
         method: String,
@@ -571,22 +594,11 @@ class TerminalV2ApiClient(
 
     private fun V2RouteIdentity.jobEndpoint(jobId: String, action: String): String {
         require(action in setOf("printing", "extend", "extend-lease", "succeeded", "failed"))
-        val contract = if (transport == "LAN") "lan" else "v2"
-        return "/terminal/$contract/jobs/${jobId.safePathSegment()}/$action"
-    }
-
-    private fun LocalTransportConfig.apiJson(): JSONObject = when (this) {
-        is LocalTransportConfig.Usb -> JSONObject()
-            .put("vendorId", vendorId)
-            .put("productId", productId)
-            .put("deviceName", deviceName ?: JSONObject.NULL)
-            .put("interfaceClass", interfaceClass ?: JSONObject.NULL)
-            .put("endpointAddress", endpointAddress)
-        is LocalTransportConfig.Lan -> JSONObject().put("host", host).put("port", port)
-        is LocalTransportConfig.Bluetooth -> JSONObject()
-            .put("macAddress", macAddress.uppercase())
-            .put("deviceName", deviceName ?: JSONObject.NULL)
-            .put("serviceUuid", serviceUuid.lowercase())
+        return if (transport == "LAN") {
+            "/terminal/lan/jobs/${jobId.safePathSegment()}/$action"
+        } else {
+            "/terminal/jobs/${jobId.safePathSegment()}/$action"
+        }
     }
 
     private fun PaperWidth.apiValue(): String = when (this) {

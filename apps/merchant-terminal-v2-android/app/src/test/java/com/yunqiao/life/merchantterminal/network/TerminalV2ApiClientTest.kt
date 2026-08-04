@@ -10,6 +10,8 @@ import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.security.CanonicalReceiptHash
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 
@@ -67,6 +69,202 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
+    fun configParsesServerEnabledAndStableUsbBindingRoute() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"code":"OK","data":{"terminal":{"id":"15","configVersion":9},"merchantPrintingEnabled":true,"terminalEnabled":true,"executionEnabled":true,"automaticCreationEnabled":false,"heartbeatIntervalSeconds":20,"pollIntervalSeconds":5,"boundPrinter":{"id":"37","name":"Front USB","channelType":"LOCAL_USB_ESCPOS","paperWidth":"MM80","enabled":true,"status":"ONLINE","capabilities":{"usbBinding":{"localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":4}}}}}""",
+                ),
+            )
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val printer = client.config(TERMINAL_TOKEN).printers.single()
+
+            assertEquals("37", printer.printerId)
+            assertEquals("123e4567-e89b-12d3-a456-426614174000", printer.localBindingId)
+            assertEquals(4L, printer.bindingVersion)
+            assertTrue(printer.enabled)
+            assertEquals("USB", printer.transport)
+        }
+    }
+
+    @Test
+    fun usbSyncAndStatusUseProductionDtosWithoutEnabledOrLanRouteFields() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"code":"OK","data":{"merchantId":"11","terminalId":"15","printerId":"37","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":1,"channelType":"LOCAL_USB_ESCPOS","status":"UNKNOWN","enabled":false,"reportedAt":"2030-01-01T00:00:00Z"}}""",
+                ),
+            )
+            server.enqueue(okData(JSONObject()))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            val binding = usbBinding()
+
+            val synced = client.syncBinding(TERMINAL_TOKEN, binding)
+            client.reportStatus(
+                TERMINAL_TOKEN,
+                V2RouteIdentity(synced.printerId, synced.localBindingId, synced.bindingVersion, "USB"),
+                "CONNECTED",
+                JSONObject().put("usbDeviceRecognized", true),
+                null,
+                null,
+            )
+
+            assertFalse(synced.enabled)
+            val sync = server.takeRequest()
+            assertEquals("/terminal/usb/bindings/sync", sync.path)
+            val syncBody = JSONObject(sync.body.readUtf8())
+            assertFalse(syncBody.has("enabled"))
+            assertFalse(syncBody.has("transport"))
+            assertFalse(syncBody.has("transportConfig"))
+            assertEquals(0x0fe6, syncBody.getInt("vendorId"))
+            assertEquals(0x811e, syncBody.getInt("productId"))
+
+            val status = server.takeRequest()
+            assertEquals("/terminal/printers/status", status.path)
+            val statusBody = JSONObject(status.body.readUtf8())
+            assertEquals(
+                setOf("printerId", "status", "capabilities", "lastErrorCode", "lastErrorMessage"),
+                statusBody.keys().asSequence().toSet(),
+            )
+            assertFalse(statusBody.has("localBindingId"))
+            assertFalse(statusBody.has("bindingVersion"))
+            assertFalse(statusBody.has("source"))
+        }
+    }
+
+    @Test
+    fun usbActiveAndClaimParseTheSameProductionRouteWithoutLanTupleRequest() {
+        MockWebServer().use { server ->
+            server.enqueue(okData(JSONObject().put("job", usbJobJson())))
+            server.enqueue(okData(JSONObject().put("job", usbJobJson())))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val active = requireNotNull(client.activeJob(TERMINAL_TOKEN))
+            val claimed = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
+
+            assertEquals(active.route, claimed.route)
+            assertEquals("USB", claimed.route.transport)
+            assertEquals("ANDROID_USB_ESCPOS", claimed.adapter)
+            assertEquals("/terminal/jobs/active", server.takeRequest().path)
+            val claimRequest = server.takeRequest()
+            assertEquals("/terminal/jobs/claim", claimRequest.path)
+            val claimBody = JSONObject(claimRequest.body.readUtf8())
+            assertEquals(setOf("allowAutomatic", "leaseMs"), claimBody.keys().asSequence().toSet())
+            assertFalse(claimBody.has("routes"))
+            assertFalse(claimBody.has("localBindingId"))
+            assertFalse(claimBody.has("bindingVersion"))
+        }
+    }
+
+    @Test
+    fun usbJobWithoutProductionRouteIsRejectedInsteadOfUsingAFalseFixture() {
+        MockWebServer().use { server ->
+            val withoutRoute = usbJobJson().apply { remove("route") }
+            server.enqueue(okData(JSONObject().put("job", withoutRoute)))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val error = runCatching { client.activeJob(TERMINAL_TOKEN) }.exceptionOrNull()
+
+            assertTrue(error is V2ApiException)
+            assertEquals("INVALID_RESPONSE", (error as V2ApiException).errorCode)
+        }
+    }
+
+    @Test
+    fun usbJobActionsUseGenericEndpointsAndExactDtoFields() {
+        MockWebServer().use { server ->
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+            server.enqueue(okData(JSONObject().put("job", usbJobJson())))
+            val job = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
+            server.takeRequest()
+            server.enqueue(
+                okData(
+                    JSONObject()
+                        .put("attempt", JSONObject().put("attemptNo", 1))
+                        .put(
+                            "job",
+                            JSONObject()
+                                .put("leaseVersion", 2)
+                                .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
+                        ),
+                ),
+            )
+            server.enqueue(
+                okData(
+                    JSONObject()
+                        .put("leaseVersion", 3)
+                        .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
+                ),
+            )
+            server.enqueue(okData(JSONObject()))
+            server.enqueue(okData(JSONObject()))
+
+            client.markPrinting(TERMINAL_TOKEN, job)
+            client.extendLease(TERMINAL_TOKEN, job.id, job.route, 2)
+            client.succeeded(
+                TERMINAL_TOKEN,
+                job.id,
+                job.route,
+                job.adapter,
+                job.contentHash,
+                1,
+                3,
+                128,
+            )
+            client.failed(
+                TERMINAL_TOKEN,
+                job.id,
+                job.route,
+                job.contentHash,
+                1,
+                3,
+                false,
+                "PRINTER_OFFLINE",
+                "offline",
+                0,
+                false,
+            )
+
+            val printing = server.takeRequest()
+            assertEquals("/terminal/jobs/267/printing", printing.path)
+            assertEquals(
+                setOf("leaseVersion", "adapter", "contentHash", "appVersion"),
+                JSONObject(printing.body.readUtf8()).keys().asSequence().toSet(),
+            )
+            val extend = server.takeRequest()
+            assertEquals("/terminal/jobs/267/extend-lease", extend.path)
+            assertEquals(
+                setOf("leaseVersion", "leaseMs"),
+                JSONObject(extend.body.readUtf8()).keys().asSequence().toSet(),
+            )
+            val succeeded = server.takeRequest()
+            assertEquals("/terminal/jobs/267/succeeded", succeeded.path)
+            assertEquals(
+                setOf("attemptNo", "leaseVersion", "bytesWritten", "contentHash", "printerResponse"),
+                JSONObject(succeeded.body.readUtf8()).keys().asSequence().toSet(),
+            )
+            val failed = server.takeRequest()
+            assertEquals("/terminal/jobs/267/failed", failed.path)
+            assertEquals(
+                setOf(
+                    "attemptNo",
+                    "leaseVersion",
+                    "bytesWritten",
+                    "contentHash",
+                    "retryable",
+                    "errorCode",
+                    "errorMessage",
+                    "outcome",
+                    "printerResponse",
+                ),
+                JSONObject(failed.body.readUtf8()).keys().asSequence().toSet(),
+            )
+            assertFalse(listOf(printing, extend, succeeded, failed).any { it.path!!.contains("/terminal/v2/") })
+        }
+    }
+
+    @Test
     fun lanSyncAndStatusUseDeployedLanRoutesWithTerminalAuthentication() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""{"code":"OK","data":{"terminalId":"15","printerId":"37","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":1,"status":"CONNECTED","enabled":true,"reportedAt":"2030-01-01T00:00:00Z"}}"""))
@@ -84,7 +282,7 @@ class TerminalV2ApiClientTest {
                 lastTestedAt = null, lastStatusReportAt = null,
             )
             val synced = client.syncBinding(token, binding)
-            client.reportStatus(token, V2RouteIdentity(synced.printerId, synced.localBindingId, synced.bindingVersion, "LAN"), "CONNECTED", "LOCAL_TEST", JSONObject(), null, null)
+            client.reportStatus(token, V2RouteIdentity(synced.printerId, synced.localBindingId, synced.bindingVersion, "LAN"), "CONNECTED", JSONObject(), null, null)
 
             val sync = server.takeRequest()
             val status = server.takeRequest()
@@ -233,6 +431,59 @@ class TerminalV2ApiClientTest {
                     .put("localBindingId", lanRoute().localBindingId)
                     .put("bindingVersion", 1)
                     .put("adapter", "ANDROID_LAN_ESCPOS"),
+            )
+    }
+
+    private fun usbBinding() = LocalPrinterBinding(
+        merchantId = "11",
+        terminalInstanceId = "terminal.instance.123",
+        localBindingId = "123e4567-e89b-12d3-a456-426614174000",
+        displayName = "USB test",
+        transport = PrinterTransport.USB,
+        transportConfig = LocalTransportConfig.Usb(
+            vendorId = 0x0fe6,
+            productId = 0x811e,
+            deviceName = "/dev/bus/usb/001/002",
+            interfaceIndex = 0,
+            interfaceId = 0,
+            alternateSetting = 0,
+            interfaceClass = 7,
+            endpointAddress = 1,
+        ),
+        paperWidth = PaperWidth.MM_80,
+        localStatus = PhysicalStatus.CONNECTED,
+        printerId = null,
+        bindingVersion = 0,
+        syncStatus = com.yunqiao.life.merchantterminal.model.BindingSyncStatus.PENDING_SYNC,
+        deletedPending = false,
+        enabled = false,
+        lastConnectedAt = null,
+        lastTestedAt = null,
+        lastStatusReportAt = null,
+    )
+
+    private fun usbJobJson(): JSONObject {
+        val snapshot = JSONObject().put("schemaVersion", 1)
+        return JSONObject()
+            .put("id", "267")
+            .put("merchantId", "11")
+            .put("printerId", "37")
+            .put("status", "CLAIMED")
+            .put("receiptType", "ORDER_CUSTOMER")
+            .put("source", "TEST")
+            .put("attemptCount", 0)
+            .put("leaseVersion", 1)
+            .put("leaseExpiresAt", "2030-01-01T00:00:00Z")
+            .put("contentHash", CanonicalReceiptHash.compute(snapshot))
+            .put("snapshotSchemaVersion", 1)
+            .put("receiptSnapshot", snapshot)
+            .put(
+                "route",
+                JSONObject()
+                    .put("printerId", "37")
+                    .put("localBindingId", "123e4567-e89b-12d3-a456-426614174000")
+                    .put("bindingVersion", 4)
+                    .put("adapter", "ANDROID_USB_ESCPOS"),
             )
     }
 

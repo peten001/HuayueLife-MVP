@@ -292,6 +292,30 @@ class PrintingRepository(
         }
     }
 
+    suspend fun queueStatusProbe(binding: LocalPrinterBinding) {
+        val printerId = binding.printerId ?: return
+        if (binding.bindingVersion <= 0 || binding.deletedPending) return
+        val now = clock()
+        dao.upsertStatusReport(
+            PendingStatusReportEntity(
+                reportId = "${binding.merchantId}:${binding.localBindingId}",
+                merchantId = binding.merchantId,
+                localBindingId = binding.localBindingId,
+                printerId = printerId,
+                bindingVersion = binding.bindingVersion,
+                status = binding.localStatus.name,
+                source = StatusSource.PROBE.name,
+                capabilitiesJson = JSONObject().toString(),
+                lastErrorCode = null,
+                lastErrorMessage = null,
+                attemptCount = 0,
+                nextAttemptAt = now,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+    }
+
     suspend fun dueBindingOperations(
         merchantId: String,
         limit: Int = 20,

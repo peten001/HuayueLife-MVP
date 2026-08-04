@@ -111,6 +111,44 @@ class PrintingRepositoryTest {
         assertEquals(BindingSyncStatus.PENDING_SYNC, pending.syncStatus)
     }
 
+    @Test
+    fun configRefreshAppliesServerEnabledAsTheLocalCache() = runBlocking {
+        val local = binding("11").copy(
+            transport = PrinterTransport.USB,
+            transportConfig = LocalTransportConfig.Usb(
+                vendorId = 0x0fe6,
+                productId = 0x811e,
+                deviceName = "/dev/bus/usb/001/002",
+                interfaceIndex = 0,
+                interfaceId = 0,
+                alternateSetting = 0,
+                interfaceClass = 7,
+                endpointAddress = 1,
+            ),
+        )
+        repository.addLocalBinding(local)
+        repository.markSynced("11", local.localBindingId, "101", 1, enabled = false)
+
+        repository.applyRemotePrinters(
+            "11",
+            listOf(
+                V2RemotePrinter(
+                    printerId = "101",
+                    displayName = "Server USB",
+                    channelType = "LOCAL_USB_ESCPOS",
+                    paperWidth = "MM80",
+                    enabled = true,
+                    status = "ONLINE",
+                    localBindingId = local.localBindingId,
+                    bindingVersion = 1,
+                    transport = "USB",
+                ),
+            ),
+        )
+
+        assertEquals(true, repository.binding("11", local.localBindingId)?.enabled)
+    }
+
     private fun binding(merchantId: String) = LocalPrinterBinding(
         merchantId = merchantId,
         terminalInstanceId = "terminal-instance-123456",
