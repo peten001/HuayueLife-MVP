@@ -26,7 +26,18 @@ data class V2TerminalConfig(
         get() = merchantPrintingEnabled && terminalEnabled && executionEnabled
 }
 
-data class V2LanConfig(val terminalEnabled: Boolean, val lanPrintingEnabled: Boolean)
+data class V2LanConfig(
+    val terminalEnabled: Boolean,
+    val lanPrintingEnabled: Boolean,
+    val bindings: List<V2LanRemoteBinding>,
+)
+
+data class V2LanRemoteBinding(
+    val printerId: String,
+    val localBindingId: String,
+    val bindingVersion: Long,
+    val enabled: Boolean,
+)
 
 data class V2RemotePrinter(
     val printerId: String,

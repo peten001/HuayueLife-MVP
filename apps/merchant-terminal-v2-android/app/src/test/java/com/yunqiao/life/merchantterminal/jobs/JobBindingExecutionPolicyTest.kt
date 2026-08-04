@@ -21,4 +21,29 @@ class JobBindingExecutionPolicyTest {
         assertFalse(JobBindingExecutionPolicy.canExecute("TEST_PRINT", bindingEnabled = true))
         assertFalse(JobBindingExecutionPolicy.canExecute("UNKNOWN", bindingEnabled = true))
     }
+
+    @Test
+    fun `claimed LAN job trusts server enablement while USB keeps local gate`() {
+        assertTrue(
+            JobBindingExecutionPolicy.canExecuteClaimed(
+                source = "AUTOMATIC",
+                bindingEnabled = false,
+                channel = "LAN",
+            ),
+        )
+        assertFalse(
+            JobBindingExecutionPolicy.canExecuteClaimed(
+                source = "AUTOMATIC",
+                bindingEnabled = false,
+                channel = "USB",
+            ),
+        )
+        assertFalse(
+            JobBindingExecutionPolicy.canExecuteClaimed(
+                source = "UNKNOWN",
+                bindingEnabled = true,
+                channel = "LAN",
+            ),
+        )
+    }
 }

@@ -89,6 +89,36 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
+    fun lanConfigParsesServerEnabledWithStableBindingIdentity() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"code":"OK","data":{"terminalEnabled":true,"lanPrintingEnabled":true,"bindings":[{"printerId":"26","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":3,"enabled":true},{"printerId":"27","localBindingId":"223e4567-e89b-12d3-a456-426614174000","bindingVersion":4,"enabled":false}]}}""",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"code":"OK","data":{"terminalEnabled":true,"lanPrintingEnabled":true}}""",
+                ),
+            )
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val config = client.lanConfig(TERMINAL_TOKEN)
+            val legacyConfig = client.lanConfig(TERMINAL_TOKEN)
+
+            assertEquals(2, config.bindings.size)
+            assertEquals("26", config.bindings[0].printerId)
+            assertEquals("123e4567-e89b-12d3-a456-426614174000", config.bindings[0].localBindingId)
+            assertEquals(3L, config.bindings[0].bindingVersion)
+            assertTrue(config.bindings[0].enabled)
+            assertFalse(config.bindings[1].enabled)
+            assertTrue(legacyConfig.bindings.isEmpty())
+            assertEquals("/terminal/lan/config", server.takeRequest().path)
+            assertEquals("/terminal/lan/config", server.takeRequest().path)
+        }
+    }
+
+    @Test
     fun usbSyncAndStatusUseProductionDtosWithoutEnabledOrLanRouteFields() {
         MockWebServer().use { server ->
             server.enqueue(

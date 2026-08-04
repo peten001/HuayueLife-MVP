@@ -16,6 +16,7 @@ import {
   PRINTING_ERROR_CODES,
   sanitizePrintingError,
 } from '../types/printing-errors';
+import { lanBindingMetadata } from '../types/lan-terminal-binding';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
 import { hasExplicitUsbExecutionEvidence } from '../utils/printer-readiness';
 import { PrintingAuditService } from './printing-audit.service';
@@ -177,6 +178,31 @@ export class TerminalConnectorService {
       },
     });
     if (!record) this.disabled();
+    const lanPrinters = await this.prisma.printer.findMany({
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        enabled: true,
+        capabilities: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    const bindings = lanPrinters.flatMap((printer) => {
+      const binding = lanBindingMetadata(printer.capabilities);
+      if (binding?.terminalId !== terminal.id.toString()) return [];
+      return [
+        {
+          printerId: printer.id,
+          localBindingId: binding.localBindingId,
+          bindingVersion: binding.bindingVersion,
+          enabled: printer.enabled,
+        },
+      ];
+    });
     return {
       taskCenterEnabled: this.flags.taskCenterEnabled(),
       executionEnabled: this.flags.executionEnabled(),
@@ -187,6 +213,7 @@ export class TerminalConnectorService {
       terminalEnabled: record.status === 'ACTIVE',
       terminalStatus: record.status,
       pollIntervalSeconds: this.pollIntervalSeconds(),
+      bindings,
     };
   }
 

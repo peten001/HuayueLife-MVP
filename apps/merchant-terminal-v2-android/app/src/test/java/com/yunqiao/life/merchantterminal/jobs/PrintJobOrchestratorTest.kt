@@ -149,6 +149,39 @@ class PrintJobOrchestratorTest {
         assertEquals(1, api.claimRoutes.size)
     }
 
+    @Test
+    fun automaticLanClaimExecutesWithStaleDisabledLocalCache() = runBlocking {
+        val stale = binding(PrinterTransport.LAN, enabled = false)
+        val events = mutableListOf<String>()
+        val api = FakeApiAdapter(
+            channel = "LAN",
+            claimed = job("AUTOMATIC", stale),
+            events = events,
+        )
+
+        assertEquals(
+            JobExecutionResult.SUCCEEDED,
+            PrintJobOrchestrator().poll(api, TOKEN, listOf(stale), true),
+        )
+        assertEquals(listOf("active", "claim:true", "execute:267"), events)
+    }
+
+    @Test
+    fun disconnectedLanDoesNotCheckActiveOrClaim() = runBlocking {
+        val disconnected = binding(PrinterTransport.LAN).copy(
+            localStatus = PhysicalStatus.DISCONNECTED,
+        )
+        val api = FakeApiAdapter(
+            channel = "LAN",
+            claimed = job("TEST", disconnected),
+            readiness = LanJobClaimPolicy::isReady,
+        )
+
+        assertNull(PrintJobOrchestrator().poll(api, TOKEN, listOf(disconnected), false))
+        assertTrue(api.activeRoutes.isEmpty())
+        assertTrue(api.claimRoutes.isEmpty())
+    }
+
     private fun binding(
         transport: PrinterTransport,
         enabled: Boolean = true,

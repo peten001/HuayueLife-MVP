@@ -96,12 +96,17 @@ internal class TerminalLanJobApiAdapter(
     }
 
     override fun isReady(binding: LocalPrinterBinding): Boolean =
-        binding.transport.name == channel && binding.localStatus.name == "CONNECTED"
+        LanJobClaimPolicy.isReady(binding)
 
     override suspend fun execute(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): JobExecutionResult = executor.execute(job, binding)
+}
+
+internal object LanJobClaimPolicy {
+    fun isReady(binding: LocalPrinterBinding): Boolean =
+        binding.transport.name == "LAN" && binding.localStatus.name == "CONNECTED"
 }
 
 internal object PrintJobSourcePolicy {
@@ -166,8 +171,21 @@ internal class PrintJobOrchestrator {
             candidate.printerId == job.route.printerId &&
                 candidate.localBindingId == job.route.localBindingId &&
                 candidate.bindingVersion == job.route.bindingVersion
-        } ?: error("${adapter.channel} job route does not match an active binding.")
-        if (!JobBindingExecutionPolicy.canExecute(job.source, binding.enabled)) return null
+        } ?: run {
+            StartupTrace.event(
+                "PRINT_POST_CLAIM_REJECTED channel=${adapter.channel} jobId=${job.id} printerId=${job.printerId} reason=ROUTE_MISMATCH",
+            )
+            error("${adapter.channel} job route does not match an active binding.")
+        }
+        if (!JobBindingExecutionPolicy.canExecuteClaimed(job.source, binding.enabled, adapter.channel)) {
+            StartupTrace.event(
+                "PRINT_POST_CLAIM_REJECTED channel=${adapter.channel} jobId=${job.id} printerId=${job.printerId} reason=LOCAL_EXECUTION_POLICY",
+            )
+            if (adapter.channel == "LAN") {
+                error("LAN claimed job source is not supported locally.")
+            }
+            return null
+        }
         return adapter.execute(job, binding)
     }
 

@@ -217,7 +217,10 @@ class V2PrinterService : Service() {
                 TerminalRuntime.updateChannels(usb = UsbChannelState.READY)
                 StartupTrace.event("LAN_CONFIG_START")
                 runCatching { graph.api.lanConfig(credential.token) }
-                    .onSuccess { TerminalRuntime.updateChannels(lan = if (it.terminalEnabled && it.lanPrintingEnabled) LanChannelState.READY else LanChannelState.NOT_CONFIGURED) }
+                    .onSuccess {
+                        repository.applyRemoteLanBindings(credential.merchantId, it.bindings)
+                        TerminalRuntime.updateChannels(lan = if (it.terminalEnabled && it.lanPrintingEnabled) LanChannelState.READY else LanChannelState.NOT_CONFIGURED)
+                    }
                     .onFailure { TerminalRuntime.updateChannels(lan = LanChannelState.ERROR) }
                 credentialRefreshGate.markHealthy()
                 lastConfigVersion = config.configVersion

@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.UUID
 import com.yunqiao.life.merchantterminal.network.V2RemotePrinter
+import com.yunqiao.life.merchantterminal.network.V2LanRemoteBinding
 
 @RunWith(RobolectricTestRunner::class)
 class PrintingRepositoryTest {
@@ -147,6 +148,47 @@ class PrintingRepositoryTest {
         )
 
         assertEquals(true, repository.binding("11", local.localBindingId)?.enabled)
+    }
+
+    @Test
+    fun lanConfigRefreshAppliesBothServerEnabledStates() = runBlocking {
+        val enabledByServer = binding("11")
+        val disabledByServer = binding("11").copy(
+            transportConfig = LocalTransportConfig.Lan("192.168.1.43", 9_100),
+        )
+        repository.addLocalBinding(enabledByServer)
+        repository.addLocalBinding(disabledByServer)
+        repository.markSynced("11", enabledByServer.localBindingId, "101", 1, enabled = false)
+        repository.markSynced("11", disabledByServer.localBindingId, "102", 2, enabled = true)
+
+        repository.applyRemoteLanBindings(
+            "11",
+            listOf(
+                V2LanRemoteBinding("101", enabledByServer.localBindingId, 1, enabled = true),
+                V2LanRemoteBinding("102", disabledByServer.localBindingId, 2, enabled = false),
+            ),
+        )
+
+        assertEquals(true, repository.binding("11", enabledByServer.localBindingId)?.enabled)
+        assertEquals(false, repository.binding("11", disabledByServer.localBindingId)?.enabled)
+    }
+
+    @Test
+    fun lanConfigRefreshRequiresTheCompleteBindingIdentity() = runBlocking {
+        val local = binding("11")
+        repository.addLocalBinding(local)
+        repository.markSynced("11", local.localBindingId, "101", 3, enabled = false)
+
+        repository.applyRemoteLanBindings(
+            "11",
+            listOf(
+                V2LanRemoteBinding("999", local.localBindingId, 3, enabled = true),
+                V2LanRemoteBinding("101", UUID.randomUUID().toString(), 3, enabled = true),
+                V2LanRemoteBinding("101", local.localBindingId, 4, enabled = true),
+            ),
+        )
+
+        assertEquals(false, repository.binding("11", local.localBindingId)?.enabled)
     }
 
     private fun binding(merchantId: String) = LocalPrinterBinding(

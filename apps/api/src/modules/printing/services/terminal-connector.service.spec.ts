@@ -418,6 +418,49 @@ describe('TerminalConnectorService', () => {
       terminalEnabled: true,
       terminalStatus: 'ACTIVE',
       pollIntervalSeconds: 5,
+      bindings: [],
+    });
+  });
+
+  it('returns server enabled state with the exact LAN binding identity', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      status: 'ACTIVE',
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    prisma.printer.findMany.mockResolvedValue([
+      lanConfigPrinter(26n, true, '67', 'binding-enabled', 3),
+      lanConfigPrinter(27n, false, '67', 'binding-disabled', 4),
+      lanConfigPrinter(28n, true, '68', 'other-terminal', 1),
+    ]);
+    const service = createService(prisma);
+
+    await expect(service.lanConfigFor(terminal)).resolves.toEqual(
+      expect.objectContaining({
+        bindings: [
+          {
+            printerId: 26n,
+            localBindingId: 'binding-enabled',
+            bindingVersion: 3,
+            enabled: true,
+          },
+          {
+            printerId: 27n,
+            localBindingId: 'binding-disabled',
+            bindingVersion: 4,
+            enabled: false,
+          },
+        ],
+      }),
+    );
+    expect(prisma.printer.findMany).toHaveBeenCalledWith({
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        deletedAt: null,
+      },
+      select: { id: true, enabled: true, capabilities: true },
+      orderBy: { id: 'asc' },
     });
   });
 
@@ -487,7 +530,7 @@ function createPrismaMock() {
     },
     printer: {
       findFirst: jest.fn(),
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -499,6 +542,30 @@ function createPrismaMock() {
     async (callback: (tx: typeof prisma) => unknown) => callback(prisma),
   );
   return prisma;
+}
+
+function lanConfigPrinter(
+  id: bigint,
+  enabled: boolean,
+  terminalId: string,
+  localBindingId: string,
+  bindingVersion: number,
+) {
+  return {
+    id,
+    enabled,
+    capabilities: {
+      lanBinding: {
+        terminalId,
+        localBindingId,
+        terminalInstanceId: 'terminal-instance-1',
+        executor: 'TERMINAL',
+        adapter: 'ANDROID_LAN_ESCPOS',
+        bindingVersion,
+        bindingUpdatedAt: '2026-08-04T00:00:00.000Z',
+      },
+    },
+  };
 }
 
 function createAuditMock() {

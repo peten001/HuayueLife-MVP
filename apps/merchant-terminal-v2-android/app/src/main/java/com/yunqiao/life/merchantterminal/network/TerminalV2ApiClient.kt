@@ -111,9 +111,17 @@ class TerminalV2ApiClient(
 
     fun lanConfig(terminalBearer: String): V2LanConfig {
         val data = request("GET", "/terminal/lan/config", terminalBearer)
+        val bindings = data.optJSONArray("bindings")?.let { values ->
+            buildList {
+                repeat(values.length()) { index ->
+                    add(parseLanRemoteBinding(values.getJSONObject(index)))
+                }
+            }
+        }.orEmpty()
         return V2LanConfig(
             terminalEnabled = data.getBoolean("terminalEnabled"),
             lanPrintingEnabled = data.getBoolean("lanPrintingEnabled"),
+            bindings = bindings,
         )
     }
 
@@ -483,6 +491,14 @@ class TerminalV2ApiClient(
             transport = "USB",
         )
     }
+
+    private fun parseLanRemoteBinding(binding: JSONObject): V2LanRemoteBinding =
+        V2LanRemoteBinding(
+            printerId = binding.requiredNumericString("printerId"),
+            localBindingId = binding.requiredString("localBindingId", 128),
+            bindingVersion = binding.requiredPositiveLong("bindingVersion"),
+            enabled = binding.getBoolean("enabled"),
+        )
 
     private fun request(
         method: String,

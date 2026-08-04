@@ -8,6 +8,7 @@ import com.yunqiao.life.merchantterminal.model.PhysicalStatus
 import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import com.yunqiao.life.merchantterminal.model.StatusSource
 import com.yunqiao.life.merchantterminal.model.TransportConfigJson
+import com.yunqiao.life.merchantterminal.network.V2LanRemoteBinding
 import com.yunqiao.life.merchantterminal.network.V2RemotePrinter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -117,6 +118,26 @@ class PrintingRepository(
         val now = clock()
         database.withTransaction {
             printers.forEach { remote ->
+                dao.updateRemoteEnabled(
+                    merchantId = merchantId,
+                    localBindingId = remote.localBindingId,
+                    printerId = remote.printerId,
+                    bindingVersion = remote.bindingVersion,
+                    enabled = remote.enabled,
+                    updatedAt = now,
+                )
+            }
+        }
+    }
+
+    suspend fun applyRemoteLanBindings(
+        merchantId: String,
+        bindings: List<V2LanRemoteBinding>,
+    ) {
+        requireNumericId(merchantId)
+        val now = clock()
+        database.withTransaction {
+            bindings.forEach { remote ->
                 dao.updateRemoteEnabled(
                     merchantId = merchantId,
                     localBindingId = remote.localBindingId,

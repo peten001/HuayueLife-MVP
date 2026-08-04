@@ -327,7 +327,13 @@ class V2PrintJobExecutor(
         require(job.route.bindingVersion == binding.bindingVersion)
         require(!binding.deletedPending)
         require(binding.syncStatus == BindingSyncStatus.SYNCED)
-        require(JobBindingExecutionPolicy.canExecute(job.source, binding.enabled))
+        require(
+            JobBindingExecutionPolicy.canExecuteClaimed(
+                job.source,
+                binding.enabled,
+                binding.transport.name,
+            ),
+        )
     }
 
     private fun log(job: ClaimedV2PrintJob, message: String) {
