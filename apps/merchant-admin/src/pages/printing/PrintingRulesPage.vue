@@ -19,6 +19,10 @@ import type { Category } from '@/types/api';
 import { PRINTING_STATE_CHANGED_EVENT } from '@/utils/printing-status';
 import { lanPrinterIsOnline } from '@/utils/lan-printer-admin-state';
 import { clearPrintingFeatureStateCache } from '@/utils/printing-feature-state';
+import {
+  buildPrintingRoutingPayload,
+  sanitizePrintingRouting,
+} from './printing-routing-state';
 
 type RoutingScene = 'FRONT_DESK' | 'KITCHEN';
 
@@ -215,7 +219,10 @@ async function load() {
     ]);
     printers.value = nextPrinters;
     categories.value = nextCategories;
-    routing.value = nextRouting;
+    routing.value = sanitizePrintingRouting(
+      nextRouting,
+      nextPrinters.map((printer) => printer.id),
+    );
     settings.value = nextSettings;
   } catch (error) {
     showError(error);
@@ -252,15 +259,12 @@ async function saveConfiguration() {
   try {
     saving.value = true;
     message.value = '';
-    routing.value = await updatePrintingRouting({
-      checkoutDefaultPrinterId: routing.value.checkoutDefaultPrinterId,
-      defaultKitchenPrinterId: routing.value.defaultKitchenPrinterId,
-      frontDeskPrinters: routing.value.frontDeskPrinters.map((entry) => ({
-        ...entry,
-        categoryIds: [],
-      })),
-      kitchenPrinters: routing.value.kitchenPrinters,
-    });
+    routing.value = await updatePrintingRouting(
+      buildPrintingRoutingPayload(
+        routing.value,
+        printers.value.map((printer) => printer.id),
+      ),
+    );
     await load();
     window.dispatchEvent(new Event(PRINTING_STATE_CHANGED_EVENT));
     messageType.value = 'success';

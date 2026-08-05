@@ -30,14 +30,21 @@ export class PrintingRoutingService {
 
   async get(merchantId: bigint) {
     this.flags.assertTaskCenterEnabled();
-    const [routing, bindings, managedRules] = await Promise.all([
+    const [routing, bindings, managedRules, currentPrinters] = await Promise.all([
       this.prisma.merchantPrintingRouting.findUnique({ where: { merchantId } }),
       this.prisma.printerCategoryBinding.findMany({
-        where: { merchantId },
+        where: {
+          merchantId,
+          printer: { merchantId, deletedAt: null },
+        },
         select: { printerId: true, categoryId: true },
       }),
       this.prisma.printRule.findMany({
-        where: { merchantId, name: { startsWith: MANAGED_RULE_PREFIX } },
+        where: {
+          merchantId,
+          name: { startsWith: MANAGED_RULE_PREFIX },
+          printer: { merchantId, deletedAt: null },
+        },
         select: {
           name: true,
           printerId: true,
@@ -46,10 +53,18 @@ export class PrintingRoutingService {
           printer: { select: { purpose: true } },
         },
       }),
+      this.prisma.printer.findMany({
+        where: { merchantId, deletedAt: null },
+        select: { id: true },
+      }),
     ]);
+    const currentPrinterIds = new Set(
+      currentPrinters.map((printer) => printer.id.toString()),
+    );
     const categoryIdsByPrinter = new Map<string, string[]>();
     for (const binding of bindings) {
       const key = binding.printerId.toString();
+      if (!currentPrinterIds.has(key)) continue;
       categoryIdsByPrinter.set(key, [
         ...(categoryIdsByPrinter.get(key) ?? []),
         binding.categoryId.toString(),
@@ -58,6 +73,7 @@ export class PrintingRoutingService {
     const frontDeskPrinters: Array<{ printerId: string; newOrderAutoPrint: boolean; categoryIds: string[] }> = [];
     const kitchenPrinters: Array<{ printerId: string; newOrderAutoPrint: boolean; categoryIds: string[] }> = [];
     for (const rule of managedRules) {
+      if (!currentPrinterIds.has(rule.printerId.toString())) continue;
       const explicitScene = this.sceneForRuleName(rule.name);
       // A disabled legacy rule was retired during conversion. It must not
       // surface as a second scene entry beside the new explicit rule.
@@ -77,8 +93,16 @@ export class PrintingRoutingService {
     }
     return {
       configured: Boolean(routing),
-      checkoutDefaultPrinterId: routing?.checkoutDefaultPrinterId?.toString() ?? null,
-      defaultKitchenPrinterId: routing?.defaultKitchenPrinterId?.toString() ?? null,
+      checkoutDefaultPrinterId:
+        routing?.checkoutDefaultPrinterId &&
+        currentPrinterIds.has(routing.checkoutDefaultPrinterId.toString())
+          ? routing.checkoutDefaultPrinterId.toString()
+          : null,
+      defaultKitchenPrinterId:
+        routing?.defaultKitchenPrinterId &&
+        currentPrinterIds.has(routing.defaultKitchenPrinterId.toString())
+          ? routing.defaultKitchenPrinterId.toString()
+          : null,
       frontDeskPrinters,
       kitchenPrinters,
     };
