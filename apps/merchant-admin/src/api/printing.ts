@@ -121,6 +121,11 @@ export async function archivePrintingPrinter(id: string, reason?: string) {
       archived: true;
       archivedAt: string;
       status: string;
+      cancelledJobCount: number;
+      removedCategoryBindingCount: number;
+      clearedCheckoutDefault: boolean;
+      clearedKitchenDefault: boolean;
+      disabledRuleCount: number;
     }>
   >(`/merchant/printing/printers/${id}/archive`, { reason });
   return response.data.data;

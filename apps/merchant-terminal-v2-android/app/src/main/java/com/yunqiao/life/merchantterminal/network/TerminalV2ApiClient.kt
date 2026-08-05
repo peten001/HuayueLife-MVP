@@ -95,6 +95,13 @@ class TerminalV2ApiClient(
         val terminal = data.requiredObject("terminal")
         val boundPrinter = data.optJSONObject("boundPrinter")
         val printers = boundPrinter?.let(::parseUsbRemotePrinter)?.let(::listOf).orEmpty()
+        val archivedBindings = data.optJSONArray("archivedBindings")?.let { values ->
+            buildList {
+                repeat(values.length()) { index ->
+                    add(parseArchivedUsbBinding(values.getJSONObject(index)))
+                }
+            }
+        }.orEmpty()
         return V2TerminalConfig(
             merchantId = "0", // Replaced by the locally validated terminal credential in the service.
             terminalId = terminal.requiredNumericString("id"),
@@ -106,6 +113,7 @@ class TerminalV2ApiClient(
             pollIntervalSeconds = data.requiredLongIn("pollIntervalSeconds", 2L..120L),
             configVersion = terminal.requiredNonNegativeLong("configVersion"),
             printers = printers,
+            archivedBindings = archivedBindings,
         )
     }
 
@@ -118,10 +126,18 @@ class TerminalV2ApiClient(
                 }
             }
         }.orEmpty()
+        val archivedBindings = data.optJSONArray("archivedBindings")?.let { values ->
+            buildList {
+                repeat(values.length()) { index ->
+                    add(parseArchivedLanBinding(values.getJSONObject(index)))
+                }
+            }
+        }.orEmpty()
         return V2LanConfig(
             terminalEnabled = data.getBoolean("terminalEnabled"),
             lanPrintingEnabled = data.getBoolean("lanPrintingEnabled"),
             bindings = bindings,
+            archivedBindings = archivedBindings,
         )
     }
 
@@ -498,6 +514,25 @@ class TerminalV2ApiClient(
             localBindingId = binding.requiredString("localBindingId", 128),
             bindingVersion = binding.requiredPositiveLong("bindingVersion"),
             enabled = binding.getBoolean("enabled"),
+        )
+
+    private fun parseArchivedLanBinding(binding: JSONObject): V2ArchivedLanBinding =
+        V2ArchivedLanBinding(
+            printerId = binding.requiredNumericString("printerId"),
+            localBindingId = binding.requiredString("localBindingId", 128),
+            bindingVersion = binding.requiredPositiveLong("bindingVersion"),
+            archivedAt = binding.requiredInstant("archivedAt"),
+        )
+
+    private fun parseArchivedUsbBinding(binding: JSONObject): V2ArchivedUsbBinding =
+        V2ArchivedUsbBinding(
+            transport = binding.requiredString("transport", 16).also {
+                require(it == "USB")
+            },
+            printerId = binding.requiredNumericString("printerId"),
+            localBindingId = binding.requiredString("localBindingId", 128),
+            bindingVersion = binding.requiredPositiveLong("bindingVersion"),
+            archivedAt = binding.requiredInstant("archivedAt"),
         )
 
     private fun request(

@@ -577,7 +577,9 @@ async function confirmArchive() {
     notifyPrintingStateChanged();
     showSuccess(p('printerArchived'));
   } catch (error) {
-    if (printingErrorCode(error) === 'PRINTER_HAS_ACTIVE_JOBS') {
+    if (printingErrorCode(error) === 'PRINTER_PRINTING_IN_PROGRESS') {
+      showError(new Error(p('archivePrinterPrintingInProgressError')));
+    } else if (printingErrorCode(error) === 'PRINTER_HAS_ACTIVE_JOBS') {
       showError(new Error(p('archivePrinterActiveJobsError')));
     } else {
       showError(error);

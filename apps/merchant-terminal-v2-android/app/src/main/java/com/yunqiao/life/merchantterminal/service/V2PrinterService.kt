@@ -214,10 +214,30 @@ class V2PrinterService : Service() {
                 val config = graph.api.config(credential.token).copy(merchantId = credential.merchantId)
                 check(config.terminalId == credential.terminalId)
                 StartupTrace.event("CONFIG_SUCCESS")
+                val usbCleanup = repository.applyArchivedUsbBindings(
+                    credential.merchantId,
+                    config.archivedBindings,
+                )
+                usbCleanup.removed.forEach {
+                    StartupTrace.event("USB_ARCHIVE_TOMBSTONE_APPLIED")
+                }
+                usbCleanup.deferred.forEach {
+                    StartupTrace.event("USB_ARCHIVE_TOMBSTONE_DEFERRED_PRINTING")
+                }
                 TerminalRuntime.updateChannels(usb = UsbChannelState.READY)
                 StartupTrace.event("LAN_CONFIG_START")
                 runCatching { graph.api.lanConfig(credential.token) }
                     .onSuccess {
+                        val cleanup = repository.applyArchivedLanBindings(
+                            credential.merchantId,
+                            it.archivedBindings,
+                        )
+                        cleanup.removed.forEach {
+                            StartupTrace.event("LAN_ARCHIVE_TOMBSTONE_APPLIED")
+                        }
+                        cleanup.deferred.forEach {
+                            StartupTrace.event("LAN_ARCHIVE_TOMBSTONE_DEFERRED_PRINTING")
+                        }
                         repository.applyRemoteLanBindings(credential.merchantId, it.bindings)
                         TerminalRuntime.updateChannels(lan = if (it.terminalEnabled && it.lanPrintingEnabled) LanChannelState.READY else LanChannelState.NOT_CONFIGURED)
                     }

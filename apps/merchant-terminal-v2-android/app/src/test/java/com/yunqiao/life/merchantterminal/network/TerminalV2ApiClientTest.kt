@@ -59,6 +59,7 @@ class TerminalV2ApiClientTest {
             assertEquals(9L, config.configVersion)
             assertEquals(true, config.canClaimJobs)
             assertEquals(0, config.printers.size)
+            assertTrue(config.archivedBindings.isEmpty())
             val heartbeat = server.takeRequest()
             val configRequest = server.takeRequest()
             assertEquals("/terminal/heartbeat", heartbeat.path)
@@ -73,18 +74,25 @@ class TerminalV2ApiClientTest {
         MockWebServer().use { server ->
             server.enqueue(
                 MockResponse().setBody(
-                    """{"code":"OK","data":{"terminal":{"id":"15","configVersion":9},"merchantPrintingEnabled":true,"terminalEnabled":true,"executionEnabled":true,"automaticCreationEnabled":false,"heartbeatIntervalSeconds":20,"pollIntervalSeconds":5,"boundPrinter":{"id":"37","name":"Front USB","channelType":"LOCAL_USB_ESCPOS","paperWidth":"MM80","enabled":true,"status":"ONLINE","capabilities":{"usbBinding":{"localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":4}}}}}""",
+                    """{"code":"OK","data":{"terminal":{"id":"15","configVersion":9},"merchantPrintingEnabled":true,"terminalEnabled":true,"executionEnabled":true,"automaticCreationEnabled":false,"heartbeatIntervalSeconds":20,"pollIntervalSeconds":5,"boundPrinter":{"id":"37","name":"Front USB","channelType":"LOCAL_USB_ESCPOS","paperWidth":"MM80","enabled":true,"status":"ONLINE","capabilities":{"usbBinding":{"localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":4}}},"archivedBindings":[{"transport":"USB","printerId":"38","localBindingId":"223e4567-e89b-12d3-a456-426614174000","bindingVersion":5,"archivedAt":"2026-08-04T02:00:00.000Z"}]}}""",
                 ),
             )
             val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
 
-            val printer = client.config(TERMINAL_TOKEN).printers.single()
+            val config = client.config(TERMINAL_TOKEN)
+            val printer = config.printers.single()
+            val archived = config.archivedBindings.single()
 
             assertEquals("37", printer.printerId)
             assertEquals("123e4567-e89b-12d3-a456-426614174000", printer.localBindingId)
             assertEquals(4L, printer.bindingVersion)
             assertTrue(printer.enabled)
             assertEquals("USB", printer.transport)
+            assertEquals("USB", archived.transport)
+            assertEquals("38", archived.printerId)
+            assertEquals("223e4567-e89b-12d3-a456-426614174000", archived.localBindingId)
+            assertEquals(5L, archived.bindingVersion)
+            assertEquals(1_785_808_800_000L, archived.archivedAt)
         }
     }
 
@@ -93,7 +101,7 @@ class TerminalV2ApiClientTest {
         MockWebServer().use { server ->
             server.enqueue(
                 MockResponse().setBody(
-                    """{"code":"OK","data":{"terminalEnabled":true,"lanPrintingEnabled":true,"bindings":[{"printerId":"26","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":3,"enabled":true},{"printerId":"27","localBindingId":"223e4567-e89b-12d3-a456-426614174000","bindingVersion":4,"enabled":false}]}}""",
+                    """{"code":"OK","data":{"terminalEnabled":true,"lanPrintingEnabled":true,"bindings":[{"printerId":"26","localBindingId":"123e4567-e89b-12d3-a456-426614174000","bindingVersion":3,"enabled":true},{"printerId":"27","localBindingId":"223e4567-e89b-12d3-a456-426614174000","bindingVersion":4,"enabled":false}],"archivedBindings":[{"printerId":"28","localBindingId":"323e4567-e89b-12d3-a456-426614174000","bindingVersion":5,"archivedAt":"2026-08-04T02:00:00.000Z"}]}}""",
                 ),
             )
             server.enqueue(
@@ -112,7 +120,12 @@ class TerminalV2ApiClientTest {
             assertEquals(3L, config.bindings[0].bindingVersion)
             assertTrue(config.bindings[0].enabled)
             assertFalse(config.bindings[1].enabled)
+            assertEquals("28", config.archivedBindings.single().printerId)
+            assertEquals("323e4567-e89b-12d3-a456-426614174000", config.archivedBindings.single().localBindingId)
+            assertEquals(5L, config.archivedBindings.single().bindingVersion)
+            assertEquals(1_785_808_800_000L, config.archivedBindings.single().archivedAt)
             assertTrue(legacyConfig.bindings.isEmpty())
+            assertTrue(legacyConfig.archivedBindings.isEmpty())
             assertEquals("/terminal/lan/config", server.takeRequest().path)
             assertEquals("/terminal/lan/config", server.takeRequest().path)
         }

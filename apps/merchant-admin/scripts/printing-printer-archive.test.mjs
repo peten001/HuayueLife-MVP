@@ -14,12 +14,29 @@ assert.match(page, /\['OWNER', 'MANAGER'\]\.includes/);
 assert.match(page, /v-if="canArchive"/);
 assert.match(page, /printing-button--danger/);
 assert.match(page, /archivePrinterDescription/);
+assert.doesNotMatch(page, /archiveLanPrinterDescription/);
 assert.match(page, /archivePrinterActiveJobsError/);
+assert.match(page, /PRINTER_PRINTING_IN_PROGRESS/);
+assert.match(page, /archivePrinterPrintingInProgressError/);
+assert.match(page, /p\('archivePrinterDescription'\)/);
+assert.equal((page.match(/p\('archivePrinterDescription'\)/g) ?? []).length, 1);
 assert.match(page, /await load\(false\)/);
 assert.match(page, /notifyPrintingStateChanged\(\)/);
 assert.match(page, /targetTerminal/);
 assert.match(page, /lanEndpoint/);
 assert.match(page, /usbDeviceInformation/);
+assert.doesNotMatch(page, /cancelPrintingJob/);
+
+for (const field of [
+  'cancelledJobCount',
+  'removedCategoryBindingCount',
+  'clearedCheckoutDefault',
+  'clearedKitchenDefault',
+  'disabledRuleCount',
+]) {
+  assert.match(api, new RegExp(`\\b${field}:`));
+  assert.doesNotMatch(api, new RegExp(`\\b${field}\\?:`));
+}
 
 for (const key of [
   'archivePrinter',
@@ -27,6 +44,7 @@ for (const key of [
   'dangerousAction',
   'archivePrinterDescription',
   'archivePrinterActiveJobsError',
+  'archivePrinterPrintingInProgressError',
   'printerArchived',
   'usbDeviceInformation',
 ]) {
@@ -36,5 +54,11 @@ for (const key of [
     `${key} must exist exactly once in zh/vi/en`,
   );
 }
+
+assert.doesNotMatch(i18n, /\barchiveLanPrinterDescription:/);
+assert.match(
+  i18n,
+  /未完成且尚未开始打印的任务将自动取消；当前分类绑定和默认打印路由将被清除；历史打印记录会保留；正在打印的任务完成前不能移除。/,
+);
 
 console.log('merchant-admin printer archive: PASS');

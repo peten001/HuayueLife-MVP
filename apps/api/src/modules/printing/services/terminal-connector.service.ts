@@ -130,6 +130,37 @@ export class TerminalConnectorService {
       },
     });
     if (!record) this.disabled();
+    const archivedUsbPrinters = await this.prisma.printer.findMany({
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        deletedAt: { not: null },
+      },
+      select: {
+        id: true,
+        capabilities: true,
+        deletedAt: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    const archivedBindings = archivedUsbPrinters.flatMap((printer) => {
+      const binding = usbTombstoneBindingMetadata(printer.capabilities);
+      if (
+        !printer.deletedAt ||
+        binding?.terminalId !== terminal.id.toString()
+      ) {
+        return [];
+      }
+      return [
+        {
+          transport: 'USB' as const,
+          printerId: printer.id,
+          localBindingId: binding.localBindingId,
+          bindingVersion: binding.bindingVersion,
+          archivedAt: printer.deletedAt,
+        },
+      ];
+    });
     return {
       terminal: {
         id: record.id,
@@ -149,6 +180,7 @@ export class TerminalConnectorService {
       pollIntervalSeconds: this.pollIntervalSeconds(),
       heartbeatIntervalSeconds: this.heartbeatIntervalSeconds(),
       boundPrinter: record.boundPrinter,
+      archivedBindings,
       commands: {
         resetUsb:
           record.resetUsbRequestedAt &&
@@ -203,6 +235,36 @@ export class TerminalConnectorService {
         },
       ];
     });
+    const archivedLanPrinters = await this.prisma.printer.findMany({
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        deletedAt: { not: null },
+      },
+      select: {
+        id: true,
+        capabilities: true,
+        deletedAt: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    const archivedBindings = archivedLanPrinters.flatMap((printer) => {
+      const binding = lanBindingMetadata(printer.capabilities);
+      if (
+        !printer.deletedAt ||
+        binding?.terminalId !== terminal.id.toString()
+      ) {
+        return [];
+      }
+      return [
+        {
+          printerId: printer.id,
+          localBindingId: binding.localBindingId,
+          bindingVersion: binding.bindingVersion,
+          archivedAt: printer.deletedAt,
+        },
+      ];
+    });
     return {
       taskCenterEnabled: this.flags.taskCenterEnabled(),
       executionEnabled: this.flags.executionEnabled(),
@@ -214,6 +276,7 @@ export class TerminalConnectorService {
       terminalStatus: record.status,
       pollIntervalSeconds: this.pollIntervalSeconds(),
       bindings,
+      archivedBindings,
     };
   }
 
@@ -617,6 +680,34 @@ type UsbBindingMetadata = {
   vendorId: number;
   productId: number;
 };
+
+type UsbTombstoneBindingMetadata = Pick<
+  UsbBindingMetadata,
+  'terminalId' | 'localBindingId' | 'bindingVersion'
+>;
+
+function usbTombstoneBindingMetadata(
+  value: Prisma.JsonValue,
+): UsbTombstoneBindingMetadata | null {
+  if (!isPlainObject(value) || !isPlainObject(value.usbBinding)) return null;
+  const binding = value.usbBinding;
+  if (
+    typeof binding.terminalId !== 'string' ||
+    !/^[1-9][0-9]{0,18}$/.test(binding.terminalId) ||
+    typeof binding.localBindingId !== 'string' ||
+    !/^[A-Za-z0-9._:-]{1,128}$/.test(binding.localBindingId) ||
+    !Number.isInteger(binding.bindingVersion) ||
+    Number(binding.bindingVersion) < 1 ||
+    Number(binding.bindingVersion) > 2_147_483_647
+  ) {
+    return null;
+  }
+  return {
+    terminalId: binding.terminalId,
+    localBindingId: binding.localBindingId,
+    bindingVersion: Number(binding.bindingVersion),
+  };
+}
 
 function usbBindingMetadata(value: Prisma.JsonValue): UsbBindingMetadata | null {
   if (!isPlainObject(value) || !isPlainObject(value.usbBinding)) return null;

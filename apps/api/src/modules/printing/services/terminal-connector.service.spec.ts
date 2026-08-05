@@ -44,8 +44,73 @@ describe('TerminalConnectorService', () => {
         commands: {
           resetUsb: { configVersion: 3, requestedAt },
         },
+        archivedBindings: [],
       }),
     );
+  });
+
+  it('returns USB archive tombstones only to the terminal that owned the binding', async () => {
+    const prisma = createPrismaMock();
+    const archivedAt = new Date('2026-08-04T02:00:00.000Z');
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminal.id,
+      name: terminal.name,
+      status: 'ACTIVE',
+      appVersion: '2.0.0-rc11',
+      boundPrinterId: null,
+      configVersion: 4,
+      resetUsbRequestedAt: null,
+      resetUsbAcknowledgedAt: null,
+      merchant: { id: terminal.merchantId, printingEnabled: true },
+      boundPrinter: null,
+    });
+    prisma.printer.findMany.mockResolvedValue([
+      {
+        id: 101n,
+        capabilities: {
+          usbBinding: {
+            terminalId: '67',
+            localBindingId: USB_BINDING_ID,
+            bindingVersion: 1,
+          },
+        },
+        deletedAt: archivedAt,
+      },
+      {
+        ...usbPrinterRecord(102n, { terminalId: '68' }),
+        deletedAt: archivedAt,
+      },
+      {
+        id: 103n,
+        capabilities: { usbBinding: { terminalId: '67' } },
+        deletedAt: archivedAt,
+      },
+    ]);
+    const service = createService(prisma);
+
+    await expect(service.configFor(terminal)).resolves.toEqual(
+      expect.objectContaining({
+        boundPrinter: null,
+        archivedBindings: [
+          {
+            transport: 'USB',
+            printerId: 101n,
+            localBindingId: USB_BINDING_ID,
+            bindingVersion: 1,
+            archivedAt,
+          },
+        ],
+      }),
+    );
+    expect(prisma.printer.findMany).toHaveBeenCalledWith({
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        deletedAt: { not: null },
+      },
+      select: { id: true, capabilities: true, deletedAt: true },
+      orderBy: { id: 'asc' },
+    });
   });
 
   it('keeps CONNECTED fail-closed without complete USB execution evidence', async () => {
@@ -419,6 +484,46 @@ describe('TerminalConnectorService', () => {
       terminalStatus: 'ACTIVE',
       pollIntervalSeconds: 5,
       bindings: [],
+      archivedBindings: [],
+    });
+  });
+
+  it('returns LAN archive tombstones only to the terminal that owned the binding', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      status: 'ACTIVE',
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    const archivedAt = new Date('2026-08-04T02:00:00.000Z');
+    prisma.printer.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { ...lanConfigPrinter(26n, false, '67', 'binding-archived', 3), deletedAt: archivedAt },
+        { ...lanConfigPrinter(27n, false, '68', 'other-terminal', 4), deletedAt: archivedAt },
+      ]);
+    const service = createService(prisma);
+
+    await expect(service.lanConfigFor(terminal)).resolves.toEqual(
+      expect.objectContaining({
+        bindings: [],
+        archivedBindings: [
+          {
+            printerId: 26n,
+            localBindingId: 'binding-archived',
+            bindingVersion: 3,
+            archivedAt,
+          },
+        ],
+      }),
+    );
+    expect(prisma.printer.findMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        merchantId: terminal.merchantId,
+        channelType: 'LOCAL_LAN_ESCPOS',
+        deletedAt: { not: null },
+      },
+      select: { id: true, capabilities: true, deletedAt: true },
+      orderBy: { id: 'asc' },
     });
   });
 

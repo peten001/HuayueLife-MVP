@@ -21,6 +21,7 @@ data class V2TerminalConfig(
     val pollIntervalSeconds: Long,
     val configVersion: Long,
     val printers: List<V2RemotePrinter>,
+    val archivedBindings: List<V2ArchivedUsbBinding> = emptyList(),
 ) {
     val canClaimJobs: Boolean
         get() = merchantPrintingEnabled && terminalEnabled && executionEnabled
@@ -30,6 +31,7 @@ data class V2LanConfig(
     val terminalEnabled: Boolean,
     val lanPrintingEnabled: Boolean,
     val bindings: List<V2LanRemoteBinding>,
+    val archivedBindings: List<V2ArchivedLanBinding>,
 )
 
 data class V2LanRemoteBinding(
@@ -37,6 +39,21 @@ data class V2LanRemoteBinding(
     val localBindingId: String,
     val bindingVersion: Long,
     val enabled: Boolean,
+)
+
+data class V2ArchivedLanBinding(
+    val printerId: String,
+    val localBindingId: String,
+    val bindingVersion: Long,
+    val archivedAt: Long,
+)
+
+data class V2ArchivedUsbBinding(
+    val transport: String,
+    val printerId: String,
+    val localBindingId: String,
+    val bindingVersion: Long,
+    val archivedAt: Long,
 )
 
 data class V2RemotePrinter(

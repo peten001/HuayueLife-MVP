@@ -8,6 +8,8 @@ import com.yunqiao.life.merchantterminal.model.PhysicalStatus
 import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import com.yunqiao.life.merchantterminal.model.StatusSource
 import com.yunqiao.life.merchantterminal.model.TransportConfigJson
+import com.yunqiao.life.merchantterminal.network.V2ArchivedLanBinding
+import com.yunqiao.life.merchantterminal.network.V2ArchivedUsbBinding
 import com.yunqiao.life.merchantterminal.network.V2LanRemoteBinding
 import com.yunqiao.life.merchantterminal.network.V2RemotePrinter
 import kotlinx.coroutines.flow.Flow
@@ -148,6 +150,100 @@ class PrintingRepository(
                 )
             }
         }
+    }
+
+    suspend fun applyArchivedLanBindings(
+        merchantId: String,
+        archivedBindings: List<V2ArchivedLanBinding>,
+    ): ArchivedBindingCleanupResult<V2ArchivedLanBinding> = applyArchivedBindings(
+        merchantId,
+        archivedBindings,
+        PrinterTransport.LAN,
+    ) { archived ->
+        ArchivedBindingIdentity(
+            archived.printerId,
+            archived.localBindingId,
+            archived.bindingVersion,
+            archived.archivedAt,
+        )
+    }
+
+    suspend fun applyArchivedUsbBindings(
+        merchantId: String,
+        archivedBindings: List<V2ArchivedUsbBinding>,
+    ): ArchivedBindingCleanupResult<V2ArchivedUsbBinding> = applyArchivedBindings(
+        merchantId,
+        archivedBindings.filter { it.transport == PrinterTransport.USB.name },
+        PrinterTransport.USB,
+    ) { archived ->
+        ArchivedBindingIdentity(
+            archived.printerId,
+            archived.localBindingId,
+            archived.bindingVersion,
+            archived.archivedAt,
+        )
+    }
+
+    private suspend fun <T> applyArchivedBindings(
+        merchantId: String,
+        archivedBindings: List<T>,
+        transport: PrinterTransport,
+        identity: (T) -> ArchivedBindingIdentity,
+    ): ArchivedBindingCleanupResult<T> {
+        requireNumericId(merchantId)
+        val removed = mutableListOf<T>()
+        val deferred = mutableListOf<T>()
+        val now = clock()
+        database.withTransaction {
+            archivedBindings.forEach { archived ->
+                val archivedIdentity = identity(archived)
+                requireNumericId(archivedIdentity.printerId)
+                requireUuid(archivedIdentity.localBindingId)
+                require(
+                    archivedIdentity.bindingVersion > 0 &&
+                        archivedIdentity.archivedAt > 0,
+                )
+                val binding = dao.binding(merchantId, archivedIdentity.localBindingId)
+                    ?: return@forEach
+                if (
+                    binding.transport != transport.name ||
+                    binding.printerId != archivedIdentity.printerId ||
+                    binding.bindingVersion != archivedIdentity.bindingVersion
+                ) {
+                    return@forEach
+                }
+                check(
+                    dao.markDeletedPending(
+                        merchantId,
+                        archivedIdentity.localBindingId,
+                        BindingSyncStatus.PENDING_ARCHIVE.name,
+                        now,
+                    ) == 1,
+                )
+                dao.deleteBindingOperations(merchantId, archivedIdentity.localBindingId)
+                dao.deleteStatusReports(merchantId, archivedIdentity.localBindingId)
+                if (
+                    dao.activePrintingExecutionCount(
+                        merchantId,
+                        archivedIdentity.localBindingId,
+                    ) > 0
+                ) {
+                    deferred += archived
+                    return@forEach
+                }
+                check(
+                    dao.deleteArchivedBinding(
+                        merchantId,
+                        archivedIdentity.localBindingId,
+                        archivedIdentity.printerId,
+                        archivedIdentity.bindingVersion,
+                        transport.name,
+                    ) == 1,
+                )
+                removed += archived
+            }
+        }
+        return ArchivedBindingCleanupResult(removed, deferred)
     }
 
     suspend fun updateDisplayName(
@@ -468,3 +564,15 @@ class PrintingRepository(
         val NUMERIC_ID = Regex("^[1-9][0-9]{0,18}$")
     }
 }
+
+data class ArchivedBindingCleanupResult<T>(
+    val removed: List<T>,
+    val deferred: List<T>,
+)
+
+private data class ArchivedBindingIdentity(
+    val printerId: String,
+    val localBindingId: String,
+    val bindingVersion: Long,
+    val archivedAt: Long,
+)

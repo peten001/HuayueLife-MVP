@@ -20,6 +20,15 @@ import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 
+const SHARED_REMOVAL_CHANNELS = new Set<PrinterChannelType>([
+  'LOCAL_USB_ESCPOS',
+  'LOCAL_LAN_ESCPOS',
+  'CLOUD_FEIE',
+  'CLOUD_YILIAN',
+  'CLOUD_XINYE',
+  'CLOUD_GPRINTER',
+]);
+
 @Injectable()
 export class PrintingPrintersService {
   constructor(
@@ -293,6 +302,9 @@ export class PrintingPrintersService {
   ) {
     this.flags.assertTaskCenterEnabled();
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM merchants WHERE id = ${merchantId} FOR UPDATE`,
+      );
       const existing = await tx.printer.findFirst({
         where: { id, merchantId },
       });
@@ -302,41 +314,58 @@ export class PrintingPrintersService {
           message: '打印机不存在',
         });
       }
+      const usesSharedRemoval = SHARED_REMOVAL_CHANNELS.has(
+        existing.channelType,
+      );
+      const usesLegacyRemoval = !usesSharedRemoval;
       if (existing.deletedAt) {
         return {
           printerId: existing.id,
           archived: true,
           archivedAt: existing.deletedAt,
           status: 'OFFLINE' as const,
+          ...(usesLegacyRemoval
+            ? {}
+            : {
+                cancelledJobCount: 0,
+                removedCategoryBindingCount: 0,
+                clearedCheckoutDefault: false,
+                clearedKitchenDefault: false,
+                disabledRuleCount: 0,
+              }),
         };
       }
 
-      const activeJob = await tx.printJob.findFirst({
-        where: {
+      if (usesLegacyRemoval) {
+        return this.archiveWithLegacyBehavior(
+          tx,
           merchantId,
-          printerId: id,
-          status: { in: ['PENDING', 'CLAIMED', 'PRINTING', 'RETRY_WAIT'] },
-        },
-        select: { id: true },
-      });
-      if (activeJob) {
-        throw new BadRequestException({
-          code: PRINTING_ERROR_CODES.PRINTER_HAS_ACTIVE_JOBS,
-          message: '该打印机仍有正在处理的打印任务，暂时无法移除',
-        });
+          actorStaffId,
+          requestId,
+          existing,
+          reason,
+        );
       }
 
+      await this.assertNotPrinting(tx, merchantId, id);
       const archivedAt = new Date();
-      await tx.printRule.updateMany({
-        where: { merchantId, printerId: id, enabled: true },
-        data: { enabled: false, autoPrint: false },
-      });
+      const cancelledJobCount = await this.cancelUnstartedJobs(
+        tx,
+        merchantId,
+        id,
+        archivedAt,
+      );
+      const routingCleanup = await this.cleanupRoutingAndRules(tx, merchantId, id);
       await tx.merchantTerminal.updateMany({
         where: { merchantId, boundPrinterId: id },
         data: { boundPrinterId: null },
       });
       const changed = await tx.printer.updateMany({
-        where: { id, merchantId, deletedAt: null },
+        where: {
+          id,
+          merchantId,
+          deletedAt: null,
+        },
         data: {
           enabled: false,
           status: 'OFFLINE',
@@ -349,6 +378,10 @@ export class PrintingPrintersService {
           message: '打印机状态已变化，请刷新后重试',
         });
       }
+      const removalClosure = {
+        cancelledJobCount,
+        ...routingCleanup,
+      };
       await this.audit.record(
         {
           merchantId,
@@ -364,6 +397,7 @@ export class PrintingPrintersService {
               status: 'OFFLINE',
             }),
             archivedAt,
+            removalClosure,
           },
           reason,
           requestId,
@@ -375,8 +409,207 @@ export class PrintingPrintersService {
         archived: true,
         archivedAt,
         status: 'OFFLINE' as const,
+        ...removalClosure,
       };
     });
+  }
+
+  private async archiveWithLegacyBehavior(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    existing: {
+      id: bigint;
+      name: string;
+      channelType: PrinterChannelType;
+      paperWidth: string;
+      purpose: string;
+      enabled: boolean;
+      status: PrintingPrinterStatus;
+    },
+    reason?: string,
+  ) {
+    const activeJob = await tx.printJob.findFirst({
+      where: {
+        merchantId,
+        printerId: existing.id,
+        status: { in: ['PENDING', 'CLAIMED', 'PRINTING', 'RETRY_WAIT'] },
+      },
+      select: { id: true },
+    });
+    if (activeJob) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PRINTER_HAS_ACTIVE_JOBS,
+        message: '该打印机仍有正在处理的打印任务，暂时无法移除',
+      });
+    }
+
+    const archivedAt = new Date();
+    await tx.printRule.updateMany({
+      where: {
+        merchantId,
+        printerId: existing.id,
+        enabled: true,
+      },
+      data: { enabled: false, autoPrint: false },
+    });
+    await tx.merchantTerminal.updateMany({
+      where: { merchantId, boundPrinterId: existing.id },
+      data: { boundPrinterId: null },
+    });
+    const changed = await tx.printer.updateMany({
+      where: {
+        id: existing.id,
+        merchantId,
+        deletedAt: null,
+      },
+      data: {
+        enabled: false,
+        status: 'OFFLINE',
+        deletedAt: archivedAt,
+      },
+    });
+    if (changed.count !== 1) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.STATE_CONFLICT,
+        message: '打印机状态已变化，请刷新后重试',
+      });
+    }
+    await this.audit.record(
+      {
+        merchantId,
+        actorStaffId,
+        action: 'PRINTER_ARCHIVED',
+        resourceType: 'Printer',
+        resourceId: existing.id,
+        beforeData: this.auditView(existing),
+        afterData: {
+          ...this.auditView({
+            ...existing,
+            enabled: false,
+            status: 'OFFLINE',
+          }),
+          archivedAt,
+        },
+        reason,
+        requestId,
+      },
+      tx,
+    );
+    return {
+      printerId: existing.id,
+      archived: true,
+      archivedAt,
+      status: 'OFFLINE' as const,
+    };
+  }
+
+  private async assertNotPrinting(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    printerId: bigint,
+  ) {
+    const activeJobs = await tx.$queryRaw<Array<{ id: bigint; status: string }>>(
+      Prisma.sql`
+        SELECT id, status
+        FROM print_jobs
+        WHERE merchant_id = ${merchantId}
+          AND printer_id = ${printerId}
+          AND status IN ('PENDING', 'CLAIMED', 'PRINTING', 'RETRY_WAIT')
+        FOR UPDATE
+      `,
+    );
+    const unfinishedAttempts = await tx.$queryRaw<Array<{ id: bigint }>>(
+      Prisma.sql`
+        SELECT pa.id
+        FROM print_attempts pa
+        INNER JOIN print_jobs pj ON pj.id = pa.job_id
+        WHERE pj.merchant_id = ${merchantId}
+          AND pj.printer_id = ${printerId}
+          AND pa.finished_at IS NULL
+        FOR UPDATE
+      `,
+    );
+    if (
+      activeJobs.some((job) => job.status === 'PRINTING') ||
+      unfinishedAttempts.length > 0
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PRINTER_PRINTING_IN_PROGRESS,
+        message: '打印机正在执行任务，请等待打印完成后再移除',
+      });
+    }
+  }
+
+  private async cancelUnstartedJobs(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    printerId: bigint,
+    archivedAt: Date,
+  ) {
+    const cancelledJobs = await tx.printJob.updateMany({
+      where: {
+        merchantId,
+        printerId,
+        status: { in: ['PENDING', 'CLAIMED', 'RETRY_WAIT'] },
+      },
+      data: {
+        status: 'CANCELLED',
+        completedAt: archivedAt,
+        cancelledAt: archivedAt,
+        claimedAt: null,
+        claimedByTerminalId: null,
+        leaseExpiresAt: null,
+        retryBlocked: false,
+        lastErrorCode: 'PRINTER_ARCHIVED',
+        lastErrorMessage: '打印机已移除，任务已自动取消',
+        leaseVersion: { increment: 1 },
+      },
+    });
+    return cancelledJobs.count;
+  }
+
+  private async cleanupRoutingAndRules(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    printerId: bigint,
+  ) {
+    const removedCategoryBindings = await tx.printerCategoryBinding.deleteMany({
+      where: { merchantId, printerId },
+    });
+    const routing = await tx.merchantPrintingRouting.findUnique({
+      where: { merchantId },
+      select: {
+        checkoutDefaultPrinterId: true,
+        defaultKitchenPrinterId: true,
+      },
+    });
+    const clearedCheckoutDefault = routing?.checkoutDefaultPrinterId === printerId;
+    const clearedKitchenDefault = routing?.defaultKitchenPrinterId === printerId;
+    if (routing && (clearedCheckoutDefault || clearedKitchenDefault)) {
+      await tx.merchantPrintingRouting.update({
+        where: { merchantId },
+        data: {
+          checkoutDefaultPrinterId: clearedCheckoutDefault ? null : undefined,
+          defaultKitchenPrinterId: clearedKitchenDefault ? null : undefined,
+        },
+      });
+    }
+    const disabledRules = await tx.printRule.updateMany({
+      where: {
+        merchantId,
+        printerId,
+        OR: [{ enabled: true }, { autoPrint: true }],
+      },
+      data: { enabled: false, autoPrint: false },
+    });
+    return {
+      removedCategoryBindingCount: removedCategoryBindings.count,
+      clearedCheckoutDefault,
+      clearedKitchenDefault,
+      disabledRuleCount: disabledRules.count,
+    };
   }
 
   async requireOwned(merchantId: bigint, id: bigint) {

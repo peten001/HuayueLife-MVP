@@ -175,6 +175,24 @@ interface V2PrintingDao {
         updatedAt: Long,
     ): Int
 
+    @Query(
+        """
+        DELETE FROM local_printer_bindings
+        WHERE merchantId = :merchantId
+          AND localBindingId = :localBindingId
+          AND printerId = :printerId
+          AND bindingVersion = :bindingVersion
+          AND transport = :transport
+        """,
+    )
+    suspend fun deleteArchivedBinding(
+        merchantId: String,
+        localBindingId: String,
+        printerId: String,
+        bindingVersion: Long,
+        transport: String,
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertBindingOperation(operation: PendingBindingOperationEntity)
 
@@ -194,6 +212,17 @@ interface V2PrintingDao {
 
     @Query("DELETE FROM pending_binding_operations WHERE operationId = :operationId")
     suspend fun deleteBindingOperation(operationId: String): Int
+
+    @Query(
+        """
+        DELETE FROM pending_binding_operations
+        WHERE merchantId = :merchantId AND localBindingId = :localBindingId
+        """,
+    )
+    suspend fun deleteBindingOperations(
+        merchantId: String,
+        localBindingId: String,
+    ): Int
 
     @Query(
         """
@@ -243,6 +272,17 @@ interface V2PrintingDao {
 
     @Query("DELETE FROM pending_status_reports WHERE reportId = :reportId")
     suspend fun deleteStatusReport(reportId: String): Int
+
+    @Query(
+        """
+        DELETE FROM pending_status_reports
+        WHERE merchantId = :merchantId AND localBindingId = :localBindingId
+        """,
+    )
+    suspend fun deleteStatusReports(
+        merchantId: String,
+        localBindingId: String,
+    ): Int
 
     @Query(
         """
@@ -301,6 +341,19 @@ interface V2PrintingDao {
         merchantId: String,
         jobId: String,
     ): PrintExecutionLedgerEntity?
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM print_execution_ledger
+        WHERE merchantId = :merchantId
+          AND localBindingId = :localBindingId
+          AND state = 'PRINTING'
+        """,
+    )
+    suspend fun activePrintingExecutionCount(
+        merchantId: String,
+        localBindingId: String,
+    ): Int
 
     @Query(
         """
