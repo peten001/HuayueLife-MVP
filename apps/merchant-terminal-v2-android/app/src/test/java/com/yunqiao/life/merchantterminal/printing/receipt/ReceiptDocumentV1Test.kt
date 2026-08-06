@@ -1,18 +1,25 @@
 package com.yunqiao.life.merchantterminal.printing.receipt
 
+import android.graphics.Bitmap
 import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.printing.UsbPrinterException
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ReceiptDocumentV1Test {
     @Test
-    fun `parses and renders controlled multilingual order snapshot`() {
+    fun `parses and renders text-only controlled multilingual order snapshot`() {
         val receipt = ReceiptDocumentParser.parse(orderJson())
         assertEquals(ReceiptType.ORDER_CUSTOMER, receipt.receiptType)
         assertEquals("Phở bò", receipt.items.single().nameVi)
@@ -29,14 +36,14 @@ class ReceiptDocumentV1Test {
         )
         try {
             assertEquals(384, bitmap.width)
-            assertTrue(bitmap.height > 250)
+            assertEquals("Order height excludes the former QR and Job area.", 775, bitmap.height)
         } finally {
             bitmap.recycle()
         }
     }
 
     @Test
-    fun `supports table bill context`() {
+    fun `renders text-only table bill context`() {
         val receipt = ReceiptDocumentParser.parse(tableJson())
         assertEquals(ReceiptType.TABLE_BILL, receipt.receiptType)
         assertEquals(listOf("A-1", "A-2"), receipt.tableSession?.orderNos)
@@ -44,6 +51,16 @@ class ReceiptDocumentV1Test {
         assertEquals(3_000L, receipt.totals.roundingAmount)
         assertEquals(17_000L, receipt.totals.receivedAmount)
         assertEquals(17_000L, receipt.totals.total)
+        val bitmap = ReceiptDocumentRenderer.render(
+            receipt,
+            renderConfig(),
+        )
+        try {
+            assertEquals(384, bitmap.width)
+            assertEquals("Table height excludes the former QR and Job area.", 671, bitmap.height)
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     @Test
@@ -58,7 +75,20 @@ class ReceiptDocumentV1Test {
                 printedAtEpochMs = 1_700_000_000_000,
             ),
         )
-        bitmap.recycle()
+        try {
+            assertEquals(576, bitmap.width)
+            assertTrue(bitmap.height > 250)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun `preserves both footer lines and renders deterministically for order and table receipts`() {
+        listOf(
+            ReceiptDocumentParser.parse(orderJson()),
+            ReceiptDocumentParser.parse(tableJson()),
+        ).forEach(::assertFooterLinesAndDeterminism)
     }
 
     @Test
@@ -128,6 +158,47 @@ class ReceiptDocumentV1Test {
             )
         }
         assertEquals(UsbPrintErrorCode.INVALID_PRINT_WIDTH, error.code)
+    }
+
+    private fun assertFooterLinesAndDeterminism(receipt: ReceiptDocumentV1) {
+        val baseFooter = ReceiptFooter(zh = "Receipt footer A", vi = "Footer line A")
+        val first = ReceiptDocumentRenderer.render(receipt.copy(footer = baseFooter), renderConfig())
+        val repeated = ReceiptDocumentRenderer.render(receipt.copy(footer = baseFooter), renderConfig())
+        val changedZh = ReceiptDocumentRenderer.render(
+            receipt.copy(footer = baseFooter.copy(zh = "Receipt footer B")),
+            renderConfig(),
+        )
+        val changedVi = ReceiptDocumentRenderer.render(
+            receipt.copy(footer = baseFooter.copy(vi = "Footer line B")),
+            renderConfig(),
+        )
+        try {
+            val firstPixels = pixels(first)
+            assertEquals(first.width, repeated.width)
+            assertEquals(first.height, repeated.height)
+            assertArrayEquals(firstPixels, pixels(repeated))
+            assertEquals(first.height, changedZh.height)
+            assertFalse(firstPixels.contentEquals(pixels(changedZh)))
+            assertEquals(first.height, changedVi.height)
+            assertFalse(firstPixels.contentEquals(pixels(changedVi)))
+        } finally {
+            first.recycle()
+            repeated.recycle()
+            changedZh.recycle()
+            changedVi.recycle()
+        }
+    }
+
+    private fun renderConfig() = ProductionReceiptRenderConfig(
+        paperWidth = PaperWidth.MM_58,
+        customDots = null,
+        jobId = "123",
+        contentHash = "a".repeat(64),
+        printedAtEpochMs = 1_700_000_000_000,
+    )
+
+    private fun pixels(bitmap: Bitmap): IntArray = IntArray(bitmap.width * bitmap.height).also { pixels ->
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
     }
 
     private fun orderJson() = """

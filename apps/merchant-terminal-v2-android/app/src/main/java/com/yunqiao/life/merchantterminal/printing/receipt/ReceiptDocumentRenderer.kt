@@ -9,7 +9,6 @@ import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.printing.UsbPrinterException
 import com.yunqiao.life.merchantterminal.printing.escpos.PrintWidthValidator
-import com.yunqiao.life.merchantterminal.printing.render.QrCodeBitmapRenderer
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -28,8 +27,8 @@ data class ProductionReceiptRenderConfig(
 /** Bitmap renderer for the two controlled V1 receipt schemas. */
 object ReceiptDocumentRenderer {
     fun render(document: ReceiptDocumentV1, config: ProductionReceiptRenderConfig): Bitmap {
-        // Server job identifiers are opaque (UUIDs are valid); only constrain their printable
-        // representation instead of incorrectly treating a non-numeric id as a bitmap failure.
+        // Keep validating the production render contract even though job metadata is no longer
+        // drawn on the customer receipt; server job identifiers remain opaque and may be UUIDs.
         require(config.jobId.length in 1..128 && config.jobId.none { it.isISOControl() })
         require(config.contentHash.matches(Regex("^[0-9a-f]{64}$")))
         val width = PrintWidthValidator.resolve(config.paperWidth, config.customDots)
@@ -132,8 +131,7 @@ object ReceiptDocumentRenderer {
 
         val gap = (6f * scale).coerceAtLeast(4f)
         val textHeight = rows.sumOf { ceil(it.paint.fontSpacing + gap).toInt() }
-        val qrSize = minOf((width * 0.35f).toInt(), 220).coerceAtLeast(128)
-        val requestedHeight = (margin * 2 + textHeight + qrSize + normal.fontSpacing * 3).toInt()
+        val requestedHeight = (margin * 2 + textHeight).toInt()
         require(requestedHeight in 1..MAX_HEIGHT) {
             "Receipt exceeds the controlled raster height limit."
         }
@@ -152,15 +150,6 @@ object ReceiptDocumentRenderer {
             canvas.drawText(row.text, if (row.centered) width / 2f else margin, y, drawPaint)
             y += row.paint.fontMetrics.descent + gap
         }
-        val qrPayload = document.verificationCode
-            ?.takeIf(String::isNotBlank)
-            ?: "YQ:J:${config.jobId}:${config.contentHash.take(16)}"
-        val qr = QrCodeBitmapRenderer.render(qrPayload, qrSize)
-        canvas.drawBitmap(qr, (width - qrSize) / 2f, y, null)
-        y += qrSize + normal.fontSpacing
-        qr.recycle()
-        val centered = Paint(normal).apply { textAlign = Paint.Align.CENTER }
-        canvas.drawText("Job ${config.jobId}", width / 2f, y, centered)
         return bitmap
     }
 
