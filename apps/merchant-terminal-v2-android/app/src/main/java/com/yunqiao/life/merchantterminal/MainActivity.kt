@@ -3,8 +3,11 @@ package com.yunqiao.life.merchantterminal
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -28,10 +31,13 @@ import com.yunqiao.life.merchantterminal.presentation.PrinterDevicesController
 import com.yunqiao.life.merchantterminal.presentation.PrinterDevicesEffect
 import com.yunqiao.life.merchantterminal.presentation.toUiState
 import com.yunqiao.life.merchantterminal.printing.bluetooth.BluetoothPermissionPolicy
+import com.yunqiao.life.merchantterminal.printing.usb.UsbAttachRecoveryDecider
+import com.yunqiao.life.merchantterminal.printing.usb.UsbAttachRecoveryDecision
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionController
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionRequestResult
 import com.yunqiao.life.merchantterminal.recovery.V2RecoveryScheduler
+import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import com.yunqiao.life.merchantterminal.security.MerchantSessionCoordinator
 import com.yunqiao.life.merchantterminal.security.MerchantSessionProcessScope
 import com.yunqiao.life.merchantterminal.security.MerchantWebSessionContract
@@ -128,11 +134,23 @@ class MainActivity :
         )
         usbPermissionController = UsbPermissionController(
             activity = this,
-            onPermissionResult = printerDevicesController::onUsbPermissionResult,
-            onPermissionTimeout = printerDevicesController::onUsbPermissionTimeout,
+            onPermissionResult = { deviceName, granted ->
+                printerDevicesController.onUsbPermissionResult(deviceName, granted)
+                if (granted) {
+                    recoverUsbDeviceAfterPermission(deviceName)
+                } else {
+                    StartupTrace.event("USB_PERMISSION_DENIED")
+                }
+            },
+            onPermissionTimeout = { deviceName ->
+                printerDevicesController.onUsbPermissionTimeout(deviceName)
+                StartupTrace.event("USB_PERMISSION_TIMEOUT")
+            },
             onDeviceAttached = { printerDevicesController.refresh() },
             onDeviceDetached = { printerDevicesController.refresh() },
         )
+        usbPermissionController.handlePermissionResult(intent)
+        handleUsbDeviceAttachedIntent(intent)
         createWebView()
         createOverlay()
         observeControllerEffects()
@@ -170,6 +188,7 @@ class MainActivity :
         super.onNewIntent(intent)
         setIntent(intent)
         usbPermissionController.handlePermissionResult(intent)
+        handleUsbDeviceAttachedIntent(intent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -413,6 +432,73 @@ class MainActivity :
         }
     }
 
+    private fun handleUsbDeviceAttachedIntent(intent: Intent?) {
+        if (intent?.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) return
+        val attachedDeviceName = intent.attachedUsbDeviceName() ?: return
+        val descriptors = runCatching(usbInspector::scan).getOrElse {
+            StartupTrace.event("USB_ATTACH_SCAN_FAILED")
+            return
+        }
+        usbPermissionController.reconcileAttachedDevices(
+            descriptors.mapTo(mutableSetOf()) { it.deviceName },
+        )
+        when (
+            val decision = UsbAttachRecoveryDecider.decide(
+                action = intent.action,
+                attachedDeviceName = attachedDeviceName,
+                scannedDevices = descriptors,
+                pendingDeviceName = usbPermissionController.pendingDeviceName(),
+            )
+        ) {
+            UsbAttachRecoveryDecision.Ignore -> Unit
+            is UsbAttachRecoveryDecision.RecoverGranted -> {
+                recoverUsbDeviceAfterPermission(decision.deviceName)
+            }
+            is UsbAttachRecoveryDecision.RequestPermission -> {
+                requestAttachedUsbPermission(decision.deviceName)
+            }
+        }
+    }
+
+    private fun requestAttachedUsbPermission(deviceName: String) {
+        val device = usbInspector.findDevice(deviceName) ?: return
+        val outcome = usbPermissionController.requestPermission(device)
+        when (outcome.result) {
+            UsbPermissionRequestResult.ALREADY_GRANTED -> Unit
+            UsbPermissionRequestResult.REQUEST_STARTED -> {
+                printerDevicesController.onUsbPermissionRequestStarted(deviceName)
+                StartupTrace.event("USB_ATTACH_PERMISSION_REQUEST_STARTED")
+            }
+            UsbPermissionRequestResult.REQUEST_ALREADY_PENDING -> {
+                val pendingDeviceName = outcome.pendingDeviceName ?: deviceName
+                printerDevicesController.onUsbPermissionRequestAlreadyPending(pendingDeviceName)
+                StartupTrace.event("USB_ATTACH_PERMISSION_REQUEST_PENDING")
+            }
+            UsbPermissionRequestResult.REQUEST_FAILED -> {
+                printerDevicesController.onUsbPermissionRequestFailed(deviceName)
+                StartupTrace.event("USB_ATTACH_PERMISSION_REQUEST_FAILED")
+            }
+        }
+    }
+
+    private fun recoverUsbDeviceAfterPermission(deviceName: String) {
+        val descriptors = runCatching(usbInspector::scan).getOrElse {
+            StartupTrace.event("USB_ATTACH_RECOVERY_SCAN_FAILED")
+            return
+        }
+        usbPermissionController.reconcileAttachedDevices(
+            descriptors.mapTo(mutableSetOf()) { it.deviceName },
+        )
+        val descriptor = descriptors.firstOrNull { it.deviceName == deviceName } ?: return
+        if (!descriptor.hasPermission || descriptor.bulkOutOptions.isEmpty()) return
+        if (graph.credentialStore.readCredential()?.isUsable() == true ||
+            graph.merchantSessionTokenStore.hasCredential()
+        ) {
+            V2RecoveryScheduler.schedule(this, "usb-attached-permission-granted")
+            StartupTrace.event("USB_ATTACH_RECOVERY_SCHEDULED")
+        }
+    }
+
     private fun observeMerchantSession() {
         val webView = terminalWebView ?: return
         if (!originPolicy.isTrustedPage(webView.url)) {
@@ -483,6 +569,15 @@ class MainActivity :
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun Intent.attachedUsbDeviceName(): String? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+        } else {
+            getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+        }
+    }.getOrNull()?.deviceName
 
     private companion object {
         const val PRINTER_DEVICES_ENTRY_COMPAT_SCRIPT = """
