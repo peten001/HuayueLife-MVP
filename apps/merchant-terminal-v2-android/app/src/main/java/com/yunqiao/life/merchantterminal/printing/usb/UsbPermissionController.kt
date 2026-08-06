@@ -35,7 +35,7 @@ fun interface UsbPermissionTimeoutScheduler {
 
 internal const val USB_PERMISSION_TIMEOUT_MS = 15_000L
 
-private class AndroidUsbPermissionTimeoutScheduler : UsbPermissionTimeoutScheduler {
+internal class AndroidUsbPermissionTimeoutScheduler : UsbPermissionTimeoutScheduler {
     private val handler = Handler(Looper.getMainLooper())
 
     override fun schedule(
@@ -48,15 +48,34 @@ private class AndroidUsbPermissionTimeoutScheduler : UsbPermissionTimeoutSchedul
     }
 }
 
+internal fun requestUsbPermission(
+    manager: UsbManager?,
+    device: UsbDevice,
+    pendingIntent: PendingIntent,
+    tracker: UsbPermissionRequestTracker,
+): UsbPermissionRequestOutcome {
+    if (manager == null) {
+        return UsbPermissionRequestOutcome(UsbPermissionRequestResult.REQUEST_FAILED)
+    }
+    return tracker.begin(
+        deviceName = device.deviceName,
+        alreadyGranted = manager.hasPermission(device),
+    ) {
+        runCatching { manager.requestPermission(device, pendingIntent) }.isSuccess
+    }
+}
+
 internal class UsbPermissionRequestTracker(
     private val onPermissionResult: (deviceName: String, granted: Boolean) -> Unit,
     private val onPermissionTimeout: (deviceName: String) -> Unit,
     private val timeoutScheduler: UsbPermissionTimeoutScheduler,
 ) {
+    @Volatile
     var pendingDeviceName: String? = null
         private set
     private var timeoutCancellation: UsbPermissionTimeoutCancellation? = null
 
+    @Synchronized
     fun begin(
         deviceName: String,
         alreadyGranted: Boolean,
@@ -80,10 +99,7 @@ internal class UsbPermissionRequestTracker(
             return UsbPermissionRequestOutcome(UsbPermissionRequestResult.REQUEST_FAILED)
         }
         timeoutCancellation = timeoutScheduler.schedule(USB_PERMISSION_TIMEOUT_MS) {
-            if (pendingDeviceName == deviceName) {
-                clearPending()
-                onPermissionTimeout(deviceName)
-            }
+            completeTimeout(deviceName)
         }
         return UsbPermissionRequestOutcome(
             UsbPermissionRequestResult.REQUEST_STARTED,
@@ -91,6 +107,7 @@ internal class UsbPermissionRequestTracker(
         )
     }
 
+    @Synchronized
     fun complete(deviceName: String, granted: Boolean): Boolean {
         if (pendingDeviceName != null && pendingDeviceName != deviceName) return false
         clearPending()
@@ -98,16 +115,26 @@ internal class UsbPermissionRequestTracker(
         return true
     }
 
+    @Synchronized
     fun onDetached(deviceName: String?) {
         if (deviceName != null && pendingDeviceName == deviceName) clearPending()
     }
 
+    @Synchronized
     fun reconcileAttachedDevices(deviceNames: Set<String>) {
         if (pendingDeviceName !in deviceNames) clearPending()
     }
 
+    @Synchronized
     fun clear() {
         clearPending()
+    }
+
+    @Synchronized
+    private fun completeTimeout(deviceName: String) {
+        if (pendingDeviceName != deviceName) return
+        clearPending()
+        onPermissionTimeout(deviceName)
     }
 
     private fun clearPending() {
@@ -175,26 +202,18 @@ class UsbPermissionController(
     }
 
     fun requestPermission(device: UsbDevice): UsbPermissionRequestOutcome {
-        val manager = usbManager ?: return UsbPermissionRequestOutcome(
-            UsbPermissionRequestResult.REQUEST_FAILED,
-        )
-        return requestTracker.begin(
-            deviceName = device.deviceName,
-            alreadyGranted = manager.hasPermission(device),
-        ) {
-            val permissionIntent = Intent(activity, activity::class.java).apply {
-                action = ACTION_USB_PERMISSION
-                setPackage(activity.packageName)
-                putExtra(EXTRA_REQUESTED_DEVICE_NAME, device.deviceName)
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                activity,
-                USB_PERMISSION_REQUEST_CODE,
-                permissionIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            runCatching { manager.requestPermission(device, pendingIntent) }.isSuccess
+        val permissionIntent = Intent(activity, activity::class.java).apply {
+            action = ACTION_USB_PERMISSION
+            setPackage(activity.packageName)
+            putExtra(EXTRA_REQUESTED_DEVICE_NAME, device.deviceName)
         }
+        val pendingIntent = PendingIntent.getActivity(
+            activity,
+            USB_PERMISSION_REQUEST_CODE,
+            permissionIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        return requestUsbPermission(usbManager, device, pendingIntent, requestTracker)
     }
 
     /** Call from Activity.onNewIntent. Returns true when the intent was a permission result. */

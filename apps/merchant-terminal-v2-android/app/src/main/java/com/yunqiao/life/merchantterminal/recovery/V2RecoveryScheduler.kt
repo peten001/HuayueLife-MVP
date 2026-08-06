@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.yunqiao.life.merchantterminal.TerminalApplication
 import com.yunqiao.life.merchantterminal.runtime.ConnectorRuntimeStatus
+import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import com.yunqiao.life.merchantterminal.runtime.TerminalRuntime
 import com.yunqiao.life.merchantterminal.service.V2PrinterService
 import java.util.concurrent.TimeUnit
@@ -21,6 +22,8 @@ object V2RecoveryScheduler {
     const val UNIQUE_WORK_NAME = "yunqiao-terminal-v2-connector-recovery"
     const val CREDENTIAL_RECOVERY_WORK_NAME =
         "yunqiao-terminal-v2-credential-recovery"
+    const val USB_PERMISSION_RECOVERY_WORK_NAME =
+        "yunqiao-usb-permission-recovery"
 
     fun schedule(context: Context, reason: String) {
         enqueue(context, UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP)
@@ -28,6 +31,20 @@ object V2RecoveryScheduler {
 
     fun scheduleCredentialRecovery(context: Context) {
         enqueue(context, CREDENTIAL_RECOVERY_WORK_NAME, ExistingWorkPolicy.REPLACE)
+    }
+
+    fun scheduleUsbPermissionRecovery(context: Context, reason: String) {
+        val request = OneTimeWorkRequestBuilder<UsbUnlockPermissionRecoveryWorker>()
+            .setInitialDelay(250, TimeUnit.MILLISECONDS)
+            .addTag(USB_PERMISSION_RECOVERY_WORK_NAME)
+            .build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+            USB_PERMISSION_RECOVERY_WORK_NAME,
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
+        val safeReason = reason.replace(Regex("[^A-Za-z0-9_.-]"), "_").take(80)
+        StartupTrace.event("USB_UNLOCK_RECOVERY_SCHEDULED reason=$safeReason")
     }
 
     private fun enqueue(
@@ -56,6 +73,8 @@ object V2RecoveryScheduler {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(UNIQUE_WORK_NAME)
         WorkManager.getInstance(context.applicationContext)
             .cancelUniqueWork(CREDENTIAL_RECOVERY_WORK_NAME)
+        WorkManager.getInstance(context.applicationContext)
+            .cancelUniqueWork(USB_PERMISSION_RECOVERY_WORK_NAME)
     }
 }
 
@@ -96,8 +115,42 @@ class V2ConnectorRecoveryWorker(
     }
 }
 
+internal data class TerminalRecoverySchedulePlan(
+    val connectorRecovery: Boolean,
+    val usbPermissionRecovery: Boolean,
+)
+
+internal object TerminalRecoveryActionPolicy {
+    fun plan(action: String?): TerminalRecoverySchedulePlan = when (action) {
+        Intent.ACTION_BOOT_COMPLETED,
+        Intent.ACTION_LOCKED_BOOT_COMPLETED,
+        -> TerminalRecoverySchedulePlan(
+            connectorRecovery = true,
+            usbPermissionRecovery = true,
+        )
+        Intent.ACTION_USER_UNLOCKED -> TerminalRecoverySchedulePlan(
+            connectorRecovery = false,
+            usbPermissionRecovery = true,
+        )
+        else -> TerminalRecoverySchedulePlan(
+            connectorRecovery = true,
+            usbPermissionRecovery = false,
+        )
+    }
+}
+
 class TerminalRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        V2RecoveryScheduler.schedule(context, intent?.action.orEmpty().take(80))
+        val action = intent?.action
+        val plan = TerminalRecoveryActionPolicy.plan(action)
+        if (plan.connectorRecovery) {
+            V2RecoveryScheduler.schedule(context, action.orEmpty().take(80))
+        }
+        if (plan.usbPermissionRecovery) {
+            V2RecoveryScheduler.scheduleUsbPermissionRecovery(
+                context,
+                action.orEmpty().take(80),
+            )
+        }
     }
 }
