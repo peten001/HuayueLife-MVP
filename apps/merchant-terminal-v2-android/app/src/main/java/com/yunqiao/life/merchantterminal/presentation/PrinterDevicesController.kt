@@ -19,16 +19,22 @@ import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.printing.PrintResult
 import com.yunqiao.life.merchantterminal.printing.PrintableDocument
 import com.yunqiao.life.merchantterminal.printing.PrinterConnectionConfig
+import com.yunqiao.life.merchantterminal.printing.PrinterCandidate
+import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.printing.bluetooth.BluetoothClassicDiscovery
 import com.yunqiao.life.merchantterminal.printing.bluetooth.BluetoothDiscoveryState
 import com.yunqiao.life.merchantterminal.printing.escpos.EscPosRasterEncoder
 import com.yunqiao.life.merchantterminal.printing.lan.LanPrinterDiscovery
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
+import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceDescriptor
 import com.yunqiao.life.merchantterminal.runtime.ConnectorRuntimeStatus
 import com.yunqiao.life.merchantterminal.runtime.TerminalRuntime
 import com.yunqiao.life.merchantterminal.security.TerminalIdentityStore
+import com.yunqiao.life.merchantterminal.security.TerminalCredential
 import com.yunqiao.life.merchantterminal.security.V2CredentialStore
 import com.yunqiao.life.merchantterminal.storage.PrintingRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,6 +78,16 @@ enum class PrinterOperation {
     ARCHIVED,
 }
 
+enum class UsbPermissionState {
+    IDLE,
+    REQUIRED,
+    REQUESTING,
+    GRANTED,
+    DENIED,
+    FAILED,
+    TIMED_OUT,
+}
+
 data class PrinterCandidateCore(
     val identity: String,
     val displayName: String,
@@ -80,6 +96,37 @@ data class PrinterCandidateCore(
     val paired: Boolean = false,
     val available: Boolean = true,
     val config: LocalTransportConfig,
+)
+
+internal fun usbCandidatesFrom(
+    devices: List<UsbDeviceDescriptor>,
+): List<PrinterCandidateCore> = devices.flatMap { device ->
+    device.bulkOutOptions.take(1).map { option ->
+        PrinterCandidateCore(
+            identity = device.deviceName,
+            displayName = device.displayName,
+            transport = PrinterTransport.USB,
+            endpoint = "VID ${device.vendorId} / PID ${device.productId}",
+            available = device.hasPermission,
+            config = LocalTransportConfig.Usb(
+                vendorId = device.vendorId,
+                productId = device.productId,
+                deviceName = device.deviceName,
+                interfaceIndex = option.interfaceIndex,
+                interfaceId = option.interfaceId,
+                alternateSetting = option.alternateSetting,
+                interfaceClass = device.interfaces
+                    .getOrNull(option.interfaceIndex)
+                    ?.interfaceClass,
+                endpointAddress = option.endpointAddress,
+            ),
+        )
+    }
+}
+
+private data class CandidateDiscovery(
+    val candidates: List<PrinterCandidateCore>,
+    val userMessage: String? = null,
 )
 
 data class PrinterDevicesCoreState(
@@ -97,6 +144,7 @@ data class PrinterDevicesCoreState(
     val serviceRunning: Boolean = false,
     val terminalAuthenticated: Boolean = false,
     val operation: PrinterOperation = PrinterOperation.IDLE,
+    val usbPermissionState: UsbPermissionState = UsbPermissionState.IDLE,
     val printerNameDraft: String = "",
     val paperWidth: PaperWidth = PaperWidth.MM_80,
     val archiveConfirmationVisible: Boolean = false,
@@ -120,6 +168,14 @@ class PrinterDevicesController(
     private val lanDiscovery: LanPrinterDiscovery = LanPrinterDiscovery(),
     private val bluetoothDiscovery: BluetoothClassicDiscovery = BluetoothClassicDiscovery(context),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val usbScanner: () -> List<UsbDeviceDescriptor> = usbInspector::scan,
+    private val lanScanner: suspend () -> List<PrinterCandidate> = lanDiscovery::discover,
+    private val printOnce: suspend (LocalPrinterBinding, PrintableDocument) -> PrintResult =
+        transportExecutor::printOnce,
+    private val saveBinding: suspend (LocalPrinterBinding) -> Unit = repository::addLocalBinding,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val readCredential: () -> TerminalCredential? = credentialStore::readCredential,
+    private val terminalInstanceId: suspend () -> String = identityStore::terminalInstanceId,
 ) {
     private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -202,11 +258,20 @@ class PrinterDevicesController(
             manualLanPort = 9_100,
             printerNameDraft = "",
             operation = PrinterOperation.IDLE,
+            usbPermissionState = UsbPermissionState.IDLE,
+            userMessage = null,
         )
     }
 
     fun selectTransport(transport: PrinterTransport) {
-        mutableState.value = mutableState.value.copy(selectedTransport = transport)
+        mutableState.value = mutableState.value.copy(
+            selectedTransport = transport,
+            candidates = emptyList(),
+            selectedCandidateId = null,
+            printerNameDraft = "",
+            usbPermissionState = UsbPermissionState.IDLE,
+            userMessage = null,
+        )
     }
 
     fun continueAdd() {
@@ -222,36 +287,161 @@ class PrinterDevicesController(
 
     fun refresh() {
         scope.launch {
+            val transport = mutableState.value.selectedTransport
             mutableState.value = mutableState.value.copy(
                 operation = PrinterOperation.DISCOVERING,
                 userMessage = null,
             )
-            val candidates = when (mutableState.value.selectedTransport) {
-                PrinterTransport.USB -> discoverUsb()
-                PrinterTransport.LAN -> discoverLan()
-                PrinterTransport.BLUETOOTH -> discoverBluetooth()
+            try {
+                val discovery = when (transport) {
+                    PrinterTransport.USB -> discoverUsb()
+                    PrinterTransport.LAN -> CandidateDiscovery(discoverLan())
+                    PrinterTransport.BLUETOOTH -> CandidateDiscovery(
+                        discoverBluetooth(),
+                        mutableState.value.userMessage,
+                    )
+                }
+                val previousSelection = mutableState.value.selectedCandidateId
+                val selected = previousSelection?.let { identity ->
+                    discovery.candidates.firstOrNull { it.identity == identity }
+                }
+                val staleMessage = if (previousSelection != null && selected == null) {
+                    applicationContext.getString(
+                        if (transport == PrinterTransport.USB) {
+                            R.string.controller_usb_device_missing
+                        } else {
+                            R.string.controller_printer_list_updated
+                        },
+                    )
+                } else {
+                    null
+                }
+                mutableState.value = mutableState.value.copy(
+                    candidates = discovery.candidates,
+                    selectedCandidateId = selected?.identity,
+                    printerNameDraft = if (previousSelection != null && selected == null) {
+                        ""
+                    } else {
+                        mutableState.value.printerNameDraft
+                    },
+                    operation = PrinterOperation.IDLE,
+                    usbPermissionState = permissionStateAfterRefresh(
+                        transport,
+                        selected,
+                        mutableState.value.usbPermissionState,
+                    ),
+                    userMessage = discovery.userMessage ?: staleMessage,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.FAILURE,
+                    userMessage = applicationContext.getString(
+                        when (transport) {
+                            PrinterTransport.USB -> R.string.controller_usb_scan_failed
+                            PrinterTransport.LAN -> R.string.lan_search_failure
+                            PrinterTransport.BLUETOOTH -> R.string.bluetooth_empty
+                        },
+                    ),
+                )
+            } finally {
+                if (mutableState.value.operation == PrinterOperation.DISCOVERING) {
+                    mutableState.value = mutableState.value.copy(operation = PrinterOperation.IDLE)
+                }
             }
-            mutableState.value = mutableState.value.copy(
-                candidates = candidates,
-                operation = PrinterOperation.IDLE,
-            )
         }
     }
 
     fun selectCandidate(identity: String) {
-        val selected = mutableState.value.candidates.firstOrNull { it.identity == identity } ?: return
-        if (
-            selected.config is LocalTransportConfig.Usb &&
-            usbInspector.scan().firstOrNull { it.deviceName == selected.config.deviceName }
-                ?.hasPermission == false
-        ) {
-            selected.config.deviceName?.let {
-                mutableEffects.tryEmit(PrinterDevicesEffect.RequestUsbPermission(it))
-            }
+        val selected = mutableState.value.candidates.firstOrNull { it.identity == identity }
+        if (selected == null) {
+            mutableState.value = mutableState.value.copy(
+                selectedCandidateId = null,
+                printerNameDraft = "",
+                operation = PrinterOperation.IDLE,
+                usbPermissionState = UsbPermissionState.IDLE,
+                userMessage = applicationContext.getString(
+                    if (mutableState.value.selectedTransport == PrinterTransport.USB) {
+                        R.string.controller_usb_device_missing
+                    } else {
+                        R.string.controller_printer_list_updated
+                    },
+                ),
+            )
+            return
         }
         mutableState.value = mutableState.value.copy(
             selectedCandidateId = identity,
             printerNameDraft = selected.displayName.take(80),
+            operation = PrinterOperation.IDLE,
+            usbPermissionState = if (
+                selected.transport == PrinterTransport.USB && selected.available
+            ) {
+                UsbPermissionState.GRANTED
+            } else if (selected.transport == PrinterTransport.USB) {
+                UsbPermissionState.REQUIRED
+            } else {
+                UsbPermissionState.IDLE
+            },
+            userMessage = null,
+        )
+        if (selected.transport == PrinterTransport.USB) requestUsbPermission(identity)
+    }
+
+    fun onUsbPermissionRequestStarted(deviceName: String) {
+        if (!isSelectedUsbDevice(deviceName)) return
+        mutableState.value = mutableState.value.copy(
+            operation = PrinterOperation.CONNECTING,
+            usbPermissionState = UsbPermissionState.REQUESTING,
+            userMessage = applicationContext.getString(R.string.usb_permission_waiting),
+        )
+    }
+
+    fun onUsbPermissionRequestAlreadyPending(deviceName: String) {
+        onUsbPermissionRequestStarted(deviceName)
+    }
+
+    fun onUsbPermissionRequestFailed(deviceName: String?) {
+        if (deviceName != null && !isSelectedUsbDevice(deviceName)) return
+        mutableState.value = mutableState.value.copy(
+            operation = PrinterOperation.FAILURE,
+            usbPermissionState = UsbPermissionState.FAILED,
+            userMessage = applicationContext.getString(R.string.controller_usb_permission_failed),
+        )
+    }
+
+    fun onUsbPermissionResult(deviceName: String, granted: Boolean) {
+        if (!isSelectedUsbDevice(deviceName)) return
+        mutableState.value = mutableState.value.copy(
+            candidates = mutableState.value.candidates.map { candidate ->
+                if (candidate.identity == deviceName && candidate.transport == PrinterTransport.USB) {
+                    candidate.copy(available = granted)
+                } else {
+                    candidate
+                }
+            },
+            operation = if (granted) PrinterOperation.IDLE else PrinterOperation.FAILURE,
+            usbPermissionState = if (granted) {
+                UsbPermissionState.GRANTED
+            } else {
+                UsbPermissionState.DENIED
+            },
+            userMessage = if (granted) {
+                null
+            } else {
+                applicationContext.getString(R.string.usb_permission_denied)
+            },
+        )
+        if (granted) refresh()
+    }
+
+    fun onUsbPermissionTimeout(deviceName: String) {
+        if (!isSelectedUsbDevice(deviceName)) return
+        mutableState.value = mutableState.value.copy(
+            operation = PrinterOperation.FAILURE,
+            usbPermissionState = UsbPermissionState.TIMED_OUT,
+            userMessage = applicationContext.getString(R.string.controller_usb_permission_timeout),
         )
     }
 
@@ -275,6 +465,7 @@ class PrinterDevicesController(
     fun beginManualLanEntry() {
         mutableState.value = mutableState.value.copy(
             manualLanEntryVisible = true,
+            operation = PrinterOperation.IDLE,
             userMessage = null,
         )
     }
@@ -321,6 +512,7 @@ class PrinterDevicesController(
             manualLanEntryVisible = true,
             manualLanHost = config.host,
             manualLanPort = config.port,
+            operation = PrinterOperation.IDLE,
             userMessage = null,
         )
     }
@@ -364,7 +556,7 @@ class PrinterDevicesController(
 
     fun confirmEditName() {
         val selectedId = mutableState.value.selectedBindingId ?: return
-        val merchantId = credentialStore.readCredential()?.merchantId ?: return
+        val merchantId = readCredential()?.merchantId ?: return
         val name = mutableState.value.printerNameDraft.trim()
         if (name.isEmpty()) return
         scope.launch {
@@ -391,90 +583,144 @@ class PrinterDevicesController(
     }
 
     fun test(bindingId: String? = null) {
-        scope.launch {
-            val binding = bindingId
-                ?.let { id -> mutableState.value.bindings.firstOrNull { it.localBindingId == id } }
-                ?: draftBinding()
-            if (binding == null) {
-                mutableState.value = mutableState.value.copy(
-                    userMessage = applicationContext.getString(R.string.controller_select_printer),
-                )
-                return@launch
-            }
-            mutableState.value = mutableState.value.copy(operation = PrinterOperation.TESTING)
-            val result = transportExecutor.printOnce(
-                binding,
-                PrintableDocument(
-                    LocalTestDocumentFactory.render(binding),
-                    "local-printer-test",
-                ),
-            )
-            val physicalStatus = if (result is PrintResult.Success) {
-                PhysicalStatus.CONNECTED
-            } else {
-                PhysicalStatus.ERROR
-            }
-            if (bindingId != null) {
-                repository.recordPhysicalStatus(
-                    binding,
-                    physicalStatus,
-                    StatusSource.LOCAL_TEST,
-                    lastErrorCode = (result as? PrintResult.Failure)?.code?.name,
-                    lastErrorMessage = (result as? PrintResult.Failure)?.technicalDetail,
-                )
-            } else {
-                draftPhysicalStatus = physicalStatus
-                draftLastTestedAt = clock()
-                if (physicalStatus == PhysicalStatus.CONNECTED) {
-                    draftLastConnectedAt = draftLastTestedAt
-                }
-            }
+        if (mutableState.value.operation.isBusy()) {
             mutableState.value = mutableState.value.copy(
-                operation = when (result) {
-                    is PrintResult.Success -> PrinterOperation.SUCCESS
-                    is PrintResult.Failure -> if (result.ioAttempted || result.writtenBytes > 0) {
-                        PrinterOperation.UNCERTAIN
-                    } else {
-                        PrinterOperation.FAILURE
-                    }
-                },
-                userMessage = when (result) {
-                    is PrintResult.Success -> applicationContext.getString(
-                        R.string.controller_test_write_complete,
-                    )
-                    is PrintResult.Failure -> result.code.name
-                },
+                userMessage = applicationContext.getString(R.string.controller_operation_in_progress),
             )
+            return
+        }
+        scope.launch {
+            val persistedBinding = bindingId?.let { id ->
+                mutableState.value.bindings.firstOrNull { it.localBindingId == id }
+            }
+            try {
+                if (
+                    persistedBinding == null &&
+                    mutableState.value.selectedTransport == PrinterTransport.USB &&
+                    !ensureSelectedUsbPermission()
+                ) {
+                    return@launch
+                }
+                val binding = persistedBinding ?: draftBinding()
+                if (binding == null) {
+                    showMissingDraft()
+                    return@launch
+                }
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.TESTING,
+                    userMessage = null,
+                )
+                val result = printOnce(
+                    binding,
+                    PrintableDocument(
+                        LocalTestDocumentFactory.render(binding),
+                        "local-printer-test",
+                    ),
+                )
+                val physicalStatus = if (result is PrintResult.Success) {
+                    PhysicalStatus.CONNECTED
+                } else {
+                    PhysicalStatus.ERROR
+                }
+                if (persistedBinding != null) {
+                    repository.recordPhysicalStatus(
+                        binding,
+                        physicalStatus,
+                        StatusSource.LOCAL_TEST,
+                        lastErrorCode = (result as? PrintResult.Failure)?.code?.name,
+                        lastErrorMessage = (result as? PrintResult.Failure)?.technicalDetail,
+                    )
+                } else {
+                    draftPhysicalStatus = physicalStatus
+                    draftLastTestedAt = clock()
+                    if (physicalStatus == PhysicalStatus.CONNECTED) {
+                        draftLastConnectedAt = draftLastTestedAt
+                    }
+                }
+                mutableState.value = mutableState.value.copy(
+                    operation = when (result) {
+                        is PrintResult.Success -> PrinterOperation.SUCCESS
+                        is PrintResult.Failure -> if (
+                            result.ioAttempted || result.writtenBytes > 0
+                        ) {
+                            PrinterOperation.UNCERTAIN
+                        } else {
+                            PrinterOperation.FAILURE
+                        }
+                    },
+                    userMessage = when (result) {
+                        is PrintResult.Success -> applicationContext.getString(
+                            R.string.controller_test_write_complete,
+                        )
+                        is PrintResult.Failure -> printFailureMessage(binding.transport, result.code)
+                    },
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.FAILURE,
+                    userMessage = applicationContext.getString(
+                        if (persistedBinding?.transport == PrinterTransport.LAN ||
+                            mutableState.value.selectedTransport == PrinterTransport.LAN
+                        ) {
+                            R.string.controller_lan_test_failed
+                        } else {
+                            R.string.controller_printer_test_failed
+                        },
+                    ),
+                )
+            }
         }
     }
 
     fun saveDraft() {
+        if (mutableState.value.operation.isBusy()) {
+            mutableState.value = mutableState.value.copy(
+                userMessage = applicationContext.getString(R.string.controller_operation_in_progress),
+            )
+            return
+        }
         scope.launch {
-            val binding = draftBinding() ?: return@launch
-            mutableState.value = mutableState.value.copy(operation = PrinterOperation.SYNCING)
-            runCatching { repository.addLocalBinding(binding) }
-                .onSuccess {
-                    mutableState.value = mutableState.value.copy(
-                        selectedBindingId = binding.localBindingId,
-                        route = if (binding.transport == PrinterTransport.LAN) {
-                            PrinterDevicesCoreRoute.LAN_SUCCESS
-                        } else {
-                            PrinterDevicesCoreRoute.OVERVIEW
-                        },
-                        operation = PrinterOperation.SUCCESS,
-                        userMessage = applicationContext.getString(
-                            R.string.controller_printer_saved_pending_sync,
-                        ),
-                    )
+            try {
+                if (
+                    mutableState.value.selectedTransport == PrinterTransport.USB &&
+                    !ensureSelectedUsbPermission()
+                ) {
+                    return@launch
                 }
-                .onFailure {
-                    mutableState.value = mutableState.value.copy(
-                        operation = PrinterOperation.FAILURE,
-                        userMessage = applicationContext.getString(
-                            R.string.controller_printer_save_failed,
-                        ),
-                    )
+                val binding = draftBinding()
+                if (binding == null) {
+                    showMissingDraft()
+                    return@launch
                 }
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.SYNCING,
+                    userMessage = null,
+                )
+                saveBinding(binding)
+                mutableState.value = mutableState.value.copy(
+                    selectedBindingId = binding.localBindingId,
+                    route = if (binding.transport == PrinterTransport.LAN) {
+                        PrinterDevicesCoreRoute.LAN_SUCCESS
+                    } else {
+                        PrinterDevicesCoreRoute.OVERVIEW
+                    },
+                    operation = PrinterOperation.SUCCESS,
+                    userMessage = applicationContext.getString(
+                        R.string.controller_printer_saved_pending_sync,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.FAILURE,
+                    userMessage = applicationContext.getString(
+                        R.string.controller_printer_save_failed,
+                    ),
+                )
+            }
         }
     }
 
@@ -492,6 +738,7 @@ class PrinterDevicesController(
             operation = PrinterOperation.IDLE,
             candidates = emptyList(),
             selectedCandidateId = null,
+            usbPermissionState = UsbPermissionState.IDLE,
             manualLanEntryVisible = false,
             userMessage = null,
         )
@@ -507,7 +754,7 @@ class PrinterDevicesController(
 
     fun confirmArchive() {
         val id = mutableState.value.selectedBindingId ?: return
-        val merchantId = credentialStore.readCredential()?.merchantId ?: return
+        val merchantId = readCredential()?.merchantId ?: return
         scope.launch {
             repository.requestArchive(merchantId, id)
             mutableState.value = mutableState.value.copy(
@@ -526,73 +773,259 @@ class PrinterDevicesController(
         scope.cancel()
     }
 
-    private fun testAndSaveLanDraft() {
-        if (
-            mutableState.value.operation in setOf(
-                PrinterOperation.CONNECTING,
-                PrinterOperation.TESTING,
-                PrinterOperation.SYNCING,
-            )
-        ) return
+    private fun requestUsbPermission(identity: String) {
         scope.launch {
-            val binding = draftBinding()
-            if (binding == null) {
-                mutableState.value = mutableState.value.copy(
-                    userMessage = applicationContext.getString(R.string.controller_select_printer),
-                )
-                return@launch
+            if (mutableState.value.selectedCandidateId != identity) return@launch
+            ensureSelectedUsbPermission()
+        }
+    }
+
+    private suspend fun ensureSelectedUsbPermission(): Boolean {
+        val selectedId = mutableState.value.selectedCandidateId
+        val selected = selectedId?.let { identity ->
+            mutableState.value.candidates.firstOrNull { it.identity == identity }
+        }
+        val config = selected?.config as? LocalTransportConfig.Usb
+        if (selected == null || config == null) {
+            showMissingDraft()
+            return false
+        }
+        val deviceName = config.deviceName ?: selected.identity
+        val descriptor = try {
+            withContext(ioDispatcher) {
+                usbScanner().firstOrNull { it.deviceName == deviceName }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
             mutableState.value = mutableState.value.copy(
-                operation = PrinterOperation.TESTING,
-                userMessage = null,
+                operation = PrinterOperation.FAILURE,
+                usbPermissionState = UsbPermissionState.FAILED,
+                userMessage = applicationContext.getString(R.string.controller_usb_scan_failed),
             )
-            val result = transportExecutor.printOnce(
-                binding,
-                PrintableDocument(
-                    LocalTestDocumentFactory.render(binding),
-                    "local-printer-test",
+            return false
+        }
+        if (descriptor == null) {
+            mutableState.value = mutableState.value.copy(
+                candidates = mutableState.value.candidates.filterNot {
+                    it.identity == selected.identity
+                },
+                selectedCandidateId = null,
+                printerNameDraft = "",
+                operation = PrinterOperation.FAILURE,
+                usbPermissionState = UsbPermissionState.IDLE,
+                userMessage = applicationContext.getString(
+                    R.string.controller_usb_device_missing,
                 ),
             )
-            if (result is PrintResult.Failure) {
-                mutableState.value = mutableState.value.copy(
-                    operation = if (result.ioAttempted || result.writtenBytes > 0) {
-                        PrinterOperation.UNCERTAIN
-                    } else {
-                        PrinterOperation.FAILURE
-                    },
-                    userMessage = result.code.name,
-                )
-                return@launch
-            }
-            draftPhysicalStatus = PhysicalStatus.CONNECTED
-            val testedAt = clock()
-            draftLastConnectedAt = testedAt
-            draftLastTestedAt = testedAt
-            val connectedBinding = binding.copy(
-                localStatus = PhysicalStatus.CONNECTED,
-                lastConnectedAt = testedAt,
-                lastTestedAt = testedAt,
+            return false
+        }
+        if (descriptor.bulkOutOptions.isEmpty()) {
+            mutableState.value = mutableState.value.copy(
+                candidates = mutableState.value.candidates.filterNot {
+                    it.identity == selected.identity
+                },
+                selectedCandidateId = null,
+                printerNameDraft = "",
+                operation = PrinterOperation.FAILURE,
+                usbPermissionState = UsbPermissionState.FAILED,
+                userMessage = applicationContext.getString(
+                    R.string.controller_usb_endpoint_unavailable,
+                ),
             )
-            mutableState.value = mutableState.value.copy(operation = PrinterOperation.SYNCING)
-            runCatching { repository.addLocalBinding(connectedBinding) }
-                .onSuccess {
+            return false
+        }
+        if (descriptor.hasPermission) {
+            mutableState.value = mutableState.value.copy(
+                candidates = mutableState.value.candidates.map { candidate ->
+                    if (candidate.identity == selected.identity) {
+                        candidate.copy(available = true)
+                    } else {
+                        candidate
+                    }
+                },
+                operation = PrinterOperation.IDLE,
+                usbPermissionState = UsbPermissionState.GRANTED,
+                userMessage = null,
+            )
+            return true
+        }
+        mutableState.value = mutableState.value.copy(
+            candidates = mutableState.value.candidates.map { candidate ->
+                if (candidate.identity == selected.identity) {
+                    candidate.copy(available = false)
+                } else {
+                    candidate
+                }
+            },
+            operation = PrinterOperation.IDLE,
+            usbPermissionState = UsbPermissionState.REQUIRED,
+            userMessage = applicationContext.getString(
+                R.string.controller_usb_permission_required,
+            ),
+        )
+        mutableEffects.emit(PrinterDevicesEffect.RequestUsbPermission(deviceName))
+        return false
+    }
+
+    private fun isSelectedUsbDevice(deviceName: String): Boolean {
+        val selected = mutableState.value.selectedCandidateId?.let { identity ->
+            mutableState.value.candidates.firstOrNull { it.identity == identity }
+        } ?: return false
+        val config = selected.config as? LocalTransportConfig.Usb ?: return false
+        return (config.deviceName ?: selected.identity) == deviceName
+    }
+
+    private fun showMissingDraft() {
+        val selectedId = mutableState.value.selectedCandidateId
+        val selectedExists = selectedId != null && mutableState.value.candidates.any {
+            it.identity == selectedId
+        }
+        val message = when {
+            selectedId != null && !selectedExists -> applicationContext.getString(
+                R.string.controller_printer_list_updated,
+            )
+            selectedExists -> applicationContext.getString(
+                R.string.controller_printer_save_failed,
+            )
+            mutableState.value.selectedTransport == PrinterTransport.USB ->
+                applicationContext.getString(R.string.controller_usb_select_printer)
+            else -> applicationContext.getString(R.string.controller_select_printer)
+        }
+        mutableState.value = mutableState.value.copy(
+            selectedCandidateId = selectedId.takeIf { selectedExists },
+            operation = PrinterOperation.FAILURE,
+            usbPermissionState = if (selectedExists) {
+                mutableState.value.usbPermissionState
+            } else {
+                UsbPermissionState.IDLE
+            },
+            userMessage = message,
+        )
+    }
+
+    private fun printFailureMessage(
+        transport: PrinterTransport,
+        code: UsbPrintErrorCode,
+    ): String = when (transport) {
+        PrinterTransport.USB -> applicationContext.getString(
+            when (code) {
+                UsbPrintErrorCode.USB_OPEN_FAILED,
+                UsbPrintErrorCode.USB_CLAIM_INTERFACE_FAILED,
+                UsbPrintErrorCode.USB_IO_BUSY
+                -> R.string.controller_usb_device_busy
+                UsbPrintErrorCode.USB_INTERFACE_NOT_FOUND,
+                UsbPrintErrorCode.USB_BULK_OUT_NOT_FOUND,
+                UsbPrintErrorCode.TRANSPORT_CONFIG_MISMATCH
+                -> R.string.controller_usb_endpoint_unavailable
+                UsbPrintErrorCode.USB_DEVICE_NOT_FOUND,
+                UsbPrintErrorCode.USB_DEVICE_DETACHED
+                -> R.string.controller_usb_device_missing
+                UsbPrintErrorCode.USB_PERMISSION_REQUIRED ->
+                    R.string.controller_usb_permission_required
+                UsbPrintErrorCode.USB_PERMISSION_DENIED -> R.string.usb_permission_denied
+                else -> R.string.controller_printer_test_failed
+            },
+        )
+        PrinterTransport.LAN -> applicationContext.getString(R.string.controller_lan_test_failed)
+        PrinterTransport.BLUETOOTH -> code.name
+    }
+
+    private fun permissionStateAfterRefresh(
+        transport: PrinterTransport,
+        selected: PrinterCandidateCore?,
+        previous: UsbPermissionState,
+    ): UsbPermissionState {
+        if (transport != PrinterTransport.USB || selected == null) {
+            return UsbPermissionState.IDLE
+        }
+        if (selected.available) return UsbPermissionState.GRANTED
+        return when (previous) {
+            UsbPermissionState.REQUESTING,
+            UsbPermissionState.DENIED,
+            UsbPermissionState.FAILED,
+            UsbPermissionState.TIMED_OUT,
+            -> previous
+            else -> UsbPermissionState.REQUIRED
+        }
+    }
+
+    private fun testAndSaveLanDraft() {
+        if (mutableState.value.operation.isBusy()) {
+            mutableState.value = mutableState.value.copy(
+                userMessage = applicationContext.getString(R.string.controller_operation_in_progress),
+            )
+            return
+        }
+        scope.launch {
+            var saving = false
+            try {
+                val binding = draftBinding()
+                if (binding == null) {
+                    showMissingDraft()
+                    return@launch
+                }
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.TESTING,
+                    userMessage = null,
+                )
+                val result = printOnce(
+                    binding,
+                    PrintableDocument(
+                        LocalTestDocumentFactory.render(binding),
+                        "local-printer-test",
+                    ),
+                )
+                if (result is PrintResult.Failure) {
                     mutableState.value = mutableState.value.copy(
-                        selectedBindingId = connectedBinding.localBindingId,
-                        route = PrinterDevicesCoreRoute.LAN_SUCCESS,
-                        operation = PrinterOperation.SUCCESS,
+                        operation = if (result.ioAttempted || result.writtenBytes > 0) {
+                            PrinterOperation.UNCERTAIN
+                        } else {
+                            PrinterOperation.FAILURE
+                        },
                         userMessage = applicationContext.getString(
-                            R.string.controller_printer_saved_pending_sync,
+                            R.string.controller_lan_test_failed,
                         ),
                     )
+                    return@launch
                 }
-                .onFailure {
-                    mutableState.value = mutableState.value.copy(
-                        operation = PrinterOperation.FAILURE,
-                        userMessage = applicationContext.getString(
-                            R.string.controller_printer_save_failed,
-                        ),
-                    )
-                }
+                draftPhysicalStatus = PhysicalStatus.CONNECTED
+                val testedAt = clock()
+                draftLastConnectedAt = testedAt
+                draftLastTestedAt = testedAt
+                val connectedBinding = binding.copy(
+                    localStatus = PhysicalStatus.CONNECTED,
+                    lastConnectedAt = testedAt,
+                    lastTestedAt = testedAt,
+                )
+                saving = true
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.SYNCING,
+                    userMessage = null,
+                )
+                saveBinding(connectedBinding)
+                mutableState.value = mutableState.value.copy(
+                    selectedBindingId = connectedBinding.localBindingId,
+                    route = PrinterDevicesCoreRoute.LAN_SUCCESS,
+                    operation = PrinterOperation.SUCCESS,
+                    userMessage = applicationContext.getString(
+                        R.string.controller_printer_saved_pending_sync,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    operation = PrinterOperation.FAILURE,
+                    userMessage = applicationContext.getString(
+                        if (saving) {
+                            R.string.controller_printer_save_failed
+                        } else {
+                            R.string.controller_lan_test_failed
+                        },
+                    ),
+                )
+            }
         }
     }
 
@@ -609,34 +1042,21 @@ class PrinterDevicesController(
         }
     }
 
-    private suspend fun discoverUsb(): List<PrinterCandidateCore> = withContext(Dispatchers.IO) {
-        usbInspector.scan().flatMap { device ->
-            device.bulkOutOptions.take(1).map { option ->
-                PrinterCandidateCore(
-                    identity = device.deviceName,
-                    displayName = device.displayName,
-                    transport = PrinterTransport.USB,
-                    endpoint = "VID ${device.vendorId} / PID ${device.productId}",
-                    available = device.hasPermission,
-                    config = LocalTransportConfig.Usb(
-                        vendorId = device.vendorId,
-                        productId = device.productId,
-                        deviceName = device.deviceName,
-                        interfaceIndex = option.interfaceIndex,
-                        interfaceId = option.interfaceId,
-                        alternateSetting = option.alternateSetting,
-                        interfaceClass = device.interfaces
-                            .getOrNull(option.interfaceIndex)
-                            ?.interfaceClass,
-                        endpointAddress = option.endpointAddress,
-                    ),
-                )
-            }
-        }
+    private suspend fun discoverUsb(): CandidateDiscovery = withContext(ioDispatcher) {
+        val devices = usbScanner()
+        val candidates = usbCandidatesFrom(devices)
+        CandidateDiscovery(
+            candidates = candidates,
+            userMessage = if (devices.isNotEmpty() && candidates.isEmpty()) {
+                applicationContext.getString(R.string.controller_usb_endpoint_unavailable)
+            } else {
+                null
+            },
+        )
     }
 
     private suspend fun discoverLan(): List<PrinterCandidateCore> =
-        lanDiscovery.discover().mapNotNull { candidate ->
+        lanScanner().mapNotNull { candidate ->
             val host = candidate.identifier.substringBefore(':')
             val port = candidate.identifier.substringAfter(':').toIntOrNull() ?: return@mapNotNull null
             PrinterCandidateCore(
@@ -649,7 +1069,7 @@ class PrinterDevicesController(
         }
 
     private suspend fun discoverBluetooth(): List<PrinterCandidateCore> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val result = withTimeoutOrNull(BLUETOOTH_DISCOVERY_TIMEOUT_MS) {
                 bluetoothDiscovery.nearbyDevices().last()
             } ?: bluetoothDiscovery.pairedDevices()
@@ -689,7 +1109,7 @@ class PrinterDevicesController(
         }
 
     private suspend fun draftBinding(): LocalPrinterBinding? {
-        val credential = credentialStore.readCredential() ?: return null
+        val credential = readCredential() ?: return null
         val candidate = mutableState.value.candidates.firstOrNull {
             it.identity == mutableState.value.selectedCandidateId
         } ?: return null
@@ -697,7 +1117,7 @@ class PrinterDevicesController(
         if (name.isEmpty()) return null
         return LocalPrinterBinding(
             merchantId = credential.merchantId,
-            terminalInstanceId = identityStore.terminalInstanceId(),
+            terminalInstanceId = terminalInstanceId(),
             localBindingId = draftBindingId,
             printerId = null,
             bindingVersion = 0,
@@ -719,6 +1139,13 @@ class PrinterDevicesController(
         const val BLUETOOTH_DISCOVERY_TIMEOUT_MS = 14_000L
     }
 }
+
+private fun PrinterOperation.isBusy(): Boolean = this in setOf(
+    PrinterOperation.DISCOVERING,
+    PrinterOperation.CONNECTING,
+    PrinterOperation.TESTING,
+    PrinterOperation.SYNCING,
+)
 
 object LocalTestDocumentFactory {
     fun render(binding: LocalPrinterBinding): ByteArray {

@@ -133,6 +133,7 @@
     <string name="usb_permission_hint">如首次连接，请在系统弹窗中允许 USB 访问权限</string>
     <string name="usb_permission_waiting">等待 USB 访问权限</string>
     <string name="usb_permission_denied">未获得 USB 访问权限。请重新连接设备并在系统弹窗中允许访问。</string>
+    <string name="usb_permission_required_short">需要授权</string>
     <string name="printer_settings">打印机设置</string>
 
     <string name="add_bluetooth_printer">添加蓝牙打印机</string>
@@ -173,6 +174,18 @@
     <string name="controller_bluetooth_unavailable">此设备不支持经典蓝牙。</string>
     <string name="controller_lan_address_invalid">LAN 地址无效</string>
     <string name="controller_select_printer">请先选择打印机</string>
+    <string name="controller_usb_select_printer">请选择一台 USB 打印机</string>
+    <string name="controller_usb_device_missing">未找到所选 USB 打印机，请刷新后重试</string>
+    <string name="controller_usb_permission_required">需要授权后才能使用该 USB 打印机</string>
+    <string name="controller_usb_permission_failed">无法发起 USB 授权，请重试</string>
+    <string name="controller_usb_permission_timeout">USB 授权未完成，请重试</string>
+    <string name="controller_usb_device_busy">打印机可能正在被其他应用使用</string>
+    <string name="controller_usb_endpoint_unavailable">未找到可用的 USB 打印接口</string>
+    <string name="controller_usb_scan_failed">USB 打印机扫描失败，请刷新后重试</string>
+    <string name="controller_printer_list_updated">打印机列表已更新，请重新选择</string>
+    <string name="controller_operation_in_progress">正在处理，请稍候</string>
+    <string name="controller_printer_test_failed">打印机测试失败</string>
+    <string name="controller_lan_test_failed">LAN 打印机连接或测试失败</string>
     <string name="controller_test_write_complete">测试数据已完整写入打印机；请核对纸张。</string>
     <string name="controller_printer_saved_pending_sync">打印机已保存，等待平台同步</string>
     <string name="controller_printer_save_failed">保存失败，请检查是否重复添加</string>

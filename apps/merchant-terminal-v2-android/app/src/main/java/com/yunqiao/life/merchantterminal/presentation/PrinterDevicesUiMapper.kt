@@ -14,6 +14,8 @@ import com.yunqiao.life.merchantterminal.ui.PrinterOperationUi
 import com.yunqiao.life.merchantterminal.ui.PrinterPhysicalStateUi
 import com.yunqiao.life.merchantterminal.ui.PrinterSummaryUi
 import com.yunqiao.life.merchantterminal.ui.PrinterTransportUi
+import com.yunqiao.life.merchantterminal.ui.UsbPermissionStateUi
+import com.yunqiao.life.merchantterminal.ui.UsbPrinterCandidateUi
 import com.yunqiao.life.merchantterminal.printing.bluetooth.BluetoothDiscoveryState
 import java.time.Instant
 import java.time.ZoneId
@@ -28,6 +30,21 @@ fun PrinterDevicesCoreState.toUiState(): PrinterDevicesUiState {
         printers = printers,
         selectedPrinter = selectedPrinter,
         selectedTransport = selectedTransport.toUiTransport(),
+        usbPrinters = candidates
+            .filter { it.transport == PrinterTransport.USB }
+            .map {
+                UsbPrinterCandidateUi(
+                    identity = it.identity,
+                    name = it.displayName,
+                    endpoint = it.endpoint,
+                    hasPermission = it.available,
+                    selected = selectedCandidateId == it.identity,
+                )
+            },
+        selectedUsbIdentity = selectedCandidateId.takeIf {
+            selectedTransport == PrinterTransport.USB
+        },
+        usbPermissionState = usbPermissionState.toUiState(),
         discoveredLanPrinters = candidates
             .filter { it.transport == PrinterTransport.LAN }
             .map {
@@ -111,6 +128,9 @@ private fun PrinterTransport.toUiTransport(): PrinterTransportUi =
 
 private fun PrinterOperation.toUiOperation(): PrinterOperationUi =
     PrinterOperationUi.valueOf(name)
+
+private fun UsbPermissionState.toUiState(): UsbPermissionStateUi =
+    UsbPermissionStateUi.valueOf(name)
 
 private fun Long.displayTime(): String = DISPLAY_TIME_FORMATTER.format(Instant.ofEpochMilli(this))
 

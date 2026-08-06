@@ -9,7 +9,113 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
+
+enum class UsbPermissionRequestResult {
+    ALREADY_GRANTED,
+    REQUEST_STARTED,
+    REQUEST_ALREADY_PENDING,
+    REQUEST_FAILED,
+}
+
+data class UsbPermissionRequestOutcome(
+    val result: UsbPermissionRequestResult,
+    val pendingDeviceName: String? = null,
+)
+
+fun interface UsbPermissionTimeoutCancellation {
+    fun cancel()
+}
+
+fun interface UsbPermissionTimeoutScheduler {
+    fun schedule(delayMs: Long, action: () -> Unit): UsbPermissionTimeoutCancellation
+}
+
+internal const val USB_PERMISSION_TIMEOUT_MS = 15_000L
+
+private class AndroidUsbPermissionTimeoutScheduler : UsbPermissionTimeoutScheduler {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun schedule(
+        delayMs: Long,
+        action: () -> Unit,
+    ): UsbPermissionTimeoutCancellation {
+        val runnable = Runnable(action)
+        handler.postDelayed(runnable, delayMs)
+        return UsbPermissionTimeoutCancellation { handler.removeCallbacks(runnable) }
+    }
+}
+
+internal class UsbPermissionRequestTracker(
+    private val onPermissionResult: (deviceName: String, granted: Boolean) -> Unit,
+    private val onPermissionTimeout: (deviceName: String) -> Unit,
+    private val timeoutScheduler: UsbPermissionTimeoutScheduler,
+) {
+    var pendingDeviceName: String? = null
+        private set
+    private var timeoutCancellation: UsbPermissionTimeoutCancellation? = null
+
+    fun begin(
+        deviceName: String,
+        alreadyGranted: Boolean,
+        startRequest: () -> Boolean,
+    ): UsbPermissionRequestOutcome {
+        if (alreadyGranted) {
+            clearPending()
+            onPermissionResult(deviceName, true)
+            return UsbPermissionRequestOutcome(UsbPermissionRequestResult.ALREADY_GRANTED)
+        }
+        pendingDeviceName?.let { pending ->
+            return UsbPermissionRequestOutcome(
+                UsbPermissionRequestResult.REQUEST_ALREADY_PENDING,
+                pending,
+            )
+        }
+        pendingDeviceName = deviceName
+        val started = runCatching(startRequest).getOrDefault(false)
+        if (!started) {
+            clearPending()
+            return UsbPermissionRequestOutcome(UsbPermissionRequestResult.REQUEST_FAILED)
+        }
+        timeoutCancellation = timeoutScheduler.schedule(USB_PERMISSION_TIMEOUT_MS) {
+            if (pendingDeviceName == deviceName) {
+                clearPending()
+                onPermissionTimeout(deviceName)
+            }
+        }
+        return UsbPermissionRequestOutcome(
+            UsbPermissionRequestResult.REQUEST_STARTED,
+            deviceName,
+        )
+    }
+
+    fun complete(deviceName: String, granted: Boolean): Boolean {
+        if (pendingDeviceName != null && pendingDeviceName != deviceName) return false
+        clearPending()
+        onPermissionResult(deviceName, granted)
+        return true
+    }
+
+    fun onDetached(deviceName: String?) {
+        if (deviceName != null && pendingDeviceName == deviceName) clearPending()
+    }
+
+    fun reconcileAttachedDevices(deviceNames: Set<String>) {
+        if (pendingDeviceName !in deviceNames) clearPending()
+    }
+
+    fun clear() {
+        clearPending()
+    }
+
+    private fun clearPending() {
+        timeoutCancellation?.cancel()
+        timeoutCancellation = null
+        pendingDeviceName = null
+    }
+}
 
 /**
  * Activity-scoped USB permission and attach/detach coordinator.
@@ -21,12 +127,18 @@ import androidx.core.content.ContextCompat
 class UsbPermissionController(
     private val activity: Activity,
     private val onPermissionResult: (deviceName: String, granted: Boolean) -> Unit,
+    private val onPermissionTimeout: (deviceName: String) -> Unit,
     private val onDeviceAttached: (deviceName: String?) -> Unit,
     private val onDeviceDetached: (deviceName: String?) -> Unit,
+    timeoutScheduler: UsbPermissionTimeoutScheduler = AndroidUsbPermissionTimeoutScheduler(),
 ) {
     private val usbManager = activity.getSystemService(UsbManager::class.java)
     private var receiverRegistered = false
-    private var pendingDeviceName: String? = null
+    private val requestTracker = UsbPermissionRequestTracker(
+        onPermissionResult = onPermissionResult,
+        onPermissionTimeout = onPermissionTimeout,
+        timeoutScheduler = timeoutScheduler,
+    )
 
     private val attachDetachReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -34,7 +146,7 @@ class UsbPermissionController(
             when (intent.action) {
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> onDeviceAttached(deviceName)
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    if (deviceName == pendingDeviceName) pendingDeviceName = null
+                    requestTracker.onDetached(deviceName)
                     onDeviceDetached(deviceName)
                 }
             }
@@ -62,30 +174,27 @@ class UsbPermissionController(
         receiverRegistered = false
     }
 
-    fun requestPermission(device: UsbDevice): Boolean {
-        val manager = usbManager ?: return false
-        if (manager.hasPermission(device)) {
-            pendingDeviceName = null
-            onPermissionResult(device.deviceName, true)
-            return true
-        }
-        if (pendingDeviceName != null) return false
-
-        pendingDeviceName = device.deviceName
-        val permissionIntent = Intent(activity, activity::class.java).apply {
-            action = ACTION_USB_PERMISSION
-            setPackage(activity.packageName)
-            putExtra(EXTRA_REQUESTED_DEVICE_NAME, device.deviceName)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            activity,
-            USB_PERMISSION_REQUEST_CODE,
-            permissionIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+    fun requestPermission(device: UsbDevice): UsbPermissionRequestOutcome {
+        val manager = usbManager ?: return UsbPermissionRequestOutcome(
+            UsbPermissionRequestResult.REQUEST_FAILED,
         )
-        return runCatching { manager.requestPermission(device, pendingIntent) }
-            .onFailure { pendingDeviceName = null }
-            .isSuccess
+        return requestTracker.begin(
+            deviceName = device.deviceName,
+            alreadyGranted = manager.hasPermission(device),
+        ) {
+            val permissionIntent = Intent(activity, activity::class.java).apply {
+                action = ACTION_USB_PERMISSION
+                setPackage(activity.packageName)
+                putExtra(EXTRA_REQUESTED_DEVICE_NAME, device.deviceName)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                activity,
+                USB_PERMISSION_REQUEST_CODE,
+                permissionIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            runCatching { manager.requestPermission(device, pendingIntent) }.isSuccess
+        }
     }
 
     /** Call from Activity.onNewIntent. Returns true when the intent was a permission result. */
@@ -93,22 +202,25 @@ class UsbPermissionController(
         if (intent?.action != ACTION_USB_PERMISSION) return false
         val requestedName = intent.getStringExtra(EXTRA_REQUESTED_DEVICE_NAME)
         val device = intent.usbDevice()
-        val deviceName = device?.deviceName ?: requestedName ?: pendingDeviceName
-        if (deviceName == null || (pendingDeviceName != null && pendingDeviceName != deviceName)) {
-            return true
-        }
+        val deviceName = device?.deviceName ?: requestedName ?: requestTracker.pendingDeviceName
+            ?: return true
 
         val grantedByResult = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
         val granted = device?.let { usbManager?.hasPermission(it) == true } == true && grantedByResult
-        pendingDeviceName = null
-        onPermissionResult(deviceName, granted)
+        requestTracker.complete(deviceName, granted)
         return true
     }
 
-    fun hasPendingRequest(): Boolean = pendingDeviceName != null
+    fun hasPendingRequest(): Boolean = requestTracker.pendingDeviceName != null
+
+    fun pendingDeviceName(): String? = requestTracker.pendingDeviceName
 
     fun reconcileAttachedDevices(deviceNames: Set<String>) {
-        if (pendingDeviceName !in deviceNames) pendingDeviceName = null
+        requestTracker.reconcileAttachedDevices(deviceNames)
+    }
+
+    fun clear() {
+        requestTracker.clear()
     }
 
     @Suppress("DEPRECATION")

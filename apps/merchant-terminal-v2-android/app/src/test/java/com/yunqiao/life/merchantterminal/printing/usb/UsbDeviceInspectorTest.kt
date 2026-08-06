@@ -7,8 +7,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.model.PhysicalStatus
+import com.yunqiao.life.merchantterminal.presentation.usbCandidatesFrom
 
 class UsbDeviceInspectorTest {
+    @Test
+    fun `target printer remains a core candidate without permission`() {
+        val descriptor = device(
+            vendorId = 0x0FE6,
+            productId = 0x811E,
+            interfaces = listOf(
+                usbInterface(
+                    id = 0,
+                    interfaceClass = 7,
+                    interfaceSubclass = 1,
+                    interfaceProtocol = 2,
+                    endpoints = listOf(endpoint(address = 0x03)),
+                ),
+            ),
+            hasPermission = false,
+        )
+
+        assertTrue(descriptor.likelyPrinter)
+        assertEquals(0x03, descriptor.bulkOutOptions.single().endpointAddress)
+        val candidate = usbCandidatesFrom(listOf(descriptor)).single()
+        val config = candidate.config as LocalTransportConfig.Usb
+        assertEquals(0x0FE6, config.vendorId)
+        assertEquals(0x811E, config.productId)
+        assertFalse(candidate.available)
+    }
+
     @Test
     fun `printer class interface is a candidate without hardcoded vid pid`() {
         val descriptor = device(
@@ -252,14 +279,16 @@ class UsbDeviceInspectorTest {
         index: Int = id,
         alternateSetting: Int = 0,
         interfaceClass: Int,
+        interfaceSubclass: Int = 0,
+        interfaceProtocol: Int = 0,
         endpoints: List<UsbEndpointDescriptor> = emptyList(),
     ) = UsbInterfaceDescriptor(
         index = index,
         id = id,
         alternateSetting = alternateSetting,
         interfaceClass = interfaceClass,
-        interfaceSubclass = 0,
-        interfaceProtocol = 0,
+        interfaceSubclass = interfaceSubclass,
+        interfaceProtocol = interfaceProtocol,
         endpoints = endpoints,
     )
 

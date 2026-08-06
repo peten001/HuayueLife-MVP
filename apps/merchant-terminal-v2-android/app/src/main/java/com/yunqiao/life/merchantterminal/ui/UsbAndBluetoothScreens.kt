@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -50,8 +52,16 @@ internal fun UsbSetupScreen(
     actions: PrinterDevicesActions,
     compact: Boolean,
 ) {
-    val usbPrinters = state.printers.filter { it.transport == PrinterTransportUi.USB }
-    val selected = state.selectedPrinter?.takeIf { it.transport == PrinterTransportUi.USB } ?: usbPrinters.firstOrNull()
+    val usbPrinters = state.usbPrinters
+    val selected = state.selectedUsbIdentity?.let { identity ->
+        usbPrinters.firstOrNull { it.identity == identity }
+    }
+    val busy = state.operation in setOf(
+        PrinterOperationUi.DISCOVERING,
+        PrinterOperationUi.CONNECTING,
+        PrinterOperationUi.TESTING,
+        PrinterOperationUi.SYNCING,
+    ) || state.usbPermissionState == UsbPermissionStateUi.REQUESTING
     ModalScrim(alpha = .42f) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val modalWidth = if (compact) maxWidth else 891.dp
@@ -89,12 +99,12 @@ internal fun UsbSetupScreen(
                         text = stringResource(
                             if (state.operation == PrinterOperationUi.TESTING) R.string.common_testing else R.string.common_test,
                         ),
-                        onClick = { actions.onTestPrinter(selected?.id) },
+                        onClick = { actions.onTestPrinter(null) },
                         modifier = Modifier.weight(1f),
                         icon = YunQiaoIconKind.PRINTER,
                         accent = YunQiaoUiTokens.Usb.Green,
                         visualHeight = 53.dp,
-                        enabled = selected != null && state.operation != PrinterOperationUi.TESTING,
+                        enabled = selected != null && !busy,
                     )
                     YunQiaoButton(
                         text = stringResource(
@@ -105,7 +115,7 @@ internal fun UsbSetupScreen(
                         style = YunQiaoButtonStyle.PRIMARY,
                         accent = YunQiaoUiTokens.Usb.Green,
                         visualHeight = 53.dp,
-                        enabled = selected != null && state.operation !in setOf(PrinterOperationUi.TESTING, PrinterOperationUi.SYNCING),
+                        enabled = selected != null && !busy,
                     )
                 }
             }
@@ -159,15 +169,22 @@ private fun StepArrow() {
 @Composable
 private fun UsbDeviceSection(
     state: PrinterDevicesUiState,
-    printers: List<PrinterSummaryUi>,
-    selected: PrinterSummaryUi?,
+    printers: List<UsbPrinterCandidateUi>,
+    selected: UsbPrinterCandidateUi?,
     actions: PrinterDevicesActions,
 ) {
-    val denied = state.operation == PrinterOperationUi.FAILURE
+    val error = state.operation in setOf(
+        PrinterOperationUi.FAILURE,
+        PrinterOperationUi.UNCERTAIN,
+    ) || state.usbPermissionState in setOf(
+        UsbPermissionStateUi.DENIED,
+        UsbPermissionStateUi.FAILED,
+        UsbPermissionStateUi.TIMED_OUT,
+    )
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(23.dp).clip(RoundedCornerShape(50)).background(
-                if (printers.isNotEmpty()) YunQiaoUiTokens.Usb.Green else if (denied) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning,
+                if (printers.isNotEmpty()) YunQiaoUiTokens.Usb.Green else if (error) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning,
             ),
             contentAlignment = Alignment.Center,
         ) {
@@ -175,8 +192,11 @@ private fun UsbDeviceSection(
         }
         Spacer(Modifier.width(11.dp))
         Text(
-            if (printers.isNotEmpty()) stringResource(R.string.usb_detected_count, printers.size)
-            else stringResource(if (state.operation == PrinterOperationUi.CONNECTING) R.string.usb_permission_waiting else R.string.usb_not_detected),
+            when {
+                state.operation == PrinterOperationUi.DISCOVERING -> stringResource(R.string.searching)
+                printers.isNotEmpty() -> stringResource(R.string.usb_detected_count, printers.size)
+                else -> stringResource(R.string.usb_not_detected)
+            },
             style = YunQiaoUiTokens.Label.copy(fontSize = 18.sp),
         )
         if (printers.isEmpty()) {
@@ -190,54 +210,103 @@ private fun UsbDeviceSection(
         }
     }
     Spacer(Modifier.height(12.dp))
-    if (selected != null) {
-        ReferenceCard(
-            Modifier.fillMaxWidth().height(90.dp), radius = 12.dp,
-            borderColor = YunQiaoUiTokens.Usb.Border, shadow = 0.dp,
-        ) {
-            Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(YunQiaoUiTokens.Usb.Green.copy(alpha = .09f)),
-                    contentAlignment = Alignment.Center,
-                ) { ThermalPrinterIllustration(Modifier.size(55.dp)) }
-                Spacer(Modifier.width(20.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(selected.name, style = YunQiaoUiTokens.ItemTitle)
-                    Spacer(Modifier.height(6.dp))
-                    Text("USB · ${selected.paperWidthMm}mm", style = YunQiaoUiTokens.Body)
-                }
-                StatusPill(stringResource(R.string.status_connected), YunQiaoUiTokens.Usb.Green, dot = true)
+    if (printers.isNotEmpty()) {
+        LazyColumn(Modifier.fillMaxWidth().height(90.dp)) {
+            items(printers, key = UsbPrinterCandidateUi::identity) { printer ->
+                UsbCandidateRow(printer, actions.onSelectUsb)
             }
         }
     } else {
+        val message = state.userMessage ?: stringResource(
+            when (state.usbPermissionState) {
+                UsbPermissionStateUi.DENIED -> R.string.usb_permission_denied
+                UsbPermissionStateUi.FAILED -> R.string.controller_usb_permission_failed
+                UsbPermissionStateUi.TIMED_OUT -> R.string.controller_usb_permission_timeout
+                else -> R.string.usb_permission_hint
+            },
+        )
         ReferenceCard(
             Modifier.fillMaxWidth().height(90.dp), radius = 12.dp,
-            backgroundColor = (if (denied) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning).copy(alpha = .06f),
-            borderColor = (if (denied) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning).copy(alpha = .35f), shadow = 0.dp,
+            backgroundColor = (if (error) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning).copy(alpha = .06f),
+            borderColor = (if (error) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning).copy(alpha = .35f), shadow = 0.dp,
         ) {
             Row(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                YunQiaoIcon(YunQiaoIconKind.USB, Modifier.size(34.dp), if (denied) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning)
+                YunQiaoIcon(YunQiaoIconKind.USB, Modifier.size(34.dp), if (error) YunQiaoUiTokens.Danger else YunQiaoUiTokens.Warning)
                 Spacer(Modifier.width(17.dp))
-                Text(
-                    stringResource(if (denied) R.string.usb_permission_denied else R.string.usb_permission_hint),
-                    style = YunQiaoUiTokens.Body,
-                    maxLines = 3,
-                )
+                Text(message, style = YunQiaoUiTokens.Body, maxLines = 3)
             }
         }
     }
-    Spacer(Modifier.height(9.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        YunQiaoIcon(YunQiaoIconKind.INFO, Modifier.size(18.dp), YunQiaoUiTokens.Muted)
-        Spacer(Modifier.width(9.dp))
-        Text(stringResource(R.string.usb_permission_hint), style = YunQiaoUiTokens.Meta, maxLines = 2)
+    if (printers.isNotEmpty()) {
+        Spacer(Modifier.height(9.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            YunQiaoIcon(YunQiaoIconKind.INFO, Modifier.size(18.dp), YunQiaoUiTokens.Muted)
+            Spacer(Modifier.width(9.dp))
+            Text(
+                state.userMessage ?: when {
+                    selected == null -> stringResource(R.string.controller_usb_select_printer)
+                    state.usbPermissionState == UsbPermissionStateUi.REQUESTING ->
+                        stringResource(R.string.usb_permission_waiting)
+                    !selected.hasPermission ->
+                        stringResource(R.string.controller_usb_permission_required)
+                    else -> stringResource(R.string.usb_permission_hint)
+                },
+                style = YunQiaoUiTokens.Meta,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UsbCandidateRow(
+    candidate: UsbPrinterCandidateUi,
+    onSelect: (String) -> Unit,
+) {
+    val color = if (candidate.hasPermission) YunQiaoUiTokens.Usb.Green else YunQiaoUiTokens.Warning
+    ReferenceCard(
+        Modifier.fillMaxWidth().height(82.dp)
+            .semantics { selected = candidate.selected; role = Role.RadioButton }
+            .clickable { onSelect(candidate.identity) },
+        radius = 12.dp,
+        backgroundColor = if (candidate.selected) color.copy(alpha = .05f) else Color.White,
+        borderColor = if (candidate.selected) color else YunQiaoUiTokens.Usb.Border,
+        shadow = 0.dp,
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(54.dp).clip(RoundedCornerShape(10.dp))
+                    .background(YunQiaoUiTokens.Usb.Green.copy(alpha = .09f)),
+                contentAlignment = Alignment.Center,
+            ) { ThermalPrinterIllustration(Modifier.size(50.dp)) }
+            Spacer(Modifier.width(18.dp))
+            Column(Modifier.weight(1f)) {
+                Text(candidate.name, style = YunQiaoUiTokens.ItemTitle, maxLines = 1)
+                Spacer(Modifier.height(4.dp))
+                Text(candidate.endpoint, style = YunQiaoUiTokens.Body, maxLines = 1)
+            }
+            StatusPill(
+                stringResource(
+                    if (candidate.hasPermission) {
+                        R.string.common_available
+                    } else {
+                        R.string.usb_permission_required_short
+                    },
+                ),
+                color,
+                dot = candidate.hasPermission,
+            )
+        }
     }
 }
 
 @Composable
 private fun UsbSettings(
     state: PrinterDevicesUiState,
-    selected: PrinterSummaryUi?,
+    selected: UsbPrinterCandidateUi?,
     actions: PrinterDevicesActions,
 ) {
     ReferenceCard(

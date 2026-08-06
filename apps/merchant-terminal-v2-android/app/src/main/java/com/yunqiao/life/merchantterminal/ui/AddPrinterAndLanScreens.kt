@@ -293,7 +293,28 @@ internal fun LanDiscoveryScreen(
                     }
                 }
                 Spacer(Modifier.height(9.dp))
+                val operationBusy = state.operation in setOf(
+                    PrinterOperationUi.DISCOVERING,
+                    PrinterOperationUi.CONNECTING,
+                    PrinterOperationUi.TESTING,
+                    PrinterOperationUi.SYNCING,
+                )
                 when {
+                    state.userMessage != null -> LanStateNotice(
+                        state.userMessage,
+                        if (state.operation == PrinterOperationUi.FAILURE ||
+                            state.operation == PrinterOperationUi.UNCERTAIN
+                        ) {
+                            YunQiaoUiTokens.Danger
+                        } else {
+                            YunQiaoUiTokens.Warning
+                        },
+                        if (operationBusy || state.discoveredLanPrinters.isNotEmpty()) {
+                            null
+                        } else {
+                            actions.onRetry
+                        },
+                    )
                     state.operation == PrinterOperationUi.FAILURE -> LanStateNotice(
                         stringResource(R.string.lan_search_failure),
                         YunQiaoUiTokens.Danger,
@@ -322,15 +343,23 @@ internal fun LanDiscoveryScreen(
                         Modifier.weight(1.06f),
                         icon = YunQiaoIconKind.REFRESH,
                         visualHeight = 48.dp,
+                        enabled = !operationBusy,
                     )
                     YunQiaoButton(
-                        stringResource(R.string.common_next),
+                        stringResource(
+                            when (state.operation) {
+                                PrinterOperationUi.TESTING -> R.string.common_testing
+                                PrinterOperationUi.SYNCING -> R.string.common_syncing
+                                else -> R.string.common_next
+                            },
+                        ),
                         actions.onContinueAdd,
                         Modifier.weight(1.18f),
                         style = YunQiaoButtonStyle.PRIMARY,
                         accent = YunQiaoUiTokens.LanDiscovery.Green,
                         visualHeight = 48.dp,
-                        enabled = state.selectedLanIdentity != null || state.manualLanHost.isNotBlank(),
+                        enabled = !operationBusy &&
+                            (state.selectedLanIdentity != null || state.manualLanHost.isNotBlank()),
                     )
                 }
             }
@@ -399,17 +428,20 @@ private fun LanPrinterRow(
 }
 
 @Composable
-private fun LanStateNotice(text: String, color: Color, action: () -> Unit) {
+private fun LanStateNotice(text: String, color: Color, action: (() -> Unit)?) {
+    val interaction = if (action != null) Modifier.clickable(onClick = action) else Modifier
     Row(
         Modifier.fillMaxWidth().height(70.dp).clip(RoundedCornerShape(9.dp))
             .background(color.copy(alpha = .06f)).border(1.dp, color.copy(alpha = .25f), RoundedCornerShape(9.dp))
-            .clickable(onClick = action).padding(horizontal = 16.dp),
+            .then(interaction).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         YunQiaoIcon(YunQiaoIconKind.INFO, Modifier.size(22.dp), color)
         Spacer(Modifier.width(12.dp))
         Text(text, style = YunQiaoUiTokens.Body, modifier = Modifier.weight(1f), maxLines = 2)
-        Text(stringResource(R.string.common_retry_action), style = YunQiaoUiTokens.Label, color = color)
+        if (action != null) {
+            Text(stringResource(R.string.common_retry_action), style = YunQiaoUiTokens.Label, color = color)
+        }
     }
 }
 

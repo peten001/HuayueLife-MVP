@@ -49,7 +49,7 @@
     <string name="add_usb_printer">Add USB printer</string><string name="usb_setup_subtitle">Connect a USB thermal printer and the system will detect it automatically</string>
     <string name="usb_step_connect">Connect printer</string><string name="usb_step_connect_body">Connect through USB</string><string name="usb_step_recognize">Automatic detection</string><string name="usb_step_recognize_body">The system detects the device</string>
     <string name="usb_step_ready">Ready</string><string name="usb_step_ready_body">Configure and use it</string><string name="usb_detected_count">%1$d USB printer detected</string><string name="usb_not_detected">No USB printer detected</string>
-    <string name="usb_permission_hint">For the first connection, allow USB access in the system prompt</string><string name="usb_permission_waiting">Waiting for USB access</string><string name="usb_permission_denied">USB access was not granted. Reconnect the device and allow access in the system prompt.</string><string name="printer_settings">Printer settings</string>
+    <string name="usb_permission_hint">For the first connection, allow USB access in the system prompt</string><string name="usb_permission_waiting">Waiting for USB access</string><string name="usb_permission_denied">USB access was not granted. Reconnect the device and allow access in the system prompt.</string><string name="usb_permission_required_short">Permission required</string><string name="printer_settings">Printer settings</string>
     <string name="add_bluetooth_printer">Add Bluetooth printer</string><string name="bluetooth_setup_subtitle">Scan for nearby receipt printers that can be paired</string>
     <string name="bluetooth_on">Bluetooth on</string><string name="bluetooth_off">Bluetooth off</string><string name="paired_devices">Paired devices</string><string name="nearby_devices">Nearby devices</string><string name="scanning">Scanning…</string>
     <string name="pair">Pair</string><string name="paired">Paired</string><string name="signal_good">Good signal</string><string name="signal_fair">Fair signal</string><string name="selected_printer_settings">Selected printer settings</string>
@@ -67,6 +67,18 @@
     <string name="controller_bluetooth_unavailable">Classic Bluetooth is unavailable on this device.</string>
     <string name="controller_lan_address_invalid">The LAN address is invalid</string>
     <string name="controller_select_printer">Select a printer first</string>
+    <string name="controller_usb_select_printer">Select a USB printer</string>
+    <string name="controller_usb_device_missing">The selected USB printer was not found. Refresh and try again.</string>
+    <string name="controller_usb_permission_required">Allow USB access before using this printer.</string>
+    <string name="controller_usb_permission_failed">Could not request USB access. Try again.</string>
+    <string name="controller_usb_permission_timeout">USB access was not completed. Try again.</string>
+    <string name="controller_usb_device_busy">Another app may be using the printer.</string>
+    <string name="controller_usb_endpoint_unavailable">No usable USB printer interface was found.</string>
+    <string name="controller_usb_scan_failed">USB printer scan failed. Refresh and try again.</string>
+    <string name="controller_printer_list_updated">The printer list changed. Select the printer again.</string>
+    <string name="controller_operation_in_progress">Processing. Please wait.</string>
+    <string name="controller_printer_test_failed">Printer test failed.</string>
+    <string name="controller_lan_test_failed">Could not connect to or test the LAN printer.</string>
     <string name="controller_test_write_complete">The test data was fully written to the printer. Check the paper.</string>
     <string name="controller_printer_saved_pending_sync">Printer saved and waiting for platform sync</string>
     <string name="controller_printer_save_failed">Save failed. Check whether this printer was already added.</string>

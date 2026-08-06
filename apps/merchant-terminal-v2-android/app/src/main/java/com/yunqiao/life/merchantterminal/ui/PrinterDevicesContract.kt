@@ -40,6 +40,16 @@ enum class PrinterOperationUi {
     ARCHIVED,
 }
 
+enum class UsbPermissionStateUi {
+    IDLE,
+    REQUIRED,
+    REQUESTING,
+    GRANTED,
+    DENIED,
+    FAILED,
+    TIMED_OUT,
+}
+
 @Immutable
 data class PrinterSummaryUi(
     val id: String,
@@ -63,6 +73,15 @@ data class DiscoveredLanPrinterUi(
 )
 
 @Immutable
+data class UsbPrinterCandidateUi(
+    val identity: String,
+    val name: String,
+    val endpoint: String,
+    val hasPermission: Boolean,
+    val selected: Boolean,
+)
+
+@Immutable
 data class BluetoothPrinterUi(
     val address: String,
     val name: String,
@@ -76,6 +95,9 @@ data class PrinterDevicesUiState(
     val printers: List<PrinterSummaryUi> = emptyList(),
     val selectedPrinter: PrinterSummaryUi? = null,
     val selectedTransport: PrinterTransportUi = PrinterTransportUi.LAN,
+    val usbPrinters: List<UsbPrinterCandidateUi> = emptyList(),
+    val selectedUsbIdentity: String? = null,
+    val usbPermissionState: UsbPermissionStateUi = UsbPermissionStateUi.IDLE,
     val discoveredLanPrinters: List<DiscoveredLanPrinterUi> = emptyList(),
     val selectedLanIdentity: String? = null,
     val manualLanEntryVisible: Boolean = false,
@@ -108,6 +130,7 @@ data class PrinterDevicesActions(
     val onContinueAdd: () -> Unit = {},
     val onRefresh: () -> Unit = {},
     val onRetry: () -> Unit = {},
+    val onSelectUsb: (String) -> Unit = {},
     val onSelectLanPrinter: (String) -> Unit = {},
     val onManualLanAddress: () -> Unit = {},
     val onManualLanAddressChanged: (String, Int) -> Unit = { _, _ -> },

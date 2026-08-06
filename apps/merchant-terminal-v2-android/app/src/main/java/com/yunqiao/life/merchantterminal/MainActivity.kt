@@ -30,6 +30,7 @@ import com.yunqiao.life.merchantterminal.presentation.toUiState
 import com.yunqiao.life.merchantterminal.printing.bluetooth.BluetoothPermissionPolicy
 import com.yunqiao.life.merchantterminal.printing.usb.UsbDeviceInspector
 import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionController
+import com.yunqiao.life.merchantterminal.printing.usb.UsbPermissionRequestResult
 import com.yunqiao.life.merchantterminal.recovery.V2RecoveryScheduler
 import com.yunqiao.life.merchantterminal.security.MerchantSessionCoordinator
 import com.yunqiao.life.merchantterminal.security.MerchantSessionProcessScope
@@ -127,7 +128,8 @@ class MainActivity :
         )
         usbPermissionController = UsbPermissionController(
             activity = this,
-            onPermissionResult = { _, _ -> printerDevicesController.refresh() },
+            onPermissionResult = printerDevicesController::onUsbPermissionResult,
+            onPermissionTimeout = printerDevicesController::onUsbPermissionTimeout,
             onDeviceAttached = { printerDevicesController.refresh() },
             onDeviceDetached = { printerDevicesController.refresh() },
         )
@@ -185,6 +187,7 @@ class MainActivity :
             webView.destroy()
         }
         terminalWebView = null
+        usbPermissionController.clear()
         printerDevicesController.clear()
         super.onDestroy()
     }
@@ -324,6 +327,7 @@ class MainActivity :
                             onContinueAdd = printerDevicesController::continueCurrentFlow,
                             onRefresh = printerDevicesController::refresh,
                             onRetry = printerDevicesController::refresh,
+                            onSelectUsb = printerDevicesController::selectCandidate,
                             onSelectLanPrinter = printerDevicesController::selectCandidate,
                             onManualLanAddress = printerDevicesController::beginManualLanEntry,
                             onManualLanAddressChanged = printerDevicesController::setManualLanAddress,
@@ -361,8 +365,36 @@ class MainActivity :
                 printerDevicesController.effects.collect { effect ->
                     when (effect) {
                         is PrinterDevicesEffect.RequestUsbPermission -> {
-                            usbInspector.findDevice(effect.deviceName)?.let {
-                                usbPermissionController.requestPermission(it)
+                            val device = usbInspector.findDevice(effect.deviceName)
+                            if (device == null) {
+                                printerDevicesController.onUsbPermissionRequestFailed(
+                                    effect.deviceName,
+                                )
+                            } else {
+                                val outcome = usbPermissionController.requestPermission(device)
+                                when (outcome.result) {
+                                    UsbPermissionRequestResult.ALREADY_GRANTED -> Unit
+                                    UsbPermissionRequestResult.REQUEST_STARTED ->
+                                        printerDevicesController.onUsbPermissionRequestStarted(
+                                            effect.deviceName,
+                                        )
+                                    UsbPermissionRequestResult.REQUEST_ALREADY_PENDING -> {
+                                        if (outcome.pendingDeviceName == effect.deviceName) {
+                                            printerDevicesController
+                                                .onUsbPermissionRequestAlreadyPending(
+                                                    effect.deviceName,
+                                                )
+                                        } else {
+                                            printerDevicesController.onUsbPermissionRequestFailed(
+                                                effect.deviceName,
+                                            )
+                                        }
+                                    }
+                                    UsbPermissionRequestResult.REQUEST_FAILED ->
+                                        printerDevicesController.onUsbPermissionRequestFailed(
+                                            effect.deviceName,
+                                        )
+                                }
                             }
                         }
                         PrinterDevicesEffect.RequestBluetoothPermissions -> {
