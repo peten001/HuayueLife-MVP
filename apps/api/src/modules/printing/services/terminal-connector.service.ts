@@ -635,7 +635,7 @@ export class TerminalConnectorService {
   }
 
   private pollIntervalSeconds() {
-    return boundedInteger(this.config.get('TERMINAL_JOB_POLL_SECONDS'), 5, 10, 5);
+    return boundedInteger(this.config.get('TERMINAL_JOB_POLL_SECONDS'), 2, 10, 2);
   }
 
   private heartbeatIntervalSeconds() {

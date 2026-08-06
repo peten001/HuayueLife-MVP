@@ -49,6 +49,44 @@ describe('TerminalConnectorService', () => {
     );
   });
 
+  it.each([
+    ['an unset value', undefined, 2],
+    ['the minimum', '2', 2],
+    ['a value below the minimum', '1', 2],
+    ['an in-range value', '7', 7],
+    ['a value above the maximum', '11', 10],
+  ] as const)(
+    'returns the bounded terminal print poll interval for %s',
+    async (_case, configuredValue, expected) => {
+      const prisma = createPrismaMock();
+      prisma.merchantTerminal.findFirst.mockResolvedValue({
+        id: terminal.id,
+        name: terminal.name,
+        status: 'ACTIVE',
+        appVersion: '2.0.0-rc11.3',
+        boundPrinterId: 88n,
+        configVersion: 3,
+        resetUsbRequestedAt: null,
+        resetUsbAcknowledgedAt: null,
+        merchant: { id: terminal.merchantId, printingEnabled: true },
+        boundPrinter: {
+          id: 88n,
+          channelType: 'LOCAL_USB_ESCPOS',
+          enabled: true,
+        },
+      });
+      const service = createService(prisma, {}, createAuditMock(), {
+        ...(configuredValue === undefined
+          ? {}
+          : { TERMINAL_JOB_POLL_SECONDS: configuredValue }),
+      });
+
+      await expect(service.configFor(terminal)).resolves.toEqual(
+        expect.objectContaining({ pollIntervalSeconds: expected }),
+      );
+    },
+  );
+
   it('returns USB archive tombstones only to the terminal that owned the binding', async () => {
     const prisma = createPrismaMock();
     const archivedAt = new Date('2026-08-04T02:00:00.000Z');
@@ -482,7 +520,7 @@ describe('TerminalConnectorService', () => {
       merchantPrintingEnabled: true,
       terminalEnabled: true,
       terminalStatus: 'ACTIVE',
-      pollIntervalSeconds: 5,
+      pollIntervalSeconds: 2,
       bindings: [],
       archivedBindings: [],
     });
@@ -606,12 +644,13 @@ function createService(
   prisma: ReturnType<typeof createPrismaMock>,
   flagOverrides: Record<string, unknown> = {},
   audit: ReturnType<typeof createAuditMock> = createAuditMock(),
+  configOverrides: Record<string, unknown> = {},
 ) {
   return new TerminalConnectorService(
     prisma as never,
     new ConfigService({
-      TERMINAL_JOB_POLL_SECONDS: '5',
       TERMINAL_HEARTBEAT_SECONDS: '20',
+      ...configOverrides,
     }),
     {
       assertTaskCenterEnabled: jest.fn(),
