@@ -2,15 +2,15 @@
 // Keep APK metadata out of printing-center components.
 export const androidTerminalRelease = {
   appName: 'YunQiao Merchant Terminal',
-  versionName: '1.0.0-rc6',
-  versionCode: 13,
+  versionName: '2.0.0-rc11.5',
+  versionCode: 60,
   releaseType: 'OFFICIAL_OPTIONAL_UPGRADE',
   packageName: 'com.yunqiao.life.merchantterminal',
-  fileName: 'YunQiao-Merchant-Terminal-v1.0.0-rc6-signed.apk',
-  fileSizeBytes: 2_051_509,
-  sha256: '8970fb3ef649fe0795f6313febf10a2355cfa56807011f524c11bb2691c8cb26',
-  updatedAt: '2026-07-28 20:25 (GMT+7)',
-  downloadUrl: '/downloads/apk/YunQiao-Merchant-Terminal-v1.0.0-rc6-signed.apk',
+  fileName: 'YunQiao-Merchant-Terminal-v2.0.0-rc11.5-signed.apk',
+  fileSizeBytes: 2_216_758,
+  sha256: 'f0b51ea37f3e773677b3b6197a83c068eba62bcec39c47d6313f9d4a02e948d6',
+  updatedAt: '2026-08-07 08:49 (GMT+7)',
+  downloadUrl: '/downloads/apk/YunQiao-Merchant-Terminal-v2.0.0-rc11.5-signed.apk',
   releaseNoteKeys: [
     'androidTerminalReleaseNoteBilingual',
     'androidTerminalReleaseNoteUsb',
