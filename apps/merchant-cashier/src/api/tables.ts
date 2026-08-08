@@ -4,6 +4,7 @@ import type {
   TableSessionCheckoutResult,
   TableSessionDetail,
   TableSessionSummary,
+  SettlementAdjustmentInput,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -55,5 +56,19 @@ export async function checkoutTableSession(sessionId: string): Promise<TableSess
 export async function setTableSessionRounding(sessionId: string, enabled: boolean): Promise<TableSessionDetail> {
   if (isDemoSessionActive()) return demoRepository.setSessionRounding(sessionId, enabled);
   const result = await requestApi<{ session: TableSessionDetail }>(`/merchant/table-sessions/${encodeURIComponent(sessionId)}/rounding`, { method: 'POST', body: { enabled } });
+  return result.session;
+}
+
+export async function setTableSessionSettlementAdjustment(
+  sessionId: string,
+  input: SettlementAdjustmentInput,
+): Promise<TableSessionDetail> {
+  if (isDemoSessionActive()) {
+    return demoRepository.setSessionSettlementAdjustment(sessionId, input);
+  }
+  const result = await requestApi<{ session: TableSessionDetail }>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/settlement-adjustment`,
+    { method: 'POST', body: input },
+  );
   return result.session;
 }

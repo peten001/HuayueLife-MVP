@@ -13,13 +13,13 @@ const props = defineProps<{
   order: MerchantOrder;
   loading?: boolean;
   disabled?: boolean;
-  roundingLoading?: boolean;
-  roundingDisabled?: boolean;
-  roundingDisabledReason?: string;
+  adjustmentLoading?: boolean;
+  adjustmentDisabled?: boolean;
+  adjustmentDisabledReason?: string;
 }>();
 const emit = defineEmits<{
   action: [action: FulfillmentWorkflowAction];
-  rounding: [];
+  adjustment: [];
 }>();
 const { t } = useI18n();
 const action = computed(() => nextFulfillmentAction(props.order));
@@ -65,15 +65,15 @@ const icon = computed(() => {
       v-if="['PICKUP', 'DELIVERY'].includes(order.orderType)"
       type="button"
       class="secondary-action fulfillment-action-dock__rounding"
-      data-testid="pickup-rounding"
-      :class="{ 'is-applied': order.roundingApplied }"
-      :disabled="roundingLoading || disabled || roundingDisabled"
-      :title="roundingDisabledReason"
-      @click="emit('rounding')"
+      data-testid="order-settlement-adjustment"
+      :class="{ 'is-applied': order.discountPayableRateBps != null || order.roundingApplied }"
+      :disabled="adjustmentLoading || disabled || adjustmentDisabled"
+      :title="adjustmentDisabledReason"
+      @click="emit('adjustment')"
     >
-      <LoaderCircle v-if="roundingLoading" :size="18" class="spinning" aria-hidden="true" />
+      <LoaderCircle v-if="adjustmentLoading" :size="18" class="spinning" aria-hidden="true" />
       <CircleDollarSign v-else :size="18" aria-hidden="true" />
-      {{ roundingLoading ? t('common.processing') : order.roundingApplied ? t('table.cancelRoundingShort') : t('table.rounding') }}
+      {{ adjustmentLoading ? t('common.processing') : t('discount.entry') }}
     </button>
   </footer>
 </template>

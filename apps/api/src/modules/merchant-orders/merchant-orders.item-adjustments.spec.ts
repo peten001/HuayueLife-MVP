@@ -83,6 +83,9 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
             category_active: 1,
           },
         ]),
+      tableSession: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     const { service, creator } = buildService(tx);
 
@@ -126,6 +129,26 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         }),
       }),
     );
+    expect(tx.tableSession.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 51n,
+        OR: [
+          { discountPayableRateBps: { not: null } },
+          { discountAmountVnd: { not: 0n } },
+          { discountAppliedByStaffId: { not: null } },
+          { roundingAppliedByStaffId: { not: null } },
+          { roundingAmountVnd: { not: 0n } },
+        ],
+      },
+      data: {
+        discountPayableRateBps: null,
+        discountAmountVnd: 0n,
+        discountAppliedByStaffId: null,
+        discountAppliedAt: null,
+        roundingAmountVnd: 0n,
+        roundingAppliedByStaffId: null,
+      },
+    });
   });
 
   it('returns the existing add-on order for the same staff idempotency key', async () => {
@@ -522,6 +545,10 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
           status: 'CLOSED',
           openTableId: null,
           closedAt: expect.any(Date),
+          discountPayableRateBps: null,
+          discountAmountVnd: 0n,
+          discountAppliedByStaffId: null,
+          discountAppliedAt: null,
           roundingAmountVnd: 0n,
           roundingAppliedByStaffId: null,
         }),

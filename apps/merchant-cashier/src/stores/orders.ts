@@ -8,6 +8,7 @@ import {
   messageFromApiError,
   runMerchantOrderAction,
   setMerchantOrderRounding,
+  setMerchantOrderSettlementAdjustment,
 } from '@/api';
 import { cashierConfig } from '@/config';
 import {
@@ -24,6 +25,7 @@ import type {
   MerchantOrderAction,
   MerchantOrderChatConversation,
   MerchantOrderFilters,
+  SettlementAdjustmentInput,
 } from '@/types';
 import { useAuthStore } from './auth';
 import { useSoundStore } from './sound';
@@ -276,6 +278,42 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     }
   }
 
+  async function setSettlementAdjustment(
+    id: string,
+    input: SettlementAdjustmentInput,
+  ) {
+    const order = findCachedOrder(id) ?? selectedOrder.value;
+    if (!order || order.id !== id) throw new Error('Order not loaded');
+    if (!['PICKUP', 'DELIVERY'].includes(order.orderType)) {
+      throw new Error('Only pickup and delivery orders can receive settlement adjustments');
+    }
+    const generation = dataGeneration;
+    invalidateLiveRequests();
+    detailRequestSequence += 1;
+    actionLoadingId.value = id;
+    error.value = '';
+    try {
+      const updated = await setMerchantOrderSettlementAdjustment(id, input);
+      if (generation === dataGeneration) {
+        selectedOrder.value = updated;
+        updateCachedOrder(updated);
+      }
+      return updated;
+    } catch (caught) {
+      if (generation === dataGeneration) {
+        error.value = messageFromApiError(caught);
+        try {
+          await selectOrder(id);
+        } catch {
+          // Preserve the adjustment error; the refresh is best effort.
+        }
+      }
+      throw caught;
+    } finally {
+      if (generation === dataGeneration) actionLoadingId.value = '';
+    }
+  }
+
   async function refreshSelectedOrder() {
     const id = selectedOrder.value?.id;
     if (!id) return null;
@@ -444,6 +482,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     applyOrderSnapshot,
     runAction,
     setRounding,
+    setSettlementAdjustment,
     startLivePolling,
     stopLivePolling,
     clear,

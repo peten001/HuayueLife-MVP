@@ -28,6 +28,10 @@ export interface TableSessionSummary {
   itemCount: number;
   totalAmountVnd: string;
   originalAmountVnd?: string;
+  discountPayableRateBps?: number | null;
+  discountAmountVnd?: string;
+  discountAppliedByStaffId?: string | null;
+  discountAppliedAt?: string | null;
   roundingApplied?: boolean;
   roundingAmountVnd?: string;
   payableAmountVnd?: string;

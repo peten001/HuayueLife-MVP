@@ -30,11 +30,12 @@ const currentReceipt: ReceiptDocument = {
   ],
   totals: {
     subtotal: 513_000,
+    commercialDiscountAmount: 51_300,
     originalAmount: 513_000,
-    discount: 3_000,
-    roundingAmount: 3_000,
-    receivedAmount: 510_000,
-    total: 510_000,
+    discount: 1_700,
+    roundingAmount: 1_700,
+    receivedAmount: 460_000,
+    total: 460_000,
     currency: 'VND',
   },
   footer: { zh: '谢谢惠顾', vi: 'Cảm ơn quý khách' },
@@ -68,10 +69,11 @@ describe('receipt schema compatibility', () => {
 
     expect(compatible.totals).toEqual(
       expect.objectContaining({
+        commercialDiscountAmount: 51_300,
         originalAmount: 513_000,
-        roundingAmount: 3_000,
-        receivedAmount: 510_000,
-        total: 510_000,
+        roundingAmount: 1_700,
+        receivedAmount: 460_000,
+        total: 460_000,
       }),
     );
   });

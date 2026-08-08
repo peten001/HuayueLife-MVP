@@ -15,7 +15,7 @@ const props = defineProps<{
   actionsDisabled?: boolean;
   adjustmentLoadingId?: string;
   pendingAdjustmentItemId?: string;
-  roundingApplied?: boolean;
+  adjustmentApplied?: boolean;
   payableAmount?: string;
 }>();
 
@@ -24,11 +24,13 @@ const emit = defineEmits<{
   decreaseItem: [item: OrderItem, order: TableSessionOrder];
   returnItem: [item: OrderItem, order: TableSessionOrder];
   checkout: [];
-  rounding: [];
+  adjustment: [];
 }>();
 
 const { t, locale } = useI18n();
 const receivedAmount = computed(() => props.payableAmount || props.session?.payableAmountVnd || props.session?.totalAmountVnd || '0');
+const discountAmount = computed(() => props.session?.discountAmountVnd || '0');
+const roundingAmount = computed(() => props.session?.roundingAmountVnd || '0');
 const sessionItems = computed(() => (props.session?.orders || []).flatMap((order) => order.items.map((item) => ({ item, order }))));
 const totalDishQuantity = computed(() => sessionItems.value.reduce((total, { item }) => total + Number(item.quantity || 0), 0));
 const dishCountLabel = computed(() => t(totalDishQuantity.value === 1 ? 'table.dishCountOne' : 'table.dishCount', { count: totalDishQuantity.value }));
@@ -125,7 +127,12 @@ function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
       <button v-if="canOrderItems" type="button" class="secondary-action dinein-action-button" data-testid="table-order-items" :disabled="actionsDisabled" @click="emit('orderItems')">
         <UtensilsCrossed :size="18" aria-hidden="true" />{{ t('table.addItems') }}
       </button>
-      <strong :title="formatVnd(receivedAmount, locale)">{{ t('table.total') }} {{ formatVnd(receivedAmount, locale) }}</strong>
+      <dl class="dinein-settlement-summary">
+        <div><dt>{{ t('discount.cashierOriginal') }}</dt><dd>{{ formatVnd(session.originalAmountVnd || session.totalAmountVnd, locale) }}</dd></div>
+        <div v-if="BigInt(discountAmount) > 0n"><dt>{{ t('discount.cashierAmount') }}</dt><dd class="is-deduction">-{{ formatVnd(discountAmount, locale) }}</dd></div>
+        <div v-if="BigInt(roundingAmount) > 0n"><dt>{{ t('discount.cashierRounding') }}</dt><dd class="is-deduction">-{{ formatVnd(roundingAmount, locale) }}</dd></div>
+        <div class="is-payable"><dt>{{ t('discount.cashierPayable') }}</dt><dd :title="formatVnd(receivedAmount, locale)">{{ formatVnd(receivedAmount, locale) }}</dd></div>
+      </dl>
     </div>
 
     <DineInActionDock
@@ -133,8 +140,8 @@ function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
       :checkout-disabled="checkoutDisabled"
       :checking-out="checkingOut"
       :actions-disabled="actionsDisabled"
-      :rounding-applied="roundingApplied"
-      @rounding="emit('rounding')"
+      :adjustment-applied="adjustmentApplied"
+      @adjustment="emit('adjustment')"
       @checkout="emit('checkout')"
     />
   </div>
@@ -156,3 +163,14 @@ function emitItemAdjustment(item: OrderItem, order: TableSessionOrder) {
 
   <EmptyState v-else :title="t('table.detailEmptyTitle')" :description="t('table.detailEmptyDescription')" />
 </template>
+
+<style scoped>
+.dinein-settlement-summary { display: grid; width: 100%; min-width: 0; gap: 7px; margin: 0; }
+.dinein-settlement-summary div { display: grid; grid-template-columns: max-content max-content; align-items: baseline; justify-content: start; column-gap: 10px; }
+.dinein-settlement-summary dt { min-width: 0; color: var(--cashier-shell-muted); font-size: 14px; font-weight: 400; }
+.dinein-settlement-summary dd { min-width: max-content; margin: 0; overflow: visible; color: var(--cashier-shell-text); font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; text-overflow: clip; white-space: nowrap; }
+.dinein-settlement-summary .is-deduction { color: var(--cashier-red); }
+.dinein-settlement-summary .is-payable { margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--cashier-shell-border); }
+.dinein-settlement-summary .is-payable dt { color: var(--cashier-shell-text); font-size: 16px; font-weight: 600; }
+.dinein-settlement-summary .is-payable dd { color: var(--cashier-detail-total); font-size: 21px; font-weight: 700; }
+</style>

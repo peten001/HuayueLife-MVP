@@ -211,23 +211,42 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.get('[data-testid="table-item-summary"]').text()).toContain('Beef pho');
   });
 
-  it('keeps only the payable total in the compact settlement row', () => {
+  it('shows the authoritative discount, rounding and payable breakdown compactly', () => {
     const wrapper = mountDetail({
-      session: { ...session(0), originalAmountVnd: '513000', roundingApplied: true, roundingAmountVnd: '3000', payableAmountVnd: '510000' },
-      roundingApplied: true,
-      roundingAmount: '3000',
-      payableAmount: '510000',
+      session: {
+        ...session(0),
+        originalAmountVnd: '513000',
+        discountPayableRateBps: 9000,
+        discountAmountVnd: '51300',
+        roundingApplied: true,
+        roundingAmountVnd: '1700',
+        payableAmountVnd: '460000',
+      },
+      adjustmentApplied: true,
+      payableAmount: '460000',
     });
     expect(wrapper.find('[data-testid="table-settlement-summary"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="table-rounding-rule"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="dinein-rounding"]').text()).toBe('取消');
-    expect(wrapper.get('.table-bill-total-row').text()).toContain('510,000');
+    expect(wrapper.get('[data-testid="dinein-settlement-adjustment"]').text()).toBe('优惠');
+    expect(wrapper.text()).toContain('51,300');
+    expect(wrapper.text()).toContain('1,700');
+    expect(wrapper.get('.table-bill-total-row').text()).toContain('460,000');
     expect(wrapper.get('.table-bill-total-row').text()).toContain('加菜');
     expect(wrapper.get('.dinein-summary-row').classes()).toContain('dinein-summary-row');
     expect(wrapper.get('[data-testid="table-order-items"]').classes()).toContain('dinein-action-button');
     expect(wrapper.get('[data-testid="dinein-action-dock"] .dinein-action-button').classes()).toContain('dinein-action-button');
-    expect(wrapper.get('[data-testid="dinein-rounding"]').classes()).toContain('dinein-action-button');
+    expect(wrapper.get('[data-testid="dinein-settlement-adjustment"]').classes()).toContain('dinein-action-button');
     expect(wrapper.get('[data-testid="dinein-checkout"]').classes()).toContain('dinein-action-button');
+    expect(wrapper.get('.dinein-settlement-summary').findAll('dt').map((label) => label.text())).toEqual([
+      '原金额',
+      '折扣',
+      '抹零',
+      '实收',
+    ]);
+    expect(wrapper.get('.dinein-settlement-summary').text()).not.toContain('商品原金额');
+    expect(wrapper.get('.dinein-settlement-summary').text()).not.toContain('折扣优惠');
+    expect(wrapper.get('.dinein-settlement-summary').text()).not.toContain('抹零金额');
+    expect(wrapper.get('.dinein-settlement-summary').text()).not.toContain('最终应收');
   });
 
   it.each(['14000000', '99999999'])('keeps long total %s complete and on one line', (amount) => {
@@ -235,10 +254,38 @@ describe('TableBillDetail V2 table workspace', () => {
       session: { ...session(0), totalAmountVnd: amount, payableAmountVnd: amount },
       payableAmount: amount,
     });
-    const total = wrapper.get('.table-bill-total-row strong');
+    const total = wrapper.get('.dinein-settlement-summary .is-payable dd');
     expect(total.text()).toContain(Number(amount).toLocaleString('en-US'));
     expect(total.attributes('title')).toContain(Number(amount).toLocaleString('en-US'));
     expect(wrapper.get('.table-item-summary-row').find('[data-testid="decrease-order-item"]').exists()).toBe(true);
+  });
+
+  it('renders the production-sized discount amounts completely without zero rounding rows', () => {
+    const wrapper = mountDetail({
+      session: {
+        ...session(0),
+        originalAmountVnd: '1541000',
+        discountPayableRateBps: 8500,
+        discountAmountVnd: '231150',
+        roundingApplied: false,
+        roundingAmountVnd: '0',
+        payableAmountVnd: '1309850',
+      },
+      adjustmentApplied: true,
+      payableAmount: '1309850',
+    });
+    const summary = wrapper.get('.dinein-settlement-summary');
+    const values = summary.findAll('dd').map((value) => value.text());
+
+    expect(values).toEqual([
+      expect.stringContaining('1,541,000'),
+      expect.stringContaining('-231,150'),
+      expect.stringContaining('1,309,850'),
+    ]);
+    expect(summary.text()).not.toContain('抹零金额');
+    summary.findAll('dd').forEach((value) => {
+      expect(value.classes()).not.toContain('is-truncated');
+    });
   });
 
   it('keeps source, item, quantity, amount and remove action on one row', async () => {
@@ -252,20 +299,20 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({ id: 'item-1' });
   });
 
-  it('keeps print, rounding and checkout in the bottom action dock', async () => {
+  it('keeps print, adjustment and checkout in the bottom action dock', async () => {
     const wrapper = mountDetail({
       actionsDisabled: true,
       checkoutDisabled: true,
     });
     expect(wrapper.get('[data-testid="print-primary"]').attributes('disabled')).toBeUndefined();
-    expect(wrapper.get('[data-testid="dinein-rounding"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="dinein-settlement-adjustment"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('[data-testid="dinein-checkout"]').attributes('disabled')).toBeDefined();
 
     await wrapper.setProps({
       actionsDisabled: false,
       checkoutDisabled: false,
     });
-    expect(wrapper.get('[data-testid="dinein-rounding"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('[data-testid="dinein-settlement-adjustment"]').attributes('disabled')).toBeUndefined();
     expect(wrapper.get('[data-testid="dinein-checkout"]').attributes('disabled')).toBeUndefined();
     expect(wrapper.text()).not.toContain('接单');
   });

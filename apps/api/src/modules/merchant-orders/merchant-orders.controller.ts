@@ -23,6 +23,7 @@ import { DecreaseOrderItemDto } from './dto/decrease-order-item.dto';
 import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { OrderItemParamsDto } from './dto/order-item-params.dto';
 import { OrderRoundingDto } from './dto/order-rounding.dto';
+import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
@@ -193,6 +194,21 @@ export class MerchantOrdersController {
       BigInt(staff.sub),
       BigInt(params.id),
       dto.enabled,
+    );
+  }
+
+  @Post(':id/settlement-adjustment')
+  settlementAdjustment(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: SettlementAdjustmentDto,
+  ) {
+    return this.service.setSettlementAdjustment(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto,
     );
   }
 

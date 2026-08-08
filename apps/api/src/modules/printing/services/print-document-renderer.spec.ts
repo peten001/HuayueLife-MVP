@@ -34,6 +34,52 @@ describe('PrintDocument V2 server renderer', () => {
     expect(serialized).not.toContain('tableSession');
   });
 
+  it('renders commercial discount separately from legacy rounding on TABLE_BILL only', () => {
+    const tableBill = tableBillReceipt({
+      subtotal: 513_000,
+      commercialDiscountAmount: 51_300,
+      discount: 1_700,
+      roundingAmount: 1_700,
+      receivedAmount: 460_000,
+      total: 460_000,
+    });
+    const tableContent = renderedContent(renderPrintDocumentV2({
+      receipt: tableBill,
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    }));
+    const orderContent = renderedContent(renderPrintDocumentV2({
+      receipt: receipt({
+        subtotal: 513_000,
+        commercialDiscountAmount: 51_300,
+        roundingAmount: 1_700,
+        total: 460_000,
+      }),
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    }));
+
+    expect(tableContent).toContain('折扣优惠 / Giảm giá -51.300 VND');
+    expect(tableContent).toContain('抹零 / Làm tròn -1.700 VND');
+    expect(tableContent).toContain('最终应收 / Phải thu 460.000 VND');
+    expect(orderContent).not.toContain('折扣优惠 / Giảm giá');
+  });
+
+  it('keeps the historical totals.discount field as rounding only', () => {
+    const content = renderedContent(renderPrintDocumentV2({
+      receipt: tableBillReceipt({
+        subtotal: 513_000,
+        discount: 3_000,
+        total: 510_000,
+      }),
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    }));
+
+    expect(content).not.toContain('折扣优惠 / Giảm giá');
+    expect(content).toContain('抹零 / Làm tròn -3.000 VND');
+  });
+
   it('models a future discount as an ordinary ROW and allows server-only wording changes', () => {
     const build = (discountLabel: string) => createPrintDocumentV2('MM80', [
       { type: 'ROW', left: '小计', right: '828,000 VND', bold: false },
@@ -233,7 +279,7 @@ describe('PrintDocument V2 server renderer', () => {
 
   it('hides TABLE_BILL totals and footer independently', () => {
     const totalsHidden = renderedContent(renderTableBill({ orderTotal: false }));
-    expect(totalsHidden).not.toMatch(/小计 \/ Tạm tính|服务费 \/ Phí dịch vụ|抹零 \/ Làm tròn|最终应收 \/ Phải thu/);
+    expect(totalsHidden).not.toMatch(/小计 \/ Tạm tính|折扣优惠 \/ Giảm giá|服务费 \/ Phí dịch vụ|抹零 \/ Làm tròn|最终应收 \/ Phải thu/);
     expect(totalsHidden).toContain('牛肉粉');
 
     const footerHidden = renderedContent(renderTableBill({ footer: false }));
@@ -330,8 +376,10 @@ function receipt(totals: Omit<ReceiptDocument['totals'], 'currency'>): ReceiptDo
   };
 }
 
-function tableBillReceipt(): ReceiptDocument {
-  const document = receipt({ subtotal: 40_000, total: 40_000 });
+function tableBillReceipt(
+  totals: Omit<ReceiptDocument['totals'], 'currency'> = { subtotal: 40_000, total: 40_000 },
+): ReceiptDocument {
+  const document = receipt(totals);
   return {
     ...document,
     receiptType: 'TABLE_BILL',

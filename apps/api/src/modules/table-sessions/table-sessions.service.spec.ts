@@ -157,12 +157,12 @@ describe('TableSessionsService checkout', () => {
         operatorType: 'MERCHANT_STAFF',
         operatorStaffId: staffId,
         action: 'TABLE_SESSION_CHECKOUT',
-        metadata: {
+        metadata: expect.objectContaining({
           tableSessionId: sessionId.toString(),
           originalAmountVnd: '513000',
           roundingAmountVnd: '3000',
           payableAmountVnd: '510000',
-        },
+        }),
       }),
     });
     expect(
@@ -181,12 +181,12 @@ describe('TableSessionsService checkout', () => {
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([triggerId]);
     expect(transaction.tableSession.updateMany).toHaveBeenCalledWith({
       where: { id: sessionId, merchantId, status: 'OPEN' },
-      data: {
+      data: expect.objectContaining({
         openTableId: null,
         status: 'CLOSED',
         closedAt: expect.any(Date),
         roundingAmountVnd: 3_000n,
-      },
+      }),
     });
     expect(prisma.order.findMany).toHaveBeenCalledWith({
       where: { merchantId, tableSessionId: sessionId },
@@ -261,12 +261,12 @@ describe('TableSessionsService checkout', () => {
         merchantId: harness.merchantId,
         status: 'OPEN',
       },
-      data: {
+      data: expect.objectContaining({
         openTableId: null,
         status: 'CLOSED',
         closedAt: expect.any(Date),
         roundingAmountVnd: 0n,
-      },
+      }),
     });
   });
 
@@ -301,12 +301,12 @@ describe('TableSessionsService checkout', () => {
         merchantId: harness.merchantId,
         status: 'OPEN',
       },
-      data: {
+      data: expect.objectContaining({
         openTableId: null,
         status: 'CLOSED',
         closedAt: expect.any(Date),
         roundingAmountVnd: 0n,
-      },
+      }),
     });
   });
 
@@ -339,6 +339,68 @@ describe('TableSessionsService checkout', () => {
     expect(harness.printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([29n]);
   });
 
+  it('recalculates discount then rounding under checkout locks and records full metadata', async () => {
+    const harness = checkoutHarness([
+      { id: 19n, status: 'ACCEPTED', order_type: 'DINE_IN' },
+    ]);
+    harness.transaction.$queryRaw.mockReset();
+    harness.transaction.$queryRaw
+      .mockResolvedValueOnce([{ id: 13n, status: 'ACTIVE' }])
+      .mockResolvedValueOnce([{
+        id: harness.sessionId,
+        merchant_id: harness.merchantId,
+        table_id: 13n,
+        status: 'OPEN',
+        open_table_id: 13n,
+        closed_at: null,
+        discount_payable_rate_bps: 9_000,
+        discount_amount_vnd: 100_300n,
+        discount_applied_by_staff_id: harness.staffId,
+        discount_applied_at: new Date('2026-08-08T08:00:00.000Z'),
+        rounding_amount_vnd: 2_700n,
+        rounding_applied_by_staff_id: harness.staffId,
+      }])
+      .mockResolvedValueOnce([{
+        id: 19n,
+        status: 'ACCEPTED',
+        order_type: 'DINE_IN',
+        item_amount_vnd: 1_003_000n,
+        total_amount_vnd: 1_003_000n,
+      }]);
+
+    await harness.service.checkoutSession(
+      harness.merchantId,
+      harness.staffId,
+      harness.sessionId,
+    );
+
+    expect(harness.transaction.orderStatusLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'TABLE_SESSION_CHECKOUT',
+        metadata: expect.objectContaining({
+          originalAmountVnd: '1003000',
+          itemAmountVnd: '1003000',
+          discountPayableRateBps: 9_000,
+          discountAmountVnd: '100300',
+          afterDiscountAmountVnd: '902700',
+          nonDiscountableFeeVnd: '0',
+          roundingAmountVnd: '2700',
+          finalPayableAmountVnd: '900000',
+          payableAmountVnd: '900000',
+        }),
+      }),
+    });
+    expect(harness.transaction.tableSession.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: harness.sessionId, status: 'OPEN' }),
+      data: expect.objectContaining({
+        status: 'CLOSED',
+        discountPayableRateBps: 9_000,
+        discountAmountVnd: 100_300n,
+        roundingAmountVnd: 2_700n,
+      }),
+    });
+  });
+
   it('closes and completes an accepted session even after its table is disabled', async () => {
     const harness = checkoutHarness(
       [{ id: 19n, status: 'ACCEPTED', order_type: 'DINE_IN' }],
@@ -358,12 +420,12 @@ describe('TableSessionsService checkout', () => {
     );
     expect(harness.transaction.tableSession.updateMany).toHaveBeenCalledWith({
       where: { id: harness.sessionId, merchantId: harness.merchantId, status: 'OPEN' },
-      data: {
+      data: expect.objectContaining({
         openTableId: null,
         status: 'CLOSED',
         closedAt: expect.any(Date),
         roundingAmountVnd: 0n,
-      },
+      }),
     });
   });
 
@@ -488,8 +550,8 @@ describe('TableSessionsService rounding', () => {
             status: 'OPEN',
             open_table_id: tableId,
             closed_at: null,
-            rounding_amount_vnd: enabled ? 3_000n : 0n,
-            rounding_applied_by_staff_id: enabled ? staffId : null,
+            rounding_amount_vnd: enabled ? 0n : 3_000n,
+            rounding_applied_by_staff_id: enabled ? null : staffId,
           },
         ])
         .mockResolvedValueOnce([

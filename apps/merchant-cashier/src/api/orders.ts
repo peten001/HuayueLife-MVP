@@ -7,6 +7,7 @@ import type {
   MerchantOrderFilters,
   MerchantOrderMutationResult,
   ReturnMerchantOrderItemInput,
+  SettlementAdjustmentInput,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -20,6 +21,18 @@ export function listMerchantOrders(filters: MerchantOrderFilters = {}): Promise<
         date: filters.date,
       },
     });
+}
+
+export function setMerchantOrderSettlementAdjustment(
+  id: string,
+  input: SettlementAdjustmentInput,
+): Promise<MerchantOrder> {
+  return isDemoSessionActive()
+    ? Promise.resolve(demoRepository.setOrderSettlementAdjustment(id, input))
+    : requestApi<MerchantOrder>(
+      `/merchant/orders/${encodeURIComponent(id)}/settlement-adjustment`,
+      { method: 'POST', body: input },
+    );
 }
 
 export function getMerchantOrder(id: string): Promise<MerchantOrder> {

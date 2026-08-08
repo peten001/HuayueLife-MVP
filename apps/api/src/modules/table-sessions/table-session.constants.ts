@@ -1,5 +1,10 @@
+import {
+  calculateSettlementAdjustment,
+  SETTLEMENT_ROUNDING_UNIT_VND,
+} from '../orders/settlement-adjustment';
+
 /** The cashier removes only the tail below the ten-thousand VND place. */
-export const TABLE_SESSION_ROUNDING_UNIT_VND = 10_000n;
+export const TABLE_SESSION_ROUNDING_UNIT_VND = SETTLEMENT_ROUNDING_UNIT_VND;
 
 export type RoundingAmounts = {
   originalAmountVnd: bigint;
@@ -10,15 +15,15 @@ export type RoundingAmounts = {
 export function calculateRoundingAmounts(
   originalAmountVnd: bigint,
 ): RoundingAmounts {
-  if (originalAmountVnd < 0n) {
-    throw new RangeError('Amount cannot be negative');
-  }
-  const roundingAmountVnd =
-    originalAmountVnd % TABLE_SESSION_ROUNDING_UNIT_VND;
+  const amounts = calculateSettlementAdjustment({
+    itemAmountVnd: originalAmountVnd,
+    discountPayableRateBps: null,
+    roundingEnabled: true,
+  });
   return {
     originalAmountVnd,
-    roundingAmountVnd,
-    payableAmountVnd: originalAmountVnd - roundingAmountVnd,
+    roundingAmountVnd: amounts.roundingAmountVnd,
+    payableAmountVnd: amounts.payableAmountVnd,
   };
 }
 

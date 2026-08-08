@@ -485,6 +485,55 @@ describe('ReceiptSnapshotService validation', () => {
       expect.objectContaining({ where: { id: 47n, merchantId } }),
     );
   });
+
+  it('freezes the TABLE_BILL commercial discount before rounding', async () => {
+    prisma.tableSession.findFirst.mockResolvedValue({
+      id: 48n,
+      sessionNo: 'TS-48',
+      openedAt: new Date('2026-07-15T00:00:00.000Z'),
+      closedAt: null,
+      discountPayableRateBps: 9000,
+      discountAmountVnd: 51_300n,
+      discountAppliedByStaffId: 11n,
+      discountAppliedAt: new Date('2026-07-15T00:01:00.000Z'),
+      roundingAmountVnd: 1_700n,
+      roundingAppliedByStaffId: 11n,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        addressZh: '测试地址',
+        addressDetail: null,
+        contactPhone: '0900000000',
+      },
+      table: { tableNo: 'A01', tableName: null },
+      orders: [{
+        orderNo: 'TEST-DISCOUNTED-TABLE',
+        itemAmountVnd: 513_000n,
+        totalAmountVnd: 513_000n,
+        items: [{
+          productNameZhSnapshot: '折扣验收菜品',
+          product: { nameVi: 'Món giảm giá' },
+          quantity: 1,
+          unitPriceVnd: 513_000n,
+          subtotalVnd: 513_000n,
+          remark: null,
+        }],
+      }],
+    });
+
+    const snapshot = await service.fromTableSession(merchantId, 48n);
+
+    expect(snapshot.totals).toEqual({
+      subtotal: 513_000,
+      commercialDiscountAmount: 51_300,
+      discount: 1_700,
+      originalAmount: 513_000,
+      roundingAmount: 1_700,
+      receivedAmount: 460_000,
+      total: 460_000,
+      currency: 'VND',
+    });
+  });
 });
 
 function validReceipt(): ReceiptDocument {

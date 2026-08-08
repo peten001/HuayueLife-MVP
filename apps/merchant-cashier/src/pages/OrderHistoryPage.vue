@@ -167,20 +167,22 @@ onMounted(async () => { await refresh(false); initialized.value = true; });
           <OrderItemsSection :order="order" />
           <section v-if="order.customerRemark" class="workflow-section"><h3>{{ t('order.customerRemark') }}</h3><p>{{ order.customerRemark }}</p></section>
           <BillSummary :item-amount="order.itemAmountVnd" :delivery-fee="order.deliveryFeeVnd" :total-amount="orderPayableAmount" />
-          <section v-if="order.roundingApplied" class="workflow-section order-checkout-settlement" data-testid="order-rounding-settlement">
+          <section v-if="BigInt(order.discountAmountVnd || '0') > 0n || order.roundingApplied" class="workflow-section order-checkout-settlement" data-testid="order-settlement-adjustment">
             <h3>{{ t('table.checkoutSettlement') }}</h3>
             <dl>
               <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(order.originalAmountVnd || order.totalAmountVnd, locale) }}</dd></div>
-              <div><dt>{{ t('table.roundingAmount') }}</dt><dd>{{ formatVnd(order.roundingAmountVnd || '0', locale) }}</dd></div>
-              <div><dt>{{ t('table.receivedAmount') }}</dt><dd>{{ formatVnd(orderPayableAmount, locale) }}</dd></div>
+              <div v-if="BigInt(order.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(order.discountAmountVnd || '0', locale) }}</dd></div>
+              <div v-if="BigInt(order.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(order.roundingAmountVnd || '0', locale) }}</dd></div>
+              <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(orderPayableAmount, locale) }}</dd></div>
             </dl>
           </section>
           <section v-if="checkoutSettlement" class="workflow-section order-checkout-settlement" data-testid="order-checkout-settlement">
             <h3>{{ t('table.checkoutSettlement') }}</h3>
             <dl>
               <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(checkoutSettlement.originalAmountVnd, locale) }}</dd></div>
-              <div><dt>{{ t('table.roundingAmount') }}</dt><dd>{{ formatVnd(checkoutSettlement.roundingAmountVnd, locale) }}</dd></div>
-              <div><dt>{{ t('table.receivedAmount') }}</dt><dd>{{ formatVnd(checkoutSettlement.payableAmountVnd, locale) }}</dd></div>
+              <div v-if="BigInt(checkoutSettlement.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.discountAmountVnd || '0', locale) }}</dd></div>
+              <div v-if="BigInt(checkoutSettlement.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.roundingAmountVnd, locale) }}</dd></div>
+              <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(checkoutSettlement.finalPayableAmountVnd || checkoutSettlement.payableAmountVnd, locale) }}</dd></div>
             </dl>
           </section>
           <PrintJobActions compact :order-id="order.id" />

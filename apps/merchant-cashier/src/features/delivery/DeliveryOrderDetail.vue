@@ -11,8 +11,8 @@ import DeliveryContactPanel from './DeliveryContactPanel.vue';
 const props = defineProps<{ order: MerchantOrder }>();
 const { t, locale } = useI18n();
 const packingFee = computed(() => packingFeeVnd(props.order));
-const originalAmount = computed(() => props.order.originalAmountVnd || props.order.totalAmountVnd);
 const roundingAmount = computed(() => props.order.roundingAmountVnd || '0');
+const discountAmount = computed(() => props.order.discountAmountVnd || '0');
 const payableAmount = computed(() => props.order.payableAmountVnd || props.order.totalAmountVnd);
 </script>
 
@@ -32,11 +32,9 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
       <div><dt>{{ t('bill.itemsSubtotal') }}</dt><dd>{{ formatVnd(order.itemAmountVnd, locale) }}</dd></div>
       <div><dt>{{ t('bill.packingFee') }}</dt><dd>{{ formatVnd(packingFee, locale) }}</dd></div>
       <div><dt>{{ t('bill.deliveryFee') }}</dt><dd>{{ formatVnd(order.deliveryFeeVnd, locale) }}</dd></div>
-      <template v-if="order.roundingApplied">
-        <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(originalAmount, locale) }}</dd></div>
-        <div><dt>{{ t('table.roundingAmount') }}</dt><dd class="pickup-settlement-summary__rounding">−{{ formatVnd(roundingAmount, locale) }}</dd></div>
-      </template>
-      <div class="pickup-settlement-summary__payable"><dt>{{ order.roundingApplied ? t('table.receivedAmount') : t('bill.total') }}</dt><dd>{{ formatVnd(payableAmount, locale) }}</dd></div>
+      <div v-if="BigInt(discountAmount) > 0n"><dt>{{ t('discount.amount') }}</dt><dd class="pickup-settlement-summary__rounding">-{{ formatVnd(discountAmount, locale) }}</dd></div>
+      <div v-if="BigInt(roundingAmount) > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd class="pickup-settlement-summary__rounding">-{{ formatVnd(roundingAmount, locale) }}</dd></div>
+      <div class="pickup-settlement-summary__payable"><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(payableAmount, locale) }}</dd></div>
     </dl>
   </article>
 </template>

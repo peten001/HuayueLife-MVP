@@ -1,4 +1,5 @@
-import { canRunOrderAction, calculateTableSessionRoundingAmount } from '@/domain';
+import { canRunOrderAction } from '@/domain';
+import { previewSettlementAdjustment } from '@/domain/settlement-adjustment';
 import type {
   CreateMerchantTableOrderInput,
   DecreaseMerchantOrderItemInput,
@@ -7,6 +8,7 @@ import type {
   MerchantOrderFilters,
   MerchantOrderMutationResult,
   ReturnMerchantOrderItemInput,
+  SettlementAdjustmentInput,
   TableSessionCheckoutResult,
   TableSessionDetail,
   TableSessionSummary,
@@ -32,6 +34,7 @@ function cloneFixture<T>(value: T): T {
 let orders = cloneFixture(initialDemoOrders);
 let sessionClosed = false;
 let roundingApplied = false;
+let sessionDiscountPayableRateBps: number | null = null;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 
@@ -39,6 +42,7 @@ export function resetDemoRepository() {
   orders = cloneFixture(initialDemoOrders);
   sessionClosed = false;
   roundingApplied = false;
+  sessionDiscountPayableRateBps = null;
   nextAddedOrder = 1;
   adjustmentResults = new Map();
   resetDemoChatRepository();
@@ -77,19 +81,20 @@ export const demoRepository = {
     if (!['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
       throw conflict('ORDER_ROUNDING_STATUS_NOT_ALLOWED', 'This order cannot be rounded');
     }
-    const originalAmountVnd = BigInt(order.totalAmountVnd);
-    const roundingAmountVnd = enabled
-      ? calculateTableSessionRoundingAmount(originalAmountVnd)
-      : 0n;
-    const now = new Date().toISOString();
-    order.originalAmountVnd = originalAmountVnd.toString();
-    order.roundingAmountVnd = roundingAmountVnd.toString();
-    order.payableAmountVnd = (originalAmountVnd - roundingAmountVnd).toString();
-    order.roundingApplied = enabled;
-    order.roundingAppliedByStaffId = enabled ? demoStaffSession.id : null;
-    order.roundingAppliedAt = enabled ? now : null;
-    order.updatedAt = now;
-    return cloneFixture(order);
+    return applyDemoOrderSettlement(order, {
+      discountPayableRateBps: order.discountPayableRateBps ?? null,
+      roundingEnabled: enabled,
+    });
+  },
+  setOrderSettlementAdjustment(id: string, input: SettlementAdjustmentInput) {
+    const order = requireOrder(id);
+    if (!['PICKUP', 'DELIVERY'].includes(order.orderType)) {
+      throw conflict('ORDER_ROUNDING_ORDER_TYPE_NOT_ALLOWED', 'Only pickup and delivery orders can receive adjustments');
+    }
+    if (order.settlementStatus !== 'UNSETTLED') {
+      throw conflict('ORDER_ROUNDING_ALREADY_SETTLED', 'This order is settled');
+    }
+    return applyDemoOrderSettlement(order, input);
   },
   tables: () => cloneFixture(demoTables),
   openSessions: () => sessionClosed ? [] : [buildSessionSummary()],
@@ -103,6 +108,13 @@ export const demoRepository = {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
     roundingApplied = enabled;
+    return buildSessionDetail();
+  },
+  setSessionSettlementAdjustment: (id: string, input: SettlementAdjustmentInput) => {
+    if (id !== 'demo-session-1') throw notFound('Demo table session not found');
+    if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
+    sessionDiscountPayableRateBps = input.discountPayableRateBps;
+    roundingApplied = input.roundingEnabled;
     return buildSessionDetail();
   },
   closeSession: (id: string) => {
@@ -125,10 +137,11 @@ export const demoRepository = {
     const originalAmountVnd = tableOrders()
       .filter((order) => order.status !== 'CANCELLED')
       .reduce((sum, order) => sum + BigInt(order.totalAmountVnd), 0n);
-    const roundingAmountVnd = roundingApplied
-      ? calculateTableSessionRoundingAmount(originalAmountVnd)
-      : 0n;
-    const payableAmountVnd = originalAmountVnd - roundingAmountVnd;
+    const amounts = previewSettlementAdjustment({
+      itemAmountVnd: originalAmountVnd,
+      discountPayableRateBps: sessionDiscountPayableRateBps,
+      roundingEnabled: roundingApplied,
+    });
     const completedAt = new Date().toISOString();
     for (const order of tableOrders()) {
       if (['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) {
@@ -150,8 +163,14 @@ export const demoRepository = {
             metadata: {
               tableSessionId: 'demo-session-1',
               originalAmountVnd: originalAmountVnd.toString(),
-              roundingAmountVnd: roundingAmountVnd.toString(),
-              payableAmountVnd: payableAmountVnd.toString(),
+              itemAmountVnd: originalAmountVnd.toString(),
+              discountPayableRateBps: sessionDiscountPayableRateBps,
+              discountAmountVnd: amounts.discountAmountVnd,
+              afterDiscountAmountVnd: amounts.afterDiscountAmountVnd,
+              nonDiscountableFeeVnd: '0',
+              roundingAmountVnd: amounts.roundingAmountVnd,
+              finalPayableAmountVnd: amounts.payableAmountVnd,
+              payableAmountVnd: amounts.payableAmountVnd,
             },
           },
         ];
@@ -352,6 +371,7 @@ function tableOrders() {
 
 function clearDemoSessionRounding() {
   roundingApplied = false;
+  sessionDiscountPayableRateBps = null;
 }
 
 function buildSessionSummary(): TableSessionSummary {
@@ -360,13 +380,44 @@ function buildSessionSummary(): TableSessionSummary {
   const unfinished = related.filter((order) => !['COMPLETED', 'CANCELLED'].includes(order.status));
   const firstOpenedOrder = related[related.length - 1];
   const totalAmountVnd = billable.reduce((sum, order) => sum + BigInt(order.totalAmountVnd), 0n);
-  const roundingAmountVnd = roundingApplied
-    ? calculateTableSessionRoundingAmount(totalAmountVnd)
-    : 0n;
+  const amounts = previewSettlementAdjustment({
+    itemAmountVnd: totalAmountVnd,
+    discountPayableRateBps: sessionDiscountPayableRateBps,
+    roundingEnabled: roundingApplied,
+  });
   return {
     id: 'demo-session-1', sessionNo: 'DEMO-SESSION-1', merchantId: 'demo-merchant', tableId: 'demo-table-1', tableNo: 'A01', tableName: '演示桌 A01', status: sessionClosed ? 'CLOSED' : 'OPEN', openedAt: firstOpenedOrder?.createdAt ?? new Date().toISOString(), closedAt: sessionClosed ? new Date().toISOString() : null,
-    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), roundingApplied, roundingAmountVnd: roundingAmountVnd.toString(), payableAmountVnd: (totalAmountVnd - roundingAmountVnd).toString(), latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
+    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountPayableRateBps, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: sessionDiscountPayableRateBps === null ? null : demoStaffSession.id, discountAppliedAt: sessionDiscountPayableRateBps === null ? null : new Date().toISOString(), roundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
+}
+
+function applyDemoOrderSettlement(
+  order: MerchantOrder,
+  input: SettlementAdjustmentInput,
+) {
+  const amounts = previewSettlementAdjustment({
+    itemAmountVnd: order.itemAmountVnd,
+    nonDiscountableFeeVnd: order.orderType === 'DELIVERY'
+      ? order.deliveryFeeVnd
+      : '0',
+    discountPayableRateBps: input.discountPayableRateBps,
+    roundingEnabled: input.roundingEnabled,
+  });
+  const now = new Date().toISOString();
+  order.originalAmountVnd = order.totalAmountVnd;
+  order.discountPayableRateBps = input.discountPayableRateBps;
+  order.discountAmountVnd = amounts.discountAmountVnd;
+  order.discountAppliedByStaffId = input.discountPayableRateBps === null
+    ? null
+    : demoStaffSession.id;
+  order.discountAppliedAt = input.discountPayableRateBps === null ? null : now;
+  order.roundingAmountVnd = amounts.roundingAmountVnd;
+  order.payableAmountVnd = amounts.payableAmountVnd;
+  order.roundingApplied = input.roundingEnabled;
+  order.roundingAppliedByStaffId = input.roundingEnabled ? demoStaffSession.id : null;
+  order.roundingAppliedAt = input.roundingEnabled ? now : null;
+  order.updatedAt = now;
+  return cloneFixture(order);
 }
 
 function buildSessionDetail(): TableSessionDetail {

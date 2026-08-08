@@ -160,7 +160,7 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.emitted('action')).toEqual([['finish-preparing']]);
   });
 
-  it('renders pickup rounding as a fourth action and switches to cancel', async () => {
+  it('renders pickup adjustment as the fourth action', async () => {
     const wrapper = mount(FulfillmentActionDock, {
       props: {
         order: { ...order, roundingApplied: true, roundingAmountVnd: '3000', payableAmountVnd: '137000' },
@@ -169,12 +169,12 @@ describe('cashier fulfilment V2 components', () => {
     });
 
     expect(wrapper.findAll('footer > button')).toHaveLength(2);
-    expect(wrapper.get('[data-testid="pickup-rounding"]').text()).toContain('取消');
-    await wrapper.get('[data-testid="pickup-rounding"]').trigger('click');
-    expect(wrapper.emitted('rounding')).toHaveLength(1);
+    expect(wrapper.get('[data-testid="order-settlement-adjustment"]').text()).toContain('优惠');
+    await wrapper.get('[data-testid="order-settlement-adjustment"]').trigger('click');
+    expect(wrapper.emitted('adjustment')).toHaveLength(1);
   });
 
-  it('orders pending pickup actions as reject, print, accept, then rounding', () => {
+  it('orders pending pickup actions as reject, print, accept, then adjustment', () => {
     const wrapper = mount(FulfillmentActionDock, {
       props: { order: { ...order, status: 'PENDING_ACCEPTANCE' } },
       slots: {
@@ -189,32 +189,32 @@ describe('cashier fulfilment V2 components', () => {
       '拒单',
       '打印',
       '接单',
-      '抹零',
+      '优惠',
     ]);
   });
 
-  it('keeps delivery pending actions in the same reject, print, accept, rounding order', () => {
+  it('keeps delivery pending actions in the same reject, print, accept, adjustment order', () => {
     const wrapper = mount(FulfillmentActionDock, {
       props: { order: { ...order, orderType: 'DELIVERY', status: 'PENDING_ACCEPTANCE' } },
       slots: { secondary: '<button class="reject-stub">拒单</button>' },
       global: { stubs: { PrintJobActions: { template: '<button class="print-stub">打印</button>' } } },
     });
 
-    expect(wrapper.findAll('footer > button').map((button) => button.text())).toEqual(['拒单', '打印', '接单', '抹零']);
+    expect(wrapper.findAll('footer > button').map((button) => button.text())).toEqual(['拒单', '打印', '接单', '优惠']);
   });
 
-  it('keeps completed pickup rounding disabled while leaving print available', () => {
+  it('keeps completed pickup adjustment disabled while leaving print available', () => {
     const wrapper = mount(FulfillmentActionDock, {
       props: {
         order: { ...order, status: 'COMPLETED' },
-        roundingDisabled: true,
-        roundingDisabledReason: '当前订单状态不允许抹零。',
+        adjustmentDisabled: true,
+        adjustmentDisabledReason: '当前订单状态不允许优惠。',
       },
       global: { stubs: { PrintJobActions: true } },
     });
 
-    expect(wrapper.get('[data-testid="pickup-rounding"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('[data-testid="pickup-rounding"]').attributes('title')).toContain('当前订单状态');
+    expect(wrapper.get('[data-testid="order-settlement-adjustment"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('[data-testid="order-settlement-adjustment"]').attributes('title')).toContain('当前订单状态');
   });
 
   it('copies the address and exposes a safe dial action instead of copying the phone', async () => {

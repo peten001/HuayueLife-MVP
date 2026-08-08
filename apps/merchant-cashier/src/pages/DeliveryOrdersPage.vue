@@ -18,6 +18,7 @@ import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
 import DeliveryOrderCard from '@/features/delivery/DeliveryOrderCard.vue';
 import DeliveryOrderDetail from '@/features/delivery/DeliveryOrderDetail.vue';
 import FulfillmentActionDock from '@/features/fulfillment/FulfillmentActionDock.vue';
@@ -38,6 +39,7 @@ const filter = ref<DeliveryFilter>('ALL');
 const activePane = ref<'detail' | 'chat'>('detail');
 const refreshing = ref(false);
 const rejectOpen = ref(false);
+const adjustmentOpen = ref(false);
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
@@ -96,10 +98,16 @@ async function rejectOrder() {
   await runActionSequence(['reject']);
 }
 
-async function toggleRounding() {
+function openSettlementAdjustment() {
+  if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
+  adjustmentOpen.value = true;
+}
+
+async function saveSettlementAdjustment(input: { discountPayableRateBps: number | null; roundingEnabled: boolean }) {
   if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
   try {
-    await ordersStore.setRounding(order.value.id, !order.value.roundingApplied);
+    await ordersStore.setSettlementAdjustment(order.value.id, input);
+    adjustmentOpen.value = false;
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.roundingStatusNotAllowed')), 'error');
   }
@@ -187,12 +195,24 @@ onMounted(() => void refresh(false));
           </div>
         </div>
 
-        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled" :rounding-loading="actionLoadingId === order.id" :rounding-disabled="roundingDisabled" :rounding-disabled-reason="roundingDisabledReasonKey ? t(roundingDisabledReasonKey) : ''" @action="runFulfillmentAction" @rounding="toggleRounding">
+        <FulfillmentActionDock v-if="order && activePane === 'detail'" :order="order" :loading="actionLoadingId === order.id" :disabled="writeDisabled" :adjustment-loading="actionLoadingId === order.id" :adjustment-disabled="roundingDisabled" :adjustment-disabled-reason="roundingDisabledReasonKey ? t(roundingDisabledReasonKey) : ''" @action="runFulfillmentAction" @adjustment="openSettlementAdjustment">
           <template #secondary><button v-if="order.status === 'PENDING_ACCEPTANCE'" type="button" class="secondary-action secondary-action--danger" :disabled="writeDisabled" @click="rejectOpen = true"><XCircle :size="18" aria-hidden="true" />{{ t('order.action.reject') }}</button></template>
         </FulfillmentActionDock>
       </section>
     </div>
     <ConfirmDialog :open="rejectOpen" :title="t('order.rejectConfirmTitle')" :description="t('order.rejectConfirmDescription')" :cancel-label="t('common.cancel')" :confirm-label="t('common.confirm')" :loading="Boolean(actionLoadingId)" @cancel="rejectOpen = false" @confirm="rejectOrder" />
+    <SettlementAdjustmentDialog
+      v-if="order"
+      :open="adjustmentOpen"
+      :item-amount-vnd="order.itemAmountVnd"
+      :non-discountable-fee-vnd="order.deliveryFeeVnd"
+      :discount-payable-rate-bps="order.discountPayableRateBps"
+      :rounding-enabled="order.roundingApplied"
+      show-delivery-fee
+      :loading="actionLoadingId === order.id"
+      @cancel="adjustmentOpen = false"
+      @confirm="saveSettlementAdjustment"
+    />
     <p v-if="error" class="sr-only" aria-live="polite">{{ error }}</p>
   </section>
 </template>

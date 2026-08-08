@@ -8,7 +8,13 @@ function buildHarness(overrides: Record<string, unknown> = {}) {
     orderNo: 'HY-00000041',
     status: 'PENDING_ACCEPTANCE',
     settlementStatus: 'UNSETTLED',
+    itemAmountVnd: 513_000n,
+    deliveryFeeVnd: 0n,
     totalAmountVnd: 513_000n,
+    discountPayableRateBps: null,
+    discountAmountVnd: 0n,
+    discountAppliedByStaffId: null,
+    discountAppliedAt: null,
     roundingAmountVnd: 0n,
     roundingAppliedByStaffId: null,
     roundingAppliedAt: null,
@@ -164,5 +170,134 @@ describe('MerchantOrdersService pickup rounding', () => {
       response: { code: 'ORDER_ROUNDING_CONCURRENT_UPDATE' },
     });
     expect(tx.orderStatusLog.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('MerchantOrdersService settlement adjustment', () => {
+  it('applies, changes, and cancels a pickup discount', async () => {
+    const applied = buildHarness({ itemAmountVnd: 1_003_000n, totalAmountVnd: 1_003_000n });
+    await expect(applied.service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: 9_000,
+      roundingEnabled: false,
+    })).resolves.toMatchObject({
+      discountPayableRateBps: 9_000,
+      discountAmountVnd: 100_300n,
+      payableAmountVnd: 902_700n,
+    });
+
+    await expect(applied.service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: 8_500,
+      roundingEnabled: false,
+    })).resolves.toMatchObject({
+      discountPayableRateBps: 8_500,
+      discountAmountVnd: 150_450n,
+      payableAmountVnd: 852_550n,
+    });
+
+    await expect(applied.service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: null,
+      roundingEnabled: false,
+    })).resolves.toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: 0n,
+      discountAppliedByStaffId: null,
+      payableAmountVnd: 1_003_000n,
+    });
+  });
+
+  it('updates discount and rounding atomically', async () => {
+    const { service, tx } = buildHarness({ itemAmountVnd: 1_003_000n, totalAmountVnd: 1_003_000n });
+
+    await expect(service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: 9_000,
+      roundingEnabled: true,
+    })).resolves.toMatchObject({
+      discountAmountVnd: 100_300n,
+      roundingAmountVnd: 2_700n,
+      payableAmountVnd: 900_000n,
+    });
+    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        discountPayableRateBps: 9_000,
+        discountAmountVnd: 100_300n,
+        roundingAmountVnd: 2_700n,
+      }),
+    }));
+  });
+
+  it('keeps discount when the legacy rounding endpoint changes only rounding', async () => {
+    const appliedAt = new Date('2026-08-08T08:00:00.000Z');
+    const { service } = buildHarness({
+      itemAmountVnd: 1_003_000n,
+      totalAmountVnd: 1_003_000n,
+      discountPayableRateBps: 9_000,
+      discountAmountVnd: 100_300n,
+      discountAppliedByStaffId: 12n,
+      discountAppliedAt: appliedAt,
+    });
+
+    await expect(service.setRounding(7n, 11n, 41n, true)).resolves.toMatchObject({
+      discountPayableRateBps: 9_000,
+      discountAmountVnd: 100_300n,
+      discountAppliedByStaffId: 12n,
+      discountAppliedAt: appliedAt,
+      roundingAmountVnd: 2_700n,
+    });
+  });
+
+  it('cancels discount while preserving enabled rounding and recalculating it', async () => {
+    const { service } = buildHarness({
+      itemAmountVnd: 1_003_000n,
+      totalAmountVnd: 1_003_000n,
+      discountPayableRateBps: 9_000,
+      discountAmountVnd: 100_300n,
+      discountAppliedByStaffId: 11n,
+      discountAppliedAt: new Date(),
+      roundingAmountVnd: 2_700n,
+      roundingAppliedByStaffId: 11n,
+      roundingAppliedAt: new Date(),
+    });
+
+    await expect(service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: null,
+      roundingEnabled: true,
+    })).resolves.toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: 0n,
+      roundingApplied: true,
+      roundingAmountVnd: 3_000n,
+      payableAmountVnd: 1_000_000n,
+    });
+  });
+
+  it('excludes delivery fee from discount', async () => {
+    const { service } = buildHarness({
+      orderType: 'DELIVERY',
+      itemAmountVnd: 1_000_000n,
+      deliveryFeeVnd: 30_000n,
+      totalAmountVnd: 1_030_000n,
+    });
+    await expect(service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: 9_000,
+      roundingEnabled: true,
+    })).resolves.toMatchObject({
+      discountAmountVnd: 100_000n,
+      roundingAmountVnd: 0n,
+      payableAmountVnd: 930_000n,
+    });
+  });
+
+  it('rejects DINE_IN, settled, and stale updates through existing gates', async () => {
+    await expect(buildHarness({ orderType: 'DINE_IN' }).service.setSettlementAdjustment(
+      7n, 11n, 41n, { discountPayableRateBps: 9_000, roundingEnabled: false },
+    )).rejects.toMatchObject({ response: { code: 'ORDER_ROUNDING_ORDER_TYPE_NOT_ALLOWED' } });
+    await expect(buildHarness({ settlementStatus: 'SETTLED' }).service.setSettlementAdjustment(
+      7n, 11n, 41n, { discountPayableRateBps: 9_000, roundingEnabled: false },
+    )).rejects.toMatchObject({ response: { code: 'ORDER_ROUNDING_ALREADY_SETTLED' } });
+    const stale = buildHarness();
+    stale.tx.order.updateMany.mockResolvedValue({ count: 0 });
+    await expect(stale.service.setSettlementAdjustment(
+      7n, 11n, 41n, { discountPayableRateBps: 9_000, roundingEnabled: false },
+    )).rejects.toMatchObject({ response: { code: 'ORDER_ROUNDING_CONCURRENT_UPDATE' } });
   });
 });

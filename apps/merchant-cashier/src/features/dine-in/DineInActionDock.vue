@@ -8,17 +8,17 @@ defineProps<{
   checkoutDisabled?: boolean;
   checkingOut?: boolean;
   actionsDisabled?: boolean;
-  roundingApplied?: boolean;
+  adjustmentApplied?: boolean;
 }>();
-defineEmits<{ rounding: []; checkout: [] }>();
+defineEmits<{ adjustment: []; checkout: [] }>();
 const { t } = useI18n();
 </script>
 
 <template>
   <footer class="dinein-action-dock" data-testid="dinein-action-dock">
     <PrintJobActions compact :table-session-id="sessionId" />
-    <button type="button" class="dinein-action-dock__action dinein-action-button dinein-action-dock__rounding" :class="{ 'is-applied': roundingApplied }" data-testid="dinein-rounding" :disabled="actionsDisabled" @click="$emit('rounding')">
-      {{ roundingApplied ? t('table.cancelRoundingShort') : t('table.rounding') }}
+    <button type="button" class="dinein-action-dock__action dinein-action-button dinein-action-dock__rounding" :class="{ 'is-applied': adjustmentApplied }" data-testid="dinein-settlement-adjustment" :disabled="actionsDisabled" @click="$emit('adjustment')">
+      {{ t('discount.entry') }}
     </button>
     <button type="button" class="dinein-action-dock__action dinein-action-button dinein-action-dock__checkout" data-testid="dinein-checkout" :aria-busy="checkingOut" :disabled="checkoutDisabled || checkingOut || actionsDisabled" @click="$emit('checkout')">
       <CreditCard :size="18" aria-hidden="true" />{{ t('table.checkout') }}

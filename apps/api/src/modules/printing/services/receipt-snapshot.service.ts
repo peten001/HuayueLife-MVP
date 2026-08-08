@@ -14,6 +14,7 @@ import {
 } from '../types/receipt-document';
 import { footerFromTemplateDefinition } from '../types/bilingual-receipt';
 import { withOrderSettlementFields } from '../../orders/order-settlement-fields';
+import { calculateSettlementAdjustment } from '../../orders/settlement-adjustment';
 import {
   assertPrintDocumentV2,
   isPrintDocumentV2,
@@ -160,9 +161,11 @@ export class ReceiptSnapshotService {
       (sum, order) => sum + order.totalAmountVnd,
       0n,
     );
-    const rounding = session.roundingAppliedByStaffId != null
-      ? session.roundingAmountVnd
-      : 0n;
+    const amounts = calculateSettlementAdjustment({
+      itemAmountVnd: subtotal,
+      discountPayableRateBps: session.discountPayableRateBps ?? null,
+      roundingEnabled: session.roundingAppliedByStaffId != null,
+    });
     const tableItems = aggregateReceiptItems(
       session.orders.flatMap((order) =>
         order.items.map((item) => ({
@@ -198,11 +201,16 @@ export class ReceiptSnapshotService {
       items: tableItems,
       totals: {
         subtotal: safeVnd(subtotal),
-        ...(rounding > 0n ? { discount: safeVnd(rounding) } : {}),
+        ...(amounts.discountAmountVnd > 0n
+          ? { commercialDiscountAmount: safeVnd(amounts.discountAmountVnd) }
+          : {}),
+        ...(amounts.roundingAmountVnd > 0n
+          ? { discount: safeVnd(amounts.roundingAmountVnd) }
+          : {}),
         originalAmount: safeVnd(total),
-        roundingAmount: safeVnd(rounding),
-        receivedAmount: safeVnd(total - rounding),
-        total: safeVnd(total - rounding),
+        roundingAmount: safeVnd(amounts.roundingAmountVnd),
+        receivedAmount: safeVnd(amounts.payableAmountVnd),
+        total: safeVnd(amounts.payableAmountVnd),
         currency: 'VND',
       },
       verificationCode: `YQ:TABLE:${session.id}:${session.sessionNo}`,

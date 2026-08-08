@@ -197,6 +197,58 @@ describe('real merchant API contracts', () => {
     expect(requestInit(fetchMock.mock.calls[0]).body).not.toContain('roundingAmountVnd');
   });
 
+  it('saves order and TableSession adjustments without client-calculated amounts', async () => {
+    const { api } = await loadApi();
+    const adjustedOrder = {
+      ...order,
+      orderType: 'DELIVERY',
+      discountPayableRateBps: 9000,
+      discountAmountVnd: '12000',
+      roundingApplied: true,
+      roundingAmountVnd: '8000',
+      payableAmountVnd: '100000',
+    };
+    const adjustedSession = {
+      ...session,
+      status: 'OPEN',
+      closedAt: null,
+      discountPayableRateBps: 8500,
+      discountAmountVnd: '18000',
+      roundingApplied: false,
+      roundingAmountVnd: '0',
+      payableAmountVnd: '102000',
+    };
+    fetchMock
+      .mockResolvedValueOnce(apiResponse(adjustedOrder))
+      .mockResolvedValueOnce(apiResponse({ session: adjustedSession }));
+
+    await expect(api.setMerchantOrderSettlementAdjustment(order.id, {
+      discountPayableRateBps: 9000,
+      roundingEnabled: true,
+    })).resolves.toEqual(adjustedOrder);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe(
+      '/api/v1/merchant/orders/order-1/settlement-adjustment',
+    );
+    expect(requestInit(fetchMock.mock.calls[0]).body).toBe(JSON.stringify({
+      discountPayableRateBps: 9000,
+      roundingEnabled: true,
+    }));
+
+    await expect(api.setTableSessionSettlementAdjustment(session.id, {
+      discountPayableRateBps: 8500,
+      roundingEnabled: false,
+    })).resolves.toEqual(adjustedSession);
+    expect(requestPath(fetchMock.mock.calls[1])).toBe(
+      '/api/v1/merchant/table-sessions/session-1/settlement-adjustment',
+    );
+    const sessionBody = String(requestInit(fetchMock.mock.calls[1]).body);
+    expect(sessionBody).toBe(JSON.stringify({
+      discountPayableRateBps: 8500,
+      roundingEnabled: false,
+    }));
+    expect(sessionBody).not.toMatch(/discountAmountVnd|roundingAmountVnd|payableAmountVnd/);
+  });
+
   it('reports TableSession close success and failure', async () => {
     const { api } = await loadApi();
     fetchMock.mockResolvedValueOnce(apiResponse({ session }));

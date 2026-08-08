@@ -11,7 +11,10 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 import { PrintJobsService } from '../printing/services/print-jobs.service';
-import { calculateTableSessionRoundingAmount } from './table-session.constants';
+import {
+  calculateSettlementAdjustment,
+  normalizeDiscountPayableRateBps,
+} from '../orders/settlement-adjustment';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -20,6 +23,12 @@ type CheckoutOrderRow = {
   status: OrderStatus;
   order_type: OrderType;
   total_amount_vnd: bigint;
+  item_amount_vnd: bigint;
+};
+
+type SettlementAdjustmentRequest = {
+  discountPayableRateBps: number | null;
+  roundingEnabled: boolean;
 };
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
@@ -249,7 +258,7 @@ export class TableSessionsService {
       // every bound order then makes completion, status logs, and session close
       // one atomic state change for retries and concurrent checkout requests.
       const sessionOrders = await tx.$queryRaw<CheckoutOrderRow[]>`
-        SELECT id, status, order_type, total_amount_vnd
+        SELECT id, status, order_type, item_amount_vnd, total_amount_vnd
         FROM orders
         WHERE table_session_id = ${sessionId}
         ORDER BY id
@@ -283,17 +292,18 @@ export class TableSessionsService {
         });
       }
 
-      const originalAmountVnd = sessionOrders
+      const itemAmountVnd = sessionOrders
         .filter((order) => BILLABLE_ORDER_STATUSES.includes(order.status))
-        .reduce((sum, order) => sum + order.total_amount_vnd, 0n);
+        .reduce(
+          (sum, order) => sum + (order.item_amount_vnd ?? order.total_amount_vnd),
+          0n,
+        );
       const roundingApplied = session.rounding_applied_by_staff_id !== null;
-      // setRounding persists the exact amount applied by the cashier. Keep
-      // that historical value for checkout/print/order association so all
-      // consumers agree even after a refresh.
-      const roundingAmountVnd = roundingApplied
-        ? session.rounding_amount_vnd
-        : 0n;
-      const payableAmountVnd = originalAmountVnd - roundingAmountVnd;
+      const amounts = calculateSettlementAdjustment({
+        itemAmountVnd,
+        discountPayableRateBps: session.discount_payable_rate_bps ?? null,
+        roundingEnabled: roundingApplied,
+      });
       const completedAt = new Date();
       const printTriggerIds: bigint[] = [];
       for (const order of sessionOrders) {
@@ -329,9 +339,15 @@ export class TableSessionsService {
             action: 'TABLE_SESSION_CHECKOUT',
             metadata: {
               tableSessionId: sessionId.toString(),
-              originalAmountVnd: originalAmountVnd.toString(),
-              roundingAmountVnd: roundingAmountVnd.toString(),
-              payableAmountVnd: payableAmountVnd.toString(),
+              originalAmountVnd: itemAmountVnd.toString(),
+              itemAmountVnd: itemAmountVnd.toString(),
+              discountPayableRateBps: amounts.discountPayableRateBps,
+              discountAmountVnd: amounts.discountAmountVnd.toString(),
+              afterDiscountAmountVnd: amounts.discountedItemAmountVnd.toString(),
+              nonDiscountableFeeVnd: amounts.nonDiscountableFeeVnd.toString(),
+              roundingAmountVnd: amounts.roundingAmountVnd.toString(),
+              finalPayableAmountVnd: amounts.payableAmountVnd.toString(),
+              payableAmountVnd: amounts.payableAmountVnd.toString(),
             },
             remark: '桌台结账，订单自动完成',
           },
@@ -355,7 +371,9 @@ export class TableSessionsService {
           openTableId: null,
           status: 'CLOSED',
           closedAt: completedAt,
-          roundingAmountVnd,
+          discountPayableRateBps: amounts.discountPayableRateBps,
+          discountAmountVnd: amounts.discountAmountVnd,
+          roundingAmountVnd: amounts.roundingAmountVnd,
         },
       });
       if (closed.count !== 1) {
@@ -391,6 +409,37 @@ export class TableSessionsService {
   }
 
   async setRounding(merchantId: bigint, staffId: bigint, sessionId: bigint, enabled: boolean) {
+    return this.updateSettlementAdjustment(
+      merchantId,
+      staffId,
+      sessionId,
+      { discountPayableRateBps: undefined, roundingEnabled: enabled },
+    );
+  }
+
+  async setSettlementAdjustment(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    input: SettlementAdjustmentRequest,
+  ) {
+    return this.updateSettlementAdjustment(merchantId, staffId, sessionId, {
+      discountPayableRateBps: normalizeDiscountPayableRateBps(
+        input.discountPayableRateBps,
+      ),
+      roundingEnabled: input.roundingEnabled,
+    });
+  }
+
+  private async updateSettlementAdjustment(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    input: {
+      discountPayableRateBps: number | null | undefined;
+      roundingEnabled: boolean;
+    },
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
       await this.lockTableRow(tx, merchantId, sessionRef.tableId);
@@ -413,16 +462,47 @@ export class TableSessionsService {
           message: '桌账包含非堂食订单，无法抹零。',
         });
       }
-      const total = orders
+      const itemAmountVnd = orders
         .filter((order) => BILLABLE_ORDER_STATUSES.includes(order.status))
         .reduce((sum, order) => sum + order.total_amount_vnd, 0n);
+      const discountPayableRateBps = input.discountPayableRateBps === undefined
+        ? session.discount_payable_rate_bps ?? null
+        : input.discountPayableRateBps;
+      const amounts = calculateSettlementAdjustment({
+        itemAmountVnd,
+        discountPayableRateBps,
+        roundingEnabled: input.roundingEnabled,
+      });
+      const discountChanged =
+        amounts.discountPayableRateBps !==
+          (session.discount_payable_rate_bps ?? null) ||
+        amounts.discountAmountVnd !== (session.discount_amount_vnd ?? 0n);
+      const roundingApplied =
+        session.rounding_applied_by_staff_id !== null;
+      const roundingChanged =
+        input.roundingEnabled !== roundingApplied ||
+        amounts.roundingAmountVnd !== session.rounding_amount_vnd;
+      if (!discountChanged && !roundingChanged) return { sessionId };
+      const now = new Date();
       await tx.tableSession.update({
         where: { id: sessionId },
         data: {
-          roundingAmountVnd: enabled
-            ? calculateTableSessionRoundingAmount(total)
-            : 0n,
-          roundingAppliedByStaffId: enabled ? staffId : null,
+          ...(discountChanged
+            ? {
+                discountPayableRateBps: amounts.discountPayableRateBps,
+                discountAmountVnd: amounts.discountAmountVnd,
+                discountAppliedByStaffId:
+                  amounts.discountPayableRateBps === null ? null : staffId,
+                discountAppliedAt:
+                  amounts.discountPayableRateBps === null ? null : now,
+              }
+            : {}),
+          ...(roundingChanged
+            ? {
+                roundingAmountVnd: amounts.roundingAmountVnd,
+                roundingAppliedByStaffId: input.roundingEnabled ? staffId : null,
+              }
+            : {}),
         },
       });
       return { sessionId };
@@ -486,9 +566,15 @@ export class TableSessionsService {
       closed_at: Date | null;
       rounding_amount_vnd: bigint;
       rounding_applied_by_staff_id: bigint | null;
+      discount_payable_rate_bps: number | null;
+      discount_amount_vnd: bigint;
+      discount_applied_by_staff_id: bigint | null;
+      discount_applied_at: Date | null;
     }>>`
       SELECT id, merchant_id, table_id, status, open_table_id, closed_at,
-             rounding_amount_vnd, rounding_applied_by_staff_id
+             rounding_amount_vnd, rounding_applied_by_staff_id,
+             discount_payable_rate_bps, discount_amount_vnd,
+             discount_applied_by_staff_id, discount_applied_at
       FROM table_sessions
       WHERE id = ${sessionId} AND merchant_id = ${merchantId}
       FOR UPDATE
@@ -701,6 +787,10 @@ export class TableSessionsService {
     const roundingAmountVnd = roundingApplied
       ? session.roundingAmountVnd
       : 0n;
+    const discountPayableRateBps = session.discountPayableRateBps ?? null;
+    const discountAmountVnd = discountPayableRateBps === null
+      ? 0n
+      : session.discountAmountVnd;
     return {
       id: session.id,
       sessionNo: session.sessionNo,
@@ -711,9 +801,14 @@ export class TableSessionsService {
       status: session.status,
       openedAt: session.openedAt,
       closedAt: session.closedAt,
+      discountPayableRateBps,
+      discountAmountVnd,
+      discountAppliedByStaffId: session.discountAppliedByStaffId ?? null,
+      discountAppliedAt: session.discountAppliedAt ?? null,
       roundingApplied,
       roundingAmountVnd,
-      payableAmountVnd: summary.totalAmountVnd - roundingAmountVnd,
+      payableAmountVnd:
+        summary.totalAmountVnd - discountAmountVnd - roundingAmountVnd,
       originalAmountVnd: summary.totalAmountVnd,
       ...summary,
     };
@@ -727,6 +822,10 @@ export class TableSessionsService {
     const roundingAmountVnd = roundingApplied
       ? session.roundingAmountVnd
       : 0n;
+    const discountPayableRateBps = session.discountPayableRateBps ?? null;
+    const discountAmountVnd = discountPayableRateBps === null
+      ? 0n
+      : session.discountAmountVnd;
     return {
       id: session.id,
       sessionNo: session.sessionNo,
@@ -737,9 +836,14 @@ export class TableSessionsService {
       status: session.status,
       openedAt: session.openedAt,
       closedAt: session.closedAt,
+      discountPayableRateBps,
+      discountAmountVnd,
+      discountAppliedByStaffId: session.discountAppliedByStaffId ?? null,
+      discountAppliedAt: session.discountAppliedAt ?? null,
       roundingApplied,
       roundingAmountVnd,
-      payableAmountVnd: summary.totalAmountVnd - roundingAmountVnd,
+      payableAmountVnd:
+        summary.totalAmountVnd - discountAmountVnd - roundingAmountVnd,
       originalAmountVnd: summary.totalAmountVnd,
       ...summary,
       orders: session.orders.map((order) => ({

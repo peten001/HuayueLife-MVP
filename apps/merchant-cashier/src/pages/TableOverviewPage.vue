@@ -10,7 +10,7 @@ import {
   isDefinitiveMutationRejection,
   isMutationOutcomeUncertain,
   returnMerchantOrderItem,
-  setTableSessionRounding,
+  setTableSessionSettlementAdjustment,
   shouldRefreshAfterItemAdjustmentError,
 } from '@/api';
 import {
@@ -35,6 +35,7 @@ import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
 import PendingDecreaseRecovery from '@/components/orders/PendingDecreaseRecovery.vue';
 import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import TableGrid from '@/components/tables/TableGrid.vue';
+import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -48,6 +49,8 @@ const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
 const { selectedOrder } = storeToRefs(ordersStore);
 const checkoutConfirmOpen = ref(false);
+const adjustmentOpen = ref(false);
+const settlementAdjustmentLoading = ref(false);
 const orderingOpen = ref(false);
 const orderingMutationLocked = ref(false);
 const adjustmentLoadingId = ref('');
@@ -94,13 +97,22 @@ const filteredTables = computed(() => {
   });
 });
 
-async function toggleRounding() {
+function openSettlementAdjustment() {
   if (!session.value || writeDisabled.value) return;
+  adjustmentOpen.value = true;
+}
+
+async function saveSettlementAdjustment(input: { discountPayableRateBps: number | null; roundingEnabled: boolean }) {
+  if (!session.value || writeDisabled.value || settlementAdjustmentLoading.value) return;
+  settlementAdjustmentLoading.value = true;
   try {
-    const updated = await setTableSessionRounding(session.value.id, !session.value.roundingApplied);
+    const updated = await setTableSessionSettlementAdjustment(session.value.id, input);
     tablesStore.applySessionSnapshot(updated);
+    adjustmentOpen.value = false;
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.checkoutFailed')), 'error');
+  } finally {
+    settlementAdjustmentLoading.value = false;
   }
 }
 
@@ -400,16 +412,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         :session="session"
         :checkout-disabled="!canCheckout"
         :checking-out="checkingOut"
-        :actions-disabled="writeDisabled || Boolean(adjustmentLoadingId)"
+        :actions-disabled="writeDisabled || Boolean(adjustmentLoadingId) || settlementAdjustmentLoading"
         :adjustment-loading-id="adjustmentLoadingId"
         :pending-adjustment-item-id="pendingDecreaseMutation?.itemId"
-        :rounding-applied="session?.roundingApplied"
+        :adjustment-applied="Boolean(session?.discountPayableRateBps != null || session?.roundingApplied)"
         :payable-amount="session?.payableAmountVnd || session?.totalAmountVnd || '0'"
         @order-items="openOrdering"
         @decrease-item="decreaseItem"
         @return-item="requestReturn"
         @checkout="checkoutConfirmOpen = true"
-        @rounding="toggleRounding"
+        @adjustment="openSettlementAdjustment"
       />
     </aside>
 
@@ -417,5 +429,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
     <PendingDecreaseRecovery :open="Boolean(pendingDecreaseMutation) && !adjustmentLoadingId" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" @retry="pendingDecreaseMutation && executeDecrease(pendingDecreaseMutation)" />
     <ReturnItemDialog :open="Boolean(returnDialogItem)" :item="returnDialogItem" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" :outcome-uncertain="Boolean(pendingReturnMutation) && !adjustmentLoadingId" :fixed-quantity="pendingReturnMutation?.returnQuantity" :last-order-item="returnDialogLastOrderItem" :last-table-item="returnDialogLastTableItem" @cancel="cancelReturn" @confirm="confirmReturn" />
     <ConfirmDialog :open="checkoutConfirmOpen" :title="t('table.checkoutConfirmTitle')" :description="t('table.checkoutConfirmDescription')" :cancel-label="t('common.cancel')" :confirm-label="t('table.checkout')" :loading="checkingOut" :confirm-disabled="writeDisabled || !canCheckout" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
+    <SettlementAdjustmentDialog
+      v-if="session"
+      :open="adjustmentOpen"
+      :item-amount-vnd="session.originalAmountVnd || session.totalAmountVnd"
+      :discount-payable-rate-bps="session.discountPayableRateBps"
+      :rounding-enabled="session.roundingApplied"
+      :loading="settlementAdjustmentLoading"
+      @cancel="adjustmentOpen = false"
+      @confirm="saveSettlementAdjustment"
+    />
   </section>
 </template>

@@ -6,6 +6,7 @@ const apiMocks = vi.hoisted(() => ({
   getMerchantOrder: vi.fn(),
   listMerchantOrders: vi.fn(),
   runMerchantOrderAction: vi.fn(),
+  setMerchantOrderSettlementAdjustment: vi.fn(),
 }));
 
 vi.mock('@/api', async (importOriginal) => ({
@@ -36,6 +37,7 @@ describe('cashier order store request isolation', () => {
     apiMocks.getMerchantOrder.mockReset();
     apiMocks.listMerchantOrders.mockReset();
     apiMocks.runMerchantOrderAction.mockReset();
+    apiMocks.setMerchantOrderSettlementAdjustment.mockReset();
   });
 
   it('does not restore previous-merchant orders after the store is cleared', async () => {
@@ -83,6 +85,85 @@ describe('cashier order store request isolation', () => {
 
     expect(store.selectedOrder?.totalAmountVnd).toBe('25000');
     expect(store.pendingOrders[0]?.totalAmountVnd).toBe('25000');
+  });
+
+  it('uses the Backend adjustment response as the selected and cached authority', async () => {
+    const pickup = { ...pendingOrder, orderType: 'PICKUP' as const, status: 'ACCEPTED' as const };
+    const authoritative = {
+      ...pickup,
+      discountPayableRateBps: 9000,
+      discountAmountVnd: '5000',
+      roundingApplied: true,
+      roundingAmountVnd: '5000',
+      payableAmountVnd: '40000',
+    };
+    apiMocks.listMerchantOrders.mockResolvedValueOnce([pickup]);
+    apiMocks.getMerchantOrder.mockResolvedValueOnce(pickup);
+    apiMocks.setMerchantOrderSettlementAdjustment.mockResolvedValueOnce(authoritative);
+    const store = useOrdersStore();
+    await store.fetchPending();
+    await store.selectOrder(pickup.id);
+
+    await store.setSettlementAdjustment(pickup.id, {
+      discountPayableRateBps: 9000,
+      roundingEnabled: true,
+    });
+
+    expect(apiMocks.setMerchantOrderSettlementAdjustment).toHaveBeenCalledWith(pickup.id, {
+      discountPayableRateBps: 9000,
+      roundingEnabled: true,
+    });
+    expect(store.selectedOrder).toMatchObject({
+      discountAmountVnd: '5000',
+      roundingAmountVnd: '5000',
+      payableAmountVnd: '40000',
+    });
+    expect(store.activeOrders[0]).toMatchObject({ payableAmountVnd: '40000' });
+  });
+
+  it('uses the Backend clear-adjustment response instead of calculating the restored amount locally', async () => {
+    const pickup = {
+      ...pendingOrder,
+      orderType: 'PICKUP' as const,
+      status: 'ACCEPTED' as const,
+      discountPayableRateBps: 8500,
+      discountAmountVnd: '7500',
+      roundingApplied: true,
+      roundingAmountVnd: '2500',
+      payableAmountVnd: '40000',
+    };
+    const authoritative = {
+      ...pickup,
+      discountPayableRateBps: null,
+      discountAmountVnd: '0',
+      roundingApplied: false,
+      roundingAmountVnd: '0',
+      payableAmountVnd: '50000',
+    };
+    apiMocks.listMerchantOrders.mockResolvedValueOnce([pickup]);
+    apiMocks.getMerchantOrder.mockResolvedValueOnce(pickup);
+    apiMocks.setMerchantOrderSettlementAdjustment.mockResolvedValueOnce(authoritative);
+    const store = useOrdersStore();
+    await store.fetchPending();
+    await store.selectOrder(pickup.id);
+
+    await store.setSettlementAdjustment(pickup.id, {
+      discountPayableRateBps: null,
+      roundingEnabled: false,
+    });
+
+    expect(apiMocks.setMerchantOrderSettlementAdjustment).toHaveBeenCalledWith(pickup.id, {
+      discountPayableRateBps: null,
+      roundingEnabled: false,
+    });
+    expect(store.selectedOrder).toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: '0',
+      roundingApplied: false,
+      roundingAmountVnd: '0',
+      payableAmountVnd: '50000',
+    });
+    expect(store.activeOrders[0]).toMatchObject({ payableAmountVnd: '50000' });
   });
 
   it('does not let an older polling response overwrite an item-adjustment snapshot', async () => {

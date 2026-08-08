@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { TableIdParamDto } from './dto/table-id-param.dto';
+import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
 import { TableSessionsService } from './table-sessions.service';
 
 class TableSessionRoundingDto {
@@ -79,5 +80,20 @@ export class MerchantTableSessionsController {
     @Body() body: TableSessionRoundingDto,
   ) {
     return this.service.setRounding(merchantId, BigInt(staff.sub), BigInt(params.id), body.enabled);
+  }
+
+  @Post('table-sessions/:id/settlement-adjustment')
+  setSettlementAdjustment(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() body: SettlementAdjustmentDto,
+  ) {
+    return this.service.setSettlementAdjustment(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      body,
+    );
   }
 }

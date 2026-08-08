@@ -24,7 +24,10 @@ import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 import { withPickupFulfillmentFields } from '../orders/order-fulfillment-fields';
 import { withOrderSettlementFields } from '../orders/order-settlement-fields';
-import { calculateRoundingAmounts } from '../table-sessions/table-session.constants';
+import {
+  calculateSettlementAdjustment,
+  normalizeDiscountPayableRateBps,
+} from '../orders/settlement-adjustment';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -425,10 +428,10 @@ export class MerchantOrdersService {
           orderType: 'DINE_IN',
           status: 'ACCEPTED',
         });
-        // Any order mutation invalidates a previously calculated table
-        // rounding amount. Clear it atomically so refresh/checkout/printing
-        // cannot reuse a discount calculated from an older bill total.
-        await this.clearSessionRounding(tx, session.id);
+        // Any order mutation invalidates the current settlement adjustment.
+        // Clear it atomically so refresh/checkout/printing cannot reuse a
+        // discount or rounding amount calculated from an older bill total.
+        await this.clearSessionAdjustment(tx, session.id);
         return {
           orderId: created.id,
           sessionId: created.tableSessionId!,
@@ -978,6 +981,10 @@ export class MerchantOrdersService {
                 status: 'CLOSED',
                 openTableId: null,
                 closedAt: cancelledAt,
+                discountPayableRateBps: null,
+                discountAmountVnd: 0n,
+                discountAppliedByStaffId: null,
+                discountAppliedAt: null,
                 roundingAmountVnd: 0n,
                 roundingAppliedByStaffId: null,
               },
@@ -1016,7 +1023,7 @@ export class MerchantOrdersService {
       }
 
       if (!closeEmptySession) {
-        await this.clearSessionRounding(tx, orderRef.tableSessionId);
+        await this.clearSessionAdjustment(tx, orderRef.tableSessionId);
       }
 
       return { orderId, sessionId: orderRef.tableSessionId };
@@ -1122,16 +1129,26 @@ export class MerchantOrdersService {
     }
   }
 
-  private async clearSessionRounding(
+  private async clearSessionAdjustment(
     tx: Prisma.TransactionClient,
     sessionId: bigint,
   ) {
     await tx.tableSession.updateMany({
       where: {
         id: sessionId,
-        roundingAppliedByStaffId: { not: null },
+        OR: [
+          { discountPayableRateBps: { not: null } },
+          { discountAmountVnd: { not: 0n } },
+          { discountAppliedByStaffId: { not: null } },
+          { roundingAppliedByStaffId: { not: null } },
+          { roundingAmountVnd: { not: 0n } },
+        ],
       },
       data: {
+        discountPayableRateBps: null,
+        discountAmountVnd: 0n,
+        discountAppliedByStaffId: null,
+        discountAppliedAt: null,
         roundingAmountVnd: 0n,
         roundingAppliedByStaffId: null,
       },
@@ -1196,6 +1213,45 @@ export class MerchantOrdersService {
     id: bigint,
     enabled: boolean,
   ) {
+    return this.updateSettlementAdjustment(
+      merchantId,
+      staffId,
+      id,
+      { discountPayableRateBps: undefined, roundingEnabled: enabled },
+      'ROUNDING',
+    );
+  }
+
+  async setSettlementAdjustment(
+    merchantId: bigint,
+    staffId: bigint,
+    id: bigint,
+    input: { discountPayableRateBps: number | null; roundingEnabled: boolean },
+  ) {
+    return this.updateSettlementAdjustment(
+      merchantId,
+      staffId,
+      id,
+      {
+        discountPayableRateBps: normalizeDiscountPayableRateBps(
+          input.discountPayableRateBps,
+        ),
+        roundingEnabled: input.roundingEnabled,
+      },
+      'ADJUSTMENT',
+    );
+  }
+
+  private async updateSettlementAdjustment(
+    merchantId: bigint,
+    staffId: bigint,
+    id: bigint,
+    input: {
+      discountPayableRateBps: number | null | undefined;
+      roundingEnabled: boolean;
+    },
+    source: 'ROUNDING' | 'ADJUSTMENT',
+  ) {
     const order = await this.prisma.$transaction(async (tx) => {
       const current = await tx.order.findFirst({
         where: { id, merchantId },
@@ -1204,7 +1260,13 @@ export class MerchantOrdersService {
           orderType: true,
           status: true,
           settlementStatus: true,
+          itemAmountVnd: true,
+          deliveryFeeVnd: true,
           totalAmountVnd: true,
+          discountPayableRateBps: true,
+          discountAmountVnd: true,
+          discountAppliedByStaffId: true,
+          discountAppliedAt: true,
           roundingAmountVnd: true,
           roundingAppliedByStaffId: true,
           roundingAppliedAt: true,
@@ -1233,11 +1295,32 @@ export class MerchantOrdersService {
         });
       }
 
-      const nextRoundingAmountVnd = enabled
-        ? calculateRoundingAmounts(current.totalAmountVnd).roundingAmountVnd
+      const discountPayableRateBps = input.discountPayableRateBps === undefined
+        ? current.discountPayableRateBps ?? null
+        : input.discountPayableRateBps;
+      const nonDiscountableFeeVnd = current.orderType === 'DELIVERY'
+        ? current.deliveryFeeVnd ?? 0n
         : 0n;
+      const itemAmountVnd = current.itemAmountVnd
+        ?? current.totalAmountVnd - nonDiscountableFeeVnd;
+      const amounts = calculateSettlementAdjustment({
+        itemAmountVnd,
+        nonDiscountableFeeVnd,
+        discountPayableRateBps,
+        roundingEnabled: input.roundingEnabled,
+      });
       const currentlyApplied = current.roundingAppliedByStaffId !== null;
-      if ((enabled && currentlyApplied) || (!enabled && !currentlyApplied)) {
+      const discountChanged =
+        amounts.discountPayableRateBps !==
+          (current.discountPayableRateBps ?? null) ||
+        amounts.discountAmountVnd !== (current.discountAmountVnd ?? 0n);
+      const roundingChanged =
+        input.roundingEnabled !== currentlyApplied ||
+        amounts.roundingAmountVnd !== current.roundingAmountVnd;
+      if (
+        !discountChanged &&
+        !roundingChanged
+      ) {
         return this.requireOrder(tx, merchantId, id);
       }
 
@@ -1252,9 +1335,23 @@ export class MerchantOrdersService {
           updatedAt: current.updatedAt,
         },
         data: {
-          roundingAmountVnd: nextRoundingAmountVnd,
-          roundingAppliedByStaffId: enabled ? staffId : null,
-          roundingAppliedAt: enabled ? now : null,
+          ...(discountChanged
+            ? {
+                discountPayableRateBps: amounts.discountPayableRateBps,
+                discountAmountVnd: amounts.discountAmountVnd,
+                discountAppliedByStaffId:
+                  amounts.discountPayableRateBps === null ? null : staffId,
+                discountAppliedAt:
+                  amounts.discountPayableRateBps === null ? null : now,
+              }
+            : {}),
+          ...(roundingChanged
+            ? {
+                roundingAmountVnd: amounts.roundingAmountVnd,
+                roundingAppliedByStaffId: input.roundingEnabled ? staffId : null,
+                roundingAppliedAt: input.roundingEnabled ? now : null,
+              }
+            : {}),
         },
       });
       if (updated.count !== 1) {
@@ -1271,18 +1368,30 @@ export class MerchantOrdersService {
           toStatus: current.status,
           operatorType: OperatorType.MERCHANT_STAFF,
           operatorStaffId: staffId,
-          action: enabled
-            ? `${current.orderType}_ORDER_ROUNDING_APPLIED`
-            : `${current.orderType}_ORDER_ROUNDING_CANCELLED`,
+          action: source === 'ROUNDING'
+            ? input.roundingEnabled
+              ? `${current.orderType}_ORDER_ROUNDING_APPLIED`
+              : `${current.orderType}_ORDER_ROUNDING_CANCELLED`
+            : `${current.orderType}_ORDER_SETTLEMENT_ADJUSTMENT_UPDATED`,
           metadata: {
             originalAmountVnd: current.totalAmountVnd.toString(),
             beforeRoundingAmountVnd: current.roundingAmountVnd.toString(),
-            roundingAmountVnd: nextRoundingAmountVnd.toString(),
-            payableAmountVnd: (
-              current.totalAmountVnd - nextRoundingAmountVnd
-            ).toString(),
+            itemAmountVnd: itemAmountVnd.toString(),
+            discountPayableRateBps: amounts.discountPayableRateBps,
+            discountAmountVnd: amounts.discountAmountVnd.toString(),
+            afterDiscountAmountVnd:
+              amounts.discountedItemAmountVnd.toString(),
+            nonDiscountableFeeVnd:
+              amounts.nonDiscountableFeeVnd.toString(),
+            roundingAmountVnd: amounts.roundingAmountVnd.toString(),
+            payableAmountVnd: amounts.payableAmountVnd.toString(),
+            operatorStaffId: staffId.toString(),
           },
-          remark: enabled ? '自取订单抹零' : '取消自取订单抹零',
+          remark: source === 'ROUNDING'
+            ? input.roundingEnabled
+              ? '订单抹零'
+              : '取消订单抹零'
+            : '更新订单优惠',
         },
       });
 
@@ -1332,6 +1441,12 @@ export class MerchantOrdersService {
       createdAt: Date;
       readyAt: Date | null;
       totalAmountVnd?: bigint | number;
+      itemAmountVnd?: bigint | number;
+      deliveryFeeVnd?: bigint | number;
+      discountPayableRateBps?: number | null;
+      discountAmountVnd?: bigint | null;
+      discountAppliedByStaffId?: bigint | null;
+      discountAppliedAt?: Date | null;
       roundingAmountVnd?: bigint | null;
       roundingAppliedByStaffId?: bigint | null;
       roundingAppliedAt?: Date | null;

@@ -1607,16 +1607,17 @@
 .dinein-action-button svg { width: var(--dinein-action-icon-size); height: var(--dinein-action-icon-size); }
 .dinein-summary-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(76px, 0.65fr) minmax(0, 2.35fr);
   align-items: center;
   gap: var(--dinein-action-gap);
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
 }
 .dinein-summary-row .dinein-action-button { grid-column: 1; width: 100%; min-width: 0; }
+.dinein-summary-row .dinein-settlement-summary { grid-column: 2; width: 100%; min-width: 0; }
 .dinein-summary-row strong {
-  grid-column: 2 / 4;
+  grid-column: 2;
   min-width: 0;
   margin: 0;
   overflow: visible;
@@ -1628,6 +1629,12 @@
 }
 .dinein-action-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dinein-action-gap); }
 .dinein-action-dock > .dinein-action-button { width: 100%; min-width: 0; }
+
+@media (min-width: 1280px) {
+  .cashier-shell--workflow .table-overview-route {
+    grid-template-columns: minmax(0, 1fr) clamp(420px, 24vw, 460px);
+  }
+}
 
 @media (max-width: 520px) {
   .table-bill-detail {

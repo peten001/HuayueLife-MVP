@@ -127,6 +127,15 @@ function customerBlocks(
   const summaryBlocks: PrintBlock[] = [];
   if (display.orderTotal) {
     summaryBlocks.push(row('小计 / Tạm tính', money(document.totals.subtotal)));
+    if (
+      document.receiptType === 'TABLE_BILL' &&
+      (document.totals.commercialDiscountAmount ?? 0) > 0
+    ) {
+      summaryBlocks.push(row(
+        '折扣优惠 / Giảm giá',
+        `-${money(document.totals.commercialDiscountAmount!)}`,
+      ));
+    }
     if (document.totals.serviceFee !== undefined) {
       summaryBlocks.push(row('服务费 / Phí dịch vụ', money(document.totals.serviceFee)));
     }

@@ -346,32 +346,32 @@ model Merchant {
   createdAt                DateTime            @default(now()) @map("created_at")
   updatedAt                DateTime            @updatedAt @map("updated_at")
 
-  businessType           MerchantBusinessType?   @relation(fields: [businessTypeId], references: [id], onDelete: SetNull)
-  ownerUser              User?                   @relation("MerchantOwnerUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  staff                  MerchantStaff[]
-  categories             Category[]
-  products               Product[]
-  tables                 DiningTable[]
-  tableSessions          TableSession[]
-  carts                  Cart[]
-  orders                 Order[]
-  orderChatConversations OrderChatConversation[]
-  printerSettings        PrinterSetting[]
-  printLogs              PrintLog[]
-  printers               Printer[]
-  receiptTemplates       ReceiptTemplate[]
-  printRules             PrintRule[]
-  printJobs              PrintJob[]
-  printTriggerOutbox     PrintTriggerOutbox[]
-  printingRouting        MerchantPrintingRouting?
+  businessType            MerchantBusinessType?    @relation(fields: [businessTypeId], references: [id], onDelete: SetNull)
+  ownerUser               User?                    @relation("MerchantOwnerUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  staff                   MerchantStaff[]
+  categories              Category[]
+  products                Product[]
+  tables                  DiningTable[]
+  tableSessions           TableSession[]
+  carts                   Cart[]
+  orders                  Order[]
+  orderChatConversations  OrderChatConversation[]
+  printerSettings         PrinterSetting[]
+  printLogs               PrintLog[]
+  printers                Printer[]
+  receiptTemplates        ReceiptTemplate[]
+  printRules              PrintRule[]
+  printJobs               PrintJob[]
+  printTriggerOutbox      PrintTriggerOutbox[]
+  printingRouting         MerchantPrintingRouting?
   printerCategoryBindings PrinterCategoryBinding[]
-  merchantTerminals      MerchantTerminal[]
-  printingAuditLogs      PrintingAuditLog[]
-  merchantReportSetting  MerchantReportSetting?
-  dailyReportLogs        DailyReportLog[]
-  promotionTags          MerchantPromotionTag[]
-  capabilities           MerchantCapability[]
-  images                 MerchantImage[]
+  merchantTerminals       MerchantTerminal[]
+  printingAuditLogs       PrintingAuditLog[]
+  merchantReportSetting   MerchantReportSetting?
+  dailyReportLogs         DailyReportLog[]
+  promotionTags           MerchantPromotionTag[]
+  capabilities            MerchantCapability[]
+  images                  MerchantImage[]
 
   @@index([status])
   @@index([province, city, status])
@@ -541,6 +541,7 @@ model MerchantStaff {
   merchant           Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   operatedStatusLogs OrderStatusLog[]   @relation("StaffStatusLogOperator")
   createdOrders      Order[]            @relation("StaffCreatedOrders")
+  discountedOrders   Order[]            @relation("OrderDiscountStaff")
   roundedOrders      Order[]            @relation("OrderRoundingStaff")
   createdPrintJobs   PrintJob[]         @relation("PrintJobCreatedBy")
   printingAuditLogs  PrintingAuditLog[] @relation("PrintingAuditActor")
@@ -560,8 +561,8 @@ model Category {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  merchant Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  products Product[]
+  merchant                Merchant                 @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  products                Product[]
   printerCategoryBindings PrinterCategoryBinding[]
 
   @@index([merchantId, isActive, sortOrder])
@@ -614,23 +615,27 @@ model DiningTable {
 }
 
 model TableSession {
-  id          BigInt             @id @default(autoincrement())
-  merchantId  BigInt             @map("merchant_id")
-  tableId     BigInt             @map("table_id")
-  openTableId BigInt?            @unique @map("open_table_id")
-  sessionNo   String             @unique @map("session_no") @db.VarChar(32)
-  status      TableSessionStatus @default(OPEN)
-  openedAt    DateTime           @default(now()) @map("opened_at")
-  closedAt    DateTime?          @map("closed_at")
-  roundingAmountVnd BigInt       @default(0) @map("rounding_amount_vnd")
-  roundingAppliedByStaffId BigInt? @map("rounding_applied_by_staff_id")
-  createdAt   DateTime           @default(now()) @map("created_at")
-  updatedAt   DateTime           @updatedAt @map("updated_at")
+  id                       BigInt             @id @default(autoincrement())
+  merchantId               BigInt             @map("merchant_id")
+  tableId                  BigInt             @map("table_id")
+  openTableId              BigInt?            @unique @map("open_table_id")
+  sessionNo                String             @unique @map("session_no") @db.VarChar(32)
+  status                   TableSessionStatus @default(OPEN)
+  openedAt                 DateTime           @default(now()) @map("opened_at")
+  closedAt                 DateTime?          @map("closed_at")
+  discountPayableRateBps   Int?               @map("discount_payable_rate_bps")
+  discountAmountVnd        BigInt             @default(0) @map("discount_amount_vnd")
+  discountAppliedByStaffId BigInt?            @map("discount_applied_by_staff_id")
+  discountAppliedAt        DateTime?          @map("discount_applied_at")
+  roundingAmountVnd        BigInt             @default(0) @map("rounding_amount_vnd")
+  roundingAppliedByStaffId BigInt?            @map("rounding_applied_by_staff_id")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
 
-  merchant  Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  table     DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  orders    Order[]
-  printJobs PrintJob[]
+  merchant           Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  table              DiningTable          @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  orders             Order[]
+  printJobs          PrintJob[]
   printTriggerOutbox PrintTriggerOutbox[]
 
   @@index([merchantId, status])
@@ -677,51 +682,56 @@ model CartItem {
 }
 
 model Order {
-  id                BigInt           @id @default(autoincrement())
-  orderNo           String           @unique @map("order_no") @db.VarChar(32)
-  idempotencyKey    String           @map("idempotency_key") @db.VarChar(64)
-  userId            BigInt?          @map("user_id")
-  createdByStaffId  BigInt?          @map("created_by_staff_id")
-  merchantId        BigInt           @map("merchant_id")
-  tableId           BigInt?          @map("table_id")
-  tableSessionId    BigInt?          @map("table_session_id")
-  tableNoSnapshot   String?          @map("table_no_snapshot") @db.VarChar(32)
-  orderType         OrderType        @map("order_type")
-  status            OrderStatus      @default(PENDING_ACCEPTANCE)
-  contactName       String?          @map("contact_name") @db.VarChar(64)
-  contactPhone      String?          @map("contact_phone") @db.VarChar(32)
-  deliveryAddress   String?          @map("delivery_address") @db.VarChar(255)
-  deliveryLatitude  Decimal?         @map("delivery_latitude") @db.Decimal(10, 7)
-  deliveryLongitude Decimal?         @map("delivery_longitude") @db.Decimal(10, 7)
-  customerRemark    String?          @map("customer_remark") @db.VarChar(500)
-  itemAmountVnd     BigInt           @map("item_amount_vnd")
-  deliveryFeeVnd    BigInt           @default(0) @map("delivery_fee_vnd")
-  totalAmountVnd    BigInt           @map("total_amount_vnd")
-  roundingAmountVnd BigInt           @default(0) @map("rounding_amount_vnd")
-  roundingAppliedByStaffId BigInt?   @map("rounding_applied_by_staff_id")
-  roundingAppliedAt DateTime?        @map("rounding_applied_at")
-  settlementStatus  SettlementStatus @default(UNSETTLED) @map("settlement_status")
-  acceptedAt        DateTime?        @map("accepted_at")
-  readyAt           DateTime?        @map("ready_at")
-  completedAt       DateTime?        @map("completed_at")
-  cancelledAt       DateTime?        @map("cancelled_at")
-  cancelReason      String?          @map("cancel_reason") @db.VarChar(255)
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  id                       BigInt           @id @default(autoincrement())
+  orderNo                  String           @unique @map("order_no") @db.VarChar(32)
+  idempotencyKey           String           @map("idempotency_key") @db.VarChar(64)
+  userId                   BigInt?          @map("user_id")
+  createdByStaffId         BigInt?          @map("created_by_staff_id")
+  merchantId               BigInt           @map("merchant_id")
+  tableId                  BigInt?          @map("table_id")
+  tableSessionId           BigInt?          @map("table_session_id")
+  tableNoSnapshot          String?          @map("table_no_snapshot") @db.VarChar(32)
+  orderType                OrderType        @map("order_type")
+  status                   OrderStatus      @default(PENDING_ACCEPTANCE)
+  contactName              String?          @map("contact_name") @db.VarChar(64)
+  contactPhone             String?          @map("contact_phone") @db.VarChar(32)
+  deliveryAddress          String?          @map("delivery_address") @db.VarChar(255)
+  deliveryLatitude         Decimal?         @map("delivery_latitude") @db.Decimal(10, 7)
+  deliveryLongitude        Decimal?         @map("delivery_longitude") @db.Decimal(10, 7)
+  customerRemark           String?          @map("customer_remark") @db.VarChar(500)
+  itemAmountVnd            BigInt           @map("item_amount_vnd")
+  deliveryFeeVnd           BigInt           @default(0) @map("delivery_fee_vnd")
+  totalAmountVnd           BigInt           @map("total_amount_vnd")
+  discountPayableRateBps   Int?             @map("discount_payable_rate_bps")
+  discountAmountVnd        BigInt           @default(0) @map("discount_amount_vnd")
+  discountAppliedByStaffId BigInt?          @map("discount_applied_by_staff_id")
+  discountAppliedAt        DateTime?        @map("discount_applied_at")
+  roundingAmountVnd        BigInt           @default(0) @map("rounding_amount_vnd")
+  roundingAppliedByStaffId BigInt?          @map("rounding_applied_by_staff_id")
+  roundingAppliedAt        DateTime?        @map("rounding_applied_at")
+  settlementStatus         SettlementStatus @default(UNSETTLED) @map("settlement_status")
+  acceptedAt               DateTime?        @map("accepted_at")
+  readyAt                  DateTime?        @map("ready_at")
+  completedAt              DateTime?        @map("completed_at")
+  cancelledAt              DateTime?        @map("cancelled_at")
+  cancelReason             String?          @map("cancel_reason") @db.VarChar(255)
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @updatedAt @map("updated_at")
 
-  user               User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
-  createdByStaff     MerchantStaff?         @relation("StaffCreatedOrders", fields: [createdByStaffId], references: [id], onDelete: Restrict, map: "fk_orders_created_by_staff")
-  merchant           Merchant               @relation(fields: [merchantId], references: [id])
-  table              DiningTable?           @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  tableSession       TableSession?          @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
-  roundingAppliedByStaff MerchantStaff?     @relation("OrderRoundingStaff", fields: [roundingAppliedByStaffId], references: [id], onDelete: SetNull)
-  items              OrderItem[]
-  statusLogs         OrderStatusLog[]
-  chatConversation   OrderChatConversation?
-  chatMessages       OrderChatMessage[]
-  printLogs          PrintLog[]
-  printJobs          PrintJob[]
-  printTriggerOutbox PrintTriggerOutbox[]
+  user                   User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdByStaff         MerchantStaff?         @relation("StaffCreatedOrders", fields: [createdByStaffId], references: [id], onDelete: Restrict, map: "fk_orders_created_by_staff")
+  merchant               Merchant               @relation(fields: [merchantId], references: [id])
+  table                  DiningTable?           @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSession           TableSession?          @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  discountAppliedByStaff MerchantStaff?         @relation("OrderDiscountStaff", fields: [discountAppliedByStaffId], references: [id], onDelete: SetNull)
+  roundingAppliedByStaff MerchantStaff?         @relation("OrderRoundingStaff", fields: [roundingAppliedByStaffId], references: [id], onDelete: SetNull)
+  items                  OrderItem[]
+  statusLogs             OrderStatusLog[]
+  chatConversation       OrderChatConversation?
+  chatMessages           OrderChatMessage[]
+  printLogs              PrintLog[]
+  printJobs              PrintJob[]
+  printTriggerOutbox     PrintTriggerOutbox[]
 
   @@unique([userId, idempotencyKey])
   @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
@@ -729,6 +739,7 @@ model Order {
   @@index([userId, createdAt])
   @@index([createdByStaffId, createdAt], map: "ix_orders_staff_created")
   @@index([tableSessionId])
+  @@index([discountAppliedByStaffId])
   @@map("orders")
 }
 
@@ -911,12 +922,12 @@ model Printer {
   updatedAt        DateTime              @updatedAt @map("updated_at")
   deletedAt        DateTime?             @map("deleted_at")
 
-  merchant           Merchant             @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  merchant           Merchant                 @relation(fields: [merchantId], references: [id], onDelete: Restrict)
   rules              PrintRule[]
   jobs               PrintJob[]
   printTriggerOutbox PrintTriggerOutbox[]
   categoryBindings   PrinterCategoryBinding[]
-  boundTerminal      MerchantTerminal?    @relation("TerminalBoundPrinter")
+  boundTerminal      MerchantTerminal?        @relation("TerminalBoundPrinter")
 
   @@index([merchantId, enabled], map: "ix_printer_merchant_enabled")
   @@index([merchantId, channelType], map: "ix_printer_merchant_channel")
@@ -927,11 +938,11 @@ model Printer {
 /// One row per merchant controls the new front-desk/kitchen routing mode.
 /// Printer ownership and purpose are enforced by the API before persisting IDs.
 model MerchantPrintingRouting {
-  merchantId                    BigInt   @id @map("merchant_id")
-  checkoutDefaultPrinterId      BigInt?  @map("checkout_default_printer_id")
-  defaultKitchenPrinterId       BigInt?  @map("default_kitchen_printer_id")
-  createdAt                     DateTime @default(now()) @map("created_at")
-  updatedAt                     DateTime @updatedAt @map("updated_at")
+  merchantId               BigInt   @id @map("merchant_id")
+  checkoutDefaultPrinterId BigInt?  @map("checkout_default_printer_id")
+  defaultKitchenPrinterId  BigInt?  @map("default_kitchen_printer_id")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
 
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 

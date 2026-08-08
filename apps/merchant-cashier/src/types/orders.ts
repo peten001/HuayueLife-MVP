@@ -82,6 +82,10 @@ export interface MerchantOrder {
   itemAmountVnd: string;
   deliveryFeeVnd: string;
   totalAmountVnd: string;
+  discountPayableRateBps?: number | null;
+  discountAmountVnd?: string;
+  discountAppliedByStaffId?: string | null;
+  discountAppliedAt?: string | null;
   originalAmountVnd?: string;
   roundingAmountVnd?: string;
   payableAmountVnd?: string;
@@ -117,9 +121,20 @@ export interface OrderStatusLog {
   metadata?: {
     tableSessionId?: string;
     originalAmountVnd?: string;
+    itemAmountVnd?: string;
+    discountPayableRateBps?: number | null;
+    discountAmountVnd?: string;
+    afterDiscountAmountVnd?: string;
+    nonDiscountableFeeVnd?: string;
     roundingAmountVnd?: string;
+    finalPayableAmountVnd?: string;
     payableAmountVnd?: string;
   } | null;
+}
+
+export interface SettlementAdjustmentInput {
+  discountPayableRateBps: number | null;
+  roundingEnabled: boolean;
 }
 
 export interface MerchantOrderChatConversation {
