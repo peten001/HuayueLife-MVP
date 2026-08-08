@@ -16,6 +16,7 @@ const androidRelease = fs.readFileSync(path.join(root, 'src/config/android-termi
 const androidPage = fs.readFileSync(path.join(root, 'src/pages/printing/AndroidTerminalPage.vue'), 'utf8');
 const printingApi = fs.readFileSync(path.join(root, 'src/api/printing.ts'), 'utf8');
 const receiptTemplateDefinitionSource = fs.readFileSync(path.join(root, 'src/utils/receipt-template-definition.ts'), 'utf8');
+const receiptPreviewMerchantSource = fs.readFileSync(path.join(root, 'src/utils/receipt-preview-merchant.ts'), 'utf8');
 const receiptTemplateDefinitionModule = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(
   receiptTemplateDefinitionSource,
   { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
@@ -25,10 +26,15 @@ const {
   CANONICAL_RECEIPT_SECTION_TYPES,
   receiptSettingsDisplayFromDefinition,
 } = receiptTemplateDefinitionModule;
+const receiptPreviewMerchantModule = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(
+  receiptPreviewMerchantSource,
+  { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
+).outputText).toString('base64')}`);
+const { receiptPreviewMerchant } = receiptPreviewMerchantModule;
 
 for (const key of ['merchantInfoGroup', 'orderInfoGroup', 'productsAmountsGroup', 'receiptFooterGroup']) assert.match(page, new RegExp(key));
 assert.match(page, /receipt-setting-row/);
-assert.match(page, /maxlength="80"/);
+assert.equal((page.match(/maxlength="60"/g) ?? []).length, 2);
 assert.match(page, /receipt-paper__items/);
 assert.match(page, /footerZh/);
 assert.match(page, /footerVi/);
@@ -41,15 +47,31 @@ assert.match(printersPage, /printerUsageLabel/);
 assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_ZH/);
 assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_VI/);
 assert.doesNotMatch(page, /<pre>.*preview/s);
-assert.match(page, /updatePrintingTemplate|createPrintingTemplate/);
+assert.doesNotMatch(page, /getPrintingTemplates|createPrintingTemplate|updatePrintingTemplate|duplicatePrintingTemplate/);
+assert.doesNotMatch(page, /printing-advanced|printing-table-wrap|modalOpen|definitionText|openCreate|openEdit|row\.version|row\.id/);
+assert.doesNotMatch(page, /川味小馆|Nhà hàng Xuyên Vị|华越川味小馆|Huayue Sichuan Kitchen/);
 assert.match(page, /buildReceiptSettingsDefinition/);
 assert.match(page, /receiptSettingsDisplayFromDefinition/);
 assert.doesNotMatch(page, /key\.toUpperCase\(\)/);
-for (const key of ['merchantName', 'orderNumber', 'tableNumber', 'orderTime', 'note', 'itemPrice', 'total', 'footer']) {
+for (const key of ['orderNumber', 'tableNumber', 'orderTime', 'note', 'itemPrice', 'total', 'footer']) {
   assert.match(page, new RegExp(`v-if="receiptSettings\\.${key}"`));
 }
+assert.match(page, /v-if="receiptSettings\.merchantName && previewMerchant\.hasName"/);
 assert.match(page, /getCurrentOrderCustomerReceiptSettings/);
 assert.match(page, /saveCurrentOrderCustomerReceiptSettings/);
+assert.match(page, /getProfile/);
+assert.match(page, /merchantProfile\.value = profile/);
+assert.match(page, /receiptPreviewMerchant\(merchantProfile\.value\)/);
+assert.match(page, /previewMerchant\.hasName/);
+assert.match(page, /previewMerchant\.nameZh/);
+assert.match(page, /previewMerchant\.nameVi/);
+assert.match(page, /onMounted\(load\)/);
+assert.match(page, /function cancelChanges\(\)/);
+assert.match(page, /function restoreDefaults\(\)/);
+assert.match(page, /receiptSettings\.footerZh \|\| DEFAULT_RECEIPT_FOOTER_ZH/);
+assert.match(page, /receiptSettings\.footerVi \|\| DEFAULT_RECEIPT_FOOTER_VI/);
+assert.match(page, /grid-template-columns: minmax\(0, 3fr\) minmax\(300px, 2fr\)/);
+assert.match(page, /@media \(max-width: 900px\)[\s\S]*grid-template-columns: 1fr/);
 const simpleSettingsSave = page.slice(
   page.indexOf('async function saveReceiptSettings()'),
   page.indexOf('function cancelChanges()'),
@@ -76,7 +98,7 @@ assert.doesNotMatch(printersPage, /downloadAppShort|downloadApp/);
 assert.match(printersPage, /usbAutoDetectHint/);
 assert.match(router, /path: 'settings\/android-terminal'/);
 assert.match(router, /redirect: '\/printing-center\/android-terminal'/);
-for (const key of ['receiptSettingsSubtitle', 'restoreDefaults', 'cancelChanges', 'paperWidth58', 'paperWidth80']) {
+for (const key of ['receiptSettingsSubtitle', 'currentMerchant', 'restoreDefaults', 'cancelChanges', 'paperWidth58', 'paperWidth80']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
 for (const key of ['footerZhLabel', 'footerViLabel', 'bilingualReceipt', 'bilingualReceiptHint', 'printerConnectionInfoHint']) {
@@ -124,6 +146,23 @@ for (const key of [
 assert.match(appI18n, /正式发布 · 按需升级/);
 assert.match(appI18n, /现有 RC5 设备如运行稳定，可继续使用，无需强制升级/);
 assert.doesNotMatch(appI18n, /候选版本：|Bản ứng viên:|Release Candidate:/);
+
+const merchantA = receiptPreviewMerchant({ nameZh: '商家 A', nameVi: 'Cửa hàng A' });
+const merchantB = receiptPreviewMerchant({ nameZh: '商家 B', nameVi: 'Cửa hàng B' });
+assert.notEqual(merchantA.nameZh, merchantB.nameZh);
+assert.deepEqual(merchantA, { nameZh: '商家 A', nameVi: 'Cửa hàng A', hasName: true });
+assert.deepEqual(merchantB, { nameZh: '商家 B', nameVi: 'Cửa hàng B', hasName: true });
+assert.deepEqual(receiptPreviewMerchant({ nameZh: '仅中文商家' }), {
+  nameZh: '仅中文商家',
+  nameVi: '',
+  hasName: true,
+});
+assert.deepEqual(receiptPreviewMerchant({ nameZh: ' 同名商家 ', nameVi: '同名商家' }), {
+  nameZh: '同名商家',
+  nameVi: '',
+  hasName: true,
+});
+assert.deepEqual(receiptPreviewMerchant(null), { nameZh: '', nameVi: '', hasName: false });
 
 const defaultReceiptSettings = {
   merchantName: true,
