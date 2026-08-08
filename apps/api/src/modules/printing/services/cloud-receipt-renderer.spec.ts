@@ -39,6 +39,22 @@ describe('cloud receipt renderer', () => {
     expect(content).toContain('&lt;B&gt;不可注入&lt;/B&gt; &amp; Store');
     expect(content).not.toContain('<B>不可注入</B>');
   });
+
+  it('sends the same PrintDocument V2 rows through both cloud adapters', () => {
+    const document = {
+      documentType: 'PRINT_DOCUMENT' as const,
+      schemaVersion: 2 as const,
+      paperWidth: 'MM80' as const,
+      copies: 1,
+      blocks: [
+        { type: 'ROW' as const, left: '折扣（9折）', right: '-82,800 VND', bold: false },
+        { type: 'ROW' as const, left: '最终应收', right: '740,000 VND', bold: true },
+      ],
+    };
+
+    expect(renderCloudReceipt(document, 'YILIAN')).toContain('折扣（9折）');
+    expect(renderCloudReceipt(document, 'FEIE')).toContain('740,000 VND');
+  });
 });
 
 function orderReceipt(): ReceiptDocument {

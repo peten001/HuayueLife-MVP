@@ -5,6 +5,7 @@ import {
   RC6_RECEIPT_SCHEMA_VERSION,
   receiptDocumentForChannel,
 } from './receipt-compatibility';
+import { supportsPrintDocumentV2Version } from '../services/print-jobs.service';
 
 const currentReceipt: ReceiptDocument = {
   schemaVersion: 1,
@@ -40,6 +41,12 @@ const currentReceipt: ReceiptDocument = {
 };
 
 describe('receipt schema compatibility', () => {
+  it('gates both field baselines until the one-time V2 RC12 executor upgrade', () => {
+    expect(supportsPrintDocumentV2Version('1.0.0-rc7')).toBe(false);
+    expect(supportsPrintDocumentV2Version('2.0.0-rc11.5')).toBe(false);
+    expect(supportsPrintDocumentV2Version('2.0.0-rc12')).toBe(true);
+    expect(supportsPrintDocumentV2Version('2.0.1')).toBe(true);
+  });
   it('uses the strict RC5 subset for every USB job when no reliable terminal profile exists', () => {
     const compatible = receiptDocumentForChannel(
       currentReceipt,

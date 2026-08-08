@@ -1,10 +1,12 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ReceiptTemplatesService } from './receipt-templates.service';
 
 const merchantId = 7n;
 
 describe('ReceiptTemplatesService versioning', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
+  let audit: { record: jest.Mock };
   let settings: { assertMerchantPrintingEnabled: jest.Mock };
   let service: ReceiptTemplatesService;
 
@@ -13,12 +15,214 @@ describe('ReceiptTemplatesService versioning', () => {
     settings = {
       assertMerchantPrintingEnabled: jest.fn().mockResolvedValue(undefined),
     };
+    audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
     service = new ReceiptTemplatesService(
       prisma as never,
       { assertTaskCenterEnabled: jest.fn() } as never,
-      { record: jest.fn().mockResolvedValue({ id: 1n }) } as never,
+      audit as never,
       settings as never,
     );
+  });
+
+  it('selects the current merchant-owned ORDER_CUSTOMER template deterministically', async () => {
+    const current = template({ id: 31n, version: 4 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+
+    await expect(service.getCurrentOrderCustomer(merchantId)).resolves.toBe(current);
+
+    expect(prisma.receiptTemplate.findFirst).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        receiptType: 'ORDER_CUSTOMER',
+        enabled: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { version: 'desc' }, { id: 'desc' }],
+    });
+  });
+
+  it('creates version 1 when current ORDER_CUSTOMER settings do not exist', async () => {
+    const created = template({ id: 30n, version: 1 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(null);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: null } });
+    prisma.receiptTemplate.create.mockResolvedValue(created);
+
+    await expect(
+      service.saveCurrentOrderCustomer(
+        merchantId,
+        3n,
+        'current-create',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(created);
+
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        merchantId,
+        name: '商家默认',
+        receiptType: 'ORDER_CUSTOMER',
+        version: 1,
+        enabled: true,
+      }),
+    });
+    expect(prisma.receiptTemplate.update).not.toHaveBeenCalled();
+    expect(prisma.printRule.updateMany).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'RECEIPT_TEMPLATE_CREATED', resourceId: created.id }),
+      prisma,
+    );
+  });
+
+  it('persists fine-grained display settings inside the immutable definition JSON', async () => {
+    const created = template({ id: 32n, version: 1 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(null);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: null } });
+    prisma.receiptTemplate.create.mockResolvedValue(created);
+
+    await service.saveCurrentOrderCustomer(
+      merchantId,
+      3n,
+      'current-display-create',
+      currentSettingsPayload({
+        merchantName: false,
+        orderNumber: true,
+        tableNumber: false,
+        orderTime: true,
+        note: false,
+        itemPrice: false,
+        orderTotal: false,
+        footer: true,
+      }),
+    );
+
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        definition: expect.objectContaining({
+          display: {
+            merchantName: false,
+            orderNumber: true,
+            tableNumber: false,
+            orderTime: true,
+            note: false,
+            itemPrice: false,
+            orderTotal: false,
+            footer: true,
+          },
+        }),
+      }),
+    });
+  });
+
+  it('creates the next immutable version from the current ORDER_CUSTOMER settings', async () => {
+    const current = template({ id: 30n, version: 1 });
+    const saved = template({ id: 31n, version: 2 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: 1 } });
+    prisma.receiptTemplate.create.mockResolvedValue(saved);
+    prisma.receiptTemplate.update.mockResolvedValue({ ...current, enabled: false });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      service.saveCurrentOrderCustomer(
+        merchantId,
+        3n,
+        'current-update',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(saved);
+
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ version: 2, name: current.name }),
+    });
+    expect(prisma.receiptTemplate.update).toHaveBeenCalledWith({
+      where: { id: current.id },
+      data: { enabled: false },
+    });
+    expect(prisma.printRule.updateMany).toHaveBeenCalledWith({
+      where: { merchantId, receiptTemplateId: current.id },
+      data: {
+        receiptTemplateId: saved.id,
+        enabled: false,
+        autoPrint: false,
+      },
+    });
+  });
+
+  it('ignores stale client create assumptions and versions from server current state', async () => {
+    const current = template({ id: 34n, name: '服务端当前模板', version: 4 });
+    const saved = template({ id: 35n, name: current.name, version: 5 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: 4 } });
+    prisma.receiptTemplate.create.mockResolvedValue(saved);
+    prisma.receiptTemplate.update.mockResolvedValue({ ...current, enabled: false });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.saveCurrentOrderCustomer(
+        merchantId,
+        3n,
+        'stale-client',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(saved);
+
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: current.name, version: 5 }),
+    });
+  });
+
+  it('re-resolves current settings once after a concurrent P2002 conflict', async () => {
+    const concurrentlyCreated = template({ id: 40n, version: 1 });
+    const saved = template({ id: 41n, version: 2 });
+    prisma.receiptTemplate.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(concurrentlyCreated);
+    prisma.receiptTemplate.aggregate
+      .mockResolvedValueOnce({ _max: { version: null } })
+      .mockResolvedValueOnce({ _max: { version: 1 } });
+    prisma.receiptTemplate.create
+      .mockRejectedValueOnce(uniqueViolation())
+      .mockResolvedValueOnce(saved);
+    prisma.receiptTemplate.update.mockResolvedValue({ ...concurrentlyCreated, enabled: false });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.saveCurrentOrderCustomer(
+        merchantId,
+        3n,
+        'concurrent-save',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(saved);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.receiptTemplate.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({ version: 2 }),
+    });
+  });
+
+  it('returns an explicit conflict instead of exposing a repeated P2002 as HTTP 500', async () => {
+    prisma.receiptTemplate.findFirst.mockResolvedValue(null);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: null } });
+    prisma.receiptTemplate.create.mockRejectedValue(uniqueViolation());
+
+    let caught: unknown;
+    try {
+      await service.saveCurrentOrderCustomer(
+        merchantId,
+        3n,
+        'repeated-conflict',
+        currentSettingsPayload(),
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getStatus()).toBe(409);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      code: 'RECEIPT_TEMPLATE_VERSION_CONFLICT',
+      message: '当前小票设置已被其他操作更新，请刷新后重试',
+    });
   });
 
   it('blocks template mutations while platform printing is disabled', async () => {
@@ -142,6 +346,22 @@ describe('ReceiptTemplatesService versioning', () => {
         sections: [{ type: 'ITEMS' }, { type: 'ITEMS' }],
       },
     },
+    {
+      caseName: 'non-boolean display flag',
+      definition: {
+        schemaVersion: 1,
+        sections: [{ type: 'ITEMS' }],
+        display: { orderNumber: 'false' },
+      },
+    },
+    {
+      caseName: 'unknown display flag',
+      definition: {
+        schemaVersion: 1,
+        sections: [{ type: 'ITEMS' }],
+        display: { orderNumber: true, phone: false },
+      },
+    },
   ])('rejects template definition with $caseName', async ({ definition }) => {
     await expect(
       service.create(merchantId, 3n, undefined, {
@@ -250,4 +470,23 @@ function template(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2026-07-15T00:00:00.000Z'),
     ...overrides,
   };
+}
+
+function currentSettingsPayload(display?: Record<string, boolean>) {
+  return {
+    paperWidth: 'MM80' as const,
+    languageMode: 'MERCHANT_DEFAULT' as const,
+    definition: {
+      schemaVersion: 1,
+      sections: [{ type: 'MERCHANT_HEADER' }, { type: 'ITEMS' }],
+      ...(display ? { display } : {}),
+    },
+  };
+}
+
+function uniqueViolation() {
+  return new Prisma.PrismaClientKnownRequestError('duplicate template version', {
+    code: 'P2002',
+    clientVersion: '5.22.0',
+  });
 }

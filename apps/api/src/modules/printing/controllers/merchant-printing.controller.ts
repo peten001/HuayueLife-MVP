@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -46,6 +47,7 @@ import {
 } from '../dto/printer.dto';
 import {
   CreateReceiptTemplateDto,
+  SaveCurrentOrderCustomerReceiptSettingsDto,
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PrintAttemptsService } from '../services/print-attempts.service';
@@ -280,6 +282,27 @@ export class MerchantPrintingController {
     @Body() dto: CreateReceiptTemplateDto,
   ) {
     return this.templates.create(merchantId, BigInt(staff.sub), request.requestId, dto);
+  }
+
+  @Get('templates/current/order-customer')
+  getCurrentOrderCustomerReceiptSettings(@MerchantId() merchantId: bigint) {
+    return this.templates.getCurrentOrderCustomer(merchantId);
+  }
+
+  @Put('templates/current/order-customer')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  saveCurrentOrderCustomerReceiptSettings(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: SaveCurrentOrderCustomerReceiptSettingsDto,
+  ) {
+    return this.templates.saveCurrentOrderCustomer(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      dto,
+    );
   }
 
   @Get('templates/:id')

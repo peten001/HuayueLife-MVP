@@ -199,6 +199,11 @@ export interface PrintingReceiptTemplatePayload {
   enabled: boolean;
 }
 
+export type PrintingCurrentReceiptSettingsPayload = Pick<
+  PrintingReceiptTemplatePayload,
+  'paperWidth' | 'languageMode' | 'definition'
+>;
+
 export interface PrintingRule {
   id: string;
   merchantId?: string;

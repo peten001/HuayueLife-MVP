@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 
 const root = path.resolve(import.meta.dirname, '..');
 const page = fs.readFileSync(path.join(root, 'src/pages/printing/PrintingTemplatesPage.vue'), 'utf8');
@@ -13,6 +14,17 @@ const i18n = fs.readFileSync(path.join(root, 'src/i18n/printing.ts'), 'utf8');
 const appI18n = fs.readFileSync(path.join(root, 'src/i18n/index.ts'), 'utf8');
 const androidRelease = fs.readFileSync(path.join(root, 'src/config/android-terminal-release.ts'), 'utf8');
 const androidPage = fs.readFileSync(path.join(root, 'src/pages/printing/AndroidTerminalPage.vue'), 'utf8');
+const printingApi = fs.readFileSync(path.join(root, 'src/api/printing.ts'), 'utf8');
+const receiptTemplateDefinitionSource = fs.readFileSync(path.join(root, 'src/utils/receipt-template-definition.ts'), 'utf8');
+const receiptTemplateDefinitionModule = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(
+  receiptTemplateDefinitionSource,
+  { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
+).outputText).toString('base64')}`);
+const {
+  buildReceiptSettingsDefinition,
+  CANONICAL_RECEIPT_SECTION_TYPES,
+  receiptSettingsDisplayFromDefinition,
+} = receiptTemplateDefinitionModule;
 
 for (const key of ['merchantInfoGroup', 'orderInfoGroup', 'productsAmountsGroup', 'receiptFooterGroup']) assert.match(page, new RegExp(key));
 assert.match(page, /receipt-setting-row/);
@@ -30,6 +42,23 @@ assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_ZH/);
 assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_VI/);
 assert.doesNotMatch(page, /<pre>.*preview/s);
 assert.match(page, /updatePrintingTemplate|createPrintingTemplate/);
+assert.match(page, /buildReceiptSettingsDefinition/);
+assert.match(page, /receiptSettingsDisplayFromDefinition/);
+assert.doesNotMatch(page, /key\.toUpperCase\(\)/);
+for (const key of ['merchantName', 'orderNumber', 'tableNumber', 'orderTime', 'note', 'itemPrice', 'total', 'footer']) {
+  assert.match(page, new RegExp(`v-if="receiptSettings\\.${key}"`));
+}
+assert.match(page, /getCurrentOrderCustomerReceiptSettings/);
+assert.match(page, /saveCurrentOrderCustomerReceiptSettings/);
+const simpleSettingsSave = page.slice(
+  page.indexOf('async function saveReceiptSettings()'),
+  page.indexOf('function cancelChanges()'),
+);
+assert.match(simpleSettingsSave, /saveCurrentOrderCustomerReceiptSettings/);
+assert.doesNotMatch(simpleSettingsSave, /createPrintingTemplate|updatePrintingTemplate|\.id\b/);
+assert.match(printingApi, /getCurrentOrderCustomerReceiptSettings/);
+assert.match(printingApi, /saveCurrentOrderCustomerReceiptSettings/);
+assert.match(printingApi, /\/merchant\/printing\/templates\/current\/order-customer/);
 assert.match(rulesPage, /frontDeskPrinters/);
 assert.match(rulesPage, /kitchenPrinters/);
 assert.match(rulesPage, /添加前台打印机/);
@@ -95,5 +124,99 @@ for (const key of [
 assert.match(appI18n, /正式发布 · 按需升级/);
 assert.match(appI18n, /现有 RC5 设备如运行稳定，可继续使用，无需强制升级/);
 assert.doesNotMatch(appI18n, /候选版本：|Bản ứng viên:|Release Candidate:/);
+
+const defaultReceiptSettings = {
+  merchantName: true,
+  phone: false,
+  qrCode: false,
+  orderNumber: true,
+  tableNumber: true,
+  orderTime: true,
+  note: true,
+  itemPrice: true,
+  total: true,
+  footer: true,
+  footerZh: '谢谢惠顾，欢迎再次光临',
+  footerVi: 'Cảm ơn quý khách, hẹn gặp lại!',
+};
+const createdDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: {},
+  settings: { ...defaultReceiptSettings, footerZh: '云桥后台文案验证' },
+  defaultFooterZh: defaultReceiptSettings.footerZh,
+  defaultFooterVi: defaultReceiptSettings.footerVi,
+});
+assert.equal(createdDefinition.footerTextZh, '云桥后台文案验证');
+assert.deepEqual(createdDefinition.sections, CANONICAL_RECEIPT_SECTION_TYPES.map((type) => ({ type })));
+assert.deepEqual(createdDefinition.display, {
+  merchantName: true,
+  orderNumber: true,
+  tableNumber: true,
+  orderTime: true,
+  note: true,
+  itemPrice: true,
+  orderTotal: true,
+  footer: true,
+});
+assert.doesNotMatch(JSON.stringify(createdDefinition.sections), /MERCHANTNAME|ORDERNUMBER|TABLENUMBER|ORDERTIME|NOTE|ITEMPRICE|"TOTAL"/);
+
+const existingSections = [
+  { type: 'ITEMS', title: '菜品' },
+  { type: 'FOOTER', enabled: true },
+];
+const updatedDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: { schemaVersion: 1, sections: existingSections },
+  settings: { ...defaultReceiptSettings, footerZh: '仅更新结束语' },
+  defaultFooterZh: defaultReceiptSettings.footerZh,
+  defaultFooterVi: defaultReceiptSettings.footerVi,
+});
+assert.equal(updatedDefinition.footerTextZh, '仅更新结束语');
+assert.deepEqual(updatedDefinition.sections, existingSections);
+
+const switchedDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: { schemaVersion: 1, sections: existingSections },
+  settings: {
+    ...defaultReceiptSettings,
+    merchantName: false,
+    orderNumber: false,
+    tableNumber: false,
+    note: false,
+    itemPrice: false,
+    total: false,
+    footer: false,
+  },
+  defaultFooterZh: defaultReceiptSettings.footerZh,
+  defaultFooterVi: defaultReceiptSettings.footerVi,
+});
+assert.deepEqual(switchedDefinition.sections, existingSections);
+assert.deepEqual(switchedDefinition.display, {
+  merchantName: false,
+  orderNumber: false,
+  tableNumber: false,
+  orderTime: true,
+  note: false,
+  itemPrice: false,
+  orderTotal: false,
+  footer: false,
+});
+assert.deepEqual(receiptSettingsDisplayFromDefinition(switchedDefinition), {
+  merchantName: false,
+  orderNumber: false,
+  tableNumber: false,
+  orderTime: true,
+  note: false,
+  itemPrice: false,
+  total: false,
+  footer: false,
+});
+assert.deepEqual(receiptSettingsDisplayFromDefinition({ schemaVersion: 1, sections: existingSections }), {
+  merchantName: true,
+  orderNumber: true,
+  tableNumber: true,
+  orderTime: true,
+  note: true,
+  itemPrice: true,
+  total: true,
+  footer: true,
+});
 
 console.log('merchant-admin receipt settings UI: PASS');

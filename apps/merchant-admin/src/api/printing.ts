@@ -13,6 +13,7 @@ import type {
   PrintingPrinter,
   PrintingPrinterPayload,
   PrintingReceiptTemplate,
+  PrintingCurrentReceiptSettingsPayload,
   PrintingReceiptTemplatePayload,
   PrintingRule,
   PrintingRulePayload,
@@ -144,6 +145,23 @@ export async function getPrintingTemplates() {
     '/merchant/printing/templates',
   );
   return normalizeCollection(response.data.data);
+}
+
+export async function getCurrentOrderCustomerReceiptSettings() {
+  const response = await http.get<ApiResponse<PrintingReceiptTemplate | null>>(
+    '/merchant/printing/templates/current/order-customer',
+  );
+  return response.data.data;
+}
+
+export async function saveCurrentOrderCustomerReceiptSettings(
+  payload: PrintingCurrentReceiptSettingsPayload,
+) {
+  const response = await http.put<ApiResponse<PrintingReceiptTemplate>>(
+    '/merchant/printing/templates/current/order-customer',
+    payload,
+  );
+  return response.data.data;
 }
 
 export async function createPrintingTemplate(payload: PrintingReceiptTemplatePayload) {

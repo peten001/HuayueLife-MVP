@@ -13,6 +13,8 @@ import com.yunqiao.life.merchantterminal.printing.LocalTransportExecutor
 import com.yunqiao.life.merchantterminal.printing.PrintResult
 import com.yunqiao.life.merchantterminal.printing.PrintableDocument
 import com.yunqiao.life.merchantterminal.printing.escpos.EscPosRasterEncoder
+import com.yunqiao.life.merchantterminal.printing.document.PrintDocumentV2Parser
+import com.yunqiao.life.merchantterminal.printing.document.PrintDocumentV2Renderer
 import com.yunqiao.life.merchantterminal.printing.receipt.ProductionReceiptRenderConfig
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentParser
 import com.yunqiao.life.merchantterminal.printing.receipt.ReceiptDocumentRenderer
@@ -105,7 +107,7 @@ class V2PrintJobExecutor(
             log(job, "PRINT_EXECUTE_START attemptNo=${started.attemptNo}")
             val result = transportExecutor.printOnce(
                 binding,
-                PrintableDocument(bytes, "server-receipt-v1"),
+                PrintableDocument(bytes, "server-print-document"),
             )
             when (result) {
                 is PrintResult.Success -> {
@@ -301,6 +303,12 @@ class V2PrintJobExecutor(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): ByteArray {
+        if (PrintDocumentV2Parser.schemaVersion(job.receiptSnapshotJson) == 2) {
+            return PrintDocumentV2Renderer.renderBytes(
+                PrintDocumentV2Parser.parse(job.receiptSnapshotJson),
+                binding.paperWidth,
+            )
+        }
         val receipt = ReceiptDocumentParser.parse(job.receiptSnapshotJson)
         require(receipt.receiptType.name == job.receiptType)
         val bitmap = ReceiptDocumentRenderer.render(

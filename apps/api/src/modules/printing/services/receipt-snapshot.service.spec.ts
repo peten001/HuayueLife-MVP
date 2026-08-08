@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { ReceiptDocument } from '../types/receipt-document';
+import {
+  DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+  ReceiptDocument,
+} from '../types/receipt-document';
 import { ReceiptSnapshotService } from './receipt-snapshot.service';
 
 const merchantId = 7n;
@@ -41,6 +44,45 @@ describe('ReceiptSnapshotService validation', () => {
       vi: 'Cảm ơn quý khách, hẹn gặp lại!',
     });
     expect(Object.isFrozen(snapshot.footer)).toBe(true);
+  });
+
+  it('defaults every fine-grained display setting to visible for historical definitions', () => {
+    expect(service.displaySettingsFromTemplate({
+      schemaVersion: 1,
+      sections: [{ type: 'ITEMS' }],
+    })).toEqual(DEFAULT_RECEIPT_TEMPLATE_DISPLAY);
+  });
+
+  it('normalizes independent display settings from an applied template definition', () => {
+    expect(service.displaySettingsFromTemplate({
+      schemaVersion: 1,
+      sections: [{ type: 'ITEMS' }],
+      display: {
+        orderNumber: false,
+        orderTime: true,
+        note: false,
+        itemPrice: false,
+      },
+    })).toEqual({
+      ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+      orderNumber: false,
+      orderTime: true,
+      note: false,
+      itemPrice: false,
+    });
+  });
+
+  it('ignores malformed runtime display values instead of crashing snapshot rendering', () => {
+    expect(service.displaySettingsFromTemplate({
+      display: {
+        merchantName: false,
+        orderNumber: 'false',
+        unsupported: false,
+      },
+    })).toEqual({
+      ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+      merchantName: false,
+    });
   });
 
   it.each([

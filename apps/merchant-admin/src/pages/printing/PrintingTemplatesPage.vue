@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
-import { createPrintingTemplate, duplicatePrintingTemplate, getPrintingTemplates, updatePrintingTemplate } from '@/api/printing';
+import { createPrintingTemplate, duplicatePrintingTemplate, getCurrentOrderCustomerReceiptSettings, getPrintingTemplates, saveCurrentOrderCustomerReceiptSettings, updatePrintingTemplate } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
-import type { PrintingPaperWidth, PrintingReceiptTemplate, PrintingReceiptTemplatePayload, PrintingReceiptType } from '@/types/printing';
-import { BILINGUAL_RECEIPT_LABELS, DEFAULT_RECEIPT_FOOTER_VI, DEFAULT_RECEIPT_FOOTER_ZH, joinBilingualFooter, splitBilingualFooter } from '@/utils/bilingual-receipt';
+import type { PrintingCurrentReceiptSettingsPayload, PrintingPaperWidth, PrintingReceiptTemplate, PrintingReceiptTemplatePayload, PrintingReceiptType } from '@/types/printing';
+import { BILINGUAL_RECEIPT_LABELS, DEFAULT_RECEIPT_FOOTER_VI, DEFAULT_RECEIPT_FOOTER_ZH, splitBilingualFooter } from '@/utils/bilingual-receipt';
+import { buildReceiptSettingsDefinition, receiptSettingsDisplayFromDefinition, type ReceiptSettings } from '@/utils/receipt-template-definition';
 
 const { p } = usePrintingI18n();
-type ReceiptSettingKey = 'merchantName' | 'phone' | 'qrCode' | 'orderNumber' | 'tableNumber' | 'orderTime' | 'note' | 'itemPrice' | 'total';
-type ReceiptSettings = Record<ReceiptSettingKey, boolean> & { footerZh: string; footerVi: string };
-const defaults: ReceiptSettings = { merchantName: true, phone: false, qrCode: false, orderNumber: true, tableNumber: true, orderTime: true, note: true, itemPrice: true, total: true, footerZh: DEFAULT_RECEIPT_FOOTER_ZH, footerVi: DEFAULT_RECEIPT_FOOTER_VI };
+const defaults: ReceiptSettings = { merchantName: true, phone: false, qrCode: false, orderNumber: true, tableNumber: true, orderTime: true, note: true, itemPrice: true, total: true, footer: true, footerZh: DEFAULT_RECEIPT_FOOTER_ZH, footerVi: DEFAULT_RECEIPT_FOOTER_VI };
 const rows = ref<PrintingReceiptTemplate[]>([]);
+const currentReceiptSettings = ref<PrintingReceiptTemplate | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const modalOpen = ref(false);
@@ -22,7 +22,6 @@ const receiptSettings = reactive<ReceiptSettings>({ ...defaults });
 const initialSnapshot = ref(JSON.stringify({ settings: defaults, paperWidth: 'MM80' }));
 const paperWidth = ref<PrintingPaperWidth>('MM80');
 const form = reactive({ id: '', name: '', receiptType: 'ORDER_CUSTOMER' as PrintingReceiptType, paperWidth: 'MM80' as PrintingPaperWidth, enabled: false });
-const merchantTemplate = computed(() => rows.value.find((row) => Boolean(row.merchantId) && row.receiptType === 'ORDER_CUSTOMER'));
 const isDirty = computed(() => JSON.stringify({ settings: receiptSettings, paperWidth: paperWidth.value }) !== initialSnapshot.value);
 const supportedReceiptTypes = computed(() => Array.from(new Set(rows.value.filter((row) => row.merchantId).map((row) => row.receiptType))));
 
@@ -32,12 +31,7 @@ function syncSettingsFromTemplate(row?: PrintingReceiptTemplate) {
   Object.assign(receiptSettings, defaults);
   paperWidth.value = row?.paperWidth ?? 'MM80';
   const definition = row?.definition ?? {};
-  const sections = Array.isArray(definition.sections) ? definition.sections : [];
-  const types = sections.map((item) => typeof item === 'object' && item !== null && 'type' in item ? String((item as { type?: unknown }).type).toUpperCase() : '');
-  const known: Record<string, ReceiptSettingKey> = { MERCHANTNAME: 'merchantName', MERCHANT_HEADER: 'merchantName', PHONE: 'phone', MERCHANTPHONE: 'phone', QR_CODE: 'qrCode', QRCODE: 'qrCode', ORDERNUMBER: 'orderNumber', ORDER_NUMBER: 'orderNumber', TABLENUMBER: 'tableNumber', TABLE_NUMBER: 'tableNumber', ORDERTIME: 'orderTime', ORDER_TIME: 'orderTime', NOTE: 'note', ORDERNOTE: 'note', ORDER_NOTE: 'note', ITEMPRICE: 'itemPrice', ITEM_PRICE: 'itemPrice', TOTAL: 'total', ORDER_TOTAL: 'total' };
-  if (types.some((type) => type && !['MERCHANT_HEADER', 'ORDER_INFO', 'ITEMS', 'TOTALS', 'FOOTER'].includes(type))) {
-    (Object.keys(known) as string[]).forEach((type) => { if (known[type]) receiptSettings[known[type]] = types.includes(type); });
-  }
+  Object.assign(receiptSettings, receiptSettingsDisplayFromDefinition(definition));
   const footer = typeof definition.footerTextZh === 'string' || typeof definition.footerTextVi === 'string'
     ? { zh: String(definition.footerTextZh ?? ''), vi: String(definition.footerTextVi ?? '') }
     : splitBilingualFooter(definition.footerText);
@@ -55,21 +49,28 @@ function closeModal() { modalOpen.value = false; resetForm(); }
 function parseDefinition(): Record<string, unknown> { const parsed: unknown = JSON.parse(definitionText.value); if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(p('invalidJson')); return parsed as Record<string, unknown>; }
 function payload(): PrintingReceiptTemplatePayload { return { name: form.name.trim(), receiptType: form.receiptType, paperWidth: form.paperWidth, languageMode: 'MERCHANT_DEFAULT', definition: parseDefinition(), enabled: form.enabled }; }
 function receiptSettingsDefinition() {
-  const existing = merchantTemplate.value?.definition ?? {};
-  return { ...existing, schemaVersion: typeof existing.schemaVersion === 'number' ? existing.schemaVersion : 1, sections: Object.entries(receiptSettings).filter(([key, value]) => !key.startsWith('footer') && value).map(([key]) => ({ type: key.toUpperCase() })), footerTextZh: receiptSettings.footerZh.trim() || DEFAULT_RECEIPT_FOOTER_ZH, footerTextVi: receiptSettings.footerVi.trim() || DEFAULT_RECEIPT_FOOTER_VI, footerText: joinBilingualFooter({ zh: receiptSettings.footerZh, vi: receiptSettings.footerVi }) };
+  const existing = currentReceiptSettings.value?.definition ?? {};
+  return buildReceiptSettingsDefinition({
+    existingDefinition: existing,
+    settings: { ...receiptSettings },
+    defaultFooterZh: DEFAULT_RECEIPT_FOOTER_ZH,
+    defaultFooterVi: DEFAULT_RECEIPT_FOOTER_VI,
+  });
 }
 async function saveReceiptSettings() {
   try {
     saving.value = true;
-    const value: PrintingReceiptTemplatePayload = { name: merchantTemplate.value?.name ?? p('merchantDefault'), receiptType: 'ORDER_CUSTOMER', paperWidth: paperWidth.value, languageMode: 'MERCHANT_DEFAULT', definition: receiptSettingsDefinition(), enabled: true };
-    if (merchantTemplate.value) await updatePrintingTemplate(merchantTemplate.value.id, value); else await createPrintingTemplate(value);
+    const value: PrintingCurrentReceiptSettingsPayload = { paperWidth: paperWidth.value, languageMode: 'MERCHANT_DEFAULT', definition: receiptSettingsDefinition() };
+    const saved = await saveCurrentOrderCustomerReceiptSettings(value);
+    currentReceiptSettings.value = saved;
+    syncSettingsFromTemplate(saved);
     await load(); showSuccess(p('receiptSettingsSaved'));
   } catch (error) { showError(error); } finally { saving.value = false; }
 }
-function cancelChanges() { syncSettingsFromTemplate(merchantTemplate.value); }
+function cancelChanges() { syncSettingsFromTemplate(currentReceiptSettings.value ?? undefined); }
 function askRestoreDefaults() { restoreConfirmOpen.value = true; }
 function restoreDefaults() { Object.assign(receiptSettings, defaults); paperWidth.value = 'MM80'; restoreConfirmOpen.value = false; }
-async function load() { try { loading.value = true; rows.value = await getPrintingTemplates(); syncSettingsFromTemplate(merchantTemplate.value); } catch (error) { showError(error); } finally { loading.value = false; } }
+async function load() { try { loading.value = true; const [templates, current] = await Promise.all([getPrintingTemplates(), getCurrentOrderCustomerReceiptSettings()]); rows.value = templates; currentReceiptSettings.value = current; syncSettingsFromTemplate(current ?? undefined); } catch (error) { showError(error); } finally { loading.value = false; } }
 async function save() { try { saving.value = true; if (form.id) await updatePrintingTemplate(form.id, payload()); else await createPrintingTemplate(payload()); closeModal(); await load(); showSuccess(p('templateSaved')); } catch (error) { showError(error); } finally { saving.value = false; } }
 async function duplicate(row: PrintingReceiptTemplate) { try { await duplicatePrintingTemplate(row.id); await load(); showSuccess(p('templateDuplicated')); } catch (error) { showError(error); } }
 function showError(error: unknown) { success.value = false; message.value = error instanceof SyntaxError ? p('invalidJson') : errorMessage(error); }
@@ -93,7 +94,7 @@ const settingGroups = [
         <div class="receipt-settings-group receipt-settings-group--footer"><h4>{{ p('receiptFooterGroup') }}</h4><label class="receipt-footer-field"><span><strong>{{ p('footerZhLabel') }}</strong><small>{{ p('footerZhHint') }}</small></span><input v-model="receiptSettings.footerZh" maxlength="60" :placeholder="DEFAULT_RECEIPT_FOOTER_ZH" /><em>{{ [...receiptSettings.footerZh].length }}/60</em></label><label class="receipt-footer-field"><span><strong>{{ p('footerViLabel') }}</strong><small>{{ p('footerViHint') }}</small></span><input v-model="receiptSettings.footerVi" maxlength="60" :placeholder="DEFAULT_RECEIPT_FOOTER_VI" /><em>{{ [...receiptSettings.footerVi].length }}/60</em></label></div>
       </section>
       <aside class="receipt-preview-card"><div class="receipt-preview-card__heading"><div><h3>{{ p('previewTitle') }}</h3><p>{{ p('previewHint') }}</p></div><div class="receipt-paper-switch" role="group" :aria-label="p('paperWidthLabel')"><button type="button" :class="{ 'is-selected': paperWidth === 'MM58' }" @click="paperWidth = 'MM58'">{{ p('paperWidth58') }}</button><button type="button" :class="{ 'is-selected': paperWidth === 'MM80' }" @click="paperWidth = 'MM80'">{{ p('paperWidth80') }}</button></div></div>
-        <div class="receipt-preview-stage"><div class="receipt-paper" :class="paperWidth === 'MM58' ? 'receipt-paper--58' : 'receipt-paper--80'"><div v-if="receiptSettings.merchantName" class="receipt-paper__merchant">川味小馆<br /><small>Nhà hàng Xuyên Vị</small></div><strong class="receipt-paper__type">{{ BILINGUAL_RECEIPT_LABELS.customerReceipt }}</strong><div class="receipt-paper__meta"><div v-if="receiptSettings.orderNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.orderNumber }}</span><strong>20260728001</strong></div><div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div><div v-if="receiptSettings.orderTime"><span>{{ BILINGUAL_RECEIPT_LABELS.time }}</span><strong>11:30</strong></div></div><div class="receipt-paper__divider" /><div class="receipt-paper__items"><div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div><div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div></div><div v-if="receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div><div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div><div class="receipt-paper__footer">{{ receiptSettings.footerZh || DEFAULT_RECEIPT_FOOTER_ZH }}<br />{{ receiptSettings.footerVi || DEFAULT_RECEIPT_FOOTER_VI }}</div></div></div></aside>
+        <div class="receipt-preview-stage"><div class="receipt-paper" :class="paperWidth === 'MM58' ? 'receipt-paper--58' : 'receipt-paper--80'"><div v-if="receiptSettings.merchantName" class="receipt-paper__merchant">川味小馆<br /><small>Nhà hàng Xuyên Vị</small></div><strong class="receipt-paper__type">{{ BILINGUAL_RECEIPT_LABELS.customerReceipt }}</strong><div class="receipt-paper__meta"><div v-if="receiptSettings.orderNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.orderNumber }}</span><strong>20260728001</strong></div><div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div><div v-if="receiptSettings.orderTime"><span>{{ BILINGUAL_RECEIPT_LABELS.time }}</span><strong>11:30</strong></div></div><div class="receipt-paper__divider" /><div class="receipt-paper__items"><div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div><div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div></div><div v-if="receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div><div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div><div v-if="receiptSettings.footer" class="receipt-paper__footer">{{ receiptSettings.footerZh || DEFAULT_RECEIPT_FOOTER_ZH }}<br />{{ receiptSettings.footerVi || DEFAULT_RECEIPT_FOOTER_VI }}</div></div></div></aside>
     </div>
     <div class="receipt-settings-actionbar"><button class="printing-button printing-button--secondary" type="button" @click="askRestoreDefaults">{{ p('restoreDefaults') }}</button><div><button class="printing-button printing-button--secondary" type="button" :disabled="!isDirty || saving" @click="cancelChanges">{{ p('cancelChanges') }}</button><button class="printing-button" type="button" :disabled="!isDirty || saving" @click="saveReceiptSettings">{{ saving ? p('saving') : p('saveSettings') }}</button></div></div>
     <details class="printing-advanced-rules printing-field--full"><summary><strong>{{ p('advancedTemplate') }}</strong><span>{{ p('advancedTemplateWarning') }}</span></summary><div class="printing-advanced-template__action"><button class="printing-button printing-button--secondary" type="button" @click="openCreate">{{ p('advancedTemplateEdit') }}</button></div></details>

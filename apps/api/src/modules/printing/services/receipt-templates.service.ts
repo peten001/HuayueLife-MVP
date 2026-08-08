@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import {
   CreateReceiptTemplateDto,
+  SaveCurrentOrderCustomerReceiptSettingsDto,
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
@@ -14,6 +16,8 @@ import { assertReceiptTemplateDefinition } from '../types/receipt-document';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
+
+const CURRENT_ORDER_CUSTOMER_TEMPLATE_NAME = '商家默认';
 
 @Injectable()
 export class ReceiptTemplatesService {
@@ -35,6 +39,63 @@ export class ReceiptTemplatesService {
   async get(merchantId: bigint, id: bigint) {
     this.flags.assertTaskCenterEnabled();
     return this.requireReadable(merchantId, id);
+  }
+
+  getCurrentOrderCustomer(merchantId: bigint) {
+    this.flags.assertTaskCenterEnabled();
+    return this.resolveCurrentOrderCustomer(merchantId);
+  }
+
+  resolveCurrentOrderCustomer(
+    merchantId: bigint,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    return client.receiptTemplate.findFirst({
+      where: {
+        merchantId,
+        receiptType: 'ORDER_CUSTOMER',
+        enabled: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { version: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  async saveCurrentOrderCustomer(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    dto: SaveCurrentOrderCustomerReceiptSettingsDto,
+  ) {
+    this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
+    const definition = this.validateDefinition(dto.definition);
+    try {
+      return await this.saveCurrentOrderCustomerAttempt(
+        merchantId,
+        actorStaffId,
+        requestId,
+        dto,
+        definition,
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+    }
+
+    try {
+      return await this.saveCurrentOrderCustomerAttempt(
+        merchantId,
+        actorStaffId,
+        requestId,
+        dto,
+        definition,
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.TEMPLATE_VERSION_CONFLICT,
+        message: '当前小票设置已被其他操作更新，请刷新后重试',
+      });
+    }
   }
 
   async create(
@@ -199,6 +260,73 @@ export class ReceiptTemplatesService {
     return template;
   }
 
+  private saveCurrentOrderCustomerAttempt(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    dto: SaveCurrentOrderCustomerReceiptSettingsDto,
+    definition: Prisma.InputJsonObject,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await this.resolveCurrentOrderCustomer(merchantId, tx);
+      const name = current?.name ?? CURRENT_ORDER_CUSTOMER_TEMPLATE_NAME;
+      const latest = await tx.receiptTemplate.aggregate({
+        where: { merchantId, name },
+        _max: { version: true },
+      });
+      const saved = await tx.receiptTemplate.create({
+        data: {
+          merchantId,
+          name,
+          receiptType: 'ORDER_CUSTOMER',
+          paperWidth: dto.paperWidth,
+          languageMode: dto.languageMode,
+          definition,
+          version: (latest._max.version ?? 0) + 1,
+          enabled: true,
+        },
+      });
+      let relinkedRules = 0;
+      if (current) {
+        await tx.receiptTemplate.update({
+          where: { id: current.id },
+          data: { enabled: false },
+        });
+        const relinked = await tx.printRule.updateMany({
+          where: { merchantId, receiptTemplateId: current.id },
+          data: {
+            receiptTemplateId: saved.id,
+            enabled: false,
+            autoPrint: false,
+          },
+        });
+        relinkedRules = relinked.count;
+      }
+      await this.audit.record(
+        {
+          merchantId,
+          actorStaffId,
+          action: current ? 'RECEIPT_TEMPLATE_UPDATED' : 'RECEIPT_TEMPLATE_CREATED',
+          resourceType: 'ReceiptTemplate',
+          resourceId: saved.id,
+          beforeData: current ? this.auditView(current) : undefined,
+          afterData: {
+            ...this.auditView(saved),
+            ...(current
+              ? {
+                  previousTemplateId: current.id.toString(),
+                  relinkedRules,
+                }
+              : {}),
+          },
+          requestId,
+        },
+        tx,
+      );
+      return saved;
+    });
+  }
+
   private validateDefinition(value: Record<string, unknown>) {
     try {
       assertReceiptTemplateDefinition(value);
@@ -237,4 +365,8 @@ export class ReceiptTemplatesService {
       enabled: template.enabled,
     };
   }
+}
+
+function isUniqueViolation(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }

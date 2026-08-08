@@ -3,7 +3,10 @@ import { validate } from 'class-validator';
 import { ListPrintJobsQueryDto } from './print-job.dto';
 import { CreatePrintRuleDto } from './print-rule.dto';
 import { CreatePrintingPrinterDto } from './printer.dto';
-import { CreateReceiptTemplateDto } from './receipt-template.dto';
+import {
+  CreateReceiptTemplateDto,
+  SaveCurrentOrderCustomerReceiptSettingsDto,
+} from './receipt-template.dto';
 import {
   ExtendPrintJobLeaseDto,
   FailPrintingDto,
@@ -17,6 +20,7 @@ describe('Printing DTO validation contract', () => {
   it.each([
     [CreatePrintingPrinterDto, validPrinter()],
     [CreateReceiptTemplateDto, validTemplate()],
+    [SaveCurrentOrderCustomerReceiptSettingsDto, validCurrentReceiptSettings()],
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
@@ -35,6 +39,7 @@ describe('Printing DTO validation contract', () => {
     ['printer purpose', CreatePrintingPrinterDto, { ...validPrinter(), purpose: 'OFFICE' }],
     ['template receipt type', CreateReceiptTemplateDto, { ...validTemplate(), receiptType: 'KITCHEN' }],
     ['template language', CreateReceiptTemplateDto, { ...validTemplate(), languageMode: 'FR' }],
+    ['current receipt settings language', SaveCurrentOrderCustomerReceiptSettingsDto, { ...validCurrentReceiptSettings(), languageMode: 'FR' }],
     ['rule order type', CreatePrintRuleDto, { ...validRule(), orderType: 'TAKEAWAY' }],
     ['rule trigger', CreatePrintRuleDto, { ...validRule(), triggerEvent: 'ORDER_CREATED' }],
     ['rule receipt type', CreatePrintRuleDto, { ...validRule(), receiptType: 'KITCHEN' }],
@@ -118,6 +123,7 @@ describe('Printing DTO validation contract', () => {
   it.each([
     [CreatePrintingPrinterDto, validPrinter()],
     [CreateReceiptTemplateDto, validTemplate()],
+    [SaveCurrentOrderCustomerReceiptSettingsDto, validCurrentReceiptSettings()],
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
@@ -206,6 +212,16 @@ function validTemplate(): Record<string, unknown> {
     definition: { schemaVersion: 1, sections: [{ type: 'ITEMS' }] },
     enabled: false,
   };
+}
+
+function validCurrentReceiptSettings(): Record<string, unknown> {
+  const {
+    name: _name,
+    receiptType: _receiptType,
+    enabled: _enabled,
+    ...settings
+  } = validTemplate();
+  return settings;
 }
 
 function validRule(): Record<string, unknown> {

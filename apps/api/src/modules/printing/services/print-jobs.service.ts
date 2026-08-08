@@ -12,6 +12,9 @@ import {
   PrintTriggerEvent,
   OrderType,
   Prisma,
+  PrinterChannelType,
+  PrinterPurpose,
+  PrintingPaperWidth,
   ReceiptType,
 } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
@@ -25,6 +28,7 @@ import {
 } from '../types/printing-errors';
 import { receiptDocumentForChannel } from '../types/receipt-compatibility';
 import { ReceiptDocument } from '../types/receipt-document';
+import { isPrintDocumentV2 } from '../types/print-document';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import {
   hasExplicitUsbExecutionEvidence,
@@ -35,8 +39,13 @@ import {
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
-import { ReceiptSnapshotService } from './receipt-snapshot.service';
+import {
+  PrintingSnapshot,
+  ReceiptSnapshotService,
+} from './receipt-snapshot.service';
+import { renderPrintDocumentV2 } from './print-document-renderer';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
+import { ReceiptTemplatesService } from './receipt-templates.service';
 import { MANAGED_RULE_PREFIX, PrintingRoutingService } from './printing-routing.service';
 import {
   ANDROID_LAN_ESCPOS_ADAPTER,
@@ -115,7 +124,6 @@ export interface CreateManualPrintJobInput {
 export interface CreateTestJobInput {
   merchantId: bigint;
   printerId: bigint;
-  receiptTemplateId?: bigint;
   createdByStaffId?: bigint;
   requestId?: string;
   requestKey: string;
@@ -133,6 +141,7 @@ export class PrintJobsService {
     private readonly audit: PrintingAuditService,
     private readonly settings: PrintingSettingsService,
     private readonly lanBindings: LanTerminalBindingsService,
+    private readonly templates: ReceiptTemplatesService,
     private readonly routing?: PrintingRoutingService,
   ) {}
 
@@ -841,6 +850,7 @@ export class PrintJobsService {
             snapshot,
             createdByStaffId: input.createdByStaffId,
             allowHistoricalTemplate: true,
+            preserveSnapshot: true,
           },
           tx,
         );
@@ -912,6 +922,10 @@ export class PrintJobsService {
         if (input.createdByStaffId) {
           await this.requireOwnedStaff(tx, input.merchantId, input.createdByStaffId);
         }
+        const currentTemplate = await this.templates.resolveCurrentOrderCustomer(
+          input.merchantId,
+          tx,
+        );
         const created = await this.createJob(
           {
             merchantId: input.merchantId,
@@ -919,7 +933,7 @@ export class PrintJobsService {
             requestGroupId: randomUUID(),
             copyIndex: 1,
             copyCount: 1,
-            receiptTemplateId: input.receiptTemplateId,
+            receiptTemplateId: currentTemplate?.id,
             receiptType: input.document.receiptType,
             triggerEvent: 'MANUAL',
             source: 'TEST',
@@ -1933,10 +1947,11 @@ export class PrintJobsService {
     source: PrintJobSource;
     priority: number;
     dedupeKey?: string;
-    snapshot: ReceiptDocument;
+    snapshot: PrintingSnapshot;
     createdByStaffId?: bigint;
     allowHistoricalTemplate?: boolean;
     allowDisabledPrinter?: boolean;
+    preserveSnapshot?: boolean;
   }, client: DbClient = this.prisma) {
     await this.settings.assertMerchantPrintingEnabled(input.merchantId, client);
     const { printer, template } = await this.validateJobReferences(
@@ -1948,6 +1963,13 @@ export class PrintJobsService {
       input.allowDisabledPrinter ?? false,
       client,
     );
+    if (
+      input.preserveSnapshot &&
+      isPrintDocumentV2(input.snapshot) &&
+      !(await this.printerSupportsPrintDocumentV2(printer, client))
+    ) {
+      this.referenceError('目标终端尚不支持 PrintDocument V2，不能补打该历史任务');
+    }
     if (input.orderId) {
       const order = await client.order.findFirst({
         where: { id: input.orderId, merchantId: input.merchantId },
@@ -1962,13 +1984,9 @@ export class PrintJobsService {
       });
       if (!session) this.referenceError('桌台账单不存在或不属于当前商家');
     }
-    const templatedSnapshot = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
-      ? this.snapshots.withTemplate(input.snapshot, template?.definition)
-      : input.snapshot;
-    const snapshot = receiptDocumentForChannel(
-      templatedSnapshot,
-      printer.channelType,
-    );
+    const snapshot = input.preserveSnapshot
+      ? input.snapshot
+      : await this.snapshotForPrinter(input.snapshot, printer, template?.definition, client);
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -1993,6 +2011,53 @@ export class PrintJobsService {
         createdByStaffId: input.createdByStaffId,
       },
     });
+  }
+
+  private async snapshotForPrinter(
+    input: PrintingSnapshot,
+    printer: {
+      id: bigint;
+      channelType: PrinterChannelType;
+      paperWidth: PrintingPaperWidth;
+      purpose: PrinterPurpose;
+      capabilities: Prisma.JsonValue;
+    },
+    templateDefinition: unknown,
+    client: DbClient,
+  ): Promise<PrintingSnapshot> {
+    if (isPrintDocumentV2(input)) return input;
+    const templated = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
+      ? this.snapshots.withTemplate(input, templateDefinition)
+      : input;
+    if (await this.printerSupportsPrintDocumentV2(printer, client)) {
+      return renderPrintDocumentV2({
+        receipt: templated,
+        paperWidth: printer.paperWidth,
+        purpose: printer.purpose,
+        display: this.snapshots.displaySettingsFromTemplate(templateDefinition),
+      });
+    }
+    return receiptDocumentForChannel(templated, printer.channelType);
+  }
+
+  private async printerSupportsPrintDocumentV2(
+    printer: {
+      id: bigint;
+      channelType: string;
+      capabilities: Prisma.JsonValue;
+    },
+    client: DbClient,
+  ) {
+    if (printer.channelType === 'CLOUD_FEIE' || printer.channelType === 'CLOUD_YILIAN') {
+      return true;
+    }
+    const terminalId = boundTerminalId(printer.capabilities, printer.channelType);
+    if (!terminalId) return false;
+    const terminal = await client.merchantTerminal.findFirst({
+      where: { id: terminalId, boundPrinterId: printer.channelType === 'LOCAL_USB_ESCPOS' ? printer.id : undefined },
+      select: { appVersion: true },
+    });
+    return supportsPrintDocumentV2Version(terminal?.appVersion);
   }
 
   private async createReceiptCompatibilityRetry(
@@ -2284,7 +2349,8 @@ export class PrintJobsService {
     }
   }
 
-  private assertSnapshotMerchant(merchantId: bigint, snapshot: ReceiptDocument) {
+  private assertSnapshotMerchant(merchantId: bigint, snapshot: PrintingSnapshot) {
+    if (isPrintDocumentV2(snapshot)) return;
     if (snapshot.merchant.id !== merchantId.toString()) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
@@ -2406,6 +2472,31 @@ export class PrintJobsService {
   private stateConflict(message: string): never {
     throw new ConflictException({ code: PRINTING_ERROR_CODES.STATE_CONFLICT, message });
   }
+}
+
+function boundTerminalId(
+  value: Prisma.JsonValue,
+  channelType: string,
+): bigint | null {
+  if (!isPlainObject(value)) return null;
+  const key = channelType === 'LOCAL_USB_ESCPOS' ? 'usbBinding' : 'lanBinding';
+  const binding = value[key];
+  if (!isPlainObject(binding) || typeof binding.terminalId !== 'string') return null;
+  if (!/^[1-9][0-9]{0,18}$/.test(binding.terminalId)) return null;
+  return BigInt(binding.terminalId);
+}
+
+export function supportsPrintDocumentV2Version(value: string | null | undefined) {
+  if (!value) return false;
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-rc(\d+(?:\.\d+)?))?$/.exec(value);
+  if (!match) return false;
+  const [, majorText, minorText, patchText, rcText] = match;
+  const major = Number(majorText);
+  const minor = Number(minorText);
+  const patch = Number(patchText);
+  if (major > 2 || (major === 2 && (minor > 0 || patch > 0))) return true;
+  if (major !== 2 || minor !== 0 || patch !== 0) return false;
+  return rcText === undefined || Number(rcText) >= 12;
 }
 
 function isUniqueViolation(error: unknown) {

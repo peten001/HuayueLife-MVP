@@ -66,11 +66,39 @@ export const RECEIPT_TEMPLATE_SECTION_TYPES = [
   'FOOTER',
 ] as const;
 
+export const RECEIPT_TEMPLATE_DISPLAY_KEYS = [
+  'merchantName',
+  'orderNumber',
+  'tableNumber',
+  'orderTime',
+  'note',
+  'itemPrice',
+  'orderTotal',
+  'footer',
+] as const;
+
+export type ReceiptTemplateDisplaySettings = Record<
+  (typeof RECEIPT_TEMPLATE_DISPLAY_KEYS)[number],
+  boolean
+>;
+
+export const DEFAULT_RECEIPT_TEMPLATE_DISPLAY: Readonly<ReceiptTemplateDisplaySettings> = {
+  merchantName: true,
+  orderNumber: true,
+  tableNumber: true,
+  orderTime: true,
+  note: true,
+  itemPrice: true,
+  orderTotal: true,
+  footer: true,
+};
+
 export interface ReceiptTemplateDefinition {
   schemaVersion: 1;
   footerText?: string;
   footerTextZh?: string;
   footerTextVi?: string;
+  display?: Partial<ReceiptTemplateDisplaySettings>;
   sections: Array<{
     type: (typeof RECEIPT_TEMPLATE_SECTION_TYPES)[number];
     enabled?: boolean;
@@ -255,7 +283,14 @@ export function assertReceiptTemplateDefinition(
   if (!isPlainObject(value)) {
     throw new Error('Template definition must be an object');
   }
-  if (!hasOnlyKeys(value, ['schemaVersion', 'footerText', 'footerTextZh', 'footerTextVi', 'sections'])) {
+  if (!hasOnlyKeys(value, [
+    'schemaVersion',
+    'footerText',
+    'footerTextZh',
+    'footerTextVi',
+    'display',
+    'sections',
+  ])) {
     throw new Error('Template definition contains unsupported fields');
   }
   const definition = value as Partial<ReceiptTemplateDefinition>;
@@ -267,6 +302,14 @@ export function assertReceiptTemplateDefinition(
     (definition.footerTextVi !== undefined && !isBoundedText(definition.footerTextVi, 0, 60))
   ) {
     throw new Error('Template definition must use schemaVersion 1 and sections');
+  }
+  if (
+    definition.display !== undefined &&
+    (!isPlainObject(definition.display) ||
+      !hasOnlyKeys(definition.display, [...RECEIPT_TEMPLATE_DISPLAY_KEYS]) ||
+      Object.values(definition.display).some((visible) => typeof visible !== 'boolean'))
+  ) {
+    throw new Error('Template display settings are invalid');
   }
   if (
     definition.sections.length === 0 ||
@@ -286,6 +329,17 @@ export function assertReceiptTemplateDefinition(
   if (new Set(definition.sections.map((section) => section.type)).size !== definition.sections.length) {
     throw new Error('Template sections must not contain duplicate types');
   }
+}
+
+export function receiptTemplateDisplayFromDefinition(
+  definition: unknown,
+): ReceiptTemplateDisplaySettings {
+  const normalized = { ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY };
+  if (!isPlainObject(definition) || !isPlainObject(definition.display)) return normalized;
+  for (const key of RECEIPT_TEMPLATE_DISPLAY_KEYS) {
+    if (typeof definition.display[key] === 'boolean') normalized[key] = definition.display[key];
+  }
+  return normalized;
 }
 
 export function immutableJsonSnapshot<T>(value: T): T {

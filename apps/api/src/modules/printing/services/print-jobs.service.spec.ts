@@ -4,8 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ReceiptDocument } from '../types/receipt-document';
+import {
+  ReceiptDocument,
+  receiptTemplateDisplayFromDefinition,
+} from '../types/receipt-document';
 import { PrintJobsService } from './print-jobs.service';
+import { ReceiptSnapshotService } from './receipt-snapshot.service';
 
 const merchantId = 7n;
 const printerId = 17n;
@@ -37,6 +41,8 @@ describe('PrintJobsService', () => {
     fromOrder: jest.Mock;
     fromTableSession: jest.Mock;
     cloneAndValidate: jest.Mock;
+    withTemplate: jest.Mock;
+    displaySettingsFromTemplate: jest.Mock;
   };
   let audit: { record: jest.Mock };
   let settings: {
@@ -48,17 +54,23 @@ describe('PrintJobsService', () => {
     requireTestable: jest.Mock;
     requireClaimable: jest.Mock;
   };
+  let templates: { resolveCurrentOrderCustomer: jest.Mock };
   let service: PrintJobsService;
 
   beforeEach(() => {
     prisma = createPrismaMock();
     flags = createFlagsMock();
+    const snapshotService = new ReceiptSnapshotService({} as never);
     snapshots = {
       fromOrder: jest.fn().mockResolvedValue(receipt),
       fromTableSession: jest.fn(),
       cloneAndValidate: jest.fn((value: ReceiptDocument) =>
         JSON.parse(JSON.stringify(value)),
       ),
+      withTemplate: jest.fn((value: ReceiptDocument, definition: unknown) =>
+        snapshotService.withTemplate(value, definition),
+      ),
+      displaySettingsFromTemplate: jest.fn(receiptTemplateDisplayFromDefinition),
     };
     audit = { record: jest.fn().mockResolvedValue({ id: 1n }) };
     settings = {
@@ -81,6 +93,9 @@ describe('PrintJobsService', () => {
       requireTestable: jest.fn().mockResolvedValue({}),
       requireClaimable: jest.fn().mockResolvedValue({}),
     };
+    templates = {
+      resolveCurrentOrderCustomer: jest.fn().mockResolvedValue(null),
+    };
     service = new PrintJobsService(
       prisma as never,
       flags as never,
@@ -88,6 +103,7 @@ describe('PrintJobsService', () => {
       audit as never,
       settings as never,
       lanBindings as never,
+      templates as never,
     );
   });
 
@@ -496,15 +512,17 @@ describe('PrintJobsService', () => {
       order: undefined,
       tableSession: {
         id: tableSessionId.toString(),
+        sessionNo: 'TS-A01',
         tableName: 'A01',
-        settledAt: '2026-07-28T10:00:00.000Z',
-        orderCount: 2,
+        openedAt: '2026-07-28T09:00:00.000Z',
+        closedAt: '2026-07-28T10:00:00.000Z',
+        orderNos: ['A-1', 'A-2'],
       },
       totals: {
         subtotal: 513_000,
-        originalTotal: 513_000,
+        originalAmount: 513_000,
         roundingAmount: 3_000,
-        finalAmount: 510_000,
+        receivedAmount: 510_000,
         total: 510_000,
         currency: 'VND',
       },
@@ -544,11 +562,12 @@ describe('PrintJobsService', () => {
           receiptType: 'TABLE_BILL',
           triggerEvent: 'TABLE_SESSION_SETTLED',
           receiptSnapshot: expect.objectContaining({
-            totals: expect.objectContaining({
-              originalTotal: 513_000,
-              roundingAmount: 3_000,
-              finalAmount: 510_000,
-            }),
+            documentType: 'PRINT_DOCUMENT',
+            schemaVersion: 2,
+            blocks: expect.arrayContaining([
+              expect.objectContaining({ type: 'ROW', left: '抹零 / Làm tròn', right: '-3.000 VND' }),
+              expect.objectContaining({ type: 'ROW', left: '最终应收 / Phải thu', right: '510.000 VND' }),
+            ]),
           }),
         }),
       }),
@@ -682,6 +701,46 @@ describe('PrintJobsService', () => {
     }
   });
 
+  it('reprints a historical PrintDocument V2 snapshot without rendering or recalculating it', async () => {
+    const originalSnapshot = {
+      documentType: 'PRINT_DOCUMENT',
+      schemaVersion: 2,
+      paperWidth: 'MM80',
+      copies: 1,
+      blocks: [
+        { type: 'ROW', left: '折扣（9折）', right: '-82,800 VND', bold: false },
+        { type: 'ROW', left: '最终应收', right: '740,000 VND', bold: true },
+      ],
+    };
+    prisma.printJob.findFirst.mockResolvedValue({
+      id: 211n,
+      merchantId,
+      orderId,
+      tableSessionId: null,
+      printerId,
+      receiptTemplateId: null,
+      receiptType: 'ORDER_CUSTOMER',
+      priority: 40,
+      receiptSnapshot: originalSnapshot,
+    });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      purpose: 'FRONT_DESK',
+      capabilities: usbBoundCapabilities(),
+    }));
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12' });
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 212n, printerId });
+
+    await service.createManualReprintJob({
+      merchantId,
+      originalJobId: 211n,
+      createdByStaffId: 3n,
+      requestKey: 'reprint-print-document-v2',
+    });
+
+    expect(prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot).toEqual(originalSnapshot);
+  });
+
   it('does not disclose a job belonging to another merchant', async () => {
     prisma.printJob.findFirst.mockResolvedValue(null);
 
@@ -809,6 +868,88 @@ describe('PrintJobsService', () => {
     expect(snapshot.items[0].nameVi).toBe('Món thử nghiệm');
   });
 
+  it('stores PrintDocument V2 only after the bound terminal reports the rc12 executor', async () => {
+    const current = currentExtendedReceipt(receipt);
+    snapshots.fromOrder.mockResolvedValue(current);
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      purpose: 'FRONT_DESK',
+      capabilities: usbBoundCapabilities(),
+    }));
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12' });
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 221n, printerId });
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'manual-print-document-v2',
+      printerId,
+      orderId,
+      receiptType: 'ORDER_CUSTOMER',
+    });
+
+    expect(prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot).toEqual(
+      expect.objectContaining({
+        documentType: 'PRINT_DOCUMENT',
+        schemaVersion: 2,
+        blocks: expect.any(Array),
+      }),
+    );
+  });
+
+  it('renders an applied ORDER_CUSTOMER template display definition into the stored V2 snapshot', async () => {
+    snapshots.fromOrder.mockResolvedValue({
+      ...receipt,
+      note: '整单备注',
+      order: { ...receipt.order!, tableName: 'D10' },
+    });
+    const definition = {
+      schemaVersion: 1,
+      sections: [{ type: 'ORDER_INFO' }, { type: 'ITEMS' }],
+      display: {
+        merchantName: true,
+        orderNumber: false,
+        tableNumber: true,
+        orderTime: true,
+        note: true,
+        itemPrice: true,
+        orderTotal: true,
+        footer: true,
+      },
+    };
+    prisma.printRule.findFirst.mockResolvedValue(automaticRule());
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      channelType: 'CLOUD_FEIE',
+      connectionConfig: { printerSn: 'FEIE-SN-1' },
+      capabilities: {},
+      purpose: 'FRONT_DESK',
+    }));
+    prisma.receiptTemplate.findFirst.mockResolvedValue(template({ definition }));
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({ id: 224n, printerId });
+
+    await service.createAutomaticJob({
+      merchantId,
+      ruleId,
+      orderId,
+      eventKey: 'order-status-log:display-settings',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot as {
+      blocks: Array<Record<string, unknown>>;
+    };
+    expect(snapshots.displaySettingsFromTemplate).toHaveBeenCalledWith(definition);
+    expect(snapshot.blocks).not.toContainEqual(
+      expect.objectContaining({ type: 'ROW', left: '订单 / Đơn' }),
+    );
+    expect(snapshot.blocks).toContainEqual(
+      expect.objectContaining({ type: 'ROW', left: '下单时间 / Đặt lúc' }),
+    );
+    expect(snapshot.blocks).toContainEqual(
+      expect.objectContaining({ type: 'TEXT', text: '订单备注 / Ghi chú: 整单备注' }),
+    );
+  });
+
   it('stores an RC5-compatible USB checkout receipt without changing settlement amounts', async () => {
     const current = currentExtendedReceipt({
       ...receipt,
@@ -854,7 +995,7 @@ describe('PrintJobsService', () => {
       id: merchantId,
       nameZh: '测试商家',
       addressZh: null,
-      contactPhone: null,
+      contactPhone: '0900000000',
     });
     prisma.printJob.create.mockResolvedValue({ id: 223n, printerId });
 
@@ -873,6 +1014,135 @@ describe('PrintJobsService', () => {
     expect(prisma.printer.update).not.toHaveBeenCalled();
   });
 
+  it('uses the P0-A current resolver and freezes latest template display/footer settings into a V2 test Job', async () => {
+    const current = template({
+      id: 93n,
+      version: 3,
+      definition: testTemplateDefinition({
+        footerTextZh: '云桥后台文案验证',
+        footerTextVi: 'Xác minh nội dung YunQiao',
+        display: {
+          merchantName: true,
+          orderNumber: false,
+          tableNumber: true,
+          orderTime: true,
+          note: false,
+          itemPrice: true,
+          orderTotal: true,
+          footer: true,
+        },
+      }),
+    });
+    configureRc12UsbTest(prisma);
+    templates.resolveCurrentOrderCustomer.mockResolvedValue(current);
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+    prisma.printJob.create.mockImplementation(async ({ data }) => ({ id: 225n, ...data }));
+
+    await service.createSafeTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-current-template-test',
+      'current-template-test',
+    );
+
+    const data = prisma.printJob.create.mock.calls[0][0].data;
+    const blocks = data.receiptSnapshot.blocks as Array<Record<string, unknown>>;
+    expect(templates.resolveCurrentOrderCustomer).toHaveBeenCalledWith(
+      merchantId,
+      prisma,
+    );
+    expect(data.receiptTemplateId).toBe(93n);
+    expect(data.receiptTemplateVersion).toBe(3);
+    expect(data.receiptSnapshot).toEqual(expect.objectContaining({
+      documentType: 'PRINT_DOCUMENT',
+      schemaVersion: 2,
+    }));
+    expect(blocks).not.toContainEqual(
+      expect.objectContaining({ type: 'ROW', left: '订单 / Đơn' }),
+    );
+    expect(blocks).not.toContainEqual(
+      expect.objectContaining({ type: 'TEXT', text: expect.stringContaining('Synthetic test') }),
+    );
+    expect(blocks).toContainEqual(
+      expect.objectContaining({ type: 'TEXT', text: '云桥后台文案验证' }),
+    );
+    expect(blocks).toContainEqual(
+      expect.objectContaining({ type: 'TEXT', text: 'Xác minh nội dung YunQiao' }),
+    );
+  });
+
+  it('preserves default test printing and does not create a template when no current template exists', async () => {
+    configureRc12UsbTest(prisma);
+    templates.resolveCurrentOrderCustomer.mockResolvedValue(null);
+    prisma.printJob.create.mockImplementation(async ({ data }) => ({ id: 226n, ...data }));
+
+    await service.createSafeTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-no-current-template-test',
+      'no-current-template-test',
+    );
+
+    const data = prisma.printJob.create.mock.calls[0][0].data;
+    const blocks = data.receiptSnapshot.blocks as Array<Record<string, unknown>>;
+    expect(data.receiptTemplateId).toBeUndefined();
+    expect(data.receiptTemplateVersion).toBeUndefined();
+    expect(blocks).toContainEqual(
+      expect.objectContaining({ type: 'ROW', left: '订单 / Đơn' }),
+    );
+    expect(blocks).toContainEqual(
+      expect.objectContaining({ type: 'TEXT', text: expect.stringContaining('Synthetic test') }),
+    );
+    expect(prisma.receiptTemplate.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps an existing test Job snapshot unchanged after current template settings advance', async () => {
+    const version3 = template({
+      id: 93n,
+      version: 3,
+      definition: testTemplateDefinition({ footerTextZh: '云桥后台文案验证' }),
+    });
+    const version4 = template({
+      id: 94n,
+      version: 4,
+      definition: testTemplateDefinition({ footerTextZh: '后续新版文案' }),
+    });
+    configureRc12UsbTest(prisma);
+    prisma.printJob.create
+      .mockImplementationOnce(async ({ data }) => ({ id: 227n, ...data }))
+      .mockImplementationOnce(async ({ data }) => ({ id: 228n, ...data }));
+    templates.resolveCurrentOrderCustomer.mockResolvedValueOnce(version3);
+    prisma.receiptTemplate.findFirst.mockResolvedValueOnce(version3);
+
+    await service.createSafeTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-snapshot-v3',
+      'snapshot-v3',
+    );
+    const firstSnapshot = prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot;
+
+    templates.resolveCurrentOrderCustomer.mockResolvedValueOnce(version4);
+    prisma.receiptTemplate.findFirst.mockResolvedValueOnce(version4);
+    await service.createSafeTestJob(
+      merchantId,
+      printerId,
+      3n,
+      'req-snapshot-v4',
+      'snapshot-v4',
+    );
+    const secondSnapshot = prisma.printJob.create.mock.calls[1][0].data.receiptSnapshot;
+
+    expect(JSON.stringify(firstSnapshot)).toContain('云桥后台文案验证');
+    expect(JSON.stringify(firstSnapshot)).not.toContain('后续新版文案');
+    expect(JSON.stringify(secondSnapshot)).toContain('后续新版文案');
+    expect(prisma.printJob.create.mock.calls[0][0].data.receiptTemplateVersion).toBe(3);
+    expect(prisma.printJob.create.mock.calls[1][0].data.receiptTemplateVersion).toBe(4);
+  });
+
   it('creates a synthetic LAN TEST job while the printer is disabled and deduplicates active tests', async () => {
     const printer = enabledLanPrinter({ enabled: false, status: 'UNVERIFIED' });
     prisma.printer.findFirst.mockResolvedValue(printer);
@@ -881,7 +1151,7 @@ describe('PrintJobsService', () => {
       nameZh: '测试商家',
       nameVi: null,
       addressZh: null,
-      contactPhone: null,
+      contactPhone: '0900000000',
     });
     prisma.printJob.findUnique.mockResolvedValue(null);
     prisma.printJob.findFirst.mockResolvedValue(null);
@@ -1753,7 +2023,7 @@ function createPrismaMock() {
       findMany: jest.fn(),
       update: jest.fn(),
     },
-    receiptTemplate: { findFirst: jest.fn() },
+    receiptTemplate: { findFirst: jest.fn(), create: jest.fn() },
     order: { findFirst: jest.fn() },
     tableSession: { findFirst: jest.fn() },
     merchantTerminal: {
@@ -1878,6 +2148,38 @@ function template(overrides: Record<string, unknown> = {}) {
     paperWidth: 'MM80',
     version: 3,
     enabled: true,
+    ...overrides,
+  };
+}
+
+function configureRc12UsbTest(prisma: ReturnType<typeof createPrismaMock>) {
+  prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+    purpose: 'FRONT_DESK',
+    capabilities: usbBoundCapabilities(),
+  }));
+  prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12' });
+  prisma.merchant.findUnique.mockResolvedValue({
+    id: merchantId,
+    nameZh: '测试商家',
+    nameVi: 'Nhà hàng thử nghiệm',
+    addressZh: null,
+    contactPhone: '0900000000',
+  });
+  prisma.printJob.findUnique.mockResolvedValue(null);
+  prisma.printJob.findFirst.mockResolvedValue(null);
+}
+
+function testTemplateDefinition(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    sections: [
+      { type: 'MERCHANT_HEADER' },
+      { type: 'ORDER_INFO' },
+      { type: 'TABLE_INFO' },
+      { type: 'ITEMS' },
+      { type: 'TOTALS' },
+      { type: 'FOOTER' },
+    ],
     ...overrides,
   };
 }

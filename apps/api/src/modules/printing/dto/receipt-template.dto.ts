@@ -36,6 +36,17 @@ export class CreateReceiptTemplateDto {
   enabled?: boolean;
 }
 
+export class SaveCurrentOrderCustomerReceiptSettingsDto {
+  @IsIn(['MM58', 'MM80'])
+  paperWidth: 'MM58' | 'MM80';
+
+  @IsIn(['MERCHANT_DEFAULT', 'ZH', 'VI', 'EN'])
+  languageMode: 'MERCHANT_DEFAULT' | 'ZH' | 'VI' | 'EN';
+
+  @IsObject()
+  definition: Record<string, unknown>;
+}
+
 export class UpdateReceiptTemplateDto {
   @IsOptional()
   @Transform(trim)

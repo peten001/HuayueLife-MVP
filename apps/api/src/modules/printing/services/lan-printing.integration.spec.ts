@@ -52,6 +52,9 @@ describe('terminal-executed LAN printing service chain', () => {
       fromOrder: jest.fn().mockResolvedValue(receipt()),
       fromTableSession: jest.fn(),
     };
+    const templates = {
+      resolveCurrentOrderCustomer: jest.fn().mockResolvedValue(null),
+    };
     const jobs = new PrintJobsService(
       prisma as never,
       flags as never,
@@ -59,6 +62,7 @@ describe('terminal-executed LAN printing service chain', () => {
       audit as never,
       settings as never,
       lan,
+      templates as never,
     );
     const attempts = new PrintAttemptsService(
       prisma as never,

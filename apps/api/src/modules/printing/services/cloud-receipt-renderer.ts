@@ -7,6 +7,11 @@ import {
   DEFAULT_RECEIPT_FOOTER_ZH,
 } from '../types/bilingual-receipt';
 import { CloudProvider } from './cloud-printing.service';
+import {
+  assertPrintDocumentV2,
+  isPrintDocumentV2,
+  PrintDocumentV2,
+} from '../types/print-document';
 
 const VND = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
 const LOCAL_TIME = new Intl.DateTimeFormat('zh-CN', {
@@ -21,16 +26,17 @@ const LOCAL_TIME = new Intl.DateTimeFormat('zh-CN', {
 });
 
 /**
- * The cloud text document follows the same immutable bilingual snapshot used
- * by Android. Provider-specific markup is applied only after all data has been
- * escaped, so merchant text cannot inject printer control tags.
+ * New cloud tasks consume the same immutable PrintDocument V2 used by Android.
+ * Receipt V1 remains accepted only for historical jobs. Provider-specific
+ * markup is applied after escaping so text cannot inject printer control tags.
  */
 export function renderCloudReceipt(
   value: unknown,
   provider: CloudProvider,
 ) {
-  assertReceiptDocument(value);
-  const lines = receiptLines(value);
+  const lines = isPrintDocumentV2(value)
+    ? printDocumentLines(value)
+    : legacyReceiptLines(value);
   if (provider === 'FEIE') {
     return lines.map((line, index) => {
       const escaped = escapeFeie(line);
@@ -38,6 +44,29 @@ export function renderCloudReceipt(
     }).join('<BR>');
   }
   return lines.join('\n');
+}
+
+function legacyReceiptLines(value: unknown) {
+  assertReceiptDocument(value);
+  return receiptLines(value);
+}
+
+export function printDocumentLines(document: PrintDocumentV2) {
+  assertPrintDocumentV2(document);
+  const width = document.paperWidth === 'MM58' ? 32 : 48;
+  const lines: string[] = [];
+  for (const block of document.blocks) {
+    if (block.type === 'TEXT') lines.push(block.text);
+    if (block.type === 'ROW') lines.push(joinRow(block.left, block.right, width));
+    if (block.type === 'DIVIDER') lines.push('-'.repeat(width));
+    if (block.type === 'FEED') lines.push(...Array.from({ length: block.lines }, () => ''));
+  }
+  return lines;
+}
+
+function joinRow(left: string, right: string, width: number) {
+  const spaces = Math.max(1, width - left.length - right.length);
+  return `${left}${' '.repeat(spaces)}${right}`;
 }
 
 export function receiptLines(document: ReceiptDocument) {

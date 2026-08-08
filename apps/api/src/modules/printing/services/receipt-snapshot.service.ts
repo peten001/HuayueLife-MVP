@@ -10,9 +10,17 @@ import {
   assertReceiptDocument,
   immutableJsonSnapshot,
   ReceiptDocument,
+  receiptTemplateDisplayFromDefinition,
 } from '../types/receipt-document';
 import { footerFromTemplateDefinition } from '../types/bilingual-receipt';
 import { withOrderSettlementFields } from '../../orders/order-settlement-fields';
+import {
+  assertPrintDocumentV2,
+  isPrintDocumentV2,
+  PrintDocumentV2,
+} from '../types/print-document';
+
+export type PrintingSnapshot = ReceiptDocument | PrintDocumentV2;
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -202,7 +210,11 @@ export class ReceiptSnapshotService {
     return this.validateAndFreeze(document);
   }
 
-  cloneAndValidate(document: ReceiptDocument) {
+  cloneAndValidate(document: ReceiptDocument): ReceiptDocument;
+  cloneAndValidate(document: PrintDocumentV2): PrintDocumentV2;
+  cloneAndValidate(document: PrintingSnapshot): PrintingSnapshot;
+  cloneAndValidate(document: PrintingSnapshot): PrintingSnapshot {
+    if (isPrintDocumentV2(document)) return this.validatePrintDocumentAndFreeze(document);
     return this.validateAndFreeze(document);
   }
 
@@ -211,6 +223,10 @@ export class ReceiptSnapshotService {
       ...document,
       footer: footerFromTemplateDefinition(definition),
     });
+  }
+
+  displaySettingsFromTemplate(definition?: unknown) {
+    return receiptTemplateDisplayFromDefinition(definition);
   }
 
   private validateAndFreeze(document: ReceiptDocument) {
@@ -222,6 +238,19 @@ export class ReceiptSnapshotService {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.TEMPLATE_INVALID,
         message: error instanceof Error ? error.message : '小票快照无效',
+      });
+    }
+  }
+
+  private validatePrintDocumentAndFreeze(document: PrintDocumentV2) {
+    try {
+      const snapshot = immutableJsonSnapshot(document);
+      assertPrintDocumentV2(snapshot);
+      return deepFreeze(snapshot);
+    } catch (error) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.TEMPLATE_INVALID,
+        message: error instanceof Error ? error.message : '打印文档快照无效',
       });
     }
   }

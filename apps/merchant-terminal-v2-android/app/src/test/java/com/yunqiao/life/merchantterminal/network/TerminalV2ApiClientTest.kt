@@ -201,6 +201,27 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
+    fun usbActiveAcceptsPrintDocumentV2Snapshot() {
+        MockWebServer().use { server ->
+            val snapshot = JSONObject(
+                """{"documentType":"PRINT_DOCUMENT","schemaVersion":2,"paperWidth":"MM80","copies":1,"blocks":[{"type":"TEXT","text":"PrintDocument V2","align":"CENTER","bold":true,"fontSize":"NORMAL","underline":false}]}""",
+            )
+            val job = usbJobJson()
+                .put("snapshotSchemaVersion", 2)
+                .put("receiptSnapshot", snapshot)
+                .put("contentHash", CanonicalReceiptHash.compute(snapshot))
+            server.enqueue(okData(JSONObject().put("job", job)))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val active = requireNotNull(client.activeJob(TERMINAL_TOKEN))
+
+            assertEquals(2, active.snapshotSchemaVersion)
+            assertEquals(2, JSONObject(active.receiptSnapshotJson).getInt("schemaVersion"))
+            assertEquals("PRINT_DOCUMENT", JSONObject(active.receiptSnapshotJson).getString("documentType"))
+        }
+    }
+
+    @Test
     fun usbJobWithoutProductionRouteIsRejectedInsteadOfUsingAFalseFixture() {
         MockWebServer().use { server ->
             val withoutRoute = usbJobJson().apply { remove("route") }
