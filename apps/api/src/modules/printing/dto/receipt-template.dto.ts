@@ -36,7 +36,7 @@ export class CreateReceiptTemplateDto {
   enabled?: boolean;
 }
 
-export class SaveCurrentOrderCustomerReceiptSettingsDto {
+export class SaveCurrentReceiptSettingsDto {
   @IsIn(['MM58', 'MM80'])
   paperWidth: 'MM58' | 'MM80';
 
@@ -46,6 +46,10 @@ export class SaveCurrentOrderCustomerReceiptSettingsDto {
   @IsObject()
   definition: Record<string, unknown>;
 }
+
+export class SaveCurrentOrderCustomerReceiptSettingsDto extends SaveCurrentReceiptSettingsDto {}
+
+export class SaveCurrentTableBillReceiptSettingsDto extends SaveCurrentReceiptSettingsDto {}
 
 export class UpdateReceiptTemplateDto {
   @IsOptional()

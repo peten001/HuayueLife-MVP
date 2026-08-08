@@ -265,7 +265,7 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
       (!Number.isSafeInteger(document.totals.serviceFee) ||
         document.totals.serviceFee < 0)) ||
     (document.note !== undefined && !isBoundedText(document.note, 0, 500)) ||
-    (document.footer !== undefined && (!isPlainObject(document.footer) || !hasOnlyKeys(document.footer, ['zh', 'vi']) || !isBoundedText(document.footer.zh, 1, 60) || !isBoundedText(document.footer.vi, 1, 60))) ||
+    (document.footer !== undefined && (!isPlainObject(document.footer) || !hasOnlyKeys(document.footer, ['zh', 'vi']) || !isBoundedText(document.footer.zh, 0, 60) || !isBoundedText(document.footer.vi, 0, 60))) ||
     (document.verificationCode !== undefined &&
       !isBoundedText(document.verificationCode, 1, 128))
   ) {
@@ -297,7 +297,7 @@ export function assertReceiptTemplateDefinition(
   if (
     definition.schemaVersion !== 1 ||
     !Array.isArray(definition.sections) ||
-    (definition.footerText !== undefined && !isBoundedText(definition.footerText, 0, 120)) ||
+    (definition.footerText !== undefined && !isBoundedText(definition.footerText, 0, 121)) ||
     (definition.footerTextZh !== undefined && !isBoundedText(definition.footerTextZh, 0, 60)) ||
     (definition.footerTextVi !== undefined && !isBoundedText(definition.footerTextVi, 0, 60))
   ) {

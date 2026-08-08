@@ -60,6 +60,10 @@ describe('MerchantPrintingController contract', () => {
         ['POST', 'printers/:id/test-job'],
         ['GET', 'templates'],
         ['POST', 'templates'],
+        ['GET', 'templates/current/order-customer'],
+        ['PUT', 'templates/current/order-customer'],
+        ['GET', 'templates/current/table-bill'],
+        ['PUT', 'templates/current/table-bill'],
         ['GET', 'templates/:id'],
         ['PATCH', 'templates/:id'],
         ['POST', 'templates/:id/duplicate'],
@@ -115,7 +119,12 @@ describe('MerchantPrintingController contract', () => {
 
   it('passes the authenticated merchant and staff scope to service calls', async () => {
     const printers = serviceMock(['list']);
-    const templates = serviceMock([]);
+    const templates = serviceMock([
+      'getCurrentOrderCustomer',
+      'saveCurrentOrderCustomer',
+      'getCurrentTableBill',
+      'saveCurrentTableBill',
+    ]);
     const rules = serviceMock([]);
     const jobs = serviceMock(['retry']);
     const attempts = serviceMock([]);
@@ -155,6 +164,25 @@ describe('MerchantPrintingController contract', () => {
     );
 
     await controller.listPrinters(7n);
+    await controller.getCurrentOrderCustomerReceiptSettings(7n);
+    await controller.getCurrentTableBillReceiptSettings(7n);
+    const currentSettings = {
+      paperWidth: 'MM80' as const,
+      languageMode: 'MERCHANT_DEFAULT' as const,
+      definition: { schemaVersion: 1, sections: [{ type: 'ITEMS' }] },
+    };
+    await controller.saveCurrentOrderCustomerReceiptSettings(
+      7n,
+      { sub: '3' } as never,
+      { requestId: 'order-current' } as never,
+      currentSettings,
+    );
+    await controller.saveCurrentTableBillReceiptSettings(
+      7n,
+      { sub: '3' } as never,
+      { requestId: 'bill-current' } as never,
+      currentSettings,
+    );
     await controller.retryJob(
       7n,
       { sub: '3' } as never,
@@ -175,6 +203,20 @@ describe('MerchantPrintingController contract', () => {
     );
 
     expect(printers.list).toHaveBeenCalledWith(7n);
+    expect(templates.getCurrentOrderCustomer).toHaveBeenCalledWith(7n);
+    expect(templates.getCurrentTableBill).toHaveBeenCalledWith(7n);
+    expect(templates.saveCurrentOrderCustomer).toHaveBeenCalledWith(
+      7n,
+      3n,
+      'order-current',
+      currentSettings,
+    );
+    expect(templates.saveCurrentTableBill).toHaveBeenCalledWith(
+      7n,
+      3n,
+      'bill-current',
+      currentSettings,
+    );
     expect(jobs.retry).toHaveBeenCalledWith(
       7n,
       3n,
@@ -389,6 +431,8 @@ describe('MerchantPrintingController contract', () => {
       'disablePrinter',
       'archivePrinter',
       'createTemplate',
+      'saveCurrentOrderCustomerReceiptSettings',
+      'saveCurrentTableBillReceiptSettings',
       'updateTemplate',
       'duplicateTemplate',
       'createRule',

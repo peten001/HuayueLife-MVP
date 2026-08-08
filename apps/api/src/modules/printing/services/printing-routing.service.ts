@@ -11,6 +11,10 @@ export const MANAGED_RULE_PREFIX = '__ROUTING_NEW_ORDER__:';
 export const FRONT_DESK_RULE_PREFIX = `${MANAGED_RULE_PREFIX}FRONT_DESK:`;
 export const KITCHEN_RULE_PREFIX = `${MANAGED_RULE_PREFIX}KITCHEN:`;
 
+export function isManagedKitchenRuleName(name: string) {
+  return name.startsWith(KITCHEN_RULE_PREFIX);
+}
+
 type DbClient = PrismaService | Prisma.TransactionClient;
 type RoutingScene = 'FRONT_DESK' | 'KITCHEN';
 type RoutingEntry = {
@@ -360,7 +364,7 @@ export class PrintingRoutingService {
 
   private sceneForRuleName(name: string): RoutingScene | null {
     if (name.startsWith(FRONT_DESK_RULE_PREFIX)) return 'FRONT_DESK';
-    if (name.startsWith(KITCHEN_RULE_PREFIX)) return 'KITCHEN';
+    if (isManagedKitchenRuleName(name)) return 'KITCHEN';
     return null;
   }
 

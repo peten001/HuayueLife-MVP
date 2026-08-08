@@ -24,6 +24,9 @@ const receiptTemplateDefinitionModule = await import(`data:text/javascript;base6
 const {
   buildReceiptSettingsDefinition,
   CANONICAL_RECEIPT_SECTION_TYPES,
+  parseReceiptFooterInput,
+  receiptFooterSaveError,
+  receiptFooterText,
   receiptSettingsDisplayFromDefinition,
 } = receiptTemplateDefinitionModule;
 const receiptPreviewMerchantModule = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(
@@ -34,7 +37,11 @@ const { receiptPreviewMerchant } = receiptPreviewMerchantModule;
 
 for (const key of ['merchantInfoGroup', 'orderInfoGroup', 'productsAmountsGroup', 'receiptFooterGroup']) assert.match(page, new RegExp(key));
 assert.match(page, /receipt-setting-row/);
-assert.equal((page.match(/maxlength="60"/g) ?? []).length, 2);
+assert.equal((page.match(/<textarea/g) ?? []).length, 1);
+assert.match(page, /updateFooterTextarea/);
+assert.match(page, /role="switch"/);
+assert.match(page, /footerTextarea/);
+assert.doesNotMatch(page, /footerZhLabel|footerViLabel/);
 assert.match(page, /receipt-paper__items/);
 assert.match(page, /footerZh/);
 assert.match(page, /footerVi/);
@@ -53,12 +60,31 @@ assert.doesNotMatch(page, /川味小馆|Nhà hàng Xuyên Vị|华越川味小�
 assert.match(page, /buildReceiptSettingsDefinition/);
 assert.match(page, /receiptSettingsDisplayFromDefinition/);
 assert.doesNotMatch(page, /key\.toUpperCase\(\)/);
-for (const key of ['orderNumber', 'tableNumber', 'orderTime', 'note', 'itemPrice', 'total', 'footer']) {
+for (const key of ['orderNumber', 'tableNumber', 'orderTime', 'itemPrice', 'total']) {
   assert.match(page, new RegExp(`v-if="receiptSettings\\.${key}"`));
 }
+assert.match(page, /activeReceiptType === 'ORDER_CUSTOMER' && receiptSettings\.note/);
 assert.match(page, /v-if="receiptSettings\.merchantName && previewMerchant\.hasName"/);
 assert.match(page, /getCurrentOrderCustomerReceiptSettings/);
 assert.match(page, /saveCurrentOrderCustomerReceiptSettings/);
+assert.match(page, /getCurrentTableBillReceiptSettings/);
+assert.match(page, /saveCurrentTableBillReceiptSettings/);
+assert.match(page, /activeReceiptType = ref<PrintingReceiptType>\('ORDER_CUSTOMER'\)/);
+assert.match(page, /ORDER_CUSTOMER: createReceiptTabState\(\)/);
+assert.match(page, /TABLE_BILL: createReceiptTabState\(\)/);
+assert.match(page, /selectReceiptType\('ORDER_CUSTOMER'\)/);
+assert.match(page, /selectReceiptType\('TABLE_BILL'\)/);
+assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER'[\s\S]*saveCurrentOrderCustomerReceiptSettings[\s\S]*saveCurrentTableBillReceiptSettings/);
+assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER'[\s\S]*orderNoteLabel[\s\S]*: \[\]/);
+assert.match(page, /billOrderInfoLabel/);
+assert.match(page, /billTimeInfoLabel/);
+assert.match(page, /billPreviewTitle/);
+assert.match(page, /billSessionLabel/);
+assert.match(page, /billOrderCountLabel/);
+assert.match(page, /billOrderNumbersLabel/);
+assert.match(page, /billOpenedAtLabel/);
+assert.match(page, /billSettledAtLabel/);
+assert.match(page, /billGeneratedAtLabel/);
 assert.match(page, /getProfile/);
 assert.match(page, /merchantProfile\.value = profile/);
 assert.match(page, /receiptPreviewMerchant\(merchantProfile\.value\)/);
@@ -68,8 +94,12 @@ assert.match(page, /previewMerchant\.nameVi/);
 assert.match(page, /onMounted\(load\)/);
 assert.match(page, /function cancelChanges\(\)/);
 assert.match(page, /function restoreDefaults\(\)/);
-assert.match(page, /receiptSettings\.footerZh \|\| DEFAULT_RECEIPT_FOOTER_ZH/);
-assert.match(page, /receiptSettings\.footerVi \|\| DEFAULT_RECEIPT_FOOTER_VI/);
+assert.match(page, /function cancelChanges\(\)[\s\S]*activeState\.value[\s\S]*syncSettingsFromTemplate\(state, state\.current\)/);
+assert.match(page, /function restoreDefaults\(\)[\s\S]*Object\.assign\(activeState\.value\.settings, defaults\)[\s\S]*activeState\.value\.paperWidth = 'MM80'/);
+assert.match(page, /const state = receiptTabs\[receiptType\]/);
+assert.match(page, /state\.initialSnapshot = settingSnapshot\(state\)/);
+assert.match(page, /footerPreviewLines/);
+assert.match(page, /receiptSettings\.footer && footerPreviewLines\.length/);
 assert.match(page, /grid-template-columns: minmax\(0, 3fr\) minmax\(300px, 2fr\)/);
 assert.match(page, /@media \(max-width: 900px\)[\s\S]*grid-template-columns: 1fr/);
 const simpleSettingsSave = page.slice(
@@ -77,10 +107,14 @@ const simpleSettingsSave = page.slice(
   page.indexOf('function cancelChanges()'),
 );
 assert.match(simpleSettingsSave, /saveCurrentOrderCustomerReceiptSettings/);
+assert.match(simpleSettingsSave, /saveCurrentTableBillReceiptSettings/);
 assert.doesNotMatch(simpleSettingsSave, /createPrintingTemplate|updatePrintingTemplate|\.id\b/);
 assert.match(printingApi, /getCurrentOrderCustomerReceiptSettings/);
 assert.match(printingApi, /saveCurrentOrderCustomerReceiptSettings/);
 assert.match(printingApi, /\/merchant\/printing\/templates\/current\/order-customer/);
+assert.match(printingApi, /getCurrentTableBillReceiptSettings/);
+assert.match(printingApi, /saveCurrentTableBillReceiptSettings/);
+assert.match(printingApi, /\/merchant\/printing\/templates\/current\/table-bill/);
 assert.match(rulesPage, /frontDeskPrinters/);
 assert.match(rulesPage, /kitchenPrinters/);
 assert.match(rulesPage, /添加前台打印机/);
@@ -98,10 +132,13 @@ assert.doesNotMatch(printersPage, /downloadAppShort|downloadApp/);
 assert.match(printersPage, /usbAutoDetectHint/);
 assert.match(router, /path: 'settings\/android-terminal'/);
 assert.match(router, /redirect: '\/printing-center\/android-terminal'/);
-for (const key of ['receiptSettingsSubtitle', 'currentMerchant', 'restoreDefaults', 'cancelChanges', 'paperWidth58', 'paperWidth80']) {
+for (const key of ['receiptSettingsSubtitle', 'currentMerchant', 'restoreDefaults', 'cancelChanges', 'paperWidth58', 'paperWidth80', 'orderReceiptTab', 'billReceiptTab', 'billOrderInfoLabel', 'billTimeInfoLabel']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
-for (const key of ['footerZhLabel', 'footerViLabel', 'bilingualReceipt', 'bilingualReceiptHint', 'printerConnectionInfoHint']) {
+for (const key of ['bilingualReceipt', 'bilingualReceiptHint', 'printerConnectionInfoHint']) {
+  assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
+}
+for (const key of ['orderReceiptScopeHint', 'footerTextareaHint', 'footerVisibleLabel', 'footerTooManyLines', 'footerLineTooLong', 'footerSecondWithoutFirst', 'footerFirstLineRequired', 'footerLineCountLabel']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
 for (const key of [
@@ -181,8 +218,6 @@ const defaultReceiptSettings = {
 const createdDefinition = buildReceiptSettingsDefinition({
   existingDefinition: {},
   settings: { ...defaultReceiptSettings, footerZh: '云桥后台文案验证' },
-  defaultFooterZh: defaultReceiptSettings.footerZh,
-  defaultFooterVi: defaultReceiptSettings.footerVi,
 });
 assert.equal(createdDefinition.footerTextZh, '云桥后台文案验证');
 assert.deepEqual(createdDefinition.sections, CANONICAL_RECEIPT_SECTION_TYPES.map((type) => ({ type })));
@@ -205,8 +240,6 @@ const existingSections = [
 const updatedDefinition = buildReceiptSettingsDefinition({
   existingDefinition: { schemaVersion: 1, sections: existingSections },
   settings: { ...defaultReceiptSettings, footerZh: '仅更新结束语' },
-  defaultFooterZh: defaultReceiptSettings.footerZh,
-  defaultFooterVi: defaultReceiptSettings.footerVi,
 });
 assert.equal(updatedDefinition.footerTextZh, '仅更新结束语');
 assert.deepEqual(updatedDefinition.sections, existingSections);
@@ -223,8 +256,6 @@ const switchedDefinition = buildReceiptSettingsDefinition({
     total: false,
     footer: false,
   },
-  defaultFooterZh: defaultReceiptSettings.footerZh,
-  defaultFooterVi: defaultReceiptSettings.footerVi,
 });
 assert.deepEqual(switchedDefinition.sections, existingSections);
 assert.deepEqual(switchedDefinition.display, {
@@ -257,5 +288,71 @@ assert.deepEqual(receiptSettingsDisplayFromDefinition({ schemaVersion: 1, sectio
   total: true,
   footer: true,
 });
+
+const orderDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: {},
+  settings: { ...defaultReceiptSettings, footerZh: 'ORDER Footer', orderNumber: false },
+});
+const billDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: {},
+  settings: { ...defaultReceiptSettings, footerZh: 'BILL Footer', orderTime: false },
+});
+assert.equal(orderDefinition.footerTextZh, 'ORDER Footer');
+assert.equal(billDefinition.footerTextZh, 'BILL Footer');
+assert.equal(orderDefinition.display.orderNumber, false);
+assert.equal(orderDefinition.display.orderTime, true);
+assert.equal(billDefinition.display.orderNumber, true);
+assert.equal(billDefinition.display.orderTime, false);
+
+const oneLineDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: {},
+  settings: { ...defaultReceiptSettings, footerZh: '只有中文', footerVi: '' },
+});
+assert.equal(oneLineDefinition.footerTextZh, '只有中文');
+assert.equal(oneLineDefinition.footerTextVi, '');
+assert.equal(oneLineDefinition.footerText, '只有中文');
+assert.equal(receiptFooterText({ footerZh: '只有中文', footerVi: '' }), '只有中文');
+assert.equal(receiptFooterText({ footerZh: '中文', footerVi: 'Tiếng Việt' }), '中文\nTiếng Việt');
+assert.deepEqual(parseReceiptFooterInput('中文\nTiếng Việt'), {
+  ok: true,
+  footerZh: '中文',
+  footerVi: 'Tiếng Việt',
+});
+assert.deepEqual(parseReceiptFooterInput('中文\nTiếng Việt\n第三行'), {
+  ok: false,
+  error: 'TOO_MANY_LINES',
+});
+assert.deepEqual(parseReceiptFooterInput('中'.repeat(60)), {
+  ok: true,
+  footerZh: '中'.repeat(60),
+  footerVi: '',
+});
+assert.deepEqual(parseReceiptFooterInput('中'.repeat(61)), {
+  ok: false,
+  error: 'LINE_TOO_LONG',
+});
+assert.equal(receiptFooterSaveError({ footer: true, footerZh: '', footerVi: 'Tiếng Việt' }), 'SECOND_WITHOUT_FIRST');
+assert.equal(receiptFooterSaveError({ footer: true, footerZh: '  ', footerVi: '' }), 'FIRST_LINE_REQUIRED');
+assert.equal(receiptFooterSaveError({ footer: false, footerZh: '保留内容', footerVi: 'Giữ nội dung' }), null);
+const footerOffDefinition = buildReceiptSettingsDefinition({
+  existingDefinition: {},
+  settings: {
+    ...defaultReceiptSettings,
+    footer: false,
+    footerZh: '保留内容',
+    footerVi: 'Giữ nội dung',
+  },
+});
+assert.equal(footerOffDefinition.display.footer, false);
+assert.equal(footerOffDefinition.footerTextZh, '保留内容');
+assert.equal(footerOffDefinition.footerTextVi, 'Giữ nội dung');
+const footerToggleState = {
+  ...defaultReceiptSettings,
+  footer: false,
+  footerZh: '关闭时保留',
+  footerVi: 'Giữ khi tắt',
+};
+footerToggleState.footer = true;
+assert.equal(receiptFooterText(footerToggleState), '关闭时保留\nGiữ khi tắt');
 
 console.log('merchant-admin receipt settings UI: PASS');

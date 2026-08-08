@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  assertReceiptTemplateDefinition,
   DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
   ReceiptDocument,
 } from '../types/receipt-document';
@@ -44,6 +45,44 @@ describe('ReceiptSnapshotService validation', () => {
       vi: 'Cảm ơn quý khách, hẹn gặp lại!',
     });
     expect(Object.isFrozen(snapshot.footer)).toBe(true);
+  });
+
+  it('preserves an explicitly empty second footer line', () => {
+    const snapshot = service.withTemplate(validReceipt(), {
+      schemaVersion: 1,
+      sections: [{ type: 'FOOTER' }],
+      footerTextZh: '仅一行结束语',
+      footerTextVi: '',
+    });
+
+    expect(snapshot.footer).toEqual({ zh: '仅一行结束语', vi: '' });
+  });
+
+  it('keeps default bilingual footer values when historical fields are missing', () => {
+    const snapshot = service.withTemplate(validReceipt(), {
+      schemaVersion: 1,
+      sections: [{ type: 'FOOTER' }],
+    });
+
+    expect(snapshot.footer).toEqual({
+      zh: '谢谢惠顾，欢迎再次光临',
+      vi: 'Cảm ơn quý khách, hẹn gặp lại!',
+    });
+  });
+
+  it('accepts the exact 121-character compatibility footer boundary', () => {
+    expect(() => assertReceiptTemplateDefinition({
+      schemaVersion: 1,
+      sections: [{ type: 'FOOTER' }],
+      footerTextZh: '中'.repeat(60),
+      footerTextVi: 'V'.repeat(60),
+      footerText: `${'中'.repeat(60)}\n${'V'.repeat(60)}`,
+    })).not.toThrow();
+    expect(() => assertReceiptTemplateDefinition({
+      schemaVersion: 1,
+      sections: [{ type: 'FOOTER' }],
+      footerText: 'x'.repeat(122),
+    })).toThrow('Template definition must use schemaVersion 1 and sections');
   });
 
   it('defaults every fine-grained display setting to visible for historical definitions', () => {
@@ -254,6 +293,72 @@ describe('ReceiptSnapshotService validation', () => {
     expect(prisma.order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 37n, merchantId } }),
     );
+  });
+
+  it('keeps only selected category items and totals in a category snapshot', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 40n,
+      merchantId,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        nameVi: null,
+        addressZh: null,
+        addressDetail: null,
+        contactPhone: null,
+      },
+      table: { tableNo: 'A01', tableName: null },
+      tableNoSnapshot: 'A01',
+      orderNo: 'CATEGORY-40',
+      orderType: 'DINE_IN',
+      createdAt: new Date('2026-07-15T00:00:00.000Z'),
+      completedAt: null,
+      items: [
+        {
+          productNameZhSnapshot: '分类 A 商品 1',
+          product: { nameVi: 'Món A1', categoryId: 81n },
+          quantity: 1,
+          unitPriceVnd: 1000n,
+          subtotalVnd: 1000n,
+          remark: '商品备注 A1',
+        },
+        {
+          productNameZhSnapshot: '分类 A 商品 2',
+          product: { nameVi: 'Món A2', categoryId: 81n },
+          quantity: 1,
+          unitPriceVnd: 500n,
+          subtotalVnd: 500n,
+          remark: null,
+        },
+        {
+          productNameZhSnapshot: '分类 B 商品',
+          product: { nameVi: 'Món B', categoryId: 82n },
+          quantity: 1,
+          unitPriceVnd: 1500n,
+          subtotalVnd: 1500n,
+          remark: null,
+        },
+      ],
+      itemAmountVnd: 3000n,
+      totalAmountVnd: 3000n,
+      roundingAmountVnd: 0n,
+      roundingAppliedByStaffId: null,
+      roundingAppliedAt: null,
+      customerRemark: '整单备注',
+    });
+
+    const snapshot = await service.fromOrder(merchantId, 40n, [81n]);
+
+    expect(snapshot.items.map((item) => item.name)).toEqual(['分类 A 商品 1', '分类 A 商品 2']);
+    expect(snapshot.items[0]?.note).toBe('商品备注 A1');
+    expect(snapshot.items.map((item) => item.name)).not.toContain('分类 B 商品');
+    expect(snapshot.totals).toEqual(expect.objectContaining({
+      subtotal: 1500,
+      originalAmount: 1500,
+      roundingAmount: 0,
+      receivedAmount: 1500,
+      total: 1500,
+    }));
   });
 
   it('prints pickup rounding from the persisted order amount fields', async () => {

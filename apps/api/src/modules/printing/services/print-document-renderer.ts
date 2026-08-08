@@ -31,14 +31,15 @@ export function renderPrintDocumentV2(input: {
   paperWidth: PrintingPaperWidth;
   purpose: PrinterPurpose;
   display?: ReceiptTemplateDisplaySettings;
+  renderMode?: 'CUSTOMER' | 'KITCHEN';
 }): PrintDocumentV2 {
-  const blocks = input.purpose === 'KITCHEN'
+  const renderMode = input.renderMode
+    ?? (input.purpose === 'KITCHEN' ? 'KITCHEN' : 'CUSTOMER');
+  const blocks = renderMode === 'KITCHEN'
     ? kitchenBlocks(input.receipt)
     : customerBlocks(
         input.receipt,
-        input.receipt.receiptType === 'ORDER_CUSTOMER'
-          ? input.display ?? DEFAULT_RECEIPT_TEMPLATE_DISPLAY
-          : DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+        input.display ?? DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
       );
   return createPrintDocumentV2(input.paperWidth, blocks);
 }
@@ -91,13 +92,17 @@ function customerBlocks(
     const table = document.tableSession!;
     const orderNos = table.orderNos ?? [];
     orderBlocks.push(text('结账小票 / Hóa đơn thanh toán', 'CENTER', true));
-    orderBlocks.push(row('桌台 / Bàn', table.tableName, true));
+    if (display.tableNumber) orderBlocks.push(row('桌台 / Bàn', table.tableName, true));
     orderBlocks.push(row('桌账 / Phiên bàn', table.sessionNo));
-    orderBlocks.push(row('订单数 / Số đơn', String(orderNos.length)));
-    if (orderNos.length) orderBlocks.push(text(`订单 / Đơn: ${orderNos.join(', ')}`));
-    orderBlocks.push(row('开台时间 / Mở bàn', formatTime(table.openedAt ?? document.generatedAt)));
-    if (table.closedAt) {
-      orderBlocks.push(row('结账时间 / Thanh toán', formatTime(table.closedAt)));
+    if (display.orderNumber) {
+      orderBlocks.push(row('订单数 / Số đơn', String(orderNos.length)));
+      if (orderNos.length) orderBlocks.push(text(`订单 / Đơn: ${orderNos.join(', ')}`));
+    }
+    if (display.orderTime) {
+      orderBlocks.push(row('开台时间 / Mở bàn', formatTime(table.openedAt ?? document.generatedAt)));
+      if (table.closedAt) {
+        orderBlocks.push(row('结账时间 / Thanh toán', formatTime(table.closedAt)));
+      }
     }
   }
   appendSection(blocks, orderBlocks);
@@ -136,11 +141,17 @@ function customerBlocks(
     summaryBlocks.push(text(`订单备注 / Ghi chú: ${document.note}`));
   }
   appendSection(blocks, summaryBlocks);
-  appendSection(blocks, [row('生成时间 / Tạo lúc', formatTime(document.generatedAt))]);
+  if (document.receiptType === 'ORDER_CUSTOMER' || display.orderTime) {
+    appendSection(blocks, [row('生成时间 / Tạo lúc', formatTime(document.generatedAt))]);
+  }
   if (display.footer) {
+    const footer = document.footer ?? {
+      zh: DEFAULT_RECEIPT_FOOTER_ZH,
+      vi: DEFAULT_RECEIPT_FOOTER_VI,
+    };
     appendSection(blocks, [
-      text(document.footer?.zh || DEFAULT_RECEIPT_FOOTER_ZH, 'CENTER'),
-      text(document.footer?.vi || DEFAULT_RECEIPT_FOOTER_VI, 'CENTER'),
+      ...(footer.zh ? [text(footer.zh, 'CENTER')] : []),
+      ...(footer.vi ? [text(footer.vi, 'CENTER')] : []),
     ]);
   }
   return blocks;

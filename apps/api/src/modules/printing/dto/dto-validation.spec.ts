@@ -6,6 +6,7 @@ import { CreatePrintingPrinterDto } from './printer.dto';
 import {
   CreateReceiptTemplateDto,
   SaveCurrentOrderCustomerReceiptSettingsDto,
+  SaveCurrentTableBillReceiptSettingsDto,
 } from './receipt-template.dto';
 import {
   ExtendPrintJobLeaseDto,
@@ -21,6 +22,7 @@ describe('Printing DTO validation contract', () => {
     [CreatePrintingPrinterDto, validPrinter()],
     [CreateReceiptTemplateDto, validTemplate()],
     [SaveCurrentOrderCustomerReceiptSettingsDto, validCurrentReceiptSettings()],
+    [SaveCurrentTableBillReceiptSettingsDto, validCurrentReceiptSettings()],
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],
@@ -40,6 +42,7 @@ describe('Printing DTO validation contract', () => {
     ['template receipt type', CreateReceiptTemplateDto, { ...validTemplate(), receiptType: 'KITCHEN' }],
     ['template language', CreateReceiptTemplateDto, { ...validTemplate(), languageMode: 'FR' }],
     ['current receipt settings language', SaveCurrentOrderCustomerReceiptSettingsDto, { ...validCurrentReceiptSettings(), languageMode: 'FR' }],
+    ['current table bill settings language', SaveCurrentTableBillReceiptSettingsDto, { ...validCurrentReceiptSettings(), languageMode: 'FR' }],
     ['rule order type', CreatePrintRuleDto, { ...validRule(), orderType: 'TAKEAWAY' }],
     ['rule trigger', CreatePrintRuleDto, { ...validRule(), triggerEvent: 'ORDER_CREATED' }],
     ['rule receipt type', CreatePrintRuleDto, { ...validRule(), receiptType: 'KITCHEN' }],
@@ -124,6 +127,7 @@ describe('Printing DTO validation contract', () => {
     [CreatePrintingPrinterDto, validPrinter()],
     [CreateReceiptTemplateDto, validTemplate()],
     [SaveCurrentOrderCustomerReceiptSettingsDto, validCurrentReceiptSettings()],
+    [SaveCurrentTableBillReceiptSettingsDto, validCurrentReceiptSettings()],
     [CreatePrintRuleDto, validRule()],
     [ListPrintJobsQueryDto, validJobQuery()],
     [CreateMerchantTerminalDto, validTerminal()],

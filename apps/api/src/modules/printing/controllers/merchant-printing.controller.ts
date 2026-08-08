@@ -48,6 +48,7 @@ import {
 import {
   CreateReceiptTemplateDto,
   SaveCurrentOrderCustomerReceiptSettingsDto,
+  SaveCurrentTableBillReceiptSettingsDto,
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PrintAttemptsService } from '../services/print-attempts.service';
@@ -298,6 +299,27 @@ export class MerchantPrintingController {
     @Body() dto: SaveCurrentOrderCustomerReceiptSettingsDto,
   ) {
     return this.templates.saveCurrentOrderCustomer(
+      merchantId,
+      BigInt(staff.sub),
+      request.requestId,
+      dto,
+    );
+  }
+
+  @Get('templates/current/table-bill')
+  getCurrentTableBillReceiptSettings(@MerchantId() merchantId: bigint) {
+    return this.templates.getCurrentTableBill(merchantId);
+  }
+
+  @Put('templates/current/table-bill')
+  @MerchantRoles(StaffRole.OWNER, StaffRole.MANAGER)
+  saveCurrentTableBillReceiptSettings(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: SaveCurrentTableBillReceiptSettingsDto,
+  ) {
+    return this.templates.saveCurrentTableBill(
       merchantId,
       BigInt(staff.sub),
       request.requestId,

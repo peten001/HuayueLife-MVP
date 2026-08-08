@@ -17,8 +17,12 @@ export function footerFromTemplateDefinition(definition: unknown): BilingualRece
   const value = definition as Record<string, unknown>;
   if (typeof value.footerTextZh === 'string' || typeof value.footerTextVi === 'string') {
     return {
-      zh: String(value.footerTextZh ?? '').trim() || DEFAULT_RECEIPT_FOOTER_ZH,
-      vi: String(value.footerTextVi ?? '').trim() || DEFAULT_RECEIPT_FOOTER_VI,
+      zh: typeof value.footerTextZh === 'string'
+        ? value.footerTextZh.trim()
+        : DEFAULT_RECEIPT_FOOTER_ZH,
+      vi: typeof value.footerTextVi === 'string'
+        ? value.footerTextVi.trim()
+        : DEFAULT_RECEIPT_FOOTER_VI,
     };
   }
   return splitBilingualFooter(value.footerText);

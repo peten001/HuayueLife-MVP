@@ -35,9 +35,15 @@ interface ReceiptTemplateSection {
 interface BuildReceiptSettingsDefinitionInput {
   existingDefinition: Record<string, unknown>;
   settings: ReceiptSettings;
-  defaultFooterZh: string;
-  defaultFooterVi: string;
 }
+
+export const RECEIPT_FOOTER_LINE_MAX_LENGTH = 60;
+
+export type ReceiptFooterInputError = 'TOO_MANY_LINES' | 'LINE_TOO_LONG';
+
+export type ParsedReceiptFooterInput =
+  | { ok: true; footerZh: string; footerVi: string }
+  | { ok: false; error: ReceiptFooterInputError };
 
 const CANONICAL_RECEIPT_SECTION_TYPE_SET = new Set<string>(CANONICAL_RECEIPT_SECTION_TYPES);
 
@@ -84,13 +90,11 @@ const DEFAULT_RECEIPT_DISPLAY: ReceiptDisplaySettings = {
 export function buildReceiptSettingsDefinition({
   existingDefinition,
   settings,
-  defaultFooterZh,
-  defaultFooterVi,
 }: BuildReceiptSettingsDefinitionInput): Record<string, unknown> {
   const existingSections = validCanonicalSections(existingDefinition.sections);
   const sections = existingSections ?? CANONICAL_RECEIPT_SECTION_TYPES.map((type) => ({ type }));
-  const footerZh = settings.footerZh.trim() || defaultFooterZh;
-  const footerVi = settings.footerVi.trim() || defaultFooterVi;
+  const footerZh = settings.footerZh.trim();
+  const footerVi = settings.footerVi.trim();
 
   return {
     ...existingDefinition,
@@ -99,8 +103,35 @@ export function buildReceiptSettingsDefinition({
     display: receiptDisplayFromSettings(settings),
     footerTextZh: footerZh,
     footerTextVi: footerVi,
-    footerText: [footerZh, footerVi].join('\n'),
+    footerText: [footerZh, footerVi].filter(Boolean).join('\n'),
   };
+}
+
+export function receiptFooterText(settings: Pick<ReceiptSettings, 'footerZh' | 'footerVi'>) {
+  return settings.footerVi ? `${settings.footerZh}\n${settings.footerVi}` : settings.footerZh;
+}
+
+export function parseReceiptFooterInput(value: string): ParsedReceiptFooterInput {
+  const lines = value.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length > 2) return { ok: false, error: 'TOO_MANY_LINES' };
+  if (lines.some((line) => [...line].length > RECEIPT_FOOTER_LINE_MAX_LENGTH)) {
+    return { ok: false, error: 'LINE_TOO_LONG' };
+  }
+  return {
+    ok: true,
+    footerZh: lines[0] ?? '',
+    footerVi: lines[1] ?? '',
+  };
+}
+
+export function receiptFooterSaveError(
+  settings: Pick<ReceiptSettings, 'footer' | 'footerZh' | 'footerVi'>,
+): 'FIRST_LINE_REQUIRED' | 'SECOND_WITHOUT_FIRST' | null {
+  const footerZh = settings.footerZh.trim();
+  const footerVi = settings.footerVi.trim();
+  if (!footerZh && footerVi) return 'SECOND_WITHOUT_FIRST';
+  if (settings.footer && !footerZh) return 'FIRST_LINE_REQUIRED';
+  return null;
 }
 
 export function receiptSettingsDisplayFromDefinition(

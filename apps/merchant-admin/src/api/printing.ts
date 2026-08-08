@@ -164,6 +164,23 @@ export async function saveCurrentOrderCustomerReceiptSettings(
   return response.data.data;
 }
 
+export async function getCurrentTableBillReceiptSettings() {
+  const response = await http.get<ApiResponse<PrintingReceiptTemplate | null>>(
+    '/merchant/printing/templates/current/table-bill',
+  );
+  return response.data.data;
+}
+
+export async function saveCurrentTableBillReceiptSettings(
+  payload: PrintingCurrentReceiptSettingsPayload,
+) {
+  const response = await http.put<ApiResponse<PrintingReceiptTemplate>>(
+    '/merchant/printing/templates/current/table-bill',
+    payload,
+  );
+  return response.data.data;
+}
+
 export async function createPrintingTemplate(payload: PrintingReceiptTemplatePayload) {
   const response = await http.post<ApiResponse<PrintingReceiptTemplate>>(
     '/merchant/printing/templates',

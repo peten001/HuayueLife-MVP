@@ -138,6 +138,24 @@ describe('PrintDocument V2 server renderer', () => {
     expect(content).not.toContain('谢谢惠顾，欢迎再次光临');
   });
 
+  it.each([
+    ['ORDER_CUSTOMER', receipt({ subtotal: 40_000, total: 40_000 })],
+    ['TABLE_BILL', tableBillReceipt()],
+  ] as const)('renders one explicit footer line for %s without restoring the missing language', (_, value) => {
+    const document = renderPrintDocumentV2({
+      receipt: { ...value, footer: { zh: '仅一行结束语', vi: '' } },
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    });
+    const footerBlocks = document.blocks.filter(
+      (block) => block.type === 'TEXT' && block.align === 'CENTER',
+    );
+
+    expect(footerBlocks).toContainEqual(expect.objectContaining({ text: '仅一行结束语' }));
+    expect(renderedContent(document)).not.toContain('Cảm ơn quý khách, hẹn gặp lại!');
+    expect(document.blocks).not.toContainEqual(expect.objectContaining({ type: 'TEXT', text: '' }));
+  });
+
   it('combines disabled fields without empty ROWs or orphan DIVIDER blocks', () => {
     const document = renderCustomer({
       merchantName: false,
@@ -165,26 +183,94 @@ describe('PrintDocument V2 server renderer', () => {
     expect(document.blocks.at(-1)).toEqual({ type: 'CUT', mode: 'HALF' });
   });
 
-  it('does not apply ORDER_CUSTOMER display flags to TABLE_BILL rendering', () => {
-    const document = renderPrintDocumentV2({
-      receipt: tableBillReceipt(),
-      paperWidth: 'MM80',
-      purpose: 'FRONT_DESK',
-      display: display({
-        merchantName: false,
-        tableNumber: false,
-        itemPrice: false,
-        orderTotal: false,
-        footer: false,
-      }),
-    });
-    const content = renderedContent(document);
+  it('keeps every historical TABLE_BILL field visible when display settings are absent', () => {
+    const content = renderedContent(renderTableBill());
 
     expect(content).toContain('花悦餐厅');
     expect(content).toContain('桌台 / Bàn D10');
+    expect(content).toContain('桌账 / Phiên bàn TS-D10');
+    expect(content).toContain('订单数 / Số đơn 2');
+    expect(content).toContain('订单 / Đơn: A-1, A-2');
+    expect(content).toContain('开台时间 / Mở bàn');
+    expect(content).toContain('结账时间 / Thanh toán');
+    expect(content).toContain('生成时间 / Tạo lúc');
     expect(content).toContain('单价 / Đơn giá');
     expect(content).toContain('最终应收 / Phải thu');
     expect(content).toContain('自定义结束语');
+  });
+
+  it('applies TABLE_BILL merchant, order-info, table, and time visibility independently', () => {
+    const merchantHidden = renderedContent(renderTableBill({ merchantName: false }));
+    expect(merchantHidden).not.toContain('花悦餐厅');
+    expect(merchantHidden).not.toContain('Nhà hàng Hoa Việt');
+    expect(merchantHidden).toContain('0900000000');
+
+    const orderInfoHidden = renderedContent(renderTableBill({ orderNumber: false }));
+    expect(orderInfoHidden).not.toContain('订单数 / Số đơn');
+    expect(orderInfoHidden).not.toContain('订单 / Đơn:');
+    expect(orderInfoHidden).toContain('桌账 / Phiên bàn TS-D10');
+    expect(orderInfoHidden).toContain('桌台 / Bàn D10');
+
+    const tableHidden = renderedContent(renderTableBill({ tableNumber: false }));
+    expect(tableHidden).not.toContain('桌台 / Bàn D10');
+    expect(tableHidden).toContain('桌账 / Phiên bàn TS-D10');
+
+    const timeHidden = renderedContent(renderTableBill({ orderTime: false }));
+    expect(timeHidden).not.toMatch(/开台时间 \/ Mở bàn|结账时间 \/ Thanh toán|生成时间 \/ Tạo lúc/);
+    expect(timeHidden).toContain('桌账 / Phiên bàn TS-D10');
+    expect(timeHidden).toContain('牛肉粉');
+  });
+
+  it('keeps TABLE_BILL items and quantities while hiding item prices', () => {
+    const content = renderedContent(renderTableBill({ itemPrice: false }));
+
+    expect(content).toContain('牛肉粉');
+    expect(content).toContain('数量 / Số lượng 1');
+    expect(content).not.toContain('单价 / Đơn giá');
+    expect(content).not.toContain('金额 / Thành tiền');
+    expect(content).toContain('备注 / Ghi chú: 少辣');
+  });
+
+  it('hides TABLE_BILL totals and footer independently', () => {
+    const totalsHidden = renderedContent(renderTableBill({ orderTotal: false }));
+    expect(totalsHidden).not.toMatch(/小计 \/ Tạm tính|服务费 \/ Phí dịch vụ|抹零 \/ Làm tròn|最终应收 \/ Phải thu/);
+    expect(totalsHidden).toContain('牛肉粉');
+
+    const footerHidden = renderedContent(renderTableBill({ footer: false }));
+    expect(footerHidden).not.toContain('自定义结束语');
+    expect(footerHidden).not.toContain('Lời cảm ơn tùy chỉnh');
+    expect(footerHidden).toContain('最终应收 / Phải thu');
+  });
+
+  it('combines TABLE_BILL display flags without empty rows or orphan dividers', () => {
+    const document = renderTableBill({
+      merchantName: false,
+      orderNumber: false,
+      tableNumber: false,
+      orderTime: false,
+      note: false,
+      itemPrice: false,
+      orderTotal: false,
+      footer: false,
+    });
+    const printable = document.blocks.filter((block) => block.type !== 'FEED' && block.type !== 'CUT');
+    const content = renderedContent(document);
+
+    expect(content).toContain('结账小票 / Hóa đơn thanh toán');
+    expect(content).toContain('桌账 / Phiên bàn TS-D10');
+    expect(content).toContain('牛肉粉');
+    expect(content).toContain('数量 / Số lượng 1');
+    expect(printable[0]?.type).not.toBe('DIVIDER');
+    expect(printable.at(-1)?.type).not.toBe('DIVIDER');
+    printable.forEach((block, index) => {
+      if (block.type === 'ROW') {
+        expect(block.left.trim()).not.toBe('');
+        expect(block.right.trim()).not.toBe('');
+      }
+      if (block.type === 'DIVIDER') expect(printable[index - 1]?.type).not.toBe('DIVIDER');
+    });
+    expect(document.blocks.at(-2)).toEqual({ type: 'FEED', lines: 3 });
+    expect(document.blocks.at(-1)).toEqual({ type: 'CUT', mode: 'HALF' });
   });
 
   it('renders kitchen documents with only item name quantity and note content', () => {
@@ -200,6 +286,25 @@ describe('PrintDocument V2 server renderer', () => {
     expect(lines).toContain('数量 / Số lượng');
     expect(lines).toContain('备注 / Ghi chú: 少辣');
     expect(lines).not.toMatch(/小计|折扣|抹零|最终应收|VND/);
+  });
+
+  it('uses the ORDER customer renderer for an explicit category rendering context', () => {
+    const document = renderPrintDocumentV2({
+      receipt: receipt({ subtotal: 150_000, total: 150_000 }),
+      paperWidth: 'MM58',
+      purpose: 'KITCHEN',
+      renderMode: 'CUSTOMER',
+      display: display({ note: false, itemPrice: false, orderTotal: true, footer: true }),
+    });
+    const lines = printDocumentLines(document).join('\n');
+
+    expect(lines).toContain('顾客小票 / Hóa đơn khách hàng');
+    expect(lines).toContain('订单 / Đơn');
+    expect(lines).toContain('备注 / Ghi chú: 少辣');
+    expect(lines).not.toContain('订单备注 / Ghi chú: 整单少辣');
+    expect(lines).not.toContain('单价 / Đơn giá');
+    expect(lines).toContain('最终应收 / Phải thu');
+    expect(lines).toContain('自定义结束语');
   });
 });
 
@@ -236,9 +341,19 @@ function tableBillReceipt(): ReceiptDocument {
       sessionNo: 'TS-D10',
       tableName: 'D10',
       openedAt: '2026-08-07T09:00:00.000Z',
-      orderNos: ['A-1'],
+      closedAt: '2026-08-07T10:00:00.000Z',
+      orderNos: ['A-1', 'A-2'],
     },
   };
+}
+
+function renderTableBill(overrides?: Partial<ReceiptTemplateDisplaySettings>) {
+  return renderPrintDocumentV2({
+    receipt: tableBillReceipt(),
+    paperWidth: 'MM80',
+    purpose: 'FRONT_DESK',
+    ...(overrides ? { display: display(overrides) } : {}),
+  });
 }
 
 function renderCustomer(overrides: Partial<ReceiptTemplateDisplaySettings>) {

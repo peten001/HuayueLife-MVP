@@ -4,20 +4,31 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ReceiptType } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import {
   CreateReceiptTemplateDto,
   SaveCurrentOrderCustomerReceiptSettingsDto,
+  SaveCurrentReceiptSettingsDto,
+  SaveCurrentTableBillReceiptSettingsDto,
   UpdateReceiptTemplateDto,
 } from '../dto/receipt-template.dto';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
-import { assertReceiptTemplateDefinition } from '../types/receipt-document';
+import {
+  assertReceiptTemplateDefinition,
+  DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+  RECEIPT_TEMPLATE_SECTION_TYPES,
+} from '../types/receipt-document';
+import {
+  DEFAULT_RECEIPT_FOOTER_VI,
+  DEFAULT_RECEIPT_FOOTER_ZH,
+} from '../types/bilingual-receipt';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 
 const CURRENT_ORDER_CUSTOMER_TEMPLATE_NAME = '商家默认';
+const CURRENT_TABLE_BILL_TEMPLATE_NAME = '结账小票默认';
 
 @Injectable()
 export class ReceiptTemplatesService {
@@ -50,10 +61,33 @@ export class ReceiptTemplatesService {
     merchantId: bigint,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
+    return this.resolveCurrent(merchantId, 'ORDER_CUSTOMER', client);
+  }
+
+  async getCurrentTableBill(merchantId: bigint) {
+    this.flags.assertTaskCenterEnabled();
+    return (
+      (await this.resolveCurrentTableBill(merchantId)) ??
+      this.defaultCurrentTableBillSettings(merchantId)
+    );
+  }
+
+  resolveCurrentTableBill(
+    merchantId: bigint,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    return this.resolveCurrent(merchantId, 'TABLE_BILL', client);
+  }
+
+  private resolveCurrent(
+    merchantId: bigint,
+    receiptType: ReceiptType,
+    client: PrismaService | Prisma.TransactionClient,
+  ) {
     return client.receiptTemplate.findFirst({
       where: {
         merchantId,
-        receiptType: 'ORDER_CUSTOMER',
+        receiptType,
         enabled: true,
       },
       orderBy: [{ createdAt: 'desc' }, { version: 'desc' }, { id: 'desc' }],
@@ -66,14 +100,50 @@ export class ReceiptTemplatesService {
     requestId: string | undefined,
     dto: SaveCurrentOrderCustomerReceiptSettingsDto,
   ) {
+    return this.saveCurrentReceiptSettings(
+      merchantId,
+      actorStaffId,
+      requestId,
+      'ORDER_CUSTOMER',
+      CURRENT_ORDER_CUSTOMER_TEMPLATE_NAME,
+      dto,
+    );
+  }
+
+  async saveCurrentTableBill(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    dto: SaveCurrentTableBillReceiptSettingsDto,
+  ) {
+    return this.saveCurrentReceiptSettings(
+      merchantId,
+      actorStaffId,
+      requestId,
+      'TABLE_BILL',
+      CURRENT_TABLE_BILL_TEMPLATE_NAME,
+      dto,
+    );
+  }
+
+  private async saveCurrentReceiptSettings(
+    merchantId: bigint,
+    actorStaffId: bigint,
+    requestId: string | undefined,
+    receiptType: ReceiptType,
+    internalName: string,
+    dto: SaveCurrentReceiptSettingsDto,
+  ) {
     this.flags.assertTaskCenterEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     const definition = this.validateDefinition(dto.definition);
     try {
-      return await this.saveCurrentOrderCustomerAttempt(
+      return await this.saveCurrentReceiptSettingsAttempt(
         merchantId,
         actorStaffId,
         requestId,
+        receiptType,
+        internalName,
         dto,
         definition,
       );
@@ -82,10 +152,12 @@ export class ReceiptTemplatesService {
     }
 
     try {
-      return await this.saveCurrentOrderCustomerAttempt(
+      return await this.saveCurrentReceiptSettingsAttempt(
         merchantId,
         actorStaffId,
         requestId,
+        receiptType,
+        internalName,
         dto,
         definition,
       );
@@ -260,29 +332,34 @@ export class ReceiptTemplatesService {
     return template;
   }
 
-  private saveCurrentOrderCustomerAttempt(
+  private saveCurrentReceiptSettingsAttempt(
     merchantId: bigint,
     actorStaffId: bigint,
     requestId: string | undefined,
-    dto: SaveCurrentOrderCustomerReceiptSettingsDto,
+    receiptType: ReceiptType,
+    internalName: string,
+    dto: SaveCurrentReceiptSettingsDto,
     definition: Prisma.InputJsonObject,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const current = await this.resolveCurrentOrderCustomer(merchantId, tx);
-      const name = current?.name ?? CURRENT_ORDER_CUSTOMER_TEMPLATE_NAME;
+      const current = await this.resolveCurrent(merchantId, receiptType, tx);
+      // Current settings use one reserved name per receipt type. This keeps
+      // the database's merchant/name/version unique key from coupling ORDER
+      // and TABLE_BILL version sequences without requiring a migration.
+      const name = internalName;
       const latest = await tx.receiptTemplate.aggregate({
-        where: { merchantId, name },
+        where: { merchantId, receiptType, name },
         _max: { version: true },
       });
       const saved = await tx.receiptTemplate.create({
         data: {
           merchantId,
           name,
-          receiptType: 'ORDER_CUSTOMER',
+          receiptType,
           paperWidth: dto.paperWidth,
           languageMode: dto.languageMode,
           definition,
-          version: (latest._max.version ?? 0) + 1,
+          version: Math.max(current?.version ?? 0, latest._max.version ?? 0) + 1,
           enabled: true,
         },
       });
@@ -337,6 +414,28 @@ export class ReceiptTemplatesService {
       });
     }
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonObject;
+  }
+
+  private defaultCurrentTableBillSettings(merchantId: bigint) {
+    return {
+      id: null,
+      merchantId,
+      name: CURRENT_TABLE_BILL_TEMPLATE_NAME,
+      receiptType: 'TABLE_BILL' as const,
+      paperWidth: 'MM80' as const,
+      languageMode: 'MERCHANT_DEFAULT' as const,
+      version: 0,
+      definition: {
+        schemaVersion: 1,
+        sections: RECEIPT_TEMPLATE_SECTION_TYPES.map((type) => ({ type })),
+        display: { ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY },
+        footerTextZh: DEFAULT_RECEIPT_FOOTER_ZH,
+        footerTextVi: DEFAULT_RECEIPT_FOOTER_VI,
+      },
+      enabled: true,
+      createdAt: null,
+      updatedAt: null,
+    };
   }
 
   private notFound(): never {

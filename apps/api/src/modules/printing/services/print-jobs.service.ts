@@ -46,7 +46,11 @@ import {
 import { renderPrintDocumentV2 } from './print-document-renderer';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 import { ReceiptTemplatesService } from './receipt-templates.service';
-import { MANAGED_RULE_PREFIX, PrintingRoutingService } from './printing-routing.service';
+import {
+  isManagedKitchenRuleName,
+  MANAGED_RULE_PREFIX,
+  PrintingRoutingService,
+} from './printing-routing.service';
 import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
@@ -404,7 +408,9 @@ export class PrintJobsService {
       },
       select: {
         id: true,
+        name: true,
         printerId: true,
+        printer: { select: { purpose: true } },
         receiptTemplateId: true,
         receiptType: true,
         triggerEvent: true,
@@ -415,13 +421,24 @@ export class PrintJobsService {
       orderBy: [{ priority: 'asc' }, { id: 'asc' }],
     });
     if (rules.length === 0) return [];
+    const currentOrderTemplate = rules.some(
+      (rule) => rule.receiptTemplateId === null && (
+        rule.printer.purpose === 'FRONT_DESK' || isManagedKitchenRuleName(rule.name)
+      ),
+    )
+      ? await this.templates.resolveCurrentOrderCustomer(input.merchantId, tx)
+      : null;
     const records = rules.map((rule) => ({
       merchantId: input.merchantId,
       orderId: input.orderId,
       orderStatusLogId: input.orderStatusLogId,
       printRuleId: rule.id,
       printerId: rule.printerId,
-      receiptTemplateId: rule.receiptTemplateId,
+      receiptTemplateId:
+        rule.receiptTemplateId ??
+        (rule.printer.purpose === 'FRONT_DESK' || isManagedKitchenRuleName(rule.name)
+          ? currentOrderTemplate?.id ?? null
+          : null),
       eventKey: this.outboxEventKey(
         input.merchantId,
         input.orderStatusLogId,
@@ -717,6 +734,7 @@ export class PrintJobsService {
                 priority: rule.priority,
                 dedupeKey: dedupeKeys[index],
                 snapshot,
+                renderMode: kitchenRoute?.isKitchen ? 'CUSTOMER' : undefined,
               },
               tx,
             ),
@@ -761,6 +779,9 @@ export class PrintJobsService {
     );
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const currentTemplate = input.receiptType === 'ORDER_CUSTOMER'
+          ? await this.templates.resolveCurrentOrderCustomer(input.merchantId, tx)
+          : await this.templates.resolveCurrentTableBill(input.merchantId, tx);
         const created = await this.createJob(
           {
             merchantId: input.merchantId,
@@ -770,6 +791,7 @@ export class PrintJobsService {
             requestGroupId: randomUUID(),
             copyIndex: 1,
             copyCount: 1,
+            receiptTemplateId: currentTemplate?.id,
             receiptType: input.receiptType,
             triggerEvent: 'MANUAL',
             source: 'MANUAL',
@@ -1952,6 +1974,7 @@ export class PrintJobsService {
     allowHistoricalTemplate?: boolean;
     allowDisabledPrinter?: boolean;
     preserveSnapshot?: boolean;
+    renderMode?: 'CUSTOMER' | 'KITCHEN';
   }, client: DbClient = this.prisma) {
     await this.settings.assertMerchantPrintingEnabled(input.merchantId, client);
     const { printer, template } = await this.validateJobReferences(
@@ -1986,7 +2009,13 @@ export class PrintJobsService {
     }
     const snapshot = input.preserveSnapshot
       ? input.snapshot
-      : await this.snapshotForPrinter(input.snapshot, printer, template?.definition, client);
+      : await this.snapshotForPrinter(
+          input.snapshot,
+          printer,
+          template?.definition,
+          client,
+          input.renderMode,
+        );
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -2024,6 +2053,7 @@ export class PrintJobsService {
     },
     templateDefinition: unknown,
     client: DbClient,
+    renderMode?: 'CUSTOMER' | 'KITCHEN',
   ): Promise<PrintingSnapshot> {
     if (isPrintDocumentV2(input)) return input;
     const templated = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
@@ -2035,6 +2065,7 @@ export class PrintJobsService {
         paperWidth: printer.paperWidth,
         purpose: printer.purpose,
         display: this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        renderMode,
       });
     }
     return receiptDocumentForChannel(templated, printer.channelType);

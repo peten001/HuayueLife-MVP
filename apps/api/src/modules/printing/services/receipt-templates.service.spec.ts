@@ -40,6 +40,84 @@ describe('ReceiptTemplatesService versioning', () => {
     });
   });
 
+  it('selects the current merchant-owned TABLE_BILL template deterministically', async () => {
+    const current = template({ id: 131n, receiptType: 'TABLE_BILL', version: 4 });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+
+    await expect(service.getCurrentTableBill(merchantId)).resolves.toBe(current);
+
+    expect(prisma.receiptTemplate.findFirst).toHaveBeenCalledWith({
+      where: {
+        merchantId,
+        receiptType: 'TABLE_BILL',
+        enabled: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { version: 'desc' }, { id: 'desc' }],
+    });
+  });
+
+  it('does not select a newer disabled TABLE_BILL version', async () => {
+    const enabledCurrent = template({
+      id: 132n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      version: 2,
+    });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(enabledCurrent);
+
+    await expect(service.resolveCurrentTableBill(merchantId)).resolves.toBe(enabledCurrent);
+    expect(prisma.receiptTemplate.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          merchantId,
+          receiptType: 'TABLE_BILL',
+          enabled: true,
+        }),
+      }),
+    );
+  });
+
+  it('returns editable TABLE_BILL defaults without creating a template', async () => {
+    prisma.receiptTemplate.findFirst.mockResolvedValue(null);
+
+    await expect(service.getCurrentTableBill(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        id: null,
+        merchantId,
+        name: '结账小票默认',
+        receiptType: 'TABLE_BILL',
+        paperWidth: 'MM80',
+        languageMode: 'MERCHANT_DEFAULT',
+        version: 0,
+        enabled: true,
+        definition: expect.objectContaining({
+          schemaVersion: 1,
+          sections: [
+            { type: 'MERCHANT_HEADER' },
+            { type: 'ORDER_INFO' },
+            { type: 'TABLE_INFO' },
+            { type: 'ITEMS' },
+            { type: 'TOTALS' },
+            { type: 'FOOTER' },
+          ],
+          display: {
+            merchantName: true,
+            orderNumber: true,
+            tableNumber: true,
+            orderTime: true,
+            note: true,
+            itemPrice: true,
+            orderTotal: true,
+            footer: true,
+          },
+          footerTextZh: expect.any(String),
+          footerTextVi: expect.any(String),
+        }),
+      }),
+    );
+    expect(prisma.receiptTemplate.create).not.toHaveBeenCalled();
+  });
+
   it('creates version 1 when current ORDER_CUSTOMER settings do not exist', async () => {
     const created = template({ id: 30n, version: 1 });
     prisma.receiptTemplate.findFirst.mockResolvedValue(null);
@@ -70,6 +148,253 @@ describe('ReceiptTemplatesService versioning', () => {
       expect.objectContaining({ action: 'RECEIPT_TEMPLATE_CREATED', resourceId: created.id }),
       prisma,
     );
+  });
+
+  it('creates TABLE_BILL version 1 in its independent namespace and preserves its definition', async () => {
+    const payload = currentSettingsPayload(
+      {
+        merchantName: true,
+        orderNumber: false,
+        tableNumber: true,
+        orderTime: false,
+        note: false,
+        itemPrice: true,
+        orderTotal: true,
+        footer: true,
+      },
+      {
+        paperWidth: 'MM58',
+        footerTextZh: '结账中文页脚',
+        footerTextVi: 'Chân trang thanh toán',
+      },
+    );
+    const created = template({
+      id: 130n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      paperWidth: 'MM58',
+      version: 1,
+      definition: payload.definition,
+    });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(null);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: null } });
+    prisma.receiptTemplate.create.mockResolvedValue(created);
+
+    await expect(
+      service.saveCurrentTableBill(merchantId, 3n, 'bill-create', payload),
+    ).resolves.toBe(created);
+
+    expect(prisma.receiptTemplate.aggregate).toHaveBeenCalledWith({
+      where: { merchantId, receiptType: 'TABLE_BILL', name: '结账小票默认' },
+      _max: { version: true },
+    });
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        merchantId,
+        name: '结账小票默认',
+        receiptType: 'TABLE_BILL',
+        paperWidth: 'MM58',
+        version: 1,
+        definition: payload.definition,
+        enabled: true,
+      }),
+    });
+    expect(prisma.receiptTemplate.update).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'RECEIPT_TEMPLATE_CREATED',
+        resourceId: created.id,
+        afterData: expect.objectContaining({ receiptType: 'TABLE_BILL' }),
+      }),
+      prisma,
+    );
+  });
+
+  it('creates the next immutable TABLE_BILL version and disables only its current row', async () => {
+    const current = template({
+      id: 130n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      version: 1,
+    });
+    const saved = template({
+      id: 131n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      version: 2,
+    });
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: 1 } });
+    prisma.receiptTemplate.create.mockResolvedValue(saved);
+    prisma.receiptTemplate.update.mockResolvedValue({ ...current, enabled: false });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.saveCurrentTableBill(
+        merchantId,
+        3n,
+        'bill-update',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(saved);
+
+    expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: '结账小票默认',
+        receiptType: 'TABLE_BILL',
+        version: 2,
+      }),
+    });
+    expect(prisma.receiptTemplate.update).toHaveBeenCalledWith({
+      where: { id: current.id },
+      data: { enabled: false },
+    });
+  });
+
+  it('re-resolves TABLE_BILL current settings after P2002 and never exposes a raw 500', async () => {
+    const concurrent = template({
+      id: 140n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      version: 1,
+    });
+    const saved = template({
+      id: 141n,
+      name: '结账小票默认',
+      receiptType: 'TABLE_BILL',
+      version: 2,
+    });
+    prisma.receiptTemplate.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(concurrent);
+    prisma.receiptTemplate.aggregate
+      .mockResolvedValueOnce({ _max: { version: null } })
+      .mockResolvedValueOnce({ _max: { version: 1 } });
+    prisma.receiptTemplate.create
+      .mockRejectedValueOnce(uniqueViolation())
+      .mockResolvedValueOnce(saved);
+    prisma.receiptTemplate.update.mockResolvedValue({ ...concurrent, enabled: false });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.saveCurrentTableBill(
+        merchantId,
+        3n,
+        'bill-concurrent',
+        currentSettingsPayload(),
+      ),
+    ).resolves.toBe(saved);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+
+    prisma.receiptTemplate.findFirst.mockReset().mockResolvedValue(null);
+    prisma.receiptTemplate.aggregate.mockReset().mockResolvedValue({ _max: { version: null } });
+    prisma.receiptTemplate.create.mockReset().mockRejectedValue(uniqueViolation());
+    await expect(
+      service.saveCurrentTableBill(
+        merchantId,
+        3n,
+        'bill-repeated-conflict',
+        currentSettingsPayload(),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('keeps ORDER_CUSTOMER and TABLE_BILL current rows, versions, and definitions isolated', async () => {
+    const rows = [
+      template({ id: 201n, name: '商家默认', receiptType: 'ORDER_CUSTOMER', version: 2 }),
+      template({
+        id: 301n,
+        name: '结账小票默认',
+        receiptType: 'TABLE_BILL',
+        version: 2,
+        definition: currentSettingsPayload(undefined, {
+          footerTextZh: 'BILL V2',
+          footerTextVi: 'BILL VI V2',
+        }).definition,
+      }),
+    ];
+    prisma.receiptTemplate.findFirst.mockImplementation(async ({ where }) =>
+      rows
+        .filter((row) =>
+          row.merchantId === where.merchantId &&
+          row.receiptType === where.receiptType &&
+          row.enabled === where.enabled,
+        )
+        .sort((left, right) => right.version - left.version)[0] ?? null,
+    );
+    prisma.receiptTemplate.aggregate.mockImplementation(async ({ where }) => ({
+      _max: {
+        version: rows
+          .filter((row) =>
+            row.merchantId === where.merchantId &&
+            row.receiptType === where.receiptType &&
+            row.name === where.name,
+          )
+          .reduce((max, row) => Math.max(max, row.version), 0) || null,
+      },
+    }));
+    prisma.receiptTemplate.create.mockImplementation(async ({ data }) => {
+      const row = template({ id: BigInt(400 + rows.length), ...data });
+      rows.push(row);
+      return row;
+    });
+    prisma.receiptTemplate.update.mockImplementation(async ({ where, data }) => {
+      const row = rows.find((candidate) => candidate.id === where.id)!;
+      Object.assign(row, data);
+      return row;
+    });
+    prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
+
+    const orderV3 = await service.saveCurrentOrderCustomer(
+      merchantId,
+      3n,
+      'order-v3',
+      currentSettingsPayload(undefined, { footerTextZh: 'ORDER V3' }),
+    );
+    expect(orderV3).toEqual(expect.objectContaining({
+      receiptType: 'ORDER_CUSTOMER',
+      name: '商家默认',
+      version: 3,
+    }));
+    await expect(service.resolveCurrentTableBill(merchantId)).resolves.toEqual(
+      expect.objectContaining({ id: 301n, version: 2, enabled: true }),
+    );
+
+    const billV3 = await service.saveCurrentTableBill(
+      merchantId,
+      3n,
+      'bill-v3',
+      currentSettingsPayload(undefined, {
+        footerTextZh: 'BILL V3',
+        footerTextVi: 'BILL VI V3',
+      }),
+    );
+    expect(billV3).toEqual(expect.objectContaining({
+      receiptType: 'TABLE_BILL',
+      name: '结账小票默认',
+      version: 3,
+    }));
+    await expect(service.resolveCurrentOrderCustomer(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        id: orderV3.id,
+        version: 3,
+        enabled: true,
+        definition: expect.objectContaining({ footerTextZh: 'ORDER V3' }),
+      }),
+    );
+    await expect(service.resolveCurrentTableBill(merchantId)).resolves.toEqual(
+      expect.objectContaining({
+        id: billV3.id,
+        version: 3,
+        enabled: true,
+        definition: expect.objectContaining({
+          footerTextZh: 'BILL V3',
+          footerTextVi: 'BILL VI V3',
+        }),
+      }),
+    );
+    expect(rows.find((row) => row.id === 201n)?.enabled).toBe(false);
+    expect(rows.find((row) => row.id === 301n)?.enabled).toBe(false);
   });
 
   it('persists fine-grained display settings inside the immutable definition JSON', async () => {
@@ -131,7 +456,7 @@ describe('ReceiptTemplatesService versioning', () => {
     ).resolves.toBe(saved);
 
     expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ version: 2, name: current.name }),
+      data: expect.objectContaining({ version: 2, name: '商家默认' }),
     });
     expect(prisma.receiptTemplate.update).toHaveBeenCalledWith({
       where: { id: current.id },
@@ -151,7 +476,7 @@ describe('ReceiptTemplatesService versioning', () => {
     const current = template({ id: 34n, name: '服务端当前模板', version: 4 });
     const saved = template({ id: 35n, name: current.name, version: 5 });
     prisma.receiptTemplate.findFirst.mockResolvedValue(current);
-    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: 4 } });
+    prisma.receiptTemplate.aggregate.mockResolvedValue({ _max: { version: null } });
     prisma.receiptTemplate.create.mockResolvedValue(saved);
     prisma.receiptTemplate.update.mockResolvedValue({ ...current, enabled: false });
     prisma.printRule.updateMany.mockResolvedValue({ count: 0 });
@@ -166,7 +491,7 @@ describe('ReceiptTemplatesService versioning', () => {
     ).resolves.toBe(saved);
 
     expect(prisma.receiptTemplate.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ name: current.name, version: 5 }),
+      data: expect.objectContaining({ name: '商家默认', version: 5 }),
     });
   });
 
@@ -472,14 +797,27 @@ function template(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function currentSettingsPayload(display?: Record<string, boolean>) {
+function currentSettingsPayload(
+  display?: Record<string, boolean>,
+  overrides: {
+    paperWidth?: 'MM58' | 'MM80';
+    footerTextZh?: string;
+    footerTextVi?: string;
+  } = {},
+) {
   return {
-    paperWidth: 'MM80' as const,
+    paperWidth: overrides.paperWidth ?? ('MM80' as const),
     languageMode: 'MERCHANT_DEFAULT' as const,
     definition: {
       schemaVersion: 1,
       sections: [{ type: 'MERCHANT_HEADER' }, { type: 'ITEMS' }],
       ...(display ? { display } : {}),
+      ...(overrides.footerTextZh !== undefined
+        ? { footerTextZh: overrides.footerTextZh }
+        : {}),
+      ...(overrides.footerTextVi !== undefined
+        ? { footerTextVi: overrides.footerTextVi }
+        : {}),
     },
   };
 }

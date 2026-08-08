@@ -4,13 +4,16 @@ import { errorMessage } from '@/api/http';
 import { getProfile } from '@/api/merchant';
 import {
   getCurrentOrderCustomerReceiptSettings,
+  getCurrentTableBillReceiptSettings,
   saveCurrentOrderCustomerReceiptSettings,
+  saveCurrentTableBillReceiptSettings,
 } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
 import type { MerchantProfile } from '@/types/api';
 import type {
   PrintingCurrentReceiptSettingsPayload,
   PrintingPaperWidth,
+  PrintingReceiptType,
   PrintingReceiptTemplate,
 } from '@/types/printing';
 import {
@@ -22,6 +25,9 @@ import {
 import { receiptPreviewMerchant } from '@/utils/receipt-preview-merchant';
 import {
   buildReceiptSettingsDefinition,
+  parseReceiptFooterInput,
+  receiptFooterSaveError,
+  receiptFooterText,
   receiptSettingsDisplayFromDefinition,
   type ReceiptSettings,
 } from '@/utils/receipt-template-definition';
@@ -41,63 +47,124 @@ const defaults: ReceiptSettings = {
   footerZh: DEFAULT_RECEIPT_FOOTER_ZH,
   footerVi: DEFAULT_RECEIPT_FOOTER_VI,
 };
-const currentReceiptSettings = ref<PrintingReceiptTemplate | null>(null);
+interface ReceiptTabState {
+  current: PrintingReceiptTemplate | null;
+  settings: ReceiptSettings;
+  initialSnapshot: string;
+  paperWidth: PrintingPaperWidth;
+  loaded: boolean;
+}
+
+function createReceiptTabState(): ReceiptTabState {
+  return {
+    current: null,
+    settings: { ...defaults },
+    initialSnapshot: JSON.stringify({ settings: defaults, paperWidth: 'MM80' }),
+    paperWidth: 'MM80',
+    loaded: false,
+  };
+}
+
+const activeReceiptType = ref<PrintingReceiptType>('ORDER_CUSTOMER');
+const receiptTabs = reactive<Record<PrintingReceiptType, ReceiptTabState>>({
+  ORDER_CUSTOMER: createReceiptTabState(),
+  TABLE_BILL: createReceiptTabState(),
+});
 const merchantProfile = ref<MerchantProfile | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const restoreConfirmOpen = ref(false);
 const message = ref('');
 const success = ref(false);
-const receiptSettings = reactive<ReceiptSettings>({ ...defaults });
-const initialSnapshot = ref(JSON.stringify({ settings: defaults, paperWidth: 'MM80' }));
-const paperWidth = ref<PrintingPaperWidth>('MM80');
+const activeState = computed(() => receiptTabs[activeReceiptType.value]);
+const receiptSettings = computed(() => activeState.value.settings);
+const paperWidth = computed<PrintingPaperWidth>({
+  get: () => activeState.value.paperWidth,
+  set: (value) => { activeState.value.paperWidth = value; },
+});
 const isDirty = computed(
-  () => JSON.stringify({ settings: receiptSettings, paperWidth: paperWidth.value }) !== initialSnapshot.value,
+  () => settingSnapshot(activeState.value) !== activeState.value.initialSnapshot,
 );
 const previewMerchant = computed(() => receiptPreviewMerchant(merchantProfile.value));
 const currentMerchantName = computed(
   () => previewMerchant.value.nameZh || previewMerchant.value.nameVi || p('notConfigured'),
 );
 
-function settingSnapshot() {
-  return JSON.stringify({ settings: { ...receiptSettings }, paperWidth: paperWidth.value });
+const activeReceiptLabel = computed(() =>
+  activeReceiptType.value === 'ORDER_CUSTOMER' ? p('orderReceiptTab') : p('billReceiptTab'),
+);
+const footerTextarea = computed(() => receiptFooterText(receiptSettings.value));
+const footerLineLengths = computed(() => ({
+  zh: [...receiptSettings.value.footerZh].length,
+  vi: [...receiptSettings.value.footerVi].length,
+}));
+const footerPreviewLines = computed(() => [
+  receiptSettings.value.footerZh.trim(),
+  receiptSettings.value.footerVi.trim(),
+].filter(Boolean));
+
+function settingSnapshot(state: ReceiptTabState) {
+  return JSON.stringify({ settings: { ...state.settings }, paperWidth: state.paperWidth });
 }
 
-function syncSettingsFromTemplate(row?: PrintingReceiptTemplate) {
-  Object.assign(receiptSettings, defaults);
-  paperWidth.value = row?.paperWidth ?? 'MM80';
+function syncSettingsFromTemplate(state: ReceiptTabState, row?: PrintingReceiptTemplate | null) {
+  Object.assign(state.settings, defaults);
+  state.paperWidth = row?.paperWidth ?? 'MM80';
   const definition = row?.definition ?? {};
-  Object.assign(receiptSettings, receiptSettingsDisplayFromDefinition(definition));
+  Object.assign(state.settings, receiptSettingsDisplayFromDefinition(definition));
   const footer = typeof definition.footerTextZh === 'string' || typeof definition.footerTextVi === 'string'
     ? { zh: String(definition.footerTextZh ?? ''), vi: String(definition.footerTextVi ?? '') }
     : splitBilingualFooter(definition.footerText);
-  receiptSettings.footerZh = footer.zh.slice(0, 60);
-  receiptSettings.footerVi = footer.vi.slice(0, 60);
-  initialSnapshot.value = settingSnapshot();
+  state.settings.footerZh = footer.zh.slice(0, 60);
+  state.settings.footerVi = footer.vi.slice(0, 60);
+  state.initialSnapshot = settingSnapshot(state);
+  state.loaded = true;
 }
 
-function receiptSettingsDefinition() {
-  const existing = currentReceiptSettings.value?.definition ?? {};
+function receiptSettingsDefinition(state: ReceiptTabState) {
+  const existing = state.current?.definition ?? {};
   return buildReceiptSettingsDefinition({
     existingDefinition: existing,
-    settings: { ...receiptSettings },
-    defaultFooterZh: DEFAULT_RECEIPT_FOOTER_ZH,
-    defaultFooterVi: DEFAULT_RECEIPT_FOOTER_VI,
+    settings: { ...state.settings },
   });
 }
 
+function updateFooterTextarea(event: Event) {
+  const textarea = event.currentTarget as HTMLTextAreaElement;
+  const parsed = parseReceiptFooterInput(textarea.value);
+  if (!parsed.ok) {
+    textarea.value = footerTextarea.value;
+    showValidationError(parsed.error === 'TOO_MANY_LINES'
+      ? p('footerTooManyLines')
+      : p('footerLineTooLong'));
+    return;
+  }
+  receiptSettings.value.footerZh = parsed.footerZh;
+  receiptSettings.value.footerVi = parsed.footerVi;
+}
+
 async function saveReceiptSettings() {
+  const receiptType = activeReceiptType.value;
+  const state = receiptTabs[receiptType];
+  const footerError = receiptFooterSaveError(state.settings);
+  if (footerError) {
+    showValidationError(footerError === 'SECOND_WITHOUT_FIRST'
+      ? p('footerSecondWithoutFirst')
+      : p('footerFirstLineRequired'));
+    return;
+  }
   try {
     saving.value = true;
     const value: PrintingCurrentReceiptSettingsPayload = {
-      paperWidth: paperWidth.value,
+      paperWidth: state.paperWidth,
       languageMode: 'MERCHANT_DEFAULT',
-      definition: receiptSettingsDefinition(),
+      definition: receiptSettingsDefinition(state),
     };
-    const saved = await saveCurrentOrderCustomerReceiptSettings(value);
-    currentReceiptSettings.value = saved;
-    syncSettingsFromTemplate(saved);
-    await load();
+    const saved = receiptType === 'ORDER_CUSTOMER'
+      ? await saveCurrentOrderCustomerReceiptSettings(value)
+      : await saveCurrentTableBillReceiptSettings(value);
+    state.current = saved;
+    syncSettingsFromTemplate(state, saved);
     showSuccess(p('receiptSettingsSaved'));
   } catch (error) {
     showError(error);
@@ -107,7 +174,8 @@ async function saveReceiptSettings() {
 }
 
 function cancelChanges() {
-  syncSettingsFromTemplate(currentReceiptSettings.value ?? undefined);
+  const state = activeState.value;
+  syncSettingsFromTemplate(state, state.current);
 }
 
 function askRestoreDefaults() {
@@ -115,21 +183,41 @@ function askRestoreDefaults() {
 }
 
 function restoreDefaults() {
-  Object.assign(receiptSettings, defaults);
-  paperWidth.value = 'MM80';
+  Object.assign(activeState.value.settings, defaults);
+  activeState.value.paperWidth = 'MM80';
   restoreConfirmOpen.value = false;
+}
+
+async function loadReceiptSettings(receiptType: PrintingReceiptType, force = false) {
+  const state = receiptTabs[receiptType];
+  if (state.loaded && !force) return;
+  const current = receiptType === 'ORDER_CUSTOMER'
+    ? await getCurrentOrderCustomerReceiptSettings()
+    : await getCurrentTableBillReceiptSettings();
+  state.current = current;
+  syncSettingsFromTemplate(state, current);
+}
+
+async function selectReceiptType(receiptType: PrintingReceiptType) {
+  activeReceiptType.value = receiptType;
+  try {
+    loading.value = true;
+    await loadReceiptSettings(receiptType);
+  } catch (error) {
+    showError(error);
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function load() {
   try {
     loading.value = true;
-    const [current, profile] = await Promise.all([
-      getCurrentOrderCustomerReceiptSettings(),
+    const [, profile] = await Promise.all([
+      loadReceiptSettings(activeReceiptType.value, true),
       getProfile(),
     ]);
-    currentReceiptSettings.value = current;
     merchantProfile.value = profile;
-    syncSettingsFromTemplate(current ?? undefined);
   } catch (error) {
     showError(error);
   } finally {
@@ -147,7 +235,12 @@ function showSuccess(value: string) {
   message.value = value;
 }
 
-const settingGroups = [
+function showValidationError(value: string) {
+  success.value = false;
+  message.value = value;
+}
+
+const settingGroups = computed(() => [
   {
     title: 'merchantInfoGroup',
     items: [
@@ -157,12 +250,24 @@ const settingGroups = [
     ],
   },
   {
-    title: 'orderInfoGroup',
+    title: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'orderInfoGroup' : 'billInfoGroup',
     items: [
-      { key: 'orderNumber', label: 'orderNumberLabel', hint: 'orderNumberHint', disabled: false },
+      {
+        key: 'orderNumber',
+        label: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'orderNumberLabel' : 'billOrderInfoLabel',
+        hint: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'orderNumberHint' : 'billOrderInfoHint',
+        disabled: false,
+      },
       { key: 'tableNumber', label: 'tableNumberLabel', hint: 'tableNumberHint', disabled: false },
-      { key: 'orderTime', label: 'orderTimeLabel', hint: 'orderTimeHint', disabled: false },
-      { key: 'note', label: 'orderNoteLabel', hint: 'orderNoteHint', disabled: false },
+      {
+        key: 'orderTime',
+        label: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'orderTimeLabel' : 'billTimeInfoLabel',
+        hint: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'orderTimeHint' : 'billTimeInfoHint',
+        disabled: false,
+      },
+      ...(activeReceiptType.value === 'ORDER_CUSTOMER'
+        ? [{ key: 'note', label: 'orderNoteLabel', hint: 'orderNoteHint', disabled: false } as const]
+        : []),
     ],
   },
   {
@@ -172,7 +277,7 @@ const settingGroups = [
       { key: 'total', label: 'orderTotalLabel', hint: 'orderTotalHint', disabled: false },
     ],
   },
-] as const;
+] as const);
 
 onMounted(load);
 </script>
@@ -195,9 +300,9 @@ onMounted(load);
       <section class="receipt-settings-card">
         <div class="receipt-settings-card__intro">
           <div>
-            <span class="receipt-settings-eyebrow">{{ p('customerReceipt') }}</span>
+            <span class="receipt-settings-eyebrow">{{ activeReceiptLabel }}</span>
             <h3>{{ p('displayContent') }}</h3>
-            <p>{{ p('displayContentHint') }}</p>
+            <p>{{ activeReceiptType === 'ORDER_CUSTOMER' ? p('orderReceiptScopeHint') : p('displayContentHint') }}</p>
           </div>
         </div>
 
@@ -205,6 +310,15 @@ onMounted(load);
           <span>{{ p('currentMerchant') }}</span>
           <strong>{{ currentMerchantName }}</strong>
           <small v-if="previewMerchant.nameZh && previewMerchant.nameVi">{{ previewMerchant.nameVi }}</small>
+        </div>
+
+        <div class="receipt-type-tabs" role="tablist" :aria-label="p('receiptTypeTabsLabel')">
+          <button type="button" role="tab" :aria-selected="activeReceiptType === 'ORDER_CUSTOMER'" :class="{ 'is-active': activeReceiptType === 'ORDER_CUSTOMER' }" @click="selectReceiptType('ORDER_CUSTOMER')">
+            {{ p('orderReceiptTab') }}
+          </button>
+          <button type="button" role="tab" :aria-selected="activeReceiptType === 'TABLE_BILL'" :class="{ 'is-active': activeReceiptType === 'TABLE_BILL' }" @click="selectReceiptType('TABLE_BILL')">
+            {{ p('billReceiptTab') }}
+          </button>
         </div>
 
         <div v-for="group in settingGroups" :key="group.title" class="receipt-settings-group">
@@ -230,16 +344,29 @@ onMounted(load);
 
         <div class="receipt-settings-group receipt-settings-group--footer">
           <h4>{{ p('receiptFooterGroup') }}</h4>
-          <label class="receipt-footer-field">
-            <span><strong>{{ p('footerZhLabel') }}</strong><small>{{ p('footerZhHint') }}</small></span>
-            <input v-model="receiptSettings.footerZh" maxlength="60" :placeholder="DEFAULT_RECEIPT_FOOTER_ZH" />
-            <em>{{ [...receiptSettings.footerZh].length }}/60</em>
-          </label>
-          <label class="receipt-footer-field">
-            <span><strong>{{ p('footerViLabel') }}</strong><small>{{ p('footerViHint') }}</small></span>
-            <input v-model="receiptSettings.footerVi" maxlength="60" :placeholder="DEFAULT_RECEIPT_FOOTER_VI" />
-            <em>{{ [...receiptSettings.footerVi].length }}/60</em>
-          </label>
+          <div class="receipt-footer-field">
+            <div class="receipt-footer-field__heading">
+              <label for="receipt-footer-text"><strong>{{ p('receiptFooterLabel') }}</strong><small>{{ p('footerTextareaHint') }}</small></label>
+              <button
+                class="receipt-footer-toggle"
+                type="button"
+                role="switch"
+                :aria-checked="receiptSettings.footer"
+                @click="receiptSettings.footer = !receiptSettings.footer"
+              >
+                <span>{{ p('footerVisibleLabel') }}</span>
+                <span class="receipt-switch" :class="{ 'is-on': receiptSettings.footer }" aria-hidden="true"><span /></span>
+              </button>
+            </div>
+            <textarea
+              id="receipt-footer-text"
+              :value="footerTextarea"
+              rows="2"
+              :placeholder="`${DEFAULT_RECEIPT_FOOTER_ZH}\n${DEFAULT_RECEIPT_FOOTER_VI}`"
+              @input="updateFooterTextarea"
+            />
+            <em>{{ p('footerLineCountLabel') }} {{ footerLineLengths.zh }}/60 · {{ footerLineLengths.vi }}/60</em>
+          </div>
         </div>
 
         <div class="receipt-settings-actionbar">
@@ -271,20 +398,35 @@ onMounted(load);
               <span v-if="previewMerchant.nameZh">{{ previewMerchant.nameZh }}</span>
               <small v-if="previewMerchant.nameVi">{{ previewMerchant.nameVi }}</small>
             </div>
-            <strong class="receipt-paper__type">{{ BILINGUAL_RECEIPT_LABELS.customerReceipt }}</strong>
-            <div class="receipt-paper__meta">
+            <strong class="receipt-paper__type">{{ activeReceiptType === 'ORDER_CUSTOMER' ? BILINGUAL_RECEIPT_LABELS.customerReceipt : p('billPreviewTitle') }}</strong>
+            <div v-if="activeReceiptType === 'ORDER_CUSTOMER'" class="receipt-paper__meta">
               <div v-if="receiptSettings.orderNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.orderNumber }}</span><strong>20260728001</strong></div>
               <div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div>
               <div v-if="receiptSettings.orderTime"><span>{{ BILINGUAL_RECEIPT_LABELS.time }}</span><strong>11:30</strong></div>
+            </div>
+            <div v-else class="receipt-paper__meta receipt-paper__meta--bill">
+              <div><span>{{ p('billSessionLabel') }}</span><strong>TS-20260808-01</strong></div>
+              <div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div>
+              <template v-if="receiptSettings.orderNumber">
+                <div><span>{{ p('billOrderCountLabel') }}</span><strong>2</strong></div>
+                <div><span>{{ p('billOrderNumbersLabel') }}</span><strong>20260808001, 20260808002</strong></div>
+              </template>
+              <template v-if="receiptSettings.orderTime">
+                <div><span>{{ p('billOpenedAtLabel') }}</span><strong>10:20</strong></div>
+                <div><span>{{ p('billSettledAtLabel') }}</span><strong>11:30</strong></div>
+                <div><span>{{ p('billGeneratedAtLabel') }}</span><strong>11:31</strong></div>
+              </template>
             </div>
             <div class="receipt-paper__divider" />
             <div class="receipt-paper__items">
               <div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div>
               <div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div>
             </div>
-            <div v-if="receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div>
+            <div v-if="activeReceiptType === 'ORDER_CUSTOMER' && receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div>
             <div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div>
-            <div v-if="receiptSettings.footer" class="receipt-paper__footer">{{ receiptSettings.footerZh || DEFAULT_RECEIPT_FOOTER_ZH }}<br />{{ receiptSettings.footerVi || DEFAULT_RECEIPT_FOOTER_VI }}</div>
+            <div v-if="receiptSettings.footer && footerPreviewLines.length" class="receipt-paper__footer">
+              <span v-for="line in footerPreviewLines" :key="line">{{ line }}</span>
+            </div>
           </div>
         </div>
       </aside>
@@ -319,6 +461,9 @@ onMounted(load);
 .receipt-current-merchant span { flex: 0 0 auto; color: var(--printing-muted); font-size: 12px; }
 .receipt-current-merchant strong { color: var(--printing-ink); font-size: 13px; }
 .receipt-current-merchant small { color: var(--printing-muted); font-size: 11px; }
+.receipt-type-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 9px; padding: 3px; border-radius: 9px; background: #edf3ef; }
+.receipt-type-tabs button { min-height: 36px; border: 0; border-radius: 7px; color: var(--printing-muted); background: transparent; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.receipt-type-tabs button.is-active { color: var(--printing-green); background: #fff; box-shadow: 0 1px 4px rgba(18,45,29,.1); }
 .receipt-settings-group { display: grid; gap: 6px; margin-top: 13px; }
 .receipt-settings-group h4 { margin: 0; color: var(--printing-ink); font-size: 13px; }
 .receipt-settings-group__rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -333,11 +478,14 @@ onMounted(load);
 .receipt-switch span { width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform .18s ease; }
 .receipt-switch.is-on { background: var(--printing-green); }
 .receipt-switch.is-on span { transform: translateX(20px); }
-.receipt-footer-field { display: grid; grid-template-columns: minmax(140px, .48fr) minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #e1e9e3; border-radius: 9px; }
-.receipt-footer-field > span { display: grid; gap: 2px; }
+.receipt-footer-field { display: grid; gap: 7px; padding: 9px 10px; border: 1px solid #e1e9e3; border-radius: 9px; }
+.receipt-footer-field__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.receipt-footer-field__heading label { display: grid; gap: 2px; }
 .receipt-footer-field strong { font-size: 13px; }
 .receipt-footer-field small { color: var(--printing-muted); font-size: 11px; }
-.receipt-footer-field input { min-height: 36px; min-width: 0; padding: 0 10px; border: 1px solid var(--printing-border); border-radius: 8px; color: var(--printing-ink); font: inherit; }
+.receipt-footer-field textarea { min-height: 70px; min-width: 0; resize: vertical; padding: 8px 10px; border: 1px solid var(--printing-border); border-radius: 8px; color: var(--printing-ink); background: #fff; font: inherit; line-height: 1.45; }
+.receipt-footer-field textarea:focus-visible { border-color: #82b990; outline: 2px solid rgba(67, 160, 71, .18); outline-offset: 1px; }
+.receipt-footer-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; color: var(--printing-muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
 .receipt-footer-field em { color: var(--printing-muted); font-size: 11px; font-style: normal; white-space: nowrap; }
 .receipt-settings-actionbar { display: flex; justify-content: space-between; gap: 10px; margin-top: 13px; padding-top: 10px; border-top: 1px solid var(--printing-border); }
 .receipt-settings-actionbar > div { display: flex; gap: 7px; }
@@ -357,6 +505,7 @@ onMounted(load);
 .receipt-paper__meta div { grid-template-columns: auto 1fr; gap: 8px; }
 .receipt-paper__meta span, .receipt-paper__note span { color: #626262; }
 .receipt-paper__meta strong { font-weight: 600; text-align: right; }
+.receipt-paper__meta--bill strong { max-width: 210px; overflow-wrap: anywhere; }
 .receipt-paper__divider { height: 1px; margin: 13px 0 10px; background: repeating-linear-gradient(90deg, #444 0 4px, transparent 4px 7px); }
 .receipt-paper__items { display: grid; gap: 8px; }
 .receipt-paper__item strong, .receipt-paper__total strong { text-align: right; white-space: nowrap; }
@@ -364,6 +513,7 @@ onMounted(load);
 .receipt-paper__note span { margin-right: 7px; }
 .receipt-paper__total { margin-top: 14px; padding-top: 10px; border-top: 1px solid #555; font-size: 14px; font-weight: 800; }
 .receipt-paper__footer { margin-top: 20px; color: #555; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; }
+.receipt-paper__footer span { display: block; }
 .receipt-confirm-modal { width: min(440px, 100%); }
 .receipt-confirm-modal .printing-modal__body { display: block; }
 @media (max-width: 900px) {
@@ -375,8 +525,7 @@ onMounted(load);
   .receipt-settings-card__intro, .receipt-preview-card__heading { flex-direction: column; }
   .receipt-current-merchant { align-items: flex-start; flex-direction: column; gap: 2px; }
   .receipt-settings-group__rows { grid-template-columns: 1fr; }
-  .receipt-footer-field { grid-template-columns: 1fr auto; }
-  .receipt-footer-field input { grid-column: 1 / -1; grid-row: 2; }
+  .receipt-footer-field__heading { align-items: flex-start; }
   .receipt-settings-actionbar { align-items: stretch; flex-direction: column; }
   .receipt-settings-actionbar > div { display: grid; grid-template-columns: 1fr 1fr; }
   .receipt-settings-actionbar > div .printing-button:last-child { grid-column: 1 / -1; }
