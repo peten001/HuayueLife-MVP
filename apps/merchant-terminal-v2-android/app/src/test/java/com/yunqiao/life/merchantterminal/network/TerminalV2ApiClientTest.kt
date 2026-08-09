@@ -222,6 +222,26 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
+    fun usbActiveAcceptsMeasuredPrintDocumentV3Snapshot() {
+        MockWebServer().use { server ->
+            val snapshot = JSONObject(
+                """{"documentType":"PRINT_DOCUMENT","schemaVersion":3,"paperWidth":"MM58","copies":1,"blocks":[{"type":"COLUMNS","gapDots":6,"cells":[{"text":"Món","weight":82,"align":"LEFT","bold":true,"fontSize":"SMALL","overflow":"FIT","paddingDots":0},{"text":"SL","weight":18,"align":"CENTER","bold":true,"fontSize":"SMALL","overflow":"FIT","paddingDots":0}]}]}""",
+            )
+            val job = usbJobJson()
+                .put("snapshotSchemaVersion", 3)
+                .put("receiptSnapshot", snapshot)
+                .put("contentHash", CanonicalReceiptHash.compute(snapshot))
+            server.enqueue(okData(JSONObject().put("job", job)))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            val active = requireNotNull(client.activeJob(TERMINAL_TOKEN))
+
+            assertEquals(3, active.snapshotSchemaVersion)
+            assertEquals(3, JSONObject(active.receiptSnapshotJson).getInt("schemaVersion"))
+        }
+    }
+
+    @Test
     fun usbJobWithoutProductionRouteIsRejectedInsteadOfUsingAFalseFixture() {
         MockWebServer().use { server ->
             val withoutRoute = usbJobJson().apply { remove("route") }

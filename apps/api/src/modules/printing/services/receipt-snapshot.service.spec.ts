@@ -4,6 +4,7 @@ import {
   DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
   ReceiptDocument,
 } from '../types/receipt-document';
+import { PrintDocumentV3 } from '../types/print-document';
 import { ReceiptSnapshotService } from './receipt-snapshot.service';
 
 const merchantId = 7n;
@@ -29,6 +30,30 @@ describe('ReceiptSnapshotService validation', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.merchant)).toBe(true);
     expect(Object.isFrozen(snapshot.items[0])).toBe(true);
+  });
+
+  it('clones and freezes a strict schema 3 print snapshot without rewriting it', () => {
+    const source: PrintDocumentV3 = {
+      documentType: 'PRINT_DOCUMENT',
+      schemaVersion: 3,
+      paperWidth: 'MM58',
+      copies: 1,
+      blocks: [{
+        type: 'COLUMNS',
+        gapDots: 6,
+        cells: [
+          { text: 'Món', weight: 82, align: 'LEFT', bold: true, fontSize: 'SMALL', overflow: 'FIT', paddingDots: 0 },
+          { text: 'SL', weight: 18, align: 'CENTER', bold: true, fontSize: 'SMALL', overflow: 'FIT', paddingDots: 0 },
+        ],
+      }],
+    };
+
+    const snapshot = service.cloneAndValidate(source);
+
+    expect(snapshot).toEqual(source);
+    expect(snapshot).not.toBe(source);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.blocks[0])).toBe(true);
   });
 
   it('adds the stable bilingual footer without changing the receipt schema version', () => {

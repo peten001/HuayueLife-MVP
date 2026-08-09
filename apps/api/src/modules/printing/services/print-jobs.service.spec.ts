@@ -567,8 +567,9 @@ describe('PrintJobsService', () => {
           triggerEvent: 'TABLE_SESSION_SETTLED',
           receiptSnapshot: expect.objectContaining({
             documentType: 'PRINT_DOCUMENT',
-            schemaVersion: 2,
+            schemaVersion: 3,
             blocks: expect.arrayContaining([
+              expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票/Hóa đơn thanh toán' }),
               expect.objectContaining({ type: 'ROW', left: '抹零 / Làm tròn', right: '-3.000 VND' }),
               expect.objectContaining({ type: 'ROW', left: '最终应收 / Phải thu', right: '510.000 VND' }),
             ]),
@@ -1200,6 +1201,10 @@ describe('PrintJobsService', () => {
       documentType: 'PRINT_DOCUMENT',
       schemaVersion: 2,
     }));
+    expect(blocks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'COLUMNS' }),
+      expect.objectContaining({ type: 'BOXED_TITLE' }),
+    ]));
     expect(blocks).toContainEqual(
       expect.objectContaining({ type: 'ROW', left: '桌账 / Phiên bàn', right: 'TS-47' }),
     );
@@ -1216,6 +1221,133 @@ describe('PrintJobsService', () => {
     expect(serialized).toContain('BILL-V3');
     expect(serialized).toContain('BILL-VI-V3');
     expect(serialized).not.toContain('ORDER-FOOTER');
+  });
+
+  it('stores TABLE_BILL schema 3 only after the bound terminal reports rc12 point 1', async () => {
+    snapshots.fromTableSession.mockResolvedValue(tableBillDocument());
+    const current = template({
+      id: 195n,
+      receiptType: 'TABLE_BILL',
+      paperWidth: 'MM58',
+      definition: testTemplateDefinition(),
+    });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      purpose: 'FRONT_DESK',
+      paperWidth: 'MM58',
+      capabilities: usbBoundCapabilities(),
+    }));
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12.1' });
+    templates.resolveCurrentTableBill.mockResolvedValue(current);
+    prisma.receiptTemplate.findFirst.mockResolvedValue(current);
+    prisma.tableSession.findFirst.mockResolvedValue({ id: tableSessionId });
+    prisma.printJob.create.mockImplementation(async ({ data }) => ({ id: 237n, ...data }));
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'web-table-bill-layout-v3',
+      printerId,
+      tableSessionId,
+      receiptType: 'TABLE_BILL',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot;
+    expect(snapshot).toEqual(expect.objectContaining({
+      documentType: 'PRINT_DOCUMENT',
+      schemaVersion: 3,
+      paperWidth: 'MM58',
+    }));
+    expect(snapshot.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票/Hóa đơn thanh toán' }),
+      expect.objectContaining({
+        type: 'COLUMNS',
+        cells: [
+          expect.objectContaining({ text: '测试菜品', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({ text: 'x1', overflow: 'FIT' }),
+          expect.objectContaining({ text: '1.000', overflow: 'FIT' }),
+        ],
+      }),
+      expect.objectContaining({ type: 'TEXT', text: 'Món thử nghiệm' }),
+    ]));
+    const serialized = JSON.stringify(snapshot.blocks);
+    expect(serialized).not.toMatch(/Món"|Đơn giá|SL"|Thành tiền/);
+  });
+
+  it('keeps ORDER_CUSTOMER on schema 2 for the production rc12 terminal', async () => {
+    snapshots.fromOrder.mockResolvedValue(currentExtendedReceipt({
+      ...receipt,
+      order: { ...receipt.order!, tableName: 'A01' },
+    }));
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      purpose: 'FRONT_DESK', capabilities: usbBoundCapabilities(),
+    }));
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12' });
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockImplementation(async ({ data }) => ({ id: 238n, ...data }));
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'order-stays-v2-on-rc12',
+      printerId,
+      orderId,
+      receiptType: 'ORDER_CUSTOMER',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot;
+    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.blocks).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'COLUMNS' }),
+      expect.objectContaining({ type: 'BOXED_TITLE' }),
+    ]));
+    expect(snapshot.blocks).toContainEqual(expect.objectContaining({
+      type: 'ROW', left: '桌台 / Bàn', right: 'A01',
+    }));
+  });
+
+  it('stores the ORDER_CUSTOMER schema 3 table box for an rc12.1 terminal', async () => {
+    snapshots.fromOrder.mockResolvedValue(currentExtendedReceipt({
+      ...receipt,
+      order: { ...receipt.order!, tableName: 'A01' },
+    }));
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter({
+      purpose: 'FRONT_DESK', capabilities: usbBoundCapabilities(),
+    }));
+    prisma.merchantTerminal.findFirst.mockResolvedValue({ appVersion: '2.0.0-rc12.1' });
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockImplementation(async ({ data }) => ({ id: 238n, ...data }));
+
+    await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'order-table-box-on-v3-terminal',
+      printerId,
+      orderId,
+      receiptType: 'ORDER_CUSTOMER',
+    });
+
+    const snapshot = prisma.printJob.create.mock.calls[0][0].data.receiptSnapshot;
+    expect(snapshot.schemaVersion).toBe(3);
+    expect(snapshot.blocks).toContainEqual(expect.objectContaining({
+      type: 'BOXED_TITLE',
+      boxText: 'A01',
+      title: '顾客小票 / Hóa đơn khách hàng',
+      subtitle: '订单号 / Mã đơn TEST-ORDER',
+    }));
+    expect(snapshot.blocks).not.toContainEqual(expect.objectContaining({
+      type: 'ROW', left: '桌台 / Bàn',
+    }));
+    expect(snapshot.blocks).toContainEqual(expect.objectContaining({
+      type: 'COLUMNS',
+      cells: expect.arrayContaining([
+        expect.objectContaining({ text: '测试菜品' }),
+        expect.objectContaining({ text: 'x1' }),
+      ]),
+    }));
+    const serialized = JSON.stringify(snapshot.blocks);
+    expect(serialized).not.toMatch(/真实地址|0900000000|类型 \/ Loại|单价 \/ Đơn giá|数量 \/ Số lượng|金额 \/ Thành tiền/);
+    expect(serialized).not.toMatch(/小计 \/ Tạm tính|最终应收 \/ Phải thu|生成时间 \/ Tạo lúc/);
+    expect(serialized).toContain('合计 / Tổng cộng');
   });
 
   it('preserves default TABLE_BILL V2 output when no current template exists', async () => {

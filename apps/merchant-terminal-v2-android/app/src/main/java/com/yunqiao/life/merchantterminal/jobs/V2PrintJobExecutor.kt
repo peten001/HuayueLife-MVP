@@ -303,7 +303,7 @@ class V2PrintJobExecutor(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): ByteArray {
-        if (PrintDocumentV2Parser.schemaVersion(job.receiptSnapshotJson) == 2) {
+        if (PrintDocumentV2Parser.schemaVersion(job.receiptSnapshotJson) in 2..3) {
             return PrintDocumentV2Renderer.renderBytes(
                 PrintDocumentV2Parser.parse(job.receiptSnapshotJson),
                 binding.paperWidth,

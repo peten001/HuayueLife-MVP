@@ -1,5 +1,6 @@
 export type ReceiptSettingKey =
   | 'merchantName'
+  | 'address'
   | 'phone'
   | 'qrCode'
   | 'orderNumber'
@@ -49,6 +50,8 @@ const CANONICAL_RECEIPT_SECTION_TYPE_SET = new Set<string>(CANONICAL_RECEIPT_SEC
 
 export const RECEIPT_DISPLAY_KEYS = [
   'merchantName',
+  'merchantAddress',
+  'merchantPhone',
   'orderNumber',
   'tableNumber',
   'orderTime',
@@ -60,13 +63,15 @@ export const RECEIPT_DISPLAY_KEYS = [
 
 type ReceiptDisplayKey = (typeof RECEIPT_DISPLAY_KEYS)[number];
 type ReceiptDisplaySettings = Record<ReceiptDisplayKey, boolean>;
-type PersistedReceiptSettingKey = Exclude<ReceiptSettingKey, 'phone' | 'qrCode'>;
+type PersistedReceiptSettingKey = Exclude<ReceiptSettingKey, 'qrCode'>;
 
 const RECEIPT_DISPLAY_MAPPING: ReadonlyArray<{
   displayKey: ReceiptDisplayKey;
   settingKey: PersistedReceiptSettingKey;
 }> = [
   { displayKey: 'merchantName', settingKey: 'merchantName' },
+  { displayKey: 'merchantAddress', settingKey: 'address' },
+  { displayKey: 'merchantPhone', settingKey: 'phone' },
   { displayKey: 'orderNumber', settingKey: 'orderNumber' },
   { displayKey: 'tableNumber', settingKey: 'tableNumber' },
   { displayKey: 'orderTime', settingKey: 'orderTime' },
@@ -78,6 +83,8 @@ const RECEIPT_DISPLAY_MAPPING: ReadonlyArray<{
 
 const DEFAULT_RECEIPT_DISPLAY: ReceiptDisplaySettings = {
   merchantName: true,
+  merchantAddress: true,
+  merchantPhone: true,
   orderNumber: true,
   tableNumber: true,
   orderTime: true,

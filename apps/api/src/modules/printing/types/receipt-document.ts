@@ -69,6 +69,8 @@ export const RECEIPT_TEMPLATE_SECTION_TYPES = [
 
 export const RECEIPT_TEMPLATE_DISPLAY_KEYS = [
   'merchantName',
+  'merchantAddress',
+  'merchantPhone',
   'orderNumber',
   'tableNumber',
   'orderTime',
@@ -79,12 +81,17 @@ export const RECEIPT_TEMPLATE_DISPLAY_KEYS = [
 ] as const;
 
 export type ReceiptTemplateDisplaySettings = Record<
-  (typeof RECEIPT_TEMPLATE_DISPLAY_KEYS)[number],
+  Exclude<(typeof RECEIPT_TEMPLATE_DISPLAY_KEYS)[number], 'merchantAddress' | 'merchantPhone'>,
   boolean
->;
+> & {
+  merchantAddress?: boolean;
+  merchantPhone?: boolean;
+};
 
 export const DEFAULT_RECEIPT_TEMPLATE_DISPLAY: Readonly<ReceiptTemplateDisplaySettings> = {
   merchantName: true,
+  merchantAddress: true,
+  merchantPhone: true,
   orderNumber: true,
   tableNumber: true,
   orderTime: true,

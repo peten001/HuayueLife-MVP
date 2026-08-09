@@ -28,7 +28,7 @@ import {
 } from '../types/printing-errors';
 import { receiptDocumentForChannel } from '../types/receipt-compatibility';
 import { ReceiptDocument } from '../types/receipt-document';
-import { isPrintDocumentV2 } from '../types/print-document';
+import { isPrintDocument, isPrintDocumentV2, isPrintDocumentV3 } from '../types/print-document';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import {
   hasExplicitUsbExecutionEvidence,
@@ -43,7 +43,7 @@ import {
   PrintingSnapshot,
   ReceiptSnapshotService,
 } from './receipt-snapshot.service';
-import { renderPrintDocumentV2 } from './print-document-renderer';
+import { renderPrintDocumentV2, renderPrintDocumentV3 } from './print-document-renderer';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 import { ReceiptTemplatesService } from './receipt-templates.service';
 import {
@@ -1986,7 +1986,11 @@ export class PrintJobsService {
       input.allowDisabledPrinter ?? false,
       client,
     );
-    if (
+    if (isPrintDocumentV3(input.snapshot)) {
+      if (!(await this.printerSupportsPrintDocumentV3(printer, client))) {
+        this.referenceError('目标终端尚不支持 PrintDocument V3，不能创建或补打该任务');
+      }
+    } else if (
       input.preserveSnapshot &&
       isPrintDocumentV2(input.snapshot) &&
       !(await this.printerSupportsPrintDocumentV2(printer, client))
@@ -2055,10 +2059,29 @@ export class PrintJobsService {
     client: DbClient,
     renderMode?: 'CUSTOMER' | 'KITCHEN',
   ): Promise<PrintingSnapshot> {
-    if (isPrintDocumentV2(input)) return input;
+    if (isPrintDocument(input)) return input;
     const templated = typeof (this.snapshots as ReceiptSnapshotService & { withTemplate?: unknown }).withTemplate === 'function'
       ? this.snapshots.withTemplate(input, templateDefinition)
       : input;
+    const customerRenderMode = renderMode
+      ?? (printer.purpose === 'KITCHEN' ? 'KITCHEN' : 'CUSTOMER');
+    const supportsV3Receipt = templated.receiptType === 'TABLE_BILL' || (
+      templated.receiptType === 'ORDER_CUSTOMER' &&
+      (printer.channelType === 'LOCAL_USB_ESCPOS' || printer.channelType === 'LOCAL_LAN_ESCPOS')
+    );
+    if (
+      supportsV3Receipt &&
+      customerRenderMode === 'CUSTOMER' &&
+      await this.printerSupportsPrintDocumentV3(printer, client)
+    ) {
+      return renderPrintDocumentV3({
+        receipt: templated,
+        paperWidth: printer.paperWidth,
+        purpose: printer.purpose,
+        display: this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        renderMode,
+      });
+    }
     if (await this.printerSupportsPrintDocumentV2(printer, client)) {
       return renderPrintDocumentV2({
         receipt: templated,
@@ -2089,6 +2112,29 @@ export class PrintJobsService {
       select: { appVersion: true },
     });
     return supportsPrintDocumentV2Version(terminal?.appVersion);
+  }
+
+  private async printerSupportsPrintDocumentV3(
+    printer: {
+      id: bigint;
+      channelType: string;
+      capabilities: Prisma.JsonValue;
+    },
+    client: DbClient,
+  ) {
+    if (printer.channelType === 'CLOUD_FEIE' || printer.channelType === 'CLOUD_YILIAN') {
+      return true;
+    }
+    const terminalId = boundTerminalId(printer.capabilities, printer.channelType);
+    if (!terminalId) return false;
+    const terminal = await client.merchantTerminal.findFirst({
+      where: {
+        id: terminalId,
+        boundPrinterId: printer.channelType === 'LOCAL_USB_ESCPOS' ? printer.id : undefined,
+      },
+      select: { appVersion: true },
+    });
+    return supportsPrintDocumentV3Version(terminal?.appVersion);
   }
 
   private async createReceiptCompatibilityRetry(
@@ -2381,7 +2427,7 @@ export class PrintJobsService {
   }
 
   private assertSnapshotMerchant(merchantId: bigint, snapshot: PrintingSnapshot) {
-    if (isPrintDocumentV2(snapshot)) return;
+    if (isPrintDocument(snapshot)) return;
     if (snapshot.merchant.id !== merchantId.toString()) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
@@ -2528,6 +2574,22 @@ export function supportsPrintDocumentV2Version(value: string | null | undefined)
   if (major > 2 || (major === 2 && (minor > 0 || patch > 0))) return true;
   if (major !== 2 || minor !== 0 || patch !== 0) return false;
   return rcText === undefined || Number(rcText) >= 12;
+}
+
+export function supportsPrintDocumentV3Version(value: string | null | undefined) {
+  if (!value) return false;
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-rc(\d+)(?:\.(\d+))?)?$/.exec(value);
+  if (!match) return false;
+  const [, majorText, minorText, patchText, rcMajorText, rcPointText] = match;
+  const major = Number(majorText);
+  const minor = Number(minorText);
+  const patch = Number(patchText);
+  if (major > 2 || (major === 2 && (minor > 0 || patch > 0))) return true;
+  if (major !== 2 || minor !== 0 || patch !== 0) return false;
+  if (rcMajorText === undefined) return true;
+  const rcMajor = Number(rcMajorText);
+  const rcPoint = rcPointText === undefined ? 0 : Number(rcPointText);
+  return rcMajor > 12 || (rcMajor === 12 && rcPoint >= 1);
 }
 
 function isUniqueViolation(error: unknown) {

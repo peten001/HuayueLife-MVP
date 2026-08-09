@@ -102,6 +102,8 @@ describe('ReceiptTemplatesService versioning', () => {
           ],
           display: {
             merchantName: true,
+            merchantAddress: true,
+            merchantPhone: true,
             orderNumber: true,
             tableNumber: true,
             orderTime: true,

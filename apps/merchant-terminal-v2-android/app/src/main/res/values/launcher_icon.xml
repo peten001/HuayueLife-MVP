@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Existing YunQiao Cashier PWA background color. -->
+    <color name="yunqiao_launcher_background">#EFF4F7</color>
+</resources>

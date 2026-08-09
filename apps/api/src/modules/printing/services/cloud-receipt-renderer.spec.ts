@@ -55,6 +55,36 @@ describe('cloud receipt renderer', () => {
     expect(renderCloudReceipt(document, 'YILIAN')).toContain('折扣（9折）');
     expect(renderCloudReceipt(document, 'FEIE')).toContain('740,000 VND');
   });
+
+  it('flattens schema 3 TABLE_BILL layout without changing cloud provider routing', () => {
+    const document = {
+      documentType: 'PRINT_DOCUMENT' as const,
+      schemaVersion: 3 as const,
+      paperWidth: 'MM80' as const,
+      copies: 1,
+      blocks: [
+        {
+          type: 'BOXED_TITLE' as const,
+          boxText: 'A01', title: '结账小票/Hóa đơn thanh toán', subtitle: 'TS-A01',
+          boxWeight: 24, gapDots: 10, fontSize: 'NORMAL' as const,
+        },
+        {
+          type: 'COLUMNS' as const,
+          gapDots: 8,
+          cells: [
+            { text: 'Món', weight: 48, align: 'LEFT' as const, bold: true, fontSize: 'SMALL' as const, overflow: 'FIT' as const, paddingDots: 0 },
+            { text: 'Đơn giá', weight: 20, align: 'RIGHT' as const, bold: true, fontSize: 'SMALL' as const, overflow: 'FIT' as const, paddingDots: 0 },
+            { text: 'SL', weight: 8, align: 'CENTER' as const, bold: true, fontSize: 'SMALL' as const, overflow: 'FIT' as const, paddingDots: 0 },
+            { text: 'Thành tiền', weight: 24, align: 'RIGHT' as const, bold: true, fontSize: 'SMALL' as const, overflow: 'FIT' as const, paddingDots: 0 },
+          ],
+        },
+      ],
+    };
+
+    expect(renderCloudReceipt(document, 'YILIAN')).toContain('[A01]');
+    expect(renderCloudReceipt(document, 'YILIAN')).toContain('Món  Đơn giá  SL  Thành tiền');
+    expect(renderCloudReceipt(document, 'FEIE')).toContain('结账小票/Hóa đơn thanh toán');
+  });
 });
 
 function orderReceipt(): ReceiptDocument {

@@ -472,7 +472,7 @@ class TerminalV2ApiClient(
         ).also {
             require(it.printerId == routeIdentity.printerId)
             require(it.status == "CLAIMED" || it.status == "PRINTING")
-            require(it.snapshotSchemaVersion == 1 || it.snapshotSchemaVersion == 2)
+            require(it.snapshotSchemaVersion in 1..3)
         }
     }
 

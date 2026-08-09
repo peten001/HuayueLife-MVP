@@ -35,7 +35,8 @@ import {
 const { p } = usePrintingI18n();
 const defaults: ReceiptSettings = {
   merchantName: true,
-  phone: false,
+  address: true,
+  phone: true,
   qrCode: false,
   orderNumber: true,
   tableNumber: true,
@@ -102,6 +103,43 @@ const footerPreviewLines = computed(() => [
   receiptSettings.value.footerZh.trim(),
   receiptSettings.value.footerVi.trim(),
 ].filter(Boolean));
+const orderCustomerPreview = {
+  orderNo: '20260728001',
+  orderType: 'DINE_IN',
+  tableName: 'A01',
+  createdAt: '11:30',
+};
+const tableBillPreview = {
+  tableName: 'A01',
+  sessionNo: 'TS-20260808-01',
+  openedAt: '08/08/2026 17:21',
+  closedAt: '17:22',
+  generatedAt: '17:22',
+  orderNos: ['20260808001', '20260808002'],
+  items: [
+    { name: '爆炒猪肝', nameVi: 'gan xào', quantity: 1, lineTotal: 98_000, note: '少辣' },
+    { name: '招牌酸菜鱼特大份家庭分享装', nameVi: 'Cá dưa đặc biệt phần lớn dành cho gia đình', quantity: 1, lineTotal: 12_345_678, note: '' },
+    { name: '红薯叶', nameVi: 'Rau lang xào tỏi thơm ngon kiểu quê nhà', quantity: 2, lineTotal: 116_000, note: '' },
+  ],
+  totals: {
+    originalAmount: 12_559_678,
+    commercialDiscountAmount: 1_255_967,
+    roundingAmount: 711,
+    receivedAmount: 11_303_000,
+  },
+};
+const previewMerchantName80 = computed(() => [
+  previewMerchant.value.nameZh,
+  previewMerchant.value.nameVi,
+].filter(Boolean).join(' / '));
+const previewMerchantContact80 = computed(() => [
+  receiptSettings.value.address ? previewMerchant.value.address : '',
+  receiptSettings.value.phone ? previewMerchant.value.phone : '',
+].filter(Boolean).join(' / '));
+
+function previewVnd(value: number) {
+  return `${value.toLocaleString('vi-VN')} VND`;
+}
 
 function settingSnapshot(state: ReceiptTabState) {
   return JSON.stringify({ settings: { ...state.settings }, paperWidth: state.paperWidth });
@@ -245,7 +283,12 @@ const settingGroups = computed(() => [
     title: 'merchantInfoGroup',
     items: [
       { key: 'merchantName', label: 'merchantNameLabel', hint: 'merchantNameHint', disabled: false },
-      { key: 'phone', label: 'merchantPhoneLabel', hint: 'phoneMissingHint', disabled: true },
+      ...(activeReceiptType.value === 'TABLE_BILL'
+        ? [
+            { key: 'address', label: 'merchantAddressLabel', hint: 'merchantAddressHint', disabled: false },
+            { key: 'phone', label: 'merchantPhoneLabel', hint: 'merchantPhoneHint', disabled: false },
+          ] as const
+        : []),
       { key: 'qrCode', label: 'merchantQrLabel', hint: 'qrMissingHint', disabled: true },
     ],
   },
@@ -273,7 +316,12 @@ const settingGroups = computed(() => [
   {
     title: 'productsAmountsGroup',
     items: [
-      { key: 'itemPrice', label: 'itemPriceLabel', hint: 'itemPriceHint', disabled: false },
+      {
+        key: 'itemPrice',
+        label: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'itemPriceLabel' : 'billItemAmountLabel',
+        hint: activeReceiptType.value === 'ORDER_CUSTOMER' ? 'itemPriceHint' : 'billItemAmountHint',
+        disabled: false,
+      },
       { key: 'total', label: 'orderTotalLabel', hint: 'orderTotalHint', disabled: false },
     ],
   },
@@ -394,39 +442,128 @@ onMounted(load);
         </div>
         <div class="receipt-preview-stage">
           <div class="receipt-paper" :class="paperWidth === 'MM58' ? 'receipt-paper--58' : 'receipt-paper--80'">
-            <div v-if="receiptSettings.merchantName && previewMerchant.hasName" class="receipt-paper__merchant">
-              <span v-if="previewMerchant.nameZh">{{ previewMerchant.nameZh }}</span>
-              <small v-if="previewMerchant.nameVi">{{ previewMerchant.nameVi }}</small>
-            </div>
-            <strong class="receipt-paper__type">{{ activeReceiptType === 'ORDER_CUSTOMER' ? BILINGUAL_RECEIPT_LABELS.customerReceipt : p('billPreviewTitle') }}</strong>
-            <div v-if="activeReceiptType === 'ORDER_CUSTOMER'" class="receipt-paper__meta">
-              <div v-if="receiptSettings.orderNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.orderNumber }}</span><strong>20260728001</strong></div>
-              <div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div>
-              <div v-if="receiptSettings.orderTime"><span>{{ BILINGUAL_RECEIPT_LABELS.time }}</span><strong>11:30</strong></div>
-            </div>
-            <div v-else class="receipt-paper__meta receipt-paper__meta--bill">
-              <div><span>{{ p('billSessionLabel') }}</span><strong>TS-20260808-01</strong></div>
-              <div v-if="receiptSettings.tableNumber"><span>{{ BILINGUAL_RECEIPT_LABELS.table }}</span><strong>A01</strong></div>
-              <template v-if="receiptSettings.orderNumber">
-                <div><span>{{ p('billOrderCountLabel') }}</span><strong>2</strong></div>
-                <div><span>{{ p('billOrderNumbersLabel') }}</span><strong>20260808001, 20260808002</strong></div>
-              </template>
-              <template v-if="receiptSettings.orderTime">
-                <div><span>{{ p('billOpenedAtLabel') }}</span><strong>10:20</strong></div>
-                <div><span>{{ p('billSettledAtLabel') }}</span><strong>11:30</strong></div>
-                <div><span>{{ p('billGeneratedAtLabel') }}</span><strong>11:31</strong></div>
-              </template>
-            </div>
-            <div class="receipt-paper__divider" />
-            <div class="receipt-paper__items">
-              <div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div>
-              <div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div>
-            </div>
-            <div v-if="activeReceiptType === 'ORDER_CUSTOMER' && receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div>
-            <div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div>
-            <div v-if="receiptSettings.footer && footerPreviewLines.length" class="receipt-paper__footer">
-              <span v-for="line in footerPreviewLines" :key="line">{{ line }}</span>
-            </div>
+            <template v-if="activeReceiptType === 'ORDER_CUSTOMER'">
+              <div class="order-preview" :data-paper-profile="paperWidth">
+                <div v-if="receiptSettings.merchantName && previewMerchant.hasName" class="receipt-paper__merchant">
+                  <span v-if="previewMerchant.nameZh">{{ previewMerchant.nameZh }}</span>
+                  <small v-if="previewMerchant.nameVi">{{ previewMerchant.nameVi }}</small>
+                </div>
+                <div
+                  class="order-preview__heading"
+                  :class="{ 'order-preview__heading--wide': !(receiptSettings.tableNumber && orderCustomerPreview.orderType === 'DINE_IN' && orderCustomerPreview.tableName) }"
+                  data-layout="order-header"
+                >
+                  <strong
+                    v-if="receiptSettings.tableNumber && orderCustomerPreview.orderType === 'DINE_IN' && orderCustomerPreview.tableName"
+                    class="order-preview__table-box"
+                    data-layout="order-table-box"
+                  >{{ orderCustomerPreview.tableName }}</strong>
+                  <div class="order-preview__title">
+                    <strong>{{ BILINGUAL_RECEIPT_LABELS.customerReceipt }}</strong>
+                    <span v-if="receiptSettings.orderNumber">
+                      {{ BILINGUAL_RECEIPT_LABELS.orderNumber }}
+                      <b>{{ orderCustomerPreview.orderNo }}</b>
+                    </span>
+                  </div>
+                </div>
+                <div class="receipt-paper__meta order-preview__meta">
+                  <div v-if="receiptSettings.orderTime"><span>{{ BILINGUAL_RECEIPT_LABELS.time }}</span><strong>{{ orderCustomerPreview.createdAt }}</strong></div>
+                </div>
+              </div>
+              <div class="receipt-paper__divider" />
+              <div class="receipt-paper__items">
+                <div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div>
+                <div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div>
+              </div>
+              <div v-if="receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div>
+              <div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div>
+              <div v-if="receiptSettings.footer && footerPreviewLines.length" class="receipt-paper__footer">
+                <span v-for="line in footerPreviewLines" :key="line">{{ line }}</span>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="bill-preview" :data-paper-profile="paperWidth">
+                <div v-if="receiptSettings.merchantName && previewMerchant.hasName" class="bill-preview__merchant">
+                  <template v-if="paperWidth === 'MM80'">
+                    <strong data-layout="merchant-name-80">{{ previewMerchantName80 }}</strong>
+                  </template>
+                  <template v-else>
+                    <strong v-if="previewMerchant.nameZh">{{ previewMerchant.nameZh }}</strong>
+                    <span v-if="previewMerchant.nameVi">{{ previewMerchant.nameVi }}</span>
+                  </template>
+                </div>
+                <div v-if="paperWidth === 'MM80' && previewMerchantContact80" class="bill-preview__contact" data-layout="merchant-contact-80">{{ previewMerchantContact80 }}</div>
+                <template v-else-if="paperWidth === 'MM58'">
+                  <div v-if="receiptSettings.address && previewMerchant.address" class="bill-preview__contact">{{ previewMerchant.address }}</div>
+                  <div v-if="receiptSettings.phone && previewMerchant.phone" class="bill-preview__contact">{{ previewMerchant.phone }}</div>
+                </template>
+
+                <div class="bill-preview__divider bill-preview__divider--section" data-divider="merchant-to-info" />
+                <div class="bill-preview__heading">
+                  <strong v-if="receiptSettings.tableNumber" class="bill-preview__table-box" data-layout="table-box">{{ tableBillPreview.tableName }}</strong>
+                  <div class="bill-preview__title" :class="{ 'bill-preview__title--wide': !receiptSettings.tableNumber }">
+                    <strong>结账小票/Hóa đơn thanh toán</strong>
+                    <span>{{ tableBillPreview.sessionNo }}</span>
+                  </div>
+                </div>
+
+                <div v-if="paperWidth === 'MM80'" class="bill-preview__info bill-preview__info--80">
+                  <div v-if="receiptSettings.orderTime" class="bill-preview__info-grid bill-preview__info-grid--four">
+                    <span>开台 / Mở bàn</span><strong>{{ tableBillPreview.openedAt }}</strong>
+                    <span v-if="tableBillPreview.closedAt">结账 / Thanh toán</span><strong v-if="tableBillPreview.closedAt">{{ tableBillPreview.closedAt }}</strong>
+                  </div>
+                  <div v-if="receiptSettings.orderNumber || receiptSettings.orderTime" class="bill-preview__info-grid bill-preview__info-grid--four">
+                    <template v-if="receiptSettings.orderNumber"><span>订单数 / Số đơn</span><strong>{{ tableBillPreview.orderNos.length }}</strong></template>
+                    <template v-if="receiptSettings.orderTime"><span>生成 / Tạo lúc</span><strong>{{ tableBillPreview.generatedAt }}</strong></template>
+                  </div>
+                  <div v-if="receiptSettings.orderNumber" class="bill-preview__info-grid bill-preview__info-grid--order"><span>订单号 / Mã đơn</span><strong>{{ tableBillPreview.orderNos.join(', ') }}</strong></div>
+                </div>
+                <div v-else class="bill-preview__info bill-preview__info--58">
+                  <template v-if="receiptSettings.orderTime">
+                    <div class="bill-preview__info-grid"><span>开台 / Mở bàn</span><strong>{{ tableBillPreview.openedAt }}</strong></div>
+                    <div v-if="tableBillPreview.closedAt" class="bill-preview__info-grid"><span>结账 / Thanh toán</span><strong>{{ tableBillPreview.closedAt }}</strong></div>
+                    <div class="bill-preview__info-grid"><span>生成 / Tạo lúc</span><strong>{{ tableBillPreview.generatedAt }}</strong></div>
+                  </template>
+                  <template v-if="receiptSettings.orderNumber">
+                    <div class="bill-preview__info-grid"><span>订单数 / Số đơn</span><strong>{{ tableBillPreview.orderNos.length }}</strong></div>
+                    <div class="bill-preview__info-grid bill-preview__info-grid--order"><span>订单号 / Mã đơn</span><strong>{{ tableBillPreview.orderNos.join(', ') }}</strong></div>
+                  </template>
+                </div>
+
+                <div class="bill-preview__divider bill-preview__divider--section" data-divider="info-to-items" />
+                <div class="bill-preview__items">
+                  <div v-for="item in tableBillPreview.items" :key="item.name" class="bill-preview__item">
+                    <div
+                      class="bill-preview__item-main"
+                      :class="{ 'bill-preview__item-main--no-amount': !receiptSettings.itemPrice }"
+                      :data-layout="paperWidth === 'MM80' ? 'item-row-80' : 'item-row-58'"
+                    >
+                      <span class="bill-preview__item-name">{{ item.name }}</span>
+                      <b>x{{ item.quantity }}</b>
+                      <strong v-if="receiptSettings.itemPrice">{{ item.lineTotal.toLocaleString('vi-VN') }}</strong>
+                    </div>
+                    <span v-if="item.nameVi && item.nameVi !== item.name" class="bill-preview__item-vi" data-layout="item-name-vi">{{ item.nameVi }}</span>
+                    <em v-if="item.note" class="bill-preview__note">备注 / Ghi chú: {{ item.note }}</em>
+                  </div>
+                </div>
+
+                <template v-if="receiptSettings.total">
+                  <div class="bill-preview__divider bill-preview__divider--items-total" data-divider="items-to-totals" />
+                  <div class="bill-preview__totals">
+                    <div><span>原金额 / Tổng tiền hàng</span><strong>{{ previewVnd(tableBillPreview.totals.originalAmount) }}</strong></div>
+                    <div v-if="tableBillPreview.totals.commercialDiscountAmount > 0"><span>折扣 / Giảm giá</span><strong>-{{ previewVnd(tableBillPreview.totals.commercialDiscountAmount) }}</strong></div>
+                    <div v-if="tableBillPreview.totals.roundingAmount > 0"><span>抹零 / Làm tròn</span><strong>-{{ previewVnd(tableBillPreview.totals.roundingAmount) }}</strong></div>
+                    <div class="bill-preview__divider bill-preview__divider--summary" data-divider="totals-to-final" />
+                    <div class="bill-preview__final"><span>最终应收 / Phải thu</span><strong>{{ previewVnd(tableBillPreview.totals.receivedAmount) }}</strong></div>
+                  </div>
+                </template>
+
+                <div v-if="receiptSettings.footer && footerPreviewLines.length" class="bill-preview__footer">
+                  <span v-for="line in footerPreviewLines" :key="line">{{ line }}</span>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </aside>
@@ -496,8 +633,8 @@ onMounted(load);
 .receipt-paper-switch button.is-selected { color: var(--printing-green); background: #fff; box-shadow: 0 1px 3px rgba(18,45,29,.1); }
 .receipt-preview-stage { display: grid; min-height: 360px; place-items: start center; padding: 14px 10px; overflow: auto; background: #f1f5f2; }
 .receipt-paper { flex: 0 0 auto; min-height: 330px; padding: 18px 14px; color: #1b1b1b; background: #fff; box-shadow: 0 8px 20px rgba(18,45,29,.16); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.receipt-paper--58 { width: min(260px, 100%); }
-.receipt-paper--80 { width: min(340px, 100%); }
+.receipt-paper--58 { width: 260px; }
+.receipt-paper--80 { width: 430px; }
 .receipt-paper__merchant { display: grid; gap: 2px; margin-bottom: 14px; text-align: center; font-size: 16px; font-weight: 800; }
 .receipt-paper__merchant small { font-size: 11px; font-weight: 600; }
 .receipt-paper__meta { display: grid; gap: 4px; }
@@ -514,6 +651,67 @@ onMounted(load);
 .receipt-paper__total { margin-top: 14px; padding-top: 10px; border-top: 1px solid #555; font-size: 14px; font-weight: 800; }
 .receipt-paper__footer { margin-top: 20px; color: #555; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; }
 .receipt-paper__footer span { display: block; }
+.order-preview { display: grid; gap: 7px; }
+.order-preview .receipt-paper__merchant { margin-bottom: 3px; }
+.order-preview__heading { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; align-items: stretch; }
+.order-preview__heading--wide { grid-template-columns: minmax(0, 1fr); }
+.order-preview__table-box { display: grid; min-width: 72px; min-height: 48px; place-items: center; border: 2px solid #222; font-size: 21px; line-height: 1; }
+.order-preview__title { display: grid; min-width: 0; place-content: center; gap: 3px; text-align: center; }
+.order-preview__title > strong { overflow: hidden; font-size: 12px; line-height: 1.15; text-overflow: clip; white-space: nowrap; }
+.order-preview__title > span { display: flex; min-width: 0; justify-content: center; gap: 5px; color: #555; font-size: 9px; white-space: nowrap; }
+.order-preview__title b { overflow: hidden; color: #1b1b1b; text-overflow: ellipsis; }
+.order-preview__meta { margin-top: 1px; }
+.bill-preview { display: grid; gap: 5px; font-size: 10px; line-height: 1.28; }
+.bill-preview__merchant { display: grid; gap: 1px; text-align: center; }
+.bill-preview__merchant strong { font-size: 14px; font-weight: 800; }
+.bill-preview__merchant span { font-size: 10px; font-weight: 600; }
+.bill-preview__contact { overflow-wrap: anywhere; text-align: center; font-size: 9px; }
+.receipt-paper--80 .bill-preview__merchant strong,
+.receipt-paper--80 .bill-preview__contact { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bill-preview__divider { height: 1px; margin: 5px 0; background: #555; }
+.bill-preview__divider--section,
+.bill-preview__divider--summary { opacity: .62; background: repeating-linear-gradient(90deg, #555 0 4px, transparent 4px 7px); }
+.bill-preview__divider--items-total { margin: 5px 0; background: #444; }
+.bill-preview__divider--summary { margin: 3px 0; }
+.bill-preview__heading { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; align-items: stretch; }
+.bill-preview__table-box { display: grid; min-width: 64px; min-height: 42px; place-items: center; border: 1.5px solid #222; font-size: 17px; }
+.bill-preview__title { display: grid; min-width: 0; place-content: center; gap: 2px; text-align: center; }
+.bill-preview__title strong { overflow: hidden; font-size: 11px; line-height: 1.1; text-overflow: clip; white-space: nowrap; }
+.bill-preview__title span { font-size: 9px; font-weight: 700; }
+.bill-preview__info { display: grid; gap: 3px; }
+.bill-preview__info-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px; align-items: baseline; }
+.bill-preview__info-grid span { color: #4d4d4d; white-space: nowrap; }
+.bill-preview__info-grid strong { min-width: 0; text-align: right; }
+.bill-preview__info-grid--order strong { overflow-wrap: anywhere; }
+.receipt-paper--80 .bill-preview__info-grid--four { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 5px; }
+.bill-preview__items { display: grid; gap: 8px; font-size: 11px; line-height: 1.4; }
+.bill-preview__item { display: grid; gap: 2px; }
+.bill-preview__item-main { display: grid; min-width: 0; gap: 4px; align-items: baseline; font-weight: 700; }
+.receipt-paper--80 .bill-preview__item-main { grid-template-columns: minmax(0, 72fr) minmax(0, 10fr) minmax(0, 18fr); }
+.receipt-paper--58 .bill-preview__item-main { grid-template-columns: minmax(0, 58fr) minmax(0, 12fr) minmax(0, 30fr); gap: 2px; }
+.receipt-paper--80 .bill-preview__item-main--no-amount { grid-template-columns: minmax(0, 88fr) minmax(0, 12fr); }
+.receipt-paper--58 .bill-preview__item-main--no-amount { grid-template-columns: minmax(0, 82fr) minmax(0, 18fr); }
+.bill-preview__item-main > * { min-width: 0; overflow: hidden; white-space: nowrap; }
+.bill-preview__item-main > :not(:first-child) { text-align: right; }
+.bill-preview__item-main > b { text-align: center; }
+.bill-preview__item-name { text-overflow: ellipsis; }
+.bill-preview__item-vi { overflow-wrap: anywhere; font-weight: 400; }
+.bill-preview__note { font-size: 10px; font-style: normal; font-weight: 400; overflow-wrap: anywhere; }
+.bill-preview__totals { display: grid; gap: 3px; }
+.bill-preview__totals > div:not(.bill-preview__divider) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: baseline; }
+.bill-preview__totals strong { text-align: right; white-space: nowrap; }
+.bill-preview__final { font-size: 12px; font-weight: 800; }
+.bill-preview__footer { display: grid; gap: 1px; margin-top: 9px; text-align: center; overflow-wrap: anywhere; }
+.receipt-paper--58 .bill-preview__merchant strong { font-size: 13px; }
+.receipt-paper--58 .order-preview__heading { gap: 6px; }
+.receipt-paper--58 .order-preview__table-box { min-width: 58px; min-height: 42px; font-size: 18px; }
+.receipt-paper--58 .order-preview__title > strong { font-size: 8px; }
+.receipt-paper--58 .order-preview__title > span { gap: 3px; font-size: 7px; }
+.receipt-paper--58 .bill-preview__table-box { min-width: 54px; min-height: 40px; }
+.receipt-paper--58 .bill-preview__title strong { font-size: 8px; }
+.receipt-paper--58 .bill-preview__title span { font-size: 8px; }
+.receipt-paper--58 .bill-preview__info-grid { gap: 3px; }
+.receipt-paper--58 .bill-preview__info-grid--order strong { max-width: 150px; }
 .receipt-confirm-modal { width: min(440px, 100%); }
 .receipt-confirm-modal .printing-modal__body { display: block; }
 @media (max-width: 900px) {

@@ -8,9 +8,11 @@ import {
 } from '../types/bilingual-receipt';
 import { CloudProvider } from './cloud-printing.service';
 import {
+  assertPrintDocumentV3,
   assertPrintDocumentV2,
+  isPrintDocument,
   isPrintDocumentV2,
-  PrintDocumentV2,
+  PrintDocument,
 } from '../types/print-document';
 
 const VND = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
@@ -26,7 +28,7 @@ const LOCAL_TIME = new Intl.DateTimeFormat('zh-CN', {
 });
 
 /**
- * New cloud tasks consume the same immutable PrintDocument V2 used by Android.
+ * New cloud tasks consume the same immutable PrintDocument used by Android.
  * Receipt V1 remains accepted only for historical jobs. Provider-specific
  * markup is applied after escaping so text cannot inject printer control tags.
  */
@@ -34,7 +36,7 @@ export function renderCloudReceipt(
   value: unknown,
   provider: CloudProvider,
 ) {
-  const lines = isPrintDocumentV2(value)
+  const lines = isPrintDocument(value)
     ? printDocumentLines(value)
     : legacyReceiptLines(value);
   if (provider === 'FEIE') {
@@ -51,13 +53,21 @@ function legacyReceiptLines(value: unknown) {
   return receiptLines(value);
 }
 
-export function printDocumentLines(document: PrintDocumentV2) {
-  assertPrintDocumentV2(document);
+export function printDocumentLines(document: PrintDocument) {
+  if (isPrintDocumentV2(document)) assertPrintDocumentV2(document);
+  else assertPrintDocumentV3(document);
   const width = document.paperWidth === 'MM58' ? 32 : 48;
   const lines: string[] = [];
   for (const block of document.blocks) {
     if (block.type === 'TEXT') lines.push(block.text);
     if (block.type === 'ROW') lines.push(joinRow(block.left, block.right, width));
+    if (block.type === 'COLUMNS') {
+      lines.push(block.cells.map((cell) => cell.text).filter(Boolean).join('  '));
+    }
+    if (block.type === 'BOXED_TITLE') {
+      lines.push(joinRow(`[${block.boxText}]`, block.title, width));
+      lines.push(block.subtitle);
+    }
     if (block.type === 'DIVIDER') lines.push('-'.repeat(width));
     if (block.type === 'FEED') lines.push(...Array.from({ length: block.lines }, () => ''));
   }

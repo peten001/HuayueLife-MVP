@@ -5,7 +5,10 @@ import {
   RC6_RECEIPT_SCHEMA_VERSION,
   receiptDocumentForChannel,
 } from './receipt-compatibility';
-import { supportsPrintDocumentV2Version } from '../services/print-jobs.service';
+import {
+  supportsPrintDocumentV2Version,
+  supportsPrintDocumentV3Version,
+} from '../services/print-jobs.service';
 
 const currentReceipt: ReceiptDocument = {
   schemaVersion: 1,
@@ -48,6 +51,25 @@ describe('receipt schema compatibility', () => {
     expect(supportsPrintDocumentV2Version('2.0.0-rc12')).toBe(true);
     expect(supportsPrintDocumentV2Version('2.0.1')).toBe(true);
   });
+  it.each([
+    ['2.0.0-rc11', false],
+    ['2.0.0-rc11.9', false],
+    ['2.0.0-rc12', false],
+    ['2.0.0-rc12-hotfix', false],
+    ['2.0.0-rc12.0', false],
+    ['2.0.0-rc12.1', true],
+    ['2.0.0-rc12.1-debug', false],
+    ['2.0.0-rc12.2', true],
+    ['2.0.0-rc12.10', true],
+    ['2.0.0-rc13', true],
+    ['2.0.0', true],
+    ['2.0.1', true],
+  ] as const)(
+    'gates measured TABLE_BILL layout for terminal version %s',
+    (version, expected) => {
+      expect(supportsPrintDocumentV3Version(version)).toBe(expected);
+    },
+  );
   it('uses the strict RC5 subset for every USB job when no reliable terminal profile exists', () => {
     const compatible = receiptDocumentForChannel(
       currentReceipt,

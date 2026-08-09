@@ -74,6 +74,7 @@ export interface MerchantProfile {
   city: string;
   district?: string;
   addressDetail: string;
+  addressZh?: string | null;
   latitude: string;
   longitude: string;
   businessHours: Record<string, string[]>;

@@ -19,8 +19,8 @@ fun configValue(
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val terminalVersionCode = 61
-val terminalVersionName = "2.0.0-rc12"
+val terminalVersionCode = 62
+val terminalVersionName = "2.0.0-rc12.1"
 
 val debugCashierWebUrl = configValue(
     "cashierWebUrlDebug",

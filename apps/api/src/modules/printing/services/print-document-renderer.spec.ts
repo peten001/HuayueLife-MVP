@@ -1,6 +1,7 @@
 import {
   createPrintDocumentV2,
   renderPrintDocumentV2,
+  renderPrintDocumentV3,
 } from './print-document-renderer';
 import { printDocumentLines } from './cloud-receipt-renderer';
 import {
@@ -8,7 +9,7 @@ import {
   ReceiptDocument,
   ReceiptTemplateDisplaySettings,
 } from '../types/receipt-document';
-import { PrintDocumentV2 } from '../types/print-document';
+import { PrintDocument, PrintDocumentV2, PrintDocumentV3 } from '../types/print-document';
 
 describe('PrintDocument V2 server renderer', () => {
   it('renders current rounding as presentation rows without exposing business JSON', () => {
@@ -245,6 +246,77 @@ describe('PrintDocument V2 server renderer', () => {
     expect(content).toContain('自定义结束语');
   });
 
+  it.each([
+    ['undefined', { merchantAddress: undefined, merchantPhone: undefined }],
+    ['true', { merchantAddress: true, merchantPhone: true }],
+  ] as const)('keeps TABLE_BILL merchant contact visible when the new flag is %s', (_, flags) => {
+    const content = renderedContent(renderTableBill(flags));
+
+    expect(content).toContain('真实地址');
+    expect(content).toContain('0900000000');
+  });
+
+  it('hides TABLE_BILL merchant contacts independently while preserving the merchant name pair', () => {
+    const content = renderedContent(renderTableBill({
+      merchantAddress: false,
+      merchantPhone: false,
+    }));
+
+    expect(content).toContain('花悦餐厅');
+    expect(content).toContain('Nhà hàng Hoa Việt');
+    expect(content).not.toContain('真实地址');
+    expect(content).not.toContain('0900000000');
+  });
+
+  it('keeps TABLE_BILL item price visibility paired and retains quantity', () => {
+    const content = renderedContent(renderTableBill({ itemPrice: false }));
+
+    expect(content).toContain('数量 / Số lượng 1');
+    expect(content).toContain('备注 / Ghi chú: 少辣');
+    expect(content).not.toContain('单价 / Đơn giá');
+    expect(content).not.toContain('金额 / Thành tiền');
+  });
+
+  it('renders TABLE_BILL original, conditional discount, rounding, and received totals', () => {
+    const content = renderedContent(renderPrintDocumentV2({
+      receipt: tableBillReceipt({
+        subtotal: 40_000,
+        originalAmount: 40_000,
+        commercialDiscountAmount: 5_000,
+        roundingAmount: 1_000,
+        receivedAmount: 34_000,
+        total: 34_000,
+      }),
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    }));
+
+    expect(content).toContain('原金额 / Tổng tiền hàng 40.000 VND');
+    expect(content).toContain('折扣优惠 / Giảm giá -5.000 VND');
+    expect(content).toContain('抹零 / Làm tròn -1.000 VND');
+    expect(content).toContain('最终应收 / Phải thu 34.000 VND');
+  });
+
+  it('hides TABLE_BILL zero discount and rounding rows without hiding received amount', () => {
+    const content = renderedContent(renderPrintDocumentV2({
+      receipt: tableBillReceipt({
+        subtotal: 40_000,
+        originalAmount: 40_000,
+        commercialDiscountAmount: 0,
+        roundingAmount: 0,
+        receivedAmount: 40_000,
+        total: 40_000,
+      }),
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    }));
+
+    expect(content).toContain('原金额 / Tổng tiền hàng 40.000 VND');
+    expect(content).not.toContain('折扣优惠 / Giảm giá');
+    expect(content).not.toContain('抹零 / Làm tròn');
+    expect(content).toContain('最终应收 / Phải thu 40.000 VND');
+  });
+
   it('applies TABLE_BILL merchant, order-info, table, and time visibility independently', () => {
     const merchantHidden = renderedContent(renderTableBill({ merchantName: false }));
     expect(merchantHidden).not.toContain('花悦餐厅');
@@ -319,6 +391,333 @@ describe('PrintDocument V2 server renderer', () => {
     expect(document.blocks.at(-1)).toEqual({ type: 'CUT', mode: 'HALF' });
   });
 
+  it('renders the final 80mm TABLE_BILL structure with readable bilingual item rows', () => {
+    const document = renderTableBillV3('MM80', {}, longTableBillReceipt());
+    const content = renderedContent(document);
+    const header = document.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Món',
+    );
+    const item = document.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text.includes('招牌酸菜鱼'),
+    );
+
+    expect(document.schemaVersion).toBe(3);
+    expect(content).toContain('花悦餐厅 / Nhà hàng Hoa Việt');
+    expect(content).toContain('真实地址 / 0900000000');
+    expect(document.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'TEXT', text: '花悦餐厅 / Nhà hàng Hoa Việt', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: '真实地址 / 0900000000', overflow: 'FIT' }),
+    ]));
+    expect(content).toContain('A01 结账小票/Hóa đơn thanh toán TS-LAYOUT');
+    expect(header).toBeUndefined();
+    expect(item).toEqual(expect.objectContaining({
+      cells: [
+        expect.objectContaining({ text: '招牌酸菜鱼特大份家庭分享装', fontSize: 'NORMAL', overflow: 'ELLIPSIS' }),
+        expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
+        expect.objectContaining({ text: '12.345.678', fontSize: 'NORMAL', overflow: 'FIT' }),
+      ],
+    }));
+    const itemIndex = document.blocks.indexOf(item!);
+    expect(document.blocks[itemIndex + 1]).toEqual(expect.objectContaining({
+      type: 'TEXT',
+      text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè',
+    }));
+    expect(content).not.toMatch(/Món|Đơn giá|(^|\n)SL($|\n)|Thành tiền/);
+    expect(content).not.toContain('58.000');
+    expect((content.match(/生成 \/ Tạo lúc/g) ?? [])).toHaveLength(1);
+    expect(content).toContain('备注 / Ghi chú: 少辣');
+  });
+
+  it.each(['MM80', 'MM58'] as const)(
+    'renders the %s ORDER customer receipt with the independent Preview-aligned schema 3 layout',
+    (paperWidth) => {
+      const document = renderOrderV3(paperWidth);
+      const content = renderedContent(document);
+      const boxedTitle = document.blocks.find((block) => block.type === 'BOXED_TITLE');
+      const item = document.blocks.find(
+        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+      );
+      const total = document.blocks.find(
+        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '合计 / Tổng cộng',
+      );
+      const time = document.blocks.find(
+        (block) => block.type === 'ROW' && block.left === '时间 / Thời gian',
+      );
+
+      expect(document.schemaVersion).toBe(3);
+      expect(boxedTitle).toEqual(expect.objectContaining({
+        type: 'BOXED_TITLE',
+        boxText: 'D10',
+        title: '顾客小票 / Hóa đơn khách hàng',
+        subtitle: '订单号 / Mã đơn A-1',
+        boxWeight: paperWidth === 'MM58' ? 28 : 24,
+        fontSize: paperWidth === 'MM58' ? 'SMALL' : 'NORMAL',
+      }));
+      expect(content).toContain('花悦餐厅');
+      expect(content).toContain('Nhà hàng Hoa Việt');
+      expect(content).not.toMatch(/真实地址|0900000000|类型 \/ Loại/);
+      expect(content).not.toContain('桌台 / Bàn');
+      expect(time).toEqual(expect.objectContaining({ right: '16:55' }));
+      expect(time && time.type === 'ROW' ? time.right : '').not.toMatch(/[/:]\d{2}[/:]|:\d{2}:\d{2}/);
+      expect(item).toEqual(expect.objectContaining({
+        type: 'COLUMNS',
+        cells: [
+          expect.objectContaining({ text: '牛肉粉', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({ text: 'x1', overflow: 'FIT' }),
+          expect.objectContaining({ text: expect.stringMatching(/^40[.,]000$/), overflow: 'FIT' }),
+        ],
+      }));
+      expect(document.blocks).toContainEqual(expect.objectContaining({
+        type: 'TEXT', text: 'Phở bò', align: 'LEFT',
+      }));
+      expect(total).toEqual(expect.objectContaining({
+        type: 'COLUMNS',
+        cells: [
+          expect.objectContaining({ text: '合计 / Tổng cộng' }),
+          expect.objectContaining({ text: expect.stringMatching(/^40[.,]000 VND$/) }),
+        ],
+      }));
+      expect(content).toContain('备注 / Ghi chú: 整单少辣');
+      expect(content).not.toContain('备注 / Ghi chú: 少辣');
+      expect(content).not.toMatch(/(^|\n)\d+\. |数量 \/ Số lượng|单价 \/ Đơn giá|金额 \/ Thành tiền/);
+      expect(content).not.toMatch(/小计 \/ Tạm tính|服务费 \/ Phí dịch vụ|抹零 \/ Làm tròn|最终应收 \/ Phải thu|生成时间 \/ Tạo lúc/);
+      expect(content).toContain('自定义结束语');
+      expect(document.blocks.filter((block) => block.type === 'DIVIDER')).toHaveLength(2);
+    },
+  );
+
+  it('preserves every ORDER schema 3 display switch without restoring legacy fields', () => {
+    const tableDisabled = renderOrderV3('MM80', { merchantName: false, tableNumber: false });
+    expect(tableDisabled.blocks).not.toContainEqual(expect.objectContaining({ type: 'BOXED_TITLE' }));
+    expect(tableDisabled.blocks).toContainEqual(expect.objectContaining({
+      type: 'TEXT', text: '顾客小票 / Hóa đơn khách hàng', overflow: 'FIT',
+    }));
+    expect(renderedContent(tableDisabled)).not.toMatch(/花悦餐厅|Nhà hàng Hoa Việt/);
+
+    const noTableReceipt = receipt({ subtotal: 40_000, total: 40_000 });
+    noTableReceipt.order = { ...noTableReceipt.order!, tableName: undefined };
+    const noTable = renderOrderV3('MM58', {}, noTableReceipt);
+    expect(noTable.blocks).not.toContainEqual(expect.objectContaining({ type: 'BOXED_TITLE' }));
+
+    const noOrderNumber = renderOrderV3('MM80', { orderNumber: false });
+    expect(renderedContent(noOrderNumber)).not.toContain('A-1');
+    expect(noOrderNumber.blocks).toContainEqual(expect.objectContaining({
+      type: 'BOXED_TITLE', boxText: 'D10', subtitle: ' ',
+    }));
+    expect(renderedContent(noOrderNumber)).not.toContain('类型 / Loại');
+
+    const noTime = renderOrderV3('MM80', { orderTime: false });
+    expect(renderedContent(noTime)).not.toMatch(/时间 \/ Thời gian|生成时间 \/ Tạo lúc/);
+    expect(renderedContent(noTime)).toContain('订单号 / Mã đơn A-1');
+
+    const noPrice = renderOrderV3('MM80', { itemPrice: false });
+    const noPriceItem = noPrice.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+    );
+    expect(noPriceItem).toEqual(expect.objectContaining({
+      type: 'COLUMNS',
+      cells: [
+        expect.objectContaining({ text: '牛肉粉' }),
+        expect.objectContaining({ text: 'x1' }),
+      ],
+    }));
+    expect(noPriceItem && noPriceItem.type === 'COLUMNS' ? noPriceItem.cells : []).toHaveLength(2);
+
+    const noNote = renderOrderV3('MM80', { note: false });
+    expect(renderedContent(noNote)).not.toMatch(/备注 \/ Ghi chú/);
+
+    const noTotal = renderOrderV3('MM80', { orderTotal: false });
+    expect(renderedContent(noTotal)).not.toContain('合计 / Tổng cộng');
+
+    const noFooter = renderOrderV3('MM80', { footer: false });
+    expect(renderedContent(noFooter)).not.toMatch(/自定义结束语|Lời cảm ơn tùy chỉnh/);
+  });
+
+  it('renders the final 58mm TABLE_BILL item as Chinese columns then full-width Vietnamese text', () => {
+    const document = renderTableBillV3('MM58', {}, longTableBillReceipt());
+    const content = renderedContent(document);
+    const itemIndex = document.blocks.findIndex(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text.includes('招牌酸菜鱼'),
+    );
+    const item = document.blocks[itemIndex];
+
+    expect(content).toContain('花悦餐厅');
+    expect(content).toContain('Nhà hàng Hoa Việt');
+    expect(content).toContain('真实地址');
+    expect(content).toContain('0900000000');
+    expect(item).toEqual(expect.objectContaining({
+      type: 'COLUMNS',
+      cells: [
+        expect.objectContaining({ text: '招牌酸菜鱼特大份家庭分享装', fontSize: 'NORMAL', overflow: 'ELLIPSIS' }),
+        expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
+        expect.objectContaining({ text: '12.345.678', fontSize: 'NORMAL', overflow: 'FIT' }),
+      ],
+    }));
+    expect(document.blocks[itemIndex + 1]).toEqual(expect.objectContaining({
+      type: 'TEXT',
+      text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè',
+    }));
+    expect(content).not.toMatch(/Món|Đơn giá|(^|\n)SL($|\n)|Thành tiền/);
+    expect(content).toContain('备注 / Ghi chú: 少辣');
+  });
+
+  it.each(['MM80', 'MM58'] as const)(
+    'keeps TABLE_BILL quantities while hiding line amounts at %s when itemPrice is false',
+    (paperWidth) => {
+      const document = renderTableBillV3(paperWidth, { itemPrice: false }, longTableBillReceipt());
+      const item = document.blocks.find(
+        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '红薯叶',
+      );
+
+      expect(item).toEqual(expect.objectContaining({
+        type: 'COLUMNS',
+        cells: [
+          expect.objectContaining({ text: '红薯叶', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({ text: 'x2', overflow: 'FIT' }),
+        ],
+      }));
+      expect(item && item.type === 'COLUMNS' ? item.cells : []).toHaveLength(2);
+      expect(document.blocks).toContainEqual(expect.objectContaining({
+        type: 'TEXT', text: 'Rau lang xào tỏi thơm ngon kiểu quê nhà',
+      }));
+      expect(document.blocks).not.toContainEqual(expect.objectContaining({
+        type: 'COLUMNS', cells: expect.arrayContaining([expect.objectContaining({ text: '116.000' })]),
+      }));
+    },
+  );
+
+  it.each(['MM80', 'MM58'] as const)(
+    'keeps %s TABLE_BILL section dividers without item-to-item or final-to-footer lines',
+    (paperWidth) => {
+      const document = renderTableBillV3(paperWidth, {}, longTableBillReceipt());
+      const blocks = document.blocks;
+      const itemIndexes = ['牛肉粉', '招牌酸菜鱼', '红薯叶'].map((name) =>
+        blocks.findIndex((block) =>
+          block.type === 'COLUMNS' && block.cells[0]?.text.includes(name),
+        ));
+      const originalIndex = blocks.findIndex(
+        (block) => block.type === 'ROW' && block.left === '原金额 / Tổng tiền hàng',
+      );
+      const finalIndex = blocks.findIndex(
+        (block) => block.type === 'ROW' && block.left === '最终应收 / Phải thu',
+      );
+      const footerIndex = blocks.findIndex(
+        (block) => block.type === 'TEXT' && block.text === '自定义结束语',
+      );
+
+      expect(itemIndexes.every((index) => index >= 0)).toBe(true);
+      expect(blocks[itemIndexes[0] - 1]).toEqual({ type: 'DIVIDER' });
+      expect(blocks.slice(itemIndexes[0] + 1, itemIndexes[1])).not.toContainEqual({ type: 'DIVIDER' });
+      expect(blocks.slice(itemIndexes[1] + 1, itemIndexes[2])).not.toContainEqual({ type: 'DIVIDER' });
+      expect(blocks.slice(itemIndexes[2] + 1, originalIndex)).toContainEqual({ type: 'DIVIDER' });
+      expect(blocks.slice(originalIndex + 1, finalIndex)).toContainEqual({ type: 'DIVIDER' });
+      expect(blocks.slice(finalIndex + 1, footerIndex)).not.toContainEqual({ type: 'DIVIDER' });
+    },
+  );
+
+  it('keeps TABLE_BILL schema 3 display flags and legacy contacts authoritative', () => {
+    const legacy = renderedContent(renderTableBillV3('MM80', {
+      merchantAddress: undefined,
+      merchantPhone: undefined,
+    }));
+    expect(legacy).toContain('真实地址 / 0900000000');
+
+    const hidden = renderTableBillV3('MM80', {
+      merchantName: false,
+      merchantAddress: false,
+      merchantPhone: false,
+      tableNumber: false,
+      orderNumber: false,
+      orderTime: false,
+      itemPrice: false,
+      orderTotal: false,
+      footer: false,
+    });
+    const hiddenContent = renderedContent(hidden);
+    const header = hidden.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Món',
+    );
+    const item = hidden.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+    );
+
+    expect(hiddenContent).not.toMatch(/花悦餐厅|Nhà hàng Hoa Việt|真实地址|0900000000|A01|订单数|订单号|开台|结账 \/ Thanh toán|生成 \/ Tạo lúc/);
+    expect(hiddenContent).toContain('结账小票/Hóa đơn thanh toán');
+    expect(hiddenContent).toContain('TS-LAYOUT');
+    expect(hidden.blocks).toContainEqual(expect.objectContaining({
+      type: 'TEXT', text: '结账小票/Hóa đơn thanh toán', overflow: 'FIT',
+    }));
+    expect(header).toBeUndefined();
+    expect(item).toEqual(expect.objectContaining({ cells: [
+      expect.objectContaining({ text: '牛肉粉' }), expect.objectContaining({ text: 'x1' }),
+    ] }));
+    expect((item as Extract<PrintDocumentV3['blocks'][number], { type: 'COLUMNS' }>).cells).toHaveLength(2);
+    expect(hidden.blocks).toContainEqual(expect.objectContaining({ type: 'TEXT', text: 'Phở bò' }));
+    expect(hiddenContent).toContain('备注 / Ghi chú: 少辣');
+    expect(hiddenContent).not.toMatch(/Món|Đơn giá|SL|Thành tiền|98[.,]000/);
+    expect(hiddenContent).not.toMatch(/原金额|折扣 \/ Giảm giá|抹零|最终应收|自定义结束语/);
+  });
+
+  it('renders original conditional totals and received amount without recalculation in schema 3', () => {
+    const withAdjustments = renderedContent(renderTableBillV3('MM80', {}, tableBillReceipt({
+      subtotal: 40_000,
+      originalAmount: 40_000,
+      commercialDiscountAmount: 5_000,
+      roundingAmount: 1_000,
+      receivedAmount: 34_000,
+      total: 1,
+    })));
+    expect(withAdjustments).toContain('原金额 / Tổng tiền hàng 40.000 VND');
+    expect(withAdjustments).toContain('折扣 / Giảm giá -5.000 VND');
+    expect(withAdjustments).toContain('抹零 / Làm tròn -1.000 VND');
+    expect(withAdjustments).toContain('最终应收 / Phải thu 34.000 VND');
+    expect(withAdjustments).not.toContain('1 VND');
+
+    const withoutAdjustments = renderedContent(renderTableBillV3('MM80', {}, tableBillReceipt({
+      subtotal: 40_000,
+      originalAmount: 40_000,
+      commercialDiscountAmount: 0,
+      roundingAmount: 0,
+      receivedAmount: 40_000,
+      total: 40_000,
+    })));
+    expect(withoutAdjustments).not.toMatch(/折扣 \/ Giảm giá|抹零 \/ Làm tròn/);
+  });
+
+  it('omits close time when absent and keeps generated time only in the upper section', () => {
+    const value = longTableBillReceipt();
+    value.tableSession = { ...value.tableSession!, closedAt: undefined };
+    const content = renderedContent(renderTableBillV3('MM58', {}, value));
+
+    expect(content).not.toContain('结账 / Thanh toán');
+    expect((content.match(/生成 \/ Tạo lúc/g) ?? [])).toHaveLength(1);
+  });
+
+  it('allows ORDER schema 3 only in customer rendering contexts', () => {
+    expect(() => renderPrintDocumentV3({
+      receipt: receipt({ subtotal: 40_000, total: 40_000 }),
+      paperWidth: 'MM80', purpose: 'FRONT_DESK',
+    })).not.toThrow();
+    expect(() => renderPrintDocumentV3({
+      receipt: tableBillReceipt(), paperWidth: 'MM58', purpose: 'KITCHEN',
+    })).toThrow('scoped to customer receipts');
+    expect(() => renderPrintDocumentV3({
+      receipt: receipt({ subtotal: 40_000, total: 40_000 }),
+      paperWidth: 'MM58', purpose: 'KITCHEN',
+    })).toThrow('scoped to customer receipts');
+    expect(() => renderPrintDocumentV3({
+      receipt: tableBillReceipt(), paperWidth: 'MM58', purpose: 'KITCHEN', renderMode: 'CUSTOMER',
+    })).not.toThrow();
+    expect(() => renderPrintDocumentV3({
+      receipt: receipt({ subtotal: 40_000, total: 40_000 }),
+      paperWidth: 'MM58', purpose: 'KITCHEN', renderMode: 'CUSTOMER',
+    })).not.toThrow();
+    expect(renderPrintDocumentV2({
+      receipt: receipt({ subtotal: 40_000, total: 40_000 }),
+      paperWidth: 'MM58', purpose: 'KITCHEN', renderMode: 'CUSTOMER',
+    }).schemaVersion).toBe(2);
+  });
+
   it('renders kitchen documents with only item name quantity and note content', () => {
     const document = renderPrintDocumentV2({
       receipt: receipt({ subtotal: 828_000, total: 828_000 }),
@@ -360,7 +759,7 @@ function receipt(totals: Omit<ReceiptDocument['totals'], 'currency'>): ReceiptDo
     receiptType: 'ORDER_CUSTOMER',
     generatedAt: '2026-08-07T10:00:00.000Z',
     merchant: {
-      id: '11', name: '花悦餐厅', nameVi: 'Nhà hàng Hoa Việt', phone: '0900000000',
+      id: '11', name: '花悦餐厅', nameVi: 'Nhà hàng Hoa Việt', address: '真实地址', phone: '0900000000',
     },
     order: {
       id: '20', orderNo: 'A-1', orderType: 'DINE_IN', tableName: 'D10',
@@ -404,6 +803,74 @@ function renderTableBill(overrides?: Partial<ReceiptTemplateDisplaySettings>) {
   });
 }
 
+function renderTableBillV3(
+  paperWidth: 'MM58' | 'MM80',
+  overrides: Partial<ReceiptTemplateDisplaySettings>,
+  value: ReceiptDocument = longTableBillReceipt(),
+) {
+  return renderPrintDocumentV3({
+    receipt: value,
+    paperWidth,
+    purpose: 'FRONT_DESK',
+    display: display(overrides),
+  });
+}
+
+function renderOrderV3(
+  paperWidth: 'MM58' | 'MM80',
+  overrides: Partial<ReceiptTemplateDisplaySettings> = {},
+  value: ReceiptDocument = receipt({
+    subtotal: 40_000,
+    serviceFee: 2_000,
+    roundingAmount: 2_000,
+    total: 40_000,
+  }),
+) {
+  return renderPrintDocumentV3({
+    receipt: value,
+    paperWidth,
+    purpose: 'FRONT_DESK',
+    display: display(overrides),
+  });
+}
+
+function longTableBillReceipt(): ReceiptDocument {
+  const document = tableBillReceipt({
+    subtotal: 12_559_678,
+    originalAmount: 12_559_678,
+    commercialDiscountAmount: 1_255_967,
+    roundingAmount: 711,
+    receivedAmount: 11_303_000,
+    total: 11_303_000,
+  });
+  return {
+    ...document,
+    generatedAt: '2026-08-08T10:22:00.000Z',
+    tableSession: {
+      id: '31', sessionNo: 'TS-LAYOUT', tableName: 'A01',
+      openedAt: '2026-08-08T10:21:00.000Z', closedAt: '2026-08-08T10:22:00.000Z',
+      orderNos: ['20260808001', '20260808002'],
+    },
+    items: [
+      { name: '牛肉粉', nameVi: 'Phở bò', quantity: 1, unitPrice: 98_000, lineTotal: 98_000, note: '少辣' },
+      {
+        name: '招牌酸菜鱼特大份家庭分享装',
+        nameVi: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè',
+        quantity: 1,
+        unitPrice: 12_345_678,
+        lineTotal: 12_345_678,
+      },
+      {
+        name: '红薯叶',
+        nameVi: 'Rau lang xào tỏi thơm ngon kiểu quê nhà',
+        quantity: 2,
+        unitPrice: 58_000,
+        lineTotal: 116_000,
+      },
+    ],
+  };
+}
+
 function renderCustomer(overrides: Partial<ReceiptTemplateDisplaySettings>) {
   return renderPrintDocumentV2({
     receipt: receipt({ subtotal: 40_000, serviceFee: 2_000, roundingAmount: 2_000, total: 40_000 }),
@@ -417,10 +884,12 @@ function display(overrides: Partial<ReceiptTemplateDisplaySettings>) {
   return { ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY, ...overrides };
 }
 
-function renderedContent(document: PrintDocumentV2) {
+function renderedContent(document: PrintDocument) {
   return document.blocks.flatMap((block) => {
     if (block.type === 'TEXT') return [block.text];
     if (block.type === 'ROW') return [`${block.left} ${block.right}`];
+    if (block.type === 'COLUMNS') return [block.cells.map((cell) => cell.text).join(' ')];
+    if (block.type === 'BOXED_TITLE') return [`${block.boxText} ${block.title} ${block.subtitle}`];
     return [];
   }).join('\n');
 }

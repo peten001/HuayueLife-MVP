@@ -43,6 +43,73 @@ assert.match(page, /role="switch"/);
 assert.match(page, /footerTextarea/);
 assert.doesNotMatch(page, /footerZhLabel|footerViLabel/);
 assert.match(page, /receipt-paper__items/);
+assert.match(page, /merchantAddressLabel/);
+assert.match(page, /merchantPhoneLabel/);
+assert.match(page, /receiptSettings\.address/);
+assert.match(page, /receiptSettings\.phone/);
+assert.match(page, /const orderCustomerPreview =/);
+assert.match(page, /const tableBillPreview =/);
+assert.match(page, /commercialDiscountAmount > 0/);
+assert.match(page, /roundingAmount > 0/);
+assert.match(page, /最终应收 \/ Phải thu/);
+assert.match(page, /结账小票\/Hóa đơn thanh toán/);
+assert.match(page, /data-paper-profile="paperWidth"/);
+assert.match(page, /data-layout="merchant-name-80"/);
+assert.match(page, /data-layout="merchant-contact-80"/);
+assert.match(page, /data-layout="table-box"/);
+assert.match(page, /data-layout="order-header"/);
+assert.match(page, /data-layout="order-table-box"/);
+assert.match(page, /receiptSettings\.tableNumber && orderCustomerPreview\.orderType === 'DINE_IN' && orderCustomerPreview\.tableName/);
+assert.match(page, /order-preview__table-box/);
+assert.match(page, /order-preview__heading--wide/);
+assert.match(page, /receipt-paper--58 \.order-preview__table-box/);
+assert.match(page, /receipt-paper--58 \.order-preview__title > strong/);
+assert.doesNotMatch(page, /data-layout="product-header"/);
+assert.match(page, /paperWidth === 'MM80' \? 'item-row-80' : 'item-row-58'/);
+assert.match(page, /data-layout="item-name-vi"/);
+assert.doesNotMatch(page, /tableBillItemName80/);
+assert.match(page, /bill-preview__item-name">\{\{ item\.name \}\}/);
+assert.match(page, /x\{\{ item\.quantity \}\}/);
+assert.match(page, /v-if="receiptSettings\.itemPrice">\{\{ item\.lineTotal\.toLocaleString/);
+assert.doesNotMatch(page, /item\.unitPrice/);
+assert.match(page, /v-if="item\.note"[\s\S]*备注 \/ Ghi chú/);
+assert.match(page, /receiptSettings\.value\.address \? previewMerchant\.value\.address/);
+assert.match(page, /receiptSettings\.value\.phone \? previewMerchant\.value\.phone/);
+assert.match(page, /v-if="receiptSettings\.address && previewMerchant\.address"/);
+assert.match(page, /v-if="receiptSettings\.phone && previewMerchant\.phone"/);
+assert.match(page, /tableBillPreview\.closedAt[\s\S]*结账 \/ Thanh toán/);
+assert.match(page, /招牌酸菜鱼特大份家庭分享装/);
+assert.match(page, /Cá dưa đặc biệt phần lớn dành cho gia đình/);
+assert.match(page, /12_345_678/);
+const orderPreviewMarkup = page.slice(
+  page.indexOf('<template v-if="activeReceiptType === \'ORDER_CUSTOMER\'">'),
+  page.indexOf('<template v-else>'),
+);
+assert.match(orderPreviewMarkup, /orderCustomerPreview\.tableName/);
+assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.customerReceipt/);
+assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.orderNumber/);
+assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.time/);
+assert.doesNotMatch(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.table/);
+const billItemMarkup = page.slice(
+  page.indexOf('<div v-for="item in tableBillPreview.items"'),
+  page.indexOf('<template v-if="receiptSettings.total">'),
+);
+assert.doesNotMatch(billItemMarkup, /bill-preview__divider/);
+assert.doesNotMatch(billItemMarkup, /Món|Đơn giá|SL|Thành tiền/);
+for (const divider of [
+  'merchant-to-info',
+  'info-to-items',
+  'items-to-totals',
+  'totals-to-final',
+]) {
+  assert.match(page, new RegExp(`data-divider="${divider}"`));
+}
+assert.match(page, /bill-preview__divider--section/);
+assert.doesNotMatch(page, /bill-preview__divider--header/);
+assert.match(page, /bill-preview__divider--items-total/);
+assert.match(page, /bill-preview__divider--summary/);
+const billTotalsMarkup = page.slice(page.indexOf('<div class="bill-preview__totals">'));
+assert.doesNotMatch(billTotalsMarkup, /生成 \/ Tạo lúc/);
 assert.match(page, /footerZh/);
 assert.match(page, /footerVi/);
 assert.doesNotMatch(page, /languageModeLabel|languageModes/);
@@ -63,7 +130,7 @@ assert.doesNotMatch(page, /key\.toUpperCase\(\)/);
 for (const key of ['orderNumber', 'tableNumber', 'orderTime', 'itemPrice', 'total']) {
   assert.match(page, new RegExp(`v-if="receiptSettings\\.${key}"`));
 }
-assert.match(page, /activeReceiptType === 'ORDER_CUSTOMER' && receiptSettings\.note/);
+assert.match(page, /v-if="receiptSettings\.note" class="receipt-paper__note"/);
 assert.match(page, /v-if="receiptSettings\.merchantName && previewMerchant\.hasName"/);
 assert.match(page, /getCurrentOrderCustomerReceiptSettings/);
 assert.match(page, /saveCurrentOrderCustomerReceiptSettings/);
@@ -78,13 +145,14 @@ assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER'[\s\S]*saveCurr
 assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER'[\s\S]*orderNoteLabel[\s\S]*: \[\]/);
 assert.match(page, /billOrderInfoLabel/);
 assert.match(page, /billTimeInfoLabel/);
-assert.match(page, /billPreviewTitle/);
-assert.match(page, /billSessionLabel/);
-assert.match(page, /billOrderCountLabel/);
-assert.match(page, /billOrderNumbersLabel/);
-assert.match(page, /billOpenedAtLabel/);
-assert.match(page, /billSettledAtLabel/);
-assert.match(page, /billGeneratedAtLabel/);
+assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER' \? 'itemPriceLabel' : 'billItemAmountLabel'/);
+assert.match(page, /activeReceiptType\.value === 'ORDER_CUSTOMER' \? 'itemPriceHint' : 'billItemAmountHint'/);
+assert.match(page, /tableBillPreview\.sessionNo/);
+assert.match(page, /tableBillPreview\.orderNos\.length/);
+assert.match(page, /tableBillPreview\.orderNos\.join\(', '\)/);
+assert.match(page, /tableBillPreview\.openedAt/);
+assert.match(page, /tableBillPreview\.closedAt/);
+assert.match(page, /tableBillPreview\.generatedAt/);
 assert.match(page, /getProfile/);
 assert.match(page, /merchantProfile\.value = profile/);
 assert.match(page, /receiptPreviewMerchant\(merchantProfile\.value\)/);
@@ -135,6 +203,11 @@ assert.match(router, /redirect: '\/printing-center\/android-terminal'/);
 for (const key of ['receiptSettingsSubtitle', 'currentMerchant', 'restoreDefaults', 'cancelChanges', 'paperWidth58', 'paperWidth80', 'orderReceiptTab', 'billReceiptTab', 'billOrderInfoLabel', 'billTimeInfoLabel']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
+for (const key of ['billItemAmountLabel', 'billItemAmountHint']) {
+  assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
+}
+assert.match(i18n, /billItemAmountLabel: '商品金额'/);
+assert.match(i18n, /itemPriceLabel: '商品单价'/);
 for (const key of ['bilingualReceipt', 'bilingualReceiptHint', 'printerConnectionInfoHint']) {
   assert.equal((i18n.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length, 3, `${key} must exist in zh/vi/en`);
 }
@@ -187,23 +260,46 @@ assert.doesNotMatch(appI18n, /候选版本：|Bản ứng viên:|Release Candida
 const merchantA = receiptPreviewMerchant({ nameZh: '商家 A', nameVi: 'Cửa hàng A' });
 const merchantB = receiptPreviewMerchant({ nameZh: '商家 B', nameVi: 'Cửa hàng B' });
 assert.notEqual(merchantA.nameZh, merchantB.nameZh);
-assert.deepEqual(merchantA, { nameZh: '商家 A', nameVi: 'Cửa hàng A', hasName: true });
-assert.deepEqual(merchantB, { nameZh: '商家 B', nameVi: 'Cửa hàng B', hasName: true });
+assert.deepEqual(merchantA, { nameZh: '商家 A', nameVi: 'Cửa hàng A', hasName: true, address: '', phone: '' });
+assert.deepEqual(merchantB, { nameZh: '商家 B', nameVi: 'Cửa hàng B', hasName: true, address: '', phone: '' });
 assert.deepEqual(receiptPreviewMerchant({ nameZh: '仅中文商家' }), {
   nameZh: '仅中文商家',
   nameVi: '',
   hasName: true,
+  address: '',
+  phone: '',
 });
 assert.deepEqual(receiptPreviewMerchant({ nameZh: ' 同名商家 ', nameVi: '同名商家' }), {
   nameZh: '同名商家',
   nameVi: '',
   hasName: true,
+  address: '',
+  phone: '',
 });
-assert.deepEqual(receiptPreviewMerchant(null), { nameZh: '', nameVi: '', hasName: false });
+assert.deepEqual(receiptPreviewMerchant(null), { nameZh: '', nameVi: '', hasName: false, address: '', phone: '' });
+assert.deepEqual(receiptPreviewMerchant({
+  nameZh: '商家', nameVi: 'Cửa hàng', addressDetail: '真实地址', contactPhone: '0900000000',
+}), {
+  nameZh: '商家', nameVi: 'Cửa hàng', hasName: true, address: '真实地址', phone: '0900000000',
+});
+assert.equal(receiptPreviewMerchant({
+  addressZh: '中文地址 A', addressDetail: '详细地址 B',
+}).address, '中文地址 A');
+assert.equal(receiptPreviewMerchant({
+  addressZh: null, addressDetail: '详细地址 B',
+}).address, '详细地址 B');
+assert.equal(receiptPreviewMerchant({
+  addressZh: '   ', addressDetail: '详细地址 B',
+}).address, '详细地址 B');
+assert.equal(receiptPreviewMerchant({
+  addressZh: '   ', addressDetail: '   ',
+}).address, '');
+assert.match(page, /receiptSettings\.address && previewMerchant\.address/);
 
 const defaultReceiptSettings = {
   merchantName: true,
-  phone: false,
+  address: true,
+  phone: true,
   qrCode: false,
   orderNumber: true,
   tableNumber: true,
@@ -223,6 +319,8 @@ assert.equal(createdDefinition.footerTextZh, '云桥后台文案验证');
 assert.deepEqual(createdDefinition.sections, CANONICAL_RECEIPT_SECTION_TYPES.map((type) => ({ type })));
 assert.deepEqual(createdDefinition.display, {
   merchantName: true,
+  merchantAddress: true,
+  merchantPhone: true,
   orderNumber: true,
   tableNumber: true,
   orderTime: true,
@@ -260,6 +358,8 @@ const switchedDefinition = buildReceiptSettingsDefinition({
 assert.deepEqual(switchedDefinition.sections, existingSections);
 assert.deepEqual(switchedDefinition.display, {
   merchantName: false,
+  merchantAddress: true,
+  merchantPhone: true,
   orderNumber: false,
   tableNumber: false,
   orderTime: true,
@@ -270,6 +370,8 @@ assert.deepEqual(switchedDefinition.display, {
 });
 assert.deepEqual(receiptSettingsDisplayFromDefinition(switchedDefinition), {
   merchantName: false,
+  address: true,
+  phone: true,
   orderNumber: false,
   tableNumber: false,
   orderTime: true,
@@ -280,6 +382,8 @@ assert.deepEqual(receiptSettingsDisplayFromDefinition(switchedDefinition), {
 });
 assert.deepEqual(receiptSettingsDisplayFromDefinition({ schemaVersion: 1, sections: existingSections }), {
   merchantName: true,
+  address: true,
+  phone: true,
   orderNumber: true,
   tableNumber: true,
   orderTime: true,
@@ -288,6 +392,15 @@ assert.deepEqual(receiptSettingsDisplayFromDefinition({ schemaVersion: 1, sectio
   total: true,
   footer: true,
 });
+assert.equal(receiptSettingsDisplayFromDefinition({
+  schemaVersion: 1,
+  sections: existingSections,
+  display: { merchantAddress: false },
+}).address, false);
+assert.equal(receiptSettingsDisplayFromDefinition({
+  schemaVersion: 1,
+  sections: existingSections,
+}).address, true);
 
 const orderDefinition = buildReceiptSettingsDefinition({
   existingDefinition: {},

@@ -16,12 +16,17 @@ import { footerFromTemplateDefinition } from '../types/bilingual-receipt';
 import { withOrderSettlementFields } from '../../orders/order-settlement-fields';
 import { calculateSettlementAdjustment } from '../../orders/settlement-adjustment';
 import {
+  assertPrintDocumentV3,
   assertPrintDocumentV2,
+  isPrintDocument,
   isPrintDocumentV2,
+  isPrintDocumentV3,
+  PrintDocument,
   PrintDocumentV2,
+  PrintDocumentV3,
 } from '../types/print-document';
 
-export type PrintingSnapshot = ReceiptDocument | PrintDocumentV2;
+export type PrintingSnapshot = ReceiptDocument | PrintDocument;
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -220,9 +225,10 @@ export class ReceiptSnapshotService {
 
   cloneAndValidate(document: ReceiptDocument): ReceiptDocument;
   cloneAndValidate(document: PrintDocumentV2): PrintDocumentV2;
+  cloneAndValidate(document: PrintDocumentV3): PrintDocumentV3;
   cloneAndValidate(document: PrintingSnapshot): PrintingSnapshot;
   cloneAndValidate(document: PrintingSnapshot): PrintingSnapshot {
-    if (isPrintDocumentV2(document)) return this.validatePrintDocumentAndFreeze(document);
+    if (isPrintDocument(document)) return this.validatePrintDocumentAndFreeze(document);
     return this.validateAndFreeze(document);
   }
 
@@ -250,10 +256,12 @@ export class ReceiptSnapshotService {
     }
   }
 
-  private validatePrintDocumentAndFreeze(document: PrintDocumentV2) {
+  private validatePrintDocumentAndFreeze(document: PrintDocument) {
     try {
       const snapshot = immutableJsonSnapshot(document);
-      assertPrintDocumentV2(snapshot);
+      if (isPrintDocumentV2(snapshot)) assertPrintDocumentV2(snapshot);
+      else if (isPrintDocumentV3(snapshot)) assertPrintDocumentV3(snapshot);
+      else throw new Error('Unsupported print document schema');
       return deepFreeze(snapshot);
     } catch (error) {
       throw new BadRequestException({
