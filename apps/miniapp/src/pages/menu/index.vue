@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { onLoad, onShow } from '@dcloudio/uni-app';
+import { computed, ref, watch } from 'vue';
+import { onLoad, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
 import {
@@ -27,18 +27,96 @@ const tableNo = ref('');
 const tableName = ref('');
 const tableToken = ref('');
 const activeCategory = ref('');
+const searchQuery = ref('');
+const previousBrowsingCategory = ref('');
 const error = ref('');
 const notice = ref('');
 const orderingUnavailable = ref(false);
+const HOT_CATEGORY_ID = '__hot_recommendations__';
+const SEARCH_CATEGORY_ID = '__search_results__';
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
 const { locale, t } = useI18n();
-const currentCategory = computed(
-  () => menu.value?.categories.find((category) => category.id === activeCategory.value) ?? null,
+const isSearching = computed(() => Boolean(searchQuery.value.trim()));
+const normalCategories = computed(() => menu.value?.categories ?? []);
+const hotProducts = computed(() => {
+  const candidates: Array<{ product: Product; index: number }> = [];
+  normalCategories.value.forEach((category) => {
+    if (isHotCategoryExcluded(category)) return;
+    category.products.forEach((product) => {
+      if (Number(product.salesCount) > 0) {
+        candidates.push({ product, index: candidates.length });
+      }
+    });
+  });
+
+  return candidates
+    .sort((left, right) => Number(right.product.salesCount) - Number(left.product.salesCount) || left.index - right.index)
+    .slice(0, 8)
+    .map(({ product }) => product);
+});
+const hotCategory = computed(() =>
+  hotProducts.value.length
+    ? {
+        id: HOT_CATEGORY_ID,
+        nameZh: t('hotRecommendations'),
+        products: hotProducts.value,
+      }
+    : null,
 );
+const hotRanks = computed(() => new Map(hotProducts.value.map((product, index) => [product.id, index + 1])));
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  if (!query) return [];
+  return normalCategories.value.flatMap((category) =>
+    category.products.filter((product) =>
+      product.nameZh.toLocaleLowerCase().includes(query)
+      || product.nameVi?.toLocaleLowerCase().includes(query),
+    ),
+  );
+});
+const searchCategory = computed(() => ({
+  id: SEARCH_CATEGORY_ID,
+  nameZh: t('searchResults'),
+  products: searchResults.value,
+}));
+const visibleCategories = computed(() => {
+  if (isSearching.value) return [searchCategory.value];
+  return hotCategory.value ? [hotCategory.value, ...normalCategories.value] : normalCategories.value;
+});
+const currentCategory = computed(
+  () => visibleCategories.value.find((category) => category.id === activeCategory.value) ?? null,
+);
+
+watch(isSearching, (searching) => {
+  if (searching) {
+    if (activeCategory.value !== SEARCH_CATEGORY_ID) {
+      previousBrowsingCategory.value = activeCategory.value;
+    }
+    activeCategory.value = SEARCH_CATEGORY_ID;
+    return;
+  }
+
+  activeCategory.value = visibleCategories.value.some(
+    (category) => category.id === previousBrowsingCategory.value,
+  )
+    ? previousBrowsingCategory.value
+    : defaultCategoryId();
+});
 
 usePageTitle(() => (orderingUnavailable.value ? t('orderingUnavailableTitle') : t('menuTitle')));
 
 onLoad(async (options) => {
+  const shareMerchantId = String(options?.shareMerchantId ?? '').trim();
+  if (
+    String(options?.shareTarget ?? '') === 'merchantDetail'
+    && /^\d+$/.test(shareMerchantId)
+  ) {
+    uni.redirectTo({
+      url: `/pages/merchant/detail?id=${encodeURIComponent(shareMerchantId)}`,
+    });
+    return;
+  }
+
   merchantId.value = String(options?.merchantId ?? '');
   orderType.value = (String(options?.orderType ?? 'PICKUP') as OrderType);
   tableNo.value = decodeURIComponent(String(options?.tableNo ?? ''));
@@ -74,7 +152,8 @@ onLoad(async (options) => {
     });
     cartStore.syncContextMetadata(buildContext(loadedMenu));
     menu.value = loadedMenu;
-    activeCategory.value = loadedMenu.categories[0]?.id ?? '';
+    activeCategory.value = defaultCategoryId();
+    previousBrowsingCategory.value = activeCategory.value;
   } catch (caught) {
     console.error('[menu] load menu failed', caught);
     const message = caught instanceof Error ? caught.message : t('cartContextSwitchError');
@@ -82,6 +161,31 @@ onLoad(async (options) => {
     error.value = message;
   }
 });
+
+function menuShareTitle() {
+  return merchantName(menu.value?.merchant, locale.value) || '云桥 Life';
+}
+
+function merchantDetailSharePath() {
+  return merchantId.value
+    ? `/pages/merchant/detail?id=${encodeURIComponent(merchantId.value)}`
+    : '/pages/home/index';
+}
+
+onShareAppMessage(() => ({
+  title: menuShareTitle(),
+  path: merchantDetailSharePath(),
+}));
+
+onShareTimeline(() => ({
+  title: menuShareTitle(),
+  ...(merchantId.value
+    ? {
+        query:
+          `shareTarget=merchantDetail&shareMerchantId=${encodeURIComponent(merchantId.value)}`,
+      }
+    : {}),
+}));
 
 onShow(() => {
   if (!menu.value || !merchantId.value) return;
@@ -293,6 +397,32 @@ function getProductSubtitle(product: Product) {
   return productSubtitle(product, locale.value);
 }
 
+function isHotCategoryExcluded(category: { nameZh: string }) {
+  const name = category.nameZh.trim();
+  return name.includes('米饭') || name.includes('饮料') || name.includes('饮品') || name.includes('酒水');
+}
+
+function defaultCategoryId() {
+  return hotCategory.value?.id ?? normalCategories.value[0]?.id ?? '';
+}
+
+function selectCategory(categoryId: string) {
+  activeCategory.value = categoryId;
+  if (categoryId !== SEARCH_CATEGORY_ID) {
+    previousBrowsingCategory.value = categoryId;
+  }
+}
+
+function categoryDisplayName(category: { id: string; nameZh: string }) {
+  if (category.id === HOT_CATEGORY_ID) return t('hotRecommendations');
+  if (category.id === SEARCH_CATEGORY_ID) return t('searchResults');
+  return categoryName(category, locale.value);
+}
+
+function hotRank(product: Product) {
+  return hotRanks.value.get(product.id) ?? 0;
+}
+
 async function add(product: Product) {
   if (orderingUnavailable.value || !appConfig.platformOrderingEnabled) return;
   if (product.status === 'SOLD_OUT') return;
@@ -348,23 +478,32 @@ function goHome() {
         </view>
       </view>
     </view>
+    <view v-if="!orderingUnavailable && menu" class="menu-search">
+      <input
+        v-model="searchQuery"
+        class="menu-search-input"
+        type="text"
+        :placeholder="t('searchDishes')"
+        confirm-type="search"
+      />
+    </view>
     <view v-if="!orderingUnavailable && notice" class="notice">{{ notice }}</view>
     <view v-if="!orderingUnavailable && error" class="error">{{ error }}</view>
     <view v-else-if="!orderingUnavailable && menu" class="menu-layout">
       <scroll-view class="categories" scroll-y>
         <view
-          v-for="category in menu.categories"
+          v-for="category in visibleCategories"
           :key="category.id"
           :class="['category', activeCategory === category.id ? 'active' : '']"
-          @click="activeCategory = category.id"
+          @click="selectCategory(category.id)"
         >
-          {{ categoryName(category, locale) }}
+          {{ categoryDisplayName(category) }}
         </view>
       </scroll-view>
       <scroll-view class="products" scroll-y>
         <view v-if="currentCategory" class="product-list">
           <view class="category-heading">
-            <text class="category-title">{{ categoryName(currentCategory, locale) }}</text>
+            <text class="category-title">{{ categoryDisplayName(currentCategory) }}</text>
             <text class="category-count">
               {{ t('dishCount', { count: currentCategory.products.length }) }}
             </text>
@@ -396,6 +535,13 @@ function goHome() {
               <text class="product-name">{{ getProductDisplayName(product) }}</text>
               <text v-if="getProductSubtitle(product)" class="description">
                 {{ getProductSubtitle(product) }}
+              </text>
+              <text class="sales-count">
+                <text class="sales-value">{{ t('salesCount', { count: product.salesCount }) }}</text>
+                <text v-if="hotRank(product)" class="sales-separator"> · </text>
+                <text v-if="hotRank(product)" class="hot-rank">
+                  {{ t('hotRank', { rank: hotRank(product) }) }}
+                </text>
               </text>
               <view class="price-row">
                 <text class="price">
@@ -641,6 +787,23 @@ function goHome() {
   background: #fff3dd;
 }
 
+.menu-search {
+  flex: none;
+  padding: 8rpx 0 16rpx;
+}
+
+.menu-search-input {
+  width: 100%;
+  height: 68rpx;
+  padding: 0 24rpx;
+  border: 2rpx solid #dceee0;
+  border-radius: 18rpx;
+  color: #1f2d24;
+  background: #fff;
+  font-size: 25rpx;
+  box-sizing: border-box;
+}
+
 .menu-layout {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -803,6 +966,30 @@ function goHome() {
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sales-count {
+  display: block;
+  margin: 3px 0 4px;
+  color: #818b83;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.sales-value {
+  color: #818b83;
+  font-weight: 400;
+}
+
+.sales-separator {
+  color: #b3bbb5;
+  font-weight: 400;
+}
+
+.hot-rank {
+  color: #ff8a00;
+  font-weight: 600;
 }
 
 .price-row {

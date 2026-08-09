@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app';
 import { getMerchant } from '@/api/catalog';
 import {
   merchantName,
@@ -20,6 +20,7 @@ import { resolveMediaUrl } from '@/utils/media';
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
 const merchant = ref<MerchantDetail | null>(null);
+const merchantId = ref('');
 const error = ref('');
 const { locale, t } = useI18n();
 const favoriteState = ref(false);
@@ -86,9 +87,10 @@ const galleryImages = computed(() =>
 usePageTitle(() => t('merchantDetailTitle'));
 
 onLoad(async (options) => {
+  merchantId.value = String(options?.id ?? '');
   try {
     const [loadedMerchant] = await Promise.all([
-      getMerchant(String(options?.id ?? '')),
+      getMerchant(merchantId.value),
       appConfig.ensureLoaded(),
     ]);
     merchant.value = loadedMerchant;
@@ -107,6 +109,26 @@ onLoad(async (options) => {
     error.value = caught instanceof Error ? caught.message : t('merchantLoadFailed');
   }
 });
+
+function merchantShareTitle() {
+  return merchantName(merchant.value, locale.value) || '云桥 Life';
+}
+
+function merchantSharePath() {
+  return merchantId.value
+    ? `/pages/merchant/detail?id=${encodeURIComponent(merchantId.value)}`
+    : '/pages/home/index';
+}
+
+onShareAppMessage(() => ({
+  title: merchantShareTitle(),
+  path: merchantSharePath(),
+}));
+
+onShareTimeline(() => ({
+  title: merchantShareTitle(),
+  ...(merchantId.value ? { query: `id=${encodeURIComponent(merchantId.value)}` } : {}),
+}));
 
 function handleToggleFavorite() {
   if (!merchant.value) return;

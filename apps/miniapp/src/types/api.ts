@@ -166,6 +166,7 @@ export interface Product extends LocalizedFields {
   description?: string;
   imageUrl?: string;
   priceVnd: string;
+  salesCount: number;
   status: 'ON_SALE' | 'SOLD_OUT';
   merchant?: MerchantLocalizedRef;
 }
