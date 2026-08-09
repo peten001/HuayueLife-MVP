@@ -4,7 +4,7 @@ import {
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
-import { Category, Merchant, Prisma } from '@prisma/client';
+import { Category, Merchant, OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
@@ -16,6 +16,7 @@ import {
 } from '../shared/homepage-category-keys';
 
 const PAGE_SIZE = 20;
+const SALES_ORDER_TYPES: OrderType[] = ['PICKUP', 'DELIVERY', 'DINE_IN'];
 /**
  * NOTE:
  * Bac Giang / Bac Ninh are BUSINESS REGIONS, not administrative provinces.
@@ -196,22 +197,46 @@ export class PublicMerchantsService {
     if (!this.canShowMenu(merchant)) {
       throw new GoneException('该商家暂未开通菜单/下单功能');
     }
-    const categories = await this.prisma.category.findMany({
-      where: {
-        merchantId: id,
-        isActive: true,
-      },
-      include: {
-        products: {
-          where: {
-            productType: 'FOOD',
-            status: { in: ['ON_SALE', 'SOLD_OUT'] },
-          },
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    const [categories, productSales] = await Promise.all([
+      this.prisma.category.findMany({
+        where: {
+          merchantId: id,
+          isActive: true,
         },
-      },
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    });
+        include: {
+          products: {
+            where: {
+              productType: 'FOOD',
+              status: { in: ['ON_SALE', 'SOLD_OUT'] },
+            },
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.orderItem.groupBy({
+        by: ['productId'],
+        where: {
+          productId: { not: null },
+          order: {
+            merchantId: id,
+            status: 'COMPLETED',
+            orderType: { in: SALES_ORDER_TYPES },
+          },
+        },
+        _sum: { quantity: true },
+      }),
+    ]);
+    const salesByProductId = new Map(
+      productSales.map((sale) => [String(sale.productId), sale._sum?.quantity ?? 0]),
+    );
+    const categoriesWithSales = categories.map(({ products, ...category }) => ({
+      ...category,
+      products: products.map((product) => ({
+        ...product,
+        salesCount: salesByProductId.get(String(product.id)) ?? 0,
+      })),
+    }));
 
     return {
       merchant: {
@@ -220,7 +245,7 @@ export class PublicMerchantsService {
         nameVi: merchant.nameVi,
         isOpen: isMerchantOpen(merchant),
       },
-      categories,
+      categories: categoriesWithSales,
     };
   }
 
