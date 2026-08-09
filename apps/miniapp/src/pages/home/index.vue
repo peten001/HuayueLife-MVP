@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onReachBottom, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
 import { cityOptions, merchantName, useI18n, usePageTitle } from '@/i18n';
@@ -22,6 +22,12 @@ type FilterOption = 'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 type CityMenuOption =
   | { role: 'current'; label: string; value: string }
   | { role: 'region'; label: string; value: 'Bac Giang' | 'Bac Ninh' };
+type MerchantListRequest = {
+  regionCode: 'Bac Giang' | 'Bac Ninh';
+  mode: 'province' | 'nearby';
+  latitude?: number;
+  longitude?: number;
+};
 
 const locationStore = useLocationStore();
 const appConfig = useAppConfigStore();
@@ -30,6 +36,11 @@ const { locale, t } = useI18n();
 const cities = computed(() => cityOptions(locale.value));
 const merchants = ref<MerchantSummary[]>([]);
 const loading = ref(false);
+const loadingMore = ref(false);
+const page = ref(0);
+const total = ref(0);
+const pageSize = ref(0);
+const activeMerchantRequest = ref<MerchantListRequest | null>(null);
 const requestSeq = ref(0);
 const hasInitializedHome = ref(false);
 const manualCitySelectionSeq = ref(0);
@@ -147,6 +158,7 @@ const filterDisplayLabel = computed(() => {
   return count > 0 ? `${base}(${count})` : base;
 });
 const isFilterActive = computed(() => activeFilters.value.length > 0);
+const hasMore = computed(() => merchants.value.length < total.value);
 
 const visibleMerchants = computed(() => {
   const filtered = filteredMerchants.value.filter((merchant) => {
@@ -181,6 +193,19 @@ onShow(() => {
   void initializeHome();
 });
 
+onShareAppMessage(() => ({
+  title: '云桥 Life',
+  path: '/pages/home/index',
+}));
+
+onShareTimeline(() => ({
+  title: '云桥 Life',
+}));
+
+onReachBottom(() => {
+  void loadMoreMerchants();
+});
+
 async function initializeHome() {
   await appConfig.ensureLoaded();
   if (!appConfig.platformOrderingEnabled) {
@@ -194,7 +219,7 @@ async function initializeHome() {
 async function refreshHomeByCurrentLocation() {
   const manualSeqAtStart = manualCitySelectionSeq.value;
   loading.value = true;
-  merchants.value = [];
+  resetMerchantPagination();
   merchantListMode.value = 'province';
   try {
     const snapshot = await locationStore.refreshLocationForHome();
@@ -202,9 +227,12 @@ async function refreshHomeByCurrentLocation() {
     console.log('[home] region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
-      sortOption.value = 'smart';
+      sortOption.value = 'distance';
       await loadByRegionCode(snapshot.locatedProvince, {
         mode: 'province',
+        useLocation: true,
+        latitude: snapshot.latitude,
+        longitude: snapshot.longitude,
       });
       return;
     }
@@ -278,18 +306,19 @@ async function loadByRegionCode(
 ) {
   const seq = ++requestSeq.value;
   loading.value = true;
-  merchants.value = [];
+  resetMerchantPagination(false);
   merchantListMode.value = options?.mode ?? 'province';
-  const query: Parameters<typeof getNearbyMerchants>[0] = {
-    province: operationalRegionForQuery(regionCode),
-    page: 1,
-  };
   const latitude = normalizeCoordinateForQuery(options?.latitude);
   const longitude = normalizeCoordinateForQuery(options?.longitude);
+  const request: MerchantListRequest = {
+    regionCode,
+    mode: options?.mode ?? 'province',
+  };
   if (options?.useLocation && latitude !== undefined && longitude !== undefined) {
-    query.lat = latitude;
-    query.lng = longitude;
+    request.latitude = latitude;
+    request.longitude = longitude;
   }
+  const query = merchantQueryForPage(request, 1);
   console.log('[home] merchant query', query);
   try {
     const result = await getNearbyMerchants(query);
@@ -298,6 +327,10 @@ async function loadByRegionCode(
     console.log('[home] merchants raw count', rawList.length);
     if (seq !== requestSeq.value) return;
     merchants.value = rawList;
+    page.value = result.page;
+    total.value = result.total;
+    pageSize.value = result.pageSize;
+    activeMerchantRequest.value = request;
   } catch (error) {
     console.warn('[home] loadByRegionCode failed', error);
     if (seq !== requestSeq.value) return;
@@ -307,6 +340,59 @@ async function loadByRegionCode(
       loading.value = false;
     }
   }
+}
+
+function resetMerchantPagination(invalidateRequests = true) {
+  if (invalidateRequests) requestSeq.value += 1;
+  merchants.value = [];
+  page.value = 0;
+  total.value = 0;
+  pageSize.value = 0;
+  loadingMore.value = false;
+  activeMerchantRequest.value = null;
+}
+
+async function loadMoreMerchants() {
+  const request = activeMerchantRequest.value;
+  if (!request || loading.value || loadingMore.value || !hasMore.value) return;
+
+  const seq = requestSeq.value;
+  const nextPage = page.value + 1;
+  loadingMore.value = true;
+  const query = merchantQueryForPage(request, nextPage);
+  console.log('[home] load more merchant query', query);
+
+  try {
+    const result = await getNearbyMerchants(query);
+    if (seq !== requestSeq.value) return;
+
+    const existingIds = new Set(merchants.value.map((merchant) => merchant.id));
+    merchants.value = [
+      ...merchants.value,
+      ...result.items.filter((merchant) => !existingIds.has(merchant.id)),
+    ];
+    page.value = result.page;
+    total.value = result.total;
+    pageSize.value = result.pageSize;
+  } catch (error) {
+    console.warn('[home] loadMoreMerchants failed', error);
+  } finally {
+    if (seq === requestSeq.value) {
+      loadingMore.value = false;
+    }
+  }
+}
+
+function merchantQueryForPage(request: MerchantListRequest, targetPage: number) {
+  const query: Parameters<typeof getNearbyMerchants>[0] = {
+    province: operationalRegionForQuery(request.regionCode),
+    page: targetPage,
+  };
+  if (request.latitude !== undefined && request.longitude !== undefined) {
+    query.lat = request.latitude;
+    query.lng = request.longitude;
+  }
+  return query;
 }
 
 function toggleCityMenu() {
@@ -329,7 +415,7 @@ async function selectCityOption(option: CityMenuOption) {
 async function openNearbyMerchants() {
   locationStore.hydrateFromStorage();
   loading.value = true;
-  merchants.value = [];
+  resetMerchantPagination();
   merchantListMode.value = 'nearby';
 
   try {
