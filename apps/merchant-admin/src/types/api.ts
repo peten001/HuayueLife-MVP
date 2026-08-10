@@ -266,6 +266,18 @@ export interface PlatformMerchantImageUploadResult {
   mimeType: string;
 }
 
+export interface PlatformMerchantSignatureDish {
+  id: string;
+  nameZh: string;
+  nameVi?: string | null;
+  nameEn?: string | null;
+  imageUrl: string;
+  sortOrder: number;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type PlatformMerchantImportStatus = 'VALID' | 'WARNING' | 'ERROR';
 export type PlatformMerchantImportSourceType = 'XLSX' | 'ZIP';
 
@@ -689,6 +701,7 @@ export interface Category {
   id: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string | null;
   sortOrder: number;
   isActive: boolean;
   _count?: { products: number };
@@ -701,6 +714,7 @@ export interface Product {
   categoryId: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string | null;
   description?: string;
   imageUrl?: string;
   priceVnd: string;

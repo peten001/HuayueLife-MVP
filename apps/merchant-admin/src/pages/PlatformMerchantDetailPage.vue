@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
+import PlatformMerchantSignatureDishesSection from '@/components/PlatformMerchantSignatureDishesSection.vue';
 import { errorMessage } from '@/api/http';
 import {
   createPlatformMerchantImage,
@@ -41,6 +42,7 @@ type EditorSection =
   | 'content'
   | 'businessHours'
   | 'images'
+  | 'signatureDishes'
   | 'tags'
   | 'visibility'
   | 'hot'
@@ -144,6 +146,7 @@ const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> =
   { key: 'content', label: '品牌与内容' },
   { key: 'businessHours', label: '营业时间' },
   { key: 'images', label: '商家图库' },
+  { key: 'signatureDishes', label: '招牌菜' },
   { key: 'tags', label: '内容标签' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
@@ -1167,6 +1170,10 @@ function backToList() {
             </article>
           </div>
           <p v-else class="empty">暂无内容图库图片，可按类型上传。</p>
+        </section>
+
+        <section id="merchant-section-signatureDishes">
+          <PlatformMerchantSignatureDishesSection :merchant-id="merchantId" />
         </section>
 
         <section id="merchant-section-visibility" class="editor-section-card">

@@ -25,6 +25,7 @@ export class CategoriesService {
         merchantId,
         nameZh: dto.nameZh,
         nameVi: dto.nameVi,
+        nameEn: dto.nameEn,
         sortOrder: dto.sortOrder ?? 0,
       },
     });

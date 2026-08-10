@@ -163,6 +163,7 @@ export interface Product extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string;
   description?: string;
   imageUrl?: string;
   priceVnd: string;
@@ -175,6 +176,7 @@ export interface MenuCategory extends LocalizedFields {
   id: string;
   nameZh: string;
   nameVi?: string;
+  nameEn?: string;
   products: Product[];
 }
 

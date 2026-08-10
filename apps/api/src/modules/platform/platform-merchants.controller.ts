@@ -33,12 +33,21 @@ import {
   UpdateMerchantTagsDto,
 } from './dto/create-display-merchant.dto';
 import { CreateMerchantImageDto, UpdateMerchantImageDto } from './dto/merchant-image.dto';
+import {
+  CreateMerchantSignatureDishDto,
+  MoveMerchantSignatureDishDto,
+  UpdateMerchantSignatureDishDto,
+} from './dto/merchant-signature-dish.dto';
 import { PlatformMerchantsService } from './platform-merchants.service';
+import { PlatformMerchantSignatureDishesService } from './platform-merchant-signature-dishes.service';
 
 @Controller('platform/merchants')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 export class PlatformMerchantsController {
-  constructor(private readonly service: PlatformMerchantsService) {}
+  constructor(
+    private readonly service: PlatformMerchantsService,
+    private readonly signatureDishes: PlatformMerchantSignatureDishesService,
+  ) {}
 
   @Get()
   list(@Query() query: ListPlatformMerchantsQueryDto) {
@@ -160,6 +169,42 @@ export class PlatformMerchantsController {
   @Delete(':id/images/:imageId')
   hideImage(@Param('id') id: string, @Param('imageId') imageId: string) {
     return this.service.hideImage(BigInt(id), BigInt(imageId));
+  }
+
+  @Get(':id/signature-dishes')
+  listSignatureDishes(@Param() params: IdParamDto) {
+    return this.signatureDishes.list(BigInt(params.id));
+  }
+
+  @Post(':id/signature-dishes')
+  createSignatureDish(
+    @Param() params: IdParamDto,
+    @Body() dto: CreateMerchantSignatureDishDto,
+  ) {
+    return this.signatureDishes.create(BigInt(params.id), dto);
+  }
+
+  @Patch(':id/signature-dishes/:dishId')
+  updateSignatureDish(
+    @Param('id') id: string,
+    @Param('dishId') dishId: string,
+    @Body() dto: UpdateMerchantSignatureDishDto,
+  ) {
+    return this.signatureDishes.update(BigInt(id), BigInt(dishId), dto);
+  }
+
+  @Post(':id/signature-dishes/:dishId/move')
+  moveSignatureDish(
+    @Param('id') id: string,
+    @Param('dishId') dishId: string,
+    @Body() dto: MoveMerchantSignatureDishDto,
+  ) {
+    return this.signatureDishes.move(BigInt(id), BigInt(dishId), dto);
+  }
+
+  @Delete(':id/signature-dishes/:dishId')
+  deleteSignatureDish(@Param('id') id: string, @Param('dishId') dishId: string) {
+    return this.signatureDishes.remove(BigInt(id), BigInt(dishId));
   }
 
   @Post(':id/reset-password')

@@ -13,6 +13,12 @@ function trimString(value: unknown) {
   return typeof value === 'string' ? value.trim() : value;
 }
 
+function trimOrNull(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export class UpdateCategoryDto {
   @Transform(({ value }) => trimString(value))
   @IsString()
@@ -25,6 +31,12 @@ export class UpdateCategoryDto {
   @IsNotEmpty()
   @MaxLength(80)
   nameVi: string;
+
+  @Transform(({ value }) => trimOrNull(value))
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  nameEn?: string | null;
 
   @IsOptional()
   @IsInt()

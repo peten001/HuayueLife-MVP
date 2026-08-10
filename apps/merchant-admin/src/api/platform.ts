@@ -16,6 +16,7 @@ import type {
   PlatformCapability,
   PlatformMerchantImage,
   PlatformMerchantImageUploadResult,
+  PlatformMerchantSignatureDish,
   PlatformMerchantImportConfirmResponse,
   PlatformMerchantImportPreviewResponse,
   PlatformMerchantImportRow,
@@ -448,6 +449,56 @@ export async function updatePlatformMerchantImage(
 export async function hidePlatformMerchantImage(id: string, imageId: string) {
   const response = await platformHttp.delete<ApiResponse<PlatformMerchantImage>>(
     `/platform/merchants/${id}/images/${imageId}`,
+  );
+  return response.data.data;
+}
+
+export async function getPlatformMerchantSignatureDishes(id: string) {
+  const response = await platformHttp.get<ApiResponse<{ items: PlatformMerchantSignatureDish[] }>>(
+    `/platform/merchants/${id}/signature-dishes`,
+  );
+  return apiItems<PlatformMerchantSignatureDish>(response.data);
+}
+
+export async function createPlatformMerchantSignatureDish(
+  id: string,
+  payload: Pick<PlatformMerchantSignatureDish, 'nameZh' | 'imageUrl'> &
+    Partial<Pick<PlatformMerchantSignatureDish, 'nameVi' | 'nameEn'>>,
+) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantSignatureDish>>(
+    `/platform/merchants/${id}/signature-dishes`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function updatePlatformMerchantSignatureDish(
+  id: string,
+  dishId: string,
+  payload: Partial<Pick<PlatformMerchantSignatureDish, 'nameZh' | 'nameVi' | 'nameEn' | 'imageUrl' | 'isVisible'>>,
+) {
+  const response = await platformHttp.patch<ApiResponse<PlatformMerchantSignatureDish>>(
+    `/platform/merchants/${id}/signature-dishes/${dishId}`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function movePlatformMerchantSignatureDish(
+  id: string,
+  dishId: string,
+  direction: 'UP' | 'DOWN',
+) {
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantSignatureDish>>(
+    `/platform/merchants/${id}/signature-dishes/${dishId}/move`,
+    { direction },
+  );
+  return response.data.data;
+}
+
+export async function deletePlatformMerchantSignatureDish(id: string, dishId: string) {
+  const response = await platformHttp.delete<ApiResponse<{ id: string; deleted: boolean }>>(
+    `/platform/merchants/${id}/signature-dishes/${dishId}`,
   );
   return response.data.data;
 }

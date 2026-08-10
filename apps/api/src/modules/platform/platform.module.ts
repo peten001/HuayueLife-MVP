@@ -9,6 +9,7 @@ import { PlatformAnalyticsController } from './platform-analytics.controller';
 import { PlatformAnalyticsService } from './platform-analytics.service';
 import { PlatformMerchantsController } from './platform-merchants.controller';
 import { PlatformMerchantsService } from './platform-merchants.service';
+import { PlatformMerchantSignatureDishesService } from './platform-merchant-signature-dishes.service';
 import { PlatformDictionariesController } from './platform-dictionaries.controller';
 import { PlatformDictionariesService } from './platform-dictionaries.service';
 import { PlatformUploadsController } from './platform-uploads.controller';
@@ -43,6 +44,7 @@ import { PrintingModule } from '../printing/printing.module';
     PlatformDictionariesService,
     PlatformUploadsService,
     PlatformMerchantsService,
+    PlatformMerchantSignatureDishesService,
     PlatformOrdersService,
     PlatformUsersService,
   ],

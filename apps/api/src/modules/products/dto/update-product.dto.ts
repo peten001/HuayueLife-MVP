@@ -13,6 +13,12 @@ function trimString(value: unknown) {
   return typeof value === 'string' ? value.trim() : value;
 }
 
+function trimOrNull(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export class UpdateProductDto {
   @IsOptional()
   @IsNumberString({ no_symbols: true })
@@ -29,6 +35,12 @@ export class UpdateProductDto {
   @IsNotEmpty()
   @MaxLength(120)
   nameVi: string;
+
+  @Transform(({ value }) => trimOrNull(value))
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameEn?: string | null;
 
   @IsOptional()
   @IsString()

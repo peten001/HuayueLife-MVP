@@ -70,7 +70,8 @@ const searchResults = computed(() => {
   return normalCategories.value.flatMap((category) =>
     category.products.filter((product) =>
       product.nameZh.toLocaleLowerCase().includes(query)
-      || product.nameVi?.toLocaleLowerCase().includes(query),
+      || product.nameVi?.toLocaleLowerCase().includes(query)
+      || product.nameEn?.toLocaleLowerCase().includes(query),
     ),
   );
 });

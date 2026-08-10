@@ -41,6 +41,7 @@ export class ProductsService {
         categoryId,
         nameZh: dto.nameZh,
         nameVi: dto.nameVi,
+        nameEn: dto.nameEn,
         description: dto.description,
         imageUrl: dto.imageUrl,
         priceVnd: BigInt(dto.priceVnd),
@@ -61,6 +62,7 @@ export class ProductsService {
     const data: Prisma.ProductUpdateInput = {
       nameZh: dto.nameZh,
       nameVi: dto.nameVi,
+      nameEn: dto.nameEn,
       description: dto.description,
       imageUrl: dto.imageUrl,
       priceVnd: dto.priceVnd === undefined ? undefined : BigInt(dto.priceVnd),

@@ -13,7 +13,7 @@ import type { Category } from '@/types/api';
 
 const rows = ref<Category[]>([]);
 const { t } = useI18n();
-const form = reactive({ id: '', nameZh: '', nameVi: '', sortOrder: 0 });
+const form = reactive({ id: '', nameZh: '', nameVi: '', nameEn: '', sortOrder: 0 });
 const message = ref('');
 
 async function load() {
@@ -24,11 +24,12 @@ function edit(row: Category) {
   Object.assign(form, {
     ...row,
     nameVi: row.nameVi ?? '',
+    nameEn: row.nameEn ?? '',
   });
 }
 
 function reset() {
-  Object.assign(form, { id: '', nameZh: '', nameVi: '', sortOrder: 0 });
+  Object.assign(form, { id: '', nameZh: '', nameVi: '', nameEn: '', sortOrder: 0 });
 }
 
 async function save() {
@@ -36,6 +37,7 @@ async function save() {
     const payload = {
       nameZh: form.nameZh.trim(),
       nameVi: form.nameVi.trim(),
+      nameEn: form.nameEn.trim() || null,
       sortOrder: form.sortOrder,
     };
     if (form.id) await updateCategory(form.id, payload);
@@ -68,6 +70,10 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
       {{ t('vietnameseCategoryName') }} <span class="required">{{ t('required') }}</span>
       <input v-model="form.nameVi" :placeholder="t('vietnameseCategoryName')" required />
     </label>
+    <label>
+      英文名称（English，可选）
+      <input v-model="form.nameEn" placeholder="English name" maxlength="80" />
+    </label>
     <input v-model.number="form.sortOrder" type="number" min="0" :placeholder="t('sortOrder')" />
     <button>{{ form.id ? t('saveChanges') : t('addCategory') }}</button>
     <button v-if="form.id" type="button" class="secondary" @click="reset">{{ t('cancel') }}</button>
@@ -78,7 +84,7 @@ onMounted(() => load().catch((error) => (message.value = errorMessage(error))));
       <thead><tr><th>{{ t('category') }}</th><th>{{ t('sortOrder') }}</th><th>{{ t('productCount') }}</th><th>{{ t('status') }}</th><th>{{ t('actions') }}</th></tr></thead>
       <tbody>
         <tr v-for="row in rows" :key="row.id">
-          <td>{{ row.nameZh }}<small>{{ row.nameVi }}</small></td>
+          <td>{{ row.nameZh }}<small>{{ row.nameVi }}</small><small>{{ row.nameEn }}</small></td>
           <td>{{ row.sortOrder }}</td>
           <td>{{ row._count?.products ?? 0 }}</td>
           <td><span :class="['badge', row.isActive ? 'success' : 'muted']">{{ row.isActive ? t('enabled') : t('disable') }}</span></td>

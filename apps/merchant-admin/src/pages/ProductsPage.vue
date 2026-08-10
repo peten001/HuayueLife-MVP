@@ -46,6 +46,7 @@ const categoryForm = reactive({
   id: '',
   nameZh: '',
   nameVi: '',
+  nameEn: '',
   sortOrder: 0,
 });
 
@@ -54,6 +55,7 @@ const productForm = reactive({
   categoryId: '',
   nameZh: '',
   nameVi: '',
+  nameEn: '',
   description: '',
   imageUrl: '',
   priceVnd: 0,
@@ -219,9 +221,11 @@ const filteredProducts = computed(() => {
     return [
       item.nameZh,
       item.nameVi ?? '',
+      item.nameEn ?? '',
       item.description ?? '',
       item.category?.nameZh ?? '',
       item.category?.nameVi ?? '',
+      item.category?.nameEn ?? '',
     ]
       .join(' ')
       .toLowerCase()
@@ -299,6 +303,7 @@ function setTab(tab: ManagementTab) {
 function categoryName(category?: Category | null) {
   if (!category) return '—';
   if (locale.value === 'vi' && category.nameVi) return category.nameVi;
+  if (locale.value === 'en' && category.nameEn) return category.nameEn;
   return category.nameZh;
 }
 
@@ -339,6 +344,7 @@ function resetCategoryForm() {
     id: '',
     nameZh: '',
     nameVi: '',
+    nameEn: '',
     sortOrder: 0,
   });
 }
@@ -349,6 +355,7 @@ function resetProductForm() {
     categoryId: activeCategories.value[0]?.id ?? '',
     nameZh: '',
     nameVi: '',
+    nameEn: '',
     description: '',
     imageUrl: '',
     priceVnd: 0,
@@ -377,6 +384,7 @@ function editCategory(row: Category) {
     id: row.id,
     nameZh: row.nameZh,
     nameVi: row.nameVi ?? '',
+    nameEn: row.nameEn ?? '',
     sortOrder: row.sortOrder,
   });
 }
@@ -388,6 +396,7 @@ function editProduct(row: Product) {
     categoryId: row.categoryId,
     nameZh: row.nameZh,
     nameVi: row.nameVi ?? '',
+    nameEn: row.nameEn ?? '',
     description: row.description ?? '',
     imageUrl: row.imageUrl ?? '',
     priceVnd: Number(row.priceVnd ?? 0),
@@ -426,6 +435,7 @@ async function saveCategory() {
     const payload = {
       nameZh: categoryForm.nameZh.trim(),
       nameVi: categoryForm.nameVi.trim(),
+      nameEn: categoryForm.nameEn.trim() || null,
       sortOrder: categoryForm.sortOrder,
     };
 
@@ -482,6 +492,7 @@ async function enableCategoryRow(row: Category) {
     await updateCategory(row.id, {
       nameZh: row.nameZh,
       nameVi: row.nameVi ?? '',
+      nameEn: row.nameEn ?? null,
       sortOrder: row.sortOrder,
       isActive: true,
     });
@@ -508,6 +519,7 @@ async function saveProduct() {
       categoryId: productForm.categoryId,
       nameZh: productForm.nameZh.trim(),
       nameVi: productForm.nameVi.trim(),
+      nameEn: productForm.nameEn.trim() || null,
       description: productForm.description.trim() || undefined,
       imageUrl: productForm.imageUrl.trim() || undefined,
       priceVnd: productForm.priceVnd,
@@ -718,6 +730,7 @@ onMounted(async () => {
                     <div class="product-copy">
                       <strong>{{ row.nameZh }}</strong>
                       <small>{{ row.nameVi?.trim() || pageCopy.missingVietnamese }}</small>
+                      <small v-if="row.nameEn?.trim()">English: {{ row.nameEn }}</small>
                     </div>
                   </div>
                 </td>
@@ -725,6 +738,7 @@ onMounted(async () => {
                   <div class="category-copy">
                     <strong>{{ row.category?.nameZh || '—' }}</strong>
                     <small>{{ categorySecondaryName(row.category) }}</small>
+                    <small v-if="row.category?.nameEn?.trim()">English: {{ row.category.nameEn }}</small>
                   </div>
                 </td>
                 <td class="numeric-cell">{{ productPrice(row) }}</td>
@@ -826,6 +840,11 @@ onMounted(async () => {
           </label>
 
           <label class="field">
+            <span class="field-label">英文名称（English，可选）</span>
+            <input v-model="categoryForm.nameEn" placeholder="English name" maxlength="80" />
+          </label>
+
+          <label class="field">
             <span class="field-label">{{ t('sortOrder') }}</span>
             <input v-model.number="categoryForm.sortOrder" type="number" min="0" />
             <small class="field-hint">{{ pageCopy.categorySortHint }}</small>
@@ -872,6 +891,7 @@ onMounted(async () => {
                   <div class="category-copy">
                     <strong>{{ row.nameZh }}</strong>
                     <small>{{ row.nameVi?.trim() || pageCopy.missingVietnamese }}</small>
+                    <small v-if="row.nameEn?.trim()">English: {{ row.nameEn }}</small>
                   </div>
                 </td>
                 <td class="numeric-cell">{{ row.sortOrder }}</td>
@@ -958,6 +978,11 @@ onMounted(async () => {
                 <em>{{ t('required') }}</em>
               </span>
               <input v-model="productForm.nameVi" required />
+            </label>
+
+            <label class="field">
+              <span class="field-label">英文名称（English，可选）</span>
+              <input v-model="productForm.nameEn" placeholder="English name" maxlength="120" />
             </label>
 
             <label class="field">

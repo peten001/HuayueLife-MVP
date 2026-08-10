@@ -65,7 +65,15 @@ type PublicMerchantRow = Merchant & {
     sortOrder: number;
     isVisible: boolean;
   }>;
-  categories?: Array<Pick<Category, 'nameZh' | 'nameVi'>>;
+  signatureDishes?: Array<{
+    id: bigint;
+    nameZh: string;
+    nameVi: string | null;
+    nameEn: string | null;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+  categories?: Array<Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>>;
 };
 const OPERATIONAL_REGION_ALIASES: Record<'北江' | '北宁', string[]> = {
   北江: ['北江', 'Bac Giang', 'Bắc Giang', 'BAC_GIANG', 'bac giang', 'bắc giang'],
@@ -122,6 +130,7 @@ export class PublicMerchantsService {
         select: {
           nameZh: true,
           nameVi: true,
+          nameEn: true,
         },
       },
     } satisfies Prisma.MerchantInclude;
@@ -184,6 +193,7 @@ export class PublicMerchantsService {
       select: {
         nameZh: true,
         nameVi: true,
+        nameEn: true,
       },
     });
     return this.serializeMerchant(merchant, categories, null);
@@ -295,6 +305,18 @@ export class PublicMerchantsService {
           where: { isVisible: true },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         },
+        signatureDishes: {
+          where: { isVisible: true },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            nameZh: true,
+            nameVi: true,
+            nameEn: true,
+            imageUrl: true,
+            sortOrder: true,
+          },
+        },
       },
     });
     if (!merchant) {
@@ -348,7 +370,7 @@ export class PublicMerchantsService {
 
   private serializeMerchant(
     merchant: PublicMerchantRow,
-    categories: Array<Pick<Category, 'nameZh' | 'nameVi'>>,
+    categories: Array<Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>>,
     distance: number | null,
   ) {
     const resolvedCapabilities =
@@ -445,8 +467,16 @@ export class PublicMerchantsService {
         titleEn: item.titleEn,
         sortOrder: item.sortOrder,
       })),
+      signatureDishes: (merchant.signatureDishes ?? []).map((item) => ({
+        id: item.id.toString(),
+        nameZh: item.nameZh,
+        nameVi: item.nameVi,
+        nameEn: item.nameEn,
+        imageUrl: item.imageUrl,
+        sortOrder: item.sortOrder,
+      })),
       categoryNames: categories.flatMap((category) =>
-        [category.nameZh, category.nameVi].filter(
+        [category.nameZh, category.nameVi, category.nameEn].filter(
           (value): value is string => Boolean(value),
         ),
       ),
