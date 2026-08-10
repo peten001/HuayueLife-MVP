@@ -13,6 +13,7 @@ import {
   getPlatformMerchantDetail,
   getPlatformPromotionTags,
   getPlatformSettings,
+  hidePlatformMerchantImage,
   openPlatformMerchantAccount,
   resetPlatformMerchantPassword,
   updatePlatformMerchantAccountPhone,
@@ -28,6 +29,7 @@ import type {
   PlatformBusinessType,
   PlatformCapability,
   PlatformMerchantDetailResponse,
+  PlatformMerchantImage,
   PlatformPromotionTag,
   PlatformSettings,
 } from '@/types/api';
@@ -36,8 +38,10 @@ import { resolveMediaUrl } from '@/utils/media';
 type EditorSection =
   | 'profile'
   | 'location'
+  | 'content'
   | 'businessHours'
   | 'images'
+  | 'tags'
   | 'visibility'
   | 'hot'
   | 'capabilities'
@@ -55,9 +59,10 @@ const activeSection = ref<EditorSection>('profile');
 const loading = ref(false);
 const saving = ref(false);
 const uploadingImage = ref(false);
+const imageSavingId = ref<string | null>(null);
 const message = ref('');
 const imageFileInput = ref<HTMLInputElement | null>(null);
-const imageUploadTarget = ref<'COVER' | null>(null);
+const imageUploadTarget = ref<PlatformMerchantImage['imageType'] | null>(null);
 const accountPhoneDialogOpen = ref(false);
 const accountPhoneSaving = ref(false);
 const accountPhoneError = ref('');
@@ -126,6 +131,8 @@ const provinceOptions = ['北江', '北宁'] as const;
 const capabilityValues = reactive<Record<string, boolean>>({});
 const capabilityServerValues = ref<Record<string, boolean>>({});
 const selectedTagIds = ref<string[]>([]);
+const CONTENT_IMAGE_TYPES = ['STORE', 'ENVIRONMENT', 'PRODUCT', 'MENU'] as const;
+const RESERVED_PROMOTION_TAG_CODES = new Set(['HOT_FOOD']);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
 const merchant = computed(() => detail.value?.merchant);
@@ -134,8 +141,10 @@ const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
+  { key: 'content', label: '品牌与内容' },
   { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '封面图片' },
+  { key: 'images', label: '商家图库' },
+  { key: 'tags', label: '内容标签' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
   { key: 'capabilities', label: '能力开关' },
@@ -261,6 +270,17 @@ const selectableBusinessTypes = computed(() => {
 });
 const coverImage = computed(() =>
   merchant.value?.images.find((image) => image.imageType === 'COVER' && image.isVisible),
+);
+const logoImage = computed(() =>
+  merchant.value?.images.find((image) => image.imageType === 'LOGO' && image.isVisible),
+);
+const contentImages = computed(() =>
+  (merchant.value?.images ?? [])
+    .filter((image) => CONTENT_IMAGE_TYPES.includes(image.imageType as (typeof CONTENT_IMAGE_TYPES)[number]))
+    .sort((left, right) => left.sortOrder - right.sortOrder || Number(left.id) - Number(right.id)),
+);
+const contentPromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => tag.enabled && !RESERVED_PROMOTION_TAG_CODES.has(tag.code)),
 );
 const profileRisks = computed(() => {
   const item = merchant.value;
@@ -468,7 +488,7 @@ function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
-function openImagePicker(type: 'COVER') {
+function openImagePicker(type: PlatformMerchantImage['imageType']) {
   imageUploadTarget.value = type;
   imageFileInput.value?.click();
 }
@@ -494,18 +514,29 @@ async function onImageSelected(event: Event) {
   message.value = '';
   try {
     const result = await uploadPlatformMerchantImage(file);
-    const existingImage = coverImage.value;
+    const existingImage = target === 'COVER'
+      ? coverImage.value
+      : target === 'LOGO'
+        ? logoImage.value
+        : undefined;
     const payload = {
       imageType: target,
       imageUrl: result.imageUrl,
       isVisible: true,
+      sortOrder: target === 'COVER' || target === 'LOGO'
+        ? 0
+        : nextContentImageSortOrder(),
     };
     if (existingImage) {
       await updatePlatformMerchantImage(merchantId.value, existingImage.id, payload);
     } else {
       await createPlatformMerchantImage(merchantId.value, payload);
     }
-    message.value = '商家封面已更新';
+    message.value = target === 'LOGO'
+      ? '商家 Logo 已更新'
+      : target === 'COVER'
+        ? '商家封面已更新'
+        : '商家图库图片已添加';
     await loadPage();
   } catch (error) {
     message.value = errorMessage(error);
@@ -513,6 +544,50 @@ async function onImageSelected(event: Event) {
     uploadingImage.value = false;
     input.value = '';
     imageUploadTarget.value = null;
+  }
+}
+
+function nextContentImageSortOrder() {
+  const maxSortOrder = contentImages.value.reduce(
+    (maximum, image) => Math.max(maximum, image.sortOrder),
+    -1,
+  );
+  return maxSortOrder + 1;
+}
+
+async function saveMerchantImage(image: PlatformMerchantImage) {
+  imageSavingId.value = image.id;
+  message.value = '';
+  try {
+    await updatePlatformMerchantImage(merchantId.value, image.id, {
+      imageType: image.imageType,
+      titleZh: image.titleZh ?? '',
+      titleVi: image.titleVi ?? '',
+      titleEn: image.titleEn ?? '',
+      sortOrder: Number(image.sortOrder),
+      isVisible: image.isVisible,
+    });
+    message.value = '图库图片已保存';
+    await loadPage();
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    imageSavingId.value = null;
+  }
+}
+
+async function hideMerchantImage(image: PlatformMerchantImage) {
+  if (!window.confirm('隐藏后该图片不会在前台展示，是否继续？')) return;
+  imageSavingId.value = image.id;
+  message.value = '';
+  try {
+    await hidePlatformMerchantImage(merchantId.value, image.id);
+    message.value = '图库图片已隐藏';
+    await loadPage();
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    imageSavingId.value = null;
   }
 }
 
@@ -550,8 +625,14 @@ async function saveProfile() {
       province: profileForm.province || undefined,
       city: profileForm.province || undefined,
       addressZh: profileForm.addressZh,
+      addressVi: profileForm.addressVi,
+      addressEn: profileForm.addressEn,
       latitude: Number(profileForm.latitude),
       longitude: Number(profileForm.longitude),
+      openingHoursText: profileForm.openingHoursText,
+      descriptionZh: profileForm.descriptionZh,
+      descriptionVi: profileForm.descriptionVi,
+      descriptionEn: profileForm.descriptionEn,
     });
     message.value = '基础资料已保存';
     await loadPage();
@@ -944,11 +1025,30 @@ function backToList() {
           <div class="editor-form-grid">
             <label><span>省份</span><select v-model="profileForm.province"><option value="">未设置</option><option v-for="item in provinceOptions" :key="item" :value="item">{{ item }}</option></select></label>
             <label class="span-3"><span>详细地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
+            <label class="span-3"><span>详细地址（Tiếng Việt）</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
+            <label class="span-3"><span>详细地址（English）</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
             <label><span>纬度</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>纬度示例：21.28</small></label>
             <label><span>经度</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>经度示例：106.20</small></label>
           </div>
           <p class="editor-tip">北江 / 北宁常见纬度为 21.x，经度为 106.x，请勿填反。前台展示商家建议填写准确经纬度，否则用户导航可能不准确。</p>
           <p v-if="hasInvalidCoordinates" class="editor-warning">当前经纬度缺失或疑似无效，可能影响小程序导航。</p>
+        </section>
+
+        <section id="merchant-section-content" class="editor-section-card">
+          <div class="editor-section-head">
+            <div><h2>品牌与内容</h2><p>维护小程序商家详情使用的品牌标识和三语内容</p></div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveProfile">保存品牌与内容</button>
+          </div>
+          <div class="editor-form-grid">
+            <label class="span-3">
+              <span>营业展示文案</span>
+              <input v-model="profileForm.openingHoursText" maxlength="255" placeholder="例如：每天 10:00-22:00" />
+              <small>仅用于用户展示；营业中/休息中仍按结构化营业时间计算。</small>
+            </label>
+            <label class="span-3"><span>商家简介（中文）</span><textarea v-model="profileForm.descriptionZh" rows="4" maxlength="2000" /></label>
+            <label class="span-3"><span>商家简介（Tiếng Việt）</span><textarea v-model="profileForm.descriptionVi" rows="4" maxlength="2000" /></label>
+            <label class="span-3"><span>商家简介（English）</span><textarea v-model="profileForm.descriptionEn" rows="4" maxlength="2000" /></label>
+          </div>
         </section>
 
         <section id="merchant-section-businessHours" class="editor-section-card">
@@ -1004,10 +1104,18 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>封面图片</h2><p>用于小程序和商家列表展示</p></div>
+            <div><h2>商家图库</h2><p>Logo、封面与内容图片分别使用现有商家图片模型维护</p></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
+            <article>
+              <strong>商家 Logo</strong>
+              <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
+              <div v-else class="image-empty">暂无 Logo</div>
+              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('LOGO')">
+                {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : (merchant.logoUrl ? '更换 Logo' : '上传 Logo') }}
+              </button>
+            </article>
             <article>
               <strong>商家封面图片</strong>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
@@ -1017,6 +1125,48 @@ function backToList() {
               </button>
             </article>
           </div>
+          <div class="gallery-head">
+            <div>
+              <h3>内容图库</h3>
+              <p>可添加门头、环境、菜品和菜单图片；隐藏仅取消前台展示，不删除物理文件。</p>
+            </div>
+            <div class="gallery-upload-actions">
+              <button
+                v-for="type in CONTENT_IMAGE_TYPES"
+                :key="type"
+                class="small secondary"
+                type="button"
+                :disabled="uploadingImage"
+                @click="openImagePicker(type)"
+              >
+                {{ uploadingImage && imageUploadTarget === type ? '上传中...' : `上传${type}` }}
+              </button>
+            </div>
+          </div>
+          <p class="editor-tip">STORE：门头/店铺；ENVIRONMENT：店内环境；PRODUCT：菜品展示；MENU：菜单展示。</p>
+          <div v-if="contentImages.length" class="merchant-gallery-grid">
+            <article v-for="image in contentImages" :key="image.id" class="merchant-gallery-card" :class="{ 'is-hidden': !image.isVisible }">
+              <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
+              <div class="merchant-gallery-card-head">
+                <strong>{{ image.imageType }}</strong>
+                <span>{{ image.isVisible ? '展示中' : '已隐藏' }}</span>
+              </div>
+              <label><span>标题（中文）</span><input v-model="image.titleZh" maxlength="120" /></label>
+              <label><span>标题（Tiếng Việt）</span><input v-model="image.titleVi" maxlength="120" /></label>
+              <label><span>标题（English）</span><input v-model="image.titleEn" maxlength="120" /></label>
+              <div class="merchant-gallery-options">
+                <label><span>排序</span><input v-model.number="image.sortOrder" type="number" min="0" step="1" /></label>
+                <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
+              </div>
+              <div class="section-actions">
+                <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
+                  {{ imageSavingId === image.id ? '保存中...' : '保存图片' }}
+                </button>
+                <button v-if="image.isVisible" class="small secondary" type="button" :disabled="imageSavingId === image.id" @click="hideMerchantImage(image)">隐藏</button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="empty">暂无内容图库图片，可按类型上传。</p>
         </section>
 
         <section id="merchant-section-visibility" class="editor-section-card">
@@ -1029,6 +1179,22 @@ function backToList() {
           <div class="editor-section-head"><div><h2>热门推荐</h2><p>当前小程序仅使用 HOT_FOOD 作为热门推荐标签</p></div><button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存热门推荐</button></div>
           <label v-if="hotFoodTag" class="hot-food-card" :class="{ selected: isHotFoodSelected }"><input v-model="isHotFoodSelected" type="checkbox" /><span>{{ hotFoodTag.iconText || '•' }}</span><strong>HOT_FOOD / 热门推荐</strong><em>{{ isHotFoodSelected ? '已加入热门推荐' : '未加入' }}</em></label>
           <p v-else class="empty">HOT_FOOD 推荐标签不存在</p>
+        </section>
+
+        <section id="merchant-section-tags" class="editor-section-card">
+          <div class="editor-section-head">
+            <div><h2>内容标签</h2><p>用于表达商家内容；HOT_FOOD 继续由“热门推荐”独立维护。</p></div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存内容标签</button>
+          </div>
+          <div v-if="contentPromotionTags.length" class="content-tag-picker">
+            <label v-for="tag in contentPromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+              <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
+              <span>{{ tag.iconText || '•' }}</span>
+              <strong>{{ tag.nameZh }}</strong>
+              <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+            </label>
+          </div>
+          <p v-else class="empty">暂无可分配的普通内容标签，请先在标签字典中创建并启用。</p>
         </section>
 
         <section id="merchant-section-capabilities" class="editor-section-card">
@@ -2176,6 +2342,153 @@ function backToList() {
 .editor-form-grid textarea {
   min-height: 96px;
   resize: vertical;
+}
+
+.gallery-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 22px;
+}
+
+.gallery-head h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.gallery-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.gallery-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.merchant-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.merchant-gallery-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbe8df;
+  border-radius: 14px;
+  background: #f8fcf9;
+}
+
+.merchant-gallery-card.is-hidden {
+  opacity: 0.66;
+}
+
+.merchant-gallery-card > img {
+  width: 100%;
+  height: 150px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #eef5f0;
+}
+
+.merchant-gallery-card-head,
+.merchant-gallery-options {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.merchant-gallery-card-head strong {
+  color: #166534;
+  font-size: 13px;
+}
+
+.merchant-gallery-card-head span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.merchant-gallery-card label {
+  display: grid;
+  gap: 5px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.merchant-gallery-card input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d4e2d8;
+  border-radius: 9px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.merchant-gallery-options > label:first-child {
+  width: 104px;
+}
+
+.merchant-gallery-options .switch-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-top: 17px;
+}
+
+.merchant-gallery-options .switch-row input {
+  width: auto;
+  min-height: auto;
+}
+
+.content-tag-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.content-tag-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid #dbe8df;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.content-tag-option.selected {
+  border-color: #86d69a;
+  background: #effaf1;
+}
+
+.content-tag-option strong {
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-tag-option small {
+  grid-column: 3;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-form-grid small {
