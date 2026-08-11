@@ -468,6 +468,16 @@ function isCategoryEnabled(row: Category) {
   return Boolean(row.isActive);
 }
 
+function isSignatureCategory(row: Category) {
+  return Boolean(row.isSignature);
+}
+
+function signatureCategoryLabel() {
+  if (locale.value === 'vi') return 'Danh mục hệ thống';
+  if (locale.value === 'en') return 'System category';
+  return '系统招牌菜';
+}
+
 function getCategoryToggleLabel(row: Category) {
   if (isCategoryEnabled(row)) {
     return t('disable');
@@ -889,7 +899,12 @@ onMounted(async () => {
               <tr v-for="row in sortedCategories" :key="row.id">
                 <td>
                   <div class="category-copy">
-                    <strong>{{ row.nameZh }}</strong>
+                    <div class="category-title-row">
+                      <strong>{{ row.nameZh }}</strong>
+                      <span v-if="isSignatureCategory(row)" class="signature-category-badge">
+                        ⭐ {{ signatureCategoryLabel() }}
+                      </span>
+                    </div>
                     <small>{{ row.nameVi?.trim() || pageCopy.missingVietnamese }}</small>
                     <small v-if="row.nameEn?.trim()">English: {{ row.nameEn }}</small>
                   </div>
@@ -907,6 +922,7 @@ onMounted(async () => {
                       {{ t('edit') }}
                     </button>
                     <button
+                      v-if="!isSignatureCategory(row)"
                       type="button"
                       :class="['text-action', isCategoryEnabled(row) ? 'danger' : 'success']"
                       @click="toggleCategoryRow(row)"
@@ -1551,6 +1567,28 @@ onMounted(async () => {
   border-color: #bbf7d0;
   background: #f0fdf4;
   color: #15803d;
+}
+
+.category-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.signature-category-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .table-footer {

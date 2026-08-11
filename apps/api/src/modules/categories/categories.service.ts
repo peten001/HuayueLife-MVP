@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -32,15 +32,27 @@ export class CategoriesService {
   }
 
   async update(merchantId: bigint, id: bigint, dto: UpdateCategoryDto) {
-    await this.requireOwnedCategory(merchantId, id);
+    const category = await this.requireOwnedCategory(merchantId, id);
+    if (category.isSignature && dto.isActive === false) {
+      throw new BadRequestException('招牌菜分类为系统分类，不能停用或删除；可修改名称和排序。');
+    }
     return this.prisma.category.update({
       where: { id },
-      data: dto,
+      data: {
+        nameZh: dto.nameZh,
+        nameVi: dto.nameVi,
+        nameEn: dto.nameEn,
+        sortOrder: dto.sortOrder,
+        ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
+      },
     });
   }
 
   async disable(merchantId: bigint, id: bigint) {
-    await this.requireOwnedCategory(merchantId, id);
+    const category = await this.requireOwnedCategory(merchantId, id);
+    if (category.isSignature) {
+      throw new BadRequestException('招牌菜分类为系统分类，不能停用或删除；可修改名称和排序。');
+    }
     return this.prisma.$transaction(async (tx) => {
       await tx.product.updateMany({
         where: { merchantId, categoryId: id, status: { not: 'OFF_SALE' } },

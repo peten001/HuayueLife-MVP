@@ -138,6 +138,10 @@ const RESERVED_PROMOTION_TAG_CODES = new Set(['HOT_FOOD']);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
 const merchant = computed(() => detail.value?.merchant);
+const usesMenuSignatureCategory = computed(() =>
+  merchant.value?.merchantMode === 'MANAGED'
+  && merchant.value?.claimStatus === 'CLAIMED',
+);
 const printingSummary = computed(() => detail.value?.printingSummary);
 const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
@@ -1201,7 +1205,10 @@ function backToList() {
         </section>
 
         <section id="merchant-section-signatureDishes">
-          <PlatformMerchantSignatureDishesSection :merchant-id="merchantId" />
+          <PlatformMerchantSignatureDishesSection
+            :merchant-id="merchantId"
+            :uses-menu-signature-category="usesMenuSignatureCategory"
+          />
         </section>
 
         <section id="merchant-section-visibility" class="editor-section-card">

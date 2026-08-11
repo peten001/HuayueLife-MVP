@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MerchantClaimStatus, MerchantMode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CreateMerchantSignatureDishDto,
@@ -28,7 +28,7 @@ export class PlatformMerchantSignatureDishesService {
   }
 
   async create(merchantId: bigint, dto: CreateMerchantSignatureDishDto) {
-    await this.requireMerchant(merchantId);
+    this.assertIndependentSignatureDishWriteAllowed(await this.requireMerchant(merchantId));
     const item = await this.runSerializable(async (tx) => {
       const count = await tx.merchantSignatureDish.count({ where: { merchantId } });
       if (count >= MAX_SIGNATURE_DISHES) {
@@ -57,7 +57,7 @@ export class PlatformMerchantSignatureDishesService {
     dishId: bigint,
     dto: UpdateMerchantSignatureDishDto,
   ) {
-    await this.requireMerchant(merchantId);
+    this.assertIndependentSignatureDishWriteAllowed(await this.requireMerchant(merchantId));
     await this.requireOwnedDish(merchantId, dishId);
     const item = await this.prisma.merchantSignatureDish.update({
       where: { id: dishId },
@@ -77,7 +77,7 @@ export class PlatformMerchantSignatureDishesService {
     dishId: bigint,
     dto: MoveMerchantSignatureDishDto,
   ) {
-    await this.requireMerchant(merchantId);
+    this.assertIndependentSignatureDishWriteAllowed(await this.requireMerchant(merchantId));
     const item = await this.runSerializable(async (tx) => {
       const dishes = await tx.merchantSignatureDish.findMany({
         where: { merchantId },
@@ -104,7 +104,7 @@ export class PlatformMerchantSignatureDishesService {
   }
 
   async remove(merchantId: bigint, dishId: bigint) {
-    await this.requireMerchant(merchantId);
+    this.assertIndependentSignatureDishWriteAllowed(await this.requireMerchant(merchantId));
     await this.requireOwnedDish(merchantId, dishId);
     await this.prisma.merchantSignatureDish.delete({ where: { id: dishId } });
     return { id: dishId.toString(), deleted: true };
@@ -113,10 +113,26 @@ export class PlatformMerchantSignatureDishesService {
   private async requireMerchant(merchantId: bigint) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
-      select: { id: true },
+      select: {
+        id: true,
+        merchantMode: true,
+        claimStatus: true,
+      },
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
     return merchant;
+  }
+
+  private assertIndependentSignatureDishWriteAllowed(merchant: {
+    merchantMode: MerchantMode;
+    claimStatus: MerchantClaimStatus;
+  }) {
+    if (
+      merchant.merchantMode === MerchantMode.MANAGED
+      && merchant.claimStatus === MerchantClaimStatus.CLAIMED
+    ) {
+      throw new BadRequestException('该商家的招牌菜由商家后台菜单中的招牌菜分类维护。');
+    }
   }
 
   private async requireOwnedDish(merchantId: bigint, dishId: bigint) {

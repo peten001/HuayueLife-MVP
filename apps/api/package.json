@@ -16,6 +16,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "backfill:signature-categories": "ts-node --transpile-only scripts/backfill-signature-categories.ts",
     "import:demo-merchant": "ts-node --transpile-only scripts/import-demo-merchant.ts",
     "import:demo-merchant:dry-run": "ts-node --transpile-only scripts/import-demo-merchant.ts --dry-run"
   },

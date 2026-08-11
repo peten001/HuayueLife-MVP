@@ -37,6 +37,7 @@ import {
 } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
 import { AppConfigService } from '../app-config/app-config.service';
+import { SignatureCategoryService } from '../categories/signature-category.service';
 import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
 import {
   hasExplicitUsbExecutionEvidence,
@@ -368,6 +369,7 @@ const BUSINESS_HOURS_RANGE_PATTERN =
 export class PlatformMerchantsService {
   private readonly logger = new Logger(PlatformMerchantsService.name);
   private readonly importSessions = new Map<string, MerchantImportSession>();
+  private readonly signatureCategories: SignatureCategoryService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -375,7 +377,11 @@ export class PlatformMerchantsService {
     private readonly uploads: PlatformUploadsService,
     private readonly appConfig: AppConfigService,
     private readonly printingFlags: PrintingFeatureFlagsService,
-  ) {}
+    signatureCategories?: SignatureCategoryService,
+  ) {
+    this.signatureCategories = signatureCategories
+      ?? new SignatureCategoryService(prisma);
+  }
 
   async list(query: ListPlatformMerchantsQueryDto = {}) {
     await this.dictionaries.ensureDefaults();
@@ -1197,6 +1203,7 @@ export class PlatformMerchantsService {
           merchantMode: MerchantMode.MANAGED,
         },
       });
+      await this.signatureCategories.ensureForClaimedMerchantInTransaction(tx, id);
     });
     return this.findById(id);
   }

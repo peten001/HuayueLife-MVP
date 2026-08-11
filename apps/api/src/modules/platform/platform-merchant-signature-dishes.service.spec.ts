@@ -20,7 +20,21 @@ function fixture() {
     update: jest.fn(async ({ where, data }: any) => { const item = rows.find((x) => x.id === where.id)!; Object.assign(item, data, { updatedAt: now }); return item; }),
     delete: jest.fn(async ({ where }: any) => { const index = rows.findIndex((x) => x.id === where.id); return rows.splice(index, 1)[0]; }),
   };
-  const prisma: any = { merchant: { findUnique: jest.fn(async ({ where }: any) => where.id === 1n || where.id === 2n ? { id: where.id } : null) }, merchantSignatureDish: dish, $transaction: jest.fn(async (cb: any) => cb({ merchantSignatureDish: dish })) };
+  const prisma: any = {
+    merchant: {
+      findUnique: jest.fn(async ({ where }: any) => {
+        if (where.id === 1n || where.id === 2n) {
+          return { id: where.id, merchantMode: 'DISPLAY', claimStatus: 'UNCLAIMED' };
+        }
+        if (where.id === 3n) {
+          return { id: where.id, merchantMode: 'MANAGED', claimStatus: 'CLAIMED' };
+        }
+        return null;
+      }),
+    },
+    merchantSignatureDish: dish,
+    $transaction: jest.fn(async (cb: any) => cb({ merchantSignatureDish: dish })),
+  };
   return { rows, dish, service: new PlatformMerchantSignatureDishesService(prisma) };
 }
 
@@ -71,5 +85,20 @@ describe('PlatformMerchantSignatureDishesService', () => {
     await expect(service.remove(2n, BigInt(a.id))).rejects.toBeInstanceOf(NotFoundException);
     await service.update(1n, BigInt(b.id), { isVisible: true });
     expect(rows.find((x) => x.id === BigInt(b.id))?.isVisible).toBe(true);
+  });
+
+  it('rejects every independent signature-dish write for a MANAGED / CLAIMED merchant while keeping reads available', async () => {
+    const { service } = fixture();
+    const displayDish = await service.create(1n, { nameZh: '展示商家招牌', imageUrl: '/display.png' });
+
+    await expect(service.list(3n)).resolves.toEqual({ items: [] });
+    await expect(service.create(3n, { nameZh: '不能新增', imageUrl: '/blocked.png' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.update(3n, BigInt(displayDish.id), { nameZh: '不能编辑' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.move(3n, BigInt(displayDish.id), { direction: 'UP' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.remove(3n, BigInt(displayDish.id)))
+      .rejects.toBeInstanceOf(BadRequestException);
   });
 });

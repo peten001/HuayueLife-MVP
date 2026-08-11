@@ -195,7 +195,7 @@ export class PublicMerchantsService {
 
   async detail(id: bigint) {
     const merchant = await this.requirePublicMerchant(id);
-    const [categories, hotRecommendations] = await Promise.all([
+    const [categories, hotRecommendations, signatureDishes] = await Promise.all([
       this.prisma.category.findMany({
         where: {
           merchantId: id,
@@ -208,8 +208,15 @@ export class PublicMerchantsService {
         },
       }),
       this.hotRecommendations(id),
+      this.resolveSignatureDishes(merchant),
     ]);
-    return this.serializeMerchant(merchant, categories, null, hotRecommendations);
+    return this.serializeMerchant(
+      merchant,
+      categories,
+      null,
+      hotRecommendations,
+      signatureDishes,
+    );
   }
 
   async menu(id: bigint, tableToken?: string) {
@@ -372,6 +379,7 @@ export class PublicMerchantsService {
     categories: Array<Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>>,
     distance: number | null,
     hotRecommendations: PublicMerchantRow['hotRecommendations'] = [],
+    signatureDishes: NonNullable<PublicMerchantRow['signatureDishes']> = merchant.signatureDishes ?? [],
   ) {
     const resolvedCapabilities =
       this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
@@ -472,7 +480,7 @@ export class PublicMerchantsService {
         titleEn: item.titleEn,
         sortOrder: item.sortOrder,
       })),
-      signatureDishes: (merchant.signatureDishes ?? []).map((item) => ({
+      signatureDishes: signatureDishes.map((item) => ({
         id: item.id.toString(),
         nameZh: item.nameZh,
         nameVi: item.nameVi,
@@ -514,6 +522,42 @@ export class PublicMerchantsService {
     return new Map(
       productSales.map((sale) => [String(sale.productId), sale._sum?.quantity ?? 0]),
     );
+  }
+
+  private async resolveSignatureDishes(
+    merchant: PublicMerchantRow,
+  ): Promise<NonNullable<PublicMerchantRow['signatureDishes']>> {
+    if (!isClaimedMerchant(merchant)) return merchant.signatureDishes ?? [];
+
+    const category = await this.prisma.category.findFirst({
+      where: {
+        merchantId: merchant.id,
+        isSignature: true,
+        isActive: true,
+      },
+      select: {
+        products: {
+          where: {
+            productType: 'FOOD',
+            status: { in: ['ON_SALE', 'SOLD_OUT'] },
+          },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          take: 15,
+          select: {
+            id: true,
+            nameZh: true,
+            nameVi: true,
+            nameEn: true,
+            imageUrl: true,
+            sortOrder: true,
+          },
+        },
+      },
+    });
+    return (category?.products ?? []).map((product) => ({
+      ...product,
+      imageUrl: product.imageUrl ?? '',
+    }));
   }
 
   private async hotRecommendations(merchantId: bigint) {

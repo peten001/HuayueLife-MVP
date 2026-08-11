@@ -1003,6 +1003,58 @@ describe('PlatformMerchantsService merchant account phone', () => {
   });
 });
 
+describe('PlatformMerchantsService claim signature-category provisioning', () => {
+  it('ensures the system signature category inside the existing account-opening transaction', async () => {
+    const merchantUpdate = jest.fn();
+    const merchantStaffCreate = jest.fn();
+    const transaction = {
+      merchant: { update: merchantUpdate },
+      merchantStaff: { create: merchantStaffCreate },
+    };
+    const prisma: any = {
+      merchant: {
+        findUnique: jest.fn(async () => buildMerchant([], {
+          claimStatus: MerchantClaimStatus.UNCLAIMED,
+          merchantMode: MerchantMode.DISPLAY,
+          nameZh: '待认领商家',
+          contactPhone: '0912345678',
+        })),
+      },
+      merchantStaff: {
+        findFirst: jest.fn(async () => null),
+      },
+      $transaction: jest.fn(async (callback: any) => callback(transaction)),
+    };
+    const signatureCategories = {
+      ensureForClaimedMerchantInTransaction: jest.fn(async () => ({ id: 8n })),
+    };
+    const service = new PlatformMerchantsService(
+      prisma,
+      { ensureDefaults: jest.fn() } as never,
+      {} as never,
+      buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
+      signatureCategories as never,
+    );
+    jest.spyOn(service as any, 'findById').mockResolvedValue({ id: '2' });
+
+    await service.openAccount(2n);
+
+    expect(merchantStaffCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ merchantId: 2n, role: StaffRole.OWNER }),
+    }));
+    expect(merchantUpdate).toHaveBeenCalledWith({
+      where: { id: 2n },
+      data: {
+        claimStatus: MerchantClaimStatus.CLAIMED,
+        merchantMode: MerchantMode.MANAGED,
+      },
+    });
+    expect(signatureCategories.ensureForClaimedMerchantInTransaction)
+      .toHaveBeenCalledWith(transaction, 2n);
+  });
+});
+
 describe('PlatformMerchantsService platform business hours', () => {
   let prisma: {
     merchant: {

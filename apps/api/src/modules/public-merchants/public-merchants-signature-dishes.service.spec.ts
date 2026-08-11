@@ -1,6 +1,6 @@
 import { PublicMerchantsService } from './public-merchants.service';
 
-function publicMerchant(signatureDishes: any[]) {
+function publicMerchant(signatureDishes: any[], overrides: Record<string, unknown> = {}) {
   return {
     id: 1n,
     nameZh: '展示商家',
@@ -36,69 +36,134 @@ function publicMerchant(signatureDishes: any[]) {
     capabilities: [],
     images: [],
     signatureDishes,
+    ...overrides,
   };
 }
 
-describe('PublicMerchantsService signature dishes', () => {
-  it('serializes only the public signature dish fields and keeps historical merchants as []', () => {
-    const service = new PublicMerchantsService(
-      {} as never,
-      {
-        resolveCapabilitiesFromMerchant: jest.fn(() => ({ pickupEnabled: false, deliveryEnabled: false })),
-        resolveCapabilityFlag: jest.fn(() => false),
-      } as never,
-      { isPlatformOrderingEnabled: jest.fn(() => false) } as never,
-    );
+function service(categoryFindFirst = jest.fn()) {
+  return new PublicMerchantsService(
+    { category: { findFirst: categoryFindFirst } } as never,
+    {
+      resolveCapabilitiesFromMerchant: jest.fn(() => ({ pickupEnabled: false, deliveryEnabled: false })),
+      resolveCapabilityFlag: jest.fn(() => false),
+    } as never,
+    { isPlatformOrderingEnabled: jest.fn(() => false) } as never,
+  );
+}
 
+describe('PublicMerchantsService signature dishes', () => {
+  it('keeps DISPLAY / UNCLAIMED merchant signature dishes on the independent content source', async () => {
+    const findFirst = jest.fn();
+    const subject = service(findFirst);
     const visible = {
       id: 9n,
-      nameZh: '招牌菜',
+      nameZh: '平台独立招牌菜',
       nameVi: 'Mon dac biet',
       nameEn: 'Signature Dish',
       imageUrl: '/uploads/merchants/signature.png',
       sortOrder: 2,
     };
-    const result = (service as any).serializeMerchant(publicMerchant([visible]), [], null);
-    expect(result.signatureDishes).toEqual([
+    const merchant = publicMerchant([visible]);
+
+    await expect((subject as any).resolveSignatureDishes(merchant)).resolves.toEqual([visible]);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect((subject as any).serializeMerchant(merchant, [], null).signatureDishes).toEqual([
       {
         id: '9',
-        nameZh: '招牌菜',
+        nameZh: '平台独立招牌菜',
         nameVi: 'Mon dac biet',
         nameEn: 'Signature Dish',
         imageUrl: '/uploads/merchants/signature.png',
         sortOrder: 2,
       },
     ]);
-    expect((service as any).serializeMerchant(publicMerchant([]), [], null).signatureDishes).toEqual([]);
   });
 
-  it('queries public detail with an isVisible-only, stable signature dish ordering', async () => {
-    const merchant = publicMerchant([]);
-    const findFirst = jest.fn(async () => merchant);
-    const findMany = jest.fn(async () => []);
-    const service = new PublicMerchantsService(
-      { merchant: { findFirst }, category: { findMany }, orderItem: { groupBy: jest.fn(async () => []) } } as never,
+  it('uses only public products in the active signature category for MANAGED / CLAIMED merchants', async () => {
+    const findFirst = jest.fn(async () => ({
+      products: [
+        {
+          id: 12n,
+          nameZh: '真实菜单菜品',
+          nameVi: 'Món thực đơn',
+          nameEn: 'Menu dish',
+          imageUrl: null,
+          sortOrder: 3,
+        },
+      ],
+    }));
+    const subject = service(findFirst);
+    const merchant = publicMerchant([
       {
-        resolveCapabilitiesFromMerchant: jest.fn(() => ({ pickupEnabled: false, deliveryEnabled: false })),
-        resolveCapabilityFlag: jest.fn(() => false),
-      } as never,
-      { isPlatformOrderingEnabled: jest.fn(() => false) } as never,
-    );
+        id: 99n,
+        nameZh: '历史平台招牌菜',
+        nameVi: null,
+        nameEn: null,
+        imageUrl: '/legacy.png',
+        sortOrder: 0,
+      },
+    ], {
+      merchantMode: 'MANAGED',
+      claimStatus: 'CLAIMED',
+    });
 
-    await service.detail(1n);
-    const calls = (findFirst as jest.Mock).mock.calls as unknown[][];
-    const query = calls[0]?.[0] as any;
-    expect(query.include.signatureDishes).toEqual({
-      where: { isVisible: true },
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    const signatureDishes = await (subject as any).resolveSignatureDishes(merchant);
+
+    expect(signatureDishes).toEqual([
+      {
+        id: 12n,
+        nameZh: '真实菜单菜品',
+        nameVi: 'Món thực đơn',
+        nameEn: 'Menu dish',
+        imageUrl: '',
+        sortOrder: 3,
+      },
+    ]);
+    expect((subject as any).serializeMerchant(merchant, [], null, [], signatureDishes).signatureDishes)
+      .toEqual([
+        {
+          id: '12',
+          nameZh: '真实菜单菜品',
+          nameVi: 'Món thực đơn',
+          nameEn: 'Menu dish',
+          imageUrl: '',
+          sortOrder: 3,
+        },
+      ]);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        merchantId: 1n,
+        isSignature: true,
+        isActive: true,
+      },
       select: {
-        id: true,
-        nameZh: true,
-        nameVi: true,
-        nameEn: true,
-        imageUrl: true,
-        sortOrder: true,
+        products: {
+          where: {
+            productType: 'FOOD',
+            status: { in: ['ON_SALE', 'SOLD_OUT'] },
+          },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          take: 15,
+          select: {
+            id: true,
+            nameZh: true,
+            nameVi: true,
+            nameEn: true,
+            imageUrl: true,
+            sortOrder: true,
+          },
+        },
       },
     });
+  });
+
+  it('returns an empty claimed signature-dish view model when the signature category has no public products', async () => {
+    const subject = service(jest.fn(async () => ({ products: [] })));
+    const merchant = publicMerchant([], {
+      merchantMode: 'MANAGED',
+      claimStatus: 'CLAIMED',
+    });
+
+    await expect((subject as any).resolveSignatureDishes(merchant)).resolves.toEqual([]);
   });
 });

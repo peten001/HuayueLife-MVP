@@ -704,6 +704,7 @@ export interface Category {
   nameEn?: string | null;
   sortOrder: number;
   isActive: boolean;
+  isSignature: boolean;
   _count?: { products: number };
 }
 
