@@ -28,6 +28,8 @@ const error = ref('');
 const errorRetryable = ref(true);
 const loading = ref(true);
 const activeHeroIndex = ref(0);
+const merchantNavStyle = ref<Record<string, string>>({});
+const merchantNavTitle = '商家详情';
 const failedMediaUrls = ref<Set<string>>(new Set());
 const { locale, t } = useI18n();
 const favoriteState = ref(false);
@@ -185,8 +187,43 @@ usePageTitle(() => t('merchantDetailTitle'));
 
 onLoad((options) => {
   merchantId.value = String(options?.id ?? '');
+  syncMerchantNavMetrics();
   void loadMerchant();
 });
+
+type MenuButtonRect = {
+  top?: number;
+  right?: number;
+  width?: number;
+  height?: number;
+};
+
+function finitePositive(value: unknown, fallback = 0) {
+  const resolved = Number(value);
+  return Number.isFinite(resolved) && resolved > 0 ? resolved : fallback;
+}
+
+function getMenuButtonRect(): MenuButtonRect | undefined {
+  const runtime = globalThis as typeof globalThis & {
+    wx?: { getMenuButtonBoundingClientRect?: () => MenuButtonRect };
+  };
+  return runtime.wx?.getMenuButtonBoundingClientRect?.();
+}
+
+function syncMerchantNavMetrics() {
+  const systemInfo = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync();
+  const statusBarHeight = finitePositive(systemInfo.statusBarHeight);
+  const menuButton = getMenuButtonRect();
+  const capsuleTop = finitePositive(menuButton?.top);
+  const capsuleHeight = finitePositive(menuButton?.height);
+  const capsuleTopGap = capsuleTop > statusBarHeight ? capsuleTop - statusBarHeight : 0;
+  const navContentHeight = Math.max(44, capsuleHeight ? capsuleHeight + capsuleTopGap * 2 : 44);
+
+  merchantNavStyle.value = {
+    '--merchant-status-bar-height': `${statusBarHeight}px`,
+    '--merchant-nav-content-height': `${navContentHeight}px`,
+  };
+}
 
 async function loadMerchant() {
   loading.value = true;
@@ -524,17 +561,20 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 <template>
   <view :class="['page', { 'has-order-actions': hasBottomCta }]">
-    <view v-if="loading" class="loading-state">
-      <view class="loading-nav">
+    <view class="merchant-nav" :style="merchantNavStyle">
+      <view class="merchant-nav-row">
         <button
-          class="hero-button hero-back"
+          class="merchant-nav-back"
           hover-class="is-pressed"
           :aria-label="t('back')"
           @tap="handleBack"
         >
-          <image class="hero-control-icon" :src="uiIcons.arrowLeft" mode="aspectFit" />
+          <view class="merchant-nav-back-icon" />
         </button>
+        <text class="merchant-nav-title">{{ merchantNavTitle }}</text>
       </view>
+    </view>
+    <view v-if="loading" class="loading-state">
       <view class="loading-hero" />
       <view class="loading-overview">
         <view class="loading-copy">
@@ -599,14 +639,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
 
         <view class="hero-controls">
-          <button
-            class="hero-button hero-back"
-            hover-class="is-pressed"
-            :aria-label="t('back')"
-            @tap="handleBack"
-          >
-            <image class="hero-control-icon" :src="uiIcons.arrowLeft" mode="aspectFit" />
-          </button>
           <view class="hero-controls-right">
             <button
               class="hero-button"
@@ -861,18 +893,73 @@ function hasCapability(code: string, fallbackValue: boolean) {
   padding-bottom: calc(164rpx + env(safe-area-inset-bottom));
 }
 
-.loading-state {
+.merchant-nav {
   position: relative;
-  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 24rpx 48rpx;
+  z-index: 3;
+  padding-top: var(--merchant-status-bar-height, env(safe-area-inset-top));
+  border-bottom: 1rpx solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 2rpx 10rpx rgb(31 45 36 / 3%);
 }
 
-.loading-nav {
-  position: absolute;
-  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 28rpx);
-  left: 36rpx;
-  z-index: 2;
+.merchant-nav-row {
+  position: relative;
+  height: var(--merchant-nav-content-height, 88rpx);
   display: flex;
   align-items: center;
+}
+
+.merchant-nav-back {
+  width: 88rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  margin: 0 0 0 12rpx;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 44rpx;
+  color: var(--ink);
+  background: transparent;
+  transition: transform 160ms ease, opacity 160ms ease;
+  box-sizing: border-box;
+}
+
+.merchant-nav-back::after {
+  border: 0;
+}
+
+.merchant-nav-back-icon {
+  width: 22rpx;
+  height: 22rpx;
+  border-bottom: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  transform: rotate(45deg);
+  box-sizing: border-box;
+}
+
+.merchant-nav-title {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.loading-state {
+  position: relative;
+  padding: 12rpx 24rpx 48rpx;
 }
 
 .loading-hero,
@@ -943,9 +1030,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .error-state {
-  min-height: calc(100vh - var(--status-bar-height, 0px));
+  min-height: 100vh;
   display: flex;
-  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 80rpx) 48rpx 80rpx;
+  padding: 80rpx 48rpx;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -1010,7 +1097,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero-shell {
   position: relative;
-  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 20rpx 0;
+  padding: 12rpx 20rpx 0;
   background: var(--surface);
 }
 
@@ -1071,9 +1158,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero-controls {
   position: absolute;
-  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 28rpx);
+  top: 28rpx;
   right: 36rpx;
-  left: 36rpx;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -1081,15 +1167,13 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-controls-right {
-  position: absolute;
-  top: 104rpx;
-  right: 0;
   display: flex;
   align-items: center;
   gap: 14rpx;
 }
 
 .hero-button,
+.merchant-nav-back,
 .thumbnail-button,
 .bottom-action,
 .address-nav,
@@ -1098,6 +1182,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-button,
+.merchant-nav-back,
 .thumbnail-button,
 .bottom-action,
 .address-nav {
@@ -1107,6 +1192,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-button::after,
+.merchant-nav-back::after,
 .thumbnail-button::after,
 .bottom-action::after,
 .address-nav::after,
@@ -1129,12 +1215,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   box-shadow: var(--control-shadow);
   font-size: 38rpx;
   line-height: 1;
-}
-
-.hero-back {
-  padding-bottom: 6rpx;
-  font-size: 58rpx;
-  font-weight: 300;
 }
 
 .hero-button.is-favorite {
@@ -1615,6 +1695,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-button.is-pressed,
+.merchant-nav-back.is-pressed,
 .thumbnail-button.is-pressed,
 .bottom-action.is-pressed,
 .address-nav.is-pressed,
@@ -1644,6 +1725,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
   }
 
   .hero-button,
+  .merchant-nav-back,
   .thumbnail-button,
   .bottom-action,
   .address-nav,
@@ -1671,12 +1753,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-state {
-  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 8rpx) 16rpx 40rpx;
-}
-
-.loading-nav {
-  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 20rpx);
-  left: 28rpx;
+  padding: 8rpx 16rpx 40rpx;
 }
 
 .loading-hero {
@@ -1699,7 +1776,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-shell {
-  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 8rpx) 16rpx 0;
+  padding: 8rpx 16rpx 0;
 }
 
 .hero,
@@ -1712,13 +1789,11 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero-controls {
-  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 20rpx);
+  top: 20rpx;
   right: 28rpx;
-  left: 28rpx;
 }
 
 .hero-controls-right {
-  top: 82rpx;
   gap: 10rpx;
 }
 
@@ -1730,7 +1805,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   box-shadow: 0 5rpx 16rpx rgb(0 0 0 / 14%);
 }
 
-.hero-back,
 .hero-share {
   padding: 0;
 }
