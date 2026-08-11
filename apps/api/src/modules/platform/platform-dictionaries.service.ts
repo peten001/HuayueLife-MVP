@@ -16,10 +16,9 @@ export class PlatformDictionariesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async ensureDefaults() {
-    const [businessTypeCount, promotionTagCount, capabilityCount] = await Promise.all([
+    const [businessTypeCount, promotionTagCount] = await Promise.all([
       this.prisma.merchantBusinessType.count(),
       this.prisma.promotionTag.count(),
-      this.prisma.capability.count(),
     ]);
 
     if (businessTypeCount === 0) {
@@ -37,12 +36,12 @@ export class PlatformDictionariesService {
         skipDuplicates: true,
       });
     }
-    if (capabilityCount === 0) {
-      await this.prisma.capability.createMany({
-        data: DEFAULT_CAPABILITIES,
-        skipDuplicates: true,
-      });
-    }
+    // Capability codes are a fixed platform dictionary. Always provision missing
+    // rows so additive capabilities also reach already-initialized environments.
+    await this.prisma.capability.createMany({
+      data: DEFAULT_CAPABILITIES,
+      skipDuplicates: true,
+    });
     await this.prisma.merchantBusinessType.updateMany({
       where: { code: 'FOOD_SERVICE' },
       data: { showOnHome: false },

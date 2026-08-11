@@ -77,7 +77,7 @@ describe('PublicMerchantsService signature dishes', () => {
     const findFirst = jest.fn(async () => merchant);
     const findMany = jest.fn(async () => []);
     const service = new PublicMerchantsService(
-      { merchant: { findFirst }, category: { findMany } } as never,
+      { merchant: { findFirst }, category: { findMany }, orderItem: { groupBy: jest.fn(async () => []) } } as never,
       {
         resolveCapabilitiesFromMerchant: jest.fn(() => ({ pickupEnabled: false, deliveryEnabled: false })),
         resolveCapabilityFlag: jest.fn(() => false),

@@ -73,6 +73,16 @@ type PublicMerchantRow = Merchant & {
     imageUrl: string;
     sortOrder: number;
   }>;
+  hotRecommendations?: Array<{
+    id: bigint;
+    nameZh: string;
+    nameVi: string | null;
+    nameEn: string | null;
+    imageUrl: string | null;
+    priceVnd: bigint;
+    salesCount: number;
+    hotRank: number;
+  }>;
   categories?: Array<Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>>;
 };
 const OPERATIONAL_REGION_ALIASES: Record<'北江' | '北宁', string[]> = {
@@ -185,18 +195,21 @@ export class PublicMerchantsService {
 
   async detail(id: bigint) {
     const merchant = await this.requirePublicMerchant(id);
-    const categories = await this.prisma.category.findMany({
-      where: {
-        merchantId: id,
-        isActive: true,
-      },
-      select: {
-        nameZh: true,
-        nameVi: true,
-        nameEn: true,
-      },
-    });
-    return this.serializeMerchant(merchant, categories, null);
+    const [categories, hotRecommendations] = await Promise.all([
+      this.prisma.category.findMany({
+        where: {
+          merchantId: id,
+          isActive: true,
+        },
+        select: {
+          nameZh: true,
+          nameVi: true,
+          nameEn: true,
+        },
+      }),
+      this.hotRecommendations(id),
+    ]);
+    return this.serializeMerchant(merchant, categories, null, hotRecommendations);
   }
 
   async menu(id: bigint, tableToken?: string) {
@@ -207,7 +220,7 @@ export class PublicMerchantsService {
     if (!this.canShowMenu(merchant)) {
       throw new GoneException('该商家暂未开通菜单/下单功能');
     }
-    const [categories, productSales] = await Promise.all([
+    const [categories, salesByProductId] = await Promise.all([
       this.prisma.category.findMany({
         where: {
           merchantId: id,
@@ -224,22 +237,8 @@ export class PublicMerchantsService {
         },
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       }),
-      this.prisma.orderItem.groupBy({
-        by: ['productId'],
-        where: {
-          productId: { not: null },
-          order: {
-            merchantId: id,
-            status: 'COMPLETED',
-            orderType: { in: SALES_ORDER_TYPES },
-          },
-        },
-        _sum: { quantity: true },
-      }),
+      this.salesByProductId(id),
     ]);
-    const salesByProductId = new Map(
-      productSales.map((sale) => [String(sale.productId), sale._sum?.quantity ?? 0]),
-    );
     const categoriesWithSales = categories.map(({ products, ...category }) => ({
       ...category,
       products: products.map((product) => ({
@@ -372,6 +371,7 @@ export class PublicMerchantsService {
     merchant: PublicMerchantRow,
     categories: Array<Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>>,
     distance: number | null,
+    hotRecommendations: PublicMerchantRow['hotRecommendations'] = [],
   ) {
     const resolvedCapabilities =
       this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
@@ -381,10 +381,11 @@ export class PublicMerchantsService {
       false,
     );
     const platformOrderingEnabled = this.appConfig.isPlatformOrderingEnabled();
-    const pickupEnabled = platformOrderingEnabled
+    const claimedMerchant = isClaimedMerchant(merchant);
+    const pickupEnabled = platformOrderingEnabled && claimedMerchant
       ? resolvedCapabilities.pickupEnabled
       : false;
-    const deliveryEnabled = platformOrderingEnabled
+    const deliveryEnabled = platformOrderingEnabled && claimedMerchant
       ? resolvedCapabilities.deliveryEnabled
       : false;
     const dineInEnabled = platformOrderingEnabled
@@ -423,7 +424,7 @@ export class PublicMerchantsService {
       distanceKm: distance === null ? null : Number(distance.toFixed(2)),
       isOpen: isMerchantOpen(merchant),
       supportedOrderTypes: platformOrderingEnabled
-        ? supportedOrderTypes(merchant, resolvedCapabilities)
+        ? supportedOrderTypes(merchant, { pickupEnabled, deliveryEnabled })
         : [],
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
@@ -448,16 +449,20 @@ export class PublicMerchantsService {
         iconText: item.promotionTag.iconText,
         color: item.promotionTag.color,
       })),
-      capabilities: (merchant.capabilities ?? []).map((item) => ({
-        id: item.capability.id.toString(),
-        code: item.capability.code,
-        nameZh: item.capability.nameZh,
-        nameVi: item.capability.nameVi,
-        nameEn: item.capability.nameEn,
-        isEnabled: platformOrderingEnabled || !isOrderingCapabilityCode(item.capability.code)
-          ? item.isEnabled
-          : false,
-      })),
+      capabilities: (merchant.capabilities ?? []).map((item) => {
+        const orderingAllowed = platformOrderingEnabled
+          || !isOrderingCapabilityCode(item.capability.code);
+        const claimedOnlyAllowed = !isClaimedOnlyOrderingCapability(item.capability.code)
+          || claimedMerchant;
+        return {
+          id: item.capability.id.toString(),
+          code: item.capability.code,
+          nameZh: item.capability.nameZh,
+          nameVi: item.capability.nameVi,
+          nameEn: item.capability.nameEn,
+          isEnabled: orderingAllowed && claimedOnlyAllowed ? item.isEnabled : false,
+        };
+      }),
       images: (merchant.images ?? []).map((item) => ({
         id: item.id.toString(),
         imageType: item.imageType,
@@ -475,12 +480,89 @@ export class PublicMerchantsService {
         imageUrl: item.imageUrl,
         sortOrder: item.sortOrder,
       })),
+      hotRecommendations: (hotRecommendations ?? []).map((item) => ({
+        id: item.id.toString(),
+        nameZh: item.nameZh,
+        nameVi: item.nameVi,
+        nameEn: item.nameEn,
+        imageUrl: item.imageUrl,
+        priceVnd: item.priceVnd.toString(),
+        salesCount: item.salesCount,
+        hotRank: item.hotRank,
+      })),
       categoryNames: categories.flatMap((category) =>
         [category.nameZh, category.nameVi, category.nameEn].filter(
           (value): value is string => Boolean(value),
         ),
       ),
     };
+  }
+
+  private async salesByProductId(merchantId: bigint) {
+    const productSales = await this.prisma.orderItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { not: null },
+        order: {
+          merchantId,
+          status: 'COMPLETED',
+          orderType: { in: SALES_ORDER_TYPES },
+        },
+      },
+      _sum: { quantity: true },
+    });
+    return new Map(
+      productSales.map((sale) => [String(sale.productId), sale._sum?.quantity ?? 0]),
+    );
+  }
+
+  private async hotRecommendations(merchantId: bigint) {
+    const [categories, salesByProductId] = await Promise.all([
+      this.prisma.category.findMany({
+        where: { merchantId, isActive: true },
+        include: {
+          products: {
+            where: {
+              productType: 'FOOD',
+              status: { in: ['ON_SALE', 'SOLD_OUT'] },
+            },
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      }),
+      this.salesByProductId(merchantId),
+    ]);
+    const candidates: Array<{
+      product: (typeof categories)[number]['products'][number];
+      index: number;
+    }> = [];
+    categories.forEach((category) => {
+      if (isHotRecommendationCategory(category.nameZh)) return;
+      category.products.forEach((product) => {
+        if ((salesByProductId.get(String(product.id)) ?? 0) > 0) {
+          candidates.push({ product, index: candidates.length });
+        }
+      });
+    });
+    return candidates
+      .sort(
+        (left, right) =>
+          (salesByProductId.get(String(right.product.id)) ?? 0) -
+            (salesByProductId.get(String(left.product.id)) ?? 0) ||
+          left.index - right.index,
+      )
+      .slice(0, 8)
+      .map(({ product }, index) => ({
+        id: product.id,
+        nameZh: product.nameZh,
+        nameVi: product.nameVi,
+        nameEn: product.nameEn,
+        imageUrl: product.imageUrl,
+        priceVnd: product.priceVnd,
+        salesCount: salesByProductId.get(String(product.id)) ?? 0,
+        hotRank: index + 1,
+      }));
   }
 
   private canShowMenu(merchant: PublicMerchantRow) {
@@ -508,6 +590,18 @@ export class PublicMerchantsService {
       || resolvedCapabilities.deliveryEnabled,
     );
   }
+}
+
+function isHotRecommendationCategory(nameZh: string) {
+  return ['米饭', '饮料', '饮品', '酒水'].some((keyword) => nameZh.includes(keyword));
+}
+
+function isClaimedMerchant(merchant: PublicMerchantRow) {
+  return merchant.merchantMode === 'MANAGED' && merchant.claimStatus === 'CLAIMED';
+}
+
+function isClaimedOnlyOrderingCapability(code: string) {
+  return code === 'pickupEnabled' || code === 'deliveryEnabled';
 }
 
 function supportedOrderTypes(

@@ -3,8 +3,10 @@ import { computed, ref } from 'vue';
 import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app';
 import { getMerchant } from '@/api/catalog';
 import {
+  formatNumberCurrency,
+  localizedName,
+  localizedText,
   merchantName,
-  orderTypeLabel,
   useI18n,
   usePageTitle,
 } from '@/i18n';
@@ -16,15 +18,23 @@ import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { wgs84ToGcj02 } from '@/utils/coordinates';
 import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
+import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
 
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
 const merchant = ref<MerchantDetail | null>(null);
 const merchantId = ref('');
 const error = ref('');
+const errorRetryable = ref(true);
+const loading = ref(true);
+const activeHeroIndex = ref(0);
+const failedMediaUrls = ref<Set<string>>(new Set());
 const { locale, t } = useI18n();
 const favoriteState = ref(false);
 const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
+const capabilityByCode = computed(() =>
+  new Map((merchant.value?.capabilities ?? []).map((item) => [item.code, item])),
+);
 const enabledCapabilityCodes = computed(() =>
   new Set(
     (merchant.value?.capabilities ?? [])
@@ -33,61 +43,155 @@ const enabledCapabilityCodes = computed(() =>
   ),
 );
 const hasCapabilityRecords = computed(() => Boolean(merchant.value?.capabilities?.length));
-const canPhone = computed(() => hasCapability('phoneEnabled', true));
-const canNavigate = computed(() => hasCapability('navigationEnabled', true));
+const canPhone = computed(() =>
+  Boolean(merchant.value?.contactPhone?.trim()) && hasCapability('phoneEnabled', true),
+);
+const canNavigate = computed(() =>
+  Boolean(merchantLocation()) && hasCapability('navigationEnabled', true),
+);
 const canShowGallery = computed(() => hasCapability('imageGalleryEnabled', true));
-const canPickup = computed(() =>
-  appConfig.platformOrderingEnabled &&
-  (hasCapabilityRecords.value
-    ? (merchant.value?.pickupEnabled ?? enabledCapabilityCodes.value.has('pickupEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('PICKUP'))),
+const orderingVisibility = computed(() =>
+  resolveMerchantOrderingVisibility({
+    merchantMode: merchant.value?.merchantMode,
+    claimStatus: merchant.value?.claimStatus,
+    isOpen: Boolean(merchant.value?.isOpen),
+    platformOrderingEnabled: appConfig.platformOrderingEnabled,
+    hasCapabilityRecords: hasCapabilityRecords.value,
+    pickupEnabled: merchant.value?.pickupEnabled,
+    deliveryEnabled: merchant.value?.deliveryEnabled,
+    dineInEnabled: merchant.value?.dineInEnabled,
+    qrOrderEnabled: merchant.value?.qrOrderEnabled,
+    enabledCapabilityCodes: enabledCapabilityCodes.value,
+    supportedOrderTypes: merchant.value?.supportedOrderTypes ?? [],
+  }),
 );
-const canDelivery = computed(() =>
-  appConfig.platformOrderingEnabled &&
-  (hasCapabilityRecords.value
-    ? (merchant.value?.deliveryEnabled ?? enabledCapabilityCodes.value.has('deliveryEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('DELIVERY'))),
-);
-const hasDineInTag = computed(() =>
-  appConfig.platformOrderingEnabled &&
-  (merchant.value?.dineInEnabled ?? Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN'))),
-);
-const canScanOrder = computed(() =>
-  appConfig.platformOrderingEnabled &&
-  (hasCapabilityRecords.value
-    ? (merchant.value?.qrOrderEnabled ?? enabledCapabilityCodes.value.has('qrOrderEnabled'))
-    : Boolean(merchant.value?.supportedOrderTypes.includes('DINE_IN'))),
-);
-const visibleOrderTypes = computed(() =>
-  appConfig.platformOrderingEnabled
-    ? merchant.value?.supportedOrderTypes.filter((item) => item !== 'DINE_IN') ?? []
-    : [],
-);
+const canOpenPickup = computed(() => orderingVisibility.value.pickupCtaVisible);
+const canOpenDelivery = computed(() => orderingVisibility.value.deliveryCtaVisible);
+const hasBottomCta = computed(() => canOpenPickup.value || canOpenDelivery.value);
 const displayAddress = computed(() => {
   if (!merchant.value) return '';
-  if (locale.value === 'vi') return merchant.value.addressVi || merchant.value.addressDetail;
-  if (locale.value === 'en') return merchant.value.addressEn || merchant.value.addressDetail;
-  return merchant.value.addressZh || merchant.value.addressDetail;
+  if (locale.value === 'vi') {
+    return merchant.value.addressVi || merchant.value.addressZh || merchant.value.addressEn || merchant.value.addressDetail;
+  }
+  if (locale.value === 'en') {
+    return merchant.value.addressEn || merchant.value.addressVi || merchant.value.addressZh || merchant.value.addressDetail;
+  }
+  return merchant.value.addressZh || merchant.value.addressVi || merchant.value.addressEn || merchant.value.addressDetail;
 });
 const displayDescription = computed(() => {
   if (!merchant.value) return '';
-  if (locale.value === 'vi') return merchant.value.descriptionVi || merchant.value.descriptionZh || '';
-  if (locale.value === 'en') return merchant.value.descriptionEn || merchant.value.descriptionZh || '';
-  return merchant.value.descriptionZh || merchant.value.notice || '';
+  return localizedText(merchant.value, locale.value);
 });
-const displayTags = computed(() => merchant.value?.promotionTags?.map((item) => item.nameZh) ?? []);
-const galleryImages = computed(() =>
+const displayBusinessType = computed(() =>
+  merchant.value?.businessType ? localizedName(merchant.value.businessType, locale.value) : '',
+);
+const displayTags = computed(() =>
+  merchant.value?.promotionTags
+    ?.map((item) => localizedName(item, locale.value))
+    .filter(Boolean) ?? [],
+);
+const contentImages = computed(() =>
   canShowGallery.value
     ? (merchant.value?.images ?? []).filter((item) =>
-        ['STORE', 'ENVIRONMENT', 'PRODUCT', 'MENU'].includes(item.imageType),
+        ['STORE', 'ENVIRONMENT'].includes(item.imageType),
       )
     : [],
 );
+const heroImages = computed(() => {
+  const urls: string[] = [];
+  const append = (url?: string | null) => {
+    const resolved = resolveMediaUrl(url ?? undefined);
+    if (resolved && !urls.includes(resolved)) urls.push(resolved);
+  };
+  append(merchant.value?.coverUrl);
+  contentImages.value
+    .filter((item) => item.imageType === 'STORE')
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+    .forEach((item) => append(item.imageUrl));
+  return urls;
+});
+const environmentImages = computed(() => {
+  const heroUrls = new Set(heroImages.value);
+  const urls: string[] = [];
+  contentImages.value
+    .filter((item) => item.imageType === 'ENVIRONMENT')
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+    .forEach((item) => {
+      const resolved = resolveMediaUrl(item.imageUrl);
+      if (resolved && !heroUrls.has(resolved) && !urls.includes(resolved)) urls.push(resolved);
+    });
+  return urls;
+});
+const signatureDishes = computed(() => merchant.value?.signatureDishes ?? []);
+const hotRecommendations = computed(() => merchant.value?.hotRecommendations ?? []);
+const uiIcons = {
+  arrowLeft: '/static/merchant-detail-icons/arrow-left-white.png',
+  heart: '/static/merchant-detail-icons/heart-white.png',
+  heartActive: '/static/merchant-detail-icons/heart-warm.png',
+  heartGreen: '/static/merchant-detail-icons/heart-green.png',
+  share: '/static/merchant-detail-icons/share-2-white.png',
+  merchantProfile: '/static/merchant-detail-icons/door-open-green.png',
+  phone: '/static/merchant-detail-icons/phone-green.png',
+  navigation: '/static/merchant-detail-icons/navigation-green.png',
+  mapPin: '/static/merchant-detail-icons/map-pin-green.png',
+  pickup: '/static/merchant-detail-icons/package-check-green.png',
+  pickupWhite: '/static/merchant-detail-icons/package-check-white.png',
+  delivery: '/static/merchant-detail-icons/bike-green.png',
+  deliveryWhite: '/static/merchant-detail-icons/bike-white.png',
+} as const;
+const serviceCapabilities = computed(() => {
+  const items: Array<{ code: string; icon: string; label: string }> = [];
+  appendDictionaryCapability(
+    items,
+    'chineseServiceEnabled',
+    '/static/merchant-detail-icons/languages-green.png',
+    t('chineseService'),
+  );
+  appendDictionaryCapability(
+    items,
+    'privateRoomEnabled',
+    '/static/merchant-detail-icons/door-open-green.png',
+    t('privateRooms'),
+  );
+  appendDictionaryCapability(
+    items,
+    'airConditioningEnabled',
+    '/static/merchant-detail-icons/air-vent-green.png',
+    t('airConditioned'),
+  );
+  appendDictionaryCapability(
+    items,
+    'freeWifiEnabled',
+    '/static/merchant-detail-icons/wifi-green.png',
+    t('freeWifi'),
+  );
+  if (orderingVisibility.value.pickupFacilityVisible) {
+    items.push({ code: 'pickupEnabled', icon: uiIcons.pickup, label: t('supportsPickup') });
+  }
+  if (orderingVisibility.value.deliveryFacilityVisible) {
+    items.push({ code: 'deliveryEnabled', icon: uiIcons.delivery, label: t('supportsDelivery') });
+  }
+  if (orderingVisibility.value.qrFacilityVisible) {
+    items.push({
+      code: 'qrOrderEnabled',
+      icon: '/static/merchant-detail-icons/qr-code-green.png',
+      label: t('supportsQrOrder'),
+    });
+  }
+  return items;
+});
 
 usePageTitle(() => t('merchantDetailTitle'));
 
-onLoad(async (options) => {
+onLoad((options) => {
   merchantId.value = String(options?.id ?? '');
+  void loadMerchant();
+});
+
+async function loadMerchant() {
+  loading.value = true;
+  error.value = '';
+  errorRetryable.value = true;
   try {
     const [loadedMerchant] = await Promise.all([
       getMerchant(merchantId.value),
@@ -104,11 +208,60 @@ onLoad(async (options) => {
       message.includes('商家不可用')
     ) {
       error.value = t('merchantUnavailable');
+      errorRetryable.value = false;
       return;
     }
-    error.value = caught instanceof Error ? caught.message : t('merchantLoadFailed');
+    error.value = t('merchantLoadFailed');
+  } finally {
+    loading.value = false;
   }
-});
+}
+
+function appendDictionaryCapability(
+  items: Array<{ code: string; icon: string; label: string }>,
+  code: string,
+  icon: string,
+  fallbackLabel: string,
+) {
+  const capability = capabilityByCode.value.get(code);
+  if (!capability?.isEnabled) return;
+  items.push({
+    code,
+    icon,
+    label: localizedName(capability, locale.value) || fallbackLabel,
+  });
+}
+
+function handleHeroChange(event: { detail?: { current?: number } }) {
+  const current = Number(event.detail?.current ?? 0);
+  activeHeroIndex.value = Number.isFinite(current) ? current : 0;
+}
+
+function selectHeroImage(index: number) {
+  activeHeroIndex.value = index;
+}
+
+function handleBack() {
+  const pages = getCurrentPages();
+  if (pages.length > 1) {
+    uni.navigateBack();
+    return;
+  }
+  uni.reLaunch({ url: '/pages/home/index' });
+}
+
+function handleMediaError(url?: string | null) {
+  const resolved = resolveMediaUrl(url ?? undefined);
+  if (!resolved) return;
+  const next = new Set(failedMediaUrls.value);
+  next.add(resolved);
+  failedMediaUrls.value = next;
+}
+
+function mediaAvailable(url?: string | null) {
+  const resolved = resolveMediaUrl(url ?? undefined);
+  return Boolean(resolved && !failedMediaUrls.value.has(resolved));
+}
 
 function merchantShareTitle() {
   return merchantName(merchant.value, locale.value) || '云桥 Life';
@@ -349,6 +502,20 @@ function handlePhoneTap() {
   });
 }
 
+function previewGallery(imageUrl?: string | null) {
+  const current = resolveMediaUrl(imageUrl ?? undefined);
+  const urls = heroImages.value.filter((url) => mediaAvailable(url));
+  if (!urls.length || !current || !urls.includes(current)) return;
+  uni.previewImage({ current, urls });
+}
+
+function previewEnvironment(imageUrl?: string | null) {
+  const current = resolveMediaUrl(imageUrl ?? undefined);
+  const urls = environmentImages.value.filter((url) => mediaAvailable(url));
+  if (!urls.length || !current || !urls.includes(current)) return;
+  uni.previewImage({ current, urls });
+}
+
 function hasCapability(code: string, fallbackValue: boolean) {
   if (!hasCapabilityRecords.value) return fallbackValue;
   return enabledCapabilityCodes.value.has(code);
@@ -356,121 +523,508 @@ function hasCapability(code: string, fallbackValue: boolean) {
 </script>
 
 <template>
-  <view class="page">
-    <view v-if="error" class="error">{{ error }}</view>
-    <template v-else-if="merchant">
-      <view class="cover-wrap">
-        <image
-          v-if="resolveMediaUrl(merchant.coverUrl)"
-          class="cover"
-          :src="resolveMediaUrl(merchant.coverUrl)"
-          mode="aspectFill"
-        />
-        <view v-else class="cover placeholder">
-          <view class="placeholder-mark">🍽️</view>
-          <text>{{ t('imagePlaceholder') }}</text>
+  <view :class="['page', { 'has-order-actions': hasBottomCta }]">
+    <view v-if="loading" class="loading-state">
+      <view class="loading-nav">
+        <button
+          class="hero-button hero-back"
+          hover-class="is-pressed"
+          :aria-label="t('back')"
+          @tap="handleBack"
+        >
+          <image class="hero-control-icon" :src="uiIcons.arrowLeft" mode="aspectFit" />
+        </button>
+      </view>
+      <view class="loading-hero" />
+      <view class="loading-overview">
+        <view class="loading-copy">
+          <view class="loading-line is-wide" />
+          <view class="loading-line" />
         </view>
       </view>
-      <view class="card">
-        <view class="headline">
-          <view class="headline-main">
-            <text class="title">{{ merchantName(merchant, locale) }}</text>
-            <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
-              {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
-            </text>
+      <view class="loading-card">
+        <view class="loading-line is-title" />
+        <view class="loading-line is-full" />
+        <view class="loading-line is-medium" />
+      </view>
+    </view>
+    <view v-else-if="error" class="error-state">
+      <view class="error-mark">!</view>
+      <text class="error-title">{{ error }}</text>
+      <text v-if="errorRetryable" class="error-hint">{{ t('tryAgainLater') }}</text>
+      <view class="error-actions">
+        <button
+          v-if="errorRetryable"
+          class="error-button is-primary"
+          hover-class="is-pressed"
+          @tap="loadMerchant"
+        >
+          {{ t('reload') }}
+        </button>
+        <button class="error-button" hover-class="is-pressed" @tap="handleBack">
+          {{ t('back') }}
+        </button>
+      </view>
+    </view>
+    <template v-else-if="merchant">
+      <view class="hero-shell">
+        <swiper
+          v-if="heroImages.length"
+          class="hero"
+          :current="activeHeroIndex"
+          :circular="heroImages.length > 1"
+          @change="handleHeroChange"
+        >
+          <swiper-item v-for="(url, index) in heroImages" :key="url">
+            <image
+              v-if="mediaAvailable(url)"
+              class="hero-image"
+              :src="url"
+              mode="aspectFill"
+              :aria-label="`${merchantName(merchant, locale)} ${index + 1}`"
+              @tap="previewGallery(url)"
+              @error="handleMediaError(url)"
+            />
+            <view v-else class="hero-image placeholder">
+              <view class="placeholder-mark">
+                <image class="placeholder-hero-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+              </view>
+            </view>
+          </swiper-item>
+        </swiper>
+        <view v-else class="hero placeholder">
+          <view class="placeholder-mark">
+            <image class="placeholder-hero-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
           </view>
-          <button class="favorite-button" @tap="handleToggleFavorite">
-            {{ favoriteLabel }}
+        </view>
+
+        <view class="hero-controls">
+          <button
+            class="hero-button hero-back"
+            hover-class="is-pressed"
+            :aria-label="t('back')"
+            @tap="handleBack"
+          >
+            <image class="hero-control-icon" :src="uiIcons.arrowLeft" mode="aspectFit" />
+          </button>
+          <view class="hero-controls-right">
+            <button
+              class="hero-button"
+              :class="{ 'is-favorite': favoriteState }"
+              :aria-label="favoriteLabel"
+              :aria-pressed="favoriteState"
+              hover-class="is-pressed"
+              @tap="handleToggleFavorite"
+            >
+              <image
+                class="hero-control-icon"
+                :src="favoriteState ? uiIcons.heartActive : uiIcons.heart"
+                mode="aspectFit"
+              />
+            </button>
+            <button
+              class="hero-button hero-share"
+              open-type="share"
+              hover-class="is-pressed"
+              :aria-label="t('shareMerchant')"
+            >
+              <image class="hero-control-icon" :src="uiIcons.share" mode="aspectFit" />
+            </button>
+          </view>
+        </view>
+        <text v-if="heroImages.length > 1" class="hero-count">{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
+      </view>
+
+      <scroll-view v-if="heroImages.length > 1" class="thumbnail-scroll" scroll-x show-scrollbar="false">
+        <view class="thumbnail-list">
+          <button
+            v-for="(url, index) in heroImages"
+            :key="url"
+            :class="['thumbnail-button', { 'is-active': activeHeroIndex === index }]"
+            :aria-label="`${merchantName(merchant, locale)} ${index + 1}`"
+            :aria-current="activeHeroIndex === index ? 'true' : 'false'"
+            hover-class="is-pressed"
+            @tap="selectHeroImage(index)"
+          >
+            <image v-if="mediaAvailable(url)" class="thumbnail-image" :src="url" mode="aspectFill" @error="handleMediaError(url)" />
+            <view v-else class="thumbnail-image placeholder">
+              <image class="placeholder-inline-icon is-thumbnail" :src="uiIcons.merchantProfile" mode="aspectFit" />
+            </view>
           </button>
         </view>
-        <view v-if="canNavigate" class="info-line info-action" @tap="handleAddressTap">
-          <text class="info-icon">📍</text>
-          <text class="info-text">{{ displayAddress }}</text>
-          <text class="info-link">{{ t('mapNavigation') }}</text>
+      </scroll-view>
+
+      <view class="merchant-overview">
+        <view class="headline">
+          <image
+            v-if="mediaAvailable(merchant.logoUrl)"
+            class="merchant-logo"
+            :src="resolveMediaUrl(merchant.logoUrl)"
+            mode="aspectFill"
+            :aria-label="merchantName(merchant, locale)"
+            @error="handleMediaError(merchant.logoUrl)"
+          />
+          <text class="title">{{ merchantName(merchant, locale) }}</text>
+          <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
+            {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+          </text>
         </view>
-        <view v-if="canPhone" class="info-line info-action" @tap="handlePhoneTap">
-          <text class="info-icon">📞</text>
-          <text class="info-text">{{ t('phone') }}：{{ merchant.contactPhone }}</text>
-          <text class="info-link">{{ t('callMerchant') }}</text>
-        </view>
-        <view v-if="merchant.openingHoursText" class="notice">营业时间：{{ merchant.openingHoursText }}</view>
-        <view v-if="displayDescription" class="notice">{{ displayDescription }}</view>
-        <view v-if="displayTags.length" class="tags">
+        <view v-if="displayBusinessType || displayTags.length" class="meta-row">
+          <text v-if="displayBusinessType" class="meta-type">{{ displayBusinessType }}</text>
           <text v-for="tag in displayTags" :key="tag" class="tag">{{ tag }}</text>
         </view>
-        <view v-if="galleryImages.length" class="gallery">
-          <image
-            v-for="image in galleryImages"
-            :key="image.id"
-            class="gallery-image"
-            :src="resolveMediaUrl(image.imageUrl)"
-            mode="aspectFill"
-          />
-        </view>
-        <view class="tags">
-          <text v-if="hasDineInTag" class="tag">
-            {{ t('dineIn') }}
-          </text>
-          <text
-            v-for="type in visibleOrderTypes"
-            :key="type"
-            class="tag"
-          >
-            {{ orderTypeLabel(type, locale) }}
-          </text>
-          <text v-if="canScanOrder" class="tag">
-            {{ t('inStoreScanOrder') }}
-          </text>
+        <view v-if="merchant.distanceKm !== null || merchant.openingHoursText" class="summary-line">
+          <text v-if="merchant.distanceKm !== null" class="distance">{{ merchant.distanceKm }} km</text>
+          <text v-if="merchant.openingHoursText" class="hours">{{ merchant.openingHoursText }}</text>
         </view>
       </view>
-      <view class="actions">
-        <button
-          v-if="canPickup && merchant.supportedOrderTypes.includes('PICKUP')"
-          type="button"
-          class="primary pickup"
-          @tap="openMenu('PICKUP')"
-        >
-          {{ t('pickup') }}
-        </button>
-        <button
-          v-if="canDelivery && merchant.supportedOrderTypes.includes('DELIVERY')"
-          type="button"
-          class="primary delivery"
-          @tap="openMenu('DELIVERY')"
-        >
-          {{ t('delivery') }}
-        </button>
+
+      <view v-if="displayDescription" class="intro-card">
+        <view class="intro-heading">
+          <view class="intro-icon-shell">
+            <image class="intro-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+          </view>
+          <text class="section-title">{{ t('merchantIntro') }}</text>
+        </view>
+        <text class="description">{{ displayDescription }}</text>
+      </view>
+
+      <view v-if="serviceCapabilities.length" class="content-section facility-section">
+        <view class="facility-grid">
+          <view v-for="service in serviceCapabilities" :key="service.code" class="facility-item">
+            <image class="facility-icon" :src="service.icon" mode="aspectFit" />
+            <text class="facility-label">{{ service.label }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="signatureDishes.length" class="content-section featured-section">
+        <view class="section-heading">
+          <text class="section-title">{{ locale === 'zh' ? `⭐ ${t('signatureDishes')}` : t('signatureDishes') }}</text>
+        </view>
+        <scroll-view class="horizontal-scroll" scroll-x show-scrollbar="false">
+          <view class="horizontal-list">
+            <view v-for="dish in signatureDishes" :key="dish.id" class="signature-card">
+              <image v-if="mediaAvailable(dish.imageUrl)" class="signature-image" :src="resolveMediaUrl(dish.imageUrl)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(dish.imageUrl)" />
+              <view v-else class="signature-image placeholder">
+                <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+              </view>
+              <text class="signature-name">{{ localizedName(dish, locale) }}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view v-if="hotRecommendations.length" class="content-section featured-section">
+        <view class="section-heading">
+          <text class="section-title">{{ locale === 'zh' ? `🔥 ${t('merchantHotRecommendations')}` : t('merchantHotRecommendations') }}</text>
+        </view>
+        <scroll-view class="horizontal-scroll" scroll-x show-scrollbar="false">
+          <view class="horizontal-list">
+            <view v-for="product in hotRecommendations" :key="product.id" class="hot-card">
+              <view class="hot-image-wrap">
+                <image v-if="mediaAvailable(product.imageUrl)" class="hot-image" :src="resolveMediaUrl(product.imageUrl ?? undefined)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(product.imageUrl)" />
+                <view v-else class="hot-image placeholder">
+                  <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+                </view>
+              </view>
+              <text class="hot-name">{{ localizedName(product, locale) }}</text>
+              <text class="hot-price">{{ formatNumberCurrency(product.priceVnd) }}</text>
+              <view class="hot-meta">
+                <text class="hot-sales">{{ t('salesCount', { count: product.salesCount }) }}</text>
+                <text class="hot-meta-separator">·</text>
+                <text class="hot-rank">{{ t('hotRank', { rank: product.hotRank }) }}</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view v-if="environmentImages.length" class="content-section environment-section">
+        <view class="section-heading">
+          <text class="section-title">{{ t('environmentPhotos') }}</text>
+        </view>
+        <scroll-view class="environment-scroll" scroll-x show-scrollbar="false">
+          <view class="environment-list">
+            <view v-for="url in environmentImages" :key="url" class="environment-frame">
+              <image
+                v-if="mediaAvailable(url)"
+                class="environment-image"
+                :src="url"
+                mode="aspectFill"
+                :aria-label="`${merchantName(merchant, locale)} · ${t('environmentPhotos')}`"
+                lazy-load
+                @tap="previewEnvironment(url)"
+                @error="handleMediaError(url)"
+              />
+              <view v-else class="environment-image placeholder">
+                <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view v-if="displayAddress" class="address-card">
+        <image class="address-pin" :src="uiIcons.mapPin" mode="aspectFit" />
+        <view class="address-copy">
+          <text class="address-label">{{ t('merchantAddress') }}</text>
+          <text class="address-text">{{ displayAddress }}</text>
+          <text v-if="merchant.distanceKm !== null" class="address-distance">{{ merchant.distanceKm }} km</text>
+        </view>
+      </view>
+
+      <view :class="['sticky-actions', { 'has-order-ctas': hasBottomCta }]">
+        <view class="sticky-tools">
+          <button v-if="canPhone" class="bottom-action" hover-class="is-pressed" @tap="handlePhoneTap">
+            <image class="bottom-action-icon" :src="uiIcons.phone" mode="aspectFit" />
+            <text>{{ t('phone') }}</text>
+          </button>
+          <button v-if="canNavigate" class="bottom-action" hover-class="is-pressed" @tap="handleAddressTap">
+            <image class="bottom-action-icon" :src="uiIcons.navigation" mode="aspectFit" />
+            <text>{{ t('mapNavigation') }}</text>
+          </button>
+          <button class="bottom-action" :aria-pressed="favoriteState" hover-class="is-pressed" @tap="handleToggleFavorite">
+            <image class="bottom-action-icon" :src="uiIcons.heartGreen" mode="aspectFit" />
+            <text>{{ favoriteLabel }}</text>
+          </button>
+        </view>
+        <view v-if="hasBottomCta" class="sticky-orders">
+          <button
+            v-if="canOpenPickup"
+            class="primary pickup"
+            hover-class="is-pressed"
+            @tap="openMenu('PICKUP')"
+          >
+            <image class="order-action-icon" :src="uiIcons.pickupWhite" mode="aspectFit" />
+            <text>{{ t('pickup') }}</text>
+          </button>
+          <button
+            v-if="canOpenDelivery"
+            :class="['primary', 'delivery', { 'is-solo': !canOpenPickup }]"
+            hover-class="is-pressed"
+            @tap="openMenu('DELIVERY')"
+          >
+            <image
+              class="order-action-icon"
+              :src="canOpenPickup ? uiIcons.delivery : uiIcons.deliveryWhite"
+              mode="aspectFit"
+            />
+            <text>{{ t('delivery') }}</text>
+          </button>
+        </view>
       </view>
     </template>
   </view>
 </template>
 
 <style scoped>
+/* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal
+ * B=compact-system-sans · C=split-gallery+four-column-facilities+three-up-dish-rails+compact-action-dock
+ * D=feedback-only · E=existing-restaurant-photography · SOUL=6 SPECTACLE=2 DENSITY=9 */
 .page {
+  --page-bg: #f6faf7;
+  --surface: #fcfefc;
+  --surface-soft: #f8fbf8;
+  --brand: #43a047;
+  --brand-deep: #2e7d32;
+  --brand-soft: #eaf7ee;
+  --ink: #1f2d24;
+  --ink-2: #455249;
+  --ink-3: #667169;
+  --line: #e7efe9;
+  --warm: #fff4dc;
+  --warm-ink: #6b5628;
+  --warning: #9a6500;
+  --warning-deep: #ad5a00;
+  --on-brand: #f8fff9;
+  --on-brand-warm: #fff0d0;
+  --loading: #e8f1ea;
+  --loading-soft: #eef5ef;
+  --control-overlay: rgb(31 45 36 / 72%);
+  --control-overlay-soft: rgb(31 45 36 / 66%);
+  --badge-overlay: rgb(31 45 36 / 76%);
+  --surface-translucent: rgb(255 255 255 / 78%);
+  --brand-hairline: rgb(46 125 50 / 10%);
+  --control-shadow: 0 8rpx 24rpx rgb(0 0 0 / 16%);
+  --logo-shadow: 0 6rpx 18rpx rgb(31 45 36 / 8%);
+  --dock-shadow: 0 -12rpx 30rpx rgb(31 45 36 / 8%);
+  --shadow: 0 12rpx 34rpx rgb(31 45 36 / 11%);
   min-height: 100vh;
-  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
-  color: #1f2d24;
-  background: #f6faf7;
+  padding: 0 0 calc(40rpx + env(safe-area-inset-bottom));
+  color: var(--ink);
+  background: var(--page-bg);
   box-sizing: border-box;
 }
 
-.error {
-  padding: 22rpx 24rpx;
-  border-radius: 20rpx;
-  color: #8a5a00;
-  background: #fff3dd;
-  font-size: 23rpx;
+.page.has-order-actions {
+  padding-bottom: calc(164rpx + env(safe-area-inset-bottom));
 }
 
-.cover-wrap {
-  overflow: hidden;
-  border-radius: 30rpx;
-  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
+.loading-state {
+  position: relative;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 24rpx 48rpx;
 }
 
-.cover {
+.loading-nav {
+  position: absolute;
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 28rpx);
+  left: 36rpx;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+}
+
+.loading-hero,
+.loading-avatar,
+.loading-line,
+.loading-card {
+  background: var(--loading);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.loading-hero {
+  height: 420rpx;
+  border-radius: 28rpx;
+}
+
+.loading-overview {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 28rpx 6rpx;
+}
+
+.loading-avatar {
+  width: 88rpx;
+  height: 88rpx;
+  flex: none;
+  border-radius: 44rpx;
+}
+
+.loading-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.loading-line {
+  width: 44%;
+  height: 22rpx;
+  margin-top: 16rpx;
+  border-radius: 11rpx;
+}
+
+.loading-line.is-wide {
+  width: 72%;
+  height: 34rpx;
+  margin-top: 0;
+}
+
+.loading-line.is-title {
+  width: 34%;
+  height: 28rpx;
+  margin-top: 0;
+}
+
+.loading-line.is-full {
   width: 100%;
-  height: 380rpx;
+}
+
+.loading-line.is-medium {
+  width: 68%;
+}
+
+.loading-card {
+  min-height: 176rpx;
+  padding: 26rpx;
+  border-radius: 24rpx;
+  background: var(--loading-soft);
+  box-sizing: border-box;
+}
+
+.error-state {
+  min-height: calc(100vh - var(--status-bar-height, 0px));
+  display: flex;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 80rpx) 48rpx 80rpx;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.error-mark {
+  display: grid;
+  width: 96rpx;
+  height: 96rpx;
+  place-items: center;
+  border-radius: 48rpx;
+  color: var(--warning);
+  background: var(--warm);
+  font-size: 44rpx;
+  font-weight: 800;
+}
+
+.error-title {
+  margin-top: 26rpx;
+  color: var(--ink);
+  font-size: 30rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.error-hint {
+  margin-top: 12rpx;
+  color: var(--ink-3);
+  font-size: 24rpx;
+  line-height: 1.55;
+}
+
+.error-actions {
+  width: 100%;
+  display: flex;
+  gap: 16rpx;
+  margin-top: 34rpx;
+}
+
+.error-button {
+  height: 88rpx;
+  min-height: 88rpx;
+  flex: 1;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 2rpx solid var(--brand);
+  border-radius: 22rpx;
+  color: var(--brand-deep);
+  background: var(--surface);
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 84rpx;
+  box-sizing: border-box;
+}
+
+.error-button.is-primary {
+  color: var(--on-brand);
+  background: var(--brand-deep);
+}
+
+.hero-shell {
+  position: relative;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 20rpx 0;
+  background: var(--surface);
+}
+
+.hero {
+  height: 420rpx;
+  overflow: hidden;
+  border-radius: 28rpx;
+  background: var(--brand-soft);
+  box-shadow: var(--shadow);
+}
+
+.hero-image {
+  width: 100%;
+  height: 420rpx;
   display: block;
 }
 
@@ -478,33 +1032,177 @@ function hasCapability(code: string, fallbackValue: boolean) {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 14rpx;
-  color: #2e7d32;
-  background: linear-gradient(135deg, #eaf7ee, #bde5c2);
-  font-size: 23rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 24rpx;
+  font-weight: 800;
 }
 
 .placeholder-mark {
   display: grid;
-  width: 116rpx;
-  height: 116rpx;
+  width: 96rpx;
+  height: 96rpx;
   place-items: center;
-  border: 10rpx solid rgb(255 255 255 / 70%);
-  border-radius: 50%;
-  color: #2e7d32;
-  background: #ffcf83;
-  font-size: 42rpx;
+  border: 2rpx solid var(--brand-hairline);
+  border-radius: 48rpx;
+  color: var(--brand-deep);
+  background: var(--surface-translucent);
+  font-size: 36rpx;
   font-weight: 800;
+}
+
+.placeholder-hero-icon {
+  width: 44rpx;
+  height: 44rpx;
+  display: block;
+}
+
+.placeholder-inline-icon {
+  width: 40rpx;
+  height: 40rpx;
+  display: block;
+  opacity: 0.72;
+}
+
+.placeholder-inline-icon.is-thumbnail {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.hero-controls {
+  position: absolute;
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 28rpx);
+  right: 36rpx;
+  left: 36rpx;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero-controls-right {
+  position: absolute;
+  top: 104rpx;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.hero-button,
+.thumbnail-button,
+.bottom-action,
+.address-nav,
+.error-button {
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.hero-button,
+.thumbnail-button,
+.bottom-action,
+.address-nav {
+  margin: 0;
+  border: 0;
   box-sizing: border-box;
 }
 
-.card {
-  padding: 30rpx 28rpx;
-  margin: 22rpx 0;
-  border-radius: 28rpx;
-  background: #fff;
-  box-shadow: 0 12rpx 32rpx rgb(46 125 50 / 7%);
+.hero-button::after,
+.thumbnail-button::after,
+.bottom-action::after,
+.address-nav::after,
+.error-button::after,
+.actions button::after {
+  border: 0;
+}
+
+.hero-button {
+  width: 88rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 44rpx;
+  color: var(--on-brand);
+  background: var(--control-overlay);
+  box-shadow: var(--control-shadow);
+  font-size: 38rpx;
+  line-height: 1;
+}
+
+.hero-back {
+  padding-bottom: 6rpx;
+  font-size: 58rpx;
+  font-weight: 300;
+}
+
+.hero-button.is-favorite {
+  color: var(--on-brand-warm);
+}
+
+.hero-share {
+  padding-bottom: 5rpx;
+  font-size: 34rpx;
+}
+
+.hero-count {
+  position: absolute;
+  right: 40rpx;
+  bottom: 18rpx;
+  z-index: 2;
+  padding: 8rpx 15rpx;
+  border-radius: 999rpx;
+  color: var(--on-brand);
+  background: var(--control-overlay-soft);
+  font-size: 22rpx;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.thumbnail-scroll {
+  width: 100%;
+  padding: 16rpx 20rpx 4rpx;
+  white-space: nowrap;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+
+.thumbnail-list {
+  display: flex;
+  width: max-content;
+  gap: 12rpx;
+}
+
+.thumbnail-button {
+  width: 132rpx;
+  height: 96rpx;
+  min-height: 96rpx;
+  padding: 4rpx;
+  overflow: hidden;
+  border: 3rpx solid transparent;
+  border-radius: 18rpx;
+  background: var(--surface);
+  line-height: 1;
+}
+
+.thumbnail-button.is-active {
+  border-color: var(--brand);
+}
+
+.thumbnail-image {
+  width: 118rpx;
+  height: 82rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  font-size: 22rpx;
+}
+
+.merchant-overview {
+  padding: 28rpx 28rpx 26rpx;
+  background: var(--surface);
 }
 
 .headline {
@@ -514,167 +1212,1196 @@ function hasCapability(code: string, fallbackValue: boolean) {
   gap: 20rpx;
 }
 
-.headline-main {
+.identity-row {
   min-width: 0;
   display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 18rpx;
+}
+
+.identity-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 12rpx;
+}
+
+.merchant-logo {
+  width: 82rpx;
+  height: 82rpx;
+  flex: none;
+  border: 2rpx solid var(--line);
+  border-radius: 41rpx;
+  background: var(--surface-soft);
+  box-shadow: var(--logo-shadow);
+  box-sizing: border-box;
+}
+
+.merchant-logo-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 32rpx;
+  font-weight: 800;
 }
 
 .title {
   min-width: 0;
-  color: #1f2d24;
-  font-size: 40rpx;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 38rpx;
   font-weight: 800;
-}
-
-.favorite-button {
-  flex: none;
-  margin: 0;
-  padding: 10rpx 18rpx;
-  border: 0;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 22rpx;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.favorite-button::after {
-  border: 0;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .status {
   flex: none;
+  margin-top: 4rpx;
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
-  font-size: 21rpx;
+  font-size: 22rpx;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .open {
-  color: #2e7d32;
-  background: #eaf7ee;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
 }
 
 .closed {
-  color: #a66400;
-  background: #fff1dc;
+  color: var(--warning);
+  background: var(--warm);
 }
 
-.info-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 13rpx;
-  margin-top: 20rpx;
-  color: #666;
-  font-size: 24rpx;
-  line-height: 1.55;
-}
-
-.info-action {
-  align-items: center;
-}
-
-.info-text {
-  min-width: 0;
-  flex: 1;
-}
-
-.info-link {
-  flex: none;
-  padding: 7rpx 12rpx;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 21rpx;
-  font-weight: 700;
-}
-
-.info-icon {
-  display: grid;
-  width: 42rpx;
-  height: 42rpx;
-  flex: none;
-  place-items: center;
-  border-radius: 13rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 18rpx;
-  font-weight: 700;
-}
-
-.notice {
-  padding: 18rpx 20rpx;
-  margin-top: 20rpx;
-  border-radius: 18rpx;
-  color: #7b5a16;
-  background: #fff8e1;
-  font-size: 23rpx;
-  line-height: 1.6;
-}
-
-.tags {
+.meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
-  margin-top: 22rpx;
+  align-items: center;
+  gap: 9rpx;
 }
 
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14rpx;
-  margin-top: 22rpx;
-}
-
-.gallery-image {
-  width: 100%;
-  height: 180rpx;
-  border-radius: 18rpx;
-  background: #edf5ee;
-}
-
+.meta-type,
 .tag {
-  padding: 7rpx 13rpx;
+  padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 21rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10rpx 18rpx;
+  margin-top: 18rpx;
+  color: var(--ink-3);
+  font-size: 23rpx;
+}
+
+.distance,
+.hours {
+  color: var(--ink-3);
+  font-size: 23rpx;
+}
+
+.intro-card {
+  padding: 24rpx 26rpx;
+  margin: 0 24rpx 22rpx;
+  border-radius: 24rpx;
+  background: var(--warm);
+}
+
+.content-section {
+  padding: 28rpx 24rpx 30rpx;
+  border-top: 12rpx solid var(--page-bg);
+  background: var(--surface);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.section-title {
+  display: block;
+  color: var(--ink);
+  font-size: 31rpx;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.description {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--warm-ink);
+  font-size: 25rpx;
+  line-height: 1.68;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.facility-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20rpx 12rpx;
+  margin-top: 22rpx;
+}
+
+.facility-grid.is-wide-labels {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22rpx 16rpx;
+}
+
+.facility-item {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10rpx;
+  text-align: center;
+}
+
+.facility-icon {
+  display: grid;
+  width: 80rpx;
+  height: 80rpx;
+  place-items: center;
+  border-radius: 24rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.facility-label {
+  display: block;
+  min-height: 68rpx;
+  color: var(--ink-2);
+  font-size: 24rpx;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.facility-grid.is-wide-labels .facility-label {
+  min-height: 102rpx;
+}
+
+.horizontal-scroll {
+  width: 100%;
+  margin-top: 18rpx;
+  white-space: nowrap;
+}
+
+.horizontal-list {
+  display: flex;
+  width: max-content;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding-right: 24rpx;
+}
+
+.signature-card,
+.hot-card {
+  width: 280rpx;
+  overflow: hidden;
+  border: 1rpx solid var(--line);
+  border-radius: 20rpx;
+  background: var(--surface-soft);
+  box-sizing: border-box;
+}
+
+.signature-image,
+.hot-image {
+  width: 280rpx;
+  height: 198rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-soft);
+  font-size: 32rpx;
+}
+
+.hot-image-wrap {
+  position: relative;
+  width: 280rpx;
+  height: 198rpx;
+}
+
+.hot-rank {
+  position: absolute;
+  top: 12rpx;
+  left: 12rpx;
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  color: var(--on-brand);
+  background: var(--badge-overlay);
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.signature-name,
+.hot-name {
+  min-height: 68rpx;
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 14rpx 15rpx 0;
+  color: var(--ink);
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1.42;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  box-sizing: border-box;
+}
+
+.signature-name {
+  padding-bottom: 16rpx;
+}
+
+.hot-price {
+  display: block;
+  padding: 9rpx 15rpx 0;
+  color: var(--brand-deep);
+  font-size: 26rpx;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hot-sales {
+  display: block;
+  padding: 9rpx 15rpx 16rpx;
+  color: var(--ink-3);
+  font-size: 22rpx;
+}
+
+.bottom-actions {
+  display: flex;
+  gap: 14rpx;
+  padding: 26rpx 24rpx 12rpx;
+  border-top: 12rpx solid var(--page-bg);
+  background: var(--surface);
+}
+
+.bottom-action {
+  min-width: 0;
+  height: 92rpx;
+  min-height: 92rpx;
+  display: flex;
+  flex: 1;
+  padding: 0 12rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 9rpx;
+  border-radius: 20rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.bottom-action-icon {
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.address-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+  margin: 14rpx 24rpx 24rpx;
+  border: 1rpx solid var(--line);
+  border-radius: 22rpx;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+
+.address-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.address-label {
+  color: var(--brand-deep);
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.address-text {
+  color: var(--ink-2);
+  font-size: 23rpx;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.address-distance {
+  color: var(--ink-3);
+  font-size: 22rpx;
+}
+
+.address-nav {
+  min-width: 112rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 0 18rpx;
+  border-radius: 20rpx;
+  color: var(--on-brand);
+  background: var(--brand-deep);
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 88rpx;
+  white-space: nowrap;
 }
 
 .actions {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
   display: flex;
-  gap: 18rpx;
+  gap: 16rpx;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--dock-shadow);
+  box-sizing: border-box;
 }
 
 .actions button {
-  height: 92rpx;
-  min-height: 92rpx;
+  height: 96rpx;
+  min-height: 96rpx;
   flex: 1;
   margin: 0;
   padding: 0 18rpx;
   border: 2rpx solid transparent;
   border-radius: 24rpx;
-  font-size: 30rpx;
-  font-weight: 700;
-  line-height: 88rpx;
+  color: var(--on-brand);
+  background: var(--brand-deep);
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 92rpx;
+  white-space: nowrap;
+  transition: transform 160ms ease, opacity 160ms ease;
   box-sizing: border-box;
 }
 
-.actions button::after {
+.actions .delivery {
+  border-color: var(--brand);
+  color: var(--brand-deep);
+  background: var(--surface);
+}
+
+.hero-button.is-pressed,
+.thumbnail-button.is-pressed,
+.bottom-action.is-pressed,
+.address-nav.is-pressed,
+.error-button.is-pressed,
+.actions button.is-pressed {
+  opacity: 0.86;
+  transform: scale(0.96);
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.58;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-hero,
+  .loading-avatar,
+  .loading-line,
+  .loading-card {
+    animation: none;
+  }
+
+  .hero-button,
+  .thumbnail-button,
+  .bottom-action,
+  .address-nav,
+  .error-button,
+  .actions button {
+    transition: none;
+  }
+}
+
+/* Screenshot-led density pass: preserve content and ordering behavior while matching the compact commerce stack. */
+.page {
+  --page-bg: #f4f8f5;
+  --surface-soft: #f7faf7;
+  --warm: #fff8e8;
+  --control-overlay: rgb(25 35 29 / 78%);
+  --control-overlay-soft: rgb(25 35 29 / 68%);
+  --dock-shadow: 0 -8rpx 24rpx rgb(31 45 36 / 7%);
+  --shadow: 0 8rpx 24rpx rgb(31 45 36 / 9%);
+  overflow-x: clip;
+  padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
+}
+
+.page.has-order-actions {
+  padding-bottom: calc(132rpx + env(safe-area-inset-bottom));
+}
+
+.loading-state {
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 8rpx) 16rpx 40rpx;
+}
+
+.loading-nav {
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 20rpx);
+  left: 28rpx;
+}
+
+.loading-hero {
+  height: 330rpx;
+  border-radius: 22rpx;
+}
+
+.loading-overview {
+  padding: 22rpx 8rpx 18rpx;
+}
+
+.loading-copy {
+  width: 100%;
+}
+
+.loading-card {
+  min-height: 142rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+}
+
+.hero-shell {
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 8rpx) 16rpx 0;
+}
+
+.hero,
+.hero-image {
+  height: 330rpx;
+}
+
+.hero {
+  border-radius: 22rpx;
+}
+
+.hero-controls {
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 20rpx);
+  right: 28rpx;
+  left: 28rpx;
+}
+
+.hero-controls-right {
+  top: 82rpx;
+  gap: 10rpx;
+}
+
+.hero-button {
+  width: 88rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  border-radius: 24rpx;
+  box-shadow: 0 5rpx 16rpx rgb(0 0 0 / 14%);
+}
+
+.hero-back,
+.hero-share {
+  padding: 0;
+}
+
+.hero-control-icon {
+  width: 38rpx;
+  height: 38rpx;
+  display: block;
+}
+
+.hero-count {
+  right: 28rpx;
+  bottom: 12rpx;
+  padding: 6rpx 12rpx;
+  font-size: 20rpx;
+}
+
+.thumbnail-scroll {
+  padding: 10rpx 18rpx 0;
+}
+
+.thumbnail-list {
+  gap: 8rpx;
+}
+
+.thumbnail-button {
+  width: 110rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 3rpx;
+  border-width: 2rpx;
+  border-radius: 14rpx;
+}
+
+.thumbnail-image {
+  width: 100rpx;
+  height: 78rpx;
+  border-radius: 10rpx;
+}
+
+.merchant-overview {
+  padding: 18rpx 22rpx 14rpx;
+}
+
+.headline {
+  align-items: center;
+  gap: 16rpx;
+}
+
+.title {
+  flex: 1;
+  font-size: 35rpx;
+  line-height: 1.24;
+  -webkit-line-clamp: 2;
+}
+
+.status {
+  margin-top: 0;
+  padding: 7rpx 13rpx;
+  font-size: 21rpx;
+}
+
+.meta-row {
+  gap: 7rpx;
+  margin-top: 8rpx;
+}
+
+.meta-type,
+.tag {
+  padding: 5rpx 10rpx;
+  font-size: 20rpx;
+}
+
+.summary-line {
+  gap: 8rpx 14rpx;
+  margin-top: 8rpx;
+  font-size: 21rpx;
+}
+
+.distance,
+.hours {
+  font-size: 21rpx;
+}
+
+.intro-card {
+  padding: 14rpx 16rpx;
+  margin: 0 20rpx 10rpx;
+  border-radius: 16rpx;
+}
+
+.intro-heading {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.intro-icon-shell {
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  background: rgb(255 255 255 / 70%);
+}
+
+.intro-icon {
+  width: 25rpx;
+  height: 25rpx;
+  display: block;
+}
+
+.section-title {
+  font-size: 29rpx;
+  line-height: 1.25;
+}
+
+.description {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  line-height: 1.48;
+}
+
+.content-section {
+  padding: 18rpx 22rpx 20rpx;
+  border-top-width: 8rpx;
+}
+
+.facility-section {
+  padding-top: 12rpx;
+  padding-bottom: 12rpx;
+}
+
+.facility-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.facility-list {
+  display: flex;
+  width: max-content;
+  gap: 9rpx;
+  padding-right: 0;
+}
+
+.facility-item {
+  width: 134rpx;
+  min-height: 110rpx;
+  display: flex;
+  flex: none;
+  padding: 9rpx 5rpx 8rpx;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4rpx;
+  border-radius: 16rpx;
+  background: var(--surface-soft);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.facility-icon {
+  width: 34rpx;
+  height: 34rpx;
+  display: block;
+  flex: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.facility-label {
+  min-height: 56rpx;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 23rpx;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.section-heading {
+  gap: 0;
+}
+
+.horizontal-scroll {
+  margin-top: 10rpx;
+}
+
+.horizontal-list {
+  gap: 17rpx;
+  padding-right: 0;
+}
+
+.signature-card,
+.hot-card {
+  width: 224rpx;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.signature-image,
+.hot-image {
+  width: 224rpx;
+  height: 154rpx;
+  overflow: hidden;
+  border-radius: 15rpx;
+  font-size: 25rpx;
+}
+
+.hot-image-wrap {
+  width: 224rpx;
+  height: 154rpx;
+}
+
+.hot-rank {
+  top: 8rpx;
+  left: 8rpx;
+  padding: 5rpx 8rpx;
+  font-size: 20rpx;
+}
+
+.signature-name,
+.hot-name {
+  min-height: 60rpx;
+  padding: 7rpx 2rpx 0;
+  font-size: 23rpx;
+  line-height: 1.3;
+}
+
+.signature-name {
+  padding-bottom: 0;
+}
+
+.hot-price {
+  padding: 4rpx 2rpx 0;
+  font-size: 24rpx;
+}
+
+.hot-sales {
+  padding: 2rpx 2rpx 0;
+  font-size: 22rpx;
+}
+
+.bottom-actions {
+  gap: 0;
+  padding: 8rpx 24rpx 4rpx;
+  border-top-width: 8rpx;
+}
+
+.bottom-action {
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 5rpx 8rpx 3rpx;
+  flex-direction: column;
+  gap: 3rpx;
+  border-radius: 16rpx;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: 23rpx;
+  line-height: 1.15;
+}
+
+.bottom-action-icon {
+  width: 28rpx;
+  height: 28rpx;
+  display: block;
+}
+
+.address-card {
+  gap: 12rpx;
+  padding: 12rpx 14rpx;
+  margin: 0 22rpx 12rpx;
+  border-radius: 16rpx;
+}
+
+.address-pin {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
+  flex: none;
+}
+
+.address-copy {
+  gap: 3rpx;
+}
+
+.address-label {
+  font-size: 20rpx;
+}
+
+.address-text {
+  font-size: 22rpx;
+  line-height: 1.38;
+}
+
+.address-distance {
+  font-size: 20rpx;
+}
+
+.address-nav {
+  min-width: 98rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  padding: 0 10rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  border-radius: 16rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: 20rpx;
+  line-height: 1.1;
+}
+
+.address-nav-icon {
+  width: 21rpx;
+  height: 21rpx;
+  display: block;
+}
+
+.actions {
+  gap: 10rpx;
+  padding: 8rpx 20rpx calc(8rpx + env(safe-area-inset-bottom));
+}
+
+.actions button {
+  height: 96rpx;
+  min-height: 96rpx;
+  display: flex;
+  padding: 0 16rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 9rpx;
+  border-radius: 20rpx;
+  font-size: 25rpx;
+  line-height: 1.1;
+}
+
+.actions .delivery {
+  border-color: transparent;
+  background: var(--brand-soft);
+}
+
+.actions .delivery.is-solo {
+  color: var(--on-brand);
+  background: var(--brand-deep);
+}
+
+.order-action-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
+  flex: none;
+}
+
+/* Final directed polish: compact content rails, split gallery roles, and one safe-area action dock. */
+.page,
+.page.has-order-actions {
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
+}
+
+.meta-type,
+.tag {
+  border: 1rpx solid rgb(46 125 50 / 8%);
+  color: #36753c;
+  background: #f1f8f2;
+}
+
+.intro-card {
+  background: #fff9eb;
+}
+
+.intro-icon-shell {
+  border: 1rpx solid rgb(154 101 0 / 9%);
+  background: rgb(255 255 255 / 76%);
+}
+
+.content-section {
+  padding: 20rpx 22rpx 22rpx;
+}
+
+.facility-section {
+  padding-top: 8rpx;
+  padding-bottom: 8rpx;
+}
+
+.facility-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6rpx;
+  margin-top: 0;
+}
+
+.facility-item {
+  width: auto;
+  height: 92rpx;
+  min-height: 92rpx;
+  padding: 3rpx 2rpx;
+  gap: 2rpx;
+  border-radius: 12rpx;
+}
+
+.facility-icon {
+  width: 28rpx;
+  height: 28rpx;
+}
+
+.facility-label {
+  min-height: 44rpx;
+  font-size: 21rpx;
+  line-height: 1.16;
+  -webkit-line-clamp: 2;
+}
+
+.featured-section .horizontal-scroll {
+  margin-top: 11rpx;
+}
+
+.horizontal-list {
+  gap: 14rpx;
+  padding-right: 22rpx;
+}
+
+.signature-card,
+.hot-card {
+  width: 208rpx;
+}
+
+.signature-image,
+.hot-image,
+.hot-image-wrap {
+  width: 208rpx;
+  height: 148rpx;
+}
+
+.signature-image,
+.hot-image {
+  border-radius: 14rpx;
+}
+
+.signature-name,
+.hot-name {
+  min-height: 58rpx;
+  padding: 7rpx 1rpx 0;
+  font-size: 22rpx;
+  line-height: 1.3;
+}
+
+.hot-price {
+  padding: 4rpx 1rpx 0;
+  color: var(--brand-deep);
+  font-size: 23rpx;
+  line-height: 1.25;
+}
+
+.hot-meta {
+  min-height: 32rpx;
+  display: flex;
+  padding: 3rpx 1rpx 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 5rpx;
+  line-height: 1.3;
+}
+
+.hot-sales,
+.hot-rank,
+.hot-meta-separator {
+  position: static;
+  display: inline;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 20rpx;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hot-sales,
+.hot-meta-separator {
+  color: var(--ink-3);
+}
+
+.hot-rank {
+  color: var(--warning-deep);
+}
+
+.environment-section {
+  padding-bottom: 20rpx;
+}
+
+.environment-scroll {
+  width: 100%;
+  margin-top: 11rpx;
+  white-space: nowrap;
+}
+
+.environment-list {
+  display: flex;
+  width: max-content;
+  align-items: flex-start;
+  gap: 14rpx;
+  padding-right: 22rpx;
+}
+
+.environment-frame,
+.environment-image {
+  width: 310rpx;
+  height: 184rpx;
+}
+
+.environment-frame {
+  flex: none;
+  overflow: hidden;
+  border-radius: 15rpx;
+  background: var(--brand-soft);
+}
+
+.environment-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25rpx;
+}
+
+.address-card {
+  margin-top: 8rpx;
+  margin-bottom: 14rpx;
+}
+
+.sticky-actions {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  padding: 6rpx 18rpx calc(6rpx + env(safe-area-inset-bottom));
+  align-items: stretch;
+  gap: 8rpx;
+  border-top: 1rpx solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--dock-shadow);
+  box-sizing: border-box;
+}
+
+.sticky-tools,
+.sticky-orders {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.sticky-tools {
+  flex: 1;
+  justify-content: space-around;
+}
+
+.sticky-actions.has-order-ctas .sticky-tools {
+  flex: 0 0 276rpx;
+}
+
+.sticky-orders {
+  flex: 1;
+  gap: 6rpx;
+}
+
+.sticky-actions .bottom-action {
+  min-width: 88rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  margin: 0;
+  padding: 4rpx 3rpx 2rpx;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2rpx;
+  border: 0;
+  border-radius: 12rpx;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: 20rpx;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: normal;
+  box-sizing: border-box;
+}
+
+.sticky-actions:not(.has-order-ctas) .bottom-action {
+  max-width: 190rpx;
+}
+
+.sticky-actions .bottom-action-icon {
+  width: 24rpx;
+  height: 24rpx;
+  display: block;
+  flex: none;
+}
+
+.sticky-orders button {
+  min-width: 0;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  flex: 1;
+  margin: 0;
+  padding: 0 7rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  border: 2rpx solid transparent;
+  border-radius: 16rpx;
+  color: var(--on-brand);
+  background: var(--brand-deep);
+  font-size: 20rpx;
+  font-weight: 800;
+  line-height: 1.08;
+  white-space: normal;
+  transition: transform 160ms ease, opacity 160ms ease;
+  box-sizing: border-box;
+}
+
+.sticky-orders button > text {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sticky-orders .delivery {
+  border-color: transparent;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+}
+
+.sticky-orders .delivery.is-solo {
+  color: var(--on-brand);
+  background: var(--brand-deep);
+}
+
+.sticky-orders .order-action-icon {
+  width: 24rpx;
+  height: 24rpx;
+}
+
+.sticky-orders button::after,
+.sticky-actions .bottom-action::after {
   border: 0;
 }
 
-.primary {
-  color: #fff;
-  background: #2e7d32;
+.sticky-orders button.is-pressed,
+.sticky-actions .bottom-action.is-pressed {
+  opacity: 0.86;
+  transform: scale(0.96);
 }
 
-.delivery {
-  border: 2rpx solid #43a047;
-  color: #2e7d32;
-  background: #fff;
+@media (prefers-reduced-motion: reduce) {
+  .sticky-orders button,
+  .sticky-actions .bottom-action {
+    transition: none;
+  }
 }
 </style>

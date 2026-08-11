@@ -39,7 +39,8 @@
     {
       "path": "pages/merchant/detail",
       "style": {
-        "navigationBarTitleText": "商家详情"
+        "navigationBarTitleText": "商家详情",
+        "navigationStyle": "custom"
       }
     },
     {

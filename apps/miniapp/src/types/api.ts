@@ -86,6 +86,7 @@ export interface MerchantSummary extends LocalizedFields {
   nameVi?: string;
   nameEn?: string;
   merchantMode?: 'DISPLAY' | 'MANAGED' | 'DISPLAY_ONLY' | 'PRODUCT_DISPLAY' | 'ONLINE_ORDER' | 'QR_ORDER';
+  claimStatus?: 'UNCLAIMED' | 'CLAIMED' | 'REJECTED';
   businessType?: {
     id: string;
     code: string;
@@ -157,6 +158,24 @@ export interface MerchantDetail extends MerchantSummary {
   district?: string;
   notice?: string;
   businessHours: Record<string, string[]>;
+  signatureDishes?: Array<{
+    id: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+  hotRecommendations?: Array<{
+    id: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    imageUrl?: string | null;
+    priceVnd: string;
+    salesCount: number;
+    hotRank: number;
+  }>;
 }
 
 export interface Product extends LocalizedFields {

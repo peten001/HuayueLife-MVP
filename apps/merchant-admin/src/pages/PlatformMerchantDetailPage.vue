@@ -180,6 +180,30 @@ const displayCapabilityCards = computed<CapabilityCard[]>(() => [
     description: '小程序展示商家图片',
     icon: '🖼',
   },
+  {
+    code: 'chineseServiceEnabled',
+    title: capabilityNameZh('chineseServiceEnabled', '中文服务'),
+    description: '小程序展示商家可提供中文服务',
+    icon: '中',
+  },
+  {
+    code: 'privateRoomEnabled',
+    title: capabilityNameZh('privateRoomEnabled', '有包间'),
+    description: '小程序展示商家设有独立包间',
+    icon: '间',
+  },
+  {
+    code: 'airConditioningEnabled',
+    title: capabilityNameZh('airConditioningEnabled', '空调环境'),
+    description: '小程序展示商家提供空调环境',
+    icon: '冷',
+  },
+  {
+    code: 'freeWifiEnabled',
+    title: capabilityNameZh('freeWifiEnabled', '免费 Wi-Fi'),
+    description: '小程序展示商家提供免费 Wi-Fi',
+    icon: 'Wi',
+  },
 ]);
 const operationCapabilityCards = computed<CapabilityCard[]>(() => [
   {
@@ -930,6 +954,10 @@ function claimLabel(value: string) {
 
 function capabilityEnabled(code: string) {
   return Boolean(capabilityValues[code]);
+}
+
+function capabilityNameZh(code: string, fallback: string) {
+  return capabilities.value.find((item) => item.code === code)?.nameZh || fallback;
 }
 
 function switchSection(section: EditorSection) {
