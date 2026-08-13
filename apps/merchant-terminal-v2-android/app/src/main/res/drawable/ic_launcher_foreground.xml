@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-      The official maskable YunQiao artwork is placed inside 90dp of the
-      adaptive icon's 108dp canvas. Its visible mark remains within the
-      66dp adaptive safe zone without changing the artwork proportions.
+      The official YunQiao mark is placed inside 72dp of the adaptive icon's
+      108dp canvas. The source asset includes a small transparent inset, so
+      its visible mark remains within the 66dp safe zone without distortion.
     -->
     <item
-        android:width="90dp"
-        android:height="90dp"
+        android:width="72dp"
+        android:height="72dp"
         android:gravity="center">
         <bitmap
             android:filter="true"

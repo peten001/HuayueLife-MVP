@@ -1,7 +1,7 @@
 {
-  "name": "云桥 Life 收银台",
-  "short_name": "云桥收银",
-  "description": "云桥 Life 商家收银与桌台管理工作台",
+  "name": "YunQiao Cashier",
+  "short_name": "YunQiao Cashier",
+  "description": "YunQiao Cashier 商家收银与桌台管理工作台",
   "start_url": "/tables",
   "scope": "/",
   "id": "/",
@@ -11,8 +11,8 @@
     "standalone",
     "minimal-ui"
   ],
-  "background_color": "#eff4f7",
-  "theme_color": "#061522",
+  "background_color": "#010911",
+  "theme_color": "#010911",
   "lang": "zh-CN",
   "categories": ["business", "productivity"],
   "icons": [

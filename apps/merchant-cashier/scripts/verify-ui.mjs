@@ -1387,8 +1387,8 @@ async function verifyPwaManifestAndNavigation() {
   const response = await page.request.get(`${baseUrl}/manifest.webmanifest`);
   assert.equal(response.status(), 200, 'manifest.webmanifest should return 200');
   const manifest = await response.json();
-  assert.equal(manifest.name, '云桥 Life 收银台');
-  assert.equal(manifest.short_name, '云桥收银');
+  assert.equal(manifest.name, 'YunQiao Cashier');
+  assert.equal(manifest.short_name, 'YunQiao Cashier');
   assert.equal(manifest.start_url, '/tables');
   assert.equal(manifest.scope, '/');
   assert.equal(manifest.display, 'standalone');

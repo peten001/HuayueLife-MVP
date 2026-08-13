@@ -39,7 +39,7 @@ class TerminalV2ApiClient(
             body = JSONObject()
                 .put("terminalInstanceId", terminalInstanceId)
                 .put("terminalSecret", terminalSecret)
-                .put("terminalName", "YunQiao Merchant Terminal")
+                .put("terminalName", "YunQiao Cashier")
                 .put("deviceModel", deviceModel.take(80))
                 .put("appVersion", BuildConfig.VERSION_NAME)
                 .put("appVersionCode", BuildConfig.VERSION_CODE)

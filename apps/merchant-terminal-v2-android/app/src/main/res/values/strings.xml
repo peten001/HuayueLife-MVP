@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">云桥商家终端</string>
+    <string name="app_name">YunQiao Cashier</string>
     <string name="service_channel_name">本地打印服务</string>
     <string name="service_notification_title">云桥本地打印服务</string>
     <string name="service_notification_text">正在安全连接打印机与云桥平台</string>

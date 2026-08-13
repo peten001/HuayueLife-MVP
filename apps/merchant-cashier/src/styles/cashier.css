@@ -969,8 +969,8 @@
   border-radius: 16px;
   background: var(--cashier-white-alpha-03);
 }
-.cashier-brand--auth .cashier-brand__logo { width: 72px; height: 72px; flex-basis: 72px; }
-.cashier-brand--auth .cashier-brand__name { font-size: 36px; }
+.cashier-brand--auth .cashier-brand__logo { width: 82px; height: 82px; flex-basis: 82px; }
+.cashier-brand--auth .cashier-brand__name { font-size: clamp(30px, 3.25vw, 38px); }
 .auth-card { width: 100%; max-height: calc(100vh - 40px); padding: 25px; overflow: auto; border: 1px solid var(--cashier-border); border-radius: 14px; color: var(--cashier-text); background: var(--cashier-surface); box-shadow: 0 24px 60px var(--cashier-auth-shadow-color); }
 .auth-page > .auth-card:only-child { grid-column: 1 / -1; width: min(460px, 100%); justify-self: center; }
 .auth-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 15px; border-bottom: 1px solid var(--cashier-border); }
@@ -1147,9 +1147,9 @@
   .order-list { grid-template-columns: 1fr; }
   .auth-page { display: block; padding: 16px 10px; overflow: auto; }
   .auth-product-intro { display: flex; align-items: center; margin: 0 auto 12px; width: min(500px, 100%); }
-  .cashier-brand--auth { width: auto; height: auto; padding: 8px 10px; }
-  .cashier-brand--auth .cashier-brand__name { display: block; font-size: 19px; }
-  .cashier-brand--auth .cashier-brand__logo { width: 38px; height: 38px; flex-basis: 38px; }
+  .cashier-brand--auth { width: auto; height: auto; gap: 12px; padding: 10px 14px; }
+  .cashier-brand--auth .cashier-brand__name { display: block; font-size: clamp(21px, 6vw, 25px); }
+  .cashier-brand--auth .cashier-brand__logo { width: 52px; height: 52px; flex-basis: 52px; }
   .auth-card { width: min(500px, 100%); max-height: none; margin: auto; padding: 18px 15px; }
   .confirm-dialog { grid-template-columns: 1fr; }
   .confirm-dialog footer { grid-column: 1; }

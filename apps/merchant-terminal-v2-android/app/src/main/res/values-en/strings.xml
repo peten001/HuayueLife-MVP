@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">YunQiao Merchant Terminal</string>
+    <string name="app_name">YunQiao Cashier</string>
     <string name="service_channel_name">Local printing service</string>
     <string name="service_notification_title">YunQiao local printing service</string>
     <string name="service_notification_text">Securely connecting printers to YunQiao</string>

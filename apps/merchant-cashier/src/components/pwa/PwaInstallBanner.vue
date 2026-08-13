@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X } from '@lucide/vue';
+import { Home, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { useI18n } from '@/i18n';
 import { usePwaInstall } from '@/composables';
@@ -12,7 +12,6 @@ const {
   isWebView,
   shouldShowBanner,
   shouldShowIosPrompt,
-  shouldShowAndroidFallback,
   isInstallable,
   installWithPrompt,
   dismissBanner,
@@ -26,23 +25,14 @@ const visible = computed(() =>
   && !isWebView.value
 );
 
-const ctaLabel = computed(() => {
-  if (isAndroid.value && isInstallable.value) return t('pwa.installAction');
-  if (shouldShowAndroidFallback.value) return t('pwa.androidFallbackAction');
-  return t('pwa.dismiss');
-});
-
 const message = computed(() => {
-  if (isIOS.value && shouldShowIosPrompt.value) return t('pwa.iosInstallMessage');
+  if (isIOS.value && shouldShowIosPrompt.value) return t('pwa.iosInstallInstructions');
   if (isAndroid.value && isInstallable.value) return t('pwa.androidInstallMessage');
   return t('pwa.androidInstallUnavailable');
 });
 
 async function handlePrimaryAction() {
-  if (!isAndroid.value || !isInstallable.value) {
-    dismissBanner();
-    return;
-  }
+  if (!isAndroid.value || !isInstallable.value) return;
   busy.value = true;
   try {
     await installWithPrompt();
@@ -55,24 +45,31 @@ async function handlePrimaryAction() {
 <template>
   <section v-if="visible" class="pwa-install-banner" data-testid="pwa-install-banner">
     <header class="pwa-install-banner__head">
-      <p>{{ t('pwa.installTitle') }}</p>
+      <div class="pwa-install-banner__title">
+        <span class="pwa-install-banner__icon" aria-hidden="true">
+          <Home :size="18" />
+        </span>
+        <p>{{ t('pwa.installTitle') }}</p>
+      </div>
       <button
         type="button"
         class="pwa-install-banner__close"
         :aria-label="t('pwa.dismiss')"
         @click="dismissBanner"
       >
-        <X :size="14" aria-hidden="true" />
+        <X :size="18" aria-hidden="true" />
+        <span class="sr-only">{{ t('pwa.dismiss') }}</span>
       </button>
     </header>
+    <p class="pwa-install-banner__description">{{ t('pwa.installDescription') }}</p>
     <p class="pwa-install-banner__message">{{ message }}</p>
-    <div class="pwa-install-banner__actions">
+    <div v-if="isAndroid && isInstallable" class="pwa-install-banner__actions">
       <button
         type="button"
         class="pwa-install-banner__primary"
         :disabled="busy"
         @click="handlePrimaryAction"
-      >{{ ctaLabel }}</button>
+      >{{ t('pwa.installAction') }}</button>
     </div>
   </section>
 </template>

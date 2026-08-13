@@ -7,7 +7,7 @@ function withoutTrailingSlash(value: string) {
 }
 
 export const cashierConfig = Object.freeze({
-  brandName: 'Yunqiao',
+  brandName: 'YunQiao Cashier',
   apiBaseUrl: withoutTrailingSlash(
     import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL,
   ),
