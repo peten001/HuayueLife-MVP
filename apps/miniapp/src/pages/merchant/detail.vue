@@ -29,9 +29,9 @@ const errorRetryable = ref(true);
 const loading = ref(true);
 const activeHeroIndex = ref(0);
 const merchantNavStyle = ref<Record<string, string>>({});
-const merchantNavTitle = '商家详情';
 const failedMediaUrls = ref<Set<string>>(new Set());
 const { locale, t } = useI18n();
+const merchantNavTitle = computed(() => t('merchantDetailTitle'));
 const favoriteState = ref(false);
 const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
 const capabilityByCode = computed(() =>
@@ -92,11 +92,19 @@ const displayTags = computed(() =>
     ?.map((item) => localizedName(item, locale.value))
     .filter(Boolean) ?? [],
 );
-const contentImages = computed(() =>
+const isClaimedMerchant = computed(
+  () => merchant.value?.merchantMode === 'MANAGED' && merchant.value?.claimStatus === 'CLAIMED',
+);
+const isUnclaimedDisplayMerchant = computed(
+  () => merchant.value?.merchantMode === 'DISPLAY' && merchant.value?.claimStatus === 'UNCLAIMED',
+);
+const merchantClaimLabel = computed(() =>
+  isClaimedMerchant.value ? t('merchantClaimed') : t('merchantUnclaimed'),
+);
+const showClaimCta = computed(() => isUnclaimedDisplayMerchant.value);
+const visibleGalleryImages = computed(() =>
   canShowGallery.value
-    ? (merchant.value?.images ?? []).filter((item) =>
-        ['STORE', 'ENVIRONMENT'].includes(item.imageType),
-      )
+    ? (merchant.value?.images ?? []).filter((item) => item.isVisible !== false)
     : [],
 );
 const heroImages = computed(() => {
@@ -106,16 +114,18 @@ const heroImages = computed(() => {
     if (resolved && !urls.includes(resolved)) urls.push(resolved);
   };
   append(merchant.value?.coverUrl);
-  contentImages.value
-    .filter((item) => item.imageType === 'STORE')
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
-    .forEach((item) => append(item.imageUrl));
+  (['STORE', 'MENU'] as const).forEach((imageType) => {
+    visibleGalleryImages.value
+      .filter((item) => item.imageType === imageType)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+      .forEach((item) => append(item.imageUrl));
+  });
   return urls;
 });
 const environmentImages = computed(() => {
   const heroUrls = new Set(heroImages.value);
   const urls: string[] = [];
-  contentImages.value
+  visibleGalleryImages.value
     .filter((item) => item.imageType === 'ENVIRONMENT')
     .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
     .forEach((item) => {
@@ -688,18 +698,30 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
       <view class="merchant-overview">
         <view class="headline">
-          <image
-            v-if="mediaAvailable(merchant.logoUrl)"
-            class="merchant-logo"
-            :src="resolveMediaUrl(merchant.logoUrl)"
-            mode="aspectFill"
-            :aria-label="merchantName(merchant, locale)"
-            @error="handleMediaError(merchant.logoUrl)"
-          />
-          <text class="title">{{ merchantName(merchant, locale) }}</text>
-          <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
-            {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
-          </text>
+          <view class="identity-row">
+            <image
+              v-if="mediaAvailable(merchant.logoUrl)"
+              class="merchant-logo"
+              :src="resolveMediaUrl(merchant.logoUrl)"
+              mode="aspectFill"
+              :aria-label="merchantName(merchant, locale)"
+              @error="handleMediaError(merchant.logoUrl)"
+            />
+            <view class="identity-copy">
+              <text class="title">{{ merchantName(merchant, locale) }}</text>
+              <view class="identity-badges">
+                <text
+                  v-if="isClaimedMerchant || isUnclaimedDisplayMerchant"
+                  :class="['claim-badge', { 'is-claimed': isClaimedMerchant }]"
+                >
+                  {{ merchantClaimLabel }}
+                </text>
+                <text :class="['status', merchant.isOpen ? 'open' : 'closed']">
+                  {{ merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
+                </text>
+              </view>
+            </view>
+          </view>
         </view>
         <view v-if="displayBusinessType || displayTags.length" class="meta-row">
           <text v-if="displayBusinessType" class="meta-type">{{ displayBusinessType }}</text>
@@ -806,6 +828,20 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
       </view>
 
+      <view v-if="showClaimCta" class="claim-card">
+        <view class="claim-copy">
+          <text class="claim-title">{{ t('merchantClaimTitle') }}</text>
+          <text class="claim-description">{{ t('merchantClaimDescription') }}</text>
+        </view>
+        <button
+          class="claim-action"
+          open-type="contact"
+          hover-class="is-pressed"
+        >
+          {{ t('merchantClaimAction') }}
+        </button>
+      </view>
+
       <view :class="['sticky-actions', { 'has-order-ctas': hasBottomCta }]">
         <view class="sticky-tools">
           <button v-if="canPhone" class="bottom-action" hover-class="is-pressed" @tap="handlePhoneTap">
@@ -828,7 +864,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
             hover-class="is-pressed"
             @tap="openMenu('PICKUP')"
           >
-            <image class="order-action-icon" :src="uiIcons.pickupWhite" mode="aspectFit" />
+            <image class="order-action-icon" :src="uiIcons.pickup" mode="aspectFit" />
             <text>{{ t('pickup') }}</text>
           </button>
           <button
@@ -837,11 +873,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
             hover-class="is-pressed"
             @tap="openMenu('DELIVERY')"
           >
-            <image
-              class="order-action-icon"
-              :src="canOpenPickup ? uiIcons.delivery : uiIcons.deliveryWhite"
-              mode="aspectFit"
-            />
+            <image class="order-action-icon" :src="uiIcons.deliveryWhite" mode="aspectFit" />
             <text>{{ t('delivery') }}</text>
           </button>
         </view>
@@ -852,7 +884,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 <style scoped>
 /* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal
- * B=compact-system-sans · C=split-gallery+four-column-facilities+three-up-dish-rails+compact-action-dock
+ * B=compact-system-sans · C=cover-store-menu-gallery+claim-state-identity+four-column-facilities+delivery-priority-action-dock
  * D=feedback-only · E=existing-restaurant-photography · SOUL=6 SPECTACLE=2 DENSITY=9 */
 .page {
   --page-bg: #f6faf7;
@@ -878,6 +910,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
   --badge-overlay: rgb(31 45 36 / 76%);
   --surface-translucent: rgb(255 255 255 / 78%);
   --brand-hairline: rgb(46 125 50 / 10%);
+  --claim-line: rgb(154 101 0 / 14%);
+  --claim-claimed-line: rgb(46 125 50 / 10%);
   --control-shadow: 0 8rpx 24rpx rgb(0 0 0 / 16%);
   --logo-shadow: 0 6rpx 18rpx rgb(31 45 36 / 8%);
   --dock-shadow: 0 -12rpx 30rpx rgb(31 45 36 / 8%);
@@ -2341,6 +2375,96 @@ function hasCapability(code: string, fallbackValue: boolean) {
   margin-bottom: 14rpx;
 }
 
+.identity-badges {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.claim-badge {
+  display: inline-flex;
+  padding: 6rpx 12rpx;
+  align-items: center;
+  border: 1rpx solid var(--claim-line);
+  border-radius: 999rpx;
+  color: var(--warning);
+  background: var(--warm);
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.claim-badge.is-claimed {
+  border-color: var(--claim-claimed-line);
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+}
+
+.claim-card {
+  display: flex;
+  margin: 0 22rpx 16rpx;
+  padding: 18rpx;
+  align-items: center;
+  gap: 16rpx;
+  border: 1rpx solid var(--claim-claimed-line);
+  border-radius: 16rpx;
+  background: var(--surface-soft);
+  box-shadow: 0 7rpx 18rpx rgb(31 45 36 / 5%);
+  box-sizing: border-box;
+}
+
+.claim-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.claim-title {
+  color: var(--ink);
+  font-size: 25rpx;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.claim-description {
+  color: var(--ink-3);
+  font-size: 21rpx;
+  line-height: 1.4;
+}
+
+.claim-action {
+  min-width: 154rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 14rpx;
+  color: var(--on-brand);
+  background: var(--brand-deep);
+  font-size: 22rpx;
+  font-weight: 750;
+  line-height: 88rpx;
+  white-space: nowrap;
+  transition: transform 160ms ease, opacity 160ms ease;
+  box-sizing: border-box;
+}
+
+.claim-action::after {
+  border: 0;
+}
+
+.claim-action.is-pressed {
+  opacity: 0.86;
+  transform: scale(0.96);
+}
+
 .sticky-actions {
   position: fixed;
   right: 0;
@@ -2447,13 +2571,14 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .sticky-orders .delivery {
   border-color: transparent;
-  color: var(--brand-deep);
-  background: var(--brand-soft);
-}
-
-.sticky-orders .delivery.is-solo {
   color: var(--on-brand);
   background: var(--brand-deep);
+}
+
+.sticky-orders .pickup {
+  border-color: var(--brand-hairline);
+  color: var(--brand-deep);
+  background: var(--brand-soft);
 }
 
 .sticky-orders .order-action-icon {

@@ -148,6 +148,7 @@ export interface MerchantSummary extends LocalizedFields {
     titleVi?: string | null;
     titleEn?: string | null;
     sortOrder: number;
+    isVisible?: boolean;
   }>;
 }
 

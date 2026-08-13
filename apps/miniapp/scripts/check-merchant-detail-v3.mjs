@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const miniappRoot = path.resolve(currentDir, '..');
+const detailPath = path.join(miniappRoot, 'src/pages/merchant/detail.vue');
+const orderingPath = path.join(miniappRoot, 'src/utils/merchant-ordering-visibility.ts');
+const i18nPath = path.join(miniappRoot, 'src/i18n/index.ts');
+
+const detail = fs.readFileSync(detailPath, 'utf8');
+const ordering = fs.readFileSync(orderingPath, 'utf8');
+const i18n = fs.readFileSync(i18nPath, 'utf8');
+
+function blockAfter(source, marker) {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing ${marker}`);
+  const end = source.indexOf('\n});', start);
+  assert.notEqual(end, -1, `unterminated ${marker}`);
+  return source.slice(start, end + 4);
+}
+
+const heroBlock = blockAfter(detail, 'const heroImages = computed(() => {');
+const environmentBlock = blockAfter(detail, 'const environmentImages = computed(() => {');
+
+assert.match(detail, /const visibleGalleryImages = computed\([\s\S]*item\.isVisible !== false/);
+assert.ok(
+  heroBlock.indexOf('append(merchant.value?.coverUrl);')
+    < heroBlock.indexOf("(['STORE', 'MENU'] as const)"),
+  'hero must begin with the cover before STORE and MENU media',
+);
+assert.match(heroBlock, /\['STORE', 'MENU'\] as const/);
+assert.doesNotMatch(heroBlock, /ENVIRONMENT|PRODUCT/);
+assert.match(environmentBlock, /item\.imageType === 'ENVIRONMENT'/);
+assert.doesNotMatch(environmentBlock, /item\.imageType === 'PRODUCT'/);
+assert.match(heroBlock, /!urls\.includes\(resolved\)/);
+assert.match(environmentBlock, /!heroUrls\.has\(resolved\).*?!urls\.includes\(resolved\)/s);
+
+assert.match(
+  detail,
+  /merchantMode === 'MANAGED' && merchant\.value\?\.claimStatus === 'CLAIMED'/,
+);
+assert.match(
+  detail,
+  /merchantMode === 'DISPLAY' && merchant\.value\?\.claimStatus === 'UNCLAIMED'/,
+);
+assert.match(detail, /t\('merchantClaimed'\).*t\('merchantUnclaimed'\)/s);
+assert.match(detail, /v-if="showClaimCta" class="claim-card"/);
+assert.match(detail, /open-type="contact"/);
+assert.doesNotMatch(detail, /merchantClaimSuccess|claimApplication|handleClaimContact/);
+
+assert.match(detail, /const signatureDishes = computed\(\(\) => merchant\.value\?\.signatureDishes \?\? \[\]\)/);
+assert.match(detail, /const hotRecommendations = computed\(\(\) => merchant\.value\?\.hotRecommendations \?\? \[\]\)/);
+assert.match(detail, /v-if="signatureDishes\.length"/);
+assert.match(detail, /v-if="hotRecommendations\.length"/);
+assert.match(detail, /v-if="environmentImages\.length"/);
+
+assert.match(ordering, /input\.merchantMode === 'MANAGED' && input\.claimStatus === 'CLAIMED'/);
+assert.match(ordering, /input\.platformOrderingEnabled/);
+assert.match(ordering, /pickupCtaVisible: pickupSupported && input\.supportedOrderTypes\.includes\('PICKUP'\)/);
+assert.match(ordering, /deliveryCtaVisible: deliverySupported && input\.supportedOrderTypes\.includes\('DELIVERY'\)/);
+assert.doesNotMatch(detail, /openMenu\('DINE_IN'\)|tableToken|qrCtaVisible/);
+assert.match(detail, /class="primary pickup"/);
+assert.match(detail, /\['primary', 'delivery', \{ 'is-solo': !canOpenPickup \}\]/);
+assert.match(detail, /\.sticky-orders \.pickup \{[\s\S]*background: var\(--brand-soft\);/);
+assert.match(detail, /\.sticky-orders \.delivery \{[\s\S]*background: var\(--brand-deep\);/);
+
+for (const [locale, labels] of Object.entries({
+  zh: ['已认领', '未认领', '这是您的商家？', '免费认领'],
+  vi: ['Đã nhận', 'Chưa nhận', 'Đây là cửa hàng của bạn?', 'Nhận miễn phí'],
+  en: ['Claimed', 'Unclaimed', 'Is this your business?', 'Claim for free'],
+})) {
+  for (const label of labels) {
+    assert.ok(i18n.includes(label), `missing ${locale} claim copy: ${label}`);
+  }
+}
+
+for (const match of detail.matchAll(/['"](\/static\/merchant-detail-icons\/[^'"]+)['"]/g)) {
+  const assetPath = path.join(miniappRoot, 'src', match[1]);
+  assert.ok(fs.existsSync(assetPath), `missing merchant-detail icon: ${match[1]}`);
+}
+
+console.log('check:merchant-detail-v3: source assertions passed.');
