@@ -5,11 +5,17 @@ import { OrdersModule } from '../orders/orders.module';
 import { TableSessionsModule } from '../table-sessions/table-sessions.module';
 import { MerchantOrdersController } from './merchant-orders.controller';
 import { MerchantOrdersService } from './merchant-orders.service';
+import { MerchantAnalyticsController } from './merchant-analytics.controller';
+import { MerchantAnalyticsService } from './merchant-analytics.service';
 import { MerchantTableOrdersController } from './merchant-table-orders.controller';
 
 @Module({
   imports: [PrintersModule, PrintingModule, OrdersModule, TableSessionsModule],
-  controllers: [MerchantOrdersController, MerchantTableOrdersController],
-  providers: [MerchantOrdersService],
+  controllers: [
+    MerchantOrdersController,
+    MerchantTableOrdersController,
+    MerchantAnalyticsController,
+  ],
+  providers: [MerchantOrdersService, MerchantAnalyticsService],
 })
 export class MerchantOrdersModule {}

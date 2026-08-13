@@ -120,6 +120,11 @@ const router = createRouter({
           meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
+          path: 'business-analytics',
+          component: () => import('@/pages/BusinessAnalyticsPage.vue'),
+          meta: { roles: ['OWNER', 'MANAGER'] },
+        },
+        {
           path: 'orders',
           component: OrdersPage,
           meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },

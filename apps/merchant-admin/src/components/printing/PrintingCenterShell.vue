@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { getPrintingPrinters, getPrintingRules } from '@/api/printing';
@@ -20,6 +20,8 @@ import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 const { p } = usePrintingI18n();
 const route = useRoute();
 const helpOpen = ref(false);
+const helpButton = ref<HTMLButtonElement | null>(null);
+const helpDrawer = ref<HTMLElement | null>(null);
 const featureState = ref<PrintingFeatureState | null>(null);
 const printers = ref<PrintingPrinter[]>([]);
 const rules = ref<PrintingRule[]>([]);
@@ -115,9 +117,24 @@ function refreshPrintingState() {
   void loadFeatureState(false);
 }
 
+function openHelp() {
+  helpOpen.value = true;
+  void nextTick(() => helpDrawer.value?.querySelector<HTMLButtonElement>('button')?.focus());
+}
+
+function closeHelp() {
+  helpOpen.value = false;
+  void nextTick(() => helpButton.value?.focus());
+}
+
+function handleHelpKeydown(event: KeyboardEvent) {
+  if (helpOpen.value && event.key === 'Escape') closeHelp();
+}
+
 onMounted(() => {
   void loadFeatureState();
   window.addEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
+  window.addEventListener('keydown', handleHelpKeydown);
   statusClock = window.setInterval(() => {
     now.value = Date.now();
     if (document.visibilityState === 'visible') void loadFeatureState(false);
@@ -126,6 +143,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
+  window.removeEventListener('keydown', handleHelpKeydown);
   if (statusClock !== undefined) window.clearInterval(statusClock);
 });
 </script>
@@ -139,7 +157,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="printing-center__header-actions">
         <!-- legacy route retained for old links: to="/printing-center/android-terminal" -->
-        <a class="printing-center__download-link" :href="androidTerminalRelease.downloadUrl" :download="androidTerminalRelease.fileName">
+        <a class="printing-center__download-link" v-bind="{ href: androidTerminalRelease.downloadUrl, download: androidTerminalRelease.fileName }">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
           <span class="printing-center__download-label">{{ p('downloadMerchantApp') }}</span>
           <span class="printing-center__download-short">{{ p('downloadAppShort') }}</span>
@@ -154,7 +172,7 @@ onBeforeUnmount(() => {
       >
           {{ p('printingService') }}：{{ platformCapabilityLabel }}
         </span>
-        <button class="printing-center__help-button" type="button" @click="helpOpen = true">
+        <button ref="helpButton" class="printing-center__help-button" type="button" @click="openHelp">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.7 9a2.4 2.4 0 1 1 4.2 1.6c-.9.8-1.9 1.2-1.9 2.6m0 3h.01" /></svg>
           {{ p('help') }}
         </button>
@@ -193,9 +211,9 @@ onBeforeUnmount(() => {
       <strong>{{ p('printingNotEnabled') }}</strong><p>{{ p('printingNotEnabledHint') }}</p>
     </section>
 
-    <section v-if="helpOpen" class="printing-help-backdrop" @click.self="helpOpen = false">
-      <aside class="printing-help-drawer" aria-labelledby="printing-help-title">
-        <header><div><span class="printing-help-kicker">{{ p('help') }}</span><h2 id="printing-help-title">{{ p('helpAndDiagnostics') }}</h2></div><button type="button" :aria-label="p('close')" @click="helpOpen = false">×</button></header>
+    <section v-if="helpOpen" class="printing-help-backdrop" @click.self="closeHelp">
+      <aside ref="helpDrawer" class="printing-help-drawer" role="dialog" aria-modal="true" aria-labelledby="printing-help-title" tabindex="-1">
+        <header><div><span class="printing-help-kicker">{{ p('help') }}</span><h2 id="printing-help-title">{{ p('helpAndDiagnostics') }}</h2></div><button type="button" :aria-label="p('close')" @click="closeHelp">×</button></header>
         <div class="printing-help-body">
           <h3>{{ p('howToChoosePrinting') }}</h3>
           <div class="printing-help-item"><strong>{{ p('usbPrinting') }}</strong><p>{{ p('helpUsb') }}</p></div>
@@ -1009,7 +1027,7 @@ onBeforeUnmount(() => {
   --printing-muted: #5f6f65;
   --printing-border: #dde6e0;
   --printing-bg: #f6f8f7;
-  font-family: Inter, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--printing-ink);
 }
 .printing-center__header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
@@ -1044,4 +1062,38 @@ onBeforeUnmount(() => {
 .printing-help-diagnostics summary small { margin-left: 20px; color: #7c8981; font-size: 12px; }
 .printing-help-diagnostics .printing-safety-gates__flags { margin-top: 12px; }
 @media (max-width: 760px) { .printing-center__header-actions { width: 100%; justify-content: stretch; } .printing-center__download-link, .printing-center__help-button { flex: 1; } .printing-center__download-label { display: none; } .printing-center__download-short { display: inline; } .printing-help-drawer > header, .printing-help-body { padding: 16px; } }
+@media (max-width: 768px) {
+  .printing-center { gap: 9px; margin-top: 0; padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+  .printing-center__header { align-items: stretch; flex-direction: column; gap: 9px; }
+  .printing-center__title-block h1 { font-size: 22px !important; line-height: 1.2 !important; }
+  .printing-center__title-block p { display: -webkit-box; overflow: hidden; font-size: 12px !important; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .printing-center__header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 7px; }
+  .printing-center__download-link, .printing-center__help-button { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; white-space: nowrap; }
+  .printing-center__download-label { display: none; }
+  .printing-center__download-short { display: inline; }
+  .printing-center__capability-status { grid-column: 1 / -1; justify-content: center; min-height: 34px; overflow: hidden; text-overflow: ellipsis; }
+  .printing-center__notice { min-height: 42px; padding: 9px 11px; font-size: 12px; }
+  .printing-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .printing-status-card { min-height: 78px; padding: 9px 10px; }
+  .printing-status-card span { font-size: 11px; }
+  .printing-status-card strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .printing-status-card small { font-size: 10px; }
+  .printing-center__tabs { width: 100%; min-height: 48px; gap: 2px; padding: 3px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .printing-center__tabs::-webkit-scrollbar { display: none; }
+  .printing-center__tabs a { min-height: 42px; flex: 0 0 auto; padding: 0 12px; font-size: 12px; scroll-snap-align: start; }
+  .printing-panel { padding: 12px; }
+  .printing-toolbar { align-items: stretch; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+  .printing-toolbar h2 { font-size: 17px; }
+  .printing-toolbar p { font-size: 12px; }
+  .printing-toolbar__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .printing-toolbar__actions .printing-button { width: 100%; min-width: 0; white-space: nowrap; }
+  .printing-printer-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 11px; }
+  .printing-printer-row>.printing-actions { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 7px; }
+  .printing-printer-row>.printing-actions .printing-button { width: 100%; min-width: 0; min-height: 44px; padding: 7px 8px; white-space: nowrap; }
+  .printing-printer-row__notice { margin-left: 0; }
+  .printing-receipt-options { grid-template-columns: minmax(0, 1fr); }
+  .printing-help-drawer { padding-bottom: env(safe-area-inset-bottom); }
+  .printing-help-drawer>header, .printing-help-body { padding: 16px; }
+  .printing-modal { min-height: 100dvh; max-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+}
 </style>

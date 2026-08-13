@@ -20,7 +20,7 @@ const route = useRoute();
 const { locale, t } = useI18n();
 const staff = ref(getMerchantStaff());
 const mobileMenuOpen = ref(false);
-type DesktopNavIcon = 'dashboard' | 'orders' | 'store' | 'categories' | 'products' | 'tables' | 'printing' | 'staff' | 'logout';
+type DesktopNavIcon = 'dashboard' | 'analytics' | 'orders' | 'store' | 'categories' | 'products' | 'tables' | 'printing' | 'staff' | 'logout';
 
 const navByRole: Record<
   'OWNER' | 'MANAGER' | 'STAFF',
@@ -28,6 +28,7 @@ const navByRole: Record<
 > = {
   OWNER: [
     ['/dashboard', 'dashboard'],
+    ['/business-analytics', 'businessAnalytics'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
     ['/printing-center', 'printingCenter'],
@@ -37,6 +38,7 @@ const navByRole: Record<
   ],
   MANAGER: [
     ['/dashboard', 'dashboard'],
+    ['/business-analytics', 'businessAnalytics'],
     ['/orders', 'orders', 'orders'],
     ['/merchant/profile', 'storeSettings'],
     ['/printing-center', 'printingCenter'],
@@ -52,27 +54,27 @@ const navByRole: Record<
 
 const mobileTabsByRole: Record<
   'OWNER' | 'MANAGER' | 'STAFF',
-  Array<{ path?: string; label: TranslationKey; icon: string; action?: 'more' }>
+  Array<{ path?: string; label: TranslationKey; icon: DesktopNavIcon; action?: 'more' }>
 > = {
   OWNER: [
-    { path: '/dashboard', label: 'dashboard', icon: '🏠' },
-    { path: '/orders', label: 'orders', icon: '🧾' },
-    { path: '/menu/products', label: 'products', icon: '🍜' },
-    { path: '/tables', label: 'tables', icon: '▦' },
-    { action: 'more', label: 'my', icon: '👤' },
+    { path: '/dashboard', label: 'dashboard', icon: 'dashboard' },
+    { path: '/orders', label: 'orders', icon: 'orders' },
+    { path: '/business-analytics', label: 'businessAnalytics', icon: 'analytics' },
+    { path: '/tables', label: 'tables', icon: 'tables' },
+    { action: 'more', label: 'my', icon: 'staff' },
   ],
   MANAGER: [
-    { path: '/dashboard', label: 'dashboard', icon: '🏠' },
-    { path: '/orders', label: 'orders', icon: '🧾' },
-    { path: '/menu/products', label: 'products', icon: '🍜' },
-    { path: '/tables', label: 'tables', icon: '▦' },
-    { action: 'more', label: 'my', icon: '👤' },
+    { path: '/dashboard', label: 'dashboard', icon: 'dashboard' },
+    { path: '/orders', label: 'orders', icon: 'orders' },
+    { path: '/business-analytics', label: 'businessAnalytics', icon: 'analytics' },
+    { path: '/tables', label: 'tables', icon: 'tables' },
+    { action: 'more', label: 'my', icon: 'staff' },
   ],
   STAFF: [
-    { path: '/dashboard', label: 'dashboard', icon: '🏠' },
-    { path: '/orders', label: 'orders', icon: '🧾' },
-    { path: '/merchant/profile', label: 'storeSettings', icon: '🏪' },
-    { action: 'more', label: 'my', icon: '👤' },
+    { path: '/dashboard', label: 'dashboard', icon: 'dashboard' },
+    { path: '/orders', label: 'orders', icon: 'orders' },
+    { path: '/merchant/profile', label: 'storeSettings', icon: 'store' },
+    { action: 'more', label: 'my', icon: 'staff' },
   ],
 };
 
@@ -90,7 +92,7 @@ const mobileTabs = computed(() =>
 );
 const mobileLinkTabs = computed(
   () =>
-    mobileTabs.value.filter((item): item is { path: string; label: TranslationKey; icon: string } =>
+    mobileTabs.value.filter((item): item is { path: string; label: TranslationKey; icon: DesktopNavIcon } =>
       Boolean(item.path),
     ),
 );
@@ -180,6 +182,7 @@ function canShowPath(path: string) {
 
 function navIconForPath(path: string): DesktopNavIcon {
   if (path === '/dashboard') return 'dashboard';
+  if (path === '/business-analytics') return 'analytics';
   if (path === '/orders') return 'orders';
   if (path === '/merchant/profile') return 'store';
   if (path === '/menu/categories') return 'categories';
@@ -193,6 +196,7 @@ function navIconForPath(path: string): DesktopNavIcon {
 function iconPaths(icon: DesktopNavIcon) {
   const icons: Record<DesktopNavIcon, string[]> = {
     dashboard: ['M3 10.5 12 3l9 7.5', 'M5.5 9.5V21h13V9.5', 'M9.5 21v-6h5v6'],
+    analytics: ['M4 19V9', 'M10 19V5', 'M16 19v-7', 'M22 19H2', 'm4-12 4-3 6 4 5-5'],
     orders: ['M6 4.5h12', 'M6 9h12', 'M6 13.5h8', 'M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z'],
     store: ['M4 10.5h16', 'M6 10.5V20h12v-9.5', 'M8 7V5h8v2', 'M5 10.5 7 4h10l2 6.5'],
     categories: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
@@ -207,11 +211,11 @@ function iconPaths(icon: DesktopNavIcon) {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'app-shell--analytics': route.path === '/business-analytics' }">
     <aside class="sidebar merchant-sidebar">
       <div class="brand-block">
         <div class="brand-logo">
-          <img :src="huayueLogo" alt="Yunqiao Life logo" />
+          <img v-bind="{ src: huayueLogo }" alt="Yunqiao Life logo" />
         </div>
         <div class="brand-copy">
           <div class="brand-title">{{ sidebarBrand.title }}</div>
@@ -307,7 +311,11 @@ function iconPaths(icon: DesktopNavIcon) {
         class="mobile-tab"
         :class="{ active: isActivePath(tab.path) }"
       >
-        <span class="mobile-tab-icon">{{ tab.icon }}</span>
+        <span class="mobile-tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path v-for="segment in iconPaths(tab.icon)" :key="segment" :d="segment" />
+          </svg>
+        </span>
         <span class="mobile-tab-label">{{ t(tab.label) }}</span>
       </RouterLink>
       <button
@@ -317,7 +325,11 @@ function iconPaths(icon: DesktopNavIcon) {
         :class="{ active: mobileMenuOpen }"
         @click="openMobileMenu"
       >
-        <span class="mobile-tab-icon">{{ mobileMoreTab.icon }}</span>
+        <span class="mobile-tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path v-for="segment in iconPaths(mobileMoreTab.icon)" :key="segment" :d="segment" />
+          </svg>
+        </span>
         <span class="mobile-tab-label">{{ t(mobileMoreTab.label) }}</span>
       </button>
     </nav>
@@ -332,7 +344,12 @@ function iconPaths(icon: DesktopNavIcon) {
   min-width: 0;
   grid-template-columns: var(--merchant-sidebar-width) minmax(0, 1fr);
   background: #f6f8f7;
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.app-shell--analytics,
+.app-shell--analytics .content {
+  background: #f1f5f1;
 }
 
 .merchant-sidebar {
@@ -539,7 +556,7 @@ function iconPaths(icon: DesktopNavIcon) {
   min-width: 0;
   padding: 28px 30px 36px;
   background: #f6f8f7;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .merchant-nav-icon--logout {
@@ -548,13 +565,30 @@ function iconPaths(icon: DesktopNavIcon) {
   flex-basis: 18px;
 }
 
-@media (max-width: 760px) {
+.mobile-tab-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+@media (min-width: 761px) and (max-width: 900px) {
+  .app-shell--analytics .content {
+    padding: 18px 18px 30px;
+  }
+}
+
+@media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
     width: 100%;
     max-width: 100vw;
     min-width: 0;
-    overflow-x: hidden;
+    min-height: 100dvh;
+    overflow-x: clip;
+  }
+
+  .mobile-only {
+    display: block;
   }
 
   .merchant-sidebar {
@@ -565,8 +599,145 @@ function iconPaths(icon: DesktopNavIcon) {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    padding: 12px 12px calc(92px + env(safe-area-inset-bottom));
-    overflow-x: hidden;
+    min-height: 100dvh;
+    padding: calc(10px + env(safe-area-inset-top)) 12px calc(82px + env(safe-area-inset-bottom));
+    overflow-x: clip;
+  }
+
+  .mobile-page-spacer {
+    display: block;
+    height: 2px;
+  }
+
+  .mobile-tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    display: flex;
+    align-items: stretch;
+    padding: 5px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    border-top: 1px solid #e4ece6;
+    background: rgb(251 253 251 / 97%);
+    box-shadow: 0 -6px 20px rgb(31 45 36 / 7%);
+  }
+
+  .mobile-tab {
+    display: flex;
+    min-width: 0;
+    min-height: 58px;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 3px;
+    border-radius: 11px;
+    color: #7b887f;
+    background: transparent;
+    text-decoration: none;
+  }
+
+  .mobile-tab.active {
+    color: #24783a;
+    background: #eaf6ee;
+  }
+
+  .mobile-tab-button {
+    border: 0;
+    font: inherit;
+  }
+
+  .mobile-tab-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1.15;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: flex-end;
+    padding: 12px max(12px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    background: rgb(16 38 27 / 36%);
+  }
+
+  .mobile-drawer {
+    width: 100%;
+    max-height: min(80dvh, 680px);
+    overflow-y: auto;
+    padding: 16px;
+    border-radius: 18px 18px 14px 14px;
+    background: #fbfdfb;
+    box-shadow: 0 18px 36px rgb(31 45 36 / 14%);
+  }
+
+  .mobile-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .mobile-drawer-header>div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .mobile-drawer-header span {
+    color: #24783a;
+    font-size: 12px;
+    font-weight: 750;
+  }
+
+  .mobile-drawer-header strong {
+    overflow: hidden;
+    color: #1f2d24;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-header-action,
+  .mobile-logout,
+  .mobile-drawer-link {
+    min-height: 44px;
+  }
+
+  .mobile-drawer-links {
+    display: grid;
+    gap: 8px;
+  }
+
+  .mobile-drawer-link {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #e4ece6;
+    border-radius: 12px;
+    color: #1f2d24;
+    background: #fff;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .mobile-drawer-footer {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #e8eee9;
   }
 }
 </style>

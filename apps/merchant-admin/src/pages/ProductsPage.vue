@@ -717,16 +717,24 @@ onMounted(async () => {
 
         <p v-if="productMessage" class="section-message">{{ productMessage }}</p>
 
-        <div class="table-shell">
+        <div class="table-shell product-table-shell">
           <table class="product-table">
+            <colgroup>
+              <col class="product-column" />
+              <col class="category-column" />
+              <col class="price-column" />
+              <col class="sort-column" />
+              <col class="status-column" />
+              <col class="actions-column" />
+            </colgroup>
             <thead>
               <tr>
-                <th>{{ t('product') }}</th>
-                <th>{{ t('category') }}</th>
-                <th>{{ t('priceVnd') }}</th>
-                <th>{{ t('sortOrder') }}</th>
-                <th>{{ t('status') }}</th>
-                <th>{{ t('actions') }}</th>
+                <th scope="col">{{ t('product') }}</th>
+                <th scope="col">{{ t('category') }}</th>
+                <th scope="col" class="numeric-heading">{{ t('priceVnd') }}</th>
+                <th scope="col" class="numeric-heading">{{ t('sortOrder') }}</th>
+                <th scope="col">{{ t('status') }}</th>
+                <th scope="col" class="actions-heading">{{ t('actions') }}</th>
               </tr>
             </thead>
             <tbody v-if="filteredProducts.length">
@@ -738,17 +746,23 @@ onMounted(async () => {
                       <span v-else>{{ pageCopy.noImage }}</span>
                     </div>
                     <div class="product-copy">
-                      <strong>{{ row.nameZh }}</strong>
-                      <small>{{ row.nameVi?.trim() || pageCopy.missingVietnamese }}</small>
-                      <small v-if="row.nameEn?.trim()">English: {{ row.nameEn }}</small>
+                      <strong :title="row.nameZh">{{ row.nameZh }}</strong>
+                      <small :title="row.nameVi?.trim() || pageCopy.missingVietnamese">
+                        {{ row.nameVi?.trim() || pageCopy.missingVietnamese }}
+                      </small>
+                      <small v-if="row.nameEn?.trim()" :title="row.nameEn">English: {{ row.nameEn }}</small>
                     </div>
                   </div>
                 </td>
                 <td>
                   <div class="category-copy">
-                    <strong>{{ row.category?.nameZh || '—' }}</strong>
-                    <small>{{ categorySecondaryName(row.category) }}</small>
-                    <small v-if="row.category?.nameEn?.trim()">English: {{ row.category.nameEn }}</small>
+                    <strong :title="row.category?.nameZh || '—'">{{ row.category?.nameZh || '—' }}</strong>
+                    <small :title="categorySecondaryName(row.category)">
+                      {{ categorySecondaryName(row.category) }}
+                    </small>
+                    <small v-if="row.category?.nameEn?.trim()" :title="row.category.nameEn">
+                      English: {{ row.category.nameEn }}
+                    </small>
                   </div>
                 </td>
                 <td class="numeric-cell">{{ productPrice(row) }}</td>
@@ -788,11 +802,21 @@ onMounted(async () => {
                 </td>
                 <td>
                   <div class="table-actions">
-                    <button type="button" class="icon-action" @click="editProduct(row)" aria-label="edit">
-                      <span aria-hidden="true">✎</span>
+                    <button
+                      type="button"
+                      class="text-action menu-row-action"
+                      :aria-label="`${t('edit')} ${row.nameZh}`"
+                      @click="editProduct(row)"
+                    >
+                      {{ t('edit') }}
                     </button>
-                    <button type="button" class="icon-action danger" @click="disableProductRow(row)" aria-label="disable">
-                      <span aria-hidden="true">🗑</span>
+                    <button
+                      type="button"
+                      class="text-action danger menu-row-action"
+                      :aria-label="`${t('delete')} ${row.nameZh}`"
+                      @click="disableProductRow(row)"
+                    >
+                      {{ t('delete') }}
                     </button>
                   </div>
                 </td>
@@ -809,6 +833,92 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div v-if="filteredProducts.length" class="product-mobile-list">
+          <article v-for="row in filteredProducts" :key="row.id" class="product-mobile-card">
+            <div class="product-mobile-head">
+              <div class="product-thumb product-mobile-thumb">
+                <img v-if="productImage(row)" :src="productImage(row)" :alt="row.nameZh" />
+                <span v-else>{{ pageCopy.noImage }}</span>
+              </div>
+              <div class="product-copy product-mobile-copy">
+                <strong :title="row.nameZh">{{ row.nameZh }}</strong>
+                <small :title="row.nameVi?.trim() || pageCopy.missingVietnamese">
+                  {{ row.nameVi?.trim() || pageCopy.missingVietnamese }}
+                </small>
+                <small v-if="row.nameEn?.trim()" :title="row.nameEn">English: {{ row.nameEn }}</small>
+              </div>
+              <span :class="['status-pill', productStatusClass(row.status)]">
+                {{ productStatusLabel(row.status) }}
+              </span>
+            </div>
+
+            <dl class="product-mobile-meta">
+              <div>
+                <dt>{{ t('category') }}</dt>
+                <dd :title="row.category?.nameZh || '—'">{{ row.category?.nameZh || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('priceVnd') }}</dt>
+                <dd class="numeric-cell">{{ productPrice(row) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('sortOrder') }}</dt>
+                <dd class="numeric-cell">{{ row.sortOrder }}</dd>
+              </div>
+            </dl>
+
+            <div class="status-actions product-mobile-status-actions">
+              <button
+                v-if="row.status !== 'ON_SALE'"
+                type="button"
+                class="mini-chip success"
+                @click="setProductStatus(row, 'ON_SALE')"
+              >
+                {{ t('onSale') }}
+              </button>
+              <button
+                v-if="row.status !== 'SOLD_OUT'"
+                type="button"
+                class="mini-chip warning"
+                @click="setProductStatus(row, 'SOLD_OUT')"
+              >
+                {{ t('soldOut') }}
+              </button>
+              <button
+                v-if="row.status !== 'OFF_SALE'"
+                type="button"
+                class="mini-chip neutral"
+                @click="setProductStatus(row, 'OFF_SALE')"
+              >
+                {{ t('offSale') }}
+              </button>
+            </div>
+
+            <div class="product-mobile-actions">
+              <button
+                type="button"
+                class="text-action"
+                :aria-label="`${t('edit')} ${row.nameZh}`"
+                @click="editProduct(row)"
+              >
+                {{ t('edit') }}
+              </button>
+              <button
+                type="button"
+                class="text-action danger"
+                :aria-label="`${t('delete')} ${row.nameZh}`"
+                @click="disableProductRow(row)"
+              >
+                {{ t('delete') }}
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="product-mobile-empty empty-state">
+          <strong>{{ pageCopy.listTitle }}</strong>
+          <p>{{ pageCopy.searchPlaceholder }}</p>
         </div>
 
         <div class="table-footer">
@@ -1055,6 +1165,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* finesse · register=product · A=incumbent-sage-green · B=compact-system-sans
+ * C=filter-rail+fixed-table-to-cards · D=feedback-only-css · E=real-menu-photography
+ * SOUL=5 SPECTACLE=1 DENSITY=8 */
 .menu-page {
   position: relative;
   display: grid;
@@ -1062,7 +1175,7 @@ onMounted(async () => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .menu-tabs {
@@ -1107,7 +1220,8 @@ onMounted(async () => {
 }
 
 .products-dashboard {
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(216px, 240px) minmax(0, 1fr);
+  gap: 16px;
 }
 
 .category-dashboard {
@@ -1118,6 +1232,12 @@ onMounted(async () => {
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+
+.products-sidebar .filter-card,
+.products-sidebar .stats-card,
+.list-card {
+  padding: 18px;
 }
 
 .card {
@@ -1300,7 +1420,8 @@ onMounted(async () => {
 
 .list-card {
   display: grid;
-  gap: 18px;
+  min-width: 0;
+  gap: 16px;
 }
 
 .list-toolbar {
@@ -1335,6 +1456,15 @@ onMounted(async () => {
   font-weight: 700;
 }
 
+.primary-action:focus-visible,
+.ghost-action:focus-visible,
+.status-filter:focus-visible,
+.mini-chip:focus-visible,
+.text-action:focus-visible {
+  outline: 3px solid rgba(22, 163, 74, 0.22);
+  outline-offset: 2px;
+}
+
 .ghost-action {
   height: 40px;
   padding: 0 14px;
@@ -1362,7 +1492,13 @@ onMounted(async () => {
 
 .table-shell {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+}
+
+.product-table-shell {
+  overflow-x: clip;
 }
 
 .product-table,
@@ -1372,7 +1508,34 @@ onMounted(async () => {
 }
 
 .product-table {
-  min-width: 900px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+.product-table .product-column {
+  width: 26%;
+}
+
+.product-table .category-column {
+  width: 15%;
+}
+
+.product-table .price-column {
+  width: 14%;
+}
+
+.product-table .sort-column {
+  width: 7%;
+}
+
+.product-table .status-column {
+  width: 24%;
+}
+
+.product-table .actions-column {
+  width: 14%;
 }
 
 .category-table {
@@ -1390,6 +1553,10 @@ onMounted(async () => {
   text-align: left;
 }
 
+.product-table thead th {
+  padding: 11px 8px;
+}
+
 .product-table tbody td,
 .category-table tbody td {
   padding: 14px 12px;
@@ -1399,10 +1566,16 @@ onMounted(async () => {
   vertical-align: middle;
 }
 
+.product-table tbody td {
+  min-width: 0;
+  overflow: hidden;
+  padding: 11px 8px;
+}
+
 .product-cell {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -1420,6 +1593,12 @@ onMounted(async () => {
   color: #94a3b8;
   font-size: 12px;
   text-align: center;
+}
+
+.product-table .product-thumb {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
 }
 
 .product-thumb img {
@@ -1449,14 +1628,36 @@ onMounted(async () => {
   line-height: 1.4;
 }
 
+.product-table .product-copy strong,
+.product-table .product-copy small,
+.product-table .category-copy strong,
+.product-table .category-copy small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.numeric-heading,
+.numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.actions-heading {
+  text-align: center !important;
+}
+
 .numeric-cell {
   white-space: nowrap;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .status-stack {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .status-pill {
@@ -1501,6 +1702,11 @@ onMounted(async () => {
   gap: 8px;
 }
 
+.product-table .status-actions {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .mini-chip {
   height: 24px;
   padding: 0 8px;
@@ -1509,6 +1715,11 @@ onMounted(async () => {
   background: #ffffff;
   font-size: 12px;
   font-weight: 700;
+}
+
+.product-table .mini-chip {
+  padding: 0 6px;
+  font-size: 11px;
 }
 
 .mini-chip.success {
@@ -1547,6 +1758,25 @@ onMounted(async () => {
   color: #dc2626;
 }
 
+.product-table .table-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+  gap: 6px;
+}
+
+.menu-row-action {
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.product-mobile-list,
+.product-mobile-empty {
+  display: none;
+}
+
 .text-action {
   height: 32px;
   padding: 0 10px;
@@ -1561,6 +1791,16 @@ onMounted(async () => {
 .text-action.danger {
   border-color: #fecaca;
   color: #dc2626;
+}
+
+.text-action:hover:not(:disabled) {
+  border-color: #b8c8bf;
+  background: #f8faf9;
+}
+
+.text-action.danger:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #fff7f7;
 }
 
 .text-action.success {
@@ -1721,13 +1961,21 @@ onMounted(async () => {
 }
 
 @media (max-width: 1180px) {
-  .products-dashboard,
   .category-dashboard {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .products-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .products-sidebar {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    align-items: stretch;
   }
 
   .dialog-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .field-span-2 {
@@ -1735,7 +1983,7 @@ onMounted(async () => {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .menu-tab {
     width: 160px;
   }
@@ -1762,13 +2010,131 @@ onMounted(async () => {
     box-sizing: border-box;
   }
 
+  .products-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .filter-card,
   .stats-card,
   .category-form-card,
   .category-list-card,
   .list-card,
   .dialog-card {
-    padding: 18px;
+    padding: 16px;
+  }
+
+  .list-card {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .product-table-shell {
+    display: none;
+  }
+
+  .product-mobile-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .product-mobile-empty {
+    display: grid;
+  }
+
+  .product-mobile-card {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #e5ebe8;
+    border-radius: 14px;
+    background: #fbfdfb;
+  }
+
+  .product-mobile-head {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .product-mobile-thumb {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+  }
+
+  .product-mobile-copy strong,
+  .product-mobile-copy small {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .product-mobile-head .status-pill {
+    height: 22px;
+    padding: 0 8px;
+  }
+
+  .product-mobile-meta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 0;
+    border-top: 1px solid #e8eee9;
+    border-bottom: 1px solid #e8eee9;
+  }
+
+  .product-mobile-meta>div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .product-mobile-meta dt {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .product-mobile-meta dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .product-mobile-status-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .product-mobile-status-actions .mini-chip,
+  .product-mobile-actions .text-action {
+    width: 100%;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .product-mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (min-width: 560px) and (max-width: 768px) {
+  .product-mobile-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

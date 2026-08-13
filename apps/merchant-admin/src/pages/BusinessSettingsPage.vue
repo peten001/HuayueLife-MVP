@@ -95,12 +95,13 @@ async function changePassword() {
     <section class="store-profile-card">
       <header><h2>店铺资料（平台维护）</h2><div class="profile-badges"><span class="profile-badge">平台维护</span></div></header>
       <div class="store-profile-grid">
-        <div><h2>基础资料</h2><dl><dt>中文名称</dt><dd>{{ profile?.nameZh || '—' }}</dd><dt>越南语名称</dt><dd>{{ profile?.nameVi || '—' }}</dd><dt>英文名称</dt><dd>{{ profile?.nameEn || '—' }}</dd><dt>联系人</dt><dd>{{ profile?.contactName || '—' }}</dd><dt>联系电话</dt><dd>{{ profile?.contactPhone || '—' }}</dd></dl></div>
-        <div><h2>地址定位</h2><dl><dt>省份</dt><dd>{{ profile?.province || '—' }}</dd><dt>详细地址</dt><dd>{{ profile?.addressDetail || '—' }}</dd><dt>经度 / 纬度</dt><dd>{{ profile?.longitude || '—' }} / {{ profile?.latitude || '—' }}</dd></dl></div>
-        <div><h2>商家封面</h2><div class="profile-cover"><img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="商家封面" /><span v-else>暂无封面图</span></div><p class="profile-maintenance-note">店铺资料由平台维护，如需修改请联系平台管理员。</p></div>
+        <div class="profile-desktop-details"><h2>基础资料</h2><dl><dt>中文名称</dt><dd>{{ profile?.nameZh || '暂无' }}</dd><dt>越南语名称</dt><dd>{{ profile?.nameVi || '暂无' }}</dd><dt>英文名称</dt><dd>{{ profile?.nameEn || '暂无' }}</dd><dt>联系人</dt><dd>{{ profile?.contactName || '暂无' }}</dd><dt>联系电话</dt><dd>{{ profile?.contactPhone || '暂无' }}</dd></dl></div>
+        <div class="profile-desktop-details"><h2>地址定位</h2><dl><dt>省份</dt><dd>{{ profile?.province || '暂无' }}</dd><dt>详细地址</dt><dd>{{ profile?.addressDetail || '暂无' }}</dd><dt>经度</dt><dd>{{ profile?.longitude || '暂无' }}</dd><dt>纬度</dt><dd>{{ profile?.latitude || '暂无' }}</dd></dl></div>
+        <div><h2>商家封面</h2><div class="profile-cover"><img v-if="coverPreviewUrl" v-bind="{ src: coverPreviewUrl }" alt="商家封面" /><span v-else>暂无封面图</span></div><p class="profile-maintenance-note">店铺资料由平台维护，如需修改请联系平台管理员。</p></div>
+        <div class="profile-mobile-details"><dl><dt>中文名称</dt><dd>{{ profile?.nameZh || '暂无' }}</dd><dt>越南语名称</dt><dd>{{ profile?.nameVi || '暂无' }}</dd><dt>英文名称</dt><dd>{{ profile?.nameEn || '暂无' }}</dd><dt>详细地址</dt><dd>{{ profile?.addressDetail || '暂无' }}</dd><dt>经度</dt><dd>{{ profile?.longitude || '暂无' }}</dd><dt>纬度</dt><dd>{{ profile?.latitude || '暂无' }}</dd><dt>联系人</dt><dd>{{ profile?.contactName || '暂无' }}</dd><dt>联系电话</dt><dd>{{ profile?.contactPhone || '暂无' }}</dd></dl></div>
       </div>
     </section>
-    <header class="business-settings-header"><div><h1>经营设置</h1></div><div><button class="save-button" :disabled="saving || !canSaveSettings">{{ saving ? '保存中...' : '▣ 保存设置' }}</button></div></header>
+    <header class="business-settings-header"><div><h1>经营设置</h1><p v-if="message" class="settings-message" role="status" aria-live="polite">{{ message }}</p></div><div><button class="save-button" :disabled="saving || !canSaveSettings">{{ saving ? '保存中...' : '保存设置' }}</button></div></header>
     <div class="business-settings-grid">
       <main class="business-settings-left">
         <section class="settings-card notice-card"><h2>商家公告</h2><textarea v-model="form.notice" maxlength="300" @input="dirty = true" /><span class="counter">{{ form.notice.length }} / 300</span></section>
@@ -109,8 +110,7 @@ async function changePassword() {
 	          <div class="password-card-title">
 	            <h2>修改密码</h2>
 	            <button type="button" class="password-action-button" :disabled="passwordSaving" @click="changePassword">
-	              <span class="password-action-button__icon" aria-hidden="true">🔒</span>
-	              <span class="password-action-button__text">{{ passwordSaving ? '修改中' : '修改密码' }}</span>
+		              <span class="password-action-button__text">{{ passwordSaving ? '修改中' : '修改密码' }}</span>
 	            </button>
 	          </div>
 	          <div class="password-fields">
@@ -120,15 +120,15 @@ async function changePassword() {
 	          </div>
 	        </section>
       </main>
-      <section class="settings-card hours-card"><div class="hours-title"><div><h2>营业时间</h2><p>设置每周营业时间，支持多个营业时段。</p></div></div><div class="hours-table"><div class="hours-head"><span>星期</span><span>营业状态</span><span>营业时段</span><span>操作</span></div><div v-for="day in schedule" :key="day.key" class="hours-row"><strong>{{ t(day.key) }}</strong><label class="switch"><input v-model="day.enabled" type="checkbox" @change="dirty = true" /><i /></label><div v-if="day.enabled" class="intervals"><div v-for="(interval, index) in day.intervals" :key="index" class="interval"><input v-model="interval.start" type="time" @change="dirty = true" /><b>–</b><input v-model="interval.end" type="time" @change="dirty = true" /></div><button v-if="day.intervals.length < 3" type="button" class="add-interval" @click="addInterval(day)">＋ 添加时段</button></div><span v-else class="rest">休息（不营业）</span><button v-if="day.enabled" type="button" class="remove-interval" aria-label="删除营业时段" @click="removeInterval(day, day.intervals.length - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button><span v-else>–</span></div></div></section>
-    </div><p v-if="message" class="settings-message">{{ message }}</p>
+      <section class="settings-card hours-card"><div class="hours-title"><div><h2>营业时间</h2><p>设置每周营业时间，支持多个营业时段。</p></div></div><div class="hours-table"><div class="hours-head"><span>星期</span><span>营业状态</span><span>营业时段</span><span>操作</span></div><div v-for="day in schedule" :key="day.key" class="hours-row"><strong>{{ t(day.key) }}</strong><label class="switch"><input v-model="day.enabled" type="checkbox" @change="dirty = true" /><i /></label><div v-if="day.enabled" class="intervals"><div v-for="(interval, index) in day.intervals" :key="index" class="interval"><input v-model="interval.start" type="time" @change="dirty = true" /><b>-</b><input v-model="interval.end" type="time" @change="dirty = true" /><div v-if="index === day.intervals.length - 1" class="mobile-interval-actions"><button v-if="day.intervals.length < 3" type="button" class="mobile-add-interval" aria-label="添加营业时段" @click="addInterval(day)">＋</button><button type="button" class="mobile-remove-interval" aria-label="删除营业时段" @click="removeInterval(day, index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button></div></div><button v-if="day.intervals.length < 3" type="button" class="add-interval desktop-add-interval" @click="addInterval(day)">＋ 添加时段</button></div><span v-else class="rest">休息（不营业）</span><button v-if="day.enabled" type="button" class="remove-interval desktop-remove-interval" aria-label="删除营业时段" @click="removeInterval(day, day.intervals.length - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button><span v-else>-</span></div></div></section>
+    </div>
     <div v-if="copyOpen" class="copy-modal" @click.self="copyOpen = false"><div class="copy-dialog"><h2>复制营业时间</h2><label>来源星期<select v-model="copySource"><option v-for="day in schedule" :key="day.key" :value="day.key">{{ t(day.key) }}</option></select></label><label>目标星期<select v-model="copyTarget"><option v-for="day in schedule" :key="day.key" :value="day.key">{{ t(day.key) }}</option></select></label><footer><button type="button" @click="copyOpen = false">取消</button><button type="button" class="save-button" @click="copyIntervals">确认复制</button></footer></div></div>
   </form>
 </template>
 
 <style scoped>
 :global(.merchant-sidebar + .content){background:#f6f8f9}
-.business-settings-page{display:grid;gap:14px;max-width:1640px;color:#10213d}.business-settings-header{display:flex;justify-content:space-between;align-items:start}.business-settings-header h1{margin:0;font-size:30px}.business-settings-header p,.settings-card p{margin:6px 0;color:#536b8b}.business-settings-header>div:last-child{display:grid;justify-items:end;gap:6px}.business-settings-header small{color:#536b8b}.save-button{border:0;border-radius:11px;background:#159447;color:#fff;padding:12px 22px;font:inherit;font-weight:700}.save-button:disabled{opacity:.65}.business-settings-grid{display:grid;grid-template-columns:1fr 1.48fr;gap:16px}.business-settings-left{display:grid;gap:16px}.settings-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.settings-card h2{margin:0;font-size:18px}.notice-card{min-height:264px}.notice-card textarea{width:100%;min-height:166px;margin-top:14px;resize:none}.counter{display:block;text-align:right;color:#637491;font-size:12px}.delivery-fields,.password-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}.settings-card label{display:grid;gap:8px;color:#536b8b;font-size:13px;font-weight:600}.settings-card input,.settings-card textarea,.settings-card select{box-sizing:border-box;border:1px solid #dce5e2;border-radius:10px;padding:11px 14px;background:#fff;color:#18263d;font:inherit}.password-hint{display:block;margin-top:18px;color:#159447}.password-actions{display:flex;justify-content:flex-end}.hours-card{padding:20px}.hours-title{display:flex;justify-content:space-between;align-items:start}.copy-button{border:1px solid #bfe2cb;border-radius:9px;background:#f7fcf8;color:#159447;padding:9px 15px;font-weight:700}.hours-table{margin-top:18px;border:1px solid #e0e8e5;border-radius:10px;overflow:hidden}.hours-head,.hours-row{display:grid;grid-template-columns:105px 145px 1fr 58px;align-items:center;gap:14px;padding:12px 16px}.hours-head{background:#f7fafb;color:#536b8b;font-size:13px;font-weight:700}.hours-row{min-height:66px;border-top:1px solid #e5ece9}.switch input{display:none}.switch i{display:block;width:42px;height:24px;border-radius:20px;background:#dfe5e7;position:relative}.switch i:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+i{background:#159447}.switch input:checked+i:after{left:21px}.intervals{display:grid;gap:8px}.interval{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.interval input{width:105px;padding:8px}.interval b{color:#536b8b}.add-interval{border:0;background:none;color:#159447;font-weight:700}.remove-interval{border:0;background:none;color:#536b8b;font-size:20px}.rest{color:#536b8b}.settings-message{margin:0;color:#159447}.copy-modal{position:fixed;inset:0;display:grid;place-items:center;background:#10213d33;z-index:10}.copy-dialog{display:grid;gap:14px;width:340px;padding:22px;border-radius:16px;background:#fff;box-shadow:0 20px 60px #10213d33}.copy-dialog h2{margin:0}.copy-dialog footer{display:flex;justify-content:end;gap:10px}.copy-dialog footer button{padding:10px 14px;border:1px solid #dce5e2;border-radius:9px;background:#fff}@media(max-width:1100px){.business-settings-grid{grid-template-columns:1fr}.hours-card{order:-1}}@media(max-width:700px){.business-settings-header{display:grid;gap:12px}.business-settings-header>div:last-child{justify-items:start}.delivery-fields,.password-fields{grid-template-columns:1fr}.hours-head{display:none}.hours-row{grid-template-columns:70px 50px 1fr 30px;padding:12px 8px}.interval input{width:88px}}
+.business-settings-page{display:grid;gap:14px;max-width:1640px;color:#10213d}.business-settings-header{display:flex;justify-content:space-between;align-items:start}.business-settings-header h1{margin:0;font-size:30px}.business-settings-header p,.settings-card p{margin:6px 0;color:#536b8b}.business-settings-header>div:last-child{display:grid;justify-items:end;gap:6px}.business-settings-header small{color:#536b8b}.save-button{border:0;border-radius:11px;background:#159447;color:#fff;padding:12px 22px;font:inherit;font-weight:700}.save-button:disabled{opacity:.65}.business-settings-grid{display:grid;grid-template-columns:1fr 1.48fr;gap:16px}.business-settings-left{display:grid;gap:16px}.settings-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.settings-card h2{margin:0;font-size:18px}.notice-card{min-height:264px}.notice-card textarea{width:100%;min-height:166px;margin-top:14px;resize:none}.counter{display:block;text-align:right;color:#637491;font-size:12px}.delivery-fields,.password-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}.settings-card label{display:grid;gap:8px;color:#536b8b;font-size:13px;font-weight:600}.settings-card input,.settings-card textarea,.settings-card select{box-sizing:border-box;border:1px solid #dce5e2;border-radius:10px;padding:11px 14px;background:#fff;color:#18263d;font:inherit}.password-hint{display:block;margin-top:18px;color:#159447}.password-actions{display:flex;justify-content:flex-end}.hours-card{padding:20px}.hours-title{display:flex;justify-content:space-between;align-items:start}.copy-button{border:1px solid #bfe2cb;border-radius:9px;background:#f7fcf8;color:#159447;padding:9px 15px;font-weight:700}.hours-table{margin-top:18px;border:1px solid #e0e8e5;border-radius:10px;overflow:hidden}.hours-head,.hours-row{display:grid;grid-template-columns:105px 145px 1fr 58px;align-items:center;gap:14px;padding:12px 16px}.hours-head{background:#f7fafb;color:#536b8b;font-size:13px;font-weight:700}.hours-row{min-height:66px;border-top:1px solid #e5ece9}.switch{position:relative}.switch input{position:absolute;width:1px;height:1px;margin:0;opacity:0}.switch i{display:block;width:42px;height:24px;border-radius:20px;background:#dfe5e7;position:relative}.switch i:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+i{background:#159447}.switch input:checked+i:after{left:21px}.switch input:focus-visible+i{outline:3px solid #8ccca3;outline-offset:3px}.intervals{display:grid;gap:8px}.interval{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.interval input{width:105px;padding:8px}.interval b{color:#536b8b}.add-interval{border:0;background:none;color:#159447;font-weight:700}.remove-interval{border:0;background:none;color:#536b8b;font-size:20px}.mobile-interval-actions{display:none}.rest{color:#536b8b}.settings-message{margin:0;color:#159447}.copy-modal{position:fixed;inset:0;display:grid;place-items:center;background:#10213d33;z-index:10}.copy-dialog{display:grid;gap:14px;width:340px;padding:22px;border-radius:16px;background:#fff;box-shadow:0 20px 60px #10213d33}.copy-dialog h2{margin:0}.copy-dialog footer{display:flex;justify-content:end;gap:10px}.copy-dialog footer button{padding:10px 14px;border:1px solid #dce5e2;border-radius:9px;background:#fff}@media(max-width:1100px){.business-settings-grid{grid-template-columns:1fr}.hours-card{order:-1}}@media(max-width:700px){.business-settings-header{display:grid;gap:12px}.business-settings-header>div:last-child{justify-items:start}.delivery-fields,.password-fields{grid-template-columns:1fr}.hours-head{display:none}.hours-row{grid-template-columns:70px 50px 1fr 30px;padding:12px 8px}.interval input{width:88px}}
 .store-profile-card{border:1px solid #e0e8e5;border-radius:16px;background:#fff;padding:20px;box-shadow:0 5px 18px #10213d08}.store-profile-card>header{display:flex;justify-content:space-between;align-items:center}.store-profile-card h1{margin:0;font-size:24px}.store-profile-card header p{margin:4px 0 0;color:#536b8b}.profile-badge{padding:6px 10px;border-radius:999px;color:#17693c;background:#e4f4e9;font-size:12px;font-weight:700}.store-profile-grid{display:grid;grid-template-columns:1fr 1fr 240px;gap:28px;margin-top:18px}.store-profile-grid h2{margin:0 0 10px;font-size:16px}.store-profile-grid dl{display:grid;grid-template-columns:88px 1fr;gap:7px 12px;margin:0}.store-profile-grid dt{color:#7a8796;font-size:12px}.store-profile-grid dd{margin:0;color:#18263d;font-size:13px;font-weight:600}.profile-cover{height:110px;display:grid;place-items:center;overflow:hidden;border:1px solid #e0e8e5;border-radius:10px;background:#f7fafb;color:#7a8796;font-size:12px}.profile-cover img{width:100%;height:100%;object-fit:cover}
 .intervals{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 18px}.add-interval{flex-basis:100%;text-align:left}
 .notice-card textarea{min-height:140px}
@@ -153,6 +153,7 @@ async function changePassword() {
 .store-profile-grid h2{margin-bottom:10px}
 .store-profile-grid dl{gap:7px 12px}
 .store-profile-card{padding:18px 20px 20px;border-radius:18px}
+.profile-mobile-details{display:none}
 .store-profile-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(300px,.92fr);gap:18px;margin-top:18px}
 .store-profile-grid dl{grid-template-columns:1fr;gap:12px;margin:0}
 .profile-cover{height:auto;min-height:148px;border:1px solid #dbe3df;border-radius:12px;background:#f8fafc;aspect-ratio:16 / 9}
@@ -209,4 +210,52 @@ async function changePassword() {
 .hours-head > :nth-child(3){text-align:center}
 .remove-interval svg{width:16px;height:16px}
 .hours-title h2{font-size:16px}
+@media(max-width:768px){
+  .business-settings-page{width:100%;min-width:0;gap:10px}
+  .store-profile-card{min-width:0;padding:14px;border-radius:14px}
+  .store-profile-card>header{align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .store-profile-card>header h2{font-size:17px}
+  .profile-badge{white-space:nowrap}
+  .store-profile-grid{grid-template-columns:minmax(0,1fr);gap:14px;margin-top:14px}
+  .store-profile-grid>div{min-width:0;padding-top:14px;border-top:1px solid #edf1ef}
+  .store-profile-grid>div:nth-child(3){order:-1;padding-top:0;border-top:0}
+  .profile-desktop-details{display:none}
+  .profile-mobile-details{display:block}
+  .store-profile-grid dl{grid-template-columns:88px minmax(0,1fr);gap:8px 10px}
+  .store-profile-grid dd{overflow-wrap:anywhere}
+  .profile-cover{min-height:0;aspect-ratio:16/9}
+  .business-settings-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:2px}
+  .business-settings-header h1{font-size:22px}
+  .business-settings-header>div:last-child{justify-items:end}
+  .save-button{min-height:44px;padding:9px 14px;white-space:nowrap}
+  .business-settings-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .business-settings-left{gap:10px}
+  .settings-card{min-width:0;padding:14px;border-radius:14px}
+  .settings-card h2{font-size:16px}
+  .notice-card textarea{height:112px;min-height:112px}
+  .delivery-fields,.password-fields{grid-template-columns:minmax(0,1fr);gap:12px}
+  .settings-card input,.settings-card textarea,.settings-card select{min-height:44px;font-size:16px}
+  .password-card-title{align-items:center}
+  .password-action-button{min-width:96px;min-height:44px;height:44px;padding:0 13px;white-space:nowrap}
+  .hours-card{order:0;padding:14px}
+  .hours-table{display:grid;gap:8px;margin-top:10px;overflow:visible;border:0;border-radius:0}
+  .hours-head{display:none}
+  .hours-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'day switch' 'intervals intervals';gap:8px;min-height:0;padding:10px 11px;border:1px solid #e4ebe7;border-radius:11px;background:#fbfdfb}
+  .hours-row+ .hours-row{border-top:1px solid #e4ebe7}
+  .hours-row>strong{grid-area:day;justify-self:start;align-self:center}
+  .hours-row>.switch{grid-area:switch;justify-self:end}
+  .hours-row>.intervals,.hours-row>.rest{grid-area:intervals}
+  .hours-row>.desktop-remove-interval,.hours-row>span:last-child{display:none}
+  .intervals{display:grid;position:static;gap:6px;padding:0}
+  .interval{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:6px}
+  .interval input{width:100%;min-width:0;height:44px;padding:7px 8px;font-size:16px}
+  .desktop-add-interval{display:none}
+  .mobile-interval-actions{display:flex;gap:4px}
+  .mobile-add-interval,.mobile-remove-interval{display:grid;width:44px;height:44px;place-items:center;border:0;border-radius:9px;color:#159447;background:#edf8f0;font:inherit;font-size:18px;font-weight:800}
+  .mobile-remove-interval{color:#68766e;background:#f1f4f2}
+  .mobile-remove-interval svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .switch{min-width:44px;min-height:44px;place-items:center}
+  .switch i{margin:auto}
+  .copy-dialog{width:min(340px,calc(100vw - 24px));padding:18px}
+}
 </style>
