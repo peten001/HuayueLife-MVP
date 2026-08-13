@@ -205,7 +205,7 @@ const hasHotOverflow = computed(() => (
 const uiIcons = {
   arrowLeft: '/static/merchant-detail-icons/arrow-left-white.png',
   heart: '/static/merchant-detail-icons/heart-white.png',
-  heartActive: '/static/merchant-detail-icons/heart-warm.png',
+  heartActive: '/static/merchant-detail-icons/heart-filled-warm.png',
   heartGreen: '/static/merchant-detail-icons/heart-green.png',
   share: '/static/merchant-detail-icons/share-2-white.png',
   merchantProfile: '/static/merchant-detail-icons/door-open-green.png',
@@ -751,24 +751,26 @@ function hasCapability(code: string, fallbackValue: boolean) {
             </button>
           </view>
         </view>
-        <text v-if="heroImages.length > 1" class="hero-count">{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
+        <text
+          v-if="heroImages.length > 1"
+          :class="['hero-count', { 'has-gallery-overlay': isClaimedMerchant && claimedGalleryCategories.length }]"
+        >{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
+        <scroll-view v-if="isClaimedMerchant && claimedGalleryCategories.length" class="gallery-category-scroll" scroll-x show-scrollbar="false">
+          <view class="gallery-category-list">
+            <button
+              v-for="category in claimedGalleryCategories"
+              :key="category.key"
+              :class="['gallery-category-button', { 'is-active': activeGalleryCategory === category.key }]"
+              :aria-pressed="activeGalleryCategory === category.key"
+              hover-class="is-pressed"
+              @tap="selectGalleryCategory(category.key)"
+            >
+              <text>{{ category.label }}</text>
+              <text v-if="category.key !== 'COVER'" class="gallery-category-count">{{ category.urls.length }}</text>
+            </button>
+          </view>
+        </scroll-view>
       </view>
-
-      <scroll-view v-if="isClaimedMerchant && claimedGalleryCategories.length" class="gallery-category-scroll" scroll-x show-scrollbar="false">
-        <view class="gallery-category-list">
-          <button
-            v-for="category in claimedGalleryCategories"
-            :key="category.key"
-            :class="['gallery-category-button', { 'is-active': activeGalleryCategory === category.key }]"
-            :aria-pressed="activeGalleryCategory === category.key"
-            hover-class="is-pressed"
-            @tap="selectGalleryCategory(category.key)"
-          >
-            <text>{{ category.label }}</text>
-            <text class="gallery-category-count">{{ category.urls.length }}</text>
-          </button>
-        </view>
-      </scroll-view>
 
       <scroll-view v-if="!isClaimedMerchant && heroImages.length > 1" class="thumbnail-scroll" scroll-x show-scrollbar="false">
         <view class="thumbnail-list">
@@ -849,7 +851,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <view class="section-heading">
           <text class="section-title">{{ locale === 'zh' ? `⭐ ${t('signatureDishes')}` : t('signatureDishes') }}</text>
           <button v-if="hasSignatureOverflow" class="section-more" :aria-expanded="signatureExpanded" hover-class="is-pressed" @tap="signatureExpanded = !signatureExpanded">
-            {{ signatureExpanded ? t('collapse') : t('viewMore') }}
+            <text>{{ signatureExpanded ? t('collapse') : t('viewMore') }}</text>
+            <text :class="['section-more-arrow', { 'is-expanded': signatureExpanded }]">›</text>
           </button>
         </view>
         <view v-if="isClaimedMerchant" :class="['dish-grid', 'signature-grid', { 'is-narrow': viewportWidth < 390 }]">
@@ -878,7 +881,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <view class="section-heading">
           <text class="section-title">{{ locale === 'zh' ? `🔥 ${t('merchantHotRecommendations')}` : t('merchantHotRecommendations') }}</text>
           <button v-if="hasHotOverflow" class="section-more" :aria-expanded="hotExpanded" hover-class="is-pressed" @tap="hotExpanded = !hotExpanded">
-            {{ hotExpanded ? t('collapse') : t('viewMore') }}
+            <text>{{ hotExpanded ? t('collapse') : t('viewMore') }}</text>
+            <text :class="['section-more-arrow', { 'is-expanded': hotExpanded }]">›</text>
           </button>
         </view>
         <view v-if="isClaimedMerchant" :class="['dish-grid', 'hot-grid', { 'is-narrow': viewportWidth < 390 }]">
@@ -977,8 +981,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
             <image class="bottom-action-icon" :src="uiIcons.navigation" mode="aspectFit" />
             <text>{{ t('mapNavigation') }}</text>
           </button>
-          <button class="bottom-action" :aria-pressed="favoriteState" hover-class="is-pressed" @tap="handleToggleFavorite">
-            <image class="bottom-action-icon" :src="uiIcons.heartGreen" mode="aspectFit" />
+          <button :class="['bottom-action', { 'is-favorite': favoriteState }]" :aria-pressed="favoriteState" hover-class="is-pressed" @tap="handleToggleFavorite">
+            <image class="bottom-action-icon" :src="favoriteState ? uiIcons.heartActive : uiIcons.heartGreen" mode="aspectFit" />
             <text>{{ favoriteLabel }}</text>
           </button>
         </view>
@@ -2843,5 +2847,104 @@ function hasCapability(code: string, fallbackValue: boolean) {
   .sticky-actions .bottom-action {
     transition: none;
   }
+}
+
+/* V3.2: claimed gallery controls stay inside the image without increasing Hero height. */
+.gallery-category-scroll {
+  position: absolute;
+  right: 16rpx;
+  bottom: 0;
+  left: 16rpx;
+  z-index: 3;
+  width: auto;
+  padding: 18rpx 12rpx 7rpx;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0 0 22rpx 22rpx;
+  background: linear-gradient(180deg, rgb(16 34 23 / 0%) 0%, rgb(16 34 23 / 68%) 38%, rgb(16 34 23 / 82%) 100%);
+  box-shadow: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.gallery-category-list {
+  display: inline-flex;
+  min-width: max-content;
+  gap: 5rpx;
+}
+
+.gallery-category-button {
+  min-width: 118rpx;
+  min-height: 88rpx;
+  padding: 0 14rpx;
+  gap: 6rpx;
+  border: 1rpx solid transparent;
+  border-radius: 14rpx;
+  color: var(--on-brand);
+  background: rgb(255 255 255 / 8%);
+  font-size: 21rpx;
+  font-weight: 750;
+}
+
+.gallery-category-button.is-active {
+  border-color: rgb(255 255 255 / 54%);
+  color: var(--brand-deep);
+  background: rgb(255 255 255 / 92%);
+}
+
+.gallery-category-count {
+  min-width: 27rpx;
+  height: 27rpx;
+  color: inherit;
+  background: rgb(255 255 255 / 18%);
+  font-size: 18rpx;
+}
+
+.gallery-category-button.is-active .gallery-category-count {
+  background: var(--brand-soft);
+}
+
+.hero-count.has-gallery-overlay {
+  bottom: 116rpx;
+}
+
+.section-heading {
+  min-height: 88rpx;
+  align-items: center;
+}
+
+.section-heading .section-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.section-more {
+  min-width: 0;
+  display: inline-flex;
+  flex: none;
+  padding: 0 2rpx 0 18rpx;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4rpx;
+  white-space: nowrap;
+}
+
+.section-more-arrow {
+  display: inline-block;
+  font-size: 30rpx;
+  font-weight: 500;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.section-more-arrow.is-expanded {
+  transform: rotate(-90deg);
+}
+
+.meta-type {
+  border-color: var(--brand-deep);
+  color: var(--on-brand);
+  background: var(--brand-deep);
+  font-weight: 750;
 }
 </style>

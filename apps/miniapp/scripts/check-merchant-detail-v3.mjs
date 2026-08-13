@@ -7,10 +7,12 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const miniappRoot = path.resolve(currentDir, '..');
 const detailPath = path.join(miniappRoot, 'src/pages/merchant/detail.vue');
 const orderingPath = path.join(miniappRoot, 'src/utils/merchant-ordering-visibility.ts');
+const favoritesPath = path.join(miniappRoot, 'src/utils/favorites.ts');
 const i18nPath = path.join(miniappRoot, 'src/i18n/index.ts');
 
 const detail = fs.readFileSync(detailPath, 'utf8');
 const ordering = fs.readFileSync(orderingPath, 'utf8');
+const favorites = fs.readFileSync(favoritesPath, 'utf8');
 const i18n = fs.readFileSync(i18nPath, 'utf8');
 
 function blockAfter(source, marker) {
@@ -73,6 +75,42 @@ assert.match(detail, /v-for="product in visibleHotRecommendations"/);
 assert.match(detail, /activeGalleryCategory\.value = key;[\s\S]*activeHeroIndex\.value = 0;/);
 assert.match(detail, /merchant\.value\?\.detailDisplayTags/);
 assert.doesNotMatch(detail, /displayTags = computed\([\s\S]{0,120}promotionTags/);
+
+const heroShellStart = detail.indexOf('<view class="hero-shell">');
+const heroShellEnd = detail.indexOf(
+  '</view>\n\n      <scroll-view v-if="!isClaimedMerchant && heroImages.length > 1"',
+  heroShellStart,
+);
+assert.notEqual(heroShellStart, -1, 'missing Hero shell');
+assert.notEqual(heroShellEnd, -1, 'missing claimed Hero shell boundary');
+const heroShellTemplate = detail.slice(heroShellStart, heroShellEnd);
+assert.match(heroShellTemplate, /class="gallery-category-scroll"/);
+assert.match(heroShellTemplate, /v-if="category\.key !== 'COVER'" class="gallery-category-count"/);
+assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\S]*bottom: 0;[\s\S]*background: linear-gradient\(180deg,/);
+assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*background: rgb\(255 255 255 \/ 92%\);/);
+assert.match(detail, /\.hero-count\.has-gallery-overlay \{[\s\S]*bottom: 116rpx;/);
+
+assert.match(
+  detail,
+  /hasSignatureOverflow[\s\S]*:class="\['section-more-arrow', \{ 'is-expanded': signatureExpanded \}\]">›<\/text>/,
+);
+assert.match(
+  detail,
+  /hasHotOverflow[\s\S]*:class="\['section-more-arrow', \{ 'is-expanded': hotExpanded \}\]">›<\/text>/,
+);
+assert.match(detail, /\.section-heading \{[\s\S]*min-height: 88rpx;[\s\S]*align-items: center;/);
+assert.match(detail, /\.section-more \{[\s\S]*justify-content: flex-end;[\s\S]*white-space: nowrap;/);
+assert.match(detail, /\.section-more-arrow\.is-expanded \{[\s\S]*rotate\(-90deg\);/);
+
+assert.match(detail, /heart: '\/static\/merchant-detail-icons\/heart-white\.png'/);
+assert.match(detail, /heartActive: '\/static\/merchant-detail-icons\/heart-filled-warm\.png'/);
+assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heart/);
+assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heartGreen/);
+assert.match(detail, /favoriteState\.value = isFavorite\(merchant\.value\.id\)/);
+assert.match(detail, /const result = toggleFavorite\(merchant\.value\)/);
+assert.match(favorites, /export function isFavorite/);
+assert.match(favorites, /export function toggleFavorite/);
+assert.match(detail, /\.meta-type \{[\s\S]*background: var\(--brand-deep\);/);
 
 assert.match(ordering, /input\.merchantMode === 'MANAGED' && input\.claimStatus === 'CLAIMED'/);
 assert.match(ordering, /input\.platformOrderingEnabled/);

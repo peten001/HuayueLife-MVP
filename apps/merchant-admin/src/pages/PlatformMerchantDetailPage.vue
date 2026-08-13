@@ -64,6 +64,7 @@ const saving = ref(false);
 const uploadingImage = ref(false);
 const imageSavingId = ref<string | null>(null);
 const message = ref('');
+const messageIsSuccess = computed(() => /(?:已保存|已更新|已添加|已隐藏|已显示前台|已开通|已停用|已启用|已重置|已删除)/.test(message.value));
 const imageFileInput = ref<HTMLInputElement | null>(null);
 const imageUploadTarget = ref<PlatformMerchantImage['imageType'] | null>(null);
 const accountPhoneDialogOpen = ref(false);
@@ -135,6 +136,42 @@ const capabilityValues = reactive<Record<string, boolean>>({});
 const capabilityServerValues = ref<Record<string, boolean>>({});
 const selectedTagIds = ref<string[]>([]);
 const CONTENT_IMAGE_TYPES = ['STORE', 'ENVIRONMENT', 'PRODUCT', 'MENU'] as const;
+type ContentImageType = (typeof CONTENT_IMAGE_TYPES)[number];
+const CONTENT_IMAGE_SECTION_CONFIG: Array<{
+  type: ContentImageType;
+  title: string;
+  description: string;
+  guidance: string;
+  displayLimit?: number;
+}> = [
+  {
+    type: 'STORE',
+    title: '门店外观 STORE',
+    description: '小程序顶部图库：门店外观',
+    guidance: '建议 1～3 张，按排序值从小到大展示。',
+    displayLimit: 3,
+  },
+  {
+    type: 'PRODUCT',
+    title: '菜品 PRODUCT',
+    description: '小程序顶部图库：菜品',
+    guidance: '建议 3～6 张，按排序值从小到大展示。',
+    displayLimit: 6,
+  },
+  {
+    type: 'ENVIRONMENT',
+    title: '用餐环境 ENVIRONMENT',
+    description: '小程序顶部图库：用餐环境',
+    guidance: '建议 1～3 张，按排序值从小到大展示。',
+    displayLimit: 3,
+  },
+  {
+    type: 'MENU',
+    title: '菜单 MENU',
+    description: '当前已认领商家 V3.2 顶部图库不展示 MENU；数据保留供后续功能使用。',
+    guidance: '继续支持上传、排序、显示与隐藏。',
+  },
+];
 const RESERVED_PROMOTION_TAG_CODES = new Set(['HOT_FOOD']);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
@@ -312,6 +349,27 @@ const contentImages = computed(() =>
     .filter((image) => CONTENT_IMAGE_TYPES.includes(image.imageType as (typeof CONTENT_IMAGE_TYPES)[number]))
     .sort((left, right) => left.sortOrder - right.sortOrder || Number(left.id) - Number(right.id)),
 );
+const contentImageSections = computed(() =>
+  CONTENT_IMAGE_SECTION_CONFIG.map((section) => {
+    const images = contentImages.value.filter((image) => image.imageType === section.type);
+    const visibleImages = images.filter((image) => image.isVisible);
+    const visibleCount = visibleImages.length;
+    const frontendImagePositions = Object.fromEntries(
+      visibleImages
+        .slice(0, section.displayLimit ?? visibleImages.length)
+        .map((image, index) => [image.id, index + 1]),
+    ) as Record<string, number>;
+    return {
+      ...section,
+      images,
+      visibleCount,
+      frontendImagePositions,
+      limitNotice: section.displayLimit && visibleCount > section.displayLimit
+        ? `当前有 ${visibleCount} 张展示中，小程序顶部最多展示前 ${section.displayLimit} 张；其余数据不会删除。`
+        : '',
+    };
+  }),
+);
 const operationalPromotionTags = computed(() =>
   promotionTags.value.filter((tag) => (
     tag.enabled
@@ -332,6 +390,25 @@ const selectedDetailTagCount = computed(() => {
   ]);
   return selectedTagIds.value.filter((id) => consumerIds.has(id)).length;
 });
+const selectedCuisineTags = computed(() =>
+  cuisinePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
+);
+const selectedSceneTags = computed(() =>
+  scenePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
+);
+const frontendDetailTagIds = computed(() =>
+  new Set([
+    ...selectedCuisineTags.value.slice(0, 2).map((tag) => tag.id),
+    ...selectedSceneTags.value.slice(0, 2).map((tag) => tag.id),
+  ]),
+);
+const hasDetailTagOverflow = computed(() =>
+  selectedCuisineTags.value.length > 2 || selectedSceneTags.value.length > 2,
+);
+function detailTagDisplayState(tagId: string) {
+  if (!selectedTagIds.value.includes(tagId)) return '';
+  return frontendDetailTagIds.value.has(tagId) ? 'is-frontend-visible' : 'is-over-limit';
+}
 const profileRisks = computed(() => {
   const item = merchant.value;
   if (!item) return [];
@@ -582,12 +659,13 @@ async function onImageSelected(event: Event) {
     } else {
       await createPlatformMerchantImage(merchantId.value, payload);
     }
-    message.value = target === 'LOGO'
+    const successMessage = target === 'LOGO'
       ? '商家 Logo 已更新'
       : target === 'COVER'
         ? '商家封面已更新'
         : '商家图库图片已添加';
     await loadPage();
+    message.value = successMessage;
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -617,8 +695,8 @@ async function saveMerchantImage(image: PlatformMerchantImage) {
       sortOrder: Number(image.sortOrder),
       isVisible: image.isVisible,
     });
-    message.value = '图库图片已保存';
     await loadPage();
+    message.value = '图库图片已保存';
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -632,8 +710,8 @@ async function hideMerchantImage(image: PlatformMerchantImage) {
   message.value = '';
   try {
     await hidePlatformMerchantImage(merchantId.value, image.id);
-    message.value = '图库图片已隐藏';
     await loadPage();
+    message.value = '图库图片已隐藏';
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -684,8 +762,8 @@ async function saveProfile() {
       descriptionVi: profileForm.descriptionVi,
       descriptionEn: profileForm.descriptionEn,
     });
-    message.value = '基础资料已保存';
     await loadPage();
+    message.value = '基础资料已保存';
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -758,8 +836,8 @@ async function saveTags() {
   message.value = '';
   try {
     await updatePlatformMerchantTags(merchantId.value, [...selectedTagIds.value]);
-    message.value = '标签配置已保存';
     await loadPage();
+    message.value = '标签配置已保存';
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -786,8 +864,8 @@ async function openAccount() {
   if (!window.confirm(`为 ${merchant.value.nameZh} 开通商家后台账号？默认密码 12345678。`)) return;
   try {
     await openPlatformMerchantAccount(merchantId.value);
-    message.value = '商家后台账号已开通，默认密码 12345678';
     await loadPage();
+    message.value = '商家后台账号已开通，默认密码 12345678';
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -833,8 +911,8 @@ async function submitAccountPhoneChange() {
   try {
     await updatePlatformMerchantAccountPhone(merchantId.value, accountPhoneForm.phone.trim());
     accountPhoneDialogOpen.value = false;
-    message.value = '手机号已更新';
     await loadPage();
+    message.value = '手机号已更新';
   } catch (error) {
     accountPhoneError.value = errorMessage(error) || '更换失败，请稍后重试';
   } finally {
@@ -852,8 +930,8 @@ async function toggleClientVisibility() {
     await updatePlatformMerchant(merchantId.value, {
       isVisibleOnClient: nextVisible,
     });
-    message.value = nextVisible ? '已显示前台' : '已隐藏前台';
     await loadPage();
+    message.value = nextVisible ? '已显示前台' : '已隐藏前台';
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -869,14 +947,14 @@ async function toggleMerchantStatus() {
   );
   if (!confirmed) return;
   try {
+    const successMessage = isActive ? '商家已停用' : '商家已启用';
     if (isActive) {
       await disablePlatformMerchant(merchantId.value);
-      message.value = '商家已停用';
     } else {
       await enablePlatformMerchant(merchantId.value);
-      message.value = '商家已启用';
     }
     await loadPage();
+    message.value = successMessage;
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -887,8 +965,8 @@ async function resetPassword() {
   if (!window.confirm(`重置 ${merchant.value.nameZh} 的商家后台密码？`)) return;
   try {
     await resetPlatformMerchantPassword(merchantId.value);
-    message.value = '商家后台密码已重置';
     await loadPage();
+    message.value = '商家后台密码已重置';
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -1027,7 +1105,7 @@ function backToList() {
     </div>
   </PageHeader>
 
-  <p v-if="message" class="message">{{ message }}</p>
+  <p v-if="message" :class="['message', { 'is-success': messageIsSuccess }]" role="status" aria-live="polite">{{ message }}</p>
   <section v-if="loading" class="card empty">商家资料加载中...</section>
 
   <template v-else-if="merchant && detail">
@@ -1158,12 +1236,13 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>商家图库</h2><p>Logo、封面与内容图片分别使用现有商家图片模型维护</p></div>
+            <div><h2>商家图库</h2><p>Logo 与小程序图库分类使用现有商家图片模型维护</p></div>
           </div>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
             <article>
               <strong>商家 Logo</strong>
+              <p class="image-guidance">用于商家名称旁的品牌标识，不计入顶部分类图库。</p>
               <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
               <div v-else class="image-empty">暂无 Logo</div>
               <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('LOGO')">
@@ -1171,7 +1250,8 @@ function backToList() {
               </button>
             </article>
             <article>
-              <strong>商家封面图片</strong>
+              <strong>封面 Cover</strong>
+              <p class="image-guidance">小程序顶部图库：封面（单张）。</p>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
               <div v-else class="image-empty">暂无封面图</div>
               <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('COVER')">
@@ -1179,48 +1259,62 @@ function backToList() {
               </button>
             </article>
           </div>
-          <div class="gallery-head">
-            <div>
-              <h3>内容图库</h3>
-              <p>可添加门头、环境、菜品和菜单图片；隐藏仅取消前台展示，不删除物理文件。</p>
-            </div>
-            <div class="gallery-upload-actions">
-              <button
-                v-for="type in CONTENT_IMAGE_TYPES"
-                :key="type"
-                class="small secondary"
-                type="button"
-                :disabled="uploadingImage"
-                @click="openImagePicker(type)"
-              >
-                {{ uploadingImage && imageUploadTarget === type ? '上传中...' : `上传${type}` }}
-              </button>
-            </div>
-          </div>
-          <p class="editor-tip">STORE：门头/店铺；ENVIRONMENT：店内环境；PRODUCT：菜品展示；MENU：菜单展示。</p>
-          <div v-if="contentImages.length" class="merchant-gallery-grid">
-            <article v-for="image in contentImages" :key="image.id" class="merchant-gallery-card" :class="{ 'is-hidden': !image.isVisible }">
-              <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
-              <div class="merchant-gallery-card-head">
-                <strong>{{ image.imageType }}</strong>
-                <span>{{ image.isVisible ? '展示中' : '已隐藏' }}</span>
-              </div>
-              <label><span>标题（中文）</span><input v-model="image.titleZh" maxlength="120" /></label>
-              <label><span>标题（Tiếng Việt）</span><input v-model="image.titleVi" maxlength="120" /></label>
-              <label><span>标题（English）</span><input v-model="image.titleEn" maxlength="120" /></label>
-              <div class="merchant-gallery-options">
-                <label><span>排序</span><input v-model.number="image.sortOrder" type="number" min="0" step="1" /></label>
-                <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
-              </div>
-              <div class="section-actions">
-                <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
-                  {{ imageSavingId === image.id ? '保存中...' : '保存图片' }}
+          <div class="image-classification-list">
+            <section v-for="section in contentImageSections" :key="section.type" class="image-classification-section">
+              <div class="image-classification-head">
+                <div>
+                  <h3>{{ section.title }}</h3>
+                  <p>{{ section.description }}</p>
+                  <small>{{ section.guidance }}</small>
+                  <span class="image-section-count">
+                    {{ section.visibleCount }} 张展示中
+                    <template v-if="section.displayLimit"> · 前台最多 {{ section.displayLimit }} 张</template>
+                  </span>
+                </div>
+                <button
+                  class="small secondary"
+                  type="button"
+                  :disabled="uploadingImage"
+                  @click="openImagePicker(section.type)"
+                >
+                  {{ uploadingImage && imageUploadTarget === section.type ? '上传中...' : `上传${section.title}` }}
                 </button>
-                <button v-if="image.isVisible" class="small secondary" type="button" :disabled="imageSavingId === image.id" @click="hideMerchantImage(image)">隐藏</button>
               </div>
-            </article>
+              <p v-if="section.limitNotice" class="editor-warning">{{ section.limitNotice }}</p>
+              <div v-if="section.images.length" class="merchant-gallery-grid">
+                <article v-for="image in section.images" :key="image.id" class="merchant-gallery-card" :class="{ 'is-hidden': !image.isVisible }">
+                  <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
+                  <div class="merchant-gallery-card-head">
+                    <strong>{{ section.title }}</strong>
+                    <span>{{ image.isVisible ? '展示中' : '已隐藏' }}</span>
+                  </div>
+                  <p
+                    v-if="image.isVisible && section.displayLimit"
+                    :class="['merchant-gallery-placement', { 'is-over-limit': !section.frontendImagePositions[image.id] }]"
+                  >
+                    {{ section.frontendImagePositions[image.id]
+                      ? `前台第 ${section.frontendImagePositions[image.id]} 张`
+                      : '超出顶部图库展示上限' }}
+                  </p>
+                  <label><span>标题（中文）</span><input v-model="image.titleZh" maxlength="120" /></label>
+                  <label><span>标题（Tiếng Việt）</span><input v-model="image.titleVi" maxlength="120" /></label>
+                  <label><span>标题（English）</span><input v-model="image.titleEn" maxlength="120" /></label>
+                  <div class="merchant-gallery-options">
+                    <label><span>排序</span><input v-model.number="image.sortOrder" type="number" min="0" step="1" /></label>
+                    <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
+                  </div>
+                  <div class="section-actions">
+                    <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
+                      {{ imageSavingId === image.id ? '保存中...' : '保存图片' }}
+                    </button>
+                    <button v-if="image.isVisible" class="small secondary" type="button" :disabled="imageSavingId === image.id" @click="hideMerchantImage(image)">隐藏</button>
+                  </div>
+                </article>
+              </div>
+              <p v-else class="empty">暂无{{ section.title }}图片。</p>
+            </section>
           </div>
-          <p v-else class="empty">暂无内容图库图片，可按类型上传。</p>
+          <p class="editor-tip">隐藏只取消前台展示，不删除物理文件。门店外观、菜品、用餐环境只读取展示中的图片并按排序值进入顶部图库；MENU 按上方说明保留。</p>
         </section>
 
         <section id="merchant-section-signatureDishes">
@@ -1260,36 +1354,44 @@ function backToList() {
 
         <section id="merchant-section-display-tags" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>详情页展示标签</h2><p>面向消费者展示；建议菜系最多 2 个、场景最多 2 个，总计最多 4 个。</p></div>
+            <div><h2>详情页展示标签</h2><p>面向消费者展示；前台按当前排序显示菜系前 2 个、场景前 2 个。</p></div>
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
           </div>
           <div class="display-tag-groups">
             <div class="display-tag-group">
-              <h3>菜系</h3>
+              <div class="display-tag-group-head">
+                <h3>菜系</h3>
+                <span>已选 {{ selectedCuisineTags.length }} · 前台最多 2</span>
+              </div>
               <div v-if="cuisinePromotionTags.length" class="content-tag-picker">
-                <label v-for="tag in cuisinePromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+                <label v-for="tag in cuisinePromotionTags" :key="tag.id" :class="['content-tag-option', detailTagDisplayState(tag.id), { selected: selectedTagIds.includes(tag.id) }]">
                   <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
                   <span>{{ tag.iconText || '•' }}</span>
                   <strong>{{ tag.nameZh }}</strong>
                   <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                  <em v-if="selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
                 </label>
               </div>
               <p v-else class="empty">暂无菜系标签，请先在标签字典中创建。</p>
             </div>
             <div class="display-tag-group">
-              <h3>场景</h3>
+              <div class="display-tag-group-head">
+                <h3>场景</h3>
+                <span>已选 {{ selectedSceneTags.length }} · 前台最多 2</span>
+              </div>
               <div v-if="scenePromotionTags.length" class="content-tag-picker">
-                <label v-for="tag in scenePromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+                <label v-for="tag in scenePromotionTags" :key="tag.id" :class="['content-tag-option', detailTagDisplayState(tag.id), { selected: selectedTagIds.includes(tag.id) }]">
                   <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
                   <span>{{ tag.iconText || '•' }}</span>
                   <strong>{{ tag.nameZh }}</strong>
                   <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                  <em v-if="selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
                 </label>
               </div>
               <p v-else class="empty">暂无场景标签，请先在标签字典中创建。</p>
             </div>
           </div>
-          <p v-if="selectedDetailTagCount > 4" class="editor-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签，前台会按菜系 2 个、场景 2 个的规则展示前 4 个。</p>
+          <p v-if="hasDetailTagOverflow" class="editor-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签；标记“超出前台上限”的标签会保留关联，但不会进入当前详情页前 2+2 展示。</p>
         </section>
 
         <section id="merchant-section-capabilities" class="editor-section-card">
@@ -3386,6 +3488,152 @@ function backToList() {
   .form-actions button,
   .small.secondary {
     min-height: 44px;
+  }
+}
+
+.image-guidance {
+  min-height: 38px;
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.image-classification-list {
+  display: grid;
+  gap: 16px;
+}
+
+.image-classification-section {
+  padding: 16px;
+  border: 1px solid #dbe8df;
+  border-radius: 16px;
+  background: #fbfdfb;
+}
+
+.image-classification-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.image-classification-head > div {
+  min-width: 0;
+}
+
+.image-classification-head h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.image-classification-head p {
+  margin: 5px 0 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.image-classification-head small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.image-section-count {
+  display: inline-flex;
+  margin-top: 7px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #166534;
+  background: #eaf7ee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.merchant-gallery-placement {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 9px;
+  color: #166534;
+  background: #eaf7ee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.merchant-gallery-placement.is-over-limit {
+  color: #9a5b08;
+  background: #fff4dc;
+}
+
+.display-tag-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.display-tag-group .display-tag-group-head h3 {
+  margin: 0;
+}
+
+.display-tag-group-head span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.content-tag-option em {
+  grid-column: 3;
+  width: max-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #166534;
+  background: #dcfce7;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.content-tag-option.is-over-limit {
+  border-color: #f0c36a;
+  background: #fffaf0;
+}
+
+.content-tag-option.is-over-limit em {
+  color: #9a5b08;
+  background: #fff0c2;
+}
+
+.message.is-success {
+  color: #166534;
+}
+
+.image-classification-section .merchant-gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.image-classification-section > .empty {
+  margin-top: 14px;
+}
+
+@media (max-width: 760px) {
+  .image-classification-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .image-classification-head .small,
+  .image-classification-section .small {
+    min-height: 44px;
+  }
+
+  .image-classification-section .merchant-gallery-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

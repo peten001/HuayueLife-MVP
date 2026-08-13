@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
 import {
@@ -13,6 +13,7 @@ import type { PlatformPromotionTag } from '@/types/api';
 const items = ref<PlatformPromotionTag[]>([]);
 const loading = ref(false);
 const message = ref('');
+const messageIsSuccess = computed(() => /标签已(?:更新|新增|停用)/.test(message.value));
 const editingId = ref('');
 const scopeOptions = [
   { value: 'OPERATIONAL', label: '平台运营' },
@@ -93,15 +94,15 @@ async function submit() {
     enabled: form.enabled,
   };
   try {
+    const successMessage = editingId.value ? '标签已更新' : '标签已新增';
     if (editingId.value) {
       await updatePlatformPromotionTag(editingId.value, payload);
-      message.value = '标签已更新';
     } else {
       await createPlatformPromotionTag(payload);
-      message.value = '标签已新增';
     }
     resetForm();
     await loadItems();
+    message.value = successMessage;
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -116,6 +117,7 @@ async function disable(item: PlatformPromotionTag) {
   try {
     await disablePlatformPromotionTag(item.id);
     await loadItems();
+    message.value = '标签已停用';
   } catch (error) {
     message.value = errorMessage(error);
   }
@@ -124,7 +126,7 @@ async function disable(item: PlatformPromotionTag) {
 
 <template>
   <PageHeader title="标签字典管理" description="分别维护平台运营标签，以及可在商家详情页展示的菜系与场景标签。" />
-  <p v-if="message" class="message">{{ message }}</p>
+  <p v-if="message" :class="['message', { 'is-success': messageIsSuccess }]" role="status" aria-live="polite">{{ message }}</p>
 
   <form class="card form-grid" @submit.prevent="submit">
     <h2 class="span-2">{{ editingId ? '编辑标签' : '新增标签' }}</h2>
@@ -140,6 +142,7 @@ async function disable(item: PlatformPromotionTag) {
       <select v-model="form.scope">
         <option v-for="option in scopeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
       </select>
+      <small>平台运营不进入商家详情；菜系与场景可进入详情名称下方。</small>
     </label>
     <label>排序<input v-model.number="form.sortOrder" type="number" min="0" /></label>
     <label class="check"><input v-model="form.enabled" type="checkbox" />启用</label>
@@ -190,6 +193,17 @@ async function disable(item: PlatformPromotionTag) {
 </template>
 
 <style scoped>
+.message.is-success {
+  color: #166534;
+}
+
+.form-grid label small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 @media (max-width: 760px) {
   input,
   select,
