@@ -1401,6 +1401,37 @@ async function verifyPwaManifestAndNavigation() {
     '/manifest.webmanifest',
     'manifest link should point to /manifest.webmanifest',
   );
+  const appleTouchIcons = page.locator('link[rel="apple-touch-icon"]');
+  assert.equal(await appleTouchIcons.count(), 1, 'head should expose exactly one Apple touch icon');
+  assert.equal(
+    await appleTouchIcons.getAttribute('href'),
+    '/icons/apple-touch-icon-yunqiao-cashier-v2-180.png',
+    'Apple touch icon should use the cache-busted YunQiao URL',
+  );
+  assert.equal(
+    await appleTouchIcons.getAttribute('sizes'),
+    '180x180',
+    'Apple touch icon should declare its 180x180 size',
+  );
+  const appleTouchIconResponse = await page.request.get(
+    `${baseUrl}/icons/apple-touch-icon-yunqiao-cashier-v2-180.png`,
+  );
+  assert.equal(appleTouchIconResponse.status(), 200, 'Apple touch icon should return 200');
+  assert.ok(
+    (appleTouchIconResponse.headers()['content-type'] || '').includes('image/png'),
+    'Apple touch icon should return image/png',
+  );
+  const rootAppleTouchIconResponse = await page.request.get(`${baseUrl}/apple-touch-icon.png`);
+  assert.equal(rootAppleTouchIconResponse.status(), 200, 'root Apple touch icon fallback should return 200');
+  assert.ok(
+    (rootAppleTouchIconResponse.headers()['content-type'] || '').includes('image/png'),
+    'root Apple touch icon fallback should return image/png',
+  );
+  assert.deepEqual(
+    await rootAppleTouchIconResponse.body(),
+    await appleTouchIconResponse.body(),
+    'root Apple touch icon fallback should match the linked Apple touch icon',
+  );
   const html = await page.content();
   assert.ok(html.includes('apple-mobile-web-app-capable'), 'iOS standalone meta is required');
   assert.ok(html.includes('apple-mobile-web-app-status-bar-style'), 'iOS status-bar meta is required');
