@@ -21,8 +21,11 @@ const merchantEditSections = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
   { key: 'images', label: '图片管理' },
+  { key: 'signatureDishes', label: '招牌菜' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
+  { key: 'tags', label: '运营标签' },
+  { key: 'display-tags', label: '详情标签' },
   { key: 'capabilities', label: '能力开关' },
   { key: 'account', label: '商家账号' },
   { key: 'danger', label: '危险操作', danger: true },
@@ -38,7 +41,7 @@ const breadcrumb = computed(() => {
   if (path.startsWith('/platform/merchants/')) return ['商家管理', '商家详情'];
   if (path === '/platform/merchants') return ['商家管理', '商家列表'];
   if (path === '/platform/merchant-types') return ['系统设置', '商家类型配置'];
-  if (path === '/platform/promotion-tags') return ['系统设置', '推荐标签配置'];
+  if (path === '/platform/promotion-tags') return ['系统设置', '标签字典配置'];
   if (path === '/platform/orders') return ['订单管理', '订单管理'];
   if (path === '/platform/analytics') return ['营业数据', '营业数据'];
   if (path === '/platform/recommendations') return ['首页推荐', '首页推荐'];

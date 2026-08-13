@@ -17,6 +17,7 @@ import {
   PrintingPrinterStatus,
   Prisma,
   ProductStatus,
+  PromotionTagScope,
   StaffRole,
   StaffStatus,
   TableStatus,
@@ -99,6 +100,7 @@ type MerchantWithOwner = Merchant & {
       nameZh: string;
       nameVi: string | null;
       nameEn: string | null;
+      scope: PromotionTagScope;
     };
   }>;
   capabilities?: Array<{
@@ -292,6 +294,7 @@ type DictionaryRef = {
   nameZh: string;
   nameVi?: string | null;
   nameEn?: string | null;
+  scope?: PromotionTagScope;
 };
 
 type UploadedFileLike = {
@@ -2191,6 +2194,7 @@ function serializeDictionaryRef(
         nameZh: string;
         nameVi?: string | null;
         nameEn?: string | null;
+        scope?: PromotionTagScope;
       }
     | null
     | undefined,
@@ -2202,6 +2206,7 @@ function serializeDictionaryRef(
     nameZh: item.nameZh,
     nameVi: item.nameVi,
     nameEn: item.nameEn,
+    ...(item.scope ? { scope: item.scope } : {}),
   };
 }
 

@@ -67,6 +67,27 @@ function merchant(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function promotionTag(
+  id: bigint,
+  code: string,
+  scope: 'OPERATIONAL' | 'CUISINE' | 'SCENE',
+  sortOrder: number,
+) {
+  return {
+    promotionTag: {
+      id,
+      code,
+      scope,
+      sortOrder,
+      nameZh: code,
+      nameVi: `${code}-vi`,
+      nameEn: `${code}-en`,
+      iconText: null,
+      color: null,
+    },
+  };
+}
+
 function service(platformOrderingEnabled: boolean) {
   return new PublicMerchantsService(
     {} as never,
@@ -83,6 +104,48 @@ function service(platformOrderingEnabled: boolean) {
 }
 
 describe('PublicMerchantsService effective detail capabilities', () => {
+  it('adds only sorted consumer-facing cuisine and scene tags to detail responses', () => {
+    const tags = [
+      promotionTag(1n, 'HOT_FOOD', 'OPERATIONAL', 0),
+      promotionTag(2n, 'SCENE_FAMILY', 'SCENE', 20),
+      promotionTag(3n, 'CUISINE_HUNAN', 'CUISINE', 10),
+      promotionTag(4n, 'CUISINE_SICHUAN', 'CUISINE', 20),
+      promotionTag(5n, 'CUISINE_CANTON', 'CUISINE', 30),
+      promotionTag(6n, 'SCENE_GATHERING', 'SCENE', 10),
+      promotionTag(7n, 'SCENE_DATE', 'SCENE', 30),
+    ];
+    const result = (service(true) as any).serializeMerchant(
+      merchant({ promotionTags: tags }),
+      [],
+      null,
+      [],
+      [],
+      true,
+    );
+
+    expect(result.promotionTags).toHaveLength(tags.length);
+    expect(result.detailDisplayTags.map((item: any) => item.code)).toEqual([
+      'CUISINE_HUNAN',
+      'CUISINE_SICHUAN',
+      'SCENE_GATHERING',
+      'SCENE_FAMILY',
+    ]);
+    expect(result.detailDisplayTags).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'HOT_FOOD' }),
+    ]));
+  });
+
+  it('keeps nearby serialization backward-compatible without the detail-only tag field', () => {
+    const result = (service(true) as any).serializeMerchant(
+      merchant({ promotionTags: [promotionTag(3n, 'CUISINE_HUNAN', 'CUISINE', 10)] }),
+      [],
+      null,
+    );
+
+    expect(result).not.toHaveProperty('detailDisplayTags');
+    expect(result.promotionTags).toHaveLength(1);
+  });
+
   it('keeps display facilities effective but blocks raw pickup and delivery for DISPLAY merchants', () => {
     const result = (service(true) as any).serializeMerchant(merchant(), [], null);
     const values = new Map(result.capabilities.map((item: any) => [item.code, item.isEnabled]));

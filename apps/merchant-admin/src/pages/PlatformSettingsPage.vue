@@ -84,13 +84,13 @@ function goPromotionTags() {
             <p>管理平台可选经营类型和默认能力</p>
           </div>
           <div>
-            <strong>推荐标签配置</strong>
-            <p>管理 HOT_FOOD 等首页推荐标签</p>
+            <strong>标签字典配置</strong>
+            <p>分别管理平台运营、菜系与场景标签</p>
           </div>
         </div>
         <div class="settings-reserve-actions">
           <button class="secondary" @click="goBusinessTypes">商家类型配置</button>
-          <button class="secondary" @click="goPromotionTags">推荐标签配置</button>
+          <button class="secondary" @click="goPromotionTags">标签字典配置</button>
         </div>
       </article>
 

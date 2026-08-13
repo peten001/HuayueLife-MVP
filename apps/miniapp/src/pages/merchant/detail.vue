@@ -28,6 +28,10 @@ const error = ref('');
 const errorRetryable = ref(true);
 const loading = ref(true);
 const activeHeroIndex = ref(0);
+const activeGalleryCategory = ref<ClaimedGalleryKey | ''>('');
+const viewportWidth = ref(390);
+const signatureExpanded = ref(false);
+const hotExpanded = ref(false);
 const merchantNavStyle = ref<Record<string, string>>({});
 const failedMediaUrls = ref<Set<string>>(new Set());
 const { locale, t } = useI18n();
@@ -88,9 +92,9 @@ const displayBusinessType = computed(() =>
   merchant.value?.businessType ? localizedName(merchant.value.businessType, locale.value) : '',
 );
 const displayTags = computed(() =>
-  merchant.value?.promotionTags
-    ?.map((item) => localizedName(item, locale.value))
-    .filter(Boolean) ?? [],
+  merchant.value?.detailDisplayTags
+    ?.map((item) => ({ id: item.id, label: localizedName(item, locale.value) }))
+    .filter((item) => Boolean(item.label)) ?? [],
 );
 const isClaimedMerchant = computed(
   () => merchant.value?.merchantMode === 'MANAGED' && merchant.value?.claimStatus === 'CLAIMED',
@@ -107,7 +111,44 @@ const visibleGalleryImages = computed(() =>
     ? (merchant.value?.images ?? []).filter((item) => item.isVisible !== false)
     : [],
 );
-const heroImages = computed(() => {
+type ClaimedGalleryKey = 'COVER' | 'STORE' | 'PRODUCT' | 'ENVIRONMENT';
+type ClaimedGalleryCategory = {
+  key: ClaimedGalleryKey;
+  label: string;
+  urls: string[];
+};
+
+function sortedGalleryUrls(imageType: string, limit: number) {
+  return visibleGalleryImages.value
+    .filter((item) => item.imageType === imageType)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
+    .map((item) => resolveMediaUrl(item.imageUrl))
+    .filter((url): url is string => Boolean(url))
+    .filter((url, index, urls) => urls.indexOf(url) === index)
+    .slice(0, limit);
+}
+
+const claimedGalleryCategories = computed<ClaimedGalleryCategory[]>(() => {
+  if (!isClaimedMerchant.value || !canShowGallery.value) return [];
+  const cover = resolveMediaUrl(merchant.value?.coverUrl);
+  const productUrls = sortedGalleryUrls('PRODUCT', 6);
+  const appendProduct = (url?: string | null) => {
+    const resolved = resolveMediaUrl(url ?? undefined);
+    if (resolved && !productUrls.includes(resolved) && productUrls.length < 6) productUrls.push(resolved);
+  };
+  signatureDishes.value.forEach((dish) => appendProduct(dish.imageUrl));
+  hotRecommendations.value.forEach((product) => appendProduct(product.imageUrl));
+
+  const categories: ClaimedGalleryCategory[] = [
+    { key: 'COVER', label: t('galleryCover'), urls: cover ? [cover] : [] },
+    { key: 'STORE', label: t('galleryStore'), urls: sortedGalleryUrls('STORE', 3) },
+    { key: 'PRODUCT', label: t('galleryProduct'), urls: productUrls },
+    { key: 'ENVIRONMENT', label: t('galleryEnvironment'), urls: sortedGalleryUrls('ENVIRONMENT', 3) },
+  ];
+  return categories.filter((category) => category.urls.length > 0);
+});
+
+const displayHeroImages = computed(() => {
   const urls: string[] = [];
   const append = (url?: string | null) => {
     const resolved = resolveMediaUrl(url ?? undefined);
@@ -122,8 +163,15 @@ const heroImages = computed(() => {
   });
   return urls;
 });
+const heroImages = computed(() => {
+  if (!isClaimedMerchant.value) return displayHeroImages.value;
+  const selected = claimedGalleryCategories.value.find(
+    (category) => category.key === activeGalleryCategory.value,
+  );
+  return selected?.urls ?? claimedGalleryCategories.value[0]?.urls ?? [];
+});
 const environmentImages = computed(() => {
-  const heroUrls = new Set(heroImages.value);
+  const heroUrls = new Set(displayHeroImages.value);
   const urls: string[] = [];
   visibleGalleryImages.value
     .filter((item) => item.imageType === 'ENVIRONMENT')
@@ -136,6 +184,24 @@ const environmentImages = computed(() => {
 });
 const signatureDishes = computed(() => merchant.value?.signatureDishes ?? []);
 const hotRecommendations = computed(() => merchant.value?.hotRecommendations ?? []);
+const signatureDefaultLimit = computed(() => (viewportWidth.value < 390 ? 6 : 8));
+const hotDefaultLimit = computed(() => (viewportWidth.value < 390 ? 3 : 4));
+const visibleSignatureDishes = computed(() => (
+  isClaimedMerchant.value && !signatureExpanded.value
+    ? signatureDishes.value.slice(0, signatureDefaultLimit.value)
+    : signatureDishes.value
+));
+const visibleHotRecommendations = computed(() => (
+  isClaimedMerchant.value && !hotExpanded.value
+    ? hotRecommendations.value.slice(0, hotDefaultLimit.value)
+    : hotRecommendations.value
+));
+const hasSignatureOverflow = computed(() => (
+  isClaimedMerchant.value && signatureDishes.value.length > signatureDefaultLimit.value
+));
+const hasHotOverflow = computed(() => (
+  isClaimedMerchant.value && hotRecommendations.value.length > hotDefaultLimit.value
+));
 const uiIcons = {
   arrowLeft: '/static/merchant-detail-icons/arrow-left-white.png',
   heart: '/static/merchant-detail-icons/heart-white.png',
@@ -222,6 +288,7 @@ function getMenuButtonRect(): MenuButtonRect | undefined {
 
 function syncMerchantNavMetrics() {
   const systemInfo = typeof uni.getWindowInfo === 'function' ? uni.getWindowInfo() : uni.getSystemInfoSync();
+  viewportWidth.value = finitePositive(systemInfo.windowWidth, finitePositive(systemInfo.screenWidth, 390));
   const statusBarHeight = finitePositive(systemInfo.statusBarHeight);
   const menuButton = getMenuButtonRect();
   const capsuleTop = finitePositive(menuButton?.top);
@@ -245,6 +312,10 @@ async function loadMerchant() {
       appConfig.ensureLoaded(),
     ]);
     merchant.value = loadedMerchant;
+    activeGalleryCategory.value = claimedGalleryCategories.value[0]?.key ?? '';
+    activeHeroIndex.value = 0;
+    signatureExpanded.value = false;
+    hotExpanded.value = false;
     favoriteState.value = isFavorite(merchant.value.id);
     addMerchantBrowsingHistory(merchant.value);
   } catch (caught) {
@@ -286,6 +357,12 @@ function handleHeroChange(event: { detail?: { current?: number } }) {
 
 function selectHeroImage(index: number) {
   activeHeroIndex.value = index;
+}
+
+function selectGalleryCategory(key: ClaimedGalleryKey) {
+  if (activeGalleryCategory.value === key) return;
+  activeGalleryCategory.value = key;
+  activeHeroIndex.value = 0;
 }
 
 function handleBack() {
@@ -677,7 +754,23 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <text v-if="heroImages.length > 1" class="hero-count">{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
       </view>
 
-      <scroll-view v-if="heroImages.length > 1" class="thumbnail-scroll" scroll-x show-scrollbar="false">
+      <scroll-view v-if="isClaimedMerchant && claimedGalleryCategories.length" class="gallery-category-scroll" scroll-x show-scrollbar="false">
+        <view class="gallery-category-list">
+          <button
+            v-for="category in claimedGalleryCategories"
+            :key="category.key"
+            :class="['gallery-category-button', { 'is-active': activeGalleryCategory === category.key }]"
+            :aria-pressed="activeGalleryCategory === category.key"
+            hover-class="is-pressed"
+            @tap="selectGalleryCategory(category.key)"
+          >
+            <text>{{ category.label }}</text>
+            <text class="gallery-category-count">{{ category.urls.length }}</text>
+          </button>
+        </view>
+      </scroll-view>
+
+      <scroll-view v-if="!isClaimedMerchant && heroImages.length > 1" class="thumbnail-scroll" scroll-x show-scrollbar="false">
         <view class="thumbnail-list">
           <button
             v-for="(url, index) in heroImages"
@@ -725,7 +818,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
         <view v-if="displayBusinessType || displayTags.length" class="meta-row">
           <text v-if="displayBusinessType" class="meta-type">{{ displayBusinessType }}</text>
-          <text v-for="tag in displayTags" :key="tag" class="tag">{{ tag }}</text>
+          <text v-for="tag in displayTags" :key="tag.id" class="tag">{{ tag.label }}</text>
         </view>
         <view v-if="merchant.distanceKm !== null || merchant.openingHoursText" class="summary-line">
           <text v-if="merchant.distanceKm !== null" class="distance">{{ merchant.distanceKm }} km</text>
@@ -755,8 +848,20 @@ function hasCapability(code: string, fallbackValue: boolean) {
       <view v-if="signatureDishes.length" class="content-section featured-section">
         <view class="section-heading">
           <text class="section-title">{{ locale === 'zh' ? `⭐ ${t('signatureDishes')}` : t('signatureDishes') }}</text>
+          <button v-if="hasSignatureOverflow" class="section-more" :aria-expanded="signatureExpanded" hover-class="is-pressed" @tap="signatureExpanded = !signatureExpanded">
+            {{ signatureExpanded ? t('collapse') : t('viewMore') }}
+          </button>
         </view>
-        <scroll-view class="horizontal-scroll" scroll-x show-scrollbar="false">
+        <view v-if="isClaimedMerchant" :class="['dish-grid', 'signature-grid', { 'is-narrow': viewportWidth < 390 }]">
+          <view v-for="dish in visibleSignatureDishes" :key="dish.id" class="signature-card">
+            <image v-if="mediaAvailable(dish.imageUrl)" class="signature-image" :src="resolveMediaUrl(dish.imageUrl)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(dish.imageUrl)" />
+            <view v-else class="signature-image placeholder">
+              <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+            </view>
+            <text class="signature-name">{{ localizedName(dish, locale) }}</text>
+          </view>
+        </view>
+        <scroll-view v-else class="horizontal-scroll" scroll-x show-scrollbar="false">
           <view class="horizontal-list">
             <view v-for="dish in signatureDishes" :key="dish.id" class="signature-card">
               <image v-if="mediaAvailable(dish.imageUrl)" class="signature-image" :src="resolveMediaUrl(dish.imageUrl)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(dish.imageUrl)" />
@@ -772,8 +877,28 @@ function hasCapability(code: string, fallbackValue: boolean) {
       <view v-if="hotRecommendations.length" class="content-section featured-section">
         <view class="section-heading">
           <text class="section-title">{{ locale === 'zh' ? `🔥 ${t('merchantHotRecommendations')}` : t('merchantHotRecommendations') }}</text>
+          <button v-if="hasHotOverflow" class="section-more" :aria-expanded="hotExpanded" hover-class="is-pressed" @tap="hotExpanded = !hotExpanded">
+            {{ hotExpanded ? t('collapse') : t('viewMore') }}
+          </button>
         </view>
-        <scroll-view class="horizontal-scroll" scroll-x show-scrollbar="false">
+        <view v-if="isClaimedMerchant" :class="['dish-grid', 'hot-grid', { 'is-narrow': viewportWidth < 390 }]">
+          <view v-for="product in visibleHotRecommendations" :key="product.id" class="hot-card">
+            <view class="hot-image-wrap">
+              <image v-if="mediaAvailable(product.imageUrl)" class="hot-image" :src="resolveMediaUrl(product.imageUrl ?? undefined)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(product.imageUrl)" />
+              <view v-else class="hot-image placeholder">
+                <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+              </view>
+            </view>
+            <text class="hot-name">{{ localizedName(product, locale) }}</text>
+            <text class="hot-price">{{ formatNumberCurrency(product.priceVnd) }}</text>
+            <view class="hot-meta">
+              <text class="hot-sales">{{ t('salesCount', { count: product.salesCount }) }}</text>
+              <text class="hot-meta-separator">·</text>
+              <text class="hot-rank">{{ t('hotRank', { rank: product.hotRank }) }}</text>
+            </view>
+          </view>
+        </view>
+        <scroll-view v-else class="horizontal-scroll" scroll-x show-scrollbar="false">
           <view class="horizontal-list">
             <view v-for="product in hotRecommendations" :key="product.id" class="hot-card">
               <view class="hot-image-wrap">
@@ -794,7 +919,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </scroll-view>
       </view>
 
-      <view v-if="environmentImages.length" class="content-section environment-section">
+      <view v-if="!isClaimedMerchant && environmentImages.length" class="content-section environment-section">
         <view class="section-heading">
           <text class="section-title">{{ t('environmentPhotos') }}</text>
         </view>
@@ -1280,6 +1405,56 @@ function hasCapability(code: string, fallbackValue: boolean) {
   white-space: nowrap;
   background: var(--surface);
   box-sizing: border-box;
+}
+
+.gallery-category-scroll {
+  width: 100%;
+  padding: 10rpx 18rpx 6rpx;
+  white-space: nowrap;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+
+.gallery-category-list {
+  display: flex;
+  width: max-content;
+  gap: 10rpx;
+}
+
+.gallery-category-button {
+  min-width: 132rpx;
+  min-height: 88rpx;
+  display: inline-flex;
+  padding: 0 20rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border: 2rpx solid var(--line);
+  border-radius: 18rpx;
+  color: var(--ink-2);
+  background: var(--surface-soft);
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  box-sizing: border-box;
+}
+
+.gallery-category-button.is-active {
+  border-color: var(--brand);
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+}
+
+.gallery-category-count {
+  min-width: 30rpx;
+  height: 30rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  color: var(--brand-deep);
+  background: rgb(255 255 255 / 72%);
+  font-size: 19rpx;
 }
 
 .thumbnail-list {
@@ -2261,6 +2436,72 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .featured-section .horizontal-scroll {
   margin-top: 11rpx;
+}
+
+.section-more {
+  min-width: 96rpx;
+  min-height: 88rpx;
+  padding: 0 10rpx;
+  color: var(--brand-deep);
+  background: transparent;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dish-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18rpx 12rpx;
+  margin-top: 11rpx;
+}
+
+.dish-grid.is-narrow {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18rpx 14rpx;
+}
+
+.dish-grid .signature-card,
+.dish-grid .hot-card,
+.dish-grid .signature-image,
+.dish-grid .hot-image,
+.dish-grid .hot-image-wrap {
+  width: 100%;
+}
+
+.dish-grid .signature-image,
+.dish-grid .hot-image,
+.dish-grid .hot-image-wrap {
+  height: 124rpx;
+}
+
+.dish-grid.is-narrow .signature-image,
+.dish-grid.is-narrow .hot-image,
+.dish-grid.is-narrow .hot-image-wrap {
+  height: 148rpx;
+}
+
+.dish-grid .signature-name,
+.dish-grid .hot-name {
+  min-height: 56rpx;
+  padding-top: 7rpx;
+  font-size: 21rpx;
+}
+
+.dish-grid .hot-price {
+  font-size: 21rpx;
+}
+
+.dish-grid .hot-meta {
+  min-height: 54rpx;
+  align-content: flex-start;
+}
+
+.dish-grid .hot-sales,
+.dish-grid .hot-rank,
+.dish-grid .hot-meta-separator {
+  font-size: 18rpx;
+  white-space: normal;
 }
 
 .horizontal-list {

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MerchantMode, Prisma } from '@prisma/client';
+import { MerchantMode, Prisma, PromotionTagScope } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   DEFAULT_BUSINESS_TYPES,
@@ -186,6 +186,7 @@ function promotionTagData(dto: Partial<UpsertPromotionTagDto>): Prisma.Promotion
     iconText: trimOrNull(dto.iconText),
     color: trimOrNull(dto.color),
     description: trimOrNull(dto.description),
+    scope: dto.scope as PromotionTagScope | undefined,
     sortOrder: dto.sortOrder,
     enabled: dto.enabled,
   }) as Prisma.PromotionTagUncheckedCreateInput;
@@ -228,6 +229,7 @@ function serializePromotionTag(item: {
   iconText: string | null;
   color: string | null;
   description: string | null;
+  scope: PromotionTagScope;
   sortOrder: number;
   enabled: boolean;
   createdAt: Date;

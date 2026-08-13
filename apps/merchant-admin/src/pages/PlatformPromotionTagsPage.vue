@@ -14,6 +14,11 @@ const items = ref<PlatformPromotionTag[]>([]);
 const loading = ref(false);
 const message = ref('');
 const editingId = ref('');
+const scopeOptions = [
+  { value: 'OPERATIONAL', label: '平台运营' },
+  { value: 'CUISINE', label: '菜系' },
+  { value: 'SCENE', label: '场景' },
+] as const;
 const form = reactive({
   code: '',
   nameZh: '',
@@ -23,6 +28,7 @@ const form = reactive({
   iconText: '',
   color: '',
   description: '',
+  scope: 'OPERATIONAL' as PlatformPromotionTag['scope'],
   sortOrder: 0,
   enabled: true,
 });
@@ -51,6 +57,7 @@ function resetForm() {
   form.iconText = '';
   form.color = '';
   form.description = '';
+  form.scope = 'OPERATIONAL';
   form.sortOrder = 0;
   form.enabled = true;
 }
@@ -65,6 +72,7 @@ function edit(item: PlatformPromotionTag) {
   form.iconText = item.iconText ?? '';
   form.color = item.color ?? '';
   form.description = item.description ?? '';
+  form.scope = item.scope;
   form.sortOrder = item.sortOrder;
   form.enabled = item.enabled;
 }
@@ -80,22 +88,27 @@ async function submit() {
     iconText: form.iconText.trim() || undefined,
     color: form.color.trim() || undefined,
     description: form.description.trim() || undefined,
+    scope: form.scope,
     sortOrder: form.sortOrder,
     enabled: form.enabled,
   };
   try {
     if (editingId.value) {
       await updatePlatformPromotionTag(editingId.value, payload);
-      message.value = '推荐标签已更新';
+      message.value = '标签已更新';
     } else {
       await createPlatformPromotionTag(payload);
-      message.value = '推荐标签已新增';
+      message.value = '标签已新增';
     }
     resetForm();
     await loadItems();
   } catch (error) {
     message.value = errorMessage(error);
   }
+}
+
+function scopeLabel(scope: PlatformPromotionTag['scope']) {
+  return scopeOptions.find((item) => item.value === scope)?.label ?? scope;
 }
 
 async function disable(item: PlatformPromotionTag) {
@@ -110,11 +123,11 @@ async function disable(item: PlatformPromotionTag) {
 </script>
 
 <template>
-  <PageHeader title="推荐标签管理" description="首页推荐、新店、热门等运营标签在这里管理。" />
+  <PageHeader title="标签字典管理" description="分别维护平台运营标签，以及可在商家详情页展示的菜系与场景标签。" />
   <p v-if="message" class="message">{{ message }}</p>
 
   <form class="card form-grid" @submit.prevent="submit">
-    <h2 class="span-2">{{ editingId ? '编辑推荐标签' : '新增推荐标签' }}</h2>
+    <h2 class="span-2">{{ editingId ? '编辑标签' : '新增标签' }}</h2>
     <label>编码<input v-model="form.code" required maxlength="64" placeholder="HOT_FOOD" /></label>
     <label>中文名<input v-model="form.nameZh" required maxlength="80" /></label>
     <label>越南语名<input v-model="form.nameVi" maxlength="80" /></label>
@@ -123,6 +136,11 @@ async function disable(item: PlatformPromotionTag) {
     <label>图标文本<input v-model="form.iconText" maxlength="16" placeholder="🔥" /></label>
     <label>颜色<input v-model="form.color" maxlength="32" placeholder="#16a34a" /></label>
     <label class="span-2">描述<input v-model="form.description" maxlength="255" /></label>
+    <label>用途
+      <select v-model="form.scope">
+        <option v-for="option in scopeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+      </select>
+    </label>
     <label>排序<input v-model.number="form.sortOrder" type="number" min="0" /></label>
     <label class="check"><input v-model="form.enabled" type="checkbox" />启用</label>
     <div class="form-actions span-2">
@@ -142,6 +160,7 @@ async function disable(item: PlatformPromotionTag) {
           <tr>
             <th>编码</th>
             <th>名称</th>
+            <th>用途</th>
             <th>展示</th>
             <th>排序</th>
             <th>状态</th>
@@ -152,6 +171,7 @@ async function disable(item: PlatformPromotionTag) {
           <tr v-for="item in items" :key="item.id">
             <td>{{ item.code }}</td>
             <td>{{ item.nameZh }}<br /><small>{{ item.nameVi }} / {{ item.nameEn }}</small></td>
+            <td>{{ scopeLabel(item.scope) }}</td>
             <td>
               <span :style="{ color: item.color || undefined }">{{ item.iconText || '•' }}</span>
               <small>{{ item.description || '-' }}</small>
@@ -168,3 +188,13 @@ async function disable(item: PlatformPromotionTag) {
     </div>
   </section>
 </template>
+
+<style scoped>
+@media (max-width: 760px) {
+  input,
+  select,
+  button {
+    min-height: 44px;
+  }
+}
+</style>

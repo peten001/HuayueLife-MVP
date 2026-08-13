@@ -4,7 +4,7 @@ import {
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
-import { Category, Merchant, OrderType, Prisma } from '@prisma/client';
+import { Category, Merchant, OrderType, Prisma, PromotionTagScope } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
@@ -43,6 +43,8 @@ type PublicMerchantRow = Merchant & {
       nameEn: string | null;
       iconText: string | null;
       color: string | null;
+      scope: PromotionTagScope;
+      sortOrder: number;
     };
   }>;
   capabilities?: Array<{
@@ -216,6 +218,7 @@ export class PublicMerchantsService {
       null,
       hotRecommendations,
       signatureDishes,
+      true,
     );
   }
 
@@ -380,6 +383,7 @@ export class PublicMerchantsService {
     distance: number | null,
     hotRecommendations: PublicMerchantRow['hotRecommendations'] = [],
     signatureDishes: NonNullable<PublicMerchantRow['signatureDishes']> = merchant.signatureDishes ?? [],
+    includeDetailDisplayTags = false,
   ) {
     const resolvedCapabilities =
       this.merchantCapabilities.resolveCapabilitiesFromMerchant(merchant);
@@ -457,6 +461,9 @@ export class PublicMerchantsService {
         iconText: item.promotionTag.iconText,
         color: item.promotionTag.color,
       })),
+      ...(includeDetailDisplayTags
+        ? { detailDisplayTags: resolveDetailDisplayTags(merchant.promotionTags ?? []) }
+        : {}),
       capabilities: (merchant.capabilities ?? []).map((item) => {
         const orderingAllowed = platformOrderingEnabled
           || !isOrderingCapabilityCode(item.capability.code);
@@ -634,6 +641,33 @@ export class PublicMerchantsService {
       || resolvedCapabilities.deliveryEnabled,
     );
   }
+}
+
+function resolveDetailDisplayTags(
+  relations: NonNullable<PublicMerchantRow['promotionTags']>,
+) {
+  const byScope = (scope: PromotionTagScope) => relations
+    .filter((item) => item.promotionTag.scope === scope)
+    .sort((left, right) => (
+      left.promotionTag.sortOrder - right.promotionTag.sortOrder
+      || Number(left.promotionTag.id - right.promotionTag.id)
+    ))
+    .slice(0, 2)
+    .map((item) => ({
+      id: item.promotionTag.id.toString(),
+      code: item.promotionTag.code,
+      scope: item.promotionTag.scope,
+      nameZh: item.promotionTag.nameZh,
+      nameVi: item.promotionTag.nameVi,
+      nameEn: item.promotionTag.nameEn,
+      iconText: item.promotionTag.iconText,
+      color: item.promotionTag.color,
+    }));
+
+  return [
+    ...byScope(PromotionTagScope.CUISINE),
+    ...byScope(PromotionTagScope.SCENE),
+  ].slice(0, 4);
 }
 
 function isHotRecommendationCategory(nameZh: string) {

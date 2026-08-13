@@ -159,6 +159,16 @@ export interface MerchantDetail extends MerchantSummary {
   district?: string;
   notice?: string;
   businessHours: Record<string, string[]>;
+  detailDisplayTags?: Array<{
+    id: string;
+    code: string;
+    scope: 'CUISINE' | 'SCENE';
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    iconText?: string | null;
+    color?: string | null;
+  }>;
   signatureDishes?: Array<{
     id: string;
     nameZh: string;

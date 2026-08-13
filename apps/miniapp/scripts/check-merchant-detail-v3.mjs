@@ -21,20 +21,31 @@ function blockAfter(source, marker) {
   return source.slice(start, end + 4);
 }
 
-const heroBlock = blockAfter(detail, 'const heroImages = computed(() => {');
+const displayHeroBlock = blockAfter(detail, 'const displayHeroImages = computed(() => {');
+const claimedGalleryStart = detail.indexOf('const claimedGalleryCategories = computed<ClaimedGalleryCategory[]>(() => {');
+const claimedGalleryEnd = detail.indexOf('const displayHeroImages = computed(() => {', claimedGalleryStart);
+assert.notEqual(claimedGalleryStart, -1, 'missing claimed gallery categories');
+assert.notEqual(claimedGalleryEnd, -1, 'unterminated claimed gallery categories');
+const claimedGalleryBlock = detail.slice(claimedGalleryStart, claimedGalleryEnd);
 const environmentBlock = blockAfter(detail, 'const environmentImages = computed(() => {');
 
 assert.match(detail, /const visibleGalleryImages = computed\([\s\S]*item\.isVisible !== false/);
 assert.ok(
-  heroBlock.indexOf('append(merchant.value?.coverUrl);')
-    < heroBlock.indexOf("(['STORE', 'MENU'] as const)"),
-  'hero must begin with the cover before STORE and MENU media',
+  displayHeroBlock.indexOf('append(merchant.value?.coverUrl);')
+    < displayHeroBlock.indexOf("(['STORE', 'MENU'] as const)"),
+  'DISPLAY hero must retain cover before STORE and MENU media',
 );
-assert.match(heroBlock, /\['STORE', 'MENU'\] as const/);
-assert.doesNotMatch(heroBlock, /ENVIRONMENT|PRODUCT/);
+assert.match(displayHeroBlock, /\['STORE', 'MENU'\] as const/);
+assert.doesNotMatch(displayHeroBlock, /ENVIRONMENT|PRODUCT/);
+assert.match(claimedGalleryBlock, /key: 'COVER'[\s\S]*key: 'STORE'[\s\S]*key: 'PRODUCT'[\s\S]*key: 'ENVIRONMENT'/);
+assert.match(claimedGalleryBlock, /sortedGalleryUrls\('STORE', 3\)/);
+assert.match(claimedGalleryBlock, /sortedGalleryUrls\('PRODUCT', 6\)/);
+assert.match(claimedGalleryBlock, /sortedGalleryUrls\('ENVIRONMENT', 3\)/);
+assert.match(claimedGalleryBlock, /signatureDishes\.value\.forEach[\s\S]*hotRecommendations\.value\.forEach/);
+assert.doesNotMatch(claimedGalleryBlock, /MENU/);
 assert.match(environmentBlock, /item\.imageType === 'ENVIRONMENT'/);
 assert.doesNotMatch(environmentBlock, /item\.imageType === 'PRODUCT'/);
-assert.match(heroBlock, /!urls\.includes\(resolved\)/);
+assert.match(displayHeroBlock, /!urls\.includes\(resolved\)/);
 assert.match(environmentBlock, /!heroUrls\.has\(resolved\).*?!urls\.includes\(resolved\)/s);
 
 assert.match(
@@ -54,7 +65,14 @@ assert.match(detail, /const signatureDishes = computed\(\(\) => merchant\.value\
 assert.match(detail, /const hotRecommendations = computed\(\(\) => merchant\.value\?\.hotRecommendations \?\? \[\]\)/);
 assert.match(detail, /v-if="signatureDishes\.length"/);
 assert.match(detail, /v-if="hotRecommendations\.length"/);
-assert.match(detail, /v-if="environmentImages\.length"/);
+assert.match(detail, /v-if="!isClaimedMerchant && environmentImages\.length"/);
+assert.match(detail, /signatureDefaultLimit = computed\(\(\) => \(viewportWidth\.value < 390 \? 6 : 8\)\)/);
+assert.match(detail, /hotDefaultLimit = computed\(\(\) => \(viewportWidth\.value < 390 \? 3 : 4\)\)/);
+assert.match(detail, /v-for="dish in visibleSignatureDishes"/);
+assert.match(detail, /v-for="product in visibleHotRecommendations"/);
+assert.match(detail, /activeGalleryCategory\.value = key;[\s\S]*activeHeroIndex\.value = 0;/);
+assert.match(detail, /merchant\.value\?\.detailDisplayTags/);
+assert.doesNotMatch(detail, /displayTags = computed\([\s\S]{0,120}promotionTags/);
 
 assert.match(ordering, /input\.merchantMode === 'MANAGED' && input\.claimStatus === 'CLAIMED'/);
 assert.match(ordering, /input\.platformOrderingEnabled/);

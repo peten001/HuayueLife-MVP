@@ -410,6 +410,12 @@ model MerchantBusinessType {
   @@map("merchant_business_types")
 }
 
+enum PromotionTagScope {
+  OPERATIONAL
+  CUISINE
+  SCENE
+}
+
 model PromotionTag {
   id          BigInt   @id @default(autoincrement())
   code        String   @unique @db.VarChar(64)
@@ -420,6 +426,7 @@ model PromotionTag {
   iconText    String?  @map("icon_text") @db.VarChar(16)
   color       String?  @db.VarChar(32)
   description String?  @db.VarChar(255)
+  scope       PromotionTagScope @default(OPERATIONAL)
   sortOrder   Int      @default(0) @map("sort_order")
   enabled     Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
@@ -428,6 +435,7 @@ model PromotionTag {
   merchants MerchantPromotionTag[]
 
   @@index([enabled, sortOrder])
+  @@index([scope, enabled, sortOrder])
   @@map("promotion_tags")
 }
 

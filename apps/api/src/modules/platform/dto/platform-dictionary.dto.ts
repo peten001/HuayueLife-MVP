@@ -113,6 +113,10 @@ export class UpsertPromotionTagDto {
   description?: string;
 
   @IsOptional()
+  @IsIn(['OPERATIONAL', 'CUISINE', 'SCENE'])
+  scope?: 'OPERATIONAL' | 'CUISINE' | 'SCENE';
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   sortOrder?: number;

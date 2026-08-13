@@ -44,6 +44,7 @@ type EditorSection =
   | 'images'
   | 'signatureDishes'
   | 'tags'
+  | 'display-tags'
   | 'visibility'
   | 'hot'
   | 'capabilities'
@@ -151,7 +152,8 @@ const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> =
   { key: 'businessHours', label: '营业时间' },
   { key: 'images', label: '商家图库' },
   { key: 'signatureDishes', label: '招牌菜' },
-  { key: 'tags', label: '内容标签' },
+  { key: 'tags', label: '运营标签' },
+  { key: 'display-tags', label: '详情标签' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
   { key: 'capabilities', label: '能力开关' },
@@ -310,9 +312,26 @@ const contentImages = computed(() =>
     .filter((image) => CONTENT_IMAGE_TYPES.includes(image.imageType as (typeof CONTENT_IMAGE_TYPES)[number]))
     .sort((left, right) => left.sortOrder - right.sortOrder || Number(left.id) - Number(right.id)),
 );
-const contentPromotionTags = computed(() =>
-  promotionTags.value.filter((tag) => tag.enabled && !RESERVED_PROMOTION_TAG_CODES.has(tag.code)),
+const operationalPromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => (
+    tag.enabled
+    && tag.scope === 'OPERATIONAL'
+    && !RESERVED_PROMOTION_TAG_CODES.has(tag.code)
+  )),
 );
+const cuisinePromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => tag.enabled && tag.scope === 'CUISINE'),
+);
+const scenePromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => tag.enabled && tag.scope === 'SCENE'),
+);
+const selectedDetailTagCount = computed(() => {
+  const consumerIds = new Set([
+    ...cuisinePromotionTags.value.map((tag) => tag.id),
+    ...scenePromotionTags.value.map((tag) => tag.id),
+  ]);
+  return selectedTagIds.value.filter((id) => consumerIds.has(id)).length;
+});
 const profileRisks = computed(() => {
   const item = merchant.value;
   if (!item) return [];
@@ -739,7 +758,7 @@ async function saveTags() {
   message.value = '';
   try {
     await updatePlatformMerchantTags(merchantId.value, [...selectedTagIds.value]);
-    message.value = '推荐标签已保存';
+    message.value = '标签配置已保存';
     await loadPage();
   } catch (error) {
     message.value = errorMessage(error);
@@ -1225,18 +1244,52 @@ function backToList() {
 
         <section id="merchant-section-tags" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>内容标签</h2><p>用于表达商家内容；HOT_FOOD 继续由“热门推荐”独立维护。</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存内容标签</button>
+            <div><h2>平台运营标签</h2><p>用于平台运营/首页逻辑，不直接显示在商家详情页。</p></div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
           </div>
-          <div v-if="contentPromotionTags.length" class="content-tag-picker">
-            <label v-for="tag in contentPromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+          <div v-if="operationalPromotionTags.length" class="content-tag-picker">
+            <label v-for="tag in operationalPromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
               <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
               <span>{{ tag.iconText || '•' }}</span>
               <strong>{{ tag.nameZh }}</strong>
               <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
             </label>
           </div>
-          <p v-else class="empty">暂无可分配的普通内容标签，请先在标签字典中创建并启用。</p>
+          <p v-else class="empty">暂无可分配的平台运营标签。</p>
+        </section>
+
+        <section id="merchant-section-display-tags" class="editor-section-card">
+          <div class="editor-section-head">
+            <div><h2>详情页展示标签</h2><p>面向消费者展示；建议菜系最多 2 个、场景最多 2 个，总计最多 4 个。</p></div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
+          </div>
+          <div class="display-tag-groups">
+            <div class="display-tag-group">
+              <h3>菜系</h3>
+              <div v-if="cuisinePromotionTags.length" class="content-tag-picker">
+                <label v-for="tag in cuisinePromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+                  <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
+                  <span>{{ tag.iconText || '•' }}</span>
+                  <strong>{{ tag.nameZh }}</strong>
+                  <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                </label>
+              </div>
+              <p v-else class="empty">暂无菜系标签，请先在标签字典中创建。</p>
+            </div>
+            <div class="display-tag-group">
+              <h3>场景</h3>
+              <div v-if="scenePromotionTags.length" class="content-tag-picker">
+                <label v-for="tag in scenePromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
+                  <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
+                  <span>{{ tag.iconText || '•' }}</span>
+                  <strong>{{ tag.nameZh }}</strong>
+                  <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                </label>
+              </div>
+              <p v-else class="empty">暂无场景标签，请先在标签字典中创建。</p>
+            </div>
+          </div>
+          <p v-if="selectedDetailTagCount > 4" class="editor-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签，前台会按菜系 2 个、场景 2 个的规则展示前 4 个。</p>
         </section>
 
         <section id="merchant-section-capabilities" class="editor-section-card">
@@ -2499,6 +2552,39 @@ function backToList() {
   gap: 10px;
 }
 
+.display-tag-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.display-tag-group {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f7faf8;
+}
+
+.display-tag-group h3 {
+  margin: 0 0 12px;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .display-tag-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .content-tag-option strong,
+  .content-tag-option small {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+}
+
 .content-tag-option {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
@@ -3293,5 +3379,13 @@ function backToList() {
 
 .merchant-editor-content {
   width: 100%;
+}
+
+@media (max-width: 760px) {
+  .editor-section-card .editor-button,
+  .form-actions button,
+  .small.secondary {
+    min-height: 44px;
+  }
 }
 </style>

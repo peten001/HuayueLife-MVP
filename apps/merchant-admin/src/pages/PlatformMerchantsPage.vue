@@ -169,7 +169,7 @@ const selectableBusinessTypes = computed(() => {
   });
 });
 const enabledPromotionTags = computed(() =>
-  promotionTags.value.filter((item) => item.enabled),
+  promotionTags.value.filter((item) => item.enabled && item.scope === 'OPERATIONAL'),
 );
 const capabilityGroups = computed(() => {
   const groups = new Map<string, { code: string; name: string; items: PlatformCapability[] }>();

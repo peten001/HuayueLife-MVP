@@ -225,6 +225,7 @@ export interface PlatformBusinessType extends PlatformDictionaryItem {
 }
 
 export interface PlatformPromotionTag extends PlatformDictionaryItem {
+  scope: 'OPERATIONAL' | 'CUISINE' | 'SCENE';
   iconText?: string | null;
   color?: string | null;
   description?: string | null;
