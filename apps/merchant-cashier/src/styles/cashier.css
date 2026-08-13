@@ -964,12 +964,26 @@
   justify-content: center;
   width: auto;
   height: auto;
-  padding: 20px 24px;
+  gap: clamp(14px, 1.4vw, 20px);
+  padding: 0;
   border: 0;
-  border-radius: 16px;
-  background: var(--cashier-white-alpha-03);
+  border-radius: 0;
+  outline: 0;
+  overflow: visible;
+  background: var(--cashier-transparent);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-.cashier-brand--auth .cashier-brand__logo { width: 82px; height: 82px; flex-basis: 82px; }
+.cashier-brand--auth .cashier-brand__logo {
+  width: 82px;
+  height: 82px;
+  flex-basis: 82px;
+  overflow: visible;
+  border-radius: 0;
+  background: var(--cashier-transparent);
+  box-shadow: none;
+}
 .cashier-brand--auth .cashier-brand__name { font-size: clamp(30px, 3.25vw, 38px); }
 .auth-card { width: 100%; max-height: calc(100vh - 40px); padding: 25px; overflow: auto; border: 1px solid var(--cashier-border); border-radius: 14px; color: var(--cashier-text); background: var(--cashier-surface); box-shadow: 0 24px 60px var(--cashier-auth-shadow-color); }
 .auth-page > .auth-card:only-child { grid-column: 1 / -1; width: min(460px, 100%); justify-self: center; }
@@ -1147,7 +1161,7 @@
   .order-list { grid-template-columns: 1fr; }
   .auth-page { display: block; padding: 16px 10px; overflow: auto; }
   .auth-product-intro { display: flex; align-items: center; margin: 0 auto 12px; width: min(500px, 100%); }
-  .cashier-brand--auth { width: auto; height: auto; gap: 12px; padding: 10px 14px; }
+  .cashier-brand--auth { width: auto; height: auto; gap: 12px; padding: 0; }
   .cashier-brand--auth .cashier-brand__name { display: block; font-size: clamp(21px, 6vw, 25px); }
   .cashier-brand--auth .cashier-brand__logo { width: 52px; height: 52px; flex-basis: 52px; }
   .auth-card { width: min(500px, 100%); max-height: none; margin: auto; padding: 18px 15px; }
