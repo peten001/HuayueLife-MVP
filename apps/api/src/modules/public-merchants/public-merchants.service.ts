@@ -452,15 +452,18 @@ export class PublicMerchantsService {
       ),
       manualPopular: Boolean(merchant.manualPopular),
       isNew: Boolean(merchant.isNew),
-      promotionTags: (merchant.promotionTags ?? []).map((item) => ({
-        id: item.promotionTag.id.toString(),
-        code: item.promotionTag.code,
-        nameZh: item.promotionTag.nameZh,
-        nameVi: item.promotionTag.nameVi,
-        nameEn: item.promotionTag.nameEn,
-        iconText: item.promotionTag.iconText,
-        color: item.promotionTag.color,
-      })),
+      promotionTags: (merchant.promotionTags ?? [])
+        .filter((item) => item.promotionTag.scope === PromotionTagScope.OPERATIONAL)
+        .map((item) => ({
+          id: item.promotionTag.id.toString(),
+          code: item.promotionTag.code,
+          scope: PromotionTagScope.OPERATIONAL,
+          nameZh: item.promotionTag.nameZh,
+          nameVi: item.promotionTag.nameVi,
+          nameEn: item.promotionTag.nameEn,
+          iconText: item.promotionTag.iconText,
+          color: item.promotionTag.color,
+        })),
       ...(includeDetailDisplayTags
         ? { detailDisplayTags: resolveDetailDisplayTags(merchant.promotionTags ?? []) }
         : {}),

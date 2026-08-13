@@ -113,7 +113,10 @@ function scopeLabel(scope: PlatformPromotionTag['scope']) {
 }
 
 async function disable(item: PlatformPromotionTag) {
-  if (!window.confirm(`停用 ${item.nameZh}？`)) return;
+  const consequence = item.scope === 'OPERATIONAL'
+    ? '停用后将从商家详情移除，并可能影响现有首页或推荐运营逻辑。'
+    : '停用后将从商家详情标签选择中移除，已关联商家也不再展示该标签。';
+  if (!window.confirm(`停用 ${item.nameZh}？\n${consequence}`)) return;
   try {
     await disablePlatformPromotionTag(item.id);
     await loadItems();
@@ -125,7 +128,7 @@ async function disable(item: PlatformPromotionTag) {
 </script>
 
 <template>
-  <PageHeader title="标签字典管理" description="分别维护平台运营标签，以及可在商家详情页展示的菜系与场景标签。" />
+  <PageHeader title="标签字典管理" description="三类标签均可显示在商家详情；平台运营标签同时承担首页与推荐逻辑。" />
   <p v-if="message" :class="['message', { 'is-success': messageIsSuccess }]" role="status" aria-live="polite">{{ message }}</p>
 
   <form class="card form-grid" @submit.prevent="submit">
@@ -142,7 +145,7 @@ async function disable(item: PlatformPromotionTag) {
       <select v-model="form.scope">
         <option v-for="option in scopeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
       </select>
-      <small>平台运营不进入商家详情；菜系与场景可进入详情名称下方。</small>
+      <small>平台运营、菜系与场景均可显示在详情名称下方；平台运营标签继续承担原有首页与推荐逻辑。</small>
     </label>
     <label>排序<input v-model.number="form.sortOrder" type="number" min="0" /></label>
     <label class="check"><input v-model="form.enabled" type="checkbox" />启用</label>

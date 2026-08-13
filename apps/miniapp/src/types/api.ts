@@ -126,6 +126,7 @@ export interface MerchantSummary extends LocalizedFields {
   promotionTags?: Array<{
     id: string;
     code: string;
+    scope?: 'OPERATIONAL';
     nameZh: string;
     nameVi?: string | null;
     nameEn?: string | null;

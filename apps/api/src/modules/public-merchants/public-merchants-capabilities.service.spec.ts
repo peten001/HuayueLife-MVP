@@ -104,7 +104,7 @@ function service(platformOrderingEnabled: boolean) {
 }
 
 describe('PublicMerchantsService effective detail capabilities', () => {
-  it('adds only sorted consumer-facing cuisine and scene tags to detail responses', () => {
+  it('keeps operational tags visible while adding only sorted cuisine and scene tags to detail responses', () => {
     const tags = [
       promotionTag(1n, 'HOT_FOOD', 'OPERATIONAL', 0),
       promotionTag(2n, 'SCENE_FAMILY', 'SCENE', 20),
@@ -123,7 +123,8 @@ describe('PublicMerchantsService effective detail capabilities', () => {
       true,
     );
 
-    expect(result.promotionTags).toHaveLength(tags.length);
+    expect(result.promotionTags.map((item: any) => item.code)).toEqual(['HOT_FOOD']);
+    expect(result.promotionTags.every((item: any) => item.scope === 'OPERATIONAL')).toBe(true);
     expect(result.detailDisplayTags.map((item: any) => item.code)).toEqual([
       'CUISINE_HUNAN',
       'CUISINE_SICHUAN',
@@ -135,15 +136,20 @@ describe('PublicMerchantsService effective detail capabilities', () => {
     ]));
   });
 
-  it('keeps nearby serialization backward-compatible without the detail-only tag field', () => {
+  it('keeps nearby serialization free of the detail-only tag field and consumer tag leakage', () => {
     const result = (service(true) as any).serializeMerchant(
-      merchant({ promotionTags: [promotionTag(3n, 'CUISINE_HUNAN', 'CUISINE', 10)] }),
+      merchant({
+        promotionTags: [
+          promotionTag(1n, 'HOT_FOOD', 'OPERATIONAL', 0),
+          promotionTag(3n, 'CUISINE_HUNAN', 'CUISINE', 10),
+        ],
+      }),
       [],
       null,
     );
 
     expect(result).not.toHaveProperty('detailDisplayTags');
-    expect(result.promotionTags).toHaveLength(1);
+    expect(result.promotionTags.map((item: any) => item.code)).toEqual(['HOT_FOOD']);
   });
 
   it('keeps display facilities effective but blocks raw pickup and delivery for DISPLAY merchants', () => {

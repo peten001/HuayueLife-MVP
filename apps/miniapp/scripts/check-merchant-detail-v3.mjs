@@ -15,40 +15,46 @@ const ordering = fs.readFileSync(orderingPath, 'utf8');
 const favorites = fs.readFileSync(favoritesPath, 'utf8');
 const i18n = fs.readFileSync(i18nPath, 'utf8');
 
-function blockAfter(source, marker) {
-  const start = source.indexOf(marker);
-  assert.notEqual(start, -1, `missing ${marker}`);
-  const end = source.indexOf('\n});', start);
-  assert.notEqual(end, -1, `unterminated ${marker}`);
-  return source.slice(start, end + 4);
+function sliceBetween(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing ${startMarker}`);
+  const end = source.indexOf(endMarker, start);
+  assert.notEqual(end, -1, `missing ${endMarker}`);
+  return source.slice(start, end);
 }
 
-const displayHeroBlock = blockAfter(detail, 'const displayHeroImages = computed(() => {');
-const claimedGalleryStart = detail.indexOf('const claimedGalleryCategories = computed<ClaimedGalleryCategory[]>(() => {');
-const claimedGalleryEnd = detail.indexOf('const displayHeroImages = computed(() => {', claimedGalleryStart);
-assert.notEqual(claimedGalleryStart, -1, 'missing claimed gallery categories');
-assert.notEqual(claimedGalleryEnd, -1, 'unterminated claimed gallery categories');
-const claimedGalleryBlock = detail.slice(claimedGalleryStart, claimedGalleryEnd);
-const environmentBlock = blockAfter(detail, 'const environmentImages = computed(() => {');
+const galleryBlock = sliceBetween(
+  detail,
+  'const galleryCategories = computed<GalleryCategory[]>(() => {',
+  'const heroImages = computed(() => {',
+);
+const displayTagsBlock = sliceBetween(
+  detail,
+  'const displayTags = computed(() => {',
+  'const isClaimedMerchant = computed(',
+);
 
 assert.match(detail, /const visibleGalleryImages = computed\([\s\S]*item\.isVisible !== false/);
-assert.ok(
-  displayHeroBlock.indexOf('append(merchant.value?.coverUrl);')
-    < displayHeroBlock.indexOf("(['STORE', 'MENU'] as const)"),
-  'DISPLAY hero must retain cover before STORE and MENU media',
-);
-assert.match(displayHeroBlock, /\['STORE', 'MENU'\] as const/);
-assert.doesNotMatch(displayHeroBlock, /ENVIRONMENT|PRODUCT/);
-assert.match(claimedGalleryBlock, /key: 'COVER'[\s\S]*key: 'STORE'[\s\S]*key: 'PRODUCT'[\s\S]*key: 'ENVIRONMENT'/);
-assert.match(claimedGalleryBlock, /sortedGalleryUrls\('STORE', 3\)/);
-assert.match(claimedGalleryBlock, /sortedGalleryUrls\('PRODUCT', 6\)/);
-assert.match(claimedGalleryBlock, /sortedGalleryUrls\('ENVIRONMENT', 3\)/);
-assert.match(claimedGalleryBlock, /signatureDishes\.value\.forEach[\s\S]*hotRecommendations\.value\.forEach/);
-assert.doesNotMatch(claimedGalleryBlock, /MENU/);
-assert.match(environmentBlock, /item\.imageType === 'ENVIRONMENT'/);
-assert.doesNotMatch(environmentBlock, /item\.imageType === 'PRODUCT'/);
-assert.match(displayHeroBlock, /!urls\.includes\(resolved\)/);
-assert.match(environmentBlock, /!heroUrls\.has\(resolved\).*?!urls\.includes\(resolved\)/s);
+assert.match(galleryBlock, /key: 'COVER'[\s\S]*key: 'STORE'[\s\S]*key: 'PRODUCT'[\s\S]*key: 'ENVIRONMENT'/);
+assert.match(galleryBlock, /resolveMediaUrl\(merchant\.value\?\.coverUrl\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('STORE', 3\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('PRODUCT', 6\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('ENVIRONMENT', 3\)/);
+assert.doesNotMatch(galleryBlock, /signatureDishes|hotRecommendations|MENU/);
+assert.doesNotMatch(galleryBlock, /isClaimedMerchant|isUnclaimedDisplayMerchant/);
+assert.match(galleryBlock, /categories\.filter\(\(category\) => category\.urls\.length > 0\)/);
+assert.doesNotMatch(galleryBlock, /urls\.length\s*(?:<|>=)\s*[136]/);
+assert.match(detail, /\.filter\(\(url, index, urls\) => urls\.indexOf\(url\) === index\)[\s\S]*\.slice\(0, limit\)/);
+assert.doesNotMatch(detail, /displayHeroImages|environmentImages|previewEnvironment/);
+assert.doesNotMatch(detail, /class="thumbnail-scroll"/);
+
+assert.match(displayTagsBlock, /merchant\.value\?\.detailDisplayTags \?\? \[\]/);
+assert.match(displayTagsBlock, /merchant\.value\?\.promotionTags \?\? \[\]/);
+assert.match(displayTagsBlock, /item\.scope === undefined \|\| item\.scope === 'OPERATIONAL'/);
+assert.match(displayTagsBlock, /detailTagIds\.has\(item\.id\)/);
+assert.match(displayTagsBlock, /seenLabels/);
+assert.match(displayTagsBlock, /displayBusinessType\.value\.trim\(\)\.toLocaleLowerCase\(\)/);
+assert.doesNotMatch(detail, /湘菜|适合聚餐|首页推荐|编辑精选|附近热门/);
 
 assert.match(
   detail,
@@ -67,28 +73,34 @@ assert.match(detail, /const signatureDishes = computed\(\(\) => merchant\.value\
 assert.match(detail, /const hotRecommendations = computed\(\(\) => merchant\.value\?\.hotRecommendations \?\? \[\]\)/);
 assert.match(detail, /v-if="signatureDishes\.length"/);
 assert.match(detail, /v-if="hotRecommendations\.length"/);
-assert.match(detail, /v-if="!isClaimedMerchant && environmentImages\.length"/);
+assert.doesNotMatch(detail, /class="content-section environment-section"/);
 assert.match(detail, /signatureDefaultLimit = computed\(\(\) => \(viewportWidth\.value < 390 \? 6 : 8\)\)/);
 assert.match(detail, /hotDefaultLimit = computed\(\(\) => \(viewportWidth\.value < 390 \? 3 : 4\)\)/);
 assert.match(detail, /v-for="dish in visibleSignatureDishes"/);
 assert.match(detail, /v-for="product in visibleHotRecommendations"/);
 assert.match(detail, /activeGalleryCategory\.value = key;[\s\S]*activeHeroIndex\.value = 0;/);
 assert.match(detail, /merchant\.value\?\.detailDisplayTags/);
-assert.doesNotMatch(detail, /displayTags = computed\([\s\S]{0,120}promotionTags/);
+assert.match(detail, /merchant\.value\?\.promotionTags/);
 
 const heroShellStart = detail.indexOf('<view class="hero-shell">');
-const heroShellEnd = detail.indexOf(
-  '</view>\n\n      <scroll-view v-if="!isClaimedMerchant && heroImages.length > 1"',
-  heroShellStart,
-);
+const heroShellEnd = detail.indexOf('<view class="merchant-overview">', heroShellStart);
 assert.notEqual(heroShellStart, -1, 'missing Hero shell');
-assert.notEqual(heroShellEnd, -1, 'missing claimed Hero shell boundary');
+assert.notEqual(heroShellEnd, -1, 'missing Hero shell boundary');
 const heroShellTemplate = detail.slice(heroShellStart, heroShellEnd);
 assert.match(heroShellTemplate, /class="gallery-category-scroll"/);
+assert.match(heroShellTemplate, /v-if="galleryCategories\.length"/);
+assert.match(heroShellTemplate, /v-for="category in galleryCategories"/);
+assert.match(heroShellTemplate, /role="tablist"/);
+assert.match(heroShellTemplate, /role="tab"/);
+assert.match(heroShellTemplate, /:aria-selected="activeGalleryCategory === category\.key"/);
+assert.match(heroShellTemplate, /class="gallery-category-active-marker"/);
 assert.match(heroShellTemplate, /v-if="category\.key !== 'COVER'" class="gallery-category-count"/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\S]*bottom: 0;[\s\S]*background: linear-gradient\(180deg,/);
-assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*background: rgb\(255 255 255 \/ 92%\);/);
-assert.match(detail, /\.hero-count\.has-gallery-overlay \{[\s\S]*bottom: 116rpx;/);
+assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 38%\);/);
+assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*background: rgb\(28 64 40 \/ 68%\);/);
+assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180}background: rgb\(255 255 255/);
+assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--on-brand\);/);
+assert.match(detail, /\.hero-count\.has-gallery-overlay \{[\s\S]*bottom: 112rpx;/);
 
 assert.match(
   detail,

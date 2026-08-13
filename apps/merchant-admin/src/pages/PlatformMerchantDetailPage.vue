@@ -168,7 +168,7 @@ const CONTENT_IMAGE_SECTION_CONFIG: Array<{
   {
     type: 'MENU',
     title: '菜单 MENU',
-    description: '当前已认领商家 V3.2 顶部图库不展示 MENU；数据保留供后续功能使用。',
+    description: '当前商家详情顶部图库不展示 MENU；数据保留供后续功能使用。',
     guidance: '继续支持上传、排序、显示与隐藏。',
   },
 ];
@@ -1338,7 +1338,7 @@ function backToList() {
 
         <section id="merchant-section-tags" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>平台运营标签</h2><p>用于平台运营/首页逻辑，不直接显示在商家详情页。</p></div>
+            <div><h2>运营标签（详情页 + 首页/推荐）</h2><p>显示在商家详情名称下方，并保留现有首页与推荐运营逻辑。</p></div>
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
           </div>
           <div v-if="operationalPromotionTags.length" class="content-tag-picker">
@@ -1354,7 +1354,7 @@ function backToList() {
 
         <section id="merchant-section-display-tags" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>详情页展示标签</h2><p>面向消费者展示；前台按当前排序显示菜系前 2 个、场景前 2 个。</p></div>
+            <div><h2>菜系与场景标签（详情页）</h2><p>面向消费者展示；前台按当前排序显示菜系前 2 个、场景前 2 个。</p></div>
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
           </div>
           <div class="display-tag-groups">

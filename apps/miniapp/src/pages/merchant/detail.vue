@@ -28,7 +28,7 @@ const error = ref('');
 const errorRetryable = ref(true);
 const loading = ref(true);
 const activeHeroIndex = ref(0);
-const activeGalleryCategory = ref<ClaimedGalleryKey | ''>('');
+const activeGalleryCategory = ref<GalleryKey | ''>('');
 const viewportWidth = ref(390);
 const signatureExpanded = ref(false);
 const hotExpanded = ref(false);
@@ -91,11 +91,28 @@ const displayDescription = computed(() => {
 const displayBusinessType = computed(() =>
   merchant.value?.businessType ? localizedName(merchant.value.businessType, locale.value) : '',
 );
-const displayTags = computed(() =>
-  merchant.value?.detailDisplayTags
-    ?.map((item) => ({ id: item.id, label: localizedName(item, locale.value) }))
-    .filter((item) => Boolean(item.label)) ?? [],
-);
+const displayTags = computed(() => {
+  const detailTags = merchant.value?.detailDisplayTags ?? [];
+  const detailTagIds = new Set(detailTags.map((item) => item.id));
+  const candidates = [
+    ...detailTags,
+    ...(merchant.value?.promotionTags ?? []).filter((item) => (
+      (item.scope === undefined || item.scope === 'OPERATIONAL')
+      && !detailTagIds.has(item.id)
+    )),
+  ];
+  const seenLabels = new Set<string>();
+  const businessTypeLabel = displayBusinessType.value.trim().toLocaleLowerCase();
+  if (businessTypeLabel) seenLabels.add(businessTypeLabel);
+
+  return candidates.flatMap((item) => {
+    const label = localizedName(item, locale.value).trim();
+    const normalizedLabel = label.toLocaleLowerCase();
+    if (!label || seenLabels.has(normalizedLabel)) return [];
+    seenLabels.add(normalizedLabel);
+    return [{ id: item.id, label }];
+  });
+});
 const isClaimedMerchant = computed(
   () => merchant.value?.merchantMode === 'MANAGED' && merchant.value?.claimStatus === 'CLAIMED',
 );
@@ -111,9 +128,9 @@ const visibleGalleryImages = computed(() =>
     ? (merchant.value?.images ?? []).filter((item) => item.isVisible !== false)
     : [],
 );
-type ClaimedGalleryKey = 'COVER' | 'STORE' | 'PRODUCT' | 'ENVIRONMENT';
-type ClaimedGalleryCategory = {
-  key: ClaimedGalleryKey;
+type GalleryKey = 'COVER' | 'STORE' | 'PRODUCT' | 'ENVIRONMENT';
+type GalleryCategory = {
+  key: GalleryKey;
   label: string;
   urls: string[];
 };
@@ -128,59 +145,23 @@ function sortedGalleryUrls(imageType: string, limit: number) {
     .slice(0, limit);
 }
 
-const claimedGalleryCategories = computed<ClaimedGalleryCategory[]>(() => {
-  if (!isClaimedMerchant.value || !canShowGallery.value) return [];
+const galleryCategories = computed<GalleryCategory[]>(() => {
+  if (!canShowGallery.value) return [];
   const cover = resolveMediaUrl(merchant.value?.coverUrl);
-  const productUrls = sortedGalleryUrls('PRODUCT', 6);
-  const appendProduct = (url?: string | null) => {
-    const resolved = resolveMediaUrl(url ?? undefined);
-    if (resolved && !productUrls.includes(resolved) && productUrls.length < 6) productUrls.push(resolved);
-  };
-  signatureDishes.value.forEach((dish) => appendProduct(dish.imageUrl));
-  hotRecommendations.value.forEach((product) => appendProduct(product.imageUrl));
-
-  const categories: ClaimedGalleryCategory[] = [
+  const categories: GalleryCategory[] = [
     { key: 'COVER', label: t('galleryCover'), urls: cover ? [cover] : [] },
     { key: 'STORE', label: t('galleryStore'), urls: sortedGalleryUrls('STORE', 3) },
-    { key: 'PRODUCT', label: t('galleryProduct'), urls: productUrls },
+    { key: 'PRODUCT', label: t('galleryProduct'), urls: sortedGalleryUrls('PRODUCT', 6) },
     { key: 'ENVIRONMENT', label: t('galleryEnvironment'), urls: sortedGalleryUrls('ENVIRONMENT', 3) },
   ];
   return categories.filter((category) => category.urls.length > 0);
 });
 
-const displayHeroImages = computed(() => {
-  const urls: string[] = [];
-  const append = (url?: string | null) => {
-    const resolved = resolveMediaUrl(url ?? undefined);
-    if (resolved && !urls.includes(resolved)) urls.push(resolved);
-  };
-  append(merchant.value?.coverUrl);
-  (['STORE', 'MENU'] as const).forEach((imageType) => {
-    visibleGalleryImages.value
-      .filter((item) => item.imageType === imageType)
-      .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
-      .forEach((item) => append(item.imageUrl));
-  });
-  return urls;
-});
 const heroImages = computed(() => {
-  if (!isClaimedMerchant.value) return displayHeroImages.value;
-  const selected = claimedGalleryCategories.value.find(
+  const selected = galleryCategories.value.find(
     (category) => category.key === activeGalleryCategory.value,
   );
-  return selected?.urls ?? claimedGalleryCategories.value[0]?.urls ?? [];
-});
-const environmentImages = computed(() => {
-  const heroUrls = new Set(displayHeroImages.value);
-  const urls: string[] = [];
-  visibleGalleryImages.value
-    .filter((item) => item.imageType === 'ENVIRONMENT')
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
-    .forEach((item) => {
-      const resolved = resolveMediaUrl(item.imageUrl);
-      if (resolved && !heroUrls.has(resolved) && !urls.includes(resolved)) urls.push(resolved);
-    });
-  return urls;
+  return selected?.urls ?? galleryCategories.value[0]?.urls ?? [];
 });
 const signatureDishes = computed(() => merchant.value?.signatureDishes ?? []);
 const hotRecommendations = computed(() => merchant.value?.hotRecommendations ?? []);
@@ -312,7 +293,7 @@ async function loadMerchant() {
       appConfig.ensureLoaded(),
     ]);
     merchant.value = loadedMerchant;
-    activeGalleryCategory.value = claimedGalleryCategories.value[0]?.key ?? '';
+    activeGalleryCategory.value = galleryCategories.value[0]?.key ?? '';
     activeHeroIndex.value = 0;
     signatureExpanded.value = false;
     hotExpanded.value = false;
@@ -355,11 +336,7 @@ function handleHeroChange(event: { detail?: { current?: number } }) {
   activeHeroIndex.value = Number.isFinite(current) ? current : 0;
 }
 
-function selectHeroImage(index: number) {
-  activeHeroIndex.value = index;
-}
-
-function selectGalleryCategory(key: ClaimedGalleryKey) {
+function selectGalleryCategory(key: GalleryKey) {
   if (activeGalleryCategory.value === key) return;
   activeGalleryCategory.value = key;
   activeHeroIndex.value = 0;
@@ -633,13 +610,6 @@ function previewGallery(imageUrl?: string | null) {
   uni.previewImage({ current, urls });
 }
 
-function previewEnvironment(imageUrl?: string | null) {
-  const current = resolveMediaUrl(imageUrl ?? undefined);
-  const urls = environmentImages.value.filter((url) => mediaAvailable(url));
-  if (!urls.length || !current || !urls.includes(current)) return;
-  uni.previewImage({ current, urls });
-}
-
 function hasCapability(code: string, fallbackValue: boolean) {
   if (!hasCapabilityRecords.value) return fallbackValue;
   return enabledCapabilityCodes.value.has(code);
@@ -753,43 +723,33 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
         <text
           v-if="heroImages.length > 1"
-          :class="['hero-count', { 'has-gallery-overlay': isClaimedMerchant && claimedGalleryCategories.length }]"
+          :class="['hero-count', { 'has-gallery-overlay': galleryCategories.length }]"
         >{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
-        <scroll-view v-if="isClaimedMerchant && claimedGalleryCategories.length" class="gallery-category-scroll" scroll-x show-scrollbar="false">
+        <scroll-view
+          v-if="galleryCategories.length"
+          class="gallery-category-scroll"
+          scroll-x
+          show-scrollbar="false"
+          role="tablist"
+          :aria-label="t('galleryCategories')"
+        >
           <view class="gallery-category-list">
             <button
-              v-for="category in claimedGalleryCategories"
+              v-for="category in galleryCategories"
               :key="category.key"
               :class="['gallery-category-button', { 'is-active': activeGalleryCategory === category.key }]"
-              :aria-pressed="activeGalleryCategory === category.key"
+              role="tab"
+              :aria-selected="activeGalleryCategory === category.key"
               hover-class="is-pressed"
               @tap="selectGalleryCategory(category.key)"
             >
               <text>{{ category.label }}</text>
               <text v-if="category.key !== 'COVER'" class="gallery-category-count">{{ category.urls.length }}</text>
+              <text v-if="activeGalleryCategory === category.key" class="gallery-category-active-marker" aria-hidden="true" />
             </button>
           </view>
         </scroll-view>
       </view>
-
-      <scroll-view v-if="!isClaimedMerchant && heroImages.length > 1" class="thumbnail-scroll" scroll-x show-scrollbar="false">
-        <view class="thumbnail-list">
-          <button
-            v-for="(url, index) in heroImages"
-            :key="url"
-            :class="['thumbnail-button', { 'is-active': activeHeroIndex === index }]"
-            :aria-label="`${merchantName(merchant, locale)} ${index + 1}`"
-            :aria-current="activeHeroIndex === index ? 'true' : 'false'"
-            hover-class="is-pressed"
-            @tap="selectHeroImage(index)"
-          >
-            <image v-if="mediaAvailable(url)" class="thumbnail-image" :src="url" mode="aspectFill" @error="handleMediaError(url)" />
-            <view v-else class="thumbnail-image placeholder">
-              <image class="placeholder-inline-icon is-thumbnail" :src="uiIcons.merchantProfile" mode="aspectFit" />
-            </view>
-          </button>
-        </view>
-      </scroll-view>
 
       <view class="merchant-overview">
         <view class="headline">
@@ -923,30 +883,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </scroll-view>
       </view>
 
-      <view v-if="!isClaimedMerchant && environmentImages.length" class="content-section environment-section">
-        <view class="section-heading">
-          <text class="section-title">{{ t('environmentPhotos') }}</text>
-        </view>
-        <scroll-view class="environment-scroll" scroll-x show-scrollbar="false">
-          <view class="environment-list">
-            <view v-for="url in environmentImages" :key="url" class="environment-frame">
-              <image
-                v-if="mediaAvailable(url)"
-                class="environment-image"
-                :src="url"
-                mode="aspectFill"
-                :aria-label="`${merchantName(merchant, locale)} · ${t('environmentPhotos')}`"
-                lazy-load
-                @tap="previewEnvironment(url)"
-                @error="handleMediaError(url)"
-              />
-              <view v-else class="environment-image placeholder">
-                <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
 
       <view v-if="displayAddress" class="address-card">
         <image class="address-pin" :src="uiIcons.mapPin" mode="aspectFit" />
@@ -1013,7 +949,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 <style scoped>
 /* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal
- * B=compact-system-sans · C=cover-store-menu-gallery+claim-state-identity+four-column-facilities+delivery-priority-action-dock
+ * B=compact-system-sans · C=platform-classified-adaptive-gallery+claim-state-identity+four-column-facilities+delivery-priority-action-dock
  * D=feedback-only · E=existing-restaurant-photography · SOUL=6 SPECTACLE=2 DENSITY=9 */
 .page {
   --page-bg: #f6faf7;
@@ -1426,6 +1362,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .gallery-category-button {
+  position: relative;
   min-width: 132rpx;
   min-height: 88rpx;
   display: inline-flex;
@@ -2849,7 +2786,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
   }
 }
 
-/* V3.2: claimed gallery controls stay inside the image without increasing Hero height. */
+/* V3.3: Platform-classified gallery controls stay inside the image for every merchant state. */
 .gallery-category-scroll {
   position: absolute;
   right: 16rpx;
@@ -2857,7 +2794,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
   left: 16rpx;
   z-index: 3;
   width: auto;
-  padding: 18rpx 12rpx 7rpx;
+  padding: 18rpx 12rpx 3rpx;
   overflow: hidden;
   border: 0;
   border-radius: 0 0 22rpx 22rpx;
@@ -2881,15 +2818,15 @@ function hasCapability(code: string, fallbackValue: boolean) {
   border: 1rpx solid transparent;
   border-radius: 14rpx;
   color: var(--on-brand);
-  background: rgb(255 255 255 / 8%);
+  background: rgb(18 39 27 / 38%);
   font-size: 21rpx;
   font-weight: 750;
 }
 
 .gallery-category-button.is-active {
-  border-color: rgb(255 255 255 / 54%);
-  color: var(--brand-deep);
-  background: rgb(255 255 255 / 92%);
+  border-color: rgb(202 235 207 / 74%);
+  color: var(--on-brand);
+  background: rgb(28 64 40 / 68%);
 }
 
 .gallery-category-count {
@@ -2901,11 +2838,21 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .gallery-category-button.is-active .gallery-category-count {
-  background: var(--brand-soft);
+  background: rgb(255 255 255 / 24%);
+}
+
+.gallery-category-active-marker {
+  position: absolute;
+  right: 28rpx;
+  bottom: 7rpx;
+  left: 28rpx;
+  height: 2rpx;
+  border-radius: 2rpx;
+  background: var(--on-brand);
 }
 
 .hero-count.has-gallery-overlay {
-  bottom: 116rpx;
+  bottom: 112rpx;
 }
 
 .section-heading {
