@@ -26,9 +26,11 @@ describe('Chromium 83 cashier compatibility contract', () => {
     const bootstrap = readProjectFile('public/terminal-bootstrap.js');
 
     expect(html).toContain('id="cashier-boot"');
+    expect(html).toContain('/yunqiao-cashier-splash.png');
     expect(html).toContain('/terminal-bootstrap.js');
     expect(html).toContain('id="cashier-boot-retry"');
     expect(bootstrap).toContain('terminalDebug=1');
+    expect(bootstrap).toContain('/yunqiao-cashier-splash.png');
     expect(bootstrap).toContain("window.addEventListener('error'");
     expect(bootstrap).toContain("window.addEventListener('unhandledrejection'");
     expect(bootstrap).toContain('Vue Mounted:');

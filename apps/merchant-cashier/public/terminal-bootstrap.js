@@ -102,6 +102,13 @@
 
     var center = document.createElement('div');
     center.className = 'cashier-boot__center';
+    var brand = document.createElement('div');
+    brand.className = 'cashier-boot__brand';
+    brand.setAttribute('aria-hidden', 'true');
+    var brandImage = document.createElement('img');
+    brandImage.src = '/yunqiao-cashier-splash.png';
+    brandImage.alt = '';
+    brand.appendChild(brandImage);
     var card = document.createElement('section');
     card.className = 'cashier-boot__card';
     var spinner = document.createElement('span');
@@ -125,6 +132,7 @@
     card.appendChild(title);
     card.appendChild(message);
     card.appendChild(retry);
+    center.appendChild(brand);
     center.appendChild(card);
     boot.appendChild(center);
     root.appendChild(boot);

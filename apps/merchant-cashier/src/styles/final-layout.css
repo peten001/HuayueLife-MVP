@@ -1682,6 +1682,19 @@
     height: 42px;
   }
 
+  .cashier-employee-menu .account-menu__popover {
+    position: fixed;
+    top: calc(62px + var(--cashier-safe-area-top));
+    right: auto;
+    bottom: auto;
+    left: max(6px, env(safe-area-inset-left, 0px));
+    width: min(260px, calc(100vw - 12px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    max-height: calc(100vh - 74px - var(--cashier-safe-area-top) - env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   .cashier-top-status {
     width: 100%;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1701,6 +1714,14 @@
     width: 100%;
     margin-left: 0;
     grid-template-columns: repeat(4, minmax(0, 1fr)) 42px;
+  }
+}
+
+@supports (height: 100dvh) {
+  @media (max-width: 899px) {
+    .cashier-employee-menu .account-menu__popover {
+      max-height: calc(100dvh - 74px - var(--cashier-safe-area-top) - env(safe-area-inset-bottom, 0px));
+    }
   }
 }
 
