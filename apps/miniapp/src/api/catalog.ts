@@ -19,17 +19,23 @@ export function getNearbyMerchants(params: {
   province?: string;
   businessTypeId?: string;
   promotionTag?: string;
+  homepageCategoryKey?: string;
+  keyword?: string;
+  serviceFilter?: Array<'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY'>;
 }) {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== '')
-    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+    .map(([key, value]) => {
+      const normalizedValue = Array.isArray(value) ? value.join(',') : String(value);
+      return `${key}=${encodeURIComponent(normalizedValue)}`;
+    })
     .join('&');
   return request<{
     items: MerchantSummary[];
     page: number;
     pageSize: number;
     total: number;
-    locationMode: 'GPS' | 'CITY';
+    locationMode: 'GPS' | 'CITY' | 'REGION_REQUIRED';
   }>(`/merchants/nearby?${query}`);
 }
 

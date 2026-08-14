@@ -13,6 +13,7 @@ import { isOrderingCapabilityCode } from '../app-config/ordering-capabilities';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 import {
   parseHomepageCategoryKeys,
+  type HomepageCategoryKey,
 } from '../shared/homepage-category-keys';
 
 const PAGE_SIZE = 20;
@@ -155,7 +156,7 @@ export class PublicMerchantsService {
       });
     } catch (error) {
       console.error('[public-merchants] nearby error', error);
-      merchants = [];
+      throw error;
     }
 
     console.log('[public-merchants] raw merchants count', merchants.length);
@@ -177,11 +178,24 @@ export class PublicMerchantsService {
             : null,
         ),
       )
+      .filter((merchant) => matchesHomepageCategory(
+        merchant,
+        query.homepageCategoryKey,
+      ))
+      .filter((merchant) => matchesMerchantKeyword(merchant, query.keyword))
+      .filter((merchant) => matchesServiceFilters(
+        merchant,
+        query.serviceFilter ?? [],
+      ))
       .sort((a, b) => {
+        const featuredCompare = Number(isFeaturedMerchant(b)) - Number(isFeaturedMerchant(a));
+        if (featuredCompare !== 0) return featuredCompare;
         const distanceCompare = compareNullableDistance(a.distanceKm, b.distanceKm);
         if (distanceCompare !== 0) return distanceCompare;
         if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
-        return a.nameZh.localeCompare(b.nameZh, 'zh-CN');
+        const nameCompare = a.nameZh.localeCompare(b.nameZh, 'zh-CN');
+        if (nameCompare !== 0) return nameCompare;
+        return compareMerchantIds(a.id, b.id);
       });
     console.log('[public-merchants] nearby result count', results.length);
 
@@ -761,3 +775,70 @@ function compareNullableDistance(left: number | null, right: number | null) {
   if (leftValue === rightValue) return 0;
   return leftValue - rightValue;
 }
+
+function matchesHomepageCategory(
+  merchant: HomepageMerchantListItem,
+  categoryKey?: HomepageCategoryKey,
+) {
+  if (!categoryKey) return true;
+  const categoryKeys = parseHomepageCategoryKeys(merchant.homepageCategoryKeys);
+  if (categoryKeys.includes(categoryKey)) return true;
+  if (categoryKey !== 'popular_food') return false;
+  return Boolean(merchant.manualPopular)
+    || merchant.promotionTags.some((tag) => tag.code === 'HOT_FOOD');
+}
+
+function matchesMerchantKeyword(
+  merchant: HomepageMerchantListItem,
+  rawKeyword?: string,
+) {
+  const keyword = normalizeSearchText(rawKeyword);
+  if (!keyword) return true;
+  return [
+    merchant.nameZh,
+    merchant.nameVi,
+    merchant.nameEn,
+    merchant.addressDetail,
+  ].some((value) => normalizeSearchText(value).includes(keyword));
+}
+
+function matchesServiceFilters(
+  merchant: HomepageMerchantListItem,
+  filters: NearbyMerchantsQueryDto['serviceFilter'],
+) {
+  return (filters ?? []).every((filter) => {
+    if (filter === 'OPEN') return merchant.isOpen;
+    return merchant.supportedOrderTypes.includes(filter);
+  });
+}
+
+function isFeaturedMerchant(
+  merchant: HomepageMerchantListItem,
+) {
+  return merchant.promotionTags.some((tag) => tag.code === 'FEATURED');
+}
+
+function normalizeSearchText(value: unknown) {
+  return String(value ?? '').trim().toLocaleLowerCase();
+}
+
+function compareMerchantIds(left: bigint | string, right: bigint | string) {
+  const leftId = BigInt(left);
+  const rightId = BigInt(right);
+  if (leftId === rightId) return 0;
+  return leftId < rightId ? -1 : 1;
+}
+
+type HomepageMerchantListItem = {
+  id: bigint | string;
+  nameZh: string;
+  nameVi: string | null;
+  nameEn: string | null;
+  addressDetail: string | null;
+  distanceKm: number | null;
+  isOpen: boolean;
+  supportedOrderTypes: Array<string | null>;
+  homepageCategoryKeys: unknown;
+  manualPopular: boolean;
+  promotionTags: Array<{ code: string }>;
+};

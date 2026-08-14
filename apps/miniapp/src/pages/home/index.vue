@@ -1,33 +1,29 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { onReachBottom, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import MerchantCard from '@/components/MerchantCard.vue';
 import { getNearbyMerchants } from '@/api/catalog';
-import { cityOptions, merchantName, useI18n, usePageTitle } from '@/i18n';
+import { cityOptions, useI18n, usePageTitle } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
 import { useLocationStore } from '@/stores/location';
 import type { MerchantSummary } from '@/types/api';
+import {
+  hasMoreMerchantPages,
+  isCurrentLocationIntent,
+  isCurrentMerchantResponse,
+  merchantQueryForPage,
+  merchantQueryKey,
+  mergeMerchantPage,
+  type HomeCategoryKey,
+  type HomeMerchantListRequest,
+  type HomeServiceFilter,
+} from './home-list-state';
 
-type ServiceCategoryKey =
-  | 'popular_food'
-  | 'chinese_dining'
-  | 'noodles_snacks'
-  | 'coffee_milk_tea'
-  | 'flowers_gifts'
-  | 'fresh_fruit'
-  | 'convenience_store'
-  | 'vietnamese_food';
-type SortOption = 'smart' | 'distance' | 'open';
-type FilterOption = 'OPEN' | 'DINE_IN' | 'PICKUP' | 'DELIVERY';
+type ServiceCategoryKey = HomeCategoryKey;
+type FilterOption = HomeServiceFilter;
 type CityMenuOption =
   | { role: 'current'; label: string; value: string }
   | { role: 'region'; label: string; value: 'Bac Giang' | 'Bac Ninh' };
-type MerchantListRequest = {
-  regionCode: 'Bac Giang' | 'Bac Ninh';
-  mode: 'province' | 'nearby';
-  latitude?: number;
-  longitude?: number;
-};
 
 const locationStore = useLocationStore();
 const appConfig = useAppConfigStore();
@@ -40,18 +36,22 @@ const loadingMore = ref(false);
 const page = ref(0);
 const total = ref(0);
 const pageSize = ref(0);
-const activeMerchantRequest = ref<MerchantListRequest | null>(null);
+const activeMerchantRequest = ref<HomeMerchantListRequest | null>(null);
+const activeMerchantRequestKey = ref('');
 const requestSeq = ref(0);
 const hasInitializedHome = ref(false);
 const manualCitySelectionSeq = ref(0);
+const locationIntentSeq = ref(0);
 const searchKeyword = ref('');
 const selectedCategory = ref<ServiceCategoryKey | ''>('');
-const sortOption = ref<SortOption>('smart');
 const activeFilters = ref<FilterOption[]>([]);
 const filterDraft = ref<FilterOption[]>([]);
-const sortSheetVisible = ref(false);
 const filterSheetVisible = ref(false);
 const cityMenuVisible = ref(false);
+const merchantListError = ref(false);
+const loadMoreError = ref(false);
+const paginationExhausted = ref(false);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 const merchantListMode = ref<
   'province'
   | 'homeUnsupported'
@@ -100,41 +100,10 @@ const foodCategories = computed<Array<{
   { key: 'vietnamese_food', icon: '🍽️', label: t('homeCategoryVietnamese'), tone: 'violet' },
 ]);
 
-const categoryFilteredMerchants = computed(() => {
-  const category = foodCategories.value.find((item) => item.key === selectedCategory.value);
-  const list = category
-    ? merchants.value.filter((merchant) =>
-        merchantMatchesCategory(merchant, category.key),
-      )
-    : merchants.value;
-  console.log('[home] merchants after category filter', list.length);
-  return list;
-});
-
-const filteredMerchants = computed(() => {
-  const keyword = searchKeyword.value.trim().toLocaleLowerCase();
-  const list = !keyword
-    ? categoryFilteredMerchants.value
-    : categoryFilteredMerchants.value.filter((merchant) =>
-        [merchantName(merchant, locale.value), merchant.nameZh, merchant.nameVi, merchant.addressDetail]
-          .filter(Boolean)
-          .some((value) => String(value).toLocaleLowerCase().includes(keyword)),
-      );
-  console.log('[home] merchants after search filter', list.length, list.map((item) => item.nameZh));
-  console.log('[home] final merchant names', list.map((item) => item.nameZh));
-  return list;
-});
-
 const activeCategoryLabel = computed(() => {
   if (!selectedCategory.value) return t('homeNearbyRestaurants');
   return foodCategories.value.find((item) => item.key === selectedCategory.value)?.label || t('homeNearbyRestaurants');
 });
-
-const sortOptions = computed<Array<{ value: SortOption; label: string }>>(() => [
-  { value: 'smart', label: locale.value === 'zh' ? '智能排序' : locale.value === 'vi' ? 'Sắp xếp thông minh' : 'Smart sort' },
-  { value: 'distance', label: locale.value === 'zh' ? '距离最近' : locale.value === 'vi' ? 'Gần nhất' : 'Nearest' },
-  { value: 'open', label: locale.value === 'zh' ? '当前营业' : locale.value === 'vi' ? 'Đang mở cửa' : 'Open now' },
-]);
 
 const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(() => {
   const base: Array<{ value: FilterOption; label: string }> = [
@@ -149,41 +118,25 @@ const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(()
   ];
 });
 
-const sortLabel = computed(() => sortOptions.value.find((item) => item.value === sortOption.value)?.label || sortOptions.value[0].label);
-const sortDisplayLabel = computed(() => `${sortLabel.value}⌄`);
-const isSortActive = computed(() => sortOption.value !== 'smart');
 const filterDisplayLabel = computed(() => {
   const count = activeFilters.value.length;
   const base = locale.value === 'zh' ? '筛选' : locale.value === 'vi' ? 'Lọc' : 'Filter';
   return count > 0 ? `${base}(${count})` : base;
 });
 const isFilterActive = computed(() => activeFilters.value.length > 0);
-const hasMore = computed(() => merchants.value.length < total.value);
-
-const visibleMerchants = computed(() => {
-  const filtered = filteredMerchants.value.filter((merchant) => {
-    return activeFilters.value.every((filter) => {
-      if (filter === 'OPEN') return merchant.isOpen;
-      return merchant.supportedOrderTypes.includes(filter);
-    });
-  });
-
-  const sorted = [...filtered].sort((left, right) => {
-    if (sortOption.value === 'distance') {
-      return compareDistance(left, right);
-    }
-    if (sortOption.value === 'open') {
-      if (left.isOpen !== right.isOpen) return Number(right.isOpen) - Number(left.isOpen);
-      return compareDistance(left, right);
-    }
-    if (left.isOpen !== right.isOpen) return Number(right.isOpen) - Number(left.isOpen);
-    const categoryBoost = Number(isPopularMerchant(right)) - Number(isPopularMerchant(left));
-    if (categoryBoost !== 0) return categoryBoost;
-    return compareDistance(left, right);
-  });
-
-  return sorted;
-});
+const hasMore = computed(() => hasMoreMerchantPages(
+  page.value,
+  pageSize.value,
+  total.value,
+  paginationExhausted.value,
+));
+const hasSuccessfulEmptyResult = computed(() => (
+  !loading.value
+  && !merchantListError.value
+  && page.value > 0
+  && total.value === 0
+));
+const hasLocationOutcome = computed(() => !['province', 'nearby'].includes(merchantListMode.value));
 
 usePageTitle(() => t('homeTitle'));
 
@@ -191,6 +144,20 @@ onShow(() => {
   if (hasInitializedHome.value) return;
   hasInitializedHome.value = true;
   void initializeHome();
+});
+
+watch(searchKeyword, () => {
+  if (!hasInitializedHome.value) return;
+  clearSearchDebounce();
+  searchDebounceTimer = setTimeout(() => {
+    void reloadMerchantListForActiveGeography();
+  }, 300);
+});
+
+onUnmounted(() => {
+  clearSearchDebounce();
+  requestSeq.value += 1;
+  locationIntentSeq.value += 1;
 });
 
 onShareAppMessage(() => ({
@@ -218,16 +185,21 @@ async function initializeHome() {
 
 async function refreshHomeByCurrentLocation() {
   const manualSeqAtStart = manualCitySelectionSeq.value;
+  const locationIntent = ++locationIntentSeq.value;
   loading.value = true;
   resetMerchantPagination();
   merchantListMode.value = 'province';
   try {
     const snapshot = await locationStore.refreshLocationForHome();
-    if (manualCitySelectionSeq.value !== manualSeqAtStart) return;
+    if (!isCurrentLocationIntent(
+      manualSeqAtStart,
+      manualCitySelectionSeq.value,
+      locationIntent,
+      locationIntentSeq.value,
+    )) return;
     console.log('[home] region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
-      sortOption.value = 'distance';
       await loadByRegionCode(snapshot.locatedProvince, {
         mode: 'province',
         useLocation: true,
@@ -244,16 +216,19 @@ async function refreshHomeByCurrentLocation() {
     }
 
     loading.value = false;
-    sortOption.value = 'smart';
     if (snapshot.status === 'PERMISSION_DENIED') {
       clearHomeState('homePermissionDenied');
       return;
     }
     clearHomeState('homeFailed');
   } catch {
-    if (manualCitySelectionSeq.value !== manualSeqAtStart) return;
+    if (!isCurrentLocationIntent(
+      manualSeqAtStart,
+      manualCitySelectionSeq.value,
+      locationIntent,
+      locationIntentSeq.value,
+    )) return;
     loading.value = false;
-    sortOption.value = 'smart';
     clearHomeState('homeFailed');
   }
 }
@@ -291,6 +266,8 @@ function clearNearbyState(
 ) {
   loading.value = false;
   merchants.value = [];
+  merchantListError.value = false;
+  loadMoreError.value = false;
   merchantListMode.value = mode;
   scrollToMerchantList();
 }
@@ -304,20 +281,30 @@ async function loadByRegionCode(
     longitude?: number | null;
   },
 ) {
-  const seq = ++requestSeq.value;
-  loading.value = true;
-  resetMerchantPagination(false);
   merchantListMode.value = options?.mode ?? 'province';
   const latitude = normalizeCoordinateForQuery(options?.latitude);
   const longitude = normalizeCoordinateForQuery(options?.longitude);
-  const request: MerchantListRequest = {
+  const request: HomeMerchantListRequest = {
     regionCode,
     mode: options?.mode ?? 'province',
+    homepageCategoryKey: selectedCategory.value || undefined,
+    keyword: normalizeKeyword(searchKeyword.value),
+    serviceFilters: [...activeFilters.value],
   };
   if (options?.useLocation && latitude !== undefined && longitude !== undefined) {
     request.latitude = latitude;
     request.longitude = longitude;
   }
+  await loadMerchantFirstPage(request);
+}
+
+async function loadMerchantFirstPage(request: HomeMerchantListRequest) {
+  const seq = ++requestSeq.value;
+  const requestKey = merchantQueryKey(request);
+  loading.value = true;
+  resetMerchantPagination(false);
+  activeMerchantRequest.value = request;
+  activeMerchantRequestKey.value = requestKey;
   const query = merchantQueryForPage(request, 1);
   console.log('[home] merchant query', query);
   try {
@@ -325,18 +312,38 @@ async function loadByRegionCode(
     const rawList = result.items ?? [];
     console.log('[home] raw merchants', rawList);
     console.log('[home] merchants raw count', rawList.length);
-    if (seq !== requestSeq.value) return;
-    merchants.value = rawList;
+    if (!isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) return;
+    if (rawList.length === 0 && result.total > 0) {
+      throw new Error('Merchant pagination returned an empty first page with a non-zero total');
+    }
+    merchants.value = mergeMerchantPage([], rawList);
     page.value = result.page;
     total.value = result.total;
     pageSize.value = result.pageSize;
-    activeMerchantRequest.value = request;
+    merchantListError.value = false;
+    paginationExhausted.value = rawList.length === 0;
   } catch (error) {
     console.warn('[home] loadByRegionCode failed', error);
-    if (seq !== requestSeq.value) return;
+    if (!isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) return;
     merchants.value = [];
+    merchantListError.value = true;
   } finally {
-    if (seq === requestSeq.value) {
+    if (isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) {
       loading.value = false;
     }
   }
@@ -349,7 +356,11 @@ function resetMerchantPagination(invalidateRequests = true) {
   total.value = 0;
   pageSize.value = 0;
   loadingMore.value = false;
+  merchantListError.value = false;
+  loadMoreError.value = false;
+  paginationExhausted.value = false;
   activeMerchantRequest.value = null;
+  activeMerchantRequestKey.value = '';
 }
 
 async function loadMoreMerchants() {
@@ -357,42 +368,47 @@ async function loadMoreMerchants() {
   if (!request || loading.value || loadingMore.value || !hasMore.value) return;
 
   const seq = requestSeq.value;
+  const requestKey = activeMerchantRequestKey.value;
   const nextPage = page.value + 1;
   loadingMore.value = true;
+  loadMoreError.value = false;
   const query = merchantQueryForPage(request, nextPage);
   console.log('[home] load more merchant query', query);
 
   try {
     const result = await getNearbyMerchants(query);
-    if (seq !== requestSeq.value) return;
+    if (!isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) return;
 
-    const existingIds = new Set(merchants.value.map((merchant) => merchant.id));
-    merchants.value = [
-      ...merchants.value,
-      ...result.items.filter((merchant) => !existingIds.has(merchant.id)),
-    ];
+    const rawList = result.items ?? [];
+    merchants.value = mergeMerchantPage(merchants.value, rawList);
     page.value = result.page;
     total.value = result.total;
     pageSize.value = result.pageSize;
+    paginationExhausted.value = rawList.length === 0;
   } catch (error) {
     console.warn('[home] loadMoreMerchants failed', error);
+    if (!isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) return;
+    loadMoreError.value = true;
   } finally {
-    if (seq === requestSeq.value) {
+    if (isCurrentMerchantResponse(
+      seq,
+      requestKey,
+      requestSeq.value,
+      activeMerchantRequestKey.value,
+    )) {
       loadingMore.value = false;
     }
   }
-}
-
-function merchantQueryForPage(request: MerchantListRequest, targetPage: number) {
-  const query: Parameters<typeof getNearbyMerchants>[0] = {
-    province: operationalRegionForQuery(request.regionCode),
-    page: targetPage,
-  };
-  if (request.latitude !== undefined && request.longitude !== undefined) {
-    query.lat = request.latitude;
-    query.lng = request.longitude;
-  }
-  return query;
 }
 
 function toggleCityMenu() {
@@ -406,25 +422,32 @@ async function selectCityOption(option: CityMenuOption) {
   if (regionCode === locationStore.browseProvince && merchantListMode.value === 'province') return;
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
     manualCitySelectionSeq.value += 1;
+    locationIntentSeq.value += 1;
     locationStore.setBrowseProvince(regionCode);
-    sortOption.value = 'smart';
     await loadByRegionCode(regionCode, { mode: 'province' });
   }
 }
 
 async function openNearbyMerchants() {
   locationStore.hydrateFromStorage();
+  const manualSeqAtStart = manualCitySelectionSeq.value;
+  const locationIntent = ++locationIntentSeq.value;
   loading.value = true;
   resetMerchantPagination();
   merchantListMode.value = 'nearby';
 
   try {
     const snapshot = await locationStore.refreshLocationForNearby();
+    if (!isCurrentLocationIntent(
+      manualSeqAtStart,
+      manualCitySelectionSeq.value,
+      locationIntent,
+      locationIntentSeq.value,
+    )) return;
     console.log('[home] nearby region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
       merchantListMode.value = 'nearby';
-      sortOption.value = 'distance';
       await loadByRegionCode(snapshot.locatedProvince, {
         mode: 'nearby',
         useLocation: true,
@@ -447,6 +470,12 @@ async function openNearbyMerchants() {
 
     clearNearbyState('nearbyFailed');
   } catch {
+    if (!isCurrentLocationIntent(
+      manualSeqAtStart,
+      manualCitySelectionSeq.value,
+      locationIntent,
+      locationIntentSeq.value,
+    )) return;
     clearNearbyState('nearbyFailed');
   }
 }
@@ -455,7 +484,46 @@ function clearHomeState(
   mode: 'homeUnsupported' | 'homePermissionDenied' | 'homeFailed',
 ) {
   merchants.value = [];
+  merchantListError.value = false;
+  loadMoreError.value = false;
   merchantListMode.value = mode;
+}
+
+async function reloadMerchantListForActiveGeography() {
+  const currentRequest = activeMerchantRequest.value;
+  if (!currentRequest) return;
+  const request: HomeMerchantListRequest = {
+    ...currentRequest,
+    homepageCategoryKey: selectedCategory.value || undefined,
+    keyword: normalizeKeyword(searchKeyword.value),
+    serviceFilters: [...activeFilters.value],
+  };
+  await loadMerchantFirstPage(request);
+}
+
+async function retryMerchantList() {
+  const request = activeMerchantRequest.value;
+  if (!request || loading.value) return;
+  await loadMerchantFirstPage({
+    ...request,
+    serviceFilters: [...request.serviceFilters],
+  });
+}
+
+function retryLoadMore() {
+  void loadMoreMerchants();
+}
+
+function clearSearchDebounce() {
+  if (searchDebounceTimer !== undefined) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = undefined;
+  }
+}
+
+function submitSearch() {
+  clearSearchDebounce();
+  void reloadMerchantListForActiveGeography();
 }
 
 function emptyStateTitle() {
@@ -478,8 +546,12 @@ function emptyStateTitle() {
     return t('homeNearbyLocationFailed');
   }
   if (merchantListMode.value === 'nearby') {
+    if (searchKeyword.value.trim()) return t('homeSearchEmpty');
+    if (selectedCategory.value) return t('homeCategoryJoinSoon');
     return t('homeNearbyProvinceEmptyTitle');
   }
+  if (searchKeyword.value.trim()) return t('homeSearchEmpty');
+  if (selectedCategory.value) return t('homeCategoryJoinSoon');
   return t('homeProvinceEmptyTitle');
 }
 
@@ -502,6 +574,8 @@ function emptyStateCopy() {
   if (merchantListMode.value === 'nearbyFailed') {
     return '';
   }
+  if (searchKeyword.value.trim()) return t('homeSearchEmptyHint');
+  if (selectedCategory.value) return t('homeEmptyHint');
   return t('homeProvinceEmptyHint');
 }
 
@@ -519,34 +593,12 @@ function openMessages() {
 
 function toggleCategory(categoryKey: ServiceCategoryKey) {
   selectedCategory.value = selectedCategory.value === categoryKey ? '' : categoryKey;
-  const matched = merchants.value.filter((merchant) => merchantMatchesCategory(merchant, categoryKey));
-  if (!matched.length) {
-    uni.showToast({
-      title: t('homeCategoryJoinSoon'),
-      icon: 'none',
-    });
-  }
-}
-
-function compareDistance(left: MerchantSummary, right: MerchantSummary) {
-  const leftDistance = left.distanceKm ?? Number.POSITIVE_INFINITY;
-  const rightDistance = right.distanceKm ?? Number.POSITIVE_INFINITY;
-  if (leftDistance !== rightDistance) return leftDistance - rightDistance;
-  return merchantName(left, locale.value).localeCompare(merchantName(right, locale.value));
+  void reloadMerchantListForActiveGeography();
 }
 
 function normalizeCoordinateForQuery(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   return Number(value.toFixed(6));
-}
-
-function openSortSheet() {
-  sortSheetVisible.value = true;
-}
-
-function selectSort(option: SortOption) {
-  sortOption.value = option;
-  sortSheetVisible.value = false;
 }
 
 function openFilterSheet() {
@@ -568,52 +620,18 @@ function resetFilters() {
 function applyFilters() {
   activeFilters.value = [...filterDraft.value];
   filterSheetVisible.value = false;
+  void reloadMerchantListForActiveGeography();
 }
 
-function merchantMatchesCategory(
-  merchant: MerchantSummary,
-  categoryKey: ServiceCategoryKey,
-) {
-  const configuredKeys = normalizeHomepageCategoryKeys(merchant.homepageCategoryKeys ?? []);
-  if (categoryKey === 'popular_food') {
-    return Boolean(merchant.manualPopular) || configuredKeys.includes(categoryKey);
-  }
-  return configuredKeys.includes(categoryKey);
+function clearSelectedCategory() {
+  if (!selectedCategory.value) return;
+  selectedCategory.value = '';
+  void reloadMerchantListForActiveGeography();
 }
 
-function isPopularMerchant(merchant: MerchantSummary) {
-  return Boolean(merchant.manualPopular) || merchantMatchesCategory(merchant, 'popular_food');
-}
-
-function normalizeHomepageCategoryKeys(keys: string[]) {
-  return Array.from(
-    new Set(
-      keys
-        .map((key) => {
-          const normalized = String(key).trim();
-          if (normalized === 'chinese') return 'chinese_dining';
-          if (normalized === 'noodles') return 'noodles_snacks';
-          if (normalized === 'drinks') return 'coffee_milk_tea';
-          return normalized;
-        })
-        .filter((key): key is ServiceCategoryKey => {
-          return [
-            'popular_food',
-            'chinese_dining',
-            'noodles_snacks',
-            'coffee_milk_tea',
-            'flowers_gifts',
-            'fresh_fruit',
-            'convenience_store',
-            'vietnamese_food',
-          ].includes(key as ServiceCategoryKey);
-        }),
-    ),
-  );
-}
-
-function operationalRegionForQuery(regionCode: 'Bac Giang' | 'Bac Ninh') {
-  return regionCode === 'Bac Ninh' ? '北宁' : '北江';
+function normalizeKeyword(value: string) {
+  const normalized = value.trim();
+  return normalized || undefined;
 }
 
 function resolveRegionCode(value: unknown) {
@@ -683,6 +701,7 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
           class="search-input"
           :placeholder="t('homeSearchPlaceholder')"
           confirm-type="search"
+          @confirm="submitSearch"
         />
         <text v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">×</text>
       </view>
@@ -730,14 +749,9 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
     <view id="nearby-restaurants" class="section-head">
       <text class="section-title">{{ activeCategoryLabel }}</text>
       <view class="section-actions">
-        <button v-if="selectedCategory" class="clear-button" @click="selectedCategory = ''">
+        <button v-if="selectedCategory" class="clear-button" @click="clearSelectedCategory">
           {{ t('allMerchants') }}
         </button>
-        <view :class="['section-action-chip', 'sort-chip', { active: isSortActive }]" @click="openSortSheet">
-          <text :class="['section-action-text', { strong: isSortActive }]">
-            {{ sortDisplayLabel }}
-          </text>
-        </view>
         <view :class="['section-action-chip', 'filter-chip', { active: isFilterActive }]" @click="openFilterSheet">
           <text :class="['section-action-text', { strong: isFilterActive }]">{{ filterDisplayLabel }}</text>
         </view>
@@ -746,40 +760,29 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
 
     <view class="merchant-panel" :key="merchantPanelKey">
       <view v-if="loading" class="empty">{{ t('loading') }}</view>
-      <view v-else-if="!merchants.length" class="empty">
+      <view v-else-if="merchantListError" class="empty">
+        <text class="empty-title">{{ t('homeMerchantLoadFailed') }}</text>
+        <text class="empty-copy">{{ t('homeMerchantLoadFailedHint') }}</text>
+        <button class="empty-action" @click="retryMerchantList">{{ t('homeRetry') }}</button>
+      </view>
+      <view v-else-if="hasLocationOutcome || hasSuccessfulEmptyResult" class="empty">
         <text class="empty-title">{{ emptyStateTitle() }}</text>
         <text v-if="hasEmptyStateCopy()" class="empty-copy">{{ emptyStateCopy() }}</text>
       </view>
-      <view v-else-if="selectedCategory && !categoryFilteredMerchants.length" class="empty">
-        <text class="empty-title">{{ t('homeCategoryJoinSoon') }}</text>
-        <text class="empty-copy">{{ t('homeEmptyHint') }}</text>
-      </view>
-      <view v-else-if="searchKeyword && !filteredMerchants.length" class="empty">
-        <text class="empty-title">{{ t('homeSearchEmpty') }}</text>
-        <text class="empty-copy">{{ t('homeSearchEmptyHint') }}</text>
-      </view>
       <MerchantCard
-        v-for="merchant in visibleMerchants"
+        v-for="merchant in merchants"
         :key="merchant.id"
         :merchant="merchant"
         variant="compact"
         :locale-class="locale"
         @select="openMerchant"
       />
-    </view>
-
-    <view v-if="sortSheetVisible" class="sheet-mask" @click="sortSheetVisible = false">
-      <view class="sheet-panel" @click.stop>
-        <text class="sheet-title">{{ locale === 'zh' ? '排序方式' : locale === 'vi' ? 'Cách sắp xếp' : 'Sort by' }}</text>
-        <view
-          v-for="item in sortOptions"
-          :key="item.value"
-          :class="['sheet-option', sortOption === item.value ? 'active' : '']"
-          @click="selectSort(item.value)"
-        >
-          <text>{{ item.label }}</text>
-          <text v-if="sortOption === item.value" class="sheet-check">✓</text>
-        </view>
+      <view v-if="merchants.length && loadingMore" class="merchant-list-status">
+        {{ t('homeLoadingMore') }}
+      </view>
+      <view v-else-if="merchants.length && loadMoreError" class="merchant-list-status is-error">
+        <text>{{ t('homeLoadMoreFailed') }}</text>
+        <button class="merchant-list-retry" @click="retryLoadMore">{{ t('homeRetry') }}</button>
       </view>
     </view>
 
@@ -1349,9 +1352,60 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
   line-height: 1.6;
 }
 
+.empty-action {
+  display: inline-flex;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: center;
+  padding: 0 30rpx;
+  margin: 24rpx 0 0;
+  border: 0;
+  border-radius: 999rpx;
+  color: #f8fbf8;
+  background: #2e7d32;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 88rpx;
+}
+
+.empty-action::after,
+.merchant-list-retry::after {
+  border: 0;
+}
+
 .merchant-panel {
   display: block;
   min-height: 260rpx;
+}
+
+.merchant-list-status {
+  display: flex;
+  min-height: 72rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  color: #7d8b81;
+  font-size: 24rpx;
+}
+
+.merchant-list-status.is-error {
+  color: #6f5d44;
+}
+
+.merchant-list-retry {
+  display: inline-flex;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 999rpx;
+  color: #2e7d32;
+  background: #eaf7ee;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 88rpx;
 }
 
 :deep(.merchant-card) {
