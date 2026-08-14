@@ -101,9 +101,16 @@ assert.doesNotMatch(heroShellTemplate, /class="hero-button/);
 assert.doesNotMatch(heroShellTemplate, /open-type="share"/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\S]*bottom: 0;[\s\S]*background: linear-gradient\(180deg,/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*padding: 20rpx 12rpx 1rpx;/);
-assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 30%\);/);
+assert.match(
+  detail,
+  /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*border: 1rpx solid transparent;[\s\S]*outline: none;[\s\S]*background: transparent;[\s\S]*box-shadow: none;/,
+);
 assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
 assert.match(detail, /\.gallery-category-button\.is-active \.gallery-category-label \{[\s\S]*padding: 4rpx 14rpx;[\s\S]*background: rgb\(18 39 27 \/ 42%\);[\s\S]*transform: translateY\(2rpx\);/);
+assert.match(
+  heroShellTemplate,
+  /:class="\['gallery-category-button', \{ 'is-active': activeGalleryCategory === category\.key \}\]"/,
+);
 assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180}background: rgb\(255 255 255/);
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--brand\);/);
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*bottom: 6rpx;[\s\S]*height: 2rpx;/);

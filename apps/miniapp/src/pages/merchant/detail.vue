@@ -2692,7 +2692,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
   border: 1rpx solid transparent;
   border-radius: 14rpx;
   color: rgb(248 255 249 / 78%);
-  background: rgb(18 39 27 / 30%);
+  outline: none;
+  background: transparent;
+  box-shadow: none;
   font-size: 21rpx;
   font-weight: 750;
 }
