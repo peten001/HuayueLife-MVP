@@ -2460,9 +2460,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
 .claim-card {
   display: flex;
   margin: 0 22rpx 16rpx;
-  padding: 18rpx;
+  padding: 20rpx;
   align-items: center;
-  gap: 16rpx;
+  gap: 18rpx;
   border: 1rpx solid var(--claim-claimed-line);
   border-radius: 16rpx;
   background: var(--surface-soft);
@@ -2492,18 +2492,21 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .claim-action {
-  min-width: 154rpx;
-  height: 88rpx;
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 156rpx;
   min-height: 88rpx;
   margin: 0;
-  padding: 0 16rpx;
+  padding: 0 22rpx;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 14rpx;
   color: var(--on-brand);
   background: var(--brand-deep);
   font-size: 22rpx;
   font-weight: 750;
-  line-height: 88rpx;
+  line-height: 1.2;
   white-space: nowrap;
   transition: transform 160ms ease, opacity 160ms ease;
   box-sizing: border-box;
@@ -2856,6 +2859,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .claim-action {
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .actions button {
