@@ -157,6 +157,51 @@ export class PlatformMerchantsController {
     return this.service.createImage(BigInt(params.id), dto);
   }
 
+  @Post(':id/images/:imageId/replace')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  replaceImage(
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @UploadedFile() file?: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size?: number;
+    },
+  ) {
+    return this.service.replaceImage(BigInt(id), BigInt(imageId), file);
+  }
+
+  @Post(':id/images/:imageType/upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  uploadImage(
+    @Param('id') id: string,
+    @Param('imageType') imageType: string,
+    @UploadedFile() file?: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size?: number;
+    },
+  ) {
+    return this.service.createUploadedImage(BigInt(id), imageType, file);
+  }
+
+  @Post(':id/primary-images/:imageType/replace')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  replacePrimaryImage(
+    @Param('id') id: string,
+    @Param('imageType') imageType: string,
+    @UploadedFile() file?: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size?: number;
+    },
+  ) {
+    return this.service.replacePrimaryImage(BigInt(id), imageType, file);
+  }
+
   @Patch(':id/images/:imageId')
   updateImage(
     @Param('id') id: string,
@@ -167,8 +212,13 @@ export class PlatformMerchantsController {
   }
 
   @Delete(':id/images/:imageId')
-  hideImage(@Param('id') id: string, @Param('imageId') imageId: string) {
-    return this.service.hideImage(BigInt(id), BigInt(imageId));
+  deleteImage(@Param('id') id: string, @Param('imageId') imageId: string) {
+    return this.service.deleteImage(BigInt(id), BigInt(imageId));
+  }
+
+  @Delete(':id/primary-images/:imageType')
+  deletePrimaryImage(@Param('id') id: string, @Param('imageType') imageType: string) {
+    return this.service.deletePrimaryImage(BigInt(id), imageType);
   }
 
   @Get(':id/signature-dishes')

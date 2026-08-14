@@ -229,6 +229,8 @@ export interface PlatformPromotionTag extends PlatformDictionaryItem {
   iconText?: string | null;
   color?: string | null;
   description?: string | null;
+  merchantReferenceCount: number;
+  reserved: boolean;
 }
 
 export interface PlatformCapability extends PlatformDictionaryItem {
@@ -265,6 +267,12 @@ export interface PlatformMerchantImageUploadResult {
   filename: string;
   size: number;
   mimeType: string;
+}
+
+export interface PlatformMerchantImageMutationResult {
+  id: string | null;
+  deleted?: boolean;
+  storageCleanupSucceeded: boolean;
 }
 
 export interface PlatformMerchantSignatureDish {

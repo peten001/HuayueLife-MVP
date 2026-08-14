@@ -1055,6 +1055,163 @@ describe('PlatformMerchantsService claim signature-category provisioning', () =>
   });
 });
 
+describe('PlatformMerchantsService merchant image replacement and deletion', () => {
+  const now = new Date('2026-08-14T00:00:00.000Z');
+  const merchant = {
+    id: 2n,
+    logoUrl: null,
+    coverUrl: 'https://cdn.example.com/old-cover.jpg',
+    images: [],
+  };
+  const previousImage = {
+    id: 21n,
+    merchantId: 2n,
+    imageType: 'PRODUCT',
+    imageUrl: 'https://cdn.example.com/old-product.jpg',
+    titleZh: '招牌菜',
+    titleVi: 'Món đặc trưng',
+    titleEn: 'Signature dish',
+    sortOrder: 7,
+    isVisible: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  function buildImageService(image = previousImage) {
+    const merchantUpdate = jest.fn(async () => merchant);
+    const merchantImageUpdate = jest.fn(async ({ data }: { data: { imageUrl: string } }) => ({
+      ...image,
+      imageUrl: data.imageUrl,
+    }));
+    const merchantImageDelete = jest.fn(async () => image);
+    const merchantImageDeleteMany = jest.fn(async () => ({ count: 1 }));
+    const merchantImageCreate = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 22n,
+      titleZh: null,
+      titleVi: null,
+      titleEn: null,
+      createdAt: now,
+      updatedAt: now,
+      ...data,
+    }));
+    const merchantImageFindFirst = jest.fn(async () => null);
+    const merchantImageFindMany = jest.fn(async () => [image]);
+    const transaction = {
+      merchant: { update: merchantUpdate },
+      merchantImage: {
+        update: merchantImageUpdate,
+        create: merchantImageCreate,
+        delete: merchantImageDelete,
+        deleteMany: merchantImageDeleteMany,
+        findFirst: merchantImageFindFirst,
+      },
+    };
+    const prisma = {
+      merchant: {
+        findUnique: jest.fn(async () => merchant),
+        update: merchantUpdate,
+        count: jest.fn(async () => 0),
+      },
+      merchantImage: {
+        findUnique: jest.fn(async () => image),
+        findFirst: merchantImageFindFirst,
+        findMany: merchantImageFindMany,
+        count: jest.fn(async () => 0),
+      },
+      $transaction: jest.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
+    };
+    const uploads = {
+      detectMerchantImageMime: jest.fn(async () => 'image/jpeg'),
+      saveMerchantImage: jest.fn(async () => ({ imageUrl: 'https://cdn.example.com/new-product.jpg' })),
+      removeMerchantImage: jest.fn(async () => undefined),
+    };
+    const service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn() } as never,
+      uploads as never,
+      buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
+    );
+    return {
+      service,
+      prisma,
+      uploads,
+      merchantUpdate,
+      merchantImageUpdate,
+      merchantImageDelete,
+      merchantImageDeleteMany,
+      merchantImageCreate,
+    };
+  }
+
+  it('replaces only the image bytes while preserving type, sort and visibility', async () => {
+    const { service, uploads, merchantImageUpdate } = buildImageService();
+    const result = await service.replaceImage(2n, 21n, {
+      buffer: Buffer.from('jpeg'),
+      mimetype: 'image/jpeg',
+      originalname: 'replacement.jpg',
+      size: 4,
+    });
+
+    expect(merchantImageUpdate).toHaveBeenCalledWith({
+      where: { id: 21n },
+      data: { imageUrl: 'https://cdn.example.com/new-product.jpg' },
+    });
+    expect(result).toEqual(expect.objectContaining({
+      imageType: 'PRODUCT',
+      sortOrder: 7,
+      isVisible: false,
+      storageCleanupSucceeded: true,
+    }));
+    expect(uploads.removeMerchantImage).toHaveBeenCalledWith('https://cdn.example.com/old-product.jpg');
+  });
+
+  it('normalizes duplicate primary records during replacement', async () => {
+    const cover = { ...previousImage, imageType: 'COVER', imageUrl: merchant.coverUrl, isVisible: true };
+    const duplicate = { ...cover, id: 23n, imageUrl: 'https://cdn.example.com/duplicate-cover.jpg' };
+    const { service, prisma, merchantImageDeleteMany } = buildImageService(cover);
+    prisma.merchantImage.findMany.mockResolvedValueOnce([cover, duplicate]);
+
+    const result = await service.replacePrimaryImage(2n, 'COVER', {
+      buffer: Buffer.from('jpeg'),
+      mimetype: 'image/jpeg',
+      originalname: 'cover.jpg',
+      size: 4,
+    });
+
+    expect(merchantImageDeleteMany).toHaveBeenCalledWith({ where: { id: { in: [23n] } } });
+    expect(result).toEqual(expect.objectContaining({ imageType: 'COVER', storageCleanupSucceeded: true }));
+  });
+
+  it('physically deletes a cover record, clears the legacy URL and cleans unreferenced storage', async () => {
+    const cover = { ...previousImage, imageType: 'COVER', imageUrl: merchant.coverUrl, isVisible: true };
+    const { service, uploads, merchantUpdate, merchantImageDeleteMany } = buildImageService(cover);
+    const result = await service.deleteImage(2n, 21n);
+
+    expect(merchantImageDeleteMany).toHaveBeenCalledWith({ where: { id: { in: [21n] } } });
+    expect(merchantUpdate).toHaveBeenCalledWith({
+      where: { id: 2n },
+      data: { coverUrl: null },
+    });
+    expect(uploads.removeMerchantImage).toHaveBeenCalledWith(merchant.coverUrl);
+    expect(result).toEqual({ id: '21', deleted: true, storageCleanupSucceeded: true });
+  });
+
+  it('cleans the uploaded file when content image record creation fails', async () => {
+    const { service, uploads, merchantImageCreate } = buildImageService();
+    merchantImageCreate.mockRejectedValueOnce(new Error('database unavailable'));
+
+    await expect(service.createUploadedImage(2n, 'PRODUCT', {
+      buffer: Buffer.from('jpeg'),
+      mimetype: 'image/jpeg',
+      originalname: 'new-product.jpg',
+      size: 4,
+    })).rejects.toThrow('database unavailable');
+
+    expect(uploads.removeMerchantImage).toHaveBeenCalledWith('https://cdn.example.com/new-product.jpg');
+  });
+});
+
 describe('PlatformMerchantsService platform business hours', () => {
   let prisma: {
     merchant: {

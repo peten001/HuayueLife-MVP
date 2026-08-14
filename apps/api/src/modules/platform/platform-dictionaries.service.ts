@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { MerchantMode, Prisma, PromotionTagScope } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -86,6 +91,7 @@ export class PlatformDictionariesService {
     await this.ensureDefaults();
     const items = await this.prisma.promotionTag.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      include: { _count: { select: { merchants: true } } },
     });
     return { items: items.map(serializePromotionTag) };
   }
@@ -99,21 +105,46 @@ export class PlatformDictionariesService {
   }
 
   async updatePromotionTag(id: bigint, dto: Partial<UpsertPromotionTagDto>) {
-    await this.ensurePromotionTag(id);
+    const current = await this.ensurePromotionTag(id);
+    const nextCode = dto.code?.trim();
+    const isReserved = RESERVED_PROMOTION_TAG_CODES.has(current.code);
+    if (isReserved && nextCode && nextCode !== current.code) {
+      throw new BadRequestException('系统保留标签编码不可修改');
+    }
+    if (isReserved && dto.scope && dto.scope !== current.scope) {
+      throw new BadRequestException('系统保留标签用途不可修改');
+    }
+    if (isReserved && dto.enabled === false) {
+      throw new BadRequestException('系统保留标签不可停用');
+    }
+    if (
+      current._count.merchants > 0
+      && dto.scope
+      && dto.scope !== current.scope
+    ) {
+      throw new ConflictException('该标签已被商家使用，不能修改用途，请先解除关联');
+    }
     const item = await this.prisma.promotionTag.update({
       where: { id },
       data: promotionTagData(dto),
     });
-    return serializePromotionTag(item);
+    return serializePromotionTag({ ...item, _count: current._count });
   }
 
-  async disablePromotionTag(id: bigint) {
-    await this.ensurePromotionTag(id);
-    const item = await this.prisma.promotionTag.update({
+  async deletePromotionTag(id: bigint) {
+    const current = await this.ensurePromotionTag(id);
+    if (RESERVED_PROMOTION_TAG_CODES.has(current.code)) {
+      throw new BadRequestException('系统保留标签不可删除');
+    }
+    if (current._count.merchants > 0) {
+      throw new ConflictException(
+        `该标签正在被 ${current._count.merchants} 个商家使用，请先解除关联后再删除`,
+      );
+    }
+    const item = await this.prisma.promotionTag.delete({
       where: { id },
-      data: { enabled: false },
     });
-    return serializePromotionTag(item);
+    return { ...serializePromotionTag({ ...item, _count: current._count }), deleted: true };
   }
 
   async listCapabilities() {
@@ -131,7 +162,10 @@ export class PlatformDictionariesService {
   }
 
   private async ensurePromotionTag(id: bigint) {
-    const item = await this.prisma.promotionTag.findUnique({ where: { id } });
+    const item = await this.prisma.promotionTag.findUnique({
+      where: { id },
+      include: { _count: { select: { merchants: true } } },
+    });
     if (!item) throw new NotFoundException('Promotion tag not found');
     return item;
   }
@@ -234,14 +268,26 @@ function serializePromotionTag(item: {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+  _count?: { merchants: number };
 }) {
+  const { _count, ...fields } = item;
   return {
-    ...item,
+    ...fields,
     id: item.id.toString(),
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+    merchantReferenceCount: _count?.merchants ?? 0,
+    reserved: RESERVED_PROMOTION_TAG_CODES.has(item.code),
   };
 }
+
+export const RESERVED_PROMOTION_TAG_CODES = new Set([
+  'HOT_FOOD',
+  'FEATURED',
+  'NEW_STORE',
+  'POPULAR_NEARBY',
+  'EDITOR_PICK',
+]);
 
 function serializeCapability(item: {
   id: bigint;

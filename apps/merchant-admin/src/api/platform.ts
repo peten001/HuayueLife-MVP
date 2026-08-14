@@ -15,6 +15,7 @@ import type {
   PlatformBusinessHours,
   PlatformCapability,
   PlatformMerchantImage,
+  PlatformMerchantImageMutationResult,
   PlatformMerchantImageUploadResult,
   PlatformMerchantSignatureDish,
   PlatformMerchantImportConfirmResponse,
@@ -177,7 +178,7 @@ export async function updatePlatformPromotionTag(
   return response.data.data;
 }
 
-export async function disablePlatformPromotionTag(id: string) {
+export async function deletePlatformPromotionTag(id: string) {
   const response = await platformHttp.delete<ApiResponse<PlatformPromotionTag>>(
     `/platform/promotion-tags/${id}`,
   );
@@ -446,9 +447,57 @@ export async function updatePlatformMerchantImage(
   return response.data.data;
 }
 
-export async function hidePlatformMerchantImage(id: string, imageId: string) {
-  const response = await platformHttp.delete<ApiResponse<PlatformMerchantImage>>(
+export async function replacePlatformMerchantImage(id: string, imageId: string, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImage & PlatformMerchantImageMutationResult>>(
+    `/platform/merchants/${id}/images/${imageId}/replace`,
+    formData,
+  );
+  return response.data.data;
+}
+
+export async function uploadPlatformMerchantContentImage(
+  id: string,
+  imageType: 'STORE' | 'PRODUCT' | 'ENVIRONMENT' | 'MENU',
+  file: File,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImage>>(
+    `/platform/merchants/${id}/images/${imageType}/upload`,
+    formData,
+  );
+  return response.data.data;
+}
+
+export async function replacePlatformMerchantPrimaryImage(
+  id: string,
+  imageType: 'LOGO' | 'COVER',
+  file: File,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await platformHttp.post<ApiResponse<PlatformMerchantImage & PlatformMerchantImageMutationResult>>(
+    `/platform/merchants/${id}/primary-images/${imageType}/replace`,
+    formData,
+  );
+  return response.data.data;
+}
+
+export async function deletePlatformMerchantImage(id: string, imageId: string) {
+  const response = await platformHttp.delete<ApiResponse<PlatformMerchantImageMutationResult>>(
     `/platform/merchants/${id}/images/${imageId}`,
+  );
+  return response.data.data;
+}
+
+export async function deletePlatformMerchantPrimaryImage(
+  id: string,
+  imageType: 'LOGO' | 'COVER',
+) {
+  const response = await platformHttp.delete<ApiResponse<PlatformMerchantImageMutationResult>>(
+    `/platform/merchants/${id}/primary-images/${imageType}`,
   );
   return response.data.data;
 }

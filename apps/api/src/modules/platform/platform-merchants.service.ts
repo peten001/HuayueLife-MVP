@@ -1264,21 +1264,169 @@ export class PlatformMerchantsService {
     return serializeImage(item);
   }
 
-  async hideImage(id: bigint, imageId: bigint) {
+  async replaceImage(id: bigint, imageId: bigint, file?: UploadedImage) {
+    await this.requireMerchant(id);
+    if (!file) throw new BadRequestException('Image file is required');
+    const previous = await this.prisma.merchantImage.findUnique({ where: { id: imageId } });
+    if (!previous || previous.merchantId !== id) throw new NotFoundException('Merchant image not found');
+
+    const uploaded = await this.saveValidatedMerchantImage(file);
+    let item;
+    try {
+      item = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.merchantImage.update({
+          where: { id: imageId },
+          data: { imageUrl: uploaded.imageUrl },
+        });
+        if (updated.isVisible && isLegacyImageType(updated.imageType)) {
+          await tx.merchant.update({
+            where: { id },
+            data: updated.imageType === 'LOGO'
+              ? { logoUrl: updated.imageUrl }
+              : { coverUrl: updated.imageUrl },
+          });
+        }
+        return updated;
+      });
+    } catch (error) {
+      await this.uploads.removeMerchantImage(uploaded.imageUrl);
+      throw error;
+    }
+    const storageCleanupSucceeded = await this.removeImageFileIfUnreferenced(previous.imageUrl);
+    return { ...serializeImage(item), storageCleanupSucceeded };
+  }
+
+  async createUploadedImage(id: bigint, imageType: string, file?: UploadedImage) {
+    const contentType = ensureContentImageType(imageType);
+    await this.requireMerchant(id);
+    if (!file) throw new BadRequestException('Image file is required');
+    const uploaded = await this.saveValidatedMerchantImage(file);
+    try {
+      const item = await this.prisma.$transaction(async (tx) => {
+        const lastImage = await tx.merchantImage.findFirst({
+          where: {
+            merchantId: id,
+            imageType: { in: [...CONTENT_IMAGE_TYPES] },
+          },
+          orderBy: [{ sortOrder: 'desc' }, { id: 'desc' }],
+          select: { sortOrder: true },
+        });
+        return tx.merchantImage.create({
+          data: {
+            merchantId: id,
+            imageType: contentType,
+            imageUrl: uploaded.imageUrl,
+            sortOrder: (lastImage?.sortOrder ?? -1) + 1,
+            isVisible: true,
+          },
+        });
+      });
+      return serializeImage(item);
+    } catch (error) {
+      await this.uploads.removeMerchantImage(uploaded.imageUrl);
+      throw error;
+    }
+  }
+
+  async replacePrimaryImage(id: bigint, imageType: string, file?: UploadedImage) {
+    const primaryType = ensurePrimaryImageType(imageType);
+    const merchant = await this.requireMerchant(id);
+    if (!file) throw new BadRequestException('Image file is required');
+    const existingImages = await this.prisma.merchantImage.findMany({
+      where: { merchantId: id, imageType: primaryType },
+      orderBy: [{ isVisible: 'desc' }, { sortOrder: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
+    });
+    const existing = existingImages[0];
+    const uploaded = await this.saveValidatedMerchantImage(file);
+    let item;
+    try {
+      item = await this.prisma.$transaction(async (tx) => {
+        const current = existing
+          ? await tx.merchantImage.update({
+              where: { id: existing.id },
+              data: { imageUrl: uploaded.imageUrl, isVisible: true },
+            })
+          : await tx.merchantImage.create({
+              data: {
+                merchantId: id,
+                imageType: primaryType,
+                imageUrl: uploaded.imageUrl,
+                sortOrder: 0,
+                isVisible: true,
+              },
+            });
+        if (existingImages.length > 1) {
+          await tx.merchantImage.deleteMany({
+            where: { id: { in: existingImages.slice(1).map((image) => image.id) } },
+          });
+        }
+        await tx.merchant.update({
+          where: { id },
+          data: primaryType === 'LOGO'
+            ? { logoUrl: uploaded.imageUrl }
+            : { coverUrl: uploaded.imageUrl },
+        });
+        return current;
+      });
+    } catch (error) {
+      await this.uploads.removeMerchantImage(uploaded.imageUrl);
+      throw error;
+    }
+    const previousUrls = new Set([
+      primaryType === 'LOGO' ? merchant.logoUrl : merchant.coverUrl,
+      ...existingImages.map((image) => image.imageUrl),
+    ]);
+    const cleanupResults = await Promise.all(
+      [...previousUrls].map((url) => this.removeImageFileIfUnreferenced(url)),
+    );
+    const storageCleanupSucceeded = cleanupResults.every(Boolean);
+    return { ...serializeImage(item), storageCleanupSucceeded };
+  }
+
+  async deleteImage(id: bigint, imageId: bigint) {
     await this.requireMerchant(id);
     const previous = await this.prisma.merchantImage.findUnique({
       where: { id: imageId },
-      select: { merchantId: true, imageType: true },
     });
     if (!previous || previous.merchantId !== id) throw new NotFoundException('Merchant image not found');
-    const item = await this.prisma.merchantImage.update({
-      where: { id: imageId },
-      data: { isVisible: false },
-    });
     if (isLegacyImageType(previous.imageType)) {
-      await this.refreshLegacyImageUrl(id, previous.imageType);
+      return this.deletePrimaryImage(id, previous.imageType);
     }
-    return serializeImage(item);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.merchantImage.delete({ where: { id: imageId } });
+    });
+    const storageCleanupSucceeded = await this.removeImageFileIfUnreferenced(previous.imageUrl);
+    return { id: imageId.toString(), deleted: true, storageCleanupSucceeded };
+  }
+
+  async deletePrimaryImage(id: bigint, imageType: string) {
+    const primaryType = ensurePrimaryImageType(imageType);
+    const merchant = await this.requireMerchant(id);
+    const existingImages = await this.prisma.merchantImage.findMany({
+      where: { merchantId: id, imageType: primaryType },
+      orderBy: [{ isVisible: 'desc' }, { sortOrder: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
+    });
+    const previousUrl = primaryType === 'LOGO' ? merchant.logoUrl : merchant.coverUrl;
+    await this.prisma.$transaction(async (tx) => {
+      if (existingImages.length > 0) {
+        await tx.merchantImage.deleteMany({
+          where: { id: { in: existingImages.map((image) => image.id) } },
+        });
+      }
+      await tx.merchant.update({
+        where: { id },
+        data: primaryType === 'LOGO' ? { logoUrl: null } : { coverUrl: null },
+      });
+    });
+    const cleanupResults = await Promise.all(
+      [...new Set([previousUrl, ...existingImages.map((image) => image.imageUrl)])]
+        .map((url) => this.removeImageFileIfUnreferenced(url)),
+    );
+    return {
+      id: existingImages[0]?.id.toString() ?? null,
+      deleted: true,
+      storageCleanupSucceeded: cleanupResults.every(Boolean),
+    };
   }
 
   async disable(id: bigint) {
@@ -2072,12 +2220,39 @@ export class PlatformMerchantsService {
       orderBy: [{ sortOrder: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
       select: { imageUrl: true },
     });
-    if (!item) return;
     if (imageType === 'LOGO') {
-      await this.prisma.merchant.update({ where: { id }, data: { logoUrl: item.imageUrl } });
+      await this.prisma.merchant.update({ where: { id }, data: { logoUrl: item?.imageUrl ?? null } });
     }
     if (imageType === 'COVER') {
-      await this.prisma.merchant.update({ where: { id }, data: { coverUrl: item.imageUrl } });
+      await this.prisma.merchant.update({ where: { id }, data: { coverUrl: item?.imageUrl ?? null } });
+    }
+  }
+
+  private async saveValidatedMerchantImage(file: UploadedImage) {
+    const detectedMime = await this.uploads.detectMerchantImageMime(file.buffer);
+    if (detectedMime !== file.mimetype) {
+      throw new BadRequestException('Image content does not match file type');
+    }
+    return this.uploads.saveMerchantImage(file);
+  }
+
+  private async removeImageFileIfUnreferenced(imageUrl?: string | null) {
+    const normalizedUrl = String(imageUrl ?? '').trim();
+    if (!normalizedUrl) return true;
+    try {
+      const [imageReferences, merchantReferences] = await Promise.all([
+        this.prisma.merchantImage.count({ where: { imageUrl: normalizedUrl } }),
+        this.prisma.merchant.count({
+          where: { OR: [{ logoUrl: normalizedUrl }, { coverUrl: normalizedUrl }] },
+        }),
+      ]);
+      if (imageReferences === 0 && merchantReferences === 0) {
+        await this.uploads.removeMerchantImage(normalizedUrl);
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(`Merchant image storage cleanup failed for ${normalizedUrl}: ${String(error)}`);
+      return false;
     }
   }
 
@@ -2184,6 +2359,22 @@ function isDisplayMode(value: unknown) {
 
 function isLegacyImageType(value: string) {
   return value === 'LOGO' || value === 'COVER';
+}
+
+function ensurePrimaryImageType(value: string) {
+  if (value !== 'LOGO' && value !== 'COVER') {
+    throw new BadRequestException('Primary image type must be LOGO or COVER');
+  }
+  return value;
+}
+
+const CONTENT_IMAGE_TYPES = ['STORE', 'PRODUCT', 'ENVIRONMENT', 'MENU'] as const;
+
+function ensureContentImageType(value: string) {
+  if (!CONTENT_IMAGE_TYPES.includes(value as (typeof CONTENT_IMAGE_TYPES)[number])) {
+    throw new BadRequestException('Content image type must be STORE, PRODUCT, ENVIRONMENT or MENU');
+  }
+  return value as (typeof CONTENT_IMAGE_TYPES)[number];
 }
 
 function serializeDictionaryRef(

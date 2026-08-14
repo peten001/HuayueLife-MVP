@@ -49,8 +49,8 @@ export class PlatformDictionariesController {
   }
 
   @Delete('platform/promotion-tags/:id')
-  disablePromotionTag(@Param() params: IdParamDto) {
-    return this.service.disablePromotionTag(BigInt(params.id));
+  deletePromotionTag(@Param() params: IdParamDto) {
+    return this.service.deletePromotionTag(BigInt(params.id));
   }
 
   @Get('platform/capabilities')

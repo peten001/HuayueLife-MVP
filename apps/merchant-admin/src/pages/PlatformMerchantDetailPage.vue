@@ -5,7 +5,8 @@ import PageHeader from '@/components/PageHeader.vue';
 import PlatformMerchantSignatureDishesSection from '@/components/PlatformMerchantSignatureDishesSection.vue';
 import { errorMessage } from '@/api/http';
 import {
-  createPlatformMerchantImage,
+  deletePlatformMerchantImage,
+  deletePlatformMerchantPrimaryImage,
   deletePlatformMerchant,
   disablePlatformMerchant,
   enablePlatformMerchant,
@@ -14,12 +15,13 @@ import {
   getPlatformMerchantDetail,
   getPlatformPromotionTags,
   getPlatformSettings,
-  hidePlatformMerchantImage,
   openPlatformMerchantAccount,
+  replacePlatformMerchantImage,
+  replacePlatformMerchantPrimaryImage,
   resetPlatformMerchantPassword,
   updatePlatformMerchantAccountPhone,
   updatePlatformMerchantBusinessHours,
-  uploadPlatformMerchantImage,
+  uploadPlatformMerchantContentImage,
   updatePlatformMerchant,
   updatePlatformMerchantCapabilities,
   updatePlatformMerchantImage,
@@ -64,9 +66,23 @@ const saving = ref(false);
 const uploadingImage = ref(false);
 const imageSavingId = ref<string | null>(null);
 const message = ref('');
-const messageIsSuccess = computed(() => /(?:已保存|已更新|已添加|已隐藏|已显示前台|已开通|已停用|已启用|已重置|已删除)/.test(message.value));
+const messageIsSuccess = computed(() =>
+  !/(?:失败|错误)/.test(message.value)
+  && /(?:已保存|已更新|已替换|已添加|已隐藏|已显示前台|已开通|已停用|已启用|已重置|已删除)/.test(message.value),
+);
 const imageFileInput = ref<HTMLInputElement | null>(null);
 const imageUploadTarget = ref<PlatformMerchantImage['imageType'] | null>(null);
+type ImageUploadIntent =
+  | { mode: 'PRIMARY'; imageType: 'LOGO' | 'COVER' }
+  | { mode: 'CREATE'; imageType: PlatformMerchantImage['imageType'] }
+  | { mode: 'REPLACE'; imageType: PlatformMerchantImage['imageType']; imageId: string };
+const imageUploadIntent = ref<ImageUploadIntent | null>(null);
+const imageOperation = ref<'SAVE' | 'REPLACE' | 'DELETE' | 'PRIMARY' | null>(null);
+const imageMessage = ref('');
+const imageMessageIsSuccess = computed(() =>
+  !/(?:失败|错误)/.test(imageMessage.value)
+  && /(?:已保存|已更新|已替换|已添加|已删除)/.test(imageMessage.value),
+);
 const accountPhoneDialogOpen = ref(false);
 const accountPhoneSaving = ref(false);
 const accountPhoneError = ref('');
@@ -616,76 +632,94 @@ function timeToMinutes(value: string) {
 }
 
 function openImagePicker(type: PlatformMerchantImage['imageType']) {
+  imageUploadIntent.value = type === 'LOGO' || type === 'COVER'
+    ? { mode: 'PRIMARY', imageType: type }
+    : { mode: 'CREATE', imageType: type };
   imageUploadTarget.value = type;
+  imageFileInput.value?.click();
+}
+
+function openImageReplacement(image: PlatformMerchantImage) {
+  imageUploadIntent.value = {
+    mode: 'REPLACE',
+    imageType: image.imageType,
+    imageId: image.id,
+  };
+  imageUploadTarget.value = image.imageType;
   imageFileInput.value?.click();
 }
 
 async function onImageSelected(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
-  const target = imageUploadTarget.value;
+  const intent = imageUploadIntent.value;
   if (!file) return;
-  if (!target) {
-    message.value = '请选择要上传的图片类型';
+  if (!intent) {
+    imageMessage.value = '请选择要上传的图片类型';
     input.value = '';
     return;
   }
   const validation = validateUploadImage(file);
   if (validation) {
-    message.value = validation;
+    imageMessage.value = validation;
     input.value = '';
     imageUploadTarget.value = null;
+    imageUploadIntent.value = null;
     return;
   }
   uploadingImage.value = true;
   message.value = '';
+  imageMessage.value = '';
+  imageSavingId.value = intent.mode === 'REPLACE'
+    ? intent.imageId
+    : intent.mode === 'PRIMARY'
+      ? intent.imageType
+      : null;
+  imageOperation.value = intent.mode === 'REPLACE'
+    ? 'REPLACE'
+    : intent.mode === 'PRIMARY'
+      ? 'PRIMARY'
+      : null;
   try {
-    const result = await uploadPlatformMerchantImage(file);
-    const existingImage = target === 'COVER'
-      ? coverImage.value
-      : target === 'LOGO'
-        ? logoImage.value
-        : undefined;
-    const payload = {
-      imageType: target,
-      imageUrl: result.imageUrl,
-      isVisible: true,
-      sortOrder: target === 'COVER' || target === 'LOGO'
-        ? 0
-        : nextContentImageSortOrder(),
-    };
-    if (existingImage) {
-      await updatePlatformMerchantImage(merchantId.value, existingImage.id, payload);
+    let cleanupSucceeded = true;
+    let successMessage = '';
+    if (intent.mode === 'PRIMARY') {
+      const result = await replacePlatformMerchantPrimaryImage(merchantId.value, intent.imageType, file);
+      cleanupSucceeded = result.storageCleanupSucceeded;
+      successMessage = intent.imageType === 'LOGO' ? '商家 Logo 已更新' : '商家封面已更新';
+    } else if (intent.mode === 'REPLACE') {
+      const result = await replacePlatformMerchantImage(merchantId.value, intent.imageId, file);
+      cleanupSucceeded = result.storageCleanupSucceeded;
+      successMessage = '图库图片已替换，分类、排序和展示状态保持不变';
     } else {
-      await createPlatformMerchantImage(merchantId.value, payload);
+      await uploadPlatformMerchantContentImage(
+        merchantId.value,
+        intent.imageType as 'STORE' | 'PRODUCT' | 'ENVIRONMENT' | 'MENU',
+        file,
+      );
+      successMessage = '商家图库图片已添加';
     }
-    const successMessage = target === 'LOGO'
-      ? '商家 Logo 已更新'
-      : target === 'COVER'
-        ? '商家封面已更新'
-        : '商家图库图片已添加';
     await loadPage();
-    message.value = successMessage;
+    imageMessage.value = cleanupSucceeded
+      ? successMessage
+      : `${successMessage}；旧文件清理失败，请联系管理员检查存储。`;
   } catch (error) {
-    message.value = errorMessage(error);
+    imageMessage.value = errorMessage(error);
   } finally {
     uploadingImage.value = false;
     input.value = '';
     imageUploadTarget.value = null;
+    imageUploadIntent.value = null;
+    imageSavingId.value = null;
+    imageOperation.value = null;
   }
-}
-
-function nextContentImageSortOrder() {
-  const maxSortOrder = contentImages.value.reduce(
-    (maximum, image) => Math.max(maximum, image.sortOrder),
-    -1,
-  );
-  return maxSortOrder + 1;
 }
 
 async function saveMerchantImage(image: PlatformMerchantImage) {
   imageSavingId.value = image.id;
+  imageOperation.value = 'SAVE';
   message.value = '';
+  imageMessage.value = '';
   try {
     await updatePlatformMerchantImage(merchantId.value, image.id, {
       imageType: image.imageType,
@@ -696,26 +730,53 @@ async function saveMerchantImage(image: PlatformMerchantImage) {
       isVisible: image.isVisible,
     });
     await loadPage();
-    message.value = '图库图片已保存';
+    imageMessage.value = '图库图片已保存';
   } catch (error) {
-    message.value = errorMessage(error);
+    imageMessage.value = errorMessage(error);
   } finally {
     imageSavingId.value = null;
+    imageOperation.value = null;
   }
 }
 
-async function hideMerchantImage(image: PlatformMerchantImage) {
-  if (!window.confirm('隐藏后该图片不会在前台展示，是否继续？')) return;
+async function removeMerchantImage(image: PlatformMerchantImage) {
+  if (!window.confirm('永久删除这张图库图片？\n删除后小程序对应图片会消失，记录与未被引用的物理文件不可恢复。')) return;
   imageSavingId.value = image.id;
+  imageOperation.value = 'DELETE';
   message.value = '';
+  imageMessage.value = '';
   try {
-    await hidePlatformMerchantImage(merchantId.value, image.id);
+    const result = await deletePlatformMerchantImage(merchantId.value, image.id);
     await loadPage();
-    message.value = '图库图片已隐藏';
+    imageMessage.value = result.storageCleanupSucceeded
+      ? '图库图片已删除'
+      : '图库图片已删除；物理文件清理失败，请联系管理员检查存储。';
   } catch (error) {
-    message.value = errorMessage(error);
+    imageMessage.value = errorMessage(error);
   } finally {
     imageSavingId.value = null;
+    imageOperation.value = null;
+  }
+}
+
+async function removePrimaryImage(imageType: 'LOGO' | 'COVER') {
+  const label = imageType === 'LOGO' ? '商家 Logo' : '商家封面';
+  if (!window.confirm(`永久删除${label}？\n删除后小程序对应位置将不再展示该图片，且不可恢复。`)) return;
+  imageSavingId.value = imageType;
+  imageOperation.value = 'PRIMARY';
+  message.value = '';
+  imageMessage.value = '';
+  try {
+    const result = await deletePlatformMerchantPrimaryImage(merchantId.value, imageType);
+    await loadPage();
+    imageMessage.value = result.storageCleanupSucceeded
+      ? `${label}已删除`
+      : `${label}已删除；物理文件清理失败，请联系管理员检查存储。`;
+  } catch (error) {
+    imageMessage.value = errorMessage(error);
+  } finally {
+    imageSavingId.value = null;
+    imageOperation.value = null;
   }
 }
 
@@ -1238,6 +1299,7 @@ function backToList() {
           <div class="editor-section-head">
             <div><h2>商家图库</h2><p>Logo 与小程序图库分类使用现有商家图片模型维护</p></div>
           </div>
+          <p v-if="imageMessage" :class="['message', 'image-local-message', { 'is-success': imageMessageIsSuccess }]" role="status" aria-live="polite">{{ imageMessage }}</p>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
             <article>
@@ -1245,18 +1307,28 @@ function backToList() {
               <p class="image-guidance">用于商家名称旁的品牌标识，不计入顶部分类图库。</p>
               <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
               <div v-else class="image-empty">暂无 Logo</div>
-              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('LOGO')">
-                {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : (merchant.logoUrl ? '更换 Logo' : '上传 Logo') }}
-              </button>
+              <div class="image-primary-actions">
+                <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="openImagePicker('LOGO')">
+                  {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : (merchant.logoUrl ? '替换 Logo' : '上传 Logo') }}
+                </button>
+                <button v-if="merchant.logoUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="removePrimaryImage('LOGO')">
+                  {{ imageSavingId === 'LOGO' ? '删除中...' : '删除 Logo' }}
+                </button>
+              </div>
             </article>
             <article>
               <strong>封面 Cover</strong>
               <p class="image-guidance">小程序顶部图库：封面（单张）。</p>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
               <div v-else class="image-empty">暂无封面图</div>
-              <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker('COVER')">
-                {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : (merchant.coverUrl ? '更换封面图片' : '上传封面图片') }}
-              </button>
+              <div class="image-primary-actions">
+                <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="openImagePicker('COVER')">
+                  {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : (merchant.coverUrl ? '替换封面图片' : '上传封面图片') }}
+                </button>
+                <button v-if="merchant.coverUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="removePrimaryImage('COVER')">
+                  {{ imageSavingId === 'COVER' ? '删除中...' : '删除封面' }}
+                </button>
+              </div>
             </article>
           </div>
           <div class="image-classification-list">
@@ -1277,7 +1349,7 @@ function backToList() {
                   :disabled="uploadingImage"
                   @click="openImagePicker(section.type)"
                 >
-                  {{ uploadingImage && imageUploadTarget === section.type ? '上传中...' : `上传${section.title}` }}
+                  {{ uploadingImage && imageUploadIntent?.mode === 'CREATE' && imageUploadTarget === section.type ? '上传中...' : `上传${section.title}` }}
                 </button>
               </div>
               <p v-if="section.limitNotice" class="editor-warning">{{ section.limitNotice }}</p>
@@ -1305,16 +1377,21 @@ function backToList() {
                   </div>
                   <div class="section-actions">
                     <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
-                      {{ imageSavingId === image.id ? '保存中...' : '保存图片' }}
+                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中...' : '保存图片' }}
                     </button>
-                    <button v-if="image.isVisible" class="small secondary" type="button" :disabled="imageSavingId === image.id" @click="hideMerchantImage(image)">隐藏</button>
+                    <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="openImageReplacement(image)">
+                      {{ imageSavingId === image.id && imageOperation === 'REPLACE' ? '替换中...' : '替换图片' }}
+                    </button>
+                    <button class="small danger" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="removeMerchantImage(image)">
+                      {{ imageSavingId === image.id && imageOperation === 'DELETE' ? '删除中...' : '删除图片' }}
+                    </button>
                   </div>
                 </article>
               </div>
               <p v-else class="empty">暂无{{ section.title }}图片。</p>
             </section>
           </div>
-          <p class="editor-tip">隐藏只取消前台展示，不删除物理文件。门店外观、菜品、用餐环境只读取展示中的图片并按排序值进入顶部图库；MENU 按上方说明保留。</p>
+          <p class="editor-tip">取消“前台展示”只隐藏图片；“删除图片”会永久移除记录并清理未被引用的物理文件。替换图片会保持原分类、排序与展示状态。门店外观、菜品、用餐环境只读取展示中的图片并按排序值进入顶部图库；MENU 按上方说明保留。</p>
         </section>
 
         <section id="merchant-section-signatureDishes">
@@ -2789,6 +2866,16 @@ function backToList() {
   background: #f8fcf9;
 }
 
+.image-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.image-local-message {
+  margin: 0 0 12px;
+}
+
 .image-primary-grid img,
 .image-empty {
   width: 100%;
@@ -3486,7 +3573,9 @@ function backToList() {
 @media (max-width: 760px) {
   .editor-section-card .editor-button,
   .form-actions button,
-  .small.secondary {
+  .small.primary,
+  .small.secondary,
+  .small.danger {
     min-height: 44px;
   }
 }
