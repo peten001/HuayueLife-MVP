@@ -280,19 +280,18 @@ test('20 sticky action and ordering layout remain unchanged', () => {
   assert.match(detail, /\.sticky-orders \.delivery \{[\s\S]*background: var\(--brand-deep\);/);
 });
 
-test('source wiring reuses the action-specific one-click login modal', () => {
+test('source wiring opens the shared real one-click login component', () => {
   const detail = fs.readFileSync(
     path.join(miniappRoot, 'src/pages/merchant/detail.vue'),
     'utf8',
   );
-  const loginGuard = fs.readFileSync(
-    path.join(miniappRoot, 'src/utils/login-guard.ts'),
+  const loginComponent = fs.readFileSync(
+    path.join(miniappRoot, 'src/components/WechatOneTapLogin.vue'),
     'utf8',
   );
-  assert.match(detail, /requireLoginForAction\('favorite', \(\) => undefined, \{ forceLogin \}\)/);
-  assert.match(loginGuard, /favorite: \{[\s\S]*title: 'loginFavoriteTitle',[\s\S]*content: 'loginFavoriteContent'/);
-  assert.match(loginGuard, /confirmText: t\('wechatOneTapLogin'\)/);
-  assert.match(loginGuard, /cancelText: t\('notNowLogin'\)/);
-  assert.match(loginGuard, /wechatLoginFailedSimple/);
-  assert.match(loginGuard, /options\.forceLogin && !getToken\(\)/);
+  assert.match(detail, /favoriteLoginUi\.value\?\.open\(\) \?\? 'failed'/);
+  assert.doesNotMatch(detail, /requireLoginForAction\('favorite'/);
+  assert.match(loginComponent, /class="wechat-login-button"/);
+  assert.match(loginComponent, /await auth\.loginWithWechat\(\)/);
+  assert.match(loginComponent, /defineExpose\(\{ open, close: cancel \}\)/);
 });

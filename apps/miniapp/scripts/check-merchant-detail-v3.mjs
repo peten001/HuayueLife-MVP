@@ -136,8 +136,14 @@ assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heartGree
 assert.match(detail, /favoriteState\.value = isFavorite\(merchant\.value\.id\)/);
 assert.match(detail, /favoriteGate\.toggle\(\{[\s\S]*merchantId: merchant\.value\.id,[\s\S]*currentState: favoriteState\.value,/);
 assert.match(detail, /const result = setFavorite\(currentMerchant, desiredState\)/);
-assert.match(detail, /onHide\(\(\) => favoriteGate\.setActive\(false\)\)/);
-assert.match(detail, /onUnload\(\(\) => favoriteGate\.setActive\(false\)\)/);
+assert.match(
+  detail,
+  /onHide\(\(\) => \{[\s\S]*favoriteGate\.setActive\(false\);[\s\S]*favoriteLoginUi\.value\?\.close\(\);[\s\S]*\}\);/,
+);
+assert.match(
+  detail,
+  /onUnload\(\(\) => \{[\s\S]*favoriteGate\.setActive\(false\);[\s\S]*favoriteLoginUi\.value\?\.close\(\);[\s\S]*\}\);/,
+);
 assert.match(detail, /onShareAppMessage\(\(\) => \(\{/);
 assert.match(detail, /onShareTimeline\(\(\) => \(\{/);
 assert.match(favorites, /export function isFavorite/);

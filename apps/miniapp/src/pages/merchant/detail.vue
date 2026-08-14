@@ -8,6 +8,7 @@ import {
   onShow,
   onUnload,
 } from '@dcloudio/uni-app';
+import WechatOneTapLogin from '@/components/WechatOneTapLogin.vue';
 import { getMerchant } from '@/api/catalog';
 import {
   formatNumberCurrency,
@@ -24,10 +25,11 @@ import type { MerchantDetail } from '@/types/api';
 import { isFavorite, setFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { wgs84ToGcj02 } from '@/utils/coordinates';
-import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
 import { createMerchantFavoriteGate } from '@/utils/merchant-favorite-gate';
+import type { OneTapLoginUiOutcome } from '@/utils/one-tap-login-ui';
 import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
+import { getToken } from '@/utils/storage';
 
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
@@ -48,12 +50,18 @@ const { locale, t } = useI18n();
 const merchantNavTitle = computed(() => t('merchantDetailTitle'));
 const favoriteState = ref(false);
 const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
+const favoriteLoginUi = ref<{
+  open: () => Promise<OneTapLoginUiOutcome>;
+  close: () => void;
+} | null>(null);
 const favoriteGate = createMerchantFavoriteGate({
-  isAuthenticated: () => Boolean(auth.user),
+  isAuthenticated: () => Boolean(auth.user && getToken()),
   requestLogin: async (forceLogin) => {
-    const result = await requireLoginForAction('favorite', () => undefined, { forceLogin });
-    if (result.status === 'completed') return 'success';
-    return result.status;
+    if (!forceLogin) {
+      await auth.restoreSession();
+      if (auth.user && getToken()) return 'success';
+    }
+    return favoriteLoginUi.value?.open() ?? 'failed';
   },
   persistFavorite: async (targetMerchantId, desiredState) => {
     const currentMerchant = merchant.value;
@@ -282,8 +290,14 @@ onLoad((options) => {
 });
 
 onShow(() => favoriteGate.setActive(true));
-onHide(() => favoriteGate.setActive(false));
-onUnload(() => favoriteGate.setActive(false));
+onHide(() => {
+  favoriteGate.setActive(false);
+  favoriteLoginUi.value?.close();
+});
+onUnload(() => {
+  favoriteGate.setActive(false);
+  favoriteLoginUi.value?.close();
+});
 
 type MenuButtonRect = {
   top?: number;
@@ -650,6 +664,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 <template>
   <view :class="['page', { 'has-order-actions': hasBottomCta }]">
+    <WechatOneTapLogin ref="favoriteLoginUi" :show-success-toast="false" />
     <view class="merchant-nav" :style="merchantNavStyle">
       <view class="merchant-nav-row">
         <button

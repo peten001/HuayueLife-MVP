@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import DefaultAvatar from '@/components/DefaultAvatar.vue';
+import WechatOneTapLogin from '@/components/WechatOneTapLogin.vue';
 import { useI18n, usePageTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { requireLoginForAction } from '@/utils/login-guard';
-import { openPrivacyContract } from '@/utils/privacy';
 
 const auth = useAuthStore();
 const { t } = useI18n();
@@ -21,7 +21,6 @@ const loggedIn = computed(() => Boolean(auth.user));
 const displayNickname = computed(() => auth.user?.nickname || auth.user?.defaultNickname || '');
 const displayAvatar = computed(() => auth.user?.avatarUrl || '');
 const defaultAvatarKey = computed(() => auth.user?.defaultAvatarKey || 'neutral-sprout');
-const privacyAgreed = ref(false);
 
 function openBrowsingHistory() {
   uni.navigateTo({ url: '/pages/profile/browsing-history' });
@@ -33,26 +32,6 @@ function openProfileEdit() {
   });
 }
 
-async function loginFromProfile() {
-  if (!privacyAgreed.value) {
-    uni.showToast({ title: t('privacyAgreeRequired'), icon: 'none' });
-    return;
-  }
-  try {
-    await auth.loginWithWechat();
-    if (auth.user) uni.showToast({ title: t('wechatLoginSuccess'), icon: 'none' });
-  } catch (error) {
-    uni.showToast({
-      title: error instanceof Error ? error.message : t('wechatLoginFailedSimple'),
-      icon: 'none',
-    });
-  }
-}
-
-function togglePrivacyAgreement() {
-  privacyAgreed.value = !privacyAgreed.value;
-}
-
 function logout() {
   auth.logout();
   uni.showToast({ title: t('loggedOut'), icon: 'none' });
@@ -61,19 +40,7 @@ function logout() {
 
 <template>
   <view class="page">
-    <view v-if="!loggedIn" class="login-card">
-      <text class="login-title">{{ t('profileWelcomeTitle') }}</text>
-      <text class="login-copy">{{ t('profileWelcomeDesc') }}</text>
-      <button class="wechat-login-button" :loading="auth.loading" @click="loginFromProfile">
-        {{ t('wechatOneTapLogin') }}
-      </button>
-      <view class="privacy-agreement" @tap="togglePrivacyAgreement">
-        <text class="privacy-checkbox">{{ privacyAgreed ? '☑' : '□' }}</text>
-        <text>{{ t('loginPrivacyPrefix') }}</text>
-        <text class="privacy-link" @tap.stop="openPrivacyContract">{{ t('privacyProtectionGuide') }}</text>
-      </view>
-      <text class="guest-copy">{{ t('guestBrowseHint') }}</text>
-    </view>
+    <WechatOneTapLogin v-if="!loggedIn" inline />
 
     <view v-else class="profile-card">
       <view class="avatar-wrap">
@@ -154,60 +121,6 @@ function logout() {
   border-radius: 32rpx;
   background: linear-gradient(135deg, #eaf7ee, #f8fbf8);
   box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
-}
-
-.login-card {
-  display: grid;
-  gap: 18rpx;
-  padding: 36rpx 30rpx;
-  border-radius: 32rpx;
-  background: linear-gradient(135deg, #eaf7ee, #f8fbf8);
-  box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 9%);
-}
-
-.login-title {
-  color: #1f2d24;
-  font-size: 36rpx;
-  font-weight: 800;
-}
-
-.login-copy,
-.guest-copy,
-.privacy-agreement {
-  color: #6d7970;
-  font-size: 24rpx;
-  line-height: 1.6;
-}
-
-.wechat-login-button {
-  margin: 6rpx 0 0;
-  border-radius: 999rpx;
-  color: #fff;
-  background: #2e7d32;
-  font-size: 27rpx;
-  font-weight: 800;
-}
-
-.wechat-login-button::after {
-  border: 0;
-}
-
-.privacy-agreement {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4rpx;
-  align-items: center;
-}
-
-.privacy-checkbox {
-  color: #2e7d32;
-  font-size: 27rpx;
-  line-height: 1;
-}
-
-.privacy-link {
-  color: #2e7d32;
-  text-decoration: underline;
 }
 
 .avatar-wrap {
