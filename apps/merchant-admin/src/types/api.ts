@@ -233,6 +233,11 @@ export interface PlatformPromotionTag extends PlatformDictionaryItem {
   reserved: boolean;
 }
 
+export interface PlatformPromotionTagDeleteResult extends PlatformPromotionTag {
+  deleted: true;
+  affectedMerchantCount: number;
+}
+
 export interface PlatformCapability extends PlatformDictionaryItem {
   groupCode: string;
   groupNameZh: string;

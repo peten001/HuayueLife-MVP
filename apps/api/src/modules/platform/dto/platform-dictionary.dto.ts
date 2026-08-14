@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -124,6 +125,13 @@ export class UpsertPromotionTagDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+}
+
+export class DeletePromotionTagQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  confirmReferenced?: boolean;
 }
 
 export class UpdateCapabilitiesDto {

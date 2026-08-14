@@ -38,9 +38,7 @@ const form = reactive({
   enabled: true,
 });
 const editingItem = computed(() => items.value.find((item) => item.id === editingId.value) ?? null);
-const scopeLocked = computed(() => Boolean(
-  editingItem.value?.reserved || (editingItem.value?.merchantReferenceCount ?? 0) > 0,
-));
+const scopeLocked = computed(() => Boolean(editingItem.value));
 const tagGroups = computed(() => scopeOptions.map((option) => ({
   ...option,
   items: items.value.filter((item) => item.scope === option.value),
@@ -138,17 +136,24 @@ async function remove(item: PlatformPromotionTag) {
     window.alert('这是系统保留运营标签，不能删除。');
     return;
   }
-  if (item.merchantReferenceCount > 0) {
-    window.alert(`“${item.nameZh}”正在被 ${item.merchantReferenceCount} 个商家使用。请先解除全部商家关联，再删除标签。`);
+  const hasReferences = item.merchantReferenceCount > 0;
+  if (hasReferences) {
+    const impactConfirmed = window.confirm(
+      `该标签当前被 ${item.merchantReferenceCount} 个商家使用。删除后，这些商家将同步移除此标签，是否确认删除？`,
+    );
+    if (!impactConfirmed) return;
+    if (!window.confirm(`请再次确认永久删除“${item.nameZh}”。此操作不可恢复。`)) return;
+  } else if (!window.confirm('确认删除该标签吗？')) {
     return;
   }
-  if (!window.confirm(`永久删除“${item.nameZh}”？\n删除后不可恢复。`)) return;
   try {
     deletingId.value = item.id;
-    await deletePlatformPromotionTag(item.id);
+    const result = await deletePlatformPromotionTag(item.id, hasReferences);
     if (editingId.value === item.id) resetForm();
     await loadItems();
-    message.value = '标签已删除';
+    message.value = result.affectedMerchantCount > 0
+      ? `标签已删除，并从 ${result.affectedMerchantCount} 个商家移除`
+      : '标签已删除';
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -169,18 +174,18 @@ async function remove(item: PlatformPromotionTag) {
     <label>中文名<input ref="nameZhInput" v-model="form.nameZh" required maxlength="80" /></label>
     <label>越南语名<input v-model="form.nameVi" maxlength="80" /></label>
     <label>英文名<input v-model="form.nameEn" maxlength="80" /></label>
-    <label class="span-2">图标 URL<input v-model="form.iconUrl" maxlength="500" /></label>
-    <label>图标文本<input v-model="form.iconText" maxlength="16" placeholder="🔥" /></label>
-    <label>颜色<input v-model="form.color" maxlength="32" placeholder="#16a34a" /></label>
-    <label class="span-2">描述<input v-model="form.description" maxlength="255" /></label>
+    <label class="span-2">图标 URL<input v-model="form.iconUrl" maxlength="500" :disabled="Boolean(editingItem?.reserved)" /></label>
+    <label>图标文本<input v-model="form.iconText" maxlength="16" placeholder="🔥" :disabled="Boolean(editingItem?.reserved)" /></label>
+    <label>颜色<input v-model="form.color" maxlength="32" placeholder="#16a34a" :disabled="Boolean(editingItem?.reserved)" /></label>
+    <label class="span-2">描述<input v-model="form.description" maxlength="255" :disabled="Boolean(editingItem?.reserved)" /></label>
     <label>用途
       <select v-model="form.scope" :disabled="scopeLocked">
         <option v-for="option in scopeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
       </select>
-      <small v-if="scopeLocked">系统保留标签或已被商家使用的标签不能更改用途。</small>
+      <small v-if="scopeLocked">用途在创建后不能修改。</small>
       <small v-else>平台运营标签承担首页与推荐逻辑；菜系、场景标签用于详情展示。</small>
     </label>
-    <label>排序<input v-model.number="form.sortOrder" type="number" min="0" /></label>
+    <label>排序<input v-model.number="form.sortOrder" type="number" min="0" :disabled="Boolean(editingItem?.reserved)" /></label>
     <label class="check"><input v-model="form.enabled" type="checkbox" :disabled="Boolean(editingItem?.reserved)" />启用
       <small v-if="editingItem?.reserved">系统保留运营标签必须保持启用。</small>
     </label>

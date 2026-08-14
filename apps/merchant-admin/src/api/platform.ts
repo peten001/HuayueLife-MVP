@@ -27,6 +27,7 @@ import type {
   PlatformOrderFilters,
   PlatformOrdersResponse,
   PlatformPromotionTag,
+  PlatformPromotionTagDeleteResult,
   PlatformSettings,
   PlatformUserDetailResponse,
   PlatformUserListItem,
@@ -178,9 +179,10 @@ export async function updatePlatformPromotionTag(
   return response.data.data;
 }
 
-export async function deletePlatformPromotionTag(id: string) {
-  const response = await platformHttp.delete<ApiResponse<PlatformPromotionTag>>(
+export async function deletePlatformPromotionTag(id: string, confirmReferenced = false) {
+  const response = await platformHttp.delete<ApiResponse<PlatformPromotionTagDeleteResult>>(
     `/platform/promotion-tags/${id}`,
+    { params: confirmReferenced ? { confirmReferenced: true } : undefined },
   );
   return response.data.data;
 }

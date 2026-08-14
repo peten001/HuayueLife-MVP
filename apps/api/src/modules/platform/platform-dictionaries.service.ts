@@ -98,53 +98,70 @@ export class PlatformDictionariesService {
 
   async createPromotionTag(dto: UpsertPromotionTagDto) {
     await this.ensureDefaults();
-    const item = await this.prisma.promotionTag.create({
-      data: promotionTagData(dto),
-    });
-    return serializePromotionTag(item);
+    assertPromotionTagRequiredFields(dto);
+    try {
+      const item = await this.prisma.promotionTag.create({
+        data: promotionTagData(dto),
+      });
+      return serializePromotionTag(item);
+    } catch (error) {
+      throwPromotionTagDuplicate(error);
+    }
   }
 
   async updatePromotionTag(id: bigint, dto: Partial<UpsertPromotionTagDto>) {
     const current = await this.ensurePromotionTag(id);
+    assertPromotionTagRequiredFields(dto);
     const nextCode = dto.code?.trim();
     const isReserved = RESERVED_PROMOTION_TAG_CODES.has(current.code);
-    if (isReserved && nextCode && nextCode !== current.code) {
-      throw new BadRequestException('系统保留标签编码不可修改');
+    if (nextCode && nextCode !== current.code) {
+      throw new BadRequestException('标签编码创建后不可修改');
     }
-    if (isReserved && dto.scope && dto.scope !== current.scope) {
-      throw new BadRequestException('系统保留标签用途不可修改');
+    if (dto.scope && dto.scope !== current.scope) {
+      throw new BadRequestException('标签用途创建后不可修改');
     }
-    if (isReserved && dto.enabled === false) {
-      throw new BadRequestException('系统保留标签不可停用');
+    if (isReserved) {
+      assertReservedPromotionTagUpdate(current, dto);
     }
-    if (
-      current._count.merchants > 0
-      && dto.scope
-      && dto.scope !== current.scope
-    ) {
-      throw new ConflictException('该标签已被商家使用，不能修改用途，请先解除关联');
+    try {
+      const item = await this.prisma.promotionTag.update({
+        where: { id },
+        data: promotionTagData(dto),
+      });
+      return serializePromotionTag({ ...item, _count: current._count });
+    } catch (error) {
+      throwPromotionTagDuplicate(error);
     }
-    const item = await this.prisma.promotionTag.update({
-      where: { id },
-      data: promotionTagData(dto),
-    });
-    return serializePromotionTag({ ...item, _count: current._count });
   }
 
-  async deletePromotionTag(id: bigint) {
-    const current = await this.ensurePromotionTag(id);
-    if (RESERVED_PROMOTION_TAG_CODES.has(current.code)) {
-      throw new BadRequestException('系统保留标签不可删除');
-    }
-    if (current._count.merchants > 0) {
-      throw new ConflictException(
-        `该标签正在被 ${current._count.merchants} 个商家使用，请先解除关联后再删除`,
-      );
-    }
-    const item = await this.prisma.promotionTag.delete({
-      where: { id },
+  async deletePromotionTag(id: bigint, confirmReferenced = false) {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.promotionTag.findUnique({
+        where: { id },
+        include: { _count: { select: { merchants: true } } },
+      });
+      if (!current) throw new NotFoundException('Promotion tag not found');
+      if (RESERVED_PROMOTION_TAG_CODES.has(current.code)) {
+        throw new BadRequestException('系统保留标签不可删除');
+      }
+      const referenceCount = current._count.merchants;
+      if (referenceCount > 0 && !confirmReferenced) {
+        throw new ConflictException({
+          code: 'TAG_IN_USE',
+          message: `该标签当前被 ${referenceCount} 个商家使用，请确认后删除`,
+          referenceCount,
+        });
+      }
+      const removedRelations = await tx.merchantPromotionTag.deleteMany({
+        where: { promotionTagId: id },
+      });
+      const item = await tx.promotionTag.delete({ where: { id } });
+      return {
+        ...serializePromotionTag({ ...item, _count: { merchants: 0 } }),
+        deleted: true,
+        affectedMerchantCount: removedRelations.count,
+      };
     });
-    return { ...serializePromotionTag({ ...item, _count: current._count }), deleted: true };
   }
 
   async listCapabilities() {
@@ -224,6 +241,50 @@ function promotionTagData(dto: Partial<UpsertPromotionTagDto>): Prisma.Promotion
     sortOrder: dto.sortOrder,
     enabled: dto.enabled,
   }) as Prisma.PromotionTagUncheckedCreateInput;
+}
+
+function assertPromotionTagRequiredFields(dto: Partial<UpsertPromotionTagDto>) {
+  if (dto.code !== undefined && !dto.code.trim()) {
+    throw new BadRequestException('标签编码不能为空');
+  }
+  if (dto.nameZh !== undefined && !dto.nameZh.trim()) {
+    throw new BadRequestException('标签中文名称不能为空');
+  }
+}
+
+function assertReservedPromotionTagUpdate(
+  current: {
+    iconUrl: string | null;
+    iconText: string | null;
+    color: string | null;
+    description: string | null;
+    sortOrder: number;
+    enabled: boolean;
+  },
+  dto: Partial<UpsertPromotionTagDto>,
+) {
+  const protectedTextFields = ['iconUrl', 'iconText', 'color', 'description'] as const;
+  const changesProtectedText = protectedTextFields.some((field) => (
+    dto[field] !== undefined && trimOrNull(dto[field]) !== current[field]
+  ));
+  const changesSortOrder = dto.sortOrder !== undefined && dto.sortOrder !== current.sortOrder;
+  const changesEnabled = dto.enabled !== undefined && dto.enabled !== current.enabled;
+  if (changesProtectedText || changesSortOrder || changesEnabled) {
+    throw new BadRequestException('系统保留标签仅允许编辑多语言名称');
+  }
+}
+
+function throwPromotionTagDuplicate(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError
+    && error.code === 'P2002'
+  ) {
+    throw new ConflictException({
+      code: 'PROMOTION_TAG_DUPLICATE',
+      message: '标签编码已存在',
+    });
+  }
+  throw error;
 }
 
 function serializeBusinessType(item: {

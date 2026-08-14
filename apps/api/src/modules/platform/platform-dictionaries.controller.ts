@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PlatformAdminGuard } from '../../common/guards/platform-admin.guard';
 import {
+  DeletePromotionTagQueryDto,
   UpsertBusinessTypeDto,
   UpsertPromotionTagDto,
 } from './dto/platform-dictionary.dto';
@@ -49,8 +50,14 @@ export class PlatformDictionariesController {
   }
 
   @Delete('platform/promotion-tags/:id')
-  deletePromotionTag(@Param() params: IdParamDto) {
-    return this.service.deletePromotionTag(BigInt(params.id));
+  deletePromotionTag(
+    @Param() params: IdParamDto,
+    @Query() query: DeletePromotionTagQueryDto,
+  ) {
+    return this.service.deletePromotionTag(
+      BigInt(params.id),
+      query.confirmReferenced ?? false,
+    );
   }
 
   @Get('platform/capabilities')

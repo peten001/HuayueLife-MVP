@@ -5,6 +5,8 @@ import PageHeader from '@/components/PageHeader.vue';
 import PlatformMerchantSignatureDishesSection from '@/components/PlatformMerchantSignatureDishesSection.vue';
 import { errorMessage } from '@/api/http';
 import {
+  createPlatformPromotionTag,
+  deletePlatformPromotionTag,
   deletePlatformMerchantImage,
   deletePlatformMerchantPrimaryImage,
   deletePlatformMerchant,
@@ -26,6 +28,7 @@ import {
   updatePlatformMerchantCapabilities,
   updatePlatformMerchantImage,
   updatePlatformMerchantTags,
+  updatePlatformPromotionTag,
 } from '@/api/platform';
 import type {
   PlatformBusinessHours,
@@ -92,6 +95,21 @@ const accountPhoneForm = reactive({
   remark: '',
 });
 const accountPhonePattern = /^\d{8,15}$/;
+type PromotionTagScope = PlatformPromotionTag['scope'];
+const promotionTagDialogOpen = ref(false);
+const promotionTagSaving = ref(false);
+const deletingPromotionTagId = ref('');
+const editingPromotionTag = ref<PlatformPromotionTag | null>(null);
+const promotionTagError = ref('');
+const promotionTagForm = reactive({
+  code: '',
+  scope: 'OPERATIONAL' as PromotionTagScope,
+  nameZh: '',
+  nameVi: '',
+  nameEn: '',
+  sortOrder: 0,
+  enabled: true,
+});
 
 const BUSINESS_HOURS_WEEKDAYS = [
   'monday',
@@ -386,18 +404,29 @@ const contentImageSections = computed(() =>
     };
   }),
 );
-const operationalPromotionTags = computed(() =>
+const managedOperationalPromotionTags = computed(() =>
   promotionTags.value.filter((tag) => (
-    tag.enabled
-    && tag.scope === 'OPERATIONAL'
+    tag.scope === 'OPERATIONAL'
     && !RESERVED_PROMOTION_TAG_CODES.has(tag.code)
+  )),
+);
+const systemOperationalPromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => (
+    tag.scope === 'OPERATIONAL'
+    && RESERVED_PROMOTION_TAG_CODES.has(tag.code)
   )),
 );
 const cuisinePromotionTags = computed(() =>
   promotionTags.value.filter((tag) => tag.enabled && tag.scope === 'CUISINE'),
 );
+const managedCuisinePromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => tag.scope === 'CUISINE'),
+);
 const scenePromotionTags = computed(() =>
   promotionTags.value.filter((tag) => tag.enabled && tag.scope === 'SCENE'),
+);
+const managedScenePromotionTags = computed(() =>
+  promotionTags.value.filter((tag) => tag.scope === 'SCENE'),
 );
 const selectedDetailTagCount = computed(() => {
   const consumerIds = new Set([
@@ -425,6 +454,10 @@ function detailTagDisplayState(tagId: string) {
   if (!selectedTagIds.value.includes(tagId)) return '';
   return frontendDetailTagIds.value.has(tagId) ? 'is-frontend-visible' : 'is-over-limit';
 }
+const promotionTagDialogTitle = computed(() => {
+  const prefix = editingPromotionTag.value ? '编辑' : '新增';
+  return `${prefix}${promotionTagScopeLabel(promotionTagForm.scope)}标签`;
+});
 const profileRisks = computed(() => {
   const item = merchant.value;
   if (!item) return [];
@@ -903,6 +936,128 @@ async function saveTags() {
     message.value = errorMessage(error);
   } finally {
     saving.value = false;
+  }
+}
+
+function promotionTagScopeLabel(scope: PromotionTagScope) {
+  return ({
+    OPERATIONAL: '运营',
+    CUISINE: '菜系',
+    SCENE: '场景',
+  } as const)[scope];
+}
+
+function resetPromotionTagForm(scope: PromotionTagScope = 'OPERATIONAL') {
+  editingPromotionTag.value = null;
+  promotionTagForm.code = '';
+  promotionTagForm.scope = scope;
+  promotionTagForm.nameZh = '';
+  promotionTagForm.nameVi = '';
+  promotionTagForm.nameEn = '';
+  promotionTagForm.sortOrder = 0;
+  promotionTagForm.enabled = true;
+  promotionTagError.value = '';
+}
+
+function openPromotionTagCreate(scope: PromotionTagScope) {
+  resetPromotionTagForm(scope);
+  promotionTagDialogOpen.value = true;
+}
+
+function openPromotionTagEdit(tag: PlatformPromotionTag) {
+  editingPromotionTag.value = tag;
+  promotionTagForm.code = tag.code;
+  promotionTagForm.scope = tag.scope;
+  promotionTagForm.nameZh = tag.nameZh;
+  promotionTagForm.nameVi = tag.nameVi ?? '';
+  promotionTagForm.nameEn = tag.nameEn ?? '';
+  promotionTagForm.sortOrder = tag.sortOrder;
+  promotionTagForm.enabled = tag.enabled;
+  promotionTagError.value = '';
+  promotionTagDialogOpen.value = true;
+}
+
+function closePromotionTagDialog() {
+  if (promotionTagSaving.value) return;
+  promotionTagDialogOpen.value = false;
+  resetPromotionTagForm();
+}
+
+async function refreshPromotionTags() {
+  promotionTags.value = await getPlatformPromotionTags();
+}
+
+async function submitPromotionTag() {
+  if (promotionTagSaving.value) return;
+  promotionTagError.value = '';
+  const code = promotionTagForm.code.trim();
+  const nameZh = promotionTagForm.nameZh.trim();
+  if (!code || !nameZh) {
+    promotionTagError.value = '请填写标签编码和中文名称';
+    return;
+  }
+  const payload = {
+    code,
+    scope: promotionTagForm.scope,
+    nameZh,
+    nameVi: promotionTagForm.nameVi.trim() || undefined,
+    nameEn: promotionTagForm.nameEn.trim() || undefined,
+    sortOrder: promotionTagForm.sortOrder,
+    enabled: promotionTagForm.enabled,
+  };
+  try {
+    promotionTagSaving.value = true;
+    const current = editingPromotionTag.value;
+    if (current) {
+      await updatePlatformPromotionTag(current.id, payload);
+    } else {
+      await createPlatformPromotionTag(payload);
+    }
+    await refreshPromotionTags();
+    promotionTagDialogOpen.value = false;
+    resetPromotionTagForm();
+    message.value = current
+      ? '标签文案已更新，现有商家关联保持不变'
+      : '标签已添加，尚未绑定当前商家';
+  } catch (error) {
+    promotionTagError.value = errorMessage(error);
+  } finally {
+    promotionTagSaving.value = false;
+  }
+}
+
+async function removePromotionTag(tag: PlatformPromotionTag) {
+  if (deletingPromotionTagId.value) return;
+  if (tag.reserved) {
+    window.alert('这是系统标签，不能删除。');
+    return;
+  }
+  const hasReferences = tag.merchantReferenceCount > 0;
+  if (hasReferences) {
+    const impactConfirmed = window.confirm(
+      `该标签当前被 ${tag.merchantReferenceCount} 个商家使用。删除后，这些商家将同步移除此标签，是否确认删除？`,
+    );
+    if (!impactConfirmed) return;
+    if (!window.confirm(`请再次确认永久删除“${tag.nameZh}”。此操作不可恢复。`)) return;
+  } else if (!window.confirm('确认删除该标签吗？')) {
+    return;
+  }
+  try {
+    deletingPromotionTagId.value = tag.id;
+    const result = await deletePlatformPromotionTag(tag.id, hasReferences);
+    selectedTagIds.value = selectedTagIds.value.filter((id) => id !== tag.id);
+    if (detail.value) {
+      detail.value.merchant.promotionTags = detail.value.merchant.promotionTags
+        .filter((item) => item.id !== tag.id);
+    }
+    await refreshPromotionTags();
+    message.value = result.affectedMerchantCount > 0
+      ? `标签已删除，并从 ${result.affectedMerchantCount} 个商家移除`
+      : '标签已删除';
+  } catch (error) {
+    message.value = errorMessage(error);
+  } finally {
+    deletingPromotionTagId.value = '';
   }
 }
 
@@ -1416,17 +1571,42 @@ function backToList() {
         <section id="merchant-section-tags" class="editor-section-card">
           <div class="editor-section-head">
             <div><h2>运营标签（详情页 + 首页/推荐）</h2><p>显示在商家详情名称下方，并保留现有首页与推荐运营逻辑。</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
+            <div class="editor-section-actions">
+              <button class="editor-button is-ghost" type="button" @click="openPromotionTagCreate('OPERATIONAL')">+ 新增运营标签</button>
+              <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
+            </div>
           </div>
-          <div v-if="operationalPromotionTags.length" class="content-tag-picker">
-            <label v-for="tag in operationalPromotionTags" :key="tag.id" class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id) }">
-              <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
-              <span>{{ tag.iconText || '•' }}</span>
-              <strong>{{ tag.nameZh }}</strong>
-              <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
-            </label>
+          <div v-if="managedOperationalPromotionTags.length" class="content-tag-picker">
+            <article v-for="tag in managedOperationalPromotionTags" :key="tag.id" class="tag-management-item">
+              <label class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }">
+                <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
+                <span>{{ tag.iconText || '•' }}</span>
+                <strong>{{ tag.nameZh }}</strong>
+                <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+              </label>
+              <footer class="tag-management-actions">
+                <span>{{ tag.reserved ? `系统标签 · ${tag.merchantReferenceCount} 个商家` : (tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用') }}</span>
+                <div>
+                  <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                  <button class="small danger" type="button" :disabled="tag.reserved || Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                    {{ tag.reserved ? '不可删除' : (deletingPromotionTagId === tag.id ? '删除中...' : '删除') }}
+                  </button>
+                </div>
+              </footer>
+            </article>
           </div>
           <p v-else class="empty">暂无可分配的平台运营标签。</p>
+          <div v-if="systemOperationalPromotionTags.length" class="system-promotion-tag-list">
+            <div v-for="tag in systemOperationalPromotionTags" :key="tag.id" class="system-promotion-tag-row">
+              <div>
+                <strong>{{ tag.nameZh }}</strong>
+                <small>{{ tag.code }} · {{ tag.merchantReferenceCount }} 个商家</small>
+              </div>
+              <span class="system-tag-badge">系统标签</span>
+              <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑文案</button>
+              <button class="small danger" type="button" disabled>不可删除</button>
+            </div>
+          </div>
         </section>
 
         <section id="merchant-section-display-tags" class="editor-section-card">
@@ -1438,32 +1618,60 @@ function backToList() {
             <div class="display-tag-group">
               <div class="display-tag-group-head">
                 <h3>菜系</h3>
-                <span>已选 {{ selectedCuisineTags.length }} · 前台最多 2</span>
+                <div>
+                  <span>已选 {{ selectedCuisineTags.length }} · 前台最多 2</span>
+                  <button class="small secondary" type="button" @click="openPromotionTagCreate('CUISINE')">+ 新增菜系</button>
+                </div>
               </div>
-              <div v-if="cuisinePromotionTags.length" class="content-tag-picker">
-                <label v-for="tag in cuisinePromotionTags" :key="tag.id" :class="['content-tag-option', detailTagDisplayState(tag.id), { selected: selectedTagIds.includes(tag.id) }]">
-                  <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
-                  <span>{{ tag.iconText || '•' }}</span>
-                  <strong>{{ tag.nameZh }}</strong>
-                  <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
-                  <em v-if="selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
-                </label>
+              <div v-if="managedCuisinePromotionTags.length" class="content-tag-picker">
+                <article v-for="tag in managedCuisinePromotionTags" :key="tag.id" class="tag-management-item">
+                  <label :class="['content-tag-option', tag.enabled ? detailTagDisplayState(tag.id) : '', { selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+                    <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
+                    <span>{{ tag.iconText || '•' }}</span>
+                    <strong>{{ tag.nameZh }}</strong>
+                    <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                    <em v-if="tag.enabled && selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
+                  </label>
+                  <footer class="tag-management-actions">
+                    <span>{{ tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用' }}</span>
+                    <div>
+                      <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                      <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                        {{ deletingPromotionTagId === tag.id ? '删除中...' : '删除' }}
+                      </button>
+                    </div>
+                  </footer>
+                </article>
               </div>
               <p v-else class="empty">暂无菜系标签，请先在标签字典中创建。</p>
             </div>
             <div class="display-tag-group">
               <div class="display-tag-group-head">
                 <h3>场景</h3>
-                <span>已选 {{ selectedSceneTags.length }} · 前台最多 2</span>
+                <div>
+                  <span>已选 {{ selectedSceneTags.length }} · 前台最多 2</span>
+                  <button class="small secondary" type="button" @click="openPromotionTagCreate('SCENE')">+ 新增场景</button>
+                </div>
               </div>
-              <div v-if="scenePromotionTags.length" class="content-tag-picker">
-                <label v-for="tag in scenePromotionTags" :key="tag.id" :class="['content-tag-option', detailTagDisplayState(tag.id), { selected: selectedTagIds.includes(tag.id) }]">
-                  <input v-model="selectedTagIds" type="checkbox" :value="tag.id" />
-                  <span>{{ tag.iconText || '•' }}</span>
-                  <strong>{{ tag.nameZh }}</strong>
-                  <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
-                  <em v-if="selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
-                </label>
+              <div v-if="managedScenePromotionTags.length" class="content-tag-picker">
+                <article v-for="tag in managedScenePromotionTags" :key="tag.id" class="tag-management-item">
+                  <label :class="['content-tag-option', tag.enabled ? detailTagDisplayState(tag.id) : '', { selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+                    <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
+                    <span>{{ tag.iconText || '•' }}</span>
+                    <strong>{{ tag.nameZh }}</strong>
+                    <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                    <em v-if="tag.enabled && selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
+                  </label>
+                  <footer class="tag-management-actions">
+                    <span>{{ tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用' }}</span>
+                    <div>
+                      <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                      <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                        {{ deletingPromotionTagId === tag.id ? '删除中...' : '删除' }}
+                      </button>
+                    </div>
+                  </footer>
+                </article>
               </div>
               <p v-else class="empty">暂无场景标签，请先在标签字典中创建。</p>
             </div>
@@ -1639,6 +1847,65 @@ function backToList() {
       </div>
     </section>
   </template>
+
+  <div
+    v-if="promotionTagDialogOpen"
+    class="account-phone-modal-backdrop"
+    role="presentation"
+    @click.self="closePromotionTagDialog"
+  >
+    <form class="account-phone-modal promotion-tag-modal" @submit.prevent="submitPromotionTag">
+      <header>
+        <div>
+          <h2>{{ promotionTagDialogTitle }}</h2>
+          <p>{{ editingPromotionTag ? '修改文案后，现有商家关联保持不变。' : '新增后不会自动绑定当前商家，请在保存前自行勾选。' }}</p>
+        </div>
+        <button type="button" class="account-phone-modal-close" :disabled="promotionTagSaving" aria-label="关闭标签编辑" @click="closePromotionTagDialog">×</button>
+      </header>
+
+      <div class="promotion-tag-form-grid">
+        <label>
+          <span>标签编码</span>
+          <input v-model="promotionTagForm.code" type="text" required maxlength="64" :readonly="Boolean(editingPromotionTag)" placeholder="例如 CUISINE_HUNAN" />
+          <small>创建后不可修改。</small>
+        </label>
+        <label>
+          <span>标签用途</span>
+          <input :value="promotionTagScopeLabel(promotionTagForm.scope)" type="text" readonly />
+          <small>创建后不可跨用途修改。</small>
+        </label>
+        <label>
+          <span>中文名称</span>
+          <input v-model="promotionTagForm.nameZh" type="text" required maxlength="80" />
+        </label>
+        <label>
+          <span>越南语名称</span>
+          <input v-model="promotionTagForm.nameVi" type="text" maxlength="80" />
+        </label>
+        <label>
+          <span>英文名称</span>
+          <input v-model="promotionTagForm.nameEn" type="text" maxlength="80" />
+        </label>
+        <label>
+          <span>排序</span>
+          <input v-model.number="promotionTagForm.sortOrder" type="number" min="0" :disabled="Boolean(editingPromotionTag?.reserved)" />
+        </label>
+        <label class="promotion-tag-enabled-field">
+          <input v-model="promotionTagForm.enabled" type="checkbox" :disabled="Boolean(editingPromotionTag?.reserved)" />
+          <span>启用标签</span>
+        </label>
+      </div>
+
+      <p v-if="editingPromotionTag?.reserved" class="promotion-tag-system-note">系统标签仅允许编辑中文、越南语和英文名称；编码、用途、状态及删除均受后端保护。</p>
+      <p v-if="promotionTagError" class="account-phone-error" role="alert">{{ promotionTagError }}</p>
+      <footer>
+        <button type="button" class="editor-button is-ghost" :disabled="promotionTagSaving" @click="closePromotionTagDialog">取消</button>
+        <button type="submit" class="editor-button is-primary" :disabled="promotionTagSaving">
+          {{ promotionTagSaving ? '保存中...' : (editingPromotionTag ? '保存修改' : '新增标签') }}
+        </button>
+      </footer>
+    </form>
+  </div>
 
   <div
     v-if="accountPhoneDialogOpen && merchant"
@@ -2727,8 +2994,98 @@ function backToList() {
 
 .content-tag-picker {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 10px;
+}
+
+.tag-management-item {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dbe8df;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tag-management-item .content-tag-option {
+  border: 0;
+  border-radius: 0;
+}
+
+.tag-management-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-top: 1px solid #e4eee7;
+  background: #f8fbf9;
+}
+
+.tag-management-actions > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tag-management-actions > div {
+  display: flex;
+  gap: 6px;
+}
+
+.tag-management-actions .small {
+  min-height: 30px;
+  padding: 0 9px;
+}
+
+.content-tag-option.is-disabled {
+  background: #f8faf9;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.system-promotion-tag-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e4eee7;
+}
+
+.system-promotion-tag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: #f7faf8;
+}
+
+.system-promotion-tag-row > div {
+  display: grid;
+  min-width: 0;
+}
+
+.system-promotion-tag-row strong {
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.system-promotion-tag-row small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-tag-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #166534;
+  background: #dcfce7;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .display-tag-groups {
@@ -3676,6 +4033,12 @@ function backToList() {
   font-weight: 700;
 }
 
+.display-tag-group-head > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .content-tag-option em {
   grid-column: 3;
   width: max-content;
@@ -3698,6 +4061,78 @@ function backToList() {
   background: #fff0c2;
 }
 
+.promotion-tag-modal {
+  width: min(620px, 100%);
+}
+
+.promotion-tag-modal .account-phone-modal-close {
+  width: 40px;
+  height: 40px;
+}
+
+.promotion-tag-modal footer .editor-button {
+  min-height: 40px;
+}
+
+.promotion-tag-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.promotion-tag-form-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.promotion-tag-form-grid input[type='text'],
+.promotion-tag-form-grid input[type='number'] {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #d8e6dc;
+  border-radius: 11px;
+  background: #f8fcf9;
+  color: #13351f;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.promotion-tag-form-grid input[readonly],
+.promotion-tag-form-grid input:disabled {
+  color: #64748b;
+  background: #f1f5f3;
+}
+
+.promotion-tag-form-grid small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.promotion-tag-enabled-field {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center;
+  align-self: end;
+  min-height: 40px;
+}
+
+.promotion-tag-system-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #cfe7d4;
+  border-radius: 12px;
+  color: #166534;
+  background: #f3fbf5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .message.is-success {
   color: #166534;
 }
@@ -3711,6 +4146,37 @@ function backToList() {
 }
 
 @media (max-width: 760px) {
+  .promotion-tag-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .display-tag-group-head,
+  .display-tag-group-head > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .system-promotion-tag-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .system-promotion-tag-row .small,
+  .tag-management-actions .small {
+    min-height: 44px;
+  }
+
+  .promotion-tag-modal .account-phone-modal-close,
+  .promotion-tag-modal footer .editor-button,
+  .promotion-tag-form-grid input[type='text'],
+  .promotion-tag-form-grid input[type='number'] {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .system-tag-badge {
+    justify-self: end;
+  }
+
   .image-classification-head {
     align-items: stretch;
     flex-direction: column;
