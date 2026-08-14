@@ -59,9 +59,11 @@ export function removeFavorite(id: string) {
   return nextList;
 }
 
-export function toggleFavorite(merchant: MerchantSummary) {
+export function setFavorite(merchant: MerchantSummary, desiredState: boolean) {
   const favorites = readFavorites();
-  if (favorites.some((item) => item.id === merchant.id)) {
+  const saved = favorites.some((item) => item.id === merchant.id);
+  if (saved === desiredState) return { favorites, saved };
+  if (!desiredState) {
     const nextList = favorites.filter((item) => item.id !== merchant.id);
     writeFavorites(nextList);
     return { favorites: nextList, saved: false };
@@ -84,4 +86,8 @@ export function toggleFavorite(merchant: MerchantSummary) {
   ];
   writeFavorites(nextList);
   return { favorites: nextList, saved: true };
+}
+
+export function toggleFavorite(merchant: MerchantSummary) {
+  return setFavorite(merchant, !isFavorite(merchant.id));
 }

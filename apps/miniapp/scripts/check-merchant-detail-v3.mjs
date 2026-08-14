@@ -8,11 +8,13 @@ const miniappRoot = path.resolve(currentDir, '..');
 const detailPath = path.join(miniappRoot, 'src/pages/merchant/detail.vue');
 const orderingPath = path.join(miniappRoot, 'src/utils/merchant-ordering-visibility.ts');
 const favoritesPath = path.join(miniappRoot, 'src/utils/favorites.ts');
+const favoriteGatePath = path.join(miniappRoot, 'src/utils/merchant-favorite-gate.ts');
 const i18nPath = path.join(miniappRoot, 'src/i18n/index.ts');
 
 const detail = fs.readFileSync(detailPath, 'utf8');
 const ordering = fs.readFileSync(orderingPath, 'utf8');
 const favorites = fs.readFileSync(favoritesPath, 'utf8');
+const favoriteGate = fs.readFileSync(favoriteGatePath, 'utf8');
 const i18n = fs.readFileSync(i18nPath, 'utf8');
 
 function sliceBetween(source, startMarker, endMarker) {
@@ -132,11 +134,17 @@ assert.match(detail, /\.section-more-arrow\.is-expanded \{[\s\S]*rotate\(-90deg\
 assert.match(detail, /heartActive: '\/static\/merchant-detail-icons\/heart-filled-warm\.png'/);
 assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heartGreen/);
 assert.match(detail, /favoriteState\.value = isFavorite\(merchant\.value\.id\)/);
-assert.match(detail, /const result = toggleFavorite\(merchant\.value\)/);
+assert.match(detail, /favoriteGate\.toggle\(\{[\s\S]*merchantId: merchant\.value\.id,[\s\S]*currentState: favoriteState\.value,/);
+assert.match(detail, /const result = setFavorite\(currentMerchant, desiredState\)/);
+assert.match(detail, /onHide\(\(\) => favoriteGate\.setActive\(false\)\)/);
+assert.match(detail, /onUnload\(\(\) => favoriteGate\.setActive\(false\)\)/);
 assert.match(detail, /onShareAppMessage\(\(\) => \(\{/);
 assert.match(detail, /onShareTimeline\(\(\) => \(\{/);
 assert.match(favorites, /export function isFavorite/);
+assert.match(favorites, /export function setFavorite/);
 assert.match(favorites, /export function toggleFavorite/);
+assert.match(favoriteGate, /desiredState: !input\.currentState/);
+assert.match(favoriteGate, /errorStatusCode\(error\) === 401 && intent\.reauthAttempts === 0/);
 assert.match(detail, /\.meta-type \{[\s\S]*background: var\(--brand-deep\);/);
 assert.match(detail, /font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;/);
 assert.match(detail, /--type-title-size: 35rpx;/);

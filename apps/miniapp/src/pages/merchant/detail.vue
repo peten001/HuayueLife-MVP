@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app';
+import {
+  onHide,
+  onLoad,
+  onShareAppMessage,
+  onShareTimeline,
+  onShow,
+  onUnload,
+} from '@dcloudio/uni-app';
 import { getMerchant } from '@/api/catalog';
 import {
   formatNumberCurrency,
@@ -11,17 +18,20 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
+import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import type { MerchantDetail } from '@/types/api';
-import { isFavorite, toggleFavorite } from '@/utils/favorites';
+import { isFavorite, setFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { wgs84ToGcj02 } from '@/utils/coordinates';
 import { requireLoginForAction } from '@/utils/login-guard';
 import { resolveMediaUrl } from '@/utils/media';
+import { createMerchantFavoriteGate } from '@/utils/merchant-favorite-gate';
 import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
 
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
+const auth = useAuthStore();
 const merchant = ref<MerchantDetail | null>(null);
 const merchantId = ref('');
 const error = ref('');
@@ -38,6 +48,31 @@ const { locale, t } = useI18n();
 const merchantNavTitle = computed(() => t('merchantDetailTitle'));
 const favoriteState = ref(false);
 const favoriteLabel = computed(() => (favoriteState.value ? t('saved') : t('saveFavorite')));
+const favoriteGate = createMerchantFavoriteGate({
+  isAuthenticated: () => Boolean(auth.user),
+  requestLogin: async (forceLogin) => {
+    const result = await requireLoginForAction('favorite', () => undefined, { forceLogin });
+    if (result.status === 'completed') return 'success';
+    return result.status;
+  },
+  persistFavorite: async (targetMerchantId, desiredState) => {
+    const currentMerchant = merchant.value;
+    if (!currentMerchant || currentMerchant.id !== targetMerchantId) return;
+    const result = setFavorite(currentMerchant, desiredState);
+    if (result.saved !== desiredState) throw new Error('Favorite persistence mismatch');
+  },
+  isContextCurrent: (targetMerchantId) => merchant.value?.id === targetMerchantId,
+  onStateChanged: (desiredState) => {
+    favoriteState.value = desiredState;
+    uni.showToast({
+      title: desiredState ? t('favoriteSavedToast') : t('favoriteRemovedToast'),
+      icon: 'none',
+    });
+  },
+  onFavoriteFailure: () => {
+    uni.showToast({ title: t('favoriteUpdateFailed'), icon: 'none' });
+  },
+});
 const capabilityByCode = computed(() =>
   new Map((merchant.value?.capabilities ?? []).map((item) => [item.code, item])),
 );
@@ -246,6 +281,10 @@ onLoad((options) => {
   void loadMerchant();
 });
 
+onShow(() => favoriteGate.setActive(true));
+onHide(() => favoriteGate.setActive(false));
+onUnload(() => favoriteGate.setActive(false));
+
 type MenuButtonRect = {
   top?: number;
   right?: number;
@@ -384,14 +423,9 @@ onShareTimeline(() => ({
 
 function handleToggleFavorite() {
   if (!merchant.value) return;
-  void requireLoginForAction('favorite', () => {
-    if (!merchant.value) return;
-    const result = toggleFavorite(merchant.value);
-    favoriteState.value = result.saved;
-    uni.showToast({
-      title: result.saved ? t('favoriteSavedToast') : t('favoriteRemovedToast'),
-      icon: 'none',
-    });
+  void favoriteGate.toggle({
+    merchantId: merchant.value.id,
+    currentState: favoriteState.value,
   });
 }
 

@@ -1,7 +1,17 @@
 import { useI18n, type TranslationKey } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
+import { getToken } from '@/utils/storage';
 
 type LoginAction = 'favorite' | 'merchantNotice' | 'profileEdit';
+
+export type LoginGuardResult<T> =
+  | { status: 'completed'; value: T }
+  | { status: 'cancelled' }
+  | { status: 'failed' };
+
+type LoginGuardOptions = {
+  forceLogin?: boolean;
+};
 
 const copyMap: Record<LoginAction, { title: TranslationKey; content: TranslationKey }> = {
   favorite: {
@@ -21,34 +31,46 @@ const copyMap: Record<LoginAction, { title: TranslationKey; content: Translation
 export async function requireLoginForAction<T>(
   action: LoginAction,
   onSuccess: () => T | Promise<T>,
-) {
+  options: LoginGuardOptions = {},
+): Promise<LoginGuardResult<T>> {
   const auth = useAuthStore();
   const { t } = useI18n();
-  await auth.restoreSession();
-  if (auth.user) return onSuccess();
+  if (!options.forceLogin) {
+    await auth.restoreSession();
+    if (auth.user) {
+      return { status: 'completed', value: await onSuccess() };
+    }
+  }
 
   const copy = copyMap[action];
-  const confirmed = await new Promise<boolean>((resolve) => {
+  const modalResult = await new Promise<'confirmed' | 'cancelled' | 'failed'>((resolve) => {
     uni.showModal({
       title: t(copy.title),
       content: t(copy.content),
       confirmText: t('wechatOneTapLogin'),
       cancelText: t('notNowLogin'),
-      success: (result) => resolve(result.confirm),
-      fail: () => resolve(false),
+      success: (result) => resolve(result.confirm ? 'confirmed' : 'cancelled'),
+      fail: () => resolve('failed'),
     });
   });
-  if (!confirmed) return undefined;
+  if (modalResult === 'cancelled') return { status: 'cancelled' };
+  if (modalResult === 'failed') {
+    uni.showToast({ title: t('wechatLoginFailedSimple'), icon: 'none' });
+    return { status: 'failed' };
+  }
 
   try {
     await auth.loginWithWechat();
-    if (!auth.user) return undefined;
-    return onSuccess();
   } catch (error) {
     uni.showToast({
       title: error instanceof Error ? error.message : t('wechatLoginFailedSimple'),
       icon: 'none',
     });
-    return undefined;
+    return { status: 'failed' };
   }
+  if (!auth.user || (options.forceLogin && !getToken())) {
+    uni.showToast({ title: t('wechatLoginFailedSimple'), icon: 'none' });
+    return { status: 'failed' };
+  }
+  return { status: 'completed', value: await onSuccess() };
 }
