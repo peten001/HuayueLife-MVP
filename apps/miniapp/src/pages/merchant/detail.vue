@@ -2714,6 +2714,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
   padding: 4rpx 14rpx;
   border-color: rgb(144 211 151 / 34%);
   background: rgb(18 39 27 / 42%);
+  transform: translateY(2rpx);
 }
 
 .gallery-category-active-marker {

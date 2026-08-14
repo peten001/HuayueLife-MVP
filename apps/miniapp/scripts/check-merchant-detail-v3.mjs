@@ -103,9 +103,10 @@ assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*padding: 20rpx 12rpx 1rpx;/);
 assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 30%\);/);
 assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
-assert.match(detail, /\.gallery-category-button\.is-active \.gallery-category-label \{[\s\S]*padding: 4rpx 14rpx;[\s\S]*background: rgb\(18 39 27 \/ 42%\);/);
+assert.match(detail, /\.gallery-category-button\.is-active \.gallery-category-label \{[\s\S]*padding: 4rpx 14rpx;[\s\S]*background: rgb\(18 39 27 \/ 42%\);[\s\S]*transform: translateY\(2rpx\);/);
 assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180}background: rgb\(255 255 255/);
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--brand\);/);
+assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*bottom: 6rpx;[\s\S]*height: 2rpx;/);
 assert.doesNotMatch(detail, /hero-count|gallery-category-count/);
 assert.match(detail, /\.hero,[\s\S]*\.hero-image \{[\s\S]*height: 330rpx;/);
 
