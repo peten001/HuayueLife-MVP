@@ -20,7 +20,9 @@ const nav: Array<{ path: string; label: string; icon: string }> = [
 const merchantEditSections = [
   { key: 'profile', label: '基础资料' },
   { key: 'location', label: '地址与定位' },
-  { key: 'images', label: '图片管理' },
+  { key: 'content', label: '品牌与内容' },
+  { key: 'businessHours', label: '营业时间' },
+  { key: 'images', label: '商家图库' },
   { key: 'signatureDishes', label: '招牌菜' },
   { key: 'visibility', label: '前台展示' },
   { key: 'hot', label: '热门推荐' },
@@ -185,6 +187,12 @@ async function logout() {
 </template>
 
 <style scoped>
+.platform-sidebar {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .platform-sub-nav {
   display: grid;
   gap: 4px;
@@ -236,5 +244,19 @@ async function logout() {
   background: #fff1f2;
   color: #dc2626;
   font-weight: 700;
+}
+
+.platform-sidebar .platform-sub-nav .platform-sub-nav-item:focus-visible {
+  outline: 3px solid rgb(67 160 71 / 24%);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .platform-sidebar .platform-sub-nav .platform-sub-nav-item,
+  .platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-active,
+  .platform-sidebar .platform-sub-nav .platform-sub-nav-item.router-link-exact-active {
+    min-height: 44px;
+    height: auto;
+  }
 }
 </style>

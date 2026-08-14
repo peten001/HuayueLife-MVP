@@ -130,5 +130,208 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.editor-section-card{padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#fff}.editor-section-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.editor-section-head h2{margin:0}.editor-section-head p{margin:6px 0 0;color:#64748b}.editor-form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.editor-form-grid label{display:grid;gap:6px;color:#334155;font-size:13px}.editor-form-grid input{min-width:0;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px}.span-3{grid-column:1/-1}.section-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.editor-button,.small{padding:8px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer}.editor-button.is-primary{background:#1677ff;border-color:#1677ff;color:#fff}.editor-warning{color:#b91c1c}.empty{padding:18px 0;color:#64748b}.signature-list{display:grid;gap:12px;margin-top:18px}.signature-card{display:grid;grid-template-columns:88px 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid #e5e7eb;border-radius:12px}.signature-card.hidden{opacity:.62;background:#f8fafc}.signature-card img,.signature-preview img{width:88px;height:88px;object-fit:cover;border-radius:10px}.signature-card small,.signature-card em{display:block;margin-top:4px;color:#64748b;font-size:12px}.signature-card em{color:#b45309;font-style:normal}.signature-preview{margin-top:6px}.danger{color:#b91c1c;border-color:#fecaca}.signature-category-notice{display:grid;gap:8px;padding:18px;border:1px solid #bbf7d0;border-radius:12px;background:#f0fdf4;color:#166534}.signature-category-notice strong{font-size:16px}.signature-category-notice p{margin:0;line-height:1.6}@media (max-width:760px){.editor-form-grid{grid-template-columns:1fr}.signature-card{grid-template-columns:64px 1fr}.signature-card img{width:64px;height:64px}.signature-card .section-actions{grid-column:1/-1}}
+.editor-section-card {
+  padding: 20px 22px;
+  border: 1px solid #dce8df;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgb(15 83 48 / 4%);
+}
+
+.editor-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e7eee9;
+}
+
+.editor-section-head h2 {
+  margin: 0;
+  color: #173622;
+  font-size: 18px;
+}
+
+.editor-section-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.editor-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin-top: 18px;
+}
+
+.editor-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.editor-form-grid input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #d4e2d8;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.span-3 {
+  grid-column: 1 / -1;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.editor-button,
+.small {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #cfe8d6;
+  border-radius: 9px;
+  background: #f3fbf5;
+  color: #147a35;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.editor-button.is-primary {
+  border-color: #9bcfa8;
+  background: #edf8f0;
+  color: #246b32;
+}
+
+.editor-button:focus-visible,
+.small:focus-visible,
+.editor-form-grid input:focus-visible {
+  outline: 3px solid rgb(67 160 71 / 24%);
+  outline-offset: 2px;
+}
+
+.editor-warning {
+  color: #b91c1c;
+}
+
+.empty {
+  padding: 18px 0;
+  color: #64748b;
+}
+
+.signature-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.signature-card {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid #dfe9e2;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+
+.signature-card.hidden {
+  opacity: 0.62;
+  background: #f8fafc;
+}
+
+.signature-card img,
+.signature-preview img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.signature-card small,
+.signature-card em {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.signature-card em {
+  color: #b45309;
+  font-style: normal;
+}
+
+.signature-preview {
+  margin-top: 6px;
+}
+
+.danger {
+  border-color: #fecaca;
+  background: #fff5f5;
+  color: #b91c1c;
+}
+
+.signature-category-notice {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #cfe8d6;
+  border-radius: 12px;
+  background: #f3fbf5;
+  color: #166534;
+}
+
+.signature-category-notice strong {
+  font-size: 16px;
+}
+
+.signature-category-notice p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .editor-section-card {
+    padding: 18px 16px;
+  }
+
+  .editor-section-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .editor-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-form-grid input,
+  .editor-button,
+  .small {
+    min-height: 44px;
+  }
+
+  .signature-card {
+    grid-template-columns: 64px 1fr;
+  }
+
+  .signature-card img {
+    width: 64px;
+    height: 64px;
+  }
+
+  .signature-card .section-actions {
+    grid-column: 1 / -1;
+  }
+}
 </style>

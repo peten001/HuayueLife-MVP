@@ -180,28 +180,28 @@ const CONTENT_IMAGE_SECTION_CONFIG: Array<{
 }> = [
   {
     type: 'STORE',
-    title: '门店外观 STORE',
+    title: '门店外观',
     description: '小程序顶部图库：门店外观',
     guidance: '建议 1～3 张，按排序值从小到大展示。',
     displayLimit: 3,
   },
   {
     type: 'PRODUCT',
-    title: '菜品 PRODUCT',
+    title: '菜品',
     description: '小程序顶部图库：菜品',
     guidance: '建议 3～6 张，按排序值从小到大展示。',
     displayLimit: 6,
   },
   {
     type: 'ENVIRONMENT',
-    title: '用餐环境 ENVIRONMENT',
+    title: '用餐环境',
     description: '小程序顶部图库：用餐环境',
     guidance: '建议 1～3 张，按排序值从小到大展示。',
     displayLimit: 3,
   },
   {
     type: 'MENU',
-    title: '菜单 MENU',
+    title: '菜单',
     description: '当前商家详情顶部图库不展示 MENU；数据保留供后续功能使用。',
     guidance: '继续支持上传、排序、显示与隐藏。',
   },
@@ -756,14 +756,11 @@ async function saveMerchantImage(image: PlatformMerchantImage) {
   try {
     await updatePlatformMerchantImage(merchantId.value, image.id, {
       imageType: image.imageType,
-      titleZh: image.titleZh ?? '',
-      titleVi: image.titleVi ?? '',
-      titleEn: image.titleEn ?? '',
       sortOrder: Number(image.sortOrder),
       isVisible: image.isVisible,
     });
     await loadPage();
-    imageMessage.value = '图库图片已保存';
+    imageMessage.value = '图片排序与展示状态已保存';
   } catch (error) {
     imageMessage.value = errorMessage(error);
   } finally {
@@ -1314,9 +1311,9 @@ function backToList() {
   <PageHeader :title="merchant ? '商家编辑：' + merchant.nameZh : '商家编辑'">
     <div class="merchant-editor-top-actions">
       <button class="editor-button is-ghost" type="button" @click="backToList">返回商家列表</button>
-      <button class="editor-button is-ghost" type="button" :disabled="!detail" @click="detail && assignForms(detail)">取消</button>
+      <button class="editor-button is-ghost" type="button" :disabled="!detail" title="重置资料、营业时间、标签与能力的未保存改动；不撤销已完成的图片操作" @click="detail && assignForms(detail)">重置未保存设置</button>
       <button class="editor-button is-primary" type="button" :disabled="saving || !merchant" @click="saveProfile">
-        {{ saving ? '保存中...' : '保存' }}
+        {{ saving ? '保存中...' : '保存商家资料' }}
       </button>
     </div>
   </PageHeader>
@@ -1337,6 +1334,7 @@ function backToList() {
         <span v-else>{{ merchant.nameZh.slice(0, 1) }}</span>
       </div>
       <div class="merchant-summary-main">
+        <h2>{{ merchant.nameZh }}</h2>
         <p>{{ merchant.nameVi || '未填写越南语名称' }}</p>
         <p>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.contactName || '未填写联系人' }}</p>
         <p>{{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
@@ -1452,12 +1450,12 @@ function backToList() {
 
         <section id="merchant-section-images" class="editor-section-card">
           <div class="editor-section-head">
-            <div><h2>商家图库</h2><p>Logo 与小程序图库分类使用现有商家图片模型维护</p></div>
+            <div><h2>商家图库</h2><p>图片按用途分类归档，无需填写图片名称；分类、排序和展示状态决定小程序中的位置。</p></div>
           </div>
           <p v-if="imageMessage" :class="['message', 'image-local-message', { 'is-success': imageMessageIsSuccess }]" role="status" aria-live="polite">{{ imageMessage }}</p>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="image-primary-grid">
-            <article>
+            <article class="image-primary-card image-primary-card--logo">
               <strong>商家 Logo</strong>
               <p class="image-guidance">用于商家名称旁的品牌标识，不计入顶部分类图库。</p>
               <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
@@ -1471,7 +1469,7 @@ function backToList() {
                 </button>
               </div>
             </article>
-            <article>
+            <article class="image-primary-card image-primary-card--cover">
               <strong>封面 Cover</strong>
               <p class="image-guidance">小程序顶部图库：封面（单张）。</p>
               <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
@@ -1523,16 +1521,13 @@ function backToList() {
                       ? `前台第 ${section.frontendImagePositions[image.id]} 张`
                       : '超出顶部图库展示上限' }}
                   </p>
-                  <label><span>标题（中文）</span><input v-model="image.titleZh" maxlength="120" /></label>
-                  <label><span>标题（Tiếng Việt）</span><input v-model="image.titleVi" maxlength="120" /></label>
-                  <label><span>标题（English）</span><input v-model="image.titleEn" maxlength="120" /></label>
                   <div class="merchant-gallery-options">
                     <label><span>排序</span><input v-model.number="image.sortOrder" type="number" min="0" step="1" /></label>
                     <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
                   </div>
                   <div class="section-actions">
                     <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
-                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中...' : '保存图片' }}
+                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中...' : '保存排序与展示' }}
                     </button>
                     <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="openImageReplacement(image)">
                       {{ imageSavingId === image.id && imageOperation === 'REPLACE' ? '替换中...' : '替换图片' }}
@@ -4189,6 +4184,335 @@ function backToList() {
 
   .image-classification-section .merchant-gallery-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* V3.5: keep the existing workflows, while making the editor read as one workbench. */
+.page-header,
+.message,
+.card.empty,
+.merchant-editor-meta,
+.merchant-editor-summary,
+.merchant-editor-layout {
+  width: 100%;
+  max-width: 1280px;
+}
+
+.merchant-editor-summary {
+  grid-template-columns: 68px minmax(0, 1fr) minmax(300px, auto);
+  min-height: 96px;
+  padding: 16px 18px;
+  border-color: #dce8df;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgb(15 83 48 / 5%);
+}
+
+.merchant-summary-media {
+  width: 68px;
+  height: 68px;
+  border-radius: 14px;
+}
+
+.merchant-summary-main h2 {
+  display: block;
+  margin: 0 0 4px;
+  color: #173622;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.merchant-editor-content {
+  gap: 16px;
+}
+
+.editor-section-card {
+  padding: 20px 22px;
+  border-color: #dce8df;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgb(15 83 48 / 4%);
+}
+
+.editor-section-head {
+  align-items: center;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e7eee9;
+}
+
+.editor-section-head > div {
+  min-width: 0;
+}
+
+.editor-section-head p {
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+.editor-form-grid {
+  gap: 14px 18px;
+}
+
+.editor-form-grid .span-3 {
+  grid-column: 1 / -1;
+}
+
+.merchant-editor-top-actions .editor-button.is-primary {
+  border-color: #2e7d32;
+  background: #2e7d32;
+  color: #ffffff;
+}
+
+.editor-section-head .editor-button.is-primary,
+.section-actions .editor-button.is-primary,
+.section-actions .small.primary {
+  border: 1px solid #9bcfa8;
+  background: #edf8f0;
+  color: #246b32;
+}
+
+.editor-button:focus-visible,
+.small:focus-visible,
+.editor-form-grid input:focus-visible,
+.editor-form-grid select:focus-visible,
+.editor-form-grid textarea:focus-visible,
+.merchant-gallery-card input:focus-visible,
+.content-tag-option:focus-within {
+  outline: 3px solid rgb(67 160 71 / 24%);
+  outline-offset: 2px;
+}
+
+.image-primary-grid {
+  grid-template-columns: minmax(220px, 0.7fr) minmax(420px, 1.55fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.image-primary-grid article {
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  border-color: #dce8df;
+  border-radius: 13px;
+  background: #fbfdfb;
+}
+
+.image-primary-card > strong {
+  color: #173622;
+  font-size: 14px;
+}
+
+.image-primary-card--logo img,
+.image-primary-card--logo .image-empty {
+  width: min(100%, 176px);
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.image-primary-card--cover img,
+.image-primary-card--cover .image-empty {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.image-primary-actions {
+  padding-top: 2px;
+}
+
+.image-classification-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #dce8df;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.image-classification-section {
+  padding: 18px;
+  border: 0;
+  border-bottom: 1px solid #e7eee9;
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.image-classification-section:last-child {
+  border-bottom: 0;
+}
+
+.image-classification-head {
+  align-items: center;
+}
+
+.image-classification-head h3 {
+  color: #173622;
+}
+
+.image-classification-head p {
+  color: #335d40;
+  font-weight: 650;
+}
+
+.image-classification-section .merchant-gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.merchant-gallery-card {
+  gap: 9px;
+  padding: 10px;
+  border-color: #dfe9e2;
+  border-radius: 12px;
+  background: #f9fcfa;
+}
+
+.merchant-gallery-card > img {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.merchant-gallery-options {
+  min-height: 42px;
+  padding: 8px 0 2px;
+  border-top: 1px solid #e7eee9;
+}
+
+.merchant-gallery-options > label:first-child {
+  width: 112px;
+}
+
+.merchant-gallery-options .switch-row {
+  padding-top: 0;
+}
+
+.merchant-gallery-card > .section-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  padding-top: 9px;
+  border-top: 1px solid #e7eee9;
+}
+
+.merchant-gallery-card > .section-actions .small {
+  width: 100%;
+  min-height: 34px;
+}
+
+.content-tag-picker {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tag-management-item {
+  border-color: #dce8df;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.tag-management-actions {
+  padding: 9px 10px;
+  background: #f7faf8;
+}
+
+.system-promotion-tag-list {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #dce8df;
+  border-radius: 12px;
+}
+
+.system-promotion-tag-row {
+  border-bottom: 1px solid #e7eee9;
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.system-promotion-tag-row:last-child {
+  border-bottom: 0;
+}
+
+.display-tag-groups {
+  gap: 14px;
+}
+
+.display-tag-group {
+  border: 1px solid #e1ebe4;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+
+.capability-groups {
+  gap: 14px;
+}
+
+.capability-group-card,
+.account-card {
+  border-color: #dce8df;
+  border-radius: 12px;
+  background: #fbfdfb;
+  box-shadow: none;
+}
+
+.danger-card {
+  box-shadow: none;
+}
+
+@media (max-width: 1100px) {
+  .image-primary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .image-primary-card--logo img,
+  .image-primary-card--logo .image-empty {
+    width: 160px;
+  }
+}
+
+@media (max-width: 760px) {
+  .merchant-editor-summary {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .merchant-summary-media {
+    width: 56px;
+    height: 56px;
+  }
+
+  .merchant-summary-badges {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .editor-section-card {
+    padding: 18px 16px;
+  }
+
+  .editor-form-grid input,
+  .editor-form-grid select,
+  .editor-form-grid textarea,
+  .visibility-grid select,
+  .merchant-gallery-card input,
+  .platform-business-hours-row input[type='time'],
+  .merchant-editor-top-actions .editor-button,
+  .account-phone-modal input,
+  .account-phone-modal footer .editor-button {
+    min-height: 44px;
+  }
+
+  .account-phone-modal-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .merchant-gallery-card > .section-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .merchant-gallery-card > .section-actions .small {
+    min-height: 44px;
   }
 }
 </style>
