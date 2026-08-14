@@ -185,10 +185,8 @@ const hasHotOverflow = computed(() => (
 ));
 const uiIcons = {
   arrowLeft: '/static/merchant-detail-icons/arrow-left-white.png',
-  heart: '/static/merchant-detail-icons/heart-white.png',
   heartActive: '/static/merchant-detail-icons/heart-filled-warm.png',
   heartGreen: '/static/merchant-detail-icons/heart-green.png',
-  share: '/static/merchant-detail-icons/share-2-white.png',
   merchantProfile: '/static/merchant-detail-icons/door-open-green.png',
   phone: '/static/merchant-detail-icons/phone-green.png',
   navigation: '/static/merchant-detail-icons/navigation-green.png',
@@ -695,32 +693,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
           </view>
         </view>
 
-        <view class="hero-controls">
-          <view class="hero-controls-right">
-            <button
-              class="hero-button"
-              :class="{ 'is-favorite': favoriteState }"
-              :aria-label="favoriteLabel"
-              :aria-pressed="favoriteState"
-              hover-class="is-pressed"
-              @tap="handleToggleFavorite"
-            >
-              <image
-                class="hero-control-icon"
-                :src="favoriteState ? uiIcons.heartActive : uiIcons.heart"
-                mode="aspectFit"
-              />
-            </button>
-            <button
-              class="hero-button hero-share"
-              open-type="share"
-              hover-class="is-pressed"
-              :aria-label="t('shareMerchant')"
-            >
-              <image class="hero-control-icon" :src="uiIcons.share" mode="aspectFit" />
-            </button>
-          </view>
-        </view>
         <text
           v-if="heroImages.length > 1"
           :class="['hero-count', { 'has-gallery-overlay': galleryCategories.length }]"
@@ -1255,23 +1227,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   height: 30rpx;
 }
 
-.hero-controls {
-  position: absolute;
-  top: 28rpx;
-  right: 36rpx;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.hero-controls-right {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
-.hero-button,
 .merchant-nav-back,
 .thumbnail-button,
 .bottom-action,
@@ -1280,7 +1235,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   transition: transform 160ms ease, opacity 160ms ease;
 }
 
-.hero-button,
 .merchant-nav-back,
 .thumbnail-button,
 .bottom-action,
@@ -1290,7 +1244,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   box-sizing: border-box;
 }
 
-.hero-button::after,
 .merchant-nav-back::after,
 .thumbnail-button::after,
 .bottom-action::after,
@@ -1298,31 +1251,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
 .error-button::after,
 .actions button::after {
   border: 0;
-}
-
-.hero-button {
-  width: 88rpx;
-  height: 88rpx;
-  min-height: 88rpx;
-  display: flex;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 44rpx;
-  color: var(--on-brand);
-  background: var(--control-overlay);
-  box-shadow: var(--control-shadow);
-  font-size: 38rpx;
-  line-height: 1;
-}
-
-.hero-button.is-favorite {
-  color: var(--on-brand-warm);
-}
-
-.hero-share {
-  padding-bottom: 5rpx;
-  font-size: 34rpx;
 }
 
 .hero-count {
@@ -1844,7 +1772,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   background: var(--surface);
 }
 
-.hero-button.is-pressed,
 .merchant-nav-back.is-pressed,
 .thumbnail-button.is-pressed,
 .bottom-action.is-pressed,
@@ -1874,7 +1801,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
     animation: none;
   }
 
-  .hero-button,
   .merchant-nav-back,
   .thumbnail-button,
   .bottom-action,
@@ -1936,33 +1862,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero {
   border-radius: 22rpx;
-}
-
-.hero-controls {
-  top: 20rpx;
-  right: 28rpx;
-}
-
-.hero-controls-right {
-  gap: 10rpx;
-}
-
-.hero-button {
-  width: 88rpx;
-  height: 88rpx;
-  min-height: 88rpx;
-  border-radius: 24rpx;
-  box-shadow: 0 5rpx 16rpx rgb(0 0 0 / 14%);
-}
-
-.hero-share {
-  padding: 0;
-}
-
-.hero-control-icon {
-  width: 38rpx;
-  height: 38rpx;
-  display: block;
 }
 
 .hero-count {
@@ -2794,7 +2693,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
   left: 16rpx;
   z-index: 3;
   width: auto;
-  padding: 18rpx 12rpx 3rpx;
+  padding: 20rpx 12rpx 1rpx;
   overflow: hidden;
   border: 0;
   border-radius: 0 0 22rpx 22rpx;
@@ -2817,16 +2716,16 @@ function hasCapability(code: string, fallbackValue: boolean) {
   gap: 6rpx;
   border: 1rpx solid transparent;
   border-radius: 14rpx;
-  color: var(--on-brand);
-  background: rgb(18 39 27 / 38%);
+  color: rgb(248 255 249 / 78%);
+  background: rgb(18 39 27 / 30%);
   font-size: 21rpx;
   font-weight: 750;
 }
 
 .gallery-category-button.is-active {
-  border-color: rgb(202 235 207 / 74%);
+  border-color: rgb(144 211 151 / 34%);
   color: var(--on-brand);
-  background: rgb(28 64 40 / 68%);
+  background: rgb(18 39 27 / 42%);
 }
 
 .gallery-category-count {
@@ -2838,17 +2737,17 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .gallery-category-button.is-active .gallery-category-count {
-  background: rgb(255 255 255 / 24%);
+  background: rgb(255 255 255 / 22%);
 }
 
 .gallery-category-active-marker {
   position: absolute;
   right: 28rpx;
-  bottom: 7rpx;
+  bottom: 6rpx;
   left: 28rpx;
   height: 2rpx;
   border-radius: 2rpx;
-  background: var(--on-brand);
+  background: var(--brand);
 }
 
 .hero-count.has-gallery-overlay {

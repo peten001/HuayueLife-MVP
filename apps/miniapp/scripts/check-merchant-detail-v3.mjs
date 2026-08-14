@@ -95,11 +95,15 @@ assert.match(heroShellTemplate, /role="tab"/);
 assert.match(heroShellTemplate, /:aria-selected="activeGalleryCategory === category\.key"/);
 assert.match(heroShellTemplate, /class="gallery-category-active-marker"/);
 assert.match(heroShellTemplate, /v-if="category\.key !== 'COVER'" class="gallery-category-count"/);
+assert.doesNotMatch(heroShellTemplate, /class="hero-controls"/);
+assert.doesNotMatch(heroShellTemplate, /class="hero-button/);
+assert.doesNotMatch(heroShellTemplate, /open-type="share"/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\S]*bottom: 0;[\s\S]*background: linear-gradient\(180deg,/);
-assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 38%\);/);
-assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*background: rgb\(28 64 40 \/ 68%\);/);
+assert.match(detail, /\.gallery-category-scroll \{[\s\S]*padding: 20rpx 12rpx 1rpx;/);
+assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 30%\);/);
+assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*border-color: rgb\(144 211 151 \/ 34%\);[\s\S]*background: rgb\(18 39 27 \/ 42%\);/);
 assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180}background: rgb\(255 255 255/);
-assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--on-brand\);/);
+assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--brand\);/);
 assert.match(detail, /\.hero-count\.has-gallery-overlay \{[\s\S]*bottom: 112rpx;/);
 
 assert.match(
@@ -114,15 +118,23 @@ assert.match(detail, /\.section-heading \{[\s\S]*min-height: 88rpx;[\s\S]*align-
 assert.match(detail, /\.section-more \{[\s\S]*justify-content: flex-end;[\s\S]*white-space: nowrap;/);
 assert.match(detail, /\.section-more-arrow\.is-expanded \{[\s\S]*rotate\(-90deg\);/);
 
-assert.match(detail, /heart: '\/static\/merchant-detail-icons\/heart-white\.png'/);
 assert.match(detail, /heartActive: '\/static\/merchant-detail-icons\/heart-filled-warm\.png'/);
-assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heart/);
 assert.match(detail, /favoriteState \? uiIcons\.heartActive : uiIcons\.heartGreen/);
 assert.match(detail, /favoriteState\.value = isFavorite\(merchant\.value\.id\)/);
 assert.match(detail, /const result = toggleFavorite\(merchant\.value\)/);
+assert.match(detail, /onShareAppMessage\(\(\) => \(\{/);
+assert.match(detail, /onShareTimeline\(\(\) => \(\{/);
 assert.match(favorites, /export function isFavorite/);
 assert.match(favorites, /export function toggleFavorite/);
 assert.match(detail, /\.meta-type \{[\s\S]*background: var\(--brand-deep\);/);
+
+for (const viewportWidth of [375, 390, 430]) {
+  const minimumCategoryTapHeight = (88 * viewportWidth) / 750;
+  assert.ok(
+    minimumCategoryTapHeight >= 44,
+    `gallery category tap target must stay at least 44px at ${viewportWidth}px`,
+  );
+}
 
 assert.match(ordering, /input\.merchantMode === 'MANAGED' && input\.claimStatus === 'CLAIMED'/);
 assert.match(ordering, /input\.platformOrderingEnabled/);
