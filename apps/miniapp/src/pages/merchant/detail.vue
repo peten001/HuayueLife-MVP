@@ -693,10 +693,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
           </view>
         </view>
 
-        <text
-          v-if="heroImages.length > 1"
-          :class="['hero-count', { 'has-gallery-overlay': galleryCategories.length }]"
-        >{{ activeHeroIndex + 1 }}/{{ heroImages.length }}</text>
         <scroll-view
           v-if="galleryCategories.length"
           class="gallery-category-scroll"
@@ -715,8 +711,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
               hover-class="is-pressed"
               @tap="selectGalleryCategory(category.key)"
             >
-              <text>{{ category.label }}</text>
-              <text v-if="category.key !== 'COVER'" class="gallery-category-count">{{ category.urls.length }}</text>
+              <text class="gallery-category-label">{{ category.label }}</text>
               <text v-if="activeGalleryCategory === category.key" class="gallery-category-active-marker" aria-hidden="true" />
             </button>
           </view>
@@ -953,10 +948,20 @@ function hasCapability(code: string, fallbackValue: boolean) {
   --logo-shadow: 0 6rpx 18rpx rgb(31 45 36 / 8%);
   --dock-shadow: 0 -12rpx 30rpx rgb(31 45 36 / 8%);
   --shadow: 0 12rpx 34rpx rgb(31 45 36 / 11%);
+  --type-title-size: 35rpx;
+  --type-section-size: 29rpx;
+  --type-body-size: 24rpx;
+  --type-label-size: 22rpx;
+  --type-meta-size: 21rpx;
+  --type-title-leading: 1.24;
+  --type-section-leading: 1.3;
+  --type-body-leading: 1.52;
+  --type-label-leading: 1.3;
   min-height: 100vh;
   padding: 0 0 calc(40rpx + env(safe-area-inset-bottom));
   color: var(--ink);
   background: var(--page-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
   box-sizing: border-box;
 }
 
@@ -1253,20 +1258,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   border: 0;
 }
 
-.hero-count {
-  position: absolute;
-  right: 40rpx;
-  bottom: 18rpx;
-  z-index: 2;
-  padding: 8rpx 15rpx;
-  border-radius: 999rpx;
-  color: var(--on-brand);
-  background: var(--control-overlay-soft);
-  font-size: 22rpx;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-
 .thumbnail-scroll {
   width: 100%;
   padding: 16rpx 20rpx 4rpx;
@@ -1312,18 +1303,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   border-color: var(--brand);
   color: var(--brand-deep);
   background: var(--brand-soft);
-}
-
-.gallery-category-count {
-  min-width: 30rpx;
-  height: 30rpx;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999rpx;
-  color: var(--brand-deep);
-  background: rgb(255 255 255 / 72%);
-  font-size: 19rpx;
 }
 
 .thumbnail-list {
@@ -1862,13 +1841,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero {
   border-radius: 22rpx;
-}
-
-.hero-count {
-  right: 28rpx;
-  bottom: 12rpx;
-  padding: 6rpx 12rpx;
-  font-size: 20rpx;
 }
 
 .thumbnail-scroll {
@@ -2723,21 +2695,25 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .gallery-category-button.is-active {
-  border-color: rgb(144 211 151 / 34%);
+  border-color: transparent;
   color: var(--on-brand);
+  background: transparent;
+}
+
+.gallery-category-label {
+  display: inline-flex;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid transparent;
+  border-radius: 11rpx;
+  line-height: 1.2;
+}
+
+.gallery-category-button.is-active .gallery-category-label {
+  padding: 4rpx 14rpx;
+  border-color: rgb(144 211 151 / 34%);
   background: rgb(18 39 27 / 42%);
-}
-
-.gallery-category-count {
-  min-width: 27rpx;
-  height: 27rpx;
-  color: inherit;
-  background: rgb(255 255 255 / 18%);
-  font-size: 18rpx;
-}
-
-.gallery-category-button.is-active .gallery-category-count {
-  background: rgb(255 255 255 / 22%);
 }
 
 .gallery-category-active-marker {
@@ -2748,10 +2724,6 @@ function hasCapability(code: string, fallbackValue: boolean) {
   height: 2rpx;
   border-radius: 2rpx;
   background: var(--brand);
-}
-
-.hero-count.has-gallery-overlay {
-  bottom: 112rpx;
 }
 
 .section-heading {
@@ -2792,5 +2764,107 @@ function hasCapability(code: string, fallbackValue: boolean) {
   color: var(--on-brand);
   background: var(--brand-deep);
   font-weight: 750;
+}
+
+/* V3.4: one system-font hierarchy across identity, content, metadata and actions. */
+.merchant-nav-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: var(--type-section-leading);
+}
+
+.title {
+  font-size: var(--type-title-size);
+  font-weight: 700;
+  line-height: var(--type-title-leading);
+}
+
+.section-title,
+.intro-heading {
+  font-size: var(--type-section-size);
+  font-weight: 700;
+  line-height: var(--type-section-leading);
+}
+
+.description,
+.address-text,
+.claim-description {
+  font-size: var(--type-body-size);
+  font-weight: 400;
+  line-height: var(--type-body-leading);
+}
+
+.status,
+.claim-badge,
+.meta-type,
+.tag,
+.summary-line,
+.distance,
+.hours,
+.facility-label,
+.signature-name,
+.hot-name,
+.address-label,
+.section-more,
+.claim-action,
+.bottom-action {
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-leading);
+}
+
+.status,
+.claim-badge,
+.meta-type,
+.tag,
+.facility-label,
+.signature-name,
+.hot-name,
+.address-label,
+.section-more,
+.bottom-action {
+  font-weight: 600;
+}
+
+.summary-line,
+.distance,
+.hours,
+.address-distance {
+  font-weight: 400;
+}
+
+.hot-sales,
+.hot-rank,
+.hot-meta-separator,
+.address-distance {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-label-leading);
+}
+
+.dish-grid .hot-sales,
+.dish-grid .hot-rank,
+.dish-grid .hot-meta-separator {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-label-leading);
+}
+
+.claim-title {
+  font-size: 25rpx;
+  font-weight: 700;
+  line-height: var(--type-section-leading);
+}
+
+.claim-action {
+  font-weight: 700;
+}
+
+.actions button {
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.sticky-orders button {
+  font-size: var(--type-label-size);
+  font-weight: 700;
+  line-height: 1.15;
 }
 </style>

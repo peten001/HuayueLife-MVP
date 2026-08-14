@@ -94,17 +94,20 @@ assert.match(heroShellTemplate, /role="tablist"/);
 assert.match(heroShellTemplate, /role="tab"/);
 assert.match(heroShellTemplate, /:aria-selected="activeGalleryCategory === category\.key"/);
 assert.match(heroShellTemplate, /class="gallery-category-active-marker"/);
-assert.match(heroShellTemplate, /v-if="category\.key !== 'COVER'" class="gallery-category-count"/);
+assert.match(heroShellTemplate, /class="gallery-category-label">\{\{ category\.label \}\}/);
+assert.doesNotMatch(heroShellTemplate, /hero-count|gallery-category-count|heroImages\.length \}\}/);
 assert.doesNotMatch(heroShellTemplate, /class="hero-controls"/);
 assert.doesNotMatch(heroShellTemplate, /class="hero-button/);
 assert.doesNotMatch(heroShellTemplate, /open-type="share"/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*position: absolute;[\s\S]*bottom: 0;[\s\S]*background: linear-gradient\(180deg,/);
 assert.match(detail, /\.gallery-category-scroll \{[\s\S]*padding: 20rpx 12rpx 1rpx;/);
 assert.match(detail, /\.gallery-category-button \{[\s\S]*min-height: 88rpx;[\s\S]*background: rgb\(18 39 27 \/ 30%\);/);
-assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*border-color: rgb\(144 211 151 \/ 34%\);[\s\S]*background: rgb\(18 39 27 \/ 42%\);/);
+assert.match(detail, /\.gallery-category-button\.is-active \{[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
+assert.match(detail, /\.gallery-category-button\.is-active \.gallery-category-label \{[\s\S]*padding: 4rpx 14rpx;[\s\S]*background: rgb\(18 39 27 \/ 42%\);/);
 assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180}background: rgb\(255 255 255/);
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--brand\);/);
-assert.match(detail, /\.hero-count\.has-gallery-overlay \{[\s\S]*bottom: 112rpx;/);
+assert.doesNotMatch(detail, /hero-count|gallery-category-count/);
+assert.match(detail, /\.hero,[\s\S]*\.hero-image \{[\s\S]*height: 330rpx;/);
 
 assert.match(
   detail,
@@ -127,6 +130,14 @@ assert.match(detail, /onShareTimeline\(\(\) => \(\{/);
 assert.match(favorites, /export function isFavorite/);
 assert.match(favorites, /export function toggleFavorite/);
 assert.match(detail, /\.meta-type \{[\s\S]*background: var\(--brand-deep\);/);
+assert.match(detail, /font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;/);
+assert.match(detail, /--type-title-size: 35rpx;/);
+assert.match(detail, /--type-section-size: 29rpx;/);
+assert.match(detail, /--type-body-size: 24rpx;/);
+assert.match(detail, /--type-label-size: 22rpx;/);
+assert.match(detail, /\.description,[\s\S]*\.claim-description \{[\s\S]*font-size: var\(--type-body-size\);/);
+assert.match(detail, /\.sticky-orders button \{[\s\S]*font-size: var\(--type-label-size\);[\s\S]*font-weight: 700;/);
+assert.match(detail, /\.dish-grid \.hot-sales,[\s\S]*font-size: var\(--type-meta-size\);/);
 
 for (const viewportWidth of [375, 390, 430]) {
   const minimumCategoryTapHeight = (88 * viewportWidth) / 750;
@@ -147,9 +158,9 @@ assert.match(detail, /\.sticky-orders \.pickup \{[\s\S]*background: var\(--brand
 assert.match(detail, /\.sticky-orders \.delivery \{[\s\S]*background: var\(--brand-deep\);/);
 
 for (const [locale, labels] of Object.entries({
-  zh: ['已认领', '未认领', '这是您的商家？', '免费认领'],
-  vi: ['Đã nhận', 'Chưa nhận', 'Đây là cửa hàng của bạn?', 'Nhận miễn phí'],
-  en: ['Claimed', 'Unclaimed', 'Is this your business?', 'Claim for free'],
+  zh: ['商家已入驻', '平台收录', '这是您的商家？', '免费认领'],
+  vi: ['Đã tham gia YunQiao', 'Có mặt trên YunQiao', 'Đây là cửa hàng của bạn?', 'Nhận miễn phí'],
+  en: ['Merchant onboarded', 'Listed on YunQiao', 'Is this your business?', 'Claim for free'],
 })) {
   for (const label of labels) {
     assert.ok(i18n.includes(label), `missing ${locale} claim copy: ${label}`);
