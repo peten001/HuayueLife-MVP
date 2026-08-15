@@ -6,6 +6,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { StaffRole } from '@prisma/client';
@@ -16,6 +17,7 @@ import { IdParamDto } from '../../common/dto/id-param.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
+import { RequestWithContext } from '../../common/types/request.type';
 import { ListMerchantOrdersQueryDto } from './dto/list-merchant-orders-query.dto';
 import { PrintOrderDto } from './dto/print-order.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
@@ -24,6 +26,8 @@ import { ReturnOrderItemDto } from './dto/return-order-item.dto';
 import { OrderItemParamsDto } from './dto/order-item-params.dto';
 import { OrderRoundingDto } from './dto/order-rounding.dto';
 import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
+import { PaymentMethodDto } from '../orders/payment-method.dto';
+import { BusinessDaySummaryQueryDto, PrintBusinessDaySummaryDto } from './dto/business-day-summary.dto';
 import { MerchantOrdersService } from './merchant-orders.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
@@ -52,6 +56,31 @@ export class MerchantOrdersController {
     @Query() query: ListMerchantOrdersQueryDto,
   ) {
     return this.service.summary(merchantId, query);
+  }
+
+  @Get('business-day-summary')
+  businessDaySummary(
+    @MerchantId() merchantId: bigint,
+    @Query() query: BusinessDaySummaryQueryDto,
+  ) {
+    return this.service.businessDaySummary(merchantId, query.businessDate);
+  }
+
+  @Post('business-day-summary/print')
+  printBusinessDaySummary(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Req() request: RequestWithContext,
+    @Body() dto: PrintBusinessDaySummaryDto,
+  ) {
+    return this.service.printBusinessDaySummary(
+      merchantId,
+      BigInt(staff.sub),
+      dto.businessDate,
+      dto.requestKey,
+      request.requestId,
+      dto.printerId ? BigInt(dto.printerId) : undefined,
+    );
   }
 
   @Get(':id')
@@ -142,6 +171,23 @@ export class MerchantOrdersController {
       BigInt(staff.sub),
       BigInt(params.id),
       'COMPLETE',
+    );
+  }
+
+  @Post(':id/cashier-complete')
+  cashierComplete(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: PaymentMethodDto,
+  ) {
+    return this.service.transition(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      'COMPLETE',
+      undefined,
+      dto.paymentMethod,
     );
   }
 

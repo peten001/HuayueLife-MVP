@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { useI18n } from '@/i18n';
@@ -35,7 +35,12 @@ const productMessage = ref('');
 const loading = ref(false);
 const uploading = ref(false);
 const showProductModal = ref(false);
+const productPendingDelete = ref<Product | null>(null);
+const deletingProduct = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const deleteDialog = ref<HTMLElement | null>(null);
+const deleteCancelButton = ref<HTMLButtonElement | null>(null);
+let deleteTrigger: HTMLElement | null = null;
 
 const searchKeyword = ref('');
 const selectedCategoryId = ref<'all' | string>('all');
@@ -100,6 +105,10 @@ const pageCopy = computed(() => {
       editProductTitle: 'Sửa món ăn',
       imageHint: 'Có thể nhập URL hoặc tải ảnh trực tiếp.',
       imagePlaceholder: 'Xem trước ảnh',
+      deleteTitle: 'Xóa món ăn?',
+      deleteDescription: 'Sau khi xóa, món ăn sẽ không còn trong thực đơn hiện tại hoặc màn hình gọi món. Lịch sử đơn hàng vẫn được giữ nguyên.',
+      deleteConfirm: 'Xóa món ăn',
+      deleteSuccess: 'Đã xóa món ăn.',
     };
   }
 
@@ -140,6 +149,10 @@ const pageCopy = computed(() => {
       editProductTitle: 'Edit Product',
       imageHint: 'Use either an image URL or direct upload.',
       imagePlaceholder: 'Image Preview',
+      deleteTitle: 'Delete this product?',
+      deleteDescription: 'After deletion, this product will no longer appear in the current menu or cashier ordering. Historical orders will remain intact.',
+      deleteConfirm: 'Delete product',
+      deleteSuccess: 'Product deleted.',
     };
   }
 
@@ -179,6 +192,10 @@ const pageCopy = computed(() => {
     editProductTitle: '编辑菜品',
     imageHint: '可填写图片 URL，也可直接上传图片。',
     imagePlaceholder: '图片预览',
+    deleteTitle: '确认删除菜品？',
+    deleteDescription: '删除后将不再出现在当前菜单和收银点单中，历史订单记录不会被删除。',
+    deleteConfirm: '删除菜品',
+    deleteSuccess: '菜品已删除。',
   };
 });
 
@@ -562,15 +579,53 @@ async function setProductStatus(row: Product, status: ProductStatus) {
 }
 
 async function disableProductRow(row: Product) {
-  if (!confirm(t('disableProductConfirm', { name: row.nameZh }))) return;
+  productMessage.value = '';
+  deleteTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  productPendingDelete.value = row;
+  await nextTick();
+  deleteCancelButton.value?.focus();
+}
 
+function closeDeleteProductDialog() {
+  if (deletingProduct.value) return;
+  productPendingDelete.value = null;
+  productMessage.value = '';
+  deleteTrigger?.focus();
+  deleteTrigger = null;
+}
+
+async function confirmDeleteProduct() {
+  const row = productPendingDelete.value;
+  if (!row || deletingProduct.value) return;
+
+  deletingProduct.value = true;
   try {
     await disableProduct(row.id);
-    await loadData();
+    products.value = products.value.filter((item) => item.id !== row.id);
+    productPendingDelete.value = null;
+    pageMessage.value = pageCopy.value.deleteSuccess;
+    deleteTrigger?.focus();
+    deleteTrigger = null;
   } catch (error) {
     productMessage.value = errorMessage(error);
+  } finally {
+    deletingProduct.value = false;
   }
 }
+
+function onDeleteDialogKeydown(event: KeyboardEvent) {
+  if (!productPendingDelete.value) return;
+  if (event.key === 'Escape') { closeDeleteProductDialog(); return; }
+  if (event.key !== 'Tab' || !deleteDialog.value) return;
+  const focusable = [...deleteDialog.value.querySelectorAll<HTMLElement>('button:not(:disabled)')];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+}
+window.addEventListener('keydown', onDeleteDialogKeydown);
+onBeforeUnmount(() => window.removeEventListener('keydown', onDeleteDialogKeydown));
 
 function openImagePicker() {
   fileInput.value?.click();
@@ -1160,6 +1215,38 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div
+      v-if="productPendingDelete"
+      class="dialog-backdrop"
+      @click.self="closeDeleteProductDialog"
+    >
+      <div ref="deleteDialog" class="dialog-card delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-product-dialog-title" aria-describedby="delete-product-dialog-description">
+        <div class="dialog-head">
+          <div>
+            <h3 id="delete-product-dialog-title">{{ pageCopy.deleteTitle }}</h3>
+            <p>{{ productPendingDelete.nameZh }}</p>
+          </div>
+          <button
+            type="button"
+            class="dialog-close"
+            :aria-label="t('cancel')"
+            :disabled="deletingProduct"
+            @click="closeDeleteProductDialog"
+          >×</button>
+        </div>
+        <p id="delete-product-dialog-description" class="delete-warning">{{ pageCopy.deleteDescription }}</p>
+        <p v-if="productMessage" class="section-message" role="alert">{{ productMessage }}</p>
+        <div class="dialog-actions">
+          <button ref="deleteCancelButton" type="button" class="ghost-action" :disabled="deletingProduct" @click="closeDeleteProductDialog">
+            {{ t('cancel') }}
+          </button>
+          <button type="button" class="danger-action" :disabled="deletingProduct" @click="confirmDeleteProduct">
+            {{ deletingProduct ? `${pageCopy.deleteConfirm}…` : pageCopy.deleteConfirm }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading-mask"></div>
   </div>
 </template>
@@ -1176,6 +1263,39 @@ onMounted(async () => {
   max-width: 100%;
   min-width: 0;
   overflow-x: clip;
+}
+
+.delete-dialog {
+  max-width: 480px;
+}
+
+.delete-warning {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.danger-action {
+  min-height: 44px;
+  border: 1px solid #b91c1c;
+  border-radius: 10px;
+  padding: 0 18px;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.danger-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.danger-action:focus-visible {
+  outline: 3px solid rgba(185, 28, 28, 0.22);
+  outline-offset: 2px;
 }
 
 .menu-tabs {
@@ -1984,6 +2104,8 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
+  .status-filter,.dialog-close,.delete-dialog .ghost-action,.delete-dialog .danger-action{min-height:44px}
+  .dialog-close{width:44px;height:44px}
   .menu-tab {
     width: 160px;
   }

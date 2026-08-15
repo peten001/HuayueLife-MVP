@@ -111,6 +111,59 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it('creates an immutable V2 business-summary print job through the existing executor', async () => {
+    configureRc12UsbTest(prisma);
+    prisma.printJob.create.mockResolvedValue({ id: 222n, printerId });
+    const routing = {
+      requireCheckoutDefaultPrinter: jest.fn().mockResolvedValue(printerId),
+    };
+    const summaryService = new PrintJobsService(
+      prisma as never,
+      flags as never,
+      snapshots as never,
+      audit as never,
+      settings as never,
+      lanBindings as never,
+      templates as never,
+      routing as never,
+    );
+
+    await expect(summaryService.createBusinessSummaryPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'business-summary-2026-08-15',
+      businessDate: '2026-08-15',
+      blocks: [
+        {
+          type: 'TEXT',
+          text: '营业日：2026-08-15',
+          bold: true,
+          underline: false,
+          align: 'LEFT',
+          fontSize: 'NORMAL',
+        },
+        { type: 'ROW', left: '总收入', right: '100,000 VND', bold: true },
+      ],
+    })).resolves.toEqual({ id: 222n, printerId });
+
+    expect(routing.requireCheckoutDefaultPrinter).toHaveBeenCalledWith(merchantId);
+    expect(prisma.printJob.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        receiptType: 'TABLE_BILL',
+        source: 'MANUAL',
+        receiptSnapshot: expect.objectContaining({
+          documentType: 'PRINT_DOCUMENT',
+          schemaVersion: 2,
+          blocks: expect.any(Array),
+        }),
+      }),
+    }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'BUSINESS_SUMMARY_PRINT_CREATED',
+      afterData: expect.objectContaining({ businessDate: '2026-08-15' }),
+    }), prisma);
+  });
+
   it('blocks connector config and every job-producing path when platform printing is disabled', async () => {
     settings.assertMerchantPrintingEnabled.mockRejectedValue(
       new BadRequestException({ code: 'PRINTING_NOT_ENABLED' }),

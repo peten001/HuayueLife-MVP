@@ -12,7 +12,7 @@ type WeekdayKey = 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|
 interface Interval { start: string; end: string }
 interface DaySchedule { key: WeekdayKey; enabled: boolean; intervals: Interval[] }
 const keys: WeekdayKey[] = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
-const { t } = useI18n();
+const { locale, t } = useI18n();
 const router = useRouter();
 const form = reactive({ notice: '', minimumDeliveryAmountVnd: 0, deliveryFeeVnd: 0, deliveryRadiusKm: 0 });
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -22,15 +22,25 @@ const profile = ref<MerchantProfile | null>(null);
 const coverPreviewUrl = computed(() => resolveMediaUrl(profile.value?.coverUrl || profile.value?.images?.find((item) => item.imageType === 'COVER')?.imageUrl));
 const currentRole = computed(() => getMerchantStaff()?.role ?? 'STAFF');
 const canSaveSettings = computed(() => currentRole.value !== 'STAFF');
+const hoursCopy = computed(() => locale.value === 'vi' ? {
+  description: 'Có thể thêm nhiều khung giờ. Nếu giờ kết thúc sớm hơn giờ bắt đầu, hệ thống hiểu là ngày hôm sau.',
+  title: 'Giờ mở cửa', weekday: 'Thứ', state: 'Trạng thái', segments: 'Khung giờ', rest: 'Nghỉ (không mở cửa)', start: 'bắt đầu', end: 'kết thúc', add: 'Thêm khung giờ', remove: 'Xóa khung giờ', nextDay: '→ hôm sau', needSegment: 'Vui lòng thêm ít nhất một khung giờ', sameTime: 'Giờ bắt đầu và kết thúc không được giống nhau', overlap: 'Các khung giờ không được chồng lấn, kể cả giữa hai ngày liền kề.', lastSegment: 'Muốn nghỉ cả ngày, hãy tắt trạng thái mở cửa.', openState: 'Trạng thái mở cửa', segment: 'khung giờ',
+} : locale.value === 'en' ? {
+  description: 'Add as many segments as needed. An end time earlier than its start means the next day.',
+  title: 'Business hours', weekday: 'Day', state: 'Open status', segments: 'Business segments', rest: 'Closed', start: 'start', end: 'end', add: 'Add segment', remove: 'Remove segment', nextDay: '→ next day', needSegment: 'Add at least one business segment', sameTime: 'Start and end times cannot be equal', overlap: 'Segments cannot overlap, including across adjacent weekdays.', lastSegment: 'To close for the whole day, turn off the open status.', openState: 'open status', segment: 'segment',
+} : {
+  description: '可添加多个营业时段；结束时间早于开始时间时，表示营业至次日。',
+  title: '营业时间', weekday: '星期', state: '营业状态', segments: '营业时段', rest: '休息（不营业）', start: '开始', end: '结束', add: '添加时段', remove: '删除时段', nextDay: '→ 次日', needSegment: '请至少添加一个营业时段', sameTime: '开始时间和结束时间不能相同', overlap: '营业时段不能重叠，包括相邻星期的跨天时段。', lastSegment: '如需当天休息，请关闭营业状态。', openState: '营业状态', segment: '时段',
+});
 
 onMounted(async () => { try { const p = await getProfile(); profile.value = p; Object.assign(form, { notice: p.notice ?? '', minimumDeliveryAmountVnd: Number(p.minimumDeliveryAmountVnd), deliveryFeeVnd: Number(p.deliveryFeeVnd), deliveryRadiusKm: Number(p.deliveryRadiusKm) }); schedule.value = parseHours(p.businessHours); } catch (e) { message.value = errorMessage(e); } });
 function parseHours(raw: Record<string, string[]> | undefined) { return keys.map((key) => { const values = raw?.[key] ?? []; const intervals = values.map(parseRange).filter(Boolean) as Interval[]; return { key, enabled: intervals.length > 0, intervals: intervals.length ? intervals : [{ start: '09:00', end: '22:00' }] }; }); }
 function parseRange(value: string): Interval | null { const [start, end] = value.split('-'); return start && end ? { start, end } : null; }
 function minutes(value: string) { const [h, m] = value.split(':').map(Number); return h * 60 + m; }
-function validate() { for (const day of schedule.value) { if (!day.enabled) continue; if (!day.intervals.length) return `${t(day.key)}：请至少添加一个营业时段`; if (day.intervals.length > 3) return `${t(day.key)}：最多支持 3 个营业时段`; const sorted = [...day.intervals].sort((a,b) => minutes(a.start)-minutes(b.start)); for (let i=0;i<sorted.length;i++) { if (minutes(sorted[i].start) >= minutes(sorted[i].end)) return `${t(day.key)}：开始时间必须早于结束时间`; if (i && minutes(sorted[i-1].end) > minutes(sorted[i].start)) return `${t(day.key)}：营业时段不能重叠`; } } return ''; }
+function validate() { const weekly: Array<{ id: string; start: number; end: number }> = []; for (const [dayIndex, day] of schedule.value.entries()) { if (!day.enabled) continue; if (!day.intervals.length) return `${t(day.key)}：${hoursCopy.value.needSegment}`; for (const [index, interval] of day.intervals.entries()) { const start = minutes(interval.start); const end = minutes(interval.end); if (start === end) return `${t(day.key)}：${hoursCopy.value.sameTime}`; weekly.push({ id: `${day.key}:${index}`, start: dayIndex * 1440 + start, end: dayIndex * 1440 + end + (end < start ? 1440 : 0) }); } } for (const interval of weekly) { for (const other of weekly) { if (interval.id === other.id) continue; for (const offset of [-10080, 0, 10080]) { if (Math.max(interval.start, other.start + offset) < Math.min(interval.end, other.end + offset)) return hoursCopy.value.overlap; } } } return ''; }
 function payload() { return Object.fromEntries(schedule.value.map((day) => [day.key, day.enabled ? [...day.intervals].sort((a,b) => minutes(a.start)-minutes(b.start)).map((i) => `${i.start}-${i.end}`) : []])); }
-function addInterval(day: DaySchedule) { if (day.intervals.length >= 3) return; day.intervals.push({ start: '09:00', end: '12:00' }); dirty.value = true; }
-function removeInterval(day: DaySchedule, index: number) { if (day.intervals.length === 1) { message.value = '如需当天休息，请关闭营业状态'; return; } day.intervals.splice(index, 1); dirty.value = true; }
+function addInterval(day: DaySchedule) { day.intervals.push({ start: '09:00', end: '12:00' }); dirty.value = true; }
+function removeInterval(day: DaySchedule, index: number) { if (day.intervals.length === 1) { message.value = hoursCopy.value.lastSegment; return; } day.intervals.splice(index, 1); dirty.value = true; }
 function copyIntervals() { const source = schedule.value.find((d) => d.key === copySource.value); const target = schedule.value.find((d) => d.key === copyTarget.value); if (source && target) { target.intervals = source.intervals.map((i) => ({ ...i })); target.enabled = source.enabled; dirty.value = true; } copyOpen.value = false; }
 async function save() {
   message.value = '';
@@ -97,7 +107,7 @@ async function changePassword() {
       <div class="store-profile-grid">
         <div class="profile-desktop-details"><h2>基础资料</h2><dl><dt>中文名称</dt><dd>{{ profile?.nameZh || '暂无' }}</dd><dt>越南语名称</dt><dd>{{ profile?.nameVi || '暂无' }}</dd><dt>英文名称</dt><dd>{{ profile?.nameEn || '暂无' }}</dd><dt>联系人</dt><dd>{{ profile?.contactName || '暂无' }}</dd><dt>联系电话</dt><dd>{{ profile?.contactPhone || '暂无' }}</dd></dl></div>
         <div class="profile-desktop-details"><h2>地址定位</h2><dl><dt>省份</dt><dd>{{ profile?.province || '暂无' }}</dd><dt>详细地址</dt><dd>{{ profile?.addressDetail || '暂无' }}</dd><dt>经度</dt><dd>{{ profile?.longitude || '暂无' }}</dd><dt>纬度</dt><dd>{{ profile?.latitude || '暂无' }}</dd></dl></div>
-        <div><h2>商家封面</h2><div class="profile-cover"><img v-if="coverPreviewUrl" v-bind="{ src: coverPreviewUrl }" alt="商家封面" /><span v-else>暂无封面图</span></div><p class="profile-maintenance-note">店铺资料由平台维护，如需修改请联系平台管理员。</p></div>
+        <div><h2>商家封面</h2><div class="profile-cover"><img v-if="coverPreviewUrl" :src="coverPreviewUrl" alt="商家封面" /><span v-else>暂无封面图</span></div><p class="profile-maintenance-note">店铺资料由平台维护，如需修改请联系平台管理员。</p></div>
         <div class="profile-mobile-details"><dl><dt>中文名称</dt><dd>{{ profile?.nameZh || '暂无' }}</dd><dt>越南语名称</dt><dd>{{ profile?.nameVi || '暂无' }}</dd><dt>英文名称</dt><dd>{{ profile?.nameEn || '暂无' }}</dd><dt>详细地址</dt><dd>{{ profile?.addressDetail || '暂无' }}</dd><dt>经度</dt><dd>{{ profile?.longitude || '暂无' }}</dd><dt>纬度</dt><dd>{{ profile?.latitude || '暂无' }}</dd><dt>联系人</dt><dd>{{ profile?.contactName || '暂无' }}</dd><dt>联系电话</dt><dd>{{ profile?.contactPhone || '暂无' }}</dd></dl></div>
       </div>
     </section>
@@ -120,7 +130,28 @@ async function changePassword() {
 	          </div>
 	        </section>
       </main>
-      <section class="settings-card hours-card"><div class="hours-title"><div><h2>营业时间</h2><p>设置每周营业时间，支持多个营业时段。</p></div></div><div class="hours-table"><div class="hours-head"><span>星期</span><span>营业状态</span><span>营业时段</span><span>操作</span></div><div v-for="day in schedule" :key="day.key" class="hours-row"><strong>{{ t(day.key) }}</strong><label class="switch"><input v-model="day.enabled" type="checkbox" @change="dirty = true" /><i /></label><div v-if="day.enabled" class="intervals"><div v-for="(interval, index) in day.intervals" :key="index" class="interval"><input v-model="interval.start" type="time" @change="dirty = true" /><b>-</b><input v-model="interval.end" type="time" @change="dirty = true" /><div v-if="index === day.intervals.length - 1" class="mobile-interval-actions"><button v-if="day.intervals.length < 3" type="button" class="mobile-add-interval" aria-label="添加营业时段" @click="addInterval(day)">＋</button><button type="button" class="mobile-remove-interval" aria-label="删除营业时段" @click="removeInterval(day, index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button></div></div><button v-if="day.intervals.length < 3" type="button" class="add-interval desktop-add-interval" @click="addInterval(day)">＋ 添加时段</button></div><span v-else class="rest">休息（不营业）</span><button v-if="day.enabled" type="button" class="remove-interval desktop-remove-interval" aria-label="删除营业时段" @click="removeInterval(day, day.intervals.length - 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg></button><span v-else>-</span></div></div></section>
+      <section class="settings-card hours-card">
+        <div class="hours-title"><div><h2>{{ hoursCopy.title }}</h2><p>{{ hoursCopy.description }}</p></div></div>
+        <div class="hours-table">
+          <div class="hours-head"><span>{{ hoursCopy.weekday }}</span><span>{{ hoursCopy.state }}</span><span>{{ hoursCopy.segments }}</span></div>
+          <div v-for="day in schedule" :key="day.key" class="hours-row">
+            <strong>{{ t(day.key) }}</strong>
+            <label class="switch"><input v-model="day.enabled" type="checkbox" :aria-label="`${t(day.key)} ${hoursCopy.openState}`" @change="dirty = true" /><i /></label>
+            <div v-if="day.enabled" class="intervals">
+              <div v-for="(interval, index) in day.intervals" :key="index" class="interval">
+                <input v-model="interval.start" type="time" :aria-label="`${t(day.key)} ${index + 1} ${hoursCopy.segment} ${hoursCopy.start}`" @change="dirty = true" />
+                <b>{{ minutes(interval.end) < minutes(interval.start) ? hoursCopy.nextDay : '–' }}</b>
+                <input v-model="interval.end" type="time" :aria-label="`${t(day.key)} ${index + 1} ${hoursCopy.segment} ${hoursCopy.end}`" @change="dirty = true" />
+                <button type="button" class="interval-remove" :aria-label="`${hoursCopy.remove}：${t(day.key)} ${index + 1} ${hoursCopy.segment}`" @click="removeInterval(day, index)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13M10 10v7m4-7v7" /></svg>
+                </button>
+              </div>
+              <button type="button" class="add-interval" @click="addInterval(day)">＋ {{ hoursCopy.add }}</button>
+            </div>
+            <span v-else class="rest">{{ hoursCopy.rest }}</span>
+          </div>
+        </div>
+      </section>
     </div>
     <div v-if="copyOpen" class="copy-modal" @click.self="copyOpen = false"><div class="copy-dialog"><h2>复制营业时间</h2><label>来源星期<select v-model="copySource"><option v-for="day in schedule" :key="day.key" :value="day.key">{{ t(day.key) }}</option></select></label><label>目标星期<select v-model="copyTarget"><option v-for="day in schedule" :key="day.key" :value="day.key">{{ t(day.key) }}</option></select></label><footer><button type="button" @click="copyOpen = false">取消</button><button type="button" class="save-button" @click="copyIntervals">确认复制</button></footer></div></div>
   </form>
@@ -134,7 +165,7 @@ async function changePassword() {
 .notice-card textarea{min-height:140px}
 .hours-head,.hours-row{padding-top:9px;padding-bottom:9px}
 .hours-row{min-height:62px}
-.hours-title p{display:none}
+.hours-title p{display:block;max-width:62ch;font-size:13px;line-height:1.5}
 .intervals{flex-wrap:wrap;position:relative;padding-bottom:24px;gap:8px 18px}
 .interval{flex:0 0 calc((100% - 18px) / 2);flex-wrap:nowrap}
 .hours-head{grid-template-columns:72px 92px minmax(0,1fr) 42px}
@@ -187,7 +218,7 @@ async function changePassword() {
 .password-hint{display:none}
 .hours-card{align-self:start}
 .hours-table{margin-top:12px}
-.hours-head,.hours-row{grid-template-columns:70px 80px minmax(0,1fr) 50px;gap:8px}
+.hours-head,.hours-row{grid-template-columns:70px 80px minmax(0,1fr);gap:8px}
 .hours-head,.hours-row{padding-left:14px;padding-right:14px}
 .hours-head > :nth-child(-n+2),.hours-row > strong,.hours-row > .switch{justify-self:end}
 .hours-head,.hours-row{padding-top:8px;padding-bottom:8px}
@@ -209,7 +240,17 @@ async function changePassword() {
 .hours-head{font-size:12px}
 .hours-head > :nth-child(3){text-align:center}
 .remove-interval svg{width:16px;height:16px}
+.interval-remove{display:grid;flex:0 0 36px;width:36px;height:36px;place-items:center;border:0;border-radius:9px;background:#f1f4f2;color:#68766e;cursor:pointer}
+.interval-remove svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.interval-remove:focus-visible,.add-interval:focus-visible{outline:3px solid #8ccca3;outline-offset:2px}
 .hours-title h2{font-size:16px}
+@media(max-width:1100px) and (min-width:769px){
+  .business-settings-grid{grid-template-columns:minmax(0,1fr)}
+  .hours-card{order:-1}
+  .intervals{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}
+  .interval{width:100%;min-width:0}
+  .add-interval{grid-column:1/-1}
+}
 @media(max-width:768px){
   .business-settings-page{width:100%;min-width:0;gap:10px}
   .store-profile-card{min-width:0;padding:14px;border-radius:14px}
@@ -247,9 +288,11 @@ async function changePassword() {
   .hours-row>.intervals,.hours-row>.rest{grid-area:intervals}
   .hours-row>.desktop-remove-interval,.hours-row>span:last-child{display:none}
   .intervals{display:grid;position:static;gap:6px;padding:0}
-  .interval{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:6px}
+  .interval{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) 44px;gap:6px}
   .interval input{width:100%;min-width:0;height:44px;padding:7px 8px;font-size:16px}
   .desktop-add-interval{display:none}
+  .add-interval{position:static;min-height:44px;margin-top:2px;padding:0 10px;border-radius:9px;background:#edf8f0;text-align:center}
+  .interval-remove{width:44px;height:44px}
   .mobile-interval-actions{display:flex;gap:4px}
   .mobile-add-interval,.mobile-remove-interval{display:grid;width:44px;height:44px;place-items:center;border:0;border-radius:9px;color:#159447;background:#edf8f0;font:inherit;font-size:18px;font-weight:800}
   .mobile-remove-interval{color:#68766e;background:#f1f4f2}

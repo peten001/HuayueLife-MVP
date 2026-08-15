@@ -4,6 +4,7 @@ import {
   cashierWorkspaceEnabled,
   currentBusinessHoursRange,
   firstEnabledCashierWorkspace,
+  formatBusinessHoursRange,
   isWithinBusinessHours,
   resolveCashierWorkspaceCapabilities,
   resolveMerchantImageCandidates,
@@ -22,6 +23,26 @@ describe('planned business-hours indicator', () => {
   it('returns the configured range without inventing an open/closed switch', () => {
     expect(currentBusinessHoursRange(schedule, new Date('2026-07-14T08:00:00.000Z')))
       .toBe('10:00-22:00');
+  });
+
+  it('renders cross-midnight ranges with a next-day marker instead of natural-day fragments', () => {
+    const crossMidnight = {
+      tuesday: ['15:00-01:00'],
+    };
+    expect(formatBusinessHoursRange(
+      crossMidnight,
+      '次日',
+      new Date('2026-07-14T08:00:00.000Z'),
+    )).toBe('15:00-次日01:00');
+
+    const multiSegment = {
+      tuesday: ['11:00-14:00', '16:00-01:00'],
+    };
+    expect(formatBusinessHoursRange(
+      multiSegment,
+      '次日',
+      new Date('2026-07-14T08:00:00.000Z'),
+    )).toBe('11:00-14:00 / 16:00-次日01:00');
   });
 });
 

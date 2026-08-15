@@ -9,6 +9,7 @@ export type OrderStatus =
 
 export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export type SettlementStatus = 'UNSETTLED' | 'SETTLED';
+export type PaymentMethod = 'CASH' | 'BANK_TRANSFER';
 
 export type MerchantOrderAction =
   | 'accept'
@@ -96,6 +97,8 @@ export interface MerchantOrder {
   acceptedAt?: string | null;
   readyAt?: string | null;
   completedAt?: string | null;
+  businessDate?: string | null;
+  paymentMethod?: PaymentMethod | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
   createdAt: string;
@@ -152,4 +155,19 @@ export interface MerchantOrderFilters {
   status?: OrderStatus;
   orderType?: OrderType;
   date?: string;
+}
+
+export interface BusinessDaySummary {
+  merchant: { id: string; nameZh: string; nameVi?: string | null };
+  businessDate: string;
+  segments: Array<{ start: string; end: string; crossesMidnight: boolean }>;
+  orderCount: number;
+  itemSummary: Array<{ nameZh: string; nameVi?: string | null; nameEn?: string | null; quantity: number }>;
+  discountAmountVnd: string;
+  roundingAmountVnd: string;
+  totalRevenueVnd: string;
+  cashRevenueVnd: string;
+  bankTransferRevenueVnd: string;
+  unrecordedRevenueVnd: string;
+  generatedAt: string;
 }

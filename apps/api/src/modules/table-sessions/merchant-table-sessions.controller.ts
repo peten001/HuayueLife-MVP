@@ -17,6 +17,7 @@ import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { TableIdParamDto } from './dto/table-id-param.dto';
 import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
+import { PaymentMethodDto } from '../orders/payment-method.dto';
 import { TableSessionsService } from './table-sessions.service';
 
 class TableSessionRoundingDto {
@@ -69,6 +70,21 @@ export class MerchantTableSessionsController {
       merchantId,
       BigInt(staff.sub),
       BigInt(params.id),
+    );
+  }
+
+  @Post('table-sessions/:id/cashier-checkout')
+  cashierCheckoutSession(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: PaymentMethodDto,
+  ) {
+    return this.service.checkoutSession(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto.paymentMethod,
     );
   }
 

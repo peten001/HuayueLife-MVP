@@ -28,7 +28,8 @@ import {
 } from '../types/printing-errors';
 import { receiptDocumentForChannel } from '../types/receipt-compatibility';
 import { ReceiptDocument } from '../types/receipt-document';
-import { isPrintDocument, isPrintDocumentV2, isPrintDocumentV3 } from '../types/print-document';
+import { isPrintDocument, isPrintDocumentV2, isPrintDocumentV3, PrintBlock } from '../types/print-document';
+import { createPrintDocumentV2 } from './print-document-renderer';
 import { receiptSnapshotHash } from '../utils/snapshot-hash';
 import {
   hasExplicitUsbExecutionEvidence,
@@ -123,6 +124,16 @@ export interface CreateManualPrintJobInput {
   orderId?: bigint;
   tableSessionId?: bigint;
   receiptType: ReceiptType;
+}
+
+export interface CreateBusinessSummaryPrintJobInput {
+  merchantId: bigint;
+  createdByStaffId: bigint;
+  requestId?: string;
+  requestKey: string;
+  businessDate: string;
+  printerId?: bigint;
+  blocks: PrintBlock[];
 }
 
 export interface CreateTestJobInput {
@@ -817,6 +828,57 @@ export class PrintJobsService {
           },
           tx,
         );
+        return created;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      if (!existing || existing.merchantId !== input.merchantId) throw error;
+      return existing;
+    }
+  }
+
+  async createBusinessSummaryPrintJob(input: CreateBusinessSummaryPrintJobInput) {
+    this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    await this.requireOwnedStaff(this.prisma, input.merchantId, input.createdByStaffId);
+    const printerId = input.printerId ?? (
+      this.routing
+        ? await this.routing.requireCheckoutDefaultPrinter(input.merchantId)
+        : this.referenceError('请先设置结账默认前台打印机')
+    );
+    const printer = await this.requireReadyPrinterForMerchantOperation(input.merchantId, printerId);
+    const snapshot = createPrintDocumentV2(printer.paperWidth, input.blocks);
+    const dedupeKey = this.manualDedupeKey(
+      input.merchantId,
+      input.createdByStaffId,
+      `business-summary:${input.businessDate}:${printerId}`,
+      input.requestKey,
+    );
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await this.createJob({
+          merchantId: input.merchantId,
+          printerId,
+          requestGroupId: randomUUID(),
+          receiptType: 'TABLE_BILL',
+          triggerEvent: 'MANUAL',
+          source: 'MANUAL',
+          priority: 50,
+          dedupeKey,
+          snapshot,
+          createdByStaffId: input.createdByStaffId,
+          preserveSnapshot: true,
+        }, tx);
+        await this.audit.record({
+          merchantId: input.merchantId,
+          actorStaffId: input.createdByStaffId,
+          action: 'BUSINESS_SUMMARY_PRINT_CREATED',
+          resourceType: 'PrintJob',
+          resourceId: created.id,
+          afterData: { businessDate: input.businessDate, printerId: printerId.toString() },
+          requestId: input.requestId,
+        }, tx);
         return created;
       });
     } catch (error) {

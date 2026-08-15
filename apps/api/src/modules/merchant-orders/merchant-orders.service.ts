@@ -9,6 +9,7 @@ import {
   OperatorType,
   OrderStatus,
   OrderType,
+  PaymentMethod,
   Prisma,
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -28,6 +29,19 @@ import {
   calculateSettlementAdjustment,
   normalizeDiscountPayableRateBps,
 } from '../orders/settlement-adjustment';
+import {
+  assertBusinessDate,
+  normalizeBusinessHours,
+  resolveBusinessDate,
+} from '../../common/utils/merchant-hours';
+import {
+  attributeOrderRevenue,
+  businessDateCandidateWhere,
+  businessDateSnapshotValue,
+  completedRevenueTotals,
+  isOrderInBusinessDate,
+} from './business-day-accounting';
+import type { PrintBlock } from '../printing/types/print-document';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -74,6 +88,7 @@ type LockedProductRow = {
   price_vnd: bigint;
   product_type: string;
   status: string;
+  deleted_at: Date | null;
   category_active: number | boolean;
 };
 
@@ -142,18 +157,31 @@ export class MerchantOrdersService {
   ) {}
 
   async list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
-    const createdAt = query.date ? this.dateRange(query.date) : undefined;
+    let dateWhere: Prisma.OrderWhereInput = {};
+    let schedule: ReturnType<typeof normalizeBusinessHours> | null = null;
+    const requestedDate = query.date;
+    if (requestedDate) {
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { businessHours: true },
+      });
+      schedule = normalizeBusinessHours(merchant?.businessHours);
+      dateWhere = businessDateCandidateWhere(schedule, requestedDate);
+    }
     const orders = await this.prisma.order.findMany({
       where: {
         merchantId,
         status: query.status,
         orderType: query.orderType,
-        createdAt,
+        ...dateWhere,
       },
       include: this.listInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    return orders.map((order) => this.serializeMerchantOrder(order));
+    const resolvedOrders = requestedDate && schedule
+      ? orders.filter((order) => isOrderInBusinessDate(order, schedule, requestedDate))
+      : orders;
+    return resolvedOrders.map((order) => this.serializeMerchantOrder(order));
   }
 
   /**
@@ -161,23 +189,50 @@ export class MerchantOrdersService {
    * server. They never derive monetary figures from the paged/displayed rows.
    */
   async summary(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
-    const createdAt = query.date ? this.dateRange(query.date) : undefined;
+    let dateWhere: Prisma.OrderWhereInput = {};
+    let schedule: ReturnType<typeof normalizeBusinessHours> | null = null;
+    const requestedDate = query.date;
+    if (requestedDate) {
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { businessHours: true },
+      });
+      schedule = normalizeBusinessHours(merchant?.businessHours);
+      dateWhere = businessDateCandidateWhere(schedule, requestedDate);
+    }
     const orders = await this.prisma.order.findMany({
       where: {
         merchantId,
         status: query.status,
         orderType: query.orderType,
-        createdAt,
+        ...dateWhere,
       },
       select: {
         id: true,
         status: true,
         orderType: true,
         totalAmountVnd: true,
+        discountPayableRateBps: true,
+        discountAmountVnd: true,
+        roundingAmountVnd: true,
+        paymentMethod: true,
+        tableSessionId: true,
         createdAt: true,
+        businessDate: true,
+        tableSession: {
+          select: {
+            status: true,
+            discountAmountVnd: true,
+            roundingAmountVnd: true,
+            paymentMethod: true,
+          },
+        },
         printLogs: { select: { status: true } },
       },
     });
+    const resolvedOrders = requestedDate && schedule
+      ? orders.filter((order) => isOrderInBusinessDate(order, schedule, requestedDate))
+      : orders;
     const buckets = {
       ALL: { count: 0, amountVnd: 0n },
       DINE_IN: { count: 0, amountVnd: 0n },
@@ -185,11 +240,14 @@ export class MerchantOrdersService {
       DELIVERY: { count: 0, amountVnd: 0n },
       ABNORMAL: { count: 0, amountVnd: 0n },
     };
+    const statusBreakdown = new Map<string, number>();
+    const completedOrders: Array<(typeof resolvedOrders)[number]> = [];
     const staleBefore = Date.now() - 20 * 60 * 1000;
-    for (const order of orders) {
+    for (const order of resolvedOrders) {
       const amount = order.status === 'CANCELLED' ? 0n : order.totalAmountVnd;
       buckets.ALL.count += 1;
       buckets.ALL.amountVnd += amount;
+      statusBreakdown.set(order.status, (statusBreakdown.get(order.status) ?? 0) + 1);
       const typeBucket = buckets[order.orderType];
       typeBucket.count += 1;
       typeBucket.amountVnd += amount;
@@ -200,13 +258,36 @@ export class MerchantOrdersService {
         buckets.ABNORMAL.count += 1;
         buckets.ABNORMAL.amountVnd += amount;
       }
+      if (order.status === 'COMPLETED') completedOrders.push(order);
     }
-    return Object.fromEntries(
-      Object.entries(buckets).map(([key, value]) => [
-        key,
-        { count: value.count, amountVnd: value.amountVnd.toString() },
-      ]),
-    );
+    // Session-level discount/rounding is attributed across the full completed
+    // session (which may span two business dates), then summed only for the
+    // orders of this business date - identical to businessDaySummary.
+    const completedSuperset = orders.filter((order) => order.status === 'COMPLETED');
+    const attribution = attributeOrderRevenue(completedSuperset);
+    const totals = completedRevenueTotals(completedOrders, attribution);
+    return {
+      ALL: { count: buckets.ALL.count, amountVnd: buckets.ALL.amountVnd.toString() },
+      DINE_IN: { count: buckets.DINE_IN.count, amountVnd: buckets.DINE_IN.amountVnd.toString() },
+      PICKUP: { count: buckets.PICKUP.count, amountVnd: buckets.PICKUP.amountVnd.toString() },
+      DELIVERY: { count: buckets.DELIVERY.count, amountVnd: buckets.DELIVERY.amountVnd.toString() },
+      ABNORMAL: { count: buckets.ABNORMAL.count, amountVnd: buckets.ABNORMAL.amountVnd.toString() },
+      COMPLETED: {
+        count: totals.orderCount,
+        amountVnd: totals.netSettledAmountVnd.toString(),
+        grossAmountVnd: totals.grossAmountVnd.toString(),
+        discountAmountVnd: totals.discountAmountVnd.toString(),
+        roundingAmountVnd: totals.roundingAmountVnd.toString(),
+        cashRevenueVnd: totals.cashRevenueVnd.toString(),
+        bankTransferRevenueVnd: totals.bankTransferRevenueVnd.toString(),
+        unrecordedRevenueVnd: totals.unrecordedRevenueVnd.toString(),
+      },
+      statusBreakdown: Object.fromEntries(
+        [...statusBreakdown.entries()].sort(([left], [right]) =>
+          left.localeCompare(right),
+        ),
+      ),
+    };
   }
 
   async get(merchantId: bigint, id: bigint) {
@@ -234,6 +315,10 @@ export class MerchantOrdersService {
           merchantId,
           userId: null,
           createdByStaffId: staffId,
+        });
+        const merchant = await tx.merchant.findUnique({
+          where: { id: merchantId },
+          select: { businessHours: true },
         });
 
         const duplicate = await tx.order.findUnique({
@@ -323,7 +408,7 @@ export class MerchantOrdersService {
         ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
         const products = await tx.$queryRaw<LockedProductRow[]>(Prisma.sql`
           SELECT p.id, p.name_zh, p.image_url, p.price_vnd,
-                 p.product_type, p.status, c.is_active AS category_active
+                 p.product_type, p.status, p.deleted_at, c.is_active AS category_active
           FROM products p
           INNER JOIN categories c ON c.id = p.category_id
           WHERE p.merchant_id = ${merchantId}
@@ -340,6 +425,7 @@ export class MerchantOrdersService {
             !product ||
             product.product_type !== 'FOOD' ||
             product.status !== 'ON_SALE' ||
+            product.deleted_at != null ||
             !Boolean(product.category_active)
           ) {
             throw new ConflictException({
@@ -355,6 +441,7 @@ export class MerchantOrdersService {
           0n,
         );
 
+        const createdAt = new Date();
         const created = await tx.order.create({
           data: {
             orderNo: this.generateOrderNo(),
@@ -369,6 +456,8 @@ export class MerchantOrdersService {
             itemAmountVnd,
             deliveryFeeVnd: 0n,
             totalAmountVnd: itemAmountVnd,
+            businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
+            createdAt,
             status: 'ACCEPTED',
             acceptedAt: new Date(),
             items: {
@@ -547,11 +636,19 @@ export class MerchantOrdersService {
     id: bigint,
     action: MerchantOrderAction,
     reason?: string,
+    paymentMethod?: PaymentMethod,
   ) {
     const transitioned = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, merchantId },
-        select: { id: true, status: true, orderType: true },
+        select: {
+          id: true,
+          status: true,
+          orderType: true,
+          createdAt: true,
+          businessDate: true,
+          merchant: { select: { businessHours: true } },
+        },
       });
       if (!order) {
         throw new NotFoundException('Order not found');
@@ -573,6 +670,15 @@ export class MerchantOrdersService {
         acceptedAt: rule.to === 'ACCEPTED' ? now : undefined,
         readyAt: rule.to === 'READY' ? now : undefined,
         completedAt: rule.to === 'COMPLETED' ? now : undefined,
+        // Business Date is the order's business-ownership date, snapshotted at
+        // creation. Completion never overwrites it; legacy orders are filled
+        // with the canonical creation-time resolver so cross-midnight orders
+        // stay on the business date that contained their creation.
+        businessDate:
+          rule.to === 'COMPLETED' && !order.businessDate
+            ? businessDateSnapshotValue(order.merchant.businessHours, order.createdAt)
+            : undefined,
+        paymentMethod: rule.to === 'COMPLETED' ? paymentMethod : undefined,
         cancelledAt: rule.to === 'CANCELLED' ? now : undefined,
         cancelReason:
           rule.to === 'CANCELLED'
@@ -629,6 +735,151 @@ export class MerchantOrdersService {
       }
     }
     return this.serializeMerchantOrder(transitioned.order);
+  }
+
+  async businessDaySummary(merchantId: bigint, requestedBusinessDate?: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true, nameZh: true, nameVi: true, businessHours: true },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    const businessDate = requestedBusinessDate ?? resolveBusinessDate(merchant.businessHours);
+    try {
+      assertBusinessDate(businessDate);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Invalid businessDate');
+    }
+
+    const schedule = normalizeBusinessHours(merchant.businessHours);
+    const candidates = await this.prisma.order.findMany({
+      where: {
+        merchantId,
+        status: 'COMPLETED',
+        ...businessDateCandidateWhere(schedule, businessDate),
+      },
+      include: {
+        items: {
+          select: {
+            productNameZhSnapshot: true,
+            quantity: true,
+            product: {
+              select: {
+                nameVi: true,
+                nameEn: true,
+              },
+            },
+          },
+        },
+        tableSession: {
+          select: {
+            id: true,
+            status: true,
+            paymentMethod: true,
+            discountAmountVnd: true,
+            roundingAmountVnd: true,
+          },
+        },
+      },
+      orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
+    });
+    const orders = candidates.filter((order) =>
+      isOrderInBusinessDate(order, schedule, businessDate),
+    );
+
+    const itemMap = new Map<string, {
+      nameZh: string;
+      nameVi: string | null;
+      nameEn: string | null;
+      quantity: number;
+    }>();
+    for (const order of orders) {
+      for (const item of order.items) {
+        const nameVi = item.product?.nameVi ?? null;
+        const nameEn = item.product?.nameEn ?? null;
+        const key = [item.productNameZhSnapshot, nameVi, nameEn].join('\u0000');
+        const current = itemMap.get(key);
+        if (current) current.quantity += item.quantity;
+        else itemMap.set(key, {
+          nameZh: item.productNameZhSnapshot,
+          nameVi,
+          nameEn,
+          quantity: item.quantity,
+        });
+      }
+    }
+
+    const attribution = attributeOrderRevenue(candidates);
+    const totals = completedRevenueTotals(orders, attribution);
+
+    return {
+      merchant: { id: merchant.id, nameZh: merchant.nameZh, nameVi: merchant.nameVi },
+      businessDate,
+      segments: schedule[weekdayKey(businessDate)].map((range) => {
+        const [start, end] = range.split('-');
+        return { start, end, crossesMidnight: minutesOfDay(end) < minutesOfDay(start) };
+      }),
+      orderCount: orders.length,
+      itemSummary: [...itemMap.values()].sort((left, right) =>
+        right.quantity - left.quantity || left.nameZh.localeCompare(right.nameZh, 'zh-Hans-CN')),
+      discountAmountVnd: totals.discountAmountVnd.toString(),
+      roundingAmountVnd: totals.roundingAmountVnd.toString(),
+      totalRevenueVnd: totals.netSettledAmountVnd.toString(),
+      cashRevenueVnd: totals.cashRevenueVnd.toString(),
+      bankTransferRevenueVnd: totals.bankTransferRevenueVnd.toString(),
+      unrecordedRevenueVnd: totals.unrecordedRevenueVnd.toString(),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  async printBusinessDaySummary(
+    merchantId: bigint,
+    staffId: bigint,
+    businessDate: string,
+    requestKey: string,
+    requestId?: string,
+    printerId?: bigint,
+  ) {
+    const summary = await this.businessDaySummary(merchantId, businessDate);
+    const money = (value: string) => `${new Intl.NumberFormat('vi-VN').format(Number(value))} VND`;
+    const blocks: PrintBlock[] = [
+      textBlock(summary.merchant.nameZh, true, 'LARGE', 'CENTER'),
+      { type: 'DIVIDER' },
+      textBlock(`营业日 / Ngày kinh doanh: ${summary.businessDate}`, true),
+      textBlock('营业时段 / Giờ kinh doanh', true),
+      ...summary.segments.map((segment) => textBlock(
+        `${segment.start}-${segment.crossesMidnight ? '次日/' : ''}${segment.end}`,
+        false,
+      )),
+      { type: 'DIVIDER' },
+      textBlock('菜品销售汇总 / Tổng món bán', true),
+      ...(summary.itemSummary.length
+        ? summary.itemSummary.map((item) => ({
+            type: 'ROW' as const,
+            left: item.nameZh,
+            right: `x ${item.quantity}`,
+            bold: false,
+          }))
+        : [textBlock('暂无已完成订单 / Chưa có đơn hoàn tất', false)]),
+      { type: 'DIVIDER' },
+      { type: 'ROW', left: '折扣 / Giảm giá', right: money(summary.discountAmountVnd), bold: false },
+      { type: 'ROW', left: '抹零 / Làm tròn', right: money(summary.roundingAmountVnd), bold: false },
+      { type: 'ROW', left: '总收入 / Doanh thu', right: money(summary.totalRevenueVnd), bold: true },
+      { type: 'ROW', left: '现金 / Tiền mặt', right: money(summary.cashRevenueVnd), bold: false },
+      { type: 'ROW', left: '银行转账 / Chuyển khoản', right: money(summary.bankTransferRevenueVnd), bold: false },
+      ...(summary.unrecordedRevenueVnd !== '0'
+        ? [{ type: 'ROW' as const, left: '历史未记录 / Chưa ghi nhận', right: money(summary.unrecordedRevenueVnd), bold: false }]
+        : []),
+    ];
+    const job = await this.printJobs.createBusinessSummaryPrintJob({
+      merchantId,
+      createdByStaffId: staffId,
+      requestId,
+      requestKey,
+      businessDate,
+      printerId,
+      blocks,
+    });
+    return { job, summary };
   }
 
   private async adjustOrderItem(
@@ -1498,13 +1749,6 @@ export class MerchantOrdersService {
     } as typeof settlementOrder);
   }
 
-  private dateRange(date: string): Prisma.DateTimeFilter {
-    const start = new Date(`${date}T00:00:00+07:00`);
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 1);
-    return { gte: start, lt: end };
-  }
-
   private readonly listInclude = {
     table: {
       select: { id: true, tableNo: true, tableName: true },
@@ -1606,4 +1850,25 @@ export class MerchantOrdersService {
       take: 10,
     },
   };
+}
+
+function weekdayKey(businessDate: string) {
+  const [year, month, day] = businessDate.split('-').map(Number);
+  return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][
+    new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+  ] as keyof ReturnType<typeof normalizeBusinessHours>;
+}
+
+function minutesOfDay(value: string) {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function textBlock(
+  text: string,
+  bold: boolean,
+  fontSize: 'SMALL' | 'NORMAL' | 'LARGE' = 'NORMAL',
+  align: 'LEFT' | 'CENTER' | 'RIGHT' = 'LEFT',
+): PrintBlock {
+  return { type: 'TEXT', text, align, bold, fontSize, underline: false };
 }

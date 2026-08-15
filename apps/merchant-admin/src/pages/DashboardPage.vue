@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { getProfile } from '@/api/merchant';
-import { getMerchantOrders, runOrderAction } from '@/api/orders';
+import { getBusinessDaySummary, getMerchantOrders, runOrderAction } from '@/api/orders';
+import type { BusinessDaySummary } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
@@ -30,6 +31,9 @@ import type { MerchantOrder, MerchantProfile, OrderStatus } from '@/types/api';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 
 const orders = ref<MerchantOrder[]>([]);
+const businessDaySummary = ref<BusinessDaySummary | null>(null);
+const businessDaySummaryLoading = ref(true);
+const businessDaySummaryError = ref('');
 const profile = ref<MerchantProfile | null>(null);
 const merchantName = ref('');
 const { locale, t } = useI18n();
@@ -50,21 +54,14 @@ const inProgress = computed(() =>
     ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'].includes(order.status),
   ),
 );
-const completed = computed(() =>
-  orders.value.filter((order) => order.status === 'COMPLETED'),
-);
 const cancelled = computed(() =>
   orders.value.filter((order) => order.status === 'CANCELLED'),
 );
-const validOrders = computed(() =>
-  orders.value.filter((order) => order.status !== 'CANCELLED'),
-);
-const todayRevenue = computed(() =>
-  validOrders.value
-    .reduce((sum, order) => sum + Number(order.totalAmountVnd), 0),
-);
+const todayRevenue = computed(() => Number(businessDaySummary.value?.totalRevenueVnd ?? 0));
 const averageOrderValue = computed(() =>
-  validOrders.value.length ? todayRevenue.value / validOrders.value.length : null,
+  businessDaySummary.value?.orderCount
+    ? todayRevenue.value / businessDaySummary.value.orderCount
+    : null,
 );
 const latestOrderTime = computed(() => {
   const latest = [...orders.value].sort(
@@ -73,15 +70,25 @@ const latestOrderTime = computed(() => {
   )[0];
   return latest ? new Date(latest.createdAt).toLocaleTimeString() : '-';
 });
+const businessDateHint = computed(() => businessDaySummary.value
+  ? `${businessDayCopy.value.date} ${businessDaySummary.value.businessDate}`
+  : businessDayCopy.value.snapshot);
 const activeOrders = computed(() => [...pending.value, ...inProgress.value].slice(0, 6));
+const businessDayCopy = computed(() => locale.value === 'vi' ? {
+  revenue: 'Doanh thu ngày kinh doanh', revenueHint: 'Tổng thực thu của đơn đã hoàn tất trong ngày kinh doanh', orders: 'Đơn đã hoàn tất', snapshot: 'Tổng quan ngày kinh doanh', completed: 'Đã hoàn tất', cancelled: 'Đã hủy trong ngày kinh doanh', latest: 'Đơn mới nhất trong ngày kinh doanh', date: 'Ngày kinh doanh', unavailable: 'Không thể tải tổng kết ngày kinh doanh; danh sách đơn vẫn được cập nhật.',
+} : locale.value === 'en' ? {
+  revenue: 'Business-day revenue', revenueHint: 'Collected total from completed orders in this business day', orders: 'Completed orders', snapshot: 'Business-day overview', completed: 'Completed', cancelled: 'Cancelled in this business day', latest: 'Latest order in this business day', date: 'Business date', unavailable: 'Business-day summary is unavailable; live orders are still updating.',
+} : {
+  revenue: '本营业日营业额', revenueHint: '本营业日已完成订单实收合计', orders: '本营业日已完成订单', snapshot: '营业日概览', completed: '本营业日已完成', cancelled: '本营业日已取消', latest: '本营业日最近下单', date: '营业日', unavailable: '营业日汇总暂时无法读取，实时订单仍会继续刷新。',
+});
 const operations = computed(() => ({
-  revenue: t('dashboardRevenue'),
-  revenueHint: t('dashboardRevenueHint'),
-  snapshot: t('dashboardSnapshot'),
-  completed: t('dashboardCompleted'),
-  cancelled: t('dashboardCancelled'),
+  revenue: businessDayCopy.value.revenue,
+  revenueHint: businessDayCopy.value.revenueHint,
+  snapshot: businessDayCopy.value.snapshot,
+  completed: businessDayCopy.value.completed,
+  cancelled: businessDayCopy.value.cancelled,
   averageOrder: t('dashboardAverageOrder'),
-  latestOrder: t('dashboardLatestOrder'),
+  latestOrder: businessDayCopy.value.latest,
   waiting: t('dashboardWaiting'),
   processing: t('dashboardProcessing'),
   pendingSummary: t('dashboardPendingSummary'),
@@ -98,18 +105,18 @@ const metricCards = computed(() => [
   {
     key: 'revenue',
     title: operations.value.revenue,
-    value: money(todayRevenue.value),
+    value: businessDaySummaryLoading.value || !businessDaySummary.value ? '—' : money(todayRevenue.value),
     icon: '₫',
     tone: 'green',
     hint: operations.value.revenueHint,
   },
   {
     key: 'orders',
-    title: t('todayOrders'),
-    value: String(orders.value.length),
+    title: businessDayCopy.value.orders,
+    value: businessDaySummaryLoading.value || !businessDaySummary.value ? '—' : String(businessDaySummary.value.orderCount),
     icon: '📋',
     tone: 'neutral',
-    hint: operations.value.snapshot,
+    hint: businessDateHint.value,
   },
   {
     key: 'pending',
@@ -357,26 +364,39 @@ async function load(options: { resetCountdown?: boolean } = {}) {
     orders.value = [];
     return;
   }
+  businessDaySummaryLoading.value = true;
+  businessDaySummaryError.value = '';
   try {
-    const loadedOrders = await getMerchantOrders({ date: todayInVietnam() });
-    orders.value = loadedOrders;
-    const newPendingIds = voiceFeatureEnabled.value
-      ? notifyNewPendingOrders(
-          loadedOrders
-            .filter((order) => order.status === 'PENDING_ACCEPTANCE')
-            .map((order) => order.id),
-          buildSpeechAnnouncement('new-order'),
-        )
-      : [];
-    console.debug('dashboard load notifyNewPendingOrders result', {
-      totalOrders: loadedOrders.length,
-      pendingOrders: loadedOrders.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
-      newPendingIds,
-    });
-    message.value = '';
-  } catch (error) {
-    message.value = errorMessage(error);
+    let summary;
+    try {
+      summary = await getBusinessDaySummary();
+      businessDaySummary.value = summary;
+    } catch {
+      businessDaySummaryError.value = businessDayCopy.value.unavailable;
+    }
+    const orderDate = summary?.businessDate ?? todayInVietnam();
+    try {
+      const loadedOrders = await getMerchantOrders({ date: orderDate });
+      orders.value = loadedOrders;
+      const newPendingIds = voiceFeatureEnabled.value
+        ? notifyNewPendingOrders(
+            loadedOrders
+              .filter((order) => order.status === 'PENDING_ACCEPTANCE')
+              .map((order) => order.id),
+            buildSpeechAnnouncement('new-order'),
+          )
+        : [];
+      console.debug('dashboard load notifyNewPendingOrders result', {
+        totalOrders: loadedOrders.length,
+        pendingOrders: loadedOrders.filter((order) => order.status === 'PENDING_ACCEPTANCE').length,
+        newPendingIds,
+      });
+      message.value = '';
+    } catch (error) {
+      message.value = errorMessage(error);
+    }
   } finally {
+    businessDaySummaryLoading.value = false;
     if (options.resetCountdown) {
       refreshCountdown.value = 10;
     }
@@ -595,6 +615,8 @@ type Action =
             <small>{{ metric.hint }}</small>
           </article>
         </section>
+        <p v-if="businessDaySummary" class="metric-summary-state">{{ businessDayCopy.date }} {{ businessDaySummary.businessDate }}</p>
+        <p v-if="businessDaySummaryError" class="metric-summary-state is-error" role="alert">{{ businessDaySummaryError }}</p>
       </section>
 
       <section v-if="hasNewPendingOrders && orderFeatureEnabled" class="new-order-banner desktop-only">
@@ -750,10 +772,12 @@ type Action =
 
         <aside class="panel summary-panel">
           <h2>{{ operations.snapshot }}</h2>
+          <p v-if="businessDaySummary" class="business-day-date">{{ businessDayCopy.date }} {{ businessDaySummary.businessDate }}</p>
+          <p v-if="businessDaySummaryError" class="business-day-error" role="alert">{{ businessDaySummaryError }}</p>
           <dl>
             <div>
               <dt>{{ operations.completed }}</dt>
-              <dd>{{ completed.length }}</dd>
+              <dd>{{ businessDaySummaryLoading || !businessDaySummary ? '—' : businessDaySummary.orderCount }}</dd>
             </div>
             <div>
               <dt>{{ operations.cancelled }}</dt>
@@ -837,6 +861,8 @@ type Action =
           <small>{{ metric.hint }}</small>
         </article>
       </section>
+      <p v-if="businessDaySummary" class="mobile-business-date">{{ businessDayCopy.date }} {{ businessDaySummary.businessDate }}</p>
+      <p v-if="businessDaySummaryError" class="mobile-business-date is-error" role="alert">{{ businessDaySummaryError }}</p>
 
       <section v-if="orderFeatureEnabled" class="panel mobile-orders-panel">
         <div class="section-heading mobile-section-heading">
@@ -1670,7 +1696,7 @@ type Action =
   max-width: 100%;
   min-width: 0;
   min-height: 124px;
-  height: 124px;
+  height: auto;
   padding: 20px 24px;
   border-color: #4f9f58;
   background: #5bae63;
@@ -1692,7 +1718,7 @@ type Action =
   font-size: 22px;
   font-weight: 800;
   line-height: 1.16;
-  max-width: calc(100% - 150px);
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
@@ -1703,7 +1729,7 @@ type Action =
   font-size: 15px;
   font-weight: 700;
   line-height: 1.2;
-  max-width: calc(100% - 150px);
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
@@ -1713,7 +1739,7 @@ type Action =
   font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
-  max-width: calc(100% - 150px);
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
@@ -1830,9 +1856,13 @@ type Action =
 
 .mobile-metric-card strong {
   color: #2e7d32;
-  font-size: 24px;
+  font-size: clamp(19px,5.8vw,24px);
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
+.business-day-date,.mobile-business-date{margin:5px 0 0;color:#68766e;font-size:12px;font-weight:700}.business-day-error,.mobile-business-date.is-error{color:#a13f32}.mobile-business-date{padding:0 2px}
+.metric-summary-state{margin:-4px 0 0;color:#68766e;font-size:12px;font-weight:700}.metric-summary-state.is-error{color:#a13f32}
 
 .mobile-metric-info strong,
 .mobile-metric-neutral strong {
@@ -2028,7 +2058,7 @@ type Action =
   .mobile-store-card {
     display: block;
     min-height: 124px;
-    height: 124px;
+    height: auto;
     padding: 20px 24px;
   }
 
@@ -2053,13 +2083,15 @@ type Action =
   }
 
   .mobile-metric-card strong {
-    font-size: 26px;
+    font-size: clamp(19px,6vw,26px);
   }
 
   .mobile-metric-card {
     min-height: 112px;
     padding: 16px 14px;
   }
+
+  .mobile-metric-green{grid-column:1/-1}
 
   .mobile-orders-panel,
   .mobile-quick-panel {
@@ -2117,7 +2149,7 @@ type Action =
   }
 
   .mobile-store-card.is-locale-en .mobile-store-refresh {
-    max-width: calc(100% - 170px);
+    max-width: 100%;
   }
 
 }
@@ -2130,7 +2162,7 @@ type Action =
 
   .mobile-store-card {
     min-height: 124px;
-    height: 124px;
+    height: auto;
     padding: 18px 22px;
   }
 

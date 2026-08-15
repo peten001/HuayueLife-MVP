@@ -11,6 +11,7 @@ import { OrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
+import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import { AppConfigService } from '../app-config/app-config.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
@@ -101,6 +102,7 @@ export class OrdersService {
             : null;
         const autoAcceptDineIn = dto.orderType === 'DINE_IN';
         const acceptedAt = autoAcceptDineIn ? new Date() : undefined;
+        const createdAt = new Date();
         const order = await tx.order.create({
           data: {
             orderNo: this.generateOrderNo(),
@@ -124,6 +126,11 @@ export class OrdersService {
             itemAmountVnd: preview.itemAmountVnd,
             deliveryFeeVnd: preview.deliveryFeeVnd,
             totalAmountVnd: preview.totalAmountVnd,
+            businessDate: businessDateSnapshotValue(
+              preview.merchant.businessHours ?? null,
+              createdAt,
+            ),
+            createdAt,
             status: autoAcceptDineIn ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
             acceptedAt,
             items: {
@@ -369,6 +376,7 @@ export class OrdersService {
       merchant: {
         id: merchant.id,
         nameZh: merchant.nameZh,
+        businessHours: merchant.businessHours,
       },
       table: loaded.table
         ? {

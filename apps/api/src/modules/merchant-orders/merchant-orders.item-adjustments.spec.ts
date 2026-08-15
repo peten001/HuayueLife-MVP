@@ -16,6 +16,13 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       };
     }
+    if (!tx.merchant) {
+      tx.merchant = {
+        findUnique: jest.fn().mockResolvedValue({
+          businessHours: { saturday: ['10:00-22:00'] },
+        }),
+      };
+    }
     const txOrder = tx.order as Record<string, unknown> | undefined;
     if (txOrder && !txOrder.findFirstOrThrow) {
       txOrder.findFirstOrThrow = jest.fn().mockResolvedValue(

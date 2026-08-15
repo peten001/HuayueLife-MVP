@@ -5,8 +5,8 @@ import { useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
 import {
   cashierWorkspaceEnabled,
-  currentBusinessHoursRange,
   firstEnabledCashierWorkspace,
+  formatBusinessHoursRange,
   isWithinBusinessHours,
   resolveCashierWorkspaceCapabilities,
   resolveMerchantImageCandidates,
@@ -68,7 +68,9 @@ const disabledTableCount = computed(() => tableCards.value.filter((table) => tab
 const tableAttentionCount = computed(() => tableCards.value.filter((table) => Number(table.currentSession?.pendingOrderCount || 0) > 0).length);
 const pickupAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'PICKUP').length);
 const deliveryAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'DELIVERY').length);
-const plannedHoursRange = computed(() => currentBusinessHoursRange(profile.value?.businessHours));
+const plannedHoursRange = computed(() =>
+  formatBusinessHoursRange(profile.value?.businessHours, t('shell.nextDay')),
+);
 const plannedBusinessOpen = computed<boolean | null>(() => profile.value ? isWithinBusinessHours(profile.value.businessHours) : null);
 const businessHoursLabel = computed(() => {
   if (!profile.value) return t('shell.businessHoursUnknown');

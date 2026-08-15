@@ -163,15 +163,27 @@ describe('real merchant API contracts', () => {
     const { api } = await loadApi();
     fetchMock.mockResolvedValueOnce(apiResponse({ ...order, status: nextStatus }));
 
-    await expect(api.runMerchantOrderAction(order.id, action)).resolves.toMatchObject({
+    await expect(api.runMerchantOrderAction(
+      order.id,
+      action,
+      undefined,
+      action === 'complete' ? 'CASH' : undefined,
+    )).resolves.toMatchObject({
       id: order.id,
       status: nextStatus,
     });
-    expect(requestPath(fetchMock.mock.calls[0])).toBe(`/api/v1/merchant/orders/order-1/${action}`);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe(
+      `/api/v1/merchant/orders/order-1/${action === 'complete' ? 'cashier-complete' : action}`,
+    );
     expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
 
     fetchMock.mockResolvedValueOnce(apiError(409, 'ORDER_STATUS_CONFLICT', 'Order status changed'));
-    await expect(api.runMerchantOrderAction(order.id, action)).rejects.toMatchObject({
+    await expect(api.runMerchantOrderAction(
+      order.id,
+      action,
+      undefined,
+      action === 'complete' ? 'CASH' : undefined,
+    )).rejects.toMatchObject({
       status: 409,
       code: 'ORDER_STATUS_CONFLICT',
     });
@@ -278,11 +290,12 @@ describe('real merchant API contracts', () => {
     };
     fetchMock.mockResolvedValueOnce(apiResponse(checkoutResult));
 
-    await expect(api.checkoutTableSession(session.id)).resolves.toEqual(checkoutResult);
+    await expect(api.checkoutTableSession(session.id, 'CASH')).resolves.toEqual(checkoutResult);
     expect(requestPath(fetchMock.mock.calls[0])).toBe(
-      '/api/v1/merchant/table-sessions/session-1/checkout',
+      '/api/v1/merchant/table-sessions/session-1/cashier-checkout',
     );
     expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(JSON.parse(String(requestInit(fetchMock.mock.calls[0]).body))).toEqual({ paymentMethod: 'CASH' });
     expect(checkoutResult.orders[0]?.settlementStatus).toBe('UNSETTLED');
 
     fetchMock.mockResolvedValueOnce(apiError(
@@ -290,7 +303,7 @@ describe('real merchant API contracts', () => {
       'TABLE_SESSION_HAS_UNACCEPTED_ORDERS',
       'Table session has unaccepted orders',
     ));
-    await expect(api.checkoutTableSession(session.id)).rejects.toMatchObject({
+    await expect(api.checkoutTableSession(session.id, 'BANK_TRANSFER')).rejects.toMatchObject({
       status: 409,
       code: 'TABLE_SESSION_HAS_UNACCEPTED_ORDERS',
     });

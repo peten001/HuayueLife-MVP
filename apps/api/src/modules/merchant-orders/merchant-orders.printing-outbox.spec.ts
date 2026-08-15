@@ -128,4 +128,52 @@ describe('MerchantOrdersService printing outbox', () => {
     });
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([502n]);
   });
+
+  it('stores payment method and business date in the same non-table completion transaction', async () => {
+    const completed = {
+      id: 39n,
+      merchantId: 7n,
+      orderType: 'PICKUP',
+      orderNo: 'HY20260815A039',
+      createdAt: new Date('2026-08-15T10:00:00.000Z'),
+      readyAt: new Date('2026-08-15T11:00:00.000Z'),
+      status: 'COMPLETED',
+      totalAmountVnd: 80_000n,
+    };
+    const tx = {
+      order: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 39n,
+          orderType: 'PICKUP',
+          status: 'READY',
+          merchant: { businessHours: { saturday: ['15:00-03:00'] } },
+        }),
+        findFirstOrThrow: jest.fn().mockResolvedValue(completed),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderStatusLog: { create: jest.fn().mockResolvedValue({ id: 9003n }) },
+    };
+    const service = new MerchantOrdersService(
+      { $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)) } as never,
+      {
+        enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
+        processAutomaticTriggerIds: jest.fn(),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.transition(7n, 3n, 39n, 'COMPLETE', undefined, 'CASH');
+
+    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 39n, merchantId: 7n, status: 'READY' },
+      data: expect.objectContaining({
+        status: 'COMPLETED',
+        completedAt: expect.any(Date),
+        businessDate: expect.any(Date),
+        paymentMethod: 'CASH',
+      }),
+    }));
+  });
 });

@@ -112,6 +112,19 @@ export function currentBusinessHoursRange(
   schedule: Record<string, string[]> | null | undefined,
   at = new Date(),
 ) {
+  return formatBusinessHoursRange(schedule, '', at);
+}
+
+/**
+ * Business-order display for one business day. Cross-midnight ranges are
+ * rendered with the next-day marker (e.g. `15:00-次日01:00`) and are never
+ * split into natural-day fragments.
+ */
+export function formatBusinessHoursRange(
+  schedule: Record<string, string[]> | null | undefined,
+  nextDayLabel: string,
+  at = new Date(),
+) {
   if (!schedule || typeof schedule !== 'object') return '';
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: cashierConfig.vietnamTimeZone,
@@ -119,7 +132,15 @@ export function currentBusinessHoursRange(
   })
     .format(at)
     .toLocaleLowerCase();
-  return schedule[weekday]?.join(' / ') ?? '';
+  return (schedule[weekday] ?? [])
+    .map((range) => {
+      const [start, end] = range.split('-');
+      if (!start || !end) return range;
+      return toMinutes(end) < toMinutes(start)
+        ? `${start}-${nextDayLabel}${end}`
+        : `${start}-${end}`;
+    })
+    .join(' / ');
 }
 
 function toMinutes(value: string) {

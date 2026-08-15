@@ -255,6 +255,7 @@ export class PublicMerchantsService {
             where: {
               productType: 'FOOD',
               status: { in: ['ON_SALE', 'SOLD_OUT'] },
+              deletedAt: null,
             },
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           },
@@ -295,6 +296,7 @@ export class PublicMerchantsService {
         id,
         productType: 'FOOD',
         status: { in: ['ON_SALE', 'SOLD_OUT'] },
+        deletedAt: null,
         category: { isActive: true },
         merchant: merchantFilter,
       },
@@ -564,6 +566,7 @@ export class PublicMerchantsService {
           where: {
             productType: 'FOOD',
             status: { in: ['ON_SALE', 'SOLD_OUT'] },
+            deletedAt: null,
           },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           take: 15,
@@ -593,6 +596,7 @@ export class PublicMerchantsService {
             where: {
               productType: 'FOOD',
               status: { in: ['ON_SALE', 'SOLD_OUT'] },
+              deletedAt: null,
             },
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           },

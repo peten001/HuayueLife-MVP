@@ -57,6 +57,17 @@ const summary = ref<MerchantOrderSummary>({
   PICKUP: { count: 0, amountVnd: '0' },
   DELIVERY: { count: 0, amountVnd: '0' },
   ABNORMAL: { count: 0, amountVnd: '0' },
+  COMPLETED: {
+    count: 0,
+    amountVnd: '0',
+    grossAmountVnd: '0',
+    discountAmountVnd: '0',
+    roundingAmountVnd: '0',
+    cashRevenueVnd: '0',
+    bankTransferRevenueVnd: '0',
+    unrecordedRevenueVnd: '0',
+  },
+  statusBreakdown: {},
 });
 const message = ref('');
 const operatingId = ref('');
@@ -162,7 +173,9 @@ const orderCategoryCards = computed(() => {
   ];
 });
 
-const todayOrderAmount = computed(() => Number(summary.value.ALL.amountVnd));
+const completedOrderAmount = computed(() =>
+  Number(summary.value.COMPLETED?.amountVnd ?? '0'),
+);
 
 function moneySummary(value: number) {
   return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)} VND`;
@@ -170,13 +183,27 @@ function moneySummary(value: number) {
 
 const quickStatusCards = computed(() => {
   const source = categoryFilteredRows.value;
+  const breakdown = summary.value.statusBreakdown ?? {};
+  const serverCounts = {
+    PENDING: breakdown.PENDING_ACCEPTANCE ?? 0,
+    PREPARING: (breakdown.ACCEPTED ?? 0) + (breakdown.PREPARING ?? 0),
+    READY: (breakdown.READY ?? 0) + (breakdown.DELIVERING ?? 0),
+    COMPLETED: breakdown.COMPLETED ?? 0,
+    CANCELLED: breakdown.CANCELLED ?? 0,
+  };
+  const totalBreakdown =
+    serverCounts.PENDING +
+    serverCounts.PREPARING +
+    serverCounts.READY +
+    serverCounts.COMPLETED +
+    serverCounts.CANCELLED;
   const counts = {
-    ALL: source.length,
-    PENDING: source.filter((order) => quickStatusForOrder(order) === 'PENDING').length,
-    PREPARING: source.filter((order) => quickStatusForOrder(order) === 'PREPARING').length,
-    READY: source.filter((order) => quickStatusForOrder(order) === 'READY').length,
-    COMPLETED: source.filter((order) => quickStatusForOrder(order) === 'COMPLETED').length,
-    CANCELLED: source.filter((order) => quickStatusForOrder(order) === 'CANCELLED').length,
+    ALL: totalBreakdown > 0 ? totalBreakdown : source.length,
+    PENDING: serverCounts.PENDING,
+    PREPARING: serverCounts.PREPARING,
+    READY: serverCounts.READY,
+    COMPLETED: serverCounts.COMPLETED,
+    CANCELLED: serverCounts.CANCELLED,
   };
   return [
     {
@@ -929,9 +956,9 @@ function todayInVietnam() {
           en: 'Track and process restaurant orders in real time',
         })"
       />
-      <aside class="orders-amount-card" aria-label="今日订单金额">
+      <aside class="orders-amount-card" :aria-label="t('completedOrderAmount')">
         <span class="orders-amount-icon" aria-hidden="true">▣</span>
-        <div><span>今日订单金额</span><strong>{{ moneySummary(todayOrderAmount) }}</strong><small>较昨日&nbsp;--&nbsp;ⓘ</small></div>
+        <div><span>{{ t('completedOrderAmount') }}</span><strong>{{ moneySummary(completedOrderAmount) }}</strong><small>{{ t('completedOrderAmountHint') }}</small></div>
       </aside>
 
       <form class="orders-filter-card" @submit.prevent="applyFilters">
@@ -981,7 +1008,7 @@ function todayInVietnam() {
           <div class="order-category-copy">
             <strong>{{ card.title }}</strong>
             <span class="order-category-count">{{ card.count }}</span>
-            <em>金额&nbsp; {{ moneySummary(card.amount) }}</em>
+            <em>{{ t('amountIncludingUnfinished') }}&nbsp; {{ moneySummary(card.amount) }}</em>
           </div>
         </button>
       </section>

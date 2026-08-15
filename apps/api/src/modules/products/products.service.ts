@@ -21,6 +21,7 @@ export class ProductsService {
         categoryId: query.categoryId ? BigInt(query.categoryId) : undefined,
         status: query.status,
         productType: 'FOOD',
+        deletedAt: null,
       },
       include: { category: true },
       orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
@@ -98,14 +99,14 @@ export class ProductsService {
     await this.requireOwnedProduct(merchantId, id);
     return this.prisma.product.update({
       where: { id },
-      data: { status: 'OFF_SALE' },
+      data: { status: 'OFF_SALE', deletedAt: new Date() },
       include: { category: true },
     });
   }
 
   private async requireOwnedProduct(merchantId: bigint, id: bigint) {
     const product = await this.prisma.product.findFirst({
-      where: { id, merchantId, productType: 'FOOD' },
+      where: { id, merchantId, productType: 'FOOD', deletedAt: null },
       include: { category: true },
     });
     if (!product) {

@@ -13,12 +13,13 @@ import {
 import { resolveOrderLocation } from '@/domain/order-location';
 import { useI18n } from '@/i18n';
 import { useAuthStore, useNetworkStore, useOrdersStore, useUiStore } from '@/stores';
-import type { MerchantOrderAction } from '@/types';
+import type { MerchantOrderAction, PaymentMethod } from '@/types';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
+import CheckoutPaymentDialog from '@/components/settlement/CheckoutPaymentDialog.vue';
 import PickupOrderCard from '@/features/pickup/PickupOrderCard.vue';
 import PickupOrderDetail from '@/features/pickup/PickupOrderDetail.vue';
 import FulfillmentActionDock from '@/features/fulfillment/FulfillmentActionDock.vue';
@@ -40,6 +41,8 @@ const activePane = ref<'detail' | 'chat'>('detail');
 const refreshing = ref(false);
 const rejectOpen = ref(false);
 const adjustmentOpen = ref(false);
+const paymentOpen = ref(false);
+const paymentError = ref('');
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
@@ -92,7 +95,17 @@ async function selectOrder(id: string) {
 
 async function runFulfillmentAction(action: FulfillmentWorkflowAction) {
   if (!order.value) return;
+  if (action === 'complete') {
+    paymentError.value = '';
+    paymentOpen.value = true;
+    return;
+  }
   await runActionSequence(fulfillmentActionSequence(order.value, action));
+}
+
+async function confirmPayment(paymentMethod: PaymentMethod) {
+  paymentError.value = '';
+  if (await runActionSequence(['complete'], paymentMethod)) paymentOpen.value = false;
 }
 
 async function rejectOrder() {
@@ -114,21 +127,25 @@ async function saveSettlementAdjustment(input: { discountPayableRateBps: number 
   }
 }
 
-async function runActionSequence(actions: readonly MerchantOrderAction[]) {
+async function runActionSequence(actions: readonly MerchantOrderAction[], paymentMethod?: PaymentMethod) {
   const currentOrder = order.value;
-  if (!currentOrder || !actions.length || writeDisabled.value || actionLoadingId.value) return;
+  if (!currentOrder || !actions.length || writeDisabled.value || actionLoadingId.value) return false;
   const orderId = currentOrder.id;
   try {
     let updated = currentOrder;
     for (const action of actions) {
-      updated = await ordersStore.runAction(orderId, action);
+      updated = await ordersStore.runAction(orderId, action, undefined, action === 'complete' ? paymentMethod : undefined);
     }
     await ordersStore.refreshLiveOrders();
     if (['COMPLETED', 'CANCELLED'].includes(updated.status)) {
       await router.replace(resolveOrderLocation(updated));
     }
+    return true;
   } catch (caught) {
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'order.actionFailed')), 'error');
+    const errorText = t(apiErrorTranslationKey(caught, 'order.actionFailed'));
+    if (paymentMethod) paymentError.value = errorText;
+    uiStore.pushToast(errorText, 'error');
+    return false;
   } finally {
     rejectOpen.value = false;
   }
@@ -208,6 +225,14 @@ onMounted(() => void refresh(false));
       </section>
     </div>
     <ConfirmDialog :open="rejectOpen" :title="t('order.rejectConfirmTitle')" :description="t('order.rejectConfirmDescription')" :cancel-label="t('common.cancel')" :confirm-label="t('common.confirm')" :loading="Boolean(actionLoadingId)" @cancel="rejectOpen = false" @confirm="rejectOrder" />
+    <CheckoutPaymentDialog
+      :open="paymentOpen"
+      :amount-vnd="order?.payableAmountVnd ?? order?.totalAmountVnd ?? '0'"
+      :loading="Boolean(actionLoadingId)"
+      :error="paymentError"
+      @cancel="paymentOpen = false"
+      @confirm="confirmPayment"
+    />
     <SettlementAdjustmentDialog
       v-if="order"
       :open="adjustmentOpen"

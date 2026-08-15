@@ -5,6 +5,7 @@ import type {
   TableSessionDetail,
   TableSessionSummary,
   SettlementAdjustmentInput,
+  PaymentMethod,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -45,11 +46,11 @@ export async function closeTableSession(sessionId: string): Promise<TableSession
   return result.session;
 }
 
-export async function checkoutTableSession(sessionId: string): Promise<TableSessionCheckoutResult> {
+export async function checkoutTableSession(sessionId: string, paymentMethod: PaymentMethod): Promise<TableSessionCheckoutResult> {
   if (isDemoSessionActive()) return demoRepository.checkoutSession(sessionId);
   return requestApi<TableSessionCheckoutResult>(
-    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/checkout`,
-    { method: 'POST', body: {} },
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/cashier-checkout`,
+    { method: 'POST', body: { paymentMethod } },
   );
 }
 

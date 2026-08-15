@@ -2,6 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { MerchantAnalyticsQueryDto } from './dto/merchant-analytics-query.dto';
+import {
+  normalizeBusinessHours,
+  resolveBusinessDate,
+} from '../../common/utils/merchant-hours';
+import {
+  attributeOrderRevenue,
+  businessDateRangeCandidateWhere,
+} from './business-day-accounting';
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,45 +62,88 @@ export class MerchantAnalyticsService {
     merchantId: bigint,
     query: MerchantAnalyticsQueryDto,
   ) {
-    const range = resolvePeriodRange(query.dateFrom, query.dateTo);
-    const currentWhere = completedOrdersWhere(merchantId, range.start, range.end);
-    const previousWhere = completedOrdersWhere(
-      merchantId,
-      range.previousStart,
-      range.previousEnd,
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { businessHours: true },
+    });
+    if (!merchant) throw new BadRequestException('商家不存在');
+    const schedule = normalizeBusinessHours(merchant.businessHours);
+    const range = resolvePeriodRange(
+      query.dateFrom,
+      query.dateTo,
+      resolveBusinessDate(schedule),
     );
-
-    const [
-      currentSummary,
-      previousSummary,
-      trendRows,
-      timeRows,
-      currentDishRows,
-      previousDishRows,
-    ] = await Promise.all([
-      this.prisma.order.aggregate({
-        where: currentWhere,
-        _count: { _all: true },
-        _sum: { totalAmountVnd: true },
-      }),
-      this.prisma.order.aggregate({
-        where: previousWhere,
-        _count: { _all: true },
-        _sum: { totalAmountVnd: true },
-      }),
-      this.loadTrend(merchantId, range),
-      this.loadTimeDistribution(merchantId, range),
-      this.loadDishes(merchantId, range.start, range.end),
-      this.loadDishes(merchantId, range.previousStart, range.previousEnd),
-    ]);
+    const candidates = await this.loadOrders(
+      merchantId,
+      schedule,
+      range.previousStartDate,
+      range.endDate,
+    );
+    const datedOrders = candidates.map((order) => ({
+      ...order,
+      resolvedBusinessDate: order.businessDate
+        ? order.businessDate.toISOString().slice(0, 10)
+        : resolveBusinessDate(schedule, order.createdAt),
+    }));
+    const attribution = attributeOrderRevenue(candidates);
+    const ordersWithRevenue = datedOrders.map((order) => ({
+      ...order,
+      grossAmountVnd: order.totalAmountVnd,
+      discountAmountVnd:
+        attribution.get(order.id)?.discountAmountVnd ??
+        (order.discountPayableRateBps === null
+          ? 0n
+          : order.discountAmountVnd ?? 0n),
+      roundingAmountVnd:
+        attribution.get(order.id)?.roundingAmountVnd ??
+        (order.roundingAmountVnd ?? 0n),
+      netSettledAmountVnd:
+        attribution.get(order.id)?.netSettledAmountVnd ??
+        order.totalAmountVnd -
+          (order.discountPayableRateBps === null
+            ? 0n
+            : order.discountAmountVnd ?? 0n) -
+          (order.roundingAmountVnd ?? 0n),
+      paymentMethod:
+        attribution.get(order.id)?.paymentMethod ??
+        order.paymentMethod ??
+        null,
+    }));
+    const currentOrders = datedOrders.filter((order) =>
+      order.resolvedBusinessDate >= range.startDate &&
+      order.resolvedBusinessDate <= range.endDate,
+    );
+    const previousOrders = datedOrders.filter((order) =>
+      order.resolvedBusinessDate >= range.previousStartDate &&
+      order.resolvedBusinessDate <= range.previousEndDate,
+    );
+    const currentRevenueOrders = ordersWithRevenue.filter((order) =>
+      order.resolvedBusinessDate >= range.startDate &&
+      order.resolvedBusinessDate <= range.endDate,
+    );
+    const previousRevenueOrders = ordersWithRevenue.filter((order) =>
+      order.resolvedBusinessDate >= range.previousStartDate &&
+      order.resolvedBusinessDate <= range.previousEndDate,
+    );
+    const trendRows = aggregateTrendRows(currentRevenueOrders, range);
+    const timeRows = aggregateTimeDistributionRows(currentRevenueOrders);
+    const currentDishRows = aggregateDishRows(currentOrders);
+    const previousDishRows = aggregateDishRows(previousOrders);
 
     const currentOverview = buildOverview(
-      currentSummary._count._all,
-      currentSummary._sum.totalAmountVnd ?? 0n,
+      currentRevenueOrders.length,
+      currentRevenueOrders.reduce(
+        (sum, order) => sum + order.netSettledAmountVnd,
+        0n,
+      ),
     );
+    const funds = buildFundsOverview(currentRevenueOrders);
     const previousOverview = buildOverview(
-      previousSummary._count._all,
-      previousSummary._sum.totalAmountVnd ?? 0n,
+      previousRevenueOrders.length,
+      previousRevenueOrders.reduce(
+        (sum, order) => sum + order.netSettledAmountVnd,
+        0n,
+      ),
     );
     const topDishes = mergeDishRows(currentDishRows, previousDishRows);
     const timeDistribution = fillTimeDistribution(timeRows);
@@ -112,6 +163,7 @@ export class MerchantAnalyticsService {
       },
       overview: {
         ...currentOverview,
+        funds,
         previous: previousOverview,
         comparison: {
           revenuePercent: calculatePercentChange(
@@ -136,79 +188,150 @@ export class MerchantAnalyticsService {
     };
   }
 
-  private loadTrend(merchantId: bigint, range: PeriodRange) {
-    const bucketExpression =
-      range.granularity === 'hour'
-        ? Prisma.sql`LPAD(HOUR(DATE_ADD(o.completed_at, INTERVAL 7 HOUR)), 2, '0')`
-        : Prisma.sql`DATE_FORMAT(DATE_ADD(o.completed_at, INTERVAL 7 HOUR), '%Y-%m-%d')`;
-
-    return this.prisma.$queryRaw<TrendRow[]>(Prisma.sql`
-      SELECT
-        ${bucketExpression} AS bucket,
-        COUNT(*) AS orderCount,
-        COALESCE(SUM(o.total_amount_vnd), 0) AS revenueVnd
-      FROM orders o
-      WHERE o.merchant_id = ${merchantId}
-        AND o.status = ${OrderStatus.COMPLETED}
-        AND o.completed_at >= ${range.start}
-        AND o.completed_at < ${range.end}
-      GROUP BY ${bucketExpression}
-      ORDER BY ${bucketExpression} ASC
-    `);
+  private loadOrders(
+    merchantId: bigint,
+    schedule: ReturnType<typeof normalizeBusinessHours>,
+    startDate: string,
+    endDate: string,
+  ) {
+    return this.prisma.order.findMany({
+      where: {
+        merchantId,
+        status: OrderStatus.COMPLETED,
+        ...businessDateRangeCandidateWhere(startDate, endDate),
+      },
+      select: {
+        id: true,
+        businessDate: true,
+        completedAt: true,
+        createdAt: true,
+        totalAmountVnd: true,
+        discountPayableRateBps: true,
+        discountAmountVnd: true,
+        roundingAmountVnd: true,
+        paymentMethod: true,
+        tableSessionId: true,
+        tableSession: {
+          select: {
+            status: true,
+            discountAmountVnd: true,
+            roundingAmountVnd: true,
+            paymentMethod: true,
+          },
+        },
+        items: {
+          select: {
+            productId: true,
+            productNameZhSnapshot: true,
+            imageUrlSnapshot: true,
+            quantity: true,
+            subtotalVnd: true,
+            product: {
+              select: {
+                imageUrl: true,
+                category: {
+                  select: { nameZh: true, nameVi: true, nameEn: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
+    });
   }
+}
 
-  private loadTimeDistribution(merchantId: bigint, range: PeriodRange) {
-    return this.prisma.$queryRaw<TimeDistributionRow[]>(Prisma.sql`
-      SELECT
-        WEEKDAY(DATE_ADD(o.completed_at, INTERVAL 7 HOUR)) AS weekday,
-        FLOOR(HOUR(DATE_ADD(o.completed_at, INTERVAL 7 HOUR)) / ${TIME_BUCKET_HOURS}) * ${TIME_BUCKET_HOURS} AS startHour,
-        COUNT(*) AS orderCount,
-        COALESCE(SUM(o.total_amount_vnd), 0) AS revenueVnd
-      FROM orders o
-      WHERE o.merchant_id = ${merchantId}
-        AND o.status = ${OrderStatus.COMPLETED}
-        AND o.completed_at >= ${range.start}
-        AND o.completed_at < ${range.end}
-      GROUP BY weekday, startHour
-      ORDER BY weekday ASC, startHour ASC
-    `);
+type AnalyticsOrder = Awaited<ReturnType<MerchantAnalyticsService['getAnalytics']>> extends never
+  ? never
+  : {
+      resolvedBusinessDate: string;
+      completedAt: Date | null;
+      createdAt: Date;
+      totalAmountVnd: bigint;
+      grossAmountVnd: bigint;
+      discountAmountVnd: bigint;
+      roundingAmountVnd: bigint;
+      netSettledAmountVnd: bigint;
+      paymentMethod: 'CASH' | 'BANK_TRANSFER' | null;
+      items: Array<{
+        productId: bigint | null;
+        productNameZhSnapshot: string;
+        imageUrlSnapshot: string | null;
+        quantity: number;
+        subtotalVnd: bigint;
+        product: {
+          imageUrl: string | null;
+          category: { nameZh: string; nameVi: string | null; nameEn: string | null } | null;
+        } | null;
+      }>;
+    };
+
+function aggregateTrendRows(orders: AnalyticsOrder[], range: PeriodRange): TrendRow[] {
+  const values = new Map<string, { orderCount: number; revenueVnd: bigint }>();
+  for (const order of orders) {
+    if (!order.createdAt) continue;
+    const local = new Date(order.createdAt.getTime() + VIETNAM_OFFSET_MS);
+    const bucket = range.granularity === 'hour'
+      ? String(local.getUTCHours()).padStart(2, '0')
+      : order.resolvedBusinessDate;
+    const value = values.get(bucket) ?? { orderCount: 0, revenueVnd: 0n };
+    value.orderCount += 1;
+    value.revenueVnd += order.netSettledAmountVnd;
+    values.set(bucket, value);
   }
+  return [...values].map(([bucket, value]) => ({ bucket, ...value }));
+}
 
-  private async loadDishes(merchantId: bigint, start: Date, end: Date) {
-    const rows = await this.prisma.$queryRaw<DishAggregateRow[]>(Prisma.sql`
-      SELECT
-        CASE
-          WHEN oi.product_id IS NOT NULL THEN CONCAT('product:', CAST(oi.product_id AS CHAR))
-          ELSE CONCAT('name:', oi.product_name_zh_snapshot)
-        END AS dishKey,
-        MAX(oi.product_id) AS productId,
-        MAX(oi.product_name_zh_snapshot) AS name,
-        COALESCE(
-          MAX(NULLIF(oi.image_url_snapshot, '')),
-          MAX(NULLIF(p.image_url, ''))
-        ) AS imageUrl,
-        MAX(c.name_zh) AS categoryNameZh,
-        MAX(c.name_vi) AS categoryNameVi,
-        MAX(c.name_en) AS categoryNameEn,
-        SUM(oi.quantity) AS quantity,
-        COALESCE(SUM(oi.subtotal_vnd), 0) AS revenueVnd
-      FROM order_items oi
-      INNER JOIN orders o ON o.id = oi.order_id
-      LEFT JOIN products p
-        ON p.id = oi.product_id
-        AND p.merchant_id = o.merchant_id
-      LEFT JOIN categories c
-        ON c.id = p.category_id
-        AND c.merchant_id = o.merchant_id
-      WHERE o.merchant_id = ${merchantId}
-        AND o.status = ${OrderStatus.COMPLETED}
-        AND o.completed_at >= ${start}
-        AND o.completed_at < ${end}
-      GROUP BY dishKey
-    `);
-
-    return filterAnalyticsDishRows(rows);
+function aggregateTimeDistributionRows(orders: AnalyticsOrder[]): TimeDistributionRow[] {
+  const values = new Map<string, {
+    weekday: number;
+    startHour: number;
+    orderCount: number;
+    revenueVnd: bigint;
+  }>();
+  for (const order of orders) {
+    if (!order.createdAt) continue;
+    const local = new Date(order.createdAt.getTime() + VIETNAM_OFFSET_MS);
+    const weekday = (local.getUTCDay() + 6) % 7;
+    const startHour = Math.floor(local.getUTCHours() / TIME_BUCKET_HOURS) * TIME_BUCKET_HOURS;
+    const key = `${weekday}:${startHour}`;
+    const value = values.get(key) ?? { weekday, startHour, orderCount: 0, revenueVnd: 0n };
+    value.orderCount += 1;
+    value.revenueVnd += order.netSettledAmountVnd;
+    values.set(key, value);
   }
+  return [...values.values()];
+}
+
+function aggregateDishRows(orders: Array<{ items: AnalyticsOrder['items'] }>) {
+  const values = new Map<string, DishAggregateRow>();
+  for (const order of orders) {
+    for (const item of order.items) {
+      const dishKey = item.productId === null
+        ? `name:${item.productNameZhSnapshot}`
+        : `product:${item.productId}`;
+      const category = item.product?.category;
+      const current = values.get(dishKey);
+      if (current) {
+        current.quantity = Number(current.quantity) + item.quantity;
+        current.revenueVnd = BigInt(String(current.revenueVnd)) + item.subtotalVnd;
+      } else {
+        values.set(dishKey, {
+          dishKey,
+          productId: item.productId,
+          name: item.productNameZhSnapshot,
+          imageUrl: item.imageUrlSnapshot || item.product?.imageUrl || null,
+          categoryNameZh: category?.nameZh ?? null,
+          categoryNameVi: category?.nameVi ?? null,
+          categoryNameEn: category?.nameEn ?? null,
+          quantity: item.quantity,
+          revenueVnd: item.subtotalVnd,
+        });
+      }
+    }
+  }
+  return filterAnalyticsDishRows([...values.values()]);
 }
 
 const STRUCTURED_CATEGORY_CJK_MARKERS = [
@@ -347,18 +470,6 @@ function containsNormalizedPhrase(value: string, phrase: string) {
   return ` ${value} `.includes(` ${phrase} `);
 }
 
-function completedOrdersWhere(
-  merchantId: bigint,
-  start: Date,
-  end: Date,
-): Prisma.OrderWhereInput {
-  return {
-    merchantId,
-    status: OrderStatus.COMPLETED,
-    completedAt: { gte: start, lt: end },
-  };
-}
-
 export function buildOverview(
   orderCount: number,
   revenue: bigint | number | string,
@@ -369,6 +480,37 @@ export function buildOverview(
     orderCount,
     averageOrderValueVnd:
       orderCount > 0 ? (revenueVnd / BigInt(orderCount)).toString() : '0',
+  };
+}
+
+export function buildFundsOverview(orders: AnalyticsOrder[]) {
+  let grossAmountVnd = 0n;
+  let discountAmountVnd = 0n;
+  let roundingAmountVnd = 0n;
+  let netSettledAmountVnd = 0n;
+  let cashRevenueVnd = 0n;
+  let bankTransferRevenueVnd = 0n;
+  let unrecordedRevenueVnd = 0n;
+  for (const order of orders) {
+    grossAmountVnd += order.grossAmountVnd;
+    discountAmountVnd += order.discountAmountVnd;
+    roundingAmountVnd += order.roundingAmountVnd;
+    netSettledAmountVnd += order.netSettledAmountVnd;
+    if (order.paymentMethod === 'CASH') cashRevenueVnd += order.netSettledAmountVnd;
+    else if (order.paymentMethod === 'BANK_TRANSFER') {
+      bankTransferRevenueVnd += order.netSettledAmountVnd;
+    } else {
+      unrecordedRevenueVnd += order.netSettledAmountVnd;
+    }
+  }
+  return {
+    grossAmountVnd: grossAmountVnd.toString(),
+    discountAmountVnd: discountAmountVnd.toString(),
+    roundingAmountVnd: roundingAmountVnd.toString(),
+    netSettledAmountVnd: netSettledAmountVnd.toString(),
+    cashRevenueVnd: cashRevenueVnd.toString(),
+    bankTransferRevenueVnd: bankTransferRevenueVnd.toString(),
+    unrecordedRevenueVnd: unrecordedRevenueVnd.toString(),
   };
 }
 
@@ -515,8 +657,8 @@ function resolvePeakPeriod(
   };
 }
 
-function resolvePeriodRange(dateFrom?: string, dateTo?: string): PeriodRange {
-  const today = formatVietnamDate(new Date());
+function resolvePeriodRange(dateFrom?: string, dateTo?: string, defaultDate?: string): PeriodRange {
+  const today = defaultDate ?? formatVietnamDate(new Date());
   const startDate = dateFrom ?? today;
   const endDate = dateTo ?? dateFrom ?? today;
   const start = startOfVietnamDate(startDate);

@@ -32,39 +32,42 @@ const filters = reactive({ dateFrom: today, dateTo: today });
 const copyByLocale = {
   zh: {
     title: '经营分析', subtitle: '数据驱动经营，让生意更好做', today: '今日', sevenDays: '近7天', thirtyDays: '近30天', custom: '自定义',
-    startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '营业额', orders: '订单数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
+    startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '净营业额', orders: '订单数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
+    fundsTitle: '资金概览', fundsDescription: '按已完成订单最终结账金额统计', discountAmount: '折扣金额', roundingAmount: '抹零金额', netRevenue: '净营业额', cashRevenue: '现金收入', bankTransferRevenue: '银行转账收入', unrecordedRevenue: '历史未记录',
     orderUnit: '单', salesUnit: '份', noData: '暂无数据', noComparison: '暂无可比数据', comparedWith: '较上一周期', briefTitle: 'AI经营简报',
     insufficientBrief: '当前周期暂无已完成订单，简报将在真实经营数据积累后自动生成。', viewDetails: '查看详情', hideDetails: '收起详情',
     trendTitle: '营业趋势', trendDescription: '营业额与完成订单数趋势', trendEmpty: '当前周期暂无营业趋势数据', timeTitle: '时段分析', timeDescription: '订单高峰热力图',
     less: '少', more: '多', peakPeriod: '高峰时段', rankingTitle: '菜品销售排行 TOP5', expandedRankingTitle: '菜品销售排行 TOP10', mobileRankingTitle: '菜品销售排行 TOP5', rankingDescription: '按已完成订单销量排序', expandRanking: '展开 TOP10', collapseRanking: '收起至 TOP5',
     rank: '排名', dish: '菜品', quantity: '销量', salesAmount: '销售额', comparison: '环比', rankingEmpty: '当前周期暂无菜品销售数据',
-    shareTitle: '时段营业额占比', shareDescription: '按完成时间统计营业额分布', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
+    shareTitle: '时段营业额占比', shareDescription: '按下单时间统计营业额分布', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
     currentPeriod: '当前周期', previousPeriod: '对比周期', chartAria: '营业额和订单数趋势图', shareAria: '各时段营业额占比图', sparkAria: '指标趋势', dishPlaceholder: '菜', filtersAria: '经营分析日期筛选', timeEmpty: '当前周期暂无时段数据',
     weekdays: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], otherPeriod: '其他时段', revenueShare: '营业额占比',
     suggestionCards: ['主推菜品与备货', '高峰时段准备', '周期经营观察'],
   },
   vi: {
     title: 'Phân tích kinh doanh', subtitle: 'Dữ liệu giúp vận hành tốt hơn mỗi ngày', today: 'Hôm nay', sevenDays: '7 ngày', thirtyDays: '30 ngày', custom: 'Tùy chọn',
-    startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu', orders: 'Đơn hàng', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
+    startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu ròng', orders: 'Đơn hàng', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
+    fundsTitle: 'Tổng quan tiền mặt', fundsDescription: 'Theo tổng thanh toán cuối cùng của đơn đã hoàn tất', discountAmount: 'Tiền giảm giá', roundingAmount: 'Tiền làm tròn', netRevenue: 'Doanh thu ròng', cashRevenue: 'Tiền mặt', bankTransferRevenue: 'Chuyển khoản', unrecordedRevenue: 'Chưa ghi nhận',
     orderUnit: 'đơn', salesUnit: 'phần', noData: 'Chưa có dữ liệu', noComparison: 'Chưa thể so sánh', comparedWith: 'So với kỳ trước', briefTitle: 'Tóm tắt AI',
     insufficientBrief: 'Chưa có đơn hoàn thành trong kỳ này. Bản tóm tắt sẽ tự cập nhật khi có dữ liệu thực.', viewDetails: 'Xem chi tiết', hideDetails: 'Thu gọn',
     trendTitle: 'Xu hướng kinh doanh', trendDescription: 'Doanh thu và số đơn hoàn thành', trendEmpty: 'Chưa có dữ liệu xu hướng', timeTitle: 'Phân tích thời gian', timeDescription: 'Bản đồ nhiệt giờ cao điểm',
     less: 'Ít', more: 'Nhiều', peakPeriod: 'Giờ cao điểm', rankingTitle: 'TOP5 món bán chạy', expandedRankingTitle: 'TOP10 món bán chạy', mobileRankingTitle: 'TOP5 món bán chạy', rankingDescription: 'Theo số lượng trong đơn hoàn thành', expandRanking: 'Mở TOP10', collapseRanking: 'Thu gọn TOP5',
     rank: 'Hạng', dish: 'Món', quantity: 'Số lượng', salesAmount: 'Doanh thu', comparison: 'So sánh', rankingEmpty: 'Chưa có dữ liệu món ăn',
-    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo thời gian hoàn thành đơn', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
+    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo thời gian đặt hàng', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
     currentPeriod: 'Kỳ hiện tại', previousPeriod: 'Kỳ so sánh', chartAria: 'Biểu đồ doanh thu và số đơn', shareAria: 'Biểu đồ tỷ trọng doanh thu theo giờ', sparkAria: 'Xu hướng chỉ số', dishPlaceholder: 'Món', filtersAria: 'Bộ lọc ngày phân tích kinh doanh', timeEmpty: 'Chưa có dữ liệu theo giờ trong kỳ này',
     weekdays: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'], otherPeriod: 'Khung giờ khác', revenueShare: 'Tỷ trọng',
     suggestionCards: ['Món chủ lực và tồn kho', 'Chuẩn bị giờ cao điểm', 'Theo dõi theo kỳ'],
   },
   en: {
     title: 'Business Analytics', subtitle: 'Use real data to make better business decisions', today: 'Today', sevenDays: 'Last 7 days', thirtyDays: 'Last 30 days', custom: 'Custom',
-    startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Revenue', orders: 'Orders', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
+    startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Net revenue', orders: 'Orders', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
+    fundsTitle: 'Funds overview', fundsDescription: 'Based on final settled amounts of completed orders', discountAmount: 'Discount', roundingAmount: 'Rounding', netRevenue: 'Net revenue', cashRevenue: 'Cash', bankTransferRevenue: 'Bank transfer', unrecordedRevenue: 'Unrecorded',
     orderUnit: 'orders', salesUnit: 'sold', noData: 'No data', noComparison: 'No comparison', comparedWith: 'Vs previous period', briefTitle: 'AI Business Brief',
     insufficientBrief: 'There are no completed orders in this period. The brief will update when real data is available.', viewDetails: 'View details', hideDetails: 'Hide details',
     trendTitle: 'Business Trend', trendDescription: 'Revenue and completed-order trend', trendEmpty: 'No trend data in this period', timeTitle: 'Time Analysis', timeDescription: 'Peak-order heatmap',
     less: 'Less', more: 'More', peakPeriod: 'Peak time', rankingTitle: 'Top 5 Dishes', expandedRankingTitle: 'Top 10 Dishes', mobileRankingTitle: 'Top 5 Dishes', rankingDescription: 'Ranked by completed-order quantity', expandRanking: 'Show top 10', collapseRanking: 'Show top 5',
     rank: 'Rank', dish: 'Dish', quantity: 'Quantity', salesAmount: 'Revenue', comparison: 'Change', rankingEmpty: 'No dish sales in this period',
-    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on order completion time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
+    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on order creation time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
     currentPeriod: 'Current period', previousPeriod: 'Previous period', chartAria: 'Revenue and order trend chart', shareAria: 'Revenue share by time chart', sparkAria: 'Metric trend', dishPlaceholder: 'Dish', filtersAria: 'Business analytics date filters', timeEmpty: 'No time-distribution data in this period',
     weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], otherPeriod: 'Other hours', revenueShare: 'Revenue share',
     suggestionCards: ['Featured dish and stock', 'Peak-time preparation', 'Period performance'],
@@ -364,6 +367,21 @@ onMounted(() => void selectPreset('today'));
             </article>
           </div>
 
+          <section class="card analytics-funds" data-analytics-panel="funds-overview" :aria-label="copy.fundsTitle">
+            <div class="analytics-funds-heading">
+              <h2>{{ copy.fundsTitle }}</h2>
+              <span>{{ copy.fundsDescription }}</span>
+            </div>
+            <dl class="analytics-funds-grid">
+              <div><dt>{{ copy.discountAmount }}</dt><dd data-analytics-field="discount" :title="formatMoney(analytics.overview.funds.discountAmountVnd)">{{ formatMoney(analytics.overview.funds.discountAmountVnd) }}</dd></div>
+              <div><dt>{{ copy.roundingAmount }}</dt><dd data-analytics-field="rounding" :title="formatMoney(analytics.overview.funds.roundingAmountVnd)">{{ formatMoney(analytics.overview.funds.roundingAmountVnd) }}</dd></div>
+              <div class="is-net"><dt>{{ copy.netRevenue }}</dt><dd data-analytics-field="net-revenue" :title="formatMoney(analytics.overview.funds.netSettledAmountVnd)">{{ formatMoney(analytics.overview.funds.netSettledAmountVnd) }}</dd></div>
+              <div><dt>{{ copy.cashRevenue }}</dt><dd data-analytics-field="cash" :title="formatMoney(analytics.overview.funds.cashRevenueVnd)">{{ formatMoney(analytics.overview.funds.cashRevenueVnd) }}</dd></div>
+              <div><dt>{{ copy.bankTransferRevenue }}</dt><dd data-analytics-field="bank-transfer" :title="formatMoney(analytics.overview.funds.bankTransferRevenueVnd)">{{ formatMoney(analytics.overview.funds.bankTransferRevenueVnd) }}</dd></div>
+              <div v-if="BigInt(analytics.overview.funds.unrecordedRevenueVnd) > 0n"><dt>{{ copy.unrecordedRevenue }}</dt><dd data-analytics-field="unrecorded" :title="formatMoney(analytics.overview.funds.unrecordedRevenueVnd)">{{ formatMoney(analytics.overview.funds.unrecordedRevenueVnd) }}</dd></div>
+            </dl>
+          </section>
+
           <article class="card analytics-mobile-hot-dish">
             <div class="analytics-kpi-heading"><span class="analytics-kpi-icon analytics-kpi-icon--orange"><BusinessAnalyticsIcon name="dish" /></span><span>{{ copy.topDish }}</span></div>
             <div class="analytics-top-dish-value">
@@ -571,6 +589,16 @@ onMounted(() => void selectPreset('today'));
 .analytics-brief-action { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 8px 13px; border: 0; border-radius: var(--analytics-radius-sm); color: var(--analytics-on-brand); background: var(--analytics-brand-strong); font-size: 11px; font-weight: 800; white-space: nowrap; }
 .analytics-brief-action:hover:not(:disabled) { background: color-mix(in srgb, var(--analytics-brand-strong) 88%, var(--analytics-ink)); }
 .analytics-brief-details { display: flex; grid-column: 2 / -1; flex-wrap: wrap; gap: 5px 14px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--analytics-brand) 16%, transparent); color: var(--analytics-ink-2); font-size: 10px; }
+.analytics-funds { order: 3; display: grid; grid-template-columns: minmax(150px, .75fr) minmax(0, 2.25fr); align-items: center; gap: 12px 16px; padding: 11px 14px; border: 1px solid var(--analytics-border); border-radius: var(--analytics-radius); background: var(--analytics-panel); box-shadow: var(--analytics-shadow); }
+.analytics-funds-heading { display: grid; gap: 3px; min-width: 0; }
+.analytics-funds-heading h2 { margin: 0; color: var(--analytics-ink); font-size: 13px; letter-spacing: -.01em; }
+.analytics-funds-heading span { color: var(--analytics-ink-3); font-size: 9px; line-height: 1.4; }
+.analytics-funds-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.analytics-funds-grid > div { display: grid; min-width: 0; gap: 2px; padding: 6px 9px; border-radius: 9px; background: var(--analytics-panel-muted); }
+.analytics-funds-grid dt { color: var(--analytics-ink-3); font-size: 9px; font-weight: 750; white-space: nowrap; }
+.analytics-funds-grid dd { margin: 0; overflow: hidden; color: var(--analytics-ink); font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-funds-grid .is-net { background: var(--analytics-brand-soft); }
+.analytics-funds-grid .is-net dt, .analytics-funds-grid .is-net dd { color: var(--analytics-brand-strong); }
 .analytics-primary-grid, .analytics-secondary-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 12px; margin-top: 12px; align-items: stretch; }
 .analytics-panel { min-width: 0; padding: 16px; }
 .analytics-trend-panel { grid-template-columns: minmax(0, 1fr); overflow: hidden; }
@@ -636,6 +664,9 @@ onMounted(() => void selectPreset('today'));
 @media (min-width: 901px) and (max-width: 1180px) {
   .analytics-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .analytics-kpi-card--dish { grid-column: span 2; }
+  .analytics-funds { grid-template-columns: 1fr; gap: 9px; }
+  .analytics-funds-heading { grid-row: 1; }
+  .analytics-funds-grid { grid-row: 2; }
 }
 
 @media (max-width: 900px) {
@@ -645,6 +676,8 @@ onMounted(() => void selectPreset('today'));
   .analytics-robot svg { width: 36px; height: 36px; }
   .analytics-kpi-section { order: 2; }
   .analytics-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .analytics-funds { grid-template-columns: 1fr; gap: 9px; padding: 10px 11px; }
+  .analytics-funds-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .analytics-kpi-card { min-height: 132px; }
   .analytics-kpi-card--dish { display: none; }
   .analytics-mobile-hot-dish { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; padding: 12px 13px; }
@@ -701,6 +734,11 @@ onMounted(() => void selectPreset('today'));
   .analytics-kpi-heading { font-size: 10px; }
   .analytics-kpi-icon { width: 24px; height: 24px; flex-basis: 24px; }
   .analytics-kpi-card :deep(.business-sparkline) { display: none; }
+  .analytics-funds { gap: 8px; padding: 9px 10px; }
+  .analytics-funds-heading h2 { font-size: 12px; }
+  .analytics-funds-heading span { font-size: 8px; }
+  .analytics-funds-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .analytics-funds-grid dd { font-size: 12px; }
   .analytics-mobile-hot-dish { display: grid; grid-template-columns: minmax(78px, .65fr) minmax(0, 1.8fr); align-items: center; gap: 8px; margin-top: 8px; padding: 9px 10px; }
   .analytics-mobile-hot-dish .analytics-top-dish-value { width: 100%; justify-content: flex-start; }
   .analytics-mobile-hot-dish .analytics-top-dish-value > div { max-width: none; }

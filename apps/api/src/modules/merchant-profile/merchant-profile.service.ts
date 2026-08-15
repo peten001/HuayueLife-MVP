@@ -10,6 +10,10 @@ import {
   parseHomepageCategoryKeys,
   stringifyHomepageCategoryKeys,
 } from '../shared/homepage-category-keys';
+import {
+  normalizeBusinessHours,
+  validateBusinessHoursSchedule,
+} from '../../common/utils/merchant-hours';
 
 @Injectable()
 export class MerchantProfileService {
@@ -81,6 +85,7 @@ export class MerchantProfileService {
       minimumDeliveryAmountVnd: merchant.minimumDeliveryAmountVnd.toString(),
       deliveryFeeVnd: merchant.deliveryFeeVnd.toString(),
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
+      businessHours: normalizeBusinessHours(merchant.businessHours),
       isVisibleOnClient: merchant.isVisibleOnClient,
       merchantMode: merchant.merchantMode,
       reportFeatureEnabled: Boolean(merchant.reportFeatureEnabled),
@@ -174,40 +179,14 @@ function validateRequiredUpdateValues(dto: UpdateMerchantProfileDto) {
   assertNumber(dto.deliveryRadiusKm, 'deliveryRadiusKm');
 }
 
-const WEEKDAYS = new Set([
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-  'sunday',
-]);
-const TIME_RANGE = /^(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$/;
-
-/** New writes are limited to same-day, sorted, non-overlapping intervals. */
 function validateBusinessHours(hours: Record<string, string[]>) {
-  for (const [weekday, ranges] of Object.entries(hours)) {
-    if (!WEEKDAYS.has(weekday) || !Array.isArray(ranges) || ranges.length > 3) {
-      throw new BadRequestException('businessHours must contain up to three valid daily intervals');
-    }
-    let previousEnd = -1;
-    for (const range of ranges) {
-      if (typeof range !== 'string' || !TIME_RANGE.test(range)) {
-        throw new BadRequestException('businessHours interval must use HH:mm-HH:mm');
-      }
-      const [start, end] = range.split('-').map(timeToMinutes);
-      if (start >= end || start < previousEnd) {
-        throw new BadRequestException('businessHours intervals must be ordered and cannot overlap');
-      }
-      previousEnd = end;
-    }
+  try {
+    validateBusinessHoursSchedule(hours);
+  } catch (error) {
+    throw new BadRequestException(
+      error instanceof Error ? error.message : 'Invalid businessHours',
+    );
   }
-}
-
-function timeToMinutes(value: string) {
-  const [hour, minute] = value.split(':').map(Number);
-  return hour * 60 + minute;
 }
 
 function mergeMerchantEditableHomepageCategoryKeys(

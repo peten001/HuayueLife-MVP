@@ -216,9 +216,9 @@ describe('cashier table store real-session refresh', () => {
     apiMocks.checkoutTableSession.mockResolvedValueOnce({ session: closed, orders: [] });
     apiMocks.listOpenTableSessions.mockResolvedValueOnce([]);
 
-    await expect(store.checkoutSelectedSession()).resolves.toEqual({ session: closed, orders: [] });
+    await expect(store.checkoutSelectedSession('CASH')).resolves.toEqual({ session: closed, orders: [] });
 
-    expect(apiMocks.checkoutTableSession).toHaveBeenCalledWith(detail.id);
+    expect(apiMocks.checkoutTableSession).toHaveBeenCalledWith(detail.id, 'CASH');
     expect(store.openSessions).toEqual([]);
     expect(store.selectedTable?.operationalStatus).toBe('AVAILABLE');
   });
@@ -229,7 +229,7 @@ describe('cashier table store real-session refresh', () => {
     apiMocks.getTableSessionDetail.mockResolvedValueOnce({ ...detail, pendingOrderCount: 1 });
     await store.selectTable(table.id);
 
-    await expect(store.checkoutSelectedSession()).rejects.toThrow('unaccepted');
+    await expect(store.checkoutSelectedSession('BANK_TRANSFER')).rejects.toThrow('unaccepted');
     expect(apiMocks.checkoutTableSession).not.toHaveBeenCalled();
   });
 });

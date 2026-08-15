@@ -214,6 +214,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     id: string,
     action: MerchantOrderAction,
     reason?: string,
+    paymentMethod?: import('@/types').PaymentMethod,
   ) {
     const order = findCachedOrder(id) ?? selectedOrder.value;
     if (!order || order.id !== id) throw new Error('Order not loaded');
@@ -226,7 +227,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     actionLoadingId.value = id;
     error.value = '';
     try {
-      const updated = await runMerchantOrderAction(id, action, reason);
+      const updated = await runMerchantOrderAction(id, action, reason, paymentMethod);
       if (generation === dataGeneration) {
         selectedOrder.value = updated;
         updateCachedOrder(updated);

@@ -6,11 +6,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, OrderType, Prisma } from '@prisma/client';
+import { OrderStatus, OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 import { PrintJobsService } from '../printing/services/print-jobs.service';
+import { resolveBusinessDate } from '../../common/utils/merchant-hours';
+import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import {
   calculateSettlementAdjustment,
   normalizeDiscountPayableRateBps,
@@ -24,6 +26,8 @@ type CheckoutOrderRow = {
   order_type: OrderType;
   total_amount_vnd: bigint;
   item_amount_vnd: bigint;
+  business_date: Date | null;
+  created_at: Date;
 };
 
 type SettlementAdjustmentRequest = {
@@ -240,6 +244,7 @@ export class TableSessionsService {
     merchantId: bigint,
     staffId: bigint,
     sessionId: bigint,
+    paymentMethod?: PaymentMethod,
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
@@ -253,12 +258,18 @@ export class TableSessionsService {
       if (session.status === 'CLOSED') {
         return { sessionId, printTriggerIds: [] as bigint[] };
       }
+      const merchant = await tx.merchant.findUnique({
+        where: { id: merchantId },
+        select: { businessHours: true },
+      });
+      if (!merchant) throw new NotFoundException('Merchant not found');
 
       // The dining-table lock serializes checkout against new orders. Locking
       // every bound order then makes completion, status logs, and session close
       // one atomic state change for retries and concurrent checkout requests.
       const sessionOrders = await tx.$queryRaw<CheckoutOrderRow[]>`
-        SELECT id, status, order_type, item_amount_vnd, total_amount_vnd
+        SELECT id, status, order_type, item_amount_vnd, total_amount_vnd,
+               business_date, created_at
         FROM orders
         WHERE table_session_id = ${sessionId}
         ORDER BY id
@@ -305,9 +316,14 @@ export class TableSessionsService {
         roundingEnabled: roundingApplied,
       });
       const completedAt = new Date();
+      const businessDate = resolveBusinessDate(merchant.businessHours, completedAt);
+      const businessDateValue = new Date(`${businessDate}T00:00:00.000Z`);
       const printTriggerIds: bigint[] = [];
       for (const order of sessionOrders) {
         if (!['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) continue;
+        const orderBusinessDate = order.business_date
+          ? undefined
+          : businessDateSnapshotValue(merchant.businessHours, order.created_at);
 
         const updated = await tx.order.updateMany({
           where: {
@@ -320,6 +336,8 @@ export class TableSessionsService {
           data: {
             status: 'COMPLETED',
             completedAt,
+            businessDate: orderBusinessDate,
+            paymentMethod,
           },
         });
         if (updated.count !== 1) {
@@ -365,12 +383,37 @@ export class TableSessionsService {
         printTriggerIds.push(...triggers.map(({ id }) => id));
       }
 
+      const completedWithoutBusinessDate = sessionOrders.filter(
+        (order) => order.status === 'COMPLETED' && !order.business_date,
+      );
+      if (completedWithoutBusinessDate.length > 0) {
+        for (const order of completedWithoutBusinessDate) {
+          await tx.order.updateMany({
+            where: {
+              id: order.id,
+              merchantId,
+              tableSessionId: sessionId,
+              status: 'COMPLETED',
+            },
+            data: {
+              businessDate: businessDateSnapshotValue(
+                merchant.businessHours,
+                order.created_at,
+              ),
+              paymentMethod,
+            },
+          });
+        }
+      }
+
       const closed = await tx.tableSession.updateMany({
         where: { id: sessionId, merchantId, status: 'OPEN' },
         data: {
           openTableId: null,
           status: 'CLOSED',
           closedAt: completedAt,
+          businessDate: businessDateValue,
+          paymentMethod,
           discountPayableRateBps: amounts.discountPayableRateBps,
           discountAmountVnd: amounts.discountAmountVnd,
           roundingAmountVnd: amounts.roundingAmountVnd,

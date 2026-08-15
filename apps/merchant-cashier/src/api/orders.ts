@@ -8,6 +8,8 @@ import type {
   MerchantOrderMutationResult,
   ReturnMerchantOrderItemInput,
   SettlementAdjustmentInput,
+  PaymentMethod,
+  BusinessDaySummary,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -21,6 +23,27 @@ export function listMerchantOrders(filters: MerchantOrderFilters = {}): Promise<
         date: filters.date,
       },
     });
+}
+
+export function getBusinessDaySummary(businessDate?: string): Promise<BusinessDaySummary> {
+  return isDemoSessionActive()
+    ? Promise.resolve(demoRepository.businessDaySummary(businessDate))
+    : requestApi<BusinessDaySummary>('/merchant/orders/business-day-summary', {
+      query: { businessDate },
+    });
+}
+
+export function printBusinessDaySummary(businessDate: string, requestKey: string) {
+  if (isDemoSessionActive()) {
+    return Promise.resolve({
+      job: { id: `demo-summary-${requestKey}` },
+      summary: demoRepository.businessDaySummary(businessDate),
+    });
+  }
+  return requestApi<{ job: { id: string }; summary: BusinessDaySummary }>(
+    '/merchant/orders/business-day-summary/print',
+    { method: 'POST', body: { businessDate, requestKey } },
+  );
 }
 
 export function setMerchantOrderSettlementAdjustment(
@@ -45,15 +68,20 @@ export function runMerchantOrderAction(
   id: string,
   action: MerchantOrderAction,
   reason?: string,
+  paymentMethod?: PaymentMethod,
 ): Promise<MerchantOrder> {
   if (isDemoSessionActive()) {
     return Promise.resolve(demoRepository.runOrderAction(id, action));
   }
   return requestApi<MerchantOrder>(
-    `/merchant/orders/${encodeURIComponent(id)}/${action}`,
+    `/merchant/orders/${encodeURIComponent(id)}/${action === 'complete' ? 'cashier-complete' : action}`,
     {
       method: 'POST',
-      body: action === 'reject' ? { reason: reason?.trim() || undefined } : {},
+      body: action === 'reject'
+        ? { reason: reason?.trim() || undefined }
+        : action === 'complete'
+          ? { paymentMethod }
+          : {},
     },
   );
 }

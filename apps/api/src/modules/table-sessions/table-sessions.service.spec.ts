@@ -63,6 +63,9 @@ describe('TableSessionsService checkout', () => {
     const statusLogId = 23n;
     const triggerId = 29n;
     const transaction = {
+      merchant: {
+        findUnique: jest.fn().mockResolvedValue({ businessHours: {} }),
+      },
       tableSession: {
         findFirst: jest.fn().mockResolvedValue({ id: sessionId, tableId }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -144,6 +147,8 @@ describe('TableSessionsService checkout', () => {
       data: {
         status: 'COMPLETED',
         completedAt: expect.any(Date),
+        businessDate: expect.any(Date),
+        paymentMethod: undefined,
       },
     });
     expect(transaction.order.updateMany.mock.calls[0]?.[0].data).not.toHaveProperty(
@@ -429,11 +434,51 @@ describe('TableSessionsService checkout', () => {
     });
   });
 
+  it('persists the selected payment method with completion and table release atomically', async () => {
+    const harness = checkoutHarness([
+      { id: 19n, status: 'ACCEPTED', order_type: 'DINE_IN' },
+    ]);
+
+    await harness.service.checkoutSession(
+      harness.merchantId,
+      harness.staffId,
+      harness.sessionId,
+      'BANK_TRANSFER',
+    );
+
+    expect(harness.transaction.order.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 19n, status: 'ACCEPTED' }),
+        data: expect.objectContaining({
+          status: 'COMPLETED',
+          completedAt: expect.any(Date),
+          businessDate: expect.any(Date),
+          paymentMethod: 'BANK_TRANSFER',
+        }),
+      }),
+    );
+    expect(harness.transaction.tableSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          openTableId: null,
+          status: 'CLOSED',
+          businessDate: expect.any(Date),
+          paymentMethod: 'BANK_TRANSFER',
+        }),
+      }),
+    );
+  });
+
   it('returns an already closed disabled-table session without duplicating side effects', async () => {
     const harness = checkoutHarness([], 'CLOSED', 'DISABLED');
 
     await expect(
-      harness.service.checkoutSession(harness.merchantId, harness.staffId, harness.sessionId),
+      harness.service.checkoutSession(
+        harness.merchantId,
+        harness.staffId,
+        harness.sessionId,
+        'CASH',
+      ),
     ).resolves.toEqual({ ...harness.snapshot, orders: [harness.orderSnapshot] });
 
     expect(harness.transaction.$queryRaw).toHaveBeenCalledTimes(2);
@@ -610,6 +655,9 @@ function checkoutHarness(
   const tableId = 13n;
   const sessionId = 17n;
   const transaction = {
+    merchant: {
+      findUnique: jest.fn().mockResolvedValue({ businessHours: {} }),
+    },
     tableSession: {
       findFirst: jest.fn().mockResolvedValue({ id: sessionId, tableId }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),

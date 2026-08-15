@@ -39,6 +39,15 @@ export interface MerchantAnalyticsResponse {
     revenueVnd: string;
     orderCount: number;
     averageOrderValueVnd: string;
+    funds: {
+      grossAmountVnd: string;
+      discountAmountVnd: string;
+      roundingAmountVnd: string;
+      netSettledAmountVnd: string;
+      cashRevenueVnd: string;
+      bankTransferRevenueVnd: string;
+      unrecordedRevenueVnd: string;
+    };
     previous: {
       revenueVnd: string;
       orderCount: number;

@@ -17,10 +17,28 @@ export interface MerchantOrderSummaryBucket {
   amountVnd: string;
 }
 
+export interface MerchantOrderCompletedBucket extends MerchantOrderSummaryBucket {
+  grossAmountVnd: string;
+  discountAmountVnd: string;
+  roundingAmountVnd: string;
+  cashRevenueVnd: string;
+  bankTransferRevenueVnd: string;
+  unrecordedRevenueVnd: string;
+}
+
 export type MerchantOrderSummary = Record<
   'ALL' | 'DINE_IN' | 'PICKUP' | 'DELIVERY' | 'ABNORMAL',
   MerchantOrderSummaryBucket
->;
+> & {
+  COMPLETED: MerchantOrderCompletedBucket;
+  statusBreakdown: Record<string, number>;
+};
+
+export interface BusinessDaySummary {
+  businessDate: string;
+  orderCount: number;
+  totalRevenueVnd: string;
+}
 
 export async function getMerchantOrders(filters: OrderFilters = {}) {
   const response = await http.get<ApiResponse<MerchantOrder[]>>(
@@ -42,6 +60,13 @@ export async function getMerchantOrderSummary(filters: OrderFilters = {}) {
         Object.entries(filters).filter(([, value]) => Boolean(value)),
       ),
     },
+  );
+  return response.data.data;
+}
+
+export async function getBusinessDaySummary() {
+  const response = await http.get<ApiResponse<BusinessDaySummary>>(
+    '/merchant/orders/business-day-summary',
   );
   return response.data.data;
 }

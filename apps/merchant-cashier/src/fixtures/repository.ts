@@ -12,6 +12,7 @@ import type {
   TableSessionCheckoutResult,
   TableSessionDetail,
   TableSessionSummary,
+  BusinessDaySummary,
 } from '@/types';
 import { CashierApiError } from '@/api/error';
 import {
@@ -58,6 +59,9 @@ export const demoRepository = {
       (!filters.status || order.status === filters.status) &&
       (!filters.orderType || order.orderType === filters.orderType),
     ),
+  ),
+  businessDaySummary: (businessDate?: string) => cloneFixture(
+    buildBusinessDaySummary(businessDate),
   ),
   order: (id: string) => cloneFixture(requireOrder(id)),
   runOrderAction(id: string, action: MerchantOrderAction) {
@@ -307,6 +311,53 @@ export const demoRepository = {
     return cacheAdjustmentResult(order, input.requestKey);
   },
 };
+
+function buildBusinessDaySummary(requestedDate?: string): BusinessDaySummary {
+  const businessDate = requestedDate || new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const completed = orders.filter((order) => order.status === 'COMPLETED');
+  const itemMap = new Map<string, number>();
+  for (const order of completed) {
+    for (const item of order.items) {
+      itemMap.set(
+        item.productNameZhSnapshot,
+        (itemMap.get(item.productNameZhSnapshot) ?? 0) + item.quantity,
+      );
+    }
+  }
+  const totalRevenueVnd = completed.reduce(
+    (sum, order) => sum + BigInt(order.payableAmountVnd ?? order.totalAmountVnd),
+    0n,
+  );
+  return {
+    merchant: {
+      id: demoMerchantProfile.id,
+      nameZh: demoMerchantProfile.nameZh,
+      nameVi: demoMerchantProfile.nameVi,
+    },
+    businessDate,
+    segments: [{ start: '00:00', end: '23:59', crossesMidnight: false }],
+    orderCount: completed.length,
+    itemSummary: [...itemMap].map(([nameZh, quantity]) => ({ nameZh, quantity })),
+    discountAmountVnd: completed.reduce(
+      (sum, order) => sum + BigInt(order.discountAmountVnd ?? '0'),
+      0n,
+    ).toString(),
+    roundingAmountVnd: completed.reduce(
+      (sum, order) => sum + BigInt(order.roundingAmountVnd ?? '0'),
+      0n,
+    ).toString(),
+    totalRevenueVnd: totalRevenueVnd.toString(),
+    cashRevenueVnd: '0',
+    bankTransferRevenueVnd: '0',
+    unrecordedRevenueVnd: totalRevenueVnd.toString(),
+    generatedAt: new Date().toISOString(),
+  };
+}
 
 function requireOrder(id: string) {
   const order = orders.find((item) => item.id === id);

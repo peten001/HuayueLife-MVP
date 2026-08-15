@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ArrowLeft, CalendarDays, RefreshCw } from '@lucide/vue';
+import { ArrowLeft, CalendarDays, ClipboardList, RefreshCw } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
-import { formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVnd, todayInVietnam } from '@/domain';
+import { formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVnd } from '@/domain';
+import { getBusinessDaySummary, messageFromApiError, printBusinessDaySummary } from '@/api';
 import { resolveOrderLocation } from '@/domain/order-location';
 import { useI18n } from '@/i18n';
 import { useOrdersStore, useUiStore } from '@/stores';
-import type { MerchantOrder, OrderStatus, OrderType } from '@/types';
+import type { BusinessDaySummary, MerchantOrder, OrderStatus, OrderType } from '@/types';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
@@ -18,6 +19,7 @@ import FulfillmentProgressRail from '@/features/fulfillment/FulfillmentProgressR
 import WaitDuration from '@/features/fulfillment/WaitDuration.vue';
 import DeliveryContactPanel from '@/features/delivery/DeliveryContactPanel.vue';
 import OrderItemsSection from '@/features/fulfillment/OrderItemsSection.vue';
+import BusinessDaySummaryDialog from '@/components/reports/BusinessDaySummaryDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -27,9 +29,16 @@ const uiStore = useUiStore();
 const { historyOrders, selectedOrder, historyLoading, detailLoading, historyErrorKey } = storeToRefs(ordersStore);
 const status = ref<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
 const orderType = ref<'' | OrderType>('');
-const date = ref(todayInVietnam());
+const date = ref('');
 const dateInput = ref<HTMLInputElement | null>(null);
 const initialized = ref(false);
+const summaryOpen = ref(false);
+const summaryLoading = ref(false);
+const summaryPrinting = ref(false);
+const summaryError = ref('');
+const summaryStatus = ref('');
+const summaryDate = ref('');
+const businessSummary = ref<BusinessDaySummary | null>(null);
 let routeSequence = 0;
 
 const dateFilterLabel = computed(() => formatVietnamDateFilter(date.value, locale.value));
@@ -85,6 +94,7 @@ function orderHistoryTime(itemOrder: MerchantOrder) {
 }
 
 async function refresh(showToast = true) {
+  if (!date.value) return;
   try {
     await ordersStore.fetchHistory({
       date: date.value,
@@ -93,6 +103,54 @@ async function refresh(showToast = true) {
     });
   } catch {
     if (showToast && historyOrders.value.length) uiStore.pushToast(t('error.refreshFailed'), 'error');
+  }
+}
+
+async function loadBusinessSummary(businessDate?: string) {
+  if (businessDate) summaryDate.value = businessDate;
+  summaryLoading.value = true;
+  summaryError.value = '';
+  summaryStatus.value = '';
+  try {
+    businessSummary.value = await getBusinessDaySummary(businessDate);
+    summaryDate.value = businessSummary.value.businessDate;
+    return businessSummary.value;
+  } catch (caught) {
+    summaryError.value = messageFromApiError(caught);
+    return null;
+  } finally {
+    summaryLoading.value = false;
+  }
+}
+
+async function openBusinessSummary() {
+  summaryOpen.value = true;
+  summaryDate.value = date.value;
+  await loadBusinessSummary(date.value || undefined);
+}
+
+async function changeSummaryDate(businessDate: string) {
+  summaryDate.value = businessDate;
+  if (businessDate) await loadBusinessSummary(businessDate);
+}
+
+async function printSummary() {
+  if (!businessSummary.value || summaryPrinting.value) return;
+  summaryPrinting.value = true;
+  summaryError.value = '';
+  try {
+    const randomPart = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await printBusinessDaySummary(
+      businessSummary.value.businessDate,
+      `cashier.business-summary.${randomPart}`,
+    );
+    summaryStatus.value = t('summary.printSuccess');
+  } catch (caught) {
+    summaryError.value = messageFromApiError(caught);
+  } finally {
+    summaryPrinting.value = false;
   }
 }
 
@@ -120,7 +178,14 @@ watch(
   },
   { immediate: true },
 );
-onMounted(async () => { await refresh(false); initialized.value = true; });
+onMounted(async () => {
+  const initialSummary = await loadBusinessSummary();
+  date.value = initialSummary?.businessDate ?? new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  await refresh(false);
+  initialized.value = true;
+});
 </script>
 
 <template>
@@ -135,6 +200,7 @@ onMounted(async () => { await refresh(false); initialized.value = true; });
               <input ref="dateInput" v-model="date" type="date" :aria-label="dateFilterAriaLabel" />
             </label>
             <button type="button" class="workflow-refresh-button" :disabled="historyLoading" :aria-label="t('common.refresh')" :title="t('common.refresh')" @click="refresh()"><RefreshCw :size="17" :class="{ spinning: historyLoading }" aria-hidden="true" /></button>
+            <button type="button" class="summary-open-button" @click="openBusinessSummary"><ClipboardList :size="17" aria-hidden="true" />{{ t('summary.open') }}</button>
           </div>
           <div class="history-mobile-filter-row--selects">
             <label><select v-model="orderType" :aria-label="t('orders.filterType')"><option value="">{{ t('filter.orderTypeAll') }}</option><option value="DINE_IN">{{ t('order.type.dineIn') }}</option><option value="PICKUP">{{ t('order.type.pickup') }}</option><option value="DELIVERY">{{ t('order.type.delivery') }}</option></select></label>
@@ -158,7 +224,7 @@ onMounted(async () => { await refresh(false); initialized.value = true; });
         <article v-else-if="order" class="history-detail__content">
           <header class="history-detail__identity"><strong>#{{ order.orderNo }}</strong><span>{{ t(`order.type.${orderTypeKey(order.orderType)}`) }}</span><OrderStatusBadge :status="order.status" /></header>
           <dl class="history-detail__facts">
-            <div><dt>{{ t('fulfillment.waiting') }}</dt><dd><WaitDuration :created-at="order.createdAt" compact /></dd></div>
+            <div><dt>{{ t('fulfillment.duration') }}</dt><dd><WaitDuration :created-at="order.createdAt" :end-at="(order.status === 'COMPLETED' ? order.completedAt : order.cancelledAt) ?? undefined" compact /></dd></div>
             <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
             <div v-if="order.status === 'COMPLETED' || order.status === 'CANCELLED'"><dt>{{ order.status === 'COMPLETED' ? t('order.status.completed') : t('order.status.cancelled') }}</dt><dd>{{ formatVietnamDateTime(orderHistoryTime(order), locale) }}</dd></div>
           </dl>
@@ -190,5 +256,23 @@ onMounted(async () => { await refresh(false); initialized.value = true; });
         <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
       </main>
     </div>
+    <BusinessDaySummaryDialog
+      :open="summaryOpen"
+      :business-date="summaryDate"
+      :summary="businessSummary"
+      :loading="summaryLoading"
+      :printing="summaryPrinting"
+      :error="summaryError"
+      :status="summaryStatus"
+      @cancel="summaryOpen = false"
+      @date-change="changeSummaryDate"
+      @print="printSummary"
+    />
   </section>
 </template>
+
+<style scoped>
+.summary-open-button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;gap:7px;border:1px solid var(--cashier-border);border-radius:11px;padding:0 13px;background:var(--cashier-surface);color:var(--cashier-action-primary);font:inherit;font-size:13px;font-weight:800;white-space:nowrap;cursor:pointer}
+.summary-open-button:focus-visible{outline:3px solid var(--cashier-green-alpha-35);outline-offset:2px}
+@media(max-width:700px){.summary-open-button{width:100%}}
+</style>

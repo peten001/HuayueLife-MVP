@@ -142,7 +142,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     }
   }
 
-  async function checkoutSelectedSession() {
+  async function checkoutSelectedSession(paymentMethod: import('@/types').PaymentMethod) {
     const session = selectedSessionDetail.value;
     if (!session) throw new Error('No table session selected');
     if (Number(session.pendingOrderCount || 0) > 0) {
@@ -153,7 +153,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     error.value = '';
     errorKey.value = '';
     try {
-      const result = await checkoutTableSession(session.id);
+      const result = await checkoutTableSession(session.id, paymentMethod);
       if (generation === dataGeneration) {
         applySessionSnapshot(result.session);
         await fetchTables({ force: true });

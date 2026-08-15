@@ -284,6 +284,7 @@
 .history-mobile-filter-row--selects { display: contents; min-width: 0; }
 .history-mobile-filter-row--date .history-date-control { grid-column: 1; grid-row: 1; }
 .history-mobile-filter-row--date .workflow-refresh-button { grid-column: 4; grid-row: 1; }
+.history-mobile-filter-row--date .summary-open-button { grid-column: 1 / -1; grid-row: 2; width: 100%; }
 .history-mobile-filter-row--selects label:first-child { grid-column: 2; grid-row: 1; }
 .history-mobile-filter-row--selects label:last-child { grid-column: 3; grid-row: 1; }
 .history-mobile-filter-row--selects label { display: block; min-width: 0; }
@@ -307,6 +308,7 @@
   .history-mobile-filter-row--selects label,
   .history-mobile-filter-row--selects label:first-child,
   .history-mobile-filter-row--selects label:last-child { grid-column: auto; min-width: 0; }
+  .history-mobile-filter-row--date .summary-open-button { grid-column: 1 / -1; grid-row: 2; }
 }
 .history-queue__list > button.is-selected { border-color: #c6dace; border-radius: 10px; color: #285d3e; background: #f4faf6; }
 .history-order-card__top,

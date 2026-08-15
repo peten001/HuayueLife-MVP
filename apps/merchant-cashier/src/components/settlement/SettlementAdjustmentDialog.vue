@@ -25,14 +25,14 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 const rateInput = ref('10');
-const roundingEnabled = ref(false);
+const draftRoundingEnabled = ref(false);
 
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
     rateInput.value = formatDiscountRateInput(props.discountPayableRateBps);
-    roundingEnabled.value = Boolean(props.roundingEnabled);
+    draftRoundingEnabled.value = Boolean(props.roundingEnabled);
   },
   { immediate: true },
 );
@@ -54,7 +54,7 @@ const preview = computed(() => previewSettlementAdjustment({
   discountPayableRateBps: parsedRate.value.ok
     ? parsedRate.value.discountPayableRateBps
     : null,
-  roundingEnabled: roundingEnabled.value,
+  roundingEnabled: draftRoundingEnabled.value,
 }));
 
 function confirm() {
@@ -62,7 +62,7 @@ function confirm() {
   if (!parsed.ok || props.loading) return;
   emit('confirm', {
     discountPayableRateBps: parsed.discountPayableRateBps,
-    roundingEnabled: roundingEnabled.value,
+    roundingEnabled: draftRoundingEnabled.value,
   });
 }
 
@@ -95,7 +95,7 @@ function clearAdjustment() {
         </span>
         <strong id="discount-rounding-label" class="settlement-adjustment-dialog__control-label">{{ t('table.rounding') }}</strong>
         <label class="settlement-adjustment-dialog__switch">
-          <input v-model="roundingEnabled" type="checkbox" role="switch" aria-labelledby="discount-rounding-label" />
+          <input v-model="draftRoundingEnabled" type="checkbox" role="switch" aria-labelledby="discount-rounding-label" />
           <span aria-hidden="true" class="settlement-adjustment-dialog__switch-track" />
         </label>
         <small v-if="errorKey" id="discount-rate-error" class="settlement-adjustment-dialog__error">{{ t(errorKey) }}</small>

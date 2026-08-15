@@ -571,7 +571,7 @@ function iconPaths(icon: DesktopNavIcon) {
   height: 20px;
 }
 
-@media (min-width: 761px) and (max-width: 900px) {
+@media (min-width: 769px) and (max-width: 900px) {
   .app-shell--analytics .content {
     padding: 18px 18px 30px;
   }

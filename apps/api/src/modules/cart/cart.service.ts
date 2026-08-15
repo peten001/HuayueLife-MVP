@@ -46,6 +46,7 @@ export class CartService {
           merchantId: context.merchantId,
           productType: 'FOOD',
           status: 'ON_SALE',
+          deletedAt: null,
           category: { isActive: true },
         },
       });

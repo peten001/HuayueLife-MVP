@@ -24,12 +24,12 @@ import {
 } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useAuthStore, useNetworkStore, useOrdersStore, useTablesStore, useUiStore } from '@/stores';
-import type { MerchantOrderMutationResult, OrderItem, TableSessionOrder } from '@/types';
+import type { MerchantOrderMutationResult, OrderItem, PaymentMethod, TableSessionOrder } from '@/types';
 import type { CashierOrderItemView } from '@/components/common/view-models';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
+import CheckoutPaymentDialog from '@/components/settlement/CheckoutPaymentDialog.vue';
 import TableOrderingWorkspace from '@/components/ordering/TableOrderingWorkspace.vue';
 import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
 import PendingDecreaseRecovery from '@/components/orders/PendingDecreaseRecovery.vue';
@@ -176,10 +176,10 @@ async function syncRouteSelection() {
   }
 }
 
-async function checkout() {
+async function checkout(paymentMethod: PaymentMethod) {
   if (!canCheckout.value || writeDisabled.value || checkingOut.value) return;
   try {
-    const result = await tablesStore.checkoutSelectedSession();
+    const result = await tablesStore.checkoutSelectedSession(paymentMethod);
     result.orders.forEach((order) => ordersStore.applyOrderSnapshot(order));
     checkoutConfirmOpen.value = false;
     tablesStore.clearSelection();
@@ -428,7 +428,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
     <TableOrderingWorkspace :open="orderingOpen" :table-id="selectedTable?.id || ''" :table-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :session-id="session?.id || ''" :disabled="writeDisabled" @close="closeOrdering" @created="handleTableOrderCreated" @failed="handleOrderingFailure" @mutation-lock-changed="orderingMutationLocked = $event" />
     <PendingDecreaseRecovery :open="Boolean(pendingDecreaseMutation) && !adjustmentLoadingId" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" @retry="pendingDecreaseMutation && executeDecrease(pendingDecreaseMutation)" />
     <ReturnItemDialog :open="Boolean(returnDialogItem)" :item="returnDialogItem" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" :outcome-uncertain="Boolean(pendingReturnMutation) && !adjustmentLoadingId" :fixed-quantity="pendingReturnMutation?.returnQuantity" :last-order-item="returnDialogLastOrderItem" :last-table-item="returnDialogLastTableItem" @cancel="cancelReturn" @confirm="confirmReturn" />
-    <ConfirmDialog :open="checkoutConfirmOpen" :title="t('table.checkoutConfirmTitle')" :description="t('table.checkoutConfirmDescription')" :cancel-label="t('common.cancel')" :confirm-label="t('table.checkout')" :loading="checkingOut" :confirm-disabled="writeDisabled || !canCheckout" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
+    <CheckoutPaymentDialog
+      :open="checkoutConfirmOpen"
+      :amount-vnd="session?.payableAmountVnd ?? session?.totalAmountVnd ?? '0'"
+      :loading="checkingOut"
+      @cancel="checkoutConfirmOpen = false"
+      @confirm="checkout"
+    />
     <SettlementAdjustmentDialog
       v-if="session"
       :open="adjustmentOpen"

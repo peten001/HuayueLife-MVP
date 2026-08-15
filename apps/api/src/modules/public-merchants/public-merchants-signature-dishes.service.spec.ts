@@ -139,6 +139,7 @@ describe('PublicMerchantsService signature dishes', () => {
       select: {
         products: {
           where: {
+            deletedAt: null,
             productType: 'FOOD',
             status: { in: ['ON_SALE', 'SOLD_OUT'] },
           },

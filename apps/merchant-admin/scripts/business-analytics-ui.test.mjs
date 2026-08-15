@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const page = await readFile(new URL('../src/pages/BusinessAnalyticsPage.vue', import.meta.url), 'utf8');
+const dashboardPage = await readFile(new URL('../src/pages/DashboardPage.vue', import.meta.url), 'utf8');
 const api = await readFile(new URL('../src/api/analytics.ts', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/layouts/MerchantLayout.vue', import.meta.url), 'utf8');
 const trendChart = await readFile(new URL('../src/components/BusinessTrendChart.vue', import.meta.url), 'utf8');
@@ -18,6 +19,23 @@ for (const locale of ['zh:', 'vi:', 'en:']) {
 for (const field of ['generatedAt', 'revenueVnd', 'orderCount', 'averageOrderValueVnd', 'timeDistribution', 'topDishes']) {
   assert.match(api, new RegExp(`\\b${field}\\b`), `missing analytics response field ${field}`);
 }
+for (const field of ['grossAmountVnd', 'discountAmountVnd', 'roundingAmountVnd', 'netSettledAmountVnd', 'cashRevenueVnd', 'bankTransferRevenueVnd', 'unrecordedRevenueVnd']) {
+  assert.match(api, new RegExp(`\\b${field}\\b`), `missing analytics funds field ${field}`);
+}
+assert.match(page, /data-analytics-panel="funds-overview"/, 'analytics must expose a funds overview panel');
+for (const field of ['discount', 'rounding', 'net-revenue', 'cash', 'bank-transfer', 'unrecorded']) {
+  assert.match(page, new RegExp(`data-analytics-field="${field}"`), `missing funds UI reconciliation marker ${field}`);
+}
+assert.match(page, /v-if="BigInt\(analytics\.overview\.funds\.unrecordedRevenueVnd\) > 0n"[\s\S]{0,140}data-analytics-field="unrecorded"/, 'unrecorded card must be removed from the DOM (not display-hidden) when its amount is zero');
+assert.doesNotMatch(page, /visibility:\s*hidden[\s\S]{0,80}data-analytics-field="unrecorded"/, 'unrecorded must never rely on visibility:hidden placeholders');
+assert.match(page, /fundsDescription: '按已完成订单最终结账金额统计'/, 'funds header must state the final-settled-amount basis');
+assert.match(page, /fundsDescription: 'Theo tổng thanh toán cuối cùng của đơn đã hoàn tất'/, 'Vietnamese funds basis wording must exist');
+assert.match(page, /fundsDescription: 'Based on final settled amounts of completed orders'/, 'English funds basis wording must exist');
+assert.match(page, /analytics-funds-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 6px; margin: 0; \}/, 'funds block must keep a three-column desktop composition');
+assert.match(page, /@media \(max-width: 768px\)[\s\S]*\.analytics-funds-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 5px; \}/, 'mobile funds must collapse to a two-column grid');
+assert.match(page, /shareDescription: '按下单时间统计营业额分布'/, 'time revenue share must describe creation-time attribution');
+assert.match(page, /shareDescription: 'Theo thời gian đặt hàng'/, 'Vietnamese share description must use creation-time wording');
+assert.match(page, /shareDescription: 'Based on order creation time'/, 'English share description must use creation-time wording');
 
 assert.match(api, /return response\.data\.data/, 'analytics API should return the server payload without demo remapping');
 assert.match(page, /activePreset === preset\[0\]/, 'period buttons should expose an active state');
@@ -45,6 +63,7 @@ assert.doesNotMatch(page, /🤖/, 'AI brief should not depend on a platform emoj
 assert.match(layout, /path: '\/business-analytics', label: 'businessAnalytics'/, 'mobile navigation must expose the analytics active tab');
 assert.match(layout, /iconPaths\(tab\.icon\)/, 'mobile navigation should use the same line-icon family as desktop');
 assert.match(layout, /@media \(max-width: 768px\)/, 'merchant shell should switch at the 768px mobile boundary');
+assert.match(layout, /@media \(min-width: 769px\) and \(max-width: 900px\)[\s\S]*\.app-shell--analytics \.content \{\s*padding: 18px 18px 30px;/, 'analytics tablet padding must not override the 82px mobile bottom-nav clearance at exactly 768px');
 assert.match(layout, /env\(safe-area-inset-bottom\)/, 'merchant shell should reserve the phone safe area');
 assert.match(layout, /env\(safe-area-inset-top\)/, 'merchant shell should reserve the phone top safe area');
 assert.match(indexHtml, /viewport-fit=cover/, 'viewport should opt into device safe-area coordinates');
@@ -57,6 +76,8 @@ assert.match(page, /!Number\.isFinite\(value\)/, 'comparison display must guard 
 assert.match(page, /:title="formatMoney\(analytics\.overview\.revenueVnd\)"/, 'long mobile VND values should expose their full amount');
 assert.match(shareChart, /:title="formatMoney\(totalRevenue\)"/, 'doughnut center should expose the full current-period amount');
 assert.match(settingsPage, /@media\(max-width:768px\)/, 'store settings should have a 768px mobile composition');
+assert.match(settingsPage, /@media\(max-width:1100px\) and \(min-width:769px\)/, 'business hours should use a final single-column tablet breakpoint');
+assert.match(settingsPage, /repeat\(auto-fit,minmax\(260px,1fr\)\)/, 'business hour segments should size from available tablet width');
 assert.match(settingsPage, /store-profile-grid\{grid-template-columns:minmax\(0,1fr\)/, 'store profile should collapse to one column');
 assert.match(settingsPage, /grid-template-areas:'day switch' 'intervals intervals'/, 'business hours should become compact two-row day cards on mobile');
 assert.match(settingsPage, /switch input:focus-visible\+i/, 'business-hours switches should retain a visible keyboard focus state');
@@ -72,5 +93,10 @@ assert.match(staffPage, /staff-pills/, 'mobile staff cards should expose role an
 assert.match(staffPage, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/, 'mobile staff actions should use two-column wrapping');
 assert.doesNotMatch(page, /12[,.]?580[,.]?000|128\s*单|越南河粉|牛肉炒饭/, 'target-image demo values must not be embedded');
 assert.doesNotMatch(page + trendChart + shareChart, /echarts|apexcharts|recharts|highcharts/i, 'analytics must not introduce a second chart library');
+assert.match(dashboardPage, /getBusinessDaySummary\(\)/, 'dashboard revenue must use the canonical business-day summary');
+assert.match(dashboardPage, /Promise\.allSettled/, 'live orders and the business-day summary must fail independently');
+assert.match(dashboardPage, /businessDaySummary\.businessDate/, 'dashboard must display the resolved business date');
+assert.match(dashboardPage, /businessDaySummaryLoading[\s\S]*?'—'/, 'unknown business-day totals must not render as a real zero');
+assert.match(dashboardPage, /mobile-metric-green\{grid-column:1\/-1\}/, 'mobile revenue should reserve a full-width card for large VND amounts');
 
 console.log('business analytics UI checks passed');
