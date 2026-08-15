@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import PageHeader from '@/components/PageHeader.vue';
 import PlatformMerchantSignatureDishesSection from '@/components/PlatformMerchantSignatureDishesSection.vue';
 import { errorMessage } from '@/api/http';
 import {
@@ -165,6 +164,26 @@ const profileForm = reactive({
   status: 'ACTIVE',
   sortOrder: 0,
 });
+const profileFormSnapshot = reactive({
+  nameZh: '',
+  nameVi: '',
+  nameEn: '',
+  businessTypeId: '',
+  contactPhone: '',
+  contactName: '',
+  province: '',
+  addressZh: '',
+  addressVi: '',
+  addressEn: '',
+  latitude: 0,
+  longitude: 0,
+  openingHoursText: '',
+  descriptionZh: '',
+  descriptionVi: '',
+  descriptionEn: '',
+});
+const businessHoursSnapshot = reactive({ start: DEFAULT_BUSINESS_HOURS_START, end: DEFAULT_BUSINESS_HOURS_END });
+const tagsSnapshot = ref<string[]>([]);
 const provinceOptions = ['北江', '北宁'] as const;
 const capabilityValues = reactive<Record<string, boolean>>({});
 const capabilityServerValues = ref<Record<string, boolean>>({});
@@ -488,6 +507,38 @@ const qrOrderNeedsTableManagement = computed(
 const platformOrderingEnabled = computed(() =>
   Boolean(platformSettings.value?.platformOrderingEnabled),
 );
+const hasUnsavedChanges = computed(() => {
+  const profileChanged = (
+    profileForm.nameZh !== profileFormSnapshot.nameZh
+    || profileForm.nameVi !== profileFormSnapshot.nameVi
+    || profileForm.nameEn !== profileFormSnapshot.nameEn
+    || profileForm.businessTypeId !== profileFormSnapshot.businessTypeId
+    || profileForm.contactPhone !== profileFormSnapshot.contactPhone
+    || profileForm.contactName !== profileFormSnapshot.contactName
+    || profileForm.province !== profileFormSnapshot.province
+    || profileForm.addressZh !== profileFormSnapshot.addressZh
+    || profileForm.addressVi !== profileFormSnapshot.addressVi
+    || profileForm.addressEn !== profileFormSnapshot.addressEn
+    || Number(profileForm.latitude) !== Number(profileFormSnapshot.latitude)
+    || Number(profileForm.longitude) !== Number(profileFormSnapshot.longitude)
+    || profileForm.openingHoursText !== profileFormSnapshot.openingHoursText
+    || profileForm.descriptionZh !== profileFormSnapshot.descriptionZh
+    || profileForm.descriptionVi !== profileFormSnapshot.descriptionVi
+    || profileForm.descriptionEn !== profileFormSnapshot.descriptionEn
+  );
+  const hoursChanged = (
+    businessHoursStart.value !== businessHoursSnapshot.start
+    || businessHoursEnd.value !== businessHoursSnapshot.end
+  );
+  const tagsChanged = (
+    selectedTagIds.value.length !== tagsSnapshot.value.length
+    || [...selectedTagIds.value].sort().join('|') !== [...tagsSnapshot.value].sort().join('|')
+  );
+  const capabilitiesChanged = Object.keys(capabilityValues).some(
+    (code) => capabilityServerValues.value[code] !== capabilityValues[code],
+  );
+  return profileChanged || hoursChanged || tagsChanged || capabilitiesChanged;
+});
 
 onMounted(loadPage);
 watch(
@@ -584,11 +635,32 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   profileForm.isVisibleOnClient = item.isVisibleOnClient;
   profileForm.status = item.status;
   profileForm.sortOrder = item.sortOrder ?? 0;
+  Object.assign(profileFormSnapshot, {
+    nameZh: profileForm.nameZh,
+    nameVi: profileForm.nameVi,
+    nameEn: profileForm.nameEn,
+    businessTypeId: profileForm.businessTypeId,
+    contactPhone: profileForm.contactPhone,
+    contactName: profileForm.contactName,
+    province: profileForm.province,
+    addressZh: profileForm.addressZh,
+    addressVi: profileForm.addressVi,
+    addressEn: profileForm.addressEn,
+    latitude: Number(profileForm.latitude),
+    longitude: Number(profileForm.longitude),
+    openingHoursText: profileForm.openingHoursText,
+    descriptionZh: profileForm.descriptionZh,
+    descriptionVi: profileForm.descriptionVi,
+    descriptionEn: profileForm.descriptionEn,
+  });
   const businessHours = parseBusinessHours(item.businessHours);
   businessHoursStart.value = businessHours.start;
   businessHoursEnd.value = businessHours.end;
+  businessHoursSnapshot.start = businessHours.start;
+  businessHoursSnapshot.end = businessHours.end;
   businessHoursMessage.value = '';
   selectedTagIds.value = item.promotionTags.map((tag) => tag.id);
+  tagsSnapshot.value = [...selectedTagIds.value];
   Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
   capabilityValues.dineInEnabled = Boolean(item.dineInEnabled);
   for (const capability of item.capabilities) {
@@ -1308,54 +1380,71 @@ function backToList() {
 </script>
 
 <template>
-  <PageHeader :title="merchant ? '商家编辑：' + merchant.nameZh : '商家编辑'">
-    <div class="merchant-editor-top-actions">
-      <button class="editor-button is-ghost" type="button" @click="backToList">返回商家列表</button>
-      <button class="editor-button is-ghost" type="button" :disabled="!detail" title="重置资料、营业时间、标签与能力的未保存改动；不撤销已完成的图片操作" @click="detail && assignForms(detail)">重置未保存设置</button>
+  <header class="merchant-editor-header">
+    <div class="merchant-editor-header-main">
+      <button class="editor-button is-ghost merchant-back" type="button" @click="backToList">← 返回列表</button>
+      <div class="merchant-editor-heading">
+        <h1>编辑商家</h1>
+        <span v-if="merchant" class="merchant-editor-title-name">{{ merchant.nameZh }}</span>
+      </div>
+      <div v-if="merchant" class="merchant-editor-meta">
+        <span>编号 {{ merchant.id }}</span>
+        <span>创建 {{ dateTime(merchant.createdAt) }}</span>
+        <span>更新 {{ dateTime(merchant.updatedAt) }}</span>
+      </div>
+    </div>
+    <div class="merchant-editor-header-actions">
+      <span v-if="detail" class="merchant-save-state" :class="hasUnsavedChanges ? 'is-dirty' : 'is-saved'">
+        {{ hasUnsavedChanges ? '有未保存的改动' : '已保存' }}
+      </span>
+      <button
+        class="editor-button is-ghost"
+        type="button"
+        :disabled="!detail || !hasUnsavedChanges"
+        title="重置资料、营业时间、标签与能力的未保存改动；不撤销已完成的图片操作"
+        @click="detail && assignForms(detail)"
+      >重置</button>
       <button class="editor-button is-primary" type="button" :disabled="saving || !merchant" @click="saveProfile">
-        {{ saving ? '保存中...' : '保存商家资料' }}
+        {{ saving ? '保存中…' : '保存商家资料' }}
       </button>
     </div>
-  </PageHeader>
+  </header>
 
   <p v-if="message" :class="['message', { 'is-success': messageIsSuccess }]" role="status" aria-live="polite">{{ message }}</p>
-  <section v-if="loading" class="card empty">商家资料加载中...</section>
+  <section v-if="loading" class="editor-loading">商家资料加载中…</section>
 
   <template v-else-if="merchant && detail">
-    <section class="merchant-editor-meta">
-      <span>商家编号：{{ merchant.id }}</span>
-      <span>创建时间: {{ dateTime(merchant.createdAt) }}</span>
-      <span>最近更新: {{ dateTime(merchant.updatedAt) }}</span>
-    </section>
-
-    <section class="merchant-editor-summary">
+    <section class="merchant-summary">
       <div class="merchant-summary-media">
         <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" :alt="merchant.nameZh" />
         <span v-else>{{ merchant.nameZh.slice(0, 1) }}</span>
       </div>
-      <div class="merchant-summary-main">
-        <h2>{{ merchant.nameZh }}</h2>
-        <p>{{ merchant.nameVi || '未填写越南语名称' }}</p>
-        <p>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.contactName || '未填写联系人' }}</p>
-        <p>{{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</p>
+      <div class="merchant-summary-identity">
+        <div class="merchant-summary-name-row">
+          <h2>{{ merchant.nameZh }}</h2>
+          <span v-if="merchant.nameVi" class="merchant-summary-name-vi">{{ merchant.nameVi }}</span>
+        </div>
+        <div class="merchant-summary-lines">
+          <span>{{ merchant.phone || '未填写联系电话' }} · {{ merchant.contactName || '未填写联系人' }}</span>
+          <span>{{ merchant.province || merchant.city || '-' }} · {{ merchant.addressZh || merchant.address || '-' }}</span>
+        </div>
       </div>
       <div class="merchant-summary-badges">
         <span class="editor-pill" :class="merchant.isVisibleOnClient ? 'is-success' : 'is-muted'">{{ merchant.isVisibleOnClient ? '前台显示中' : '未显示' }}</span>
-        <span class="editor-pill is-success">{{ merchant.businessType?.nameZh || '未设置类型' }}</span>
+        <span class="editor-pill is-neutral">{{ merchant.businessType?.nameZh || '未设置类型' }}</span>
         <span class="editor-pill" :class="merchant.status === 'DISABLED' ? 'is-muted' : 'is-success'">{{ statusLabel(merchant.status) }}</span>
         <span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">{{ accountOpened ? '已开通账号' : '未开通账号' }}</span>
         <span class="editor-pill" :class="merchant.claimStatus === 'CLAIMED' ? 'is-success' : 'is-muted'">{{ claimLabel(merchant.claimStatus) }}</span>
-        <span v-if="isHotFoodSelected" class="editor-pill is-success">热门推荐</span>
+        <span v-if="isHotFoodSelected" class="editor-pill is-accent">热门推荐</span>
       </div>
     </section>
 
     <section class="merchant-editor-layout">
-      <div class="merchant-editor-content">
-        <section id="merchant-section-profile" class="editor-section-card">
-          <div class="editor-section-head">
+      <div class="merchant-editor-panel">
+        <section id="merchant-section-profile" class="editor-section">
+          <header class="editor-section-head">
             <div><h2>基础资料</h2><p>维护商家名称、经营类型和联系人信息</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveProfile">保存基础资料</button>
-          </div>
+          </header>
           <form class="editor-form-grid" @submit.prevent="saveProfile">
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
             <label><span>越南语名称 <b>*</b></span><input v-model="profileForm.nameVi" required maxlength="120" /></label>
@@ -1366,249 +1455,222 @@ function backToList() {
           </form>
         </section>
 
-        <section id="merchant-section-location" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>地址与定位</h2><p>用于小程序地址展示和导航，前台展示商家建议填写准确经纬度</p></div></div>
+        <section id="merchant-section-location" class="editor-section">
+          <header class="editor-section-head">
+            <div><h2>地址与定位</h2><p>用于小程序地址展示和导航，前台展示商家建议填写准确经纬度</p></div>
+          </header>
           <div class="editor-form-grid">
             <label><span>省份</span><select v-model="profileForm.province"><option value="">未设置</option><option v-for="item in provinceOptions" :key="item" :value="item">{{ item }}</option></select></label>
             <label class="span-3"><span>详细地址 <b>*</b></span><input v-model="profileForm.addressZh" required maxlength="255" /></label>
-            <label class="span-3"><span>详细地址（Tiếng Việt）</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
-            <label class="span-3"><span>详细地址（English）</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
-            <label><span>纬度</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>纬度示例：21.28</small></label>
-            <label><span>经度</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>经度示例：106.20</small></label>
+            <label><span>详细地址（Tiếng Việt）</span><input v-model="profileForm.addressVi" maxlength="255" /></label>
+            <label><span>详细地址（English）</span><input v-model="profileForm.addressEn" maxlength="255" /></label>
+            <label><span>纬度</span><input v-model.number="profileForm.latitude" type="number" step="0.0000001" placeholder="21.28" /><small>示例：21.28</small></label>
+            <label><span>经度</span><input v-model.number="profileForm.longitude" type="number" step="0.0000001" placeholder="106.20" /><small>示例：106.20</small></label>
           </div>
-          <p class="editor-tip">北江 / 北宁常见纬度为 21.x，经度为 106.x，请勿填反。前台展示商家建议填写准确经纬度，否则用户导航可能不准确。</p>
-          <p v-if="hasInvalidCoordinates" class="editor-warning">当前经纬度缺失或疑似无效，可能影响小程序导航。</p>
+          <p class="editor-helper">北江 / 北宁常见纬度为 21.x，经度为 106.x，请勿填反。前台展示商家建议填写准确经纬度，否则用户导航可能不准确。</p>
+          <p v-if="hasInvalidCoordinates" class="editor-inline-warning">当前经纬度缺失或疑似无效，可能影响小程序导航。</p>
         </section>
 
-        <section id="merchant-section-content" class="editor-section-card">
-          <div class="editor-section-head">
+        <section id="merchant-section-content" class="editor-section">
+          <header class="editor-section-head">
             <div><h2>品牌与内容</h2><p>维护小程序商家详情使用的品牌标识和三语内容</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveProfile">保存品牌与内容</button>
-          </div>
+          </header>
           <div class="editor-form-grid">
             <label class="span-3">
               <span>营业展示文案</span>
               <input v-model="profileForm.openingHoursText" maxlength="255" placeholder="例如：每天 10:00-22:00" />
               <small>仅用于用户展示；营业中/休息中仍按结构化营业时间计算。</small>
             </label>
-            <label class="span-3"><span>商家简介（中文）</span><textarea v-model="profileForm.descriptionZh" rows="4" maxlength="2000" /></label>
-            <label class="span-3"><span>商家简介（Tiếng Việt）</span><textarea v-model="profileForm.descriptionVi" rows="4" maxlength="2000" /></label>
-            <label class="span-3"><span>商家简介（English）</span><textarea v-model="profileForm.descriptionEn" rows="4" maxlength="2000" /></label>
+            <label><span>商家简介（中文）</span><textarea v-model="profileForm.descriptionZh" rows="4" maxlength="2000" /></label>
+            <label><span>商家简介（Tiếng Việt）</span><textarea v-model="profileForm.descriptionVi" rows="4" maxlength="2000" /></label>
+            <label><span>商家简介（English）</span><textarea v-model="profileForm.descriptionEn" rows="4" maxlength="2000" /></label>
           </div>
         </section>
 
-        <section id="merchant-section-businessHours" class="editor-section-card">
-          <div class="editor-section-head">
-            <div>
-              <h2>营业时间</h2>
-              <p>用于小程序判断“营业中 / 休息中”，展示文案仍由基础资料中的营业时间文案单独维护。</p>
-            </div>
-            <button
-              v-if="!isClaimedMerchant"
-              class="editor-button is-primary"
-              type="button"
-              :disabled="businessHoursSaving"
-              @click="saveBusinessHours"
-            >
-              {{ businessHoursSaving ? '保存中...' : '保存营业时间' }}
+        <section id="merchant-section-businessHours" class="editor-section">
+          <header class="editor-section-head">
+            <div><h2>营业时间</h2><p>用于小程序判断“营业中 / 休息中”，展示文案仍由基础资料中的营业时间文案单独维护。</p></div>
+            <button v-if="!isClaimedMerchant" class="editor-button is-secondary" type="button" :disabled="businessHoursSaving" @click="saveBusinessHours">
+              {{ businessHoursSaving ? '保存中…' : '保存营业时间' }}
             </button>
+          </header>
+          <p v-if="isClaimedMerchant" class="editor-helper">已认领商家的营业时间以商家后台设置为准，平台后台仅展示当前设置，不允许覆盖。</p>
+          <div class="business-hours-row">
+            <label class="business-hours-field"><span>开始时间</span><input v-model="businessHoursStart" type="time" :disabled="isClaimedMerchant" :step="60" /></label>
+            <span class="business-hours-separator" aria-hidden="true">–</span>
+            <label class="business-hours-field"><span>结束时间</span><input v-model="businessHoursEnd" type="time" :disabled="isClaimedMerchant" :step="60" /></label>
+            <span class="business-hours-preview">{{ isClaimedMerchant ? '当前营业时间' : '保存后将应用到每天' }}：{{ businessHoursStart }}-{{ businessHoursEnd }}</span>
           </div>
-          <p v-if="isClaimedMerchant" class="editor-tip">
-            已认领商家的营业时间以商家后台设置为准，平台后台仅展示当前设置，不允许覆盖。
-          </p>
-          <div class="platform-business-hours">
-            <div class="platform-business-hours-row">
-              <label>
-                <span>开始时间</span>
-                <input
-                  v-model="businessHoursStart"
-                  type="time"
-                  :disabled="isClaimedMerchant"
-                  :step="60"
-                />
-              </label>
-              <span class="platform-business-hours-separator">-</span>
-              <label>
-                <span>结束时间</span>
-                <input
-                  v-model="businessHoursEnd"
-                  type="time"
-                  :disabled="isClaimedMerchant"
-                  :step="60"
-                />
-              </label>
-            </div>
-            <p class="platform-business-hours-preview">
-              {{ isClaimedMerchant ? '当前营业时间：' : '保存后将应用到每天：' }}{{ businessHoursStart }}-{{ businessHoursEnd }}
-            </p>
-          </div>
-          <p v-if="!isClaimedMerchant" class="editor-tip">
-            未填写历史营业时间时，页面默认回填每天 10:00-22:00；只有点击保存后才会写入数据库。
-          </p>
-          <p v-if="businessHoursMessage" class="editor-warning">{{ businessHoursMessage }}</p>
+          <p v-if="!isClaimedMerchant" class="editor-helper">未填写历史营业时间时，页面默认回填每天 10:00-22:00；只有点击保存后才会写入数据库。</p>
+          <p v-if="businessHoursMessage" class="editor-inline-warning">{{ businessHoursMessage }}</p>
         </section>
 
-        <section id="merchant-section-images" class="editor-section-card">
-          <div class="editor-section-head">
-            <div><h2>商家图库</h2><p>图片按用途分类归档，无需填写图片名称；分类、排序和展示状态决定小程序中的位置。</p></div>
-          </div>
+        <section id="merchant-section-images" class="editor-section">
+          <header class="editor-section-head">
+            <div><h2>商家图库</h2><p>图片按用途分类归档；分类、排序和展示状态决定小程序中的位置。</p></div>
+          </header>
           <p v-if="imageMessage" :class="['message', 'image-local-message', { 'is-success': imageMessageIsSuccess }]" role="status" aria-live="polite">{{ imageMessage }}</p>
           <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
-          <div class="image-primary-grid">
-            <article class="image-primary-card image-primary-card--logo">
-              <strong>商家 Logo</strong>
-              <p class="image-guidance">用于商家名称旁的品牌标识，不计入顶部分类图库。</p>
-              <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
-              <div v-else class="image-empty">暂无 Logo</div>
-              <div class="image-primary-actions">
-                <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="openImagePicker('LOGO')">
-                  {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中...' : (merchant.logoUrl ? '替换 Logo' : '上传 Logo') }}
-                </button>
-                <button v-if="merchant.logoUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="removePrimaryImage('LOGO')">
-                  {{ imageSavingId === 'LOGO' ? '删除中...' : '删除 Logo' }}
-                </button>
+          <div class="gallery-primary">
+            <article class="gallery-primary-item">
+              <div class="gallery-primary-media">
+                <img v-if="merchant.logoUrl" :src="resolveMediaUrl(merchant.logoUrl)" alt="商家 Logo" />
+                <div v-else class="gallery-empty">暂无 Logo</div>
+              </div>
+              <div class="gallery-primary-info">
+                <strong>商家 Logo</strong>
+                <p>用于商家名称旁的品牌标识，不计入顶部分类图库。</p>
+                <div class="gallery-primary-actions">
+                  <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="openImagePicker('LOGO')">
+                    {{ uploadingImage && imageUploadTarget === 'LOGO' ? '上传中…' : (merchant.logoUrl ? '替换 Logo' : '上传 Logo') }}
+                  </button>
+                  <button v-if="merchant.logoUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'LOGO'" @click="removePrimaryImage('LOGO')">
+                    {{ imageSavingId === 'LOGO' ? '删除中…' : '删除' }}
+                  </button>
+                </div>
               </div>
             </article>
-            <article class="image-primary-card image-primary-card--cover">
-              <strong>封面 Cover</strong>
-              <p class="image-guidance">小程序顶部图库：封面（单张）。</p>
-              <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
-              <div v-else class="image-empty">暂无封面图</div>
-              <div class="image-primary-actions">
-                <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="openImagePicker('COVER')">
-                  {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中...' : (merchant.coverUrl ? '替换封面图片' : '上传封面图片') }}
-                </button>
-                <button v-if="merchant.coverUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="removePrimaryImage('COVER')">
-                  {{ imageSavingId === 'COVER' ? '删除中...' : '删除封面' }}
-                </button>
+            <article class="gallery-primary-item">
+              <div class="gallery-primary-media gallery-primary-media--cover">
+                <img v-if="merchant.coverUrl" :src="resolveMediaUrl(merchant.coverUrl)" alt="商家封面" />
+                <div v-else class="gallery-empty">暂无封面图</div>
+              </div>
+              <div class="gallery-primary-info">
+                <strong>封面 Cover</strong>
+                <p>小程序顶部图库：封面（单张）。</p>
+                <div class="gallery-primary-actions">
+                  <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="openImagePicker('COVER')">
+                    {{ uploadingImage && imageUploadTarget === 'COVER' ? '上传中…' : (merchant.coverUrl ? '替换封面图片' : '上传封面图片') }}
+                  </button>
+                  <button v-if="merchant.coverUrl" class="small danger" type="button" :disabled="uploadingImage || imageSavingId === 'COVER'" @click="removePrimaryImage('COVER')">
+                    {{ imageSavingId === 'COVER' ? '删除中…' : '删除' }}
+                  </button>
+                </div>
               </div>
             </article>
           </div>
-          <div class="image-classification-list">
-            <section v-for="section in contentImageSections" :key="section.type" class="image-classification-section">
-              <div class="image-classification-head">
-                <div>
-                  <h3>{{ section.title }}</h3>
-                  <p>{{ section.description }}</p>
+          <div class="gallery-classifications">
+            <div v-for="section in contentImageSections" :key="section.type" class="gallery-classification">
+              <div class="gallery-classification-head">
+                <div class="gallery-classification-title">
+                  <strong>{{ section.title }}</strong>
+                  <span class="gallery-count">{{ section.visibleCount }} 张展示中<template v-if="section.displayLimit"> · 前台最多 {{ section.displayLimit }} 张</template></span>
                   <small>{{ section.guidance }}</small>
-                  <span class="image-section-count">
-                    {{ section.visibleCount }} 张展示中
-                    <template v-if="section.displayLimit"> · 前台最多 {{ section.displayLimit }} 张</template>
-                  </span>
                 </div>
-                <button
-                  class="small secondary"
-                  type="button"
-                  :disabled="uploadingImage"
-                  @click="openImagePicker(section.type)"
-                >
-                  {{ uploadingImage && imageUploadIntent?.mode === 'CREATE' && imageUploadTarget === section.type ? '上传中...' : `上传${section.title}` }}
+                <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker(section.type)">
+                  {{ uploadingImage && imageUploadIntent?.mode === 'CREATE' && imageUploadTarget === section.type ? '上传中…' : '上传' }}
                 </button>
               </div>
-              <p v-if="section.limitNotice" class="editor-warning">{{ section.limitNotice }}</p>
-              <div v-if="section.images.length" class="merchant-gallery-grid">
-                <article v-for="image in section.images" :key="image.id" class="merchant-gallery-card" :class="{ 'is-hidden': !image.isVisible }">
-                  <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
-                  <div class="merchant-gallery-card-head">
-                    <strong>{{ section.title }}</strong>
-                    <span>{{ image.isVisible ? '展示中' : '已隐藏' }}</span>
+              <p v-if="section.limitNotice" class="editor-inline-warning">{{ section.limitNotice }}</p>
+              <div v-if="section.images.length" class="gallery-thumbs">
+                <article v-for="image in section.images" :key="image.id" class="gallery-thumb" :class="{ 'is-hidden': !image.isVisible }">
+                  <div class="gallery-thumb-media">
+                    <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
+                    <span v-if="image.isVisible && section.displayLimit" :class="['gallery-position', { 'is-over-limit': !section.frontendImagePositions[image.id] }]">
+                      {{ section.frontendImagePositions[image.id] ? `前台第 ${section.frontendImagePositions[image.id]} 张` : '超出顶部图库展示上限' }}
+                    </span>
                   </div>
-                  <p
-                    v-if="image.isVisible && section.displayLimit"
-                    :class="['merchant-gallery-placement', { 'is-over-limit': !section.frontendImagePositions[image.id] }]"
-                  >
-                    {{ section.frontendImagePositions[image.id]
-                      ? `前台第 ${section.frontendImagePositions[image.id]} 张`
-                      : '超出顶部图库展示上限' }}
-                  </p>
-                  <div class="merchant-gallery-options">
+                  <div class="gallery-thumb-controls">
                     <label><span>排序</span><input v-model.number="image.sortOrder" type="number" min="0" step="1" /></label>
                     <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
                   </div>
-                  <div class="section-actions">
+                  <div class="gallery-thumb-actions">
                     <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
-                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中...' : '保存排序与展示' }}
+                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中…' : '保存' }}
                     </button>
                     <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="openImageReplacement(image)">
-                      {{ imageSavingId === image.id && imageOperation === 'REPLACE' ? '替换中...' : '替换图片' }}
+                      {{ imageSavingId === image.id && imageOperation === 'REPLACE' ? '替换中…' : '替换' }}
                     </button>
                     <button class="small danger" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="removeMerchantImage(image)">
-                      {{ imageSavingId === image.id && imageOperation === 'DELETE' ? '删除中...' : '删除图片' }}
+                      {{ imageSavingId === image.id && imageOperation === 'DELETE' ? '删除中…' : '删除' }}
                     </button>
                   </div>
                 </article>
               </div>
-              <p v-else class="empty">暂无{{ section.title }}图片。</p>
-            </section>
+              <p v-else class="gallery-empty-state">暂无{{ section.title }}图片。</p>
+            </div>
           </div>
-          <p class="editor-tip">取消“前台展示”只隐藏图片；“删除图片”会永久移除记录并清理未被引用的物理文件。替换图片会保持原分类、排序与展示状态。门店外观、菜品、用餐环境只读取展示中的图片并按排序值进入顶部图库；MENU 按上方说明保留。</p>
+          <p class="editor-helper">取消“前台展示”只隐藏图片；“删除图片”会永久移除记录并清理未被引用的物理文件。替换图片会保持原分类、排序与展示状态。</p>
         </section>
 
-        <section id="merchant-section-signatureDishes">
+        <section id="merchant-section-signatureDishes" class="editor-section editor-section--child">
           <PlatformMerchantSignatureDishesSection
             :merchant-id="merchantId"
             :uses-menu-signature-category="usesMenuSignatureCategory"
           />
         </section>
 
-        <section id="merchant-section-visibility" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div><button class="editor-button is-primary" type="button" @click="toggleClientVisibility">{{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</button></div>
-          <div class="visibility-grid"><label class="switch-row"><input :checked="merchant.isVisibleOnClient" type="checkbox" disabled />是否前台展示</label></div>
-          <div class="risk-panel" :class="profileRisks.length ? 'is-warning' : 'is-success'"><strong>{{ profileRisks.length ? '资料待完善' : '资料完整，可展示' }}</strong><span>{{ profileRisks.length ? profileRisks.join('、') : '当前关键资料完整' }}</span></div>
+        <section id="merchant-section-visibility" class="editor-section">
+          <header class="editor-section-head">
+            <div><h2>前台展示</h2><p>控制商家是否在小程序用户端展示</p></div>
+            <button class="editor-button is-secondary" type="button" @click="toggleClientVisibility">{{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</button>
+          </header>
+          <div class="settings-row">
+            <label class="switch-row"><input :checked="merchant.isVisibleOnClient" type="checkbox" disabled />是否前台展示</label>
+            <div class="profile-completion" :class="profileRisks.length ? 'is-warning' : 'is-success'">
+              <strong>{{ profileRisks.length ? '资料待完善' : '资料完整，可展示' }}</strong>
+              <span>{{ profileRisks.length ? profileRisks.join('、') : '当前关键资料完整' }}</span>
+            </div>
+          </div>
         </section>
 
-        <section id="merchant-section-hot" class="editor-section-card">
-          <div class="editor-section-head"><div><h2>热门推荐</h2><p>当前小程序仅使用 HOT_FOOD 作为热门推荐标签</p></div><button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存热门推荐</button></div>
-          <label v-if="hotFoodTag" class="hot-food-card" :class="{ selected: isHotFoodSelected }"><input v-model="isHotFoodSelected" type="checkbox" /><span>{{ hotFoodTag.iconText || '•' }}</span><strong>HOT_FOOD / 热门推荐</strong><em>{{ isHotFoodSelected ? '已加入热门推荐' : '未加入' }}</em></label>
-          <p v-else class="empty">HOT_FOOD 推荐标签不存在</p>
+        <section id="merchant-section-hot" class="editor-section">
+          <header class="editor-section-head">
+            <div><h2>热门推荐</h2><p>当前小程序仅使用 HOT_FOOD 作为热门推荐标签</p></div>
+          </header>
+          <label v-if="hotFoodTag" class="settings-row hot-food-row" :class="{ 'is-selected': isHotFoodSelected }">
+            <span class="settings-check"><input v-model="isHotFoodSelected" type="checkbox" /></span>
+            <span class="hot-food-icon">{{ hotFoodTag.iconText || '•' }}</span>
+            <span class="hot-food-main"><strong>HOT_FOOD / 热门推荐</strong><small>{{ isHotFoodSelected ? '已加入热门推荐，保存标签配置后生效' : '未加入热门推荐' }}</small></span>
+          </label>
+          <p v-else class="editor-helper">HOT_FOOD 推荐标签不存在</p>
         </section>
 
-        <section id="merchant-section-tags" class="editor-section-card">
-          <div class="editor-section-head">
+        <section id="merchant-section-tags" class="editor-section">
+          <header class="editor-section-head">
             <div><h2>运营标签（详情页 + 首页/推荐）</h2><p>显示在商家详情名称下方，并保留现有首页与推荐运营逻辑。</p></div>
             <div class="editor-section-actions">
               <button class="editor-button is-ghost" type="button" @click="openPromotionTagCreate('OPERATIONAL')">+ 新增运营标签</button>
-              <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
+              <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存标签配置</button>
             </div>
-          </div>
-          <div v-if="managedOperationalPromotionTags.length" class="content-tag-picker">
-            <article v-for="tag in managedOperationalPromotionTags" :key="tag.id" class="tag-management-item">
-              <label class="content-tag-option" :class="{ selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }">
+          </header>
+          <div v-if="managedOperationalPromotionTags.length" class="tag-config-list">
+            <article v-for="tag in managedOperationalPromotionTags" :key="tag.id" class="tag-config-row" :class="{ 'is-selected': selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }">
+              <label class="tag-config-select">
                 <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
-                <span>{{ tag.iconText || '•' }}</span>
-                <strong>{{ tag.nameZh }}</strong>
-                <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
+                <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
+                <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.nameVi || tag.nameEn || tag.code }}</small></span>
               </label>
-              <footer class="tag-management-actions">
-                <span>{{ tag.reserved ? `系统标签 · ${tag.merchantReferenceCount} 个商家` : (tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用') }}</span>
-                <div>
-                  <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
-                  <button class="small danger" type="button" :disabled="tag.reserved || Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
-                    {{ tag.reserved ? '不可删除' : (deletingPromotionTagId === tag.id ? '删除中...' : '删除') }}
-                  </button>
-                </div>
-              </footer>
+              <span class="tag-config-count">{{ tag.reserved ? `系统标签 · ${tag.merchantReferenceCount} 个商家` : (tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用') }}</span>
+              <div class="tag-config-actions">
+                <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                <button class="small danger" type="button" :disabled="tag.reserved || Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                  {{ tag.reserved ? '不可删除' : (deletingPromotionTagId === tag.id ? '删除中…' : '删除') }}
+                </button>
+              </div>
             </article>
           </div>
-          <p v-else class="empty">暂无可分配的平台运营标签。</p>
-          <div v-if="systemOperationalPromotionTags.length" class="system-promotion-tag-list">
-            <div v-for="tag in systemOperationalPromotionTags" :key="tag.id" class="system-promotion-tag-row">
-              <div>
-                <strong>{{ tag.nameZh }}</strong>
-                <small>{{ tag.code }} · {{ tag.merchantReferenceCount }} 个商家</small>
+          <p v-else class="editor-helper">暂无可分配的平台运营标签。</p>
+          <div v-if="systemOperationalPromotionTags.length" class="tag-config-list tag-config-list--system">
+            <div v-for="tag in systemOperationalPromotionTags" :key="tag.id" class="tag-config-row">
+              <div class="tag-config-select">
+                <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
+                <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.code }} · {{ tag.merchantReferenceCount }} 个商家</small></span>
               </div>
               <span class="system-tag-badge">系统标签</span>
-              <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑文案</button>
-              <button class="small danger" type="button" disabled>不可删除</button>
+              <div class="tag-config-actions">
+                <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑文案</button>
+                <button class="small danger" type="button" disabled>不可删除</button>
+              </div>
             </div>
           </div>
         </section>
 
-        <section id="merchant-section-display-tags" class="editor-section-card">
-          <div class="editor-section-head">
+        <section id="merchant-section-display-tags" class="editor-section">
+          <header class="editor-section-head">
             <div><h2>菜系与场景标签（详情页）</h2><p>面向消费者展示；前台按当前排序显示菜系前 2 个、场景前 2 个。</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存全部标签配置</button>
-          </div>
+            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存标签配置</button>
+          </header>
           <div class="display-tag-groups">
             <div class="display-tag-group">
               <div class="display-tag-group-head">
@@ -1618,27 +1680,23 @@ function backToList() {
                   <button class="small secondary" type="button" @click="openPromotionTagCreate('CUISINE')">+ 新增菜系</button>
                 </div>
               </div>
-              <div v-if="managedCuisinePromotionTags.length" class="content-tag-picker">
-                <article v-for="tag in managedCuisinePromotionTags" :key="tag.id" class="tag-management-item">
-                  <label :class="['content-tag-option', tag.enabled ? detailTagDisplayState(tag.id) : '', { selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+              <div v-if="managedCuisinePromotionTags.length" class="tag-config-list">
+                <article v-for="tag in managedCuisinePromotionTags" :key="tag.id" class="tag-config-row" :class="[tag.enabled ? detailTagDisplayState(tag.id) : '', { 'is-selected': selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+                  <label class="tag-config-select">
                     <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
-                    <span>{{ tag.iconText || '•' }}</span>
-                    <strong>{{ tag.nameZh }}</strong>
-                    <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
-                    <em v-if="tag.enabled && selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
+                    <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
+                    <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.nameVi || tag.nameEn || tag.code }}</small></span>
                   </label>
-                  <footer class="tag-management-actions">
-                    <span>{{ tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用' }}</span>
-                    <div>
-                      <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
-                      <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
-                        {{ deletingPromotionTagId === tag.id ? '删除中...' : '删除' }}
-                      </button>
-                    </div>
-                  </footer>
+                  <span v-if="tag.enabled && selectedTagIds.includes(tag.id)" class="tag-frontend-state">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</span>
+                  <div class="tag-config-actions">
+                    <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                    <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                      {{ deletingPromotionTagId === tag.id ? '删除中…' : '删除' }}
+                    </button>
+                  </div>
                 </article>
               </div>
-              <p v-else class="empty">暂无菜系标签，请先在标签字典中创建。</p>
+              <p v-else class="editor-helper">暂无菜系标签，请先在标签字典中创建。</p>
             </div>
             <div class="display-tag-group">
               <div class="display-tag-group-head">
@@ -1648,122 +1706,71 @@ function backToList() {
                   <button class="small secondary" type="button" @click="openPromotionTagCreate('SCENE')">+ 新增场景</button>
                 </div>
               </div>
-              <div v-if="managedScenePromotionTags.length" class="content-tag-picker">
-                <article v-for="tag in managedScenePromotionTags" :key="tag.id" class="tag-management-item">
-                  <label :class="['content-tag-option', tag.enabled ? detailTagDisplayState(tag.id) : '', { selected: selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+              <div v-if="managedScenePromotionTags.length" class="tag-config-list">
+                <article v-for="tag in managedScenePromotionTags" :key="tag.id" class="tag-config-row" :class="[tag.enabled ? detailTagDisplayState(tag.id) : '', { 'is-selected': selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
+                  <label class="tag-config-select">
                     <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
-                    <span>{{ tag.iconText || '•' }}</span>
-                    <strong>{{ tag.nameZh }}</strong>
-                    <small>{{ tag.nameVi || tag.nameEn || tag.code }}</small>
-                    <em v-if="tag.enabled && selectedTagIds.includes(tag.id)">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</em>
+                    <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
+                    <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.nameVi || tag.nameEn || tag.code }}</small></span>
                   </label>
-                  <footer class="tag-management-actions">
-                    <span>{{ tag.enabled ? `${tag.merchantReferenceCount} 个商家` : '已停用' }}</span>
-                    <div>
-                      <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
-                      <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
-                        {{ deletingPromotionTagId === tag.id ? '删除中...' : '删除' }}
-                      </button>
-                    </div>
-                  </footer>
+                  <span v-if="tag.enabled && selectedTagIds.includes(tag.id)" class="tag-frontend-state">{{ frontendDetailTagIds.has(tag.id) ? '前台展示' : '超出前台上限' }}</span>
+                  <div class="tag-config-actions">
+                    <button class="small secondary" type="button" @click="openPromotionTagEdit(tag)">编辑</button>
+                    <button class="small danger" type="button" :disabled="Boolean(deletingPromotionTagId)" @click="removePromotionTag(tag)">
+                      {{ deletingPromotionTagId === tag.id ? '删除中…' : '删除' }}
+                    </button>
+                  </div>
                 </article>
               </div>
-              <p v-else class="empty">暂无场景标签，请先在标签字典中创建。</p>
+              <p v-else class="editor-helper">暂无场景标签，请先在标签字典中创建。</p>
             </div>
           </div>
-          <p v-if="hasDetailTagOverflow" class="editor-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签；标记“超出前台上限”的标签会保留关联，但不会进入当前详情页前 2+2 展示。</p>
+          <p v-if="hasDetailTagOverflow" class="editor-inline-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签；标记“超出前台上限”的标签会保留关联，但不会进入当前详情页前 2+2 展示。</p>
         </section>
 
-        <section id="merchant-section-capabilities" class="editor-section-card">
-          <div class="editor-section-head capabilities-head">
+        <section id="merchant-section-capabilities" class="editor-section">
+          <header class="editor-section-head">
             <div><h2>能力开关</h2><p>控制商家在小程序和商家后台可使用的功能</p></div>
             <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveCapabilities">保存能力</button>
-          </div>
-          <div class="capabilities-banner">
-            <span class="capabilities-banner-icon">i</span>
+          </header>
+          <div class="capability-banner">
+            <span class="capability-banner-icon">i</span>
             <p>展示型商家默认只开启电话、导航、图片展示。到店扫码点餐不依赖在线下单，开启后建议同步开启桌台管理并完成桌码配置。</p>
           </div>
-          <div v-if="!platformOrderingEnabled" class="capabilities-banner capabilities-banner--warning">
-            <span class="capabilities-banner-icon">!</span>
+          <div v-if="!platformOrderingEnabled" class="capability-banner is-warning">
+            <span class="capability-banner-icon">!</span>
             <p>平台已关闭经营能力总开关，当前商家的经营/订单能力暂不可编辑；平台打印总能力仍可独立开通或关闭。</p>
           </div>
-          <section v-if="printingSummary" class="platform-printing-summary" aria-label="商家打印状态">
-            <header>
-              <div>
-                <h3>打印配置状态</h3>
-                <p>平台仅查看能力、配置与连接摘要；USB 设备参数由商家终端管理。</p>
-              </div>
-            </header>
-            <div class="platform-printing-summary-grid">
-              <article>
-                <span>平台打印能力</span>
-                <strong :class="{ 'is-positive': printingSummary.capabilityEnabled }">
-                  {{ printingSummary.capabilityEnabled ? '已开通' : '未开通' }}
-                </strong>
-              </article>
-              <article>
-                <span>打印机配置</span>
-                <strong :class="{ 'is-positive': printingSummary.configurationState === 'CONFIGURED' }">
-                  {{ printingConfigurationLabel(printingSummary.configurationState) }}
-                </strong>
-              </article>
-              <article>
-                <span>自动打印</span>
-                <strong :class="{ 'is-positive': printingSummary.automaticPrintingEnabled }">
-                  {{ printingSummary.automaticPrintingEnabled ? '已启用' : '未启用' }}
-                </strong>
-              </article>
-              <article>
-                <span>最近终端连接</span>
-                <strong :class="{ 'is-positive': printingSummary.connectionState === 'CONNECTED' }">
-                  {{ printingConnectionLabel(printingSummary.connectionState) }}
-                </strong>
-                <small>最近上报：{{ printingTimeLabel(printingSummary.lastReportedAt) }}</small>
-                <small>最近成功连接：{{ printingTimeLabel(printingSummary.lastConnectedAt) }}</small>
-              </article>
+          <div v-if="printingSummary" class="printing-summary" aria-label="商家打印状态">
+            <div class="printing-summary-head">
+              <strong>打印配置状态</strong>
+              <span>平台仅查看能力、配置与连接摘要；USB 设备参数由商家终端管理。</span>
             </div>
-          </section>
+            <dl class="printing-summary-grid">
+              <div><dt>平台打印能力</dt><dd :class="{ 'is-positive': printingSummary.capabilityEnabled }">{{ printingSummary.capabilityEnabled ? '已开通' : '未开通' }}</dd></div>
+              <div><dt>打印机配置</dt><dd :class="{ 'is-positive': printingSummary.configurationState === 'CONFIGURED' }">{{ printingConfigurationLabel(printingSummary.configurationState) }}</dd></div>
+              <div><dt>自动打印</dt><dd :class="{ 'is-positive': printingSummary.automaticPrintingEnabled }">{{ printingSummary.automaticPrintingEnabled ? '已启用' : '未启用' }}</dd></div>
+              <div><dt>最近终端连接</dt><dd :class="{ 'is-positive': printingSummary.connectionState === 'CONNECTED' }">{{ printingConnectionLabel(printingSummary.connectionState) }}</dd><dd class="is-note">最近上报 {{ printingTimeLabel(printingSummary.lastReportedAt) }} · 连接 {{ printingTimeLabel(printingSummary.lastConnectedAt) }}</dd></div>
+            </dl>
+          </div>
           <div class="capability-groups">
-            <article class="capability-group-card">
-              <div class="capability-group-head">
-                <div>
-                  <h3>展示能力</h3>
-                  <p>小程序前台展示</p>
-                </div>
-              </div>
-              <div class="capability-grid capability-grid--display">
-                <label
-                  v-for="capability in displayCapabilityCards"
-                  :key="capability.code"
-                  :class="['capability-card', { 'is-enabled': capabilityEnabled(capability.code) }]"
-                >
+            <div class="capability-group">
+              <header class="capability-group-head"><strong>展示能力</strong><span>小程序前台展示</span></header>
+              <div class="capability-rows">
+                <label v-for="capability in displayCapabilityCards" :key="capability.code" :class="['capability-row', { 'is-enabled': capabilityEnabled(capability.code) }]">
                   <input v-model="capabilityValues[capability.code]" type="checkbox" />
                   <span class="capability-icon">{{ capability.icon }}</span>
-                  <span class="capability-card-main">
-                    <strong>{{ capability.title }}</strong>
-                    <small>{{ capability.description }}</small>
-                  </span>
+                  <span class="capability-main"><strong>{{ capability.title }}</strong><small>{{ capability.description }}</small></span>
                 </label>
               </div>
-            </article>
-            <article :class="['capability-group-card', { 'is-disabled': !platformOrderingEnabled }]">
-              <div class="capability-group-head">
-                <div>
-                  <h3>经营能力</h3>
-                  <p>商家经营与订单相关</p>
-                </div>
-              </div>
-              <div class="capability-grid capability-grid--operation">
+            </div>
+            <div class="capability-group" :class="{ 'is-disabled': !platformOrderingEnabled }">
+              <header class="capability-group-head"><strong>经营能力</strong><span>商家经营与订单相关</span></header>
+              <div class="capability-rows">
                 <label
                   v-for="capability in operationCapabilityCards"
                   :key="capability.code"
-                  :class="[
-                    'capability-card',
-                    {
-                      'is-enabled': capabilityEnabled(capability.code),
-                      'is-disabled': !platformOrderingEnabled && capability.code !== 'printerEnabled',
-                    },
-                  ]"
+                  :class="['capability-row', { 'is-enabled': capabilityEnabled(capability.code), 'is-disabled': !platformOrderingEnabled && capability.code !== 'printerEnabled' }]"
                 >
                   <input
                     v-model="capabilityValues[capability.code]"
@@ -1771,75 +1778,68 @@ function backToList() {
                     :disabled="!platformOrderingEnabled && capability.code !== 'printerEnabled'"
                   />
                   <span class="capability-icon">{{ capability.icon }}</span>
-                  <span class="capability-card-main">
-                    <strong>
-                      {{ capability.title }}
-                      <em v-if="capability.badge">{{ capability.badge }}</em>
-                    </strong>
+                  <span class="capability-main">
+                    <strong>{{ capability.title }}<em v-if="capability.badge">{{ capability.badge }}</em></strong>
                     <small>{{ capability.description }}</small>
                   </span>
                 </label>
               </div>
-            </article>
-          </div>
-          <p v-if="qrOrderNeedsTableManagement" class="editor-warning">提示：开启“到店扫码点餐”后，建议同时开启“桌台管理”，并完成桌码配置以确保顾客正常扫码点餐。</p>
-        </section>
-
-        <section id="merchant-section-account" class="editor-section-card">
-          <div class="editor-section-head">
-            <div>
-              <h2>商家账号</h2>
-              <p>管理商家后台登录账号和认领状态</p>
             </div>
           </div>
-          <div class="account-card" :class="accountOpened ? 'is-opened' : 'is-empty'">
-            <div class="account-card-head">
-              <span class="editor-pill" :class="accountOpened ? 'is-success' : 'is-warning'">
-                {{ accountOpened ? '已开通' : '未开通' }}
-              </span>
-              <button
-                v-if="accountOpened && merchant.account"
-                class="editor-button is-secondary account-phone-change-button"
-                type="button"
-                @click="openAccountPhoneDialog"
-              >
-                更换手机号
-              </button>
-            </div>
-            <strong>{{ accountOpened ? merchant.account : '该商家暂未开通后台账号' }}</strong>
-            <p>{{ accountOpened ? `认领状态：${claimLabel(merchant.claimStatus)}` : '仍可作为展示型商家在小程序展示。' }}</p>
-            <div class="section-actions">
-              <button
-                v-if="merchant.claimStatus === 'UNCLAIMED'"
-                class="editor-button is-primary"
-                type="button"
-                @click="openAccount"
-              >
-                开通商家后台账号
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section id="merchant-section-danger" class="editor-section-card danger-card">
-          <div class="editor-section-head">
-            <div>
-              <h2>危险操作</h2>
-              <p>以下操作会影响商家前台展示、后台账号或商家状态，请谨慎处理。</p>
-            </div>
-          </div>
-          <div class="danger-actions">
-            <button class="editor-button is-danger-outline" type="button" @click="toggleClientVisibility">
-              {{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}
-            </button>
-            <button class="editor-button is-danger-outline" type="button" @click="toggleMerchantStatus">
-              {{ merchant.status === 'DISABLED' ? '启用商家' : '停用商家' }}
-            </button>
-            <button class="editor-button is-danger-outline" type="button" @click="resetPassword">重置密码</button>
-            <button class="editor-button is-danger" type="button" @click="deleteMerchant">删除商家</button>
-          </div>
+          <p v-if="qrOrderNeedsTableManagement" class="editor-inline-warning">提示：开启“到店扫码点餐”后，建议同时开启“桌台管理”，并完成桌码配置以确保顾客正常扫码点餐。</p>
         </section>
       </div>
+
+      <aside class="merchant-editor-aside">
+        <section id="merchant-section-account" class="editor-section aside-section">
+          <header class="editor-section-head">
+            <div><h2>商家账号</h2><p>管理商家后台登录账号和认领状态</p></div>
+          </header>
+          <div class="account-summary">
+            <div class="account-summary-row">
+              <span>开通状态</span>
+              <strong :class="accountOpened ? 'is-positive' : 'is-muted'">{{ accountOpened ? '已开通' : '未开通' }}</strong>
+            </div>
+            <div class="account-summary-row">
+              <span>登录手机号</span>
+              <strong>{{ accountOpened ? merchant.account : '—' }}</strong>
+            </div>
+            <div class="account-summary-row">
+              <span>认领状态</span>
+              <strong>{{ claimLabel(merchant.claimStatus) }}</strong>
+            </div>
+            <p v-if="!accountOpened" class="account-hint">仍可作为展示型商家在小程序展示。</p>
+            <div class="section-actions">
+              <button v-if="merchant.claimStatus === 'UNCLAIMED'" class="editor-button is-primary" type="button" @click="openAccount">开通商家后台账号</button>
+              <button v-if="accountOpened && merchant.account" class="editor-button is-secondary" type="button" @click="openAccountPhoneDialog">更换手机号</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="merchant-section-danger" class="editor-section aside-section danger-section">
+          <header class="editor-section-head">
+            <div><h2>危险操作</h2><p>以下操作会影响前台展示、账号或商家状态</p></div>
+          </header>
+          <div class="danger-list">
+            <button class="danger-row" type="button" @click="toggleClientVisibility">
+              <span>{{ merchant.isVisibleOnClient ? '隐藏前台' : '显示前台' }}</span>
+              <small>控制小程序前台展示</small>
+            </button>
+            <button class="danger-row" type="button" @click="toggleMerchantStatus">
+              <span>{{ merchant.status === 'DISABLED' ? '启用商家' : '停用商家' }}</span>
+              <small>{{ merchant.status === 'DISABLED' ? '恢复商家可展示状态' : '暂停商家前台展示与营业' }}</small>
+            </button>
+            <button class="danger-row" type="button" @click="resetPassword">
+              <span>重置密码</span>
+              <small>重置商家后台登录密码</small>
+            </button>
+            <button class="danger-row is-strong" type="button" @click="deleteMerchant">
+              <span>删除商家</span>
+              <small>永久删除，不可恢复</small>
+            </button>
+          </div>
+        </section>
+      </aside>
     </section>
   </template>
 
@@ -1969,715 +1969,133 @@ function backToList() {
 </template>
 
 <style scoped>
-.merchant-workbench-hero {
-  display: grid;
-  grid-template-columns: 96px 1fr auto;
-  gap: 20px;
-  align-items: start;
-  padding: 24px;
-  margin-bottom: 16px;
-  border-radius: 22px;
-  color: #fff;
-  background: linear-gradient(120deg, #124227, #257649);
-  background-size: cover;
-  background-position: center;
-  box-shadow: 0 18px 45px rgba(16, 83, 48, 0.18);
-}
-
-.merchant-workbench-logo {
-  display: grid;
-  width: 96px;
-  height: 96px;
-  place-items: center;
-  overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.55);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 42px;
-  font-weight: 800;
-}
-
-.merchant-workbench-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.merchant-workbench-main {
-  display: grid;
-  gap: 8px;
-}
-
-.merchant-workbench-main p {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.86);
-}
-
-.merchant-workbench-title,
-.merchant-workbench-tags,
-.merchant-workbench-actions {
+.merchant-editor-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
   align-items: center;
-}
-
-.merchant-workbench-title h2 {
-  margin: 0 8px 0 0;
-  color: #fff;
-  font-size: 28px;
-}
-
-.merchant-workbench-actions {
-  justify-content: flex-end;
-  max-width: 360px;
-}
-
-.merchant-workbench-actions button {
-  background: rgba(255, 255, 255, 0.94);
-  color: #165233;
-}
-
-.merchant-workbench-actions .warning {
-  color: #9f2d20;
-}
-
-.promotion-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.merchant-workbench-tabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px;
-  margin-bottom: 16px;
-  border: 1px solid #d8e6dc;
-  border-radius: 16px;
-  background: #f8fcf9;
-}
-
-.merchant-workbench-tabs button {
-  flex: none;
-  background: transparent;
-  color: #31553c;
-}
-
-.merchant-workbench-tabs button.active {
-  background: #1d7a46;
-  color: #fff;
-}
-
-.merchant-dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.dashboard-status-grid,
-.dashboard-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.dashboard-status-grid div,
-.dashboard-metrics-grid div,
-.analytics-range-card div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #f8fcf9;
-}
-
-.dashboard-status-grid span,
-.dashboard-metrics-grid span,
-.analytics-range-card span {
-  color: #667085;
-  font-size: 13px;
-}
-
-.capability-overview,
-.capability-management-grid,
-.tag-picker-grid,
-.analytics-range-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.capability-group-card,
-.capability-edit-card,
-.tag-picker-card,
-.analytics-range-card {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid #d8e6dc;
-  border-radius: 14px;
-  background: #fff;
-}
-
-.capability-pill {
-  padding: 7px 10px;
-  border-radius: 999px;
-  color: #6b7280;
-  background: #f1f5f3;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.capability-pill.enabled {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.capabilities-head {
-  align-items: center;
-}
-
-.capabilities-banner {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  border: 1px solid #cfe7d4;
-  border-radius: 16px;
-  background: #f3fbf5;
-}
-
-.capabilities-banner-icon {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  place-items: center;
-  border-radius: 50%;
-  color: #166534;
-  background: #dcfce7;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.capabilities-banner p {
-  margin: 0;
-  color: #54705b;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.capabilities-banner--warning {
-  border-color: #f3d98b;
-  background: #fff8e6;
-}
-
-.capabilities-banner--warning .capabilities-banner-icon {
-  color: #946200;
-  background: #fef0c7;
-}
-
-.capabilities-banner--warning p {
-  color: #7a5b11;
-}
-
-.platform-printing-summary {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-  border: 1px solid #cfe7d4;
-  border-radius: 16px;
-  background: #f8fcf9;
-}
-
-.platform-printing-summary header h3,
-.platform-printing-summary header p {
-  margin: 0;
-}
-
-.platform-printing-summary header h3 {
-  color: #13351f;
-  font-size: 16px;
-}
-
-.platform-printing-summary header p {
-  margin-top: 4px;
-  color: #667085;
-  font-size: 12px;
-}
-
-.platform-printing-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.platform-printing-summary-grid article {
-  display: grid;
-  align-content: start;
-  gap: 5px;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid #dce9df;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.platform-printing-summary-grid span,
-.platform-printing-summary-grid small {
-  color: #667085;
-  font-size: 12px;
-}
-
-.platform-printing-summary-grid strong {
-  color: #9a6700;
-  font-size: 15px;
-}
-
-.platform-printing-summary-grid strong.is-positive {
-  color: #17693c;
-}
-
-.capability-groups {
-  display: grid;
-  gap: 16px;
-}
-
-.capability-group-card {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid #d8e6dc;
-  border-radius: 18px;
-  background: #fff;
-}
-
-.capability-group-card.is-disabled {
-  background: #f8faf9;
-}
-
-.capability-group-head {
-  display: flex;
   justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.capability-group-head h3 {
-  margin: 0;
-  color: #13351f;
-  font-size: 18px;
-}
-
-.capability-group-head p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.capability-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.capability-grid--display {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.capability-grid--operation {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.capability-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 34px 1fr;
-  gap: 12px;
-  align-items: start;
-  padding: 14px;
-  border: 1px solid #cfe7d4;
-  border-radius: 14px;
-  background: #fdfefc;
-  cursor: pointer;
-}
-
-.capability-card input {
-  margin-top: 6px;
-  accent-color: #1d7a46;
-}
-
-.capability-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 10px;
-  color: #1d7a46;
-  background: #eaf7ee;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.capability-card-main {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.capability-card-main strong {
+.merchant-editor-header-main {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
-  color: #13351f;
-  font-size: 15px;
-}
-
-.capability-card-main strong em {
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: #b45309;
-  background: #fef3c7;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 700;
-}
-
-.capability-card-main small {
-  color: #6b7280;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.capability-card:hover {
-  border-color: #b8dec2;
-  background: #f8fcf9;
-}
-
-.capability-card.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.68;
-}
-
-.capability-card.is-disabled:hover {
-  border-color: #cfe7d4;
-  background: #fdfefc;
-}
-
-.capability-card.is-enabled {
-  border-color: #9bd1a5;
-  background: #f3fbf5;
-}
-
-.capability-card.is-enabled .capability-icon {
-  color: #fff;
-  background: #1d7a46;
-}
-
-.capability-card.is-enabled .capability-card-main strong {
-  color: #1d7a46;
-}
-
-.capability-card.is-enabled .capability-card-main small {
-  color: #5b7161;
-}
-
-.capability-card.is-enabled .capability-card-main strong em {
-  color: #b45309;
-  background: #fde68a;
-}
-
-.capability-toggle,
-.tag-picker-card {
-  cursor: pointer;
-}
-
-.capability-toggle {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px 10px;
-  align-items: center;
-}
-
-.capability-toggle small {
-  grid-column: 2;
-  color: #667085;
-}
-
-.tag-picker-card {
-  grid-template-columns: auto 1fr;
-}
-
-.tag-picker-card input {
-  grid-row: span 2;
-}
-
-.tag-picker-card.selected {
-  background: #f8fcf9;
-}
-
-.tag-icon {
-  font-size: 20px;
-}
-
-.image-preview-grid,
-.merchant-image-table {
-  display: grid;
-  gap: 12px;
-}
-
-.image-preview-card,
-.merchant-image-row {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #d8e6dc;
-  border-radius: 14px;
-  background: #f8fcf9;
-  text-align: left;
-}
-
-.image-preview-card img {
-  width: 100%;
-  height: 120px;
-  object-fit: cover;
-  border-radius: 10px;
-}
-
-.merchant-image-row {
-  grid-template-columns: 110px 1fr auto;
-  align-items: center;
-}
-
-.merchant-image-row img {
-  width: 110px;
-  height: 78px;
-  object-fit: cover;
-  border-radius: 10px;
-  background: #edf5ee;
-}
-
-.merchant-image-row div {
+  gap: 14px;
   min-width: 0;
-  display: grid;
-  gap: 4px;
 }
 
-.merchant-image-row small {
+.merchant-editor-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.merchant-editor-heading h1 {
+  margin: 0;
+  color: #173622;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.merchant-editor-title-name {
   overflow: hidden;
-  color: #667085;
+  color: #5a6b60;
+  font-size: 13.5px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.image-row-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.section-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.image-editor-form {
-  margin-bottom: 16px;
-}
-
-.hidden-file-input {
-  display: none;
-}
-
-.image-upload-preview {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px dashed #bfd3c4;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.image-upload-preview span {
-  color: #667085;
-  font-size: 13px;
-}
-
-.image-upload-preview img {
-  width: 100%;
-  max-width: 220px;
-  height: 140px;
-  object-fit: cover;
-  border-radius: 10px;
-  background: #edf5ee;
-}
-
-@media (max-width: 900px) {
-  .merchant-workbench-hero,
-  .merchant-dashboard-grid,
-  .merchant-image-row,
-  .platform-printing-summary-grid,
-  .capability-grid--display,
-  .capability-grid--operation {
-    grid-template-columns: 1fr;
-  }
-
-  .merchant-workbench-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 1200px) {
-  .capability-grid--display,
-  .capability-grid--operation {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.merchant-editor-top-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.editor-button,
-.form-actions button,
-.small.secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid #cfe8d6;
-  border-radius: 11px;
-  background: #f3fbf5;
-  color: #147a35;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.editor-button:disabled,
-.form-actions button:disabled,
-.small.secondary:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-.editor-button.is-primary,
-.form-actions button {
-  border-color: #86d39b;
-  background: #dcfce7;
-  color: #166534;
-}
-
-.editor-button.is-ghost {
-  border-color: #d9e3dd;
-  background: #fff;
-  color: #334155;
-}
-
-.editor-button.is-secondary,
-.small.secondary {
-  border-color: #cfe8d6;
-  background: #f3fbf5;
-  color: #147a35;
-}
-
-.editor-button.is-danger,
-.editor-button.is-danger-outline {
-  border-color: #fecaca;
-  background: #fff5f5;
-  color: #dc2626;
-}
-
-.editor-button.is-danger {
-  background: #fee2e2;
-}
-
-.merchant-more-actions {
-  position: relative;
-}
-
-.merchant-more-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 8px);
-  right: 0;
-  display: grid;
-  min-width: 168px;
-  padding: 8px;
-  border: 1px solid #dbe8df;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
-}
-
-.merchant-more-menu button {
-  justify-content: flex-start;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: #334155;
-  font-weight: 700;
-  text-align: left;
-}
-
-.merchant-more-menu button:hover {
-  background: #f6fbf7;
-}
-
-.merchant-more-menu button.is-danger {
-  color: #dc2626;
 }
 
 .merchant-editor-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  margin: 0 0 12px;
-  color: #64748b;
-  font-size: 13px;
+  gap: 6px 14px;
+  padding-left: 14px;
+  border-left: 1px solid #e4ebe6;
+  color: #87908b;
+  font-size: 12.5px;
 }
 
-.merchant-editor-summary {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) minmax(280px, auto);
-  gap: 16px;
+.merchant-editor-header-actions {
+  display: flex;
   align-items: center;
-  min-height: 104px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
-  border: 1px solid #dbe8df;
-  border-radius: 18px;
-  background: #f8fcf9;
-  box-shadow: 0 10px 28px rgba(15, 83, 48, 0.06);
+  gap: 10px;
+  flex: none;
+}
+
+.merchant-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.merchant-save-state::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.merchant-save-state.is-saved {
+  color: #2f855a;
+}
+
+.merchant-save-state.is-dirty {
+  color: #b45309;
+}
+
+.editor-loading {
+  padding: 48px 20px;
+  color: #7a8780;
+  font-size: 14px;
+  text-align: center;
+}
+
+.message {
+  min-height: 0;
+  margin: 0 0 14px;
+  color: #b02a2a;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.message.is-success {
+  color: #1f7a3d;
+}
+
+.image-local-message {
+  margin: 0 0 12px;
+}
+
+.merchant-summary {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #e4ebe6;
+  border-radius: 10px;
+  background: #fbfdfb;
 }
 
 .merchant-summary-media {
   display: grid;
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   place-items: center;
   overflow: hidden;
-  border-radius: 16px;
-  background: #dcfce7;
-  color: #166534;
-  font-size: 24px;
+  border: 1px solid #dfe9e2;
+  border-radius: 10px;
+  background: #eaf7ee;
+  color: #1f7a3d;
+  font-size: 22px;
   font-weight: 800;
 }
 
@@ -2687,156 +2105,285 @@ function backToList() {
   object-fit: cover;
 }
 
-.merchant-summary-main {
+.merchant-summary-identity {
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
 
-.merchant-summary-main h2 {
-  margin: 0 0 4px;
-  color: #0f172a;
-  font-size: 20px;
+.merchant-summary-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
-.merchant-summary-main p {
+.merchant-summary-name-row h2 {
   overflow: hidden;
-  margin: 2px 0;
-  color: #64748b;
+  margin: 0;
+  color: #173622;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merchant-summary-name-vi {
+  overflow: hidden;
+  color: #5a6b60;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.merchant-summary-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  color: #66736c;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .merchant-summary-badges {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+  max-width: 46%;
 }
 
 .editor-pill {
   display: inline-flex;
   align-items: center;
-  height: 24px;
+  height: 22px;
   padding: 0 9px;
+  border: 1px solid #e4ebe6;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #64748b;
+  background: #f1f5f3;
+  color: #5a6b60;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .editor-pill.is-success {
-  background: #dcfce7;
-  color: #166534;
+  border-color: #cde5d5;
+  background: #e7f6eb;
+  color: #1f7a3d;
 }
 
 .editor-pill.is-warning {
-  background: #ffedd5;
-  color: #c2410c;
+  border-color: #f0dcb6;
+  background: #fff4e5;
+  color: #a45a0a;
 }
 
 .editor-pill.is-muted {
-  background: #f1f5f9;
-  color: #64748b;
+  border-color: #e7ece9;
+  background: #f1f5f3;
+  color: #6b7a70;
+}
+
+.editor-pill.is-neutral {
+  border-color: #e4ebe6;
+  background: #fbfdfb;
+  color: #4d6154;
+}
+
+.editor-pill.is-accent {
+  border-color: #f0d9a8;
+  background: #fff1dc;
+  color: #9a6a00;
 }
 
 .merchant-editor-layout {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+  width: 100%;
 }
 
-.merchant-editor-nav {
-  position: sticky;
-  top: 88px;
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid #dbe8df;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
-}
-
-.merchant-editor-nav button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: #334155;
-  font-size: 14px;
-  font-weight: 700;
-  text-align: left;
-}
-
-.merchant-editor-nav button span {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #cbd5e1;
-}
-
-.merchant-editor-nav button.active {
-  background: #e8f8ed;
-  color: #166534;
-}
-
-.merchant-editor-nav button.active span {
-  background: #16a34a;
-}
-
-.merchant-editor-nav button.danger {
-  color: #dc2626;
-}
-
-.merchant-editor-content {
-  display: grid;
-  gap: 14px;
+.merchant-editor-panel {
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e4ebe6;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
-.editor-section-card {
-  padding: 18px 20px;
-  border: 1px solid #dbe8df;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+.editor-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e8efea;
   scroll-margin-top: 92px;
 }
 
-.editor-section-card.danger-card {
-  border-color: #fecaca;
-  background: #fffafa;
+.editor-section:last-child {
+  border-bottom: 0;
+}
+
+.editor-section--child {
+  padding: 0;
+}
+
+.editor-section--child :deep(.editor-section-card) {
+  padding: 20px 24px;
+  border: 0;
+  border-bottom: 1px solid #e8efea;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.editor-section--child :deep(.editor-section-head) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #edf2ee;
+}
+
+.editor-section--child :deep(.editor-section-head h2) {
+  margin: 0;
+  color: #173622;
+  font-size: 15.5px;
+}
+
+.editor-section--child :deep(.editor-section-head p) {
+  margin: 4px 0 0;
+  color: #6b7a70;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.editor-section--child :deep(.editor-form-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.editor-section--child :deep(.editor-form-grid label) {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #33424a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editor-section--child :deep(.editor-form-grid input) {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173622;
+  font-size: 14px;
+}
+
+.editor-section--child :deep(.span-3) {
+  grid-column: 1 / -1;
+}
+
+.editor-section--child :deep(.section-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.editor-section--child :deep(.signature-list) {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.editor-section--child :deep(.signature-card) {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  padding: 9px 11px;
+  border: 1px solid #e8efea;
+  border-radius: 9px;
+  background: #fbfdfb;
+}
+
+.editor-section--child :deep(.signature-card img),
+.editor-section--child :deep(.signature-preview img) {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+
+.editor-section--child :deep(.signature-category-notice) {
+  padding: 12px 14px;
+  border: 1px solid #cde5d5;
+  border-radius: 9px;
+  background: #f0f9f2;
+  color: #1f7a3d;
+}
+
+.editor-section--child :deep(.signature-category-notice strong) {
+  font-size: 14px;
+}
+
+.editor-section--child :deep(.signature-category-notice p) {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.editor-section--child :deep(.empty) {
+  padding: 18px 0;
+  color: #7a8780;
+  text-align: left;
+}
+
+.aside-section {
+  padding: 16px 18px;
+  border: 1px solid #e4ebe6;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.danger-section {
+  border-color: #f0d8d8;
+  background: #fffcfc;
 }
 
 .editor-section-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 16px;
-  align-items: flex-start;
+  padding-bottom: 12px;
   margin-bottom: 16px;
+  border-bottom: 1px solid #edf2ee;
+}
+
+.editor-section-head > div {
+  min-width: 0;
 }
 
 .editor-section-head h2 {
   margin: 0;
-  color: #0f172a;
-  font-size: 18px;
+  color: #173622;
+  font-size: 15.5px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .editor-section-head p {
   margin: 4px 0 0;
-  color: #64748b;
-  font-size: 13px;
+  color: #6b7a70;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .editor-section-actions,
-.section-actions,
-.danger-actions {
+.section-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -2845,7 +2392,7 @@ function backToList() {
 
 .editor-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px 16px;
 }
 
@@ -2853,645 +2400,1034 @@ function backToList() {
   display: grid;
   gap: 6px;
   min-width: 0;
-  color: #334155;
+  color: #33424a;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .editor-form-grid label b {
   color: #dc2626;
+  font-weight: 700;
 }
 
 .editor-form-grid input,
 .editor-form-grid select,
-.editor-form-grid textarea,
-.visibility-grid select {
+.editor-form-grid textarea {
   width: 100%;
-  min-height: 40px;
-  border: 1px solid #d4e2d8;
-  border-radius: 11px;
-  background: #fff;
-  color: #0f172a;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173622;
   font-size: 14px;
 }
 
 .editor-form-grid textarea {
-  min-height: 96px;
+  min-height: 88px;
+  height: auto;
+  padding: 9px 11px;
+  line-height: 1.5;
   resize: vertical;
 }
 
-.gallery-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  margin-top: 22px;
+.editor-form-grid small {
+  color: #87908b;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.gallery-head h3 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 16px;
+.span-3 {
+  grid-column: 1 / -1;
 }
 
-.gallery-head p {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 13px;
+.editor-helper {
+  margin: 12px 0 0;
+  color: #7a8780;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
-.gallery-upload-actions {
+.editor-inline-warning {
+  margin: 10px 0 0;
+  color: #b45309;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.editor-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #33424a;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.editor-button:hover:not(:disabled) {
+  background: #f4f8f5;
+}
+
+.editor-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.editor-button.is-primary {
+  border-color: #2e7d32;
+  background: #2e7d32;
+  color: #ffffff;
+}
+
+.editor-button.is-primary:hover:not(:disabled) {
+  background: #256b29;
+}
+
+.editor-button.is-secondary {
+  border-color: #bfdcc7;
+  background: #edf7f0;
+  color: #246b32;
+}
+
+.editor-button.is-secondary:hover:not(:disabled) {
+  background: #ddf0e3;
+}
+
+.editor-button.is-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: #5a6b60;
+}
+
+.editor-button.is-ghost:hover:not(:disabled) {
+  background: #f1f5f3;
+}
+
+.editor-button.is-danger {
+  border-color: #f0c8c8;
+  background: #fff0f0;
+  color: #c0392b;
+}
+
+.editor-button.is-danger-outline {
+  border-color: #f0c8c8;
+  background: #ffffff;
+  color: #c0392b;
+}
+
+.small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #d8e2db;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #33424a;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.small:hover:not(:disabled) {
+  background: #f4f8f5;
+}
+
+.small:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.small.primary,
+.small.secondary {
+  border-color: #bfdcc7;
+  background: #edf7f0;
+  color: #246b32;
+}
+
+.small.danger {
+  border-color: #f0c8c8;
+  background: #fff0f0;
+  color: #c0392b;
+}
+
+.editor-button:focus-visible,
+.small:focus-visible,
+.editor-form-grid input:focus-visible,
+.editor-form-grid select:focus-visible,
+.editor-form-grid textarea:focus-visible,
+.gallery-thumb input:focus-visible,
+.business-hours-field input:focus-visible {
+  outline: 2px solid rgb(46 125 50 / 30%);
+  outline-offset: 1px;
+}
+
+.business-hours-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  border: 1px solid #e8efea;
+  border-radius: 9px;
+  background: #fafcfa;
 }
 
-.merchant-gallery-grid {
+.business-hours-field {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px;
+  min-width: 150px;
+  color: #33424a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.business-hours-field input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173622;
+}
+
+.business-hours-field input:disabled {
+  color: #94a3b8;
+  background: #eef4f0;
+}
+
+.business-hours-separator {
+  padding-bottom: 9px;
+  color: #87908b;
+  font-weight: 700;
+}
+
+.business-hours-preview {
+  padding-bottom: 8px;
+  color: #5a6b60;
+  font-size: 13px;
+}
+
+.gallery-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 14px;
+  margin-bottom: 4px;
 }
 
-.merchant-gallery-card {
+.gallery-primary-item {
   display: grid;
-  gap: 10px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
   min-width: 0;
   padding: 12px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #f8fcf9;
-}
-
-.merchant-gallery-card.is-hidden {
-  opacity: 0.66;
-}
-
-.merchant-gallery-card > img {
-  width: 100%;
-  height: 150px;
+  border: 1px solid #e8efea;
   border-radius: 10px;
-  object-fit: cover;
-  background: #eef5f0;
+  background: #fbfdfb;
 }
 
-.merchant-gallery-card-head,
-.merchant-gallery-options {
+.gallery-primary-media {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #e4ebe6;
+  border-radius: 8px;
+  background: #f0f6f1;
+}
+
+.gallery-primary-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.gallery-primary-media--cover {
+  width: 128px;
+  height: 76px;
+}
+
+.gallery-primary-media--cover img {
+  object-fit: cover;
+}
+
+.gallery-empty {
+  display: grid;
+  place-items: center;
+  color: #87908b;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.gallery-primary-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gallery-primary-info strong {
+  color: #173622;
+  font-size: 13.5px;
+}
+
+.gallery-primary-info p {
+  margin: 0;
+  color: #6b7a70;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gallery-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.gallery-classifications {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.gallery-classification {
+  padding: 14px 0;
+  border-top: 1px solid #edf2ee;
+}
+
+.gallery-classification:first-child {
+  border-top: 0;
+}
+
+.gallery-classification-head {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-.merchant-gallery-card-head strong {
-  color: #166534;
+.gallery-classification-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gallery-classification-title strong {
+  color: #173622;
+  font-size: 13.5px;
+}
+
+.gallery-count {
+  color: #2f855a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gallery-classification-title small {
+  color: #7a8780;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 1px 8px;
+}
+
+.gallery-thumb {
+  display: grid;
+  flex: none;
+  gap: 8px;
+  width: 168px;
+  padding: 10px;
+  border: 1px solid #e8efea;
+  border-radius: 10px;
+  background: #fbfdfb;
+}
+
+.gallery-thumb.is-hidden {
+  opacity: 0.62;
+}
+
+.gallery-thumb-media {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #edf4ef;
+}
+
+.gallery-thumb-media img {
+  display: block;
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+}
+
+.gallery-position {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(46 125 50 / 88%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gallery-position.is-over-limit {
+  background: rgb(180 110 30 / 90%);
+}
+
+.gallery-thumb-controls {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.gallery-thumb-controls label {
+  display: grid;
+  gap: 3px;
+  color: #5a6b60;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.gallery-thumb-controls input {
+  width: 64px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #d8e2db;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #173622;
   font-size: 13px;
 }
 
-.merchant-gallery-card-head span {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.merchant-gallery-card label {
-  display: grid;
+.switch-row {
+  display: inline-flex;
   gap: 5px;
+  align-items: center;
   color: #475569;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.merchant-gallery-card input {
-  width: 100%;
-  min-height: 36px;
-  border: 1px solid #d4e2d8;
+.switch-row input,
+.settings-check input,
+.capability-row input,
+.tag-config-select input,
+.hot-food-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2e7d32;
+}
+
+.gallery-thumb-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.gallery-thumb-actions .small {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.gallery-empty-state {
+  margin: 2px 0 0;
+  padding: 12px;
+  border: 1px dashed #dfe9e2;
+  border-radius: 8px;
+  background: #fafcfa;
+  color: #87908b;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e8efea;
   border-radius: 9px;
-  background: #fff;
-  color: #0f172a;
+  background: #fbfdfb;
 }
 
-.merchant-gallery-options > label:first-child {
-  width: 104px;
+.hot-food-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.merchant-gallery-options .switch-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding-top: 17px;
+.hot-food-row.is-selected {
+  border-color: #bfdcc7;
+  background: #f0f9f2;
 }
 
-.merchant-gallery-options .switch-row input {
-  width: auto;
-  min-height: auto;
+.settings-check {
+  display: inline-flex;
 }
 
-.content-tag-picker {
+.hot-food-icon {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 10px;
-}
-
-.tag-management-item {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid #dbe8df;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.tag-management-item .content-tag-option {
-  border: 0;
-  border-radius: 0;
-}
-
-.tag-management-actions {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 9px;
-  border-top: 1px solid #e4eee7;
-  background: #f8fbf9;
-}
-
-.tag-management-actions > span {
-  color: #64748b;
-  font-size: 11px;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: #eaf7ee;
+  color: #1f7a3d;
+  font-size: 15px;
   font-weight: 700;
 }
 
-.tag-management-actions > div {
-  display: flex;
-  gap: 6px;
-}
-
-.tag-management-actions .small {
-  min-height: 30px;
-  padding: 0 9px;
-}
-
-.content-tag-option.is-disabled {
-  background: #f8faf9;
-  cursor: not-allowed;
-  opacity: 0.72;
-}
-
-.system-promotion-tag-list {
+.hot-food-main {
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #e4eee7;
-}
-
-.system-promotion-tag-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 8px;
-  align-items: center;
-  padding: 9px 10px;
-  border-radius: 11px;
-  background: #f7faf8;
-}
-
-.system-promotion-tag-row > div {
-  display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
-.system-promotion-tag-row strong {
-  color: #1f2937;
-  font-size: 13px;
+.hot-food-main strong {
+  color: #173622;
+  font-size: 13.5px;
 }
 
-.system-promotion-tag-row small {
+.hot-food-main small {
+  color: #6b7a70;
+  font-size: 12px;
+}
+
+.profile-completion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.profile-completion strong {
+  white-space: nowrap;
+}
+
+.profile-completion span {
   overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.system-tag-badge {
-  padding: 3px 8px;
-  border-radius: 999px;
-  color: #166534;
-  background: #dcfce7;
-  font-size: 11px;
+.profile-completion.is-success {
+  color: #1f7a3d;
+}
+
+.profile-completion.is-success span {
+  color: #5f7a68;
+}
+
+.profile-completion.is-warning {
+  color: #a45a0a;
+}
+
+.profile-completion.is-warning span {
+  color: #8a744f;
+}
+
+.tag-config-list {
+  overflow: hidden;
+  border: 1px solid #e8efea;
+  border-radius: 9px;
+}
+
+.tag-config-list--system {
+  margin-top: 10px;
+}
+
+.tag-config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #edf2ee;
+  background: #ffffff;
+}
+
+.tag-config-row:last-child {
+  border-bottom: 0;
+}
+
+.tag-config-row.is-selected {
+  background: #f3faf4;
+}
+
+.tag-config-row.is-over-limit {
+  background: #fffbf0;
+}
+
+.tag-config-row.is-disabled {
+  opacity: 0.6;
+}
+
+.tag-config-select {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.tag-config-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 7px;
+  background: #eaf7ee;
+  color: #1f7a3d;
+  font-size: 13px;
   font-weight: 700;
+}
+
+.tag-config-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tag-config-main strong {
+  overflow: hidden;
+  color: #173622;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-config-main small {
+  overflow: hidden;
+  color: #7a8780;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-config-count {
+  color: #6b7a70;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag-frontend-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f6eb;
+  color: #1f7a3d;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag-config-row.is-over-limit .tag-frontend-state {
+  background: #fff1dc;
+  color: #9a6a00;
+}
+
+.tag-config-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.system-tag-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f6eb;
+  color: #1f7a3d;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .display-tag-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .display-tag-group {
   min-width: 0;
-  padding: 14px;
-  border-radius: 14px;
-  background: #f7faf8;
-}
-
-.display-tag-group h3 {
-  margin: 0 0 12px;
-  color: #1f2937;
-  font-size: 14px;
-}
-
-@media (max-width: 760px) {
-  .display-tag-groups {
-    grid-template-columns: 1fr;
-  }
-
-  .content-tag-option strong,
-  .content-tag-option small {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-  }
-
-}
-
-.content-tag-option {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  padding: 11px 12px;
-  border: 1px solid #dbe8df;
-  border-radius: 12px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.content-tag-option.selected {
-  border-color: #86d69a;
-  background: #effaf1;
-}
-
-.content-tag-option strong {
-  overflow: hidden;
-  color: #1f2937;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.content-tag-option small {
-  grid-column: 3;
-  overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.editor-form-grid small {
-  color: #64748b;
-  font-weight: 500;
-}
-
-.span-2 {
-  grid-column: span 2;
-}
-
-.span-3 {
-  grid-column: span 3;
-}
-
-.editor-check,
-.switch-row {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  color: #334155;
-  font-weight: 700;
-}
-
-.editor-check input,
-.switch-row input,
-.capability-toggle input,
-.hot-food-card input {
-  width: 16px;
-  height: 16px;
-  accent-color: #16a34a;
-}
-
-.editor-tip,
-.editor-warning {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.editor-tip {
-  border: 1px solid #cfe8d6;
-  background: #f3fbf5;
-  color: #166534;
-}
-
-.editor-warning {
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.image-primary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.image-primary-grid article {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #f8fcf9;
-}
-
-.image-primary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.image-local-message {
-  margin: 0 0 12px;
-}
-
-.image-primary-grid img,
-.image-empty {
-  width: 100%;
-  height: 120px;
-  object-fit: cover;
-  border-radius: 12px;
-  background: #edf5ee;
-}
-
-.image-empty {
-  display: grid;
-  place-items: center;
-  color: #64748b;
-  font-weight: 700;
-}
-
-.merchant-image-table {
-  display: grid;
-  gap: 10px;
-}
-
-.merchant-image-row {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #f8fcf9;
-}
-
-.merchant-image-row img {
-  width: 112px;
-  height: 80px;
-  object-fit: cover;
+  padding: 12px 12px 8px;
+  border: 1px solid #e8efea;
   border-radius: 10px;
-  background: #edf5ee;
+  background: #fafcfa;
 }
 
-.merchant-image-row div {
+.display-tag-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.display-tag-group-head h3 {
+  margin: 0;
+  color: #173622;
+  font-size: 13.5px;
+}
+
+.display-tag-group-head span {
+  color: #6b7a70;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.display-tag-group-head > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.display-tag-group .tag-config-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.capability-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #cde5d5;
+  border-radius: 9px;
+  background: #f0f9f2;
+}
+
+.capability-banner.is-warning {
+  border-color: #f0dcb6;
+  background: #fff9ee;
+}
+
+.capability-banner p {
+  margin: 0;
+  color: #3f6b4a;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.capability-banner.is-warning p {
+  color: #7a5b11;
+}
+
+.capability-banner-icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: #ddf3e2;
+  color: #1f7a3d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.capability-banner.is-warning .capability-banner-icon {
+  background: #fdebc1;
+  color: #946200;
+}
+
+.printing-summary {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #e8efea;
+  border-radius: 9px;
+  background: #fbfdfb;
+}
+
+.printing-summary-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.printing-summary-head strong {
+  color: #173622;
+  font-size: 13.5px;
+}
+
+.printing-summary-head span {
+  color: #7a8780;
+  font-size: 12px;
+}
+
+.printing-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.printing-summary-grid > div {
+  display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
-.merchant-image-row strong,
-.merchant-image-row small {
-  display: block;
+.printing-summary-grid dt {
+  color: #7a8780;
+  font-size: 12px;
+}
+
+.printing-summary-grid dd {
+  margin: 0;
+  color: #7a5b11;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.printing-summary-grid dd.is-positive {
+  color: #1f7a3d;
+}
+
+.printing-summary-grid dd.is-note {
   overflow: hidden;
+  color: #87908b;
+  font-size: 11.5px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.merchant-image-row small {
-  color: #64748b;
+.capability-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.image-row-actions {
+.capability-group {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #e8efea;
+  border-radius: 10px;
+  background: #fbfdfb;
+}
+
+.capability-group.is-disabled {
+  background: #f8faf8;
+}
+
+.capability-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #edf2ee;
+}
+
+.capability-group-head strong {
+  color: #173622;
+  font-size: 13.5px;
+}
+
+.capability-group-head span {
+  color: #7a8780;
+  font-size: 12px;
+}
+
+.capability-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 14px;
+}
+
+.capability-row {
+  display: grid;
+  grid-template-columns: 18px 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 5px 2px;
+  border-bottom: 1px solid #f0f4f1;
+  cursor: pointer;
+}
+
+.capability-row.is-enabled .capability-main strong {
+  color: #1f7a3d;
+}
+
+.capability-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.capability-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 7px;
+  background: #edf5ee;
+  color: #1f7a3d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.capability-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.capability-main strong {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 6px;
-  max-width: 280px;
+  align-items: center;
+  color: #173622;
+  font-size: 13px;
+}
+
+.capability-main strong em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fff1dc;
+  color: #9a6a00;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.capability-main small {
+  overflow: hidden;
+  color: #7a8780;
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merchant-editor-aside {
+  position: sticky;
+  top: 84px;
+  display: grid;
+  gap: 14px;
+  align-self: start;
+  min-width: 0;
+}
+
+.account-summary {
+  display: grid;
+  gap: 0;
+}
+
+.account-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf2ee;
+  font-size: 13px;
+}
+
+.account-summary-row:last-of-type {
+  border-bottom: 0;
+}
+
+.account-summary-row span {
+  color: #7a8780;
+}
+
+.account-summary-row strong {
+  color: #173622;
+  font-weight: 700;
+}
+
+.account-summary-row strong.is-positive {
+  color: #1f7a3d;
+}
+
+.account-summary-row strong.is-muted {
+  color: #6b7a70;
+}
+
+.account-hint {
+  margin: 8px 0 0;
+  color: #7a8780;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.danger-list {
+  display: grid;
+  gap: 6px;
+}
+
+.danger-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #f0dcdc;
+  border-radius: 8px;
+  background: #fffcfc;
+  color: #b03a2e;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.danger-row:hover {
+  background: #fff5f4;
+  border-color: #ecc9c9;
+}
+
+.danger-row small {
+  color: #9a7b76;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.danger-row.is-strong {
+  border-color: #f0c8c8;
+  background: #fdecec;
+  color: #c0392b;
+}
+
+.danger-row.is-strong:hover {
+  background: #fbe0e0;
 }
 
 .hidden-file-input {
   display: none;
-}
-
-.image-upload-preview {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px dashed #bfd3c4;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.image-upload-preview img {
-  width: 220px;
-  height: 140px;
-  object-fit: cover;
-  border-radius: 10px;
-  background: #edf5ee;
-}
-
-.visibility-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.risk-panel {
-  display: grid;
-  gap: 4px;
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 12px;
-}
-
-.risk-panel.is-success {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.risk-panel.is-warning {
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.hot-food-card {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.hot-food-card.selected {
-  border-color: #86d39b;
-  background: #f3fbf5;
-}
-
-.hot-food-card span {
-  font-size: 20px;
-}
-
-.hot-food-card em {
-  margin-left: auto;
-  color: #64748b;
-  font-style: normal;
-  font-size: 13px;
-}
-
-.platform-business-hours {
-  display: grid;
-  gap: 10px;
-}
-
-.platform-business-hours-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid #dbe8df;
-  border-radius: 12px;
-  background: #f8fcf9;
-}
-
-.platform-business-hours-row label {
-  display: grid;
-  gap: 6px;
-  min-width: 150px;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.platform-business-hours-row input[type='time'] {
-  width: 100%;
-  min-height: 36px;
-  border: 1px solid #d4e2d8;
-  border-radius: 10px;
-  color: #0f172a;
-  background: #fff;
-}
-
-.platform-business-hours-separator {
-  align-self: end;
-  padding-bottom: 9px;
-  color: #64748b;
-  font-weight: 800;
-}
-
-.platform-business-hours-row input:disabled {
-  color: #94a3b8;
-  background: #eef4f0;
-}
-
-.platform-business-hours-preview {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.capability-management-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.capability-edit-card {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #f8fcf9;
-}
-
-.capability-edit-card h3 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 15px;
-}
-
-.capability-toggle {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 9px;
-  align-items: center;
-  cursor: pointer;
-}
-
-.capability-toggle small {
-  grid-column: 2;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.account-card {
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid #dbe8df;
-  border-radius: 14px;
-  background: #f8fcf9;
-}
-
-.account-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.account-phone-change-button {
-  min-height: 34px;
-  padding: 0 14px;
-  border-color: #cdefd3;
-  border-radius: 10px;
-  color: #237a32;
-  background: #eaf7ec;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.account-phone-change-button:hover {
-  background: #ddf3e2;
-}
-
-.account-card.is-opened {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
-.account-card p {
-  margin: 0;
-  color: #64748b;
 }
 
 .account-phone-modal-backdrop {
@@ -3501,7 +3437,7 @@ function backToList() {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.42);
+  background: rgb(15 23 42 / 42%);
 }
 
 .account-phone-modal {
@@ -3509,10 +3445,10 @@ function backToList() {
   gap: 14px;
   width: min(480px, 100%);
   padding: 22px;
-  border: 1px solid #d8e6dc;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  border: 1px solid #d8e2db;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgb(15 23 42 / 24%);
 }
 
 .account-phone-modal header,
@@ -3525,14 +3461,14 @@ function backToList() {
 
 .account-phone-modal header h2 {
   margin: 0;
-  color: #13351f;
-  font-size: 20px;
+  color: #173622;
+  font-size: 18px;
 }
 
 .account-phone-modal header p {
   margin: 6px 0 0;
-  color: #64748b;
-  font-size: 14px;
+  color: #6b7a70;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -3542,10 +3478,10 @@ function backToList() {
   height: 32px;
   flex: none;
   place-items: center;
-  border: 1px solid #d9e3dd;
+  border: 1px solid #e4ebe6;
   border-radius: 999px;
   color: #475569;
-  background: #fff;
+  background: #ffffff;
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -3554,57 +3490,57 @@ function backToList() {
 .account-phone-modal label {
   display: grid;
   gap: 6px;
-  color: #334155;
-  font-size: 14px;
-  font-weight: 700;
+  color: #33424a;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .account-phone-modal input,
 .account-phone-modal textarea {
   width: 100%;
-  border: 1px solid #d8e6dc;
-  border-radius: 11px;
-  background: #f8fcf9;
-  color: #13351f;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #fbfdfb;
+  color: #173622;
   font: inherit;
   box-sizing: border-box;
 }
 
 .account-phone-modal input {
-  height: 40px;
-  padding: 0 12px;
+  height: 38px;
+  padding: 0 11px;
 }
 
 .account-phone-modal input[readonly] {
-  color: #64748b;
+  color: #6b7a70;
   background: #f1f5f3;
 }
 
 .account-phone-modal textarea {
   min-height: 84px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   resize: vertical;
 }
 
 .account-phone-warning {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  color: #92400e;
-  background: #fffbeb;
-  font-size: 13px;
+  border: 1px solid #f0dcb6;
+  border-radius: 9px;
+  background: #fff9ee;
+  color: #7a5b11;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 
 .account-phone-error {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
+  border: 1px solid #f0c8c8;
+  border-radius: 9px;
+  background: #fff0f0;
   color: #b42318;
-  background: #fff5f5;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 
@@ -3612,461 +3548,13 @@ function backToList() {
   justify-content: flex-end;
 }
 
-.danger-actions {
-  padding-top: 4px;
-}
-
-@media (max-width: 1100px) {
-  .merchant-editor-summary,
-  .merchant-editor-layout,
-  .merchant-image-row {
-    grid-template-columns: 1fr;
-  }
-
-  .merchant-summary-badges {
-    justify-content: flex-start;
-  }
-
-  .merchant-editor-nav {
-    position: static;
-  }
-}
-
-@media (max-width: 760px) {
-  .merchant-editor-top-actions,
-  .editor-section-head,
-  .image-primary-grid,
-  .editor-form-grid,
-  .visibility-grid,
-  .platform-business-hours-row {
-    grid-template-columns: 1fr;
-  }
-
-  .merchant-editor-top-actions,
-  .editor-section-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .span-2 {
-    grid-column: span 1;
-  }
-
-  .span-3 {
-    grid-column: span 1;
-  }
-}
-
-.merchant-editor-top-actions {
-  gap: 8px;
-}
-
-.editor-button {
-  min-height: 36px;
-  padding: 0 13px;
-  border-radius: 10px;
-}
-
-.merchant-editor-meta {
-  gap: 6px 12px;
-  margin: -4px 0 10px;
-  font-size: 12px;
-}
-
-.merchant-editor-summary {
-  grid-template-columns: 54px minmax(0, 1fr) minmax(240px, auto);
-  gap: 12px;
-  min-height: 84px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  border-radius: 16px;
-}
-
-.merchant-summary-media {
-  width: 54px;
-  height: 54px;
-  border-radius: 14px;
-  font-size: 22px;
-}
-
-.merchant-summary-main {
-  display: grid;
-  gap: 2px;
-}
-
-.merchant-summary-main h2 {
-  display: none;
-}
-
-.merchant-summary-main p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.merchant-summary-badges {
-  gap: 6px;
-}
-
-.editor-pill {
-  height: 22px;
-  padding: 0 8px;
-  font-size: 12px;
-}
-
-.merchant-editor-layout {
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.merchant-editor-nav {
-  gap: 6px;
-  padding: 10px;
-  border-radius: 14px;
-}
-
-.merchant-editor-nav button {
-  height: 37px;
-  padding: 0 10px;
-  border-radius: 9px;
-  font-size: 14px;
-}
-
-.merchant-editor-content {
-  gap: 12px;
-}
-
-.editor-section-card {
-  padding: 16px 18px;
-  border-radius: 14px;
-  scroll-margin-top: 84px;
-}
-
-.editor-section-head {
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.editor-section-head h2 {
-  font-size: 18px;
-  line-height: 1.2;
-}
-
-.editor-section-head p {
-  margin-top: 3px;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.editor-section-actions,
-.section-actions,
-.danger-actions {
-  gap: 7px;
-}
-
-.editor-section-card .editor-button,
-.form-actions button,
-.small.secondary {
-  min-height: 32px;
-  padding: 0 11px;
-  border-radius: 9px;
-  font-size: 13px;
-}
-
-.editor-form-grid {
-  gap: 12px 14px;
-}
-
-.editor-form-grid label {
-  gap: 5px;
-  font-size: 13px;
-}
-
-.editor-form-grid input,
-.editor-form-grid select,
-.editor-form-grid textarea,
-.visibility-grid select {
-  min-height: 37px;
-  border-radius: 10px;
-  font-size: 14px;
-}
-
-.editor-form-grid textarea {
-  min-height: 84px;
-}
-
-.editor-tip,
-.editor-warning {
-  margin-top: 10px;
-  padding: 9px 11px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
-.image-primary-grid {
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.image-primary-grid article {
-  gap: 8px;
-  padding: 10px;
-  border-radius: 12px;
-}
-
-.image-primary-grid img,
-.image-empty {
-  height: 96px;
-  border-radius: 10px;
-}
-
-.image-editor-form {
-  margin-bottom: 12px;
-}
-
-.merchant-image-table {
-  gap: 8px;
-}
-
-.merchant-image-row {
-  grid-template-columns: 96px minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 9px;
-  border-radius: 12px;
-}
-
-.merchant-image-row img {
-  width: 96px;
-  height: 68px;
-  border-radius: 9px;
-}
-
-.merchant-image-row strong,
-.merchant-image-row small {
-  font-size: 12px;
-}
-
-.image-row-actions {
-  gap: 5px;
-  max-width: 250px;
-}
-
-.image-upload-preview {
-  gap: 6px;
-  padding: 9px;
-  border-radius: 10px;
-}
-
-.image-upload-preview img {
-  width: 180px;
-  height: 112px;
-}
-
-.visibility-grid {
-  gap: 12px;
-}
-
-.risk-panel {
-  gap: 3px;
-  margin-top: 10px;
-  padding: 10px 11px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.hot-food-card {
-  gap: 10px;
-  padding: 11px 12px;
-  border-radius: 12px;
-}
-
-.hot-food-card span {
-  font-size: 18px;
-}
-
-.capability-management-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.capability-edit-card {
-  gap: 8px;
-  padding: 11px 12px;
-  border-radius: 12px;
-}
-
-.capability-edit-card h3 {
-  font-size: 14px;
-}
-
-.capability-toggle {
-  gap: 2px 8px;
-}
-
-.capability-toggle small {
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.account-card {
-  gap: 7px;
-  padding: 12px;
-  border-radius: 12px;
-}
-
-.merchant-editor-layout {
-  display: block;
-}
-
-.merchant-editor-content {
-  width: 100%;
-}
-
-@media (max-width: 760px) {
-  .editor-section-card .editor-button,
-  .form-actions button,
-  .small.primary,
-  .small.secondary,
-  .small.danger {
-    min-height: 44px;
-  }
-}
-
-.image-guidance {
-  min-height: 38px;
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.image-classification-list {
-  display: grid;
-  gap: 16px;
-}
-
-.image-classification-section {
-  padding: 16px;
-  border: 1px solid #dbe8df;
-  border-radius: 16px;
-  background: #fbfdfb;
-}
-
-.image-classification-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.image-classification-head > div {
-  min-width: 0;
-}
-
-.image-classification-head h3 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.image-classification-head p {
-  margin: 5px 0 0;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.image-classification-head small {
-  display: block;
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.image-section-count {
-  display: inline-flex;
-  margin-top: 7px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  color: #166534;
-  background: #eaf7ee;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.merchant-gallery-placement {
-  margin: 0;
-  padding: 6px 8px;
-  border-radius: 9px;
-  color: #166534;
-  background: #eaf7ee;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.merchant-gallery-placement.is-over-limit {
-  color: #9a5b08;
-  background: #fff4dc;
-}
-
-.display-tag-group-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.display-tag-group .display-tag-group-head h3 {
-  margin: 0;
-}
-
-.display-tag-group-head span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.display-tag-group-head > div {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.content-tag-option em {
-  grid-column: 3;
-  width: max-content;
-  padding: 2px 7px;
-  border-radius: 999px;
-  color: #166534;
-  background: #dcfce7;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-}
-
-.content-tag-option.is-over-limit {
-  border-color: #f0c36a;
-  background: #fffaf0;
-}
-
-.content-tag-option.is-over-limit em {
-  color: #9a5b08;
-  background: #fff0c2;
-}
-
 .promotion-tag-modal {
   width: min(620px, 100%);
 }
 
 .promotion-tag-modal .account-phone-modal-close {
-  width: 40px;
-  height: 40px;
-}
-
-.promotion-tag-modal footer .editor-button {
-  min-height: 40px;
+  width: 36px;
+  height: 36px;
 }
 
 .promotion-tag-form-grid {
@@ -4079,33 +3567,33 @@ function backToList() {
   display: grid;
   gap: 6px;
   min-width: 0;
-  color: #334155;
+  color: #33424a;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .promotion-tag-form-grid input[type='text'],
 .promotion-tag-form-grid input[type='number'] {
   width: 100%;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid #d8e6dc;
-  border-radius: 11px;
-  background: #f8fcf9;
-  color: #13351f;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid #d8e2db;
+  border-radius: 8px;
+  background: #fbfdfb;
+  color: #173622;
   font: inherit;
   box-sizing: border-box;
 }
 
 .promotion-tag-form-grid input[readonly],
 .promotion-tag-form-grid input:disabled {
-  color: #64748b;
+  color: #6b7a70;
   background: #f1f5f3;
 }
 
 .promotion-tag-form-grid small {
-  color: #64748b;
-  font-size: 11px;
+  color: #87908b;
+  font-size: 11.5px;
   font-weight: 500;
 }
 
@@ -4114,35 +3602,208 @@ function backToList() {
   gap: 8px !important;
   align-items: center;
   align-self: end;
-  min-height: 40px;
+  min-height: 38px;
 }
 
 .promotion-tag-system-note {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid #cfe7d4;
-  border-radius: 12px;
-  color: #166534;
-  background: #f3fbf5;
+  border: 1px solid #cde5d5;
+  border-radius: 9px;
+  background: #f0f9f2;
+  color: #1f7a3d;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.message.is-success {
-  color: #166534;
+@media (max-width: 1240px) {
+  .merchant-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .merchant-editor-aside {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.image-classification-section .merchant-gallery-grid {
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+@media (max-width: 1320px) {
+  .capability-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.image-classification-section > .empty {
-  margin-top: 14px;
+@media (max-width: 1100px) {
+  .merchant-summary {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .merchant-summary-badges {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .editor-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gallery-primary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .printing-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .display-tag-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .merchant-editor-aside {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
-  .promotion-tag-form-grid {
+  .merchant-editor-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .merchant-editor-header-main {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .merchant-editor-heading {
+    flex: 1 1 auto;
+  }
+
+  .merchant-editor-heading h1 {
+    font-size: 19px;
+  }
+
+  .merchant-editor-meta {
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .merchant-editor-header-actions {
+    display: grid;
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .merchant-save-state {
+    justify-self: start;
+  }
+
+  .merchant-editor-header-actions .editor-button {
+    min-height: 44px;
+  }
+
+  .merchant-summary {
+    grid-template-columns: 52px minmax(0, 1fr);
+    padding: 10px 12px;
+  }
+
+  .merchant-summary-name-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .merchant-summary-name-vi {
+    font-size: 12px;
+  }
+
+  .editor-section {
+    padding: 16px;
+  }
+
+  .editor-section--child :deep(.editor-section-card) {
+    padding: 16px;
+  }
+
+  .editor-section-head,
+  .editor-section--child :deep(.editor-section-head) {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .editor-form-grid,
+  .editor-section--child :deep(.editor-form-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .span-3,
+  .editor-section--child :deep(.span-3) {
+    grid-column: span 1;
+  }
+
+  .editor-form-grid input,
+  .editor-form-grid select,
+  .editor-form-grid textarea,
+  .editor-section--child :deep(.editor-form-grid input),
+  .editor-button,
+  .small {
+    min-height: 44px;
+  }
+
+  .editor-form-grid textarea {
+    min-height: 96px;
+  }
+
+  .business-hours-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .business-hours-separator {
+    display: none;
+  }
+
+  .gallery-primary-item {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .gallery-primary-media {
+    width: 72px;
+    height: 72px;
+  }
+
+  .gallery-primary-media--cover {
+    width: 96px;
+    height: 60px;
+  }
+
+  .gallery-thumb {
+    width: 154px;
+  }
+
+  .capability-rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .capability-row {
+    min-height: 46px;
+  }
+
+  .printing-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tag-config-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .tag-config-count {
+    display: none;
   }
 
   .display-tag-group-head,
@@ -4151,368 +3812,26 @@ function backToList() {
     flex-direction: column;
   }
 
-  .system-promotion-tag-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .system-promotion-tag-row .small,
-  .tag-management-actions .small {
+  .tag-config-row .small,
+  .display-tag-group-head .small {
     min-height: 44px;
   }
 
-  .promotion-tag-modal .account-phone-modal-close,
-  .promotion-tag-modal footer .editor-button,
-  .promotion-tag-form-grid input[type='text'],
-  .promotion-tag-form-grid input[type='number'] {
-    min-height: 44px;
-    height: 44px;
-  }
-
-  .system-tag-badge {
-    justify-self: end;
-  }
-
-  .image-classification-head {
-    align-items: stretch;
+  .profile-completion {
+    align-items: flex-start;
     flex-direction: column;
+    gap: 2px;
   }
 
-  .image-classification-head .small,
-  .image-classification-section .small {
-    min-height: 44px;
+  .promotion-tag-form-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .image-classification-section .merchant-gallery-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* V3.5: keep the existing workflows, while making the editor read as one workbench. */
-.page-header,
-.message,
-.card.empty,
-.merchant-editor-meta,
-.merchant-editor-summary,
-.merchant-editor-layout {
-  width: 100%;
-  max-width: 1280px;
-}
-
-.merchant-editor-summary {
-  grid-template-columns: 68px minmax(0, 1fr) minmax(300px, auto);
-  min-height: 96px;
-  padding: 16px 18px;
-  border-color: #dce8df;
-  border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0 4px 14px rgb(15 83 48 / 5%);
-}
-
-.merchant-summary-media {
-  width: 68px;
-  height: 68px;
-  border-radius: 14px;
-}
-
-.merchant-summary-main h2 {
-  display: block;
-  margin: 0 0 4px;
-  color: #173622;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.merchant-editor-content {
-  gap: 16px;
-}
-
-.editor-section-card {
-  padding: 20px 22px;
-  border-color: #dce8df;
-  border-radius: 14px;
-  box-shadow: 0 2px 10px rgb(15 83 48 / 4%);
-}
-
-.editor-section-head {
-  align-items: center;
-  padding-bottom: 14px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid #e7eee9;
-}
-
-.editor-section-head > div {
-  min-width: 0;
-}
-
-.editor-section-head p {
-  max-width: 760px;
-  line-height: 1.5;
-}
-
-.editor-form-grid {
-  gap: 14px 18px;
-}
-
-.editor-form-grid .span-3 {
-  grid-column: 1 / -1;
-}
-
-.merchant-editor-top-actions .editor-button.is-primary {
-  border-color: #2e7d32;
-  background: #2e7d32;
-  color: #ffffff;
-}
-
-.editor-section-head .editor-button.is-primary,
-.section-actions .editor-button.is-primary,
-.section-actions .small.primary {
-  border: 1px solid #9bcfa8;
-  background: #edf8f0;
-  color: #246b32;
-}
-
-.editor-button:focus-visible,
-.small:focus-visible,
-.editor-form-grid input:focus-visible,
-.editor-form-grid select:focus-visible,
-.editor-form-grid textarea:focus-visible,
-.merchant-gallery-card input:focus-visible,
-.content-tag-option:focus-within {
-  outline: 3px solid rgb(67 160 71 / 24%);
-  outline-offset: 2px;
-}
-
-.image-primary-grid {
-  grid-template-columns: minmax(220px, 0.7fr) minmax(420px, 1.55fr);
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.image-primary-grid article {
-  align-content: start;
-  gap: 10px;
-  padding: 14px;
-  border-color: #dce8df;
-  border-radius: 13px;
-  background: #fbfdfb;
-}
-
-.image-primary-card > strong {
-  color: #173622;
-  font-size: 14px;
-}
-
-.image-primary-card--logo img,
-.image-primary-card--logo .image-empty {
-  width: min(100%, 176px);
-  height: auto;
-  aspect-ratio: 1;
-  object-fit: contain;
-}
-
-.image-primary-card--cover img,
-.image-primary-card--cover .image-empty {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-}
-
-.image-primary-actions {
-  padding-top: 2px;
-}
-
-.image-classification-list {
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid #dce8df;
-  border-radius: 14px;
-  background: #ffffff;
-}
-
-.image-classification-section {
-  padding: 18px;
-  border: 0;
-  border-bottom: 1px solid #e7eee9;
-  border-radius: 0;
-  background: #ffffff;
-}
-
-.image-classification-section:last-child {
-  border-bottom: 0;
-}
-
-.image-classification-head {
-  align-items: center;
-}
-
-.image-classification-head h3 {
-  color: #173622;
-}
-
-.image-classification-head p {
-  color: #335d40;
-  font-weight: 650;
-}
-
-.image-classification-section .merchant-gallery-grid {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-}
-
-.merchant-gallery-card {
-  gap: 9px;
-  padding: 10px;
-  border-color: #dfe9e2;
-  border-radius: 12px;
-  background: #f9fcfa;
-}
-
-.merchant-gallery-card > img {
-  height: auto;
-  aspect-ratio: 16 / 9;
-}
-
-.merchant-gallery-options {
-  min-height: 42px;
-  padding: 8px 0 2px;
-  border-top: 1px solid #e7eee9;
-}
-
-.merchant-gallery-options > label:first-child {
-  width: 112px;
-}
-
-.merchant-gallery-options .switch-row {
-  padding-top: 0;
-}
-
-.merchant-gallery-card > .section-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  padding-top: 9px;
-  border-top: 1px solid #e7eee9;
-}
-
-.merchant-gallery-card > .section-actions .small {
-  width: 100%;
-  min-height: 34px;
-}
-
-.content-tag-picker {
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.tag-management-item {
-  border-color: #dce8df;
-  border-radius: 12px;
-  box-shadow: none;
-}
-
-.tag-management-actions {
-  padding: 9px 10px;
-  background: #f7faf8;
-}
-
-.system-promotion-tag-list {
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid #dce8df;
-  border-radius: 12px;
-}
-
-.system-promotion-tag-row {
-  border-bottom: 1px solid #e7eee9;
-  border-radius: 0;
-  background: #ffffff;
-}
-
-.system-promotion-tag-row:last-child {
-  border-bottom: 0;
-}
-
-.display-tag-groups {
-  gap: 14px;
-}
-
-.display-tag-group {
-  border: 1px solid #e1ebe4;
-  border-radius: 12px;
-  background: #fbfdfb;
-}
-
-.capability-groups {
-  gap: 14px;
-}
-
-.capability-group-card,
-.account-card {
-  border-color: #dce8df;
-  border-radius: 12px;
-  background: #fbfdfb;
-  box-shadow: none;
-}
-
-.danger-card {
-  box-shadow: none;
-}
-
-@media (max-width: 1100px) {
-  .image-primary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .image-primary-card--logo img,
-  .image-primary-card--logo .image-empty {
-    width: 160px;
-  }
-}
-
-@media (max-width: 760px) {
-  .merchant-editor-summary {
-    grid-template-columns: 56px minmax(0, 1fr);
-  }
-
-  .merchant-summary-media {
-    width: 56px;
-    height: 56px;
-  }
-
-  .merchant-summary-badges {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-
-  .editor-section-card {
-    padding: 18px 16px;
-  }
-
-  .editor-form-grid input,
-  .editor-form-grid select,
-  .editor-form-grid textarea,
-  .visibility-grid select,
-  .merchant-gallery-card input,
-  .platform-business-hours-row input[type='time'],
-  .merchant-editor-top-actions .editor-button,
-  .account-phone-modal input,
-  .account-phone-modal footer .editor-button {
-    min-height: 44px;
-  }
-
-  .account-phone-modal-close {
+  .account-phone-modal-close,
+  .promotion-tag-modal .account-phone-modal-close {
     width: 44px;
     height: 44px;
   }
-
-  .merchant-gallery-card > .section-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .merchant-gallery-card > .section-actions .small {
-    min-height: 44px;
-  }
 }
+
 </style>

@@ -29,10 +29,10 @@ check('left navigation entries cover every merchant section', () => {
   for (const key of sectionKeys) assert.match(layout, new RegExp(`key: '${key}'`));
 });
 check('section headers share one visual treatment', () => {
-  assert.match(detail, /\.editor-section-head \{[\s\S]*border-bottom:\s*1px solid #e7eee9/);
+  assert.match(detail, /\.editor-section-head \{[\s\S]*border-bottom:\s*1px solid #edf2ee/);
 });
 check('form controls share consistent dimensions', () => {
-  assert.match(detail, /\.editor-form-grid input,[\s\S]*min-height:\s*37px/);
+  assert.match(detail, /\.editor-form-grid input,[\s\S]*height:\s*36px/);
   assert.match(detail, /@media \(max-width: 760px\)[\s\S]*\.editor-form-grid input,[\s\S]*min-height:\s*44px/);
 });
 check('Logo upload remains present', () => assert.match(detail, /openImagePicker\('LOGO'\)/));
@@ -53,12 +53,12 @@ check('saving image display settings preserves historical titles', () => {
   assert.match(saveBlock, /sortOrder/);
   assert.match(saveBlock, /isVisible/);
 });
-check('Cover preview uses a Hero-like ratio', () => {
-  assert.match(detail, /image-primary-card--cover/);
-  assert.match(detail, /\.image-primary-card--cover img,[\s\S]*aspect-ratio:\s*16 \/ 9/);
+check('Cover preview uses a fixed hero-like ratio', () => {
+  assert.match(detail, /gallery-primary-media--cover/);
+  assert.match(detail, /\.gallery-primary-media--cover \{[\s\S]*width:\s*128px/);
 });
-check('multi-image cards use one consistent ratio', () => {
-  assert.match(detail, /\.merchant-gallery-card > img \{[\s\S]*aspect-ratio:\s*16 \/ 9/);
+check('multi-image thumbs use one consistent ratio', () => {
+  assert.match(detail, /\.gallery-thumb-media img \{[\s\S]*height:\s*84px/);
 });
 check('Replace remains present', () => {
   assert.match(detail, /openImageReplacement\(image\)/);
@@ -86,10 +86,9 @@ check('dangerous actions remain present', () => {
 });
 check('save actions remain present with explicit hierarchy', () => {
   assert.match(detail, /保存商家资料/);
-  assert.match(detail, /保存基础资料/);
-  assert.match(detail, /保存品牌与内容/);
   assert.match(detail, /保存营业时间/);
   assert.match(detail, /保存能力/);
+  assert.match(detail, /保存标签配置/);
 });
 check('no business profile field was removed', () => {
   for (const field of [
