@@ -850,16 +850,7 @@ export class MerchantOrdersService {
         `${segment.start}-${segment.crossesMidnight ? '次日/' : ''}${segment.end}`,
         false,
       )),
-      { type: 'DIVIDER' },
-      textBlock('菜品销售汇总 / Tổng món bán', true),
-      ...(summary.itemSummary.length
-        ? summary.itemSummary.map((item) => ({
-            type: 'ROW' as const,
-            left: item.nameZh,
-            right: `x ${item.quantity}`,
-            bold: false,
-          }))
-        : [textBlock('暂无已完成订单 / Chưa có đơn hoàn tất', false)]),
+      { type: 'ROW', left: '已完成订单 / Đơn hoàn tất', right: String(summary.orderCount), bold: true },
       { type: 'DIVIDER' },
       { type: 'ROW', left: '折扣 / Giảm giá', right: money(summary.discountAmountVnd), bold: false },
       { type: 'ROW', left: '抹零 / Làm tròn', right: money(summary.roundingAmountVnd), bold: false },
