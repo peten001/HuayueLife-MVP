@@ -412,7 +412,12 @@ describe('PrintDocument V2 server renderer', () => {
     expect(header).toBeUndefined();
     expect(item).toEqual(expect.objectContaining({
       cells: [
-        expect.objectContaining({ text: '招牌酸菜鱼特大份家庭分享装', fontSize: 'NORMAL', overflow: 'ELLIPSIS' }),
+        expect.objectContaining({
+          text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè 招牌酸菜鱼特大份家庭分享装',
+          fontSize: 'LARGE',
+          overflow: 'ELLIPSIS',
+          bold: false,
+        }),
         expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
         expect.objectContaining({ text: '12.345.678', fontSize: 'NORMAL', overflow: 'FIT' }),
       ],
@@ -420,8 +425,9 @@ describe('PrintDocument V2 server renderer', () => {
     const itemIndex = document.blocks.indexOf(item!);
     expect(document.blocks[itemIndex + 1]).toEqual(expect.objectContaining({
       type: 'TEXT',
-      text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè',
+      text: expect.stringMatching(/^----/),
     }));
+    expect(content).toContain('Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè 招牌酸菜鱼特大份家庭分享装');
     expect(content).not.toMatch(/Món|Đơn giá|(^|\n)SL($|\n)|Thành tiền/);
     expect(content).not.toContain('58.000');
     expect((content.match(/生成 \/ Tạo lúc/g) ?? [])).toHaveLength(1);
@@ -435,7 +441,7 @@ describe('PrintDocument V2 server renderer', () => {
       const content = renderedContent(document);
       const boxedTitle = document.blocks.find((block) => block.type === 'BOXED_TITLE');
       const item = document.blocks.find(
-        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Phở bò 牛肉粉',
       );
       const total = document.blocks.find(
         (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '合计 / Tổng cộng',
@@ -462,13 +468,15 @@ describe('PrintDocument V2 server renderer', () => {
       expect(item).toEqual(expect.objectContaining({
         type: 'COLUMNS',
         cells: [
-          expect.objectContaining({ text: '牛肉粉', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({
+            text: 'Phở bò 牛肉粉',
+            fontSize: paperWidth === 'MM58' ? 'NORMAL' : 'LARGE',
+            overflow: 'ELLIPSIS',
+            bold: false,
+          }),
           expect.objectContaining({ text: 'x1', overflow: 'FIT' }),
           expect.objectContaining({ text: expect.stringMatching(/^40[.,]000$/), overflow: 'FIT' }),
         ],
-      }));
-      expect(document.blocks).toContainEqual(expect.objectContaining({
-        type: 'TEXT', text: 'Phở bò', align: 'LEFT',
       }));
       expect(total).toEqual(expect.objectContaining({
         type: 'COLUMNS',
@@ -512,12 +520,12 @@ describe('PrintDocument V2 server renderer', () => {
 
     const noPrice = renderOrderV3('MM80', { itemPrice: false });
     const noPriceItem = noPrice.blocks.find(
-      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Phở bò 牛肉粉',
     );
     expect(noPriceItem).toEqual(expect.objectContaining({
       type: 'COLUMNS',
       cells: [
-        expect.objectContaining({ text: '牛肉粉' }),
+        expect.objectContaining({ text: 'Phở bò 牛肉粉' }),
         expect.objectContaining({ text: 'x1' }),
       ],
     }));
@@ -533,7 +541,41 @@ describe('PrintDocument V2 server renderer', () => {
     expect(renderedContent(noFooter)).not.toMatch(/自定义结束语|Lời cảm ơn tùy chỉnh/);
   });
 
-  it('renders the final 58mm TABLE_BILL item as Chinese columns then full-width Vietnamese text', () => {
+  it('adds a dashed divider between ORDER customer items', () => {
+    const twoItem = receipt({ subtotal: 80_000, total: 80_000 });
+    twoItem.items = [
+      ...twoItem.items!,
+      {
+        name: '韭菜炒蛋',
+        nameVi: 'Trứng xào hẹ',
+        quantity: 2,
+        unitPrice: 40_000,
+        lineTotal: 80_000,
+      },
+    ];
+    const document = renderPrintDocumentV3({
+      receipt: twoItem,
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+    });
+    const first = document.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Phở bò 牛肉粉',
+    );
+    const second = document.blocks.find(
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Trứng xào hẹ 韭菜炒蛋',
+    );
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    const firstIndex = document.blocks.indexOf(first!);
+    const secondIndex = document.blocks.indexOf(second!);
+    expect(document.blocks[firstIndex + 1]).toEqual(expect.objectContaining({
+      type: 'TEXT',
+      text: expect.stringMatching(/^----/),
+    }));
+    expect(secondIndex - firstIndex).toBe(2);
+  });
+
+  it('renders the final 58mm TABLE_BILL item as one bilingual line with a dashed separator', () => {
     const document = renderTableBillV3('MM58', {}, longTableBillReceipt());
     const content = renderedContent(document);
     const itemIndex = document.blocks.findIndex(
@@ -548,14 +590,19 @@ describe('PrintDocument V2 server renderer', () => {
     expect(item).toEqual(expect.objectContaining({
       type: 'COLUMNS',
       cells: [
-        expect.objectContaining({ text: '招牌酸菜鱼特大份家庭分享装', fontSize: 'NORMAL', overflow: 'ELLIPSIS' }),
+        expect.objectContaining({
+          text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè 招牌酸菜鱼特大份家庭分享装',
+          fontSize: 'NORMAL',
+          overflow: 'ELLIPSIS',
+          bold: false,
+        }),
         expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
         expect.objectContaining({ text: '12.345.678', fontSize: 'NORMAL', overflow: 'FIT' }),
       ],
     }));
     expect(document.blocks[itemIndex + 1]).toEqual(expect.objectContaining({
       type: 'TEXT',
-      text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè',
+      text: expect.stringMatching(/^----/),
     }));
     expect(content).not.toMatch(/Món|Đơn giá|(^|\n)SL($|\n)|Thành tiền/);
     expect(content).toContain('备注 / Ghi chú: 少辣');
@@ -566,20 +613,21 @@ describe('PrintDocument V2 server renderer', () => {
     (paperWidth) => {
       const document = renderTableBillV3(paperWidth, { itemPrice: false }, longTableBillReceipt());
       const item = document.blocks.find(
-        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '红薯叶',
+        (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Rau lang xào tỏi thơm ngon kiểu quê nhà 红薯叶',
       );
 
       expect(item).toEqual(expect.objectContaining({
         type: 'COLUMNS',
         cells: [
-          expect.objectContaining({ text: '红薯叶', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({
+            text: 'Rau lang xào tỏi thơm ngon kiểu quê nhà 红薯叶',
+            overflow: 'ELLIPSIS',
+            bold: false,
+          }),
           expect.objectContaining({ text: 'x2', overflow: 'FIT' }),
         ],
       }));
       expect(item && item.type === 'COLUMNS' ? item.cells : []).toHaveLength(2);
-      expect(document.blocks).toContainEqual(expect.objectContaining({
-        type: 'TEXT', text: 'Rau lang xào tỏi thơm ngon kiểu quê nhà',
-      }));
       expect(document.blocks).not.toContainEqual(expect.objectContaining({
         type: 'COLUMNS', cells: expect.arrayContaining([expect.objectContaining({ text: '116.000' })]),
       }));
@@ -638,7 +686,7 @@ describe('PrintDocument V2 server renderer', () => {
       (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Món',
     );
     const item = hidden.blocks.find(
-      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === '牛肉粉',
+      (block) => block.type === 'COLUMNS' && block.cells[0]?.text === 'Phở bò 牛肉粉',
     );
 
     expect(hiddenContent).not.toMatch(/花悦餐厅|Nhà hàng Hoa Việt|真实地址|0900000000|A01|订单数|订单号|开台|结账 \/ Thanh toán|生成 \/ Tạo lúc/);
@@ -649,10 +697,9 @@ describe('PrintDocument V2 server renderer', () => {
     }));
     expect(header).toBeUndefined();
     expect(item).toEqual(expect.objectContaining({ cells: [
-      expect.objectContaining({ text: '牛肉粉' }), expect.objectContaining({ text: 'x1' }),
+      expect.objectContaining({ text: 'Phở bò 牛肉粉' }), expect.objectContaining({ text: 'x1' }),
     ] }));
     expect((item as Extract<PrintDocumentV3['blocks'][number], { type: 'COLUMNS' }>).cells).toHaveLength(2);
-    expect(hidden.blocks).toContainEqual(expect.objectContaining({ type: 'TEXT', text: 'Phở bò' }));
     expect(hiddenContent).toContain('备注 / Ghi chú: 少辣');
     expect(hiddenContent).not.toMatch(/Món|Đơn giá|SL|Thành tiền|98[.,]000/);
     expect(hiddenContent).not.toMatch(/原金额|折扣 \/ Giảm giá|抹零|最终应收|自定义结束语/);

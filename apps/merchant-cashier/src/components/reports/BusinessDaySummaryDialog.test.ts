@@ -63,8 +63,7 @@ describe('BusinessDaySummaryDialog', () => {
     wrapper.unmount();
   });
 
-  it('shows Chinese plus Vietnamese dish names in the Vietnamese locale', () => {
-    setLocale('vi');
+  it('shows a single bilingual line with Vietnamese first in any locale', () => {
     const wrapper = mountDialog({
       summary: {
         ...summary,
@@ -74,9 +73,9 @@ describe('BusinessDaySummaryDialog', () => {
       },
     });
     const row = wrapper.get('.summary-item');
-    expect(row.text()).toContain('招牌牛肉锅');
-    expect(row.text()).toContain('Nồi bò đặc sản');
+    expect(row.text()).toContain('Nồi bò đặc sản 招牌牛肉锅');
     expect(row.text()).toContain('× 18');
+    expect(row.find('.summary-item__name').text()).toBe('Nồi bò đặc sản 招牌牛肉锅');
     wrapper.unmount();
   });
 
@@ -99,15 +98,16 @@ describe('BusinessDaySummaryDialog', () => {
     wrapper.unmount();
   });
 
-  it('keeps the existing single-name display in Chinese and English locales', () => {
-    setLocale('zh');
-    const zhWrapper = mountDialog();
-    expect(zhWrapper.get('.summary-item').text()).toContain('匿名菜品');
-    zhWrapper.unmount();
-
-    setLocale('en');
-    const enWrapper = mountDialog();
-    expect(enWrapper.get('.summary-item').text()).toContain('匿名菜品');
-    enWrapper.unmount();
+  it('does not duplicate a Vietnamese name identical to the Chinese name', () => {
+    const wrapper = mountDialog({
+      summary: {
+        ...summary,
+        itemSummary: [
+          { nameZh: 'Bánh mì', nameVi: 'Bánh mì', nameEn: null, quantity: 3 },
+        ],
+      },
+    });
+    expect(wrapper.get('.summary-item__name').text()).toBe('Bánh mì');
+    wrapper.unmount();
   });
 });

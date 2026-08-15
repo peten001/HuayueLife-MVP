@@ -12,6 +12,7 @@ import {
 import {
   DEFAULT_RECEIPT_FOOTER_VI,
   DEFAULT_RECEIPT_FOOTER_ZH,
+  formatBilingualDishName,
 } from '../types/bilingual-receipt';
 import {
   DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
@@ -208,25 +209,27 @@ function orderCustomerItemBlocksV3(
   const blocks: PrintBlockV3[] = [];
   const showAmount = display.itemPrice !== false;
   const gap = paperWidth === 'MM58' ? 3 : 6;
+  const nameFontSize = paperWidth === 'MM58' ? 'NORMAL' : 'LARGE';
   const weights = showAmount
     ? (paperWidth === 'MM58' ? [58, 12, 30] : [72, 10, 18])
     : (paperWidth === 'MM58' ? [82, 18] : [88, 12]);
 
-  for (const item of document.items) {
-    const name = optionalText(item.name) ?? item.name;
+  document.items.forEach((item, index) => {
+    const name = formatBilingualDishName(item.nameVi, item.name);
     blocks.push(columnsV3(gap, showAmount
       ? [
-          columnV3(name, weights[0], 'LEFT', true, 'NORMAL', 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
           columnV3(`x${item.quantity}`, weights[1], 'CENTER', true, 'NORMAL', 'FIT'),
           columnV3(compactMoney(item.lineTotal), weights[2], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]
       : [
-          columnV3(name, weights[0], 'LEFT', true, 'NORMAL', 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
           columnV3(`x${item.quantity}`, weights[1], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]));
-    const nameVi = distinctOptionalText(item.nameVi, name);
-    if (nameVi) blocks.push(textV3(nameVi));
-  }
+    if (index < document.items.length - 1) {
+      blocks.push(textV3(itemDividerDashes(paperWidth), 'LEFT', false, 'SMALL'));
+    }
+  });
 
   const orderNote = display.note !== false ? optionalText(document.note) : undefined;
   if (orderNote) blocks.push(textV3(`备注 / Ghi chú: ${orderNote}`));
@@ -401,29 +404,31 @@ function tableBillItemBlocks(
   const blocks: PrintBlockV3[] = [];
   const showAmount = display.itemPrice !== false;
   const gap = paperWidth === 'MM58' ? 3 : 6;
+  const nameFontSize = paperWidth === 'MM58' ? 'NORMAL' : 'LARGE';
   const weights = showAmount
     ? (paperWidth === 'MM58' ? [58, 12, 30] : [72, 10, 18])
     : (paperWidth === 'MM58' ? [82, 18] : [88, 12]);
 
-  for (const item of document.items) {
-    const name = optionalText(item.name) ?? item.name;
-    const nameVi = distinctOptionalText(item.nameVi, name);
+  document.items.forEach((item, index) => {
+    const name = formatBilingualDishName(item.nameVi, item.name);
     blocks.push(columnsV3(gap, showAmount
       ? [
-          columnV3(name, weights[0], 'LEFT', true, 'NORMAL', 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
           columnV3(`x${item.quantity}`, weights[1], 'CENTER', true, 'NORMAL', 'FIT'),
           columnV3(compactMoney(item.lineTotal), weights[2], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]
       : [
-          columnV3(name, weights[0], 'LEFT', true, 'NORMAL', 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
           columnV3(`x${item.quantity}`, weights[1], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]));
-    if (nameVi) blocks.push(textV3(nameVi));
     const note = optionalText(item.note);
     if (note) {
       blocks.push(textV3(`备注 / Ghi chú: ${note}`, 'LEFT', false, 'SMALL'));
     }
-  }
+    if (index < document.items.length - 1) {
+      blocks.push(textV3(itemDividerDashes(paperWidth), 'LEFT', false, 'SMALL'));
+    }
+  });
   return blocks;
 }
 
@@ -515,6 +520,10 @@ function slashJoin(...values: Array<string | undefined>) {
   return values.filter((value): value is string => Boolean(value)).join(' / ');
 }
 
+function itemDividerDashes(paperWidth: PrintingPaperWidth) {
+  return '-'.repeat(paperWidth === 'MM58' ? 24 : 32);
+}
+
 function compactMoney(value: number) {
   return VND.format(value);
 }
@@ -586,11 +595,11 @@ function customerBlocks(
 
   const itemBlocks: PrintBlock[] = [];
   document.items.forEach((item, index) => {
-    itemBlocks.push(text(`${index + 1}. ${item.name}`, 'LEFT', true));
-    if (item.nameVi && item.nameVi !== item.name) itemBlocks.push(text(`   ${item.nameVi}`));
-    if (item.nameEn && item.nameEn !== item.name && item.nameEn !== item.nameVi) {
-      itemBlocks.push(text(`   ${item.nameEn}`));
-    }
+    itemBlocks.push(text(
+      `${index + 1}. ${formatBilingualDishName(item.nameVi, item.name)}`,
+      'LEFT',
+      false,
+    ));
     if (item.specification) itemBlocks.push(text(`   规格 / Quy cách: ${item.specification}`));
     itemBlocks.push(row('   数量 / Số lượng', String(item.quantity)));
     if (display.itemPrice) {
@@ -598,6 +607,9 @@ function customerBlocks(
       itemBlocks.push(row('   金额 / Thành tiền', money(item.lineTotal)));
     }
     if (item.note) itemBlocks.push(text(`   备注 / Ghi chú: ${item.note}`));
+    if (index < document.items.length - 1) {
+      itemBlocks.push(text(itemDividerDashes('MM58'), 'LEFT', false, 'SMALL'));
+    }
   });
   appendSection(blocks, itemBlocks);
 

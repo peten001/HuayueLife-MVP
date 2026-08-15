@@ -41,6 +41,7 @@ import {
   completedRevenueTotals,
   isOrderInBusinessDate,
 } from './business-day-accounting';
+import { formatBilingualDishName } from '../printing/types/bilingual-receipt';
 import type { PrintBlock } from '../printing/types/print-document';
 
 type MerchantOrderAction =
@@ -851,7 +852,7 @@ export class MerchantOrdersService {
         false,
       )),
       { type: 'ROW', left: '已完成订单 / Đơn hoàn tất', right: String(summary.orderCount), bold: true },
-      { type: 'DIVIDER' },
+      ...buildTopItemsBlocks(summary.itemSummary),
       { type: 'ROW', left: '折扣 / Giảm giá', right: money(summary.discountAmountVnd), bold: false },
       { type: 'ROW', left: '抹零 / Làm tròn', right: money(summary.roundingAmountVnd), bold: false },
       { type: 'ROW', left: '总收入 / Doanh thu', right: money(summary.totalRevenueVnd), bold: true },
@@ -1848,6 +1849,39 @@ function weekdayKey(businessDate: string) {
   return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][
     new Date(Date.UTC(year, month - 1, day)).getUTCDay()
   ] as keyof ReturnType<typeof normalizeBusinessHours>;
+}
+
+function buildTopItemsBlocks(
+  itemSummary: Array<{
+    nameZh: string;
+    nameVi: string | null;
+    nameEn: string | null;
+    quantity: number;
+  }>,
+): PrintBlock[] {
+  if (!itemSummary.length) return [{ type: 'DIVIDER' }];
+  const topItems = [...itemSummary]
+    .sort((left, right) =>
+      right.quantity - left.quantity ||
+      left.nameZh.localeCompare(right.nameZh, 'zh-Hans-CN'),
+    )
+    .slice(0, 10);
+  const blocks: PrintBlock[] = [
+    { type: 'DIVIDER' },
+    textBlock('菜品销售 TOP10 / TOP10 món bán', true),
+  ];
+  topItems.forEach((item, index) => {
+    blocks.push({
+      type: 'ROW',
+      left: formatBilingualDishName(item.nameVi, item.nameZh),
+      right: `x ${item.quantity}`,
+      bold: false,
+    });
+    if (index < topItems.length - 1) {
+      blocks.push(textBlock('-'.repeat(32), false, 'SMALL'));
+    }
+  });
+  return blocks;
 }
 
 function minutesOfDay(value: string) {

@@ -19,6 +19,14 @@ const { locale, t } = useI18n();
 const dialog = ref<HTMLElement | null>(null);
 let previouslyFocused: HTMLElement | null = null;
 
+function bilingualDishName(item: { nameZh: string; nameVi?: string | null }): string {
+  const vi = item.nameVi?.trim() ?? '';
+  const zh = item.nameZh?.trim() ?? '';
+  if (!vi) return zh;
+  if (!zh || vi === zh) return vi;
+  return `${vi} ${zh}`;
+}
+
 watch(() => props.open, (open) => {
   if (open) {
     previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -73,10 +81,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <div class="summary-section__title"><h4>{{ t('summary.items') }}</h4><span>{{ t('summary.orderCount', { count: summary.orderCount }) }}</span></div>
           <div v-if="summary.itemSummary.length" class="summary-items">
             <div v-for="item in summary.itemSummary" :key="`${item.nameZh}-${item.nameVi}`" class="summary-item">
-              <div class="summary-item__names" :title="[item.nameZh, item.nameVi, item.nameEn].filter(Boolean).join(' / ')">
-                <span>{{ item.nameZh }}</span>
-                <small v-if="locale === 'vi' && item.nameVi && item.nameVi !== item.nameZh">{{ item.nameVi }}</small>
-              </div>
+              <span class="summary-item__name" :title="[item.nameZh, item.nameVi, item.nameEn].filter(Boolean).join(' / ')">{{ bilingualDishName(item) }}</span>
               <strong>× {{ item.quantity }}</strong>
             </div>
           </div>
@@ -114,7 +119,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .summary-close:disabled{opacity:.5;cursor:not-allowed}
 .summary-date{display:grid;grid-template-columns:auto minmax(0,180px);align-items:center;justify-content:space-between;gap:12px;margin:18px 0;color:var(--cashier-text);font-size:13px;font-weight:800}.summary-date input{min-height:44px;border:1px solid var(--cashier-border);border-radius:10px;padding:0 11px;background:var(--cashier-surface);color:var(--cashier-text);font:inherit}
 .summary-state,.summary-error{padding:24px 10px;text-align:center}.summary-error{color:var(--cashier-form-error-text)}.summary-section{padding:15px 0;border-top:1px solid var(--cashier-border)}.summary-section__title{display:flex;justify-content:space-between;gap:12px}.summary-section__title span{color:var(--cashier-text-muted);font-size:12px}.summary-segments,.summary-money dl{display:grid;gap:9px;margin:12px 0 0}.summary-segments>div,.summary-money dl>div{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(0,1.3fr);gap:12px}.summary-section dt{color:var(--cashier-text-secondary);font-size:12px}.summary-section dd{display:grid;gap:3px;margin:0;color:var(--cashier-text);font-size:13px;text-align:right}.summary-items{display:grid;gap:8px;margin-top:12px;max-height:220px;overflow:auto}.summary-items>div{display:flex;justify-content:space-between;gap:14px;min-height:28px}.summary-items span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cashier-text)}.summary-items strong,.summary-money dd{font-variant-numeric:tabular-nums;white-space:nowrap}.summary-empty{margin:12px 0 0;color:var(--cashier-text-muted);font-size:13px}.summary-money .is-total{margin:3px 0;padding:10px 0;border-top:1px solid var(--cashier-border);border-bottom:1px solid var(--cashier-border)}.summary-money .is-total dt,.summary-money .is-total dd{color:var(--cashier-text);font-size:15px;font-weight:800}.business-summary-dialog>footer{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);gap:10px;position:sticky;bottom:-20px;margin:5px -4px -20px;padding:12px 4px max(20px,env(safe-area-inset-bottom));background:var(--cashier-surface)}.business-summary-dialog footer button{min-height:48px;white-space:nowrap}
-.summary-item{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:28px}.summary-item__names{display:grid;min-width:0;gap:1px}.summary-item__names span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cashier-text);font-size:13px;line-height:1.35}.summary-item__names small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cashier-text-muted);font-size:11px;line-height:1.35}
+.summary-item{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:28px}.summary-item+.summary-item{border-top:1px dashed var(--cashier-text);padding-top:8px;margin-top:1px}.summary-items .summary-item__name{min-width:0;flex:1 1 auto;color:var(--cashier-text);font-size:14px;font-weight:600;line-height:1.4;overflow-wrap:anywhere;white-space:normal;overflow:visible;text-overflow:clip}.summary-item strong{flex:0 0 auto;color:var(--cashier-text);font-size:14px;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
 .business-summary-dialog footer .secondary-action{border:1px solid var(--cashier-border-strong);color:var(--cashier-text);background:var(--cashier-surface-soft)}
 .business-summary-dialog footer .secondary-action:hover:not(:disabled){border-color:var(--cashier-text-secondary);background:var(--cashier-surface-muted);color:var(--cashier-text)}
 .business-summary-dialog footer .secondary-action:disabled,.business-summary-dialog footer .primary-action:disabled{opacity:.5;cursor:not-allowed}

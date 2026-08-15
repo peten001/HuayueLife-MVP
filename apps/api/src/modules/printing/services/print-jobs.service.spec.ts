@@ -1262,7 +1262,7 @@ describe('PrintJobsService', () => {
       expect.objectContaining({ type: 'ROW', left: '桌账 / Phiên bàn', right: 'TS-47' }),
     );
     expect(blocks).toContainEqual(
-      expect.objectContaining({ type: 'TEXT', text: '1. 测试菜品' }),
+      expect.objectContaining({ type: 'TEXT', text: '1. Món thử nghiệm 测试菜品' }),
     );
     expect(blocks).toContainEqual(
       expect.objectContaining({ type: 'ROW', left: '   数量 / Số lượng', right: '1' }),
@@ -1315,12 +1315,11 @@ describe('PrintJobsService', () => {
       expect.objectContaining({
         type: 'COLUMNS',
         cells: [
-          expect.objectContaining({ text: '测试菜品', overflow: 'ELLIPSIS' }),
+          expect.objectContaining({ text: 'Món thử nghiệm 测试菜品', overflow: 'ELLIPSIS', bold: false }),
           expect.objectContaining({ text: 'x1', overflow: 'FIT' }),
           expect.objectContaining({ text: '1.000', overflow: 'FIT' }),
         ],
       }),
-      expect.objectContaining({ type: 'TEXT', text: 'Món thử nghiệm' }),
     ]));
     const serialized = JSON.stringify(snapshot.blocks);
     expect(serialized).not.toMatch(/Món"|Đơn giá|SL"|Thành tiền/);
@@ -1393,7 +1392,7 @@ describe('PrintJobsService', () => {
     expect(snapshot.blocks).toContainEqual(expect.objectContaining({
       type: 'COLUMNS',
       cells: expect.arrayContaining([
-        expect.objectContaining({ text: '测试菜品' }),
+        expect.objectContaining({ text: 'Món thử nghiệm 测试菜品' }),
         expect.objectContaining({ text: 'x1' }),
       ]),
     }));
