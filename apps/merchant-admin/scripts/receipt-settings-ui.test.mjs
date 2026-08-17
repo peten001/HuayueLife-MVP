@@ -66,9 +66,10 @@ assert.match(page, /receipt-paper--58 \.order-preview__table-box/);
 assert.match(page, /receipt-paper--58 \.order-preview__title > strong/);
 assert.doesNotMatch(page, /data-layout="product-header"/);
 assert.match(page, /paperWidth === 'MM80' \? 'item-row-80' : 'item-row-58'/);
-assert.match(page, /data-layout="item-name-vi"/);
+assert.doesNotMatch(page, /data-layout="item-name-vi"/);
 assert.doesNotMatch(page, /tableBillItemName80/);
-assert.match(page, /bill-preview__item-name">\{\{ item\.name \}\}/);
+assert.match(page, /bill-preview__item-name">\{\{ formatBilingualDishName\(item\.nameVi, item\.name\) \}\}/);
+assert.match(page, /receipt-paper__item-name">\{\{ formatBilingualDishName\(item\.nameVi, item\.name\) \}\}/);
 assert.match(page, /x\{\{ item\.quantity \}\}/);
 assert.match(page, /v-if="receiptSettings\.itemPrice">\{\{ item\.lineTotal\.toLocaleString/);
 assert.doesNotMatch(page, /item\.unitPrice/);
@@ -90,12 +91,26 @@ assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.customerReceipt/);
 assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.orderNumber/);
 assert.match(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.time/);
 assert.doesNotMatch(orderPreviewMarkup, /BILINGUAL_RECEIPT_LABELS\.table/);
+assert.match(orderPreviewMarkup, /v-for="item in previewItems"/);
+assert.doesNotMatch(orderPreviewMarkup, /酸辣牛肉面|麻辣土豆丝/);
 const billItemMarkup = page.slice(
   page.indexOf('<div v-for="item in tableBillPreview.items"'),
   page.indexOf('<template v-if="receiptSettings.total">'),
 );
 assert.doesNotMatch(billItemMarkup, /bill-preview__divider/);
 assert.doesNotMatch(billItemMarkup, /Món|Đơn giá|SL|Thành tiền/);
+assert.doesNotMatch(page, /\.bill-preview__item \+ \.bill-preview__item \{ border-top: 1px dashed/);
+assert.doesNotMatch(page, /\.receipt-paper__item \+ \.receipt-paper__item \{ border-top: 1px dashed/);
+assert.match(page, /bill-preview__item-divider/);
+assert.match(page, /receipt-preview__item-divider/);
+assert.match(page, /\{\{ receiptItemDividerDashes \}\}/);
+assert.match(page, /RECEIPT_ITEM_DIVIDER_DASHES/);
+assert.match(page, /MM58: '-'\.repeat\(24\)/);
+assert.match(page, /MM80: '-'\.repeat\(32\)/);
+assert.match(page, /\.bill-preview__item-name \{ display: flex;[\s\S]*flex-direction: column;/);
+assert.match(page, /\.receipt-paper__item-name \{ display: flex;[\s\S]*flex-direction: column;/);
+assert.match(page, /\.bill-preview__item-name \{[\s\S]*font-size: 12px;[\s\S]*font-weight: 600;/);
+assert.match(page, /\.receipt-paper__item-name \{[\s\S]*font-size: 12px;[\s\S]*font-weight: 600;/);
 for (const divider of [
   'merchant-to-info',
   'info-to-items',
@@ -120,6 +135,10 @@ assert.match(printersPage, /getPrintingRules/);
 assert.match(printersPage, /printerUsageLabel/);
 assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_ZH/);
 assert.match(bilingualReceipt, /DEFAULT_RECEIPT_FOOTER_VI/);
+assert.match(bilingualReceipt, /export function formatBilingualDishName\(/);
+assert.match(bilingualReceipt, /if \(!vi\) return zh;/);
+assert.match(bilingualReceipt, /if \(!zh \|\| vi === zh\) return vi;/);
+assert.match(bilingualReceipt, /return `\$\{vi\} \$\{zh\}`;/);
 assert.doesNotMatch(page, /<pre>.*preview/s);
 assert.doesNotMatch(page, /getPrintingTemplates|createPrintingTemplate|updatePrintingTemplate|duplicatePrintingTemplate/);
 assert.doesNotMatch(page, /printing-advanced|printing-table-wrap|modalOpen|definitionText|openCreate|openEdit|row\.version|row\.id/);

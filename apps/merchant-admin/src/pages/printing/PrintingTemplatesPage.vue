@@ -20,6 +20,7 @@ import {
   BILINGUAL_RECEIPT_LABELS,
   DEFAULT_RECEIPT_FOOTER_VI,
   DEFAULT_RECEIPT_FOOTER_ZH,
+  formatBilingualDishName,
   splitBilingualFooter,
 } from '@/utils/bilingual-receipt';
 import { receiptPreviewMerchant } from '@/utils/receipt-preview-merchant';
@@ -109,6 +110,11 @@ const orderCustomerPreview = {
   tableName: 'A01',
   createdAt: '11:30',
 };
+const previewItems = [
+  { name: '爆炒猪肝', nameVi: 'gan xào', quantity: 1, lineTotal: 98_000, note: '少辣' },
+  { name: '招牌酸菜鱼特大份家庭分享装', nameVi: 'Cá dưa đặc biệt phần lớn dành cho gia đình', quantity: 1, lineTotal: 12_345_678, note: '' },
+  { name: '红薯叶', nameVi: 'Rau lang xào tỏi thơm ngon kiểu quê nhà', quantity: 2, lineTotal: 116_000, note: '' },
+];
 const tableBillPreview = {
   tableName: 'A01',
   sessionNo: 'TS-20260808-01',
@@ -116,11 +122,7 @@ const tableBillPreview = {
   closedAt: '17:22',
   generatedAt: '17:22',
   orderNos: ['20260808001', '20260808002'],
-  items: [
-    { name: '爆炒猪肝', nameVi: 'gan xào', quantity: 1, lineTotal: 98_000, note: '少辣' },
-    { name: '招牌酸菜鱼特大份家庭分享装', nameVi: 'Cá dưa đặc biệt phần lớn dành cho gia đình', quantity: 1, lineTotal: 12_345_678, note: '' },
-    { name: '红薯叶', nameVi: 'Rau lang xào tỏi thơm ngon kiểu quê nhà', quantity: 2, lineTotal: 116_000, note: '' },
-  ],
+  items: previewItems,
   totals: {
     originalAmount: 12_559_678,
     commercialDiscountAmount: 1_255_967,
@@ -128,6 +130,16 @@ const tableBillPreview = {
     receivedAmount: 11_303_000,
   },
 };
+// Mirrors the real print renderer's item separator: a fixed dash-count text
+// line (24 chars on 58mm, 32 on 80mm) that physically renders as a left/half
+// width dashed separator under the dish-name area.
+const RECEIPT_ITEM_DIVIDER_DASHES = {
+  MM58: '-'.repeat(24),
+  MM80: '-'.repeat(32),
+} as const;
+const receiptItemDividerDashes = computed(
+  () => RECEIPT_ITEM_DIVIDER_DASHES[paperWidth.value],
+);
 const previewMerchantName80 = computed(() => [
   previewMerchant.value.nameZh,
   previewMerchant.value.nameVi,
@@ -472,8 +484,11 @@ onMounted(load);
               </div>
               <div class="receipt-paper__divider" />
               <div class="receipt-paper__items">
-                <div class="receipt-paper__item"><span>酸辣牛肉面<br /><small>Mì bò chua cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">28,000</strong></div>
-                <div class="receipt-paper__item"><span>麻辣土豆丝<br /><small>Khoai tây sợi cay</small></span><b>x1</b><strong v-if="receiptSettings.itemPrice">12,000</strong></div>
+                <div v-for="item in previewItems" :key="item.name" class="receipt-paper__item">
+                  <span class="receipt-paper__item-name">{{ formatBilingualDishName(item.nameVi, item.name) }}<i class="receipt-preview__item-divider" aria-hidden="true">{{ receiptItemDividerDashes }}</i></span>
+                  <b>x{{ item.quantity }}</b>
+                  <strong v-if="receiptSettings.itemPrice">{{ item.lineTotal.toLocaleString('vi-VN') }}</strong>
+                </div>
               </div>
               <div v-if="receiptSettings.note" class="receipt-paper__note"><span>{{ BILINGUAL_RECEIPT_LABELS.note }}</span>少辣，不要香菜</div>
               <div v-if="receiptSettings.total" class="receipt-paper__total"><span>{{ BILINGUAL_RECEIPT_LABELS.total }}</span><strong>40,000 VND</strong></div>
@@ -539,11 +554,10 @@ onMounted(load);
                       :class="{ 'bill-preview__item-main--no-amount': !receiptSettings.itemPrice }"
                       :data-layout="paperWidth === 'MM80' ? 'item-row-80' : 'item-row-58'"
                     >
-                      <span class="bill-preview__item-name">{{ item.name }}</span>
+                      <span class="bill-preview__item-name">{{ formatBilingualDishName(item.nameVi, item.name) }}<i class="bill-preview__item-divider" aria-hidden="true">{{ receiptItemDividerDashes }}</i></span>
                       <b>x{{ item.quantity }}</b>
                       <strong v-if="receiptSettings.itemPrice">{{ item.lineTotal.toLocaleString('vi-VN') }}</strong>
                     </div>
-                    <span v-if="item.nameVi && item.nameVi !== item.name" class="bill-preview__item-vi" data-layout="item-name-vi">{{ item.nameVi }}</span>
                     <em v-if="item.note" class="bill-preview__note">备注 / Ghi chú: {{ item.note }}</em>
                   </div>
                 </div>
@@ -646,6 +660,8 @@ onMounted(load);
 .receipt-paper__divider { height: 1px; margin: 13px 0 10px; background: repeating-linear-gradient(90deg, #444 0 4px, transparent 4px 7px); }
 .receipt-paper__items { display: grid; gap: 8px; }
 .receipt-paper__item strong, .receipt-paper__total strong { text-align: right; white-space: nowrap; }
+.receipt-paper__item-name { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; color: #1c1c1c; font-size: 12px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.receipt-preview__item-divider { display: block; max-width: 100%; overflow: hidden; color: #222; font-size: 9px; font-style: normal; line-height: 1; white-space: nowrap; }
 .receipt-paper__note { margin-top: 11px; color: #333; }
 .receipt-paper__note span { margin-right: 7px; }
 .receipt-paper__total { margin-top: 14px; padding-top: 10px; border-top: 1px solid #555; font-size: 14px; font-weight: 800; }
@@ -694,6 +710,8 @@ onMounted(load);
 .bill-preview__item-main > * { min-width: 0; overflow: hidden; white-space: nowrap; }
 .bill-preview__item-main > :not(:first-child) { text-align: right; }
 .bill-preview__item-main > b { text-align: center; }
+.bill-preview__item-name { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; color: #1c1c1c; font-size: 12px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; white-space: normal; overflow: visible; text-overflow: clip; }
+.bill-preview__item-divider { display: block; max-width: 100%; overflow: hidden; color: #222; font-size: 9px; font-style: normal; line-height: 1; white-space: nowrap; }
 .bill-preview__item-name { text-overflow: ellipsis; }
 .bill-preview__item-vi { overflow-wrap: anywhere; font-weight: 400; }
 .bill-preview__note { font-size: 10px; font-style: normal; font-weight: 400; overflow-wrap: anywhere; }

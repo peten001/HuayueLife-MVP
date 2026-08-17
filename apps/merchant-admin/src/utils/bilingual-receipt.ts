@@ -18,6 +18,23 @@ export interface BilingualReceiptFooter {
   vi: string;
 }
 
+/**
+ * Canonical one-line dish-name format shared with the real print renderer:
+ * Vietnamese first, Chinese second, joined by a single space. Missing or
+ * duplicate values collapse to one name; never emit separators, undefined,
+ * null, or double spaces.
+ */
+export function formatBilingualDishName(
+  nameVi: string | undefined | null,
+  nameZh: string | undefined | null,
+): string {
+  const vi = nameVi?.trim() ?? '';
+  const zh = nameZh?.trim() ?? '';
+  if (!vi) return zh;
+  if (!zh || vi === zh) return vi;
+  return `${vi} ${zh}`;
+}
+
 export function splitBilingualFooter(value: unknown): BilingualReceiptFooter {
   if (typeof value !== 'string') return { zh: DEFAULT_RECEIPT_FOOTER_ZH, vi: DEFAULT_RECEIPT_FOOTER_VI };
   const lines = value.split('\\n').join('\n').split(/\r?\n/).map((line: string) => line.trim()).filter(Boolean);
