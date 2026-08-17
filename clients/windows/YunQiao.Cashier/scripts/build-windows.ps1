@@ -74,12 +74,17 @@ if (-not $Iscc) {
 }
 
 $CurrentStage = "Compile Setup.exe"
-& $Iscc `
+$IsccOutput = @(& $Iscc `
     "/DSourceDir=$PublishDirectory" `
     "/DWebViewBootstrapper=$Bootstrapper" `
     "/DOutputDir=$InstallerOutput" `
-    (Join-Path $ProjectRoot "installer\YunQiao.Cashier.iss")
-Assert-NativeCommandSucceeded $CurrentStage $LASTEXITCODE
+    (Join-Path $ProjectRoot "installer\YunQiao.Cashier.iss") 2>&1)
+$IsccExitCode = $LASTEXITCODE
+$IsccOutput | ForEach-Object { Write-Host $_ }
+if ($IsccExitCode -ne 0) {
+    $IsccTail = ($IsccOutput | Select-Object -Last 20) -join "`n"
+    throw "Compile Setup.exe failed with exit code $IsccExitCode.`n$IsccTail"
+}
 
 Write-Host "Windows publish: $ZipPath"
 Write-Host "Installer: $(Join-Path $InstallerOutput 'YunQiao_Cashier_Setup.exe')"
