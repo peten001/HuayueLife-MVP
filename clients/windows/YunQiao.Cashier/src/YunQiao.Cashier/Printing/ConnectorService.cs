@@ -1,0 +1,408 @@
+using System.Windows;
+using YunQiao.Cashier.Core.Printing;
+using YunQiao.Cashier.Core.Protocol;
+using YunQiao.Cashier.Core.Queue;
+using YunQiao.Cashier.Logging;
+using YunQiao.Cashier.Security;
+using YunQiao.Cashier.Settings;
+
+namespace YunQiao.Cashier.Printing;
+
+public sealed class ConnectorService : IAsyncDisposable
+{
+    private readonly SettingsService _settingsService;
+    private readonly DpapiCredentialStore _credentialStore;
+    private readonly TerminalApiClient _api;
+    private readonly WpfReceiptRenderer _renderer;
+    private readonly ExecutionLedger _ledger;
+    private readonly PendingReportStore _pendingReports;
+    private readonly SemaphoreSlim _sessionGate = new(1, 1);
+    private CancellationTokenSource? _runCancellation;
+    private Task? _runTask;
+    private string? _merchantJwtFingerprint;
+    private string? _lastStatus;
+    public event EventHandler<string>? StatusChanged;
+
+    public ConnectorService(
+        SettingsService settingsService,
+        DpapiCredentialStore credentialStore,
+        TerminalApiClient api,
+        WpfReceiptRenderer renderer)
+    {
+        _settingsService = settingsService;
+        _credentialStore = credentialStore;
+        _api = api;
+        _renderer = renderer;
+        var state = Path.Combine(SettingsService.RootDirectory, "state");
+        _ledger = new ExecutionLedger(Path.Combine(state, "execution-ledger.json"));
+        _pendingReports = new PendingReportStore(Path.Combine(state, "pending-operations.json"));
+    }
+
+    public async Task UpdateSessionAsync(string? merchantJwt)
+    {
+        var fingerprint = merchantJwt is null ? null : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(merchantJwt))).ToLowerInvariant()[..12];
+        await _sessionGate.WaitAsync();
+        try
+        {
+            if (fingerprint == _merchantJwtFingerprint && _runTask is { IsCompleted: false }) return;
+            await StopUnsafeAsync();
+            _merchantJwtFingerprint = fingerprint;
+            if (merchantJwt is null)
+            {
+                _credentialStore.ClearCredential();
+                SetStatus("打印连接器等待商家登录");
+                return;
+            }
+            _runCancellation = new CancellationTokenSource();
+            _runTask = RunAsync(merchantJwt, _runCancellation.Token);
+        }
+        finally { _sessionGate.Release(); }
+    }
+
+    public async Task RefreshSettingsAsync()
+    {
+        // A fresh loop resynchronizes all local bindings without changing the merchant session.
+        var running = _runTask;
+        if (running is null || running.IsCompleted) return;
+        SetStatus("打印机设置已保存，将在下一轮同步");
+        await Task.CompletedTask;
+    }
+
+    private async Task RunAsync(string merchantJwt, CancellationToken cancellationToken)
+    {
+        try
+        {
+            SetStatus("正在建立安全打印连接…");
+            var settings = await _settingsService.LoadAsync(cancellationToken);
+            var secret = _credentialStore.GetOrCreateTerminalSecret();
+            var bootstrap = await _api.BootstrapAsync(
+                merchantJwt,
+                settings.TerminalInstanceId,
+                secret,
+                $"Windows {Environment.OSVersion.Version}",
+                cancellationToken);
+            _credentialStore.SaveCredential(bootstrap);
+            var bearer = bootstrap.TerminalBearer;
+            var heartbeatSequence = 0L;
+            var config = await _api.GetConfigAsync(bearer, cancellationToken);
+            var lanConfig = new LanTerminalConfig(false, false);
+            var lastSync = DateTimeOffset.MinValue;
+            var routes = new Dictionary<string, RouteIdentity>(StringComparer.Ordinal);
+            SetStatus("安全打印连接已建立");
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    settings = await _settingsService.LoadAsync(cancellationToken);
+                    await _api.HeartbeatAsync(bearer, heartbeatSequence++, config.ConfigVersion, [], cancellationToken);
+                    config = await _api.GetConfigAsync(bearer, cancellationToken);
+                    if (settings.Printers.Any(value => value.Enabled && value.Transport == PrinterTransportKind.Lan))
+                        lanConfig = await _api.GetLanConfigAsync(bearer, cancellationToken);
+                    await RecoverPendingReportsAsync(bearer, bootstrap.MerchantId, cancellationToken);
+
+                    if (DateTimeOffset.UtcNow - lastSync >= TimeSpan.FromSeconds(30) || routes.Count == 0)
+                    {
+                        routes = await SyncBindingsAsync(bearer, settings, cancellationToken);
+                        lastSync = DateTimeOffset.UtcNow;
+                    }
+
+                    if (config.CanClaimJobs)
+                    {
+                        foreach (var profile in settings.Printers.Where(value => value.Enabled))
+                        {
+                            if (profile.Transport == PrinterTransportKind.Lan && (!lanConfig.TerminalEnabled || !lanConfig.LanPrintingEnabled)) continue;
+                            if (!routes.TryGetValue(profile.Id, out var route)) continue;
+                            await PollAndExecuteAsync(bearer, profile, route, config.AutomaticCreationEnabled, cancellationToken);
+                        }
+                    }
+                    SetStatus(config.CanClaimJobs ? "打印连接器运行中" : "后台已暂停本终端打印");
+                    await Task.Delay(TimeSpan.FromSeconds(config.PollIntervalSeconds), cancellationToken);
+                }
+                catch (TerminalApiException error) when (!error.CredentialInvalid)
+                {
+                    AppLog.Warn("CONNECTOR_API_RETRY", $"code={error.ErrorCode} status={error.StatusCode}");
+                    SetStatus($"打印服务暂时不可用：{error.ErrorCode}");
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (TerminalApiException error) when (error.CredentialInvalid)
+        {
+            _credentialStore.ClearCredential();
+            AppLog.Warn("CONNECTOR_CREDENTIAL_INVALID", $"code={error.ErrorCode}");
+            SetStatus("打印终端凭据失效，请重新登录");
+        }
+        catch (Exception error)
+        {
+            AppLog.Error("CONNECTOR_STOPPED", error);
+            SetStatus("打印连接器已停止，请刷新或重新登录");
+        }
+    }
+
+    private async Task<Dictionary<string, RouteIdentity>> SyncBindingsAsync(
+        string bearer,
+        AppSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var routes = new Dictionary<string, RouteIdentity>(StringComparer.Ordinal);
+        var profiles = settings.Printers.ToArray();
+        var changed = false;
+        for (var index = 0; index < profiles.Length; index++)
+        {
+            var profile = profiles[index];
+            if (!profile.Enabled) continue;
+            if (!ProfileReady(profile))
+            {
+                AppLog.Warn("BINDING_SKIPPED", $"profile={profile.Id} reason=incomplete");
+                continue;
+            }
+            try
+            {
+                var synced = await _api.SyncBindingAsync(bearer, profile, cancellationToken);
+                var updated = profile with { PrinterId = synced.PrinterId, BindingVersion = synced.BindingVersion };
+                profiles[index] = updated;
+                changed |= updated != profile;
+                routes[profile.Id] = new RouteIdentity(synced.PrinterId, synced.LocalBindingId, synced.BindingVersion, profile.Transport);
+                AppLog.Info("BINDING_SYNCED", $"profile={profile.Id} printerId={synced.PrinterId} version={synced.BindingVersion}");
+            }
+            catch (TerminalApiException error)
+            {
+                AppLog.Warn("BINDING_SYNC_FAILED", $"profile={profile.Id} code={error.ErrorCode}");
+            }
+        }
+        if (changed) await _settingsService.SaveAsync(settings with { Printers = profiles }, cancellationToken);
+        return routes;
+    }
+
+    private async Task PollAndExecuteAsync(
+        string bearer,
+        LocalPrinterProfile profile,
+        RouteIdentity route,
+        bool allowAutomatic,
+        CancellationToken cancellationToken)
+    {
+        var job = await _api.GetActiveJobAsync(bearer, route, cancellationToken)
+            ?? await _api.ClaimJobAsync(bearer, route, allowAutomatic, cancellationToken);
+        if (job is null) return;
+        if (job.Route.PrinterId != route.PrinterId || job.Route.LocalBindingId != route.LocalBindingId || job.Route.BindingVersion != route.BindingVersion)
+        {
+            AppLog.Warn("JOB_ROUTE_REJECTED", $"jobId={job.Id}");
+            return;
+        }
+        await ExecuteAsync(bearer, profile, job, cancellationToken);
+    }
+
+    private async Task ExecuteAsync(string bearer, LocalPrinterProfile profile, ClaimedPrintJob job, CancellationToken cancellationToken)
+    {
+        var registration = await _ledger.RegisterAsync(job.MerchantId, job.Id, job.ExpectedAttemptNo, job.ContentHash, cancellationToken);
+        if (registration.Disposition != RegistrationDisposition.Ready)
+        {
+            AppLog.Warn("DUPLICATE_BLOCKED", $"jobId={job.Id} disposition={registration.Disposition}");
+            return;
+        }
+
+        byte[] bytes;
+        try
+        {
+            RenderedReceipt rendered;
+            if (job.SnapshotSchemaVersion == 1)
+            {
+                var legacy = ReceiptDocumentV1Parser.Parse(job.ReceiptSnapshotJson);
+                if (legacy.ReceiptType.ToString() != job.ReceiptType) throw new ReceiptSchemaException("Receipt type mismatch.");
+                rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.RenderLegacy(legacy, profile.PaperWidth, DateTimeOffset.Now));
+            }
+            else
+            {
+                var document = PrintDocumentParser.Parse(job.ReceiptSnapshotJson);
+                if (document.PaperWidth != profile.PaperWidth) throw new PrintDocumentException("Print document paper width mismatch.");
+                rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.Render(document));
+            }
+            bytes = rendered.EscPosBytes;
+        }
+        catch (Exception error)
+        {
+            AppLog.Warn("PRINT_PREFLIGHT_FAILED", $"jobId={job.Id} type={error.GetType().Name}");
+            await ReportPreflightFailureAsync(bearer, job, registration.Entry, error, cancellationToken);
+            return;
+        }
+
+        var lease = await _api.ExtendLeaseAsync(bearer, job, cancellationToken);
+        var started = job.Status == "PRINTING" && job.CurrentAttemptNo is not null
+            ? new StartPrintingResult(job.CurrentAttemptNo.Value, lease.LeaseVersion, lease.LeaseExpiresAt)
+            : await _api.MarkPrintingAsync(bearer, job, lease.LeaseVersion, cancellationToken);
+        if (started.AttemptNo != registration.Entry.AttemptNo)
+        {
+            AppLog.Warn("ATTEMPT_MISMATCH", $"jobId={job.Id}");
+            return;
+        }
+
+        var printing = await _ledger.UpdateAsync(registration.Entry with
+        {
+            State = ExecutionState.Printing,
+            PlannedBytes = bytes.Length,
+            IoAttempted = true,
+        }, cancellationToken);
+        AppLog.Info("PRINT_EXECUTE_START", $"jobId={job.Id} attempt={started.AttemptNo} bytes={bytes.Length} transport={profile.Transport}");
+        var transport = ResolveTransport(profile);
+        TransportResult result;
+        try { result = await transport.SendAsync(bytes, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            result = TransportResult.Uncertain(0, "PRINT_CANCELLED", "Print process stopped after I/O began.");
+        }
+        catch (Exception error)
+        {
+            result = TransportResult.Uncertain(0, "PRINT_EXECUTION_EXCEPTION", error.GetType().Name);
+        }
+
+        var finalState = result.Outcome switch
+        {
+            TransportOutcome.Succeeded => ExecutionState.Succeeded,
+            TransportOutcome.Failed => ExecutionState.Failed,
+            _ => ExecutionState.Uncertain,
+        };
+        var completed = await _ledger.UpdateAsync(printing with
+        {
+            State = finalState,
+            BytesWritten = result.BytesWritten,
+            IoAttempted = result.IoAttempted,
+            ErrorCode = result.ErrorCode,
+        }, CancellationToken.None);
+        var report = CreatePending(job, started.AttemptNo, started.LeaseVersion, result, finalState);
+        await ReportOrQueueAsync(bearer, report, completed, CancellationToken.None);
+        try
+        {
+            await _api.ReportPrinterStatusAsync(
+                bearer,
+                job.Route,
+                result.Outcome == TransportOutcome.Succeeded ? "CONNECTED" : "ERROR",
+                result.ErrorCode,
+                result.ErrorMessage,
+                CancellationToken.None);
+        }
+        catch (TerminalApiException error)
+        {
+            AppLog.Warn("PRINTER_STATUS_REPORT_FAILED", $"jobId={job.Id} code={error.ErrorCode}");
+        }
+        AppLog.Info("PRINT_EXECUTE_RESULT", $"jobId={job.Id} attempt={started.AttemptNo} outcome={finalState} bytes={result.BytesWritten}");
+    }
+
+    private async Task ReportPreflightFailureAsync(
+        string bearer,
+        ClaimedPrintJob job,
+        ExecutionEntry entry,
+        Exception error,
+        CancellationToken cancellationToken)
+    {
+        var started = job.Status == "PRINTING" && job.CurrentAttemptNo is not null
+            ? new StartPrintingResult(job.CurrentAttemptNo.Value, job.LeaseVersion, job.LeaseExpiresAt)
+            : await _api.MarkPrintingAsync(bearer, job, job.LeaseVersion, cancellationToken);
+        var result = TransportResult.Failure("TEMPLATE_INVALID", error.GetType().Name, false);
+        var completed = await _ledger.UpdateAsync(entry with { State = ExecutionState.Failed, ErrorCode = "TEMPLATE_INVALID" }, cancellationToken);
+        await ReportOrQueueAsync(bearer, CreatePending(job, started.AttemptNo, started.LeaseVersion, result, ExecutionState.Failed), completed, cancellationToken);
+    }
+
+    private async Task ReportOrQueueAsync(
+        string bearer,
+        PendingPrintReport report,
+        ExecutionEntry ledgerEntry,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendReportAsync(bearer, report, cancellationToken);
+            await _ledger.UpdateAsync(ledgerEntry with { ServerReported = true }, cancellationToken);
+            await _pendingReports.RemoveAsync(report.JobId, report.AttemptNo, cancellationToken);
+        }
+        catch (Exception error) when (error is TerminalApiException or HttpRequestException or OperationCanceledException)
+        {
+            await _pendingReports.AddAsync(report, CancellationToken.None);
+            AppLog.Warn("PRINT_REPORT_PENDING", $"jobId={report.JobId} attempt={report.AttemptNo}");
+        }
+    }
+
+    private async Task RecoverPendingReportsAsync(string bearer, string merchantId, CancellationToken cancellationToken)
+    {
+        foreach (var report in (await _pendingReports.ReadAsync(cancellationToken)).Where(value => value.MerchantId == merchantId))
+        {
+            try
+            {
+                await SendReportAsync(bearer, report, cancellationToken);
+                await _pendingReports.RemoveAsync(report.JobId, report.AttemptNo, cancellationToken);
+                AppLog.Info("PRINT_REPORT_RECOVERED", $"jobId={report.JobId} attempt={report.AttemptNo}");
+            }
+            catch (TerminalApiException) { break; }
+        }
+    }
+
+    private Task SendReportAsync(string bearer, PendingPrintReport report, CancellationToken cancellationToken)
+    {
+        var job = new ClaimedPrintJob(
+            report.JobId, report.MerchantId, report.PrinterId, "PRINTING", report.ReceiptType,
+            report.Source, report.AttemptNo - 1, report.AttemptNo, report.LeaseVersion,
+            DateTimeOffset.UtcNow.AddMinutes(1), report.ContentHash, 2, "{}", report.Route, report.Adapter);
+        return report.State == ExecutionState.Succeeded
+            ? _api.ReportSucceededAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten, cancellationToken)
+            : _api.ReportFailedAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten,
+                report.State == ExecutionState.Uncertain, report.Retryable, report.ErrorCode ?? "UNKNOWN", report.ErrorMessage ?? "Local print failure", cancellationToken);
+    }
+
+    private static PendingPrintReport CreatePending(
+        ClaimedPrintJob job,
+        int attemptNo,
+        long leaseVersion,
+        TransportResult result,
+        ExecutionState state) => new(
+            job.Id, job.MerchantId, job.PrinterId, job.ReceiptType, job.Source, job.ContentHash,
+            job.Route, job.Adapter, attemptNo, leaseVersion, result.BytesWritten, state,
+            result.Retryable, result.ErrorCode, result.ErrorMessage, DateTimeOffset.UtcNow);
+
+    private static IPrinterTransport ResolveTransport(LocalPrinterProfile profile) => profile.Transport switch
+    {
+        PrinterTransportKind.WindowsSpooler when !string.IsNullOrWhiteSpace(profile.WindowsPrinterName) => new WindowsSpoolerTransport(profile.WindowsPrinterName),
+        PrinterTransportKind.Lan when !string.IsNullOrWhiteSpace(profile.Host) => new TcpPrinterTransport(profile.Host, profile.Port),
+        _ => new MissingTransport(),
+    };
+
+    private static bool ProfileReady(LocalPrinterProfile profile) => profile.Transport switch
+    {
+        PrinterTransportKind.WindowsSpooler => !string.IsNullOrWhiteSpace(profile.WindowsPrinterName),
+        PrinterTransportKind.Lan => profile.Host is not null && TcpPrinterTransport.TryPrivateIpv4(profile.Host, out _),
+        _ => false,
+    };
+
+    private void SetStatus(string value)
+    {
+        if (string.Equals(_lastStatus, value, StringComparison.Ordinal)) return;
+        _lastStatus = value;
+        StatusChanged?.Invoke(this, value);
+        AppLog.Info("CONNECTOR_STATUS", value);
+    }
+
+    private async Task StopUnsafeAsync()
+    {
+        if (_runCancellation is null) return;
+        _runCancellation.Cancel();
+        try { if (_runTask is not null) await _runTask; } catch (OperationCanceledException) { }
+        _runCancellation.Dispose();
+        _runCancellation = null;
+        _runTask = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _sessionGate.WaitAsync();
+        try { await StopUnsafeAsync(); }
+        finally { _sessionGate.Release(); }
+        _sessionGate.Dispose();
+        _api.Dispose();
+    }
+
+    private sealed class MissingTransport : IPrinterTransport
+    {
+        public Task<TransportResult> SendAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken) =>
+            Task.FromResult(TransportResult.Failure("CONFIG_INVALID", "Printer configuration is incomplete.", false));
+    }
+}
