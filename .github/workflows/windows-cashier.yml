@@ -32,7 +32,7 @@ jobs:
         run: choco install innosetup --no-progress -y
 
       - name: Test, publish, and package
-        shell: powershell
+        shell: pwsh
         working-directory: clients/windows/YunQiao.Cashier
         run: .\scripts\build-windows.ps1
 
