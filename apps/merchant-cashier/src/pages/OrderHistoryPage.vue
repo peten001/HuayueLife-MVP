@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVnd } from '@/domain';
 import { getBusinessDaySummary, messageFromApiError, printBusinessDaySummary } from '@/api';
 import { resolveOrderLocation } from '@/domain/order-location';
+import { paymentMethodDisplayKey } from '@/domain/payment-method';
 import { useI18n } from '@/i18n';
 import { useOrdersStore, useUiStore } from '@/stores';
 import type { BusinessDaySummary, MerchantOrder, OrderStatus, OrderType } from '@/types';
@@ -211,7 +212,7 @@ onMounted(async () => {
         <ErrorState v-else-if="historyErrorKey && !historyOrders.length" :title="t('error.title')" :description="t(historyErrorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
         <div v-else-if="filtered.length" class="history-queue__list">
           <button v-for="item in filtered" :key="item.id" type="button" class="history-order-card" :class="{ 'is-selected': item.id === order?.id }" @click="selectOrder(item.id)">
-            <div class="history-order-card__top"><strong>{{ orderPrimaryLabel(item) }}</strong><OrderStatusBadge :status="item.status" /><b>{{ formatVnd(item.payableAmountVnd || item.totalAmountVnd, locale) }}</b></div>
+            <div class="history-order-card__top"><strong>{{ orderPrimaryLabel(item) }}</strong><OrderStatusBadge :status="item.status" /><span class="history-order-card__amount"><b>{{ formatVnd(item.payableAmountVnd || item.totalAmountVnd, locale) }}</b><small data-testid="order-payment-method">{{ t(paymentMethodDisplayKey(item.paymentMethod)) }}</small></span></div>
             <div class="history-order-card__context"><span>{{ t(`order.type.${orderTypeKey(item.orderType)}`) }}</span><span>{{ orderContext(item) }}</span></div>
             <div class="history-order-card__footer"><span>{{ t('table.itemCount', { count: orderItemCount(item) }) }}</span><small>{{ formatVietnamDateTime(orderHistoryTime(item), locale) }}</small></div>
           </button>
@@ -240,6 +241,7 @@ onMounted(async () => {
               <div v-if="BigInt(order.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(order.discountAmountVnd || '0', locale) }}</dd></div>
               <div v-if="BigInt(order.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(order.roundingAmountVnd || '0', locale) }}</dd></div>
               <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(orderPayableAmount, locale) }}</dd></div>
+              <div><dt>{{ t('payment.methodLabel') }}</dt><dd data-testid="detail-payment-method">{{ t(paymentMethodDisplayKey(order.paymentMethod)) }}</dd></div>
             </dl>
           </section>
           <section v-if="checkoutSettlement" class="workflow-section order-checkout-settlement" data-testid="order-checkout-settlement">
@@ -249,6 +251,7 @@ onMounted(async () => {
               <div v-if="BigInt(checkoutSettlement.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.discountAmountVnd || '0', locale) }}</dd></div>
               <div v-if="BigInt(checkoutSettlement.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.roundingAmountVnd, locale) }}</dd></div>
               <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(checkoutSettlement.finalPayableAmountVnd || checkoutSettlement.payableAmountVnd, locale) }}</dd></div>
+              <div><dt>{{ t('payment.methodLabel') }}</dt><dd data-testid="detail-payment-method">{{ t(paymentMethodDisplayKey(order.paymentMethod)) }}</dd></div>
             </dl>
           </section>
           <PrintJobActions compact :order-id="order.id" />

@@ -137,16 +137,42 @@ function makeOrder(
   const fixtureRounding = id === 'demo-order-0996' ? 3000 : 0;
   const fixtureQuantity = fixtureAmount === 14_000_000 ? 2 : quantity;
   const activeTableLink = tableNo && status !== 'COMPLETED';
+  const fixturePaymentMethod = status === 'COMPLETED'
+    ? id === 'demo-order-0995' ? 'CASH' : id === 'demo-order-0997' ? 'BANK_TRANSFER' : null
+    : null;
   return {
     id, orderNo, userId: orderType === 'DINE_IN' ? null : `demo-user-${id}`, createdByStaffId: id === 'demo-order-1006' ? 'demo-staff-1' : null, merchantId: 'demo-merchant', tableId: activeTableLink ? 'demo-table-1' : null, tableSessionId: activeTableLink ? 'demo-session-1' : null, tableNoSnapshot: tableNo ?? null, orderType, status,
     contactName: orderType === 'DINE_IN' ? null : 'Demo Customer', contactPhone: orderType === 'DINE_IN' ? null : '000-000-000', deliveryAddress: orderType === 'DELIVERY' ? id === 'demo-order-1005' ? '12 Nguyễn Huệ, phường Bến Nghé, quận 1, Thành phố Hồ Chí Minh, Việt Nam' : 'Demo address (not real)' : null,
     customerRemark: '演示数据 / Dữ liệu demo / Demo data', itemAmountVnd: String(fixtureAmount), deliveryFeeVnd: '0', totalAmountVnd: String(fixtureAmount), originalAmountVnd: String(fixtureAmount), roundingAmountVnd: String(fixtureRounding), payableAmountVnd: String(fixtureAmount - fixtureRounding), roundingApplied: fixtureRounding > 0, roundingAppliedByStaffId: fixtureRounding > 0 ? 'demo-staff' : null, roundingAppliedAt: fixtureRounding > 0 ? isoMinutesAgo(Math.max(0, minutesAgo - 1)) : null, settlementStatus: 'UNSETTLED', createdAt: isoMinutesAgo(minutesAgo), updatedAt: isoMinutesAgo(minutesAgo),
+    paymentMethod: fixturePaymentMethod,
     acceptedAt: status === 'PENDING_ACCEPTANCE' ? null : isoMinutesAgo(Math.max(0, minutesAgo - 2)),
     readyAt: ['READY', 'DELIVERING', 'COMPLETED'].includes(status) ? isoMinutesAgo(Math.max(0, minutesAgo - 5)) : null,
     pickupCode: orderType === 'PICKUP' ? orderNo.replace(/\D/g, '').slice(-4) : null,
     estimatedReadyAt: orderType === 'PICKUP' ? new Date(Date.parse(isoMinutesAgo(minutesAgo)) + 30 * 60_000).toISOString() : null,
     table: tableNo ? { id: 'demo-table-1', tableNo, tableName: '演示桌 A01' } : null,
     items: [{ id: `${id}-item`, productNameZhSnapshot: fixtureAmount === 14_000_000 ? '演示大额菜品（非真实）' : '演示菜品（非真实）', productNameViSnapshot: 'Món ăn demo (dữ liệu giả)', productNameEnSnapshot: 'Demo dish (not real data)', quantity: fixtureQuantity, unitPriceVnd: String(fixtureAmount / fixtureQuantity), subtotalVnd: String(fixtureAmount), remark: 'Demo' }],
+    statusLogs: id === 'demo-order-0995' ? [{
+      id: `log-${id}`,
+      action: 'TABLE_SESSION_CHECKOUT',
+      fromStatus: 'READY',
+      toStatus: 'COMPLETED',
+      operatorType: 'MERCHANT_STAFF',
+      operatorStaffId: 'demo-staff',
+      remark: '桌台结账，订单自动完成',
+      createdAt: isoMinutesAgo(Math.max(0, minutesAgo - 1)),
+      metadata: {
+        tableSessionId: 'demo-session-1',
+        originalAmountVnd: String(fixtureAmount),
+        itemAmountVnd: String(fixtureAmount),
+        discountPayableRateBps: null,
+        discountAmountVnd: '0',
+        afterDiscountAmountVnd: String(fixtureAmount),
+        nonDiscountableFeeVnd: '0',
+        roundingAmountVnd: String(fixtureRounding),
+        finalPayableAmountVnd: String(fixtureAmount - fixtureRounding),
+        payableAmountVnd: String(fixtureAmount - fixtureRounding),
+      },
+    }] : undefined,
     chatConversation: orderType === 'DINE_IN' ? null : {
       id: `demo-chat-${id}`,
       status: ['COMPLETED', 'CANCELLED'].includes(status) ? 'CLOSED' : 'ACTIVE',
