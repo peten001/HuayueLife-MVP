@@ -4,7 +4,9 @@ import {
   apiErrorTranslationKey,
   CashierApiError,
   getMerchantOrder,
+  getMerchantSettlement,
   listMerchantOrders,
+  listMerchantSettlements,
   messageFromApiError,
   runMerchantOrderAction,
   setMerchantOrderRounding,
@@ -25,6 +27,8 @@ import type {
   MerchantOrderAction,
   MerchantOrderChatConversation,
   MerchantOrderFilters,
+  MerchantSettlement,
+  MerchantSettlementFilters,
   SettlementAdjustmentInput,
 } from '@/types';
 import { useAuthStore } from './auth';
@@ -35,15 +39,22 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   const activeOrders = ref<MerchantOrder[]>([]);
   const historyOrders = ref<MerchantOrder[]>([]);
   const selectedOrder = ref<MerchantOrder | null>(null);
+  const historySettlements = ref<MerchantSettlement[]>([]);
+  const selectedSettlement = ref<MerchantSettlement | null>(null);
+  const settlementTotal = ref(0);
   const pendingLoading = ref(false);
   const activeLoading = ref(false);
   const historyLoading = ref(false);
   const detailLoading = ref(false);
+  const settlementLoading = ref(false);
+  const settlementDetailLoading = ref(false);
   const actionLoadingId = ref('');
   const error = ref('');
   const pendingErrorKey = ref('');
   const activeErrorKey = ref('');
   const historyErrorKey = ref('');
+  const settlementErrorKey = ref('');
+  const settlementDetailErrorKey = ref('');
   const detailErrorKey = ref('');
   const lastLiveRefreshAt = ref<string | null>(null);
   const lastHistoryRefreshAt = ref<string | null>(null);
@@ -53,6 +64,8 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   let liveRequest: Promise<void> | null = null;
   let detailRequestSequence = 0;
   let historyRequestSequence = 0;
+  let settlementRequestSequence = 0;
+  let settlementDetailRequestSequence = 0;
   let dataGeneration = 0;
   let liveQueryRevision = 0;
 
@@ -174,6 +187,71 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
       throw caught;
     } finally {
       if (requestSequence === historyRequestSequence) historyLoading.value = false;
+    }
+  }
+
+  async function fetchSettlements(
+    filters: MerchantSettlementFilters = {},
+  ): Promise<MerchantSettlement[]> {
+    const requestSequence = ++settlementRequestSequence;
+    settlementLoading.value = true;
+    settlementErrorKey.value = '';
+    try {
+      const page = await listMerchantSettlements(filters);
+      if (requestSequence === settlementRequestSequence) {
+        historySettlements.value = page.items;
+        settlementTotal.value = page.total;
+      }
+      return page.items;
+    } catch (caught) {
+      if (requestSequence === settlementRequestSequence) {
+        settlementErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+      }
+      throw caught;
+    } finally {
+      if (requestSequence === settlementRequestSequence) {
+        settlementLoading.value = false;
+      }
+    }
+  }
+
+  async function selectSettlement(
+    settlementOrId: MerchantSettlement | string | null,
+  ) {
+    const requestSequence = ++settlementDetailRequestSequence;
+    if (!settlementOrId) {
+      selectedSettlement.value = null;
+      settlementDetailLoading.value = false;
+      return null;
+    }
+    const id =
+      typeof settlementOrId === 'string'
+        ? settlementOrId
+        : settlementOrId.settlementId;
+    selectedSettlement.value =
+      typeof settlementOrId === 'string'
+        ? historySettlements.value.find((item) => item.settlementId === id) ?? null
+        : settlementOrId;
+    settlementDetailLoading.value = true;
+    settlementDetailErrorKey.value = '';
+    try {
+      const detail = await getMerchantSettlement(id);
+      if (requestSequence === settlementDetailRequestSequence) {
+        selectedSettlement.value = detail;
+      }
+      return detail;
+    } catch (caught) {
+      if (requestSequence === settlementDetailRequestSequence) {
+        settlementDetailErrorKey.value = apiErrorTranslationKey(
+          caught,
+          'error.description',
+        );
+      }
+      throw caught;
+    } finally {
+      if (requestSequence === settlementDetailRequestSequence) {
+        settlementDetailLoading.value = false;
+      }
     }
   }
 
@@ -423,20 +501,29 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     dataGeneration += 1;
     invalidateLiveRequests();
     historyRequestSequence += 1;
+    settlementRequestSequence += 1;
+    settlementDetailRequestSequence += 1;
     pendingOrders.value = [];
     activeOrders.value = [];
     historyOrders.value = [];
+    historySettlements.value = [];
+    selectedSettlement.value = null;
+    settlementTotal.value = 0;
     detailRequestSequence += 1;
     selectedOrder.value = null;
     pendingLoading.value = false;
     activeLoading.value = false;
     historyLoading.value = false;
     detailLoading.value = false;
+    settlementLoading.value = false;
+    settlementDetailLoading.value = false;
     actionLoadingId.value = '';
     error.value = '';
     pendingErrorKey.value = '';
     activeErrorKey.value = '';
     historyErrorKey.value = '';
+    settlementErrorKey.value = '';
+    settlementDetailErrorKey.value = '';
     detailErrorKey.value = '';
     lastLiveRefreshAt.value = null;
     lastHistoryRefreshAt.value = null;
@@ -456,15 +543,22 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     activeOrders,
     historyOrders,
     selectedOrder,
+    historySettlements,
+    selectedSettlement,
+    settlementTotal,
     pendingLoading,
     activeLoading,
     historyLoading,
     detailLoading,
+    settlementLoading,
+    settlementDetailLoading,
     actionLoadingId,
     error,
     pendingErrorKey,
     activeErrorKey,
     historyErrorKey,
+    settlementErrorKey,
+    settlementDetailErrorKey,
     detailErrorKey,
     lastLiveRefreshAt,
     lastHistoryRefreshAt,
@@ -476,6 +570,8 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     fetchActive,
     refreshLiveOrders,
     fetchHistory,
+    fetchSettlements,
+    selectSettlement,
     selectOrder,
     findCachedOrder,
     ensureOrder,

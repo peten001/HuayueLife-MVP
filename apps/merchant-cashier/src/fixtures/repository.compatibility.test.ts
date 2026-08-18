@@ -139,4 +139,27 @@ describe('fixture repository WebView compatibility', () => {
     expect(result.session.status).toBe('OPEN');
     expect(result.session.itemCount).toBe(6);
   });
+
+  it('exposes completed history as settlement records with search and pagination', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+
+    const page = demoRepository.settlements({ status: 'COMPLETED', pageSize: 2 });
+
+    expect(page.total).toBeGreaterThanOrEqual(3);
+    expect(page.items).toHaveLength(2);
+    expect(page.items.every((item) => item.kind === 'ORDER')).toBe(true);
+    expect(page.items.every((item) => item.finalReceivableVnd)).toBeTruthy();
+
+    const searched = demoRepository.settlements({
+      search: 'demo-order-0995',
+    });
+    expect(searched.total).toBe(1);
+    expect(searched.items[0]!.settlementId).toBe('order:demo-order-0995');
+
+    const detail = demoRepository.settlement('order:demo-order-0997');
+    expect(detail.orderType).toBe('DELIVERY');
+    expect(detail.sourceOrders).toHaveLength(1);
+  });
 });

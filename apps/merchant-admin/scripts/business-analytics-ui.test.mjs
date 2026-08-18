@@ -16,7 +16,7 @@ for (const locale of ['zh:', 'vi:', 'en:']) {
   assert.match(page, new RegExp(`\\b${locale}`), `missing analytics copy for ${locale}`);
 }
 
-for (const field of ['generatedAt', 'revenueVnd', 'orderCount', 'averageOrderValueVnd', 'timeDistribution', 'topDishes']) {
+for (const field of ['generatedAt', 'revenueVnd', 'settlementCount', 'averageOrderValueVnd', 'timeDistribution', 'topDishes']) {
   assert.match(api, new RegExp(`\\b${field}\\b`), `missing analytics response field ${field}`);
 }
 for (const field of ['grossAmountVnd', 'discountAmountVnd', 'roundingAmountVnd', 'netSettledAmountVnd', 'cashRevenueVnd', 'bankTransferRevenueVnd', 'unrecordedRevenueVnd']) {
@@ -33,9 +33,9 @@ assert.match(page, /fundsDescription: 'Theo tổng thanh toán cuối cùng củ
 assert.match(page, /fundsDescription: 'Based on final settled amounts of completed orders'/, 'English funds basis wording must exist');
 assert.match(page, /analytics-funds-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 6px; margin: 0; \}/, 'funds block must keep a three-column desktop composition');
 assert.match(page, /@media \(max-width: 768px\)[\s\S]*\.analytics-funds-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 5px; \}/, 'mobile funds must collapse to a two-column grid');
-assert.match(page, /shareDescription: '按下单时间统计营业额分布'/, 'time revenue share must describe creation-time attribution');
-assert.match(page, /shareDescription: 'Theo thời gian đặt hàng'/, 'Vietnamese share description must use creation-time wording');
-assert.match(page, /shareDescription: 'Based on order creation time'/, 'English share description must use creation-time wording');
+assert.match(page, /shareDescription: '按结账时间统计营业额分布'/, 'time revenue share must describe settlement-time attribution');
+assert.match(page, /shareDescription: 'Theo thời gian thanh toán'/, 'Vietnamese share description must use settlement-time wording');
+assert.match(page, /shareDescription: 'Based on settlement time'/, 'English share description must use settlement-time wording');
 
 assert.match(api, /return response\.data\.data/, 'analytics API should return the server payload without demo remapping');
 assert.match(page, /activePreset === preset\[0\]/, 'period buttons should expose an active state');
@@ -56,7 +56,7 @@ assert.match(page, /nth-child\(n \+ 2\)/, 'mobile suggestions should keep the fi
 assert.match(page, /analytics-heatmap-row/, 'mobile keeps the heatmap instead of replacing it with a list');
 assert.match(page, /analytics-trend-panel \{ grid-template-columns: minmax\(0, 1fr\); overflow: hidden;/, 'trend panel should not preserve a desktop canvas min-content width on phones');
 assert.match(trendChart, /max-width: 100% !important/, 'trend canvas should stay within its responsive card');
-for (const field of ['revenue', 'order-count', 'average-order-value']) {
+for (const field of ['revenue', 'settlement-count', 'average-order-value']) {
   assert.match(page, new RegExp(`data-analytics-field="${field}"`), `missing UI reconciliation marker ${field}`);
 }
 assert.doesNotMatch(page, /🤖/, 'AI brief should not depend on a platform emoji glyph');

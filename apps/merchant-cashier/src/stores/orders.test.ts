@@ -5,6 +5,8 @@ import type { MerchantOrder } from '@/types';
 const apiMocks = vi.hoisted(() => ({
   getMerchantOrder: vi.fn(),
   listMerchantOrders: vi.fn(),
+  listMerchantSettlements: vi.fn(),
+  getMerchantSettlement: vi.fn(),
   runMerchantOrderAction: vi.fn(),
   setMerchantOrderSettlementAdjustment: vi.fn(),
 }));
@@ -36,8 +38,109 @@ describe('cashier order store request isolation', () => {
     setActivePinia(createPinia());
     apiMocks.getMerchantOrder.mockReset();
     apiMocks.listMerchantOrders.mockReset();
+    apiMocks.listMerchantSettlements.mockReset();
+    apiMocks.getMerchantSettlement.mockReset();
     apiMocks.runMerchantOrderAction.mockReset();
     apiMocks.setMerchantOrderSettlementAdjustment.mockReset();
+  });
+
+  it('stores grouped settlement history with the server total', async () => {
+    const page = {
+      items: [
+        {
+          settlementId: 'session:415',
+          kind: 'TABLE_SESSION',
+          orderType: 'DINE_IN',
+          status: 'COMPLETED',
+          businessDate: '2026-08-17',
+          settledAt: '2026-08-17T10:42:15.000Z',
+          tableSessionId: '415',
+          tableId: '9',
+          tableName: 'Bàn 9',
+          orderIds: ['628', '632', '633'],
+          orderNos: ['HY-TEST-628', 'HY-TEST-632', 'HY-TEST-633'],
+          orderCount: 3,
+          itemQuantity: 4,
+          items: [],
+          originalAmountVnd: '309000',
+          discountAmountVnd: '0',
+          roundingAmountVnd: '9000',
+          finalReceivableVnd: '300000',
+          paymentMethod: 'CASH',
+          sourceOrders: [],
+          invariantViolations: [],
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+      hasMore: false,
+    };
+    apiMocks.listMerchantSettlements.mockResolvedValueOnce(page);
+    const store = useOrdersStore();
+
+    const result = await store.fetchSettlements({ date: '2026-08-17' });
+
+    expect(result).toHaveLength(1);
+    expect(store.historySettlements[0]?.orderCount).toBe(3);
+    expect(store.historySettlements[0]?.finalReceivableVnd).toBe('300000');
+    expect(store.settlementTotal).toBe(1);
+  });
+
+  it('loads a settlement detail and selects it for the history panel', async () => {
+    const detail = {
+      settlementId: 'session:417',
+      kind: 'TABLE_SESSION',
+      orderType: 'DINE_IN',
+      status: 'COMPLETED',
+      businessDate: '2026-08-17',
+      settledAt: '2026-08-17T13:41:04.000Z',
+      tableSessionId: '417',
+      tableId: '02',
+      tableName: '02',
+      orderIds: ['630', '631', '646', '648', '652'],
+      orderNos: ['A', 'B', 'C', 'D', 'E'],
+      orderCount: 5,
+      itemQuantity: 12,
+      items: [],
+      originalAmountVnd: '1458000',
+      discountAmountVnd: '0',
+      roundingAmountVnd: '8000',
+      finalReceivableVnd: '1450000',
+      paymentMethod: 'CASH',
+      sourceOrders: [
+        {
+          id: '630',
+          orderNo: 'A',
+          status: 'COMPLETED',
+          createdAt: '2026-08-17T10:19:21.000Z',
+          completedAt: '2026-08-17T13:41:04.000Z',
+          cancelledAt: null,
+          totalAmountVnd: '598000',
+          paymentMethod: 'CASH',
+        },
+      ],
+      invariantViolations: [],
+    };
+    apiMocks.getMerchantSettlement.mockResolvedValueOnce(detail);
+    const store = useOrdersStore();
+
+    const loaded = await store.selectSettlement('session:417');
+
+    expect(loaded?.roundingAmountVnd).toBe('8000');
+    expect(store.selectedSettlement?.finalReceivableVnd).toBe('1450000');
+  });
+
+  it('clears settlement history and detail when the store is cleared', async () => {
+    apiMocks.listMerchantSettlements.mockResolvedValueOnce({
+      items: [], total: 0, page: 1, pageSize: 50, hasMore: false,
+    });
+    const store = useOrdersStore();
+    await store.fetchSettlements({});
+    store.clear();
+    expect(store.historySettlements).toEqual([]);
+    expect(store.selectedSettlement).toBeNull();
+    expect(store.settlementTotal).toBe(0);
   });
 
   it('does not restore previous-merchant orders after the store is cleared', async () => {

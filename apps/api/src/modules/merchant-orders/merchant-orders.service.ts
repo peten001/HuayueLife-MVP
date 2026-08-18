@@ -41,6 +41,11 @@ import {
   completedRevenueTotals,
   isOrderInBusinessDate,
 } from './business-day-accounting';
+import {
+  buildMerchantSettlements,
+  countSettlementsForBusinessDate,
+  type SettlementOrderRow,
+} from './merchant-settlements';
 import { formatBilingualDishName } from '../printing/types/bilingual-receipt';
 import type { PrintBlock } from '../printing/types/print-document';
 
@@ -192,12 +197,12 @@ export class MerchantOrdersService {
   async summary(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
     let dateWhere: Prisma.OrderWhereInput = {};
     let schedule: ReturnType<typeof normalizeBusinessHours> | null = null;
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { businessHours: true },
+    });
     const requestedDate = query.date;
     if (requestedDate) {
-      const merchant = await this.prisma.merchant.findUnique({
-        where: { id: merchantId },
-        select: { businessHours: true },
-      });
       schedule = normalizeBusinessHours(merchant?.businessHours);
       dateWhere = businessDateCandidateWhere(schedule, requestedDate);
     }
@@ -222,12 +227,26 @@ export class MerchantOrdersService {
         businessDate: true,
         tableSession: {
           select: {
+            id: true,
             status: true,
+            closedAt: true,
+            businessDate: true,
             discountAmountVnd: true,
             roundingAmountVnd: true,
             paymentMethod: true,
           },
         },
+        table: {
+          select: { id: true, tableNo: true, tableName: true },
+        },
+        orderNo: true,
+        completedAt: true,
+        cancelledAt: true,
+        updatedAt: true,
+        itemAmountVnd: true,
+        deliveryFeeVnd: true,
+        tableId: true,
+        tableNoSnapshot: true,
         printLogs: { select: { status: true } },
       },
     });
@@ -267,6 +286,18 @@ export class MerchantOrdersService {
     const completedSuperset = orders.filter((order) => order.status === 'COMPLETED');
     const attribution = attributeOrderRevenue(completedSuperset);
     const totals = completedRevenueTotals(completedOrders, attribution);
+    const resolvedSchedule = schedule ?? normalizeBusinessHours(merchant?.businessHours);
+    const settlementRows = completedOrders.map(toSettlementRow);
+    const settlementCount = requestedDate
+      ? countSettlementsForBusinessDate(
+          settlementRows,
+          requestedDate,
+          (at) => resolveBusinessDate(resolvedSchedule, at),
+        )
+      : buildMerchantSettlements(
+          settlementRows,
+          (at) => resolveBusinessDate(resolvedSchedule, at),
+        ).length;
     return {
       ALL: { count: buckets.ALL.count, amountVnd: buckets.ALL.amountVnd.toString() },
       DINE_IN: { count: buckets.DINE_IN.count, amountVnd: buckets.DINE_IN.amountVnd.toString() },
@@ -275,6 +306,7 @@ export class MerchantOrdersService {
       ABNORMAL: { count: buckets.ABNORMAL.count, amountVnd: buckets.ABNORMAL.amountVnd.toString() },
       COMPLETED: {
         count: totals.orderCount,
+        settlementCount,
         amountVnd: totals.netSettledAmountVnd.toString(),
         grossAmountVnd: totals.grossAmountVnd.toString(),
         discountAmountVnd: totals.discountAmountVnd.toString(),
@@ -759,6 +791,9 @@ export class MerchantOrdersService {
         ...businessDateCandidateWhere(schedule, businessDate),
       },
       include: {
+        table: {
+          select: { id: true, tableNo: true, tableName: true },
+        },
         items: {
           select: {
             productNameZhSnapshot: true,
@@ -775,6 +810,8 @@ export class MerchantOrdersService {
           select: {
             id: true,
             status: true,
+            closedAt: true,
+            businessDate: true,
             paymentMethod: true,
             discountAmountVnd: true,
             roundingAmountVnd: true,
@@ -811,6 +848,11 @@ export class MerchantOrdersService {
 
     const attribution = attributeOrderRevenue(candidates);
     const totals = completedRevenueTotals(orders, attribution);
+    const settlementCount = countSettlementsForBusinessDate(
+      candidates.map(toSettlementRow),
+      businessDate,
+      (at) => resolveBusinessDate(schedule, at),
+    );
 
     return {
       merchant: { id: merchant.id, nameZh: merchant.nameZh, nameVi: merchant.nameVi },
@@ -820,6 +862,7 @@ export class MerchantOrdersService {
         return { start, end, crossesMidnight: minutesOfDay(end) < minutesOfDay(start) };
       }),
       orderCount: orders.length,
+      settlementCount,
       itemSummary: [...itemMap.values()].sort((left, right) =>
         right.quantity - left.quantity || left.nameZh.localeCompare(right.nameZh, 'zh-Hans-CN')),
       discountAmountVnd: totals.discountAmountVnd.toString(),
@@ -1841,6 +1884,63 @@ export class MerchantOrdersService {
       orderBy: { createdAt: 'desc' as const },
       take: 10,
     },
+  };
+}
+
+function toSettlementRow(order: {
+  id: bigint;
+  orderNo: string;
+  status: OrderStatus;
+  orderType: OrderType;
+  createdAt: Date;
+  completedAt: Date | null;
+  cancelledAt: Date | null;
+  updatedAt: Date;
+  businessDate: Date | null;
+  totalAmountVnd: bigint;
+  itemAmountVnd: bigint;
+  deliveryFeeVnd: bigint;
+  discountPayableRateBps: number | null;
+  discountAmountVnd: bigint | null;
+  roundingAmountVnd: bigint | null;
+  paymentMethod: PaymentMethod | null;
+  tableId: bigint | null;
+  tableSessionId: bigint | null;
+  tableNoSnapshot: string | null;
+  tableSession: {
+    id: bigint;
+    status: string;
+    closedAt: Date | null;
+    businessDate: Date | null;
+    discountAmountVnd: bigint;
+    roundingAmountVnd: bigint;
+    paymentMethod: PaymentMethod | null;
+  } | null;
+  table: { id: bigint; tableNo: string; tableName: string | null } | null;
+}): SettlementOrderRow {
+  return {
+    id: order.id,
+    orderNo: order.orderNo,
+    status: order.status,
+    orderType: order.orderType,
+    createdAt: order.createdAt,
+    completedAt: order.completedAt,
+    cancelledAt: order.cancelledAt,
+    updatedAt: order.updatedAt,
+    businessDate: order.businessDate,
+    totalAmountVnd: order.totalAmountVnd,
+    itemAmountVnd: order.itemAmountVnd,
+    deliveryFeeVnd: order.deliveryFeeVnd,
+    discountPayableRateBps: order.discountPayableRateBps,
+    discountAmountVnd: order.discountAmountVnd,
+    roundingAmountVnd: order.roundingAmountVnd,
+    paymentMethod: order.paymentMethod,
+    tableId: order.tableId,
+    tableSessionId: order.tableSessionId,
+    tableNoSnapshot: order.tableNoSnapshot,
+    tableSession: order.tableSession,
+    table: order.table,
+    items: [],
   };
 }
 

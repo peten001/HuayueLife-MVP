@@ -8,6 +8,8 @@ import { MerchantOrdersService } from './merchant-orders.service';
 import { MerchantAnalyticsController } from './merchant-analytics.controller';
 import { MerchantAnalyticsService } from './merchant-analytics.service';
 import { MerchantTableOrdersController } from './merchant-table-orders.controller';
+import { MerchantSettlementsController } from './merchant-settlements.controller';
+import { MerchantSettlementsService } from './merchant-settlements.service';
 
 @Module({
   imports: [PrintersModule, PrintingModule, OrdersModule, TableSessionsModule],
@@ -15,7 +17,12 @@ import { MerchantTableOrdersController } from './merchant-table-orders.controlle
     MerchantOrdersController,
     MerchantTableOrdersController,
     MerchantAnalyticsController,
+    MerchantSettlementsController,
   ],
-  providers: [MerchantOrdersService, MerchantAnalyticsService],
+  providers: [
+    MerchantOrdersService,
+    MerchantAnalyticsService,
+    MerchantSettlementsService,
+  ],
 })
 export class MerchantOrdersModule {}

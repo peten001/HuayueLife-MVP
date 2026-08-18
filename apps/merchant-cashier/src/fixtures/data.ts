@@ -117,6 +117,16 @@ export const initialDemoOrders: MerchantOrder[] = [
   makeOrder('demo-order-0995', 'DEMO-0995', 'COMPLETED', 'DINE_IN', 175, 513000, 'A01', 4),
   makeOrder('demo-order-0997', 'DEMO-0997', 'COMPLETED', 'DELIVERY', 160, 230000, undefined, 4),
   makeOrder('demo-order-0996', 'DEMO-0996', 'COMPLETED', 'PICKUP', 190, 513000, undefined, 1),
+  // Two completed dine-in orders of one closed table session: the merchant
+  // settlement view must show them as a single checkout record.
+  ...[
+    makeOrder('demo-order-0992', 'DEMO-0992', 'COMPLETED', 'DINE_IN', 205, 210000, 'A09', 3),
+    makeOrder('demo-order-0991', 'DEMO-0991', 'COMPLETED', 'DINE_IN', 200, 150000, 'A09', 2),
+  ].map((order) => ({
+    ...order,
+    tableId: 'demo-table-9',
+    tableSessionId: 'demo-session-9',
+  })),
 ];
 
 function makeOrder(

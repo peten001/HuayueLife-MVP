@@ -803,6 +803,7 @@ export type OrderStatus =
 
 export type OrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export type SettlementStatus = 'UNSETTLED' | 'SETTLED';
+export type PaymentMethod = 'CASH' | 'BANK_TRANSFER';
 export type PrinterStatus = 'UNKNOWN' | 'ONLINE' | 'OFFLINE';
 export type PrintLogStatus = 'PENDING' | 'PRINTING' | 'SUCCESS' | 'FAILED';
 export type PrintLanguage = 'zh' | 'vi' | 'en';
@@ -956,4 +957,69 @@ export interface MerchantOrder {
   statusLogs?: OrderStatusLog[];
   chatConversation?: MerchantOrderChatConversation | null;
   printLogs?: PrintLog[];
+}
+
+export interface MerchantSettlementItem {
+  id: string;
+  productId: string | null;
+  productNameZh: string;
+  productNameVi: string | null;
+  productNameEn: string | null;
+  imageUrl: string | null;
+  unitPriceVnd: string;
+  quantity: number;
+  subtotalVnd: string;
+  remark: string | null;
+}
+
+export interface MerchantSettlementSourceOrder {
+  id: string;
+  orderNo: string;
+  status: OrderStatus;
+  createdAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  totalAmountVnd: string;
+  paymentMethod: PaymentMethod | null;
+}
+
+export interface MerchantSettlement {
+  settlementId: string;
+  kind: 'TABLE_SESSION' | 'ORDER';
+  orderType: OrderType;
+  status: OrderStatus;
+  businessDate: string;
+  settledAt: string;
+  tableSessionId: string | null;
+  tableId: string | null;
+  tableName: string | null;
+  orderIds: string[];
+  orderNos: string[];
+  orderCount: number;
+  itemQuantity: number;
+  items: MerchantSettlementItem[];
+  originalAmountVnd: string;
+  discountAmountVnd: string;
+  roundingAmountVnd: string;
+  finalReceivableVnd: string;
+  paymentMethod: PaymentMethod | null;
+  sourceOrders: MerchantSettlementSourceOrder[];
+  invariantViolations: string[];
+}
+
+export interface MerchantSettlementPage {
+  items: MerchantSettlement[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+export interface MerchantSettlementFilters {
+  status?: 'COMPLETED' | 'CANCELLED';
+  orderType?: OrderType;
+  date?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
 }

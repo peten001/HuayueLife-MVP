@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getMerchantOrderSummary, getMerchantOrders, runOrderAction, type MerchantOrderSummary } from '@/api/orders';
+import {
+  getMerchantOrderSummary,
+  getMerchantOrders,
+  getMerchantSettlements,
+  runOrderAction,
+  type MerchantOrderSummary,
+} from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
 import PageHeader from '@/components/PageHeader.vue';
@@ -19,7 +25,12 @@ import type {
   OrderSpeechAnnouncement,
   OrderSpeechLanguage,
 } from '@/utils/order-notification';
-import type { MerchantOrder, OrderStatus, OrderType } from '@/types/api';
+import type {
+  MerchantOrder,
+  MerchantSettlement,
+  OrderStatus,
+  OrderType,
+} from '@/types/api';
 
 type Action =
   | 'accept'
@@ -51,6 +62,11 @@ const router = useRouter();
 const { locale, t } = useI18n();
 const merchant = getMerchantStaff()?.merchant ?? null;
 const rows = ref<MerchantOrder[]>([]);
+const settlements = ref<MerchantSettlement[]>([]);
+const settlementLoading = ref(false);
+const selectedSettlement = ref<MerchantSettlement | null>(null);
+const settlementDialogOpen = ref(false);
+const settlementSourceOpen = ref(false);
 const summary = ref<MerchantOrderSummary>({
   ALL: { count: 0, amountVnd: '0' },
   DINE_IN: { count: 0, amountVnd: '0' },
@@ -59,6 +75,7 @@ const summary = ref<MerchantOrderSummary>({
   ABNORMAL: { count: 0, amountVnd: '0' },
   COMPLETED: {
     count: 0,
+    settlementCount: 0,
     amountVnd: '0',
     grossAmountVnd: '0',
     discountAmountVnd: '0',
@@ -109,6 +126,34 @@ const chatOrder = computed(
 const categoryFilteredRows = computed(() =>
   rows.value.filter((order) => orderMatchesCategory(order, activeCategory.value)),
 );
+
+const isSettlementMode = computed(() => activeQuickStatus.value === 'COMPLETED');
+
+const settlementCategoryFiltered = computed(() =>
+  settlements.value.filter((settlement) =>
+    activeCategory.value === 'ALL' || activeCategory.value === 'ABNORMAL'
+      ? true
+      : settlement.orderType === activeCategory.value,
+  ),
+);
+
+const settlementDisplayRows = computed(() => {
+  const keyword = mobileSearch.value.trim().toLowerCase();
+  return [...settlementCategoryFiltered.value]
+    .filter((settlement) => {
+      if (!keyword) return true;
+      const haystack = [
+        ...settlement.orderNos,
+        settlement.tableName,
+        ...settlement.items.map((item) => item.productNameZh),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    })
+    .sort(
+      (left, right) =>
+        new Date(right.settledAt).getTime() - new Date(left.settledAt).getTime(),
+    );
+});
 
 const displayRows = computed(() =>
   [...categoryFilteredRows.value]
@@ -188,7 +233,9 @@ const quickStatusCards = computed(() => {
     PENDING: breakdown.PENDING_ACCEPTANCE ?? 0,
     PREPARING: (breakdown.ACCEPTED ?? 0) + (breakdown.PREPARING ?? 0),
     READY: (breakdown.READY ?? 0) + (breakdown.DELIVERING ?? 0),
-    COMPLETED: breakdown.COMPLETED ?? 0,
+    COMPLETED: isSettlementMode.value
+      ? (summary.value.COMPLETED?.settlementCount ?? breakdown.COMPLETED ?? 0)
+      : (breakdown.COMPLETED ?? 0),
     CANCELLED: breakdown.CANCELLED ?? 0,
   };
   const totalBreakdown =
@@ -387,25 +434,43 @@ function buildSpeechAnnouncement(type: 'enable-sound' | 'new-order'): OrderSpeec
 }
 
 async function load() {
+  settlementLoading.value = isSettlementMode.value;
   try {
-    const [loadedRows, loadedSummary] = await Promise.all([
-      getMerchantOrders(filters),
-      getMerchantOrderSummary(filters),
-    ]);
-    rows.value = loadedRows;
-    summary.value = loadedSummary;
-    notifyNewPendingOrders(
-      loadedRows
-        .filter((order) => order.status === 'PENDING_ACCEPTANCE')
-        .map((order) => order.id),
-      buildSpeechAnnouncement('new-order'),
-    );
+    if (isSettlementMode.value) {
+      const [loadedSettlements, loadedSummary] = await Promise.all([
+        getMerchantSettlements({
+          date: filters.date,
+          status: 'COMPLETED',
+          pageSize: 200,
+        }),
+        getMerchantOrderSummary(filters),
+      ]);
+      settlements.value = loadedSettlements.items;
+      rows.value = [];
+      summary.value = loadedSummary;
+    } else {
+      const [loadedRows, loadedSummary] = await Promise.all([
+        getMerchantOrders(filters),
+        getMerchantOrderSummary(filters),
+      ]);
+      rows.value = loadedRows;
+      settlements.value = [];
+      summary.value = loadedSummary;
+      notifyNewPendingOrders(
+        loadedRows
+          .filter((order) => order.status === 'PENDING_ACCEPTANCE')
+          .map((order) => order.id),
+        buildSpeechAnnouncement('new-order'),
+      );
+    }
     message.value = '';
     if (await focusHighlightedOrder()) {
       await clearHighlightQuery();
     }
   } catch (error) {
     message.value = errorMessage(error);
+  } finally {
+    settlementLoading.value = false;
   }
 }
 
@@ -764,10 +829,17 @@ function selectCategory(category: OrderCategory) {
 
 function selectQuickStatus(status: QuickStatus) {
   activeQuickStatus.value = status;
+  void load();
 }
 
 function applyFilters() {
-  activeQuickStatus.value = filters.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : 'ALL';
+  if (filters.status === 'PENDING_ACCEPTANCE') {
+    activeQuickStatus.value = 'PENDING';
+  } else if (filters.status === 'COMPLETED' || filters.status === 'CANCELLED') {
+    activeQuickStatus.value = filters.status;
+  } else {
+    activeQuickStatus.value = 'ALL';
+  }
   void load();
 }
 
@@ -860,6 +932,111 @@ function mobileItemsLabel(order: MerchantOrder) {
     vi: `${order.items.length} mon`,
     en: `${order.items.length} items`,
   });
+}
+
+function settlementPrimaryLabel(settlement: MerchantSettlement) {
+  if (settlement.orderType === 'DINE_IN') {
+    return settlement.tableName || settlement.orderNos[0] || localLabel({
+      zh: '堂食',
+      vi: 'Tai ban',
+      en: 'Dine in',
+    });
+  }
+  return `#${settlement.orderNos[0] ?? ''}`;
+}
+
+function settlementServiceTitle(settlement: MerchantSettlement) {
+  if (settlement.orderType === 'DINE_IN') {
+    return localLabel({
+      zh: `桌号 ${settlement.tableName || '-'}`,
+      vi: `Ban ${settlement.tableName || '-'}`,
+      en: `Table ${settlement.tableName || '-'}`,
+    });
+  }
+  return localLabel({
+    zh: settlement.orderType === 'PICKUP' ? '到店自取' : '商家配送',
+    vi: settlement.orderType === 'PICKUP' ? 'Khach tu lay' : 'Nha hang giao',
+    en: settlement.orderType === 'PICKUP' ? 'Store pickup' : 'Merchant delivery',
+  });
+}
+
+function settlementServiceSubtitle(settlement: MerchantSettlement) {
+  return localLabel({
+    zh: `${settlement.orderCount} 笔订单 · ${settlement.itemQuantity} 份`,
+    vi: `${settlement.orderCount} don · ${settlement.itemQuantity} phan`,
+    en: `${settlement.orderCount} orders · ${settlement.itemQuantity} items`,
+  });
+}
+
+function settlementPaymentLabel(method: MerchantSettlement['paymentMethod']) {
+  if (method === 'CASH') {
+    return localLabel({ zh: '现金', vi: 'Tien mat', en: 'Cash' });
+  }
+  if (method === 'BANK_TRANSFER') {
+    return localLabel({ zh: '银行转账', vi: 'Chuyen khoan', en: 'Bank transfer' });
+  }
+  return localLabel({ zh: '历史未记录', vi: 'Chua ghi nhan', en: 'Legacy unrecorded' });
+}
+
+function settlementItemSummary(settlement: MerchantSettlement) {
+  return settlement.items
+    .slice(0, 2)
+    .map((item) => `${item.productNameZh} × ${item.quantity}`)
+    .join('、');
+}
+
+function mergedSettlementItems(settlement: MerchantSettlement) {
+  const merged: Array<{
+    key: string;
+    productNameZh: string;
+    productNameVi: string | null;
+    unitPriceVnd: string;
+    quantity: number;
+    subtotalVnd: string;
+    remark: string | null;
+  }> = [];
+  for (const row of settlement.items) {
+    const key = [
+      row.productId ?? 'name',
+      row.productNameZh,
+      row.unitPriceVnd,
+      row.remark ?? '',
+    ].join('\u0000');
+    const current = merged.find((entry) => entry.key === key);
+    if (current) {
+      current.quantity += row.quantity;
+      current.subtotalVnd = String(
+        BigInt(current.subtotalVnd) + BigInt(row.subtotalVnd),
+      );
+    } else {
+      merged.push({
+        key,
+        productNameZh: row.productNameZh,
+        productNameVi: row.productNameVi,
+        unitPriceVnd: row.unitPriceVnd,
+        quantity: row.quantity,
+        subtotalVnd: row.subtotalVnd,
+        remark: row.remark,
+      });
+    }
+  }
+  return merged;
+}
+
+function settlementDishName(row: { productNameZh: string; productNameVi: string | null }) {
+  if (locale.value === 'vi' && row.productNameVi) return row.productNameVi;
+  return row.productNameZh;
+}
+
+function openSettlementDetail(settlement: MerchantSettlement) {
+  selectedSettlement.value = settlement;
+  settlementSourceOpen.value = false;
+  settlementDialogOpen.value = true;
+}
+
+function closeSettlementDetail() {
+  settlementDialogOpen.value = false;
+  selectedSettlement.value = null;
 }
 
 function mobileNoteLabel(note: string) {
@@ -1015,7 +1192,107 @@ function todayInVietnam() {
 
       <p v-if="message" class="orders-message">{{ message }}</p>
 
-      <section class="orders-table-card">
+      <section v-if="isSettlementMode" class="orders-table-card" data-testid="settlement-orders-table">
+        <div class="orders-table-shell">
+          <table class="orders-table">
+            <colgroup>
+              <col class="col-order" />
+              <col class="col-type" />
+              <col class="col-service" />
+              <col class="col-amount" />
+              <col class="col-payment" />
+              <col class="col-status" />
+              <col class="col-time" />
+              <col class="col-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>{{ localLabel({ zh: '结账信息', vi: 'Thong tin thanh toan', en: 'Settlement info' }) }}</th>
+                <th>{{ localLabel({ zh: '订单类别', vi: 'Loai don', en: 'Order type' }) }}</th>
+                <th>{{ localLabel({ zh: '用餐/取餐/配送信息', vi: 'Thong tin phuc vu', en: 'Dining / pickup / delivery' }) }}</th>
+                <th>{{ localLabel({ zh: '金额', vi: 'So tien', en: 'Amount' }) }}</th>
+                <th>{{ localLabel({ zh: '收款', vi: 'Thu tien', en: 'Settlement' }) }}</th>
+                <th>{{ t('status') }}</th>
+                <th>{{ localLabel({ zh: '结账时间', vi: 'Thoi gian thanh toan', en: 'Settled at' }) }}</th>
+                <th class="orders-actions-head">{{ t('actions') }}</th>
+              </tr>
+            </thead>
+            <tbody v-if="settlementDisplayRows.length">
+              <tr
+                v-for="settlement in settlementDisplayRows"
+                :key="settlement.settlementId"
+                class="orders-row"
+              >
+                <td>
+                  <div class="order-info-cell">
+                    <strong>{{ settlementPrimaryLabel(settlement) }}</strong>
+                    <span>{{ t('settlementCountOrders', { count: settlement.orderCount, count2: settlement.itemQuantity }) }}</span>
+                    <small v-if="settlementItemSummary(settlement)">{{ settlementItemSummary(settlement) }}</small>
+                  </div>
+                </td>
+                <td>
+                  <span class="order-pill" :class="orderTypeTone(settlement.orderType)">
+                    {{ orderTypeLabel(settlement.orderType) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="service-info-cell">
+                    <div class="service-info-line">
+                      <span class="service-info-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path v-for="segment in iconPaths(settlement.orderType === 'DINE_IN' ? 'table' : settlement.orderType === 'PICKUP' ? 'phone' : 'map')" :key="segment" :d="segment" />
+                        </svg>
+                      </span>
+                      <strong>{{ settlementServiceTitle(settlement) }}</strong>
+                    </div>
+                    <span>{{ settlementServiceSubtitle(settlement) }}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="amount-cell">
+                    <strong>{{ money(settlement.finalReceivableVnd) }}</strong>
+                  </div>
+                </td>
+                <td>
+                  <div class="status-stack">
+                    <span class="mini-pill success">{{ settlementPaymentLabel(settlement.paymentMethod) }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="order-pill" :class="statusTone(settlement.status)">
+                    {{ statusLabel(settlement.status) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="order-time-cell">
+                    <strong>{{ timePart(settlement.settledAt) }}</strong>
+                    <span>{{ datePart(settlement.settledAt) }}</span>
+                  </div>
+                </td>
+                <td class="orders-actions-cell">
+                  <div class="orders-actions">
+                    <button type="button" class="orders-outline-button" @click="openSettlementDetail(settlement)">
+                      {{ t('viewDetails') }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="!settlementDisplayRows.length" class="orders-empty-state">
+          <span class="orders-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path v-for="segment in iconPaths('completed')" :key="segment" :d="segment" />
+            </svg>
+          </span>
+          <strong>{{ t('settlementEmptyTitle') }}</strong>
+          <p>{{ t('settlementEmptyDescription') }}</p>
+        </div>
+      </section>
+
+      <section v-else class="orders-table-card">
         <div class="orders-table-shell">
           <table class="orders-table">
             <colgroup>
@@ -1258,7 +1535,56 @@ function todayInVietnam() {
 
       <p v-if="message" class="orders-message">{{ message }}</p>
 
-      <div v-if="mobileDisplayRows.length" class="orders-mobile-list">
+      <template v-if="isSettlementMode">
+        <div v-if="settlementDisplayRows.length" class="orders-mobile-list">
+          <article
+            v-for="settlement in settlementDisplayRows"
+            :key="settlement.settlementId"
+            class="order-mobile-card settlement-mobile-card"
+          >
+            <header class="order-mobile-card-header">
+              <div>
+                <strong class="order-mobile-no">{{ settlementPrimaryLabel(settlement) }}</strong>
+              </div>
+              <div class="order-mobile-meta">
+                <span class="order-mobile-time">{{ mobileDateTime(settlement.settledAt) }}</span>
+                <span class="order-pill" :class="statusTone(settlement.status)">{{ statusLabel(settlement.status) }}</span>
+              </div>
+            </header>
+
+            <div class="order-mobile-info">
+              <span class="order-pill" :class="orderTypeTone(settlement.orderType)">{{ orderTypeLabel(settlement.orderType) }}</span>
+              <span class="order-mobile-service">{{ settlementServiceTitle(settlement) }}</span>
+              <span class="order-mobile-address">{{ settlementServiceSubtitle(settlement) }}</span>
+            </div>
+
+            <div class="order-mobile-dishes">
+              <div class="order-mobile-dish-copy">
+                <strong>{{ t('settlementCountOrders', { count: settlement.orderCount, count2: settlement.itemQuantity }) }}</strong>
+                <span>{{ settlementItemSummary(settlement) || localLabel({ zh: '本次结账菜品', vi: 'Mon cua lan thanh toan', en: 'Items of this checkout' }) }}</span>
+              </div>
+            </div>
+
+            <div class="order-mobile-total">{{ money(settlement.finalReceivableVnd) }}</div>
+
+            <div class="order-mobile-actions-row">
+              <button type="button" class="order-mobile-action secondary" @click="openSettlementDetail(settlement)">
+                {{ t('viewDetails') }}
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-else class="orders-mobile-empty-card">
+          <span class="orders-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path v-for="segment in iconPaths('completed')" :key="segment" :d="segment" />
+            </svg>
+          </span>
+          <strong>{{ t('settlementEmptyTitle') }}</strong>
+          <p>{{ t('settlementEmptyDescription') }}</p>
+        </div>
+      </template>
+      <div v-else-if="mobileDisplayRows.length" class="orders-mobile-list">
         <article
           v-for="order in mobileDisplayRows"
           :key="order.id"
@@ -1362,6 +1688,62 @@ function todayInVietnam() {
       @close="closeChat"
       @updated="applyChatConversation(chatOrderId, $event)"
     />
+
+    <div
+      v-if="settlementDialogOpen && selectedSettlement"
+      class="settlement-dialog-mask"
+      role="presentation"
+      @click.self="closeSettlementDetail"
+    >
+      <section class="settlement-dialog" role="dialog" aria-modal="true" :aria-label="t('settlementTitle')">
+        <header class="settlement-dialog__header">
+          <div>
+            <strong>{{ settlementPrimaryLabel(selectedSettlement) }}</strong>
+            <span>{{ t('settlementCountOrders', { count: selectedSettlement.orderCount, count2: selectedSettlement.itemQuantity }) }}</span>
+          </div>
+          <button type="button" class="settlement-dialog__close" :aria-label="t('close')" @click="closeSettlementDetail">×</button>
+        </header>
+        <div class="settlement-dialog__body">
+          <section class="settlement-dialog__section">
+            <h4>{{ t('itemDetails') }}</h4>
+            <ul class="settlement-dialog__items">
+              <li v-for="row in mergedSettlementItems(selectedSettlement)" :key="row.key">
+                <div>
+                  <strong>{{ settlementDishName(row) }}</strong>
+                  <small v-if="row.remark">{{ row.remark }}</small>
+                </div>
+                <span>× {{ row.quantity }}</span>
+                <b>{{ money(row.subtotalVnd) }}</b>
+              </li>
+            </ul>
+          </section>
+          <section class="settlement-dialog__section">
+            <h4>{{ t('settlementSessionCheckout') }}</h4>
+            <dl class="settlement-dialog__financials">
+              <div><dt>{{ t('settlementOriginalAmount') }}</dt><dd>{{ money(selectedSettlement.originalAmountVnd) }}</dd></div>
+              <div v-if="BigInt(selectedSettlement.discountAmountVnd || '0') > 0n"><dt>{{ t('settlementTableDiscount') }}</dt><dd>-{{ money(selectedSettlement.discountAmountVnd || '0') }}</dd></div>
+              <div v-if="BigInt(selectedSettlement.roundingAmountVnd || '0') > 0n"><dt>{{ t('settlementTableRounding') }}</dt><dd>-{{ money(selectedSettlement.roundingAmountVnd || '0') }}</dd></div>
+              <div class="settlement-dialog__total"><dt>{{ t('settlementFinalReceivable') }}</dt><dd>{{ money(selectedSettlement.finalReceivableVnd) }}</dd></div>
+              <div><dt>{{ t('settlementPaymentLabel') }}</dt><dd>{{ settlementPaymentLabel(selectedSettlement.paymentMethod) }}</dd></div>
+            </dl>
+          </section>
+          <section class="settlement-dialog__section">
+            <button type="button" class="settlement-source-toggle" @click="settlementSourceOpen = !settlementSourceOpen">
+              {{ settlementSourceOpen ? t('settlementCollapse') : t('settlementExpand') }}
+              · {{ t('settlementContainsOrders', { count: selectedSettlement.sourceOrders.length }) }}
+            </button>
+            <div v-if="settlementSourceOpen" class="settlement-dialog__sources">
+              <div v-for="source in selectedSettlement.sourceOrders" :key="source.id">
+                <span>#{{ source.orderNo }}</span>
+                <span class="order-pill" :class="statusTone(source.status)">{{ statusLabel(source.status) }}</span>
+                <b>{{ money(source.totalAmountVnd) }}</b>
+                <small>{{ mobileDateTime(source.completedAt || source.cancelledAt || source.createdAt) }}</small>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -2465,5 +2847,189 @@ function todayInVietnam() {
   .orders-desktop-view {
     display: grid;
   }
+}
+
+.settlement-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 45%);
+}
+.settlement-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(86vh, 760px);
+  border: 1px solid #e5ebe8;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgb(15 23 42 / 22%);
+}
+.settlement-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #edf1ef;
+}
+.settlement-dialog__header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.settlement-dialog__header strong {
+  overflow: hidden;
+  color: #10261b;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settlement-dialog__header span {
+  color: #64748b;
+  font-size: 12px;
+}
+.settlement-dialog__close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  color: #64748b;
+  background: #f1f5f2;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settlement-dialog__body {
+  display: grid;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 18px 20px 22px;
+}
+.settlement-dialog__section h4 {
+  margin: 0 0 8px;
+  color: #10261b;
+  font-size: 13px;
+  font-weight: 800;
+}
+.settlement-dialog__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settlement-dialog__items li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px dashed #e5ebe8;
+  font-size: 13px;
+}
+.settlement-dialog__items li:last-child {
+  border-bottom: 0;
+}
+.settlement-dialog__items li > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+.settlement-dialog__items li small {
+  color: #8393a3;
+  font-size: 11px;
+}
+.settlement-dialog__items li > span {
+  color: #54656b;
+  white-space: nowrap;
+}
+.settlement-dialog__items li b {
+  color: #10213d;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.settlement-dialog__financials {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+}
+.settlement-dialog__financials > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.settlement-dialog__financials dt {
+  color: #54656b;
+}
+.settlement-dialog__financials dd {
+  margin: 0;
+  color: #10213d;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.settlement-dialog__total {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #e5ebe8;
+}
+.settlement-dialog__total dt {
+  color: #10213d;
+  font-weight: 800;
+}
+.settlement-dialog__total dd {
+  color: #176b43;
+  font-size: 15px;
+  font-weight: 800;
+}
+.settlement-source-toggle {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #1e6d29;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.settlement-dialog__sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.settlement-dialog__sources > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.settlement-dialog__sources > div > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: #10213d;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settlement-dialog__sources b {
+  margin-left: auto;
+  color: #10213d;
+  white-space: nowrap;
+}
+.settlement-dialog__sources small {
+  color: #8393a3;
+  white-space: nowrap;
 }
 </style>

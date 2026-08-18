@@ -5,7 +5,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 const props = defineProps<{
   points: Array<{
     label: string;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: string;
   }>;
   locale: 'zh' | 'vi' | 'en';
@@ -64,7 +64,7 @@ async function renderChart() {
         },
         {
           label: props.orderLabel,
-          data: props.points.map((item) => item.orderCount),
+          data: props.points.map((item) => item.settlementCount),
           yAxisID: 'orders',
           borderColor: '#5b8def',
           backgroundColor: '#5b8def',

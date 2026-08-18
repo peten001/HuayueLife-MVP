@@ -8,7 +8,7 @@ export interface MerchantAnalyticsFilters {
 
 export interface AnalyticsComparison {
   revenuePercent: number | null;
-  orderCountPercent: number | null;
+  settlementCountPercent: number | null;
   averageOrderValuePercent: number | null;
 }
 
@@ -37,7 +37,7 @@ export interface MerchantAnalyticsResponse {
   };
   overview: {
     revenueVnd: string;
-    orderCount: number;
+    settlementCount: number;
     averageOrderValueVnd: string;
     funds: {
       grossAmountVnd: string;
@@ -50,7 +50,7 @@ export interface MerchantAnalyticsResponse {
     };
     previous: {
       revenueVnd: string;
-      orderCount: number;
+      settlementCount: number;
       averageOrderValueVnd: string;
     };
     comparison: AnalyticsComparison;
@@ -59,20 +59,20 @@ export interface MerchantAnalyticsResponse {
   trend: Array<{
     key: string;
     label: string;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: string;
   }>;
   timeDistribution: Array<{
     weekday: number;
     startHour: number;
     endHour: number;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: string;
   }>;
   peakPeriod: {
     startHour: number;
     endHour: number;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: string;
   } | null;
   topDishes: AnalyticsDish[];

@@ -4,10 +4,10 @@ describe('MerchantOrdersService.summary', () => {
   it('returns full server-side counts and excludes cancelled order amounts', async () => {
     const createdAt = new Date('2026-08-02T05:00:00.000Z');
     const findMany = jest.fn().mockResolvedValue([
-      { status: 'COMPLETED', orderType: 'DINE_IN', totalAmountVnd: 120000n, createdAt, printLogs: [] },
-      { status: 'CANCELLED', orderType: 'PICKUP', totalAmountVnd: 90000n, createdAt, printLogs: [] },
-      { status: 'PENDING_ACCEPTANCE', orderType: 'DELIVERY', totalAmountVnd: 50000n, createdAt, printLogs: [] },
-      { status: 'COMPLETED', orderType: 'DELIVERY', totalAmountVnd: 70000n, createdAt, printLogs: [{ status: 'FAILED' }] },
+      { id: 1n, orderNo: 'S-1', status: 'COMPLETED', orderType: 'DINE_IN', totalAmountVnd: 120000n, itemAmountVnd: 120000n, deliveryFeeVnd: 0n, createdAt, updatedAt: createdAt, completedAt: createdAt, cancelledAt: null, businessDate: null, discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, paymentMethod: null, tableId: null, tableSessionId: null, tableNoSnapshot: null, tableSession: null, table: null, printLogs: [] },
+      { id: 2n, orderNo: 'S-2', status: 'CANCELLED', orderType: 'PICKUP', totalAmountVnd: 90000n, itemAmountVnd: 90000n, deliveryFeeVnd: 0n, createdAt, updatedAt: createdAt, completedAt: null, cancelledAt: createdAt, businessDate: null, discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, paymentMethod: null, tableId: null, tableSessionId: null, tableNoSnapshot: null, tableSession: null, table: null, printLogs: [] },
+      { id: 3n, orderNo: 'S-3', status: 'PENDING_ACCEPTANCE', orderType: 'DELIVERY', totalAmountVnd: 50000n, itemAmountVnd: 50000n, deliveryFeeVnd: 0n, createdAt, updatedAt: createdAt, completedAt: null, cancelledAt: null, businessDate: null, discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, paymentMethod: null, tableId: null, tableSessionId: null, tableNoSnapshot: null, tableSession: null, table: null, printLogs: [] },
+      { id: 4n, orderNo: 'S-4', status: 'COMPLETED', orderType: 'DELIVERY', totalAmountVnd: 70000n, itemAmountVnd: 70000n, deliveryFeeVnd: 0n, createdAt, updatedAt: createdAt, completedAt: createdAt, cancelledAt: null, businessDate: null, discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, paymentMethod: null, tableId: null, tableSessionId: null, tableNoSnapshot: null, tableSession: null, table: null, printLogs: [{ status: 'FAILED' }] },
     ]);
     const service = new MerchantOrdersService(
       {
@@ -28,6 +28,7 @@ describe('MerchantOrdersService.summary', () => {
       ABNORMAL: { count: 2, amountVnd: '120000' },
       COMPLETED: {
         count: 2,
+        settlementCount: 2,
         amountVnd: '190000',
         grossAmountVnd: '190000',
         discountAmountVnd: '0',
@@ -57,9 +58,14 @@ describe('MerchantOrdersService.summary', () => {
       adjustment: Partial<Record<'discountPayableRateBps' | 'discountAmountVnd' | 'roundingAmountVnd', number | bigint>> = {},
     ) => ({
       id,
+      orderNo: `O-${id}`,
+      status: 'COMPLETED',
+      createdAt: new Date('2026-08-15T12:00:00.000Z'),
       tableSessionId: null,
       businessDate: new Date('2026-08-15T00:00:00.000Z'),
       completedAt: new Date('2026-08-15T12:00:00.000Z'),
+      cancelledAt: null,
+      updatedAt: new Date('2026-08-15T12:00:00.000Z'),
       paymentMethod,
       totalAmountVnd,
       itemAmountVnd: totalAmountVnd,
@@ -68,6 +74,8 @@ describe('MerchantOrdersService.summary', () => {
       discountAmountVnd: adjustment.discountAmountVnd ?? null,
       roundingAmountVnd: adjustment.roundingAmountVnd ?? null,
       tableSession: null,
+      table: null,
+      tableNoSnapshot: null,
       items: [{
         productNameZhSnapshot: name,
         quantity,
@@ -104,6 +112,7 @@ describe('MerchantOrdersService.summary', () => {
     expect(result).toEqual(expect.objectContaining({
       businessDate: '2026-08-15',
       orderCount: 3,
+      settlementCount: 3,
       discountAmountVnd: '10000',
       roundingAmountVnd: '1000',
       totalRevenueVnd: '169000',
@@ -125,9 +134,14 @@ describe('MerchantOrdersService.summary', () => {
     const findMany = jest.fn().mockResolvedValue([
       {
         id: 1n,
+        orderNo: 'O-101',
+        status: 'COMPLETED',
+        createdAt: new Date('2026-08-15T12:00:00.000Z'),
         tableSessionId: null,
         businessDate: new Date('2026-08-15T00:00:00.000Z'),
         completedAt: new Date('2026-08-15T12:00:00.000Z'),
+        cancelledAt: null,
+        updatedAt: new Date('2026-08-15T12:00:00.000Z'),
         paymentMethod: 'CASH',
         totalAmountVnd: 100_000n,
         itemAmountVnd: 100_000n,
@@ -136,6 +150,8 @@ describe('MerchantOrdersService.summary', () => {
         discountAmountVnd: null,
         roundingAmountVnd: null,
         tableSession: null,
+        table: null,
+        tableNoSnapshot: null,
         items: [
           {
             productNameZhSnapshot: '招牌牛肉锅',
@@ -185,9 +201,14 @@ describe('MerchantOrdersService.summary', () => {
     const findMany = jest.fn().mockResolvedValue([
       {
         id: 1n,
+        orderNo: 'O-201',
+        status: 'COMPLETED',
+        createdAt: new Date('2026-08-15T12:00:00.000Z'),
         tableSessionId: null,
         businessDate: new Date('2026-08-15T00:00:00.000Z'),
         completedAt: new Date('2026-08-15T12:00:00.000Z'),
+        cancelledAt: null,
+        updatedAt: new Date('2026-08-15T12:00:00.000Z'),
         paymentMethod: 'CASH',
         totalAmountVnd: 100_000n,
         itemAmountVnd: 100_000n,
@@ -196,6 +217,8 @@ describe('MerchantOrdersService.summary', () => {
         discountAmountVnd: null,
         roundingAmountVnd: null,
         tableSession: null,
+        table: null,
+        tableNoSnapshot: null,
         items,
       },
     ]);

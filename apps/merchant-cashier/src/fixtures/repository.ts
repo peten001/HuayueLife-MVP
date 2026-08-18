@@ -7,6 +7,11 @@ import type {
   MerchantOrderAction,
   MerchantOrderFilters,
   MerchantOrderMutationResult,
+  MerchantSettlement,
+  MerchantSettlementFilters,
+  MerchantSettlementItem,
+  MerchantSettlementPage,
+  MerchantSettlementSourceOrder,
   ReturnMerchantOrderItemInput,
   SettlementAdjustmentInput,
   TableSessionCheckoutResult,
@@ -60,6 +65,43 @@ export const demoRepository = {
       (!filters.orderType || order.orderType === filters.orderType),
     ),
   ),
+  settlements: (filters: MerchantSettlementFilters = {}): MerchantSettlementPage => {
+    const scope = orders.filter((order) =>
+      (order.status === 'COMPLETED' || order.status === 'CANCELLED') &&
+      (!filters.status || order.status === filters.status) &&
+      (!filters.orderType || order.orderType === filters.orderType),
+    );
+    const settlements = buildDemoSettlements(scope);
+    const filtered = filters.search?.trim()
+      ? settlements.filter((settlement) => {
+          const keyword = filters.search!.trim().toLowerCase();
+          return settlement.orderNos.some((orderNo) =>
+            orderNo.toLowerCase().includes(keyword),
+          ) || settlement.orderIds.some((orderId) => orderId.includes(keyword));
+        })
+      : settlements;
+    const total = filtered.length;
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 50));
+    const start = (page - 1) * pageSize;
+    return {
+      items: cloneFixture(filtered.slice(start, start + pageSize)),
+      total,
+      page,
+      pageSize,
+      hasMore: start + pageSize < total,
+    };
+  },
+  settlement: (id: string): MerchantSettlement => {
+    const settlements = buildDemoSettlements(orders.filter(
+      (order) => order.status === 'COMPLETED' || order.status === 'CANCELLED',
+    ));
+    const settlement = settlements.find((item) => item.settlementId === id);
+    if (!settlement) {
+      throw new CashierApiError({ message: '结账记录不存在', status: 404, code: 'HTTP_404' });
+    }
+    return cloneFixture(settlement);
+  },
   businessDaySummary: (businessDate?: string) => cloneFixture(
     buildBusinessDaySummary(businessDate),
   ),
@@ -480,4 +522,118 @@ function buildSessionDetail(): TableSessionDetail {
 
 function notFound(message: string) {
   return new CashierApiError({ message, status: 404, code: 'HTTP_404' });
+}
+
+function demoItem(item: MerchantOrder['items'][number]): MerchantSettlementItem {
+  return {
+    id: item.id,
+    productId: item.productId ?? null,
+    productNameZh: item.productNameZhSnapshot,
+    productNameVi: item.productNameViSnapshot ?? item.productNameVi ?? null,
+    productNameEn: item.productNameEnSnapshot ?? item.productNameEn ?? null,
+    imageUrl: item.imageUrlSnapshot ?? null,
+    unitPriceVnd: item.unitPriceVnd ?? '0',
+    quantity: item.quantity,
+    subtotalVnd: item.subtotalVnd,
+    remark: item.remark ?? null,
+  };
+}
+
+function demoSettlementSourceOrder(order: MerchantOrder): MerchantSettlementSourceOrder {
+  return {
+    id: order.id,
+    orderNo: order.orderNo,
+    status: order.status,
+    createdAt: order.createdAt,
+    completedAt: order.completedAt ?? null,
+    cancelledAt: order.cancelledAt ?? null,
+    totalAmountVnd: order.totalAmountVnd,
+    paymentMethod: order.paymentMethod ?? null,
+  };
+}
+
+function buildDemoSettlements(orders: MerchantOrder[]): MerchantSettlement[] {
+  const sessions = new Map<string, MerchantOrder[]>();
+  for (const order of orders) {
+    if (order.orderType === 'DINE_IN' && order.tableSessionId) {
+      const group = sessions.get(order.tableSessionId) ?? [];
+      group.push(order);
+      sessions.set(order.tableSessionId, group);
+    }
+  }
+  const settlements: MerchantSettlement[] = [];
+  for (const [sessionId, group] of sessions) {
+    const completed = group.filter((order) => order.status === 'COMPLETED');
+    if (!completed.length) continue;
+    const originalAmountVnd = completed.reduce(
+      (sum, order) => sum + BigInt(order.totalAmountVnd),
+      0n,
+    );
+    const roundingAmountVnd = BigInt(completed[0]?.roundingAmountVnd ?? '0');
+    const representative = completed[0]!;
+    const settledAt = representative.completedAt ?? representative.updatedAt;
+    settlements.push({
+      settlementId: `session:${sessionId}`,
+      kind: 'TABLE_SESSION',
+      orderType: 'DINE_IN',
+      status: 'COMPLETED',
+      businessDate: representative.businessDate ?? '',
+      settledAt,
+      tableSessionId: sessionId,
+      tableId: representative.tableId ?? null,
+      tableName: representative.tableNoSnapshot ?? representative.table?.tableName ?? null,
+      orderIds: completed.map((order) => order.id),
+      orderNos: completed.map((order) => order.orderNo),
+      orderCount: completed.length,
+      itemQuantity: completed.flatMap((order) => order.items)
+        .reduce((sum, item) => sum + item.quantity, 0),
+      items: completed.flatMap((order) => order.items.map(demoItem)),
+      originalAmountVnd: originalAmountVnd.toString(),
+      discountAmountVnd: '0',
+      roundingAmountVnd: roundingAmountVnd.toString(),
+      finalReceivableVnd: (originalAmountVnd - roundingAmountVnd).toString(),
+      paymentMethod: representative.paymentMethod ?? null,
+      sourceOrders: group.map(demoSettlementSourceOrder),
+      invariantViolations: [],
+    });
+  }
+  const sessionKeys = new Set(sessions.keys());
+  for (const order of orders) {
+    const inClosedSession =
+      order.orderType === 'DINE_IN' &&
+      order.tableSessionId != null &&
+      sessionKeys.has(order.tableSessionId);
+    if (inClosedSession) continue;
+    const totalAmountVnd = BigInt(order.totalAmountVnd);
+    const roundingAmountVnd = BigInt(order.roundingAmountVnd ?? '0');
+    const discountAmountVnd = BigInt(order.discountAmountVnd ?? '0');
+    settlements.push({
+      settlementId: `order:${order.id}`,
+      kind: 'ORDER',
+      orderType: order.orderType,
+      status: order.status,
+      businessDate: order.businessDate ?? '',
+      settledAt: order.completedAt ?? order.cancelledAt ?? order.updatedAt,
+      tableSessionId: order.tableSessionId ?? null,
+      tableId: order.tableId ?? null,
+      tableName: order.tableNoSnapshot ?? order.table?.tableName ?? null,
+      orderIds: [order.id],
+      orderNos: [order.orderNo],
+      orderCount: 1,
+      itemQuantity: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      items: order.items.map(demoItem),
+      originalAmountVnd: totalAmountVnd.toString(),
+      discountAmountVnd: discountAmountVnd.toString(),
+      roundingAmountVnd: roundingAmountVnd.toString(),
+      finalReceivableVnd: (totalAmountVnd - discountAmountVnd - roundingAmountVnd).toString(),
+      paymentMethod: order.paymentMethod ?? null,
+      sourceOrders: [demoSettlementSourceOrder(order)],
+      invariantViolations: [],
+    });
+  }
+  return settlements.sort(
+    (left, right) =>
+      new Date(right.settledAt).getTime() - new Date(left.settledAt).getTime() ||
+      right.settlementId.localeCompare(left.settlementId),
+  );
 }
