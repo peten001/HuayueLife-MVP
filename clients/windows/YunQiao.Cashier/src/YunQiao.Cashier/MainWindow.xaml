@@ -3,35 +3,53 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="云桥收银 · YunQiao Cashier"
-        Width="1280" Height="800" MinWidth="1024" MinHeight="680"
+        Width="1280" Height="800" MinWidth="760" MinHeight="460"
         WindowStartupLocation="CenterScreen">
-  <DockPanel Background="#F6FAF7">
-    <Border DockPanel.Dock="Top" Background="White" BorderBrush="#EEEEEE" BorderThickness="0,0,0,1" Padding="10,6">
+  <Grid Background="{StaticResource CanvasBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <wv2:WebView2 x:Name="CashierWebView" DefaultBackgroundColor="White" />
+
+    <Border x:Name="NativeStatusBar"
+            Grid.Row="1"
+            MinHeight="30"
+            Padding="12,3"
+            Background="{StaticResource SurfaceBrush}"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="0,1,0,0"
+            AutomationProperties.LiveSetting="Polite">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Border Width="32" Height="32" CornerRadius="9" Background="#43A047" Margin="0,0,10,0">
-            <TextBlock Text="云" Foreground="White" FontWeight="Bold" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
-          <StackPanel>
-            <TextBlock Text="云桥收银" FontSize="16" FontWeight="SemiBold" Foreground="#1F2D24" />
-            <TextBlock Text="YunQiao Cashier for Windows" FontSize="10" Foreground="#777777" />
-          </StackPanel>
+        <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{StaticResource WarningBrush}" VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,12,0" VerticalAlignment="Center">
+          <TextBlock x:Name="DeviceStatusText"
+                     Text="正在连接…"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     VerticalAlignment="Center" />
+          <TextBlock x:Name="StatusDetailText"
+                     Margin="10,0,0,0"
+                     FontSize="12"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     VerticalAlignment="Center"
+                     Visibility="Collapsed" />
         </StackPanel>
-        <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-          <TextBlock x:Name="StatusText" Text="正在启动…" Foreground="#2E7D32" FontSize="13" />
-          <TextBlock x:Name="ConnectorStatusText" Text="打印连接器等待登录" Foreground="#777777" FontSize="10" HorizontalAlignment="Center" />
-        </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal">
-          <Button Content="刷新页面" Click="Reload_Click" />
-          <Button Content="打印机设置" Click="Settings_Click" Background="#EAF7EE" Foreground="#2E7D32" BorderBrush="#A5D6A7" />
-        </StackPanel>
+        <Button x:Name="ReloadButton"
+                Grid.Column="2"
+                Content="重新加载"
+                Click="Reload_Click"
+                Style="{StaticResource TextButton}"
+                AutomationProperties.Name="重新加载收银页面"
+                Visibility="Collapsed" />
       </Grid>
     </Border>
-    <wv2:WebView2 x:Name="CashierWebView" DefaultBackgroundColor="White" />
-  </DockPanel>
+  </Grid>
 </Window>

@@ -1,78 +1,292 @@
 <Window x:Class="YunQiao.Cashier.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="云桥打印机设置" Width="900" Height="620" MinWidth="820" MinHeight="560"
-        WindowStartupLocation="CenterOwner" Background="#F6FAF7">
-  <Grid Margin="18">
+        xmlns:protocol="clr-namespace:YunQiao.Cashier.Core.Protocol;assembly=YunQiao.Cashier.Core"
+        Title="云桥收银 - 打印设备"
+        Width="1040" Height="700" MinWidth="760" MinHeight="440"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        Background="{StaticResource CanvasBrush}">
+  <Grid Margin="24,20">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
-    <StackPanel Margin="0,0,0,14">
-      <TextBlock Text="打印机与设备" FontSize="22" FontWeight="SemiBold" Foreground="#1F2D24" />
-      <TextBlock Text="业务小票继续使用后台模板；这里仅配置 Windows RAW 或 LAN 传输。" Foreground="#666666" Margin="0,5,0,0" />
+
+    <StackPanel Margin="0,0,0,18">
+      <TextBlock Text="打印设备"
+                 FontFamily="Segoe UI"
+                 FontSize="24"
+                 FontWeight="SemiBold"
+                 Foreground="{StaticResource TextPrimaryBrush}" />
+      <TextBlock Text="管理收银、后厨等位置使用的打印设备"
+                 Margin="0,5,0,0"
+                 Style="{StaticResource BodyText}" />
     </StackPanel>
 
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="280" />
-        <ColumnDefinition Width="14" />
+        <ColumnDefinition Width="300" />
+        <ColumnDefinition Width="18" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
-      <Border Background="White" CornerRadius="14" Padding="10" BorderBrush="#EEEEEE" BorderThickness="1">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-            <Button Content="添加 Windows 打印机" Click="AddWindows_Click" />
-            <Button Content="添加 LAN 打印机" Click="AddLan_Click" />
-            <Button Content="删除所选" Click="Delete_Click" Foreground="#B3261E" />
+
+      <Border Style="{StaticResource Card}" Padding="12">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <Grid Margin="4,2,4,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="已添加设备" Style="{StaticResource SectionTitle}" />
+            <TextBlock x:Name="ProfilesCountText"
+                       Grid.Column="1"
+                       Text="0 台"
+                       Style="{StaticResource BodyText}"
+                       VerticalAlignment="Center" />
+          </Grid>
+
+          <ListBox x:Name="ProfilesList"
+                   Grid.Row="1"
+                   BorderThickness="0"
+                   Background="Transparent"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   ScrollViewer.CanContentScroll="True"
+                   VirtualizingPanel.IsVirtualizing="True"
+                   ItemContainerStyle="{StaticResource PrinterListItem}"
+                   SelectionChanged="ProfilesList_SelectionChanged"
+                   AutomationProperties.Name="已添加的打印设备">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid AutomationProperties.Name="{Binding DisplayName}">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding DisplayName}"
+                             FontSize="14"
+                             FontWeight="SemiBold"
+                             Foreground="{StaticResource TextPrimaryBrush}"
+                             TextTrimming="CharacterEllipsis" />
+                  <Border x:Name="EnabledBadge"
+                          Grid.Column="1"
+                          Margin="8,0,0,0"
+                          Padding="8,3"
+                          CornerRadius="9"
+                          Background="{StaticResource DisabledSurfaceBrush}">
+                    <TextBlock x:Name="EnabledLabel"
+                               Text="未启用"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                  </Border>
+                  <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,7,0,0">
+                    <TextBlock x:Name="TransportLabel"
+                               Text="USB 打印机"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBlock x:Name="UsbDestination"
+                               Text="{Binding WindowsPrinterName}"
+                               Margin="8,0,0,0"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="LanDestination"
+                               Text="{Binding Host}"
+                               Margin="8,0,0,0"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               Visibility="Collapsed" />
+                  </StackPanel>
+                </Grid>
+                <DataTemplate.Triggers>
+                  <DataTrigger Binding="{Binding Enabled}" Value="True">
+                    <Setter TargetName="EnabledBadge" Property="Background" Value="{StaticResource SuccessSoftBrush}" />
+                    <Setter TargetName="EnabledLabel" Property="Text" Value="已启用" />
+                    <Setter TargetName="EnabledLabel" Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding Transport}" Value="{x:Static protocol:PrinterTransportKind.Lan}">
+                    <Setter TargetName="TransportLabel" Property="Text" Value="网络打印机" />
+                    <Setter TargetName="UsbDestination" Property="Visibility" Value="Collapsed" />
+                    <Setter TargetName="LanDestination" Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </DataTemplate.Triggers>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <StackPanel Grid.Row="2" Margin="4,12,4,2">
+            <Button Content="＋ 添加 USB 打印机"
+                    Click="AddWindows_Click"
+                    Style="{StaticResource SecondaryButton}"
+                    HorizontalContentAlignment="Left" />
+            <Button Content="＋ 添加网络打印机"
+                    Margin="0,8,0,0"
+                    Click="AddLan_Click"
+                    Style="{StaticResource SecondaryButton}"
+                    HorizontalContentAlignment="Left" />
+            <Button Content="删除所选设备"
+                    Margin="0,12,0,0"
+                    Click="Delete_Click"
+                    Style="{StaticResource DangerButton}" />
           </StackPanel>
-          <ListBox x:Name="ProfilesList" DisplayMemberPath="DisplayName" SelectionChanged="ProfilesList_SelectionChanged" BorderThickness="0" />
-        </DockPanel>
+        </Grid>
       </Border>
 
-      <Border Grid.Column="2" Background="White" CornerRadius="14" Padding="20" BorderBrush="#EEEEEE" BorderThickness="1">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="145" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <TextBlock Text="启用" VerticalAlignment="Center" Margin="0,8" />
-            <CheckBox x:Name="EnabledBox" Grid.Column="1" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Text="显示名称" VerticalAlignment="Center" Margin="0,8" />
-            <TextBox x:Name="DisplayNameBox" Grid.Row="1" Grid.Column="1" Padding="9" />
-            <TextBlock Grid.Row="2" Text="传输" VerticalAlignment="Center" Margin="0,8" />
-            <ComboBox x:Name="TransportBox" Grid.Row="2" Grid.Column="1" Padding="7" IsEnabled="False" />
-            <TextBlock Grid.Row="3" Text="Windows 打印机" VerticalAlignment="Center" Margin="0,8" />
-            <ComboBox x:Name="WindowsPrinterBox" Grid.Row="3" Grid.Column="1" Padding="7" IsEditable="True" />
-            <TextBlock Grid.Row="4" Text="LAN IP" VerticalAlignment="Center" Margin="0,8" />
-            <TextBox x:Name="HostBox" Grid.Row="4" Grid.Column="1" Padding="9" />
-            <TextBlock Grid.Row="5" Text="LAN Port" VerticalAlignment="Center" Margin="0,8" />
-            <TextBox x:Name="PortBox" Grid.Row="5" Grid.Column="1" Padding="9" />
-            <TextBlock Grid.Row="6" Text="纸宽" VerticalAlignment="Center" Margin="0,8" />
-            <ComboBox x:Name="PaperBox" Grid.Row="6" Grid.Column="1" Padding="7" />
-            <TextBlock Grid.Row="7" Text="用途 / Role" VerticalAlignment="Center" Margin="0,8" />
-            <ComboBox x:Name="RoleBox" Grid.Row="7" Grid.Column="1" Padding="7" />
-            <StackPanel Grid.Row="8" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-              <Button Content="应用当前编辑" Click="ApplyEditor_Click" />
-              <Button Content="测试打印" Click="TestPrint_Click" Background="#EAF7EE" Foreground="#2E7D32" />
+      <Border Grid.Column="2" Style="{StaticResource Card}" Padding="24,20">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+
+          <StackPanel>
+            <TextBlock x:Name="EditorTitleText"
+                       Text="打印设备"
+                       FontSize="19"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimaryBrush}" />
+            <TextBlock Text="设置设备名称、连接方式和使用位置"
+                       Margin="0,4,0,0"
+                       Style="{StaticResource BodyText}" />
+          </StackPanel>
+
+          <ScrollViewer Grid.Row="1"
+                        Margin="0,16,0,0"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,4">
+              <CheckBox x:Name="EnabledBox"
+                        Content="启用此打印设备"
+                        AutomationProperties.Name="启用此打印设备"
+                        Margin="0,0,0,16" />
+
+              <StackPanel Margin="0,0,0,16">
+                <Label Content="设备名称" Target="{Binding ElementName=DisplayNameBox}" Style="{StaticResource FormLabel}" />
+                <TextBox x:Name="DisplayNameBox"
+                         MaxLength="80"
+                         AutomationProperties.Name="设备名称" />
+              </StackPanel>
+
+              <StackPanel Margin="0,0,0,16">
+                <Label Content="连接方式" Style="{StaticResource FormLabel}" />
+                <Border Style="{StaticResource ReadOnlyField}">
+                  <TextBlock x:Name="ConnectionTypeText"
+                             Text="USB 打印机"
+                             FontSize="14"
+                             Foreground="{StaticResource TextPrimaryBrush}"
+                             VerticalAlignment="Center" />
+                </Border>
+              </StackPanel>
+
+              <StackPanel x:Name="UsbPrinterFields" Margin="0,0,0,16">
+                <Label Content="打印机" Target="{Binding ElementName=WindowsPrinterBox}" Style="{StaticResource FormLabel}" />
+                <ComboBox x:Name="WindowsPrinterBox"
+                          IsEditable="True"
+                          IsTextSearchEnabled="True"
+                          AutomationProperties.Name="Windows 已安装的打印机" />
+              </StackPanel>
+
+              <Grid x:Name="NetworkPrinterFields" Margin="0,0,0,16" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="2*" />
+                  <ColumnDefinition Width="16" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <Label Content="打印机 IP" Target="{Binding ElementName=HostBox}" Style="{StaticResource FormLabel}" />
+                  <TextBox x:Name="HostBox"
+                           AutomationProperties.Name="打印机 IP"
+                           ToolTip="例如 192.168.1.120" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <Label Content="端口" Target="{Binding ElementName=PortBox}" Style="{StaticResource FormLabel}" />
+                  <TextBox x:Name="PortBox"
+                           AutomationProperties.Name="打印机端口"
+                           ToolTip="通常为 9100" />
+                </StackPanel>
+              </Grid>
+
+              <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="16" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <Label Content="小票纸" Target="{Binding ElementName=PaperBox}" Style="{StaticResource FormLabel}" />
+                  <ComboBox x:Name="PaperBox" AutomationProperties.Name="小票纸" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <Label Content="使用位置" Target="{Binding ElementName=RoleBox}" Style="{StaticResource FormLabel}" />
+                  <ComboBox x:Name="RoleBox" AutomationProperties.Name="使用位置" />
+                </StackPanel>
+              </Grid>
+
+              <Button x:Name="TestPrintButton"
+                      Content="测试打印"
+                      Click="TestPrint_Click"
+                      Style="{StaticResource SecondaryButton}"
+                      HorizontalAlignment="Left" />
             </StackPanel>
-          </Grid>
-        </ScrollViewer>
+          </ScrollViewer>
+        </Grid>
       </Border>
     </Grid>
 
-    <Grid Grid.Row="2" Margin="0,14,0,0">
-      <TextBlock x:Name="ResultText" VerticalAlignment="Center" Foreground="#666666" />
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button Content="取消" Click="Cancel_Click" />
-        <Button Content="保存设置" Click="Save_Click" Background="#43A047" Foreground="White" BorderBrush="#2E7D32" />
+    <Grid Grid.Row="2" Margin="0,18,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <Border x:Name="ResultBanner"
+              MaxWidth="560"
+              Padding="12,8"
+              CornerRadius="9"
+              Background="{StaticResource PrimarySoftBrush}"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+              AutomationProperties.LiveSetting="Polite"
+              Visibility="Collapsed">
+        <StackPanel>
+          <TextBlock x:Name="ResultTitleText"
+                     FontSize="13"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource TextPrimaryBrush}" />
+          <TextBlock x:Name="ResultText"
+                     Margin="0,2,0,0"
+                     FontSize="12"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     TextWrapping="Wrap"
+                     Visibility="Collapsed" />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <Button Content="取消"
+                Click="Cancel_Click"
+                Style="{StaticResource SecondaryButton}" />
+        <Button Content="保存"
+                Margin="10,0,0,0"
+                Click="Save_Click"
+                Style="{StaticResource PrimaryButton}" />
       </StackPanel>
     </Grid>
   </Grid>

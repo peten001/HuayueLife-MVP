@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using YunQiao.Cashier.Core.Protocol;
 using YunQiao.Cashier.Logging;
@@ -22,6 +23,10 @@ public partial class MainWindow : Window
     private ConnectorService? _connector;
     private AppSettings? _settings;
     private bool _closingPersisted;
+    private bool _webReady;
+    private bool _webFailed;
+    private bool _connectorFailed;
+    private bool _connectorPaused;
 
     public MainWindow()
     {
@@ -36,14 +41,15 @@ public partial class MainWindow : Window
         try
         {
             _settings = await _settingsService.LoadAsync();
-            Width = Math.Max(MinWidth, _settings.Window.Width);
-            Height = Math.Max(MinHeight, _settings.Window.Height);
+            var workArea = SystemParameters.WorkArea;
+            Width = Math.Clamp(_settings.Window.Width, MinWidth, Math.Max(MinWidth, workArea.Width));
+            Height = Math.Clamp(_settings.Window.Height, MinHeight, Math.Max(MinHeight, workArea.Height));
             if (_settings.Window.Maximized) WindowState = WindowState.Maximized;
 
             _connector = new ConnectorService(_settingsService, _credentialStore, _api, _renderer);
-            _connector.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => ConnectorStatusText.Text = value);
+            _connector.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => UpdateConnectorStatus(value));
             _webHost = new WebViewHost(CashierWebView);
-            _webHost.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => StatusText.Text = value);
+            _webHost.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => UpdateWebStatus(value));
             _webHost.OpenPrinterDevicesRequested += (_, _) => Dispatcher.InvokeAsync(OpenSettings);
             _webHost.SessionChanged += (_, _) => _ = RefreshSessionAsync();
             _webHost.SignedOut += (_, _) => _ = SetSignedOutAsync();
@@ -64,8 +70,8 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             AppLog.Error("APP_INITIALIZATION_FAILED", error);
-            StatusText.Text = "启动失败，请查看日志";
-            MessageBox.Show("云桥收银启动失败，请查看本地日志。", "云桥收银", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowShellStatus("启动失败", "请重新打开云桥收银；如果问题持续，请联系服务人员", "DangerBrush", showReload: false);
+            MessageBox.Show("云桥收银暂时无法启动。请重新打开应用；如果问题持续，请联系服务人员。", "云桥收银", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -87,8 +93,6 @@ public partial class MainWindow : Window
         if (_connector is not null) await _connector.UpdateSessionAsync(null);
     }
 
-    private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
-
     private async void OpenSettings()
     {
         var dialog = new SettingsWindow(_settingsService, new TestPrintService(_renderer)) { Owner = this };
@@ -96,11 +100,80 @@ public partial class MainWindow : Window
         {
             _settings = await _settingsService.LoadAsync();
             _ = _connector?.RefreshSettingsAsync();
-            ConnectorStatusText.Text = "打印机设置已更新";
+            _connectorFailed = false;
+            _connectorPaused = false;
+            RenderShellStatus();
         }
     }
 
-    private void Reload_Click(object sender, RoutedEventArgs e) => _webHost?.Reload();
+    private void Reload_Click(object sender, RoutedEventArgs e)
+    {
+        _webFailed = false;
+        _webReady = false;
+        ShowShellStatus("正在重新连接…", null, "WarningBrush", showReload: false);
+        _webHost?.Reload();
+    }
+
+    private void UpdateWebStatus(string value)
+    {
+        if (value.StartsWith("页面连接失败", StringComparison.Ordinal) || value.Contains("进程异常", StringComparison.Ordinal))
+        {
+            _webReady = false;
+            _webFailed = true;
+            ShowShellStatus("页面加载失败", "请检查网络连接后重试", "DangerBrush", showReload: true);
+            return;
+        }
+
+        _webFailed = false;
+        _webReady = value.Contains("已连接", StringComparison.Ordinal);
+        if (!_webReady)
+        {
+            ShowShellStatus("正在连接…", null, "WarningBrush", showReload: false);
+            return;
+        }
+        RenderShellStatus();
+    }
+
+    private void UpdateConnectorStatus(string value)
+    {
+        _connectorFailed = value.Contains("暂时不可用", StringComparison.Ordinal)
+            || value.Contains("凭据失效", StringComparison.Ordinal)
+            || value.Contains("已停止", StringComparison.Ordinal);
+        _connectorPaused = value.Contains("已暂停", StringComparison.Ordinal);
+        RenderShellStatus();
+    }
+
+    private void RenderShellStatus()
+    {
+        if (_webFailed) return;
+        if (!_webReady)
+        {
+            ShowShellStatus("正在连接…", null, "WarningBrush", showReload: false);
+            return;
+        }
+        if (_connectorFailed)
+        {
+            ShowShellStatus("打印服务异常", "请检查网络连接或重新登录", "DangerBrush", showReload: false);
+            return;
+        }
+        if (_connectorPaused)
+        {
+            ShowShellStatus("打印服务已暂停", "请在商家后台确认打印设置", "WarningBrush", showReload: false);
+            return;
+        }
+        ShowShellStatus("设备正常", null, "SuccessBrush", showReload: false);
+    }
+
+    private void ShowShellStatus(string title, string? detail, string brushKey, bool showReload)
+    {
+        var brush = (Brush)FindResource(brushKey);
+        StatusDot.Fill = brush;
+        DeviceStatusText.Text = title;
+        DeviceStatusText.Foreground = brush;
+        StatusDetailText.Text = detail ?? string.Empty;
+        StatusDetailText.Visibility = string.IsNullOrWhiteSpace(detail) ? Visibility.Collapsed : Visibility.Visible;
+        ReloadButton.Visibility = showReload ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private async void OnClosing(object? sender, CancelEventArgs e)
     {

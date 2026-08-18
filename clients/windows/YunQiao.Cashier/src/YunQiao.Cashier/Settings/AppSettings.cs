@@ -13,7 +13,7 @@ public sealed record AppSettings(
         Guid.NewGuid().ToString(),
         [new LocalPrinterProfile(
             "windows-front-desk",
-            "Windows 前台打印机",
+            "前台收银机",
             PrinterTransportKind.WindowsSpooler,
             PrintPaperWidth.MM80,
             "FRONT_DESK",

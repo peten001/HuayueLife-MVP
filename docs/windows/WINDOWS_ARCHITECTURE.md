@@ -79,7 +79,8 @@ clients/windows/YunQiao.Cashier/
 
 - 最大化启动，支持高 DPI、触摸和窗口状态记忆；
 - 内容主体只有当前 YunQiao Cashier Web；
-- Native 菜单仅提供打印机设置、刷新和退出；
+- Native Shell 不提供第二套打印设置入口；打印设备统一从 Cashier Web 左下角账户菜单进入；
+- 正常状态仅显示低优先级“设备正常”，WebView 加载失败时才显示“重新加载”；
 - 不显示地址栏、浏览器菜单或打印 UI。
 
 ### 4.2 `WebViewHost`
@@ -122,6 +123,8 @@ window.YunQiaoMerchantTerminal.postMessage(message)
 - `{"type":"OPEN_PRINTER_DEVICES","version":1}`
 
 `OPEN_PRINTER_DEVICES` 打开 Windows Native 打印设置。当前 Android 没有 `printReceipt` Bridge，也没有 print success/error Web callback；Windows 不发明新 callback。打印成功/失败仍通过 Terminal PrintJob API 上报，Web/后台从服务器状态获知结果。
+
+Windows 的门店入口与 Android 完全相同：Cashier Web 左下角账户区域 -> 打开账户菜单 -> “打印机与设备” -> `YunQiaoMerchantTerminal.postMessage(...)` -> Windows Native“打印设备”模态窗口。Native 窗口继续使用内部 `WindowsSpooler` / `Lan` 配置值，但用户界面只显示“USB 打印机”与“网络打印机”。
 
 ### 4.4 `SessionObserver`
 

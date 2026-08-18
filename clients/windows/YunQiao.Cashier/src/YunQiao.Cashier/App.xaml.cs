@@ -23,7 +23,7 @@ public partial class App : Application
     private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         AppLog.Error("UI_UNHANDLED", e.Exception);
-        MessageBox.Show("云桥收银发生异常，请查看本地日志后重启应用。", "云桥收银", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageBox.Show("云桥收银遇到问题。请重新打开应用；如果问题持续，请联系服务人员。", "云桥收银", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 }

@@ -63,13 +63,15 @@ artifacts/test-results/
 
 ## 门店设置
 
-从 Web 收银右上角账户菜单的打印设备入口，或 Windows 顶栏“打印机设置”打开 Native 设置：
+从 Web 收银左下角账户区域打开账户菜单，选择“打印机与设备”，通过与 Android 相同的 Native Bridge 打开“打印设备”窗口：
 
-1. Windows Printer：选择 Windows 已安装的打印机，应用使用 `DataType=RAW`；
-2. LAN Printer：填写私有 IPv4 与端口；
-3. 选择 58/80mm 与现有 role；
+1. USB 打印机：选择 Windows 已安装的打印机；
+2. 网络打印机：填写打印机 IP 与端口；
+3. 选择 58/80mm 小票纸与使用位置；
 4. 保存；
 5. 使用“测试打印”验证中越文、金额和切纸。
+
+正常收银状态不显示刷新工具按钮；只有 WebView 页面加载失败时，底部状态区才提供“重新加载”。内部仍使用 RAW Spooler、LAN/TCP 和现有 role 值，不改变打印协议。
 
 测试打印是明确标记的本地设备诊断内容，不代替后台业务模板。
 

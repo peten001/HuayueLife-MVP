@@ -4,11 +4,10 @@
              StartupUri="MainWindow.xaml"
              ShutdownMode="OnMainWindowClose">
   <Application.Resources>
-    <SolidColorBrush x:Key="BrandGreen" Color="#43A047" />
-    <Style TargetType="Button">
-      <Setter Property="Padding" Value="14,8" />
-      <Setter Property="Margin" Value="4" />
-      <Setter Property="MinHeight" Value="36" />
-    </Style>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/YunQiaoStyles.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>
