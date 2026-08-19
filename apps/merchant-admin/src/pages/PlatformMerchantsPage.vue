@@ -1014,15 +1014,15 @@ function resetDisplayCapabilities() {
   });
 }
 
-function parseOptionalCoordinate(value: string) {
-  const trimmed = value.trim();
+function parseOptionalCoordinate(value: string | number) {
+  const trimmed = String(value).trim();
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function validateCoordinate(value: string, min: number, max: number, label: string) {
-  const trimmed = value.trim();
+function validateCoordinate(value: string | number, min: number, max: number, label: string) {
+  const trimmed = String(value).trim();
   if (!trimmed) return '';
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed)) {
@@ -1403,13 +1403,13 @@ function toCsvLine(values: Array<string | number>) {
       <label class="span-3">详细地址<input v-model="form.addressZh" required maxlength="255" /></label>
       <label class="coordinate-field">
         纬度
-        <input v-model="form.latitude" required type="number" step="0.0000001" placeholder="21.28" />
+        <input v-model="form.latitude" required type="text" inputmode="decimal" placeholder="21.28" />
         <small>纬度示例：21.28</small>
         <small v-if="latitudeError" class="field-error">{{ latitudeError }}</small>
       </label>
       <label class="coordinate-field">
         经度
-        <input v-model="form.longitude" required type="number" step="0.0000001" placeholder="106.20" />
+        <input v-model="form.longitude" required type="text" inputmode="decimal" placeholder="106.20" />
         <small>经度示例：106.20</small>
         <small v-if="longitudeError" class="field-error">{{ longitudeError }}</small>
       </label>
