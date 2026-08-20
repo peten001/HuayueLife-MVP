@@ -113,6 +113,10 @@ describe('PublicMerchantsService effective detail capabilities', () => {
       promotionTag(5n, 'CUISINE_CANTON', 'CUISINE', 30),
       promotionTag(6n, 'SCENE_GATHERING', 'SCENE', 10),
       promotionTag(7n, 'SCENE_DATE', 'SCENE', 30),
+      promotionTag(8n, 'CUISINE_VIETNAMESE', 'CUISINE', 40),
+      promotionTag(9n, 'CUISINE_THAI', 'CUISINE', 50),
+      promotionTag(10n, 'SCENE_BUSINESS', 'SCENE', 40),
+      promotionTag(11n, 'SCENE_LATE_NIGHT', 'SCENE', 50),
     ];
     const result = (service(true) as any).serializeMerchant(
       merchant({ promotionTags: tags }),
@@ -128,9 +132,17 @@ describe('PublicMerchantsService effective detail capabilities', () => {
     expect(result.detailDisplayTags.map((item: any) => item.code)).toEqual([
       'CUISINE_HUNAN',
       'CUISINE_SICHUAN',
+      'CUISINE_CANTON',
+      'CUISINE_VIETNAMESE',
       'SCENE_GATHERING',
       'SCENE_FAMILY',
+      'SCENE_DATE',
+      'SCENE_BUSINESS',
     ]);
+    expect(result.detailDisplayTags.map((item: any) => item.code)).not.toEqual(expect.arrayContaining([
+      'CUISINE_THAI',
+      'SCENE_LATE_NIGHT',
+    ]));
     expect(result.detailDisplayTags).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'HOT_FOOD' }),
     ]));
