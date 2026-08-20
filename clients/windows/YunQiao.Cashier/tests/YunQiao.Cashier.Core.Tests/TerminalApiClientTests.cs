@@ -43,7 +43,11 @@ public sealed class TerminalApiClientTests
             WindowsPrinterName: "Receipt Printer");
         var evidence = new WindowsSpoolerEvidence(true, true, true, true, "READY");
 
-        var result = await api.SyncBindingAsync("terminal-bearer", profile, evidence, CancellationToken.None);
+        var result = await api.SyncBindingAsync(
+            $"yt1.1.{new string('A', 43)}",
+            profile,
+            evidence,
+            CancellationToken.None);
 
         Assert.Equal("41", result.PrinterId);
         using var body = JsonDocument.Parse(Assert.IsType<string>(requestJson));
