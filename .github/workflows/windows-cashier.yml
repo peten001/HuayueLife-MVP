@@ -37,11 +37,14 @@ jobs:
       - name: Install workspace dependencies
         run: corepack pnpm install --frozen-lockfile
 
-      - name: Test printing API
-        run: corepack pnpm --filter @huayue-life/api exec jest --runInBand src/modules/printing
+      - name: Generate Prisma client
+        run: corepack pnpm --filter @huayue-life/api prisma:generate
 
       - name: Typecheck API
         run: corepack pnpm --filter @huayue-life/api typecheck
+
+      - name: Test printing API
+        run: corepack pnpm --filter @huayue-life/api exec jest --runInBand src/modules/printing
 
   build-windows-cashier:
     runs-on: windows-latest

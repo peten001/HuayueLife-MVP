@@ -1,3 +1,4 @@
+using System.IO;
 using YunQiao.Cashier.Core.Protocol;
 using YunQiao.Cashier.Printing;
 using YunQiao.Cashier.Security;
