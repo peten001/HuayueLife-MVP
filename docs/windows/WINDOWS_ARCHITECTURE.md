@@ -27,9 +27,9 @@ Windows 客户端不是另一套收银系统，也不建立另一套小票协议
 - terminal bootstrap、心跳、租约、attempt 状态上报和重打语义；
 - 58/80mm 的 384/576 dots、V3 blocks、最终切纸、中文/越南语 bitmap 路径；
 - Android 现有 Bridge 对象名和消息；
-- Android 应用、Web、API、数据库结构。
+- Android 应用、Web、Terminal API 路径与数据库结构。
 
-Windows 只新增：WebView2 宿主、Windows 凭据保护、WPF bitmap renderer、RAW Spooler、TCP transport、本地执行账本、设置界面、日志、安装脚本和 Windows CI。
+Windows 新增：WebView2 宿主、按商家隔离的 Windows 凭据保护、WPF bitmap renderer、RAW Spooler、TCP transport、本地执行账本、设置界面、日志、安装脚本和 Windows CI。服务端仅扩展现有 USB readiness 判断以识别 Windows RAW Spooler 的明确证据，不新增 API 或数据库字段。
 
 ## 2. 明确不做
 
@@ -132,7 +132,9 @@ Windows 的门店入口与 Android 完全相同：Cashier Web 左下角账户区
 - token 不存在时停止 connector，并清除本机 terminal credential；
 - token 改变时重新 bootstrap；
 - token 只在内存中短暂存在，日志永不输出；
-- terminal id/secret/bearer 使用 Windows DPAPI `CurrentUser` 加密后保存。
+- terminal id/secret/bearer 按 `merchantId` 隔离，并使用 Windows DPAPI `CurrentUser` 加密后保存；
+- 旧版本升级时先安全复用旧终端身份；只有服务端明确返回 `TERMINAL_DEVICE_CONFLICT` 时，才为当前门店生成独立身份并重试一次；
+- 切换门店只清除上一门店的 bearer，不删除其稳定终端身份，返回原门店时不会创建重复终端。
 
 ## 5. Terminal API 兼容
 
@@ -167,6 +169,8 @@ Windows 报告的兼容版本为 `2.0.0-rc12.2`，因为现有服务端只接受
 
 - Windows 已安装打印机仍映射到现有 `LOCAL_USB_ESCPOS` channel；
 - Windows logical USB binding 的 `vendorId/productId` 默认 `0/0`，可由设置覆盖；它只用于复用现有 binding API，实际设备选择以保存的 Windows printer name 为准；
+- Windows 每轮 binding sync 前通过 `OpenPrinter` + `GetPrinter(level 6)` 检查队列；只在队列存在、可打开、无离线/缺纸/人工干预等阻断状态且执行器就绪时上报 `CONNECTED`；
+- 服务端将 `platform=WINDOWS`、`adapter=WINDOWS_RAW_SPOOLER` 及四项完整 Spooler 证据视为 Windows 在线条件；缺项、过期或阻断状态继续 fail-closed；
 - LAN 复用现有 LAN binding 和 attempt API；
 - 服务端历史字段中的 adapter 名称可能仍保留 Android 命名，这是现有 API 的展示字段，不改变实际 Windows transport；
 - printer role 继续使用 `FRONT_DESK/KITCHEN/BAR/LABEL` 和服务端路由，不在客户端重新分单。

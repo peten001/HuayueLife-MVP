@@ -1,11 +1,29 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using YunQiao.Cashier.Core.Printing;
+using YunQiao.Cashier.Core.Protocol;
 
 namespace YunQiao.Cashier.Printing;
 
 public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransport
 {
+    private const uint BlockingStatusMask =
+        0x00000001 | // PRINTER_STATUS_PAUSED
+        0x00000002 | // PRINTER_STATUS_ERROR
+        0x00000004 | // PRINTER_STATUS_PENDING_DELETION
+        0x00000008 | // PRINTER_STATUS_PAPER_JAM
+        0x00000010 | // PRINTER_STATUS_PAPER_OUT
+        0x00000020 | // PRINTER_STATUS_MANUAL_FEED
+        0x00000040 | // PRINTER_STATUS_PAPER_PROBLEM
+        0x00000080 | // PRINTER_STATUS_OFFLINE
+        0x00000800 | // PRINTER_STATUS_OUTPUT_BIN_FULL
+        0x00001000 | // PRINTER_STATUS_NOT_AVAILABLE
+        0x00040000 | // PRINTER_STATUS_NO_TONER
+        0x00100000 | // PRINTER_STATUS_USER_INTERVENTION
+        0x00200000 | // PRINTER_STATUS_OUT_OF_MEMORY
+        0x00400000 | // PRINTER_STATUS_DOOR_OPEN
+        0x00800000;  // PRINTER_STATUS_SERVER_UNKNOWN
+
     public Task<TransportResult> SendAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
     {
         if (bytes.IsEmpty) return Task.FromResult(TransportResult.Failure("EMPTY_PRINT_DATA", "Print bytes are empty.", false));
@@ -36,6 +54,34 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
         }
         finally { Marshal.FreeHGlobal(buffer); }
     }
+
+    public static WindowsSpoolerEvidence Probe(string? configuredPrinterName)
+    {
+        if (string.IsNullOrWhiteSpace(configuredPrinterName)) return WindowsSpoolerEvidence.NotConfigured();
+        if (!OpenPrinter(configuredPrinterName, out var printer, IntPtr.Zero))
+            return new WindowsSpoolerEvidence(false, false, false, false, $"OPEN_FAILED_{Marshal.GetLastWin32Error()}");
+        try
+        {
+            var buffer = Marshal.AllocHGlobal(sizeof(uint));
+            try
+            {
+                if (!GetPrinter(printer, 6, buffer, sizeof(uint), out _))
+                    return new WindowsSpoolerEvidence(true, true, false, false, $"STATUS_FAILED_{Marshal.GetLastWin32Error()}");
+                var status = unchecked((uint)Marshal.ReadInt32(buffer));
+                var ready = IsReadyStatus(status);
+                return new WindowsSpoolerEvidence(
+                    true,
+                    true,
+                    ready,
+                    ready,
+                    ready ? "READY" : $"BLOCKED_0x{status:X8}");
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }
+        finally { _ = ClosePrinter(printer); }
+    }
+
+    public static bool IsReadyStatus(uint status) => (status & BlockingStatusMask) == 0;
 
     private TransportResult Send(byte[] bytes)
     {
@@ -129,4 +175,8 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
     [DllImport("winspool.drv", EntryPoint = "EnumPrintersW", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumPrinters(int flags, string? name, int level, IntPtr buffer, uint bufferSize, out uint needed, out uint returned);
+
+    [DllImport("winspool.drv", EntryPoint = "GetPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetPrinter(IntPtr printer, int level, IntPtr buffer, int bufferSize, out int needed);
 }

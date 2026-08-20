@@ -7,7 +7,7 @@ public sealed class SettingsService
 {
     public static string RootDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YunQiao", "Cashier");
-    private readonly string _path = Path.Combine(RootDirectory, "settings.json");
+    private readonly string _path;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
@@ -15,12 +15,22 @@ public sealed class SettingsService
         Converters = { new JsonStringEnumConverter() },
     };
 
+    public SettingsService(string? rootDirectory = null)
+    {
+        _path = Path.Combine(rootDirectory ?? RootDirectory, "settings.json");
+    }
+
     public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (!File.Exists(_path)) return AppSettings.CreateDefault();
+            if (!File.Exists(_path))
+            {
+                var defaults = AppSettings.CreateDefault();
+                await WriteUnsafeAsync(defaults, cancellationToken);
+                return defaults;
+            }
             await using var input = File.OpenRead(_path);
             var value = await JsonSerializer.DeserializeAsync<AppSettings>(input, _json, cancellationToken);
             return Validate(value) ? value! : AppSettings.CreateDefault();
@@ -35,13 +45,18 @@ public sealed class SettingsService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.CreateDirectory(RootDirectory);
-            var temporary = _path + ".tmp";
-            await using (var output = File.Create(temporary))
-                await JsonSerializer.SerializeAsync(output, value, _json, cancellationToken);
-            File.Move(temporary, _path, true);
+            await WriteUnsafeAsync(value, cancellationToken);
         }
         finally { _gate.Release(); }
+    }
+
+    private async Task WriteUnsafeAsync(AppSettings value, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        var temporary = _path + ".tmp";
+        await using (var output = File.Create(temporary))
+            await JsonSerializer.SerializeAsync(output, value, _json, cancellationToken);
+        File.Move(temporary, _path, true);
     }
 
     private static bool Validate(AppSettings? value) => value is not null

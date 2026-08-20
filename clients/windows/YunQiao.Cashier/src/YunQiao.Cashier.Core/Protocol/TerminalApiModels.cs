@@ -58,6 +58,19 @@ public sealed record BindingSyncResult(
     bool Enabled,
     string Status);
 
+public sealed record WindowsSpoolerEvidence(
+    bool SpoolerQueueFound,
+    bool SpoolerOpenSucceeded,
+    bool SpoolerQueueReady,
+    bool AppExecutionReady,
+    string StatusReason)
+{
+    public bool Ready => SpoolerQueueFound && SpoolerOpenSucceeded && SpoolerQueueReady && AppExecutionReady;
+
+    public static WindowsSpoolerEvidence NotConfigured() =>
+        new(false, false, false, false, "NOT_CONFIGURED");
+}
+
 public sealed record ClaimedPrintJob(
     string Id,
     string MerchantId,

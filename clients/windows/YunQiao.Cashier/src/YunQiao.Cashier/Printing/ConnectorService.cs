@@ -17,9 +17,11 @@ public sealed class ConnectorService : IAsyncDisposable
     private readonly ExecutionLedger _ledger;
     private readonly PendingReportStore _pendingReports;
     private readonly SemaphoreSlim _sessionGate = new(1, 1);
+    private readonly SemaphoreSlim _settingsRefresh = new(0, 1);
     private CancellationTokenSource? _runCancellation;
     private Task? _runTask;
     private string? _merchantJwtFingerprint;
+    private string? _activeMerchantId;
     private string? _lastStatus;
     public event EventHandler<string>? StatusChanged;
 
@@ -46,42 +48,61 @@ public sealed class ConnectorService : IAsyncDisposable
         {
             if (fingerprint == _merchantJwtFingerprint && _runTask is { IsCompleted: false }) return;
             await StopUnsafeAsync();
+            string? merchantId;
+            try { merchantId = merchantJwt is null ? null : TerminalApiClient.MerchantIdFromJwt(merchantJwt); }
+            catch
+            {
+                if (_activeMerchantId is not null) _credentialStore.ClearCredential(_activeMerchantId);
+                _activeMerchantId = null;
+                _merchantJwtFingerprint = fingerprint;
+                SetStatus("打印连接器等待有效商家登录");
+                throw;
+            }
+            if (_activeMerchantId is not null && _activeMerchantId != merchantId)
+                _credentialStore.ClearCredential(_activeMerchantId);
             _merchantJwtFingerprint = fingerprint;
+            _activeMerchantId = merchantId;
             if (merchantJwt is null)
             {
-                _credentialStore.ClearCredential();
                 SetStatus("打印连接器等待商家登录");
                 return;
             }
             _runCancellation = new CancellationTokenSource();
-            _runTask = RunAsync(merchantJwt, _runCancellation.Token);
+            _runTask = RunAsync(merchantJwt, merchantId!, _runCancellation.Token);
         }
         finally { _sessionGate.Release(); }
     }
 
-    public async Task RefreshSettingsAsync()
+    public Task RefreshSettingsAsync()
     {
-        // A fresh loop resynchronizes all local bindings without changing the merchant session.
         var running = _runTask;
-        if (running is null || running.IsCompleted) return;
-        SetStatus("打印机设置已保存，将在下一轮同步");
-        await Task.CompletedTask;
+        if (running is null || running.IsCompleted) return Task.CompletedTask;
+        SetStatus("打印机设置已保存，将立即同步");
+        if (_settingsRefresh.CurrentCount == 0) _settingsRefresh.Release();
+        return Task.CompletedTask;
     }
 
-    private async Task RunAsync(string merchantJwt, CancellationToken cancellationToken)
+    private async Task RunAsync(string merchantJwt, string merchantId, CancellationToken cancellationToken)
     {
         try
         {
             SetStatus("正在建立安全打印连接…");
             var settings = await _settingsService.LoadAsync(cancellationToken);
-            var secret = _credentialStore.GetOrCreateTerminalSecret();
-            var bootstrap = await _api.BootstrapAsync(
-                merchantJwt,
-                settings.TerminalInstanceId,
-                secret,
-                $"Windows {Environment.OSVersion.Version}",
-                cancellationToken);
-            _credentialStore.SaveCredential(bootstrap);
+            var identity = _credentialStore.GetBootstrapIdentity(merchantId, settings.TerminalInstanceId);
+            TerminalBootstrap bootstrap;
+            try
+            {
+                bootstrap = await BootstrapAsync(merchantJwt, identity, cancellationToken);
+            }
+            catch (TerminalApiException error) when (
+                error.ErrorCode == "TERMINAL_DEVICE_CONFLICT" && identity.CanReplaceOnDeviceConflict)
+            {
+                AppLog.Warn("LEGACY_TERMINAL_IDENTITY_CONFLICT", $"merchantId={merchantId}");
+                SetStatus("正在为当前门店建立独立打印终端…");
+                identity = _credentialStore.ReplaceLegacyIdentityAfterConflict(identity);
+                bootstrap = await BootstrapAsync(merchantJwt, identity, cancellationToken);
+            }
+            _credentialStore.SaveCredential(identity, bootstrap);
             var bearer = bootstrap.TerminalBearer;
             var heartbeatSequence = 0L;
             var config = await _api.GetConfigAsync(bearer, cancellationToken);
@@ -117,7 +138,7 @@ public sealed class ConnectorService : IAsyncDisposable
                         }
                     }
                     SetStatus(config.CanClaimJobs ? "打印连接器运行中" : "后台已暂停本终端打印");
-                    await Task.Delay(TimeSpan.FromSeconds(config.PollIntervalSeconds), cancellationToken);
+                    _ = await _settingsRefresh.WaitAsync(TimeSpan.FromSeconds(config.PollIntervalSeconds), cancellationToken);
                 }
                 catch (TerminalApiException error) when (!error.CredentialInvalid)
                 {
@@ -130,9 +151,14 @@ public sealed class ConnectorService : IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (TerminalApiException error) when (error.CredentialInvalid)
         {
-            _credentialStore.ClearCredential();
+            _credentialStore.ClearCredential(merchantId);
             AppLog.Warn("CONNECTOR_CREDENTIAL_INVALID", $"code={error.ErrorCode}");
             SetStatus("打印终端凭据失效，请重新登录");
+        }
+        catch (TerminalApiException error) when (error.ErrorCode == "TERMINAL_DEVICE_CONFLICT")
+        {
+            AppLog.Warn("CONNECTOR_IDENTITY_CONFLICT", $"merchantId={merchantId}");
+            SetStatus("打印终端身份冲突，请联系服务人员");
         }
         catch (Exception error)
         {
@@ -140,6 +166,17 @@ public sealed class ConnectorService : IAsyncDisposable
             SetStatus("打印连接器已停止，请刷新或重新登录");
         }
     }
+
+    private Task<TerminalBootstrap> BootstrapAsync(
+        string merchantJwt,
+        TerminalBootstrapIdentity identity,
+        CancellationToken cancellationToken) =>
+        _api.BootstrapAsync(
+            merchantJwt,
+            identity.TerminalInstanceId,
+            identity.TerminalSecret,
+            $"Windows {Environment.OSVersion.Version}",
+            cancellationToken);
 
     private async Task<Dictionary<string, RouteIdentity>> SyncBindingsAsync(
         string bearer,
@@ -160,11 +197,17 @@ public sealed class ConnectorService : IAsyncDisposable
             }
             try
             {
-                var synced = await _api.SyncBindingAsync(bearer, profile, cancellationToken);
+                var spoolerEvidence = profile.Transport == PrinterTransportKind.WindowsSpooler
+                    ? WindowsSpoolerTransport.Probe(profile.WindowsPrinterName)
+                    : null;
+                var synced = await _api.SyncBindingAsync(bearer, profile, spoolerEvidence, cancellationToken);
                 var updated = profile with { PrinterId = synced.PrinterId, BindingVersion = synced.BindingVersion };
                 profiles[index] = updated;
                 changed |= updated != profile;
-                routes[profile.Id] = new RouteIdentity(synced.PrinterId, synced.LocalBindingId, synced.BindingVersion, profile.Transport);
+                if (spoolerEvidence is null || spoolerEvidence.Ready)
+                    routes[profile.Id] = new RouteIdentity(synced.PrinterId, synced.LocalBindingId, synced.BindingVersion, profile.Transport);
+                else
+                    AppLog.Warn("SPOOLER_NOT_READY", $"profile={profile.Id} status={spoolerEvidence.StatusReason}");
                 AppLog.Info("BINDING_SYNCED", $"profile={profile.Id} printerId={synced.PrinterId} version={synced.BindingVersion}");
             }
             catch (TerminalApiException error)
@@ -274,12 +317,16 @@ public sealed class ConnectorService : IAsyncDisposable
         await ReportOrQueueAsync(bearer, report, completed, CancellationToken.None);
         try
         {
+            var spoolerEvidence = profile.Transport == PrinterTransportKind.WindowsSpooler
+                ? WindowsSpoolerTransport.Probe(profile.WindowsPrinterName)
+                : null;
             await _api.ReportPrinterStatusAsync(
                 bearer,
                 job.Route,
-                result.Outcome == TransportOutcome.Succeeded ? "CONNECTED" : "ERROR",
+                result.Outcome == TransportOutcome.Succeeded && (spoolerEvidence?.Ready ?? true) ? "CONNECTED" : "ERROR",
                 result.ErrorCode,
                 result.ErrorMessage,
+                spoolerEvidence,
                 CancellationToken.None);
         }
         catch (TerminalApiException error)
@@ -397,6 +444,7 @@ public sealed class ConnectorService : IAsyncDisposable
         try { await StopUnsafeAsync(); }
         finally { _sessionGate.Release(); }
         _sessionGate.Dispose();
+        _settingsRefresh.Dispose();
         _api.Dispose();
     }
 

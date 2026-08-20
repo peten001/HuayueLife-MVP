@@ -52,14 +52,17 @@ artifacts/test-results/
 ```text
 %LOCALAPPDATA%\YunQiao\Cashier\
 ├── settings.json
-├── terminal-secret.bin       # DPAPI CurrentUser
-├── terminal-credential.bin   # DPAPI CurrentUser
+├── terminal-secret.bin       # 旧版本迁移来源，DPAPI CurrentUser
+├── terminal-credential.bin   # 旧版本迁移来源，DPAPI CurrentUser
+├── terminals\                # 按 merchantId 隔离的终端身份/凭据，DPAPI CurrentUser
 ├── WebView2\                 # Cookie / localStorage profile
 ├── state\                    # execution ledger / pending reports
 └── logs\                     # 14-day rolling logs
 ```
 
 日志不记录 Merchant JWT、terminal secret/bearer、Cookie 或 receiptSnapshot 全文。
+
+同一台电脑可以切换登录不同门店。每个门店使用独立且稳定的 terminal instance/secret；升级时保留原门店身份，跨门店冲突时只为新门店生成一次新身份，不覆盖旧门店终端。
 
 ## 门店设置
 
@@ -70,6 +73,9 @@ artifacts/test-results/
 3. 选择 58/80mm 小票纸与使用位置；
 4. 保存；
 5. 使用“测试打印”验证中越文、金额和切纸。
+6. 在商家后台打印中心确认设备已上报，首次创建的打印机需由商家明确启用并配置自动打印场景。
+
+保存后 Connector 会立即同步。Windows 会实际探测已选打印队列；队列可打开且没有离线、缺纸或人工干预等阻断状态时，后台显示在线。测试打印只证明本机 I/O，后台上报还需要终端注册、心跳、binding sync 和服务端启用打印机全部通过。
 
 正常收银状态不显示刷新工具按钮；只有 WebView 页面加载失败时，底部状态区才提供“重新加载”。内部仍使用 RAW Spooler、LAN/TCP 和现有 role 值，不改变打印协议。
 

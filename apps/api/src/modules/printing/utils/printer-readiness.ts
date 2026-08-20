@@ -145,20 +145,28 @@ export function isConnectionConfigValid(
 }
 
 /**
- * CONNECTED is only promoted to ONLINE when the Android connector reports all
- * positive, current prerequisites. Missing/false/unknown evidence fails closed.
+ * CONNECTED is promoted to ONLINE only when Android USB or Windows RAW Spooler
+ * reports every platform-specific prerequisite. Missing/false evidence fails closed.
  */
 export function hasExplicitUsbExecutionEvidence(
   value: Record<string, unknown> | undefined,
 ) {
-  return Boolean(
-    value &&
-      value.usbDeviceRecognized === true &&
-      value.usbPermissionGranted === true &&
-      value.usbInterfaceValid === true &&
-      value.usbEndpointValid === true &&
-      value.appExecutionReady === true,
-  );
+  if (!value) return false;
+  const androidReady =
+    value.platform !== 'WINDOWS' &&
+    value.usbDeviceRecognized === true &&
+    value.usbPermissionGranted === true &&
+    value.usbInterfaceValid === true &&
+    value.usbEndpointValid === true &&
+    value.appExecutionReady === true;
+  const windowsSpoolerReady =
+    value.platform === 'WINDOWS' &&
+    value.adapter === 'WINDOWS_RAW_SPOOLER' &&
+    value.spoolerQueueFound === true &&
+    value.spoolerOpenSucceeded === true &&
+    value.spoolerQueueReady === true &&
+    value.appExecutionReady === true;
+  return androidReady || windowsSpoolerReady;
 }
 
 export function hasExplicitLanExecutionEvidence(

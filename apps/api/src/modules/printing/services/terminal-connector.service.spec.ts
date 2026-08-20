@@ -236,6 +236,41 @@ describe('TerminalConnectorService', () => {
     );
   });
 
+  it('promotes a verified Windows RAW Spooler queue to ONLINE', async () => {
+    const prisma = createPrismaMock();
+    prisma.printer.findFirst.mockResolvedValue({ capabilities: {} });
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminal.id,
+      boundPrinterId: terminal.boundPrinterId,
+    });
+    prisma.printer.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma);
+
+    await expect(
+      service.reportPrinterStatus(terminal, {
+        printerId: '88',
+        status: 'CONNECTED',
+        capabilities: readyWindowsSpoolerEvidence(),
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ persistedStatus: 'ONLINE' }),
+    );
+    expect(prisma.printer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'ONLINE',
+          capabilities: expect.objectContaining({
+            connectorStatus: expect.objectContaining({
+              ...readyWindowsSpoolerEvidence(),
+              connectionType: 'USB',
+              status: 'CONNECTED',
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('creates and binds a Terminal-authenticated USB printer', async () => {
     const prisma = createPrismaMock();
     const audit = createAuditMock();
@@ -739,6 +774,18 @@ function readyUsbEvidence() {
     usbInterfaceValid: true,
     usbEndpointValid: true,
     appExecutionReady: true,
+  };
+}
+
+function readyWindowsSpoolerEvidence() {
+  return {
+    platform: 'WINDOWS',
+    adapter: 'WINDOWS_RAW_SPOOLER',
+    spoolerQueueFound: true,
+    spoolerOpenSucceeded: true,
+    spoolerQueueReady: true,
+    appExecutionReady: true,
+    spoolerStatus: 'READY',
   };
 }
 

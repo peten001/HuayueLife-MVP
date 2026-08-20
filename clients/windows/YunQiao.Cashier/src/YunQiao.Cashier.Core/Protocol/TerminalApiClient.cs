@@ -98,10 +98,12 @@ public sealed class TerminalApiClient : IDisposable
     public async Task<BindingSyncResult> SyncBindingAsync(
         string terminalBearer,
         LocalPrinterProfile profile,
+        WindowsSpoolerEvidence? spoolerEvidence,
         CancellationToken cancellationToken)
     {
         if (profile.Transport == PrinterTransportKind.WindowsSpooler)
         {
+            var evidence = spoolerEvidence ?? WindowsSpoolerEvidence.NotConfigured();
             var usbBody = new
             {
                 localBindingId = profile.Id,
@@ -112,8 +114,18 @@ public sealed class TerminalApiClient : IDisposable
                 enabled = profile.Enabled,
                 appVersion = TerminalCompatibility.AppVersion,
                 appVersionCode = TerminalCompatibility.AppVersionCode,
-                status = profile.Enabled ? "CONNECTED" : "DISCONNECTED",
-                capabilities = new { platform = "WINDOWS", adapter = "WINDOWS_RAW_SPOOLER", role = profile.Role },
+                status = profile.Enabled && evidence.Ready ? "CONNECTED" : "DISCONNECTED",
+                capabilities = new
+                {
+                    platform = "WINDOWS",
+                    adapter = "WINDOWS_RAW_SPOOLER",
+                    role = profile.Role,
+                    evidence.SpoolerQueueFound,
+                    evidence.SpoolerOpenSucceeded,
+                    evidence.SpoolerQueueReady,
+                    evidence.AppExecutionReady,
+                    spoolerStatus = evidence.StatusReason,
+                },
             };
             using var data = await RequestAsync(HttpMethod.Post, "terminal/usb/bindings/sync", terminalBearer, "Terminal", usbBody, cancellationToken).ConfigureAwait(false);
             return ParseBinding(data.RootElement);
@@ -227,6 +239,7 @@ public sealed class TerminalApiClient : IDisposable
         string status,
         string? errorCode,
         string? errorMessage,
+        WindowsSpoolerEvidence? spoolerEvidence,
         CancellationToken cancellationToken)
     {
         if (status is not ("UNKNOWN" or "CONNECTED" or "DISCONNECTED" or "ERROR"))
@@ -250,12 +263,22 @@ public sealed class TerminalApiClient : IDisposable
         }
         else
         {
+            var evidence = spoolerEvidence ?? WindowsSpoolerEvidence.NotConfigured();
             path = "terminal/printers/status";
             body = new
             {
                 printerId = route.PrinterId,
                 status,
-                capabilities = new { platform = "WINDOWS", adapter = "WINDOWS_RAW_SPOOLER" },
+                capabilities = new
+                {
+                    platform = "WINDOWS",
+                    adapter = "WINDOWS_RAW_SPOOLER",
+                    evidence.SpoolerQueueFound,
+                    evidence.SpoolerOpenSucceeded,
+                    evidence.SpoolerQueueReady,
+                    evidence.AppExecutionReady,
+                    spoolerStatus = evidence.StatusReason,
+                },
                 lastErrorCode = errorCode,
                 lastErrorMessage = errorMessage is null ? null : SanitizeError(errorMessage),
             };
@@ -401,7 +424,7 @@ public sealed class TerminalApiClient : IDisposable
             : $"terminal/jobs/{jobId}/{action}";
     }
 
-    private static string MerchantIdFromJwt(string jwt)
+    public static string MerchantIdFromJwt(string jwt)
     {
         var segment = jwt.Split('.').ElementAtOrDefault(1) ?? throw new TerminalApiException(200, "INVALID_MERCHANT_SESSION", "Merchant identity is missing.");
         segment = segment.Replace('-', '+').Replace('_', '/').PadRight(segment.Length + ((4 - segment.Length % 4) % 4), '=');

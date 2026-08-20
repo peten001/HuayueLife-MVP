@@ -138,6 +138,7 @@ public partial class MainWindow : Window
     {
         _connectorFailed = value.Contains("暂时不可用", StringComparison.Ordinal)
             || value.Contains("凭据失效", StringComparison.Ordinal)
+            || value.Contains("身份冲突", StringComparison.Ordinal)
             || value.Contains("已停止", StringComparison.Ordinal);
         _connectorPaused = value.Contains("已暂停", StringComparison.Ordinal);
         RenderShellStatus();

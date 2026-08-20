@@ -123,6 +123,34 @@ describe('hasExplicitUsbExecutionEvidence', () => {
     }
     expect(hasExplicitUsbExecutionEvidence(undefined)).toBe(false);
   });
+
+  it('accepts explicit Windows RAW Spooler execution evidence', () => {
+    const complete = {
+      platform: 'WINDOWS',
+      adapter: 'WINDOWS_RAW_SPOOLER',
+      spoolerQueueFound: true,
+      spoolerOpenSucceeded: true,
+      spoolerQueueReady: true,
+      appExecutionReady: true,
+    };
+    expect(hasExplicitUsbExecutionEvidence(complete)).toBe(true);
+    for (const key of [
+      'spoolerQueueFound',
+      'spoolerOpenSucceeded',
+      'spoolerQueueReady',
+      'appExecutionReady',
+    ]) {
+      expect(
+        hasExplicitUsbExecutionEvidence({ ...complete, [key]: false }),
+      ).toBe(false);
+    }
+    expect(
+      hasExplicitUsbExecutionEvidence({
+        ...complete,
+        adapter: 'ANDROID_USB_ESCPOS',
+      }),
+    ).toBe(false);
+  });
 });
 
 function printer(overrides: Record<string, unknown> = {}) {
