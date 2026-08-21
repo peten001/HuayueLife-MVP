@@ -32,42 +32,42 @@ const filters = reactive({ dateFrom: today, dateTo: today });
 const copyByLocale = {
   zh: {
     title: '经营分析', subtitle: '数据驱动经营，让生意更好做', today: '今日', sevenDays: '近7天', thirtyDays: '近30天', custom: '自定义',
-    startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '净营业额', orders: '订单数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
+    startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '净营业额', orders: '结账笔数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
     fundsTitle: '资金概览', fundsDescription: '按已完成订单最终结账金额统计', discountAmount: '折扣金额', roundingAmount: '抹零金额', netRevenue: '净营业额', cashRevenue: '现金收入', bankTransferRevenue: '银行转账收入', unrecordedRevenue: '历史未记录',
-    orderUnit: '单', salesUnit: '份', noData: '暂无数据', noComparison: '暂无可比数据', comparedWith: '较上一周期', briefTitle: 'AI经营简报',
+    orderUnit: '笔', salesUnit: '份', noData: '暂无数据', noComparison: '暂无可比数据', comparedWith: '较上一周期', briefTitle: 'AI经营简报',
     insufficientBrief: '当前周期暂无已完成订单，简报将在真实经营数据积累后自动生成。', viewDetails: '查看详情', hideDetails: '收起详情',
-    trendTitle: '营业趋势', trendDescription: '营业额与完成订单数趋势', trendEmpty: '当前周期暂无营业趋势数据', timeTitle: '时段分析', timeDescription: '订单高峰热力图',
+    trendTitle: '营业趋势', trendDescription: '营业额与结账笔数趋势', trendEmpty: '当前周期暂无营业趋势数据', timeTitle: '时段分析', timeDescription: '结账高峰热力图',
     less: '少', more: '多', peakPeriod: '高峰时段', rankingTitle: '菜品销售排行 TOP5', expandedRankingTitle: '菜品销售排行 TOP10', mobileRankingTitle: '菜品销售排行 TOP5', rankingDescription: '按已完成订单销量排序', expandRanking: '展开 TOP10', collapseRanking: '收起至 TOP5',
     rank: '排名', dish: '菜品', quantity: '销量', salesAmount: '销售额', comparison: '环比', rankingEmpty: '当前周期暂无菜品销售数据',
-    shareTitle: '时段营业额占比', shareDescription: '按下单时间统计营业额分布', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
+    shareTitle: '时段营业额占比', shareDescription: '按结账时间统计营业额分布', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
     currentPeriod: '当前周期', previousPeriod: '对比周期', chartAria: '营业额和订单数趋势图', shareAria: '各时段营业额占比图', sparkAria: '指标趋势', dishPlaceholder: '菜', filtersAria: '经营分析日期筛选', timeEmpty: '当前周期暂无时段数据',
     weekdays: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], otherPeriod: '其他时段', revenueShare: '营业额占比',
     suggestionCards: ['主推菜品与备货', '高峰时段准备', '周期经营观察'],
   },
   vi: {
     title: 'Phân tích kinh doanh', subtitle: 'Dữ liệu giúp vận hành tốt hơn mỗi ngày', today: 'Hôm nay', sevenDays: '7 ngày', thirtyDays: '30 ngày', custom: 'Tùy chọn',
-    startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu ròng', orders: 'Đơn hàng', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
+    startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu ròng', orders: 'Số lần thanh toán', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
     fundsTitle: 'Tổng quan tiền mặt', fundsDescription: 'Theo tổng thanh toán cuối cùng của đơn đã hoàn tất', discountAmount: 'Tiền giảm giá', roundingAmount: 'Tiền làm tròn', netRevenue: 'Doanh thu ròng', cashRevenue: 'Tiền mặt', bankTransferRevenue: 'Chuyển khoản', unrecordedRevenue: 'Chưa ghi nhận',
-    orderUnit: 'đơn', salesUnit: 'phần', noData: 'Chưa có dữ liệu', noComparison: 'Chưa thể so sánh', comparedWith: 'So với kỳ trước', briefTitle: 'Tóm tắt AI',
+    orderUnit: 'lượt', salesUnit: 'phần', noData: 'Chưa có dữ liệu', noComparison: 'Chưa thể so sánh', comparedWith: 'So với kỳ trước', briefTitle: 'Tóm tắt AI',
     insufficientBrief: 'Chưa có đơn hoàn thành trong kỳ này. Bản tóm tắt sẽ tự cập nhật khi có dữ liệu thực.', viewDetails: 'Xem chi tiết', hideDetails: 'Thu gọn',
     trendTitle: 'Xu hướng kinh doanh', trendDescription: 'Doanh thu và số đơn hoàn thành', trendEmpty: 'Chưa có dữ liệu xu hướng', timeTitle: 'Phân tích thời gian', timeDescription: 'Bản đồ nhiệt giờ cao điểm',
     less: 'Ít', more: 'Nhiều', peakPeriod: 'Giờ cao điểm', rankingTitle: 'TOP5 món bán chạy', expandedRankingTitle: 'TOP10 món bán chạy', mobileRankingTitle: 'TOP5 món bán chạy', rankingDescription: 'Theo số lượng trong đơn hoàn thành', expandRanking: 'Mở TOP10', collapseRanking: 'Thu gọn TOP5',
     rank: 'Hạng', dish: 'Món', quantity: 'Số lượng', salesAmount: 'Doanh thu', comparison: 'So sánh', rankingEmpty: 'Chưa có dữ liệu món ăn',
-    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo thời gian đặt hàng', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
+    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo thời gian thanh toán', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
     currentPeriod: 'Kỳ hiện tại', previousPeriod: 'Kỳ so sánh', chartAria: 'Biểu đồ doanh thu và số đơn', shareAria: 'Biểu đồ tỷ trọng doanh thu theo giờ', sparkAria: 'Xu hướng chỉ số', dishPlaceholder: 'Món', filtersAria: 'Bộ lọc ngày phân tích kinh doanh', timeEmpty: 'Chưa có dữ liệu theo giờ trong kỳ này',
     weekdays: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'], otherPeriod: 'Khung giờ khác', revenueShare: 'Tỷ trọng',
     suggestionCards: ['Món chủ lực và tồn kho', 'Chuẩn bị giờ cao điểm', 'Theo dõi theo kỳ'],
   },
   en: {
     title: 'Business Analytics', subtitle: 'Use real data to make better business decisions', today: 'Today', sevenDays: 'Last 7 days', thirtyDays: 'Last 30 days', custom: 'Custom',
-    startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Net revenue', orders: 'Orders', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
+    startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Net revenue', orders: 'Settlements', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
     fundsTitle: 'Funds overview', fundsDescription: 'Based on final settled amounts of completed orders', discountAmount: 'Discount', roundingAmount: 'Rounding', netRevenue: 'Net revenue', cashRevenue: 'Cash', bankTransferRevenue: 'Bank transfer', unrecordedRevenue: 'Unrecorded',
-    orderUnit: 'orders', salesUnit: 'sold', noData: 'No data', noComparison: 'No comparison', comparedWith: 'Vs previous period', briefTitle: 'AI Business Brief',
+    orderUnit: 'settlements', salesUnit: 'sold', noData: 'No data', noComparison: 'No comparison', comparedWith: 'Vs previous period', briefTitle: 'AI Business Brief',
     insufficientBrief: 'There are no completed orders in this period. The brief will update when real data is available.', viewDetails: 'View details', hideDetails: 'Hide details',
     trendTitle: 'Business Trend', trendDescription: 'Revenue and completed-order trend', trendEmpty: 'No trend data in this period', timeTitle: 'Time Analysis', timeDescription: 'Peak-order heatmap',
     less: 'Less', more: 'More', peakPeriod: 'Peak time', rankingTitle: 'Top 5 Dishes', expandedRankingTitle: 'Top 10 Dishes', mobileRankingTitle: 'Top 5 Dishes', rankingDescription: 'Ranked by completed-order quantity', expandRanking: 'Show top 10', collapseRanking: 'Show top 5',
     rank: 'Rank', dish: 'Dish', quantity: 'Quantity', salesAmount: 'Revenue', comparison: 'Change', rankingEmpty: 'No dish sales in this period',
-    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on order creation time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
+    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on settlement time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
     currentPeriod: 'Current period', previousPeriod: 'Previous period', chartAria: 'Revenue and order trend chart', shareAria: 'Revenue share by time chart', sparkAria: 'Metric trend', dishPlaceholder: 'Dish', filtersAria: 'Business analytics date filters', timeEmpty: 'No time-distribution data in this period',
     weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], otherPeriod: 'Other hours', revenueShare: 'Revenue share',
     suggestionCards: ['Featured dish and stock', 'Peak-time preparation', 'Period performance'],
@@ -75,17 +75,17 @@ const copyByLocale = {
 } as const;
 
 const copy = computed(() => copyByLocale[locale.value]);
-const hasOrders = computed(() => (analytics.value?.overview.orderCount ?? 0) > 0);
-const hasTrend = computed(() => analytics.value?.trend.some((item) => item.orderCount > 0 || Number(item.revenueVnd) > 0) ?? false);
-const maxHeat = computed(() => Math.max(1, ...(analytics.value?.timeDistribution.map((item) => item.orderCount) ?? [0])));
+const hasOrders = computed(() => (analytics.value?.overview.settlementCount ?? 0) > 0);
+const hasTrend = computed(() => analytics.value?.trend.some((item) => item.settlementCount > 0 || Number(item.revenueVnd) > 0) ?? false);
+const maxHeat = computed(() => Math.max(1, ...(analytics.value?.timeDistribution.map((item) => item.settlementCount) ?? [0])));
 const timeRowsByWeekday = computed(() => Array.from({ length: 7 }, (_, weekday) => ({
   weekday,
   label: copy.value.weekdays[weekday],
   values: analytics.value?.timeDistribution.filter((item) => item.weekday === weekday) ?? [],
 })));
 const revenueSpark = computed(() => analytics.value?.trend.map((item) => Number(item.revenueVnd)) ?? [0, 0]);
-const orderSpark = computed(() => analytics.value?.trend.map((item) => item.orderCount) ?? [0, 0]);
-const averageSpark = computed(() => analytics.value?.trend.map((item) => item.orderCount ? Number(item.revenueVnd) / item.orderCount : 0) ?? [0, 0]);
+const orderSpark = computed(() => analytics.value?.trend.map((item) => item.settlementCount) ?? [0, 0]);
+const averageSpark = computed(() => analytics.value?.trend.map((item) => item.settlementCount ? Number(item.revenueVnd) / item.settlementCount : 0) ?? [0, 0]);
 const mobileTopDishes = computed(() => analytics.value?.topDishes.slice(0, 5) ?? []);
 const desktopTopDishes = computed(() => analytics.value?.topDishes.slice(0, rankingExpanded.value ? 10 : 5) ?? []);
 
@@ -101,9 +101,9 @@ const previousPeriodLabel = computed(() => {
 const businessBrief = computed(() => {
   const data = analytics.value;
   if (!data || !hasOrders.value) return copy.value.insufficientBrief;
-  if (locale.value === 'vi') return `Kỳ này có ${data.overview.orderCount} đơn hoàn thành, doanh thu ${formatMoney(data.overview.revenueVnd)}. ${briefHighlight(data)}`;
-  if (locale.value === 'en') return `${data.overview.orderCount} completed orders generated ${formatMoney(data.overview.revenueVnd)} in this period. ${briefHighlight(data)}`;
-  return `本周期完成 ${data.overview.orderCount} 笔订单，营业额 ${formatMoney(data.overview.revenueVnd)}。${briefHighlight(data)}`;
+  if (locale.value === 'vi') return `Kỳ này có ${data.overview.settlementCount} lần thanh toán, doanh thu ${formatMoney(data.overview.revenueVnd)}. ${briefHighlight(data)}`;
+  if (locale.value === 'en') return `${data.overview.settlementCount} settlements generated ${formatMoney(data.overview.revenueVnd)} in this period. ${briefHighlight(data)}`;
+  return `本周期完成 ${data.overview.settlementCount} 笔结账，营业额 ${formatMoney(data.overview.revenueVnd)}。${briefHighlight(data)}`;
 });
 
 const briefDetails = computed(() => {
@@ -113,7 +113,7 @@ const briefDetails = computed(() => {
     `${copy.value.currentPeriod}：${data.period.startDate} - ${data.period.endDate}`,
     `${copy.value.previousPeriod}：${previousPeriodLabel.value}`,
     comparisonSentence(copy.value.revenue, data.overview.comparison.revenuePercent),
-    comparisonSentence(copy.value.orders, data.overview.comparison.orderCountPercent),
+    comparisonSentence(copy.value.orders, data.overview.comparison.settlementCountPercent),
   ];
 });
 
@@ -259,9 +259,9 @@ function timeRange(startHour: number, endHour: number) {
   return `${String(startHour).padStart(2, '0')}:00-${String(endHour).padStart(2, '0')}:00`;
 }
 
-function heatStyle(orderCount: number) {
-  if (!orderCount) return { backgroundColor: '#f0f4f1', color: '#5f6d65' };
-  const ratio = orderCount / maxHeat.value;
+function heatStyle(settlementCount: number) {
+  if (!settlementCount) return { backgroundColor: '#f0f4f1', color: '#5f6d65' };
+  const ratio = settlementCount / maxHeat.value;
   return { backgroundColor: `rgba(47, 158, 68, ${0.18 + ratio * 0.78})`, color: ratio > 0.5 ? 'var(--analytics-on-brand)' : '#31543b' };
 }
 
@@ -338,10 +338,10 @@ onMounted(() => void selectPreset('today'));
               <small :class="changeClass(analytics.overview.comparison.revenuePercent)">{{ copy.comparedWith }} {{ formatPercent(analytics.overview.comparison.revenuePercent) }}</small>
               <BusinessSparkline :values="revenueSpark" :ariaLabel="`${copy.revenue}${copy.sparkAria}`" />
             </article>
-            <article class="card analytics-kpi-card" :title="analytics.overview.orderCount.toLocaleString(localeCode())">
+            <article class="card analytics-kpi-card" :title="analytics.overview.settlementCount.toLocaleString(localeCode())">
               <div class="analytics-kpi-heading"><span class="analytics-kpi-icon analytics-kpi-icon--blue"><BusinessAnalyticsIcon name="orders" /></span><span>{{ copy.orders }}</span></div>
-              <strong data-analytics-field="order-count">{{ analytics.overview.orderCount.toLocaleString(localeCode()) }}</strong>
-              <small :class="changeClass(analytics.overview.comparison.orderCountPercent)">{{ copy.comparedWith }} {{ formatPercent(analytics.overview.comparison.orderCountPercent) }}</small>
+              <strong data-analytics-field="settlement-count">{{ analytics.overview.settlementCount.toLocaleString(localeCode()) }}</strong>
+              <small :class="changeClass(analytics.overview.comparison.settlementCountPercent)">{{ copy.comparedWith }} {{ formatPercent(analytics.overview.comparison.settlementCountPercent) }}</small>
               <BusinessSparkline :values="orderSpark" color="#5b8def" :ariaLabel="`${copy.orders}${copy.sparkAria}`" />
             </article>
             <article class="card analytics-kpi-card" :title="formatMoney(analytics.overview.averageOrderValueVnd)">
@@ -428,7 +428,7 @@ onMounted(() => void selectPreset('today'));
             <div class="analytics-heatmap-header"><span></span><span v-for="hour in 12" :key="hour">{{ String((hour - 1) * 2).padStart(2, '0') }}</span></div>
             <div v-for="row in timeRowsByWeekday" :key="row.weekday" class="analytics-heatmap-row">
               <strong>{{ row.label }}</strong>
-              <span v-for="item in row.values" :key="`${item.weekday}-${item.startHour}`" class="analytics-heat-cell" role="img" :style="heatStyle(item.orderCount)" :title="`${row.label} ${timeRange(item.startHour, item.endHour)}: ${item.orderCount} ${copy.orderUnit}`" :aria-label="`${row.label} ${timeRange(item.startHour, item.endHour)}: ${item.orderCount} ${copy.orderUnit}`" :data-orders="item.orderCount">{{ item.orderCount || '' }}</span>
+              <span v-for="item in row.values" :key="`${item.weekday}-${item.startHour}`" class="analytics-heat-cell" role="img" :style="heatStyle(item.settlementCount)" :title="`${row.label} ${timeRange(item.startHour, item.endHour)}: ${item.settlementCount} ${copy.orderUnit}`" :aria-label="`${row.label} ${timeRange(item.startHour, item.endHour)}: ${item.settlementCount} ${copy.orderUnit}`" :data-orders="item.settlementCount">{{ item.settlementCount || '' }}</span>
             </div>
           </div>
           <p v-else class="analytics-panel-empty">{{ copy.timeEmpty }}</p>

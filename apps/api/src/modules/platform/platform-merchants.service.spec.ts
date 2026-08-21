@@ -1212,6 +1212,55 @@ describe('PlatformMerchantsService merchant image replacement and deletion', () 
   });
 });
 
+describe('PlatformMerchantsService detail tag limits', () => {
+  function buildService(tags: Array<{ scope: string }>) {
+    const tx = {
+      merchantPromotionTag: {
+        deleteMany: jest.fn().mockResolvedValue(undefined),
+        createMany: jest.fn().mockResolvedValue(undefined),
+      },
+      merchant: { update: jest.fn().mockResolvedValue(undefined) },
+    };
+    const prisma = {
+      promotionTag: {
+        findMany: jest.fn().mockResolvedValue(tags),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      $transaction: jest.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    };
+    const service = new PlatformMerchantsService(
+      prisma as never,
+      { ensureDefaults: jest.fn() } as never,
+      {} as never,
+      buildAppConfigMock() as never,
+      buildPrintingFlagsMock() as never,
+    );
+    jest.spyOn(service as any, 'requireMerchant').mockResolvedValue({ id: 2n });
+    jest.spyOn(service as any, 'findById').mockResolvedValue({ id: '2' });
+    return { service, prisma, tx };
+  }
+
+  it('accepts up to four cuisine tags', async () => {
+    const { service, tx } = buildService(Array.from({ length: 4 }, () => ({ scope: 'CUISINE' })));
+
+    await service.updateTags(2n, { promotionTagIds: ['1', '2', '3', '4'] });
+
+    expect(tx.merchantPromotionTag.createMany).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CUISINE', '菜系'],
+    ['SCENE', '场景'],
+  ])('rejects a fifth %s tag', async (scope, label) => {
+    const { service, tx } = buildService(Array.from({ length: 5 }, () => ({ scope })));
+
+    await expect(service.updateTags(2n, {
+      promotionTagIds: ['1', '2', '3', '4', '5'],
+    })).rejects.toThrow(`最多选择 4 个${label}标签`);
+    expect(tx.merchantPromotionTag.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('PlatformMerchantsService platform business hours', () => {
   let prisma: {
     merchant: {
@@ -1252,7 +1301,7 @@ describe('PlatformMerchantsService platform business hours', () => {
 
     await service.updateBusinessHours(2n, {
       businessHours: {
-        monday: ['09:00-21:00'],
+        monday: ['09:00-14:00', '17:00-22:00'],
         tuesday: [],
       },
     });
@@ -1261,7 +1310,7 @@ describe('PlatformMerchantsService platform business hours', () => {
       where: { id: 2n },
       data: {
         businessHours: {
-          monday: ['09:00-21:00'],
+          monday: ['09:00-14:00', '17:00-22:00'],
           tuesday: [],
         },
       },
@@ -1318,16 +1367,66 @@ describe('PlatformMerchantsService platform business hours', () => {
     expect(prisma.merchant.update).not.toHaveBeenCalled();
   });
 
-  it('rejects close time earlier than or equal to open time', async () => {
+  it('reuses merchant business-hours cross-midnight semantics', async () => {
     prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
       claimStatus: MerchantClaimStatus.UNCLAIMED,
     }));
 
-    await expect(
-      service.updateBusinessHours(2n, {
-        businessHours: { monday: ['22:00-10:00'] },
-      }),
-    ).rejects.toThrow('营业时间格式错误');
+    await service.updateBusinessHours(2n, {
+      businessHours: { monday: ['22:00-02:00'], tuesday: ['02:00-05:00'] },
+    });
+
+    expect(prisma.merchant.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { businessHours: { monday: ['22:00-02:00'], tuesday: ['02:00-05:00'] } },
+    }));
+  });
+
+  it('keeps the existing open/close object input compatible', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await service.updateBusinessHours(2n, {
+      businessHours: {
+        monday: [{ open: '09:00', close: '14:00' }],
+      } as never,
+    });
+
+    expect(prisma.merchant.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { businessHours: { monday: ['09:00-14:00'] } },
+    }));
+  });
+
+  it('rejects equal start and end times', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(service.updateBusinessHours(2n, {
+      businessHours: { monday: ['10:00-10:00'] },
+    })).rejects.toThrow('开始和结束不能相同');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than two intervals per weekday', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(service.updateBusinessHours(2n, {
+      businessHours: { monday: ['08:00-10:00', '11:00-13:00', '17:00-22:00'] },
+    })).rejects.toThrow('每天最多设置 2 个营业时段');
+    expect(prisma.merchant.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlapping intervals across the week boundary', async () => {
+    prisma.merchant.findUnique.mockResolvedValue(buildMerchant([], {
+      claimStatus: MerchantClaimStatus.UNCLAIMED,
+    }));
+
+    await expect(service.updateBusinessHours(2n, {
+      businessHours: { monday: ['22:00-03:00'], tuesday: ['02:30-05:00'] },
+    })).rejects.toThrow('营业时段不能重叠');
     expect(prisma.merchant.update).not.toHaveBeenCalled();
   });
 

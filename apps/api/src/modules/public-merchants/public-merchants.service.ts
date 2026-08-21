@@ -673,7 +673,7 @@ function resolveDetailDisplayTags(
       left.promotionTag.sortOrder - right.promotionTag.sortOrder
       || Number(left.promotionTag.id - right.promotionTag.id)
     ))
-    .slice(0, 2)
+    .slice(0, 4)
     .map((item) => ({
       id: item.promotionTag.id.toString(),
       code: item.promotionTag.code,
@@ -688,7 +688,7 @@ function resolveDetailDisplayTags(
   return [
     ...byScope(PromotionTagScope.CUISINE),
     ...byScope(PromotionTagScope.SCENE),
-  ].slice(0, 4);
+  ].slice(0, 8);
 }
 
 function isHotRecommendationCategory(nameZh: string) {

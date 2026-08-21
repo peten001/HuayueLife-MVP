@@ -59,8 +59,8 @@ const cancelled = computed(() =>
 );
 const todayRevenue = computed(() => Number(businessDaySummary.value?.totalRevenueVnd ?? 0));
 const averageOrderValue = computed(() =>
-  businessDaySummary.value?.orderCount
-    ? todayRevenue.value / businessDaySummary.value.orderCount
+  (businessDaySummary.value?.settlementCount ?? businessDaySummary.value?.orderCount)
+    ? todayRevenue.value / (businessDaySummary.value?.settlementCount ?? businessDaySummary.value?.orderCount ?? 1)
     : null,
 );
 const latestOrderTime = computed(() => {
@@ -75,11 +75,11 @@ const businessDateHint = computed(() => businessDaySummary.value
   : businessDayCopy.value.snapshot);
 const activeOrders = computed(() => [...pending.value, ...inProgress.value].slice(0, 6));
 const businessDayCopy = computed(() => locale.value === 'vi' ? {
-  revenue: 'Doanh thu ngày kinh doanh', revenueHint: 'Tổng thực thu của đơn đã hoàn tất trong ngày kinh doanh', orders: 'Đơn đã hoàn tất', snapshot: 'Tổng quan ngày kinh doanh', completed: 'Đã hoàn tất', cancelled: 'Đã hủy trong ngày kinh doanh', latest: 'Đơn mới nhất trong ngày kinh doanh', date: 'Ngày kinh doanh', unavailable: 'Không thể tải tổng kết ngày kinh doanh; danh sách đơn vẫn được cập nhật.',
+  revenue: 'Doanh thu ngày kinh doanh', revenueHint: 'Tổng thực thu của đơn đã hoàn tất trong ngày kinh doanh', orders: 'Số lần thanh toán trong ngày', snapshot: 'Tổng quan ngày kinh doanh', completed: 'Đã hoàn tất', cancelled: 'Đã hủy trong ngày kinh doanh', latest: 'Đơn mới nhất trong ngày kinh doanh', date: 'Ngày kinh doanh', unavailable: 'Không thể tải tổng kết ngày kinh doanh; danh sách đơn vẫn được cập nhật.',
 } : locale.value === 'en' ? {
-  revenue: 'Business-day revenue', revenueHint: 'Collected total from completed orders in this business day', orders: 'Completed orders', snapshot: 'Business-day overview', completed: 'Completed', cancelled: 'Cancelled in this business day', latest: 'Latest order in this business day', date: 'Business date', unavailable: 'Business-day summary is unavailable; live orders are still updating.',
+  revenue: 'Business-day revenue', revenueHint: 'Collected total from completed orders in this business day', orders: 'Business-day settlements', snapshot: 'Business-day overview', completed: 'Completed', cancelled: 'Cancelled in this business day', latest: 'Latest order in this business day', date: 'Business date', unavailable: 'Business-day summary is unavailable; live orders are still updating.',
 } : {
-  revenue: '本营业日营业额', revenueHint: '本营业日已完成订单实收合计', orders: '本营业日已完成订单', snapshot: '营业日概览', completed: '本营业日已完成', cancelled: '本营业日已取消', latest: '本营业日最近下单', date: '营业日', unavailable: '营业日汇总暂时无法读取，实时订单仍会继续刷新。',
+  revenue: '本营业日营业额', revenueHint: '本营业日已完成订单实收合计', orders: '本营业日结账笔数', snapshot: '营业日概览', completed: '本营业日已完成', cancelled: '本营业日已取消', latest: '本营业日最近下单', date: '营业日', unavailable: '营业日汇总暂时无法读取，实时订单仍会继续刷新。',
 });
 const operations = computed(() => ({
   revenue: businessDayCopy.value.revenue,
@@ -113,7 +113,7 @@ const metricCards = computed(() => [
   {
     key: 'orders',
     title: businessDayCopy.value.orders,
-    value: businessDaySummaryLoading.value || !businessDaySummary.value ? '—' : String(businessDaySummary.value.orderCount),
+    value: businessDaySummaryLoading.value || !businessDaySummary.value ? '—' : String(businessDaySummary.value.settlementCount ?? businessDaySummary.value.orderCount),
     icon: '📋',
     tone: 'neutral',
     hint: businessDateHint.value,
@@ -777,7 +777,7 @@ type Action =
           <dl>
             <div>
               <dt>{{ operations.completed }}</dt>
-              <dd>{{ businessDaySummaryLoading || !businessDaySummary ? '—' : businessDaySummary.orderCount }}</dd>
+              <dd>{{ businessDaySummaryLoading || !businessDaySummary ? '—' : (businessDaySummary.settlementCount ?? businessDaySummary.orderCount) }}</dd>
             </div>
             <div>
               <dt>{{ operations.cancelled }}</dt>

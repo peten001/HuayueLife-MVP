@@ -26,7 +26,10 @@ check('all existing merchant sections remain present', () => {
   for (const key of sectionKeys) assert.match(detail, new RegExp(`id="merchant-section-${key}"`));
 });
 check('left navigation entries cover every merchant section', () => {
-  for (const key of sectionKeys) assert.match(layout, new RegExp(`key: '${key}'`));
+  for (const key of ['profile', 'businessHours', 'images', 'tags', 'capabilities', 'account']) {
+    assert.match(layout, new RegExp(`key: '${key}'`));
+  }
+  assert.doesNotMatch(layout, /key: 'danger'/);
 });
 check('section headers share one visual treatment', () => {
   assert.match(detail, /\.editor-section-head \{[\s\S]*border-bottom:\s*1px solid #edf2ee/);
@@ -48,7 +51,7 @@ check('manual image title inputs are removed from the UI', () => {
   assert.doesNotMatch(detail, /标题（中文）|标题（Tiếng Việt）|标题（English）/);
 });
 check('saving image display settings preserves historical titles', () => {
-  const saveBlock = detail.match(/async function saveMerchantImage[\s\S]*?\n\}/)?.[0] ?? '';
+  const saveBlock = detail.match(/async function saveAllChanges[\s\S]*?\n\}/)?.[0] ?? '';
   assert.doesNotMatch(saveBlock, /titleZh|titleVi|titleEn/);
   assert.match(saveBlock, /sortOrder/);
   assert.match(saveBlock, /isVisible/);
@@ -77,18 +80,29 @@ check('tag CRUD remains present', () => {
 });
 check('capability UI and save path remain present', () => {
   assert.match(detail, /v-model="capabilityValues\[capability\.code\]"/);
-  assert.match(detail, /@click="saveCapabilities"/);
+  assert.match(detail, /@click="saveAllChanges"/);
 });
 check('dangerous actions remain present', () => {
   for (const marker of ['toggleClientVisibility', 'toggleMerchantStatus', 'resetPassword', 'deleteMerchant']) {
     assert.match(detail, new RegExp(marker));
   }
 });
-check('save actions remain present with explicit hierarchy', () => {
-  assert.match(detail, /保存商家资料/);
-  assert.match(detail, /保存营业时间/);
-  assert.match(detail, /保存能力/);
-  assert.match(detail, /保存标签配置/);
+check('page uses one unified save action', () => {
+  assert.match(detail, /保存全部修改/);
+  assert.match(detail, /async function saveAllChanges/);
+  assert.doesNotMatch(detail, /@click="save(?:Profile|BusinessHours|Tags|Capabilities)"/);
+  assert.doesNotMatch(detail, />保存(?:商家资料|营业时间|标签配置|能力)</);
+});
+check('business hours reuse weekly intervals with a two-segment limit', () => {
+  assert.match(detail, /MAX_BUSINESS_HOURS_INTERVALS = 2/);
+  assert.match(detail, /businessHoursSchedule/);
+  assert.match(detail, /营业时段不能重叠，包括相邻星期的跨天时段/);
+  assert.match(detail, /Asia\/Ho_Chi_Minh（UTC\+7）/);
+});
+check('cuisine and scene limits are four', () => {
+  assert.match(detail, /DETAIL_TAG_LIMIT = 4/);
+  assert.match(detail, /最多显示 4 个菜系、4 个场景/);
+  assert.doesNotMatch(detail, /前台最多 2/);
 });
 check('no business profile field was removed', () => {
   for (const field of [
@@ -109,4 +123,4 @@ check('image classification stays explicit and never auto-fills', () => {
   assert.doesNotMatch(detail, /autoFill|guessImageType|signature.*fallback|hot.*fallback/i);
 });
 
-console.log(`Platform merchant detail V3.5 checks passed: ${passed}/25`);
+console.log(`Platform merchant detail V3.5 checks passed: ${passed}/27`);

@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { ArrowLeft, CalendarDays, ClipboardList, RefreshCw } from '@lucide/vue';
+import { ArrowLeft, CalendarDays, ChevronDown, ClipboardList, RefreshCw } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVnd } from '@/domain';
 import { getBusinessDaySummary, messageFromApiError, printBusinessDaySummary } from '@/api';
-import { resolveOrderLocation } from '@/domain/order-location';
 import { useI18n } from '@/i18n';
 import { useOrdersStore, useUiStore } from '@/stores';
-import type { BusinessDaySummary, MerchantOrder, OrderStatus, OrderType } from '@/types';
+import type { BusinessDaySummary, MerchantSettlement, OrderType, PaymentMethod } from '@/types';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
-import BillSummary from '@/components/bills/BillSummary.vue';
 import PrintJobActions from '@/components/printing/PrintJobActions.vue';
-import FulfillmentProgressRail from '@/features/fulfillment/FulfillmentProgressRail.vue';
-import WaitDuration from '@/features/fulfillment/WaitDuration.vue';
-import DeliveryContactPanel from '@/features/delivery/DeliveryContactPanel.vue';
-import OrderItemsSection from '@/features/fulfillment/OrderItemsSection.vue';
 import BusinessDaySummaryDialog from '@/components/reports/BusinessDaySummaryDialog.vue';
 
 const route = useRoute();
@@ -26,7 +20,13 @@ const router = useRouter();
 const { t, locale } = useI18n();
 const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
-const { historyOrders, selectedOrder, historyLoading, detailLoading, historyErrorKey } = storeToRefs(ordersStore);
+const {
+  historySettlements,
+  selectedSettlement,
+  settlementLoading,
+  settlementDetailLoading,
+  settlementErrorKey,
+} = storeToRefs(ordersStore);
 const status = ref<'ALL' | 'COMPLETED' | 'CANCELLED'>('ALL');
 const orderType = ref<'' | OrderType>('');
 const date = ref('');
@@ -39,6 +39,7 @@ const summaryError = ref('');
 const summaryStatus = ref('');
 const summaryDate = ref('');
 const businessSummary = ref<BusinessDaySummary | null>(null);
+const sourceOrdersOpen = ref(false);
 let routeSequence = 0;
 
 const dateFilterLabel = computed(() => formatVietnamDateFilter(date.value, locale.value));
@@ -56,53 +57,92 @@ function openDatePicker(event: MouseEvent) {
   }
 }
 
-const filtered = computed(() => historyOrders.value.filter((order) => {
-  if (status.value !== 'ALL' && order.status !== status.value) return false;
-  if (orderType.value && order.orderType !== orderType.value) return false;
+const filtered = computed(() => historySettlements.value.filter((item) => {
+  if (status.value !== 'ALL' && item.status !== status.value) return false;
+  if (orderType.value && item.orderType !== orderType.value) return false;
   return true;
 }));
-const order = computed(() => selectedOrder.value && ['COMPLETED', 'CANCELLED'].includes(selectedOrder.value.status) ? selectedOrder.value : null);
-const checkoutSettlement = computed(() => {
-  const metadata = order.value?.statusLogs?.find((log) => log.action === 'TABLE_SESSION_CHECKOUT')?.metadata;
-  if (!metadata?.originalAmountVnd || !metadata.roundingAmountVnd || !metadata.payableAmountVnd) return null;
-  return metadata;
-});
-const orderPayableAmount = computed(() => order.value?.payableAmountVnd || order.value?.totalAmountVnd || '0');
+const settlement = computed(() =>
+  selectedSettlement.value &&
+  ['COMPLETED', 'CANCELLED'].includes(selectedSettlement.value.status)
+    ? selectedSettlement.value
+    : null,
+);
 
 function orderTypeKey(orderTypeValue: OrderType) {
   return orderTypeValue === 'DINE_IN' ? 'dineIn' : orderTypeValue.toLowerCase();
 }
 
-function orderItemCount(itemOrder: MerchantOrder) {
-  return itemOrder.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+function settlementPrimaryLabel(item: MerchantSettlement) {
+  if (item.orderType === 'DINE_IN') return item.tableName || item.orderNos[0] || t('order.type.dineIn');
+  return `#${item.orderNos[0] ?? ''}`;
 }
 
-function orderPrimaryLabel(itemOrder: MerchantOrder) {
-  if (itemOrder.orderType === 'PICKUP') return itemOrder.pickupCode || itemOrder.orderNo;
-  if (itemOrder.orderType === 'DINE_IN') return itemOrder.tableNoSnapshot || itemOrder.orderNo;
-  return `#${itemOrder.orderNo}`;
+function settlementContext(item: MerchantSettlement) {
+  if (item.orderType === 'DINE_IN') return item.tableName || t('order.type.dineIn');
+  if (item.orderType === 'PICKUP') return t('order.type.pickup');
+  return t('order.type.delivery');
 }
 
-function orderContext(itemOrder: MerchantOrder) {
-  if (itemOrder.orderType === 'DINE_IN') return itemOrder.tableNoSnapshot || t('order.type.dineIn');
-  if (itemOrder.orderType === 'PICKUP') return itemOrder.contactName || t('order.customerFallback');
-  return itemOrder.deliveryAddress || t('order.deliveryAddressMissing');
+function paymentLabel(method: PaymentMethod | null) {
+  if (method === 'CASH') return t('payment.cash');
+  if (method === 'BANK_TRANSFER') return t('payment.bankTransfer');
+  return t('settlement.unrecorded');
 }
 
-function orderHistoryTime(itemOrder: MerchantOrder) {
-  return itemOrder.completedAt || itemOrder.cancelledAt || itemOrder.updatedAt || itemOrder.createdAt;
+function mergedSettlementItems(item: MerchantSettlement) {
+  const merged: Array<{
+    key: string;
+    productNameZh: string;
+    productNameVi: string | null;
+    unitPriceVnd: string;
+    quantity: number;
+    subtotalVnd: string;
+    remark: string | null;
+  }> = [];
+  for (const row of item.items) {
+    const key = [
+      row.productId ?? 'name',
+      row.productNameZh,
+      row.unitPriceVnd,
+      row.remark ?? '',
+    ].join('\u0000');
+    const current = merged.find((entry) => entry.key === key);
+    if (current) {
+      current.quantity += row.quantity;
+      current.subtotalVnd = String(
+        BigInt(current.subtotalVnd) + BigInt(row.subtotalVnd),
+      );
+    } else {
+      merged.push({
+        key,
+        productNameZh: row.productNameZh,
+        productNameVi: row.productNameVi,
+        unitPriceVnd: row.unitPriceVnd,
+        quantity: row.quantity,
+        subtotalVnd: row.subtotalVnd,
+        remark: row.remark,
+      });
+    }
+  }
+  return merged;
+}
+
+function dishName(row: { productNameZh: string; productNameVi: string | null }) {
+  if (locale.value === 'vi' && row.productNameVi) return row.productNameVi;
+  return row.productNameZh;
 }
 
 async function refresh(showToast = true) {
   if (!date.value) return;
   try {
-    await ordersStore.fetchHistory({
+    await ordersStore.fetchSettlements({
       date: date.value,
-      status: status.value === 'ALL' ? undefined : status.value as OrderStatus,
+      status: status.value === 'ALL' ? undefined : status.value,
       orderType: orderType.value || undefined,
     });
   } catch {
-    if (showToast && historyOrders.value.length) uiStore.pushToast(t('error.refreshFailed'), 'error');
+    if (showToast && historySettlements.value.length) uiStore.pushToast(t('error.refreshFailed'), 'error');
   }
 }
 
@@ -154,7 +194,7 @@ async function printSummary() {
   }
 }
 
-async function selectOrder(id: string) {
+async function selectSettlement(id: string) {
   await router.push({ name: 'order-history', params: { orderId: id } });
 }
 
@@ -165,13 +205,12 @@ watch(
     const sequence = ++routeSequence;
     const id = typeof value === 'string' ? value : '';
     if (!id) {
-      await ordersStore.selectOrder(null);
+      await ordersStore.selectSettlement(null);
       return;
     }
     try {
-      const loaded = await ordersStore.selectOrder(id);
+      const loaded = await ordersStore.selectSettlement(id);
       if (sequence !== routeSequence || !loaded) return;
-      if (!['COMPLETED', 'CANCELLED'].includes(loaded.status)) await router.replace(resolveOrderLocation(loaded));
     } catch {
       if (sequence === routeSequence) uiStore.pushToast(t('error.operationFailed'), 'error');
     }
@@ -189,7 +228,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="history-page" :class="{ 'has-selection': Boolean(order) }">
+  <section class="history-page" :class="{ 'has-selection': Boolean(settlement) }">
     <div class="history-workspace">
       <aside class="history-queue">
         <div class="history-toolbar">
@@ -199,7 +238,7 @@ onMounted(async () => {
               <span>{{ dateFilterLabel }}</span>
               <input ref="dateInput" v-model="date" type="date" :aria-label="dateFilterAriaLabel" />
             </label>
-            <button type="button" class="workflow-refresh-button" :disabled="historyLoading" :aria-label="t('common.refresh')" :title="t('common.refresh')" @click="refresh()"><RefreshCw :size="17" :class="{ spinning: historyLoading }" aria-hidden="true" /></button>
+            <button type="button" class="workflow-refresh-button" :disabled="settlementLoading" :aria-label="t('common.refresh')" :title="t('common.refresh')" @click="refresh()"><RefreshCw :size="17" :class="{ spinning: settlementLoading }" aria-hidden="true" /></button>
             <button type="button" class="summary-open-button" @click="openBusinessSummary"><ClipboardList :size="17" aria-hidden="true" />{{ t('summary.open') }}</button>
           </div>
           <div class="history-mobile-filter-row--selects">
@@ -207,51 +246,93 @@ onMounted(async () => {
             <label><select v-model="status" :aria-label="t('orders.filterStatus')" :title="t('filter.orderStatusAll')"><option value="ALL">{{ t('filter.orderStatusAll') }}</option><option value="COMPLETED">{{ t('order.status.completed') }}</option><option value="CANCELLED">{{ t('order.status.cancelled') }}</option></select></label>
           </div>
         </div>
-        <LoadingState v-if="historyLoading && !historyOrders.length" :label="t('orders.loading')" />
-        <ErrorState v-else-if="historyErrorKey && !historyOrders.length" :title="t('error.title')" :description="t(historyErrorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
+        <LoadingState v-if="settlementLoading && !historySettlements.length" :label="t('orders.loading')" />
+        <ErrorState v-else-if="settlementErrorKey && !historySettlements.length" :title="t('error.title')" :description="t(settlementErrorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
         <div v-else-if="filtered.length" class="history-queue__list">
-          <button v-for="item in filtered" :key="item.id" type="button" class="history-order-card" :class="{ 'is-selected': item.id === order?.id }" @click="selectOrder(item.id)">
-            <div class="history-order-card__top"><strong>{{ orderPrimaryLabel(item) }}</strong><OrderStatusBadge :status="item.status" /><b>{{ formatVnd(item.payableAmountVnd || item.totalAmountVnd, locale) }}</b></div>
-            <div class="history-order-card__context"><span>{{ t(`order.type.${orderTypeKey(item.orderType)}`) }}</span><span>{{ orderContext(item) }}</span></div>
-            <div class="history-order-card__footer"><span>{{ t('table.itemCount', { count: orderItemCount(item) }) }}</span><small>{{ formatVietnamDateTime(orderHistoryTime(item), locale) }}</small></div>
+          <button
+            v-for="item in filtered"
+            :key="item.settlementId"
+            type="button"
+            class="history-order-card settlement-card"
+            :class="{ 'is-selected': item.settlementId === settlement?.settlementId }"
+            @click="selectSettlement(item.settlementId)"
+          >
+            <div class="history-order-card__top">
+              <strong>{{ settlementPrimaryLabel(item) }}</strong>
+              <OrderStatusBadge :status="item.status" />
+              <b>{{ formatVnd(item.finalReceivableVnd, locale) }}</b>
+            </div>
+            <div class="history-order-card__context">
+              <span>{{ t(`order.type.${orderTypeKey(item.orderType)}`) }}</span>
+              <span>{{ settlementContext(item) }}</span>
+            </div>
+            <div class="history-order-card__footer">
+              <span class="settlement-card__meta">
+                <span>{{ t('settlement.countOrders', { count: item.orderCount }) }} · {{ t('table.itemCount', { count: item.itemQuantity }) }}</span>
+                <span class="settlement-card__payment">{{ paymentLabel(item.paymentMethod) }}</span>
+              </span>
+              <small>{{ formatVietnamDateTime(item.settledAt, locale) }}</small>
+            </div>
           </button>
         </div>
         <EmptyState v-else :title="t('orders.historyEmptyTitle')" :description="t('orders.historyEmptyDescription')" />
       </aside>
       <main class="history-detail">
         <button type="button" class="mobile-workspace-back" @click="router.push('/orders/history')"><ArrowLeft :size="18" aria-hidden="true" />{{ t('fulfillment.backToList') }}</button>
-        <LoadingState v-if="detailLoading" :label="t('orders.loading')" />
-        <article v-else-if="order" class="history-detail__content">
-          <header class="history-detail__identity"><strong>#{{ order.orderNo }}</strong><span>{{ t(`order.type.${orderTypeKey(order.orderType)}`) }}</span><OrderStatusBadge :status="order.status" /></header>
+        <LoadingState v-if="settlementDetailLoading" :label="t('orders.loading')" />
+        <article v-else-if="settlement" class="history-detail__content">
+          <header class="history-detail__identity">
+            <strong>{{ settlementPrimaryLabel(settlement) }}</strong>
+            <span>{{ t(`order.type.${orderTypeKey(settlement.orderType)}`) }}</span>
+            <OrderStatusBadge :status="settlement.status" />
+          </header>
           <dl class="history-detail__facts">
-            <div><dt>{{ t('fulfillment.duration') }}</dt><dd><WaitDuration :created-at="order.createdAt" :end-at="(order.status === 'COMPLETED' ? order.completedAt : order.cancelledAt) ?? undefined" compact /></dd></div>
-            <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
-            <div v-if="order.status === 'COMPLETED' || order.status === 'CANCELLED'"><dt>{{ order.status === 'COMPLETED' ? t('order.status.completed') : t('order.status.cancelled') }}</dt><dd>{{ formatVietnamDateTime(orderHistoryTime(order), locale) }}</dd></div>
+            <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(settlement.settledAt, locale) }}</dd></div>
+            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate }}</dd></div>
+            <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
           </dl>
-          <FulfillmentProgressRail v-if="order.orderType !== 'DINE_IN'" :order="order" show-current-status />
-          <DeliveryContactPanel v-if="order.orderType === 'DELIVERY'" :order="order" />
-          <OrderItemsSection :order="order" />
-          <section v-if="order.customerRemark" class="workflow-section"><h3>{{ t('order.customerRemark') }}</h3><p>{{ order.customerRemark }}</p></section>
-          <BillSummary :item-amount="order.itemAmountVnd" :delivery-fee="order.deliveryFeeVnd" :total-amount="orderPayableAmount" />
-          <section v-if="BigInt(order.discountAmountVnd || '0') > 0n || order.roundingApplied" class="workflow-section order-checkout-settlement" data-testid="order-settlement-adjustment">
-            <h3>{{ t('table.checkoutSettlement') }}</h3>
-            <dl>
-              <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(order.originalAmountVnd || order.totalAmountVnd, locale) }}</dd></div>
-              <div v-if="BigInt(order.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(order.discountAmountVnd || '0', locale) }}</dd></div>
-              <div v-if="BigInt(order.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(order.roundingAmountVnd || '0', locale) }}</dd></div>
-              <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(orderPayableAmount, locale) }}</dd></div>
+
+          <section class="workflow-section settlement-items-section">
+            <h3>{{ t('order.itemsTitle') }}</h3>
+            <ul class="settlement-item-list">
+              <li v-for="row in mergedSettlementItems(settlement)" :key="row.key" class="settlement-item-row">
+                <div class="settlement-item-row__name">
+                  <span>{{ dishName(row) }}</span>
+                  <small v-if="row.remark">{{ row.remark }}</small>
+                </div>
+                <span class="settlement-item-row__qty">× {{ row.quantity }}</span>
+                <span class="settlement-item-row__amount">{{ formatVnd(row.subtotalVnd, locale) }}</span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="workflow-section settlement-financials" data-testid="settlement-financials">
+            <h3>{{ t('settlement.sessionCheckout') }}</h3>
+            <dl class="settlement-financial-list">
+              <div><dt>{{ t('settlement.originalAmount') }}</dt><dd>{{ formatVnd(settlement.originalAmountVnd, locale) }}</dd></div>
+              <div v-if="BigInt(settlement.discountAmountVnd || '0') > 0n"><dt>{{ t('settlement.tableDiscount') }}</dt><dd>-{{ formatVnd(settlement.discountAmountVnd || '0', locale) }}</dd></div>
+              <div v-if="BigInt(settlement.roundingAmountVnd || '0') > 0n"><dt>{{ t('settlement.tableRounding') }}</dt><dd>-{{ formatVnd(settlement.roundingAmountVnd || '0', locale) }}</dd></div>
+              <div class="settlement-financial-total"><dt>{{ t('settlement.finalReceivable') }}</dt><dd>{{ formatVnd(settlement.finalReceivableVnd, locale) }}</dd></div>
+              <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
             </dl>
           </section>
-          <section v-if="checkoutSettlement" class="workflow-section order-checkout-settlement" data-testid="order-checkout-settlement">
-            <h3>{{ t('table.checkoutSettlement') }}</h3>
-            <dl>
-              <div><dt>{{ t('table.originalAmount') }}</dt><dd>{{ formatVnd(checkoutSettlement.originalAmountVnd, locale) }}</dd></div>
-              <div v-if="BigInt(checkoutSettlement.discountAmountVnd || '0') > 0n"><dt>{{ t('discount.amount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.discountAmountVnd || '0', locale) }}</dd></div>
-              <div v-if="BigInt(checkoutSettlement.roundingAmountVnd || '0') > 0n"><dt>{{ t('table.roundingAmount') }}</dt><dd>-{{ formatVnd(checkoutSettlement.roundingAmountVnd, locale) }}</dd></div>
-              <div><dt>{{ t('discount.finalPayable') }}</dt><dd>{{ formatVnd(checkoutSettlement.finalPayableAmountVnd || checkoutSettlement.payableAmountVnd, locale) }}</dd></div>
-            </dl>
+
+          <section v-if="settlement.sourceOrders.length > 1 || settlement.kind === 'TABLE_SESSION'" class="workflow-section settlement-source-section">
+            <button type="button" class="settlement-source-toggle" :aria-expanded="sourceOrdersOpen" @click="sourceOrdersOpen = !sourceOrdersOpen">
+              <span>{{ t('settlement.containsOrders', { count: settlement.sourceOrders.length }) }}</span>
+              <ChevronDown :size="16" :class="{ 'is-open': sourceOrdersOpen }" aria-hidden="true" />
+            </button>
+            <div v-if="sourceOrdersOpen" class="settlement-source-list">
+              <div v-for="source in settlement.sourceOrders" :key="source.id" class="settlement-source-row">
+                <span class="settlement-source-row__no">#{{ source.orderNo }}</span>
+                <OrderStatusBadge :status="source.status" />
+                <span class="settlement-source-row__amount">{{ formatVnd(source.totalAmountVnd, locale) }}</span>
+                <small>{{ formatVietnamDateTime(source.completedAt || source.cancelledAt || source.createdAt, locale) }}</small>
+              </div>
+            </div>
           </section>
-          <PrintJobActions compact :order-id="order.id" />
+
+          <PrintJobActions v-if="settlement.orderIds.length === 1" compact :order-id="settlement.orderIds[0]" />
         </article>
         <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
       </main>
@@ -275,4 +356,32 @@ onMounted(async () => {
 .summary-open-button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;gap:7px;border:1px solid var(--cashier-border);border-radius:11px;padding:0 13px;background:var(--cashier-surface);color:var(--cashier-action-primary);font:inherit;font-size:13px;font-weight:800;white-space:nowrap;cursor:pointer}
 .summary-open-button:focus-visible{outline:3px solid var(--cashier-green-alpha-35);outline-offset:2px}
 @media(max-width:700px){.summary-open-button{width:100%}}
+
+.settlement-card__meta{display:inline-flex;min-width:0;align-items:center;gap:8px}
+.settlement-card__payment{color:var(--cashier-action-primary, #2e7d32);font-weight:700}
+
+.settlement-item-list{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+.settlement-item-row{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px dashed var(--cashier-border, #e0e8e3)}
+.settlement-item-row:last-child{border-bottom:0}
+.settlement-item-row__name{display:flex;min-width:0;flex:1;flex-direction:column;gap:1px}
+.settlement-item-row__name small{color:#839087;font-size:11px}
+.settlement-item-row__qty{color:#506b5b;font-size:12px;font-weight:700;white-space:nowrap}
+.settlement-item-row__amount{color:#25392d;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.settlement-financial-list{display:flex;flex-direction:column;gap:6px;margin:0}
+.settlement-financial-list>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.settlement-financial-list dt{color:#506b5b;font-size:12px}
+.settlement-financial-list dd{margin:0;color:#25392d;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.settlement-financial-total{border-top:1px solid var(--cashier-border, #e0e8e3);margin-top:4px;padding-top:8px}
+.settlement-financial-total dt{color:#25392d;font-size:13px;font-weight:800}
+.settlement-financial-total dd{color:var(--color-money-strong, #176b43);font-size:15px;font-weight:800}
+
+.settlement-source-toggle{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;color:#506b5b;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.settlement-source-toggle svg{transition:transform .15s ease}
+.settlement-source-toggle svg.is-open{transform:rotate(180deg)}
+.settlement-source-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.settlement-source-row{display:flex;align-items:center;gap:10px;font-size:12px}
+.settlement-source-row__no{min-width:0;overflow:hidden;color:#25392d;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.settlement-source-row__amount{margin-left:auto;color:#25392d;font-variant-numeric:tabular-nums;white-space:nowrap}
+.settlement-source-row small{color:#839087;white-space:nowrap}
 </style>

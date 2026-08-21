@@ -6,6 +6,9 @@ import type {
   MerchantOrderAction,
   MerchantOrderFilters,
   MerchantOrderMutationResult,
+  MerchantSettlement,
+  MerchantSettlementFilters,
+  MerchantSettlementPage,
   ReturnMerchantOrderItemInput,
   SettlementAdjustmentInput,
   PaymentMethod,
@@ -23,6 +26,31 @@ export function listMerchantOrders(filters: MerchantOrderFilters = {}): Promise<
         date: filters.date,
       },
     });
+}
+
+export function listMerchantSettlements(
+  filters: MerchantSettlementFilters = {},
+): Promise<MerchantSettlementPage> {
+  return isDemoSessionActive()
+    ? Promise.resolve(demoRepository.settlements(filters))
+    : requestApi<MerchantSettlementPage>('/merchant/settlements', {
+        query: {
+          status: filters.status,
+          orderType: filters.orderType,
+          date: filters.date,
+          search: filters.search,
+          page: filters.page,
+          pageSize: filters.pageSize,
+        },
+      });
+}
+
+export function getMerchantSettlement(id: string): Promise<MerchantSettlement> {
+  return isDemoSessionActive()
+    ? Promise.resolve(demoRepository.settlement(id))
+    : requestApi<MerchantSettlement>(
+        `/merchant/settlements/${encodeURIComponent(id)}`,
+      );
 }
 
 export function getBusinessDaySummary(businessDate?: string): Promise<BusinessDaySummary> {

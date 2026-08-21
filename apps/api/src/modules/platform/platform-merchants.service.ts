@@ -77,6 +77,7 @@ import {
   type MerchantImportTemplateFieldDefinition,
   type MerchantImportTemplateFieldKey,
 } from './merchant-import-fields';
+import { validateBusinessHoursSchedule as validateSharedBusinessHoursSchedule } from '../../common/utils/merchant-hours';
 
 type MerchantWithOwner = Merchant & {
   businessType?: {
@@ -367,6 +368,8 @@ const IMPORT_BUSINESS_HOURS_FIELD = '营业时间';
 const BUSINESS_HOURS_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const BUSINESS_HOURS_RANGE_PATTERN =
   /^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
+const MAX_PLATFORM_BUSINESS_HOURS_INTERVALS = 2;
+const MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE = 4;
 
 @Injectable()
 export class PlatformMerchantsService {
@@ -1154,6 +1157,7 @@ export class PlatformMerchantsService {
   async updateTags(id: bigint, dto: UpdateMerchantTagsDto) {
     await this.requireMerchant(id);
     const tagIds = parseIdList(dto.promotionTagIds);
+    await this.assertPromotionTagScopeLimits(tagIds);
     const manualPopular = await this.hasPromotionTagCode(tagIds, 'HOT_FOOD');
     await this.prisma.$transaction(async (tx) => {
       await tx.merchantPromotionTag.deleteMany({ where: { merchantId: id } });
@@ -1785,6 +1789,22 @@ export class PlatformMerchantsService {
       where: { id: { in: tagIds }, code },
     });
     return count > 0;
+  }
+
+  private async assertPromotionTagScopeLimits(tagIds: bigint[]) {
+    if (!tagIds.length) return;
+    const tags = await this.prisma.promotionTag.findMany({
+      where: { id: { in: tagIds } },
+      select: { scope: true },
+    });
+    const cuisineCount = tags.filter((tag) => tag.scope === PromotionTagScope.CUISINE).length;
+    const sceneCount = tags.filter((tag) => tag.scope === PromotionTagScope.SCENE).length;
+    if (cuisineCount > MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE) {
+      throw new BadRequestException(`每个商家最多选择 ${MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE} 个菜系标签`);
+    }
+    if (sceneCount > MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE) {
+      throw new BadRequestException(`每个商家最多选择 ${MAX_PLATFORM_DETAIL_TAGS_PER_SCOPE} 个场景标签`);
+    }
   }
 
   private async loadCapabilities() {
@@ -2670,7 +2690,7 @@ function validateBusinessHoursPayload(value: unknown): MerchantImportBusinessHou
     throw new BadRequestException('businessHours must be an object');
   }
 
-  const result: MerchantImportBusinessHours = {};
+  const candidate: MerchantImportBusinessHours = {};
   const allowedKeys = new Set<string>(WEEKDAY_KEYS);
   for (const [weekday, ranges] of Object.entries(value)) {
     if (!allowedKeys.has(weekday)) {
@@ -2679,9 +2699,32 @@ function validateBusinessHoursPayload(value: unknown): MerchantImportBusinessHou
     if (!Array.isArray(ranges)) {
       throw new BadRequestException(`${weekday} 营业时间必须是数组`);
     }
-    result[weekday] = ranges.map((range) => normalizeBusinessHoursRangeOrThrow(range));
+    if (ranges.length > MAX_PLATFORM_BUSINESS_HOURS_INTERVALS) {
+      throw new BadRequestException(`${weekday} 每天最多设置 ${MAX_PLATFORM_BUSINESS_HOURS_INTERVALS} 个营业时段`);
+    }
+    candidate[weekday] = ranges.map((range) => normalizeBusinessHoursRangeOrThrow(range));
   }
-  return result;
+  try {
+    const normalized = validateSharedBusinessHoursSchedule(candidate);
+    return Object.fromEntries(
+      Object.keys(value).map((weekday) => [
+        weekday,
+        normalized[weekday as (typeof WEEKDAY_KEYS)[number]],
+      ]),
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Invalid businessHours';
+    const localized = detail.includes('interval must use')
+      ? '营业时间格式错误，请使用 HH:mm-HH:mm'
+      : detail.includes('start and end cannot be equal')
+        ? '营业时间开始和结束不能相同'
+        : detail.includes('cannot overlap')
+          ? '营业时段不能重叠，包括相邻星期的跨天时段'
+          : detail;
+    throw new BadRequestException(
+      localized,
+    );
+  }
 }
 
 function normalizeBusinessHoursRangeOrThrow(value: unknown) {
@@ -2699,11 +2742,11 @@ function normalizeBusinessHoursRangeOrThrow(value: unknown) {
 }
 
 function normalizeBusinessHoursRangeStringOrThrow(value: string) {
-  const normalized = normalizeBusinessHoursRangeString(value);
-  if (!normalized) {
+  const match = value.match(BUSINESS_HOURS_RANGE_PATTERN);
+  if (!match) {
     throw new BadRequestException('营业时间格式错误，请使用 HH:mm-HH:mm');
   }
-  return normalized;
+  return `${match[1]}:${match[2]}-${match[3]}:${match[4]}`;
 }
 
 function normalizeBusinessHoursRangeString(value: string) {

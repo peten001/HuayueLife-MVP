@@ -63,7 +63,9 @@ describe('cross-service Business Date contract', () => {
     expect(summary.orderCount).toBe(6);
     expect(adminSummary.statusBreakdown.COMPLETED).toBe(6);
     expect(adminSummary.COMPLETED.count).toBe(6);
-    expect(analytics.overview.orderCount).toBe(6);
+    // Analytics counts settlements, not raw orders: the closed session 201
+    // (orders 101+102) is one checkout, so 6 raw orders -> 5 settlement facts.
+    expect(analytics.overview.settlementCount).toBe(5);
     expect(adminCompletedRows).toHaveLength(6);
     expect(adminRows).toHaveLength(8);
     expect(adminSummary.ALL.count).toBe(8);

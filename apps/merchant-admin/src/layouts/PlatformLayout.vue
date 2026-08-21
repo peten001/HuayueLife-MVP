@@ -17,20 +17,13 @@ const nav: Array<{ path: string; label: string; icon: string }> = [
   { path: '/platform/users', label: '用户管理', icon: '客' },
   { path: '/platform/settings', label: '系统设置', icon: '设' },
 ];
-const merchantEditSections = [
-  { key: 'profile', label: '基础资料' },
-  { key: 'location', label: '地址与定位' },
-  { key: 'content', label: '品牌与内容' },
+const merchantEditSections: Array<{ key: string; label: string; danger?: boolean }> = [
+  { key: 'profile', label: '商家资料' },
   { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '商家图库' },
-  { key: 'signatureDishes', label: '招牌菜' },
-  { key: 'visibility', label: '前台展示' },
-  { key: 'hot', label: '热门推荐' },
-  { key: 'tags', label: '运营标签' },
-  { key: 'display-tags', label: '详情标签' },
-  { key: 'capabilities', label: '能力开关' },
-  { key: 'account', label: '商家账号' },
-  { key: 'danger', label: '危险操作', danger: true },
+  { key: 'images', label: '图库与招牌菜' },
+  { key: 'tags', label: '标签与推荐' },
+  { key: 'capabilities', label: '能力设置' },
+  { key: 'account', label: '账号与状态' },
 ];
 
 const adminName = computed(() => admin?.username?.trim() || '平台管理员');

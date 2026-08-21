@@ -79,7 +79,7 @@ type ImageUploadIntent =
   | { mode: 'CREATE'; imageType: PlatformMerchantImage['imageType'] }
   | { mode: 'REPLACE'; imageType: PlatformMerchantImage['imageType']; imageId: string };
 const imageUploadIntent = ref<ImageUploadIntent | null>(null);
-const imageOperation = ref<'SAVE' | 'REPLACE' | 'DELETE' | 'PRIMARY' | null>(null);
+const imageOperation = ref<'REPLACE' | 'DELETE' | 'PRIMARY' | null>(null);
 const imageMessage = ref('');
 const imageMessageIsSuccess = computed(() =>
   !/(?:失败|错误)/.test(imageMessage.value)
@@ -119,8 +119,17 @@ const BUSINESS_HOURS_WEEKDAYS = [
   'saturday',
   'sunday',
 ] as const;
+type BusinessWeekday = (typeof BUSINESS_HOURS_WEEKDAYS)[number];
+type BusinessInterval = { start: string; end: string };
+type BusinessDaySchedule = {
+  key: BusinessWeekday;
+  enabled: boolean;
+  intervals: BusinessInterval[];
+};
 const DEFAULT_BUSINESS_HOURS_START = '10:00';
 const DEFAULT_BUSINESS_HOURS_END = '22:00';
+const MAX_BUSINESS_HOURS_INTERVALS = 2;
+const DETAIL_TAG_LIMIT = 4;
 const ORDERING_CAPABILITY_CODES = new Set([
   'onlineOrderEnabled',
   'pickupEnabled',
@@ -135,9 +144,7 @@ const ORDERING_CAPABILITY_CODES = new Set([
   'orderChatEnabled',
   'zaloReportEnabled',
 ]);
-const businessHoursStart = ref(DEFAULT_BUSINESS_HOURS_START);
-const businessHoursEnd = ref(DEFAULT_BUSINESS_HOURS_END);
-const businessHoursSaving = ref(false);
+const businessHoursSchedule = ref<BusinessDaySchedule[]>(createDefaultBusinessHoursSchedule());
 const businessHoursMessage = ref('');
 
 const profileForm = reactive({
@@ -182,8 +189,9 @@ const profileFormSnapshot = reactive({
   descriptionVi: '',
   descriptionEn: '',
 });
-const businessHoursSnapshot = reactive({ start: DEFAULT_BUSINESS_HOURS_START, end: DEFAULT_BUSINESS_HOURS_END });
+const businessHoursSnapshot = ref('');
 const tagsSnapshot = ref<string[]>([]);
+const imageSettingsSnapshot = ref<Record<string, { sortOrder: number; isVisible: boolean }>>({});
 const provinceOptions = ['北江', '北宁'] as const;
 const capabilityValues = reactive<Record<string, boolean>>({});
 const capabilityServerValues = ref<Record<string, boolean>>({});
@@ -236,19 +244,12 @@ const usesMenuSignatureCategory = computed(() =>
 const printingSummary = computed(() => detail.value?.printingSummary);
 const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
-  { key: 'profile', label: '基础资料' },
-  { key: 'location', label: '地址与定位' },
-  { key: 'content', label: '品牌与内容' },
+  { key: 'profile', label: '商家资料' },
   { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '商家图库' },
-  { key: 'signatureDishes', label: '招牌菜' },
-  { key: 'tags', label: '运营标签' },
-  { key: 'display-tags', label: '详情标签' },
-  { key: 'visibility', label: '前台展示' },
-  { key: 'hot', label: '热门推荐' },
-  { key: 'capabilities', label: '能力开关' },
-  { key: 'account', label: '商家账号' },
-  { key: 'danger', label: '危险操作', danger: true },
+  { key: 'images', label: '图库与招牌菜' },
+  { key: 'tags', label: '标签与推荐' },
+  { key: 'capabilities', label: '能力设置' },
+  { key: 'account', label: '账号与状态' },
 ];
 type CapabilityCard = {
   code: string;
@@ -455,23 +456,40 @@ const selectedDetailTagCount = computed(() => {
   return selectedTagIds.value.filter((id) => consumerIds.has(id)).length;
 });
 const selectedCuisineTags = computed(() =>
-  cuisinePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
+  managedCuisinePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
 );
 const selectedSceneTags = computed(() =>
-  scenePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
+  managedScenePromotionTags.value.filter((tag) => selectedTagIds.value.includes(tag.id)),
 );
 const frontendDetailTagIds = computed(() =>
   new Set([
-    ...selectedCuisineTags.value.slice(0, 2).map((tag) => tag.id),
-    ...selectedSceneTags.value.slice(0, 2).map((tag) => tag.id),
+    ...selectedCuisineTags.value.slice(0, DETAIL_TAG_LIMIT).map((tag) => tag.id),
+    ...selectedSceneTags.value.slice(0, DETAIL_TAG_LIMIT).map((tag) => tag.id),
   ]),
 );
 const hasDetailTagOverflow = computed(() =>
-  selectedCuisineTags.value.length > 2 || selectedSceneTags.value.length > 2,
+  selectedCuisineTags.value.length > DETAIL_TAG_LIMIT
+  || selectedSceneTags.value.length > DETAIL_TAG_LIMIT,
 );
 function detailTagDisplayState(tagId: string) {
   if (!selectedTagIds.value.includes(tagId)) return '';
   return frontendDetailTagIds.value.has(tagId) ? 'is-frontend-visible' : 'is-over-limit';
+}
+function toggleDetailTag(tag: PlatformPromotionTag, checked: boolean) {
+  if (!checked) {
+    selectedTagIds.value = selectedTagIds.value.filter((id) => id !== tag.id);
+    message.value = '';
+    return;
+  }
+  const selectedInScope = tag.scope === 'CUISINE'
+    ? selectedCuisineTags.value
+    : selectedSceneTags.value;
+  if (selectedInScope.length >= DETAIL_TAG_LIMIT) {
+    message.value = `${tag.scope === 'CUISINE' ? '菜系' : '场景'}最多选择 ${DETAIL_TAG_LIMIT} 个`;
+    return;
+  }
+  selectedTagIds.value = Array.from(new Set([...selectedTagIds.value, tag.id]));
+  message.value = '';
 }
 const promotionTagDialogTitle = computed(() => {
   const prefix = editingPromotionTag.value ? '编辑' : '新增';
@@ -507,8 +525,7 @@ const qrOrderNeedsTableManagement = computed(
 const platformOrderingEnabled = computed(() =>
   Boolean(platformSettings.value?.platformOrderingEnabled),
 );
-const hasUnsavedChanges = computed(() => {
-  const profileChanged = (
+const profileChanged = computed(() => (
     profileForm.nameZh !== profileFormSnapshot.nameZh
     || profileForm.nameVi !== profileFormSnapshot.nameVi
     || profileForm.nameEn !== profileFormSnapshot.nameEn
@@ -525,20 +542,32 @@ const hasUnsavedChanges = computed(() => {
     || profileForm.descriptionZh !== profileFormSnapshot.descriptionZh
     || profileForm.descriptionVi !== profileFormSnapshot.descriptionVi
     || profileForm.descriptionEn !== profileFormSnapshot.descriptionEn
-  );
-  const hoursChanged = (
-    businessHoursStart.value !== businessHoursSnapshot.start
-    || businessHoursEnd.value !== businessHoursSnapshot.end
-  );
-  const tagsChanged = (
+));
+const businessHoursChanged = computed(() => (
+  !isClaimedMerchant.value
+  && serializeBusinessHoursSchedule(businessHoursSchedule.value) !== businessHoursSnapshot.value
+));
+const tagsChanged = computed(() => (
     selectedTagIds.value.length !== tagsSnapshot.value.length
     || [...selectedTagIds.value].sort().join('|') !== [...tagsSnapshot.value].sort().join('|')
-  );
-  const capabilitiesChanged = Object.keys(capabilityValues).some(
+));
+const capabilitiesChanged = computed(() => Object.keys(capabilityValues).some(
     (code) => capabilityServerValues.value[code] !== capabilityValues[code],
-  );
-  return profileChanged || hoursChanged || tagsChanged || capabilitiesChanged;
-});
+));
+const dirtyImages = computed(() => contentImages.value.filter((image) => {
+  const snapshot = imageSettingsSnapshot.value[image.id];
+  return Boolean(snapshot && (
+    snapshot.sortOrder !== Number(image.sortOrder)
+    || snapshot.isVisible !== image.isVisible
+  ));
+}));
+const hasUnsavedChanges = computed(() => (
+  profileChanged.value
+  || businessHoursChanged.value
+  || tagsChanged.value
+  || capabilitiesChanged.value
+  || dirtyImages.value.length > 0
+));
 
 onMounted(loadPage);
 watch(
@@ -611,6 +640,16 @@ async function loadPage() {
   }
 }
 
+async function refreshDetailPreservingDraft() {
+  detail.value = await getPlatformMerchantDetail(merchantId.value);
+  imageSettingsSnapshot.value = Object.fromEntries(
+    detail.value.merchant.images.map((image) => [image.id, {
+      sortOrder: Number(image.sortOrder),
+      isVisible: image.isVisible,
+    }]),
+  );
+}
+
 function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   const item = nextDetail.merchant;
   profileForm.nameZh = item.nameZh ?? '';
@@ -653,12 +692,15 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
     descriptionVi: profileForm.descriptionVi,
     descriptionEn: profileForm.descriptionEn,
   });
-  const businessHours = parseBusinessHours(item.businessHours);
-  businessHoursStart.value = businessHours.start;
-  businessHoursEnd.value = businessHours.end;
-  businessHoursSnapshot.start = businessHours.start;
-  businessHoursSnapshot.end = businessHours.end;
+  businessHoursSchedule.value = parseBusinessHours(item.businessHours);
+  businessHoursSnapshot.value = serializeBusinessHoursSchedule(businessHoursSchedule.value);
   businessHoursMessage.value = '';
+  imageSettingsSnapshot.value = Object.fromEntries(
+    item.images.map((image) => [image.id, {
+      sortOrder: Number(image.sortOrder),
+      isVisible: image.isVisible,
+    }]),
+  );
   selectedTagIds.value = item.promotionTags.map((tag) => tag.id);
   tagsSnapshot.value = [...selectedTagIds.value];
   Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
@@ -675,56 +717,127 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   capabilityServerValues.value = { ...capabilityValues };
 }
 
-function parseBusinessHours(value: PlatformBusinessHours | undefined) {
-  const defaults = {
-    start: DEFAULT_BUSINESS_HOURS_START,
-    end: DEFAULT_BUSINESS_HOURS_END,
-  };
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return defaults;
-  }
-
-  const weekdayOrder = ['monday', ...BUSINESS_HOURS_WEEKDAYS.filter((day) => day !== 'monday')] as const;
-  for (const weekday of weekdayOrder) {
-    const ranges = value[weekday];
-    if (!Array.isArray(ranges) || ranges.length === 0) continue;
-    const parsed = parseBusinessHoursRange(ranges[0]);
-    if (!parsed) {
-      continue;
-    }
-    return parsed;
-  }
-  return defaults;
+function createDefaultBusinessHoursSchedule(): BusinessDaySchedule[] {
+  return BUSINESS_HOURS_WEEKDAYS.map((key) => ({
+    key,
+    enabled: true,
+    intervals: [{
+      start: DEFAULT_BUSINESS_HOURS_START,
+      end: DEFAULT_BUSINESS_HOURS_END,
+    }],
+  }));
 }
 
-function parseBusinessHoursRange(value: string | undefined) {
+function parseBusinessHours(value: PlatformBusinessHours | undefined): BusinessDaySchedule[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return createDefaultBusinessHoursSchedule();
+  }
+  return BUSINESS_HOURS_WEEKDAYS.map((key) => {
+    const intervals = (Array.isArray(value[key]) ? value[key] : [])
+      .map(parseBusinessHoursRange)
+      .filter((interval): interval is BusinessInterval => Boolean(interval))
+      .slice(0, MAX_BUSINESS_HOURS_INTERVALS);
+    return {
+      key,
+      enabled: intervals.length > 0,
+      intervals: intervals.length
+        ? intervals
+        : [{ start: DEFAULT_BUSINESS_HOURS_START, end: DEFAULT_BUSINESS_HOURS_END }],
+    };
+  });
+}
+
+function parseBusinessHoursRange(value: string | undefined): BusinessInterval | null {
   const match = value?.match(/^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/);
   if (!match) return null;
   const start = `${match[1]}:${match[2]}`;
   const end = `${match[3]}:${match[4]}`;
-  if (timeToMinutes(end) <= timeToMinutes(start)) return null;
+  if (start === end) return null;
   return { start, end };
 }
 
 function validateBusinessHoursSchedule() {
-  const start = businessHoursStart.value;
-  const end = businessHoursEnd.value;
-  if (!start || !end) return '请填写开始时间和结束时间';
-  if (!isValidBusinessTime(start) || !isValidBusinessTime(end)) {
-    return '时间格式无效，请使用 24 小时制';
+  const weekly: Array<{ id: string; start: number; end: number }> = [];
+  for (const [dayIndex, day] of businessHoursSchedule.value.entries()) {
+    if (!day.enabled) continue;
+    const dayName = businessWeekdayLabel(day.key);
+    if (!day.intervals.length) return `${dayName}：请至少保留一个营业时段`;
+    if (day.intervals.length > MAX_BUSINESS_HOURS_INTERVALS) {
+      return `${dayName}：每天最多设置 ${MAX_BUSINESS_HOURS_INTERVALS} 个营业时段`;
+    }
+    for (const [index, interval] of day.intervals.entries()) {
+      if (!isValidBusinessTime(interval.start) || !isValidBusinessTime(interval.end)) {
+        return `${dayName}：第 ${index + 1} 个时段格式无效，请使用 24 小时制`;
+      }
+      const start = timeToMinutes(interval.start);
+      const end = timeToMinutes(interval.end);
+      if (start === end) return `${dayName}：开始时间和结束时间不能相同`;
+      weekly.push({
+        id: `${day.key}:${index}`,
+        start: dayIndex * 1440 + start,
+        end: dayIndex * 1440 + end + (end < start ? 1440 : 0),
+      });
+    }
   }
-  if (timeToMinutes(end) <= timeToMinutes(start)) {
-    return '结束时间必须晚于开始时间';
+  for (const interval of weekly) {
+    for (const other of weekly) {
+      if (interval.id === other.id) continue;
+      for (const offset of [-10080, 0, 10080]) {
+        if (Math.max(interval.start, other.start + offset) < Math.min(interval.end, other.end + offset)) {
+          return '营业时段不能重叠，包括相邻星期的跨天时段';
+        }
+      }
+    }
   }
   return '';
 }
 
 function buildBusinessHoursPayload(): PlatformBusinessHours {
-  const range = `${businessHoursStart.value}-${businessHoursEnd.value}`;
-  return BUSINESS_HOURS_WEEKDAYS.reduce<PlatformBusinessHours>((acc, weekday) => {
-    acc[weekday] = [range];
-    return acc;
-  }, {});
+  return Object.fromEntries(businessHoursSchedule.value.map((day) => [
+    day.key,
+    day.enabled
+      ? [...day.intervals]
+        .sort((left, right) => timeToMinutes(left.start) - timeToMinutes(right.start))
+        .map((interval) => `${interval.start}-${interval.end}`)
+      : [],
+  ]));
+}
+
+function serializeBusinessHoursSchedule(value: BusinessDaySchedule[]) {
+  return JSON.stringify(Object.fromEntries(value.map((day) => [
+    day.key,
+    day.enabled ? day.intervals : [],
+  ])));
+}
+
+function businessWeekdayLabel(value: BusinessWeekday) {
+  return ({
+    monday: '星期一',
+    tuesday: '星期二',
+    wednesday: '星期三',
+    thursday: '星期四',
+    friday: '星期五',
+    saturday: '星期六',
+    sunday: '星期日',
+  })[value];
+}
+
+function addBusinessHoursInterval(day: BusinessDaySchedule) {
+  if (day.intervals.length >= MAX_BUSINESS_HOURS_INTERVALS) return;
+  day.intervals.push({ start: '17:00', end: '22:00' });
+}
+
+function removeBusinessHoursInterval(day: BusinessDaySchedule, index: number) {
+  if (day.intervals.length === 1) {
+    businessHoursMessage.value = '如需全天休息，请关闭该日营业状态';
+    return;
+  }
+  day.intervals.splice(index, 1);
+  businessHoursMessage.value = '';
+}
+
+function businessHoursCrossesMidnight(interval: BusinessInterval) {
+  return timeToMinutes(interval.end) < timeToMinutes(interval.start);
 }
 
 function isValidBusinessTime(value: string) {
@@ -804,7 +917,7 @@ async function onImageSelected(event: Event) {
       );
       successMessage = '商家图库图片已添加';
     }
-    await loadPage();
+    await refreshDetailPreservingDraft();
     imageMessage.value = cleanupSucceeded
       ? successMessage
       : `${successMessage}；旧文件清理失败，请联系管理员检查存储。`;
@@ -820,27 +933,6 @@ async function onImageSelected(event: Event) {
   }
 }
 
-async function saveMerchantImage(image: PlatformMerchantImage) {
-  imageSavingId.value = image.id;
-  imageOperation.value = 'SAVE';
-  message.value = '';
-  imageMessage.value = '';
-  try {
-    await updatePlatformMerchantImage(merchantId.value, image.id, {
-      imageType: image.imageType,
-      sortOrder: Number(image.sortOrder),
-      isVisible: image.isVisible,
-    });
-    await loadPage();
-    imageMessage.value = '图片排序与展示状态已保存';
-  } catch (error) {
-    imageMessage.value = errorMessage(error);
-  } finally {
-    imageSavingId.value = null;
-    imageOperation.value = null;
-  }
-}
-
 async function removeMerchantImage(image: PlatformMerchantImage) {
   if (!window.confirm('永久删除这张图库图片？\n删除后小程序对应图片会消失，记录与未被引用的物理文件不可恢复。')) return;
   imageSavingId.value = image.id;
@@ -849,7 +941,7 @@ async function removeMerchantImage(image: PlatformMerchantImage) {
   imageMessage.value = '';
   try {
     const result = await deletePlatformMerchantImage(merchantId.value, image.id);
-    await loadPage();
+    await refreshDetailPreservingDraft();
     imageMessage.value = result.storageCleanupSucceeded
       ? '图库图片已删除'
       : '图库图片已删除；物理文件清理失败，请联系管理员检查存储。';
@@ -870,7 +962,7 @@ async function removePrimaryImage(imageType: 'LOGO' | 'COVER') {
   imageMessage.value = '';
   try {
     const result = await deletePlatformMerchantPrimaryImage(merchantId.value, imageType);
-    await loadPage();
+    await refreshDetailPreservingDraft();
     imageMessage.value = result.storageCleanupSucceeded
       ? `${label}已删除`
       : `${label}已删除；物理文件清理失败，请联系管理员检查存储。`;
@@ -882,130 +974,151 @@ async function removePrimaryImage(imageType: 'LOGO' | 'COVER') {
   }
 }
 
-async function saveProfile() {
-  saving.value = true;
-  message.value = '';
-  try {
-    if (!profileForm.nameZh.trim() || !profileForm.nameVi.trim() || !profileForm.nameEn.trim()) {
-      message.value = '请完整填写中文名称、越南语名称和英文名称';
-      return;
-    }
-    if (!profileForm.businessTypeId) {
-      message.value = '请选择经营类型';
-      return;
-    }
-    if (!profileForm.contactPhone.trim() || !profileForm.contactName.trim()) {
-      message.value = '请完整填写联系电话和联系人';
-      return;
-    }
-    if (!profileForm.province.trim() || !profileForm.addressZh.trim()) {
-      message.value = '请完整填写省份和详细地址';
-      return;
-    }
-    if (!Number.isFinite(Number(profileForm.latitude)) || !Number.isFinite(Number(profileForm.longitude))) {
-      message.value = '请填写有效的纬度和经度';
-      return;
-    }
-    await updatePlatformMerchant(merchantId.value, {
-      nameZh: profileForm.nameZh,
-      nameVi: profileForm.nameVi || undefined,
-      nameEn: profileForm.nameEn || undefined,
-      businessTypeId: profileForm.businessTypeId || null,
-      contactPhone: profileForm.contactPhone,
-      contactName: profileForm.contactName || undefined,
-      province: profileForm.province || undefined,
-      city: profileForm.province || undefined,
-      addressZh: profileForm.addressZh,
-      addressVi: profileForm.addressVi,
-      addressEn: profileForm.addressEn,
-      latitude: Number(profileForm.latitude),
-      longitude: Number(profileForm.longitude),
-      openingHoursText: profileForm.openingHoursText,
-      descriptionZh: profileForm.descriptionZh,
-      descriptionVi: profileForm.descriptionVi,
-      descriptionEn: profileForm.descriptionEn,
+function moveMerchantImage(image: PlatformMerchantImage, direction: -1 | 1) {
+  const section = contentImageSections.value.find((item) => item.type === image.imageType);
+  if (!section) return;
+  const index = section.images.findIndex((item) => item.id === image.id);
+  const target = section.images[index + direction];
+  if (!target) return;
+  let currentOrder = Number(image.sortOrder);
+  if (currentOrder === Number(target.sortOrder)) {
+    section.images.forEach((item, position) => {
+      item.sortOrder = position + 1;
     });
-    await loadPage();
-    message.value = '基础资料已保存';
-  } catch (error) {
-    message.value = errorMessage(error);
-  } finally {
-    saving.value = false;
+    currentOrder = Number(image.sortOrder);
   }
+  image.sortOrder = Number(target.sortOrder);
+  target.sortOrder = currentOrder;
 }
 
-async function saveBusinessHours() {
+function validatePageDraft() {
+  if (!profileForm.nameZh.trim() || !profileForm.nameVi.trim() || !profileForm.nameEn.trim()) {
+    return '请完整填写中文名称、越南语名称和英文名称';
+  }
+  if (!profileForm.businessTypeId) return '请选择经营类型';
+  if (!profileForm.contactPhone.trim() || !profileForm.contactName.trim()) {
+    return '请完整填写联系电话和联系人';
+  }
+  if (!profileForm.province.trim() || !profileForm.addressZh.trim()) {
+    return '请完整填写省份和详细地址';
+  }
+  if (!Number.isFinite(Number(profileForm.latitude)) || !Number.isFinite(Number(profileForm.longitude))) {
+    return '请填写有效的纬度和经度';
+  }
+  if (selectedCuisineTags.value.length > DETAIL_TAG_LIMIT) {
+    return `菜系最多选择 ${DETAIL_TAG_LIMIT} 个，请先取消多余选项`;
+  }
+  if (selectedSceneTags.value.length > DETAIL_TAG_LIMIT) {
+    return `场景最多选择 ${DETAIL_TAG_LIMIT} 个，请先取消多余选项`;
+  }
+  if (!isClaimedMerchant.value) {
+    const hoursValidation = validateBusinessHoursSchedule();
+    if (hoursValidation) return hoursValidation;
+  }
+  return '';
+}
+
+function profilePayload() {
+  return {
+    nameZh: profileForm.nameZh,
+    nameVi: profileForm.nameVi || undefined,
+    nameEn: profileForm.nameEn || undefined,
+    businessTypeId: profileForm.businessTypeId || null,
+    contactPhone: profileForm.contactPhone,
+    contactName: profileForm.contactName || undefined,
+    province: profileForm.province || undefined,
+    city: profileForm.province || undefined,
+    addressZh: profileForm.addressZh,
+    addressVi: profileForm.addressVi,
+    addressEn: profileForm.addressEn,
+    latitude: Number(profileForm.latitude),
+    longitude: Number(profileForm.longitude),
+    openingHoursText: profileForm.openingHoursText,
+    descriptionZh: profileForm.descriptionZh,
+    descriptionVi: profileForm.descriptionVi,
+    descriptionEn: profileForm.descriptionEn,
+  };
+}
+
+function capabilityPayload() {
+  return Object.entries(capabilityValues)
+    .filter(([code]) => (
+      code === 'printerEnabled'
+      || platformOrderingEnabled.value
+      || !ORDERING_CAPABILITY_CODES.has(code)
+    ))
+    .map(([code, isEnabled]) => ({ code, isEnabled }));
+}
+
+async function saveAllChanges() {
+  message.value = '';
   businessHoursMessage.value = '';
-  message.value = '';
-  if (isClaimedMerchant.value) {
-    businessHoursMessage.value = '已认领商家的营业时间以商家后台设置为准';
-    return;
-  }
-  const validation = validateBusinessHoursSchedule();
+  const validation = validatePageDraft();
   if (validation) {
-    businessHoursMessage.value = validation;
+    message.value = validation;
+    return;
+  }
+  if (!hasUnsavedChanges.value) {
+    message.value = '当前没有需要保存的修改';
     return;
   }
 
-  businessHoursSaving.value = true;
-  try {
-    await updatePlatformMerchantBusinessHours(
-      merchantId.value,
-      buildBusinessHoursPayload(),
-    );
-    await loadPage();
-    businessHoursMessage.value = '营业时间已保存';
-  } catch (error) {
-    businessHoursMessage.value = errorMessage(error);
-  } finally {
-    businessHoursSaving.value = false;
+  const tasks: Array<{ label: string; run: Promise<unknown> }> = [];
+  if (profileChanged.value) {
+    tasks.push({ label: '商家资料', run: updatePlatformMerchant(merchantId.value, profilePayload()) });
   }
-}
+  if (businessHoursChanged.value) {
+    tasks.push({
+      label: '营业时间',
+      run: updatePlatformMerchantBusinessHours(merchantId.value, buildBusinessHoursPayload()),
+    });
+  }
+  if (tagsChanged.value) {
+    tasks.push({
+      label: '标签配置',
+      run: updatePlatformMerchantTags(merchantId.value, [...selectedTagIds.value]),
+    });
+  }
+  if (capabilitiesChanged.value) {
+    tasks.push({
+      label: '能力设置',
+      run: updatePlatformMerchantCapabilities(merchantId.value, capabilityPayload()),
+    });
+  }
+  for (const image of dirtyImages.value) {
+    tasks.push({
+      label: `${CONTENT_IMAGE_SECTION_CONFIG.find((item) => item.type === image.imageType)?.title ?? '图库'}图片`,
+      run: updatePlatformMerchantImage(merchantId.value, image.id, {
+        imageType: image.imageType,
+        sortOrder: Number(image.sortOrder),
+        isVisible: image.isVisible,
+      }),
+    });
+  }
 
-async function saveCapabilities() {
   saving.value = true;
-  message.value = '';
   try {
-    const capabilityPayload = Object.entries(capabilityValues)
-      .filter(([code]) => (
-        code === 'printerEnabled'
-        || platformOrderingEnabled.value
-        || !ORDERING_CAPABILITY_CODES.has(code)
-      ))
-      .map(([code, isEnabled]) => ({ code, isEnabled }));
-    await updatePlatformMerchantCapabilities(
-      merchantId.value,
-      capabilityPayload,
-    );
-    await loadPage();
-    if (detail.value) {
-      message.value = platformOrderingEnabled.value
-        ? '能力配置已保存'
-        : '展示和打印能力已保存，其他经营能力因平台总开关关闭未修改';
+    const results = await Promise.allSettled(tasks.map((task) => task.run));
+    const failures = results.flatMap((result, index) => (
+      result.status === 'rejected'
+        ? [`${tasks[index].label}：${errorMessage(result.reason)}`]
+        : []
+    ));
+    if (failures.length) {
+      message.value = `部分保存失败：${failures.join('；')}。已成功的项目可安全重复保存。`;
+      return;
     }
-  } catch (error) {
-    const failureMessage = errorMessage(error);
-    Object.keys(capabilityValues).forEach((key) => delete capabilityValues[key]);
-    Object.assign(capabilityValues, capabilityServerValues.value);
     await loadPage();
-    message.value = failureMessage;
+    message.value = '全部修改已保存';
   } finally {
     saving.value = false;
   }
 }
 
-async function saveTags() {
-  saving.value = true;
-  message.value = '';
-  try {
-    await updatePlatformMerchantTags(merchantId.value, [...selectedTagIds.value]);
-    await loadPage();
-    message.value = '标签配置已保存';
-  } catch (error) {
-    message.value = errorMessage(error);
-  } finally {
-    saving.value = false;
-  }
+async function resetPageDraft() {
+  if (!hasUnsavedChanges.value) return;
+  await loadPage();
+  message.value = '未保存的修改已重置；已完成的上传、替换和删除不会撤销';
 }
 
 function promotionTagScopeLabel(scope: PromotionTagScope) {
@@ -1401,11 +1514,11 @@ function backToList() {
         class="editor-button is-ghost"
         type="button"
         :disabled="!detail || !hasUnsavedChanges"
-        title="重置资料、营业时间、标签与能力的未保存改动；不撤销已完成的图片操作"
-        @click="detail && assignForms(detail)"
+        title="重置资料、营业时间、标签、能力与图片设置的未保存改动；不撤销已完成的图片操作"
+        @click="resetPageDraft"
       >重置</button>
-      <button class="editor-button is-primary" type="button" :disabled="saving || !merchant" @click="saveProfile">
-        {{ saving ? '保存中…' : '保存商家资料' }}
+      <button class="editor-button is-primary" type="button" :disabled="saving || !merchant || !hasUnsavedChanges" @click="saveAllChanges">
+        {{ saving ? '保存中…' : '保存全部修改' }}
       </button>
     </div>
   </header>
@@ -1439,13 +1552,23 @@ function backToList() {
       </div>
     </section>
 
+    <nav class="merchant-workspace-nav" aria-label="商家编辑分区">
+      <button
+        v-for="section in sections"
+        :key="section.key"
+        type="button"
+        :class="{ 'is-active': activeSection === section.key }"
+        @click="switchSection(section.key)"
+      >{{ section.label }}</button>
+    </nav>
+
     <section class="merchant-editor-layout">
       <div class="merchant-editor-panel">
         <section id="merchant-section-profile" class="editor-section">
           <header class="editor-section-head">
             <div><h2>基础资料</h2><p>维护商家名称、经营类型和联系人信息</p></div>
           </header>
-          <form class="editor-form-grid" @submit.prevent="saveProfile">
+          <form class="editor-form-grid" @submit.prevent="saveAllChanges">
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
             <label><span>越南语名称 <b>*</b></span><input v-model="profileForm.nameVi" required maxlength="120" /></label>
             <label><span>英文名称 <b>*</b></span><input v-model="profileForm.nameEn" required maxlength="120" /></label>
@@ -1489,19 +1612,39 @@ function backToList() {
 
         <section id="merchant-section-businessHours" class="editor-section">
           <header class="editor-section-head">
-            <div><h2>营业时间</h2><p>用于小程序判断“营业中 / 休息中”，展示文案仍由基础资料中的营业时间文案单独维护。</p></div>
-            <button v-if="!isClaimedMerchant" class="editor-button is-secondary" type="button" :disabled="businessHoursSaving" @click="saveBusinessHours">
-              {{ businessHoursSaving ? '保存中…' : '保存营业时间' }}
-            </button>
+            <div><h2>营业时间</h2><p>每天最多 2 个时段；结束早于开始表示跨天。时区固定为 Asia/Ho_Chi_Minh（UTC+7）。</p></div>
+            <span class="section-save-hint">随页面统一保存</span>
           </header>
           <p v-if="isClaimedMerchant" class="editor-helper">已认领商家的营业时间以商家后台设置为准，平台后台仅展示当前设置，不允许覆盖。</p>
-          <div class="business-hours-row">
-            <label class="business-hours-field"><span>开始时间</span><input v-model="businessHoursStart" type="time" :disabled="isClaimedMerchant" :step="60" /></label>
-            <span class="business-hours-separator" aria-hidden="true">–</span>
-            <label class="business-hours-field"><span>结束时间</span><input v-model="businessHoursEnd" type="time" :disabled="isClaimedMerchant" :step="60" /></label>
-            <span class="business-hours-preview">{{ isClaimedMerchant ? '当前营业时间' : '保存后将应用到每天' }}：{{ businessHoursStart }}-{{ businessHoursEnd }}</span>
+          <div class="business-hours-table">
+            <div class="business-hours-table-head" aria-hidden="true">
+              <span>星期</span><span>营业</span><span>营业时段</span><span>操作</span>
+            </div>
+            <div v-for="day in businessHoursSchedule" :key="day.key" class="business-hours-day">
+              <strong>{{ businessWeekdayLabel(day.key) }}</strong>
+              <label class="business-hours-switch">
+                <input v-model="day.enabled" type="checkbox" :disabled="isClaimedMerchant" :aria-label="`${businessWeekdayLabel(day.key)}营业状态`" />
+                <span>{{ day.enabled ? '营业' : '休息' }}</span>
+              </label>
+              <div v-if="day.enabled" class="business-hours-intervals">
+                <div v-for="(interval, index) in day.intervals" :key="index" class="business-hours-interval">
+                  <input v-model="interval.start" type="time" :disabled="isClaimedMerchant" :step="60" :aria-label="`${businessWeekdayLabel(day.key)}第${index + 1}时段开始`" />
+                  <span>{{ businessHoursCrossesMidnight(interval) ? '至次日' : '—' }}</span>
+                  <input v-model="interval.end" type="time" :disabled="isClaimedMerchant" :step="60" :aria-label="`${businessWeekdayLabel(day.key)}第${index + 1}时段结束`" />
+                  <button v-if="!isClaimedMerchant" type="button" class="interval-action is-remove" :aria-label="`删除${businessWeekdayLabel(day.key)}第${index + 1}时段`" @click="removeBusinessHoursInterval(day, index)">×</button>
+                </div>
+              </div>
+              <span v-else class="business-hours-closed">全天休息</span>
+              <button
+                v-if="!isClaimedMerchant && day.enabled"
+                type="button"
+                class="interval-action is-add"
+                :disabled="day.intervals.length >= MAX_BUSINESS_HOURS_INTERVALS"
+                @click="addBusinessHoursInterval(day)"
+              >{{ day.intervals.length >= MAX_BUSINESS_HOURS_INTERVALS ? '已达 2 段' : '+ 时段' }}</button>
+            </div>
           </div>
-          <p v-if="!isClaimedMerchant" class="editor-helper">未填写历史营业时间时，页面默认回填每天 10:00-22:00；只有点击保存后才会写入数据库。</p>
+          <p v-if="!isClaimedMerchant" class="editor-helper">未填写历史营业时间时默认回填每天 10:00-22:00；跨天与相邻星期重叠会在保存前拦截。</p>
           <p v-if="businessHoursMessage" class="editor-inline-warning">{{ businessHoursMessage }}</p>
         </section>
 
@@ -1575,9 +1718,8 @@ function backToList() {
                     <label class="switch-row"><input v-model="image.isVisible" type="checkbox" />前台展示</label>
                   </div>
                   <div class="gallery-thumb-actions">
-                    <button class="small primary" type="button" :disabled="imageSavingId === image.id" @click="saveMerchantImage(image)">
-                      {{ imageSavingId === image.id && imageOperation === 'SAVE' ? '保存中…' : '保存' }}
-                    </button>
+                    <button class="small secondary" type="button" title="向前排序" aria-label="向前排序" @click="moveMerchantImage(image, -1)">←</button>
+                    <button class="small secondary" type="button" title="向后排序" aria-label="向后排序" @click="moveMerchantImage(image, 1)">→</button>
                     <button class="small secondary" type="button" :disabled="uploadingImage || imageSavingId === image.id" @click="openImageReplacement(image)">
                       {{ imageSavingId === image.id && imageOperation === 'REPLACE' ? '替换中…' : '替换' }}
                     </button>
@@ -1590,7 +1732,7 @@ function backToList() {
               <p v-else class="gallery-empty-state">暂无{{ section.title }}图片。</p>
             </div>
           </div>
-          <p class="editor-helper">取消“前台展示”只隐藏图片；“删除图片”会永久移除记录并清理未被引用的物理文件。替换图片会保持原分类、排序与展示状态。</p>
+          <p class="editor-helper">排序和展示状态随页面统一保存。上传、替换、删除会立即执行；替换图片会保持原分类、排序与展示状态。</p>
         </section>
 
         <section id="merchant-section-signatureDishes" class="editor-section editor-section--child">
@@ -1631,7 +1773,7 @@ function backToList() {
             <div><h2>运营标签（详情页 + 首页/推荐）</h2><p>显示在商家详情名称下方，并保留现有首页与推荐运营逻辑。</p></div>
             <div class="editor-section-actions">
               <button class="editor-button is-ghost" type="button" @click="openPromotionTagCreate('OPERATIONAL')">+ 新增运营标签</button>
-              <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存标签配置</button>
+              <span class="section-save-hint">选择随页面统一保存</span>
             </div>
           </header>
           <div v-if="managedOperationalPromotionTags.length" class="tag-config-list">
@@ -1668,22 +1810,22 @@ function backToList() {
 
         <section id="merchant-section-display-tags" class="editor-section">
           <header class="editor-section-head">
-            <div><h2>菜系与场景标签（详情页）</h2><p>面向消费者展示；前台按当前排序显示菜系前 2 个、场景前 2 个。</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveTags">保存标签配置</button>
+            <div><h2>菜系与场景标签（详情页）</h2><p>面向消费者展示；前台按当前排序最多显示 4 个菜系、4 个场景。</p></div>
+            <span class="section-save-hint">选择随页面统一保存</span>
           </header>
           <div class="display-tag-groups">
             <div class="display-tag-group">
               <div class="display-tag-group-head">
                 <h3>菜系</h3>
                 <div>
-                  <span>已选 {{ selectedCuisineTags.length }} · 前台最多 2</span>
+                  <span>已选 {{ selectedCuisineTags.length }} / 4</span>
                   <button class="small secondary" type="button" @click="openPromotionTagCreate('CUISINE')">+ 新增菜系</button>
                 </div>
               </div>
               <div v-if="managedCuisinePromotionTags.length" class="tag-config-list">
                 <article v-for="tag in managedCuisinePromotionTags" :key="tag.id" class="tag-config-row" :class="[tag.enabled ? detailTagDisplayState(tag.id) : '', { 'is-selected': selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
                   <label class="tag-config-select">
-                    <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
+                    <input :checked="selectedTagIds.includes(tag.id)" type="checkbox" :disabled="!tag.enabled && !selectedTagIds.includes(tag.id)" @change="toggleDetailTag(tag, ($event.target as HTMLInputElement).checked)" />
                     <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
                     <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.nameVi || tag.nameEn || tag.code }}</small></span>
                   </label>
@@ -1702,14 +1844,14 @@ function backToList() {
               <div class="display-tag-group-head">
                 <h3>场景</h3>
                 <div>
-                  <span>已选 {{ selectedSceneTags.length }} · 前台最多 2</span>
+                  <span>已选 {{ selectedSceneTags.length }} / 4</span>
                   <button class="small secondary" type="button" @click="openPromotionTagCreate('SCENE')">+ 新增场景</button>
                 </div>
               </div>
               <div v-if="managedScenePromotionTags.length" class="tag-config-list">
                 <article v-for="tag in managedScenePromotionTags" :key="tag.id" class="tag-config-row" :class="[tag.enabled ? detailTagDisplayState(tag.id) : '', { 'is-selected': selectedTagIds.includes(tag.id), 'is-disabled': !tag.enabled }]">
                   <label class="tag-config-select">
-                    <input v-model="selectedTagIds" type="checkbox" :value="tag.id" :disabled="!tag.enabled" />
+                    <input :checked="selectedTagIds.includes(tag.id)" type="checkbox" :disabled="!tag.enabled && !selectedTagIds.includes(tag.id)" @change="toggleDetailTag(tag, ($event.target as HTMLInputElement).checked)" />
                     <span class="tag-config-icon">{{ tag.iconText || '•' }}</span>
                     <span class="tag-config-main"><strong>{{ tag.nameZh }}</strong><small>{{ tag.nameVi || tag.nameEn || tag.code }}</small></span>
                   </label>
@@ -1725,13 +1867,13 @@ function backToList() {
               <p v-else class="editor-helper">暂无场景标签，请先在标签字典中创建。</p>
             </div>
           </div>
-          <p v-if="hasDetailTagOverflow" class="editor-inline-warning">当前已选择 {{ selectedDetailTagCount }} 个详情展示标签；标记“超出前台上限”的标签会保留关联，但不会进入当前详情页前 2+2 展示。</p>
+          <p v-if="hasDetailTagOverflow" class="editor-inline-warning">当前存在历史超限选择（共 {{ selectedDetailTagCount }} 个详情标签）。保存前请将菜系和场景分别调整到最多 4 个。</p>
         </section>
 
         <section id="merchant-section-capabilities" class="editor-section">
           <header class="editor-section-head">
             <div><h2>能力开关</h2><p>控制商家在小程序和商家后台可使用的功能</p></div>
-            <button class="editor-button is-primary" type="button" :disabled="saving" @click="saveCapabilities">保存能力</button>
+            <span class="section-save-hint">随页面统一保存</span>
           </header>
           <div class="capability-banner">
             <span class="capability-banner-icon">i</span>
@@ -1970,11 +2112,19 @@ function backToList() {
 
 <style scoped>
 .merchant-editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  min-height: 58px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgb(217 229 220 / 88%);
+  background: rgb(246 250 247 / 96%);
+  backdrop-filter: blur(10px);
 }
 
 .merchant-editor-header-main {
@@ -2083,6 +2233,48 @@ function backToList() {
   border: 1px solid #e4ebe6;
   border-radius: 10px;
   background: #fbfdfb;
+}
+
+.merchant-workspace-nav {
+  position: sticky;
+  top: 58px;
+  z-index: 18;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid #dfe9e2;
+  border-radius: 9px;
+  background: rgb(251 253 251 / 96%);
+  backdrop-filter: blur(10px);
+}
+
+.merchant-workspace-nav button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid #e7eee9;
+  background: transparent;
+  color: #617168;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.merchant-workspace-nav button:last-child {
+  border-right: 0;
+}
+
+.merchant-workspace-nav button:hover,
+.merchant-workspace-nav button.is-active {
+  background: #edf7f0;
+  color: #246b32;
+}
+
+.merchant-workspace-nav button.is-active {
+  box-shadow: inset 0 -2px #2e7d32;
 }
 
 .merchant-summary-media {
@@ -2390,6 +2582,14 @@ function backToList() {
   align-items: center;
 }
 
+.section-save-hint {
+  flex: none;
+  color: #2f855a;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .editor-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2569,56 +2769,122 @@ function backToList() {
 .editor-form-grid select:focus-visible,
 .editor-form-grid textarea:focus-visible,
 .gallery-thumb input:focus-visible,
-.business-hours-field input:focus-visible {
+.business-hours-interval input:focus-visible {
   outline: 2px solid rgb(46 125 50 / 30%);
   outline-offset: 1px;
 }
 
-.business-hours-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
-  padding: 12px 14px;
-  border: 1px solid #e8efea;
+.business-hours-table {
+  overflow: hidden;
+  border: 1px solid #e3ebe5;
   border-radius: 9px;
-  background: #fafcfa;
 }
 
-.business-hours-field {
+.business-hours-table-head,
+.business-hours-day {
   display: grid;
-  gap: 6px;
-  min-width: 150px;
-  color: #33424a;
-  font-size: 13px;
-  font-weight: 600;
+  grid-template-columns: 78px 74px minmax(0, 1fr) 76px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 12px;
 }
 
-.business-hours-field input {
-  width: 100%;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 1px solid #d8e2db;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #173622;
-}
-
-.business-hours-field input:disabled {
-  color: #94a3b8;
-  background: #eef4f0;
-}
-
-.business-hours-separator {
-  padding-bottom: 9px;
-  color: #87908b;
+.business-hours-table-head {
+  min-height: 30px;
+  background: #f3f7f4;
+  color: #718078;
+  font-size: 11.5px;
   font-weight: 700;
 }
 
-.business-hours-preview {
-  padding-bottom: 8px;
-  color: #5a6b60;
+.business-hours-day {
+  min-height: 50px;
+  border-top: 1px solid #edf2ee;
+  background: #fdfefd;
+}
+
+.business-hours-day > strong {
+  color: #263a2d;
   font-size: 13px;
+}
+
+.business-hours-switch {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #53675b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.business-hours-switch input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2e7d32;
+}
+
+.business-hours-intervals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.business-hours-interval {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr) 28px;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+}
+
+.business-hours-interval input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid #d8e2db;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #173622;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.business-hours-interval > span {
+  color: #75837b;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.business-hours-closed {
+  color: #87908b;
+  font-size: 12.5px;
+}
+
+.interval-action {
+  display: inline-grid;
+  min-width: 28px;
+  min-height: 28px;
+  place-items: center;
+  border: 1px solid #dce7df;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #53675b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.interval-action.is-add {
+  color: #246b32;
+  background: #edf7f0;
+}
+
+.interval-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .gallery-primary {
@@ -3634,6 +3900,18 @@ function backToList() {
 }
 
 @media (max-width: 1100px) {
+  .merchant-workspace-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .merchant-workspace-nav button:nth-child(3) {
+    border-right: 0;
+  }
+
+  .merchant-workspace-nav button:nth-child(-n + 3) {
+    border-bottom: 1px solid #e7eee9;
+  }
+
   .merchant-summary {
     grid-template-columns: 56px minmax(0, 1fr);
   }
@@ -3705,6 +3983,20 @@ function backToList() {
     min-height: 44px;
   }
 
+  .merchant-workspace-nav {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    border-radius: 8px;
+  }
+
+  .merchant-workspace-nav button {
+    min-width: 112px;
+    min-height: 44px;
+    border-right: 1px solid #e7eee9;
+    border-bottom: 0 !important;
+  }
+
   .merchant-summary {
     grid-template-columns: 52px minmax(0, 1fr);
     padding: 10px 12px;
@@ -3758,13 +4050,59 @@ function backToList() {
     min-height: 96px;
   }
 
-  .business-hours-row {
-    align-items: stretch;
-    flex-direction: column;
+  .business-hours-table {
+    display: grid;
+    gap: 8px;
+    overflow: visible;
+    border: 0;
   }
 
-  .business-hours-separator {
+  .business-hours-table-head {
     display: none;
+  }
+
+  .business-hours-day {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'weekday state'
+      'intervals intervals'
+      'add add';
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid #e3ebe5;
+    border-radius: 9px;
+  }
+
+  .business-hours-day > strong {
+    grid-area: weekday;
+  }
+
+  .business-hours-switch {
+    grid-area: state;
+  }
+
+  .business-hours-intervals,
+  .business-hours-closed {
+    grid-area: intervals;
+  }
+
+  .business-hours-intervals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .business-hours-interval {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 44px;
+  }
+
+  .business-hours-interval input,
+  .interval-action {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .business-hours-day > .interval-action.is-add {
+    grid-area: add;
+    width: 100%;
   }
 
   .gallery-primary-item {

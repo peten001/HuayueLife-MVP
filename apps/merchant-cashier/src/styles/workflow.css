@@ -316,6 +316,8 @@
 .history-order-card__footer { display: flex; min-width: 0; align-items: center; gap: 7px; }
 .history-order-card__top strong { min-width: 0; overflow: hidden; color: #25392d; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .history-order-card__top b { margin-left: auto; color: var(--color-money-strong, #176b43); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.history-order-card__amount { display: grid; gap: 2px; margin-left: auto; text-align: right; }
+.history-order-card__amount small { color: #6c7c72; font-size: 12px; font-weight: 600; white-space: normal; }
 .history-order-card__context span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-order-card__context span:first-child { color: #506b5b; font-size: 11px; font-weight: 800; }
 .history-order-card__context span:last-child { color: #617067; font-size: 11px; }

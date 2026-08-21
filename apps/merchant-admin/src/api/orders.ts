@@ -2,6 +2,9 @@ import { http } from './http';
 import type {
   ApiResponse,
   MerchantOrder,
+  MerchantSettlement,
+  MerchantSettlementFilters,
+  MerchantSettlementPage,
   OrderStatus,
   OrderType,
 } from '@/types/api';
@@ -18,6 +21,7 @@ export interface MerchantOrderSummaryBucket {
 }
 
 export interface MerchantOrderCompletedBucket extends MerchantOrderSummaryBucket {
+  settlementCount: number;
   grossAmountVnd: string;
   discountAmountVnd: string;
   roundingAmountVnd: string;
@@ -37,6 +41,7 @@ export type MerchantOrderSummary = Record<
 export interface BusinessDaySummary {
   businessDate: string;
   orderCount: number;
+  settlementCount: number;
   totalRevenueVnd: string;
 }
 
@@ -48,6 +53,27 @@ export async function getMerchantOrders(filters: OrderFilters = {}) {
         Object.entries(filters).filter(([, value]) => Boolean(value)),
       ),
     },
+  );
+  return response.data.data;
+}
+
+export async function getMerchantSettlements(
+  filters: MerchantSettlementFilters = {},
+) {
+  const response = await http.get<ApiResponse<MerchantSettlementPage>>(
+    '/merchant/settlements',
+    {
+      params: Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => Boolean(value)),
+      ),
+    },
+  );
+  return response.data.data;
+}
+
+export async function getMerchantSettlement(id: string) {
+  const response = await http.get<ApiResponse<MerchantSettlement>>(
+    `/merchant/settlements/${encodeURIComponent(id)}`,
   );
   return response.data.data;
 }

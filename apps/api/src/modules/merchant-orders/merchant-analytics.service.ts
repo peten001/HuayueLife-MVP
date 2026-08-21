@@ -6,10 +6,16 @@ import {
   normalizeBusinessHours,
   resolveBusinessDate,
 } from '../../common/utils/merchant-hours';
+import { businessDateRangeCandidateWhere } from './business-day-accounting';
 import {
-  attributeOrderRevenue,
-  businessDateRangeCandidateWhere,
-} from './business-day-accounting';
+  buildMerchantSettlements,
+  toSettlementFacts,
+  type MerchantSettlementFact,
+  type SettlementItemRow,
+  type SettlementOrderRow,
+  type SettlementSessionRow,
+  type SettlementTableRow,
+} from './merchant-settlements';
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -18,14 +24,14 @@ const TIME_BUCKET_HOURS = 2;
 
 interface TrendRow {
   bucket: string;
-  orderCount: bigint | number;
+  settlementCount: bigint | number;
   revenueVnd: bigint | Prisma.Decimal | number | string;
 }
 
 interface TimeDistributionRow {
   weekday: bigint | number;
   startHour: bigint | number;
-  orderCount: bigint | number;
+  settlementCount: bigint | number;
   revenueVnd: bigint | Prisma.Decimal | number | string;
 }
 
@@ -85,30 +91,15 @@ export class MerchantAnalyticsService {
         ? order.businessDate.toISOString().slice(0, 10)
         : resolveBusinessDate(schedule, order.createdAt),
     }));
-    const attribution = attributeOrderRevenue(candidates);
-    const ordersWithRevenue = datedOrders.map((order) => ({
-      ...order,
-      grossAmountVnd: order.totalAmountVnd,
-      discountAmountVnd:
-        attribution.get(order.id)?.discountAmountVnd ??
-        (order.discountPayableRateBps === null
-          ? 0n
-          : order.discountAmountVnd ?? 0n),
-      roundingAmountVnd:
-        attribution.get(order.id)?.roundingAmountVnd ??
-        (order.roundingAmountVnd ?? 0n),
-      netSettledAmountVnd:
-        attribution.get(order.id)?.netSettledAmountVnd ??
-        order.totalAmountVnd -
-          (order.discountPayableRateBps === null
-            ? 0n
-            : order.discountAmountVnd ?? 0n) -
-          (order.roundingAmountVnd ?? 0n),
-      paymentMethod:
-        attribution.get(order.id)?.paymentMethod ??
-        order.paymentMethod ??
-        null,
-    }));
+    // Financial / transaction facts come from the canonical Settlement Read
+    // Model: one closed table-session checkout = one fact, one pickup or
+    // delivery order = one fact. Dish metrics below still use every raw
+    // OrderItem so no sold quantity is lost by grouping.
+    const settlements = buildMerchantSettlements(
+      candidates.map(toSettlementOrderRow),
+      (at) => resolveBusinessDate(schedule, at),
+    );
+    const facts = toSettlementFacts(settlements);
     const currentOrders = datedOrders.filter((order) =>
       order.resolvedBusinessDate >= range.startDate &&
       order.resolvedBusinessDate <= range.endDate,
@@ -117,33 +108,29 @@ export class MerchantAnalyticsService {
       order.resolvedBusinessDate >= range.previousStartDate &&
       order.resolvedBusinessDate <= range.previousEndDate,
     );
-    const currentRevenueOrders = ordersWithRevenue.filter((order) =>
-      order.resolvedBusinessDate >= range.startDate &&
-      order.resolvedBusinessDate <= range.endDate,
+    const currentFacts = facts.filter(
+      (fact) =>
+        fact.businessDate >= range.startDate &&
+        fact.businessDate <= range.endDate,
     );
-    const previousRevenueOrders = ordersWithRevenue.filter((order) =>
-      order.resolvedBusinessDate >= range.previousStartDate &&
-      order.resolvedBusinessDate <= range.previousEndDate,
+    const previousFacts = facts.filter(
+      (fact) =>
+        fact.businessDate >= range.previousStartDate &&
+        fact.businessDate <= range.previousEndDate,
     );
-    const trendRows = aggregateTrendRows(currentRevenueOrders, range);
-    const timeRows = aggregateTimeDistributionRows(currentRevenueOrders);
+    const trendRows = aggregateTrendRows(currentFacts, range);
+    const timeRows = aggregateTimeDistributionRows(currentFacts);
     const currentDishRows = aggregateDishRows(currentOrders);
     const previousDishRows = aggregateDishRows(previousOrders);
 
     const currentOverview = buildOverview(
-      currentRevenueOrders.length,
-      currentRevenueOrders.reduce(
-        (sum, order) => sum + order.netSettledAmountVnd,
-        0n,
-      ),
+      currentFacts.length,
+      currentFacts.reduce((sum, fact) => sum + fact.finalRevenueVnd, 0n),
     );
-    const funds = buildFundsOverview(currentRevenueOrders);
+    const funds = buildFundsOverview(currentFacts);
     const previousOverview = buildOverview(
-      previousRevenueOrders.length,
-      previousRevenueOrders.reduce(
-        (sum, order) => sum + order.netSettledAmountVnd,
-        0n,
-      ),
+      previousFacts.length,
+      previousFacts.reduce((sum, fact) => sum + fact.finalRevenueVnd, 0n),
     );
     const topDishes = mergeDishRows(currentDishRows, previousDishRows);
     const timeDistribution = fillTimeDistribution(timeRows);
@@ -170,9 +157,9 @@ export class MerchantAnalyticsService {
             currentOverview.revenueVnd,
             previousOverview.revenueVnd,
           ),
-          orderCountPercent: calculatePercentChange(
-            currentOverview.orderCount,
-            previousOverview.orderCount,
+          settlementCountPercent: calculatePercentChange(
+            currentOverview.settlementCount,
+            previousOverview.settlementCount,
           ),
           averageOrderValuePercent: calculatePercentChange(
             currentOverview.averageOrderValueVnd,
@@ -202,18 +189,33 @@ export class MerchantAnalyticsService {
       },
       select: {
         id: true,
+        orderNo: true,
+        status: true,
+        orderType: true,
         businessDate: true,
         completedAt: true,
+        cancelledAt: true,
         createdAt: true,
+        updatedAt: true,
         totalAmountVnd: true,
+        itemAmountVnd: true,
+        deliveryFeeVnd: true,
         discountPayableRateBps: true,
         discountAmountVnd: true,
         roundingAmountVnd: true,
         paymentMethod: true,
+        tableId: true,
         tableSessionId: true,
+        tableNoSnapshot: true,
+        table: {
+          select: { id: true, tableNo: true, tableName: true },
+        },
         tableSession: {
           select: {
+            id: true,
             status: true,
+            closedAt: true,
+            businessDate: true,
             discountAmountVnd: true,
             roundingAmountVnd: true,
             paymentMethod: true,
@@ -221,13 +223,19 @@ export class MerchantAnalyticsService {
         },
         items: {
           select: {
+            id: true,
             productId: true,
             productNameZhSnapshot: true,
             imageUrlSnapshot: true,
+            unitPriceVnd: true,
             quantity: true,
             subtotalVnd: true,
+            remark: true,
             product: {
               select: {
+                nameZh: true,
+                nameVi: true,
+                nameEn: true,
                 imageUrl: true,
                 category: {
                   select: { nameZh: true, nameVi: true, nameEn: true },
@@ -246,59 +254,125 @@ type AnalyticsOrder = Awaited<ReturnType<MerchantAnalyticsService['getAnalytics'
   ? never
   : {
       resolvedBusinessDate: string;
+      id: bigint;
+      orderNo: string;
+      status: 'COMPLETED';
+      orderType: 'DINE_IN' | 'PICKUP' | 'DELIVERY';
+      businessDate: Date | null;
       completedAt: Date | null;
+      cancelledAt: Date | null;
       createdAt: Date;
+      updatedAt: Date;
       totalAmountVnd: bigint;
-      grossAmountVnd: bigint;
-      discountAmountVnd: bigint;
-      roundingAmountVnd: bigint;
-      netSettledAmountVnd: bigint;
+      itemAmountVnd: bigint;
+      deliveryFeeVnd: bigint;
+      discountPayableRateBps: number | null;
+      discountAmountVnd: bigint | null;
+      roundingAmountVnd: bigint | null;
       paymentMethod: 'CASH' | 'BANK_TRANSFER' | null;
+      tableId: bigint | null;
+      tableSessionId: bigint | null;
+      tableNoSnapshot: string | null;
+      table: SettlementTableRow | null;
+      tableSession: SettlementSessionRow | null;
       items: Array<{
+        id: bigint;
         productId: bigint | null;
         productNameZhSnapshot: string;
         imageUrlSnapshot: string | null;
+        unitPriceVnd: bigint;
         quantity: number;
         subtotalVnd: bigint;
+        remark: string | null;
         product: {
+          nameZh: string;
+          nameVi: string | null;
+          nameEn: string | null;
           imageUrl: string | null;
           category: { nameZh: string; nameVi: string | null; nameEn: string | null } | null;
         } | null;
       }>;
     };
 
-function aggregateTrendRows(orders: AnalyticsOrder[], range: PeriodRange): TrendRow[] {
-  const values = new Map<string, { orderCount: number; revenueVnd: bigint }>();
-  for (const order of orders) {
-    if (!order.createdAt) continue;
-    const local = new Date(order.createdAt.getTime() + VIETNAM_OFFSET_MS);
+function toSettlementOrderRow(
+  order: Omit<AnalyticsOrder, 'resolvedBusinessDate' | 'status'>,
+): SettlementOrderRow {
+  return {
+    id: order.id,
+    orderNo: order.orderNo,
+    status: 'COMPLETED',
+    orderType: order.orderType,
+    createdAt: order.createdAt,
+    completedAt: order.completedAt,
+    cancelledAt: order.cancelledAt,
+    updatedAt: order.updatedAt,
+    businessDate: order.businessDate,
+    totalAmountVnd: order.totalAmountVnd,
+    itemAmountVnd: order.itemAmountVnd,
+    deliveryFeeVnd: order.deliveryFeeVnd,
+    discountPayableRateBps: order.discountPayableRateBps,
+    discountAmountVnd: order.discountAmountVnd,
+    roundingAmountVnd: order.roundingAmountVnd,
+    paymentMethod: order.paymentMethod,
+    tableId: order.tableId,
+    tableSessionId: order.tableSessionId,
+    tableNoSnapshot: order.tableNoSnapshot,
+    tableSession: order.tableSession,
+    table: order.table,
+    items: order.items.map(
+      (item): SettlementItemRow => ({
+        id: item.id,
+        productId: item.productId,
+        productNameZhSnapshot: item.productNameZhSnapshot,
+        imageUrlSnapshot: item.imageUrlSnapshot,
+        unitPriceVnd: item.unitPriceVnd,
+        quantity: item.quantity,
+        subtotalVnd: item.subtotalVnd,
+        remark: item.remark,
+        product: item.product
+          ? {
+              nameZh: item.product.nameZh,
+              nameVi: item.product.nameVi,
+              nameEn: item.product.nameEn,
+            }
+          : null,
+      }),
+    ),
+  };
+}
+
+function aggregateTrendRows(facts: MerchantSettlementFact[], range: PeriodRange): TrendRow[] {
+  const values = new Map<string, { settlementCount: number; revenueVnd: bigint }>();
+  for (const fact of facts) {
+    if (!fact.settledAt) continue;
+    const local = new Date(fact.settledAt.getTime() + VIETNAM_OFFSET_MS);
     const bucket = range.granularity === 'hour'
       ? String(local.getUTCHours()).padStart(2, '0')
-      : order.resolvedBusinessDate;
-    const value = values.get(bucket) ?? { orderCount: 0, revenueVnd: 0n };
-    value.orderCount += 1;
-    value.revenueVnd += order.netSettledAmountVnd;
+      : fact.businessDate;
+    const value = values.get(bucket) ?? { settlementCount: 0, revenueVnd: 0n };
+    value.settlementCount += 1;
+    value.revenueVnd += fact.finalRevenueVnd;
     values.set(bucket, value);
   }
   return [...values].map(([bucket, value]) => ({ bucket, ...value }));
 }
 
-function aggregateTimeDistributionRows(orders: AnalyticsOrder[]): TimeDistributionRow[] {
+function aggregateTimeDistributionRows(facts: MerchantSettlementFact[]): TimeDistributionRow[] {
   const values = new Map<string, {
     weekday: number;
     startHour: number;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: bigint;
   }>();
-  for (const order of orders) {
-    if (!order.createdAt) continue;
-    const local = new Date(order.createdAt.getTime() + VIETNAM_OFFSET_MS);
+  for (const fact of facts) {
+    if (!fact.settledAt) continue;
+    const local = new Date(fact.settledAt.getTime() + VIETNAM_OFFSET_MS);
     const weekday = (local.getUTCDay() + 6) % 7;
     const startHour = Math.floor(local.getUTCHours() / TIME_BUCKET_HOURS) * TIME_BUCKET_HOURS;
     const key = `${weekday}:${startHour}`;
-    const value = values.get(key) ?? { weekday, startHour, orderCount: 0, revenueVnd: 0n };
-    value.orderCount += 1;
-    value.revenueVnd += order.netSettledAmountVnd;
+    const value = values.get(key) ?? { weekday, startHour, settlementCount: 0, revenueVnd: 0n };
+    value.settlementCount += 1;
+    value.revenueVnd += fact.finalRevenueVnd;
     values.set(key, value);
   }
   return [...values.values()];
@@ -471,19 +545,19 @@ function containsNormalizedPhrase(value: string, phrase: string) {
 }
 
 export function buildOverview(
-  orderCount: number,
+  settlementCount: number,
   revenue: bigint | number | string,
 ) {
   const revenueVnd = BigInt(revenue);
   return {
     revenueVnd: revenueVnd.toString(),
-    orderCount,
+    settlementCount,
     averageOrderValueVnd:
-      orderCount > 0 ? (revenueVnd / BigInt(orderCount)).toString() : '0',
+      settlementCount > 0 ? (revenueVnd / BigInt(settlementCount)).toString() : '0',
   };
 }
 
-export function buildFundsOverview(orders: AnalyticsOrder[]) {
+export function buildFundsOverview(facts: MerchantSettlementFact[]) {
   let grossAmountVnd = 0n;
   let discountAmountVnd = 0n;
   let roundingAmountVnd = 0n;
@@ -491,16 +565,16 @@ export function buildFundsOverview(orders: AnalyticsOrder[]) {
   let cashRevenueVnd = 0n;
   let bankTransferRevenueVnd = 0n;
   let unrecordedRevenueVnd = 0n;
-  for (const order of orders) {
-    grossAmountVnd += order.grossAmountVnd;
-    discountAmountVnd += order.discountAmountVnd;
-    roundingAmountVnd += order.roundingAmountVnd;
-    netSettledAmountVnd += order.netSettledAmountVnd;
-    if (order.paymentMethod === 'CASH') cashRevenueVnd += order.netSettledAmountVnd;
-    else if (order.paymentMethod === 'BANK_TRANSFER') {
-      bankTransferRevenueVnd += order.netSettledAmountVnd;
+  for (const fact of facts) {
+    grossAmountVnd += fact.originalAmountVnd;
+    discountAmountVnd += fact.discountAmountVnd;
+    roundingAmountVnd += fact.roundingAmountVnd;
+    netSettledAmountVnd += fact.finalRevenueVnd;
+    if (fact.paymentMethod === 'CASH') cashRevenueVnd += fact.finalRevenueVnd;
+    else if (fact.paymentMethod === 'BANK_TRANSFER') {
+      bankTransferRevenueVnd += fact.finalRevenueVnd;
     } else {
-      unrecordedRevenueVnd += order.netSettledAmountVnd;
+      unrecordedRevenueVnd += fact.finalRevenueVnd;
     }
   }
   return {
@@ -563,7 +637,7 @@ function fillTrend(rows: TrendRow[], range: PeriodRange) {
     rows.map((item) => [
       String(item.bucket),
       {
-        orderCount: Number(item.orderCount),
+        settlementCount: Number(item.settlementCount),
         revenueVnd: String(item.revenueVnd),
       },
     ]),
@@ -576,7 +650,7 @@ function fillTrend(rows: TrendRow[], range: PeriodRange) {
       return {
         key,
         label: `${key}:00`,
-        orderCount: value?.orderCount ?? 0,
+        settlementCount: value?.settlementCount ?? 0,
         revenueVnd: value?.revenueVnd ?? '0',
       };
     });
@@ -587,7 +661,7 @@ function fillTrend(rows: TrendRow[], range: PeriodRange) {
     return {
       key,
       label: key,
-      orderCount: value?.orderCount ?? 0,
+      settlementCount: value?.settlementCount ?? 0,
       revenueVnd: value?.revenueVnd ?? '0',
     };
   });
@@ -598,7 +672,7 @@ function fillTimeDistribution(rows: TimeDistributionRow[]) {
     rows.map((item) => [
       `${Number(item.weekday)}:${Number(item.startHour)}`,
       {
-        orderCount: Number(item.orderCount),
+        settlementCount: Number(item.settlementCount),
         revenueVnd: String(item.revenueVnd),
       },
     ]),
@@ -612,7 +686,7 @@ function fillTimeDistribution(rows: TimeDistributionRow[]) {
         weekday,
         startHour,
         endHour: startHour + TIME_BUCKET_HOURS,
-        orderCount: value?.orderCount ?? 0,
+        settlementCount: value?.settlementCount ?? 0,
         revenueVnd: value?.revenueVnd ?? '0',
       };
     }),
@@ -623,36 +697,36 @@ function resolvePeakPeriod(
   rows: Array<{
     startHour: number;
     endHour: number;
-    orderCount: number;
+    settlementCount: number;
     revenueVnd: string;
   }>,
 ) {
   const byTime = new Map<
     number,
-    { startHour: number; endHour: number; orderCount: number; revenueVnd: bigint }
+    { startHour: number; endHour: number; settlementCount: number; revenueVnd: bigint }
   >();
   for (const row of rows) {
     const value = byTime.get(row.startHour) ?? {
       startHour: row.startHour,
       endHour: row.endHour,
-      orderCount: 0,
+      settlementCount: 0,
       revenueVnd: 0n,
     };
-    value.orderCount += row.orderCount;
+    value.settlementCount += row.settlementCount;
     value.revenueVnd += BigInt(row.revenueVnd);
     byTime.set(row.startHour, value);
   }
   const peak = Array.from(byTime.values()).sort(
     (left, right) =>
-      right.orderCount - left.orderCount ||
+      right.settlementCount - left.settlementCount ||
       compareBigIntStrings(right.revenueVnd.toString(), left.revenueVnd.toString()) ||
       left.startHour - right.startHour,
   )[0];
-  if (!peak || peak.orderCount === 0) return null;
+  if (!peak || peak.settlementCount === 0) return null;
   return {
     startHour: peak.startHour,
     endHour: peak.endHour,
-    orderCount: peak.orderCount,
+    settlementCount: peak.settlementCount,
     revenueVnd: peak.revenueVnd.toString(),
   };
 }

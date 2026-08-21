@@ -11,9 +11,15 @@ import {
 describe('MerchantAnalyticsService', () => {
   it('scopes every summary to the authenticated merchant and COMPLETED orders', async () => {
     const findMany = jest.fn().mockResolvedValue([
-      { id: 1n, businessDate: new Date('2026-08-01T00:00:00.000Z'), completedAt: new Date('2026-08-01T10:00:00.000Z'), totalAmountVnd: 100_000n, items: [] },
-      { id: 2n, businessDate: new Date('2026-08-07T00:00:00.000Z'), completedAt: new Date('2026-08-07T20:00:00.000Z'), totalAmountVnd: 200_000n, items: [] },
-      { id: 3n, businessDate: new Date('2026-07-31T00:00:00.000Z'), completedAt: new Date('2026-07-31T10:00:00.000Z'), totalAmountVnd: 100_000n, items: [] },
+      {
+        id: 1n, orderNo: 'T-1', orderType: 'DINE_IN', createdAt: new Date('2026-08-01T03:00:00.000Z'), updatedAt: new Date('2026-08-01T10:00:00.000Z'), businessDate: new Date('2026-08-01T00:00:00.000Z'), completedAt: new Date('2026-08-01T10:00:00.000Z'), totalAmountVnd: 100_000n, itemAmountVnd: 100_000n, deliveryFeeVnd: 0n, paymentMethod: 'CASH', discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, tableSessionId: null, tableSession: null, table: null, tableNoSnapshot: null, items: [],
+      },
+      {
+        id: 2n, orderNo: 'T-2', orderType: 'PICKUP', createdAt: new Date('2026-08-07T13:00:00.000Z'), updatedAt: new Date('2026-08-07T20:00:00.000Z'), businessDate: new Date('2026-08-07T00:00:00.000Z'), completedAt: new Date('2026-08-07T20:00:00.000Z'), totalAmountVnd: 200_000n, itemAmountVnd: 200_000n, deliveryFeeVnd: 0n, paymentMethod: 'CASH', discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, tableSessionId: null, tableSession: null, table: null, tableNoSnapshot: null, items: [],
+      },
+      {
+        id: 3n, orderNo: 'T-3', orderType: 'DELIVERY', createdAt: new Date('2026-07-31T03:00:00.000Z'), updatedAt: new Date('2026-07-31T10:00:00.000Z'), businessDate: new Date('2026-07-31T00:00:00.000Z'), completedAt: new Date('2026-07-31T10:00:00.000Z'), totalAmountVnd: 100_000n, itemAmountVnd: 100_000n, deliveryFeeVnd: 0n, paymentMethod: 'CASH', discountPayableRateBps: null, discountAmountVnd: null, roundingAmountVnd: null, tableSessionId: null, tableSession: null, table: null, tableNoSnapshot: null, items: [],
+      },
     ]);
     const prisma = {
       merchant: { findUnique: jest.fn().mockResolvedValue({ businessHours: {} }) },
@@ -35,7 +41,7 @@ describe('MerchantAnalyticsService', () => {
     expect(result.overview).toEqual(
       expect.objectContaining({
         revenueVnd: '300000',
-        orderCount: 2,
+        settlementCount: 2,
         averageOrderValueVnd: '150000',
       }),
     );
@@ -75,18 +81,18 @@ describe('MerchantAnalyticsService', () => {
     });
 
     expect(result.overview).toEqual(expect.objectContaining({
-      orderCount: 3,
+      settlementCount: 3,
       revenueVnd: '60000',
     }));
     expect(result.trend.find((item) => item.key === '02')).toEqual(
-      expect.objectContaining({ orderCount: 1, revenueVnd: '30000' }),
+      expect.objectContaining({ settlementCount: 1, revenueVnd: '30000' }),
     );
   });
 
   it('keeps zero-order averages finite and marks zero baselines as not comparable', () => {
     expect(buildOverview(0, 0n)).toEqual({
       revenueVnd: '0',
-      orderCount: 0,
+      settlementCount: 0,
       averageOrderValueVnd: '0',
     });
     expect(calculatePercentChange(18, 0)).toBeNull();
@@ -143,9 +149,23 @@ describe('MerchantAnalyticsService', () => {
       merchant: { findUnique: jest.fn().mockResolvedValue({ businessHours: {} }) },
       order: { findMany: jest.fn().mockResolvedValue([{
         id: 1n,
+        orderNo: 'T-4',
+        orderType: 'DINE_IN',
+        createdAt: new Date('2026-08-12T03:00:00.000Z'),
+        updatedAt: new Date('2026-08-12T10:00:00.000Z'),
         businessDate: new Date('2026-08-12T00:00:00.000Z'),
         completedAt: new Date('2026-08-12T10:00:00.000Z'),
         totalAmountVnd: 150_000n,
+        itemAmountVnd: 150_000n,
+        deliveryFeeVnd: 0n,
+        paymentMethod: 'CASH',
+        discountPayableRateBps: null,
+        discountAmountVnd: null,
+        roundingAmountVnd: null,
+        tableSessionId: null,
+        tableSession: null,
+        table: null,
+        tableNoSnapshot: null,
         items: [
           { productId: 1n, productNameZhSnapshot: '招牌牛肉锅', imageUrlSnapshot: null, quantity: 5, subtotalVnd: 100_000n, product: { imageUrl: null, category: { nameZh: '热菜', nameVi: 'Mon nong', nameEn: 'Hot dishes' } } },
           { productId: 2n, productNameZhSnapshot: '白饭', imageUrlSnapshot: null, quantity: 20, subtotalVnd: 20_000n, product: { imageUrl: null, category: { nameZh: '米饭类', nameVi: 'Com', nameEn: 'Rice' } } },
@@ -235,7 +255,7 @@ describe('MerchantAnalyticsService', () => {
     ).toBe(BigInt(result.overview.funds.netSettledAmountVnd));
   });
 
-  it('buckets trend and time distribution by creation time, not completion time', async () => {
+  it('buckets trend and time distribution by settledAt (checkout/completion time)', async () => {
     const service = new MerchantAnalyticsService({
       merchant: { findUnique: jest.fn().mockResolvedValue({ businessHours: {} }) },
       order: {
@@ -261,19 +281,21 @@ describe('MerchantAnalyticsService', () => {
       dateTo: '2026-08-15',
     });
 
-    // Created 23:00 local on 8/15; completed 02:30 local on 8/16.
+    // Created 23:00 local on 8/15; completed 02:30 local on 8/16. The
+    // settlement fact uses settledAt so the transaction lands in the 02:00
+    // bucket on the following local weekday, not the creation hour.
     expect(result.trend.find((item) => item.key === '23')).toEqual(
-      expect.objectContaining({ orderCount: 1, revenueVnd: '120000' }),
+      expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }),
     );
     expect(result.trend.find((item) => item.key === '02')).toEqual(
-      expect.objectContaining({ orderCount: 0, revenueVnd: '0' }),
+      expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }),
     );
     expect(result.timeDistribution.find(
       (item) => item.weekday === 5 && item.startHour === 22,
-    )).toEqual(expect.objectContaining({ orderCount: 1, revenueVnd: '120000' }));
+    )).toEqual(expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }));
     expect(result.timeDistribution.find(
-      (item) => item.weekday === 6 && item.startHour === 0,
-    )).toEqual(expect.objectContaining({ orderCount: 0, revenueVnd: '0' }));
+      (item) => item.weekday === 6 && item.startHour === 2,
+    )).toEqual(expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }));
   });
 
   it('keeps today, custom-range and per-day buckets on the same business-date attribution', async () => {
@@ -316,12 +338,14 @@ describe('MerchantAnalyticsService', () => {
     const day2 = await service.getAnalytics(9n, { dateFrom: '2026-08-13', dateTo: '2026-08-13' });
     const day3 = await service.getAnalytics(9n, { dateFrom: '2026-08-14', dateTo: '2026-08-14' });
 
-    expect(range.overview.orderCount).toBe(2);
+    expect(range.overview.settlementCount).toBe(2);
     expect(range.overview.revenueVnd).toBe('150000');
     expect(range.overview.funds.cashRevenueVnd).toBe('100000');
     expect(range.overview.funds.bankTransferRevenueVnd).toBe('50000');
-    expect(range.overview.orderCount).toBe(
-      day1.overview.orderCount + day2.overview.orderCount + day3.overview.orderCount,
+    expect(range.overview.settlementCount).toBe(
+      day1.overview.settlementCount +
+      day2.overview.settlementCount +
+      day3.overview.settlementCount,
     );
     expect(range.overview.revenueVnd).toBe(String(
       BigInt(day1.overview.revenueVnd) +
@@ -329,13 +353,13 @@ describe('MerchantAnalyticsService', () => {
       BigInt(day3.overview.revenueVnd),
     ));
     expect(range.trend.find((item) => item.key === '2026-08-12')).toEqual(
-      expect.objectContaining({ orderCount: 1, revenueVnd: '100000' }),
+      expect.objectContaining({ settlementCount: 1, revenueVnd: '100000' }),
     );
     expect(range.trend.find((item) => item.key === '2026-08-13')).toEqual(
-      expect.objectContaining({ orderCount: 0, revenueVnd: '0' }),
+      expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }),
     );
     expect(range.trend.find((item) => item.key === '2026-08-14')).toEqual(
-      expect.objectContaining({ orderCount: 1, revenueVnd: '50000' }),
+      expect.objectContaining({ settlementCount: 1, revenueVnd: '50000' }),
     );
   });
 
