@@ -58,6 +58,47 @@ try {
     'NOT_CONFIGURED',
   );
   assert.equal(printerConnectionState(printer(), now), 'CONNECTED');
+  const windowsSpoolerPrinter = printer({
+    capabilities: {
+      connectorStatus: {
+        platform: 'WINDOWS',
+        adapter: 'WINDOWS_RAW_SPOOLER',
+        spoolerQueueFound: true,
+        spoolerOpenSucceeded: true,
+        spoolerQueueReady: true,
+        appExecutionReady: true,
+      },
+    },
+  });
+  assert.equal(printerConnectionState(windowsSpoolerPrinter, now), 'CONNECTED');
+  assert.equal(
+    resolvePrintingCenterSummary(
+      [windowsSpoolerPrinter],
+      [{ id: '1', printerId: '1', enabled: true, autoPrint: true }],
+      true,
+      now,
+    ).recentTerminalConnection,
+    'ONLINE',
+  );
+  assert.equal(
+    printerConnectionState(
+      printer({
+        status: 'OFFLINE',
+        capabilities: {
+          connectorStatus: {
+            platform: 'WINDOWS',
+            adapter: 'WINDOWS_RAW_SPOOLER',
+            spoolerQueueFound: true,
+            spoolerOpenSucceeded: true,
+            spoolerQueueReady: false,
+            appExecutionReady: false,
+          },
+        },
+      }),
+      now,
+    ),
+    'OFFLINE',
+  );
   const connectedAt = '2026-07-24T09:58:00.000Z';
   const printerWithConnectionHistory = printer({
     capabilities: {
