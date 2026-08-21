@@ -123,11 +123,11 @@ public sealed class TerminalIdentityAndSpoolerTests
             () => lastError);
 
         Assert.Equal(new uint[] { 0, 32 }, calls);
-        Assert.True(evidence.QueueFound);
-        Assert.True(evidence.OpenSucceeded);
-        Assert.True(evidence.QueueReady);
+        Assert.True(evidence.SpoolerQueueFound);
+        Assert.True(evidence.SpoolerOpenSucceeded);
+        Assert.True(evidence.SpoolerQueueReady);
         Assert.True(evidence.AppExecutionReady);
-        Assert.Equal("READY", evidence.Status);
+        Assert.Equal("READY", evidence.StatusReason);
     }
 
     private static string TemporaryDirectory()
