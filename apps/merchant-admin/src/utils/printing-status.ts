@@ -73,6 +73,31 @@ export function printerConnectionState(
   }
 
   if (evidenceFresh && evidence) {
+    const windowsSpooler =
+      evidence.platform === 'WINDOWS'
+      && evidence.adapter === 'WINDOWS_RAW_SPOOLER';
+    if (windowsSpooler) {
+      if (evidence.spoolerQueueFound === false) return 'DEVICE_NOT_DETECTED';
+      if (
+        printer.status === 'ONLINE'
+        && evidence.spoolerQueueFound === true
+        && evidence.spoolerOpenSucceeded === true
+        && evidence.spoolerQueueReady === true
+        && evidence.appExecutionReady === true
+      ) {
+        return 'CONNECTED';
+      }
+      if (printer.status === 'OFFLINE' || printer.status === 'ERROR') return 'OFFLINE';
+      if (
+        evidence.spoolerOpenSucceeded === false
+        || evidence.spoolerQueueReady === false
+        || evidence.appExecutionReady === false
+      ) {
+        return 'OFFLINE';
+      }
+      return 'RECONNECTING';
+    }
+
     if (evidence.usbDeviceRecognized === false) return 'DEVICE_NOT_DETECTED';
     if (
       evidence.usbDeviceRecognized === true
