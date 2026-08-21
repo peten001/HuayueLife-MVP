@@ -7,6 +7,8 @@ namespace YunQiao.Cashier.Printing;
 
 public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransport
 {
+    private const int ErrorInsufficientBuffer = 122;
+
     private const uint BlockingStatusMask =
         0x00000001 | // PRINTER_STATUS_PAUSED
         0x00000002 | // PRINTER_STATUS_ERROR
@@ -62,24 +64,55 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
             return new WindowsSpoolerEvidence(false, false, false, false, $"OPEN_FAILED_{Marshal.GetLastWin32Error()}");
         try
         {
-            var buffer = Marshal.AllocHGlobal(sizeof(uint));
-            try
-            {
-                if (!GetPrinter(printer, 6, buffer, sizeof(uint), out _))
-                    return new WindowsSpoolerEvidence(true, true, false, false, $"STATUS_FAILED_{Marshal.GetLastWin32Error()}");
-                var status = unchecked((uint)Marshal.ReadInt32(buffer));
-                var ready = IsReadyStatus(status);
-                return new WindowsSpoolerEvidence(
-                    true,
-                    true,
-                    ready,
-                    ready,
-                    ready ? "READY" : $"BLOCKED_0x{status:X8}");
-            }
-            finally { Marshal.FreeHGlobal(buffer); }
+            return ReadSpoolerStatus(printer, GetPrinter, Marshal.GetLastWin32Error);
         }
         finally { _ = ClosePrinter(printer); }
     }
+
+    internal static WindowsSpoolerEvidence ReadSpoolerStatus(
+        IntPtr printer,
+        GetPrinterCall getPrinter,
+        Func<int> getLastError)
+    {
+        var querySucceeded = getPrinter(printer, 6, IntPtr.Zero, 0, out var needed);
+        if (!querySucceeded)
+        {
+            var queryError = getLastError();
+            if (queryError != ErrorInsufficientBuffer)
+                return StatusFailure(queryError);
+        }
+
+        var bufferSize = Math.Max(needed, sizeof(uint));
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var buffer = Marshal.AllocHGlobal(checked((int)bufferSize));
+            try
+            {
+                if (getPrinter(printer, 6, buffer, bufferSize, out var actualNeeded))
+                {
+                    var status = unchecked((uint)Marshal.ReadInt32(buffer));
+                    var ready = IsReadyStatus(status);
+                    return new WindowsSpoolerEvidence(
+                        true,
+                        true,
+                        ready,
+                        ready,
+                        ready ? "READY" : $"BLOCKED_0x{status:X8}");
+                }
+
+                var error = getLastError();
+                if (error != ErrorInsufficientBuffer || actualNeeded <= bufferSize)
+                    return StatusFailure(error);
+                bufferSize = actualNeeded;
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }
+
+        return StatusFailure(ErrorInsufficientBuffer);
+    }
+
+    private static WindowsSpoolerEvidence StatusFailure(int error) =>
+        new(true, true, false, false, $"STATUS_FAILED_{error}");
 
     public static bool IsReadyStatus(uint status) => (status & BlockingStatusMask) == 0;
 
@@ -178,5 +211,7 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
 
     [DllImport("winspool.drv", EntryPoint = "GetPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetPrinter(IntPtr printer, int level, IntPtr buffer, int bufferSize, out int needed);
+    private static extern bool GetPrinter(IntPtr printer, int level, IntPtr buffer, uint bufferSize, out uint needed);
+
+    internal delegate bool GetPrinterCall(IntPtr printer, int level, IntPtr buffer, uint bufferSize, out uint needed);
 }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using YunQiao.Cashier.Core.Protocol;
 using YunQiao.Cashier.Printing;
 using YunQiao.Cashier.Security;
@@ -92,6 +93,41 @@ public sealed class TerminalIdentityAndSpoolerTests
     public void ClassifiesWindowsSpoolerBlockingStatus(uint status, bool expectedReady)
     {
         Assert.Equal(expectedReady, WindowsSpoolerTransport.IsReadyStatus(status));
+    }
+
+    [Fact]
+    public void RetriesSpoolerStatusProbeWithTheBufferSizeRequiredByWindows()
+    {
+        var calls = new List<uint>();
+        var lastError = 0;
+
+        bool GetPrinterStub(IntPtr _, int level, IntPtr buffer, uint bufferSize, out uint needed)
+        {
+            Assert.Equal(6, level);
+            calls.Add(bufferSize);
+            needed = 32;
+            if (buffer == IntPtr.Zero || bufferSize < needed)
+            {
+                lastError = 122;
+                return false;
+            }
+
+            Marshal.WriteInt32(buffer, 0);
+            lastError = 0;
+            return true;
+        }
+
+        var evidence = WindowsSpoolerTransport.ReadSpoolerStatus(
+            new IntPtr(1),
+            GetPrinterStub,
+            () => lastError);
+
+        Assert.Equal(new uint[] { 0, 32 }, calls);
+        Assert.True(evidence.QueueFound);
+        Assert.True(evidence.OpenSucceeded);
+        Assert.True(evidence.QueueReady);
+        Assert.True(evidence.AppExecutionReady);
+        Assert.Equal("READY", evidence.Status);
     }
 
     private static string TemporaryDirectory()
