@@ -11,7 +11,6 @@ import {
   downloadTableQr,
   enableTable,
   getOpenTableSessions,
-  getProfile,
   getTableQrBlob,
   getTableSessionDetail,
   getTables,
@@ -20,7 +19,6 @@ import {
 } from '@/api/merchant';
 import type {
   DiningTable,
-  MerchantProfile,
   OrderStatus,
   TableSessionDetail,
   TableSessionOrderItem,
@@ -42,7 +40,6 @@ type IconName =
   | 'qr-code'
   | 'pencil'
   | 'download'
-  | 'printer'
   | 'refresh-cw'
   | 'alert-triangle'
   | 'chevron-left'
@@ -54,7 +51,6 @@ type MenuActionKey =
   | 'edit'
   | 'view-qr'
   | 'download-qr'
-  | 'print-qr'
   | 'rotate-qr'
   | 'disable';
 type ActionTone = 'soft-green' | 'soft-amber';
@@ -94,7 +90,6 @@ interface MenuAction {
 
 const rows = ref<DiningTable[]>([]);
 const sessions = ref<TableSessionSummary[]>([]);
-const profile = ref<MerchantProfile | null>(null);
 const loading = ref(false);
 const pageError = ref('');
 const message = ref('');
@@ -130,7 +125,6 @@ const iconPaths: Record<IconName, string[]> = {
   'qr-code': ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M15 15h1', 'M19 15h1', 'M15 19h1', 'M19 19h1', 'M17 13v2', 'M13 17h2', 'M17 17h3', 'M13 13h3'],
   pencil: ['M12 20h9', 'm16.5 3.5 4 4L8 20l-4 1 1-4L16.5 3.5Z'],
   download: ['M12 4v10', 'm8-4-8 8-8-8', 'M5 20h14'],
-  printer: ['M6 9V4h12v5', 'M6 18H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-1', 'M7 14h10v7H7z', 'M17 12h.01'],
   'refresh-cw': ['M20 11a8 8 0 1 0 2.3 5.7', 'M20 4v7h-7'],
   'alert-triangle': ['M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z', 'M12 9v4', 'M12 17h.01'],
   'chevron-left': ['m15 18-6-6 6-6'],
@@ -247,15 +241,6 @@ const bodyScrollSnapshot = {
 };
 let bodyScrollLocked = false;
 
-async function ensureProfileLoaded() {
-  if (profile.value) return;
-  try {
-    profile.value = await getProfile();
-  } catch {
-    profile.value = null;
-  }
-}
-
 async function load(options: { silent?: boolean } = {}) {
   closeDesktopMenu();
   closeMobileMenu();
@@ -270,7 +255,6 @@ async function load(options: { silent?: boolean } = {}) {
     rows.value = tables;
     sessions.value = openSessions;
     pageError.value = '';
-    void ensureProfileLoaded();
   } catch (error) {
     const text = errorMessage(error) || t('operationFailed');
     if (!options.silent || !rows.value.length) {
@@ -374,7 +358,6 @@ function closeMobileMenu() {
 async function openQrPreview(row: DiningTable) {
   closeDesktopMenu();
   closeMobileMenu();
-  await ensureProfileLoaded();
   qrPreviewRow.value = row;
   qrVisible.value = true;
   qrLoading.value = true;
@@ -435,69 +418,6 @@ async function enable(row: DiningTable) {
     await load();
   } catch (error) {
     message.value = errorMessage(error);
-  }
-}
-
-async function printQr(row: DiningTable) {
-  try {
-    await ensureProfileLoaded();
-    const blob = await getTableQrBlob(row.id);
-    const dataUrl = await blobToDataUrl(blob);
-    const popup = window.open('', '_blank', 'width=900,height=1200');
-    if (!popup) {
-      message.value = t('operationFailed');
-      return;
-    }
-
-    const merchantName = displayMerchantName();
-    const tableNo = row.tableNo?.trim() || '';
-
-    popup.document.open();
-    popup.document.write(`<!doctype html>
-<html lang="${localeHtml()}">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(t('qrPrintPreview'))}</title>
-  <style>
-    body { margin: 0; font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; background: #fff; color: #111; }
-    .sheet { box-sizing: border-box; width: 100%; min-height: 100vh; padding: 36px 24px; display: grid; place-items: center; }
-    .card { width: 100%; max-width: 620px; border: 1px solid #ddd; border-radius: 18px; padding: 24px 20px 28px; text-align: center; }
-    .merchant { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
-    .table-no { font-size: 36px; font-weight: 800; margin-bottom: 18px; }
-    .qr { width: 520px; max-width: 100%; height: 520px; object-fit: contain; display: block; margin: 0 auto 18px; }
-    .line { font-size: 24px; line-height: 1.5; margin-top: 8px; }
-    .hint { font-size: 30px; font-weight: 800; margin-top: 14px; }
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { padding: 0; }
-      .card { border: none; border-radius: 0; max-width: none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="card">
-      <div class="merchant">${escapeHtml(merchantName)}</div>
-      <div class="table-no">${escapeHtml(`${t('qrPrintTableNo')}：${tableNo}`)}</div>
-      <img class="qr" src="${dataUrl}" alt="QR" />
-      <div class="hint">${escapeHtml(t('qrPrintWechat'))}</div>
-      <div class="line">${escapeHtml(t('qrPrintVietnamese'))}</div>
-      <div class="line">${escapeHtml(t('qrPrintEnglish'))}</div>
-    </div>
-  </div>
-  <script>
-    window.addEventListener('load', () => {
-      setTimeout(() => window.print(), 300);
-    });
-    window.onafterprint = () => window.close();
-  <\/script>
-</body>
-</html>`);
-    popup.document.close();
-    popup.focus();
-  } catch (error) {
-    message.value = error instanceof Error ? error.message : t('operationFailed');
   }
 }
 
@@ -702,7 +622,6 @@ function getMoreActions(row: TableViewModel): MenuAction[] {
 
   actions.push(
     { key: 'download-qr', labelKey: 'downloadTableCode', icon: 'download' },
-    { key: 'print-qr', labelKey: 'printTableCode', icon: 'printer' },
     {
       key: 'rotate-qr',
       labelKey: 'regenerateTableCode',
@@ -758,10 +677,6 @@ async function runMenuAction(action: MenuActionKey, row: TableViewModel) {
     await downloadQrFile(row);
     return;
   }
-  if (action === 'print-qr') {
-    await printQr(row);
-    return;
-  }
   if (action === 'rotate-qr') {
     await rotate(row);
     return;
@@ -809,26 +724,6 @@ function mobileBillItemMeta(item: TableSessionOrderItem) {
     return `× ${item.quantity} · ${formatMoney(item.unitPriceVnd)}`;
   }
   return `× ${item.quantity}`;
-}
-
-function displayMerchantName() {
-  if (!profile.value) return '';
-  if (locale.value === 'vi' && profile.value.nameVi) return profile.value.nameVi;
-  if (locale.value === 'en' && profile.value.nameEn) return profile.value.nameEn;
-  return profile.value.nameZh;
-}
-
-function localeHtml() {
-  return locale.value === 'vi' ? 'vi' : locale.value === 'en' ? 'en' : 'zh-CN';
-}
-
-function escapeHtml(value: string) {
-  return value
-    .split('&').join('&amp;')
-    .split('<').join('&lt;')
-    .split('>').join('&gt;')
-    .split('"').join('&quot;')
-    .split("'").join('&#39;');
 }
 
 function blobToDataUrl(blob: Blob) {
@@ -1286,9 +1181,6 @@ onBeforeUnmount(() => {
         <div class="table-modal-header">
           <div>
             <h2>{{ t('viewTableCode') }}</h2>
-            <p v-if="qrPreviewRow">
-              {{ qrPreviewRow.tableNo }} · {{ qrPreviewRow.tableName || '-' }}
-            </p>
           </div>
           <button type="button" class="table-icon-button" @click="closeQrModal">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1317,24 +1209,15 @@ onBeforeUnmount(() => {
         </div>
 
         <template v-else-if="qrPreviewRow && qrImageUrl">
-          <div class="table-qr-summary">
-            <strong>{{ displayMerchantName() }}</strong>
-            <span>{{ t('tableNo') }} · {{ qrPreviewRow.tableNo }}</span>
-            <span>{{ t('displayName') }} · {{ qrPreviewRow.tableName || '-' }}</span>
-            <span>{{ t('qrVersion') }} · v{{ qrPreviewRow.qrVersion }}</span>
-          </div>
           <div class="table-qr-image-wrap">
-            <img :src="qrImageUrl" :alt="`${qrPreviewRow.tableNo} QR`" class="table-qr-image" />
+            <img :src="qrImageUrl" :alt="t('viewTableCode')" class="table-qr-image" />
           </div>
           <div class="table-modal-actions">
             <button type="button" class="table-secondary-button" @click="closeQrModal">
               {{ t('close') }}
             </button>
-            <button type="button" class="table-action-button table-action-button--soft-green" @click="downloadQrFile(qrPreviewRow)">
+            <button type="button" class="table-solid-button" @click="downloadQrFile(qrPreviewRow)">
               {{ t('downloadTableCode') }}
-            </button>
-            <button type="button" class="table-solid-button" @click="printQr(qrPreviewRow)">
-              {{ t('printTableCode') }}
             </button>
           </div>
         </template>
@@ -2090,7 +1973,7 @@ onBeforeUnmount(() => {
 
 .table-mobile-actions .table-action-button {
   flex: 1 1 calc(50% - 5px);
-  min-height: 42px;
+  min-height: 44px;
 }
 
 .modal-backdrop {
@@ -2132,6 +2015,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.table-modal-header > div {
+  min-width: 0;
 }
 
 .table-modal-header h2,
@@ -2206,34 +2093,16 @@ onBeforeUnmount(() => {
   background: #237a32;
 }
 
-.table-qr-summary {
-  display: grid;
-  gap: 6px;
-  justify-items: center;
-  text-align: center;
-}
-
-.table-qr-summary strong {
-  font-size: 18px;
-  color: #183127;
-}
-
-.table-qr-summary span {
-  color: #667085;
-  font-size: 13px;
-}
-
 .table-qr-image-wrap {
   display: grid;
   place-items: center;
-  padding: 18px 0 6px;
+  padding: 8px 0 2px;
 }
 
 .table-qr-image {
-  width: min(320px, 100%);
+  display: block;
+  width: min(360px, 100%);
   max-width: 100%;
-  border-radius: 14px;
-  border: 1px solid #eef2ef;
   background: #ffffff;
 }
 

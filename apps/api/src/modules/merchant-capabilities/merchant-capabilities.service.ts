@@ -3,7 +3,10 @@ import { PrismaService } from '../../database/prisma.service';
 
 const CAPABILITY_CODES = ['pickupEnabled', 'deliveryEnabled'] as const;
 
-export type MerchantCapabilityCode = (typeof CAPABILITY_CODES)[number] | 'qrOrderEnabled';
+export type MerchantCapabilityCode =
+  | (typeof CAPABILITY_CODES)[number]
+  | 'qrOrderEnabled'
+  | 'tableManagementEnabled';
 
 type CapabilityItem = {
   isEnabled: boolean;
@@ -15,6 +18,7 @@ type CapabilityItem = {
 
 export type MerchantCapabilitySource = {
   id?: bigint;
+  dineInEnabled?: boolean | null;
   pickupEnabled?: boolean | null;
   deliveryEnabled?: boolean | null;
   capabilities?: CapabilityItem[] | null;
@@ -23,6 +27,12 @@ export type MerchantCapabilitySource = {
 export type ResolvedMerchantCapabilities = {
   pickupEnabled: boolean;
   deliveryEnabled: boolean;
+};
+
+export type ResolvedQrTableOrderingCapabilities = {
+  dineInEnabled: boolean;
+  qrOrderEnabled: boolean;
+  tableManagementEnabled: boolean;
 };
 
 export type MerchantCapabilityMismatchSummary = {
@@ -100,6 +110,34 @@ export class MerchantCapabilitiesService {
   ) {
     const explicit = findCapabilityValue(merchant, code);
     return explicit ?? fallbackValue;
+  }
+
+  resolveQrTableOrderingCapabilities(
+    merchant: MerchantCapabilitySource,
+  ): ResolvedQrTableOrderingCapabilities {
+    const dineInEnabled = Boolean(merchant.dineInEnabled);
+    const legacyFallback = merchant.capabilities?.length ? false : dineInEnabled;
+    return {
+      dineInEnabled,
+      qrOrderEnabled: this.resolveCapabilityFlag(
+        merchant,
+        'qrOrderEnabled',
+        legacyFallback,
+      ),
+      tableManagementEnabled: this.resolveCapabilityFlag(
+        merchant,
+        'tableManagementEnabled',
+        legacyFallback,
+      ),
+    };
+  }
+
+  qrTableOrderingBlockReason(merchant: MerchantCapabilitySource) {
+    const capabilities = this.resolveQrTableOrderingCapabilities(merchant);
+    if (!capabilities.dineInEnabled) return '商家当前未开启堂食';
+    if (!capabilities.qrOrderEnabled) return '商家当前未开启扫码点餐';
+    if (!capabilities.tableManagementEnabled) return '商家当前未开启桌台管理';
+    return null;
   }
 
   async getLegacyCapabilityMismatchSummary(
