@@ -16,6 +16,7 @@ describe('Merchant management isolation', () => {
   let previousPlatformOrderingEnabled: string | undefined;
   let previousMiniappQrEntryUrl: string | undefined;
   const originalFetch = global.fetch;
+  const officialScheme = 'weixin://dl/business/?t=E2eOfficialTicket_123';
   const suffix = `${Date.now()}`;
 
   beforeAll(async () => {
@@ -31,6 +32,19 @@ describe('Merchant management isolation', () => {
           : input instanceof URL
             ? input.toString()
             : input.url;
+
+      if (url.startsWith('https://api.weixin.qq.com/cgi-bin/token?')) {
+        return new Response(
+          JSON.stringify({ access_token: 'e2e-access-token', expires_in: 7200 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.startsWith('https://api.weixin.qq.com/wxa/generatescheme?')) {
+        return new Response(
+          JSON.stringify({ errcode: 0, errmsg: 'ok', openlink: officialScheme }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
 
       throw new Error(`Unexpected outbound request in merchant management E2E: ${url}`);
     }) as typeof fetch;
@@ -520,14 +534,27 @@ describe('Merchant management isolation', () => {
 
   it('serves the public short-link bridge and respects table status changes', async () => {
     const table = await createTable(tokenOne, `S-${suffix}`, '短链桌台');
+    const identityBeforeBridge = await prisma.diningTable.findUniqueOrThrow({
+      where: { id: BigInt(table.id) },
+      select: { qrToken: true, qrVersion: true },
+    });
 
     const activeBridge = await request(app.getHttpServer())
       .get(`/t/${table.qrToken}`)
       .expect(200);
     expect(activeBridge.headers['content-type']).toMatch(/text\/html/);
-    expect(activeBridge.text).toContain('weixin://dl/business/');
-    expect(activeBridge.text).toContain('pages/scan/resolve');
-    expect(activeBridge.text).toContain(table.qrToken);
+    expect(activeBridge.text).toContain(officialScheme);
+    expect(activeBridge.text.split(officialScheme)).toHaveLength(3);
+    expect(activeBridge.text).not.toContain('appid=');
+    expect(activeBridge.text).not.toContain('path=pages/scan/resolve');
+    expect(activeBridge.text).not.toContain('/api/v1/qr/resolve');
+    expect(activeBridge.text).not.toContain(table.qrToken);
+    await expect(
+      prisma.diningTable.findUniqueOrThrow({
+        where: { id: BigInt(table.id) },
+        select: { qrToken: true, qrVersion: true },
+      }),
+    ).resolves.toEqual(identityBeforeBridge);
 
     await request(app.getHttpServer())
       .delete(`/api/v1/merchant/tables/${table.id}`)
