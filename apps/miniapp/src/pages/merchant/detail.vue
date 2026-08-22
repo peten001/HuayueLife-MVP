@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   onHide,
   onLoad,
@@ -30,6 +30,15 @@ import { createMerchantFavoriteGate } from '@/utils/merchant-favorite-gate';
 import type { OneTapLoginUiOutcome } from '@/utils/one-tap-login-ui';
 import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
 import { getToken } from '@/utils/storage';
+import {
+  firstGalleryIndexForCategory,
+  flattenGalleryMedia,
+  galleryCategoryForIndex,
+  normalizeGalleryIndex,
+  reconcileGalleryIndex,
+  type GalleryCategory,
+  type GalleryKey,
+} from './merchant-gallery-state';
 
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
@@ -171,13 +180,6 @@ const visibleGalleryImages = computed(() =>
     ? (merchant.value?.images ?? []).filter((item) => item.isVisible !== false)
     : [],
 );
-type GalleryKey = 'COVER' | 'STORE' | 'PRODUCT' | 'ENVIRONMENT';
-type GalleryCategory = {
-  key: GalleryKey;
-  label: string;
-  urls: string[];
-};
-
 function sortedGalleryUrls(imageType: string, limit: number) {
   return visibleGalleryImages.value
     .filter((item) => item.imageType === imageType)
@@ -200,11 +202,17 @@ const galleryCategories = computed<GalleryCategory[]>(() => {
   return categories.filter((category) => category.urls.length > 0);
 });
 
-const heroImages = computed(() => {
-  const selected = galleryCategories.value.find(
-    (category) => category.key === activeGalleryCategory.value,
+const flatGalleryMedia = computed(() => flattenGalleryMedia(galleryCategories.value));
+const heroImages = computed(() => flatGalleryMedia.value.map((item) => item.url));
+
+watch(flatGalleryMedia, (nextMedia, previousMedia) => {
+  const nextIndex = reconcileGalleryIndex(
+    previousMedia,
+    nextMedia,
+    activeHeroIndex.value,
   );
-  return selected?.urls ?? galleryCategories.value[0]?.urls ?? [];
+  activeHeroIndex.value = nextIndex;
+  activeGalleryCategory.value = galleryCategoryForIndex(nextMedia, nextIndex);
 });
 const signatureDishes = computed(() => merchant.value?.signatureDishes ?? []);
 const hotRecommendations = computed(() => merchant.value?.hotRecommendations ?? []);
@@ -338,14 +346,22 @@ async function loadMerchant() {
   loading.value = true;
   error.value = '';
   errorRetryable.value = true;
+  const previousGalleryMedia = flatGalleryMedia.value;
+  const previousHeroIndex = activeHeroIndex.value;
   try {
     const [loadedMerchant] = await Promise.all([
       getMerchant(merchantId.value),
       appConfig.ensureLoaded(),
     ]);
     merchant.value = loadedMerchant;
-    activeGalleryCategory.value = galleryCategories.value[0]?.key ?? '';
-    activeHeroIndex.value = 0;
+    const nextGalleryMedia = flatGalleryMedia.value;
+    const nextHeroIndex = reconcileGalleryIndex(
+      previousGalleryMedia,
+      nextGalleryMedia,
+      previousHeroIndex,
+    );
+    activeHeroIndex.value = nextHeroIndex;
+    activeGalleryCategory.value = galleryCategoryForIndex(nextGalleryMedia, nextHeroIndex);
     signatureExpanded.value = false;
     hotExpanded.value = false;
     favoriteState.value = isFavorite(merchant.value.id);
@@ -384,13 +400,16 @@ function appendDictionaryCapability(
 
 function handleHeroChange(event: { detail?: { current?: number } }) {
   const current = Number(event.detail?.current ?? 0);
-  activeHeroIndex.value = Number.isFinite(current) ? current : 0;
+  const nextIndex = normalizeGalleryIndex(current, flatGalleryMedia.value.length);
+  activeHeroIndex.value = nextIndex;
+  activeGalleryCategory.value = galleryCategoryForIndex(flatGalleryMedia.value, nextIndex);
 }
 
 function selectGalleryCategory(key: GalleryKey) {
-  if (activeGalleryCategory.value === key) return;
+  const categoryIndex = firstGalleryIndexForCategory(flatGalleryMedia.value, key);
+  if (categoryIndex < 0) return;
   activeGalleryCategory.value = key;
-  activeHeroIndex.value = 0;
+  activeHeroIndex.value = categoryIndex;
 }
 
 function handleBack() {
@@ -651,7 +670,9 @@ function handlePhoneTap() {
 
 function previewGallery(imageUrl?: string | null) {
   const current = resolveMediaUrl(imageUrl ?? undefined);
-  const urls = heroImages.value.filter((url) => mediaAvailable(url));
+  const urls = flatGalleryMedia.value
+    .map((item) => item.url)
+    .filter((url) => mediaAvailable(url));
   if (!urls.length || !current || !urls.includes(current)) return;
   uni.previewImage({ current, urls });
 }
@@ -719,15 +740,15 @@ function hasCapability(code: string, fallbackValue: boolean) {
           :circular="heroImages.length > 1"
           @change="handleHeroChange"
         >
-          <swiper-item v-for="(url, index) in heroImages" :key="url">
+          <swiper-item v-for="media in flatGalleryMedia" :key="media.stableKey">
             <image
-              v-if="mediaAvailable(url)"
+              v-if="mediaAvailable(media.url)"
               class="hero-image"
-              :src="url"
+              :src="media.url"
               mode="aspectFill"
-              :aria-label="`${merchantName(merchant, locale)} ${index + 1}`"
-              @tap="previewGallery(url)"
-              @error="handleMediaError(url)"
+              :aria-label="`${merchantName(merchant, locale)} ${media.globalIndex + 1}`"
+              @tap="previewGallery(media.url)"
+              @error="handleMediaError(media.url)"
             />
             <view v-else class="hero-image placeholder">
               <view class="placeholder-mark">

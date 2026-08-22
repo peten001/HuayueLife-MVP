@@ -28,7 +28,7 @@ function sliceBetween(source, startMarker, endMarker) {
 const galleryBlock = sliceBetween(
   detail,
   'const galleryCategories = computed<GalleryCategory[]>(() => {',
-  'const heroImages = computed(() => {',
+  'const flatGalleryMedia = computed(',
 );
 const displayTagsBlock = sliceBetween(
   detail,
@@ -80,7 +80,8 @@ assert.match(detail, /signatureDefaultLimit = computed\(\(\) => \(viewportWidth\
 assert.match(detail, /hotDefaultLimit = computed\(\(\) => \(viewportWidth\.value < 390 \? 3 : 4\)\)/);
 assert.match(detail, /v-for="dish in visibleSignatureDishes"/);
 assert.match(detail, /v-for="product in visibleHotRecommendations"/);
-assert.match(detail, /activeGalleryCategory\.value = key;[\s\S]*activeHeroIndex\.value = 0;/);
+assert.match(detail, /firstGalleryIndexForCategory\(flatGalleryMedia\.value, key\)/);
+assert.match(detail, /activeGalleryCategory\.value = key;[\s\S]*activeHeroIndex\.value = categoryIndex;/);
 assert.match(detail, /merchant\.value\?\.detailDisplayTags/);
 assert.match(detail, /merchant\.value\?\.promotionTags/);
 
@@ -90,6 +91,7 @@ assert.notEqual(heroShellStart, -1, 'missing Hero shell');
 assert.notEqual(heroShellEnd, -1, 'missing Hero shell boundary');
 const heroShellTemplate = detail.slice(heroShellStart, heroShellEnd);
 assert.match(heroShellTemplate, /class="gallery-category-scroll"/);
+assert.match(heroShellTemplate, /v-for="media in flatGalleryMedia"/);
 assert.match(heroShellTemplate, /v-if="galleryCategories\.length"/);
 assert.match(heroShellTemplate, /v-for="category in galleryCategories"/);
 assert.match(heroShellTemplate, /role="tablist"/);
