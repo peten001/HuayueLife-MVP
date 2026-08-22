@@ -4,6 +4,7 @@ import { formatNumberCurrency, orderTypeLabel, productName, useI18n, usePageTitl
 import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
+import { formatCartQuantity } from '@/utils/product-unit-display';
 
 const appConfig = useAppConfigStore();
 const cartStore = useCartStore();
@@ -107,7 +108,7 @@ function goHome() {
         <text class="price">{{ formatNumberCurrency(item.product.priceVnd) }}</text>
         <view class="stepper">
           <button class="minus" @click="change(item.id, item.quantity - 1)">−</button>
-          <text class="quantity">{{ item.quantity }}</text>
+          <text class="quantity">{{ formatCartQuantity(item.quantity, item.product.unit) }}</text>
           <button class="plus" @click="change(item.id, item.quantity + 1)">+</button>
           <button class="delete" @click="remove(item.id)">{{ t('delete') }}</button>
         </view>
@@ -269,6 +270,7 @@ function goHome() {
   width: 50rpx;
   height: 50rpx;
   min-height: 50rpx;
+  flex: none;
   padding: 0;
   margin: 0;
   border-radius: 50%;
@@ -296,16 +298,21 @@ function goHome() {
 
 .quantity {
   min-width: 30rpx;
+  max-width: 120rpx;
+  overflow: hidden;
   color: #1f2d24;
   font-size: 24rpx;
   font-weight: 700;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stepper .delete {
   width: auto;
   height: auto;
   min-height: 0;
+  flex: none;
   margin-left: auto;
   color: #c26a6a;
   background: transparent;

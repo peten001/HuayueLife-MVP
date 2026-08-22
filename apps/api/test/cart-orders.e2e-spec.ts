@@ -71,6 +71,7 @@ describe('Cart and order workflow', () => {
         nameZh: 'Day4 主菜',
         imageUrl: 'https://example.com/day4.jpg',
         priceVnd: 60000n,
+        unit: '份',
         status: 'ON_SALE',
       },
     });
@@ -131,6 +132,13 @@ describe('Cart and order workflow', () => {
     expect(dineCart.orderType).toBe('DINE_IN');
     expect(dineCart.tableId).toBe(tableId.toString());
     expect(dineCart.totalQuantity).toBe(2);
+    expect(dineCart.itemAmountVnd).toBe('120000');
+    expect(dineCart.items[0].product.unit).toBe('份');
+
+    const reloadedDineCart = await getCart(token, 'DINE_IN', tableToken);
+    expect(reloadedDineCart.totalQuantity).toBe(2);
+    expect(reloadedDineCart.itemAmountVnd).toBe('120000');
+    expect(reloadedDineCart.items[0].product.unit).toBe('份');
 
     await request(app.getHttpServer())
       .post('/api/v1/cart/items')
@@ -169,6 +177,22 @@ describe('Cart and order workflow', () => {
       .expect(200);
     expect(updated.body.data.items[0].quantity).toBe(3);
     expect(updated.body.data.items[0].remark).toBe('少盐');
+    expect(updated.body.data.items[0].product.unit).toBeNull();
+    expect(updated.body.data.itemAmountVnd).toBe('150000');
+
+    const decremented = await request(app.getHttpServer())
+      .patch(`/api/v1/cart/items/${itemId}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ quantity: 2 })
+      .expect(200);
+    expect(decremented.body.data.items[0].quantity).toBe(2);
+    expect(decremented.body.data.items[0].product.unit).toBeNull();
+    expect(decremented.body.data.itemAmountVnd).toBe('100000');
+
+    const reloadedLegacyCart = await getCart(otherToken, 'PICKUP');
+    expect(reloadedLegacyCart.items[0].quantity).toBe(2);
+    expect(reloadedLegacyCart.items[0].product.unit).toBeNull();
+    expect(reloadedLegacyCart.itemAmountVnd).toBe('100000');
 
     await request(app.getHttpServer())
       .delete(`/api/v1/cart/items/${itemId}`)
