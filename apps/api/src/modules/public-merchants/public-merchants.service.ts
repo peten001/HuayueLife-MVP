@@ -104,9 +104,10 @@ export class PublicMerchantsService {
   async nearby(query: NearbyMerchantsQueryDto) {
     console.log('[public-merchants] nearby query', query);
     const selectedOperationalRegion = resolveSelectedOperationalRegion(query);
+    const keyword = query.keyword?.trim();
     console.log('[public-merchants] selected operational region', selectedOperationalRegion);
 
-    if (!selectedOperationalRegion) {
+    if (!selectedOperationalRegion && !keyword) {
       return {
         items: [],
         page: query.page,
@@ -120,7 +121,9 @@ export class PublicMerchantsService {
       status: 'ACTIVE',
       isVisibleOnClient: true,
     };
-    where.province = selectedOperationalRegion;
+    if (selectedOperationalRegion) {
+      where.province = selectedOperationalRegion;
+    }
     if (query.businessTypeId) {
       where.businessTypeId = BigInt(query.businessTypeId);
     }
@@ -205,7 +208,11 @@ export class PublicMerchantsService {
       page: query.page,
       pageSize: PAGE_SIZE,
       total: results.length,
-      locationMode: hasUserLocation ? 'GPS' : 'CITY',
+      locationMode: hasUserLocation
+        ? 'GPS'
+        : selectedOperationalRegion
+          ? 'CITY'
+          : 'GLOBAL_SEARCH',
     };
   }
 

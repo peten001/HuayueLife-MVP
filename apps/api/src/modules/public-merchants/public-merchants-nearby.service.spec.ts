@@ -97,7 +97,13 @@ function nearbyQuery(overrides: Record<string, unknown>) {
 }
 
 function createService(rows: any[], platformOrderingEnabled = true) {
-  const findMany = jest.fn().mockResolvedValue(rows);
+  const findMany = jest.fn().mockImplementation(({ where }: { where: Record<string, unknown> }) => (
+    Promise.resolve(rows.filter((row) => (
+      row.status === where.status
+      && row.isVisibleOnClient === where.isVisibleOnClient
+      && (where.province === undefined || row.province === where.province)
+    )))
+  ));
   const service = new PublicMerchantsService(
     { merchant: { findMany } } as never,
     {
@@ -172,6 +178,80 @@ describe('PublicMerchantsService homepage query, ordering and pagination', () =>
     const empty = await service.nearby(nearbyQuery({ province: '北江', page: 1, keyword: '不存在的商家' }));
     expect(empty.items).toEqual([]);
     expect(empty.total).toBe(0);
+  });
+
+  it('searches visible active merchants across operational regions when keyword has no region', async () => {
+    const rows = [
+      merchant(1, {
+        nameZh: '跨城同名商家',
+        province: '北江',
+      }),
+      merchant(2, {
+        nameZh: '跨城精选商家',
+        province: '北宁',
+        city: '北宁',
+        promotionTags: [promotionTag('FEATURED')],
+      }),
+      merchant(3, {
+        nameZh: '跨城隐藏商家',
+        province: '北宁',
+        city: '北宁',
+        isVisibleOnClient: false,
+      }),
+      merchant(4, {
+        nameZh: '跨城停用商家',
+        province: '北宁',
+        city: '北宁',
+        status: 'DISABLED',
+      }),
+    ];
+    const { service, findMany } = createService(rows);
+
+    const result = await service.nearby(nearbyQuery({ page: 1, keyword: ' 跨城 ' }));
+
+    expect(result).toMatchObject({
+      total: 2,
+      locationMode: 'GLOBAL_SEARCH',
+    });
+    expect(result.items.map((item) => item.id)).toEqual([2n, 1n]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        status: 'ACTIVE',
+        isVisibleOnClient: true,
+      },
+    }));
+  });
+
+  it('keeps region mandatory when keyword is empty', async () => {
+    const { service, findMany } = createService([merchant(1)]);
+
+    await expect(service.nearby(nearbyQuery({ page: 1 }))).resolves.toMatchObject({
+      items: [],
+      total: 0,
+      locationMode: 'REGION_REQUIRED',
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('sorts and paginates the full cross-region keyword result before slicing', async () => {
+    const rows = Array.from({ length: 22 }, (_, index) => merchant(index + 1, {
+      nameZh: `跨城分页商家${String(index + 1).padStart(2, '0')}`,
+      province: index % 2 === 0 ? '北江' : '北宁',
+      city: index % 2 === 0 ? '北江' : '北宁',
+    }));
+    rows[21].promotionTags = [promotionTag('FEATURED')];
+    const { service } = createService(rows);
+
+    const pageOne = await service.nearby(nearbyQuery({ page: 1, keyword: '跨城分页' }));
+    const pageTwo = await service.nearby(nearbyQuery({ page: 2, keyword: '跨城分页' }));
+    const combinedIds = [...pageOne.items, ...pageTwo.items].map((item) => item.id);
+
+    expect(pageOne.items[0]?.id).toBe(22n);
+    expect(pageOne.items).toHaveLength(20);
+    expect(pageTwo.items).toHaveLength(2);
+    expect(pageOne.total).toBe(22);
+    expect(pageTwo.total).toBe(22);
+    expect(new Set(combinedIds).size).toBe(22);
   });
 
   it('applies OPEN, PICKUP, DELIVERY and DINE_IN effective filters before pagination', async () => {
