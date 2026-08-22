@@ -28,17 +28,18 @@ export function merchantQueryForPage(
   targetPage: number,
 ) {
   const query: {
-    province: string;
+    province?: string;
     page: number;
     lat?: number;
     lng?: number;
     homepageCategoryKey?: HomeCategoryKey;
     keyword?: string;
     serviceFilter?: HomeServiceFilter[];
-  } = {
-    province: request.regionCode === 'Bac Ninh' ? '北宁' : '北江',
-    page: targetPage,
-  };
+  } = { page: targetPage };
+  const keyword = request.keyword?.trim() || undefined;
+  if (!keyword) {
+    query.province = request.regionCode === 'Bac Ninh' ? '北宁' : '北江';
+  }
   if (request.latitude !== undefined && request.longitude !== undefined) {
     query.lat = request.latitude;
     query.lng = request.longitude;
@@ -46,8 +47,8 @@ export function merchantQueryForPage(
   if (request.homepageCategoryKey) {
     query.homepageCategoryKey = request.homepageCategoryKey;
   }
-  if (request.keyword) {
-    query.keyword = request.keyword;
+  if (keyword) {
+    query.keyword = keyword;
   }
   if (request.serviceFilters.length) {
     query.serviceFilter = [...request.serviceFilters];

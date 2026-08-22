@@ -29,10 +29,34 @@ const baseQuery = {
 };
 
 assert.deepEqual(helper.merchantQueryForPage(baseQuery, 2), {
-  province: '北江',
   page: 2,
   homepageCategoryKey: 'coffee_milk_tea',
   keyword: '农品香',
+  serviceFilter: ['OPEN', 'PICKUP'],
+  lat: 21.2,
+  lng: 106.2,
+});
+
+assert.deepEqual(helper.merchantQueryForPage({
+  ...baseQuery,
+  keyword: '   ',
+}, 1), {
+  province: '北江',
+  page: 1,
+  homepageCategoryKey: 'coffee_milk_tea',
+  serviceFilter: ['OPEN', 'PICKUP'],
+  lat: 21.2,
+  lng: 106.2,
+});
+
+assert.deepEqual(helper.merchantQueryForPage({
+  ...baseQuery,
+  regionCode: 'Bac Ninh',
+  keyword: undefined,
+}, 1), {
+  province: '北宁',
+  page: 1,
+  homepageCategoryKey: 'coffee_milk_tea',
   serviceFilter: ['OPEN', 'PICKUP'],
   lat: 21.2,
   lng: 106.2,
@@ -90,6 +114,7 @@ assert.match(page, /mergeMerchantPage\(merchants\.value, rawList\)/);
 assert.match(page, /hasMoreMerchantPages\(/);
 assert.match(page, /merchantListError/);
 assert.match(page, /retryMerchantList/);
+assert.match(page, /keyword: normalizeKeyword\(searchKeyword\.value\)/);
 assert.doesNotMatch(page, /categoryFilteredMerchants|filteredMerchants|visibleMerchants/);
 assert.doesNotMatch(page, /manualPopular[\s\S]{0,120}sort|sort[\s\S]{0,120}manualPopular/);
 assert.doesNotMatch(page, /compareDistance\(/);
