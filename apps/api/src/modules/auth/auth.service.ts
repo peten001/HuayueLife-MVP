@@ -447,7 +447,7 @@ export class AuthService {
       : resolvedPhone;
   }
 
-  private async getWechatAccessToken(appId: string, appSecret: string) {
+  async getWechatAccessToken(appId: string, appSecret: string) {
     const cached = this.wechatAccessTokenCache;
     if (cached && cached.expiresAt > Date.now()) {
       return cached.token;

@@ -4,6 +4,7 @@ import { onLoad } from '@dcloudio/uni-app';
 import { resolveQr } from '@/api/catalog';
 import { merchantName, useI18n, usePageTitle } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
+import { parseTableQrLaunchInput } from '@/utils/table-qr-launch-input';
 
 const appConfig = useAppConfigStore();
 const status = ref('');
@@ -22,13 +23,12 @@ function goHome() {
 }
 
 onLoad(async (options) => {
-  console.log('[scan resolve] onLoad options', options);
   await appConfig.ensureLoaded();
   if (!appConfig.platformOrderingEnabled) {
     orderingUnavailable.value = true;
     return;
   }
-  const resolved = resolveScanInput(options);
+  const resolved = parseTableQrLaunchInput(options);
   if (!resolved) {
     error.value = t('qrMissingTableInfo');
     return;
@@ -51,64 +51,6 @@ onLoad(async (options) => {
     error.value = caught instanceof Error ? caught.message : t('qrParseFailed');
   }
 });
-
-function resolveScanInput(options?: Record<string, unknown>) {
-  const token = normalizeToken(String(options?.token ?? ''));
-  if (token) return { token };
-
-  const scene = normalizeScene(String(options?.scene ?? ''));
-  if (scene) return { scene };
-
-  const candidates = [
-    String(options?.path ?? ''),
-    String(options?.result ?? ''),
-    String(options?.rawData ?? ''),
-    String(options?.q ?? ''),
-  ]
-    .map(decodeMaybe)
-    .filter(Boolean);
-  for (const value of candidates) {
-    const parsed = parseScanValue(value);
-    if (parsed) return parsed;
-  }
-  return null;
-}
-
-function parseScanValue(value: string) {
-  const token = extractFromText(value, 'token');
-  if (token) return { token };
-  const scene = extractFromText(value, 'scene');
-  if (scene) return { scene };
-  if (normalizeToken(value)) return { token: value };
-  if (normalizeScene(value)) return { scene: value };
-  return null;
-}
-
-function extractFromText(value: string, key: 'token' | 'scene') {
-  const matched = value.match(new RegExp(`[?&]${key}=([^&#]+)`));
-  if (!matched) return '';
-  const decoded = decodeMaybe(matched[1]);
-  return key === 'token' ? normalizeToken(decoded) : normalizeScene(decoded);
-}
-
-function normalizeToken(value: string) {
-  const decoded = decodeMaybe(value);
-  return /^[a-f0-9]{64}$/i.test(decoded) ? decoded : '';
-}
-
-function normalizeScene(value: string) {
-  const decoded = decodeMaybe(value);
-  return /^t\d+v\d+$/.test(decoded) ? decoded : '';
-}
-
-function decodeMaybe(value: string) {
-  if (!value) return '';
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
 </script>
 
 <template>

@@ -1,14 +1,29 @@
+import { BadGatewayException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import sharp = require('sharp');
 import { TablesService } from './tables.service';
 
-type MiniappQrEnvResolver = {
-  getTableQrEnvVersion(merchantId: number): 'release' | 'trial' | 'develop';
-};
-
-describe('TablesService miniapp QR env version', () => {
+describe('TablesService standard table QR', () => {
+  const table = {
+    id: 18n,
+    merchantId: 4n,
+    tableNo: '大厅01号桌',
+    tableName: '靠窗长桌名称'.repeat(8),
+    qrToken: 'a'.repeat(64),
+    qrVersion: 7,
+    status: 'ACTIVE',
+  };
+  const findFirst = jest.fn();
+  const update = jest.fn();
   const config = new Map<string, string>();
   const configService = {
     get: jest.fn((key: string) => config.get(key)),
+  };
+  const prisma = {
+    diningTable: {
+      findFirst,
+      update,
+    },
   };
 
   let service: TablesService;
@@ -16,63 +31,75 @@ describe('TablesService miniapp QR env version', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     config.clear();
+    config.set('MINIAPP_QR_ENTRY_URL', 'https://api.huayueyouxuan.com/t');
+    findFirst.mockResolvedValue({ ...table });
     service = new TablesService(
-      { diningTable: {} } as never,
+      prisma as never,
       configService as unknown as ConfigService,
     );
   });
 
-  function resolveEnvVersion(merchantId: number) {
-    return (
-      service as unknown as MiniappQrEnvResolver
-    ).getTableQrEnvVersion(merchantId);
-  }
+  it('builds the canonical HTTPS payload and safely handles a trailing slash', () => {
+    expect(service.buildPublicQrPayload(table)).toBe(
+      `https://api.huayueyouxuan.com/t/${table.qrToken}`,
+    );
 
-  it('uses trial for whitelisted merchant 2', () => {
-    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
-
-    expect(resolveEnvVersion(2)).toBe('trial');
+    config.set('MINIAPP_QR_ENTRY_URL', 'https://api.huayueyouxuan.com/t///');
+    expect(service.buildPublicQrPayload(table)).toBe(
+      `https://api.huayueyouxuan.com/t/${table.qrToken}`,
+    );
   });
 
-  it('uses trial for whitelisted merchant 7', () => {
-    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
+  it('rejects missing, malformed, query-bearing, and direct resolver bases', () => {
+    config.delete('MINIAPP_QR_ENTRY_URL');
+    expect(() => service.buildPublicQrPayload(table)).toThrow(BadGatewayException);
 
-    expect(resolveEnvVersion(7)).toBe('trial');
+    config.set('MINIAPP_QR_ENTRY_URL', 'not-a-url');
+    expect(() => service.buildPublicQrPayload(table)).toThrow(BadGatewayException);
+
+    config.set('MINIAPP_QR_ENTRY_URL', 'https://api.huayueyouxuan.com/t?source=qr');
+    expect(() => service.buildPublicQrPayload(table)).toThrow(BadGatewayException);
+
+    config.set(
+      'MINIAPP_QR_ENTRY_URL',
+      'https://api.huayueyouxuan.com/api/v1/qr/resolve',
+    );
+    expect(() => service.buildPublicQrPayload(table)).toThrow(BadGatewayException);
   });
 
-  it('uses release for non-whitelisted merchants by default', () => {
-    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2,7');
+  it('returns a pure 1024px PNG without calling WeChat or mutating QR identity', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+    try {
+      const result = await service.qrImage(table.merchantId, table.id);
+      const metadata = await sharp(result.image).metadata();
 
-    expect(resolveEnvVersion(11)).toBe('release');
-  });
-
-  it('uses release for merchant 2 when the trial whitelist is not configured', () => {
-    expect(resolveEnvVersion(2)).toBe('release');
-  });
-
-  it('uses the dedicated QR env variable for non-whitelisted merchants', () => {
-    config.set('WECHAT_MINIAPP_QR_ENV_VERSION', 'release');
-
-    expect(resolveEnvVersion(11)).toBe('release');
-  });
-
-  it('falls back to release for invalid QR env values', () => {
-    config.set('WECHAT_MINIAPP_QR_ENV_VERSION', 'staging');
-
-    expect(resolveEnvVersion(11)).toBe('release');
-  });
-
-  it('ignores the legacy miniapp env variable for table QR codes', () => {
-    config.set('WECHAT_MINIAPP_ENV_VERSION', 'trial');
-
-    expect(resolveEnvVersion(11)).toBe('release');
-  });
-
-  it('ignores empty and invalid trial whitelist entries', () => {
-    config.set('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS', '2, 7, abc');
-
-    expect(resolveEnvVersion(2)).toBe('trial');
-    expect(resolveEnvVersion(7)).toBe('trial');
-    expect(resolveEnvVersion(11)).toBe('release');
+      expect(metadata.format).toBe('png');
+      expect(metadata.width).toBe(1024);
+      expect(metadata.height).toBe(1024);
+      const { data, info } = await sharp(result.image)
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const channelValues = new Set<number>();
+      let hasNonGrayscalePixel = false;
+      for (let index = 0; index < data.length; index += info.channels) {
+        channelValues.add(data[index]);
+        if (data[index + 1] !== data[index] || data[index + 2] !== data[index]) {
+          hasNonGrayscalePixel = true;
+          break;
+        }
+      }
+      expect(hasNonGrayscalePixel).toBe(false);
+      expect([...channelValues].sort((left, right) => left - right)).toEqual([0, 255]);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+      expect(result.table.qrToken).toBe(table.qrToken);
+      expect(result.table.qrVersion).toBe(table.qrVersion);
+      expect(service.buildScene(result.table)).toBe('t18v7');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

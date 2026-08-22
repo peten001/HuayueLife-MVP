@@ -192,6 +192,149 @@ describe('Cart and order workflow', () => {
       });
   });
 
+  it('enforces every QR table-ordering gate across menu, cart, preview, and create without blocking pickup', async () => {
+    const codes = [
+      'pickupEnabled',
+      'deliveryEnabled',
+      'qrOrderEnabled',
+      'tableManagementEnabled',
+    ] as const;
+    const capabilities = await Promise.all(
+      codes.map((code, index) => prisma.capability.upsert({
+        where: { code },
+        update: { enabled: true },
+        create: {
+          code,
+          nameZh: `E2E ${code}`,
+          groupCode: 'RESTAURANT',
+          groupNameZh: '餐厅能力',
+          enabled: true,
+          defaultValue: false,
+          sortOrder: 900 + index,
+        },
+      })),
+    );
+    const capabilityByCode = new Map(
+      capabilities.map((capability) => [capability.code, capability]),
+    );
+
+    await prisma.merchantCapability.createMany({
+      data: capabilities.map((capability) => ({
+        merchantId,
+        capabilityId: capability.id,
+        isEnabled: true,
+      })),
+      skipDuplicates: true,
+    });
+
+    const setCapability = async (code: typeof codes[number], isEnabled: boolean) => {
+      const capability = capabilityByCode.get(code);
+      if (!capability) throw new Error(`Missing E2E capability ${code}`);
+      await prisma.merchantCapability.update({
+        where: {
+          merchantId_capabilityId: { merchantId, capabilityId: capability.id },
+        },
+        data: { isEnabled },
+      });
+    };
+
+    try {
+      await setCapability('qrOrderEnabled', false);
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/merchants/${merchantId}/menu`)
+        .query({ tableToken })
+        .expect(410);
+      await request(app.getHttpServer())
+        .post('/api/v1/cart/items')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          merchantId: merchantId.toString(),
+          orderType: 'DINE_IN',
+          tableToken,
+          productId: productId.toString(),
+        })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/api/v1/orders/preview')
+        .set('Authorization', `Bearer ${token}`)
+        .send(orderPayload('DINE_IN', { tableToken }))
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/api/v1/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', `blocked_qr_${Date.now()}`)
+        .send(orderPayload('DINE_IN', { tableToken }))
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ merchantId: merchantId.toString(), orderType: 'PICKUP' })
+        .expect(200);
+
+      await setCapability('qrOrderEnabled', true);
+      await setCapability('tableManagementEnabled', false);
+      await request(app.getHttpServer())
+        .get('/api/v1/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .query({
+          merchantId: merchantId.toString(),
+          orderType: 'DINE_IN',
+          tableToken,
+        })
+        .expect(400);
+
+      await setCapability('tableManagementEnabled', true);
+      await prisma.merchant.update({
+        where: { id: merchantId },
+        data: { dineInEnabled: false },
+      });
+      await request(app.getHttpServer())
+        .get('/api/v1/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .query({
+          merchantId: merchantId.toString(),
+          orderType: 'DINE_IN',
+          tableToken,
+        })
+        .expect(400);
+
+      await prisma.merchant.update({
+        where: { id: merchantId },
+        data: { dineInEnabled: true },
+      });
+      await request(app.getHttpServer())
+        .get(`/api/v1/merchants/${merchantId}/menu`)
+        .query({ tableToken })
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .query({
+          merchantId: merchantId.toString(),
+          orderType: 'DINE_IN',
+          tableToken,
+        })
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/qr/resolve')
+        .query({ token: tableToken })
+        .expect(200);
+    } finally {
+      await prisma.merchant.update({
+        where: { id: merchantId },
+        data: { dineInEnabled: true },
+      });
+      await prisma.merchantCapability.deleteMany({
+        where: {
+          merchantId,
+          capabilityId: { in: capabilities.map((capability) => capability.id) },
+        },
+      });
+    }
+  });
+
   it('rechecks current price and rejects sold-out products', async () => {
     await prisma.product.update({
       where: { id: productId },

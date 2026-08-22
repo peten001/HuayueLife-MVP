@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AppConfigService } from '../app-config/app-config.service';
+import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
 import type { ResolveQrQueryDto } from './dto/resolve-qr-query.dto';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class QrService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly appConfig: AppConfigService,
+    private readonly merchantCapabilities: MerchantCapabilitiesService,
   ) {}
 
   async resolve(query: ResolveQrQueryDto) {
@@ -45,8 +47,11 @@ export class QrService {
     ) {
       throw new GoneException('商家当前不可用');
     }
-    if (!qrOrderEnabled(table.merchant)) {
-      throw new GoneException('商家当前未开启堂食');
+    const blockReason = this.merchantCapabilities.qrTableOrderingBlockReason(
+      table.merchant,
+    );
+    if (blockReason) {
+      throw new GoneException(blockReason);
     }
 
     return {
@@ -95,8 +100,11 @@ export class QrService {
     ) {
       throw new GoneException('商家当前不可用');
     }
-    if (!qrOrderEnabled(table.merchant)) {
-      throw new GoneException('商家当前未开启堂食');
+    const blockReason = this.merchantCapabilities.qrTableOrderingBlockReason(
+      table.merchant,
+    );
+    if (blockReason) {
+      throw new GoneException(blockReason);
     }
 
     return {
@@ -168,19 +176,4 @@ export class QrService {
       return raw;
     }
   }
-}
-
-function qrOrderEnabled(merchant: {
-  dineInEnabled: boolean;
-  capabilities?: Array<{
-    isEnabled: boolean;
-    capability: { code: string };
-  }>;
-}) {
-  if (merchant.capabilities?.length) {
-    return merchant.capabilities.some(
-      (item) => item.capability.code === 'qrOrderEnabled' && item.isEnabled,
-    );
-  }
-  return merchant.dineInEnabled;
 }

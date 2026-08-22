@@ -1,6 +1,7 @@
 import { INestApplication, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import sharp = require('sharp');
 import request = require('supertest');
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
@@ -13,22 +14,17 @@ describe('Merchant management isolation', () => {
   let tokenOne: string;
   let tokenTwo: string;
   let previousPlatformOrderingEnabled: string | undefined;
-  let previousWechatAppId: string | undefined;
-  let previousWechatAppSecret: string | undefined;
-  let previousPublicQrBaseUrl: string | undefined;
+  let previousMiniappQrEntryUrl: string | undefined;
   const originalFetch = global.fetch;
+  const officialScheme = 'weixin://dl/business/?t=E2eOfficialTicket_123';
   const suffix = `${Date.now()}`;
 
   beforeAll(async () => {
     previousPlatformOrderingEnabled = process.env.PLATFORM_ORDERING_ENABLED;
-    previousWechatAppId = process.env.WECHAT_APP_ID;
-    previousWechatAppSecret = process.env.WECHAT_APP_SECRET;
-    previousPublicQrBaseUrl = process.env.PUBLIC_QR_BASE_URL;
+    previousMiniappQrEntryUrl = process.env.MINIAPP_QR_ENTRY_URL;
     process.env.PLATFORM_ORDERING_ENABLED = 'true';
     process.env.JWT_SECRET = 'e2e-test-secret-at-least-32-characters';
-    process.env.WECHAT_APP_ID = 'wx2e951e5e94eae8c4';
-    process.env.WECHAT_APP_SECRET = 'merchant-management-e2e-secret';
-    process.env.PUBLIC_QR_BASE_URL = 'https://api.huayueyouxuan.com';
+    process.env.MINIAPP_QR_ENTRY_URL = 'https://api.huayueyouxuan.com/t';
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url =
         typeof input === 'string'
@@ -39,22 +35,15 @@ describe('Merchant management isolation', () => {
 
       if (url.startsWith('https://api.weixin.qq.com/cgi-bin/token?')) {
         return new Response(
-          JSON.stringify({
-            access_token: 'merchant-management-e2e-access-token',
-            expires_in: 7200,
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
+          JSON.stringify({ access_token: 'e2e-access-token', expires_in: 7200 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-
-      if (url.startsWith('https://api.weixin.qq.com/wxa/getwxacodeunlimit?')) {
-        return new Response(MINIMAL_WECHAT_QR_PNG, {
-          status: 200,
-          headers: { 'content-type': 'image/png' },
-        });
+      if (url.startsWith('https://api.weixin.qq.com/wxa/generatescheme?')) {
+        return new Response(
+          JSON.stringify({ errcode: 0, errmsg: 'ok', openlink: officialScheme }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
       }
 
       throw new Error(`Unexpected outbound request in merchant management E2E: ${url}`);
@@ -117,9 +106,7 @@ describe('Merchant management isolation', () => {
       'PLATFORM_ORDERING_ENABLED',
       previousPlatformOrderingEnabled,
     );
-    restoreEnvironmentVariable('WECHAT_APP_ID', previousWechatAppId);
-    restoreEnvironmentVariable('WECHAT_APP_SECRET', previousWechatAppSecret);
-    restoreEnvironmentVariable('PUBLIC_QR_BASE_URL', previousPublicQrBaseUrl);
+    restoreEnvironmentVariable('MINIAPP_QR_ENTRY_URL', previousMiniappQrEntryUrl);
 
     if (merchantOneId) {
       await prisma.product.deleteMany({
@@ -489,6 +476,20 @@ describe('Merchant management isolation', () => {
       .expect(200);
     expect(newResolved.body.data.table.tableNo).toBe(table.tableNo);
 
+    await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ scene: `t${table.id}v2` })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/qr/resolve')
+      .query({ scene: `t${table.id}v1` })
+      .expect(410);
+
+    const identityBeforeImage = await prisma.diningTable.findUniqueOrThrow({
+      where: { id: BigInt(table.id) },
+      select: { qrToken: true, qrVersion: true },
+    });
+
     const image = await request(app.getHttpServer())
       .get(`/api/v1/merchant/tables/${table.id}/qr-image`)
       .set('Authorization', `Bearer ${tokenOne}`)
@@ -501,10 +502,15 @@ describe('Merchant management isolation', () => {
       .expect('Content-Type', /image\/png/)
       .expect(200);
     expect(Buffer.from(image.body).subarray(1, 4).toString()).toBe('PNG');
+    const metadata = await sharp(Buffer.from(image.body)).metadata();
+    expect(metadata).toMatchObject({ format: 'png', width: 1024, height: 1024 });
+    expect(global.fetch).not.toHaveBeenCalled();
     const stored = await prisma.diningTable.findUnique({
       where: { id: BigInt(table.id) },
     });
     expect(stored?.status).toBe('ACTIVE');
+    expect(stored?.qrToken).toBe(identityBeforeImage.qrToken);
+    expect(stored?.qrVersion).toBe(identityBeforeImage.qrVersion);
   });
 
   it('returns QR images even when the table number contains Chinese characters', async () => {
@@ -528,14 +534,27 @@ describe('Merchant management isolation', () => {
 
   it('serves the public short-link bridge and respects table status changes', async () => {
     const table = await createTable(tokenOne, `S-${suffix}`, '短链桌台');
+    const identityBeforeBridge = await prisma.diningTable.findUniqueOrThrow({
+      where: { id: BigInt(table.id) },
+      select: { qrToken: true, qrVersion: true },
+    });
 
     const activeBridge = await request(app.getHttpServer())
       .get(`/t/${table.qrToken}`)
       .expect(200);
     expect(activeBridge.headers['content-type']).toMatch(/text\/html/);
-    expect(activeBridge.text).toContain('weixin://dl/business/');
-    expect(activeBridge.text).toContain('pages/scan/resolve');
-    expect(activeBridge.text).toContain(table.qrToken);
+    expect(activeBridge.text).toContain(officialScheme);
+    expect(activeBridge.text.split(officialScheme)).toHaveLength(3);
+    expect(activeBridge.text).not.toContain('appid=');
+    expect(activeBridge.text).not.toContain('path=pages/scan/resolve');
+    expect(activeBridge.text).not.toContain('/api/v1/qr/resolve');
+    expect(activeBridge.text).not.toContain(table.qrToken);
+    await expect(
+      prisma.diningTable.findUniqueOrThrow({
+        where: { id: BigInt(table.id) },
+        select: { qrToken: true, qrVersion: true },
+      }),
+    ).resolves.toEqual(identityBeforeBridge);
 
     await request(app.getHttpServer())
       .delete(`/api/v1/merchant/tables/${table.id}`)
@@ -544,7 +563,13 @@ describe('Merchant management isolation', () => {
 
     await request(app.getHttpServer())
       .get(`/t/${table.qrToken}`)
-      .expect(410);
+      .expect(410)
+      .expect((response) => {
+        expect(response.headers['content-type']).toMatch(/text\/html/);
+        expect(response.text).toContain('二维码暂不可用');
+        expect(response.text).not.toContain(table.qrToken);
+        expect(response.text).not.toContain(table.tableNo);
+      });
 
     const restored = await request(app.getHttpServer())
       .post(`/api/v1/merchant/tables/${table.id}/enable`)
@@ -558,7 +583,11 @@ describe('Merchant management isolation', () => {
       .expect(201);
     await request(app.getHttpServer())
       .get(`/t/${table.qrToken}`)
-      .expect(404);
+      .expect(404)
+      .expect((response) => {
+        expect(response.text).toContain('二维码暂不可用');
+        expect(response.text).not.toContain(table.qrToken);
+      });
     await request(app.getHttpServer())
       .get(`/t/${rotated.body.data.qrToken}`)
       .expect(200);
@@ -600,6 +629,7 @@ describe('Merchant management isolation', () => {
       tableNo: string;
       tableName?: string;
       qrToken: string;
+      qrVersion: number;
     };
   }
 });
@@ -618,11 +648,6 @@ function merchantData(nameZh: string) {
     status: 'ACTIVE' as const,
   };
 }
-
-const MINIMAL_WECHAT_QR_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-  'base64',
-);
 
 function restoreEnvironmentVariable(name: string, value: string | undefined) {
   if (value === undefined) {

@@ -48,4 +48,53 @@ describe('MerchantCapabilitiesService', () => {
       deliveryEnabled: false,
     });
   });
+
+  it('uses the legacy dine-in flag only when no capability records exist', () => {
+    const service = new MerchantCapabilitiesService({} as never);
+
+    expect(service.resolveQrTableOrderingCapabilities({ dineInEnabled: true })).toEqual({
+      dineInEnabled: true,
+      qrOrderEnabled: true,
+      tableManagementEnabled: true,
+    });
+    expect(
+      service.resolveQrTableOrderingCapabilities({
+        dineInEnabled: true,
+        capabilities: [{ isEnabled: true, capability: { code: 'pickupEnabled' } }],
+      }),
+    ).toEqual({
+      dineInEnabled: true,
+      qrOrderEnabled: false,
+      tableManagementEnabled: false,
+    });
+  });
+
+  it('requires dine-in, QR ordering, and table management for public table ordering', () => {
+    const service = new MerchantCapabilitiesService({} as never);
+    const merchant = {
+      dineInEnabled: true,
+      capabilities: [
+        { isEnabled: true, capability: { code: 'qrOrderEnabled' } },
+        { isEnabled: true, capability: { code: 'tableManagementEnabled' } },
+      ],
+    };
+
+    expect(service.qrTableOrderingBlockReason(merchant)).toBeNull();
+    expect(service.qrTableOrderingBlockReason({ ...merchant, dineInEnabled: false }))
+      .toBe('商家当前未开启堂食');
+    expect(service.qrTableOrderingBlockReason({
+      ...merchant,
+      capabilities: [
+        { isEnabled: false, capability: { code: 'qrOrderEnabled' } },
+        { isEnabled: true, capability: { code: 'tableManagementEnabled' } },
+      ],
+    })).toBe('商家当前未开启扫码点餐');
+    expect(service.qrTableOrderingBlockReason({
+      ...merchant,
+      capabilities: [
+        { isEnabled: true, capability: { code: 'qrOrderEnabled' } },
+        { isEnabled: false, capability: { code: 'tableManagementEnabled' } },
+      ],
+    })).toBe('商家当前未开启桌台管理');
+  });
 });

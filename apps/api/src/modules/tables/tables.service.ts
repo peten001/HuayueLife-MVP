@@ -5,21 +5,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
+import * as QRCode from 'qrcode';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateTableDto } from './dto/create-table.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
 
-type WechatAccessTokenCache = {
-  token: string;
-  expiresAt: number;
-};
-
-type WechatMiniProgramEnvVersion = 'release' | 'trial' | 'develop';
-
 @Injectable()
 export class TablesService {
-  private accessTokenCache: WechatAccessTokenCache | null = null;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -80,7 +72,7 @@ export class TablesService {
 
   async qrImage(merchantId: bigint, id: bigint) {
     const table = await this.requireOwnedTable(merchantId, id);
-    const image = await this.buildWechatMiniProgramCode(table);
+    const image = await this.buildStandardQrCode(table);
     return { table, image };
   }
 
@@ -88,124 +80,44 @@ export class TablesService {
     return `t${table.id.toString()}v${table.qrVersion}`;
   }
 
-  private async buildWechatMiniProgramCode(table: {
-    id: bigint;
-    merchantId: bigint;
-    qrVersion: number;
-  }) {
-    const appId = this.config.get<string>('WECHAT_APP_ID')?.trim();
-    const appSecret = this.config.get<string>('WECHAT_APP_SECRET')?.trim();
-    const envVersion = this.getTableQrEnvVersion(table.merchantId);
-    if (!appId || !appSecret) {
-      throw new BadGatewayException('微信小程序配置缺失');
+  buildPublicQrPayload(table: { qrToken: string }) {
+    const configuredBase = this.config
+      .get<string>('MINIAPP_QR_ENTRY_URL')
+      ?.trim();
+    if (!configuredBase) {
+      throw new BadGatewayException('桌台二维码公网入口配置缺失');
     }
 
-    const accessToken = await this.getWechatAccessToken(appId, appSecret);
-    const scene = this.buildScene(table);
-    console.log(`[table-qr] merchantId=${table.merchantId.toString()} env_version=${envVersion}`);
-    const response = await fetch(
-      `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${encodeURIComponent(accessToken)}`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          scene,
-          page: 'pages/scan/resolve',
-          check_path: false,
-          env_version: envVersion,
-          is_hyaline: false,
-        }),
-      },
-    );
-
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!response.ok || contentType.includes('application/json')) {
-      const message = await this.readWechatError(response);
-      throw new BadGatewayException(message || '微信小程序码生成失败');
-    }
-
-    return Buffer.from(await response.arrayBuffer());
-  }
-
-  private getTableQrEnvVersion(
-    merchantId: bigint | number,
-  ): WechatMiniProgramEnvVersion {
-    if (this.isTrialQrMerchant(merchantId)) {
-      return 'trial';
-    }
-
-    const qrEnvVersion = this.normalizeMiniappEnvVersion(
-      this.config.get<string>('WECHAT_MINIAPP_QR_ENV_VERSION')?.trim(),
-    );
-    return qrEnvVersion ?? 'release';
-  }
-
-  private normalizeMiniappEnvVersion(
-    value?: string,
-  ): WechatMiniProgramEnvVersion | null {
-    const normalized = value?.trim().toLowerCase();
-    if (
-      normalized === 'release' ||
-      normalized === 'trial' ||
-      normalized === 'develop'
-    ) {
-      return normalized;
-    }
-
-    return null;
-  }
-
-  private isTrialQrMerchant(merchantId: bigint | number) {
-    const numericMerchantId = Number(merchantId);
-    if (!Number.isSafeInteger(numericMerchantId)) return false;
-    const ids = this.config
-      .get<string>('WECHAT_MINIAPP_TRIAL_QR_MERCHANT_IDS')
-      ?.split(',')
-      .map((value) => Number(value.trim()))
-      .filter((value) => Number.isSafeInteger(value));
-    return Boolean(ids?.includes(numericMerchantId));
-  }
-
-  private async getWechatAccessToken(appId: string, appSecret: string) {
-    const cached = this.accessTokenCache;
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.token;
-    }
-
-    const response = await fetch(
-      'https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=' +
-        encodeURIComponent(appId) +
-        '&secret=' +
-        encodeURIComponent(appSecret),
-    );
-    const payload = (await response.json()) as {
-      access_token?: string;
-      expires_in?: number;
-      errcode?: number;
-      errmsg?: string;
-    };
-    if (!response.ok || !payload.access_token) {
-      throw new BadGatewayException(
-        payload.errmsg || '微信 access_token 获取失败',
-      );
-    }
-
-    const expiresIn = Math.max(0, Number(payload.expires_in ?? 7200));
-    this.accessTokenCache = {
-      token: payload.access_token,
-      expiresAt: Date.now() + (expiresIn - 300) * 1000,
-    };
-    return payload.access_token;
-  }
-
-  private async readWechatError(response: Response) {
-    const text = await response.text();
+    let entryUrl: URL;
     try {
-      const payload = JSON.parse(text) as { errmsg?: string; errcode?: number };
-      return payload.errmsg || text;
+      entryUrl = new URL(configuredBase);
     } catch {
-      return text;
+      throw new BadGatewayException('桌台二维码公网入口配置无效');
     }
+    if (
+      !['http:', 'https:'].includes(entryUrl.protocol)
+      || entryUrl.search
+      || entryUrl.hash
+      || /\/api\/v1\/qr\/resolve\/?$/i.test(entryUrl.pathname)
+    ) {
+      throw new BadGatewayException('桌台二维码公网入口配置无效');
+    }
+
+    entryUrl.pathname = `${entryUrl.pathname.replace(/\/+$/, '')}/${encodeURIComponent(table.qrToken)}`;
+    return entryUrl.toString();
+  }
+
+  private async buildStandardQrCode(table: { qrToken: string }) {
+    return QRCode.toBuffer(this.buildPublicQrPayload(table), {
+      type: 'png',
+      width: 1024,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    });
   }
 
   private async requireOwnedTable(merchantId: bigint, id: bigint) {
