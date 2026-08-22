@@ -170,6 +170,13 @@ describe('Cart and order workflow', () => {
     expect(updated.body.data.items[0].quantity).toBe(3);
     expect(updated.body.data.items[0].remark).toBe('少盐');
 
+    const decremented = await request(app.getHttpServer())
+      .patch(`/api/v1/cart/items/${itemId}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ quantity: 2 })
+      .expect(200);
+    expect(decremented.body.data.items[0].quantity).toBe(2);
+
     await request(app.getHttpServer())
       .delete(`/api/v1/cart/items/${itemId}`)
       .set('Authorization', `Bearer ${otherToken}`)

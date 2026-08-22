@@ -15,6 +15,7 @@ import {
 import { useAppConfigStore } from '@/stores/app-config';
 import { useCartStore, type ContextSwitchResult } from '@/stores/cart';
 import { resolveMediaUrl } from '@/utils/media';
+import { formatProductUnitSuffix } from '@/utils/product-unit-display';
 import type { MenuResponse, OrderType, Product } from '@/types/api';
 import type { CartContext } from '@/types/api';
 
@@ -545,10 +546,15 @@ function goHome() {
                 </text>
               </text>
               <view class="price-row">
-                <text class="price">
-                  <text class="currency">₫</text>
-                  {{ Number(product.priceVnd).toLocaleString() }}
-                </text>
+                <view class="price-copy">
+                  <text class="price">
+                    <text class="currency">₫</text>
+                    {{ Number(product.priceVnd).toLocaleString() }}
+                  </text>
+                  <text v-if="formatProductUnitSuffix(product.unit)" class="price-unit">
+                    {{ formatProductUnitSuffix(product.unit) }}
+                  </text>
+                </view>
                 <button
                   v-if="product.status !== 'SOLD_OUT'"
                   class="add"
@@ -1001,10 +1007,31 @@ function goHome() {
   margin-top: auto;
 }
 
+.price-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  overflow: hidden;
+}
+
 .price {
+  flex: none;
   color: #1f2d24;
   font-size: 17px;
   font-weight: 800;
+}
+
+.price-unit {
+  display: block;
+  min-width: 0;
+  margin-left: 6rpx;
+  overflow: hidden;
+  color: #6e7d72;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .currency {
