@@ -397,11 +397,35 @@ describe('Cart and order workflow', () => {
       tableToken,
     });
     expect(second.id).toBe(first.id);
-    expect(first.status).toBe('PENDING_ACCEPTANCE');
+    expect(first.status).toBe('ACCEPTED');
+    expect(first.acceptedAt).toBeTruthy();
+    expect(second.status).toBe('ACCEPTED');
+    expect(second.acceptedAt).toBe(first.acceptedAt);
     expect(first.tableNoSnapshot).toBe('D4-A01');
     expect(first.items[0].productNameZhSnapshot).toBe('Day4 主菜');
     expect(first.items[0].unitPriceVnd).toBe('65000');
     expect(first.statusLogs).toHaveLength(1);
+    expect(first.statusLogs[0]).toEqual(
+      expect.objectContaining({
+        fromStatus: null,
+        toStatus: 'ACCEPTED',
+        operatorType: 'SYSTEM',
+      }),
+    );
+    const persisted = await prisma.order.findUniqueOrThrow({
+      where: { id: BigInt(first.id) },
+      include: { statusLogs: true },
+    });
+    expect(persisted.status).toBe('ACCEPTED');
+    expect(persisted.acceptedAt?.toISOString()).toBe(first.acceptedAt);
+    expect(persisted.statusLogs).toEqual([
+      expect.objectContaining({
+        fromStatus: null,
+        toStatus: 'ACCEPTED',
+        operatorType: 'SYSTEM',
+        action: 'DINE_IN_AUTO_ACCEPTED',
+      }),
+    ]);
     expect(
       await prisma.order.count({
         where: { userId, idempotencyKey: key },
@@ -424,6 +448,7 @@ describe('Cart and order workflow', () => {
       contactPhone: '0911111111',
     });
     expect(order.orderType).toBe('PICKUP');
+    expect(order.status).toBe('PENDING_ACCEPTANCE');
     expect(order.deliveryFeeVnd).toBe('0');
   });
 
@@ -509,6 +534,7 @@ describe('Cart and order workflow', () => {
       deliveryLongitude: 106.077,
     });
     expect(order.orderType).toBe('DELIVERY');
+    expect(order.status).toBe('PENDING_ACCEPTANCE');
     expect(order.totalAmountVnd).toBe('135000');
   });
 

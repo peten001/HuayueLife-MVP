@@ -289,7 +289,7 @@ export interface OrderPreview {
 export interface CreatedOrder {
   id: string;
   orderNo: string;
-  status: 'PENDING_ACCEPTANCE';
+  status: OrderStatus;
   orderType: OrderType;
   totalAmountVnd: string;
 }

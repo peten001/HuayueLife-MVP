@@ -676,9 +676,13 @@ function haversineDistanceKm(
 }
 
 function showSuccess(order: CreatedOrder) {
+  const successMessage =
+    order.orderType === 'DINE_IN'
+      ? t('dineInSubmittedToTableBill')
+      : t('waitingMerchantAccept');
   uni.showModal({
     title: t('orderSuccessTitle'),
-    content: `${t('orderNumber', { orderNo: order.orderNo })}\n${t('waitingMerchantAccept')}`,
+    content: `${t('orderNumber', { orderNo: order.orderNo })}\n${successMessage}`,
     showCancel: false,
     success: () =>
       uni.redirectTo({ url: `/pages/order/detail?id=${order.id}` }),
