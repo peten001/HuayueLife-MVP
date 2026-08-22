@@ -391,11 +391,17 @@ export class PublicMerchantsService {
     if (table.status !== 'ACTIVE') {
       throw new GoneException('该桌台已停用');
     }
-    if (table.merchant.status !== 'ACTIVE') {
+    if (
+      table.merchant.status !== 'ACTIVE'
+      || table.merchant.merchantType !== 'RESTAURANT'
+    ) {
       throw new GoneException('商家当前不可用');
     }
-    if (!table.merchant.dineInEnabled) {
-      throw new GoneException('商家当前未开启堂食');
+    const blockReason = this.merchantCapabilities.qrTableOrderingBlockReason(
+      table.merchant,
+    );
+    if (blockReason) {
+      throw new GoneException(blockReason);
     }
     return table;
   }

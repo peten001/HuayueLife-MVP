@@ -1,0 +1,55 @@
+<Window x:Class="YunQiao.Cashier.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="云桥收银 · YunQiao Cashier"
+        Width="1280" Height="800" MinWidth="760" MinHeight="460"
+        WindowStartupLocation="CenterScreen">
+  <Grid Background="{StaticResource CanvasBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <wv2:WebView2 x:Name="CashierWebView" DefaultBackgroundColor="White" />
+
+    <Border x:Name="NativeStatusBar"
+            Grid.Row="1"
+            MinHeight="30"
+            Padding="12,3"
+            Background="{StaticResource SurfaceBrush}"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="0,1,0,0"
+            AutomationProperties.LiveSetting="Polite">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{StaticResource WarningBrush}" VerticalAlignment="Center" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,12,0" VerticalAlignment="Center">
+          <TextBlock x:Name="DeviceStatusText"
+                     Text="正在连接…"
+                     FontSize="12"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     VerticalAlignment="Center" />
+          <TextBlock x:Name="StatusDetailText"
+                     Margin="10,0,0,0"
+                     FontSize="12"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     VerticalAlignment="Center"
+                     Visibility="Collapsed" />
+        </StackPanel>
+        <Button x:Name="ReloadButton"
+                Grid.Column="2"
+                Content="重新加载"
+                Click="Reload_Click"
+                Style="{StaticResource TextButton}"
+                AutomationProperties.Name="重新加载收银页面"
+                Visibility="Collapsed" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

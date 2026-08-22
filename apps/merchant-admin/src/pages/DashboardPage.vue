@@ -75,11 +75,11 @@ const businessDateHint = computed(() => businessDaySummary.value
   : businessDayCopy.value.snapshot);
 const activeOrders = computed(() => [...pending.value, ...inProgress.value].slice(0, 6));
 const businessDayCopy = computed(() => locale.value === 'vi' ? {
-  revenue: 'Doanh thu ngày kinh doanh', revenueHint: 'Tổng thực thu của đơn đã hoàn tất trong ngày kinh doanh', orders: 'Số lần thanh toán trong ngày', snapshot: 'Tổng quan ngày kinh doanh', completed: 'Đã hoàn tất', cancelled: 'Đã hủy trong ngày kinh doanh', latest: 'Đơn mới nhất trong ngày kinh doanh', date: 'Ngày kinh doanh', unavailable: 'Không thể tải tổng kết ngày kinh doanh; danh sách đơn vẫn được cập nhật.',
+  revenue: 'Doanh thu ngày kinh doanh', mobileRevenue: 'Doanh thu ngày', revenueHint: 'Tổng thực thu của đơn đã hoàn tất trong ngày kinh doanh', orders: 'Số lần thanh toán trong ngày', mobileOrders: 'Lần thanh toán', snapshot: 'Tổng quan ngày kinh doanh', completed: 'Đã hoàn tất', cancelled: 'Đã hủy trong ngày kinh doanh', latest: 'Đơn mới nhất trong ngày kinh doanh', date: 'Ngày kinh doanh', unavailable: 'Không thể tải tổng kết ngày kinh doanh; danh sách đơn vẫn được cập nhật.',
 } : locale.value === 'en' ? {
-  revenue: 'Business-day revenue', revenueHint: 'Collected total from completed orders in this business day', orders: 'Business-day settlements', snapshot: 'Business-day overview', completed: 'Completed', cancelled: 'Cancelled in this business day', latest: 'Latest order in this business day', date: 'Business date', unavailable: 'Business-day summary is unavailable; live orders are still updating.',
+  revenue: 'Business-day revenue', mobileRevenue: 'Day revenue', revenueHint: 'Collected total from completed orders in this business day', orders: 'Business-day settlements', mobileOrders: 'Settlements', snapshot: 'Business-day overview', completed: 'Completed', cancelled: 'Cancelled in this business day', latest: 'Latest order in this business day', date: 'Business date', unavailable: 'Business-day summary is unavailable; live orders are still updating.',
 } : {
-  revenue: '本营业日营业额', revenueHint: '本营业日已完成订单实收合计', orders: '本营业日结账笔数', snapshot: '营业日概览', completed: '本营业日已完成', cancelled: '本营业日已取消', latest: '本营业日最近下单', date: '营业日', unavailable: '营业日汇总暂时无法读取，实时订单仍会继续刷新。',
+  revenue: '本营业日营业额', mobileRevenue: '本日营额', revenueHint: '本营业日已完成订单实收合计', orders: '本营业日结账笔数', mobileOrders: '结账笔数', snapshot: '营业日概览', completed: '本营业日已完成', cancelled: '本营业日已取消', latest: '本营业日最近下单', date: '营业日', unavailable: '营业日汇总暂时无法读取，实时订单仍会继续刷新。',
 });
 const operations = computed(() => ({
   revenue: businessDayCopy.value.revenue,
@@ -146,7 +146,12 @@ const mobileMetricCards = computed(() =>
           : metric.key === 'pending'
             ? 'mobile-metric-warn'
             : 'mobile-metric-neutral',
-    title: metric.key === 'revenue' ? operations.value.revenue : metric.title,
+    title:
+      metric.key === 'revenue'
+        ? businessDayCopy.value.mobileRevenue
+        : metric.key === 'orders'
+          ? businessDayCopy.value.mobileOrders
+          : metric.title,
     hint:
       metric.key === 'revenue'
         ? operations.value.revenueHint
@@ -1014,6 +1019,7 @@ type Action =
 </template>
 
 <style scoped>
+/* finesse · register=product · A=incumbent-sage · B=system-sans · C=operations-dashboard · D=feedback-only · E=business-day-kpis · SOUL=5 SPECTACLE=1 DENSITY=9 */
 .dashboard-page {
   display: grid;
   gap: 8px;
@@ -2090,8 +2096,6 @@ type Action =
     min-height: 112px;
     padding: 16px 14px;
   }
-
-  .mobile-metric-green{grid-column:1/-1}
 
   .mobile-orders-panel,
   .mobile-quick-panel {

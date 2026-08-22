@@ -1,0 +1,90 @@
+name: Windows Cashier
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "clients/windows/YunQiao.Cashier/**"
+      - "apps/api/src/modules/printing/**"
+      - "docs/windows/**"
+      - ".github/workflows/windows-cashier.yml"
+  pull_request:
+    paths:
+      - "clients/windows/YunQiao.Cashier/**"
+      - "apps/api/src/modules/printing/**"
+      - "docs/windows/**"
+      - ".github/workflows/windows-cashier.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-printing-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install workspace dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: corepack pnpm --filter @huayue-life/api prisma:generate
+
+      - name: Typecheck API
+        run: corepack pnpm --filter @huayue-life/api typecheck
+
+      - name: Test printing API
+        run: corepack pnpm --filter @huayue-life/api exec jest --runInBand src/modules/printing
+
+  build-windows-cashier:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Test, publish, and package
+        shell: pwsh
+        working-directory: clients/windows/YunQiao.Cashier
+        run: .\scripts\build-windows.ps1
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cashier-test-results
+          path: clients/windows/YunQiao.Cashier/artifacts/test-results
+          if-no-files-found: warn
+
+      - name: Upload win-x64 application
+        uses: actions/upload-artifact@v4
+        with:
+          name: YunQiao.Cashier-win-x64
+          path: clients/windows/YunQiao.Cashier/artifacts/YunQiao.Cashier-win-x64.zip
+          if-no-files-found: error
+
+      - name: Upload Setup.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: YunQiao_Cashier_Setup
+          path: clients/windows/YunQiao.Cashier/artifacts/installer/YunQiao_Cashier_Setup.exe
+          if-no-files-found: error

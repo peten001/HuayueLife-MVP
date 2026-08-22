@@ -18,6 +18,69 @@ const props = defineProps<{
 const canvas = ref<HTMLCanvasElement | null>(null);
 let chart: Chart | null = null;
 let mobileMediaQuery: MediaQueryList | null = null;
+let touchCanvas: HTMLCanvasElement | null = null;
+let touchInteractionActive = false;
+
+function hideTouchTooltip() {
+  if (!chart) return;
+  touchInteractionActive = false;
+  if (touchCanvas) touchCanvas.dataset.tooltipActive = 'false';
+  chart.setActiveElements([]);
+  chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
+  chart.update('none');
+  queueMicrotask(() => {
+    if (!chart || touchInteractionActive) return;
+    chart.setActiveElements([]);
+    chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
+    chart.update('none');
+  });
+}
+
+function updateTouchTooltip(event: TouchEvent) {
+  if (!chart || !touchCanvas) return;
+  const touch = event.touches[0];
+  if (!touch) {
+    hideTouchTooltip();
+    return;
+  }
+
+  const activeElements = chart
+    .getElementsAtEventForMode(event, 'index', { intersect: false }, false)
+    .map(({ datasetIndex, index }) => ({ datasetIndex, index }));
+  if (!activeElements.length) {
+    hideTouchTooltip();
+    return;
+  }
+
+  const bounds = touchCanvas.getBoundingClientRect();
+  touchInteractionActive = true;
+  touchCanvas.dataset.tooltipActive = 'true';
+  chart.setActiveElements(activeElements);
+  chart.tooltip?.setActiveElements(activeElements, {
+    x: touch.clientX - bounds.left,
+    y: touch.clientY - bounds.top,
+  });
+  chart.update('none');
+}
+
+function clearTouchListeners() {
+  if (!touchCanvas) return;
+  touchCanvas.removeEventListener('touchstart', updateTouchTooltip);
+  touchCanvas.removeEventListener('touchmove', updateTouchTooltip);
+  touchCanvas.removeEventListener('touchend', hideTouchTooltip);
+  touchCanvas.removeEventListener('touchcancel', hideTouchTooltip);
+  touchInteractionActive = false;
+  touchCanvas = null;
+}
+
+function bindTouchListeners(target: HTMLCanvasElement) {
+  touchCanvas = target;
+  target.dataset.tooltipActive = 'false';
+  target.addEventListener('touchstart', updateTouchTooltip, { passive: true });
+  target.addEventListener('touchmove', updateTouchTooltip, { passive: true });
+  target.addEventListener('touchend', hideTouchTooltip, { passive: true });
+  target.addEventListener('touchcancel', hideTouchTooltip, { passive: true });
+}
 
 function localeCode() {
   return props.locale === 'vi' ? 'vi-VN' : props.locale === 'en' ? 'en-GB' : 'zh-CN';
@@ -42,6 +105,7 @@ function formatCompact(value: string | number) {
 async function renderChart() {
   await nextTick();
   if (!canvas.value) return;
+  clearTouchListeners();
   chart?.destroy();
   const mobile = mobileMediaQuery?.matches ?? window.matchMedia('(max-width: 768px)').matches;
   chart = new Chart(canvas.value, {
@@ -82,6 +146,7 @@ async function renderChart() {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      events: ['mousemove', 'mouseout', 'touchstart', 'touchmove'],
       animation: false,
       plugins: {
         legend: {
@@ -145,6 +210,7 @@ async function renderChart() {
       },
     },
   });
+  if (mobile) bindTouchListeners(canvas.value);
 }
 
 watch(
@@ -164,6 +230,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   mobileMediaQuery?.removeEventListener('change', handleBreakpointChange);
+  clearTouchListeners();
   chart?.destroy();
 });
 </script>
@@ -175,6 +242,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* finesse · register=product · A=incumbent-sage · B=system-sans · C=responsive-line-chart · D=feedback-only · E=dual-metric-trend · SOUL=5 SPECTACLE=1 DENSITY=9 */
 .business-trend-chart {
   position: relative;
   width: 100%;

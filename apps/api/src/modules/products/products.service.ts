@@ -46,6 +46,7 @@ export class ProductsService {
         description: dto.description,
         imageUrl: dto.imageUrl,
         priceVnd: BigInt(dto.priceVnd),
+        unit: dto.unit,
         sortOrder: dto.sortOrder ?? 0,
         productType: 'FOOD',
       },
@@ -67,6 +68,7 @@ export class ProductsService {
       description: dto.description,
       imageUrl: dto.imageUrl,
       priceVnd: dto.priceVnd === undefined ? undefined : BigInt(dto.priceVnd),
+      unit: dto.unit,
       sortOrder: dto.sortOrder,
       category: categoryId ? { connect: { id: categoryId } } : undefined,
     };

@@ -55,6 +55,12 @@ export class CreateProductDto {
   @Min(0)
   priceVnd: number;
 
+  @Transform(({ value }) => trimOrNull(value))
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  unit?: string | null;
+
   @IsOptional()
   @IsInt()
   @Min(0)

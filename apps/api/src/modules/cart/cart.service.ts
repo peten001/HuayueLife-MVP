@@ -146,6 +146,9 @@ export class CartService {
         status: 'ACTIVE',
         merchantType: 'RESTAURANT',
       },
+      include: {
+        capabilities: { include: { capability: true } },
+      },
     });
     if (!merchant) throw new BadRequestException('商家当前不可用');
 
@@ -163,8 +166,11 @@ export class CartService {
       ) {
         throw new BadRequestException('桌码无效、已停用或已换码');
       }
-      if (!merchant.dineInEnabled) {
-        throw new BadRequestException('商家当前未开启堂食');
+      const blockReason = this.merchantCapabilities.qrTableOrderingBlockReason(
+        merchant,
+      );
+      if (blockReason) {
+        throw new BadRequestException(blockReason);
       }
       return {
         merchantId,

@@ -15,7 +15,7 @@
 | `JWT_EXPIRES_IN` | 是 | JWT 有效期，例如 `7d` |
 | `WECHAT_APP_ID` | 正式版是 | 微信小程序 AppID |
 | `WECHAT_APP_SECRET` | 正式版是 | 微信小程序密钥，只保存在服务端 |
-| `MINIAPP_QR_ENTRY_URL` | 是 | 桌台二维码入口 HTTPS 地址 |
+| `MINIAPP_QR_ENTRY_URL` | 是 | 桌台普通二维码 HTTPS base，例如 `https://api.example.com/t`；API 追加 `/{qrToken}` |
 | `SEED_MERCHANT_PASSWORD` | 仅 seed | 试点店主初始密码，执行 seed 前设置 |
 
 前端构建变量：

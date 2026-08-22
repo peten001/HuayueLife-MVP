@@ -37,4 +37,58 @@ describe('ProductsService soft delete', () => {
     }));
     expect(prisma.orderItem.deleteMany).not.toHaveBeenCalled();
   });
+
+  it('persists an optional product unit without changing pricing fields', async () => {
+    const prisma = {
+      category: {
+        findFirst: jest.fn().mockResolvedValue({ id: 3n, merchantId: 7n }),
+      },
+      product: {
+        create: jest.fn().mockResolvedValue({ id: 20n, unit: '份' }),
+      },
+    };
+    const service = new ProductsService(prisma as never);
+
+    await service.create(7n, {
+      categoryId: '3',
+      nameZh: '测试菜品',
+      nameVi: 'Món thử nghiệm',
+      priceVnd: 88_000,
+      unit: '份',
+    });
+
+    expect(prisma.product.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        priceVnd: 88_000n,
+        unit: '份',
+      }),
+    }));
+  });
+
+  it('allows clearing an existing product unit to null', async () => {
+    const product = {
+      id: 21n,
+      merchantId: 7n,
+      categoryId: 3n,
+      productType: 'FOOD',
+      deletedAt: null,
+    };
+    const prisma = {
+      product: {
+        findFirst: jest.fn().mockResolvedValue(product),
+        update: jest.fn().mockResolvedValue({ ...product, unit: null }),
+      },
+    };
+    const service = new ProductsService(prisma as never);
+
+    await service.update(7n, 21n, {
+      nameZh: '测试菜品',
+      nameVi: 'Món thử nghiệm',
+      unit: null,
+    });
+
+    expect(prisma.product.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ unit: null }),
+    }));
+  });
 });

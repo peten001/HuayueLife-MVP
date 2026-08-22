@@ -33,6 +33,16 @@ assert.match(page, /fundsDescription: 'Theo tổng thanh toán cuối cùng củ
 assert.match(page, /fundsDescription: 'Based on final settled amounts of completed orders'/, 'English funds basis wording must exist');
 assert.match(page, /analytics-funds-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 6px; margin: 0; \}/, 'funds block must keep a three-column desktop composition');
 assert.match(page, /@media \(max-width: 768px\)[\s\S]*\.analytics-funds-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 5px; \}/, 'mobile funds must collapse to a two-column grid');
+for (const [className, order] of [
+  ['funds-item--discount', 1],
+  ['funds-item--rounding', 2],
+  ['funds-item--bank', 3],
+  ['funds-item--cash', 4],
+  ['funds-item--unrecorded', 5],
+  ['funds-item--net', 6],
+]) {
+  assert.match(page, new RegExp(`\\.${className} \\{ order: ${order}; \\}`), `mobile funds order must place ${className} at ${order}`);
+}
 assert.match(page, /shareDescription: '按结账时间统计营业额分布'/, 'time revenue share must describe settlement-time attribution');
 assert.match(page, /shareDescription: 'Theo thời gian thanh toán'/, 'Vietnamese share description must use settlement-time wording');
 assert.match(page, /shareDescription: 'Based on settlement time'/, 'English share description must use settlement-time wording');
@@ -71,6 +81,13 @@ assert.match(layout, /\.mobile-tab \{[\s\S]*?min-height: 58px/, 'mobile navigati
 assert.match(trendChart, /chart\.js\/auto/, 'trend chart must use the existing Chart.js dependency');
 assert.match(trendChart, /borderDash: \[5, 4\]/, 'the second trend series must be distinguishable without color alone');
 assert.match(trendChart, /dateParts\.length === 3 \? `\$\{dateParts\[1\]\}-\$\{dateParts\[2\]\}`/, 'desktop and mobile trend ticks should use short month-day labels');
+assert.match(trendChart, /touchstart[\s\S]*updateTouchTooltip/, 'touchstart must show the nearest trend tooltip');
+assert.match(trendChart, /touchmove[\s\S]*updateTouchTooltip/, 'touchmove must update the active trend point');
+assert.match(trendChart, /touchend[\s\S]*hideTouchTooltip/, 'touchend must immediately clear the trend tooltip');
+assert.match(trendChart, /touchcancel[\s\S]*hideTouchTooltip/, 'touchcancel must immediately clear the trend tooltip');
+assert.match(trendChart, /chart\.setActiveElements\(\[\]\)/, 'touch release must clear active chart points');
+assert.match(trendChart, /chart\.tooltip\?\.setActiveElements\(\[\], \{ x: 0, y: 0 \}\)/, 'touch release must clear the Chart.js tooltip state');
+assert.match(trendChart, /events: \['mousemove', 'mouseout', 'touchstart', 'touchmove'\]/, 'desktop hover and touch tracking must remain while synthetic click selection stays disabled');
 assert.match(shareChart, /type: 'doughnut'/, 'time revenue share should use a Chart.js doughnut');
 assert.match(page, /!Number\.isFinite\(value\)/, 'comparison display must guard against NaN and Infinity');
 assert.match(page, /:title="formatMoney\(analytics\.overview\.revenueVnd\)"/, 'long mobile VND values should expose their full amount');
@@ -97,6 +114,9 @@ assert.match(dashboardPage, /getBusinessDaySummary\(\)/, 'dashboard revenue must
 assert.match(dashboardPage, /Promise\.allSettled/, 'live orders and the business-day summary must fail independently');
 assert.match(dashboardPage, /businessDaySummary\.businessDate/, 'dashboard must display the resolved business date');
 assert.match(dashboardPage, /businessDaySummaryLoading[\s\S]*?'—'/, 'unknown business-day totals must not render as a real zero');
-assert.match(dashboardPage, /mobile-metric-green\{grid-column:1\/-1\}/, 'mobile revenue should reserve a full-width card for large VND amounts');
+assert.match(dashboardPage, /mobileRevenue: '本日营额'/, 'mobile dashboard must use the approved compact revenue label');
+assert.match(dashboardPage, /mobileOrders: '结账笔数'/, 'mobile dashboard must use the approved compact settlement label');
+assert.match(dashboardPage, /\.mobile-metric-grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/, 'mobile dashboard metrics must keep a two-column grid');
+assert.doesNotMatch(dashboardPage, /mobile-metric-green\s*\{\s*grid-column:\s*1\s*\/\s*-1/, 'mobile revenue must not span both metric columns');
 
 console.log('business analytics UI checks passed');

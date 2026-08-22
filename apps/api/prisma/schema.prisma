@@ -614,6 +614,7 @@ model Product {
   description String?       @db.Text
   imageUrl    String?       @map("image_url") @db.VarChar(500)
   priceVnd    BigInt        @map("price_vnd")
+  unit        String?       @db.VarChar(32)
   sortOrder   Int           @default(0) @map("sort_order")
   status      ProductStatus @default(DRAFT)
   deletedAt   DateTime?     @map("deleted_at")
