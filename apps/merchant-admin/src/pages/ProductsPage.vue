@@ -64,6 +64,7 @@ const productForm = reactive({
   description: '',
   imageUrl: '',
   priceVnd: 0,
+  unit: '',
   sortOrder: 0,
 });
 
@@ -239,6 +240,7 @@ const filteredProducts = computed(() => {
       item.nameZh,
       item.nameVi ?? '',
       item.nameEn ?? '',
+      item.unit ?? '',
       item.description ?? '',
       item.category?.nameZh ?? '',
       item.category?.nameVi ?? '',
@@ -376,6 +378,7 @@ function resetProductForm() {
     description: '',
     imageUrl: '',
     priceVnd: 0,
+    unit: '',
     sortOrder: 0,
   });
 
@@ -417,6 +420,7 @@ function editProduct(row: Product) {
     description: row.description ?? '',
     imageUrl: row.imageUrl ?? '',
     priceVnd: Number(row.priceVnd ?? 0),
+    unit: row.unit ?? '',
     sortOrder: row.sortOrder,
   });
   showProductModal.value = true;
@@ -550,6 +554,7 @@ async function saveProduct() {
       description: productForm.description.trim() || undefined,
       imageUrl: productForm.imageUrl.trim() || undefined,
       priceVnd: productForm.priceVnd,
+      unit: productForm.unit.trim() || null,
       sortOrder: productForm.sortOrder,
     };
 
@@ -797,7 +802,7 @@ onMounted(async () => {
                 <td>
                   <div class="product-cell">
                     <div class="product-thumb">
-                      <img v-if="productImage(row)" :src="productImage(row)" :alt="row.nameZh" />
+                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" />
                       <span v-else>{{ pageCopy.noImage }}</span>
                     </div>
                     <div class="product-copy">
@@ -820,7 +825,12 @@ onMounted(async () => {
                     </small>
                   </div>
                 </td>
-                <td class="numeric-cell">{{ productPrice(row) }}</td>
+                <td class="numeric-cell">
+                  <div class="price-stack">
+                    <span>{{ productPrice(row) }}</span>
+                    <small v-if="row.unit?.trim()" :title="row.unit">{{ row.unit }}</small>
+                  </div>
+                </td>
                 <td class="numeric-cell">{{ row.sortOrder }}</td>
                 <td>
                   <div class="status-stack">
@@ -894,7 +904,7 @@ onMounted(async () => {
           <article v-for="row in filteredProducts" :key="row.id" class="product-mobile-card">
             <div class="product-mobile-head">
               <div class="product-thumb product-mobile-thumb">
-                <img v-if="productImage(row)" :src="productImage(row)" :alt="row.nameZh" />
+                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" />
                 <span v-else>{{ pageCopy.noImage }}</span>
               </div>
               <div class="product-copy product-mobile-copy">
@@ -916,7 +926,10 @@ onMounted(async () => {
               </div>
               <div>
                 <dt>{{ t('priceVnd') }}</dt>
-                <dd class="numeric-cell">{{ productPrice(row) }}</dd>
+                <dd class="numeric-cell price-stack">
+                  <span>{{ productPrice(row) }}</span>
+                  <small v-if="row.unit?.trim()" :title="row.unit">{{ row.unit }}</small>
+                </dd>
               </div>
               <div>
                 <dt>{{ t('sortOrder') }}</dt>
@@ -1167,6 +1180,15 @@ onMounted(async () => {
             </label>
 
             <label class="field">
+              <span class="field-label">{{ t('productUnit') }}</span>
+              <input
+                v-model="productForm.unit"
+                :placeholder="t('productUnitPlaceholder')"
+                maxlength="32"
+              />
+            </label>
+
+            <label class="field">
               <span class="field-label">{{ t('sortOrder') }}</span>
               <input v-model.number="productForm.sortOrder" type="number" min="0" />
             </label>
@@ -1194,7 +1216,7 @@ onMounted(async () => {
                 @change="onImageSelected"
               />
               <div class="image-preview-box">
-                <img v-if="imagePreviewUrl" :src="imagePreviewUrl" :alt="pageCopy.imagePlaceholder" />
+                <img v-if="imagePreviewUrl" v-bind="{ src: imagePreviewUrl }" :alt="pageCopy.imagePlaceholder" />
                 <span v-else>{{ pageCopy.imagePlaceholder }}</span>
               </div>
             </div>
@@ -1252,9 +1274,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* finesse · register=product · A=incumbent-sage-green · B=compact-system-sans
- * C=filter-rail+fixed-table-to-cards · D=feedback-only-css · E=real-menu-photography
- * SOUL=5 SPECTACLE=1 DENSITY=8 */
+/* finesse · register=product · A=incumbent-sage-green · B=compact-system-sans · C=filter-rail+fixed-table-to-cards · D=touch-feedback-only · E=real-menu-photography · SOUL=5 SPECTACLE=1 DENSITY=9 */
 .menu-page {
   position: relative;
   display: grid;
@@ -1775,6 +1795,23 @@ onMounted(async () => {
   font-weight: 700;
 }
 
+.price-stack {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.price-stack small {
+  max-width: 100%;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+
 .status-stack {
   display: grid;
   gap: 6px;
@@ -2232,6 +2269,11 @@ onMounted(async () => {
     font-weight: 750;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .product-mobile-meta .price-stack {
+    display: grid;
+    justify-items: end;
   }
 
   .product-mobile-status-actions {

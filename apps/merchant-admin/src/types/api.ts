@@ -733,6 +733,7 @@ export interface Product {
   description?: string;
   imageUrl?: string;
   priceVnd: string;
+  unit?: string | null;
   sortOrder: number;
   status: ProductStatus;
   productType: 'FOOD';

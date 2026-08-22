@@ -20,5 +20,11 @@ assert.match(page, /\.product-table-shell \{\s*display: none;/, 'the wide table 
 assert.match(page, /min-height: 44px/, 'mobile product actions should meet the touch target floor');
 assert.match(page, /product-mobile-empty empty-state/, 'mobile menu management should retain a useful empty state');
 assert.match(page, /:focus-visible/, 'menu actions should keep a visible keyboard focus state');
+assert.match(page, /unit: productForm\.unit\.trim\(\) \|\| null/, 'product create and edit payloads should persist or clear the optional unit');
+assert.match(page, /v-model="productForm\.unit"/, 'product form should expose the unit input');
+assert.match(page, /t\('productUnitPlaceholder'\)/, 'product unit should use localized placeholder copy');
+assert.match(page, /maxlength="32"/, 'product unit input should match the API length contract');
+assert.match(page, /v-if="row\.unit\?\.trim\(\)"[\s\S]*\{\{ row\.unit \}\}/, 'desktop and mobile product views should show non-empty units only');
+assert.match(page, /\.price-stack \{[\s\S]*?justify-items: end;/, 'unit display should remain subordinate to the numeric price');
 
 console.log('menu management UI checks passed');

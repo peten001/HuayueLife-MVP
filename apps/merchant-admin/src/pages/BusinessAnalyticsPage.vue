@@ -373,12 +373,12 @@ onMounted(() => void selectPreset('today'));
               <span>{{ copy.fundsDescription }}</span>
             </div>
             <dl class="analytics-funds-grid">
-              <div><dt>{{ copy.discountAmount }}</dt><dd data-analytics-field="discount" :title="formatMoney(analytics.overview.funds.discountAmountVnd)">{{ formatMoney(analytics.overview.funds.discountAmountVnd) }}</dd></div>
-              <div><dt>{{ copy.roundingAmount }}</dt><dd data-analytics-field="rounding" :title="formatMoney(analytics.overview.funds.roundingAmountVnd)">{{ formatMoney(analytics.overview.funds.roundingAmountVnd) }}</dd></div>
-              <div class="is-net"><dt>{{ copy.netRevenue }}</dt><dd data-analytics-field="net-revenue" :title="formatMoney(analytics.overview.funds.netSettledAmountVnd)">{{ formatMoney(analytics.overview.funds.netSettledAmountVnd) }}</dd></div>
-              <div><dt>{{ copy.cashRevenue }}</dt><dd data-analytics-field="cash" :title="formatMoney(analytics.overview.funds.cashRevenueVnd)">{{ formatMoney(analytics.overview.funds.cashRevenueVnd) }}</dd></div>
-              <div><dt>{{ copy.bankTransferRevenue }}</dt><dd data-analytics-field="bank-transfer" :title="formatMoney(analytics.overview.funds.bankTransferRevenueVnd)">{{ formatMoney(analytics.overview.funds.bankTransferRevenueVnd) }}</dd></div>
-              <div v-if="BigInt(analytics.overview.funds.unrecordedRevenueVnd) > 0n"><dt>{{ copy.unrecordedRevenue }}</dt><dd data-analytics-field="unrecorded" :title="formatMoney(analytics.overview.funds.unrecordedRevenueVnd)">{{ formatMoney(analytics.overview.funds.unrecordedRevenueVnd) }}</dd></div>
+              <div class="funds-item--discount"><dt>{{ copy.discountAmount }}</dt><dd data-analytics-field="discount" :title="formatMoney(analytics.overview.funds.discountAmountVnd)">{{ formatMoney(analytics.overview.funds.discountAmountVnd) }}</dd></div>
+              <div class="funds-item--rounding"><dt>{{ copy.roundingAmount }}</dt><dd data-analytics-field="rounding" :title="formatMoney(analytics.overview.funds.roundingAmountVnd)">{{ formatMoney(analytics.overview.funds.roundingAmountVnd) }}</dd></div>
+              <div class="is-net funds-item--net"><dt>{{ copy.netRevenue }}</dt><dd data-analytics-field="net-revenue" :title="formatMoney(analytics.overview.funds.netSettledAmountVnd)">{{ formatMoney(analytics.overview.funds.netSettledAmountVnd) }}</dd></div>
+              <div class="funds-item--cash"><dt>{{ copy.cashRevenue }}</dt><dd data-analytics-field="cash" :title="formatMoney(analytics.overview.funds.cashRevenueVnd)">{{ formatMoney(analytics.overview.funds.cashRevenueVnd) }}</dd></div>
+              <div class="funds-item--bank"><dt>{{ copy.bankTransferRevenue }}</dt><dd data-analytics-field="bank-transfer" :title="formatMoney(analytics.overview.funds.bankTransferRevenueVnd)">{{ formatMoney(analytics.overview.funds.bankTransferRevenueVnd) }}</dd></div>
+              <div v-if="BigInt(analytics.overview.funds.unrecordedRevenueVnd) > 0n" class="funds-item--unrecorded"><dt>{{ copy.unrecordedRevenue }}</dt><dd data-analytics-field="unrecorded" :title="formatMoney(analytics.overview.funds.unrecordedRevenueVnd)">{{ formatMoney(analytics.overview.funds.unrecordedRevenueVnd) }}</dd></div>
             </dl>
           </section>
 
@@ -664,7 +664,7 @@ onMounted(() => void selectPreset('today'));
 @media (min-width: 901px) and (max-width: 1180px) {
   .analytics-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .analytics-kpi-card--dish { grid-column: span 2; }
-  .analytics-funds { grid-template-columns: 1fr; gap: 9px; }
+  .analytics-funds { grid-template-columns: minmax(0, 1fr); gap: 9px; }
   .analytics-funds-heading { grid-row: 1; }
   .analytics-funds-grid { grid-row: 2; }
 }
@@ -676,7 +676,7 @@ onMounted(() => void selectPreset('today'));
   .analytics-robot svg { width: 36px; height: 36px; }
   .analytics-kpi-section { order: 2; }
   .analytics-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-  .analytics-funds { grid-template-columns: 1fr; gap: 9px; padding: 10px 11px; }
+  .analytics-funds { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 10px 11px; }
   .analytics-funds-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .analytics-kpi-card { min-height: 132px; }
   .analytics-kpi-card--dish { display: none; }
@@ -738,6 +738,12 @@ onMounted(() => void selectPreset('today'));
   .analytics-funds-heading h2 { font-size: 12px; }
   .analytics-funds-heading span { font-size: 8px; }
   .analytics-funds-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .funds-item--discount { order: 1; }
+  .funds-item--rounding { order: 2; }
+  .funds-item--bank { order: 3; }
+  .funds-item--cash { order: 4; }
+  .funds-item--unrecorded { order: 5; }
+  .funds-item--net { order: 6; }
   .analytics-funds-grid dd { font-size: 12px; }
   .analytics-mobile-hot-dish { display: grid; grid-template-columns: minmax(78px, .65fr) minmax(0, 1.8fr); align-items: center; gap: 8px; margin-top: 8px; padding: 9px 10px; }
   .analytics-mobile-hot-dish .analytics-top-dish-value { width: 100%; justify-content: flex-start; }
