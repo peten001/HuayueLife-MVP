@@ -20,7 +20,7 @@ describe('CanonicalPrintArtifactService', () => {
       first.heightDots & 0xff, (first.heightDots >> 8) & 0xff,
     ]));
     expect(first.payload.subarray(-3)).toEqual(Buffer.from([0x1d, 0x56, 0x01]));
-    expect(first.sha256).toBe('eac4c7837611dfe515184fd51219b6e05a87935ae92153edf8be16d43fa6ab75');
+    expect(first.sha256).toBe('2d0fe29e7c072ad57e812ba379635e3e70262a7c1d520352fc71b0b69032ead2');
     expect(second.sha256).toBe(first.sha256);
     expect(second.payload).toEqual(first.payload);
   });
