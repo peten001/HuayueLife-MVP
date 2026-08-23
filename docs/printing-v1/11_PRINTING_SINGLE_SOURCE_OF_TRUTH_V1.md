@@ -1,0 +1,198 @@
+# YunQiao Printing Single Source of Truth V1
+
+Date: 2026-08-23
+Canonical template: `YQ_CANONICAL_RECEIPT_V1`
+Render protocol: `ESC_POS_RASTER_V1`
+
+## Decision
+
+The immutable server-rendered ESC/POS payload is the only visual truth for a
+canonical print job. Android and Windows validate and transport that payload;
+they do not measure text, wrap dish names, rasterize, or add printer commands
+for canonical jobs.
+
+Legacy `PrintDocument` parsing remains only as a temporary compatibility path
+for jobs created before a terminal reports the new capabilities. Any non-null,
+unknown server render protocol is rejected instead of falling through to a
+local renderer.
+
+## Architecture before
+
+```text
+Receipt semantic model
+        |
+        v
+Server PrintDocument V2/V3 snapshot
+        |
+        +-------------------------+
+        |                         |
+        v                         v
+Android local Canvas         Windows WPF renderer
+text measure + wrap          text measure + wrap
+raster + ESC/POS             raster + RAW bytes
+        |                         |
+        v                         v
+USB / LAN printer            RAW Spooler / TCP printer
+```
+
+The same semantic content could therefore produce different pixels because
+the client renderer, font installation, renderer version, and printer profile
+were not a single versioned artifact.
+
+## Architecture after
+
+```text
+Receipt semantic model + merchant content preferences
+        |
+        v
+Canonical server layout
+Noto Sans SC 5.3.0 locked unicode-subset stack
+grapheme-safe measure + wrap
+        |
+        v
+576-dot 1-bit raster + ESC/POS commands
+        |
+        v
+Immutable PrintJob payload + SHA-256 + protocol/profile metadata
+        |
+        +----------------------------+
+        |                            |
+        v                            v
+Android SHA verify              Windows SHA verify
+raw byte copy                   raw byte copy
+        |                            |
+        v                            v
+USB / LAN write                RAW Spooler / TCP write
+        |                            |
+        +-------------+--------------+
+                      v
+Attempt receipt: expected SHA, actual SHA,
+bytes written, actual transport, result
+```
+
+## Canonical 80 mm TABLE_BILL tokens
+
+| Token | Value |
+| --- | --- |
+| Paper width | 80 mm |
+| Raster width | 576 dots |
+| Page margin | 30 dots per side |
+| Content width | 516 dots |
+| Inter-block gap | 4 dots |
+| Font | `YunQiao Noto Sans SC` |
+| Font package | `@fontsource-variable/noto-sans-sc@5.3.0` |
+| Font license | OFL-1.1 |
+| Threshold | 160 |
+| Table box weight | 24% |
+| Table/title gap | 10 dots |
+| Dish / quantity / amount | 72% / 10% / 18% |
+| Column gap | 6 dots |
+| Feed / cut | 3 lines / half cut |
+
+The Diguoju schema-3 receipt hierarchy is the visual baseline. The canonical
+renderer locks the values above; a merchant template cannot override them.
+
+## Header and wrapping contracts
+
+- The structured Chinese merchant name is one centered `LARGE` bold line.
+- The structured Vietnamese merchant name is a separate centered `LARGE`
+  bold line below it. The renderer never guesses a language split from `/`,
+  punctuation, or brackets.
+- Missing languages are omitted and never duplicated as a filler line.
+- Address and phone are independent centered `SMALL` lines.
+- A dish name is `LARGE`, non-bold, and wraps within the 72% dish column.
+- Vietnamese wraps at word boundaries when possible. Chinese, mixed text, and
+  long unbroken tokens fall back to Unicode grapheme boundaries.
+- Dish lines have no fixed line limit. Quantity and amount are emitted exactly
+  once and remain in their own columns.
+
+## Merchant preference allowlist
+
+Canonical rendering preserves only these existing content semantics:
+
+1. order number information;
+2. time information;
+3. merchant address and merchant phone as their existing independent switches;
+4. footer visibility and the existing Chinese/Vietnamese footer text;
+5. the current information-line count derived from the order-number and time
+   switches.
+
+Legacy fields remain readable for compatibility, but canonical rendering
+forces merchant name, table identity, notes, item amount, totals, typography,
+paper profile, margins, columns, wrapping, raster threshold, feed, and cut.
+Therefore `IGNORED_BY_CANONICAL_RENDERER = YES` for legacy layout/style fields
+and for historical display switches outside the allowlist.
+
+For 80 mm TABLE_BILL, current information-line count means:
+
+| order number | time | information blocks |
+| --- | --- | ---: |
+| off | off | 0 |
+| on | off | 2 |
+| off | on | 2 |
+| on | on | 3 |
+
+This is the existing schema-3 grouping behavior, not a new numeric preference.
+
+## Immutable artifact contract
+
+Every newly created `PrintJob` stores:
+
+- `canonicalTemplateVersion`;
+- `renderProtocol`;
+- the final payload bytes;
+- `renderedPayloadSha256`;
+- `renderedPayloadByteLength`;
+- `renderedPaperWidthMm`;
+- `renderedWidthDots`;
+- the existing immutable receipt snapshot and snapshot hash.
+
+Retry, reclaim, reconnect, and duplicate completion paths reuse the stored
+payload. They do not re-render it. A canonical success is accepted only when
+the client-reported SHA matches the server SHA and `bytesWritten` equals the
+stored payload byte length.
+
+Each `PrintAttempt` records expected SHA, client-reported SHA, actual transport,
+bytes written, and result. Valid actual transports are:
+
+- `ANDROID_USB_ESCPOS`;
+- `ANDROID_LAN_ESCPOS`;
+- `WINDOWS_RAW_SPOOLER`;
+- `WINDOWS_TCP_ESCPOS`.
+
+## Client capability and rollout
+
+New clients report:
+
+- `SERVER_ESC_POS_PAYLOAD_V1 = true`;
+- `RAW_PAYLOAD_PASSTHROUGH = true`.
+
+The safe rollout order is API dual compatibility, signed Android and Windows
+artifacts, terminal installation, heartbeat capability confirmation for
+merchants 4/11/18, and only then canonical-only enforcement. There is no
+invented remote-install mechanism. Until all three active terminals confirm,
+the release state is `READY_FOR_CLIENT_INSTALL`, not complete.
+
+No production print job or physical test ticket may be created as part of this
+software rollout without separate explicit permission.
+
+## Print type audit
+
+The current production enum contains only `ORDER_CUSTOMER` and `TABLE_BILL`.
+Both are converted by the API into an immutable server payload. Kitchen-mode
+content is also laid out on the server before transport. There is no current
+`BUSINESS_DAY_SUMMARY` print-job receipt type; business-day, settlement,
+payment, discount, rounding, and analytics behavior are outside this change.
+
+Cloud printer integrations remain server-executed. They do not make an Android
+or Windows client a layout authority.
+
+## Rollback
+
+- Repoint API and Merchant Admin to their recorded previous releases.
+- Keep the additive nullable payload/attempt columns; application rollback does
+  not require destructive reverse DDL.
+- Keep the production database backup taken before migration.
+- Reinstall the recorded previous Android or Windows release if a client
+  rollback is needed.
+- Do not requeue an uncertain attempt or create a test print during rollback.

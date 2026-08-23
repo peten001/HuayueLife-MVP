@@ -92,6 +92,20 @@ export class FinishLanPrintingDto extends LanRouteIdentityDto {
   @IsString()
   @Matches(/^[a-f0-9]{64}$/)
   contentHash: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/)
+  actualPayloadSha256?: string;
+
+  @IsOptional()
+  @IsIn([
+    'ANDROID_USB_ESCPOS',
+    'ANDROID_LAN_ESCPOS',
+    'WINDOWS_RAW_SPOOLER',
+    'WINDOWS_TCP_ESCPOS',
+  ])
+  transport?: string;
 }
 
 export class FailLanPrintingDto extends FinishLanPrintingDto {

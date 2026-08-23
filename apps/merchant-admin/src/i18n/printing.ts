@@ -1,6 +1,8 @@
 import { useI18n } from '@/i18n';
 
 const zh = {
+  canonicalSettingsHint: '字号、字重、纸宽、边距、列宽与换行规则由云桥统一管理。',
+  paperWidthManagedByPrinter: '由打印机管理',
   merchantAddressLabel: '商家地址', merchantAddressHint: '打印小票中的商家地址',
   automaticPrintDescription: '自动打印支持新订单和堂食结账场景。', tableSessionSettled: '堂食结账完成', checkoutScenarioHintFinal: '完成堂食结账后打印整桌顾客小票。',
   title: '打印中心', printerTab: '打印机', confirmAction: '确认',
@@ -397,6 +399,8 @@ const zh = {
 type PrintingTranslationKey = keyof typeof zh;
 
 const vi: Record<PrintingTranslationKey, string> = {
+  canonicalSettingsHint: 'Cỡ chữ, độ đậm, khổ giấy, lề, độ rộng cột và cách xuống dòng do Yunqiao quản lý thống nhất.',
+  paperWidthManagedByPrinter: 'Do máy in quản lý',
   merchantAddressLabel: 'Địa chỉ cửa hàng', merchantAddressHint: 'Hiển thị địa chỉ cửa hàng trên hóa đơn',
   automaticPrintDescription: 'In tự động hỗ trợ đơn mới và thanh toán tại bàn.', tableSessionSettled: 'Đã thanh toán tại bàn', checkoutScenarioHintFinal: 'In hóa đơn của cả bàn sau khi hoàn tất thanh toán.',
   title: 'Trung tâm in', printerTab: 'Máy in', confirmAction: 'Xác nhận',
@@ -692,6 +696,8 @@ const vi: Record<PrintingTranslationKey, string> = {
 };
 
 const en: Record<PrintingTranslationKey, string> = {
+  canonicalSettingsHint: 'Font, weight, paper width, margins, columns, and wrapping are managed centrally by Yunqiao.',
+  paperWidthManagedByPrinter: 'Managed by printer',
   merchantAddressLabel: 'Merchant address', merchantAddressHint: 'Print the merchant address on the receipt',
   automaticPrintDescription: 'Automatic printing supports new orders and dine-in checkout.', tableSessionSettled: 'Dine-in checkout completed', checkoutScenarioHintFinal: 'Print the full table receipt after dine-in checkout.',
   title: 'Printing Center', printerTab: 'Printers', confirmAction: 'Confirm',

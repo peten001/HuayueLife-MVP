@@ -21,6 +21,7 @@ import { LanTerminalBindingsService } from './services/lan-terminal-bindings.ser
 import { LanTerminalConnectorController } from './controllers/lan-terminal-connector.controller';
 import { TerminalConnectorController } from './controllers/terminal-connector.controller';
 import { PrintingRoutingService } from './services/printing-routing.service';
+import { CanonicalPrintArtifactService } from './services/canonical-print-artifact.service';
 
 @Module({
   controllers: [MerchantPrintingController, LanTerminalConnectorController, TerminalConnectorController],
@@ -31,6 +32,7 @@ import { PrintingRoutingService } from './services/printing-routing.service';
     ReceiptTemplatesService,
     PrintRulesService,
     ReceiptSnapshotService,
+    CanonicalPrintArtifactService,
     PrintJobsService,
     PrintAttemptsService,
     TerminalsService,

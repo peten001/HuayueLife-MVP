@@ -1021,7 +1021,7 @@ describe('PrintJobsService', () => {
     expect(blocks).not.toContainEqual(
       expect.objectContaining({ type: 'ROW', left: '订单 / Đơn' }),
     );
-    expect(blocks).not.toContainEqual(
+    expect(blocks).toContainEqual(
       expect.objectContaining({ type: 'TEXT', text: expect.stringContaining('不应打印的整单备注') }),
     );
     expect(blocks).toContainEqual(
@@ -1267,10 +1267,11 @@ describe('PrintJobsService', () => {
     expect(blocks).toContainEqual(
       expect.objectContaining({ type: 'ROW', left: '   数量 / Số lượng', right: '1' }),
     );
-    expect(serialized).not.toMatch(/订单数 \/ Số đơn|订单 \/ Đơn:|桌台 \/ Bàn/);
+    expect(serialized).not.toMatch(/订单数 \/ Số đơn|订单 \/ Đơn:/);
+    expect(serialized).toMatch(/桌台 \/ Bàn/);
     expect(serialized).not.toMatch(/开台时间 \/ Mở bàn|结账时间 \/ Thanh toán|生成时间 \/ Tạo lúc/);
-    expect(serialized).not.toMatch(/单价 \/ Đơn giá|金额 \/ Thành tiền/);
-    expect(serialized).not.toMatch(/小计 \/ Tạm tính|最终应收 \/ Phải thu/);
+    expect(serialized).toMatch(/单价 \/ Đơn giá|金额 \/ Thành tiền/);
+    expect(serialized).toMatch(/最终应收 \/ Phải thu/);
     expect(serialized).toContain('BILL-V3');
     expect(serialized).toContain('BILL-VI-V3');
     expect(serialized).not.toContain('ORDER-FOOTER');
@@ -1556,7 +1557,7 @@ describe('PrintJobsService', () => {
     expect(blocks).not.toContainEqual(
       expect.objectContaining({ type: 'ROW', left: '订单 / Đơn' }),
     );
-    expect(blocks).not.toContainEqual(
+    expect(blocks).toContainEqual(
       expect.objectContaining({ type: 'TEXT', text: expect.stringContaining('Synthetic test') }),
     );
     expect(blocks).toContainEqual(
@@ -2191,9 +2192,9 @@ describe('PrintJobsService', () => {
     }));
     expect(blocks).toContainEqual(expect.objectContaining({ type: 'TEXT', text: '分类 ORDER Footer' }));
     expect(blocks).not.toContainEqual(expect.objectContaining({ type: 'TEXT', text: '' }));
-    expect(blocks).not.toContainEqual(expect.objectContaining({ left: '   单价 / Đơn giá' }));
-    expect(blocks).not.toContainEqual(expect.objectContaining({ left: '   金额 / Thành tiền' }));
-    expect(blocks).not.toContainEqual(expect.objectContaining({
+    expect(blocks).toContainEqual(expect.objectContaining({ left: '   单价 / Đơn giá' }));
+    expect(blocks).toContainEqual(expect.objectContaining({ left: '   金额 / Thành tiền' }));
+    expect(blocks).toContainEqual(expect.objectContaining({
       type: 'TEXT',
       text: expect.stringContaining('整单不要香菜'),
     }));

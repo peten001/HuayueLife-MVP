@@ -74,6 +74,8 @@ class TerminalV2ApiClient(
                     "capabilities",
                     JSONObject()
                         .put("platform", "ANDROID")
+                        .put("SERVER_ESC_POS_PAYLOAD_V1", true)
+                        .put("RAW_PAYLOAD_PASSTHROUGH", true)
                         .put("androidApiLevel", Build.VERSION.SDK_INT)
                         .put(
                             "channels",
@@ -376,13 +378,14 @@ class TerminalV2ApiClient(
         attemptNo: Int,
         leaseVersion: Long,
         bytesWritten: Int,
+        actualPayloadSha256: String? = null,
     ) {
         require(bytesWritten > 0)
         request(
             "POST",
             route.jobEndpoint(jobId, "succeeded"),
             terminalBearer,
-            finishJson(route, contentHash, attemptNo, leaseVersion, bytesWritten)
+            finishJson(route, contentHash, attemptNo, leaseVersion, bytesWritten, actualPayloadSha256)
                 .put("printerResponse", "${adapter.take(80)}_WRITE_COMPLETE"),
         )
     }
@@ -399,6 +402,7 @@ class TerminalV2ApiClient(
         errorMessage: String,
         bytesWritten: Int,
         uncertain: Boolean,
+        actualPayloadSha256: String? = null,
     ) {
         require(!uncertain || !retryable)
         require(bytesWritten == 0 || uncertain)
@@ -406,7 +410,7 @@ class TerminalV2ApiClient(
             "POST",
             route.jobEndpoint(jobId, "failed"),
             terminalBearer,
-            finishJson(route, contentHash, attemptNo, leaseVersion, bytesWritten)
+            finishJson(route, contentHash, attemptNo, leaseVersion, bytesWritten, actualPayloadSha256)
                 .put("retryable", retryable && !uncertain)
                 .put("errorCode", if (uncertain) "PRINT_OUTCOME_UNKNOWN" else errorCode.take(64))
                 .put(
@@ -451,6 +455,15 @@ class TerminalV2ApiClient(
             bindingVersion = route.requiredPositiveLong("bindingVersion"),
             transport = transport,
         )
+        val renderProtocol = job.optString("renderProtocol").takeIf { it.isNotBlank() && it != "null" }
+        val payloadSha = job.optString("renderedPayloadSha256").takeIf { it.isNotBlank() && it != "null" }
+        val payload = if (renderProtocol == "ESC_POS_RASTER_V1") {
+            ServerPayloadIntegrity.decodeBase64(
+                job.requiredString("renderedPayloadBase64", 20_000_000),
+                job.getInt("renderedPayloadByteLength"),
+                payloadSha,
+            )
+        } else null
         return ClaimedV2PrintJob(
             id = job.requiredNumericString("id"),
             merchantId = job.requiredNumericString("merchantId"),
@@ -467,6 +480,13 @@ class TerminalV2ApiClient(
             contentHash = hash,
             snapshotSchemaVersion = job.getInt("snapshotSchemaVersion"),
             receiptSnapshotJson = snapshot.toString(),
+            renderProtocol = renderProtocol,
+            canonicalTemplateVersion = job.optString("canonicalTemplateVersion").takeIf { it.isNotBlank() && it != "null" },
+            renderedPayload = payload,
+            renderedPayloadSha256 = payloadSha,
+            renderedPayloadByteLength = job.optInt("renderedPayloadByteLength", -1).takeIf { it >= 0 },
+            paperWidthMm = job.optInt("paperWidthMm", -1).takeIf { it > 0 },
+            widthDots = job.optInt("widthDots", -1).takeIf { it > 0 },
             route = routeIdentity,
             adapter = route.requiredString("adapter", 80),
         ).also {
@@ -482,6 +502,7 @@ class TerminalV2ApiClient(
         attemptNo: Int,
         leaseVersion: Long,
         bytesWritten: Int,
+        actualPayloadSha256: String?,
     ): JSONObject {
         val body = if (route.transport == "LAN") route.json() else JSONObject()
         return body
@@ -489,6 +510,11 @@ class TerminalV2ApiClient(
             .put("leaseVersion", leaseVersion)
             .put("bytesWritten", bytesWritten.coerceAtLeast(0))
             .put("contentHash", contentHash)
+            .put(
+                "transport",
+                if (route.transport == "LAN") "ANDROID_LAN_ESCPOS" else "ANDROID_USB_ESCPOS",
+            )
+            .apply { if (actualPayloadSha256 != null) put("actualPayloadSha256", actualPayloadSha256) }
     }
 
     private fun parseUsbRemotePrinter(printer: JSONObject): V2RemotePrinter? {

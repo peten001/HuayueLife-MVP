@@ -20,7 +20,8 @@ public sealed record PendingPrintReport(
     bool Retryable,
     string? ErrorCode,
     string? ErrorMessage,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? RenderedPayloadSha256 = null);
 
 public sealed class PendingReportStore
 {

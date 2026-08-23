@@ -274,6 +274,7 @@ class V2PrintJobExecutor(
                     attemptNo = entry.attemptNo,
                     leaseVersion = entry.leaseVersion,
                     bytesWritten = entry.bytesWritten,
+                    actualPayloadSha256 = entry.renderedPayloadSha256,
                 )
             } else {
                 val uncertain = entry.state == PrintExecutionState.UNCERTAIN.name
@@ -289,6 +290,7 @@ class V2PrintJobExecutor(
                     errorMessage = entry.errorCode ?: "Local print failure",
                     bytesWritten = entry.bytesWritten,
                     uncertain = uncertain,
+                    actualPayloadSha256 = entry.renderedPayloadSha256,
                 )
             }
             ledger.markReported(entry)
@@ -303,6 +305,7 @@ class V2PrintJobExecutor(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): ByteArray {
+        CanonicalServerPayload.forJob(job, binding.paperWidth.defaultDots)?.let { return it }
         if (PrintDocumentV2Parser.schemaVersion(job.receiptSnapshotJson) in 2..3) {
             return PrintDocumentV2Renderer.renderBytes(
                 PrintDocumentV2Parser.parse(job.receiptSnapshotJson),

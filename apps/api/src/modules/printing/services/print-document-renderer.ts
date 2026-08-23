@@ -112,6 +112,24 @@ export function renderPrintDocumentV3(input: {
   );
 }
 
+/**
+ * Canonical receipts keep only the merchant-owned content preferences. All
+ * fields that shape the required receipt structure remain enabled even when a
+ * legacy template contains historical layout/display switches.
+ */
+export function canonicalReceiptDisplaySettings(
+  display: Readonly<ReceiptTemplateDisplaySettings>,
+): ReceiptTemplateDisplaySettings {
+  return {
+    ...display,
+    merchantName: true,
+    tableNumber: true,
+    note: true,
+    itemPrice: true,
+    orderTotal: true,
+  };
+}
+
 export function createPrintDocumentV3(
   paperWidth: PrintingPaperWidth,
   blocks: PrintBlockV3[],
@@ -286,21 +304,11 @@ function tableBillMerchantBlocks(
     ? undefined
     : optionalText(document.merchant.phone);
   if (display.merchantName) {
-    if (paperWidth === 'MM80') {
-      const combinedName = slashJoin(nameZh, nameVi);
-      if (combinedName) blocks.push(textV3(combinedName, 'CENTER', true, 'LARGE', 'FIT'));
-    } else {
-      if (nameZh) blocks.push(textV3(nameZh, 'CENTER', true, 'LARGE'));
-      if (nameVi) blocks.push(textV3(nameVi, 'CENTER', true));
-    }
+    if (nameZh) blocks.push(textV3(nameZh, 'CENTER', true, 'LARGE', 'FIT'));
+    if (nameVi) blocks.push(textV3(nameVi, 'CENTER', true, 'LARGE', 'FIT'));
   }
-  if (paperWidth === 'MM80') {
-    const contact = slashJoin(address, phone);
-    if (contact) blocks.push(textV3(contact, 'CENTER', false, 'SMALL', 'FIT'));
-  } else {
-    if (address) blocks.push(textV3(address, 'CENTER', false, 'SMALL'));
-    if (phone) blocks.push(textV3(phone, 'CENTER', false, 'SMALL'));
-  }
+  if (address) blocks.push(textV3(address, 'CENTER', false, 'SMALL', 'FIT'));
+  if (phone) blocks.push(textV3(phone, 'CENTER', false, 'SMALL', 'FIT'));
   return blocks;
 }
 
@@ -514,10 +522,6 @@ function optionalText(value: string | undefined) {
 function distinctOptionalText(value: string | undefined, other: string | undefined) {
   const normalized = optionalText(value);
   return normalized && normalized !== other ? normalized : undefined;
-}
-
-function slashJoin(...values: Array<string | undefined>) {
-  return values.filter((value): value is string => Boolean(value)).join(' / ');
 }
 
 function itemDividerDashes(paperWidth: PrintingPaperWidth) {

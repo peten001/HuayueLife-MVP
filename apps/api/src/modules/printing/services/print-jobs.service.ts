@@ -44,7 +44,11 @@ import {
   PrintingSnapshot,
   ReceiptSnapshotService,
 } from './receipt-snapshot.service';
-import { renderPrintDocumentV2, renderPrintDocumentV3 } from './print-document-renderer';
+import {
+  canonicalReceiptDisplaySettings,
+  renderPrintDocumentV2,
+  renderPrintDocumentV3,
+} from './print-document-renderer';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 import { ReceiptTemplatesService } from './receipt-templates.service';
 import {
@@ -56,6 +60,7 @@ import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
 } from '../types/lan-terminal-binding';
+import { CanonicalPrintArtifactService } from './canonical-print-artifact.service';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -158,6 +163,7 @@ export class PrintJobsService {
     private readonly lanBindings: LanTerminalBindingsService,
     private readonly templates: ReceiptTemplatesService,
     private readonly routing?: PrintingRoutingService,
+    private readonly canonicalArtifacts: CanonicalPrintArtifactService = new CanonicalPrintArtifactService(),
   ) {}
 
   async list(merchantId: bigint, query: ListPrintJobsQueryDto) {
@@ -1831,6 +1837,15 @@ export class PrintJobsService {
       contentHash,
       snapshotSchemaVersion: snapshot.schemaVersion,
       receiptSnapshot: job.receiptSnapshot,
+      canonicalTemplateVersion: job.canonicalTemplateVersion,
+      renderProtocol: job.renderProtocol,
+      renderedPayloadBase64: job.renderedPayload
+        ? Buffer.from(job.renderedPayload).toString('base64')
+        : null,
+      renderedPayloadSha256: job.renderedPayloadSha256,
+      renderedPayloadByteLength: job.renderedPayloadByteLength,
+      paperWidthMm: job.renderedPaperWidthMm,
+      widthDots: job.renderedWidthDots,
       printer: job.printer,
       currentAttempt: job.attempts[0] ?? null,
       ...(binding
@@ -2082,6 +2097,11 @@ export class PrintJobsService {
           client,
           input.renderMode,
         );
+    const artifact = this.canonicalArtifacts.render(
+      snapshot,
+      printer.paperWidth,
+      printer.purpose,
+    );
     return client.printJob.create({
       data: {
         merchantId: input.merchantId,
@@ -2103,6 +2123,13 @@ export class PrintJobsService {
         dedupeKey: input.dedupeKey,
         receiptSnapshot: snapshot as unknown as Prisma.InputJsonValue,
         receiptSnapshotHash: receiptSnapshotHash(snapshot),
+        canonicalTemplateVersion: artifact.canonicalTemplateVersion,
+        renderProtocol: artifact.renderProtocol,
+        renderedPayload: artifact.payload,
+        renderedPayloadSha256: artifact.sha256,
+        renderedPayloadByteLength: artifact.byteLength,
+        renderedPaperWidthMm: artifact.paperWidthMm,
+        renderedWidthDots: artifact.widthDots,
         createdByStaffId: input.createdByStaffId,
       },
     });
@@ -2140,7 +2167,9 @@ export class PrintJobsService {
         receipt: templated,
         paperWidth: printer.paperWidth,
         purpose: printer.purpose,
-        display: this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        display: canonicalReceiptDisplaySettings(
+          this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        ),
         renderMode,
       });
     }
@@ -2149,7 +2178,9 @@ export class PrintJobsService {
         receipt: templated,
         paperWidth: printer.paperWidth,
         purpose: printer.purpose,
-        display: this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        display: canonicalReceiptDisplaySettings(
+          this.snapshots.displaySettingsFromTemplate(templateDefinition),
+        ),
         renderMode,
       });
     }

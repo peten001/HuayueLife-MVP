@@ -45,6 +45,8 @@ export interface FinishPrintingInput {
   leaseVersion: number;
   printerResponse?: string;
   contentHash?: string;
+  actualPayloadSha256?: string;
+  transport?: string;
   bytesWritten?: number;
   localBindingId?: string;
   bindingVersion?: number;
@@ -90,6 +92,7 @@ export class PrintAttemptsService {
         input.bindingVersion,
       );
       const expectedHash = this.assertContentHash(job, input.contentHash);
+      const expectedPayloadSha256 = job.renderedPayloadSha256;
       const expectedAdapter = this.expectedTerminalAdapter(
         job.printer.channelType,
       );
@@ -155,6 +158,8 @@ export class PrintAttemptsService {
           appVersion: input.appVersion?.slice(0, 64),
           networkInfo,
           contentHash: expectedHash,
+          expectedPayloadSha256,
+          transport: expectedAdapter,
         },
       });
       const updatedJob = await tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
@@ -173,9 +178,17 @@ export class PrintAttemptsService {
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
       const expectedHash = this.assertContentHash(job, input.contentHash);
+      const expectedPayloadSha256 = job.renderedPayloadSha256;
+      this.assertPayloadHash(expectedPayloadSha256, input.actualPayloadSha256);
+      this.assertCompletePayloadWrite(
+        job,
+        input.bytesWritten,
+        input.actualPayloadSha256,
+      );
       const expectedAdapter = this.expectedTerminalAdapter(
         job.printer.channelType,
       );
+      const transport = normalizeTransport(input.transport) ?? expectedAdapter;
       this.assertTerminalRouteIdentity(
         job,
         input.terminalId,
@@ -198,6 +211,8 @@ export class PrintAttemptsService {
           completedAttempt &&
           completedAttempt.printerResponse === sanitizePrintingError(input.printerResponse)
           && (input.contentHash === undefined || completedAttempt.contentHash === expectedHash)
+          && (input.actualPayloadSha256 === undefined || completedAttempt.actualPayloadSha256 === input.actualPayloadSha256)
+          && (input.transport === undefined || completedAttempt.transport === transport)
           && (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
           return job;
@@ -244,6 +259,9 @@ export class PrintAttemptsService {
           result: 'SUCCEEDED',
           printerResponse: sanitizePrintingError(input.printerResponse),
           contentHash: expectedHash,
+          expectedPayloadSha256,
+          actualPayloadSha256: input.actualPayloadSha256,
+          transport,
           bytesWritten: input.bytesWritten,
         },
       });
@@ -261,9 +279,12 @@ export class PrintAttemptsService {
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
       const expectedHash = this.assertContentHash(job, input.contentHash);
+      const expectedPayloadSha256 = job.renderedPayloadSha256;
+      this.assertPayloadHash(expectedPayloadSha256, input.actualPayloadSha256);
       const expectedAdapter = this.expectedTerminalAdapter(
         job.printer.channelType,
       );
+      const transport = normalizeTransport(input.transport) ?? expectedAdapter;
       this.assertTerminalRouteIdentity(
         job,
         input.terminalId,
@@ -291,6 +312,8 @@ export class PrintAttemptsService {
           completedAttempt.errorMessage === sanitizePrintingError(input.errorMessage) &&
           completedAttempt.printerResponse === sanitizePrintingError(input.printerResponse) &&
           (input.contentHash === undefined || completedAttempt.contentHash === expectedHash) &&
+          (input.actualPayloadSha256 === undefined || completedAttempt.actualPayloadSha256 === input.actualPayloadSha256) &&
+          (input.transport === undefined || completedAttempt.transport === transport) &&
           (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
           return job;
@@ -346,6 +369,9 @@ export class PrintAttemptsService {
           errorMessage: sanitizePrintingError(input.errorMessage),
           printerResponse: sanitizePrintingError(input.printerResponse),
           contentHash: expectedHash,
+          expectedPayloadSha256,
+          actualPayloadSha256: input.actualPayloadSha256,
+          transport,
           bytesWritten: input.bytesWritten,
         },
       });
@@ -411,6 +437,23 @@ export class PrintAttemptsService {
   private assertExecution() {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
+  }
+
+  private assertCompletePayloadWrite(
+    job: { renderedPayloadByteLength: number | null },
+    bytesWritten?: number,
+    actualPayloadSha256?: string,
+  ) {
+    if (
+      actualPayloadSha256 !== undefined &&
+      job.renderedPayloadByteLength !== null &&
+      bytesWritten !== job.renderedPayloadByteLength
+    ) {
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.CONTENT_HASH_MISMATCH,
+        message: '打印字节数与服务端最终 payload 不一致',
+      });
+    }
   }
 
   private async requireActiveTerminal(merchantId: bigint, terminalId: bigint) {
@@ -649,6 +692,15 @@ export class PrintAttemptsService {
     return expected;
   }
 
+  private assertPayloadHash(expected: string | null, received: string | undefined) {
+    if (expected && received !== undefined && received !== expected) {
+      throw new ConflictException({
+        code: PRINTING_ERROR_CODES.CONTENT_HASH_MISMATCH,
+        message: '最终打印字节哈希不匹配，已拒绝执行或回报',
+      });
+    }
+  }
+
   private notFound(): never {
     throw new NotFoundException({
       code: PRINTING_ERROR_CODES.RESOURCE_NOT_FOUND,
@@ -670,6 +722,25 @@ export class PrintAttemptsService {
 
 function retryDelay(attemptNo: number) {
   return Math.min(300_000, 5_000 * 2 ** Math.max(0, attemptNo - 1));
+}
+
+const REPORTED_PRINT_TRANSPORTS = new Set([
+  'ANDROID_USB_ESCPOS',
+  'ANDROID_LAN_ESCPOS',
+  'WINDOWS_RAW_SPOOLER',
+  'WINDOWS_TCP_ESCPOS',
+]);
+
+function normalizeTransport(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const normalized = value.trim();
+  if (!REPORTED_PRINT_TRANSPORTS.has(normalized)) {
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+      message: '打印传输类型无效',
+    });
+  }
+  return normalized;
 }
 
 function normalizeNetworkInfo(value: Record<string, unknown> | undefined) {

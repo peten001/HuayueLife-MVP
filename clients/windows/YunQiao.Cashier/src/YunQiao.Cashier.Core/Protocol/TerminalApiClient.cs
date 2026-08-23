@@ -64,6 +64,8 @@ public sealed class TerminalApiClient : IDisposable
             capabilities = new
             {
                 platform = "WINDOWS",
+                SERVER_ESC_POS_PAYLOAD_V1 = true,
+                RAW_PAYLOAD_PASSTHROUGH = true,
                 windowsVersion = Environment.OSVersion.VersionString,
                 channels = new[] { "LOCAL_USB_ESCPOS", "LOCAL_LAN_ESCPOS" },
             },
@@ -315,6 +317,17 @@ public sealed class TerminalApiClient : IDisposable
         var currentAttempt = job.TryGetProperty("currentAttempt", out var current) && current.ValueKind == JsonValueKind.Object
             ? BoundedInt32(current, "attemptNo", 1, int.MaxValue)
             : (int?)null;
+        var renderProtocol = OptionalString(job, "renderProtocol", 64);
+        var payloadSha = OptionalString(job, "renderedPayloadSha256", 64);
+        byte[]? payload = null;
+        if (renderProtocol == "ESC_POS_RASTER_V1")
+        {
+            var declaredLength = BoundedInt32(job, "renderedPayloadByteLength", 1, 20_000_000);
+            payload = ServerPayloadIntegrity.DecodeBase64(
+                RequiredString(job, "renderedPayloadBase64", 20_000_000),
+                declaredLength,
+                payloadSha);
+        }
         var parsed = new ClaimedPrintJob(
             NumericString(job, "id"),
             NumericString(job, "merchantId"),
@@ -330,7 +343,14 @@ public sealed class TerminalApiClient : IDisposable
             BoundedInt32(job, "snapshotSchemaVersion", 1, 3),
             snapshotJson,
             route,
-            RequiredString(routeJson, "adapter", 80));
+            RequiredString(routeJson, "adapter", 80),
+            renderProtocol,
+            OptionalString(job, "canonicalTemplateVersion", 64),
+            payload,
+            payloadSha,
+            OptionalInt32(job, "renderedPayloadByteLength"),
+            OptionalInt32(job, "paperWidthMm"),
+            OptionalInt32(job, "widthDots"));
         if (parsed.PrinterId != route.PrinterId || parsed.Status is not ("CLAIMED" or "PRINTING"))
             throw InvalidResponse("job.route");
         return parsed;
@@ -344,7 +364,12 @@ public sealed class TerminalApiClient : IDisposable
             ["leaseVersion"] = leaseVersion,
             ["bytesWritten"] = Math.Max(0, bytesWritten),
             ["contentHash"] = job.ContentHash,
+            ["transport"] = job.Route.Transport == PrinterTransportKind.Lan
+                ? "WINDOWS_TCP_ESCPOS"
+                : "WINDOWS_RAW_SPOOLER",
         };
+        if (job.RenderedPayloadSha256 is not null)
+            result["actualPayloadSha256"] = job.RenderedPayloadSha256;
         if (job.Route.Transport == PrinterTransportKind.Lan)
         {
             result["printerId"] = job.Route.PrinterId;
@@ -460,6 +485,9 @@ public sealed class TerminalApiClient : IDisposable
 
     private static int BoundedInt32(JsonElement owner, string key, int min, int max) =>
         owner.TryGetProperty(key, out var value) && value.TryGetInt32(out var number) && number >= min && number <= max ? number : throw InvalidResponse(key);
+
+    private static int? OptionalInt32(JsonElement owner, string key) =>
+        owner.TryGetProperty(key, out var value) && value.TryGetInt32(out var number) ? number : null;
 
     private static long PositiveInt64(JsonElement owner, string key) =>
         owner.TryGetProperty(key, out var value) && value.TryGetInt64(out var number) && number > 0 ? number : throw InvalidResponse(key);

@@ -1,4 +1,5 @@
 import {
+  canonicalReceiptDisplaySettings,
   createPrintDocumentV2,
   renderPrintDocumentV2,
   renderPrintDocumentV3,
@@ -12,6 +13,33 @@ import {
 import { PrintDocument, PrintDocumentV2, PrintDocumentV3 } from '../types/print-document';
 
 describe('PrintDocument V2 server renderer', () => {
+  it('limits canonical merchant preferences to content fields only', () => {
+    expect(canonicalReceiptDisplaySettings({
+      ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+      merchantName: false,
+      tableNumber: false,
+      note: false,
+      itemPrice: false,
+      orderTotal: false,
+      orderNumber: false,
+      orderTime: false,
+      merchantAddress: false,
+      merchantPhone: false,
+      footer: false,
+    })).toEqual(expect.objectContaining({
+      merchantName: true,
+      tableNumber: true,
+      note: true,
+      itemPrice: true,
+      orderTotal: true,
+      orderNumber: false,
+      orderTime: false,
+      merchantAddress: false,
+      merchantPhone: false,
+      footer: false,
+    }));
+  });
+
   it('renders current rounding as presentation rows without exposing business JSON', () => {
     const document = renderPrintDocumentV2({
       receipt: receipt({ subtotal: 513_000, discount: 3_000, roundingAmount: 3_000, receivedAmount: 510_000, total: 510_000 }),
@@ -402,11 +430,13 @@ describe('PrintDocument V2 server renderer', () => {
     );
 
     expect(document.schemaVersion).toBe(3);
-    expect(content).toContain('花悦餐厅 / Nhà hàng Hoa Việt');
-    expect(content).toContain('真实地址 / 0900000000');
+    expect(content).toContain('花悦餐厅\nNhà hàng Hoa Việt');
+    expect(content).toContain('真实地址\n0900000000');
     expect(document.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'TEXT', text: '花悦餐厅 / Nhà hàng Hoa Việt', overflow: 'FIT' }),
-      expect.objectContaining({ type: 'TEXT', text: '真实地址 / 0900000000', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: '花悦餐厅', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: 'Nhà hàng Hoa Việt', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: '真实地址', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: '0900000000', overflow: 'FIT' }),
     ]));
     expect(content).toContain('A01 结账小票/Hóa đơn thanh toán TS-LAYOUT');
     expect(header).toBeUndefined();
@@ -432,6 +462,51 @@ describe('PrintDocument V2 server renderer', () => {
     expect(content).not.toContain('58.000');
     expect((content.match(/生成 \/ Tạo lúc/g) ?? [])).toHaveLength(1);
     expect(content).toContain('备注 / Ghi chú: 少辣');
+  });
+
+  it.each([
+    {
+      label: 'bilingual names',
+      name: '花悦餐厅',
+      nameVi: 'Nhà hàng Hoa Việt',
+      expected: ['花悦餐厅', 'Nhà hàng Hoa Việt'],
+    },
+    {
+      label: 'a Chinese name only',
+      name: '花悦餐厅',
+      nameVi: undefined,
+      expected: ['花悦餐厅'],
+    },
+    {
+      label: 'a Vietnamese name only',
+      name: '',
+      nameVi: 'Nhà hàng Hoa Việt',
+      expected: ['Nhà hàng Hoa Việt'],
+    },
+    {
+      label: 'long Chinese and Vietnamese names',
+      name: '云桥花悦优选越南家庭餐厅旗舰店',
+      nameVi: 'Nhà hàng gia đình Hoa Việt tuyển chọn của YunQiao',
+      expected: [
+        '云桥花悦优选越南家庭餐厅旗舰店',
+        'Nhà hàng gia đình Hoa Việt tuyển chọn của YunQiao',
+      ],
+    },
+  ])('keeps $label on separate FIT header lines', ({ name, nameVi, expected }) => {
+    const value = longTableBillReceipt();
+    const document = renderTableBillV3('MM80', {}, {
+      ...value,
+      merchant: { ...value.merchant, name, nameVi },
+    });
+    const headerLines = document.blocks.filter(
+      (block) => block.type === 'TEXT' && expected.includes(block.text),
+    );
+
+    expect(headerLines).toHaveLength(expected.length);
+    expect(headerLines).toEqual(expected.map((text) => expect.objectContaining({
+      type: 'TEXT', text, align: 'CENTER', bold: true, fontSize: 'LARGE', overflow: 'FIT',
+    })));
+    expect(renderedContent(document)).not.toContain(`${name} / ${nameVi ?? ''}`);
   });
 
   it.each(['MM80', 'MM58'] as const)(
@@ -668,7 +743,7 @@ describe('PrintDocument V2 server renderer', () => {
       merchantAddress: undefined,
       merchantPhone: undefined,
     }));
-    expect(legacy).toContain('真实地址 / 0900000000');
+    expect(legacy).toContain('真实地址\n0900000000');
 
     const hidden = renderTableBillV3('MM80', {
       merchantName: false,

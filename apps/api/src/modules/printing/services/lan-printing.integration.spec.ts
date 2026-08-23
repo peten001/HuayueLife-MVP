@@ -63,6 +63,18 @@ describe('terminal-executed LAN printing service chain', () => {
       settings as never,
       lan,
       templates as never,
+      undefined,
+      {
+        render: () => ({
+          canonicalTemplateVersion: 'YQ_CANONICAL_RECEIPT_V1',
+          renderProtocol: 'ESC_POS_RASTER_V1',
+          payload: Buffer.from([0x1b, 0x40]),
+          sha256: 'a'.repeat(64),
+          byteLength: 2,
+          paperWidthMm: 80,
+          widthDots: 576,
+        }),
+      } as never,
     );
     const attempts = new PrintAttemptsService(
       prisma as never,

@@ -120,6 +120,13 @@ data class ClaimedV2PrintJob(
     val receiptSnapshotJson: String,
     val route: V2RouteIdentity,
     val adapter: String,
+    val renderProtocol: String? = null,
+    val canonicalTemplateVersion: String? = null,
+    val renderedPayload: ByteArray? = null,
+    val renderedPayloadSha256: String? = null,
+    val renderedPayloadByteLength: Int? = null,
+    val paperWidthMm: Int? = null,
+    val widthDots: Int? = null,
 ) {
     val expectedAttemptNo: Int
         get() = currentAttemptNo ?: attemptCount + 1

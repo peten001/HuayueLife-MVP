@@ -1,0 +1,9 @@
+{
+  "fixtureVersion": "SERVER_ESC_POS_PAYLOAD_V1_SHARED_FIXTURE_1",
+  "renderProtocol": "ESC_POS_RASTER_V1",
+  "paperWidthMm": 80,
+  "widthDots": 576,
+  "payloadBase64": "G0AddjAAAQAIAIFCJBgYJEKBCgoKHVYB",
+  "byteLength": 24,
+  "sha256": "c4516147531d5ef36d1e33d632443880e76c0429b8d47a7f5aa58f6b46aeb72e"
+}

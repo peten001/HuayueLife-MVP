@@ -637,6 +637,8 @@ export class MerchantPrintingController {
       leaseVersion: dto.leaseVersion,
       printerResponse: dto.printerResponse,
       contentHash: dto.contentHash,
+      actualPayloadSha256: dto.actualPayloadSha256,
+      transport: dto.transport,
       bytesWritten: dto.bytesWritten,
     });
   }
@@ -672,6 +674,8 @@ export class MerchantPrintingController {
       errorMessage: dto.errorMessage,
       printerResponse: dto.printerResponse,
       contentHash: dto.contentHash,
+      actualPayloadSha256: dto.actualPayloadSha256,
+      transport: dto.transport,
       bytesWritten: dto.bytesWritten,
     });
   }

@@ -169,6 +169,8 @@ export class TerminalConnectorController {
       leaseVersion: dto.leaseVersion,
       printerResponse: dto.printerResponse,
       contentHash: dto.contentHash,
+      actualPayloadSha256: dto.actualPayloadSha256,
+      transport: dto.transport,
       bytesWritten: dto.bytesWritten,
     });
   }
@@ -205,6 +207,8 @@ export class TerminalConnectorController {
       errorMessage: dto.errorMessage,
       printerResponse: dto.printerResponse,
       contentHash: dto.contentHash,
+      actualPayloadSha256: dto.actualPayloadSha256,
+      transport: dto.transport,
       bytesWritten: dto.bytesWritten,
     });
   }

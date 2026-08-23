@@ -325,7 +325,7 @@ class TerminalV2ApiClientTest {
             val succeeded = server.takeRequest()
             assertEquals("/terminal/jobs/267/succeeded", succeeded.path)
             assertEquals(
-                setOf("attemptNo", "leaseVersion", "bytesWritten", "contentHash", "printerResponse"),
+                setOf("attemptNo", "leaseVersion", "bytesWritten", "contentHash", "transport", "printerResponse"),
                 JSONObject(succeeded.body.readUtf8()).keys().asSequence().toSet(),
             )
             val failed = server.takeRequest()
@@ -336,6 +336,7 @@ class TerminalV2ApiClientTest {
                     "leaseVersion",
                     "bytesWritten",
                     "contentHash",
+                    "transport",
                     "retryable",
                     "errorCode",
                     "errorMessage",

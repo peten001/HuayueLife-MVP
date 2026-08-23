@@ -1134,6 +1134,13 @@ model PrintJob {
   dedupeKey              String?           @unique(map: "uq_print_jobs_dedupe") @map("dedupe_key") @db.VarChar(191)
   receiptSnapshot        Json              @map("receipt_snapshot")
   receiptSnapshotHash    String?           @map("receipt_snapshot_hash") @db.VarChar(64)
+  canonicalTemplateVersion String?         @map("canonical_template_version") @db.VarChar(64)
+  renderProtocol         String?           @map("render_protocol") @db.VarChar(64)
+  renderedPayload        Bytes?            @map("rendered_payload") @db.LongBlob
+  renderedPayloadSha256  String?           @map("rendered_payload_sha256") @db.VarChar(64)
+  renderedPayloadByteLength Int?           @map("rendered_payload_byte_length")
+  renderedPaperWidthMm   Int?               @map("rendered_paper_width_mm")
+  renderedWidthDots      Int?               @map("rendered_width_dots")
   availableAt            DateTime          @default(now()) @map("available_at")
   claimedAt              DateTime?         @map("claimed_at")
   leaseExpiresAt         DateTime?         @map("lease_expires_at")
@@ -1194,6 +1201,9 @@ model PrintAttempt {
   appVersion          String?                    @map("app_version") @db.VarChar(64)
   networkInfo         Json?                      @map("network_info")
   contentHash         String?                    @map("content_hash") @db.VarChar(64)
+  expectedPayloadSha256 String?                  @map("expected_payload_sha256") @db.VarChar(64)
+  actualPayloadSha256   String?                  @map("actual_payload_sha256") @db.VarChar(64)
+  transport             String?                  @db.VarChar(80)
   bytesWritten        Int?                       @map("bytes_written")
   createdAt           DateTime                   @default(now()) @map("created_at")
 

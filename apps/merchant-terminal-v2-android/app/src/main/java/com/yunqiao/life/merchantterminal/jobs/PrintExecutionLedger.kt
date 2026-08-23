@@ -49,6 +49,7 @@ class PrintExecutionLedger(
             printerId = job.route.printerId,
             bindingVersion = job.route.bindingVersion,
             contentHash = job.contentHash,
+            renderedPayloadSha256 = job.renderedPayloadSha256,
             adapter = job.adapter,
             leaseVersion = job.leaseVersion,
             state = PrintExecutionState.CLAIMED.name,

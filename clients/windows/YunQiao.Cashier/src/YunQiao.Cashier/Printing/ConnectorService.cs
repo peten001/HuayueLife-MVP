@@ -249,20 +249,28 @@ public sealed class ConnectorService : IAsyncDisposable
         byte[] bytes;
         try
         {
-            RenderedReceipt rendered;
-            if (job.SnapshotSchemaVersion == 1)
+            var canonicalPayload = CanonicalServerPayload.ForJob(job, profile.PaperWidth.WidthDots);
+            if (canonicalPayload is not null)
             {
-                var legacy = ReceiptDocumentV1Parser.Parse(job.ReceiptSnapshotJson);
-                if (legacy.ReceiptType.ToString() != job.ReceiptType) throw new ReceiptSchemaException("Receipt type mismatch.");
-                rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.RenderLegacy(legacy, profile.PaperWidth, DateTimeOffset.Now));
+                bytes = canonicalPayload;
             }
             else
             {
-                var document = PrintDocumentParser.Parse(job.ReceiptSnapshotJson);
-                if (document.PaperWidth != profile.PaperWidth) throw new PrintDocumentException("Print document paper width mismatch.");
-                rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.Render(document));
+                RenderedReceipt rendered;
+                if (job.SnapshotSchemaVersion == 1)
+                {
+                    var legacy = ReceiptDocumentV1Parser.Parse(job.ReceiptSnapshotJson);
+                    if (legacy.ReceiptType.ToString() != job.ReceiptType) throw new ReceiptSchemaException("Receipt type mismatch.");
+                    rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.RenderLegacy(legacy, profile.PaperWidth, DateTimeOffset.Now));
+                }
+                else
+                {
+                    var document = PrintDocumentParser.Parse(job.ReceiptSnapshotJson);
+                    if (document.PaperWidth != profile.PaperWidth) throw new PrintDocumentException("Print document paper width mismatch.");
+                    rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.Render(document));
+                }
+                bytes = rendered.EscPosBytes;
             }
-            bytes = rendered.EscPosBytes;
         }
         catch (Exception error)
         {
@@ -389,7 +397,8 @@ public sealed class ConnectorService : IAsyncDisposable
         var job = new ClaimedPrintJob(
             report.JobId, report.MerchantId, report.PrinterId, "PRINTING", report.ReceiptType,
             report.Source, report.AttemptNo - 1, report.AttemptNo, report.LeaseVersion,
-            DateTimeOffset.UtcNow.AddMinutes(1), report.ContentHash, 2, "{}", report.Route, report.Adapter);
+            DateTimeOffset.UtcNow.AddMinutes(1), report.ContentHash, 2, "{}", report.Route, report.Adapter,
+            RenderedPayloadSha256: report.RenderedPayloadSha256);
         return report.State == ExecutionState.Succeeded
             ? _api.ReportSucceededAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten, cancellationToken)
             : _api.ReportFailedAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten,
@@ -404,7 +413,8 @@ public sealed class ConnectorService : IAsyncDisposable
         ExecutionState state) => new(
             job.Id, job.MerchantId, job.PrinterId, job.ReceiptType, job.Source, job.ContentHash,
             job.Route, job.Adapter, attemptNo, leaseVersion, result.BytesWritten, state,
-            result.Retryable, result.ErrorCode, result.ErrorMessage, DateTimeOffset.UtcNow);
+            result.Retryable, result.ErrorCode, result.ErrorMessage, DateTimeOffset.UtcNow,
+            job.RenderedPayloadSha256);
 
     private static IPrinterTransport ResolveTransport(LocalPrinterProfile profile) => profile.Transport switch
     {

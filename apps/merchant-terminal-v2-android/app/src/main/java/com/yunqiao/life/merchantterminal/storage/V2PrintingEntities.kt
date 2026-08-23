@@ -111,4 +111,5 @@ data class PrintExecutionLedgerEntity(
     val serverReportedAt: Long?,
     val createdAt: Long,
     val updatedAt: Long,
+    val renderedPayloadSha256: String? = null,
 )

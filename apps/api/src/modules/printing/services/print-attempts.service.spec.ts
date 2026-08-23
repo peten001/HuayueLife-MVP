@@ -226,6 +226,53 @@ describe('PrintAttemptsService', () => {
     expect(prisma.printer.updateMany).not.toHaveBeenCalled();
   });
 
+  it('requires a canonical success receipt to report the exact payload bytes and transport', async () => {
+    const sha = 'b'.repeat(64);
+    const printing = job({
+      status: 'PRINTING',
+      attemptCount: 1,
+      renderedPayloadSha256: sha,
+      renderedPayloadByteLength: 128,
+    });
+    prisma.printJob.findFirst.mockResolvedValue(printing);
+
+    await expect(service.markSucceeded({
+      merchantId,
+      terminalId,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      actualPayloadSha256: sha,
+      bytesWritten: 127,
+      transport: 'WINDOWS_RAW_SPOOLER',
+    })).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({ ...printing, status: 'SUCCEEDED' });
+    await service.markSucceeded({
+      merchantId,
+      terminalId,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      actualPayloadSha256: sha,
+      bytesWritten: 128,
+      transport: 'WINDOWS_RAW_SPOOLER',
+    });
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          expectedPayloadSha256: sha,
+          actualPayloadSha256: sha,
+          bytesWritten: 128,
+          transport: 'WINDOWS_RAW_SPOOLER',
+        }),
+      }),
+    );
+  });
+
   it('treats only a duplicate success report for the same completed attempt as idempotent', async () => {
     const succeeded = job({
       status: 'SUCCEEDED',
