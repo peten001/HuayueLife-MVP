@@ -249,7 +249,8 @@ public sealed class ConnectorService : IAsyncDisposable
         byte[] bytes;
         try
         {
-            var canonicalPayload = CanonicalServerPayload.ForJob(job, profile.PaperWidth.WidthDots);
+            var expectedWidthDots = profile.PaperWidth == PrintPaperWidth.MM58 ? 384 : 576;
+            var canonicalPayload = CanonicalServerPayload.ForJob(job, expectedWidthDots);
             if (canonicalPayload is not null)
             {
                 bytes = canonicalPayload;
