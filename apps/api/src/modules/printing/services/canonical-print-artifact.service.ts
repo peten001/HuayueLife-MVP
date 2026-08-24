@@ -355,7 +355,7 @@ function packMonochrome(rgba: Uint8ClampedArray, width: number, height: number) 
       const offset = (y * width + x) * 4;
       const alpha = rgba[offset + 3] / 255;
       const luminance = (rgba[offset] * 299 + rgba[offset + 1] * 587 + rgba[offset + 2] * 114) / 1000;
-      if (alpha > 0 && luminance < 170) output[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      if (alpha > 0 && luminance < 180) output[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
     }
   }
   return output;
