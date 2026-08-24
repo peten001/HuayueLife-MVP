@@ -64,3 +64,42 @@ export function canonicalTableBillGoldenFixture(): ReceiptDocument {
     },
   };
 }
+
+export type CanonicalSettlementFixtureName =
+  | 'NONE'
+  | 'DISCOUNT_ONLY'
+  | 'ROUNDING_ONLY'
+  | 'DISCOUNT_AND_ROUNDING';
+
+export function canonicalTableBillSettlementFixture(
+  name: CanonicalSettlementFixtureName,
+): ReceiptDocument {
+  const originalAmount = 536_000;
+  const discountAmount = name === 'DISCOUNT_ONLY' || name === 'DISCOUNT_AND_ROUNDING'
+    ? 20_000
+    : 0;
+  const roundingAmount = name === 'ROUNDING_ONLY' || name === 'DISCOUNT_AND_ROUNDING'
+    ? 6_000
+    : 0;
+  const finalReceivable = originalAmount - discountAmount - roundingAmount;
+  const fixture = canonicalTableBillGoldenFixture();
+  return {
+    ...fixture,
+    generatedAt: '2026-08-24T13:00:00.000Z',
+    tableSession: {
+      ...fixture.tableSession!,
+      id: '889',
+      sessionNo: `TS-ANON-${name}`,
+      orderNos: ['HY-ANON-SETTLEMENT-0001', 'HY-ANON-SETTLEMENT-0002'],
+    },
+    totals: {
+      subtotal: originalAmount,
+      originalAmount,
+      ...(discountAmount > 0 ? { commercialDiscountAmount: discountAmount } : {}),
+      roundingAmount,
+      receivedAmount: finalReceivable,
+      total: finalReceivable,
+      currency: 'VND',
+    },
+  };
+}

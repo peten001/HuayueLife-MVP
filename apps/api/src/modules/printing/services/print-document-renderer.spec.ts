@@ -1,6 +1,7 @@
 import {
   canonicalReceiptDisplaySettings,
   createPrintDocumentV2,
+  formatCanonicalDeductionAmount,
   renderPrintDocumentV2,
   renderPrintDocumentV3,
 } from './print-document-renderer';
@@ -556,7 +557,7 @@ describe('PrintDocument V2 server renderer', () => {
     expect(contacts).toHaveLength(expected ? 1 : 0);
     if (expected) {
       expect(contacts[0]).toEqual(expect.objectContaining({
-        type: 'TEXT', text: expected, align: 'CENTER', fontSize: 'SMALL',
+        type: 'TEXT', text: expected, align: 'CENTER', fontSize: 'NORMAL',
       }));
       expect('overflow' in contacts[0]).toBe(false);
       expect(expected.startsWith(' / ') || expected.endsWith(' / ')).toBe(false);
@@ -869,6 +870,34 @@ describe('PrintDocument V2 server renderer', () => {
     expect(hiddenContent).not.toMatch(/原金额|折扣 \/ Giảm giá|抹零|最终应收|自定义结束语/);
   });
 
+  it.each([
+    { address: '真实地址', phone: '0900000000', expected: '真实地址 / 0900000000' },
+    { address: '真实地址', phone: undefined, expected: '真实地址' },
+    { address: undefined, phone: '0900000000', expected: '0900000000' },
+    { address: undefined, phone: undefined, expected: undefined },
+  ])('renders the address and phone combination at the TABLE_BILL NORMAL token', ({
+    address,
+    phone,
+    expected,
+  }) => {
+    const receipt = longTableBillReceipt();
+    receipt.merchant = { ...receipt.merchant, address, phone };
+    const document = renderTableBillV3('MM80', {}, receipt);
+    const contact = document.blocks.find((block) => (
+      block.type === 'TEXT' && block.text === expected
+    ));
+
+    if (expected) {
+      expect(contact).toEqual(expect.objectContaining({
+        type: 'TEXT', align: 'CENTER', bold: false, fontSize: 'NORMAL',
+      }));
+    } else {
+      expect(document.blocks.some((block) => (
+        block.type === 'TEXT' && (block.text === '真实地址' || block.text === '0900000000')
+      ))).toBe(false);
+    }
+  });
+
   it('renders original conditional totals and received amount without recalculation in schema 3', () => {
     const withAdjustments = renderedContent(renderTableBillV3('MM80', {}, tableBillReceipt({
       subtotal: 40_000,
@@ -893,6 +922,41 @@ describe('PrintDocument V2 server renderer', () => {
       total: 40_000,
     })));
     expect(withoutAdjustments).not.toMatch(/折扣 \/ Giảm giá|抹零 \/ Làm tròn/);
+  });
+
+  it.each([
+    { name: 'none', discount: 0, rounding: 0, final: 536_000, discountRows: 0, roundingRows: 0 },
+    { name: 'discount only', discount: 20_000, rounding: 0, final: 516_000, discountRows: 1, roundingRows: 0 },
+    { name: 'rounding only', discount: 0, rounding: 6_000, final: 530_000, discountRows: 0, roundingRows: 1 },
+    { name: 'both', discount: 20_000, rounding: 6_000, final: 510_000, discountRows: 1, roundingRows: 1 },
+  ])('renders the $name settlement combination exactly once', ({
+    discount,
+    rounding,
+    final,
+    discountRows,
+    roundingRows,
+  }) => {
+    const content = renderedContent(renderTableBillV3('MM80', {}, tableBillReceipt({
+      subtotal: 536_000,
+      originalAmount: 536_000,
+      commercialDiscountAmount: discount,
+      roundingAmount: rounding,
+      receivedAmount: final,
+      total: final,
+    })));
+
+    expect((content.match(/折扣 \/ Giảm giá/g) ?? [])).toHaveLength(discountRows);
+    expect((content.match(/抹零 \/ Làm tròn/g) ?? [])).toHaveLength(roundingRows);
+    expect((content.match(/最终应收 \/ Phải thu/g) ?? [])).toHaveLength(1);
+    expect(content).toContain(`最终应收 / Phải thu ${new Intl.NumberFormat('vi-VN').format(final)} VND`);
+    expect(536_000 - discount - rounding).toBe(final);
+  });
+
+  it('normalizes persisted deduction magnitudes to one leading minus sign', () => {
+    expect(formatCanonicalDeductionAmount(20_000)).toBe('-20.000 VND');
+    expect(formatCanonicalDeductionAmount(-20_000)).toBe('-20.000 VND');
+    expect(formatCanonicalDeductionAmount(9_000)).toBe('-9.000 VND');
+    expect(formatCanonicalDeductionAmount(-9_000)).toBe('-9.000 VND');
   });
 
   it('omits close time when absent and keeps generated time only in the upper section', () => {

@@ -307,7 +307,7 @@ function tableBillMerchantBlocks(
     if (nameVi) blocks.push(textV3(nameVi, 'CENTER', true, 'LARGE', 'FIT'));
   }
   const contact = [address, phone].filter((value): value is string => Boolean(value)).join(' / ');
-  if (contact) blocks.push(textV3(contact, 'CENTER', false, 'SMALL'));
+  if (contact) blocks.push(textV3(contact, 'CENTER', false, 'NORMAL'));
   return blocks;
 }
 
@@ -438,11 +438,13 @@ function tableBillTotalBlocks(
   if ((document.totals.commercialDiscountAmount ?? 0) > 0) {
     blocks.push(rowV3(
       '折扣 / Giảm giá',
-      `-${money(document.totals.commercialDiscountAmount!)}`,
+      formatCanonicalDeductionAmount(document.totals.commercialDiscountAmount!),
     ));
   }
   const rounding = document.totals.roundingAmount ?? document.totals.discount ?? 0;
-  if (rounding > 0) blocks.push(rowV3('抹零 / Làm tròn', `-${money(rounding)}`));
+  if (rounding > 0) {
+    blocks.push(rowV3('抹零 / Làm tròn', formatCanonicalDeductionAmount(rounding)));
+  }
   blocks.push({ type: 'DIVIDER' });
   blocks.push(rowV3(
     '最终应收 / Phải thu',
@@ -450,6 +452,11 @@ function tableBillTotalBlocks(
     true,
   ));
   return blocks;
+}
+
+/** Persisted discount and rounding fields are non-negative deduction values. */
+export function formatCanonicalDeductionAmount(value: number) {
+  return `-${money(Math.abs(value))}`;
 }
 
 function columnV3(

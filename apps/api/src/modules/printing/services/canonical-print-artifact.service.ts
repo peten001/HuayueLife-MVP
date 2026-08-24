@@ -28,12 +28,18 @@ export const CANONICAL_RENDER_PROTOCOL = 'ESC_POS_RASTER_V1';
 export const CANONICAL_FONT_FAMILY = 'YunQiao Noto Sans SC';
 export const CANONICAL_FONT_PACKAGE = '@fontsource-variable/noto-sans-sc@5.3.0';
 export const CANONICAL_FONT_LICENSE = 'OFL-1.1';
-export const CANONICAL_THRESHOLD = 180;
+export const CANONICAL_THRESHOLD = 185;
+export const CANONICAL_THRESHOLD_BASELINE = 180;
 export const CANONICAL_DOTS_PER_MM = 8;
 export const CANONICAL_VERTICAL_DPI = CANONICAL_DOTS_PER_MM * 25.4;
 export const TABLE_BILL_LAYOUT_VERSION = 'YQ_CANONICAL_TABLE_BILL_LAYOUT_V2';
 export const TABLE_BILL_ITEM_ROW_BOTTOM_DOTS = 8;
 export const TABLE_BILL_DISH_FONT_WEIGHT = 500;
+export const TABLE_BILL_ADDRESS_FONT_TOKEN = 'NORMAL';
+export const TABLE_BILL_ADDRESS_FONT_WEIGHT = 500;
+export const TABLE_BILL_FOOTER_FONT_TOKEN = 'NORMAL';
+export const TABLE_BILL_FOOTER_FONT_WEIGHT = 500;
+export const TABLE_BILL_FOOTER_LINE_GAP_DOTS = 5;
 export const TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT = 700;
 export const TABLE_BILL_BOTTOM_SAFE_MM = 25;
 export const TABLE_BILL_BOTTOM_SAFE_DOTS = Math.round(
@@ -75,12 +81,22 @@ export interface CanonicalLayoutDiagnostics {
   widthDots: number;
   heightDots: number;
   threshold: typeof CANONICAL_THRESHOLD;
+  thresholdBaseline: typeof CANONICAL_THRESHOLD_BASELINE;
+  blackPixelRatioAt180: number;
+  blackPixelRatioAt185: number;
   dotsPerMm: typeof CANONICAL_DOTS_PER_MM;
   verticalDpi: typeof CANONICAL_VERTICAL_DPI;
   dishFontWeight: typeof TABLE_BILL_DISH_FONT_WEIGHT | 400;
   dishTextBlackPixelRatioBefore: number;
   dishTextBlackPixelRatioAfter: number;
   dishTextBoldReferenceBlackPixelRatio: number;
+  addressFontToken: typeof TABLE_BILL_ADDRESS_FONT_TOKEN;
+  addressFontWeight: typeof TABLE_BILL_ADDRESS_FONT_WEIGHT | 400;
+  addressTextBlackPixelRatio: number;
+  footerFontToken: typeof TABLE_BILL_FOOTER_FONT_TOKEN;
+  footerFontWeight: typeof TABLE_BILL_FOOTER_FONT_WEIGHT | 400;
+  footerLineGapDots: typeof TABLE_BILL_FOOTER_LINE_GAP_DOTS | 0;
+  footerTextBlackPixelRatio: number;
   finalReceivableFontWeight: typeof TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT;
   finalReceivableBlackPixelRatio: number;
   footerLastInkY: number;
@@ -185,6 +201,9 @@ export class CanonicalPrintArtifactService {
     drawOperations(context, operations);
     const rgba = context.getImageData(0, 0, paper.widthDots, height).data;
     const raster = packMonochrome(rgba, paper.widthDots, height);
+    const baselineRaster = includeEvidence
+      ? packMonochrome(rgba, paper.widthDots, height, CANONICAL_THRESHOLD_BASELINE)
+      : undefined;
     const payload = encodeEscPos(raster, paper.widthDots, height, feedLines, cutMode);
     const artifact: CanonicalPrintArtifact = {
       canonicalTemplateVersion: CANONICAL_TEMPLATE_VERSION,
@@ -213,6 +232,7 @@ export class CanonicalPrintArtifactService {
         paper.widthDots,
         height,
         raster,
+        baselineRaster!,
       ),
     };
   }
@@ -312,13 +332,24 @@ function layoutDocument(
           footerStarted = true;
         }
         const baseSize = fontPixels(block.fontSize);
+        const readableSecondaryText = tableBill && (
+          (defaultRegion === 'HEADER' && block.fontSize === TABLE_BILL_ADDRESS_FONT_TOKEN && !block.bold) ||
+          defaultRegion === 'FOOTER'
+        );
+        const fontWeight = readableSecondaryText
+          ? defaultRegion === 'FOOTER'
+            ? TABLE_BILL_FOOTER_FONT_WEIGHT
+            : TABLE_BILL_ADDRESS_FONT_WEIGHT
+          : canonicalFontWeight(block.bold);
         const fit = block.overflow === 'FIT';
-        const size = fit ? fitFontSize(context, block.text, contentWidth, block.bold, baseSize) : baseSize;
+        const size = fit
+          ? fitFontSize(context, block.text, contentWidth, block.bold, baseSize, fontWeight)
+          : baseSize;
         const lines = fit
           ? [block.text]
           : tableBill && defaultRegion === 'HEADER' && block.fontSize === 'SMALL'
             ? wrapCenteredText(context, block.text, contentWidth, block.bold, size)
-            : wrapText(context, block.text, contentWidth, block.bold, size);
+            : wrapText(context, block.text, contentWidth, block.bold, size, fontWeight);
         const lineHeight = Math.ceil(size * 1.35);
         for (const line of lines) {
           operations.push({
@@ -330,7 +361,7 @@ function layoutDocument(
             width: contentWidth,
             align: block.align,
             bold: block.bold,
-            fontWeight: canonicalFontWeight(block.bold),
+            fontWeight,
             size,
           });
           if (block.underline) operations.push({ ...metadata, type: 'LINE', x1: marginDots, x2: widthDots - marginDots, y: y + lineHeight - 5, thickness: 1 });
@@ -339,7 +370,7 @@ function layoutDocument(
         y += tableBill && defaultRegion === 'HEADER'
           ? block.fontSize === 'SMALL' ? 10 : 4
           : tableBill && defaultRegion === 'FOOTER'
-            ? 5
+            ? TABLE_BILL_FOOTER_LINE_GAP_DOTS
             : tableBill && defaultRegion === 'ITEMS' && !/^--+$/u.test(block.text)
               ? TABLE_BILL_ITEM_ROW_BOTTOM_DOTS
               : 4;
@@ -574,6 +605,7 @@ function inspectLayout(
   widthDots: number,
   heightDots: number,
   raster: Buffer,
+  baselineRaster: Buffer,
 ): CanonicalLayoutDiagnostics {
   const textOperations = operations.filter(
     (operation): operation is Extract<DrawOperation, { type: 'TEXT' }> => operation.type === 'TEXT',
@@ -656,6 +688,11 @@ function inspectLayout(
     )).length === block.cells.length - 1;
   });
   const dishOperations = itemColumnOperations.filter((operation) => operation.align === 'LEFT');
+  const addressOperations = textOperations.filter((operation) => (
+    operation.region === 'HEADER' &&
+    operation.size === fontPixels(TABLE_BILL_ADDRESS_FONT_TOKEN) &&
+    !operation.bold
+  ));
   const finalReceivableOperations = textOperations.filter(({ blockIndex }) => {
     const block = document.blocks[blockIndex];
     return block.type === 'ROW' && block.left === '最终应收 / Phải thu';
@@ -667,6 +704,16 @@ function inspectLayout(
     TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
   );
   const finalReceivableBlackPixelRatio = textBlackPixelRatio(finalReceivableOperations);
+  const addressTextBlackPixelRatio = textBlackPixelRatio(addressOperations);
+  const footerTextBlackPixelRatio = textBlackPixelRatio(
+    textOperations.filter((operation) => operation.region === 'FOOTER'),
+  );
+  const totalRasterPixels = widthDots * heightDots;
+  const blackPixelRatioAt180 = roundedRatio(
+    countBlackPixels(baselineRaster),
+    totalRasterPixels,
+  );
+  const blackPixelRatioAt185 = roundedRatio(countBlackPixels(raster), totalRasterPixels);
   const rowBytes = Math.ceil(widthDots / 8);
   const footerLastInkY = lastRasterInkY(raster, rowBytes, heightDots);
   const bottomBlankDots = profile === 'TABLE_BILL_V2'
@@ -700,12 +747,22 @@ function inspectLayout(
     widthDots,
     heightDots,
     threshold: CANONICAL_THRESHOLD,
+    thresholdBaseline: CANONICAL_THRESHOLD_BASELINE,
+    blackPixelRatioAt180,
+    blackPixelRatioAt185,
     dotsPerMm: CANONICAL_DOTS_PER_MM,
     verticalDpi: CANONICAL_VERTICAL_DPI,
     dishFontWeight: profile === 'TABLE_BILL_V2' ? TABLE_BILL_DISH_FONT_WEIGHT : 400,
     dishTextBlackPixelRatioBefore,
     dishTextBlackPixelRatioAfter,
     dishTextBoldReferenceBlackPixelRatio,
+    addressFontToken: TABLE_BILL_ADDRESS_FONT_TOKEN,
+    addressFontWeight: profile === 'TABLE_BILL_V2' ? TABLE_BILL_ADDRESS_FONT_WEIGHT : 400,
+    addressTextBlackPixelRatio,
+    footerFontToken: TABLE_BILL_FOOTER_FONT_TOKEN,
+    footerFontWeight: profile === 'TABLE_BILL_V2' ? TABLE_BILL_FOOTER_FONT_WEIGHT : 400,
+    footerLineGapDots: profile === 'TABLE_BILL_V2' ? TABLE_BILL_FOOTER_LINE_GAP_DOTS : 0,
+    footerTextBlackPixelRatio,
     finalReceivableFontWeight: TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
     finalReceivableBlackPixelRatio,
     footerLastInkY,
@@ -846,6 +903,12 @@ function countBlackPixels(raster: Buffer) {
     }
   }
   return count;
+}
+
+function roundedRatio(numerator: number, denominator: number) {
+  return denominator === 0
+    ? 0
+    : Math.round(numerator / denominator * 1_000_000) / 1_000_000;
 }
 
 function renderMonochromePng(raster: Buffer, width: number, height: number) {
@@ -1010,7 +1073,12 @@ function fontPixels(size: FontSize) {
   return size === 'SMALL' ? 18 : size === 'LARGE' ? 30 : 22;
 }
 
-function packMonochrome(rgba: Uint8ClampedArray, width: number, height: number) {
+function packMonochrome(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  threshold = CANONICAL_THRESHOLD,
+) {
   const rowBytes = Math.ceil(width / 8);
   const output = Buffer.alloc(rowBytes * height);
   for (let y = 0; y < height; y += 1) {
@@ -1018,7 +1086,7 @@ function packMonochrome(rgba: Uint8ClampedArray, width: number, height: number) 
       const offset = (y * width + x) * 4;
       const alpha = rgba[offset + 3] / 255;
       const luminance = (rgba[offset] * 299 + rgba[offset + 1] * 587 + rgba[offset + 2] * 114) / 1000;
-      if (alpha > 0 && luminance < CANONICAL_THRESHOLD) {
+      if (alpha > 0 && luminance < threshold) {
         output[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
       }
     }

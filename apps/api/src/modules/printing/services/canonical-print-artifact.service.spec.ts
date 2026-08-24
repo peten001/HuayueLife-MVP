@@ -7,20 +7,30 @@ import {
   CANONICAL_FONT_LICENSE,
   CANONICAL_FONT_PACKAGE,
   CANONICAL_THRESHOLD,
+  CANONICAL_THRESHOLD_BASELINE,
   CANONICAL_VERTICAL_DPI,
   CanonicalPrintArtifactService,
+  TABLE_BILL_ADDRESS_FONT_TOKEN,
+  TABLE_BILL_ADDRESS_FONT_WEIGHT,
   TABLE_BILL_BOTTOM_SAFE_DOTS,
   TABLE_BILL_BOTTOM_SAFE_MM,
   TABLE_BILL_DISH_FONT_WEIGHT,
   TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
   TABLE_BILL_FINAL_TOTAL_BOTTOM_DOTS,
+  TABLE_BILL_FOOTER_FONT_TOKEN,
+  TABLE_BILL_FOOTER_FONT_WEIGHT,
+  TABLE_BILL_FOOTER_LINE_GAP_DOTS,
   TABLE_BILL_ITEM_ROW_BOTTOM_DOTS,
   TABLE_BILL_LAYOUT_VERSION,
   TABLE_BILL_ORDER_INFO_ROW_GAP_DOTS,
   TABLE_BILL_TOTAL_ROW_GAP_DOTS,
 } from './canonical-print-artifact.service';
 import { renderPrintDocumentV3 } from './print-document-renderer';
-import { canonicalTableBillGoldenFixture } from '../testing/canonical-table-bill-layout.fixture';
+import {
+  canonicalTableBillGoldenFixture,
+  canonicalTableBillSettlementFixture,
+  CanonicalSettlementFixtureName,
+} from '../testing/canonical-table-bill-layout.fixture';
 
 describe('CanonicalPrintArtifactService', () => {
   const service = new CanonicalPrintArtifactService();
@@ -29,7 +39,8 @@ describe('CanonicalPrintArtifactService', () => {
     const first = service.renderEvidence(goldenDocument(14), 'MM80');
     const second = service.renderEvidence(goldenDocument(14), 'MM80');
 
-    expect(CANONICAL_THRESHOLD).toBe(180);
+    expect(CANONICAL_THRESHOLD_BASELINE).toBe(180);
+    expect(CANONICAL_THRESHOLD).toBe(185);
     expect(CANONICAL_VERTICAL_DPI / 25.4).toBe(CANONICAL_DOTS_PER_MM);
     expect(TABLE_BILL_BOTTOM_SAFE_DOTS).toBe(Math.round(
       TABLE_BILL_BOTTOM_SAFE_MM * CANONICAL_DOTS_PER_MM,
@@ -42,7 +53,7 @@ describe('CanonicalPrintArtifactService', () => {
       first.artifact.heightDots & 0xff, (first.artifact.heightDots >> 8) & 0xff,
     ]));
     expect(first.artifact.payload.subarray(-3)).toEqual(Buffer.from([0x1d, 0x56, 0x01]));
-    expect(first.artifact.sha256).toBe('71f340e659233f5fab85409bf0e52312e9e457b3f2908fa772096bc86dfeee06');
+    expect(first.artifact.sha256).toBe('8ab7cb789b5884bac6c2980ffb6bbcfe47d147a0d679a6947f6b2e24def73f41');
     expect(second.artifact.sha256).toBe(first.artifact.sha256);
     expect(second.artifact.payload).toEqual(first.artifact.payload);
     expect(second.layout.layoutFingerprint).toBe(first.layout.layoutFingerprint);
@@ -50,9 +61,15 @@ describe('CanonicalPrintArtifactService', () => {
       layoutVersion: TABLE_BILL_LAYOUT_VERSION,
       widthDots: 576,
       threshold: CANONICAL_THRESHOLD,
+      thresholdBaseline: CANONICAL_THRESHOLD_BASELINE,
       dotsPerMm: CANONICAL_DOTS_PER_MM,
       verticalDpi: CANONICAL_VERTICAL_DPI,
       dishFontWeight: TABLE_BILL_DISH_FONT_WEIGHT,
+      addressFontToken: TABLE_BILL_ADDRESS_FONT_TOKEN,
+      addressFontWeight: TABLE_BILL_ADDRESS_FONT_WEIGHT,
+      footerFontToken: TABLE_BILL_FOOTER_FONT_TOKEN,
+      footerFontWeight: TABLE_BILL_FOOTER_FONT_WEIGHT,
+      footerLineGapDots: TABLE_BILL_FOOTER_LINE_GAP_DOTS,
       finalReceivableFontWeight: TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
       bottomSafeMm: TABLE_BILL_BOTTOM_SAFE_MM,
       bottomSafeDots: TABLE_BILL_BOTTOM_SAFE_DOTS,
@@ -69,6 +86,11 @@ describe('CanonicalPrintArtifactService', () => {
       finalTotalBottomDots: TABLE_BILL_FINAL_TOTAL_BOTTOM_DOTS,
     }));
     expect(first.layout.maxDishLineCount).toBeGreaterThanOrEqual(3);
+    expect(first.layout.blackPixelRatioAt185).toBeGreaterThan(
+      first.layout.blackPixelRatioAt180,
+    );
+    expect(first.layout.addressTextBlackPixelRatio).toBeGreaterThan(0);
+    expect(first.layout.footerTextBlackPixelRatio).toBeGreaterThan(0);
     expect(first.layout.dishTextBlackPixelRatioAfter).toBeGreaterThan(
       first.layout.dishTextBlackPixelRatioBefore,
     );
@@ -85,12 +107,12 @@ describe('CanonicalPrintArtifactService', () => {
       license: CANONICAL_FONT_LICENSE,
     });
     expect(first.layout.keyBboxes).toEqual({
-      HEADER: { x: 30, y: 18, width: 516, height: 159.5 },
-      CHECKOUT: { x: 30, y: 193, width: 474.8249969482422, height: 83 },
-      ORDER_INFO: { x: 30, y: 290, width: 516, height: 213.5 },
-      ITEMS: { x: 30, y: 513, width: 516, height: 1594.5 },
-      TOTALS: { x: 30, y: 2125, width: 516, height: 168 },
-      FOOTER: { x: 79, y: 2325, width: 418, height: 61 },
+      HEADER: { x: 30, y: 18, width: 516, height: 157.5 },
+      CHECKOUT: { x: 30, y: 191, width: 474.8249969482422, height: 83 },
+      ORDER_INFO: { x: 30, y: 288, width: 516, height: 213.5 },
+      ITEMS: { x: 30, y: 511, width: 516, height: 1594.5 },
+      TOTALS: { x: 30, y: 2123, width: 516, height: 168 },
+      FOOTER: { x: 79, y: 2323, width: 418, height: 61 },
     });
   });
 
@@ -143,6 +165,31 @@ describe('CanonicalPrintArtifactService', () => {
     }));
   });
 
+  it.each<{
+    name: CanonicalSettlementFixtureName;
+    discount: number;
+    rounding: number;
+    final: number;
+  }>([
+    { name: 'NONE', discount: 0, rounding: 0, final: 536_000 },
+    { name: 'DISCOUNT_ONLY', discount: 20_000, rounding: 0, final: 516_000 },
+    { name: 'ROUNDING_ONLY', discount: 0, rounding: 6_000, final: 530_000 },
+    { name: 'DISCOUNT_AND_ROUNDING', discount: 20_000, rounding: 6_000, final: 510_000 },
+  ])('keeps the anonymous $name settlement fixture internally consistent', ({
+    name,
+    discount,
+    rounding,
+    final,
+  }) => {
+    const fixture = canonicalTableBillSettlementFixture(name);
+
+    expect(fixture.totals.originalAmount).toBe(536_000);
+    expect(fixture.totals.commercialDiscountAmount ?? 0).toBe(discount);
+    expect(fixture.totals.roundingAmount ?? 0).toBe(rounding);
+    expect(fixture.totals.receivedAmount).toBe(final);
+    expect(536_000 - discount - rounding).toBe(final);
+  });
+
   it('verifies the shared transport-only fixture used by both clients', () => {
     const fixture = JSON.parse(readFileSync(join(process.cwd(), '../../fixtures/printing/server-esc-pos-payload-v1.json'), 'utf8'));
     const payload = Buffer.from(fixture.payloadBase64, 'base64');
@@ -161,6 +208,31 @@ describe('CanonicalPrintArtifactService', () => {
   it('keeps long Vietnamese words and emoji graphemes without truncating the receipt', () => {
     const artifact = service.render(goldenDocument(1, 'Cơm chiên hải sản siêu đặc biệt gia đình 👨‍👩‍👧‍👦 / 超长家庭海鲜炒饭测试菜名'), 'MM80');
     expect(artifact.heightDots).toBeGreaterThan(service.render(goldenDocument(1, 'Cơm / 饭'), 'MM80').heightDots);
+  });
+
+  it('wraps long address and bilingual footer text at NORMAL Medium without clipping', () => {
+    const fixture = canonicalTableBillGoldenFixture();
+    const evidence = service.renderEvidence({
+      ...fixture,
+      merchant: {
+        ...fixture.merchant,
+        address: 'Tầng hai khu nhà mẫu 65V3-2VQ Tiên Phong, Bắc Giang, Việt Nam với lối vào phía đông',
+      },
+      footer: {
+        zh: '谢谢惠顾，欢迎再次光临云桥示例家庭餐厅，与家人朋友共享每一顿好饭',
+        vi: 'Cảm ơn quý khách, hẹn gặp lại tại YunQiao thật sớm!',
+      },
+    }, 'MM80');
+
+    expect(evidence.layout.addressFontToken).toBe('NORMAL');
+    expect(evidence.layout.addressFontWeight).toBe(500);
+    expect(evidence.layout.footerFontToken).toBe('NORMAL');
+    expect(evidence.layout.footerFontWeight).toBe(500);
+    expect(evidence.layout.footerLineGapDots).toBe(5);
+    expect(evidence.layout.visibleTextClippingCount).toBe(0);
+    expect(evidence.layout.ellipsisBusinessTextCount).toBe(0);
+    expect(evidence.layout.bottomBlankMm).toBeGreaterThanOrEqual(23);
+    expect(evidence.layout.bottomBlankMm).toBeLessThanOrEqual(27);
   });
 
   it('applies the TABLE_BILL layout profile to the stored schema 3 snapshot used in production', () => {

@@ -460,13 +460,52 @@ describe('ReceiptSnapshotService validation', () => {
     expect(snapshot.totals).toMatchObject({ originalAmount: 513_000, roundingAmount: 3_000, receivedAmount: 510_000, total: 510_000 });
   });
 
-  it('prints a rounded 513,000 VND table bill with a 510,000 VND final total', async () => {
+  it('prints pickup discount and rounding from the persisted Order settlement fields', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 41n,
+      merchantId,
+      merchant: { id: merchantId, nameZh: '测试商家', addressZh: null, addressDetail: null, contactPhone: null },
+      table: null,
+      tableNoSnapshot: null,
+      orderNo: 'TEST-PICKUP-DISCOUNT-41',
+      orderType: 'PICKUP',
+      createdAt: new Date('2026-07-15T00:00:00.000Z'),
+      completedAt: new Date('2026-07-15T00:02:00.000Z'),
+      items: [{ productNameZhSnapshot: '折扣自取菜品', product: { nameVi: 'Món giảm giá' }, quantity: 1, unitPriceVnd: 536_000n, subtotalVnd: 536_000n, remark: null }],
+      itemAmountVnd: 536_000n,
+      totalAmountVnd: 536_000n,
+      discountPayableRateBps: 9_627,
+      discountAmountVnd: 20_000n,
+      discountAppliedByStaffId: 11n,
+      discountAppliedAt: new Date('2026-07-15T00:01:00.000Z'),
+      roundingAmountVnd: 6_000n,
+      roundingAppliedByStaffId: 11n,
+      roundingAppliedAt: new Date('2026-07-15T00:01:30.000Z'),
+      customerRemark: null,
+    });
+
+    const snapshot = await service.fromOrder(merchantId, 41n);
+
+    expect(snapshot.totals).toEqual({
+      subtotal: 536_000,
+      commercialDiscountAmount: 20_000,
+      discount: 6_000,
+      originalAmount: 536_000,
+      roundingAmount: 6_000,
+      receivedAmount: 510_000,
+      total: 510_000,
+      currency: 'VND',
+    });
+  });
+
+  it('reads one persisted 9,000 VND session rounding for a multi-order 309,000 VND table bill', async () => {
     prisma.tableSession.findFirst.mockResolvedValue({
       id: 47n,
       sessionNo: 'TS-47',
       openedAt: new Date('2026-07-15T00:00:00.000Z'),
       closedAt: null,
-      roundingAmountVnd: 3_000n,
+      discountAmountVnd: 0n,
+      roundingAmountVnd: 9_000n,
       roundingAppliedByStaffId: 11n,
       merchant: {
         id: merchantId,
@@ -476,49 +515,48 @@ describe('ReceiptSnapshotService validation', () => {
         contactPhone: '0900000000',
       },
       table: { tableNo: 'A01', tableName: null },
-      orders: [
-        {
-          orderNo: 'TEST-TABLE-ORDER',
-          itemAmountVnd: 513_000n,
-          totalAmountVnd: 513_000n,
+      orders: Array.from({ length: 3 }, (_, index) => ({
+          orderNo: `TEST-TABLE-ORDER-${index + 1}`,
+          itemAmountVnd: 103_000n,
+          totalAmountVnd: 103_000n,
           items: [
             {
               productNameZhSnapshot: '抹零验收菜品',
               product: { nameVi: 'Mon kiem thu' },
               quantity: 1,
-              unitPriceVnd: 513_000n,
-              subtotalVnd: 513_000n,
+              unitPriceVnd: 103_000n,
+              subtotalVnd: 103_000n,
               remark: null,
             },
           ],
-        },
-      ],
+        })),
     });
 
     const snapshot = await service.fromTableSession(merchantId, 47n);
 
     expect(snapshot.totals).toEqual({
-      subtotal: 513_000,
-      discount: 3_000,
-      originalAmount: 513_000,
-      roundingAmount: 3_000,
-      receivedAmount: 510_000,
-      total: 510_000,
+      subtotal: 309_000,
+      discount: 9_000,
+      originalAmount: 309_000,
+      roundingAmount: 9_000,
+      receivedAmount: 300_000,
+      total: 300_000,
       currency: 'VND',
     });
+    expect(snapshot.tableSession?.orderNos).toHaveLength(3);
     expect(prisma.tableSession.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 47n, merchantId } }),
     );
   });
 
-  it('freezes the TABLE_BILL commercial discount before rounding', async () => {
+  it('freezes persisted TABLE_BILL discount and rounding without recalculating them', async () => {
     prisma.tableSession.findFirst.mockResolvedValue({
       id: 48n,
       sessionNo: 'TS-48',
       openedAt: new Date('2026-07-15T00:00:00.000Z'),
       closedAt: null,
       discountPayableRateBps: 9000,
-      discountAmountVnd: 51_300n,
+      discountAmountVnd: 50_000n,
       discountAppliedByStaffId: 11n,
       discountAppliedAt: new Date('2026-07-15T00:01:00.000Z'),
       roundingAmountVnd: 1_700n,
@@ -550,12 +588,12 @@ describe('ReceiptSnapshotService validation', () => {
 
     expect(snapshot.totals).toEqual({
       subtotal: 513_000,
-      commercialDiscountAmount: 51_300,
+      commercialDiscountAmount: 50_000,
       discount: 1_700,
       originalAmount: 513_000,
       roundingAmount: 1_700,
-      receivedAmount: 460_000,
-      total: 460_000,
+      receivedAmount: 461_300,
+      total: 461_300,
       currency: 'VND',
     });
   });

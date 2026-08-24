@@ -14,7 +14,6 @@ import {
 } from '../types/receipt-document';
 import { footerFromTemplateDefinition } from '../types/bilingual-receipt';
 import { withOrderSettlementFields } from '../../orders/order-settlement-fields';
-import { calculateSettlementAdjustment } from '../../orders/settlement-adjustment';
 import {
   assertPrintDocumentV3,
   assertPrintDocumentV2,
@@ -111,6 +110,9 @@ export class ReceiptSnapshotService {
       })),
       totals: {
         subtotal: safeVnd(itemAmountVnd),
+        ...(!categoryIdSet && settlement.discountAmountVnd > 0n
+          ? { commercialDiscountAmount: safeVnd(settlement.discountAmountVnd) }
+          : {}),
         ...(!categoryIdSet && settlement.roundingAmountVnd > 0n
           ? { discount: safeVnd(settlement.roundingAmountVnd) }
           : {}),
@@ -166,11 +168,23 @@ export class ReceiptSnapshotService {
       (sum, order) => sum + order.totalAmountVnd,
       0n,
     );
-    const amounts = calculateSettlementAdjustment({
-      itemAmountVnd: subtotal,
-      discountPayableRateBps: session.discountPayableRateBps ?? null,
-      roundingEnabled: session.roundingAppliedByStaffId != null,
-    });
+    // TableSession is the canonical settlement owner for DINE_IN. Snapshot
+    // creation reads the persisted adjustment values exactly once; manual
+    // reprints clone this immutable snapshot and never revisit child logs or
+    // current menu prices.
+    const commercialDiscountAmount = session.discountAmountVnd ?? 0n;
+    const roundingAmount = session.roundingAmountVnd ?? 0n;
+    if (
+      commercialDiscountAmount < 0n ||
+      roundingAmount < 0n ||
+      commercialDiscountAmount + roundingAmount > total
+    ) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+        message: '桌台结算金额无效，无法生成打印快照',
+      });
+    }
+    const finalReceivable = total - commercialDiscountAmount - roundingAmount;
     const tableItems = aggregateReceiptItems(
       session.orders.flatMap((order) =>
         order.items.map((item) => ({
@@ -206,16 +220,16 @@ export class ReceiptSnapshotService {
       items: tableItems,
       totals: {
         subtotal: safeVnd(subtotal),
-        ...(amounts.discountAmountVnd > 0n
-          ? { commercialDiscountAmount: safeVnd(amounts.discountAmountVnd) }
+        ...(commercialDiscountAmount > 0n
+          ? { commercialDiscountAmount: safeVnd(commercialDiscountAmount) }
           : {}),
-        ...(amounts.roundingAmountVnd > 0n
-          ? { discount: safeVnd(amounts.roundingAmountVnd) }
+        ...(roundingAmount > 0n
+          ? { discount: safeVnd(roundingAmount) }
           : {}),
         originalAmount: safeVnd(total),
-        roundingAmount: safeVnd(amounts.roundingAmountVnd),
-        receivedAmount: safeVnd(amounts.payableAmountVnd),
-        total: safeVnd(amounts.payableAmountVnd),
+        roundingAmount: safeVnd(roundingAmount),
+        receivedAmount: safeVnd(finalReceivable),
+        total: safeVnd(finalReceivable),
         currency: 'VND',
       },
       verificationCode: `YQ:TABLE:${session.id}:${session.sessionNo}`,
