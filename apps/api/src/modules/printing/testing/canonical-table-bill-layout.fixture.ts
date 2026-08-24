@@ -2,10 +2,10 @@ import { ReceiptDocument } from '../types/receipt-document';
 
 const DISHES = [
   ['西红柿炖牛腩家庭分享特大份长菜名完整换行测试', 'Thịt bò hầm cà chua phần lớn dành cho gia đình và bạn bè trong buổi tối cuối tuần'],
-  ['招牌酸菜鱼特大份家庭分享装', 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè'],
-  ['越式香茅烤鸡', 'Gà nướng sả kiểu Việt Nam'],
+  ['土豆炖牛腩家庭分享特大份长菜名完整换行测试', 'Thịt bò hầm khoai tây phần lớn dành cho gia đình và bạn bè'],
+  ['青椒炒肉丝家庭分享装', 'Thịt heo xào ớt xanh kiểu gia đình'],
   ['蒜蓉炒红薯叶', 'Rau lang xào tỏi thơm ngon kiểu quê nhà'],
-  ['鲜虾炒饭', 'Cơm chiên tôm tươi'],
+  ['西红柿炖牛腩', 'Thịt bò hầm cà chua'],
   ['牛肉粉', 'Phở bò'],
   ['酸辣海鲜汤', 'Canh hải sản chua cay'],
   ['脆皮烧肉', 'Heo quay da giòn'],

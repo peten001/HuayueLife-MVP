@@ -83,12 +83,14 @@ bytes written, actual transport, result
 | Font package | `@fontsource-variable/noto-sans-sc@5.3.0` |
 | Font license | OFL-1.1 |
 | Threshold | 180 |
+| Dish font weight | 500 effective Medium (deterministic Regular overprint) |
 | Table box weight | 24% |
 | Table/title gap | 10 dots |
 | Dish / quantity / amount | 72% / 10% / 18% |
 | Column gap | 6 dots |
 | Item row bottom gap | 8 dots |
-| Footer/cut safety | 128 raster dots (16 mm) / half cut |
+| Vertical density | 203.2 dpi / 8 dots per mm |
+| Footer/cut safety | 200 pure-white raster dots (25 mm) / half cut |
 
 The Diguoju schema-3 receipt hierarchy is the visual baseline. The canonical
 renderer locks the values above; a merchant template cannot override them.
@@ -106,14 +108,22 @@ renderer locks the values above; a merchant template cannot override them.
 - Every table-session information value uses an independent label/value row.
   The label width and 12-dot label/value gap are stable; long values, including
   order numbers, wrap inside the remaining width without ellipsis.
-- A dish name is `LARGE`, non-bold, and wraps within the 72% dish column.
+- A dish name is `LARGE`, medium weight 500, and wraps within the 72% dish
+  column. The font family, package, size, column ratio, and wrap algorithm stay
+  unchanged; quantity, amount, headings, totals, and footer keep their existing
+  weights. The registered subset stack cannot safely expose numeric 500 without
+  over-darkening at threshold 180, so the server uses a deterministic second
+  Regular pass as its effective Medium raster and guards it between the 400 and
+  700 black-pixel references.
 - Vietnamese wraps at word boundaries when possible. Chinese, mixed text, and
   long unbroken tokens fall back to Unicode grapheme boundaries.
 - Dish lines have no fixed line limit. Quantity and amount are emitted exactly
   once and remain in their own columns.
 - Each completed item group has an 8-dot bottom gap before its separator or the
-  next block. The final payload carries at least 128 blank raster dots after the
-  footer before half cut; it does not rely on printer-specific line-feed height.
+  next block. The final `TABLE_BILL` payload carries 200 pure-white raster dots,
+  calculated as `round(25 mm × 8 dots/mm)`, after the footer ink before half cut;
+  it does not rely on printer-specific line-feed height. Other canonical print
+  types retain their existing feed/cut behavior.
 
 ## Merchant preference allowlist
 

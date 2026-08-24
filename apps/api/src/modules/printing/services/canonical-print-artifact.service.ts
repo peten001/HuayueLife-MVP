@@ -30,9 +30,15 @@ export const CANONICAL_FONT_PACKAGE = '@fontsource-variable/noto-sans-sc@5.3.0';
 export const CANONICAL_FONT_LICENSE = 'OFL-1.1';
 export const CANONICAL_THRESHOLD = 180;
 export const CANONICAL_DOTS_PER_MM = 8;
+export const CANONICAL_VERTICAL_DPI = CANONICAL_DOTS_PER_MM * 25.4;
 export const TABLE_BILL_LAYOUT_VERSION = 'YQ_CANONICAL_TABLE_BILL_LAYOUT_V2';
 export const TABLE_BILL_ITEM_ROW_BOTTOM_DOTS = 8;
-export const TABLE_BILL_FOOTER_CUT_SAFETY_DOTS = 128;
+export const TABLE_BILL_DISH_FONT_WEIGHT = 500;
+export const TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT = 700;
+export const TABLE_BILL_BOTTOM_SAFE_MM = 25;
+export const TABLE_BILL_BOTTOM_SAFE_DOTS = Math.round(
+  TABLE_BILL_BOTTOM_SAFE_MM * CANONICAL_DOTS_PER_MM,
+);
 export const TABLE_BILL_ORDER_INFO_ROW_GAP_DOTS = 6;
 export const TABLE_BILL_TOTAL_ROW_GAP_DOTS = 8;
 export const TABLE_BILL_FINAL_TOTAL_BOTTOM_DOTS = 14;
@@ -47,12 +53,13 @@ let canonicalFontStack = `"${CANONICAL_FONT_FAMILY}"`;
 
 type FontSize = 'SMALL' | 'NORMAL' | 'LARGE';
 type Alignment = 'LEFT' | 'CENTER' | 'RIGHT';
+type CanonicalFontWeight = 400 | 500 | 700;
 type CanvasContext = ReturnType<ReturnType<typeof createCanvas>['getContext']>;
 type LayoutProfile = 'DEFAULT' | 'TABLE_BILL_V2';
 type LayoutRegion = 'GENERIC' | 'HEADER' | 'CHECKOUT' | 'ORDER_INFO' | 'ITEMS' | 'TOTALS' | 'FOOTER';
 type OperationMetadata = { blockIndex: number; region: LayoutRegion };
 type DrawOperation =
-  | (OperationMetadata & { type: 'TEXT'; text: string; x: number; y: number; width: number; align: Alignment; bold: boolean; size: number })
+  | (OperationMetadata & { type: 'TEXT'; text: string; x: number; y: number; width: number; align: Alignment; bold: boolean; fontWeight: CanonicalFontWeight; size: number })
   | (OperationMetadata & { type: 'LINE'; x1: number; x2: number; y: number; thickness: number })
   | (OperationMetadata & { type: 'RECT'; x: number; y: number; width: number; height: number; thickness: number });
 
@@ -69,6 +76,21 @@ export interface CanonicalLayoutDiagnostics {
   heightDots: number;
   threshold: typeof CANONICAL_THRESHOLD;
   dotsPerMm: typeof CANONICAL_DOTS_PER_MM;
+  verticalDpi: typeof CANONICAL_VERTICAL_DPI;
+  dishFontWeight: typeof TABLE_BILL_DISH_FONT_WEIGHT | 400;
+  dishTextBlackPixelRatioBefore: number;
+  dishTextBlackPixelRatioAfter: number;
+  dishTextBoldReferenceBlackPixelRatio: number;
+  finalReceivableFontWeight: typeof TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT;
+  finalReceivableBlackPixelRatio: number;
+  footerLastInkY: number;
+  cutReferenceY: number;
+  bottomSafeMm: typeof TABLE_BILL_BOTTOM_SAFE_MM | 0;
+  bottomSafeDots: typeof TABLE_BILL_BOTTOM_SAFE_DOTS | 0;
+  bottomBlankDots: number;
+  bottomBlankMm: number;
+  bottomBlankAreaIsRaster: boolean;
+  bottomBlankBlackPixelCount: number;
   footerToCutDots: number;
   footerToCutMm: number;
   visibleTextClippingCount: number;
@@ -76,6 +98,7 @@ export interface CanonicalLayoutDiagnostics {
   textOverlapCount: number;
   textTouchingBorderCount: number;
   ellipsisBusinessTextCount: number;
+  qtyAmountSingleOccurrence: boolean;
   maxDishLineCount: number;
   itemRowBottomDots: number;
   orderInfoRowGapDots: number;
@@ -181,7 +204,7 @@ export class CanonicalPrintArtifactService {
     if (!includeEvidence) return { artifact };
     return {
       artifact,
-      png: canvas.toBuffer('image/png'),
+      png: renderMonochromePng(raster, paper.widthDots, height),
       layout: inspectLayout(
         measurement,
         normalized.document,
@@ -189,6 +212,7 @@ export class CanonicalPrintArtifactService {
         operations,
         paper.widthDots,
         height,
+        raster,
       ),
     };
   }
@@ -297,7 +321,18 @@ function layoutDocument(
             : wrapText(context, block.text, contentWidth, block.bold, size);
         const lineHeight = Math.ceil(size * 1.35);
         for (const line of lines) {
-          operations.push({ ...metadata, type: 'TEXT', text: line, x: marginDots, y, width: contentWidth, align: block.align, bold: block.bold, size });
+          operations.push({
+            ...metadata,
+            type: 'TEXT',
+            text: line,
+            x: marginDots,
+            y,
+            width: contentWidth,
+            align: block.align,
+            bold: block.bold,
+            fontWeight: canonicalFontWeight(block.bold),
+            size,
+          });
           if (block.underline) operations.push({ ...metadata, type: 'LINE', x1: marginDots, x2: widthDots - marginDots, y: y + lineHeight - 5, thickness: 1 });
           y += lineHeight;
         }
@@ -335,8 +370,30 @@ function layoutDocument(
         const rightLines = wrapText(context, block.right, rightWidth, rightBold, size);
         const lines = Math.max(leftLines.length, rightLines.length);
         for (let index = 0; index < lines; index += 1) {
-          if (leftLines[index]) operations.push({ ...metadata, type: 'TEXT', text: leftLines[index], x: marginDots, y: y + index * lineHeight, width: leftWidth, align: 'LEFT', bold: leftBold, size });
-          if (rightLines[index]) operations.push({ ...metadata, type: 'TEXT', text: rightLines[index], x: marginDots + leftWidth + rowGap, y: y + index * lineHeight, width: rightWidth, align: 'RIGHT', bold: rightBold, size });
+          if (leftLines[index]) operations.push({
+            ...metadata,
+            type: 'TEXT',
+            text: leftLines[index],
+            x: marginDots,
+            y: y + index * lineHeight,
+            width: leftWidth,
+            align: 'LEFT',
+            bold: leftBold,
+            fontWeight: canonicalFontWeight(leftBold),
+            size,
+          });
+          if (rightLines[index]) operations.push({
+            ...metadata,
+            type: 'TEXT',
+            text: rightLines[index],
+            x: marginDots + leftWidth + rowGap,
+            y: y + index * lineHeight,
+            width: rightWidth,
+            align: 'RIGHT',
+            bold: rightBold,
+            fontWeight: canonicalFontWeight(rightBold),
+            size,
+          });
         }
         y += lines * lineHeight + (stable
           ? defaultRegion === 'ORDER_INFO'
@@ -361,19 +418,22 @@ function layoutDocument(
             ? widthDots - marginDots - x
             : Math.floor(usable * cell.weight / totalWeight);
           const size = cell.fontSize === 'LARGE' ? 28 : fontPixels(cell.fontSize);
+          const fontWeight = tableBillItem && index === 0
+            ? TABLE_BILL_DISH_FONT_WEIGHT
+            : canonicalFontWeight(cell.bold);
           const fit = cell.overflow === 'FIT';
           const innerWidth = Math.max(1, width - cell.paddingDots * 2);
           const fitted = tableBillItem && index === 0
             ? size
-            : fit ? fitFontSize(context, cell.text, innerWidth, cell.bold, size) : size;
+            : fit ? fitFontSize(context, cell.text, innerWidth, cell.bold, size, fontWeight) : size;
           const lines = tableBillItem && index === 0
-            ? wrapText(context, cell.text, innerWidth, cell.bold, fitted)
+            ? wrapText(context, cell.text, innerWidth, cell.bold, fitted, fontWeight)
             : index === 0
-              ? wrapText(context, cell.text, innerWidth, cell.bold, fitted)
-              : measure(context, cell.text, cell.bold, fitted) <= innerWidth
+              ? wrapText(context, cell.text, innerWidth, cell.bold, fitted, fontWeight)
+              : measure(context, cell.text, cell.bold, fitted, fontWeight) <= innerWidth
                 ? [cell.text]
-                : wrapText(context, cell.text, innerWidth, cell.bold, fitted);
-          const result = { cell, x, width, size: fitted, lines };
+                : wrapText(context, cell.text, innerWidth, cell.bold, fitted, fontWeight);
+          const result = { cell, x, width, size: fitted, lines, fontWeight };
           x += width + gap;
           return result;
         });
@@ -382,7 +442,8 @@ function layoutDocument(
           const lineHeight = Math.ceil(cell.size * 1.35);
           cell.lines.forEach((line, index) => operations.push({
             ...metadata, type: 'TEXT', text: line, x: cell.x + cell.cell.paddingDots, y: y + index * lineHeight,
-            width: cell.width - cell.cell.paddingDots * 2, align: cell.cell.align, bold: cell.cell.bold, size: cell.size,
+            width: cell.width - cell.cell.paddingDots * 2, align: cell.cell.align,
+            bold: cell.cell.bold, fontWeight: cell.fontWeight, size: cell.size,
           }));
         }
         y += rowHeight + (tableBillItem ? TABLE_BILL_ITEM_ROW_BOTTOM_DOTS : 4);
@@ -412,19 +473,19 @@ function layoutDocument(
           boxLines.forEach((line, index) => operations.push({
             ...metadata, region: 'CHECKOUT', type: 'TEXT', text: line,
             x: marginDots + 10, y: boxY + index * boxLineHeight,
-            width: boxWidth - 20, align: 'CENTER', bold: true, size: boxSize,
+            width: boxWidth - 20, align: 'CENTER', bold: true, fontWeight: 700, size: boxSize,
           }));
           const titleY = y + Math.floor((height - rightContentHeight) / 2);
           titleLines.forEach((line, index) => operations.push({
             ...metadata, region: 'CHECKOUT', type: 'TEXT', text: line,
             x: titleX, y: titleY + index * titleLineHeight,
-            width: titleWidth, align: 'CENTER', bold: true, size: titleSize,
+            width: titleWidth, align: 'CENTER', bold: true, fontWeight: 700, size: titleSize,
           }));
           const subtitleY = titleY + titleLines.length * titleLineHeight + 8;
           subtitleLines.forEach((line, index) => operations.push({
             ...metadata, region: 'CHECKOUT', type: 'TEXT', text: line,
             x: titleX, y: subtitleY + index * subtitleLineHeight,
-            width: titleWidth, align: 'CENTER', bold: true, size: subtitleSize,
+            width: titleWidth, align: 'CENTER', bold: true, fontWeight: 700, size: subtitleSize,
           }));
           y += height + 14;
           break;
@@ -439,9 +500,9 @@ function layoutDocument(
         const subtitleSize = fitFontSize(context, block.subtitle, titleWidth, true, fontPixels('SMALL'));
         const height = Math.max(68, Math.ceil(titleSize * 1.35 + subtitleSize * 1.35 + 6));
         operations.push({ ...metadata, type: 'RECT', x: marginDots, y, width: boxWidth, height, thickness: 2 });
-        operations.push({ ...metadata, type: 'TEXT', text: block.boxText, x: marginDots + 5, y: y + Math.floor((height - boxSize * 1.2) / 2), width: boxWidth - 10, align: 'CENTER', bold: true, size: boxSize });
-        operations.push({ ...metadata, type: 'TEXT', text: block.title, x: titleX, y: y + 3, width: titleWidth, align: 'CENTER', bold: true, size: titleSize });
-        operations.push({ ...metadata, type: 'TEXT', text: block.subtitle, x: titleX, y: y + Math.ceil(titleSize * 1.35) + 5, width: titleWidth, align: 'CENTER', bold: true, size: subtitleSize });
+        operations.push({ ...metadata, type: 'TEXT', text: block.boxText, x: marginDots + 5, y: y + Math.floor((height - boxSize * 1.2) / 2), width: boxWidth - 10, align: 'CENTER', bold: true, fontWeight: 700, size: boxSize });
+        operations.push({ ...metadata, type: 'TEXT', text: block.title, x: titleX, y: y + 3, width: titleWidth, align: 'CENTER', bold: true, fontWeight: 700, size: titleSize });
+        operations.push({ ...metadata, type: 'TEXT', text: block.subtitle, x: titleX, y: y + Math.ceil(titleSize * 1.35) + 5, width: titleWidth, align: 'CENTER', bold: true, fontWeight: 700, size: subtitleSize });
         y += height + 8;
         break;
       }
@@ -460,12 +521,21 @@ function layoutDocument(
         break;
     }
   }
-  const cutSafetyDots = profile === 'TABLE_BILL_V2'
-    ? TABLE_BILL_FOOTER_CUT_SAFETY_DOTS
-    : 0;
+  const baseHeight = Math.max(1, Math.ceil(y + 8));
+  const textOperations = operations.filter(
+    (operation): operation is Extract<DrawOperation, { type: 'TEXT' }> => operation.type === 'TEXT',
+  );
+  const footerOperations = textOperations.filter((operation) => operation.region === 'FOOTER');
+  const lastVisibleBottom = Math.max(
+    0,
+    ...(footerOperations.length ? footerOperations : textOperations)
+      .map((operation) => operation.y + Math.ceil(operation.size * 1.15)),
+  );
   return {
     operations,
-    height: Math.max(1, Math.ceil(y + 8 + cutSafetyDots)),
+    height: profile === 'TABLE_BILL_V2'
+      ? Math.max(baseHeight, Math.ceil(lastVisibleBottom) + TABLE_BILL_BOTTOM_SAFE_DOTS + 4)
+      : baseHeight,
     feedLines,
     cutMode,
   };
@@ -484,14 +554,14 @@ function drawOperations(context: CanvasContext, operations: DrawOperation[]) {
       context.lineWidth = operation.thickness;
       context.strokeRect(operation.x, operation.y, operation.width, operation.height);
     } else {
-      setFont(context, operation.bold, operation.size);
+      setFont(context, operation.bold, operation.size, operation.fontWeight);
       const measured = context.measureText(operation.text).width;
       const x = operation.align === 'CENTER'
         ? operation.x + Math.max(0, (operation.width - measured) / 2)
         : operation.align === 'RIGHT'
           ? operation.x + Math.max(0, operation.width - measured)
           : operation.x;
-      context.fillText(operation.text, x, operation.y);
+      drawCanonicalText(context, operation.text, x, operation.y, operation.fontWeight);
     }
   }
 }
@@ -503,6 +573,7 @@ function inspectLayout(
   operations: DrawOperation[],
   widthDots: number,
   heightDots: number,
+  raster: Buffer,
 ): CanonicalLayoutDiagnostics {
   const textOperations = operations.filter(
     (operation): operation is Extract<DrawOperation, { type: 'TEXT' }> => operation.type === 'TEXT',
@@ -573,7 +644,44 @@ function inspectLayout(
       );
     }
   });
-  const footerToCutDots = Math.max(0, Math.floor(heightDots - lastVisibleBottom));
+  const itemColumnOperations = textOperations.filter(({ blockIndex, region }) => (
+    region === 'ITEMS' && document.blocks[blockIndex]?.type === 'COLUMNS'
+  ));
+  const itemColumnBlockIndexes = [...new Set(itemColumnOperations.map(({ blockIndex }) => blockIndex))];
+  const qtyAmountSingleOccurrence = itemColumnBlockIndexes.every((blockIndex) => {
+    const block = document.blocks[blockIndex];
+    if (block.type !== 'COLUMNS') return false;
+    return itemColumnOperations.filter((operation) => (
+      operation.blockIndex === blockIndex && operation.align !== 'LEFT'
+    )).length === block.cells.length - 1;
+  });
+  const dishOperations = itemColumnOperations.filter((operation) => operation.align === 'LEFT');
+  const finalReceivableOperations = textOperations.filter(({ blockIndex }) => {
+    const block = document.blocks[blockIndex];
+    return block.type === 'ROW' && block.left === '最终应收 / Phải thu';
+  });
+  const dishTextBlackPixelRatioBefore = textBlackPixelRatio(dishOperations, 400);
+  const dishTextBlackPixelRatioAfter = textBlackPixelRatio(dishOperations, TABLE_BILL_DISH_FONT_WEIGHT);
+  const dishTextBoldReferenceBlackPixelRatio = textBlackPixelRatio(
+    dishOperations,
+    TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
+  );
+  const finalReceivableBlackPixelRatio = textBlackPixelRatio(finalReceivableOperations);
+  const rowBytes = Math.ceil(widthDots / 8);
+  const footerLastInkY = lastRasterInkY(raster, rowBytes, heightDots);
+  const bottomBlankDots = profile === 'TABLE_BILL_V2'
+    ? Math.max(0, heightDots - footerLastInkY)
+    : 0;
+  const bottomBlankStart = Math.max(0, heightDots - TABLE_BILL_BOTTOM_SAFE_DOTS);
+  const bottomBlankBlackPixelCount = profile === 'TABLE_BILL_V2'
+    ? countBlackPixels(raster.subarray(bottomBlankStart * rowBytes))
+    : 0;
+  const bottomBlankAreaIsRaster = profile === 'TABLE_BILL_V2' &&
+    bottomBlankBlackPixelCount === 0 &&
+    bottomBlankDots >= TABLE_BILL_BOTTOM_SAFE_DOTS;
+  const footerToCutDots = profile === 'TABLE_BILL_V2'
+    ? bottomBlankDots
+    : Math.max(0, Math.floor(heightDots - lastVisibleBottom));
   const layoutFingerprint = createHash('sha256')
     .update(JSON.stringify({
       profile,
@@ -593,6 +701,21 @@ function inspectLayout(
     heightDots,
     threshold: CANONICAL_THRESHOLD,
     dotsPerMm: CANONICAL_DOTS_PER_MM,
+    verticalDpi: CANONICAL_VERTICAL_DPI,
+    dishFontWeight: profile === 'TABLE_BILL_V2' ? TABLE_BILL_DISH_FONT_WEIGHT : 400,
+    dishTextBlackPixelRatioBefore,
+    dishTextBlackPixelRatioAfter,
+    dishTextBoldReferenceBlackPixelRatio,
+    finalReceivableFontWeight: TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT,
+    finalReceivableBlackPixelRatio,
+    footerLastInkY,
+    cutReferenceY: heightDots,
+    bottomSafeMm: profile === 'TABLE_BILL_V2' ? TABLE_BILL_BOTTOM_SAFE_MM : 0,
+    bottomSafeDots: profile === 'TABLE_BILL_V2' ? TABLE_BILL_BOTTOM_SAFE_DOTS : 0,
+    bottomBlankDots,
+    bottomBlankMm: Math.round(bottomBlankDots / CANONICAL_DOTS_PER_MM * 100) / 100,
+    bottomBlankAreaIsRaster,
+    bottomBlankBlackPixelCount,
     footerToCutDots,
     footerToCutMm: Math.round(footerToCutDots / CANONICAL_DOTS_PER_MM * 100) / 100,
     visibleTextClippingCount,
@@ -600,6 +723,7 @@ function inspectLayout(
     textOverlapCount,
     textTouchingBorderCount,
     ellipsisBusinessTextCount,
+    qtyAmountSingleOccurrence,
     maxDishLineCount: Math.max(0, ...dishLineCounts.values()),
     itemRowBottomDots: profile === 'TABLE_BILL_V2' ? TABLE_BILL_ITEM_ROW_BOTTOM_DOTS : 0,
     orderInfoRowGapDots: profile === 'TABLE_BILL_V2' ? TABLE_BILL_ORDER_INFO_ROW_GAP_DOTS : 0,
@@ -614,7 +738,13 @@ function textOperationBox(
   context: CanvasContext,
   operation: Extract<DrawOperation, { type: 'TEXT' }>,
 ): CanonicalLayoutBox {
-  const measured = measure(context, operation.text, operation.bold, operation.size);
+  const measured = measure(
+    context,
+    operation.text,
+    operation.bold,
+    operation.size,
+    operation.fontWeight,
+  );
   const x = operation.align === 'CENTER'
     ? operation.x + Math.max(0, (operation.width - measured) / 2)
     : operation.align === 'RIGHT'
@@ -661,6 +791,83 @@ function unionBoxes(
   return { x, y, width: right - x, height: bottom - y };
 }
 
+function textBlackPixelRatio(
+  operations: Extract<DrawOperation, { type: 'TEXT' }>[],
+  fontWeightOverride?: CanonicalFontWeight,
+) {
+  let blackPixels = 0;
+  let inkBoxPixels = 0;
+  for (const operation of operations) {
+    const fontWeight = fontWeightOverride ?? operation.fontWeight;
+    const measuredWidth = Math.max(1, Math.ceil(operation.width));
+    const measuredHeight = Math.max(1, Math.ceil(operation.size * 1.2));
+    const canvas = createCanvas(measuredWidth + 4, measuredHeight + 4);
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#000000';
+    context.textBaseline = 'top';
+    setFont(context, operation.bold, operation.size, fontWeight);
+    drawCanonicalText(context, operation.text, 2, 2, fontWeight);
+    const packed = packMonochrome(
+      context.getImageData(0, 0, canvas.width, canvas.height).data,
+      canvas.width,
+      canvas.height,
+    );
+    const rowBytes = Math.ceil(canvas.width / 8);
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        if ((packed[y * rowBytes + (x >> 3)] & (0x80 >> (x & 7))) === 0) continue;
+        blackPixels += 1;
+      }
+    }
+    inkBoxPixels += measuredWidth * measuredHeight;
+  }
+  return inkBoxPixels === 0
+    ? 0
+    : Math.round(blackPixels / inkBoxPixels * 1_000_000) / 1_000_000;
+}
+
+function lastRasterInkY(raster: Buffer, rowBytes: number, height: number) {
+  for (let y = height - 1; y >= 0; y -= 1) {
+    const start = y * rowBytes;
+    if (raster.subarray(start, start + rowBytes).some((value) => value !== 0)) return y + 1;
+  }
+  return 0;
+}
+
+function countBlackPixels(raster: Buffer) {
+  let count = 0;
+  for (const value of raster) {
+    let byte = value;
+    while (byte !== 0) {
+      count += byte & 1;
+      byte >>= 1;
+    }
+  }
+  return count;
+}
+
+function renderMonochromePng(raster: Buffer, width: number, height: number) {
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext('2d');
+  const image = context.createImageData(width, height);
+  const rowBytes = Math.ceil(width / 8);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const black = (raster[y * rowBytes + (x >> 3)] & (0x80 >> (x & 7))) !== 0;
+      const offset = (y * width + x) * 4;
+      const value = black ? 0 : 255;
+      image.data[offset] = value;
+      image.data[offset + 1] = value;
+      image.data[offset + 2] = value;
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  return canvas.toBuffer('image/png');
+}
+
 function wrapCenteredText(
   context: CanvasContext,
   text: string,
@@ -685,7 +892,14 @@ function wrapCenteredText(
   return best?.lines ?? greedy;
 }
 
-function wrapText(context: CanvasContext, text: string, width: number, bold: boolean, size: number) {
+function wrapText(
+  context: CanvasContext,
+  text: string,
+  width: number,
+  bold: boolean,
+  size: number,
+  fontWeight: CanonicalFontWeight = canonicalFontWeight(bold),
+) {
   const paragraphs = text.replace(/\r\n?/g, '\n').split('\n');
   const result: string[] = [];
   for (const paragraph of paragraphs) {
@@ -696,19 +910,19 @@ function wrapText(context: CanvasContext, text: string, width: number, bold: boo
     const tokens = tokeniseForWrapping(paragraph);
     let line = '';
     for (const token of tokens) {
-      if (measure(context, line + token, bold, size) <= width) {
+      if (measure(context, line + token, bold, size, fontWeight) <= width) {
         line += token;
         continue;
       }
       if (line) result.push(line.trimEnd());
-      if (measure(context, token, bold, size) <= width) {
+      if (measure(context, token, bold, size, fontWeight) <= width) {
         line = token.trimStart();
         continue;
       }
       const graphemes = splitter.splitGraphemes(token);
       line = '';
       for (const grapheme of graphemes) {
-        if (line && measure(context, line + grapheme, bold, size) > width) {
+        if (line && measure(context, line + grapheme, bold, size, fontWeight) > width) {
           result.push(line);
           line = '';
         }
@@ -737,19 +951,59 @@ function tokeniseForWrapping(text: string) {
   return tokens;
 }
 
-function fitFontSize(context: CanvasContext, text: string, width: number, bold: boolean, requested: number) {
+function fitFontSize(
+  context: CanvasContext,
+  text: string,
+  width: number,
+  bold: boolean,
+  requested: number,
+  fontWeight: CanonicalFontWeight = canonicalFontWeight(bold),
+) {
   let size = requested;
-  while (size > 14 && measure(context, text, bold, size) > width) size -= 1;
+  while (size > 14 && measure(context, text, bold, size, fontWeight) > width) size -= 1;
   return size;
 }
 
-function measure(context: CanvasContext, text: string, bold: boolean, size: number) {
-  setFont(context, bold, size);
+function measure(
+  context: CanvasContext,
+  text: string,
+  bold: boolean,
+  size: number,
+  fontWeight: CanonicalFontWeight = canonicalFontWeight(bold),
+) {
+  setFont(context, bold, size, fontWeight);
   return context.measureText(text).width;
 }
 
-function setFont(context: CanvasContext, bold: boolean, size: number) {
-  context.font = `${bold ? 700 : 400} ${size}px ${canonicalFontStack}`;
+function setFont(
+  context: CanvasContext,
+  bold: boolean,
+  size: number,
+  fontWeight: CanonicalFontWeight = canonicalFontWeight(bold),
+) {
+  context.fontVariationSettings = 'normal';
+  context.font = `${fontWeight === TABLE_BILL_DISH_FONT_WEIGHT ? 400 : fontWeight} ${size}px ${canonicalFontStack}`;
+}
+
+function canonicalFontWeight(bold: boolean): CanonicalFontWeight {
+  return bold ? 700 : 400;
+}
+
+function drawCanonicalText(
+  context: CanvasContext,
+  text: string,
+  x: number,
+  y: number,
+  fontWeight: CanonicalFontWeight,
+) {
+  context.fillText(text, x, y);
+  if (fontWeight === TABLE_BILL_DISH_FONT_WEIGHT) {
+    // Skia maps the registered unicode-subset variable font's numeric 500
+    // request to an over-dark face at the locked threshold. A deterministic
+    // second Regular pass produces the intended Medium raster while retaining
+    // the existing 400 metrics and remaining lighter than the 700 totals.
+    context.fillText(text, x, y);
+  }
 }
 
 function fontPixels(size: FontSize) {
