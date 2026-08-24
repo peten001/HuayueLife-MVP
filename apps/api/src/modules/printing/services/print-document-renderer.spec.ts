@@ -431,21 +431,24 @@ describe('PrintDocument V2 server renderer', () => {
 
     expect(document.schemaVersion).toBe(3);
     expect(content).toContain('花悦餐厅\nNhà hàng Hoa Việt');
-    expect(content).toContain('真实地址\n0900000000');
+    expect(content).toContain('真实地址 / 0900000000');
     expect(document.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'TEXT', text: '花悦餐厅', overflow: 'FIT' }),
       expect.objectContaining({ type: 'TEXT', text: 'Nhà hàng Hoa Việt', overflow: 'FIT' }),
-      expect.objectContaining({ type: 'TEXT', text: '真实地址', overflow: 'FIT' }),
-      expect.objectContaining({ type: 'TEXT', text: '0900000000', overflow: 'FIT' }),
+      expect.objectContaining({ type: 'TEXT', text: '真实地址 / 0900000000' }),
     ]));
-    expect(content).toContain('A01 结账小票/Hóa đơn thanh toán TS-LAYOUT');
+    const contact = document.blocks.find(
+      (block) => block.type === 'TEXT' && block.text === '真实地址 / 0900000000',
+    );
+    expect(contact && 'overflow' in contact ? contact.overflow : undefined).toBeUndefined();
+    expect(content).toContain('A01 结账小票 / Hóa đơn thanh toán TS-LAYOUT');
     expect(header).toBeUndefined();
     expect(item).toEqual(expect.objectContaining({
       cells: [
         expect.objectContaining({
           text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè 招牌酸菜鱼特大份家庭分享装',
           fontSize: 'LARGE',
-          overflow: 'ELLIPSIS',
+          overflow: 'FIT',
           bold: false,
         }),
         expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
@@ -507,6 +510,92 @@ describe('PrintDocument V2 server renderer', () => {
       type: 'TEXT', text, align: 'CENTER', bold: true, fontSize: 'LARGE', overflow: 'FIT',
     })));
     expect(renderedContent(document)).not.toContain(`${name} / ${nameVi ?? ''}`);
+  });
+
+  it.each([
+    {
+      label: 'address and phone',
+      address: '65V3-2VQ Tiên Phong, Bắc Giang',
+      phone: '0333-6247',
+      settings: {},
+      expected: '65V3-2VQ Tiên Phong, Bắc Giang / 0333-6247',
+    },
+    {
+      label: 'address only',
+      address: '65V3-2VQ Tiên Phong, Bắc Giang',
+      phone: '0333-6247',
+      settings: { merchantPhone: false },
+      expected: '65V3-2VQ Tiên Phong, Bắc Giang',
+    },
+    {
+      label: 'phone only',
+      address: '65V3-2VQ Tiên Phong, Bắc Giang',
+      phone: '0333-6247',
+      settings: { merchantAddress: false },
+      expected: '0333-6247',
+    },
+    {
+      label: 'neither contact',
+      address: '65V3-2VQ Tiên Phong, Bắc Giang',
+      phone: '0333-6247',
+      settings: { merchantAddress: false, merchantPhone: false },
+      expected: undefined,
+    },
+  ])('renders $label as one wrapping contact block without an orphan separator', ({
+    address, phone, settings, expected,
+  }) => {
+    const value = longTableBillReceipt();
+    const document = renderTableBillV3('MM80', settings, {
+      ...value,
+      merchant: { ...value.merchant, address, phone },
+    });
+    const contacts = document.blocks.filter((block) =>
+      block.type === 'TEXT' && (block.text.includes(address) || block.text.includes(phone)),
+    );
+
+    expect(contacts).toHaveLength(expected ? 1 : 0);
+    if (expected) {
+      expect(contacts[0]).toEqual(expect.objectContaining({
+        type: 'TEXT', text: expected, align: 'CENTER', fontSize: 'SMALL',
+      }));
+      expect('overflow' in contacts[0]).toBe(false);
+      expect(expected.startsWith(' / ') || expected.endsWith(' / ')).toBe(false);
+    }
+  });
+
+  it('uses independent stable rows for every 80mm TABLE_BILL information value', () => {
+    const value = longTableBillReceipt();
+    value.tableSession = {
+      ...value.tableSession!,
+      tableName: 'A01-家庭包间-非常长的桌台名称',
+      sessionNo: 'TS-LONG-SESSION-20260824-000001',
+      orderNos: [
+        'HY-LONG-20260824-000000000001',
+        'HY-LONG-20260824-000000000002',
+      ],
+    };
+    const document = renderTableBillV3('MM80', {}, value);
+    const infoLabels = [
+      '开台 / Mở bàn',
+      '结账 / Thanh toán',
+      '生成 / Tạo lúc',
+      '订单数 / Số đơn',
+      '订单号 / Mã đơn',
+    ];
+    const infoRows = document.blocks.filter(
+      (block) => block.type === 'ROW' && infoLabels.includes(block.left),
+    );
+
+    expect(infoRows).toHaveLength(infoLabels.length);
+    expect(infoRows.map((row) => row.type === 'ROW' ? row.left : '')).toEqual(infoLabels);
+    expect(infoRows.at(-1)).toEqual(expect.objectContaining({
+      type: 'ROW',
+      right: 'HY-LONG-20260824-000000000001, HY-LONG-20260824-000000000002',
+    }));
+    expect(document.blocks).not.toContainEqual(expect.objectContaining({
+      type: 'COLUMNS',
+      cells: expect.arrayContaining([expect.objectContaining({ text: '开台 / Mở bàn' })]),
+    }));
   });
 
   it.each(['MM80', 'MM58'] as const)(
@@ -668,7 +757,7 @@ describe('PrintDocument V2 server renderer', () => {
         expect.objectContaining({
           text: 'Cá dưa đặc biệt phần lớn dành cho gia đình và bạn bè 招牌酸菜鱼特大份家庭分享装',
           fontSize: 'NORMAL',
-          overflow: 'ELLIPSIS',
+          overflow: 'FIT',
           bold: false,
         }),
         expect.objectContaining({ text: 'x1', fontSize: 'NORMAL', overflow: 'FIT' }),
@@ -696,7 +785,7 @@ describe('PrintDocument V2 server renderer', () => {
         cells: [
           expect.objectContaining({
             text: 'Rau lang xào tỏi thơm ngon kiểu quê nhà 红薯叶',
-            overflow: 'ELLIPSIS',
+            overflow: 'FIT',
             bold: false,
           }),
           expect.objectContaining({ text: 'x2', overflow: 'FIT' }),
@@ -743,7 +832,7 @@ describe('PrintDocument V2 server renderer', () => {
       merchantAddress: undefined,
       merchantPhone: undefined,
     }));
-    expect(legacy).toContain('真实地址\n0900000000');
+    expect(legacy).toContain('真实地址 / 0900000000');
 
     const hidden = renderTableBillV3('MM80', {
       merchantName: false,
@@ -765,10 +854,10 @@ describe('PrintDocument V2 server renderer', () => {
     );
 
     expect(hiddenContent).not.toMatch(/花悦餐厅|Nhà hàng Hoa Việt|真实地址|0900000000|A01|订单数|订单号|开台|结账 \/ Thanh toán|生成 \/ Tạo lúc/);
-    expect(hiddenContent).toContain('结账小票/Hóa đơn thanh toán');
+    expect(hiddenContent).toContain('结账小票 / Hóa đơn thanh toán');
     expect(hiddenContent).toContain('TS-LAYOUT');
     expect(hidden.blocks).toContainEqual(expect.objectContaining({
-      type: 'TEXT', text: '结账小票/Hóa đơn thanh toán', overflow: 'FIT',
+      type: 'TEXT', text: '结账小票 / Hóa đơn thanh toán', overflow: 'FIT',
     }));
     expect(header).toBeUndefined();
     expect(item).toEqual(expect.objectContaining({ cells: [

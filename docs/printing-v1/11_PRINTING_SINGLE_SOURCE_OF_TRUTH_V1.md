@@ -82,12 +82,13 @@ bytes written, actual transport, result
 | Font | `YunQiao Noto Sans SC` |
 | Font package | `@fontsource-variable/noto-sans-sc@5.3.0` |
 | Font license | OFL-1.1 |
-| Threshold | 160 |
+| Threshold | 180 |
 | Table box weight | 24% |
 | Table/title gap | 10 dots |
 | Dish / quantity / amount | 72% / 10% / 18% |
 | Column gap | 6 dots |
-| Feed / cut | 3 lines / half cut |
+| Item row bottom gap | 8 dots |
+| Footer/cut safety | 128 raster dots (16 mm) / half cut |
 
 The Diguoju schema-3 receipt hierarchy is the visual baseline. The canonical
 renderer locks the values above; a merchant template cannot override them.
@@ -99,12 +100,20 @@ renderer locks the values above; a merchant template cannot override them.
   bold line below it. The renderer never guesses a language split from `/`,
   punctuation, or brackets.
 - Missing languages are omitted and never duplicated as a filler line.
-- Address and phone are independent centered `SMALL` lines.
+- Address and phone keep their independent merchant switches, but render in one
+  centered wrapping `SMALL` block. When both are visible the fixed separator is
+  ` / `; when either is hidden there is no orphan separator.
+- Every table-session information value uses an independent label/value row.
+  The label width and 12-dot label/value gap are stable; long values, including
+  order numbers, wrap inside the remaining width without ellipsis.
 - A dish name is `LARGE`, non-bold, and wraps within the 72% dish column.
 - Vietnamese wraps at word boundaries when possible. Chinese, mixed text, and
   long unbroken tokens fall back to Unicode grapheme boundaries.
 - Dish lines have no fixed line limit. Quantity and amount are emitted exactly
   once and remain in their own columns.
+- Each completed item group has an 8-dot bottom gap before its separator or the
+  next block. The final payload carries at least 128 blank raster dots after the
+  footer before half cut; it does not rely on printer-specific line-feed height.
 
 ## Merchant preference allowlist
 
@@ -123,16 +132,17 @@ paper profile, margins, columns, wrapping, raster threshold, feed, and cut.
 Therefore `IGNORED_BY_CANONICAL_RENDERER = YES` for legacy layout/style fields
 and for historical display switches outside the allowlist.
 
-For 80 mm TABLE_BILL, current information-line count means:
+For 80 mm TABLE_BILL, the order-number and time switches keep their existing
+visibility semantics while each visible value now owns a stable row:
 
 | order number | time | information blocks |
 | --- | --- | ---: |
 | off | off | 0 |
 | on | off | 2 |
-| off | on | 2 |
-| on | on | 3 |
+| off | on | 2 or 3 (close time is conditional) |
+| on | on | 4 or 5 (close time is conditional) |
 
-This is the existing schema-3 grouping behavior, not a new numeric preference.
+This is a layout change only. It does not add or reset a merchant preference.
 
 ## Immutable artifact contract
 

@@ -2101,6 +2101,7 @@ export class PrintJobsService {
       snapshot,
       printer.paperWidth,
       printer.purpose,
+      input.receiptType,
     );
     return client.printJob.create({
       data: {

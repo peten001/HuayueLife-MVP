@@ -622,7 +622,7 @@ describe('PrintJobsService', () => {
             documentType: 'PRINT_DOCUMENT',
             schemaVersion: 3,
             blocks: expect.arrayContaining([
-              expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票/Hóa đơn thanh toán' }),
+              expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票 / Hóa đơn thanh toán' }),
               expect.objectContaining({ type: 'ROW', left: '抹零 / Làm tròn', right: '-3.000 VND' }),
               expect.objectContaining({ type: 'ROW', left: '最终应收 / Phải thu', right: '510.000 VND' }),
             ]),
@@ -1312,11 +1312,11 @@ describe('PrintJobsService', () => {
       paperWidth: 'MM58',
     }));
     expect(snapshot.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票/Hóa đơn thanh toán' }),
+      expect.objectContaining({ type: 'BOXED_TITLE', title: '结账小票 / Hóa đơn thanh toán' }),
       expect.objectContaining({
         type: 'COLUMNS',
         cells: [
-          expect.objectContaining({ text: 'Món thử nghiệm 测试菜品', overflow: 'ELLIPSIS', bold: false }),
+          expect.objectContaining({ text: 'Món thử nghiệm 测试菜品', overflow: 'FIT', bold: false }),
           expect.objectContaining({ text: 'x1', overflow: 'FIT' }),
           expect.objectContaining({ text: '1.000', overflow: 'FIT' }),
         ],

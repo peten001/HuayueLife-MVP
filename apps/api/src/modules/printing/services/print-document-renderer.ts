@@ -272,7 +272,7 @@ function tableBillBlocksV3(
   display: Readonly<ReceiptTemplateDisplaySettings>,
 ): PrintBlockV3[] {
   const blocks: PrintBlockV3[] = [];
-  appendSectionV3(blocks, tableBillMerchantBlocks(document, paperWidth, display));
+  appendSectionV3(blocks, tableBillMerchantBlocks(document, display));
   appendSectionV3(blocks, tableBillInformationBlocks(document, paperWidth, display));
   appendSectionV3(blocks, tableBillItemBlocks(document, paperWidth, display));
   appendSectionV3(blocks, tableBillTotalBlocks(document, display));
@@ -291,7 +291,6 @@ function tableBillBlocksV3(
 
 function tableBillMerchantBlocks(
   document: ReceiptDocument,
-  paperWidth: PrintingPaperWidth,
   display: Readonly<ReceiptTemplateDisplaySettings>,
 ): PrintBlockV3[] {
   const blocks: PrintBlockV3[] = [];
@@ -307,8 +306,8 @@ function tableBillMerchantBlocks(
     if (nameZh) blocks.push(textV3(nameZh, 'CENTER', true, 'LARGE', 'FIT'));
     if (nameVi) blocks.push(textV3(nameVi, 'CENTER', true, 'LARGE', 'FIT'));
   }
-  if (address) blocks.push(textV3(address, 'CENTER', false, 'SMALL', 'FIT'));
-  if (phone) blocks.push(textV3(phone, 'CENTER', false, 'SMALL', 'FIT'));
+  const contact = [address, phone].filter((value): value is string => Boolean(value)).join(' / ');
+  if (contact) blocks.push(textV3(contact, 'CENTER', false, 'SMALL'));
   return blocks;
 }
 
@@ -319,7 +318,7 @@ function tableBillInformationBlocks(
 ): PrintBlockV3[] {
   const table = document.tableSession!;
   const blocks: PrintBlockV3[] = [];
-  const title = '结账小票/Hóa đơn thanh toán';
+  const title = '结账小票 / Hóa đơn thanh toán';
   if (display.tableNumber) {
     blocks.push({
       type: 'BOXED_TITLE',
@@ -370,33 +369,18 @@ function tableBillInformationBlocks80(
 ): PrintBlockV3[] {
   const table = document.tableSession!;
   const blocks: PrintBlockV3[] = [];
-  const gap = 8;
   if (display.orderTime) {
+    blocks.push(rowV3(
+      '开台 / Mở bàn',
+      formatBillDateTime(table.openedAt ?? document.generatedAt),
+    ));
     if (table.closedAt) {
-      blocks.push(columnsV3(gap, [
-        columnV3('开台 / Mở bàn', 19, 'LEFT', true, 'SMALL', 'FIT'),
-        columnV3(formatBillDateTime(table.openedAt ?? document.generatedAt), 31, 'RIGHT', false, 'SMALL', 'FIT'),
-        columnV3('结账 / Thanh toán', 30, 'LEFT', true, 'SMALL', 'FIT'),
-        columnV3(formatBillTime(table.closedAt), 20, 'RIGHT', false, 'SMALL', 'FIT'),
-      ]));
-    } else {
-      blocks.push(columnsV3(gap, [
-        columnV3('开台 / Mở bàn', 28, 'LEFT', true, 'SMALL', 'FIT'),
-        columnV3(formatBillDateTime(table.openedAt ?? document.generatedAt), 72, 'RIGHT', false, 'SMALL', 'FIT'),
-      ]));
+      blocks.push(rowV3('结账 / Thanh toán', formatBillTime(table.closedAt)));
     }
-  }
-  if (display.orderNumber && display.orderTime) {
-    blocks.push(columnsV3(gap, [
-      columnV3('订单数 / Số đơn', 25, 'LEFT', true, 'SMALL', 'FIT'),
-      columnV3(String(table.orderNos.length), 15, 'RIGHT', false, 'SMALL', 'FIT'),
-      columnV3('生成 / Tạo lúc', 38, 'LEFT', true, 'SMALL', 'FIT'),
-      columnV3(formatBillTime(document.generatedAt), 22, 'RIGHT', false, 'SMALL', 'FIT'),
-    ]));
-  } else if (display.orderNumber) {
-    blocks.push(rowV3('订单数 / Số đơn', String(table.orderNos.length)));
-  } else if (display.orderTime) {
     blocks.push(rowV3('生成 / Tạo lúc', formatBillTime(document.generatedAt)));
+  }
+  if (display.orderNumber) {
+    blocks.push(rowV3('订单数 / Số đơn', String(table.orderNos.length)));
   }
   if (display.orderNumber && table.orderNos.length) {
     blocks.push(rowV3('订单号 / Mã đơn', table.orderNos.join(', ')));
@@ -421,12 +405,12 @@ function tableBillItemBlocks(
     const name = formatBilingualDishName(item.nameVi, item.name);
     blocks.push(columnsV3(gap, showAmount
       ? [
-          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'FIT'),
           columnV3(`x${item.quantity}`, weights[1], 'CENTER', true, 'NORMAL', 'FIT'),
           columnV3(compactMoney(item.lineTotal), weights[2], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]
       : [
-          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'ELLIPSIS'),
+          columnV3(name, weights[0], 'LEFT', false, nameFontSize, 'FIT'),
           columnV3(`x${item.quantity}`, weights[1], 'RIGHT', true, 'NORMAL', 'FIT'),
         ]));
     const note = optionalText(item.note);
