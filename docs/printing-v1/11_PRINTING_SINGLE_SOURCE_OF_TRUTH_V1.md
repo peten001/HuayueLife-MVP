@@ -240,16 +240,16 @@ recent PrintAttempt activity. The final inventory contains three terminals:
 
 | merchant | terminal | reported platform | installed client | printer |
 | --- | ---: | --- | --- | ---: |
-| 4 农品香 | 31 | ANDROID | 2.0.0-rc13 | 39 |
+| 4 农品香-湘菜馆 | 31 | ANDROID | 2.0.0-rc13 | 39 |
 | 11 地锅居 | 30 | ANDROID | 2.0.0-rc13 | 38 |
 | 18 川湘菜馆 | 35 | WINDOWS | Windows 1.1.0 compatibility code 101 | 43 |
 
 All three have verified `ESC_POS_RASTER_V1` attempts with equal server/client
 SHA and full non-zero byte writes. Across the complete recorded history of
 these current terminals there are 586 successful legacy attempts before their
-first verified canonical cutover and zero after it. In the rolling seven-day
-window at closeout, 242 legacy successes are all pre-upgrade history and zero
-are post-upgrade regressions.
+first verified canonical cutover and zero after it. At the final
+2026-08-25 11:21 UTC audit, the rolling seven-day window contains 233 legacy
+successes; all are pre-upgrade history and zero are post-upgrade regressions.
 
 The remaining 20 terminal registrations are historical stale inventory: 19
 have no current printer binding and one is bound only to a disabled printer.
