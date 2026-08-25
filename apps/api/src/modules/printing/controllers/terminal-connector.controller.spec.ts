@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { TerminalAuthGuard } from '../guards/terminal-auth.guard';
 import { ActiveTerminalGuard } from '../guards/active-terminal.guard';
+import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import {
   TerminalConnectorController,
   TerminalPairingController,
@@ -137,6 +138,66 @@ describe('terminal connector controller contract', () => {
     ).toThrow(BadRequestException);
   });
 
+  it.each([
+    ['success', 'SUCCEEDED', 'markSucceeded'],
+    ['failure', 'RETRY_WAIT', 'markFailed'],
+  ] as const)(
+    'keeps USB %s acknowledgements bounded and free of print artifacts',
+    async (_label, status, method) => {
+      const attempts = {
+        [method]: jest.fn().mockResolvedValue({
+          id: 1126n,
+          status,
+          renderedPayload: Buffer.alloc(1_100_000),
+          renderedPayloadBase64: 'x'.repeat(1_100_000),
+          receiptSnapshot: {
+            document: 'PrintDocument',
+            body: 'x'.repeat(1_100_000),
+          },
+        }),
+      };
+      const controller = new TerminalConnectorController(
+        {} as never,
+        {} as never,
+        attempts as never,
+      );
+      const terminal = {
+        id: 30n,
+        merchantId: 11n,
+        boundPrinterId: 38n,
+        name: '收银终端',
+        platform: 'ANDROID' as const,
+        status: 'ACTIVE' as const,
+        tokenVersion: 1,
+      };
+      const response =
+        method === 'markSucceeded'
+          ? await controller.markSucceeded(terminal, { id: '1126' }, {
+              attemptNo: 1,
+              leaseVersion: 2,
+              bytesWritten: 109_237,
+              contentHash: 'a'.repeat(64),
+            })
+          : await controller.markFailed(terminal, { id: '1126' }, {
+              attemptNo: 1,
+              leaseVersion: 2,
+              bytesWritten: 0,
+              contentHash: 'a'.repeat(64),
+              retryable: true,
+              errorCode: PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
+              errorMessage: 'timeout',
+              outcome: 'FAILED',
+            });
+
+      expect(response).toEqual({ jobId: '1126', status });
+      const serialized = JSON.stringify(response);
+      expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
+      expect(Object.keys(response).sort()).toEqual(['jobId', 'status']);
+      expect(serialized).not.toMatch(
+        /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
+      );
+    },
+  );
   it('keeps USB lease renewal responses bounded and free of print artifacts', async () => {
     const leaseExpiresAt = new Date('2026-08-25T12:00:00.000Z');
     const attempts = {

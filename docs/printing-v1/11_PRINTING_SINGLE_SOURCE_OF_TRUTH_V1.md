@@ -204,6 +204,15 @@ USB and LAN renewal responses to remain below 16 KiB and exclude
 `renderedPayload`, `renderedPayloadBase64`, `receiptSnapshot`, `PrintDocument`,
 and other large metadata.
 
+## Bounded completion acknowledgement contract
+
+Terminal success and failure report endpoints return only `jobId` and the
+persisted job `status`. Completion retries remain idempotent, but their
+acknowledgements never echo the immutable rendered payload, receipt snapshot,
+or other job metadata. USB and LAN completion acknowledgements must remain
+below 16 KiB so a completed local write can always be marked reported within
+the Android rc13 response limit.
+
 ## Client capability and production gate
 
 New clients report:

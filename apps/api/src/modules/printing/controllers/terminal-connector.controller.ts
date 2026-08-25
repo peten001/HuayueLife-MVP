@@ -172,7 +172,10 @@ export class TerminalConnectorController {
       actualPayloadSha256: dto.actualPayloadSha256,
       transport: dto.transport,
       bytesWritten: dto.bytesWritten,
-    });
+    }).then((job) => ({
+      jobId: job.id.toString(),
+      status: job.status,
+    }));
   }
 
   @Post('jobs/:id/failed')
@@ -210,7 +213,10 @@ export class TerminalConnectorController {
       actualPayloadSha256: dto.actualPayloadSha256,
       transport: dto.transport,
       bytesWritten: dto.bytesWritten,
-    });
+    }).then((job) => ({
+      jobId: job.id.toString(),
+      status: job.status,
+    }));
   }
 
   @Post('jobs/:id/extend-lease')

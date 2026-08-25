@@ -9,6 +9,7 @@ import { LanActiveJobQueryDto } from '../dto/lan-terminal-connector.dto';
 import { ActiveTerminalGuard } from '../guards/active-terminal.guard';
 import { TerminalAuthGuard } from '../guards/terminal-auth.guard';
 import { ANDROID_LAN_ESCPOS_ADAPTER } from '../types/lan-terminal-binding';
+import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { LanTerminalConnectorController } from './lan-terminal-connector.controller';
 
 const terminal = {
@@ -206,6 +207,58 @@ describe('LanTerminalConnectorController contract', () => {
     ).toThrow(BadRequestException);
     expect(attempts.markFailed).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['success', 'SUCCEEDED', 'markSucceeded'],
+    ['failure', 'RETRY_WAIT', 'markFailed'],
+  ] as const)(
+    'keeps LAN %s acknowledgements bounded and free of print artifacts',
+    async (_label, status, method) => {
+      const { controller, attempts } = createController();
+      attempts[method].mockResolvedValue({
+        id: 1136n,
+        status,
+        renderedPayload: Buffer.alloc(1_100_000),
+        renderedPayloadBase64: 'x'.repeat(1_100_000),
+        receiptSnapshot: {
+          document: 'PrintDocument',
+          body: 'x'.repeat(1_100_000),
+        },
+      });
+      const response =
+        method === 'markSucceeded'
+          ? await controller.markSucceeded(terminal, { id: '1136' }, {
+              printerId: '37',
+              localBindingId: 'binding-1',
+              bindingVersion: 1,
+              attemptNo: 1,
+              leaseVersion: 2,
+              bytesWritten: 109_237,
+              contentHash: 'a'.repeat(64),
+            })
+          : await controller.markFailed(terminal, { id: '1136' }, {
+              printerId: '37',
+              localBindingId: 'binding-1',
+              bindingVersion: 1,
+              attemptNo: 1,
+              leaseVersion: 2,
+              bytesWritten: 0,
+              contentHash: 'a'.repeat(64),
+              retryable: true,
+              errorCode: PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
+              errorMessage: 'timeout',
+              outcome: 'FAILED',
+            });
+
+      expect(response).toEqual({ jobId: '1136', status });
+      const serialized = JSON.stringify(response);
+      expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
+      expect(Object.keys(response).sort()).toEqual(['jobId', 'status']);
+      expect(serialized).not.toMatch(
+        /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
+      );
+    },
+  );
 
   it('rejects an out-of-range status printerId before Prisma-backed services', () => {
     const { controller, bindings } = createController();

@@ -195,7 +195,10 @@ export class LanTerminalConnectorController {
       bytesWritten: dto.bytesWritten,
       localBindingId: dto.localBindingId,
       bindingVersion: dto.bindingVersion,
-    });
+    }).then((job) => ({
+      jobId: job.id.toString(),
+      status: job.status,
+    }));
   }
 
   @Post('jobs/:id/failed')
@@ -223,7 +226,10 @@ export class LanTerminalConnectorController {
       bytesWritten: dto.bytesWritten,
       localBindingId: dto.localBindingId,
       bindingVersion: dto.bindingVersion,
-    });
+    }).then((job) => ({
+      jobId: job.id.toString(),
+      status: job.status,
+    }));
   }
 
   @Post('jobs/:id/extend')
