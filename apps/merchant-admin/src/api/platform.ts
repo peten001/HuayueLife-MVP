@@ -5,6 +5,7 @@ import {
   clearPlatformToken,
   getPlatformToken,
 } from '@/utils/storage';
+import { API_BASE_URL } from '@/config/api';
 import type {
   ApiResponse,
   PlatformAnalyticsFilters,
@@ -34,15 +35,6 @@ import type {
   PlatformUsersFilters,
   PlatformUsersResponse,
 } from '@/types/api';
-
-const PRODUCTION_API_BASE_URL = 'https://api.huayueyouxuan.com/api/v1';
-const DEFAULT_API_BASE_URL = import.meta.env.PROD
-  ? PRODUCTION_API_BASE_URL
-  : 'http://localhost:3001/api/v1';
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-const API_BASE_URL = import.meta.env.PROD && configuredApiBaseUrl?.startsWith('/')
-  ? PRODUCTION_API_BASE_URL
-  : configuredApiBaseUrl || DEFAULT_API_BASE_URL;
 
 const platformHttp = axios.create({
   baseURL: API_BASE_URL,

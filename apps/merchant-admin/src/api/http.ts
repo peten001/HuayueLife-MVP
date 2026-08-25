@@ -6,13 +6,10 @@ import {
   clearToken,
   getToken,
 } from '@/utils/storage';
-
-const DEFAULT_API_BASE_URL = import.meta.env.PROD
-  ? 'https://api.huayueyouxuan.com/api/v1'
-  : 'http://localhost:3001/api/v1';
+import { API_BASE_URL } from '@/config/api';
 
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
 
