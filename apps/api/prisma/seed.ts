@@ -1,10 +1,16 @@
-import { PrismaClient, ProductStatus, StaffRole } from '@prisma/client';
+import { Prisma, PrismaClient, ProductStatus, StaffRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'node:crypto';
+import {
+  DEFAULT_BUSINESS_TYPES,
+  DEFAULT_CAPABILITIES,
+  DEFAULT_PROMOTION_TAGS,
+} from '../src/modules/platform/platform-dictionary-seed';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  await seedPlatformDictionaries();
   const seedPassword = process.env.SEED_MERCHANT_PASSWORD ?? 'ChangeMe123!';
   const passwordHash = await bcrypt.hash(seedPassword, 12);
   const merchantData = {
@@ -245,6 +251,28 @@ async function main() {
   console.log('Seed completed.');
   console.log(`Merchant login: owner / ${seedPassword}`);
   console.log(`A01 QR token: ${pilotQrToken('A01')}`);
+}
+
+async function seedPlatformDictionaries() {
+  await prisma.merchantBusinessType.createMany({
+    data: DEFAULT_BUSINESS_TYPES.map((item) => ({
+      ...item,
+      defaultCapabilities: item.defaultCapabilities as Prisma.InputJsonValue,
+    })),
+    skipDuplicates: true,
+  });
+  await prisma.promotionTag.createMany({
+    data: DEFAULT_PROMOTION_TAGS,
+    skipDuplicates: true,
+  });
+  await prisma.capability.createMany({
+    data: DEFAULT_CAPABILITIES,
+    skipDuplicates: true,
+  });
+  await prisma.merchantBusinessType.updateMany({
+    where: { code: 'FOOD_SERVICE' },
+    data: { showOnHome: false },
+  });
 }
 
 function pilotQrToken(tableNo: string) {

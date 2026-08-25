@@ -88,16 +88,6 @@ async function resolveMerchantSession() {
   }
 }
 
-async function resolveMerchantRole(): Promise<RouteRole | null> {
-  const session = await resolveMerchantSession();
-  return session?.role ?? null;
-}
-
-async function resolveMerchantPasswordFlag(): Promise<boolean> {
-  const session = await resolveMerchantSession();
-  return Boolean(session?.mustChangePassword);
-}
-
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -254,20 +244,20 @@ router.beforeEach(async (to) => {
     const authenticated = Boolean(getMerchantToken());
     if (to.path === '/login') {
       if (!authenticated) return true;
-      const mustChangePassword = await resolveMerchantPasswordFlag();
-      if (mustChangePassword) return '/merchant/profile';
-      const role = await resolveMerchantRole();
+      const session = await resolveMerchantSession();
+      if (session?.mustChangePassword) return '/merchant/profile';
+      const role = session?.role ?? null;
       if (!role) return '/login';
       return '/dashboard';
     }
     if (meta.auth && !authenticated) return '/login';
     if (meta.auth) {
-      const role = await resolveMerchantRole();
+      const session = await resolveMerchantSession();
+      const role = session?.role ?? null;
       if (!role) return '/login';
       if (meta.roles?.length && !meta.roles.includes(role)) {
         return '/forbidden';
       }
-      const session = await resolveMerchantSession();
       if (meta.legacyPrintingRoute) {
         const state = await resolvePrintingFeatureState();
         return state.legacyPrintingEnabled
@@ -281,8 +271,7 @@ router.beforeEach(async (to) => {
         window.alert('当前商家未开通此功能');
         return '/dashboard';
       }
-      const mustChangePassword = await resolveMerchantPasswordFlag();
-      if (mustChangePassword && to.path !== '/merchant/profile') {
+      if (session?.mustChangePassword && to.path !== '/merchant/profile') {
         return '/merchant/profile';
       }
     }

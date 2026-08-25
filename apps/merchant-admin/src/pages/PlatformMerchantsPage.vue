@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PageHeader from '@/components/PageHeader.vue';
 import { errorMessage } from '@/api/http';
@@ -57,6 +57,8 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
+const merchantPage = ref(1);
+const merchantPageSize = 20;
 const avatarLoadFailed = reactive<Record<string, boolean>>({});
 const businessTypes = ref<PlatformBusinessType[]>([]);
 const promotionTags = ref<PlatformPromotionTag[]>([]);
@@ -271,6 +273,13 @@ const filteredMerchants = computed(() =>
     );
   }),
 );
+const merchantTotalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredMerchants.value.length / merchantPageSize)),
+);
+const pagedMerchants = computed(() => {
+  const start = (merchantPage.value - 1) * merchantPageSize;
+  return filteredMerchants.value.slice(start, start + merchantPageSize);
+});
 const merchantSummary = computed(() => {
   const list = merchants.value;
   return {
@@ -281,6 +290,14 @@ const merchantSummary = computed(() => {
     missingCovers: list.filter((item) => hasMissingImages(item)).length,
     hot: list.filter((item) => hasHotRecommendation(item)).length,
   };
+});
+
+watch(filters, () => {
+  merchantPage.value = 1;
+}, { deep: true });
+
+watch(merchantTotalPages, (totalPages) => {
+  merchantPage.value = Math.min(merchantPage.value, totalPages);
 });
 
 onMounted(loadMerchants);
@@ -1268,7 +1285,7 @@ function toCsvLine(values: Array<string | number>) {
         </thead>
         <tbody>
           <tr
-            v-for="item in filteredMerchants"
+            v-for="item in pagedMerchants"
             :key="item.id"
             class="platform-merchant-row"
             @dblclick="openDetail(item)"
@@ -1280,6 +1297,8 @@ function toCsvLine(values: Array<string | number>) {
                   class="merchant-avatar merchant-avatar-image"
                   :src="merchantThumbnail(item)"
                   :alt="item.nameZh"
+                  loading="lazy"
+                  decoding="async"
                   @error="markAvatarFailed(item.id)"
                 />
                 <div v-else class="merchant-avatar">{{ merchantInitial(item) }}</div>
@@ -1326,6 +1345,8 @@ function toCsvLine(values: Array<string | number>) {
                     v-if="getMerchantCoverUrl(item)"
                     :src="getMerchantCoverUrl(item)"
                     alt="封面"
+                    loading="lazy"
+                    decoding="async"
                   />
                 </div>
                 <span class="status-pill" :class="imageStatusClass(item)">
@@ -1363,6 +1384,19 @@ function toCsvLine(values: Array<string | number>) {
     </div>
     <p v-if="loading" class="empty">商户数据加载中...</p>
     <p v-else-if="filteredMerchants.length === 0" class="empty">{{ t('noMatchingMerchants') }}</p>
+    <div v-else-if="merchantTotalPages > 1" class="platform-pagination">
+      <button
+        class="secondary small"
+        :disabled="merchantPage <= 1"
+        @click="merchantPage -= 1"
+      >上一页</button>
+      <span>第 {{ merchantPage }} / {{ merchantTotalPages }} 页 · 共 {{ filteredMerchants.length }} 家</span>
+      <button
+        class="secondary small"
+        :disabled="merchantPage >= merchantTotalPages"
+        @click="merchantPage += 1"
+      >下一页</button>
+    </div>
   </section>
 
   <div v-if="dialogVisible" class="modal-backdrop" @click.self="closeDialog">

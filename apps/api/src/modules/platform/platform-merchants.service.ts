@@ -390,7 +390,6 @@ export class PlatformMerchantsService {
   }
 
   async list(query: ListPlatformMerchantsQueryDto = {}) {
-    await this.dictionaries.ensureDefaults();
     const now = new Date();
     const todayStart = startOfVietnamDay(now);
     const tomorrowStart = addDays(todayStart, 1);
@@ -859,7 +858,6 @@ export class PlatformMerchantsService {
   }
 
   async getMerchantImportTemplate() {
-    await this.dictionaries.ensureDefaults();
     const businessTypes = await this.prisma.merchantBusinessType.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       select: {

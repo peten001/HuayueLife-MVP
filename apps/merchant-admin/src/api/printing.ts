@@ -24,6 +24,9 @@ import type {
 
 type CollectionResponse<T> = T[] | PrintingListEnvelope<T>;
 
+let printingPrintersRequest: Promise<PrintingPrinter[]> | null = null;
+let printingRulesRequest: Promise<PrintingRule[]> | null = null;
+
 function normalizeCollection<T>(value: CollectionResponse<T>): T[] {
   return Array.isArray(value) ? value : value.items;
 }
@@ -74,11 +77,18 @@ export async function updatePrintingRouting(payload: PrintingRoutingPayload) {
   return response.data.data;
 }
 
-export async function getPrintingPrinters() {
-  const response = await http.get<ApiResponse<CollectionResponse<PrintingPrinter>>>(
-    '/merchant/printing/printers',
-  );
-  return normalizeCollection(response.data.data);
+export function getPrintingPrinters() {
+  if (!printingPrintersRequest) {
+    printingPrintersRequest = http
+      .get<ApiResponse<CollectionResponse<PrintingPrinter>>>(
+        '/merchant/printing/printers',
+      )
+      .then((response) => normalizeCollection(response.data.data))
+      .finally(() => {
+        printingPrintersRequest = null;
+      });
+  }
+  return printingPrintersRequest;
 }
 
 export async function createPrintingPrinter(payload: PrintingPrinterPayload) {
@@ -207,11 +217,18 @@ export async function duplicatePrintingTemplate(id: string) {
   return response.data.data;
 }
 
-export async function getPrintingRules() {
-  const response = await http.get<ApiResponse<CollectionResponse<PrintingRule>>>(
-    '/merchant/printing/rules',
-  );
-  return normalizeCollection(response.data.data);
+export function getPrintingRules() {
+  if (!printingRulesRequest) {
+    printingRulesRequest = http
+      .get<ApiResponse<CollectionResponse<PrintingRule>>>(
+        '/merchant/printing/rules',
+      )
+      .then((response) => normalizeCollection(response.data.data))
+      .finally(() => {
+        printingRulesRequest = null;
+      });
+  }
+  return printingRulesRequest;
 }
 
 export async function createPrintingRule(payload: PrintingRulePayload) {

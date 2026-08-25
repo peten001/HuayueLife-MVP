@@ -54,7 +54,6 @@ export class PlatformDictionariesService {
   }
 
   async listBusinessTypes() {
-    await this.ensureDefaults();
     const items = await this.prisma.merchantBusinessType.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
@@ -88,7 +87,6 @@ export class PlatformDictionariesService {
   }
 
   async listPromotionTags() {
-    await this.ensureDefaults();
     const items = await this.prisma.promotionTag.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       include: { _count: { select: { merchants: true } } },
@@ -165,7 +163,6 @@ export class PlatformDictionariesService {
   }
 
   async listCapabilities() {
-    await this.ensureDefaults();
     const items = await this.prisma.capability.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });

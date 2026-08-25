@@ -5,6 +5,38 @@ import {
   RESERVED_PROMOTION_TAG_CODES,
 } from './platform-dictionaries.service';
 
+describe('PlatformDictionariesService read-only lists', () => {
+  it('does not seed or update dictionaries during GET-backed reads', async () => {
+    const prisma = {
+      merchantBusinessType: {
+        findMany: jest.fn(async () => []),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      promotionTag: {
+        findMany: jest.fn(async () => []),
+        createMany: jest.fn(),
+      },
+      capability: {
+        findMany: jest.fn(async () => []),
+        createMany: jest.fn(),
+      },
+    };
+    const service = new PlatformDictionariesService(prisma as never);
+
+    await Promise.all([
+      service.listBusinessTypes(),
+      service.listPromotionTags(),
+      service.listCapabilities(),
+    ]);
+
+    expect(prisma.merchantBusinessType.createMany).not.toHaveBeenCalled();
+    expect(prisma.merchantBusinessType.updateMany).not.toHaveBeenCalled();
+    expect(prisma.promotionTag.createMany).not.toHaveBeenCalled();
+    expect(prisma.capability.createMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('PlatformDictionariesService capability provisioning', () => {
   it('repeat-safely provisions all fixed capability codes into initialized environments', async () => {
     const prisma = {

@@ -372,16 +372,22 @@ async function load(options: { resetCountdown?: boolean } = {}) {
   businessDaySummaryLoading.value = true;
   businessDaySummaryError.value = '';
   try {
-    let summary;
-    try {
-      summary = await getBusinessDaySummary();
+    const requestedOrderDate = businessDaySummary.value?.businessDate ?? todayInVietnam();
+    const [summaryResult, ordersResult] = await Promise.allSettled([
+      getBusinessDaySummary(),
+      getMerchantOrders({ date: requestedOrderDate }),
+    ]);
+    const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : undefined;
+    if (summary) {
       businessDaySummary.value = summary;
-    } catch {
+    } else {
       businessDaySummaryError.value = businessDayCopy.value.unavailable;
     }
-    const orderDate = summary?.businessDate ?? todayInVietnam();
     try {
-      const loadedOrders = await getMerchantOrders({ date: orderDate });
+      if (ordersResult.status === 'rejected') throw ordersResult.reason;
+      const loadedOrders = summary?.businessDate && summary.businessDate !== requestedOrderDate
+        ? await getMerchantOrders({ date: summary.businessDate })
+        : ordersResult.value;
       orders.value = loadedOrders;
       const newPendingIds = voiceFeatureEnabled.value
         ? notifyNewPendingOrders(
@@ -530,8 +536,10 @@ async function execute(order: MerchantOrder) {
 }
 
 onMounted(async () => {
-  await loadProfileData();
-  await load({ resetCountdown: true });
+  await Promise.all([
+    loadProfileData(),
+    load({ resetCountdown: true }),
+  ]);
   startRefreshTimer();
   await startAutoWakeLock();
 });

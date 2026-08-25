@@ -66,6 +66,7 @@ describe('PlatformMerchantsService list filters', () => {
   it('uses only the default non-deleted status filter by default', async () => {
     await service.list({});
 
+    expect(dictionaries.ensureDefaults).not.toHaveBeenCalled();
     expect(currentWhere()).toEqual({
       status: { not: MerchantStatus.DELETED },
     });
