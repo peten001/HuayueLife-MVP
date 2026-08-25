@@ -18,6 +18,10 @@ import {
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { quarantineTerminalJobs } from './terminal-credentials.service';
+import {
+  normalizeTerminalCapabilities,
+  reportedTerminalPlatform,
+} from '../utils/terminal-canonical-capabilities';
 
 @Injectable()
 export class TerminalsService {
@@ -476,6 +480,9 @@ export class TerminalsService {
       Date.now() - terminal.lastSeenAt.getTime() <= this.onlineThresholdMs();
     const result = {
       ...safe,
+      ...('capabilities' in safe
+        ? { reportedPlatform: reportedTerminalPlatform(safe.capabilities) }
+        : {}),
       lastErrorMessage: sanitizePrintingError(terminal.lastErrorMessage),
       pairingState: terminal.status === 'UNPAIRED' ? 'NOT_PAIRED' : terminal.status,
       onlineState: online ? 'ONLINE' : 'OFFLINE',
@@ -525,7 +532,9 @@ export class TerminalsService {
       if (serialized.length > 8_192) {
         throw new Error('capabilities exceeds 8192 bytes');
       }
-      return JSON.parse(serialized) as Prisma.InputJsonObject;
+      return normalizeTerminalCapabilities(
+        JSON.parse(serialized) as Record<string, unknown>,
+      ) as Prisma.InputJsonObject;
     } catch (error) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,

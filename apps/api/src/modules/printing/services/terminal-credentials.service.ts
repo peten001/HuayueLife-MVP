@@ -23,6 +23,7 @@ import {
 } from '../types/printing-errors';
 import { lanBindingMetadata } from '../types/lan-terminal-binding';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
+import { normalizeTerminalCapabilities } from '../utils/terminal-canonical-capabilities';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 
@@ -578,7 +579,9 @@ export class TerminalCredentialsService {
             name: dto.name ?? terminal.name,
             platform: 'ANDROID',
             deviceIdentifier: dto.deviceIdentifier,
-            capabilities: normalizeSafeJson(dto.capabilities ?? {}),
+            capabilities: normalizeSafeJson(
+              normalizeTerminalCapabilities(dto.capabilities ?? {}),
+            ),
             appVersion: dto.appVersion,
             lastSeenAt: now,
             pairedAt: now,

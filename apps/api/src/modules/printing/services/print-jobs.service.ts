@@ -60,7 +60,12 @@ import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
 } from '../types/lan-terminal-binding';
-import { CanonicalPrintArtifactService } from './canonical-print-artifact.service';
+import {
+  CANONICAL_RENDER_PROTOCOL,
+  CANONICAL_TEMPLATE_VERSION,
+  CanonicalPrintArtifactService,
+} from './canonical-print-artifact.service';
+import { terminalSupportsCanonicalPayload } from '../utils/terminal-canonical-capabilities';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -1383,6 +1388,7 @@ export class PrintJobsService {
         message: '终端未启用或不属于当前商家',
       });
     }
+    this.assertCanonicalTerminalCapability(terminal.capabilities);
     if (!terminal.boundPrinterId) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
@@ -1461,6 +1467,7 @@ export class PrintJobsService {
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
+        this.assertCanonicalJobArtifact(candidate);
         const leaseExpiresAt = new Date(
           now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
         );
@@ -1500,6 +1507,8 @@ export class PrintJobsService {
     this.flags.assertTaskCenterEnabled();
     this.flags.assertExecutionEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    this.assertAuthenticatedTerminalConnector(terminalId);
+    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
     const printer = printerId
       ? await this.requireUsablePrinter(merchantId, printerId, true)
       : await this.requireDefaultReadyUsbPrinter(merchantId);
@@ -1599,6 +1608,7 @@ export class PrintJobsService {
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
+        this.assertCanonicalJobArtifact(candidate);
         if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
           await this.lanBindings.requireClaimable(
             merchantId,
@@ -1665,9 +1675,10 @@ export class PrintJobsService {
         status: 'ACTIVE',
         revokedAt: null,
       },
-      select: { boundPrinterId: true },
+      select: { boundPrinterId: true, capabilities: true },
     });
     if (!terminal?.boundPrinterId) return null;
+    this.assertCanonicalTerminalCapability(terminal.capabilities);
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
@@ -1687,6 +1698,8 @@ export class PrintJobsService {
     terminalId: bigint | null = null,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    this.assertAuthenticatedTerminalConnector(terminalId);
+    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
@@ -1711,6 +1724,7 @@ export class PrintJobsService {
     bindingVersion: number,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
     await this.lanBindings.requireClaimable(
       merchantId,
       printerId,
@@ -1735,6 +1749,8 @@ export class PrintJobsService {
     bindingVersion?: number,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
+    this.assertAuthenticatedTerminalConnector(terminalId);
+    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
     const job = await this.prisma.printJob.findFirst({
       where: {
         id: jobId,
@@ -1771,6 +1787,7 @@ export class PrintJobsService {
       },
     });
     if (!job) this.notFound();
+    this.assertCanonicalJobArtifact(job);
     if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
       if (terminalId === null) {
         throw new BadRequestException({
@@ -2229,6 +2246,76 @@ export class PrintJobsService {
       select: { appVersion: true },
     });
     return supportsPrintDocumentV3Version(terminal?.appVersion);
+  }
+
+  private async requireCanonicalTerminalCapability(
+    merchantId: bigint,
+    terminalId: bigint,
+  ) {
+    const terminal = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminalId,
+        merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+      },
+      select: { capabilities: true },
+    });
+    if (!terminal) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+        message: '终端未启用或不属于当前商家',
+      });
+    }
+    this.assertCanonicalTerminalCapability(terminal.capabilities);
+  }
+
+  private assertAuthenticatedTerminalConnector(
+    terminalId: bigint | null,
+  ): asserts terminalId is bigint {
+    if (terminalId !== null) return;
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.TERMINAL_UPGRADE_REQUIRED,
+      message: '旧版 merchant-session 本地打印已停用，请使用已配对的正式终端',
+    });
+  }
+
+  private assertCanonicalTerminalCapability(capabilities: Prisma.JsonValue) {
+    if (terminalSupportsCanonicalPayload(capabilities)) return;
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.TERMINAL_UPGRADE_REQUIRED,
+      message: '当前终端不支持服务端 canonical payload，请升级正式客户端',
+    });
+  }
+
+  private assertCanonicalJobArtifact(
+    job: Pick<
+      PrintJob,
+      | 'canonicalTemplateVersion'
+      | 'renderProtocol'
+      | 'renderedPayload'
+      | 'renderedPayloadSha256'
+      | 'renderedPayloadByteLength'
+    >,
+  ) {
+    const payload = job.renderedPayload;
+    const payloadSha = job.renderedPayloadSha256;
+    const payloadLength = job.renderedPayloadByteLength;
+    const valid =
+      job.canonicalTemplateVersion === CANONICAL_TEMPLATE_VERSION &&
+      job.renderProtocol === CANONICAL_RENDER_PROTOCOL &&
+      payload !== null &&
+      payloadLength !== null &&
+      payloadLength > 0 &&
+      payload.length === payloadLength &&
+      payloadSha !== null &&
+      /^[a-f0-9]{64}$/.test(payloadSha) &&
+      createHash('sha256').update(payload).digest('hex') === payloadSha;
+    if (valid) return;
+    throw new BadRequestException({
+      code: PRINTING_ERROR_CODES.CANONICAL_PAYLOAD_REQUIRED,
+      message: '生产打印任务缺少完整的服务端 canonical payload，禁止本地排版',
+    });
   }
 
   private async createReceiptCompatibilityRetry(

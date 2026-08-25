@@ -82,8 +82,10 @@ bytes written, actual transport, result
 | Font | `YunQiao Noto Sans SC` |
 | Font package | `@fontsource-variable/noto-sans-sc@5.3.0` |
 | Font license | OFL-1.1 |
-| Threshold | 180 |
+| Threshold | 185 |
 | Dish font weight | 500 effective Medium (deterministic Regular overprint) |
+| Address / phone | `NORMAL`, effective Medium 500, centered wrap |
+| Footer | `NORMAL`, effective Medium 500, 5-dot line gap |
 | Table box weight | 24% |
 | Table/title gap | 10 dots |
 | Dish / quantity / amount | 72% / 10% / 18% |
@@ -103,7 +105,7 @@ renderer locks the values above; a merchant template cannot override them.
   punctuation, or brackets.
 - Missing languages are omitted and never duplicated as a filler line.
 - Address and phone keep their independent merchant switches, but render in one
-  centered wrapping `SMALL` block. When both are visible the fixed separator is
+  centered wrapping `NORMAL` effective-Medium block. When both are visible the fixed separator is
   ` / `; when either is hidden there is no orphan separator.
 - Every table-session information value uses an independent label/value row.
   The label width and 12-dot label/value gap are stable; long values, including
@@ -112,13 +114,17 @@ renderer locks the values above; a merchant template cannot override them.
   column. The font family, package, size, column ratio, and wrap algorithm stay
   unchanged; quantity, amount, headings, totals, and footer keep their existing
   weights. The registered subset stack cannot safely expose numeric 500 without
-  over-darkening at threshold 180, so the server uses a deterministic second
+  over-darkening at threshold 185, so the server uses a deterministic second
   Regular pass as its effective Medium raster and guards it between the 400 and
   700 black-pixel references.
 - Vietnamese wraps at word boundaries when possible. Chinese, mixed text, and
   long unbroken tokens fall back to Unicode grapheme boundaries.
 - Dish lines have no fixed line limit. Quantity and amount are emitted exactly
   once and remain in their own columns.
+- Totals keep the accepted server semantics and order: original amount,
+  commercial discount only when non-zero, rounding only when non-zero, then
+  final amount received. A zero discount or zero rounding value never creates
+  a blank row or changes the final amount.
 - Each completed item group has an 8-dot bottom gap before its separator or the
   next block. The final `TABLE_BILL` payload carries 200 pure-white raster dots,
   calculated as `round(25 mm × 8 dots/mm)`, after the footer ink before half cut;
@@ -129,18 +135,23 @@ renderer locks the values above; a merchant template cannot override them.
 
 Canonical rendering preserves only these existing content semantics:
 
-1. order number information;
-2. time information;
-3. merchant address and merchant phone as their existing independent switches;
-4. footer visibility and the existing Chinese/Vietnamese footer text;
-5. the current information-line count derived from the order-number and time
-   switches.
+1. order number information (`showOrderNo`);
+2. time information (`showTime`);
+3. merchant address and merchant phone as their independent `showAddress` and
+   `showPhone` switches;
+4. footer visibility (`showFooter`) and the supported footer text;
+5. the current `infoLineCount` derived from the order-number and time switches.
 
 Legacy fields remain readable for compatibility, but canonical rendering
 forces merchant name, table identity, notes, item amount, totals, typography,
 paper profile, margins, columns, wrapping, raster threshold, feed, and cut.
 Therefore `IGNORED_BY_CANONICAL_RENDERER = YES` for legacy layout/style fields
 and for historical display switches outside the allowlist.
+
+Merchant configuration is therefore content-only. It may decide whether the
+existing order number, time, address, phone, and footer content is shown and may
+provide the supported footer text. It cannot set font family or size, weight,
+threshold, margins, columns, wrapping, layout version, rasterizer, feed, or cut.
 
 For 80 mm TABLE_BILL, the order-number and time switches keep their existing
 visibility semantics while each visible value now owns a stable row:
@@ -180,18 +191,32 @@ bytes written, and result. Valid actual transports are:
 - `WINDOWS_RAW_SPOOLER`;
 - `WINDOWS_TCP_ESCPOS`.
 
-## Client capability and rollout
+## Client capability and production gate
 
 New clients report:
 
 - `SERVER_ESC_POS_PAYLOAD_V1 = true`;
 - `RAW_PAYLOAD_PASSTHROUGH = true`.
 
-The safe rollout order is API dual compatibility, signed Android and Windows
-artifacts, terminal installation, heartbeat capability confirmation for
-merchants 4/11/18, and only then canonical-only enforcement. There is no
-invented remote-install mechanism. Until all three active terminals confirm,
-the release state is `READY_FOR_CLIENT_INSTALL`, not complete.
+The production claim and payload endpoints require both capability values and
+reject unsupported terminals with `PRINTING_TERMINAL_UPGRADE_REQUIRED`.
+The unauthenticated legacy merchant-session connector is rejected with the
+same explicit upgrade error; production local printing requires a paired
+terminal identity.
+They also validate the immutable template, protocol, bytes, length, and SHA
+before a job can be claimed or returned. A missing or incomplete server
+artifact is rejected with `CANONICAL_PRINT_PAYLOAD_REQUIRED`; it is never sent
+to an Android `PrintDocumentV2Renderer` or Windows `WpfReceiptRenderer`.
+
+Legacy renderer source may remain for historical development and offline test
+fixtures, but it is unreachable from the production canonical job delivery
+contract. Android and Windows are transport-only in production.
+
+Capability names are normalized case-insensitively on write and always stored
+as the canonical keys above. Historical Windows acronym casing remains readable
+for compatibility. The database platform enum is a compatibility identity and
+does not contain `WINDOWS`; authenticated heartbeat capability truth is exposed
+as `reportedPlatform = WINDOWS` while the stored identity remains `ANDROID`.
 
 No production print job or physical test ticket may be created as part of this
 software rollout without separate explicit permission.
@@ -206,6 +231,36 @@ payment, discount, rounding, and analytics behavior are outside this change.
 
 Cloud printer integrations remain server-executed. They do not make an Android
 or Windows client a layout authority.
+
+## Production closeout evidence — 2026-08-25
+
+`CURRENT_ACTIVE_PRINT_TERMINAL` requires an enabled, non-deleted bound printer,
+an active non-revoked terminal, recent heartbeat/connection evidence, and real
+recent PrintAttempt activity. The final inventory contains three terminals:
+
+| merchant | terminal | reported platform | installed client | printer |
+| --- | ---: | --- | --- | ---: |
+| 4 农品香 | 31 | ANDROID | 2.0.0-rc13 | 39 |
+| 11 地锅居 | 30 | ANDROID | 2.0.0-rc13 | 38 |
+| 18 川湘菜馆 | 35 | WINDOWS | Windows 1.1.0 compatibility code 101 | 43 |
+
+All three have verified `ESC_POS_RASTER_V1` attempts with equal server/client
+SHA and full non-zero byte writes. Across the complete recorded history of
+these current terminals there are 586 successful legacy attempts before their
+first verified canonical cutover and zero after it. In the rolling seven-day
+window at closeout, 242 legacy successes are all pre-upgrade history and zero
+are post-upgrade regressions.
+
+The remaining 20 terminal registrations are historical stale inventory: 19
+have no current printer binding and one is bound only to a disabled printer.
+They are retained for audit history and do not participate in the production
+canonical gate.
+
+Both current receipt types, `TABLE_BILL` and `ORDER_CUSTOMER`, have verified
+production server payload attempts after cutover. New merchants do not clone a
+private visual template; printers store only paper/hardware/connection data,
+terminals store identity/binding/capability data, and every new PrintJob stores
+the same server canonical artifact contract.
 
 ## Rollback
 

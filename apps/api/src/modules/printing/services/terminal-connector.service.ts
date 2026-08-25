@@ -19,6 +19,7 @@ import {
 import { lanBindingMetadata } from '../types/lan-terminal-binding';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
 import { hasExplicitUsbExecutionEvidence } from '../utils/printer-readiness';
+import { normalizeTerminalCapabilities } from '../utils/terminal-canonical-capabilities';
 import { PrintingAuditService } from './printing-audit.service';
 import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 
@@ -49,7 +50,7 @@ export class TerminalConnectorService {
     const currentCapabilities = isPlainObject(current.capabilities)
       ? current.capabilities
       : {};
-    const capabilities = normalizeSafeJson({
+    const capabilities = normalizeSafeJson(normalizeTerminalCapabilities({
       ...currentCapabilities,
       ...(dto.capabilities ? { connector: dto.capabilities } : {}),
       ...(dto.diagnostics
@@ -63,7 +64,7 @@ export class TerminalConnectorService {
             },
           }
         : {}),
-    });
+    }));
     const updated = await this.prisma.merchantTerminal.updateMany({
       where: {
         id: terminal.id,

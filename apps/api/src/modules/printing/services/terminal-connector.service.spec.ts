@@ -526,6 +526,40 @@ describe('TerminalConnectorService', () => {
     );
   });
 
+  it('normalizes Windows canonical capability keys and reported platform on heartbeat', async () => {
+    const prisma = createPrismaMock();
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: {},
+      configVersion: 5,
+    });
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    const service = createService(prisma);
+
+    await service.heartbeat(terminal, {
+      appVersion: '2.0.0-rc13',
+      capabilities: {
+        platform: 'windows',
+        serveR_ESC_POS_PAYLOAD_V1: true,
+        raW_PAYLOAD_PASSTHROUGH: true,
+      },
+    });
+
+    expect(prisma.merchantTerminal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          capabilities: {
+            connector: {
+              platform: 'WINDOWS',
+              SERVER_ESC_POS_PAYLOAD_V1: true,
+              RAW_PAYLOAD_PASSTHROUGH: true,
+            },
+            reportedPlatform: 'WINDOWS',
+          },
+        }),
+      }),
+    );
+  });
+
   it('does not let a disabled terminal mutate printer status', async () => {
     const prisma = createPrismaMock();
     const service = createService(prisma);

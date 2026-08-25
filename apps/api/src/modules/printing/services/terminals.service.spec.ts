@@ -46,6 +46,42 @@ describe('TerminalsService', () => {
     );
   });
 
+  it('normalizes dirty Windows capability keys while preserving the compatibility platform identity', async () => {
+    prisma.merchantTerminal.create.mockImplementation(
+      async ({ data }: { data: object }) => terminal({ ...data }),
+    );
+
+    const result = await service.create(merchantId, 3n, 'request-windows', {
+      name: 'Windows 收银终端',
+      platform: 'ANDROID',
+      capabilities: {
+        connector: {
+          platform: 'WINDOWS',
+          serveR_ESC_POS_PAYLOAD_V1: true,
+          raW_PAYLOAD_PASSTHROUGH: true,
+        },
+      },
+    });
+
+    expect(prisma.merchantTerminal.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        platform: 'ANDROID',
+        capabilities: {
+          connector: {
+            platform: 'WINDOWS',
+            SERVER_ESC_POS_PAYLOAD_V1: true,
+            RAW_PAYLOAD_PASSTHROUGH: true,
+          },
+          reportedPlatform: 'WINDOWS',
+        },
+      }),
+    });
+    expect(result).toEqual(expect.objectContaining({
+      platform: 'ANDROID',
+      reportedPlatform: 'WINDOWS',
+    }));
+  });
+
   it('reports a recently-heartbeating disabled terminal as online without enabling execution', async () => {
     prisma.merchantTerminal.findMany.mockResolvedValue([
       terminal({ status: 'DISABLED', lastSeenAt: new Date() }),

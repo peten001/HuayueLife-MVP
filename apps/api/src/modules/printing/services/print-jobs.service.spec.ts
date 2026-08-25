@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import {
   ReceiptDocument,
   receiptTemplateDisplayFromDefinition,
@@ -2234,6 +2235,7 @@ describe('PrintJobsService', () => {
     prisma.merchantTerminal.findFirst.mockResolvedValue({
       id: terminalId,
       boundPrinterId: printerId,
+      capabilities: canonicalTerminalCapabilities(),
       merchant: { status: 'ACTIVE', printingEnabled: true },
     });
     prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
@@ -2277,6 +2279,9 @@ describe('PrintJobsService', () => {
   });
 
   it('claims a first-sync LAN TEST by the exact printer, terminal, and local binding tuple', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
     const printer = enabledLanPrinter({ enabled: false, status: 'UNVERIFIED' });
     const candidate = pendingJob({ source: 'TEST' });
     prisma.printer.findFirst.mockResolvedValue(printer);
@@ -2348,6 +2353,9 @@ describe('PrintJobsService', () => {
   });
 
   it('rejects a LAN claim when terminal or local binding validation fails', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
     prisma.printer.findFirst.mockResolvedValue(enabledLanPrinter());
     lanBindings.requireClaimable.mockRejectedValue(
       new ConflictException({ code: 'PERMISSION_DENIED' }),
@@ -2368,6 +2376,9 @@ describe('PrintJobsService', () => {
   });
 
   it('routes an enabled automatic LAN job to the same bound terminal', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
     flags.automaticCreationEnabled.mockReturnValue(true);
     const candidate = pendingJob({ source: 'AUTOMATIC' });
     prisma.printer.findFirst.mockResolvedValue(enabledLanPrinter());
@@ -2443,6 +2454,9 @@ describe('PrintJobsService', () => {
   });
 
   it('returns a canonical LAN payload route only after validating the complete tuple', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
     prisma.printJob.findFirst.mockResolvedValue({
       ...pendingJob({
         status: 'CLAIMED',
@@ -2494,6 +2508,9 @@ describe('PrintJobsService', () => {
   });
 
   it('returns a canonical USB payload route for the authenticated bound terminal', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
     prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
     prisma.printJob.findFirst.mockResolvedValue({
       ...pendingJob({
@@ -2533,6 +2550,7 @@ describe('PrintJobsService', () => {
   it('filters active USB lookup by the current terminal binding and channel', async () => {
     prisma.merchantTerminal.findFirst.mockResolvedValue({
       boundPrinterId: printerId,
+      capabilities: canonicalTerminalCapabilities(),
     });
     prisma.printJob.findFirst.mockResolvedValue(null);
 
@@ -2563,11 +2581,98 @@ describe('PrintJobsService', () => {
     expect(prisma.merchantTerminal.findFirst).not.toHaveBeenCalled();
   });
 
+  it('returns an explicit upgrade error before a terminal without canonical capabilities can claim', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      capabilities: { connector: { platform: 'ANDROID' } },
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+
+    await expect(service.claimNextJob(merchantId, terminalId)).rejects.toMatchObject({
+      response: { code: 'PRINTING_TERMINAL_UPGRADE_REQUIRED' },
+    });
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects the unauthenticated merchant-session connector instead of allowing local render fallback', async () => {
+    await expect(
+      service.claimNextMerchantJob(merchantId, printerId),
+    ).rejects.toMatchObject({
+      response: { code: 'PRINTING_TERMINAL_UPGRADE_REQUIRED' },
+    });
+    expect(prisma.printer.findFirst).not.toHaveBeenCalled();
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('never claims a production job without a complete immutable canonical payload', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      capabilities: canonicalTerminalCapabilities(),
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.merchantTerminal.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.updateMany.mockResolvedValue({ count: 0 });
+    const legacy = pendingJob({
+      canonicalTemplateVersion: null,
+      renderProtocol: null,
+      renderedPayload: null,
+      renderedPayloadSha256: null,
+      renderedPayloadByteLength: null,
+    });
+    prisma.printJob.findFirst.mockImplementation(
+      async ({ where }: { where: { status?: unknown } }) =>
+        where.status === 'PENDING' ? legacy : null,
+    );
+
+    await expect(service.claimNextJob(merchantId, terminalId)).rejects.toMatchObject({
+      response: { code: 'CANONICAL_PRINT_PAYLOAD_REQUIRED' },
+    });
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'CLAIMED' }),
+      }),
+    );
+  });
+
+  it('never delivers an already-claimed legacy job to Android or Windows local renderers', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      capabilities: canonicalTerminalCapabilities(),
+    });
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob({
+        status: 'CLAIMED',
+        claimedByTerminalId: terminalId,
+        canonicalTemplateVersion: null,
+        renderProtocol: null,
+        renderedPayload: null,
+        renderedPayloadSha256: null,
+        renderedPayloadByteLength: null,
+      }),
+      printer: {
+        ...enabledPrinter({ capabilities: usbBoundCapabilities() }),
+        name: 'USB 前台打印机',
+        purpose: 'FRONT_DESK',
+      },
+      attempts: [],
+    });
+
+    await expect(
+      service.connectorJobPayload(merchantId, terminalId, 301n),
+    ).rejects.toMatchObject({
+      response: { code: 'CANONICAL_PRINT_PAYLOAD_REQUIRED' },
+    });
+    expect(prisma.printer.findFirst).not.toHaveBeenCalled();
+  });
+
   it('compensates durable automatic triggers before an automatic connector claim', async () => {
     flags.automaticCreationEnabled.mockReturnValue(true);
     prisma.merchantTerminal.findFirst.mockResolvedValue({
       id: terminalId,
       boundPrinterId: printerId,
+      capabilities: canonicalTerminalCapabilities(),
       merchant: { status: 'ACTIVE', printingEnabled: true },
     });
     prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
@@ -3010,6 +3115,7 @@ function testTemplateDefinition(overrides: Record<string, unknown> = {}) {
 }
 
 function pendingJob(overrides: Record<string, unknown> = {}) {
+  const renderedPayload = Buffer.from('canonical-payload');
   return {
     id: 301n,
     merchantId,
@@ -3020,7 +3126,24 @@ function pendingJob(overrides: Record<string, unknown> = {}) {
     leaseVersion: 0,
     attemptCount: 0,
     maxAttempts: 3,
+    canonicalTemplateVersion: 'YQ_CANONICAL_RECEIPT_V1',
+    renderProtocol: 'ESC_POS_RASTER_V1',
+    renderedPayload,
+    renderedPayloadSha256: createHash('sha256')
+      .update(renderedPayload)
+      .digest('hex'),
+    renderedPayloadByteLength: renderedPayload.length,
     ...overrides,
+  };
+}
+
+function canonicalTerminalCapabilities() {
+  return {
+    connector: {
+      platform: 'ANDROID',
+      SERVER_ESC_POS_PAYLOAD_V1: true,
+      RAW_PAYLOAD_PASSTHROUGH: true,
+    },
   };
 }
 

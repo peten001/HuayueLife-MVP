@@ -3,12 +3,20 @@ import { PrintJobsService } from './print-jobs.service';
 import { PrintRulesService } from './print-rules.service';
 import { PrintingPrintersService } from './printing-printers.service';
 import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
-import { ReceiptDocument } from '../types/receipt-document';
+import {
+  ReceiptDocument,
+  receiptTemplateDisplayFromDefinition,
+} from '../types/receipt-document';
+import { createHash } from 'node:crypto';
 
 const merchantId = 7n;
 const staffId = 3n;
 const terminalId = 67n;
 const printerId = 17n;
+const canonicalPayload = Buffer.from([0x1b, 0x40]);
+const canonicalPayloadSha256 = createHash('sha256')
+  .update(canonicalPayload)
+  .digest('hex');
 
 describe('terminal-executed LAN printing service chain', () => {
   it('syncs, tests, claims, succeeds, enables, and routes automatic work to the same terminal', async () => {
@@ -51,6 +59,7 @@ describe('terminal-executed LAN printing service chain', () => {
       ),
       fromOrder: jest.fn().mockResolvedValue(receipt()),
       fromTableSession: jest.fn(),
+      displaySettingsFromTemplate: jest.fn(receiptTemplateDisplayFromDefinition),
     };
     const templates = {
       resolveCurrentOrderCustomer: jest.fn().mockResolvedValue(null),
@@ -68,9 +77,9 @@ describe('terminal-executed LAN printing service chain', () => {
         render: () => ({
           canonicalTemplateVersion: 'YQ_CANONICAL_RECEIPT_V1',
           renderProtocol: 'ESC_POS_RASTER_V1',
-          payload: Buffer.from([0x1b, 0x40]),
-          sha256: 'a'.repeat(64),
-          byteLength: 2,
+          payload: Buffer.from(canonicalPayload),
+          sha256: canonicalPayloadSha256,
+          byteLength: canonicalPayload.length,
           paperWidthMm: 80,
           widthDots: 576,
         }),
@@ -108,8 +117,8 @@ describe('terminal-executed LAN printing service chain', () => {
       host: '192.168.1.20',
       port: 9100,
       paperWidth: 'MM80',
-      appVersion: '1.0.0-rc7.3',
-      appVersionCode: 24,
+      appVersion: '2.0.0-rc13',
+      appVersionCode: 64,
       expectedBindingVersion: 0,
       serviceRunning: true,
       executionEnabled: true,
@@ -169,7 +178,8 @@ describe('terminal-executed LAN printing service chain', () => {
       jobId: testJob.id,
       attemptNo: started.attempt.attemptNo,
       leaseVersion: started.job.leaseVersion,
-      bytesWritten: 128,
+      actualPayloadSha256: canonicalPayloadSha256,
+      bytesWritten: canonicalPayload.length,
     });
     expect(state.jobs[0].status).toBe('SUCCEEDED');
     expect(state.attempts[0]).toEqual(
@@ -241,9 +251,15 @@ function createState() {
       name: 'D2 收银台',
       platform: 'ANDROID',
       status: 'ACTIVE',
-      capabilities: {},
+      capabilities: {
+        connector: {
+          platform: 'ANDROID',
+          SERVER_ESC_POS_PAYLOAD_V1: true,
+          RAW_PAYLOAD_PASSTHROUGH: true,
+        },
+      },
       deviceIdentifier: 'terminal-instance-1',
-      appVersion: '1.0.0-rc7.3',
+      appVersion: '2.0.0-rc13',
       lastSeenAt: new Date(),
       tokenVersion: 1,
       revokedAt: null,

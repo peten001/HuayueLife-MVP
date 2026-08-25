@@ -242,6 +242,26 @@ describe('PrintAttemptsService', () => {
       jobId,
       attemptNo: 1,
       leaseVersion: printing.leaseVersion,
+      bytesWritten: 128,
+      transport: 'WINDOWS_RAW_SPOOLER',
+    })).rejects.toBeInstanceOf(ConflictException);
+
+    await expect(service.markSucceeded({
+      merchantId,
+      terminalId,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
+      actualPayloadSha256: sha,
+      transport: 'WINDOWS_RAW_SPOOLER',
+    })).rejects.toBeInstanceOf(ConflictException);
+
+    await expect(service.markSucceeded({
+      merchantId,
+      terminalId,
+      jobId,
+      attemptNo: 1,
+      leaseVersion: printing.leaseVersion,
       actualPayloadSha256: sha,
       bytesWritten: 127,
       transport: 'WINDOWS_RAW_SPOOLER',

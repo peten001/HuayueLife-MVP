@@ -183,7 +183,6 @@ export class PrintAttemptsService {
       this.assertCompletePayloadWrite(
         job,
         input.bytesWritten,
-        input.actualPayloadSha256,
       );
       const expectedAdapter = this.expectedTerminalAdapter(
         job.printer.channelType,
@@ -442,11 +441,9 @@ export class PrintAttemptsService {
   private assertCompletePayloadWrite(
     job: { renderedPayloadByteLength: number | null },
     bytesWritten?: number,
-    actualPayloadSha256?: string,
   ) {
     if (
-      actualPayloadSha256 !== undefined &&
-      job.renderedPayloadByteLength !== null &&
+      typeof job.renderedPayloadByteLength === 'number' &&
       bytesWritten !== job.renderedPayloadByteLength
     ) {
       throw new ConflictException({
@@ -693,10 +690,10 @@ export class PrintAttemptsService {
   }
 
   private assertPayloadHash(expected: string | null, received: string | undefined) {
-    if (expected && received !== undefined && received !== expected) {
+    if (expected && received !== expected) {
       throw new ConflictException({
         code: PRINTING_ERROR_CODES.CONTENT_HASH_MISMATCH,
-        message: '最终打印字节哈希不匹配，已拒绝执行或回报',
+        message: '最终打印字节哈希缺失或不匹配，已拒绝执行或回报',
       });
     }
   }
