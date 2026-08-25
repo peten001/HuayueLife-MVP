@@ -191,6 +191,19 @@ bytes written, and result. Valid actual transports are:
 - `WINDOWS_RAW_SPOOLER`;
 - `WINDOWS_TCP_ESCPOS`.
 
+## Bounded lease renewal response contract
+
+Lease/renew endpoints MUST NOT return immutable rendered payload artifacts.
+Large print artifacts are transferred only through the intended claim/job
+payload path.
+
+The Android rc13 client response safety limit is 1,048,576 characters. Lease
+renewal responses therefore remain bounded and minimal: only the current
+`leaseVersion` and `leaseExpiresAt` are returned. Regression tests require both
+USB and LAN renewal responses to remain below 16 KiB and exclude
+`renderedPayload`, `renderedPayloadBase64`, `receiptSnapshot`, `PrintDocument`,
+and other large metadata.
+
 ## Client capability and production gate
 
 New clients report:

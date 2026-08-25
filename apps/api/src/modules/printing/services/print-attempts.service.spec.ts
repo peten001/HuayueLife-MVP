@@ -681,17 +681,22 @@ describe('PrintAttemptsService', () => {
   });
 
   it('extends only the active owner lease and caps the extension at 120 seconds', async () => {
-    const printing = job({ status: 'PRINTING', attemptCount: 1 });
-    prisma.printJob.findFirst.mockResolvedValue(printing);
+    const claimed = job({ status: 'CLAIMED', attemptCount: 0 });
+    const renewed = {
+      ...claimed,
+      leaseVersion: claimed.leaseVersion + 1,
+      leaseExpiresAt: new Date(Date.now() + 120_000),
+    };
+    prisma.printJob.findFirst.mockResolvedValue(claimed);
     prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
-    prisma.printJob.findUniqueOrThrow.mockResolvedValue(printing);
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue(renewed);
 
     const before = Date.now();
-    await service.extendLease(
+    const result = await service.extendLease(
       merchantId,
       terminalId,
       jobId,
-      printing.leaseVersion,
+      claimed.leaseVersion,
       999_000,
     );
     const call = prisma.printJob.updateMany.mock.calls[0][0];
@@ -702,11 +707,53 @@ describe('PrintAttemptsService', () => {
         id: jobId,
         merchantId,
         claimedByTerminalId: terminalId,
-        leaseVersion: printing.leaseVersion,
+        leaseVersion: claimed.leaseVersion,
       }),
     );
     expect(expiry.getTime()).toBeGreaterThanOrEqual(before + 119_000);
     expect(expiry.getTime()).toBeLessThanOrEqual(Date.now() + 120_500);
+    expect(result).toEqual(renewed);
+    expect(result.status).toBe('CLAIMED');
+    expect(result.attemptCount).toBe(0);
+    expect(result.leaseVersion).toBe(claimed.leaseVersion + 1);
+    expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('allows the current owner to start one attempt after a successful renewal', async () => {
+    const claimed = job({ status: 'CLAIMED', attemptCount: 0, leaseVersion: 2 });
+    const renewed = { ...claimed, leaseVersion: 3 };
+    prisma.printJob.findFirst
+      .mockResolvedValueOnce(claimed)
+      .mockResolvedValueOnce(renewed);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUniqueOrThrow
+      .mockResolvedValueOnce(renewed)
+      .mockResolvedValueOnce({ ...renewed, status: 'PRINTING', attemptCount: 1 });
+    prisma.printAttempt.create.mockResolvedValue({ id: 401n, attemptNo: 1 });
+
+    const extended = await service.extendLease(
+      merchantId,
+      terminalId,
+      jobId,
+      claimed.leaseVersion,
+      60_000,
+    );
+    const started = await service.markPrinting({
+      merchantId,
+      terminalId,
+      jobId,
+      leaseVersion: extended.leaseVersion,
+      adapter: 'ANDROID_USB_ESCPOS',
+    });
+
+    expect(extended.status).toBe('CLAIMED');
+    expect(started.attempt).toEqual({ id: 401n, attemptNo: 1 });
+    expect(prisma.printAttempt.create).toHaveBeenCalledTimes(1);
+    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects an expired lease without changing task state', async () => {
@@ -970,6 +1017,10 @@ function createPrismaMock() {
     },
     printer: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    order: {
+      update: jest.fn(),
+      updateMany: jest.fn(),
     },
     $transaction: jest.fn(),
   };

@@ -136,4 +136,49 @@ describe('terminal connector controller contract', () => {
       ),
     ).toThrow(BadRequestException);
   });
+
+  it('keeps USB lease renewal responses bounded and free of print artifacts', async () => {
+    const leaseExpiresAt = new Date('2026-08-25T12:00:00.000Z');
+    const attempts = {
+      extendLease: jest.fn().mockResolvedValue({
+        id: 1126n,
+        status: 'CLAIMED',
+        leaseVersion: 7,
+        leaseExpiresAt,
+        renderedPayload: Buffer.alloc(1_100_000),
+        renderedPayloadBase64: 'x'.repeat(1_100_000),
+        receiptSnapshot: { document: 'PrintDocument', body: 'x'.repeat(1_100_000) },
+      }),
+      markPrinting: jest.fn(),
+    };
+    const controller = new TerminalConnectorController(
+      {} as never,
+      {} as never,
+      attempts as never,
+    );
+
+    const response = await controller.extendLease(
+      {
+        id: 30n,
+        merchantId: 11n,
+        boundPrinterId: 38n,
+        name: '收银终端',
+        platform: 'ANDROID',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+      },
+      { id: '1126' },
+      { leaseVersion: 6, leaseMs: 60_000 },
+    );
+
+    expect(response).toEqual({ leaseVersion: 7, leaseExpiresAt });
+    const serialized = JSON.stringify(response);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
+    expect(Object.keys(response).sort()).toEqual(['leaseExpiresAt', 'leaseVersion']);
+    expect(serialized).not.toMatch(
+      /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
+    );
+    expect(attempts.extendLease).toHaveBeenCalledWith(11n, 30n, 1126n, 6, 60_000);
+    expect(attempts.markPrinting).not.toHaveBeenCalled();
+  });
 });

@@ -228,12 +228,12 @@ export class LanTerminalConnectorController {
 
   @Post('jobs/:id/extend')
   @UseGuards(ActiveTerminalGuard)
-  extendLease(
+  async extendLease(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
     @Param() params: IdParamDto,
     @Body() dto: ExtendLanPrintJobLeaseDto,
   ) {
-    return this.attempts.extendLease(
+    const job = await this.attempts.extendLease(
       terminal.merchantId,
       terminal.id,
       databaseId(params.id, 'id'),
@@ -243,6 +243,10 @@ export class LanTerminalConnectorController {
       dto.bindingVersion,
       databaseId(dto.printerId, 'printerId'),
     );
+    return {
+      leaseVersion: job.leaseVersion,
+      leaseExpiresAt: job.leaseExpiresAt,
+    };
   }
 
   @Post('printers/status')

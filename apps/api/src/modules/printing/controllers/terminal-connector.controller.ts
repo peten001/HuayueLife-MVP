@@ -215,18 +215,22 @@ export class TerminalConnectorController {
 
   @Post('jobs/:id/extend-lease')
   @UseGuards(ActiveTerminalGuard)
-  extendLease(
+  async extendLease(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
     @Param() params: IdParamDto,
     @Body() dto: ExtendPrintJobLeaseDto,
   ) {
-    return this.attempts.extendLease(
+    const job = await this.attempts.extendLease(
       terminal.merchantId,
       terminal.id,
       BigInt(params.id),
       dto.leaseVersion,
       dto.leaseMs,
     );
+    return {
+      leaseVersion: job.leaseVersion,
+      leaseExpiresAt: job.leaseExpiresAt,
+    };
   }
 
   @Post('printers/status')

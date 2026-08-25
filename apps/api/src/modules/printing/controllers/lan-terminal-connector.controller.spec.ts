@@ -222,6 +222,51 @@ describe('LanTerminalConnectorController contract', () => {
     ).toThrow(BadRequestException);
     expect(bindings.reportStatus).not.toHaveBeenCalled();
   });
+
+  it('keeps LAN lease renewal responses bounded and free of print artifacts', async () => {
+    const leaseExpiresAt = new Date('2026-08-25T12:00:00.000Z');
+    const { controller, attempts } = createController();
+    attempts.extendLease.mockResolvedValue({
+      id: 1136n,
+      status: 'CLAIMED',
+      leaseVersion: 9,
+      leaseExpiresAt,
+      renderedPayload: Buffer.alloc(1_100_000),
+      renderedPayloadBase64: 'x'.repeat(1_100_000),
+      receiptSnapshot: { document: 'PrintDocument', body: 'x'.repeat(1_100_000) },
+    });
+
+    const response = await controller.extendLease(
+      terminal,
+      { id: '1136' },
+      {
+        printerId: '37',
+        localBindingId: 'binding-1',
+        bindingVersion: 1,
+        leaseVersion: 8,
+        leaseMs: 60_000,
+      },
+    );
+
+    expect(response).toEqual({ leaseVersion: 9, leaseExpiresAt });
+    const serialized = JSON.stringify(response);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
+    expect(Object.keys(response).sort()).toEqual(['leaseExpiresAt', 'leaseVersion']);
+    expect(serialized).not.toMatch(
+      /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
+    );
+    expect(attempts.extendLease).toHaveBeenCalledWith(
+      7n,
+      67n,
+      1136n,
+      8,
+      60_000,
+      'binding-1',
+      1,
+      37n,
+    );
+    expect(attempts.markPrinting).not.toHaveBeenCalled();
+  });
 });
 
 function createController() {
