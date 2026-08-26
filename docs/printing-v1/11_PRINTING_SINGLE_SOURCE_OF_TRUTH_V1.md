@@ -1,6 +1,8 @@
 # YunQiao Printing Single Source of Truth V1
 
 Date: 2026-08-23
+
+Last updated: 2026-08-26
 Canonical template: `YQ_CANONICAL_RECEIPT_V1`
 Render protocol: `ESC_POS_RASTER_V1`
 
@@ -82,7 +84,7 @@ bytes written, actual transport, result
 | Font | `YunQiao Noto Sans SC` |
 | Font package | `@fontsource-variable/noto-sans-sc@5.3.0` |
 | Font license | OFL-1.1 |
-| Threshold | 185 |
+| Threshold | 205 (global canonical value; baseline comparison 185) |
 | Dish font weight | 500 effective Medium (deterministic Regular overprint) |
 | Address / phone | `NORMAL`, effective Medium 500, centered wrap |
 | Footer | `NORMAL`, effective Medium 500, 5-dot line gap |
@@ -113,10 +115,9 @@ renderer locks the values above; a merchant template cannot override them.
 - A dish name is `LARGE`, medium weight 500, and wraps within the 72% dish
   column. The font family, package, size, column ratio, and wrap algorithm stay
   unchanged; quantity, amount, headings, totals, and footer keep their existing
-  weights. The registered subset stack cannot safely expose numeric 500 without
-  over-darkening at threshold 185, so the server uses a deterministic second
-  Regular pass as its effective Medium raster and guards it between the 400 and
-  700 black-pixel references.
+  weights. The registered subset stack cannot safely expose numeric 500, so the
+  server uses a deterministic second Regular pass as its effective Medium raster
+  and guards it between the 400 and 700 black-pixel references.
 - Vietnamese wraps at word boundaries when possible. Chinese, mixed text, and
   long unbroken tokens fall back to Unicode grapheme boundaries.
 - Dish lines have no fixed line limit. Quantity and amount are emitted exactly
@@ -212,6 +213,63 @@ acknowledgements never echo the immutable rendered payload, receipt snapshot,
 or other job metadata. USB and LAN completion acknowledgements must remain
 below 16 KiB so a completed local write can always be marked reported within
 the Android rc13 response limit.
+
+## Legacy JSON Transport Capacity
+
+The Android rc13 parser ceiling is 1,048,576 serialized response characters.
+The server therefore measures the **actual final success JSON envelope**—after
+the complete job DTO, Base64 payload, receipt snapshot, `requestId`, timestamp,
+BigInt normalization, and API wrapper have all been applied—on every USB and
+LAN `active`, `claim`, and `printing` payload response.
+
+The global capacity contract is:
+
+- binary payload warning at 500 KiB;
+- binary payload critical level at 600 KiB;
+- application hard gate at 983,040 serialized characters, leaving 64 KiB below
+  the rc13 ceiling;
+- planning-only non-payload reserve of 16 KiB, which derives a 724,992-byte
+  binary capacity estimate; runtime acceptance never relies on that estimate;
+- 100/300/500/600/700/750/768/780 KiB and 1/2/5 MiB fixtures are verified
+  against the final serialized envelope, with 700 KiB accepted and 750 KiB and
+  larger fixtures rejected under the representative metadata fixture.
+
+Warning and critical logs contain only `jobId`, `merchantId`, `printType`,
+`payloadBytes`, `serializedResponseChars`, and client version. Receipt snapshots,
+Base64 data, business text, and complete response bodies are never logged.
+
+If the final serialized response exceeds the application gate, the server does
+not send it. A claimed or printing job is atomically finalized as `FAILED`, its
+lease and claim are cleared, `retryBlocked` is set to `true`, and the stable
+non-retryable error code is
+`PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT`. A started attempt, when present, is
+finished as failed with zero bytes written. The terminal receives a small 413
+error response, and the next pending job remains claimable. Manual retry and
+automatic retry/release do not whitelist this error.
+
+This guard is global across merchants and has no merchant darkness or capacity
+override. It does not change heartbeat, printer status, renewal, completion, or
+failure acknowledgements; their 1/2/5 MiB regression fixtures continue to prove
+that the control response itself stays below 16 KiB.
+
+## Canonical darkness 205 evidence gate
+
+Threshold 205 replaces 185 globally in the canonical server rasterizer. It does
+not change font family, size, weight, line height, margins, columns, wrapping,
+footer spacing, discount/rounding semantics, QR behavior, Android density, or
+Windows transport. The 185 raster remains an offline comparison artifact only.
+
+The locked fixtures prove that 185 and 205 have identical width, height, and
+ESC/POS payload byte length while their pixel SHA differs. The offline evidence
+set is `185.png`, `205.png`, and `diff.png`; visual review covers Chinese,
+Vietnamese diacritics, address/phone, long wrapped dish names, quantities,
+amounts, discount, rounding, footer, horizontal rules, interior counters, and
+white-space noise. Cross-platform pixel determinism remains a separate paused
+task, so macOS and Linux golden SHA values are locked independently.
+
+No production job, order, reprint, or device print is created by this rollout.
+Physical-paper readability is `WAITING_USER`; code, Linux, API health, and
+natural-traffic evidence must not be presented as paper proof.
 
 ## Client capability and production gate
 

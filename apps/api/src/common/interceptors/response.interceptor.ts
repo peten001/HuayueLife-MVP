@@ -7,6 +7,7 @@ import {
 import { map, Observable } from 'rxjs';
 import { ApiSuccessResponse } from '../dto/api-response.dto';
 import { RequestWithContext } from '../types/request.type';
+import { buildApiSuccessResponse } from '../utils/api-success-response';
 
 @Injectable()
 export class ResponseInterceptor<T>
@@ -19,31 +20,7 @@ export class ResponseInterceptor<T>
     const request = context.switchToHttp().getRequest<RequestWithContext>();
 
     return next.handle().pipe(
-      map((data) => ({
-        code: 'OK',
-        message: 'success',
-        data: normalizeBigInt(data),
-        requestId: request.requestId,
-        timestamp: new Date().toISOString(),
-      })),
+      map((data) => buildApiSuccessResponse(data, request.requestId)),
     );
   }
-}
-
-function normalizeBigInt(value: unknown): unknown {
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-  if (Array.isArray(value)) {
-    return value.map(normalizeBigInt);
-  }
-  if (value instanceof Date) {
-    return value;
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeBigInt(item)]),
-    );
-  }
-  return value;
 }

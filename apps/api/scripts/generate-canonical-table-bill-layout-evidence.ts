@@ -22,9 +22,11 @@ import {
 } from '../src/modules/printing/testing/canonical-table-bill-layout.fixture';
 import { renderPrintDocumentV3 } from '../src/modules/printing/services/print-document-renderer';
 
-const OUTPUT_DIRECTORY = '/Users/peter/Desktop/云桥Life-发布与交付/06-UI优化/YunQiao-Canonical-Receipt-Readability-20260824';
-const READABILITY_PNG_PATH = join(OUTPUT_DIRECTORY, 'canonical-table-bill-readability-185.png');
-const SETTLEMENT_PNG_PATH = join(OUTPUT_DIRECTORY, 'canonical-table-bill-discount-rounding.png');
+const OUTPUT_DIRECTORY = '/tmp/yunqiao-receipt-darkness';
+const BASELINE_PNG_PATH = join(OUTPUT_DIRECTORY, '185.png');
+const READABILITY_PNG_PATH = join(OUTPUT_DIRECTORY, '205.png');
+const DIFF_PNG_PATH = join(OUTPUT_DIRECTORY, 'diff.png');
+const SETTLEMENT_PNG_PATH = join(OUTPUT_DIRECTORY, 'settlement-205.png');
 const INVARIANTS_PATH = join(OUTPUT_DIRECTORY, 'LAYOUT_INVARIANTS.json');
 
 const service = new CanonicalPrintArtifactService();
@@ -52,11 +54,17 @@ const financialRows = settlementRows.filter((row) => [
 
 if (artifact.widthDots !== 576) throw new Error('LAYOUT_WIDTH_MISMATCH');
 if (layout.threshold !== CANONICAL_THRESHOLD) throw new Error('CANONICAL_THRESHOLD_MISMATCH');
-if (layout.threshold !== 185 || layout.thresholdBaseline !== 180) {
-  throw new Error('CANONICAL_THRESHOLD_185_BASELINE_180_MISMATCH');
+if (layout.threshold !== 205 || layout.thresholdBaseline !== 185) {
+  throw new Error('CANONICAL_THRESHOLD_205_BASELINE_185_MISMATCH');
 }
-if (layout.blackPixelRatioAt185 <= layout.blackPixelRatioAt180) {
-  throw new Error('THRESHOLD_185_DID_NOT_INCREASE_BLACK_RATIO');
+if (layout.blackPixelRatioAt205 <= layout.blackPixelRatioAt185) {
+  throw new Error('THRESHOLD_205_DID_NOT_INCREASE_BLACK_RATIO');
+}
+if (evidence.baselineArtifact.byteLength !== artifact.byteLength) {
+  throw new Error('THRESHOLD_CHANGED_PAYLOAD_BYTE_LENGTH');
+}
+if (evidence.baselineArtifact.sha256 === artifact.sha256) {
+  throw new Error('THRESHOLD_DID_NOT_CHANGE_PAYLOAD_SHA');
 }
 if (layout.visibleTextClippingCount !== 0) throw new Error('VISIBLE_TEXT_CLIPPING');
 if (layout.textOverlapCount !== 0) throw new Error('VISIBLE_TEXT_OVERLAP');
@@ -101,7 +109,7 @@ if (536_000 - 20_000 - 6_000 !== 510_000) throw new Error('SETTLEMENT_EQUATION_M
 const dishInternalLineGapDots = Math.ceil(28 * 1.35) - 28;
 const itemToItemGapDots = dishInternalLineGapDots + TABLE_BILL_ITEM_ROW_BOTTOM_DOTS + Math.ceil(18 * 1.35) + 4;
 const invariants = {
-  generatedFor: '2026-08-24',
+  generatedFor: '2026-08-26',
   canonicalTemplateVersion: artifact.canonicalTemplateVersion,
   renderProtocol: artifact.renderProtocol,
   layoutVersion: layout.layoutVersion,
@@ -110,8 +118,8 @@ const invariants = {
   renderedHeight: artifact.heightDots,
   threshold: layout.threshold,
   thresholdBaseline: CANONICAL_THRESHOLD_BASELINE,
-  blackPixelRatioAt180: layout.blackPixelRatioAt180,
   blackPixelRatioAt185: layout.blackPixelRatioAt185,
+  blackPixelRatioAt205: layout.blackPixelRatioAt205,
   verticalDpi: CANONICAL_VERTICAL_DPI,
   dotsPerMm: CANONICAL_DOTS_PER_MM,
   dishFontWeight: layout.dishFontWeight,
@@ -195,9 +203,9 @@ const invariants = {
     NO_TEXT_TOUCHING_BORDER: layout.textTouchingBorderCount === 0,
     NO_TEXT_OVERLAP: layout.textOverlapCount === 0,
     WIDTH_576: artifact.widthDots === 576,
-    THRESHOLD_BASELINE_180: layout.thresholdBaseline === 180,
-    THRESHOLD_185: layout.threshold === 185,
-    BLACK_PIXEL_RATIO_185_GT_180: layout.blackPixelRatioAt185 > layout.blackPixelRatioAt180,
+    THRESHOLD_BASELINE_185: layout.thresholdBaseline === 185,
+    THRESHOLD_205: layout.threshold === 205,
+    BLACK_PIXEL_RATIO_205_GT_185: layout.blackPixelRatioAt205 > layout.blackPixelRatioAt185,
     ADDRESS_NORMAL_500: layout.addressFontToken === 'NORMAL' && layout.addressFontWeight === 500,
     FOOTER_NORMAL_500: layout.footerFontToken === 'NORMAL' && layout.footerFontWeight === 500,
     FOOTER_LINE_GAP_5: layout.footerLineGapDots === 5,
@@ -209,12 +217,16 @@ const invariants = {
 };
 
 mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
+writeFileSync(BASELINE_PNG_PATH, evidence.baselinePng);
 writeFileSync(READABILITY_PNG_PATH, evidence.png);
+writeFileSync(DIFF_PNG_PATH, evidence.diffPng);
 writeFileSync(SETTLEMENT_PNG_PATH, settlementEvidence.png);
 writeFileSync(INVARIANTS_PATH, `${JSON.stringify(invariants, null, 2)}\n`, 'utf8');
 
 process.stdout.write(`${JSON.stringify({
+  baselinePngPath: BASELINE_PNG_PATH,
   readabilityPngPath: READABILITY_PNG_PATH,
+  diffPngPath: DIFF_PNG_PATH,
   settlementPngPath: SETTLEMENT_PNG_PATH,
   invariantsPath: INVARIANTS_PATH,
   ...invariants,

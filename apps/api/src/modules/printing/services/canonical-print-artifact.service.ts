@@ -28,8 +28,8 @@ export const CANONICAL_RENDER_PROTOCOL = 'ESC_POS_RASTER_V1';
 export const CANONICAL_FONT_FAMILY = 'YunQiao Noto Sans SC';
 export const CANONICAL_FONT_PACKAGE = '@fontsource-variable/noto-sans-sc@5.3.0';
 export const CANONICAL_FONT_LICENSE = 'OFL-1.1';
-export const CANONICAL_THRESHOLD = 185;
-export const CANONICAL_THRESHOLD_BASELINE = 180;
+export const CANONICAL_THRESHOLD = 205;
+export const CANONICAL_THRESHOLD_BASELINE = 185;
 export const CANONICAL_DOTS_PER_MM = 8;
 export const CANONICAL_VERTICAL_DPI = CANONICAL_DOTS_PER_MM * 25.4;
 export const TABLE_BILL_LAYOUT_VERSION = 'YQ_CANONICAL_TABLE_BILL_LAYOUT_V2';
@@ -82,8 +82,8 @@ export interface CanonicalLayoutDiagnostics {
   heightDots: number;
   threshold: typeof CANONICAL_THRESHOLD;
   thresholdBaseline: typeof CANONICAL_THRESHOLD_BASELINE;
-  blackPixelRatioAt180: number;
   blackPixelRatioAt185: number;
+  blackPixelRatioAt205: number;
   dotsPerMm: typeof CANONICAL_DOTS_PER_MM;
   verticalDpi: typeof CANONICAL_VERTICAL_DPI;
   dishFontWeight: typeof TABLE_BILL_DISH_FONT_WEIGHT | 400;
@@ -143,12 +143,22 @@ export interface CanonicalPrintArtifact {
 export interface CanonicalPrintEvidence {
   artifact: CanonicalPrintArtifact;
   png: Buffer;
+  baselinePng: Buffer;
+  diffPng: Buffer;
+  baselineArtifact: {
+    threshold: typeof CANONICAL_THRESHOLD_BASELINE;
+    sha256: string;
+    byteLength: number;
+  };
   layout: CanonicalLayoutDiagnostics;
 }
 
 type CanonicalRenderResult = {
   artifact: CanonicalPrintArtifact;
   png?: Buffer;
+  baselinePng?: Buffer;
+  diffPng?: Buffer;
+  baselinePayload?: Buffer;
   layout?: CanonicalLayoutDiagnostics;
 };
 
@@ -170,7 +180,18 @@ export class CanonicalPrintArtifactService {
     receiptType?: ReceiptTypeValue,
   ): CanonicalPrintEvidence {
     const result = this.renderInternal(snapshot, paperWidth, purpose, receiptType, true);
-    return { artifact: result.artifact, png: result.png!, layout: result.layout! };
+    return {
+      artifact: result.artifact,
+      png: result.png!,
+      baselinePng: result.baselinePng!,
+      diffPng: result.diffPng!,
+      baselineArtifact: {
+        threshold: CANONICAL_THRESHOLD_BASELINE,
+        sha256: createHash('sha256').update(result.baselinePayload!).digest('hex'),
+        byteLength: result.baselinePayload!.length,
+      },
+      layout: result.layout!,
+    };
   }
 
   private renderInternal(
@@ -205,6 +226,15 @@ export class CanonicalPrintArtifactService {
       ? packMonochrome(rgba, paper.widthDots, height, CANONICAL_THRESHOLD_BASELINE)
       : undefined;
     const payload = encodeEscPos(raster, paper.widthDots, height, feedLines, cutMode);
+    const baselinePayload = includeEvidence
+      ? encodeEscPos(
+          baselineRaster!,
+          paper.widthDots,
+          height,
+          feedLines,
+          cutMode,
+        )
+      : undefined;
     const artifact: CanonicalPrintArtifact = {
       canonicalTemplateVersion: CANONICAL_TEMPLATE_VERSION,
       renderProtocol: CANONICAL_RENDER_PROTOCOL,
@@ -224,6 +254,18 @@ export class CanonicalPrintArtifactService {
     return {
       artifact,
       png: renderMonochromePng(raster, paper.widthDots, height),
+      baselinePng: renderMonochromePng(
+        baselineRaster!,
+        paper.widthDots,
+        height,
+      ),
+      diffPng: renderMonochromeDiffPng(
+        baselineRaster!,
+        raster,
+        paper.widthDots,
+        height,
+      ),
+      baselinePayload,
       layout: inspectLayout(
         measurement,
         normalized.document,
@@ -709,11 +751,11 @@ function inspectLayout(
     textOperations.filter((operation) => operation.region === 'FOOTER'),
   );
   const totalRasterPixels = widthDots * heightDots;
-  const blackPixelRatioAt180 = roundedRatio(
+  const blackPixelRatioAt185 = roundedRatio(
     countBlackPixels(baselineRaster),
     totalRasterPixels,
   );
-  const blackPixelRatioAt185 = roundedRatio(countBlackPixels(raster), totalRasterPixels);
+  const blackPixelRatioAt205 = roundedRatio(countBlackPixels(raster), totalRasterPixels);
   const rowBytes = Math.ceil(widthDots / 8);
   const footerLastInkY = lastRasterInkY(raster, rowBytes, heightDots);
   const bottomBlankDots = profile === 'TABLE_BILL_V2'
@@ -748,8 +790,8 @@ function inspectLayout(
     heightDots,
     threshold: CANONICAL_THRESHOLD,
     thresholdBaseline: CANONICAL_THRESHOLD_BASELINE,
-    blackPixelRatioAt180,
     blackPixelRatioAt185,
+    blackPixelRatioAt205,
     dotsPerMm: CANONICAL_DOTS_PER_MM,
     verticalDpi: CANONICAL_VERTICAL_DPI,
     dishFontWeight: profile === 'TABLE_BILL_V2' ? TABLE_BILL_DISH_FONT_WEIGHT : 400,
@@ -924,6 +966,40 @@ function renderMonochromePng(raster: Buffer, width: number, height: number) {
       image.data[offset] = value;
       image.data[offset + 1] = value;
       image.data[offset + 2] = value;
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  return canvas.toBuffer('image/png');
+}
+
+function renderMonochromeDiffPng(
+  baselineRaster: Buffer,
+  currentRaster: Buffer,
+  width: number,
+  height: number,
+) {
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext('2d');
+  const image = context.createImageData(width, height);
+  const rowBytes = Math.ceil(width / 8);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const mask = 0x80 >> (x & 7);
+      const byteOffset = y * rowBytes + (x >> 3);
+      const baselineBlack = (baselineRaster[byteOffset] & mask) !== 0;
+      const currentBlack = (currentRaster[byteOffset] & mask) !== 0;
+      const offset = (y * width + x) * 4;
+      const color = baselineBlack
+        ? currentBlack
+          ? [0, 0, 0]
+          : [37, 99, 235]
+        : currentBlack
+          ? [220, 38, 38]
+          : [255, 255, 255];
+      image.data[offset] = color[0];
+      image.data[offset + 1] = color[1];
+      image.data[offset + 2] = color[2];
       image.data[offset + 3] = 255;
     }
   }

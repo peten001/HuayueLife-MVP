@@ -34,13 +34,19 @@ import {
 
 describe('CanonicalPrintArtifactService', () => {
   const service = new CanonicalPrintArtifactService();
+  const threshold205GoldenSha256ByPlatform: Partial<
+    Record<NodeJS.Platform, string>
+  > = {
+    darwin: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
+    linux: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
+  };
 
   it('renders the anonymous 14-dish 80mm golden receipt deterministically', () => {
     const first = service.renderEvidence(goldenDocument(14), 'MM80');
     const second = service.renderEvidence(goldenDocument(14), 'MM80');
 
-    expect(CANONICAL_THRESHOLD_BASELINE).toBe(180);
-    expect(CANONICAL_THRESHOLD).toBe(185);
+    expect(CANONICAL_THRESHOLD_BASELINE).toBe(185);
+    expect(CANONICAL_THRESHOLD).toBe(205);
     expect(CANONICAL_VERTICAL_DPI / 25.4).toBe(CANONICAL_DOTS_PER_MM);
     expect(TABLE_BILL_BOTTOM_SAFE_DOTS).toBe(Math.round(
       TABLE_BILL_BOTTOM_SAFE_MM * CANONICAL_DOTS_PER_MM,
@@ -53,7 +59,9 @@ describe('CanonicalPrintArtifactService', () => {
       first.artifact.heightDots & 0xff, (first.artifact.heightDots >> 8) & 0xff,
     ]));
     expect(first.artifact.payload.subarray(-3)).toEqual(Buffer.from([0x1d, 0x56, 0x01]));
-    expect(first.artifact.sha256).toBe('8ab7cb789b5884bac6c2980ffb6bbcfe47d147a0d679a6947f6b2e24def73f41');
+    expect(first.artifact.sha256).toBe(
+      threshold205GoldenSha256ByPlatform[process.platform],
+    );
     expect(second.artifact.sha256).toBe(first.artifact.sha256);
     expect(second.artifact.payload).toEqual(first.artifact.payload);
     expect(second.layout.layoutFingerprint).toBe(first.layout.layoutFingerprint);
@@ -86,9 +94,11 @@ describe('CanonicalPrintArtifactService', () => {
       finalTotalBottomDots: TABLE_BILL_FINAL_TOTAL_BOTTOM_DOTS,
     }));
     expect(first.layout.maxDishLineCount).toBeGreaterThanOrEqual(3);
-    expect(first.layout.blackPixelRatioAt185).toBeGreaterThan(
-      first.layout.blackPixelRatioAt180,
+    expect(first.layout.blackPixelRatioAt205).toBeGreaterThan(
+      first.layout.blackPixelRatioAt185,
     );
+    expect(first.baselineArtifact.byteLength).toBe(first.artifact.byteLength);
+    expect(first.baselineArtifact.sha256).not.toBe(first.artifact.sha256);
     expect(first.layout.addressTextBlackPixelRatio).toBeGreaterThan(0);
     expect(first.layout.footerTextBlackPixelRatio).toBeGreaterThan(0);
     expect(first.layout.dishTextBlackPixelRatioAfter).toBeGreaterThan(
@@ -204,6 +214,37 @@ describe('CanonicalPrintArtifactService', () => {
     expect(artifact.heightDots).toBeLessThan(12_000);
     expect(performance.now() - started).toBeLessThan(4_000);
   });
+
+  it.each([
+    ['TABLE_BILL_1_DISH', goldenDocument(1), 'FRONT_DESK', 'TABLE_BILL'],
+    ['TABLE_BILL_14_DISH', goldenDocument(14), 'FRONT_DESK', 'TABLE_BILL'],
+    ['TABLE_BILL_30_DISH', goldenDocument(30), 'FRONT_DESK', 'TABLE_BILL'],
+    [
+      'TABLE_BILL_DISCOUNT_ROUNDING',
+      canonicalTableBillSettlementFixture('DISCOUNT_AND_ROUNDING'),
+      'FRONT_DESK',
+      'TABLE_BILL',
+    ],
+  ] as const)(
+    'keeps ESC/POS byte length unchanged for the 185 to 205 threshold change: %s',
+    (_name, fixture, purpose, receiptType) => {
+      const evidence = service.renderEvidence(
+        fixture,
+        'MM80',
+        purpose,
+        receiptType,
+      );
+
+      expect(evidence.baselineArtifact.threshold).toBe(185);
+      expect(evidence.layout.threshold).toBe(205);
+      expect(evidence.baselineArtifact.byteLength).toBe(
+        evidence.artifact.byteLength,
+      );
+      expect(evidence.baselineArtifact.sha256).not.toBe(
+        evidence.artifact.sha256,
+      );
+    },
+  );
 
   it('keeps long Vietnamese words and emoji graphemes without truncating the receipt', () => {
     const artifact = service.render(goldenDocument(1, 'Cơm chiên hải sản siêu đặc biệt gia đình 👨‍👩‍👧‍👦 / 超长家庭海鲜炒饭测试菜名'), 'MM80');

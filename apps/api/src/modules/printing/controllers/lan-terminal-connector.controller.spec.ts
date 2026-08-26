@@ -26,7 +26,10 @@ const terminal = {
   platform: 'ANDROID' as const,
   status: 'ACTIVE' as const,
   tokenVersion: 1,
+  appVersion: '2.0.0-rc13',
 };
+
+const request = { requestId: 'req-lan-capacity' } as never;
 
 describe('LanTerminalConnectorController contract', () => {
   it('passes a numeric query bindingVersion to the active-job service', async () => {
@@ -38,7 +41,7 @@ describe('LanTerminalConnectorController contract', () => {
       bindingVersion: '1',
     });
 
-    await controller.activeJob(terminal, query);
+    await controller.activeJob(terminal, request, query);
 
     expect(query.bindingVersion).toBe(1);
     expect(typeof query.bindingVersion).toBe('number');
@@ -101,7 +104,7 @@ describe('LanTerminalConnectorController contract', () => {
     jobs.claimNextLanTerminalJob.mockResolvedValue({ id: 301n });
     jobs.connectorJobPayload.mockResolvedValue({ id: 301n });
 
-    await controller.claim(terminal, {
+    await controller.claim(terminal, request, {
       printerId: '17',
       localBindingId: 'binding-1',
       bindingVersion: 3,
@@ -166,6 +169,7 @@ describe('LanTerminalConnectorController contract', () => {
 
     await controller.markPrinting(
       terminal,
+      request,
       { id: '301' },
       {
         printerId: '17',
@@ -188,6 +192,73 @@ describe('LanTerminalConnectorController contract', () => {
       }),
     );
   });
+
+  it.each(['active', 'claim', 'printing'] as const)(
+    'applies the final-envelope capacity guard to the LAN %s payload route',
+    async (route) => {
+      const { controller, jobs, attempts } = createController();
+      const job = {
+        id: 301n,
+        receiptType: 'TABLE_BILL',
+        renderedPayloadByteLength: 612_000,
+      };
+      jobs.connectorJobPayload.mockResolvedValue(job);
+      jobs.findActiveLanTerminalJob.mockResolvedValue({ id: 301n });
+      jobs.claimNextLanTerminalJob.mockResolvedValue({ id: 301n });
+      attempts.markPrinting.mockResolvedValue({
+        job: { id: 301n },
+        attempt: { id: 901n },
+      });
+
+      if (route === 'active') {
+        await controller.activeJob(
+          terminal,
+          request,
+          plainToInstance(LanActiveJobQueryDto, {
+            printerId: '17',
+            localBindingId: 'binding-1',
+            bindingVersion: '1',
+          }),
+        );
+      } else if (route === 'claim') {
+        await controller.claim(terminal, request, {
+          printerId: '17',
+          localBindingId: 'binding-1',
+          bindingVersion: 1,
+          allowAutomatic: false,
+        });
+      } else {
+        await controller.markPrinting(
+          terminal,
+          request,
+          { id: '301' },
+          {
+            printerId: '17',
+            localBindingId: 'binding-1',
+            bindingVersion: 1,
+            leaseVersion: 4,
+            contentHash: 'a'.repeat(64),
+          },
+        );
+      }
+
+      expect(jobs.guardLegacyPayloadTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          responseData:
+            route === 'printing'
+              ? { job, attempt: { id: 901n } }
+              : { job },
+          requestId: 'req-lan-capacity',
+          jobId: 301n,
+          merchantId: 7n,
+          terminalId: 67n,
+          printType: 'TABLE_BILL',
+          payloadBytes: 612_000,
+          clientVersion: '2.0.0-rc13',
+        }),
+      );
+    },
+  );
 
   it('rejects noncanonical LAN failure outcomes before service mutation', () => {
     const { controller, attempts } = createController();
@@ -364,6 +435,9 @@ function createController() {
     findActiveLanTerminalJob: jest.fn(),
     claimNextLanTerminalJob: jest.fn(),
     connectorJobPayload: jest.fn(),
+    guardLegacyPayloadTransfer: jest
+      .fn()
+      .mockImplementation(({ responseData }) => responseData),
   };
   const attempts = {
     markPrinting: jest.fn(),

@@ -648,6 +648,7 @@ export class TerminalCredentialsService {
         name: true,
         platform: true,
         status: true,
+        appVersion: true,
         revokedAt: true,
         tokenHash: true,
         tokenVersion: true,
@@ -673,6 +674,7 @@ export class TerminalCredentialsService {
       name: terminal.name,
       platform: terminal.platform,
       status: terminal.status,
+      appVersion: terminal.appVersion,
       tokenVersion: terminal.tokenVersion,
     };
   }

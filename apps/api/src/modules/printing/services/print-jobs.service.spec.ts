@@ -2229,6 +2229,195 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
+  it('warns and becomes critical at the legacy binary capacity thresholds without logging payload data', async () => {
+    const logger = jest.spyOn((service as never as { logger: { warn: (value: string) => void } }).logger, 'warn');
+    const warnResponse = payloadTransferResponse(500 * 1024);
+    const criticalResponse = payloadTransferResponse(600 * 1024);
+
+    await expect(service.guardLegacyPayloadTransfer({
+      responseData: warnResponse,
+      requestId: 'capacity-warn',
+      jobId: 301n,
+      merchantId,
+      terminalId,
+      printType: 'TABLE_BILL',
+      payloadBytes: 500 * 1024,
+      clientVersion: '2.0.0-rc13',
+    })).resolves.toBe(warnResponse);
+    await expect(service.guardLegacyPayloadTransfer({
+      responseData: criticalResponse,
+      requestId: 'capacity-critical',
+      jobId: 302n,
+      merchantId,
+      terminalId,
+      printType: 'ORDER_CUSTOMER',
+      payloadBytes: 600 * 1024,
+      clientVersion: '2.0.0-rc13',
+    })).resolves.toBe(criticalResponse);
+
+    expect(logger).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('PRINT_PAYLOAD_CAPACITY_WARN'),
+    );
+    expect(logger).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('PRINT_PAYLOAD_CAPACITY_CRITICAL'),
+    );
+    for (const [value] of logger.mock.calls) {
+      expect(Object.keys(JSON.parse(value)).sort()).toEqual([
+        'clientVersion',
+        'event',
+        'jobId',
+        'merchantId',
+        'payloadBytes',
+        'printType',
+        'serializedResponseChars',
+      ]);
+      expect(value).not.toContain('renderedPayloadBase64');
+    }
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('returns a normal legacy payload response unchanged without state mutation', async () => {
+    const logger = jest.spyOn(
+      (service as never as { logger: { warn: (value: string) => void } }).logger,
+      'warn',
+    );
+    const response = payloadTransferResponse(100 * 1024);
+
+    await expect(
+      service.guardLegacyPayloadTransfer({
+        responseData: response,
+        requestId: 'capacity-normal',
+        jobId: 301n,
+        merchantId,
+        terminalId,
+        printType: 'TABLE_BILL',
+        payloadBytes: 100 * 1024,
+        clientVersion: '2.0.0-rc13',
+      }),
+    ).resolves.toBe(response);
+    expect(logger).not.toHaveBeenCalled();
+    expect(prisma.printJob.findFirst).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('fails an oversized claimed job non-retryably and leaves the following normal job claimable', async () => {
+    const oversized = {
+      ...pendingJob({
+        id: 301n,
+        status: 'CLAIMED',
+        claimedByTerminalId: terminalId,
+        leaseVersion: 3,
+        renderedPayload: Buffer.alloc(750 * 1024),
+        renderedPayloadByteLength: 750 * 1024,
+      }),
+      attemptCount: 0,
+    };
+    prisma.printJob.findFirst.mockResolvedValue(oversized);
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.guardLegacyPayloadTransfer({
+      responseData: payloadTransferResponse(750 * 1024),
+      requestId: 'capacity-reject-a',
+      jobId: oversized.id,
+      merchantId,
+      terminalId,
+      printType: 'TABLE_BILL',
+      payloadBytes: 750 * 1024,
+      clientVersion: '2.0.0-rc13',
+    })).rejects.toMatchObject({
+      response: {
+        code: 'PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT',
+      },
+    });
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: oversized.id,
+          status: 'CLAIMED',
+          leaseVersion: 3,
+        }),
+        data: expect.objectContaining({
+          status: 'FAILED',
+          retryBlocked: true,
+          claimedByTerminalId: null,
+          leaseExpiresAt: null,
+          lastErrorCode: 'PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT',
+        }),
+      }),
+    );
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+
+    const following = pendingJob({ id: 302n });
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      tokenVersion: 1,
+      capabilities: canonicalTerminalCapabilities(),
+      merchant: { status: 'ACTIVE', printingEnabled: true },
+    });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    jest.spyOn(service, 'releaseExpiredLeases').mockResolvedValue({
+      claimed: 0,
+      printing: 0,
+    });
+    jest.spyOn(service, 'releaseAvailableRetries').mockResolvedValue(0);
+    prisma.printJob.findFirst.mockImplementation(
+      async ({ where }: { where: { status?: unknown } }) =>
+        where.status === 'PENDING' ? following : null,
+    );
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printJob.findUnique.mockResolvedValue({
+      ...following,
+      status: 'CLAIMED',
+      claimedByTerminalId: terminalId,
+    });
+
+    await expect(service.claimNextJob(merchantId, terminalId)).resolves.toEqual(
+      expect.objectContaining({ id: 302n, status: 'CLAIMED' }),
+    );
+  });
+
+  it('finishes an in-progress attempt when its payload response exceeds the safe limit', async () => {
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob(),
+      status: 'PRINTING',
+      claimedByTerminalId: terminalId,
+      leaseVersion: 5,
+      attemptCount: 2,
+    });
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printAttempt.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.guardLegacyPayloadTransfer({
+      responseData: payloadTransferResponse(1 * 1024 * 1024),
+      requestId: 'capacity-reject-printing',
+      jobId: 301n,
+      merchantId,
+      terminalId,
+      printType: 'TABLE_BILL',
+      payloadBytes: 1 * 1024 * 1024,
+    })).rejects.toMatchObject({
+      response: { code: 'PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT' },
+    });
+    expect(prisma.printAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          jobId: 301n,
+          attemptNo: 2,
+          terminalId,
+          finishedAt: null,
+        }),
+        data: expect.objectContaining({
+          result: 'FAILED',
+          bytesWritten: 0,
+          errorCode: 'PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT',
+        }),
+      }),
+    );
+  });
+
   it('uses compare-and-set so only one competing terminal claims a job', async () => {
     let winner: bigint | null = null;
     const candidate = pendingJob();
@@ -2921,6 +3110,22 @@ describe('PrintJobsService', () => {
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
   });
 
+  it('blocks manual retry for a legacy payload capacity failure', async () => {
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob(),
+      status: 'FAILED',
+      attemptCount: 0,
+      retryBlocked: true,
+      lastErrorCode: 'PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT',
+    });
+
+    await expect(
+      service.retry(merchantId, 3n, 'req-capacity', 301n, '尝试重试超限票据'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.printer.findFirst).not.toHaveBeenCalled();
+    expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects retry from an illegal state', async () => {
     prisma.printJob.findFirst.mockResolvedValue(pendingJob());
 
@@ -2939,6 +3144,21 @@ function createFlagsMock() {
     taskCenterEnabled: jest.fn().mockReturnValue(true),
     automaticCreationEnabled: jest.fn().mockReturnValue(false),
     legacyPrintingEnabled: jest.fn().mockReturnValue(false),
+  };
+}
+
+function payloadTransferResponse(payloadBytes: number) {
+  return {
+    job: {
+      id: 301n,
+      merchantId: merchantId.toString(),
+      receiptType: 'TABLE_BILL',
+      status: 'CLAIMED',
+      renderedPayloadBase64: Buffer.alloc(payloadBytes, 0xa5).toString('base64'),
+      renderedPayloadByteLength: payloadBytes,
+      renderedPayloadSha256: 'a'.repeat(64),
+      receiptSnapshot: { schemaVersion: 3, metadata: 'x'.repeat(12_000) },
+    },
   };
 }
 

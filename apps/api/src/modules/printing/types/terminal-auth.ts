@@ -8,6 +8,7 @@ export interface AuthenticatedTerminal {
   name: string;
   platform: MerchantTerminalPlatform;
   status: MerchantTerminalStatus;
+  appVersion?: string | null;
   tokenVersion: number;
 }
 

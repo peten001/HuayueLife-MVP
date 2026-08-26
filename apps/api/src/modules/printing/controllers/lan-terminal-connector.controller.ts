@@ -80,6 +80,7 @@ export class LanTerminalConnectorController {
   @UseGuards(ActiveTerminalGuard)
   async activeJob(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
     @Query() query: LanActiveJobQueryDto,
   ) {
     const printerId = databaseId(query.printerId, 'printerId');
@@ -90,24 +91,33 @@ export class LanTerminalConnectorController {
       query.localBindingId,
       query.bindingVersion,
     );
-    return {
-      job: active
-        ? await this.jobs.connectorJobPayload(
-            terminal.merchantId,
-            terminal.id,
-            active.id,
-            printerId,
-            query.localBindingId,
-            query.bindingVersion,
-          )
-        : null,
-    };
+    if (!active) return { job: null };
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      active.id,
+      printerId,
+      query.localBindingId,
+      query.bindingVersion,
+    );
+    const response = { job };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: active.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/claim')
   @UseGuards(ActiveTerminalGuard)
   async claim(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
     @Body() dto: ClaimLanPrintJobDto,
   ) {
     const printerId = databaseId(dto.printerId, 'printerId');
@@ -120,24 +130,33 @@ export class LanTerminalConnectorController {
       dto.leaseMs,
       dto.allowAutomatic,
     );
-    return {
-      job: claimed
-        ? await this.jobs.connectorJobPayload(
-            terminal.merchantId,
-            terminal.id,
-            claimed.id,
-            printerId,
-            dto.localBindingId,
-            dto.bindingVersion,
-          )
-        : null,
-    };
+    if (!claimed) return { job: null };
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      claimed.id,
+      printerId,
+      dto.localBindingId,
+      dto.bindingVersion,
+    );
+    const response = { job };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: claimed.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/:id/printing')
   @UseGuards(ActiveTerminalGuard)
   async markPrinting(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
     @Param() params: IdParamDto,
     @Body() dto: MarkLanPrintingDto,
   ) {
@@ -155,17 +174,28 @@ export class LanTerminalConnectorController {
       localBindingId: dto.localBindingId,
       bindingVersion: dto.bindingVersion,
     });
-    return {
-      job: await this.jobs.connectorJobPayload(
-        terminal.merchantId,
-        terminal.id,
-        result.job.id,
-        printerId,
-        dto.localBindingId,
-        dto.bindingVersion,
-      ),
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      result.job.id,
+      printerId,
+      dto.localBindingId,
+      dto.bindingVersion,
+    );
+    const response = {
+      job,
       attempt: result.attempt,
     };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: result.job.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/:id/succeeded')

@@ -82,26 +82,38 @@ export class TerminalConnectorController {
 
   @Get('jobs/active')
   @UseGuards(ActiveTerminalGuard)
-  async activeJob(@CurrentTerminal() terminal: AuthenticatedTerminal) {
+  async activeJob(
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
+  ) {
     const active = await this.jobs.findActiveTerminalJob(
       terminal.merchantId,
       terminal.id,
     );
-    return {
-      job: active
-        ? await this.jobs.connectorJobPayload(
-            terminal.merchantId,
-            terminal.id,
-            active.id,
-          )
-        : null,
-    };
+    if (!active) return { job: null };
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      active.id,
+    );
+    const response = { job };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: active.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/claim')
   @UseGuards(ActiveTerminalGuard)
   async claim(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
     @Body() dto: ClaimPrintJobDto,
   ) {
     const claimed = await this.jobs.claimNextJob(
@@ -110,21 +122,30 @@ export class TerminalConnectorController {
       dto.leaseMs,
       dto.allowAutomatic,
     );
-    return {
-      job: claimed
-        ? await this.jobs.connectorJobPayload(
-            terminal.merchantId,
-            terminal.id,
-            claimed.id,
-          )
-        : null,
-    };
+    if (!claimed) return { job: null };
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      claimed.id,
+    );
+    const response = { job };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: claimed.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/:id/printing')
   @UseGuards(ActiveTerminalGuard)
   async markPrinting(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Req() request: RequestWithContext,
     @Param() params: IdParamDto,
     @Body() dto: MarkPrintingDto,
   ) {
@@ -138,14 +159,25 @@ export class TerminalConnectorController {
       networkInfo: dto.networkInfo,
       contentHash: dto.contentHash,
     });
-    return {
-      job: await this.jobs.connectorJobPayload(
-        terminal.merchantId,
-        terminal.id,
-        result.job.id,
-      ),
+    const job = await this.jobs.connectorJobPayload(
+      terminal.merchantId,
+      terminal.id,
+      result.job.id,
+    );
+    const response = {
+      job,
       attempt: result.attempt,
     };
+    return this.jobs.guardLegacyPayloadTransfer({
+      responseData: response,
+      requestId: request.requestId,
+      jobId: result.job.id,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.id,
+      printType: job.receiptType,
+      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      clientVersion: terminal.appVersion,
+    });
   }
 
   @Post('jobs/:id/succeeded')

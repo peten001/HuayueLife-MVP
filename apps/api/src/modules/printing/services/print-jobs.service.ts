@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import {
   PrintJob,
@@ -66,6 +67,11 @@ import {
   CanonicalPrintArtifactService,
 } from './canonical-print-artifact.service';
 import { terminalSupportsCanonicalPayload } from '../utils/terminal-canonical-capabilities';
+import { serializeApiSuccessResponse } from '../../../common/utils/api-success-response';
+import {
+  LEGACY_JSON_RESPONSE_SAFE_MAX_CHARS,
+  printPayloadCapacityLevel,
+} from '../types/printing-payload-capacity';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -153,6 +159,17 @@ export interface CreateTestJobInput {
   requestId?: string;
   requestKey: string;
   document: ReceiptDocument;
+}
+
+export interface GuardLegacyPayloadTransferInput<T> {
+  responseData: T;
+  requestId: string;
+  jobId: bigint;
+  merchantId: bigint;
+  terminalId: bigint;
+  printType: string;
+  payloadBytes: number;
+  clientVersion?: string | null;
 }
 
 @Injectable()
@@ -1879,6 +1896,115 @@ export class PrintJobsService {
           }
         : {}),
     };
+  }
+
+  async guardLegacyPayloadTransfer<T>(
+    input: GuardLegacyPayloadTransferInput<T>,
+  ): Promise<T> {
+    const serializedResponseChars = serializeApiSuccessResponse(
+      input.responseData,
+      input.requestId,
+    ).length;
+    const capacityLevel = printPayloadCapacityLevel(
+      input.payloadBytes,
+      serializedResponseChars,
+    );
+    if (capacityLevel !== 'NORMAL') {
+      this.logger.warn(
+        JSON.stringify({
+          event:
+            capacityLevel === 'CRITICAL'
+              ? 'PRINT_PAYLOAD_CAPACITY_CRITICAL'
+              : 'PRINT_PAYLOAD_CAPACITY_WARN',
+          jobId: input.jobId.toString(),
+          merchantId: input.merchantId.toString(),
+          printType: input.printType,
+          payloadBytes: input.payloadBytes,
+          serializedResponseChars,
+          clientVersion: input.clientVersion ?? null,
+        }),
+      );
+    }
+    if (serializedResponseChars <= LEGACY_JSON_RESPONSE_SAFE_MAX_CHARS) {
+      return input.responseData;
+    }
+
+    const safelyFinalized = await this.failOversizedLegacyPayloadJob(input);
+    if (!safelyFinalized) {
+      this.stateConflict(
+        '超限打印任务状态已变化；响应已拒绝，需刷新任务状态后继续',
+      );
+    }
+    throw new PayloadTooLargeException({
+      code: PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
+      message: '打印内容超过当前客户端安全传输上限，任务已安全终止',
+    });
+  }
+
+  private failOversizedLegacyPayloadJob(
+    input: GuardLegacyPayloadTransferInput<unknown>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.printJob.findFirst({
+        where: {
+          id: input.jobId,
+          merchantId: input.merchantId,
+          claimedByTerminalId: input.terminalId,
+          status: { in: ['CLAIMED', 'PRINTING'] },
+        },
+        select: {
+          id: true,
+          status: true,
+          leaseVersion: true,
+          attemptCount: true,
+        },
+      });
+      if (!job) return false;
+      const now = new Date();
+      const errorMessage =
+        '打印内容超过当前客户端安全传输上限，未向终端下发';
+      const changed = await tx.printJob.updateMany({
+        where: {
+          id: job.id,
+          merchantId: input.merchantId,
+          claimedByTerminalId: input.terminalId,
+          status: job.status,
+          leaseVersion: job.leaseVersion,
+        },
+        data: {
+          status: 'FAILED',
+          claimedAt: null,
+          claimedByTerminalId: null,
+          leaseExpiresAt: null,
+          leaseVersion: { increment: 1 },
+          completedAt: now,
+          retryBlocked: true,
+          lastErrorCode:
+            PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
+          lastErrorMessage: errorMessage,
+        },
+      });
+      if (changed.count !== 1) return false;
+      if (job.status === 'PRINTING') {
+        await tx.printAttempt.updateMany({
+          where: {
+            jobId: job.id,
+            attemptNo: job.attemptCount,
+            terminalId: input.terminalId,
+            finishedAt: null,
+          },
+          data: {
+            finishedAt: now,
+            result: 'FAILED',
+            errorCode:
+              PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
+            errorMessage,
+            bytesWritten: 0,
+          },
+        });
+      }
+      return true;
+    });
   }
 
   async reportMerchantConnectorPrinterStatus(
