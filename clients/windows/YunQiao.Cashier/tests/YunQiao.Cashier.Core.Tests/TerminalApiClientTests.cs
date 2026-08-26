@@ -223,9 +223,42 @@ public sealed class TerminalApiClientTests
         return response;
     }
 
-    private static string BinaryClaim(int byteLength, string sha) => $$"""
-        {"code":"OK","data":{"job":{"id":"267","jobId":"267","merchantId":"11","printerId":"37","status":"CLAIMED","receiptType":"ORDER_CUSTOMER","source":"TEST","attemptCount":0,"leaseVersion":1,"leaseExpiresAt":"2030-01-01T00:00:00Z","contentHash":"{{new string('a', 64)}}","canonicalTemplateVersion":"YQ_CANONICAL_RECEIPT_V1","renderProtocol":"ESC_POS_RASTER_V1","payloadTransport":"BINARY_PRINT_ARTIFACT_V1","payloadByteLength":{{byteLength}},"payloadSha256":"{{sha}}","artifactPath":"/terminal/jobs/267/artifact","paperWidthMm":80,"widthDots":576,"route":{"printerId":"37","localBindingId":"windows-front-desk","bindingVersion":4,"adapter":"WINDOWS_RAW_SPOOLER"}}}}
-        """;
+    private static string BinaryClaim(int byteLength, string sha) => JsonSerializer.Serialize(new
+    {
+        code = "OK",
+        data = new
+        {
+            job = new
+            {
+                id = "267",
+                jobId = "267",
+                merchantId = "11",
+                printerId = "37",
+                status = "CLAIMED",
+                receiptType = "ORDER_CUSTOMER",
+                source = "TEST",
+                attemptCount = 0,
+                leaseVersion = 1,
+                leaseExpiresAt = "2030-01-01T00:00:00Z",
+                contentHash = new string('a', 64),
+                canonicalTemplateVersion = "YQ_CANONICAL_RECEIPT_V1",
+                renderProtocol = "ESC_POS_RASTER_V1",
+                payloadTransport = "BINARY_PRINT_ARTIFACT_V1",
+                payloadByteLength = byteLength,
+                payloadSha256 = sha,
+                artifactPath = "/terminal/jobs/267/artifact",
+                paperWidthMm = 80,
+                widthDots = 576,
+                route = new
+                {
+                    printerId = "37",
+                    localBindingId = "windows-front-desk",
+                    bindingVersion = 4,
+                    adapter = "WINDOWS_RAW_SPOOLER",
+                },
+            },
+        },
+    });
 
     private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
     {
