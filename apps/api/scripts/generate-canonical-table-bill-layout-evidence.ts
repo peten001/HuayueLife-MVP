@@ -4,6 +4,7 @@ import {
   CANONICAL_DOTS_PER_MM,
   CANONICAL_THRESHOLD,
   CANONICAL_THRESHOLD_BASELINE,
+  CANONICAL_TEXT_EMBOLDEN_DOTS,
   CANONICAL_VERTICAL_DPI,
   CanonicalPrintArtifactService,
   TABLE_BILL_ADDRESS_FONT_TOKEN,
@@ -66,6 +67,24 @@ if (evidence.baselineArtifact.byteLength !== artifact.byteLength) {
 if (evidence.baselineArtifact.sha256 === artifact.sha256) {
   throw new Error('THRESHOLD_DID_NOT_CHANGE_PAYLOAD_SHA');
 }
+if (
+  evidence.preEmboldenArtifact.threshold !== 205 ||
+  evidence.preEmboldenArtifact.byteLength !== artifact.byteLength ||
+  evidence.preEmboldenArtifact.sha256 === artifact.sha256
+) throw new Error('TEXT_EMBOLDEN_ARTIFACT_CONTRACT_MISMATCH');
+if (
+  !evidence.textEmbolden.enabled ||
+  evidence.textEmbolden.outlineDots !== CANONICAL_TEXT_EMBOLDEN_DOTS ||
+  evidence.textEmbolden.addedBlackPixelCount <= 0 ||
+  evidence.textEmbolden.removedBlackPixelCount !== 0 ||
+  evidence.textEmbolden.nonTextChangedPixelCount !== 0 ||
+  evidence.textEmbolden.lineChangedPixelCount !== 0 ||
+  evidence.textEmbolden.rectChangedPixelCount !== 0 ||
+  evidence.textEmbolden.imageChangedPixelCount !== 0 ||
+  evidence.textEmbolden.dimensionsChanged ||
+  evidence.textEmbolden.textPositionsChanged ||
+  evidence.textEmbolden.lineBreaksChanged
+) throw new Error('TEXT_EMBOLDEN_PIXEL_CONTRACT_MISMATCH');
 if (layout.visibleTextClippingCount !== 0) throw new Error('VISIBLE_TEXT_CLIPPING');
 if (layout.textOverlapCount !== 0) throw new Error('VISIBLE_TEXT_OVERLAP');
 if (layout.textTouchingBorderCount !== 0) throw new Error('TEXT_TOUCHING_BORDER');
@@ -118,6 +137,8 @@ const invariants = {
   renderedHeight: artifact.heightDots,
   threshold: layout.threshold,
   thresholdBaseline: CANONICAL_THRESHOLD_BASELINE,
+  textEmbolden: evidence.textEmbolden,
+  preEmboldenPayloadSha256: evidence.preEmboldenArtifact.sha256,
   blackPixelRatioAt185: layout.blackPixelRatioAt185,
   blackPixelRatioAt205: layout.blackPixelRatioAt205,
   verticalDpi: CANONICAL_VERTICAL_DPI,
@@ -205,6 +226,17 @@ const invariants = {
     WIDTH_576: artifact.widthDots === 576,
     THRESHOLD_BASELINE_185: layout.thresholdBaseline === 185,
     THRESHOLD_205: layout.threshold === 205,
+    TEXT_1DOT_EMBOLDEN: evidence.textEmbolden.outlineDots === 1,
+    TEXT_EMBOLDEN_ADDED_PIXELS_ONLY:
+      evidence.textEmbolden.addedBlackPixelCount > 0 &&
+      evidence.textEmbolden.removedBlackPixelCount === 0,
+    NON_TEXT_PIXELS_CHANGED: evidence.textEmbolden.nonTextChangedPixelCount,
+    RULE_PIXELS_CHANGED: evidence.textEmbolden.lineChangedPixelCount,
+    BOX_PIXELS_CHANGED: evidence.textEmbolden.rectChangedPixelCount,
+    IMAGE_PIXELS_CHANGED: evidence.textEmbolden.imageChangedPixelCount,
+    DIMENSIONS_CHANGED: evidence.textEmbolden.dimensionsChanged,
+    TEXT_POSITIONS_CHANGED: evidence.textEmbolden.textPositionsChanged,
+    LINE_BREAKS_CHANGED: evidence.textEmbolden.lineBreaksChanged,
     BLACK_PIXEL_RATIO_205_GT_185: layout.blackPixelRatioAt205 > layout.blackPixelRatioAt185,
     ADDRESS_NORMAL_500: layout.addressFontToken === 'NORMAL' && layout.addressFontWeight === 500,
     FOOTER_NORMAL_500: layout.footerFontToken === 'NORMAL' && layout.footerFontWeight === 500,

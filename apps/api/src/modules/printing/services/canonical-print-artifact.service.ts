@@ -30,6 +30,7 @@ export const CANONICAL_FONT_PACKAGE = '@fontsource-variable/noto-sans-sc@5.3.0';
 export const CANONICAL_FONT_LICENSE = 'OFL-1.1';
 export const CANONICAL_THRESHOLD = 205;
 export const CANONICAL_THRESHOLD_BASELINE = 185;
+export const CANONICAL_TEXT_EMBOLDEN_DOTS = 1;
 export const CANONICAL_DOTS_PER_MM = 8;
 export const CANONICAL_VERTICAL_DPI = CANONICAL_DOTS_PER_MM * 25.4;
 export const TABLE_BILL_LAYOUT_VERSION = 'YQ_CANONICAL_TABLE_BILL_LAYOUT_V2';
@@ -145,12 +146,36 @@ export interface CanonicalPrintEvidence {
   png: Buffer;
   baselinePng: Buffer;
   diffPng: Buffer;
+  preEmboldenArtifact: {
+    threshold: typeof CANONICAL_THRESHOLD;
+    sha256: string;
+    byteLength: number;
+  };
   baselineArtifact: {
     threshold: typeof CANONICAL_THRESHOLD_BASELINE;
     sha256: string;
     byteLength: number;
   };
+  textEmbolden: CanonicalTextEmboldenDiagnostics;
   layout: CanonicalLayoutDiagnostics;
+}
+
+export interface CanonicalTextEmboldenDiagnostics {
+  enabled: true;
+  outlineDots: typeof CANONICAL_TEXT_EMBOLDEN_DOTS;
+  addedBlackPixelCount: number;
+  removedBlackPixelCount: number;
+  nonTextChangedPixelCount: number;
+  lineChangedPixelCount: number;
+  rectChangedPixelCount: number;
+  imageChangedPixelCount: 0;
+  blackPixelRatioBefore: number;
+  blackPixelRatioAfter: number;
+  textBlackPixelRatioBefore: number;
+  textBlackPixelRatioAfter: number;
+  dimensionsChanged: false;
+  textPositionsChanged: false;
+  lineBreaksChanged: false;
 }
 
 type CanonicalRenderResult = {
@@ -158,7 +183,9 @@ type CanonicalRenderResult = {
   png?: Buffer;
   baselinePng?: Buffer;
   diffPng?: Buffer;
+  preEmboldenPayload?: Buffer;
   baselinePayload?: Buffer;
+  textEmbolden?: CanonicalTextEmboldenDiagnostics;
   layout?: CanonicalLayoutDiagnostics;
 };
 
@@ -185,11 +212,17 @@ export class CanonicalPrintArtifactService {
       png: result.png!,
       baselinePng: result.baselinePng!,
       diffPng: result.diffPng!,
+      preEmboldenArtifact: {
+        threshold: CANONICAL_THRESHOLD,
+        sha256: createHash('sha256').update(result.preEmboldenPayload!).digest('hex'),
+        byteLength: result.preEmboldenPayload!.length,
+      },
       baselineArtifact: {
         threshold: CANONICAL_THRESHOLD_BASELINE,
         sha256: createHash('sha256').update(result.baselinePayload!).digest('hex'),
         byteLength: result.baselinePayload!.length,
       },
+      textEmbolden: result.textEmbolden!,
       layout: result.layout!,
     };
   }
@@ -221,11 +254,34 @@ export class CanonicalPrintArtifactService {
     context.strokeStyle = '#000000';
     drawOperations(context, operations);
     const rgba = context.getImageData(0, 0, paper.widthDots, height).data;
-    const raster = packMonochrome(rgba, paper.widthDots, height);
+    const preEmboldenRaster = packMonochrome(rgba, paper.widthDots, height);
+    const normalTextRaster = renderTextOperationsRaster(
+      operations,
+      paper.widthDots,
+      height,
+      false,
+    );
+    const emboldenedTextRaster = renderTextOperationsRaster(
+      operations,
+      paper.widthDots,
+      height,
+      true,
+    );
+    const addedTextRaster = rasterAndNot(emboldenedTextRaster, normalTextRaster);
+    const raster = rasterOr(preEmboldenRaster, addedTextRaster);
     const baselineRaster = includeEvidence
       ? packMonochrome(rgba, paper.widthDots, height, CANONICAL_THRESHOLD_BASELINE)
       : undefined;
     const payload = encodeEscPos(raster, paper.widthDots, height, feedLines, cutMode);
+    const preEmboldenPayload = includeEvidence
+      ? encodeEscPos(
+          preEmboldenRaster,
+          paper.widthDots,
+          height,
+          feedLines,
+          cutMode,
+        )
+      : undefined;
     const baselinePayload = includeEvidence
       ? encodeEscPos(
           baselineRaster!,
@@ -265,7 +321,17 @@ export class CanonicalPrintArtifactService {
         paper.widthDots,
         height,
       ),
+      preEmboldenPayload,
       baselinePayload,
+      textEmbolden: inspectTextEmbolden(
+        operations,
+        paper.widthDots,
+        height,
+        preEmboldenRaster,
+        raster,
+        normalTextRaster,
+        emboldenedTextRaster,
+      ),
       layout: inspectLayout(
         measurement,
         normalized.document,
@@ -627,16 +693,118 @@ function drawOperations(context: CanvasContext, operations: DrawOperation[]) {
       context.lineWidth = operation.thickness;
       context.strokeRect(operation.x, operation.y, operation.width, operation.height);
     } else {
-      setFont(context, operation.bold, operation.size, operation.fontWeight);
-      const measured = context.measureText(operation.text).width;
-      const x = operation.align === 'CENTER'
-        ? operation.x + Math.max(0, (operation.width - measured) / 2)
-        : operation.align === 'RIGHT'
-          ? operation.x + Math.max(0, operation.width - measured)
-          : operation.x;
-      drawCanonicalText(context, operation.text, x, operation.y, operation.fontWeight);
+      drawTextOperation(context, operation, false);
     }
   }
+}
+
+function drawTextOperation(
+  context: CanvasContext,
+  operation: Extract<DrawOperation, { type: 'TEXT' }>,
+  embolden: boolean,
+) {
+  setFont(context, operation.bold, operation.size, operation.fontWeight);
+  const measured = context.measureText(operation.text).width;
+  const x = operation.align === 'CENTER'
+    ? operation.x + Math.max(0, (operation.width - measured) / 2)
+    : operation.align === 'RIGHT'
+      ? operation.x + Math.max(0, operation.width - measured)
+      : operation.x;
+  drawCanonicalText(context, operation.text, x, operation.y, operation.fontWeight);
+  if (embolden) {
+    context.lineWidth = CANONICAL_TEXT_EMBOLDEN_DOTS;
+    context.strokeText(operation.text, x, operation.y);
+  }
+}
+
+function renderOperationsRaster(
+  operations: DrawOperation[],
+  width: number,
+  height: number,
+) {
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = '#000000';
+  context.strokeStyle = '#000000';
+  drawOperations(context, operations);
+  return packMonochrome(
+    context.getImageData(0, 0, width, height).data,
+    width,
+    height,
+  );
+}
+
+function renderTextOperationsRaster(
+  operations: DrawOperation[],
+  width: number,
+  height: number,
+  embolden: boolean,
+) {
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = '#000000';
+  context.strokeStyle = '#000000';
+  context.textBaseline = 'top';
+  for (const operation of operations) {
+    if (operation.type === 'TEXT') drawTextOperation(context, operation, embolden);
+  }
+  return packMonochrome(
+    context.getImageData(0, 0, width, height).data,
+    width,
+    height,
+  );
+}
+
+function inspectTextEmbolden(
+  operations: DrawOperation[],
+  width: number,
+  height: number,
+  beforeRaster: Buffer,
+  afterRaster: Buffer,
+  normalTextRaster: Buffer,
+  emboldenedTextRaster: Buffer,
+): CanonicalTextEmboldenDiagnostics {
+  const changedRaster = rasterXor(beforeRaster, afterRaster);
+  const lineRaster = renderOperationsRaster(
+    operations.filter((operation) => operation.type === 'LINE'),
+    width,
+    height,
+  );
+  const rectRaster = renderOperationsRaster(
+    operations.filter((operation) => operation.type === 'RECT'),
+    width,
+    height,
+  );
+  const totalPixels = width * height;
+  return {
+    enabled: true,
+    outlineDots: CANONICAL_TEXT_EMBOLDEN_DOTS,
+    addedBlackPixelCount: countBlackPixels(rasterAndNot(afterRaster, beforeRaster)),
+    removedBlackPixelCount: countBlackPixels(rasterAndNot(beforeRaster, afterRaster)),
+    nonTextChangedPixelCount: countBlackPixels(
+      rasterAndNot(changedRaster, emboldenedTextRaster),
+    ),
+    lineChangedPixelCount: countBlackPixels(rasterAnd(changedRaster, lineRaster)),
+    rectChangedPixelCount: countBlackPixels(rasterAnd(changedRaster, rectRaster)),
+    imageChangedPixelCount: 0,
+    blackPixelRatioBefore: roundedRatio(countBlackPixels(beforeRaster), totalPixels),
+    blackPixelRatioAfter: roundedRatio(countBlackPixels(afterRaster), totalPixels),
+    textBlackPixelRatioBefore: roundedRatio(
+      countBlackPixels(normalTextRaster),
+      totalPixels,
+    ),
+    textBlackPixelRatioAfter: roundedRatio(
+      countBlackPixels(emboldenedTextRaster),
+      totalPixels,
+    ),
+    dimensionsChanged: false,
+    textPositionsChanged: false,
+    lineBreaksChanged: false,
+  };
 }
 
 function inspectLayout(
@@ -933,6 +1101,46 @@ function lastRasterInkY(raster: Buffer, rowBytes: number, height: number) {
     if (raster.subarray(start, start + rowBytes).some((value) => value !== 0)) return y + 1;
   }
   return 0;
+}
+
+function rasterOr(left: Buffer, right: Buffer) {
+  assertSameRasterLength(left, right);
+  const output = Buffer.alloc(left.length);
+  for (let index = 0; index < left.length; index += 1) {
+    output[index] = left[index] | right[index];
+  }
+  return output;
+}
+
+function rasterAnd(left: Buffer, right: Buffer) {
+  assertSameRasterLength(left, right);
+  const output = Buffer.alloc(left.length);
+  for (let index = 0; index < left.length; index += 1) {
+    output[index] = left[index] & right[index];
+  }
+  return output;
+}
+
+function rasterAndNot(left: Buffer, right: Buffer) {
+  assertSameRasterLength(left, right);
+  const output = Buffer.alloc(left.length);
+  for (let index = 0; index < left.length; index += 1) {
+    output[index] = left[index] & (~right[index] & 0xff);
+  }
+  return output;
+}
+
+function rasterXor(left: Buffer, right: Buffer) {
+  assertSameRasterLength(left, right);
+  const output = Buffer.alloc(left.length);
+  for (let index = 0; index < left.length; index += 1) {
+    output[index] = left[index] ^ right[index];
+  }
+  return output;
+}
+
+function assertSameRasterLength(left: Buffer, right: Buffer) {
+  if (left.length !== right.length) throw new Error('CANONICAL_RASTER_DIMENSION_MISMATCH');
 }
 
 function countBlackPixels(raster: Buffer) {

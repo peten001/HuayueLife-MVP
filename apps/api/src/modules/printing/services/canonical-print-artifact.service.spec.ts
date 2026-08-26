@@ -8,6 +8,7 @@ import {
   CANONICAL_FONT_PACKAGE,
   CANONICAL_THRESHOLD,
   CANONICAL_THRESHOLD_BASELINE,
+  CANONICAL_TEXT_EMBOLDEN_DOTS,
   CANONICAL_VERTICAL_DPI,
   CanonicalPrintArtifactService,
   TABLE_BILL_ADDRESS_FONT_TOKEN,
@@ -34,9 +35,9 @@ import {
 
 describe('CanonicalPrintArtifactService', () => {
   const service = new CanonicalPrintArtifactService();
-  const threshold205GoldenSha256ByPlatform: Partial<
-    Record<NodeJS.Platform, string>
-  > = {
+  const linuxThreshold205TextEmboldenGoldenSha256 =
+    'df336cb752a9daa9e45058d86109a316b170a90445c58397eb85454617b50545';
+  const preEmboldenGoldenSha256ByPlatform: Partial<Record<NodeJS.Platform, string>> = {
     darwin: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
     linux: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
   };
@@ -59,9 +60,9 @@ describe('CanonicalPrintArtifactService', () => {
       first.artifact.heightDots & 0xff, (first.artifact.heightDots >> 8) & 0xff,
     ]));
     expect(first.artifact.payload.subarray(-3)).toEqual(Buffer.from([0x1d, 0x56, 0x01]));
-    expect(first.artifact.sha256).toBe(
-      threshold205GoldenSha256ByPlatform[process.platform],
-    );
+    if (process.platform === 'linux') {
+      expect(first.artifact.sha256).toBe(linuxThreshold205TextEmboldenGoldenSha256);
+    }
     expect(second.artifact.sha256).toBe(first.artifact.sha256);
     expect(second.artifact.payload).toEqual(first.artifact.payload);
     expect(second.layout.layoutFingerprint).toBe(first.layout.layoutFingerprint);
@@ -99,6 +100,34 @@ describe('CanonicalPrintArtifactService', () => {
     );
     expect(first.baselineArtifact.byteLength).toBe(first.artifact.byteLength);
     expect(first.baselineArtifact.sha256).not.toBe(first.artifact.sha256);
+    expect(first.preEmboldenArtifact).toEqual(expect.objectContaining({
+      threshold: 205,
+      byteLength: first.artifact.byteLength,
+    }));
+    const expectedPreEmboldenSha = preEmboldenGoldenSha256ByPlatform[process.platform];
+    if (expectedPreEmboldenSha) {
+      expect(first.preEmboldenArtifact.sha256).toBe(expectedPreEmboldenSha);
+    }
+    expect(first.preEmboldenArtifact.sha256).not.toBe(first.artifact.sha256);
+    expect(first.textEmbolden).toEqual(expect.objectContaining({
+      enabled: true,
+      outlineDots: CANONICAL_TEXT_EMBOLDEN_DOTS,
+      removedBlackPixelCount: 0,
+      nonTextChangedPixelCount: 0,
+      lineChangedPixelCount: 0,
+      rectChangedPixelCount: 0,
+      imageChangedPixelCount: 0,
+      dimensionsChanged: false,
+      textPositionsChanged: false,
+      lineBreaksChanged: false,
+    }));
+    expect(first.textEmbolden.addedBlackPixelCount).toBeGreaterThan(0);
+    expect(first.textEmbolden.blackPixelRatioAfter).toBeGreaterThan(
+      first.textEmbolden.blackPixelRatioBefore,
+    );
+    expect(first.textEmbolden.textBlackPixelRatioAfter).toBeGreaterThan(
+      first.textEmbolden.textBlackPixelRatioBefore,
+    );
     expect(first.layout.addressTextBlackPixelRatio).toBeGreaterThan(0);
     expect(first.layout.footerTextBlackPixelRatio).toBeGreaterThan(0);
     expect(first.layout.dishTextBlackPixelRatioAfter).toBeGreaterThan(
