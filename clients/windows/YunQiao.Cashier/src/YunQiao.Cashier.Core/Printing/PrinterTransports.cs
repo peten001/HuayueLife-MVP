@@ -25,11 +25,19 @@ public interface IPrinterTransport
     Task<TransportResult> SendAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken);
 }
 
+public interface IStreamPrinterTransport : IPrinterTransport
+{
+    Task<TransportResult> SendFileAsync(
+        string privateFilePath,
+        int expectedLength,
+        CancellationToken cancellationToken);
+}
+
 public sealed class TcpPrinterTransport(
     string host,
     int port = 9100,
     TimeSpan? connectTimeout = null,
-    TimeSpan? writeTimeout = null) : IPrinterTransport
+    TimeSpan? writeTimeout = null) : IStreamPrinterTransport
 {
     private readonly TimeSpan _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(2);
     private readonly TimeSpan _writeTimeout = writeTimeout ?? TimeSpan.FromSeconds(8);
@@ -64,7 +72,11 @@ public sealed class TcpPrinterTransport(
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(_writeTimeout);
-            await client.GetStream().WriteAsync(bytes, timeout.Token).ConfigureAwait(false);
+            for (var offset = 0; offset < bytes.Length; offset += RawWriteChunkBytes)
+            {
+                var length = Math.Min(RawWriteChunkBytes, bytes.Length - offset);
+                await client.GetStream().WriteAsync(bytes.Slice(offset, length), timeout.Token).ConfigureAwait(false);
+            }
             await client.GetStream().FlushAsync(timeout.Token).ConfigureAwait(false);
             return TransportResult.Success(bytes.Length);
         }
@@ -75,6 +87,69 @@ public sealed class TcpPrinterTransport(
         catch (IOException error)
         {
             return TransportResult.Uncertain(0, "LAN_WRITE_FAILED", $"LAN write outcome is unknown: {error.GetType().Name}");
+        }
+    }
+
+    public async Task<TransportResult> SendFileAsync(
+        string privateFilePath,
+        int expectedLength,
+        CancellationToken cancellationToken)
+    {
+        if (expectedLength <= 0 || new FileInfo(privateFilePath).Length != expectedLength)
+            return TransportResult.Failure("PAYLOAD_LENGTH_MISMATCH", "Verified artifact file length changed.", false);
+        if (!TryPrivateIpv4(host, out var address))
+            return TransportResult.Failure("LAN_HOST_INVALID", "LAN printer must use a private IPv4 address.", false);
+        if (port is < 1 or > 65_535)
+            return TransportResult.Failure("LAN_PORT_INVALID", "LAN printer port is invalid.", false);
+        using var client = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };
+        try
+        {
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                timeout.CancelAfter(_connectTimeout);
+                await client.ConnectAsync(address, port, timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return TransportResult.Failure("LAN_CONNECT_TIMEOUT", "LAN printer connection timed out.");
+        }
+        catch (SocketException error)
+        {
+            return TransportResult.Failure("LAN_CONNECT_FAILED", $"LAN connect failed: {error.SocketErrorCode}");
+        }
+        var written = 0;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(_writeTimeout);
+            await using var input = new FileStream(
+                privateFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                RawWriteChunkBytes,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var buffer = new byte[RawWriteChunkBytes];
+            while (true)
+            {
+                var count = await input.ReadAsync(buffer, timeout.Token).ConfigureAwait(false);
+                if (count == 0) break;
+                await client.GetStream().WriteAsync(buffer.AsMemory(0, count), timeout.Token).ConfigureAwait(false);
+                written += count;
+            }
+            await client.GetStream().FlushAsync(timeout.Token).ConfigureAwait(false);
+            return written == expectedLength
+                ? TransportResult.Success(written)
+                : TransportResult.Uncertain(written, "PAYLOAD_LENGTH_MISMATCH", "Artifact changed during LAN write.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return TransportResult.Uncertain(written, "LAN_WRITE_TIMEOUT", "LAN write outcome is unknown after timeout.");
+        }
+        catch (IOException error)
+        {
+            return TransportResult.Uncertain(written, "LAN_WRITE_FAILED", $"LAN write outcome is unknown: {error.GetType().Name}");
         }
     }
 
@@ -91,4 +166,6 @@ public sealed class TcpPrinterTransport(
         address = parsed;
         return true;
     }
+
+    private const int RawWriteChunkBytes = 64 * 1024;
 }

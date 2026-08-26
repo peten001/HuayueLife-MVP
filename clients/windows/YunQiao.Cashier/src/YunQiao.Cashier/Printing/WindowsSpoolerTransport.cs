@@ -5,7 +5,7 @@ using YunQiao.Cashier.Core.Protocol;
 
 namespace YunQiao.Cashier.Printing;
 
-public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransport
+public sealed class WindowsSpoolerTransport(string printerName) : IStreamPrinterTransport
 {
     private const int ErrorInsufficientBuffer = 122;
 
@@ -32,6 +32,19 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
         if (string.IsNullOrWhiteSpace(printerName)) return Task.FromResult(TransportResult.Failure("CONFIG_INVALID", "Windows printer is not configured.", false));
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run(() => Send(bytes.ToArray()), CancellationToken.None);
+    }
+
+    public Task<TransportResult> SendFileAsync(
+        string privateFilePath,
+        int expectedLength,
+        CancellationToken cancellationToken)
+    {
+        if (expectedLength <= 0 || new FileInfo(privateFilePath).Length != expectedLength)
+            return Task.FromResult(TransportResult.Failure("PAYLOAD_LENGTH_MISMATCH", "Verified artifact file length changed.", false));
+        if (string.IsNullOrWhiteSpace(printerName))
+            return Task.FromResult(TransportResult.Failure("CONFIG_INVALID", "Windows printer is not configured.", false));
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.Run(() => SendFile(privateFilePath, expectedLength), CancellationToken.None);
     }
 
     public static IReadOnlyList<string> InstalledPrinterNames()
@@ -133,18 +146,7 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
                 return TransportResult.Failure("USB_WRITE_FAILED", $"StartPagePrinter failed: {Marshal.GetLastWin32Error()}");
             pageStarted = true;
 
-            var unmanaged = Marshal.AllocHGlobal(bytes.Length);
-            try
-            {
-                Marshal.Copy(bytes, 0, unmanaged, bytes.Length);
-                if (!WritePrinter(printer, unmanaged, bytes.Length, out var written))
-                    result = TransportResult.Uncertain((int)written, "USB_WRITE_FAILED", $"WritePrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
-                else if (written != bytes.Length)
-                    result = TransportResult.Uncertain((int)written, "USB_WRITE_FAILED", "WritePrinter accepted only part of the receipt.");
-                else
-                    result = TransportResult.Success((int)written);
-            }
-            finally { Marshal.FreeHGlobal(unmanaged); }
+            result = WriteChunks(printer, bytes);
 
             if (!EndPagePrinter(printer) && result.Outcome == TransportOutcome.Succeeded)
                 result = TransportResult.Uncertain(result.BytesWritten, "USB_WRITE_FAILED", $"EndPagePrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
@@ -161,6 +163,88 @@ public sealed class WindowsSpoolerTransport(string printerName) : IPrinterTransp
             _ = ClosePrinter(printer);
         }
     }
+
+    private TransportResult SendFile(string privateFilePath, int expectedLength)
+    {
+        if (!OpenPrinter(printerName, out var printer, IntPtr.Zero))
+            return TransportResult.Failure("PRINTER_OFFLINE", $"OpenPrinter failed: {Marshal.GetLastWin32Error()}");
+        var documentStarted = false;
+        var pageStarted = false;
+        TransportResult result;
+        try
+        {
+            var info = new DocInfo1 { DocumentName = "YunQiao Receipt", DataType = "RAW", OutputFile = null };
+            if (StartDocPrinter(printer, 1, ref info) == 0)
+                return TransportResult.Failure("USB_WRITE_FAILED", $"StartDocPrinter failed: {Marshal.GetLastWin32Error()}");
+            documentStarted = true;
+            if (!StartPagePrinter(printer))
+                return TransportResult.Failure("USB_WRITE_FAILED", $"StartPagePrinter failed: {Marshal.GetLastWin32Error()}");
+            pageStarted = true;
+            using var input = new FileStream(privateFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, RawWriteChunkBytes, FileOptions.SequentialScan);
+            result = WriteChunks(printer, input, expectedLength);
+            if (!EndPagePrinter(printer) && result.Outcome == TransportOutcome.Succeeded)
+                result = TransportResult.Uncertain(result.BytesWritten, "USB_WRITE_FAILED", $"EndPagePrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
+            pageStarted = false;
+            if (!EndDocPrinter(printer) && result.Outcome == TransportOutcome.Succeeded)
+                result = TransportResult.Uncertain(result.BytesWritten, "USB_WRITE_FAILED", $"EndDocPrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
+            documentStarted = false;
+            return result;
+        }
+        finally
+        {
+            if (pageStarted) _ = EndPagePrinter(printer);
+            if (documentStarted) _ = EndDocPrinter(printer);
+            _ = ClosePrinter(printer);
+        }
+    }
+
+    private static TransportResult WriteChunks(IntPtr printer, byte[] bytes)
+    {
+        var total = 0;
+        while (total < bytes.Length)
+        {
+            var length = Math.Min(RawWriteChunkBytes, bytes.Length - total);
+            var unmanaged = Marshal.AllocHGlobal(length);
+            try
+            {
+                Marshal.Copy(bytes, total, unmanaged, length);
+                if (!WritePrinter(printer, unmanaged, length, out var written))
+                    return TransportResult.Uncertain(total + (int)written, "USB_WRITE_FAILED", $"WritePrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
+                if (written != length)
+                    return TransportResult.Uncertain(total + (int)written, "USB_WRITE_FAILED", "WritePrinter accepted only part of the receipt.");
+                total += (int)written;
+            }
+            finally { Marshal.FreeHGlobal(unmanaged); }
+        }
+        return TransportResult.Success(total);
+    }
+
+    private static TransportResult WriteChunks(IntPtr printer, Stream input, int expectedLength)
+    {
+        var buffer = new byte[RawWriteChunkBytes];
+        var total = 0;
+        while (true)
+        {
+            var count = input.Read(buffer, 0, buffer.Length);
+            if (count == 0) break;
+            var unmanaged = Marshal.AllocHGlobal(count);
+            try
+            {
+                Marshal.Copy(buffer, 0, unmanaged, count);
+                if (!WritePrinter(printer, unmanaged, count, out var written))
+                    return TransportResult.Uncertain(total + (int)written, "USB_WRITE_FAILED", $"WritePrinter outcome is unknown: {Marshal.GetLastWin32Error()}");
+                if (written != count)
+                    return TransportResult.Uncertain(total + (int)written, "USB_WRITE_FAILED", "WritePrinter accepted only part of the receipt.");
+                total += (int)written;
+            }
+            finally { Marshal.FreeHGlobal(unmanaged); }
+        }
+        return total == expectedLength
+            ? TransportResult.Success(total)
+            : TransportResult.Uncertain(total, "PAYLOAD_LENGTH_MISMATCH", "Artifact changed during spooler write.");
+    }
+
+    private const int RawWriteChunkBytes = 64 * 1024;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct DocInfo1

@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -11,6 +13,9 @@ public sealed class TerminalApiClient : IDisposable
     private readonly HttpClient _http;
     private readonly bool _ownsClient;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Regex Sha256Pattern = new("^[a-f0-9]{64}$", RegexOptions.CultureInvariant);
+    private const string BinaryPrintArtifactV1 = "BINARY_PRINT_ARTIFACT_V1";
+    private const int MaxBinaryArtifactBytes = 20 * 1024 * 1024;
 
     public TerminalApiClient(HttpClient? httpClient = null, Uri? baseUri = null)
     {
@@ -61,13 +66,14 @@ public sealed class TerminalApiClient : IDisposable
             appliedConfigVersion = Math.Max(0, appliedConfigVersion),
             appVersion = TerminalCompatibility.AppVersion,
             buildRevision = "windows-wpf-v1",
-            capabilities = new
+            capabilities = new Dictionary<string, object?>
             {
-                platform = "WINDOWS",
-                SERVER_ESC_POS_PAYLOAD_V1 = true,
-                RAW_PAYLOAD_PASSTHROUGH = true,
-                windowsVersion = Environment.OSVersion.VersionString,
-                channels = new[] { "LOCAL_USB_ESCPOS", "LOCAL_LAN_ESCPOS" },
+                ["platform"] = "WINDOWS",
+                ["SERVER_ESC_POS_PAYLOAD_V1"] = true,
+                ["RAW_PAYLOAD_PASSTHROUGH"] = true,
+                ["BINARY_PRINT_ARTIFACT_V1"] = true,
+                ["windowsVersion"] = Environment.OSVersion.VersionString,
+                ["channels"] = new[] { "LOCAL_USB_ESCPOS", "LOCAL_LAN_ESCPOS" },
             },
             activeJobIds = activeJobIds.Take(20).ToArray(),
         };
@@ -303,10 +309,15 @@ public sealed class TerminalApiClient : IDisposable
 
     private static ClaimedPrintJob ParseJob(JsonElement job, PrinterTransportKind transport)
     {
-        var snapshot = RequiredObject(job, "receiptSnapshot");
-        var snapshotJson = snapshot.GetRawText();
+        var id = NumericString(job, "id");
+        var payloadTransport = OptionalString(job, "payloadTransport", 64);
+        var binary = payloadTransport == BinaryPrintArtifactV1;
+        if (payloadTransport is not null && !binary) throw InvalidResponse("payloadTransport");
+        var snapshotJson = binary
+            ? string.Empty
+            : RequiredObject(job, "receiptSnapshot").GetRawText();
         var hash = RequiredString(job, "contentHash", 64).ToLowerInvariant();
-        if (!CanonicalJsonHash.Matches(snapshotJson, hash))
+        if (!binary && !CanonicalJsonHash.Matches(snapshotJson, hash))
             throw new TerminalApiException(200, "CONTENT_HASH_MISMATCH", "Authenticated receipt content hash mismatch.");
         var routeJson = RequiredObject(job, "route");
         var route = new RouteIdentity(
@@ -318,9 +329,12 @@ public sealed class TerminalApiClient : IDisposable
             ? BoundedInt32(current, "attemptNo", 1, int.MaxValue)
             : (int?)null;
         var renderProtocol = OptionalString(job, "renderProtocol", 64);
-        var payloadSha = OptionalString(job, "renderedPayloadSha256", 64);
+        var payloadSha = OptionalString(
+            job,
+            binary ? "payloadSha256" : "renderedPayloadSha256",
+            64);
         byte[]? payload = null;
-        if (renderProtocol == "ESC_POS_RASTER_V1")
+        if (!binary && renderProtocol == "ESC_POS_RASTER_V1")
         {
             var declaredLength = BoundedInt32(job, "renderedPayloadByteLength", 1, 20_000_000);
             payload = ServerPayloadIntegrity.DecodeBase64(
@@ -329,7 +343,7 @@ public sealed class TerminalApiClient : IDisposable
                 payloadSha);
         }
         var parsed = new ClaimedPrintJob(
-            NumericString(job, "id"),
+            id,
             NumericString(job, "merchantId"),
             NumericString(job, "printerId"),
             RequiredString(job, "status", 32),
@@ -340,7 +354,7 @@ public sealed class TerminalApiClient : IDisposable
             PositiveInt64(job, "leaseVersion"),
             RequiredInstant(job, "leaseExpiresAt"),
             hash,
-            BoundedInt32(job, "snapshotSchemaVersion", 1, 3),
+            binary ? 0 : BoundedInt32(job, "snapshotSchemaVersion", 1, 3),
             snapshotJson,
             route,
             RequiredString(routeJson, "adapter", 80),
@@ -348,12 +362,128 @@ public sealed class TerminalApiClient : IDisposable
             OptionalString(job, "canonicalTemplateVersion", 64),
             payload,
             payloadSha,
-            OptionalInt32(job, "renderedPayloadByteLength"),
+            OptionalInt32(job, binary ? "payloadByteLength" : "renderedPayloadByteLength"),
             OptionalInt32(job, "paperWidthMm"),
-            OptionalInt32(job, "widthDots"));
+            OptionalInt32(job, "widthDots"),
+            payloadTransport,
+            binary ? RequiredString(job, "artifactPath", 256) : null);
         if (parsed.PrinterId != route.PrinterId || parsed.Status is not ("CLAIMED" or "PRINTING"))
             throw InvalidResponse("job.route");
+        if (binary && (
+            parsed.ArtifactPath != $"/terminal/jobs/{id}/artifact" ||
+            parsed.RenderProtocol != "ESC_POS_RASTER_V1" ||
+            parsed.RenderedPayload is not null ||
+            parsed.RenderedPayloadByteLength is not (>= 1 and <= MaxBinaryArtifactBytes) ||
+            parsed.RenderedPayloadSha256 is null || !Sha256Pattern.IsMatch(parsed.RenderedPayloadSha256) ||
+            job.TryGetProperty("renderedPayloadBase64", out _) ||
+            job.TryGetProperty("receiptSnapshot", out _)))
+            throw InvalidResponse("binaryArtifact");
         return parsed;
+    }
+
+    public async Task<DownloadedPrintArtifact> DownloadArtifactAsync(
+        string terminalBearer,
+        ClaimedPrintJob job,
+        string privateCacheDirectory,
+        int retryCount,
+        CancellationToken cancellationToken)
+    {
+        if (job.PayloadTransport != BinaryPrintArtifactV1 || job.ArtifactPath is null ||
+            job.RenderedPayloadByteLength is not (>= 1 and <= MaxBinaryArtifactBytes) ||
+            job.RenderedPayloadSha256 is null || !Sha256Pattern.IsMatch(job.RenderedPayloadSha256))
+            throw InvalidResponse("binaryArtifact");
+        Directory.CreateDirectory(privateCacheDirectory);
+        var temporary = System.IO.Path.Combine(
+            privateCacheDirectory,
+            $"yq-{job.Id}-{Guid.NewGuid():N}.escpos");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            job.ArtifactPath.TrimStart('/'));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Terminal", terminalBearer);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+        request.Headers.Add("X-Terminal-App-Version", TerminalCompatibility.AppVersion);
+        request.Headers.Add(
+            "X-YunQiao-Artifact-Retry-Count",
+            Math.Clamp(retryCount, 0, 20).ToString());
+        try
+        {
+            using var response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+            if ((int)response.StatusCode is >= 300 and < 400)
+                throw new TerminalApiException((int)response.StatusCode, "REDIRECT_BLOCKED", "Artifact redirect blocked.");
+            if (!response.IsSuccessStatusCode)
+                throw new TerminalApiException((int)response.StatusCode, $"HTTP_{(int)response.StatusCode}", "Artifact request failed.");
+            if (response.Content.Headers.ContentType?.MediaType != "application/octet-stream" ||
+                response.Content.Headers.ContentEncoding.Count != 0)
+                throw InvalidResponse("artifactHeaders");
+            if (response.Content.Headers.ContentLength != job.RenderedPayloadByteLength)
+                throw new TerminalApiException((int)response.StatusCode, "PAYLOAD_LENGTH_MISMATCH", "Artifact Content-Length mismatch.");
+            var headerSha = Header(response, "X-YunQiao-Payload-SHA256")?.ToLowerInvariant();
+            if (headerSha != job.RenderedPayloadSha256.ToLowerInvariant() ||
+                Header(response, "X-YunQiao-Render-Protocol") != "ESC_POS_RASTER_V1")
+                throw new TerminalApiException((int)response.StatusCode, "PAYLOAD_SHA_MISMATCH", "Artifact identity header mismatch.");
+
+            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var output = new FileStream(
+                temporary,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[64 * 1024];
+            var actualLength = 0;
+            while (true)
+            {
+                var count = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (count == 0) break;
+                actualLength = checked(actualLength + count);
+                if (actualLength > job.RenderedPayloadByteLength)
+                    throw new TerminalApiException((int)response.StatusCode, "PAYLOAD_LENGTH_MISMATCH", "Artifact body exceeds declared length.");
+                digest.AppendData(buffer, 0, count);
+                await output.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+            }
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            if (actualLength != job.RenderedPayloadByteLength)
+                throw new TerminalApiException((int)response.StatusCode, "PAYLOAD_LENGTH_MISMATCH", "Artifact body length mismatch.");
+            var actualSha = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
+            if (actualSha != job.RenderedPayloadSha256.ToLowerInvariant())
+                throw new TerminalApiException((int)response.StatusCode, "PAYLOAD_SHA_MISMATCH", "Artifact SHA-256 mismatch.");
+            return new DownloadedPrintArtifact(temporary, actualLength, actualSha);
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or IOException ||
+            error is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            try { File.Delete(temporary); } catch { }
+            throw new TerminalApiException(0, "NETWORK_IO_ERROR", error.GetType().Name, error);
+        }
+        catch
+        {
+            try { File.Delete(temporary); } catch { }
+            throw;
+        }
+    }
+
+    public async Task ReportArtifactFailureAsync(
+        string terminalBearer,
+        ClaimedPrintJob job,
+        long leaseVersion,
+        string errorCode,
+        CancellationToken cancellationToken)
+    {
+        if (errorCode is not ("PAYLOAD_LENGTH_MISMATCH" or "PAYLOAD_SHA_MISMATCH"))
+            throw new ArgumentException("Artifact error code is invalid.", nameof(errorCode));
+        using var ignored = await RequestAsync(
+            HttpMethod.Post,
+            $"terminal/jobs/{job.Id}/artifact-failed",
+            terminalBearer,
+            "Terminal",
+            new { leaseVersion, errorCode },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static JsonObject FinishBody(ClaimedPrintJob job, int attemptNo, long leaseVersion, int bytesWritten)
@@ -439,6 +569,11 @@ public sealed class TerminalApiClient : IDisposable
         PositiveInt64(data, "bindingVersion"),
         RequiredBoolean(data, "enabled"),
         RequiredString(data, "status", 32));
+
+    private static string? Header(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values)
+            ? values.SingleOrDefault()
+            : null;
 
     private static string JobPath(string jobId, PrinterTransportKind transport, string action)
     {

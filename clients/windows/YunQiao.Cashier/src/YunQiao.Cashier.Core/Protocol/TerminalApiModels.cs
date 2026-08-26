@@ -3,8 +3,8 @@ namespace YunQiao.Cashier.Core.Protocol;
 public static class TerminalCompatibility
 {
     // The server feature gate accepts only this Android-compatible syntax.
-    public const string AppVersion = "2.0.0-rc13";
-    public const int AppVersionCode = 101;
+    public const string AppVersion = "2.0.0-rc14";
+    public const int AppVersionCode = 102;
 }
 
 public sealed record TerminalBootstrap(
@@ -93,13 +93,27 @@ public sealed record ClaimedPrintJob(
     string? RenderedPayloadSha256 = null,
     int? RenderedPayloadByteLength = null,
     int? PaperWidthMm = null,
-    int? WidthDots = null)
+    int? WidthDots = null,
+    string? PayloadTransport = null,
+    string? ArtifactPath = null)
 {
     public int ExpectedAttemptNo => CurrentAttemptNo ?? AttemptCount + 1;
 }
 
 public sealed record LeaseResult(long LeaseVersion, DateTimeOffset LeaseExpiresAt);
 public sealed record StartPrintingResult(int AttemptNo, long LeaseVersion, DateTimeOffset LeaseExpiresAt);
+
+public sealed class DownloadedPrintArtifact(string path, int byteLength, string sha256) : IDisposable
+{
+    public string Path { get; } = path;
+    public int ByteLength { get; } = byteLength;
+    public string Sha256 { get; } = sha256;
+
+    public void Dispose()
+    {
+        try { File.Delete(Path); } catch { }
+    }
+}
 
 public sealed class TerminalApiException(
     int statusCode,

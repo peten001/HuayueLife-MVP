@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Net.Http.Headers;
 using YunQiao.Cashier.Core.Protocol;
 
 namespace YunQiao.Cashier.Core.Tests;
@@ -61,6 +63,169 @@ public sealed class TerminalApiClientTests
         Assert.True(capabilities.GetProperty("spoolerQueueReady").GetBoolean());
         Assert.True(capabilities.GetProperty("appExecutionReady").GetBoolean());
     }
+
+    [Fact]
+    public async Task ReportsBinaryArtifactCapabilityInHeartbeat()
+    {
+        string? requestJson = null;
+        var handler = new StubHandler(async request =>
+        {
+            requestJson = await request.Content!.ReadAsStringAsync();
+            return JsonResponse("{\"code\":\"OK\",\"data\":{}}");
+        });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/api/v1/") };
+        using var api = new TerminalApiClient(http, http.BaseAddress);
+
+        await api.HeartbeatAsync(new string('t', 24), 1, 2, [], CancellationToken.None);
+
+        using var body = JsonDocument.Parse(Assert.IsType<string>(requestJson));
+        Assert.True(body.RootElement.GetProperty("capabilities")
+            .GetProperty("BINARY_PRINT_ARTIFACT_V1").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public async Task StreamsAndVerifiesLargeBinaryArtifactsToPrivateTempFiles(int megabytes)
+    {
+        var payload = Enumerable.Range(0, megabytes * 1024 * 1024)
+            .Select(value => (byte)(value % 251)).ToArray();
+        var sha = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var requests = new List<HttpRequestMessage>();
+        var handler = new StubHandler(request =>
+        {
+            requests.Add(request);
+            return Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/artifact", StringComparison.Ordinal)
+                ? BinaryResponse(payload, sha)
+                : JsonResponse(BinaryClaim(payload.Length, sha)));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/api/v1/") };
+        using var api = new TerminalApiClient(http, http.BaseAddress);
+        var route = new RouteIdentity("37", "windows-front-desk", 4, PrinterTransportKind.WindowsSpooler);
+        var cache = Path.Combine(Path.GetTempPath(), $"yq-windows-artifact-{Guid.NewGuid():N}");
+        try
+        {
+            var job = Assert.IsType<ClaimedPrintJob>(await api.ClaimJobAsync(
+                new string('t', 24), route, false, CancellationToken.None));
+            Assert.Equal("BINARY_PRINT_ARTIFACT_V1", job.PayloadTransport);
+            Assert.Null(job.RenderedPayload);
+
+            using (var artifact = await api.DownloadArtifactAsync(
+                new string('t', 24), job, cache, 0, CancellationToken.None))
+            {
+                Assert.Equal(payload.Length, artifact.ByteLength);
+                Assert.Equal(sha, artifact.Sha256);
+                Assert.Equal(payload, await File.ReadAllBytesAsync(artifact.Path));
+                Assert.Equal(Path.GetFullPath(cache), Path.GetDirectoryName(Path.GetFullPath(artifact.Path)));
+            }
+
+            Assert.Empty(Directory.GetFiles(cache));
+            Assert.Equal("ResponseHeadersRead", nameof(HttpCompletionOption.ResponseHeadersRead));
+            Assert.Equal("0", requests[1].Headers.GetValues("X-YunQiao-Artifact-Retry-Count").Single());
+        }
+        finally
+        {
+            if (Directory.Exists(cache)) Directory.Delete(cache, true);
+        }
+    }
+
+    [Fact]
+    public async Task ShaMismatchRefusesPrintArtifactAndDeletesTempFile()
+    {
+        var expected = Enumerable.Repeat((byte)0x2a, 1024 * 1024).ToArray();
+        var actual = expected.ToArray();
+        actual[^1] = 0x2b;
+        var sha = Convert.ToHexString(SHA256.HashData(expected)).ToLowerInvariant();
+        var handler = new StubHandler(request => Task.FromResult(
+            request.RequestUri!.AbsolutePath.EndsWith("/artifact", StringComparison.Ordinal)
+                ? BinaryResponse(actual, sha)
+                : JsonResponse(BinaryClaim(expected.Length, sha))));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/api/v1/") };
+        using var api = new TerminalApiClient(http, http.BaseAddress);
+        var route = new RouteIdentity("37", "windows-front-desk", 4, PrinterTransportKind.WindowsSpooler);
+        var cache = Path.Combine(Path.GetTempPath(), $"yq-windows-artifact-{Guid.NewGuid():N}");
+        try
+        {
+            var job = Assert.IsType<ClaimedPrintJob>(await api.ClaimJobAsync(
+                new string('t', 24), route, false, CancellationToken.None));
+            var error = await Assert.ThrowsAsync<TerminalApiException>(() =>
+                api.DownloadArtifactAsync(new string('t', 24), job, cache, 0, CancellationToken.None));
+            Assert.Equal("PAYLOAD_SHA_MISMATCH", error.ErrorCode);
+            Assert.Empty(Directory.GetFiles(cache));
+        }
+        finally
+        {
+            if (Directory.Exists(cache)) Directory.Delete(cache, true);
+        }
+    }
+
+    [Fact]
+    public async Task PartialArtifactDownloadCanRetryWithoutStartingAPrintAttempt()
+    {
+        var payload = Enumerable.Range(0, 5 * 1024 * 1024)
+            .Select(value => (byte)(value % 197)).ToArray();
+        var sha = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var artifactRequests = 0;
+        var paths = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            paths.Add(request.RequestUri!.AbsolutePath);
+            if (!request.RequestUri.AbsolutePath.EndsWith("/artifact", StringComparison.Ordinal))
+                return Task.FromResult(JsonResponse(BinaryClaim(payload.Length, sha)));
+            artifactRequests++;
+            return Task.FromResult(artifactRequests == 1
+                ? BinaryResponse(payload[..(payload.Length / 2)], sha, payload.Length)
+                : BinaryResponse(payload, sha));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/api/v1/") };
+        using var api = new TerminalApiClient(http, http.BaseAddress);
+        var route = new RouteIdentity("37", "windows-front-desk", 4, PrinterTransportKind.WindowsSpooler);
+        var cache = Path.Combine(Path.GetTempPath(), $"yq-windows-retry-{Guid.NewGuid():N}");
+        try
+        {
+            var job = Assert.IsType<ClaimedPrintJob>(await api.ClaimJobAsync(
+                new string('t', 24), route, false, CancellationToken.None));
+            var first = await Assert.ThrowsAsync<TerminalApiException>(() =>
+                api.DownloadArtifactAsync(new string('t', 24), job, cache, 0, CancellationToken.None));
+            Assert.Equal("PAYLOAD_LENGTH_MISMATCH", first.ErrorCode);
+
+            using var artifact = await api.DownloadArtifactAsync(
+                new string('t', 24), job, cache, 1, CancellationToken.None);
+            Assert.Equal(payload.Length, artifact.ByteLength);
+            Assert.Equal(sha, artifact.Sha256);
+            Assert.Equal(3, paths.Count);
+            Assert.DoesNotContain(paths, path => path.EndsWith("/printing", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(cache)) Directory.Delete(cache, true);
+        }
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, Encoding.UTF8, "application/json"),
+    };
+
+    private static HttpResponseMessage BinaryResponse(byte[] payload, string sha, int? declaredLength = null)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload),
+        };
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        response.Content.Headers.ContentLength = declaredLength ?? payload.Length;
+        response.Headers.TryAddWithoutValidation("X-YunQiao-Payload-SHA256", sha);
+        response.Headers.TryAddWithoutValidation("X-YunQiao-Render-Protocol", "ESC_POS_RASTER_V1");
+        response.Headers.CacheControl = new CacheControlHeaderValue { Private = true, NoStore = true };
+        return response;
+    }
+
+    private static string BinaryClaim(int byteLength, string sha) => $$"""
+        {"code":"OK","data":{"job":{"id":"267","jobId":"267","merchantId":"11","printerId":"37","status":"CLAIMED","receiptType":"ORDER_CUSTOMER","source":"TEST","attemptCount":0,"leaseVersion":1,"leaseExpiresAt":"2030-01-01T00:00:00Z","contentHash":"{{new string('a', 64)}}","canonicalTemplateVersion":"YQ_CANONICAL_RECEIPT_V1","renderProtocol":"ESC_POS_RASTER_V1","payloadTransport":"BINARY_PRINT_ARTIFACT_V1","payloadByteLength":{{byteLength}},"payloadSha256":"{{sha}}","artifactPath":"/terminal/jobs/267/artifact","paperWidthMm":80,"widthDots":576,"route":{"printerId":"37","localBindingId":"windows-front-desk","bindingVersion":4,"adapter":"WINDOWS_RAW_SPOOLER"}}}}
+        """;
 
     private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
     {
