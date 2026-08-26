@@ -5,6 +5,7 @@ import com.yunqiao.life.merchantterminal.model.BindingSyncStatus
 import com.yunqiao.life.merchantterminal.model.PrintExecutionState
 import com.yunqiao.life.merchantterminal.network.ClaimedV2PrintJob
 import com.yunqiao.life.merchantterminal.network.TerminalV2ApiClient
+import com.yunqiao.life.merchantterminal.network.DownloadedPrintArtifact
 import com.yunqiao.life.merchantterminal.network.V2ApiException
 import com.yunqiao.life.merchantterminal.network.V2RouteIdentity
 import com.yunqiao.life.merchantterminal.network.V2StartPrintingResponse
@@ -24,6 +25,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 
 enum class JobExecutionResult {
     SUCCEEDED,
@@ -41,22 +46,52 @@ class V2PrintJobExecutor(
     private val transportExecutor: LocalTransportExecutor,
     private val terminalBearer: () -> String?,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val artifactCacheDirectory: File = File(
+        System.getProperty("java.io.tmpdir"),
+        "yunqiao-private-print-artifacts",
+    ),
+    private val heartbeatDuringArtifactDownload: suspend (String) -> Unit = {},
 ) {
     suspend fun execute(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
     ): JobExecutionResult = withContext(Dispatchers.IO) {
         validateRoute(job, binding)
-        when (val registration = ledger.register(job)) {
-            is LedgerRegistration.DuplicateBlocked -> {
-                reportPending(registration.entry)
-                return@withContext JobExecutionResult.DUPLICATE_BLOCKED
+        val binary = if (job.payloadTransport == BINARY_PRINT_ARTIFACT_V1) {
+            val token = terminalBearer() ?: return@withContext JobExecutionResult.LEASE_PENDING
+            try {
+                downloadBinaryArtifact(token, job)
+            } catch (failure: ArtifactDownloadException) {
+                val error = failure.apiError
+                log(job, "PRINT_ARTIFACT_REFUSED errorCode=${error.errorCode}")
+                if (error.errorCode in INTEGRITY_FAILURE_CODES) {
+                    runCatching {
+                        api.reportArtifactFailure(
+                            terminalBearer = token,
+                            jobId = job.id,
+                            leaseVersion = failure.leaseVersion,
+                            errorCode = error.errorCode,
+                        )
+                    }
+                }
+                return@withContext JobExecutionResult.FAILED
             }
-            is LedgerRegistration.RequiresOperator -> {
-                reportPending(registration.entry)
-                return@withContext JobExecutionResult.REQUIRES_OPERATOR
+        } else null
+        try {
+            when (val registration = ledger.register(job)) {
+                is LedgerRegistration.DuplicateBlocked -> {
+                    reportPending(registration.entry)
+                    JobExecutionResult.DUPLICATE_BLOCKED
+                }
+                is LedgerRegistration.RequiresOperator -> {
+                    reportPending(registration.entry)
+                    JobExecutionResult.REQUIRES_OPERATOR
+                }
+                is LedgerRegistration.Ready ->
+                    executeReady(job, binding, registration.entry, binary)
             }
-            is LedgerRegistration.Ready -> executeReady(job, binding, registration.entry)
+        } finally {
+            binary?.artifact?.close()
         }
     }
 
@@ -69,9 +104,10 @@ class V2PrintJobExecutor(
         job: ClaimedV2PrintJob,
         binding: LocalPrinterBinding,
         claimedEntry: PrintExecutionLedgerEntity,
+        binary: PreparedBinaryArtifact?,
     ): JobExecutionResult {
         val bytes = try {
-            render(job, binding)
+            if (binary == null) render(job, binding) else null
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             return failControlledPreflight(job, claimedEntry, error)
@@ -82,7 +118,7 @@ class V2PrintJobExecutor(
                 terminalBearer = token,
                 jobId = job.id,
                 route = job.route,
-                leaseVersion = job.leaseVersion,
+                leaseVersion = binary?.leaseVersion ?: job.leaseVersion,
                 leaseMs = PRINT_LEASE_MS,
             )
         } catch (_: V2ApiException) {
@@ -101,14 +137,22 @@ class V2PrintJobExecutor(
         var printing = ledger.markPrinting(
             claimedEntry,
             leaseVersion = started.leaseVersion,
-            plannedBytes = bytes.size,
+            plannedBytes = binary?.artifact?.byteLength ?: requireNotNull(bytes).size,
         )
         return try {
             log(job, "PRINT_EXECUTE_START attemptNo=${started.attemptNo}")
-            val result = transportExecutor.printOnce(
-                binding,
-                PrintableDocument(bytes, "server-print-document"),
-            )
+            val result = if (binary != null) {
+                transportExecutor.printOnceFile(
+                    binding,
+                    binary.artifact.file,
+                    binary.artifact.byteLength,
+                )
+            } else {
+                transportExecutor.printOnce(
+                    binding,
+                    PrintableDocument(requireNotNull(bytes), "server-print-document"),
+                )
+            }
             when (result) {
                 is PrintResult.Success -> {
                     log(
@@ -188,6 +232,64 @@ class V2PrintJobExecutor(
             if (error is CancellationException) throw error
             JobExecutionResult.UNCERTAIN
         }
+    }
+
+    private suspend fun downloadBinaryArtifact(
+        token: String,
+        job: ClaimedV2PrintJob,
+    ): PreparedBinaryArtifact {
+        var leaseVersion = job.leaseVersion
+        var lastError: V2ApiException? = null
+        repeat(MAX_ARTIFACT_DOWNLOAD_ATTEMPTS) { retryCount ->
+            if (retryCount > 0) {
+                runCatching {
+                    api.extendLease(
+                        terminalBearer = token,
+                        jobId = job.id,
+                        route = job.route,
+                        leaseVersion = leaseVersion,
+                        leaseMs = PRINT_LEASE_MS,
+                    )
+                }.getOrNull()?.let { leaseVersion = it.leaseVersion }
+            }
+            try {
+                val artifact = coroutineScope {
+                    val pending = async(Dispatchers.IO) {
+                        api.downloadArtifact(
+                            terminalBearer = token,
+                            job = job,
+                            cacheDirectory = artifactCacheDirectory,
+                            retryCount = retryCount,
+                        )
+                    }
+                    while (true) {
+                        val completed = withTimeoutOrNull(ARTIFACT_KEEPALIVE_INTERVAL_MS) {
+                            pending.await()
+                        }
+                        if (completed != null) return@coroutineScope completed
+                        runCatching { heartbeatDuringArtifactDownload(token) }
+                        runCatching {
+                            api.extendLease(
+                                terminalBearer = token,
+                                jobId = job.id,
+                                route = job.route,
+                                leaseVersion = leaseVersion,
+                                leaseMs = PRINT_LEASE_MS,
+                            )
+                        }.getOrNull()?.let { leaseVersion = it.leaseVersion }
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    error("artifact download loop exited unexpectedly")
+                }
+                return PreparedBinaryArtifact(artifact, leaseVersion)
+            } catch (error: V2ApiException) {
+                lastError = error
+                if (error.errorCode !in SAFE_ARTIFACT_RETRY_CODES) {
+                    throw ArtifactDownloadException(error, leaseVersion)
+                }
+            }
+        }
+        throw ArtifactDownloadException(requireNotNull(lastError), leaseVersion)
     }
 
     private suspend fun failControlledPreflight(
@@ -355,5 +457,20 @@ class V2PrintJobExecutor(
 
     private companion object {
         const val PRINT_LEASE_MS = 120_000L
+        const val ARTIFACT_KEEPALIVE_INTERVAL_MS = 15_000L
+        const val MAX_ARTIFACT_DOWNLOAD_ATTEMPTS = 3
+        const val BINARY_PRINT_ARTIFACT_V1 = "BINARY_PRINT_ARTIFACT_V1"
+        val SAFE_ARTIFACT_RETRY_CODES = setOf("NETWORK_IO_ERROR", "PAYLOAD_LENGTH_MISMATCH")
+        val INTEGRITY_FAILURE_CODES = setOf("PAYLOAD_LENGTH_MISMATCH", "PAYLOAD_SHA_MISMATCH")
     }
 }
+
+private data class PreparedBinaryArtifact(
+    val artifact: DownloadedPrintArtifact,
+    val leaseVersion: Long,
+)
+
+private class ArtifactDownloadException(
+    val apiError: V2ApiException,
+    val leaseVersion: Long,
+) : RuntimeException(apiError)

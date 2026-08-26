@@ -11,11 +11,14 @@ import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.security.MessageDigest
 
 class TerminalV2ApiClient(
     private val endpointResolver: (String) -> String = ::productionEndpoint,
@@ -76,6 +79,7 @@ class TerminalV2ApiClient(
                         .put("platform", "ANDROID")
                         .put("SERVER_ESC_POS_PAYLOAD_V1", true)
                         .put("RAW_PAYLOAD_PASSTHROUGH", true)
+                        .put("BINARY_PRINT_ARTIFACT_V1", true)
                         .put("androidApiLevel", Build.VERSION.SDK_INT)
                         .put(
                             "channels",
@@ -430,10 +434,17 @@ class TerminalV2ApiClient(
         allowAutomatic: Boolean,
         transport: String = "UNKNOWN",
     ): ClaimedV2PrintJob {
-        val snapshot = job.requiredObject("receiptSnapshot")
+        val id = job.requiredNumericString("id")
+        val payloadTransport = job.optString("payloadTransport")
+            .takeIf { it.isNotBlank() && it != "null" }
+        val binary = payloadTransport == BINARY_PRINT_ARTIFACT_V1
+        if (payloadTransport != null && !binary) {
+            throw V2ApiException(200, "INVALID_RESPONSE", message = "Unsupported payload transport.")
+        }
+        val snapshot = if (binary) null else job.requiredObject("receiptSnapshot")
         val hash = job.requiredString("contentHash", 64).lowercase()
         require(SHA256.matches(hash))
-        if (!CanonicalReceiptHash.matches(snapshot, hash)) {
+        if (snapshot != null && !CanonicalReceiptHash.matches(snapshot, hash)) {
             throw V2ApiException(
                 200,
                 "CONTENT_HASH_MISMATCH",
@@ -456,8 +467,10 @@ class TerminalV2ApiClient(
             transport = transport,
         )
         val renderProtocol = job.optString("renderProtocol").takeIf { it.isNotBlank() && it != "null" }
-        val payloadSha = job.optString("renderedPayloadSha256").takeIf { it.isNotBlank() && it != "null" }
-        val payload = if (renderProtocol == "ESC_POS_RASTER_V1") {
+        val payloadSha = job.optString(
+            if (binary) "payloadSha256" else "renderedPayloadSha256",
+        ).takeIf { it.isNotBlank() && it != "null" }
+        val payload = if (!binary && renderProtocol == "ESC_POS_RASTER_V1") {
             ServerPayloadIntegrity.decodeBase64(
                 job.requiredString("renderedPayloadBase64", 20_000_000),
                 job.getInt("renderedPayloadByteLength"),
@@ -465,7 +478,7 @@ class TerminalV2ApiClient(
             )
         } else null
         return ClaimedV2PrintJob(
-            id = job.requiredNumericString("id"),
+            id = id,
             merchantId = job.requiredNumericString("merchantId"),
             printerId = job.requiredNumericString("printerId"),
             status = job.requiredString("status", 32),
@@ -478,22 +491,150 @@ class TerminalV2ApiClient(
             leaseVersion = job.requiredPositiveLong("leaseVersion"),
             leaseExpiresAt = job.requiredInstant("leaseExpiresAt"),
             contentHash = hash,
-            snapshotSchemaVersion = job.getInt("snapshotSchemaVersion"),
-            receiptSnapshotJson = snapshot.toString(),
+            snapshotSchemaVersion = snapshot?.getInt("schemaVersion") ?: 0,
+            receiptSnapshotJson = snapshot?.toString().orEmpty(),
             renderProtocol = renderProtocol,
             canonicalTemplateVersion = job.optString("canonicalTemplateVersion").takeIf { it.isNotBlank() && it != "null" },
             renderedPayload = payload,
             renderedPayloadSha256 = payloadSha,
-            renderedPayloadByteLength = job.optInt("renderedPayloadByteLength", -1).takeIf { it >= 0 },
+            renderedPayloadByteLength = job.optInt(
+                if (binary) "payloadByteLength" else "renderedPayloadByteLength",
+                -1,
+            ).takeIf { it >= 0 },
             paperWidthMm = job.optInt("paperWidthMm", -1).takeIf { it > 0 },
             widthDots = job.optInt("widthDots", -1).takeIf { it > 0 },
             route = routeIdentity,
             adapter = route.requiredString("adapter", 80),
+            payloadTransport = payloadTransport,
+            artifactPath = if (binary) {
+                job.requiredString("artifactPath", 256).also {
+                    require(it == "/terminal/jobs/$id/artifact")
+                }
+            } else null,
         ).also {
             require(it.printerId == routeIdentity.printerId)
             require(it.status == "CLAIMED" || it.status == "PRINTING")
-            require(it.snapshotSchemaVersion in 1..3)
+            require(binary || it.snapshotSchemaVersion in 1..3)
+            if (binary) {
+                require(it.renderProtocol == "ESC_POS_RASTER_V1")
+                require(it.renderedPayload == null)
+                require(it.renderedPayloadByteLength in 1..MAX_BINARY_ARTIFACT_BYTES)
+                require(it.renderedPayloadSha256?.matches(SHA256) == true)
+                require(!job.has("renderedPayloadBase64"))
+                require(!job.has("receiptSnapshot"))
+            }
         }
+    }
+
+    fun downloadArtifact(
+        terminalBearer: String,
+        job: ClaimedV2PrintJob,
+        cacheDirectory: File,
+        retryCount: Int,
+    ): DownloadedPrintArtifact {
+        require(job.payloadTransport == BINARY_PRINT_ARTIFACT_V1)
+        val artifactPath = requireNotNull(job.artifactPath)
+        val expectedLength = requireNotNull(job.renderedPayloadByteLength)
+        val expectedSha = requireNotNull(job.renderedPayloadSha256).lowercase()
+        require(expectedLength in 1..MAX_BINARY_ARTIFACT_BYTES)
+        require(SHA256.matches(expectedSha))
+        require(cacheDirectory.mkdirs() || cacheDirectory.isDirectory)
+        val temporary = File.createTempFile("yq-${job.id}-", ".escpos", cacheDirectory)
+        val startedAt = System.currentTimeMillis()
+        StartupTrace.event(
+            "PRINT_ARTIFACT_DOWNLOAD_STARTED jobId=${job.id} bytes=$expectedLength retryCount=${retryCount.coerceIn(0, 20)}",
+        )
+        val connection = connectionFactory(URL(endpointResolver(artifactPath))).apply {
+            requestMethod = "GET"
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = ARTIFACT_READ_TIMEOUT_MS
+            instanceFollowRedirects = false
+            useCaches = false
+            setRequestProperty("Accept", "application/octet-stream")
+            setRequestProperty("Authorization", "Terminal $terminalBearer")
+            setRequestProperty("X-Terminal-App-Version", BuildConfig.VERSION_NAME.take(64))
+            setRequestProperty("X-YunQiao-Artifact-Retry-Count", retryCount.coerceIn(0, 20).toString())
+        }
+        try {
+            val status = connection.responseCode
+            if (status in 300..399) {
+                throw V2ApiException(status, "REDIRECT_BLOCKED", message = "Redirect blocked.")
+            }
+            if (status !in 200..299) {
+                throw V2ApiException(status, "HTTP_$status", message = "Artifact request failed.")
+            }
+            if (connection.contentType?.substringBefore(';')?.trim() != "application/octet-stream" ||
+                !connection.contentEncoding.isNullOrBlank()
+            ) {
+                throw V2ApiException(status, "INVALID_RESPONSE", message = "Artifact response headers are invalid.")
+            }
+            if (connection.contentLengthLong != expectedLength.toLong()) {
+                throw V2ApiException(status, "PAYLOAD_LENGTH_MISMATCH", message = "Artifact Content-Length mismatch.")
+            }
+            val headerSha = connection.getHeaderField("X-YunQiao-Payload-SHA256")?.lowercase()
+            if (headerSha != expectedSha ||
+                connection.getHeaderField("X-YunQiao-Render-Protocol") != "ESC_POS_RASTER_V1"
+            ) {
+                throw V2ApiException(status, "PAYLOAD_SHA_MISMATCH", message = "Artifact identity header mismatch.")
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
+            var actualLength = 0L
+            connection.inputStream.use { input ->
+                FileOutputStream(temporary).buffered(64 * 1024).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        actualLength += count
+                        if (actualLength > expectedLength) {
+                            throw V2ApiException(status, "PAYLOAD_LENGTH_MISMATCH", message = "Artifact body exceeds declared length.")
+                        }
+                        digest.update(buffer, 0, count)
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            if (actualLength != expectedLength.toLong()) {
+                throw V2ApiException(status, "PAYLOAD_LENGTH_MISMATCH", message = "Artifact body length mismatch.")
+            }
+            val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
+            if (actualSha != expectedSha) {
+                throw V2ApiException(status, "PAYLOAD_SHA_MISMATCH", message = "Artifact SHA-256 mismatch.")
+            }
+            StartupTrace.event(
+                "PRINT_ARTIFACT_DOWNLOAD_COMPLETED jobId=${job.id} bytes=$actualLength durationMs=${System.currentTimeMillis() - startedAt} shaStatus=MATCH retryCount=${retryCount.coerceIn(0, 20)}",
+            )
+            return DownloadedPrintArtifact(temporary, expectedLength, actualSha)
+        } catch (error: Throwable) {
+            temporary.delete()
+            StartupTrace.event(
+                "PRINT_ARTIFACT_DOWNLOAD_FAILED jobId=${job.id} bytes=$expectedLength durationMs=${System.currentTimeMillis() - startedAt} shaStatus=${(error as? V2ApiException)?.errorCode ?: "IO_ERROR"} retryCount=${retryCount.coerceIn(0, 20)}",
+            )
+            if (error is V2ApiException) throw error
+            if (error is IOException) {
+                throw V2ApiException(0, "NETWORK_IO_ERROR", message = error.javaClass.simpleName, cause = error)
+            }
+            throw error
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun reportArtifactFailure(
+        terminalBearer: String,
+        jobId: String,
+        leaseVersion: Long,
+        errorCode: String,
+    ) {
+        require(errorCode in setOf("PAYLOAD_LENGTH_MISMATCH", "PAYLOAD_SHA_MISMATCH"))
+        request(
+            "POST",
+            "/terminal/jobs/${jobId.safePathSegment()}/artifact-failed",
+            terminalBearer,
+            JSONObject()
+                .put("leaseVersion", leaseVersion)
+                .put("errorCode", errorCode),
+        )
     }
 
     private fun finishJson(
@@ -694,7 +835,10 @@ class TerminalV2ApiClient(
         private val SHA256 = Regex("^[0-9a-f]{64}$")
         private const val CONNECT_TIMEOUT_MS = 8_000
         private const val READ_TIMEOUT_MS = 20_000
+        private const val ARTIFACT_READ_TIMEOUT_MS = 60_000
         private const val MAX_RESPONSE_CHARS = 1_048_576
+        private const val MAX_BINARY_ARTIFACT_BYTES = 20 * 1024 * 1024
+        private const val BINARY_PRINT_ARTIFACT_V1 = "BINARY_PRINT_ARTIFACT_V1"
 
         private fun productionEndpoint(path: String): String {
             require(path.startsWith("/") && !path.contains(".."))
@@ -702,6 +846,16 @@ class TerminalV2ApiClient(
             require(base.startsWith("https://"))
             return base + path
         }
+    }
+}
+
+data class DownloadedPrintArtifact(
+    val file: File,
+    val byteLength: Int,
+    val sha256: String,
+) : AutoCloseable {
+    override fun close() {
+        file.delete()
     }
 }
 

@@ -13,19 +13,21 @@ import com.yunqiao.life.merchantterminal.printing.PrinterCandidate
 import com.yunqiao.life.merchantterminal.printing.PrinterConnectionConfig
 import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
 import com.yunqiao.life.merchantterminal.printing.UsbPrinterException
+import com.yunqiao.life.merchantterminal.printing.StreamingPrinterAdapter
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+import java.io.File
 
 class UsbEscPosAdapter(
     context: Context,
     private val inspector: UsbDeviceInspector = UsbDeviceInspector(context),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val ownershipGate: UsbIoOwnershipGate = ProcessUsbIoOwnership.gate,
-) : PrinterAdapter {
+) : StreamingPrinterAdapter {
     private val usbManager = context.applicationContext.getSystemService(UsbManager::class.java)
     private val mutex = Mutex()
     private val ownershipToken = Any()
@@ -126,6 +128,44 @@ class UsbEscPosAdapter(
         }
     }
 
+    override suspend fun printFile(file: File, expectedLength: Int): PrintResult {
+        if (expectedLength <= 0 || file.length() != expectedLength.toLong()) {
+            return PrintResult.Failure(
+                code = UsbPrintErrorCode.TRANSPORT_CONFIG_MISMATCH,
+                technicalDetail = "Verified artifact file length changed.",
+                plannedBytes = expectedLength.coerceAtLeast(0),
+            )
+        }
+        var written = 0
+        file.inputStream().buffered(RAW_FILE_CHUNK_BYTES).use { input ->
+            val buffer = ByteArray(RAW_FILE_CHUNK_BYTES)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                when (val result = print(
+                    PrintableDocument(buffer.copyOf(count), "binary-artifact-chunk"),
+                )) {
+                    is PrintResult.Success -> written += result.writtenBytes
+                    is PrintResult.Failure -> return result.copy(
+                        plannedBytes = expectedLength,
+                        writtenBytes = written + result.writtenBytes,
+                    )
+                }
+            }
+        }
+        return if (written == expectedLength) {
+            PrintResult.Success(expectedLength, written)
+        } else {
+            PrintResult.Failure(
+                code = UsbPrintErrorCode.USB_PARTIAL_WRITE,
+                technicalDetail = "Artifact file changed during USB write.",
+                plannedBytes = expectedLength,
+                writtenBytes = written,
+                ioAttempted = written > 0,
+            )
+        }
+    }
+
     override suspend fun disconnect() {
         withContext(ioDispatcher) {
             try {
@@ -134,6 +174,10 @@ class UsbEscPosAdapter(
                 ownershipGate.release(ownershipToken)
             }
         }
+    }
+
+    private companion object {
+        const val RAW_FILE_CHUNK_BYTES = 64 * 1024
     }
 
     /** Called by the service/runtime owner when Android reports a USB detach. */

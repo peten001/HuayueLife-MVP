@@ -13,6 +13,7 @@ import com.yunqiao.life.merchantterminal.printing.usb.V2UsbBindingResolver
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.io.File
 
 fun interface TransportAdapterFactory {
     fun create(transport: PrinterTransport): PrinterAdapter
@@ -80,6 +81,50 @@ class LocalTransportExecutor(
                     )
                 }
                 adapter.print(document)
+            } finally {
+                adapter.disconnect()
+            }
+        }
+    }
+
+    suspend fun printOnceFile(
+        binding: LocalPrinterBinding,
+        file: File,
+        expectedLength: Int,
+    ): PrintResult {
+        if (binding.deletedPending || expectedLength <= 0 || file.length() != expectedLength.toLong()) {
+            return PrintResult.Failure(
+                code = UsbPrintErrorCode.TRANSPORT_CONFIG_MISMATCH,
+                technicalDetail = "Verified artifact file is unavailable or changed.",
+                plannedBytes = expectedLength.coerceAtLeast(0),
+            )
+        }
+        return ProcessPrintIoGate.withEndpoint(binding.transportConfig.endpointIdentity()) {
+            val adapter = adapterFactory.create(binding.transport)
+            try {
+                val config = resolveConfig(binding).getOrElse { error ->
+                    return@withEndpoint PrintResult.Failure(
+                        code = error.asPrintErrorCode(binding.transport),
+                        technicalDetail = error.message?.take(160),
+                        plannedBytes = expectedLength,
+                    )
+                }
+                val connected = adapter.connect(config)
+                if (connected.isFailure) {
+                    val error = connected.exceptionOrNull()
+                    return@withEndpoint PrintResult.Failure(
+                        code = error.asPrintErrorCode(binding.transport),
+                        technicalDetail = error?.javaClass?.simpleName,
+                        plannedBytes = expectedLength,
+                    )
+                }
+                val streaming = adapter as? StreamingPrinterAdapter
+                    ?: return@withEndpoint PrintResult.Failure(
+                        code = UsbPrintErrorCode.TRANSPORT_CONFIG_MISMATCH,
+                        technicalDetail = "Binary artifact adapter is not stream-capable.",
+                        plannedBytes = expectedLength,
+                    )
+                streaming.printFile(file, expectedLength)
             } finally {
                 adapter.disconnect()
             }

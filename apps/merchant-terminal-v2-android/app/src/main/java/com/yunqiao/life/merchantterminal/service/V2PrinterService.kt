@@ -60,6 +60,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 class V2PrinterService : Service() {
@@ -112,11 +113,24 @@ class V2PrinterService : Service() {
         val ledger = PrintExecutionLedger(repository.executionDao())
         val transportExecutor = LocalTransportExecutor(application)
         val usbDeviceInspector = UsbDeviceInspector(application)
+        var heartbeatSequence = 0L
+        var lastHeartbeatAt = 0L
+        var lastUsbStatusRefreshAt = 0L
+        var lastConfigVersion = 0L
         val executor = V2PrintJobExecutor(
             api = graph.api,
             ledger = ledger,
             transportExecutor = transportExecutor,
             terminalBearer = { graph.credentialStore.readCredential()?.token },
+            artifactCacheDirectory = File(application.cacheDir, "print-artifacts"),
+            heartbeatDuringArtifactDownload = { token ->
+                graph.api.heartbeat(
+                    terminalBearer = token,
+                    heartbeatSequence = heartbeatSequence++,
+                    appliedConfigVersion = lastConfigVersion,
+                )
+                lastHeartbeatAt = System.currentTimeMillis()
+            },
         )
         val orchestrator = PrintJobOrchestrator()
         val usbJobApi = TerminalUsbJobApiAdapter(graph.api, executor)
@@ -133,10 +147,6 @@ class V2PrinterService : Service() {
             },
         )
         executor.recoverInterrupted()
-        var heartbeatSequence = 0L
-        var lastHeartbeatAt = 0L
-        var lastUsbStatusRefreshAt = 0L
-        var lastConfigVersion = 0L
         var networkBackoffMs = 2_000L
         val credentialRefreshGate = CredentialRefreshGate()
         try {

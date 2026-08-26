@@ -127,6 +127,8 @@ data class ClaimedV2PrintJob(
     val renderedPayloadByteLength: Int? = null,
     val paperWidthMm: Int? = null,
     val widthDots: Int? = null,
+    val payloadTransport: String? = null,
+    val artifactPath: String? = null,
 ) {
     val expectedAttemptNo: Int
         get() = currentAttemptNo ?: attemptCount + 1

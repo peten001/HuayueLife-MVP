@@ -2,6 +2,7 @@ package com.yunqiao.life.merchantterminal.network
 
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import com.yunqiao.life.merchantterminal.model.LocalPrinterBinding
 import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.model.PhysicalStatus
@@ -10,11 +11,19 @@ import com.yunqiao.life.merchantterminal.printing.PaperWidth
 import com.yunqiao.life.merchantterminal.security.CanonicalReceiptHash
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNotNull
 import org.junit.Test
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlin.io.path.createTempDirectory
 
 class TerminalV2ApiClientTest {
     @Test
@@ -67,6 +76,11 @@ class TerminalV2ApiClientTest {
             assertEquals("/terminal/config", configRequest.path)
             assertEquals("Terminal $terminalBearer", heartbeat.getHeader("Authorization"))
             assertEquals("Terminal $terminalBearer", configRequest.getHeader("Authorization"))
+            assertTrue(
+                JSONObject(heartbeat.body.readUtf8())
+                    .getJSONObject("capabilities")
+                    .getBoolean("BINARY_PRINT_ARTIFACT_V1"),
+            )
         }
     }
 
@@ -514,6 +528,171 @@ class TerminalV2ApiClientTest {
         }
     }
 
+    @Test
+    fun binaryClaimStreamsAndVerifiesFullCapacityMatrixInPrivateTempFiles() {
+        listOf(
+            100 * 1024,
+            500 * 1024,
+            1 * 1024 * 1024,
+            2 * 1024 * 1024,
+            5 * 1024 * 1024,
+            10 * 1024 * 1024,
+        ).forEach { byteLength ->
+            MockWebServer().use { server ->
+                val payload = ByteArray(byteLength) { (it % 251).toByte() }
+                val sha = sha256(payload)
+                server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+                server.enqueue(binaryResponse(payload, sha))
+                val cache = createTempDirectory("yq-artifact-test-").toFile()
+                try {
+                    val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+                    val job = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
+
+                    assertEquals("BINARY_PRINT_ARTIFACT_V1", job.payloadTransport)
+                    assertEquals(null, job.renderedPayload)
+                    assertEquals(payload.size, job.renderedPayloadByteLength)
+                    val artifact = client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+
+                    assertEquals(cache.canonicalFile, artifact.file.parentFile?.canonicalFile)
+                    assertEquals(payload.size, artifact.byteLength)
+                    assertEquals(sha, artifact.sha256)
+                    assertArrayEquals(payload, artifact.file.readBytes())
+                    artifact.close()
+                    assertFalse(artifact.file.exists())
+                    assertEquals("/terminal/jobs/claim", server.takeRequest().path)
+                    assertEquals("/terminal/jobs/267/artifact", server.takeRequest().path)
+                } finally {
+                    cache.deleteRecursively()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun shaMismatchRefusesArtifactAndCleansTemporaryFile() {
+        MockWebServer().use { server ->
+            val expected = ByteArray(1024 * 1024) { 0x2a }
+            val actual = expected.copyOf().also { it[it.lastIndex] = 0x2b }
+            val sha = sha256(expected)
+            server.enqueue(okData(JSONObject().put("job", binaryUsbJob(expected.size, sha))))
+            server.enqueue(binaryResponse(actual, sha))
+            val cache = createTempDirectory("yq-artifact-mismatch-").toFile()
+            try {
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+                val job = requireNotNull(client.claim(TERMINAL_TOKEN, false))
+                val error = runCatching {
+                    client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+                }.exceptionOrNull() as V2ApiException
+
+                assertEquals("PAYLOAD_SHA_MISMATCH", error.errorCode)
+                assertTrue(cache.listFiles().orEmpty().isEmpty())
+            } finally {
+                cache.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun artifactIntegrityFailureUsesMinimalControlReportWithoutPayload() {
+        MockWebServer().use { server ->
+            server.enqueue(okData(JSONObject().put("jobId", "267").put("status", "FAILED")))
+            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+            client.reportArtifactFailure(
+                TERMINAL_TOKEN,
+                "267",
+                3,
+                "PAYLOAD_SHA_MISMATCH",
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/terminal/jobs/267/artifact-failed", request.path)
+            val body = JSONObject(request.body.readUtf8())
+            assertEquals(setOf("leaseVersion", "errorCode"), body.keys().asSequence().toSet())
+            assertFalse(body.has("payload"))
+            assertFalse(body.has("renderedPayloadBase64"))
+        }
+    }
+
+    @Test
+    fun partialDownloadCanRetryWithoutChangingTheClaimOrCreatingAPrintAttempt() {
+        MockWebServer().use { server ->
+            val payload = ByteArray(5 * 1024 * 1024) { (it % 197).toByte() }
+            val sha = sha256(payload)
+            server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+            server.enqueue(
+                binaryResponse(payload.copyOf(payload.size / 2), sha)
+                    .setHeader("Content-Length", payload.size),
+            )
+            server.enqueue(
+                binaryResponse(payload, sha)
+                    .setHeadersDelay(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .throttleBody(64 * 1024, 10, java.util.concurrent.TimeUnit.MILLISECONDS),
+            )
+            val cache = createTempDirectory("yq-artifact-retry-").toFile()
+            try {
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+                val job = requireNotNull(client.claim(TERMINAL_TOKEN, false))
+                val first = runCatching {
+                    client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+                }.exceptionOrNull() as V2ApiException
+                assertTrue(first.errorCode in setOf("NETWORK_IO_ERROR", "PAYLOAD_LENGTH_MISMATCH"))
+                assertTrue(cache.listFiles().orEmpty().isEmpty())
+
+                client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 1).use { artifact ->
+                    assertEquals(payload.size, artifact.byteLength)
+                    assertEquals(sha, artifact.sha256)
+                }
+                assertTrue(cache.listFiles().orEmpty().isEmpty())
+                assertEquals(3, server.requestCount)
+            } finally {
+                cache.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun slowPrivateInterfaceDownloadDoesNotStarveHeartbeat() {
+        val address = siteLocalIpv4()
+        assumeNotNull(address)
+        val server = MockWebServer()
+        server.start(InetAddress.getByName("0.0.0.0"), 0)
+        val payload = ByteArray(5 * 1024 * 1024) { (it % 181).toByte() }
+        val sha = sha256(payload)
+        server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+        server.enqueue(
+            binaryResponse(payload, sha)
+                .throttleBody(64 * 1024, 125, TimeUnit.MILLISECONDS),
+        )
+        server.enqueue(okData(JSONObject()))
+        val cache = createTempDirectory("yq-artifact-private-net-").toFile()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val baseUrl = "http://${requireNotNull(address).hostAddress}:${server.port}"
+            val client = TerminalV2ApiClient(endpointResolver = { path -> "$baseUrl$path" })
+            val job = requireNotNull(client.claim(TERMINAL_TOKEN, false))
+            val download = executor.submit<DownloadedPrintArtifact> {
+                client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+            }
+
+            Thread.sleep(400)
+            client.heartbeat(TERMINAL_TOKEN, heartbeatSequence = 9, appliedConfigVersion = 7)
+
+            assertFalse(download.isDone)
+            download.get(20, TimeUnit.SECONDS).use { artifact ->
+                assertEquals(payload.size, artifact.byteLength)
+                assertEquals(sha, artifact.sha256)
+            }
+            assertEquals("/terminal/jobs/claim", server.takeRequest().path)
+            assertEquals("/terminal/jobs/267/artifact", server.takeRequest().path)
+            assertEquals("/terminal/heartbeat", server.takeRequest().path)
+        } finally {
+            executor.shutdownNow()
+            server.shutdown()
+            cache.deleteRecursively()
+        }
+    }
+
     private fun parseLanJob(
         client: TerminalV2ApiClient,
         server: MockWebServer,
@@ -530,6 +709,20 @@ class TerminalV2ApiClientTest {
         bindingVersion = 1,
         transport = "LAN",
     )
+
+    private fun siteLocalIpv4(): Inet4Address? {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+        while (interfaces.hasMoreElements()) {
+            val addresses = interfaces.nextElement().inetAddresses
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                if (address is Inet4Address && address.isSiteLocalAddress && !address.isLoopbackAddress) {
+                    return address
+                }
+            }
+        }
+        return null
+    }
 
     private fun lanJobJson(): JSONObject {
         val snapshot = JSONObject().put("schemaVersion", 1)
@@ -622,6 +815,46 @@ class TerminalV2ApiClientTest {
             .put("paperWidthMm", 80)
             .put("widthDots", 576)
     }
+
+    private fun binaryUsbJob(byteLength: Int, sha: String): JSONObject = JSONObject()
+        .put("id", "267")
+        .put("jobId", "267")
+        .put("merchantId", "11")
+        .put("printerId", "37")
+        .put("status", "CLAIMED")
+        .put("receiptType", "ORDER_CUSTOMER")
+        .put("source", "TEST")
+        .put("attemptCount", 0)
+        .put("leaseVersion", 1)
+        .put("leaseExpiresAt", "2030-01-01T00:00:00Z")
+        .put("contentHash", "a".repeat(64))
+        .put("canonicalTemplateVersion", "YQ_CANONICAL_RECEIPT_V1")
+        .put("renderProtocol", "ESC_POS_RASTER_V1")
+        .put("payloadTransport", "BINARY_PRINT_ARTIFACT_V1")
+        .put("payloadByteLength", byteLength)
+        .put("payloadSha256", sha)
+        .put("artifactPath", "/terminal/jobs/267/artifact")
+        .put("paperWidthMm", 80)
+        .put("widthDots", 576)
+        .put(
+            "route",
+            JSONObject()
+                .put("printerId", "37")
+                .put("localBindingId", "123e4567-e89b-12d3-a456-426614174000")
+                .put("bindingVersion", 4)
+                .put("adapter", "ANDROID_USB_ESCPOS"),
+        )
+
+    private fun binaryResponse(payload: ByteArray, sha: String) = MockResponse()
+        .setHeader("Content-Type", "application/octet-stream")
+        .setHeader("Cache-Control", "private, no-store")
+        .setHeader("X-YunQiao-Payload-SHA256", sha)
+        .setHeader("X-YunQiao-Render-Protocol", "ESC_POS_RASTER_V1")
+        .setBody(Buffer().write(payload))
+
+    private fun sha256(payload: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(payload)
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     private fun okData(data: JSONObject) = MockResponse().setBody(
         JSONObject().put("code", "OK").put("data", data).toString(),

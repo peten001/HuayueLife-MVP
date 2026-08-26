@@ -8,6 +8,7 @@ import com.yunqiao.life.merchantterminal.printing.PrinterCandidate
 import com.yunqiao.life.merchantterminal.printing.PrinterChannel
 import com.yunqiao.life.merchantterminal.printing.PrinterConnectionConfig
 import com.yunqiao.life.merchantterminal.printing.UsbPrintErrorCode
+import com.yunqiao.life.merchantterminal.printing.StreamingPrinterAdapter
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -25,6 +26,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
+import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 
 sealed interface NetworkWriteOutcome {
@@ -75,17 +77,20 @@ private class SocketChannelLanConnection(
     private val channel: SocketChannel,
 ) : LanConnection {
     override fun writeOnce(bytes: ByteArray, timeoutMs: Int): NetworkWriteOutcome {
-        val buffer = ByteBuffer.wrap(bytes)
         val deadline = System.nanoTime() + timeoutMs * 1_000_000L
         var attempted = false
+        var writtenBytes = 0
         return try {
             Selector.open().use { selector ->
                 channel.register(selector, SelectionKey.OP_WRITE)
-                while (buffer.hasRemaining()) {
+                while (writtenBytes < bytes.size) {
+                    val chunkLength = minOf(RAW_WRITE_CHUNK_BYTES, bytes.size - writtenBytes)
+                    val buffer = ByteBuffer.wrap(bytes, writtenBytes, chunkLength)
+                    while (buffer.hasRemaining()) {
                     val remainingMs = ((deadline - System.nanoTime()) / 1_000_000L)
                     if (remainingMs <= 0) {
                         return NetworkWriteOutcome.Failed(
-                            writtenBytes = buffer.position(),
+                            writtenBytes = writtenBytes,
                             ioAttempted = attempted,
                             timedOut = true,
                             detail = "LAN write deadline exceeded.",
@@ -96,18 +101,20 @@ private class SocketChannelLanConnection(
                     val count = channel.write(buffer)
                     if (count < 0) {
                         return NetworkWriteOutcome.Failed(
-                            writtenBytes = buffer.position(),
+                            writtenBytes = writtenBytes,
                             ioAttempted = true,
                             timedOut = false,
                             detail = "LAN socket closed during write.",
                         )
                     }
+                    writtenBytes += count
+                    }
                 }
             }
-            NetworkWriteOutcome.Complete(buffer.position())
+            NetworkWriteOutcome.Complete(writtenBytes)
         } catch (error: Throwable) {
             NetworkWriteOutcome.Failed(
-                writtenBytes = buffer.position(),
+                writtenBytes = writtenBytes,
                 ioAttempted = attempted,
                 timedOut = error is java.net.SocketTimeoutException,
                 detail = error.javaClass.simpleName.take(80),
@@ -118,13 +125,17 @@ private class SocketChannelLanConnection(
     override fun close() {
         channel.close()
     }
+
+    private companion object {
+        const val RAW_WRITE_CHUNK_BYTES = 64 * 1024
+    }
 }
 
 class LanEscPosAdapter(
     private val discovery: LanPrinterDiscovery = LanPrinterDiscovery(),
     private val connectionFactory: LanConnectionFactory = SocketChannelLanConnectionFactory(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : PrinterAdapter {
+) : StreamingPrinterAdapter {
     private val mutex = Mutex()
     private var connection: LanConnection? = null
 
@@ -175,6 +186,44 @@ class LanEscPosAdapter(
             }
         }
 
+    override suspend fun printFile(file: File, expectedLength: Int): PrintResult {
+        if (expectedLength <= 0 || file.length() != expectedLength.toLong()) {
+            return PrintResult.Failure(
+                code = UsbPrintErrorCode.TRANSPORT_CONFIG_MISMATCH,
+                technicalDetail = "Verified artifact file length changed.",
+                plannedBytes = expectedLength.coerceAtLeast(0),
+            )
+        }
+        var written = 0
+        file.inputStream().buffered(RAW_FILE_CHUNK_BYTES).use { input ->
+            val buffer = ByteArray(RAW_FILE_CHUNK_BYTES)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                when (val result = print(
+                    PrintableDocument(buffer.copyOf(count), "binary-artifact-chunk"),
+                )) {
+                    is PrintResult.Success -> written += result.writtenBytes
+                    is PrintResult.Failure -> return result.copy(
+                        plannedBytes = expectedLength,
+                        writtenBytes = written + result.writtenBytes,
+                    )
+                }
+            }
+        }
+        return if (written == expectedLength) {
+            PrintResult.Success(expectedLength, written)
+        } else {
+            PrintResult.Failure(
+                code = UsbPrintErrorCode.LAN_WRITE_FAILED,
+                technicalDetail = "Artifact file changed during LAN write.",
+                plannedBytes = expectedLength,
+                writtenBytes = written,
+                ioAttempted = written > 0,
+            )
+        }
+    }
+
     override suspend fun disconnect() {
         withContext(ioDispatcher) {
             mutex.withLock {
@@ -182,6 +231,10 @@ class LanEscPosAdapter(
                 connection = null
             }
         }
+    }
+
+    private companion object {
+        const val RAW_FILE_CHUNK_BYTES = 64 * 1024
     }
 }
 

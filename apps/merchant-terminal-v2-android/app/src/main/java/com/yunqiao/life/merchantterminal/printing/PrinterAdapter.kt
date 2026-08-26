@@ -1,11 +1,17 @@
 package com.yunqiao.life.merchantterminal.printing
 
+import java.io.File
+
 /** A single-write transport contract shared by USB, LAN and Classic Bluetooth ESC/POS. */
 interface PrinterAdapter {
     suspend fun discover(): List<PrinterCandidate>
     suspend fun connect(config: PrinterConnectionConfig): Result<Unit>
     suspend fun print(document: PrintableDocument): PrintResult
     suspend fun disconnect()
+}
+
+interface StreamingPrinterAdapter : PrinterAdapter {
+    suspend fun printFile(file: File, expectedLength: Int): PrintResult
 }
 
 enum class PrinterChannel {
