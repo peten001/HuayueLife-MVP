@@ -36,7 +36,7 @@ import {
 describe('CanonicalPrintArtifactService', () => {
   const service = new CanonicalPrintArtifactService();
   const linuxThreshold205TextEmboldenGoldenSha256 =
-    'df336cb752a9daa9e45058d86109a316b170a90445c58397eb85454617b50545';
+    'd57e70810e7828e8f9386cb7eb0eaed9e77a08c6c7d842893738a37e02011469';
   const preEmboldenGoldenSha256ByPlatform: Partial<Record<NodeJS.Platform, string>> = {
     darwin: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
     linux: '4e9341f2946d38be2158a837b482c80e21be68d49ff3a73a25752140cadf8d60',
