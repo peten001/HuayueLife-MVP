@@ -14,6 +14,7 @@ const LARGE_RECEIPT_FIXTURE_BYTES = [
   1 * 1024 * 1024,
   2 * 1024 * 1024,
   5 * 1024 * 1024,
+  10 * 1024 * 1024,
 ] as const;
 
 describe('terminal connector controller contract', () => {

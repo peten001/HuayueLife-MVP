@@ -655,41 +655,43 @@ class TerminalV2ApiClientTest {
     fun slowPrivateInterfaceDownloadDoesNotStarveHeartbeat() {
         val address = siteLocalIpv4()
         assumeNotNull(address)
-        val server = MockWebServer()
-        server.start(InetAddress.getByName("0.0.0.0"), 0)
-        val payload = ByteArray(5 * 1024 * 1024) { (it % 181).toByte() }
-        val sha = sha256(payload)
-        server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
-        server.enqueue(
-            binaryResponse(payload, sha)
-                .throttleBody(64 * 1024, 125, TimeUnit.MILLISECONDS),
-        )
-        server.enqueue(okData(JSONObject()))
-        val cache = createTempDirectory("yq-artifact-private-net-").toFile()
-        val executor = Executors.newSingleThreadExecutor()
-        try {
-            val baseUrl = "http://${requireNotNull(address).hostAddress}:${server.port}"
-            val client = TerminalV2ApiClient(endpointResolver = { path -> "$baseUrl$path" })
-            val job = requireNotNull(client.claim(TERMINAL_TOKEN, false))
-            val download = executor.submit<DownloadedPrintArtifact> {
-                client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
-            }
+        listOf(5, 10).forEach { megabytes ->
+            val server = MockWebServer()
+            server.start(InetAddress.getByName("0.0.0.0"), 0)
+            val payload = ByteArray(megabytes * 1024 * 1024) { (it % 181).toByte() }
+            val sha = sha256(payload)
+            server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+            server.enqueue(
+                binaryResponse(payload, sha)
+                    .throttleBody(64 * 1024, 125, TimeUnit.MILLISECONDS),
+            )
+            server.enqueue(okData(JSONObject()))
+            val cache = createTempDirectory("yq-artifact-private-net-").toFile()
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val baseUrl = "http://${requireNotNull(address).hostAddress}:${server.port}"
+                val client = TerminalV2ApiClient(endpointResolver = { path -> "$baseUrl$path" })
+                val job = requireNotNull(client.claim(TERMINAL_TOKEN, false))
+                val download = executor.submit<DownloadedPrintArtifact> {
+                    client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+                }
 
-            Thread.sleep(400)
-            client.heartbeat(TERMINAL_TOKEN, heartbeatSequence = 9, appliedConfigVersion = 7)
+                Thread.sleep(400)
+                client.heartbeat(TERMINAL_TOKEN, heartbeatSequence = 9, appliedConfigVersion = 7)
 
-            assertFalse(download.isDone)
-            download.get(20, TimeUnit.SECONDS).use { artifact ->
-                assertEquals(payload.size, artifact.byteLength)
-                assertEquals(sha, artifact.sha256)
+                assertFalse(download.isDone)
+                download.get(35, TimeUnit.SECONDS).use { artifact ->
+                    assertEquals(payload.size, artifact.byteLength)
+                    assertEquals(sha, artifact.sha256)
+                }
+                assertEquals("/terminal/jobs/claim", server.takeRequest().path)
+                assertEquals("/terminal/jobs/267/artifact", server.takeRequest().path)
+                assertEquals("/terminal/heartbeat", server.takeRequest().path)
+            } finally {
+                executor.shutdownNow()
+                server.shutdown()
+                cache.deleteRecursively()
             }
-            assertEquals("/terminal/jobs/claim", server.takeRequest().path)
-            assertEquals("/terminal/jobs/267/artifact", server.takeRequest().path)
-            assertEquals("/terminal/heartbeat", server.takeRequest().path)
-        } finally {
-            executor.shutdownNow()
-            server.shutdown()
-            cache.deleteRecursively()
         }
     }
 
