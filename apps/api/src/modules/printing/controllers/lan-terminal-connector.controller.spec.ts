@@ -12,6 +12,12 @@ import { ANDROID_LAN_ESCPOS_ADAPTER } from '../types/lan-terminal-binding';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { LanTerminalConnectorController } from './lan-terminal-connector.controller';
 
+const LARGE_RECEIPT_FIXTURE_BYTES = [
+  1 * 1024 * 1024,
+  2 * 1024 * 1024,
+  5 * 1024 * 1024,
+] as const;
+
 const terminal = {
   id: 67n,
   merchantId: 7n,
@@ -208,22 +214,27 @@ describe('LanTerminalConnectorController contract', () => {
     expect(attempts.markFailed).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['success', 'SUCCEEDED', 'markSucceeded'],
-    ['failure', 'RETRY_WAIT', 'markFailed'],
-  ] as const)(
-    'keeps LAN %s acknowledgements bounded and free of print artifacts',
-    async (_label, status, method) => {
+  it.each(
+    LARGE_RECEIPT_FIXTURE_BYTES.flatMap((fixtureBytes) => [
+      ['success', 'SUCCEEDED', 'markSucceeded', fixtureBytes] as const,
+      ['failure', 'RETRY_WAIT', 'markFailed', fixtureBytes] as const,
+    ]),
+  )(
+    'keeps LAN %s acknowledgements bounded with a %i-byte print fixture',
+    async (_label, status, method, fixtureBytes) => {
       const { controller, attempts } = createController();
       attempts[method].mockResolvedValue({
-        id: 1136n,
+        jobId: '1136',
         status,
-        renderedPayload: Buffer.alloc(1_100_000),
-        renderedPayloadBase64: 'x'.repeat(1_100_000),
+        renderedPayload: Buffer.alloc(fixtureBytes),
+        renderedPayloadBase64: 'x'.repeat(fixtureBytes),
         receiptSnapshot: {
           document: 'PrintDocument',
-          body: 'x'.repeat(1_100_000),
+          body: 'x'.repeat(fixtureBytes),
         },
+        printDocument: { body: 'x'.repeat(fixtureBytes) },
+        artifact: Buffer.alloc(fixtureBytes),
+        payloadBase64: 'x'.repeat(fixtureBytes),
       });
       const response =
         method === 'markSucceeded'
@@ -251,12 +262,8 @@ describe('LanTerminalConnectorController contract', () => {
             });
 
       expect(response).toEqual({ jobId: '1136', status });
-      const serialized = JSON.stringify(response);
-      expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
       expect(Object.keys(response).sort()).toEqual(['jobId', 'status']);
-      expect(serialized).not.toMatch(
-        /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
-      );
+      assertBoundedControlResponse(response);
     },
   );
 
@@ -276,50 +283,77 @@ describe('LanTerminalConnectorController contract', () => {
     expect(bindings.reportStatus).not.toHaveBeenCalled();
   });
 
-  it('keeps LAN lease renewal responses bounded and free of print artifacts', async () => {
-    const leaseExpiresAt = new Date('2026-08-25T12:00:00.000Z');
-    const { controller, attempts } = createController();
-    attempts.extendLease.mockResolvedValue({
-      id: 1136n,
-      status: 'CLAIMED',
-      leaseVersion: 9,
-      leaseExpiresAt,
-      renderedPayload: Buffer.alloc(1_100_000),
-      renderedPayloadBase64: 'x'.repeat(1_100_000),
-      receiptSnapshot: { document: 'PrintDocument', body: 'x'.repeat(1_100_000) },
+  it('keeps LAN printer-status responses as bounded control data', async () => {
+    const { controller, bindings } = createController();
+    bindings.reportStatus.mockResolvedValue({
+      printerId: 37n,
+      reportedStatus: 'CONNECTED',
+      persistedStatus: 'ONLINE',
+      reportedAt: new Date('2026-08-25T12:00:00.000Z'),
     });
 
-    const response = await controller.extendLease(
-      terminal,
-      { id: '1136' },
-      {
-        printerId: '37',
-        localBindingId: 'binding-1',
-        bindingVersion: 1,
-        leaseVersion: 8,
-        leaseMs: 60_000,
-      },
-    );
+    const response = await controller.reportPrinterStatus(terminal, {
+      printerId: '37',
+      localBindingId: 'binding-1',
+      bindingVersion: 1,
+      status: 'CONNECTED',
+      serviceRunning: true,
+      executionEnabled: true,
+    });
 
-    expect(response).toEqual({ leaseVersion: 9, leaseExpiresAt });
-    const serialized = JSON.stringify(response);
-    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
-    expect(Object.keys(response).sort()).toEqual(['leaseExpiresAt', 'leaseVersion']);
-    expect(serialized).not.toMatch(
-      /renderedPayload|renderedPayloadBase64|receiptSnapshot|PrintDocument|document/i,
-    );
-    expect(attempts.extendLease).toHaveBeenCalledWith(
-      7n,
-      67n,
-      1136n,
-      8,
-      60_000,
-      'binding-1',
-      1,
-      37n,
-    );
-    expect(attempts.markPrinting).not.toHaveBeenCalled();
+    assertBoundedControlResponse(response);
   });
+
+  it.each(LARGE_RECEIPT_FIXTURE_BYTES)(
+    'keeps LAN lease renewal bounded with a %i-byte print fixture',
+    async (fixtureBytes) => {
+      const leaseExpiresAt = new Date('2026-08-25T12:00:00.000Z');
+      const { controller, attempts } = createController();
+      attempts.extendLease.mockResolvedValue({
+        leaseVersion: 9,
+        leaseExpiresAt,
+        renderedPayload: Buffer.alloc(fixtureBytes),
+        renderedPayloadBase64: 'x'.repeat(fixtureBytes),
+        receiptSnapshot: {
+          document: 'PrintDocument',
+          body: 'x'.repeat(fixtureBytes),
+        },
+        printDocument: { body: 'x'.repeat(fixtureBytes) },
+        artifact: Buffer.alloc(fixtureBytes),
+        payloadBase64: 'x'.repeat(fixtureBytes),
+      });
+
+      const response = await controller.extendLease(
+        terminal,
+        { id: '1136' },
+        {
+          printerId: '37',
+          localBindingId: 'binding-1',
+          bindingVersion: 1,
+          leaseVersion: 8,
+          leaseMs: 60_000,
+        },
+      );
+
+      expect(response).toEqual({ leaseVersion: 9, leaseExpiresAt });
+      expect(Object.keys(response).sort()).toEqual([
+        'leaseExpiresAt',
+        'leaseVersion',
+      ]);
+      assertBoundedControlResponse(response);
+      expect(attempts.extendLease).toHaveBeenCalledWith(
+        7n,
+        67n,
+        1136n,
+        8,
+        60_000,
+        'binding-1',
+        1,
+        37n,
+      );
+      expect(attempts.markPrinting).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function createController() {
@@ -351,6 +385,23 @@ function createController() {
       attempts as never,
     ),
   };
+}
+
+function assertBoundedControlResponse(response: Record<string, unknown>) {
+  const serialized = JSON.stringify(
+    {
+      code: 'OK',
+      message: 'success',
+      data: response,
+      requestId: `req_${'x'.repeat(32)}`,
+      timestamp: '2026-08-25T12:00:00.000Z',
+    },
+    (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
+  );
+  expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThan(16 * 1024);
+  expect(serialized).not.toMatch(
+    /renderedPayload|receiptSnapshot|printDocument|semanticDocument|artifact|payloadBase64|snapshot/i,
+  );
 }
 
 function controllerRoutes(): Array<[string, string]> {

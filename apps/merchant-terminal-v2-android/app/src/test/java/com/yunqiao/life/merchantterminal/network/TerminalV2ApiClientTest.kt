@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.MessageDigest
 import java.util.Base64
 
 class TerminalV2ApiClientTest {
@@ -281,8 +282,8 @@ class TerminalV2ApiClientTest {
                         .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
                 ),
             )
-            server.enqueue(okData(JSONObject()))
-            server.enqueue(okData(JSONObject()))
+            server.enqueue(okData(JSONObject().put("jobId", "267").put("status", "SUCCEEDED")))
+            server.enqueue(okData(JSONObject().put("jobId", "267").put("status", "FAILED")))
 
             client.markPrinting(TERMINAL_TOKEN, job)
             client.extendLease(TERMINAL_TOKEN, job.id, job.route, 2)
@@ -346,6 +347,41 @@ class TerminalV2ApiClientTest {
                 JSONObject(failed.body.readUtf8()).keys().asSequence().toSet(),
             )
             assertFalse(listOf(printing, extend, succeeded, failed).any { it.path!!.contains("/terminal/v2/") })
+            assertEquals(5, server.requestCount)
+        }
+    }
+
+    @Test
+    fun rc13Accepts500And750KiBCanonicalPayloadResponses() {
+        for (payloadBytes in listOf(500 * 1024, 750 * 1024)) {
+            MockWebServer().use { server ->
+                val payload = ByteArray(payloadBytes) { index -> (index % 251).toByte() }
+                server.enqueue(okData(JSONObject().put("job", canonicalUsbJob(payload))))
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+                val job = requireNotNull(client.activeJob(TERMINAL_TOKEN))
+
+                assertEquals(payloadBytes, job.renderedPayload?.size)
+                assertEquals(payloadBytes, job.renderedPayloadByteLength)
+                assertEquals(1, server.requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun rc13Rejects1And2MiBCanonicalPayloadResponsesAtTheGlobalResponseLimit() {
+        for (payloadBytes in listOf(1 * 1024 * 1024, 2 * 1024 * 1024)) {
+            MockWebServer().use { server ->
+                val payload = ByteArray(payloadBytes) { index -> (index % 251).toByte() }
+                server.enqueue(okData(JSONObject().put("job", canonicalUsbJob(payload))))
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+
+                val error = runCatching { client.activeJob(TERMINAL_TOKEN) }.exceptionOrNull()
+
+                assertTrue(error is V2ApiException)
+                assertEquals("RESPONSE_TOO_LARGE", (error as V2ApiException).errorCode)
+                assertEquals(1, server.requestCount)
+            }
         }
     }
 
@@ -439,8 +475,8 @@ class TerminalV2ApiClientTest {
                         .put("leaseExpiresAt", "2030-01-01T00:00:00Z"),
                 ),
             )
-            server.enqueue(okData(JSONObject()))
-            server.enqueue(okData(JSONObject()))
+            server.enqueue(okData(JSONObject().put("jobId", "267").put("status", "SUCCEEDED")))
+            server.enqueue(okData(JSONObject().put("jobId", "267").put("status", "FAILED")))
 
             client.markPrinting(TERMINAL_TOKEN, job)
             client.extendLease(TERMINAL_TOKEN, job.id, job.route, leaseVersion = 2)
@@ -474,6 +510,7 @@ class TerminalV2ApiClientTest {
             val failed = server.takeRequest()
             assertEquals("/terminal/lan/jobs/267/failed", failed.path)
             assertEquals("FAILED", JSONObject(failed.body.readUtf8()).getString("outcome"))
+            assertEquals(5, server.requestCount)
         }
     }
 
@@ -570,6 +607,20 @@ class TerminalV2ApiClientTest {
                     .put("bindingVersion", 4)
                     .put("adapter", "ANDROID_USB_ESCPOS"),
             )
+    }
+
+    private fun canonicalUsbJob(payload: ByteArray): JSONObject {
+        val sha = MessageDigest.getInstance("SHA-256")
+            .digest(payload)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+        return usbJobJson()
+            .put("canonicalTemplateVersion", "YQ_CANONICAL_RECEIPT_V1")
+            .put("renderProtocol", "ESC_POS_RASTER_V1")
+            .put("renderedPayloadBase64", Base64.getEncoder().encodeToString(payload))
+            .put("renderedPayloadSha256", sha)
+            .put("renderedPayloadByteLength", payload.size)
+            .put("paperWidthMm", 80)
+            .put("widthDots", 576)
     }
 
     private fun okData(data: JSONObject) = MockResponse().setBody(

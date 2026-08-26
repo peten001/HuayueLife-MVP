@@ -214,7 +214,10 @@ export class PrintAttemptsService {
           && (input.transport === undefined || completedAttempt.transport === transport)
           && (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
-          return job;
+          return {
+            jobId: job.id.toString(),
+            status: job.status,
+          };
         }
         this.stateConflict('重复成功回报与已记录尝试不一致');
       }
@@ -265,7 +268,10 @@ export class PrintAttemptsService {
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
-      return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
+      return {
+        jobId: job.id.toString(),
+        status: 'SUCCEEDED' as const,
+      };
     });
   }
 
@@ -315,7 +321,10 @@ export class PrintAttemptsService {
           (input.transport === undefined || completedAttempt.transport === transport) &&
           (input.bytesWritten === undefined || completedAttempt.bytesWritten === input.bytesWritten)
         ) {
-          return job;
+          return {
+            jobId: job.id.toString(),
+            status: job.status,
+          };
         }
         this.stateConflict('重复失败回报与已记录尝试不一致');
       }
@@ -375,7 +384,10 @@ export class PrintAttemptsService {
         },
       });
       if (attempt.count !== 1) this.stateConflict('当前打印尝试不存在或已完成');
-      return tx.printJob.findUniqueOrThrow({ where: { id: job.id } });
+      return {
+        jobId: job.id.toString(),
+        status: nextStatus,
+      };
     });
   }
 
@@ -413,6 +425,9 @@ export class PrintAttemptsService {
     );
     this.assertLeaseOwner(job, terminalId, ['CLAIMED', 'PRINTING']);
     const now = new Date();
+    const leaseExpiresAt = new Date(
+      now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
+    );
     const changed = await this.prisma.printJob.updateMany({
       where: {
         id: jobId,
@@ -425,12 +440,15 @@ export class PrintAttemptsService {
         printer: { channelType: job.printer.channelType },
       },
       data: {
-        leaseExpiresAt: new Date(now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs))),
+        leaseExpiresAt,
         leaseVersion: { increment: 1 },
       },
     });
     if (changed.count !== 1) this.leaseConflict();
-    return this.prisma.printJob.findUniqueOrThrow({ where: { id: jobId } });
+    return {
+      leaseVersion: expectedLeaseVersion + 1,
+      leaseExpiresAt,
+    };
   }
 
   private assertExecution() {

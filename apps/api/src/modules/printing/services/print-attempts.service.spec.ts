@@ -4,6 +4,11 @@ import { PrintAttemptsService } from './print-attempts.service';
 const merchantId = 7n;
 const terminalId = 67n;
 const jobId = 301n;
+const LARGE_RECEIPT_FIXTURE_BYTES = [
+  1 * 1024 * 1024,
+  2 * 1024 * 1024,
+  5 * 1024 * 1024,
+] as const;
 
 describe('PrintAttemptsService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
@@ -190,14 +195,14 @@ describe('PrintAttemptsService', () => {
       status: 'SUCCEEDED',
     });
 
-    await service.markSucceeded({
+    await expect(service.markSucceeded({
       merchantId,
       terminalId,
       jobId,
       attemptNo: 1,
       leaseVersion: printing.leaseVersion,
       printerResponse: 'paper emitted',
-    });
+    })).resolves.toEqual({ jobId: jobId.toString(), status: 'SUCCEEDED' });
 
     expect(prisma.printJob.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
@@ -317,7 +322,7 @@ describe('PrintAttemptsService', () => {
         attemptNo: 1,
         leaseVersion: 3,
       }),
-    ).resolves.toBe(succeeded);
+    ).resolves.toEqual({ jobId: jobId.toString(), status: 'SUCCEEDED' });
     expect(prisma.printAttempt.findFirst).toHaveBeenCalledWith({
       where: {
         jobId,
@@ -365,7 +370,7 @@ describe('PrintAttemptsService', () => {
       status: 'RETRY_WAIT',
     });
 
-    await service.markFailed({
+    await expect(service.markFailed({
       merchantId,
       terminalId,
       jobId,
@@ -374,7 +379,7 @@ describe('PrintAttemptsService', () => {
       retryable: true,
       errorCode: 'NETWORK_TIMEOUT',
       errorMessage: 'token=private-value connection timeout',
-    });
+    })).resolves.toEqual({ jobId: jobId.toString(), status: 'RETRY_WAIT' });
 
     expect(prisma.printJob.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ status: 'PRINTING' }),
@@ -427,7 +432,7 @@ describe('PrintAttemptsService', () => {
         errorCode: 'NETWORK_TIMEOUT',
         errorMessage: 'same report delivered twice',
       }),
-    ).resolves.toBe(retryWaiting);
+    ).resolves.toEqual({ jobId: jobId.toString(), status: 'RETRY_WAIT' });
 
     expect(prisma.printAttempt.findFirst).toHaveBeenCalledWith({
       where: {
@@ -474,9 +479,87 @@ describe('PrintAttemptsService', () => {
         errorCode: 'NETWORK_TIMEOUT',
         errorMessage: 'first report response was lost',
       }),
-    ).resolves.toBe(reclaimed);
+    ).resolves.toEqual({ jobId: jobId.toString(), status: 'CLAIMED' });
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
   });
+
+  it.each(LARGE_RECEIPT_FIXTURE_BYTES)(
+    'returns only a success ACK when the persisted job carries a %i-byte payload',
+    async (fixtureBytes) => {
+      const succeeded = job({
+        status: 'SUCCEEDED',
+        attemptCount: 1,
+        claimedByTerminalId: null,
+        leaseExpiresAt: null,
+        renderedPayload: Buffer.alloc(fixtureBytes),
+        renderedPayloadByteLength: fixtureBytes,
+        receiptSnapshot: { body: 'x'.repeat(fixtureBytes) },
+      });
+      prisma.printJob.findFirst.mockResolvedValue(succeeded);
+      prisma.printAttempt.findFirst.mockResolvedValue({
+        jobId,
+        attemptNo: 1,
+        terminalId,
+        result: 'SUCCEEDED',
+        printerResponse: null,
+        bytesWritten: fixtureBytes,
+      });
+
+      const response = await service.markSucceeded({
+        merchantId,
+        terminalId,
+        jobId,
+        attemptNo: 1,
+        leaseVersion: 3,
+        bytesWritten: fixtureBytes,
+      });
+
+      assertMinimalCompletionAck(response, 'SUCCEEDED');
+      expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+      expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(LARGE_RECEIPT_FIXTURE_BYTES)(
+    'returns only a failure ACK when the persisted job carries a %i-byte payload',
+    async (fixtureBytes) => {
+      const retryWaiting = job({
+        status: 'RETRY_WAIT',
+        attemptCount: 1,
+        claimedByTerminalId: null,
+        leaseExpiresAt: null,
+        renderedPayload: Buffer.alloc(fixtureBytes),
+        receiptSnapshot: { body: 'x'.repeat(fixtureBytes) },
+      });
+      prisma.printJob.findFirst.mockResolvedValue(retryWaiting);
+      prisma.printAttempt.findFirst.mockResolvedValue({
+        jobId,
+        attemptNo: 1,
+        terminalId,
+        result: 'FAILED',
+        errorCode: 'NETWORK_TIMEOUT',
+        errorMessage: 'same report delivered twice',
+        printerResponse: null,
+        bytesWritten: 0,
+      });
+
+      const response = await service.markFailed({
+        merchantId,
+        terminalId,
+        jobId,
+        attemptNo: 1,
+        leaseVersion: 3,
+        retryable: true,
+        errorCode: 'NETWORK_TIMEOUT',
+        errorMessage: 'same report delivered twice',
+        bytesWritten: 0,
+      });
+
+      assertMinimalCompletionAck(response, 'RETRY_WAIT');
+      expect(prisma.printAttempt.create).not.toHaveBeenCalled();
+      expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects a duplicate failure report when the recorded result details differ', async () => {
     prisma.printJob.findFirst.mockResolvedValue(
@@ -682,14 +765,8 @@ describe('PrintAttemptsService', () => {
 
   it('extends only the active owner lease and caps the extension at 120 seconds', async () => {
     const claimed = job({ status: 'CLAIMED', attemptCount: 0 });
-    const renewed = {
-      ...claimed,
-      leaseVersion: claimed.leaseVersion + 1,
-      leaseExpiresAt: new Date(Date.now() + 120_000),
-    };
     prisma.printJob.findFirst.mockResolvedValue(claimed);
     prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
-    prisma.printJob.findUniqueOrThrow.mockResolvedValue(renewed);
 
     const before = Date.now();
     const result = await service.extendLease(
@@ -712,15 +789,43 @@ describe('PrintAttemptsService', () => {
     );
     expect(expiry.getTime()).toBeGreaterThanOrEqual(before + 119_000);
     expect(expiry.getTime()).toBeLessThanOrEqual(Date.now() + 120_500);
-    expect(result).toEqual(renewed);
-    expect(result.status).toBe('CLAIMED');
-    expect(result.attemptCount).toBe(0);
-    expect(result.leaseVersion).toBe(claimed.leaseVersion + 1);
+    expect(result).toEqual({
+      leaseVersion: claimed.leaseVersion + 1,
+      leaseExpiresAt: expiry,
+    });
     expect(prisma.printAttempt.create).not.toHaveBeenCalled();
     expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
     expect(prisma.order.update).not.toHaveBeenCalled();
     expect(prisma.order.updateMany).not.toHaveBeenCalled();
   });
+
+  it.each(LARGE_RECEIPT_FIXTURE_BYTES)(
+    'returns only lease metadata when the persisted job carries a %i-byte payload',
+    async (fixtureBytes) => {
+      const claimed = job({
+        status: 'CLAIMED',
+        renderedPayload: Buffer.alloc(fixtureBytes),
+        receiptSnapshot: { body: 'x'.repeat(fixtureBytes) },
+      });
+      prisma.printJob.findFirst.mockResolvedValue(claimed);
+      prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+
+      const response = await service.extendLease(
+        merchantId,
+        terminalId,
+        jobId,
+        claimed.leaseVersion,
+      );
+
+      expect(Object.keys(response).sort()).toEqual([
+        'leaseExpiresAt',
+        'leaseVersion',
+      ]);
+      expect(Buffer.byteLength(JSON.stringify(response), 'utf8')).toBeLessThan(
+        16 * 1024,
+      );
+    },
+  );
 
   it('allows the current owner to start one attempt after a successful renewal', async () => {
     const claimed = job({ status: 'CLAIMED', attemptCount: 0, leaseVersion: 2 });
@@ -729,9 +834,11 @@ describe('PrintAttemptsService', () => {
       .mockResolvedValueOnce(claimed)
       .mockResolvedValueOnce(renewed);
     prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
-    prisma.printJob.findUniqueOrThrow
-      .mockResolvedValueOnce(renewed)
-      .mockResolvedValueOnce({ ...renewed, status: 'PRINTING', attemptCount: 1 });
+    prisma.printJob.findUniqueOrThrow.mockResolvedValue({
+      ...renewed,
+      status: 'PRINTING',
+      attemptCount: 1,
+    });
     prisma.printAttempt.create.mockResolvedValue({ id: 401n, attemptNo: 1 });
 
     const extended = await service.extendLease(
@@ -749,7 +856,6 @@ describe('PrintAttemptsService', () => {
       adapter: 'ANDROID_USB_ESCPOS',
     });
 
-    expect(extended.status).toBe('CLAIMED');
     expect(started.attempt).toEqual({ id: 401n, attemptNo: 1 });
     expect(prisma.printAttempt.create).toHaveBeenCalledTimes(1);
     expect(prisma.order.update).not.toHaveBeenCalled();
@@ -1028,6 +1134,17 @@ function createPrismaMock() {
     callback(prisma),
   );
   return prisma;
+}
+
+function assertMinimalCompletionAck(
+  response: { jobId: string; status: string },
+  status: string,
+) {
+  expect(response).toEqual({ jobId: jobId.toString(), status });
+  expect(Object.keys(response).sort()).toEqual(['jobId', 'status']);
+  expect(Buffer.byteLength(JSON.stringify(response), 'utf8')).toBeLessThan(
+    16 * 1024,
+  );
 }
 
 function job(overrides: Record<string, unknown> = {}) {

@@ -195,9 +195,9 @@ export class LanTerminalConnectorController {
       bytesWritten: dto.bytesWritten,
       localBindingId: dto.localBindingId,
       bindingVersion: dto.bindingVersion,
-    }).then((job) => ({
-      jobId: job.id.toString(),
-      status: job.status,
+    }).then((ack) => ({
+      jobId: ack.jobId,
+      status: ack.status,
     }));
   }
 
@@ -226,9 +226,9 @@ export class LanTerminalConnectorController {
       bytesWritten: dto.bytesWritten,
       localBindingId: dto.localBindingId,
       bindingVersion: dto.bindingVersion,
-    }).then((job) => ({
-      jobId: job.id.toString(),
-      status: job.status,
+    }).then((ack) => ({
+      jobId: ack.jobId,
+      status: ack.status,
     }));
   }
 

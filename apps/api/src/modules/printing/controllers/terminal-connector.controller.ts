@@ -172,9 +172,9 @@ export class TerminalConnectorController {
       actualPayloadSha256: dto.actualPayloadSha256,
       transport: dto.transport,
       bytesWritten: dto.bytesWritten,
-    }).then((job) => ({
-      jobId: job.id.toString(),
-      status: job.status,
+    }).then((ack) => ({
+      jobId: ack.jobId,
+      status: ack.status,
     }));
   }
 
@@ -213,9 +213,9 @@ export class TerminalConnectorController {
       actualPayloadSha256: dto.actualPayloadSha256,
       transport: dto.transport,
       bytesWritten: dto.bytesWritten,
-    }).then((job) => ({
-      jobId: job.id.toString(),
-      status: job.status,
+    }).then((ack) => ({
+      jobId: ack.jobId,
+      status: ack.status,
     }));
   }
 
