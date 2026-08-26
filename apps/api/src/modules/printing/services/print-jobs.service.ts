@@ -66,7 +66,10 @@ import {
   CANONICAL_TEMPLATE_VERSION,
   CanonicalPrintArtifactService,
 } from './canonical-print-artifact.service';
-import { terminalSupportsCanonicalPayload } from '../utils/terminal-canonical-capabilities';
+import {
+  terminalSupportsBinaryPrintArtifact,
+  terminalSupportsCanonicalPayload,
+} from '../utils/terminal-canonical-capabilities';
 import { serializeApiSuccessResponse } from '../../../common/utils/api-success-response';
 import {
   LEGACY_JSON_RESPONSE_SAFE_MAX_CHARS,
@@ -88,6 +91,8 @@ const RETRYABLE_MANUAL_ERROR_CODES: string[] = [
 ];
 
 const ANDROID_USB_ESCPOS_ADAPTER = 'ANDROID_USB_ESCPOS';
+export const BINARY_PRINT_ARTIFACT_TRANSPORT = 'BINARY_PRINT_ARTIFACT_V1';
+export const MAX_BINARY_PRINT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 
 export interface CreateAutomaticJobInput {
   merchantId: bigint;
@@ -1764,6 +1769,7 @@ export class PrintJobsService {
     printerId?: bigint,
     localBindingId?: string,
     bindingVersion?: number,
+    binaryTransport = false,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     this.assertAuthenticatedTerminalConnector(terminalId);
@@ -1853,6 +1859,46 @@ export class PrintJobsService {
         message: '任务终端与 USB Binding 不匹配',
       });
     }
+    if (binaryTransport) {
+      this.assertBinaryArtifactSize(job.renderedPayloadByteLength);
+      return {
+        id: job.id,
+        jobId: job.id,
+        merchantId: merchantId.toString(),
+        printerId: job.printerId,
+        receiptType: job.receiptType,
+        source: job.source,
+        status: job.status,
+        attemptCount: job.attemptCount,
+        leaseVersion: job.leaseVersion,
+        leaseExpiresAt: job.leaseExpiresAt,
+        contentHash,
+        renderProtocol: job.renderProtocol,
+        canonicalTemplateVersion: job.canonicalTemplateVersion,
+        payloadTransport: BINARY_PRINT_ARTIFACT_TRANSPORT,
+        payloadByteLength: job.renderedPayloadByteLength,
+        payloadSha256: job.renderedPayloadSha256,
+        artifactPath: `/terminal/jobs/${job.id.toString()}/artifact`,
+        paperWidthMm: job.renderedPaperWidthMm,
+        widthDots: job.renderedWidthDots,
+        currentAttempt: job.attempts[0]
+          ? { attemptNo: job.attempts[0].attemptNo }
+          : null,
+        ...(binding
+          ? {
+              route: {
+                printerId: job.printerId,
+                localBindingId: binding.localBindingId,
+                bindingVersion: binding.bindingVersion,
+                adapter:
+                  job.printer.channelType === 'LOCAL_LAN_ESCPOS'
+                    ? ANDROID_LAN_ESCPOS_ADAPTER
+                    : ANDROID_USB_ESCPOS_ADAPTER,
+              },
+            }
+          : {}),
+      };
+    }
     return {
       id: job.id,
       merchantId: merchantId.toString(),
@@ -1896,6 +1942,121 @@ export class PrintJobsService {
           }
         : {}),
     };
+  }
+
+  async binaryArtifact(
+    merchantId: bigint,
+    terminalId: bigint,
+    jobId: bigint,
+  ) {
+    await this.settings.assertMerchantPrintingEnabled(merchantId);
+    const terminal = await this.prisma.merchantTerminal.findFirst({
+      where: {
+        id: terminalId,
+        merchantId,
+        status: 'ACTIVE',
+        revokedAt: null,
+      },
+      select: {
+        id: true,
+        boundPrinterId: true,
+        capabilities: true,
+      },
+    });
+    if (!terminal || !terminalSupportsBinaryPrintArtifact(terminal.capabilities)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.TERMINAL_UPGRADE_REQUIRED,
+        message: '当前终端未启用 Binary Print Artifact V1',
+      });
+    }
+    const job = await this.prisma.printJob.findFirst({
+      where: {
+        id: jobId,
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+        leaseExpiresAt: { gt: new Date() },
+      },
+      include: {
+        printer: {
+          select: {
+            id: true,
+            channelType: true,
+            capabilities: true,
+          },
+        },
+      },
+    });
+    if (!job) this.notFound();
+    this.assertCanonicalJobArtifact(job);
+    this.assertBinaryArtifactSize(job.renderedPayloadByteLength);
+    if (job.printer.channelType === 'LOCAL_LAN_ESCPOS') {
+      const binding = lanBindingMetadata(job.printer.capabilities);
+      if (!binding) this.permissionDenied('任务缺少有效 LAN Binding');
+      await this.lanBindings.requireClaimable(
+        merchantId,
+        job.printerId,
+        terminalId,
+        binding.localBindingId,
+        binding.bindingVersion,
+        true,
+        this.prisma,
+        { requireFreshEvidence: false, requireFreshTerminal: false },
+      );
+    } else {
+      const binding = usbJobBindingMetadata(job.printer.capabilities);
+      if (
+        terminal.boundPrinterId !== job.printerId ||
+        !binding ||
+        binding.terminalId !== terminalId.toString()
+      ) {
+        this.permissionDenied('任务终端与 USB Binding 不匹配');
+      }
+    }
+    return {
+      jobId: job.id,
+      terminalId,
+      payload: Buffer.from(job.renderedPayload!),
+      byteLength: job.renderedPayloadByteLength!,
+      sha256: job.renderedPayloadSha256!,
+      renderProtocol: job.renderProtocol!,
+    };
+  }
+
+  async recordBinaryArtifactFailure(
+    merchantId: bigint,
+    terminalId: bigint,
+    jobId: bigint,
+    leaseVersion: number,
+    errorCode:
+      | typeof PRINTING_ERROR_CODES.PAYLOAD_LENGTH_MISMATCH
+      | typeof PRINTING_ERROR_CODES.PAYLOAD_SHA_MISMATCH,
+  ) {
+    await this.binaryArtifact(merchantId, terminalId, jobId);
+    const changed = await this.prisma.printJob.updateMany({
+      where: {
+        id: jobId,
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: 'CLAIMED',
+        leaseVersion,
+        leaseExpiresAt: { gt: new Date() },
+      },
+      data: {
+        status: 'FAILED',
+        retryBlocked: true,
+        completedAt: new Date(),
+        claimedAt: null,
+        claimedByTerminalId: null,
+        leaseExpiresAt: null,
+        lastErrorCode: errorCode,
+        lastErrorMessage: 'Binary print artifact integrity verification failed',
+      },
+    });
+    if (changed.count !== 1) {
+      this.stateConflict('artifact 失败上报时任务租约已变化');
+    }
+    return { jobId, status: 'FAILED' as const };
   }
 
   async guardLegacyPayloadTransfer<T>(
@@ -2846,6 +3007,27 @@ export class PrintJobsService {
     throw new NotFoundException({
       code: PRINTING_ERROR_CODES.RESOURCE_NOT_FOUND,
       message: '打印任务不存在',
+    });
+  }
+
+  private permissionDenied(message: string): never {
+    throw new ConflictException({
+      code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
+      message,
+    });
+  }
+
+  private assertBinaryArtifactSize(byteLength: number | null): void {
+    if (
+      byteLength !== null &&
+      byteLength > 0 &&
+      byteLength <= MAX_BINARY_PRINT_ARTIFACT_BYTES
+    ) {
+      return;
+    }
+    throw new PayloadTooLargeException({
+      code: PRINTING_ERROR_CODES.PRINT_ARTIFACT_ABNORMAL_SIZE,
+      message: '打印 artifact 超过 20MB 异常保护上限',
     });
   }
 

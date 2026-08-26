@@ -134,6 +134,20 @@ export class ClaimPrintJobDto {
   leaseMs?: number;
 }
 
+export class ReportArtifactFailureDto {
+  @IsInt()
+  @Min(1)
+  leaseVersion: number;
+
+  @IsIn([
+    PRINTING_ERROR_CODES.PAYLOAD_LENGTH_MISMATCH,
+    PRINTING_ERROR_CODES.PAYLOAD_SHA_MISMATCH,
+  ])
+  errorCode:
+    | typeof PRINTING_ERROR_CODES.PAYLOAD_LENGTH_MISMATCH
+    | typeof PRINTING_ERROR_CODES.PAYLOAD_SHA_MISMATCH;
+}
+
 export class MarkPrintingDto {
   @IsInt()
   @Min(0)

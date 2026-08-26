@@ -32,6 +32,7 @@ import { TerminalCredentialsService } from '../services/terminal-credentials.ser
 import { ANDROID_LAN_ESCPOS_ADAPTER } from '../types/lan-terminal-binding';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
+import { terminalSupportsBinaryPrintArtifact } from '../utils/terminal-canonical-capabilities';
 
 const SAFE_ZERO_BYTE_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -99,8 +100,10 @@ export class LanTerminalConnectorController {
       printerId,
       query.localBindingId,
       query.bindingVersion,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = { job };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -108,7 +111,7 @@ export class LanTerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
   }
@@ -138,8 +141,10 @@ export class LanTerminalConnectorController {
       printerId,
       dto.localBindingId,
       dto.bindingVersion,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = { job };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -147,7 +152,7 @@ export class LanTerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
   }
@@ -181,11 +186,13 @@ export class LanTerminalConnectorController {
       printerId,
       dto.localBindingId,
       dto.bindingVersion,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = {
       job,
       attempt: result.attempt,
     };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -193,7 +200,7 @@ export class LanTerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
   }
@@ -345,4 +352,10 @@ function databaseId(value: string, name: string) {
     });
   }
   return parsed;
+}
+
+function legacyPayloadBytes(value: object) {
+  if (!('renderedPayloadByteLength' in value)) return 0;
+  const byteLength = value.renderedPayloadByteLength;
+  return typeof byteLength === 'number' ? byteLength : 0;
 }

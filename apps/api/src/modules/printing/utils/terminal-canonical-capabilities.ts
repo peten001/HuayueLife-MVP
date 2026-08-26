@@ -1,5 +1,6 @@
 const SERVER_PAYLOAD_CAPABILITY = 'SERVER_ESC_POS_PAYLOAD_V1';
 const RAW_PAYLOAD_CAPABILITY = 'RAW_PAYLOAD_PASSTHROUGH';
+export const BINARY_PRINT_ARTIFACT_CAPABILITY = 'BINARY_PRINT_ARTIFACT_V1';
 
 const REPORTED_PLATFORMS = new Set(['ANDROID', 'WINDOWS', 'WEB', 'SERVER']);
 
@@ -27,6 +28,12 @@ export function terminalSupportsCanonicalPayload(value: unknown) {
   );
 }
 
+export function terminalSupportsBinaryPrintArtifact(value: unknown) {
+  if (!isPlainObject(value)) return false;
+  const connector = isPlainObject(value.connector) ? value.connector : value;
+  return capabilityValue(connector, BINARY_PRINT_ARTIFACT_CAPABILITY) === true;
+}
+
 export function reportedTerminalPlatform(value: unknown): string | null {
   if (!isPlainObject(value)) return null;
   const explicit = normalizedPlatform(value.reportedPlatform);
@@ -39,6 +46,7 @@ function normalizeConnectorCapabilities(value: Record<string, unknown>) {
   const normalized = { ...value };
   canonicalizeCapabilityKey(normalized, SERVER_PAYLOAD_CAPABILITY);
   canonicalizeCapabilityKey(normalized, RAW_PAYLOAD_CAPABILITY);
+  canonicalizeCapabilityKey(normalized, BINARY_PRINT_ARTIFACT_CAPABILITY);
   const platform = normalizedPlatform(normalized.platform);
   if (platform) normalized.platform = platform;
   return normalized;

@@ -128,6 +128,7 @@ describe('LanTerminalConnectorController contract', () => {
       17n,
       'binding-1',
       3,
+      false,
     );
     expect(jobs.claimNextLanTerminalJob).not.toHaveBeenCalledWith(
       expect.anything(),

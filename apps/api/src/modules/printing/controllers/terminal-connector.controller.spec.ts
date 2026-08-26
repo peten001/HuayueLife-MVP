@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
 import { TerminalAuthGuard } from '../guards/terminal-auth.guard';
 import { ActiveTerminalGuard } from '../guards/active-terminal.guard';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
@@ -44,9 +46,76 @@ describe('terminal connector controller contract', () => {
         'markSucceeded',
         'markFailed',
         'extendLease',
+        'artifact',
+        'artifactFailed',
         'reportPrinterStatus',
       ]),
     );
+  });
+
+  it('streams the exact artifact bytes with private binary headers and no JSON envelope', async () => {
+    const payload = Buffer.alloc(100 * 1024, 0xa5);
+    const sha256 = createHash('sha256').update(payload).digest('hex');
+    const jobs = {
+      binaryArtifact: jest.fn().mockResolvedValue({
+        jobId: 301n,
+        terminalId: 30n,
+        payload,
+        byteLength: payload.length,
+        sha256,
+        renderProtocol: 'ESC_POS_RASTER_V1',
+      }),
+    };
+    const controller = new TerminalConnectorController(
+      {} as never,
+      jobs as never,
+      {} as never,
+    );
+    const response = new PassThrough() as PassThrough & {
+      statusCode: number;
+      headers: Record<string, string>;
+      status(code: number): typeof response;
+      setHeader(name: string, value: string): typeof response;
+    };
+    response.headers = {};
+    response.status = (code) => {
+      response.statusCode = code;
+      return response;
+    };
+    response.setHeader = (name, value) => {
+      response.headers[name.toLowerCase()] = value;
+      return response;
+    };
+    const chunks: Buffer[] = [];
+    response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    const terminal = {
+      id: 30n,
+      merchantId: 11n,
+      boundPrinterId: 38n,
+      name: '收银终端',
+      platform: 'ANDROID' as const,
+      status: 'ACTIVE' as const,
+      tokenVersion: 1,
+      capabilities: { connector: { BINARY_PRINT_ARTIFACT_V1: true } },
+    };
+
+    await controller.artifact(
+      terminal,
+      { id: '301' },
+      '2',
+      response as never,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers).toEqual(expect.objectContaining({
+      'content-type': 'application/octet-stream',
+      'content-length': payload.length.toString(),
+      'cache-control': 'private, no-store',
+      'x-accel-buffering': 'no',
+      'x-yunqiao-payload-sha256': sha256,
+      'x-yunqiao-render-protocol': 'ESC_POS_RASTER_V1',
+    }));
+    expect(Buffer.concat(chunks)).toEqual(payload);
   });
 
   it('requires ACTIVE status only on execution and printer mutation routes', () => {
@@ -55,6 +124,8 @@ describe('terminal connector controller contract', () => {
       'activeJob',
       'claim',
       'markPrinting',
+      'artifact',
+      'artifactFailed',
       'markSucceeded',
       'markFailed',
       'extendLease',

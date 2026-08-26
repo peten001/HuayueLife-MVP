@@ -2736,6 +2736,222 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it.each([1, 2, 5, 10])(
+    'returns a metadata-only binary descriptor under 16KB for a %iMB artifact',
+    async (megabytes) => {
+      const payload = Buffer.alloc(megabytes * 1024 * 1024, 0xa5);
+      prisma.merchantTerminal.findFirst.mockResolvedValue({
+        capabilities: binaryTerminalCapabilities(),
+      });
+      prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+      prisma.printJob.findFirst.mockResolvedValue({
+        ...pendingJob({
+          status: 'CLAIMED',
+          source: 'TEST',
+          claimedByTerminalId: terminalId,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+          receiptType: 'ORDER_CUSTOMER',
+          triggerEvent: 'MANUAL_TEST',
+          copyIndex: 1,
+          copyCount: 1,
+          receiptSnapshot: receipt,
+          receiptSnapshotHash: 'a'.repeat(64),
+          renderedPayload: payload,
+          renderedPayloadSha256: createHash('sha256').update(payload).digest('hex'),
+          renderedPayloadByteLength: payload.length,
+        }),
+        printer: {
+          ...enabledPrinter({ capabilities: usbBoundCapabilities() }),
+          name: 'USB 前台打印机',
+          purpose: 'FRONT_DESK',
+        },
+        attempts: [],
+      });
+
+      const descriptor = await service.connectorJobPayload(
+        merchantId,
+        terminalId,
+        301n,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      const serialized = JSON.stringify(descriptor, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      );
+
+      expect(Buffer.byteLength(serialized)).toBeLessThan(16 * 1024);
+      expect(descriptor).toEqual(expect.objectContaining({
+        payloadTransport: 'BINARY_PRINT_ARTIFACT_V1',
+        payloadByteLength: payload.length,
+        payloadSha256: createHash('sha256').update(payload).digest('hex'),
+        artifactPath: '/terminal/jobs/301/artifact',
+      }));
+      expect(descriptor).not.toHaveProperty('renderedPayloadBase64');
+      expect(descriptor).not.toHaveProperty('receiptSnapshot');
+    },
+  );
+
+  it.each([1, 2, 5, 10])(
+    'serves exact immutable bytes and SHA for a %iMB binary artifact without mutating job state',
+    async (megabytes) => {
+      const payload = Buffer.alloc(megabytes * 1024 * 1024, megabytes);
+      const sha256 = createHash('sha256').update(payload).digest('hex');
+      prisma.merchantTerminal.findFirst.mockResolvedValue({
+        id: terminalId,
+        boundPrinterId: printerId,
+        capabilities: binaryTerminalCapabilities(),
+      });
+      prisma.printJob.findFirst.mockResolvedValue({
+        ...pendingJob({
+          status: 'CLAIMED',
+          claimedByTerminalId: terminalId,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+          renderedPayload: payload,
+          renderedPayloadSha256: sha256,
+          renderedPayloadByteLength: payload.length,
+        }),
+        printer: {
+          id: printerId,
+          channelType: 'LOCAL_USB_ESCPOS',
+          capabilities: usbBoundCapabilities(),
+        },
+      });
+
+      const first = await service.binaryArtifact(merchantId, terminalId, 301n);
+      const second = await service.binaryArtifact(merchantId, terminalId, 301n);
+
+      expect(first.payload).toEqual(payload);
+      expect(first.byteLength).toBe(payload.length);
+      expect(first.sha256).toBe(sha256);
+      expect(second.payload).toEqual(first.payload);
+      expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks cross-merchant and wrong-terminal artifact lookup at the ownership query', async () => {
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      capabilities: binaryTerminalCapabilities(),
+    });
+    prisma.printJob.findFirst.mockResolvedValue(null);
+
+    await expect(service.binaryArtifact(merchantId, terminalId, 301n))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.printJob.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 301n,
+        merchantId,
+        claimedByTerminalId: terminalId,
+        status: { in: ['CLAIMED', 'PRINTING'] },
+        leaseExpiresAt: { gt: expect.any(Date) },
+      }),
+    }));
+  });
+
+  it('records a verified artifact integrity failure without creating a PrintAttempt', async () => {
+    const payload = Buffer.alloc(1024, 0xa5);
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      capabilities: binaryTerminalCapabilities(),
+    });
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob({
+        status: 'CLAIMED',
+        claimedByTerminalId: terminalId,
+        leaseVersion: 3,
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        renderedPayload: payload,
+        renderedPayloadSha256: createHash('sha256').update(payload).digest('hex'),
+        renderedPayloadByteLength: payload.length,
+      }),
+      printer: {
+        id: printerId,
+        channelType: 'LOCAL_USB_ESCPOS',
+        capabilities: usbBoundCapabilities(),
+      },
+    });
+    prisma.printJob.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.recordBinaryArtifactFailure(
+      merchantId,
+      terminalId,
+      301n,
+      3,
+      'PAYLOAD_SHA_MISMATCH',
+    )).resolves.toEqual({ jobId: 301n, status: 'FAILED' });
+
+    expect(prisma.printJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 301n,
+        claimedByTerminalId: terminalId,
+        status: 'CLAIMED',
+        leaseVersion: 3,
+      }),
+      data: expect.objectContaining({
+        status: 'FAILED',
+        retryBlocked: true,
+        lastErrorCode: 'PAYLOAD_SHA_MISMATCH',
+      }),
+    }));
+    expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy Base64 decode and binary artifact bytes exactly SHA-equivalent', async () => {
+    const payload = Buffer.from('immutable-canonical-artifact-equivalence');
+    const sha256 = createHash('sha256').update(payload).digest('hex');
+    prisma.merchantTerminal.findFirst.mockResolvedValue({
+      id: terminalId,
+      boundPrinterId: printerId,
+      capabilities: binaryTerminalCapabilities(),
+    });
+    prisma.printer.findFirst.mockResolvedValue(enabledPrinter());
+    prisma.printJob.findFirst.mockResolvedValue({
+      ...pendingJob({
+        status: 'CLAIMED',
+        source: 'TEST',
+        claimedByTerminalId: terminalId,
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        receiptType: 'ORDER_CUSTOMER',
+        triggerEvent: 'MANUAL_TEST',
+        copyIndex: 1,
+        copyCount: 1,
+        receiptSnapshot: receipt,
+        receiptSnapshotHash: 'a'.repeat(64),
+        renderedPayload: payload,
+        renderedPayloadSha256: sha256,
+        renderedPayloadByteLength: payload.length,
+      }),
+      printer: {
+        ...enabledPrinter({ capabilities: usbBoundCapabilities() }),
+        name: 'USB 前台打印机',
+        purpose: 'FRONT_DESK',
+      },
+      attempts: [],
+    });
+
+    const legacy = await service.connectorJobPayload(
+      merchantId,
+      terminalId,
+      301n,
+    );
+    const binary = await service.binaryArtifact(merchantId, terminalId, 301n);
+    if (
+      !('renderedPayloadBase64' in legacy) ||
+      typeof legacy.renderedPayloadBase64 !== 'string'
+    ) {
+      throw new Error('legacy payload missing');
+    }
+    const decoded = Buffer.from(legacy.renderedPayloadBase64, 'base64');
+
+    expect(decoded).toEqual(binary.payload);
+    expect(decoded.length).toBe(binary.byteLength);
+    expect(createHash('sha256').update(decoded).digest('hex')).toBe(binary.sha256);
+  });
+
   it('filters active USB lookup by the current terminal binding and channel', async () => {
     prisma.merchantTerminal.findFirst.mockResolvedValue({
       boundPrinterId: printerId,
@@ -3363,6 +3579,15 @@ function canonicalTerminalCapabilities() {
       platform: 'ANDROID',
       SERVER_ESC_POS_PAYLOAD_V1: true,
       RAW_PAYLOAD_PASSTHROUGH: true,
+    },
+  };
+}
+
+function binaryTerminalCapabilities() {
+  return {
+    connector: {
+      ...canonicalTerminalCapabilities().connector,
+      BINARY_PRINT_ARTIFACT_V1: true,
     },
   };
 }

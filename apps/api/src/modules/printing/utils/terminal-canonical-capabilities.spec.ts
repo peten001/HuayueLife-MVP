@@ -1,6 +1,7 @@
 import {
   normalizeTerminalCapabilities,
   reportedTerminalPlatform,
+  terminalSupportsBinaryPrintArtifact,
   terminalSupportsCanonicalPayload,
 } from './terminal-canonical-capabilities';
 
@@ -49,5 +50,16 @@ describe('terminal canonical capabilities', () => {
     expect(terminalSupportsCanonicalPayload(normalized)).toBe(false);
     expect(normalized).not.toHaveProperty('SERVER_ESC_POS_PAYLOAD_V1');
     expect(normalized).not.toHaveProperty('RAW_PAYLOAD_PASSTHROUGH');
+  });
+
+  it('normalizes binary artifact capability casing without enabling it implicitly', () => {
+    const normalized = normalizeTerminalCapabilities({
+      connector: { binarY_PRINT_ARTIFACT_V1: true },
+    });
+    expect(normalized).toEqual({
+      connector: { BINARY_PRINT_ARTIFACT_V1: true },
+    });
+    expect(terminalSupportsBinaryPrintArtifact(normalized)).toBe(true);
+    expect(terminalSupportsBinaryPrintArtifact({ connector: {} })).toBe(false);
   });
 });

@@ -3,11 +3,16 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  Logger,
   Param,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { once } from 'node:events';
+import type { Response } from 'express';
 import { IdParamDto } from '../../../common/dto/id-param.dto';
 import { RequestWithContext } from '../../../common/types/request.type';
 import { CurrentTerminal } from '../decorators/current-terminal.decorator';
@@ -18,6 +23,7 @@ import {
   FinishPrintingDto,
   MarkPrintingDto,
   ReportTerminalPrinterStatusDto,
+  ReportArtifactFailureDto,
   SyncUsbTerminalBindingDto,
   TerminalHeartbeatDto,
 } from '../dto/terminal-connector.dto';
@@ -30,6 +36,7 @@ import { TerminalConnectorService } from '../services/terminal-connector.service
 import { TerminalCredentialsService } from '../services/terminal-credentials.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
+import { terminalSupportsBinaryPrintArtifact } from '../utils/terminal-canonical-capabilities';
 
 const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -51,6 +58,8 @@ export class TerminalPairingController {
 @Controller('terminal')
 @UseGuards(TerminalAuthGuard)
 export class TerminalConnectorController {
+  private readonly logger = new Logger(TerminalConnectorController.name);
+
   constructor(
     private readonly connector: TerminalConnectorService,
     private readonly jobs: PrintJobsService,
@@ -95,8 +104,13 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       active.id,
+      undefined,
+      undefined,
+      undefined,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = { job };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -104,7 +118,7 @@ export class TerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
   }
@@ -127,8 +141,13 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       claimed.id,
+      undefined,
+      undefined,
+      undefined,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = { job };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -136,7 +155,7 @@ export class TerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
   }
@@ -163,11 +182,16 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       result.job.id,
+      undefined,
+      undefined,
+      undefined,
+      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
     const response = {
       job,
       attempt: result.attempt,
     };
+    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
     return this.jobs.guardLegacyPayloadTransfer({
       responseData: response,
       requestId: request.requestId,
@@ -175,9 +199,95 @@ export class TerminalConnectorController {
       merchantId: terminal.merchantId,
       terminalId: terminal.id,
       printType: job.receiptType,
-      payloadBytes: job.renderedPayloadByteLength ?? 0,
+      payloadBytes: legacyPayloadBytes(job),
       clientVersion: terminal.appVersion,
     });
+  }
+
+  @Get('jobs/:id/artifact')
+  @UseGuards(ActiveTerminalGuard)
+  async artifact(
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Param() params: IdParamDto,
+    @Headers('x-yunqiao-artifact-retry-count') retryHeader: string | undefined,
+    @Res() response: Response,
+  ) {
+    const startedAt = Date.now();
+    const retryCount = boundedRetryCount(retryHeader);
+    const artifact = await this.jobs.binaryArtifact(
+      terminal.merchantId,
+      terminal.id,
+      BigInt(params.id),
+    );
+    let completed = false;
+    this.logger.log(
+      JSON.stringify({
+        event: 'PRINT_ARTIFACT_DOWNLOAD_STARTED',
+        jobId: artifact.jobId.toString(),
+        terminalId: artifact.terminalId.toString(),
+        bytes: artifact.byteLength,
+        durationMs: 0,
+        shaStatus: 'PENDING',
+        retryCount,
+      }),
+    );
+    response.status(200);
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', artifact.byteLength.toString());
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.setHeader('X-YunQiao-Payload-SHA256', artifact.sha256);
+    response.setHeader('X-YunQiao-Render-Protocol', artifact.renderProtocol);
+    response.once('finish', () => {
+      completed = true;
+      this.logger.log(
+        JSON.stringify({
+          event: 'PRINT_ARTIFACT_DOWNLOAD_COMPLETED',
+          jobId: artifact.jobId.toString(),
+          terminalId: artifact.terminalId.toString(),
+          bytes: artifact.byteLength,
+          durationMs: Date.now() - startedAt,
+          shaStatus: 'MATCH',
+          retryCount,
+        }),
+      );
+    });
+    response.once('close', () => {
+      if (completed) return;
+      this.logger.warn(
+        JSON.stringify({
+          event: 'PRINT_ARTIFACT_DOWNLOAD_FAILED',
+          jobId: artifact.jobId.toString(),
+          terminalId: artifact.terminalId.toString(),
+          bytes: artifact.byteLength,
+          durationMs: Date.now() - startedAt,
+          shaStatus: 'INCOMPLETE',
+          retryCount,
+        }),
+      );
+    });
+    for (let offset = 0; offset < artifact.payload.length; offset += 64 * 1024) {
+      if (!response.write(artifact.payload.subarray(offset, offset + 64 * 1024))) {
+        await once(response, 'drain');
+      }
+    }
+    response.end();
+  }
+
+  @Post('jobs/:id/artifact-failed')
+  @UseGuards(ActiveTerminalGuard)
+  artifactFailed(
+    @CurrentTerminal() terminal: AuthenticatedTerminal,
+    @Param() params: IdParamDto,
+    @Body() dto: ReportArtifactFailureDto,
+  ) {
+    return this.jobs.recordBinaryArtifactFailure(
+      terminal.merchantId,
+      terminal.id,
+      BigInt(params.id),
+      dto.leaseVersion,
+      dto.errorCode,
+    );
   }
 
   @Post('jobs/:id/succeeded')
@@ -279,4 +389,15 @@ export class TerminalConnectorController {
   ) {
     return this.connector.reportPrinterStatus(terminal, dto);
   }
+}
+
+function boundedRetryCount(value: string | undefined) {
+  if (!value || !/^[0-9]{1,2}$/.test(value)) return 0;
+  return Math.min(20, Number(value));
+}
+
+function legacyPayloadBytes(value: object) {
+  if (!('renderedPayloadByteLength' in value)) return 0;
+  const byteLength = value.renderedPayloadByteLength;
+  return typeof byteLength === 'number' ? byteLength : 0;
 }
