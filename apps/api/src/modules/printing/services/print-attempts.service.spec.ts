@@ -1180,6 +1180,9 @@ function activeTerminal(overrides: Record<string, unknown> = {}) {
     id: terminalId,
     merchantId,
     boundPrinterId: 88n,
+    capabilities: {
+      connector: { BINARY_PRINT_ARTIFACT_V1: true },
+    },
     merchant: { status: 'ACTIVE', printingEnabled: true },
     boundPrinter: {
       id: 88n,

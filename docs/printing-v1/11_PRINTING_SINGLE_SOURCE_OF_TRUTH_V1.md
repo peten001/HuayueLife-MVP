@@ -216,41 +216,11 @@ the Android rc13 response limit.
 
 ## Legacy JSON Transport Capacity
 
-The Android rc13 parser ceiling is 1,048,576 serialized response characters.
-The server therefore measures the **actual final success JSON envelope**—after
-the complete job DTO, Base64 payload, receipt snapshot, `requestId`, timestamp,
-BigInt normalization, and API wrapper have all been applied—on every USB and
-LAN `active`, `claim`, and `printing` payload response.
-
-The global capacity contract is:
-
-- binary payload warning at 500 KiB;
-- binary payload critical level at 600 KiB;
-- application hard gate at 983,040 serialized characters, leaving 64 KiB below
-  the rc13 ceiling;
-- planning-only non-payload reserve of 16 KiB, which derives a 724,992-byte
-  binary capacity estimate; runtime acceptance never relies on that estimate;
-- 100/300/500/600/700/750/768/780 KiB and 1/2/5 MiB fixtures are verified
-  against the final serialized envelope, with 700 KiB accepted and 750 KiB and
-  larger fixtures rejected under the representative metadata fixture.
-
-Warning and critical logs contain only `jobId`, `merchantId`, `printType`,
-`payloadBytes`, `serializedResponseChars`, and client version. Receipt snapshots,
-Base64 data, business text, and complete response bodies are never logged.
-
-If the final serialized response exceeds the application gate, the server does
-not send it. A claimed or printing job is atomically finalized as `FAILED`, its
-lease and claim are cleared, `retryBlocked` is set to `true`, and the stable
-non-retryable error code is
-`PRINT_PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT`. A started attempt, when present, is
-finished as failed with zero bytes written. The terminal receives a small 413
-error response, and the next pending job remains claimable. Manual retry and
-automatic retry/release do not whitelist this error.
-
-This guard is global across merchants and has no merchant darkness or capacity
-override. It does not change heartbeat, printer status, renewal, completion, or
-failure acknowledgements; their 1/2/5 MiB regression fixtures continue to prove
-that the control response itself stays below 16 KiB.
+The RC13 JSON/Base64 transport and its capacity guard are removed from current
+runtime source. Claim, active, and printing responses are metadata-only. The
+artifact endpoint is the sole receipt-byte retrieval path and supports the
+1/2/5/10 MiB test matrix without placing receipt content in control responses.
+Non-Binary terminals receive `CLIENT_UPGRADE_REQUIRED` before job execution.
 
 ## Canonical darkness 205 evidence gate
 
@@ -273,13 +243,15 @@ natural-traffic evidence must not be presented as paper proof.
 
 ## Client capability and production gate
 
-New clients report:
+Production clients report:
 
 - `SERVER_ESC_POS_PAYLOAD_V1 = true`;
-- `RAW_PAYLOAD_PASSTHROUGH = true`.
+- `RAW_PAYLOAD_PASSTHROUGH = true`;
+- `BINARY_PRINT_ARTIFACT_V1 = true`.
 
-The production claim and payload endpoints require both capability values and
-reject unsupported terminals with `PRINTING_TERMINAL_UPGRADE_REQUIRED`.
+The production claim and payload endpoints require
+`BINARY_PRINT_ARTIFACT_V1` and reject unsupported terminals with
+`CLIENT_UPGRADE_REQUIRED`.
 The unauthenticated legacy merchant-session connector is rejected with the
 same explicit upgrade error; production local printing requires a paired
 terminal identity.
@@ -288,9 +260,10 @@ before a job can be claimed or returned. A missing or incomplete server
 artifact is rejected with `CANONICAL_PRINT_PAYLOAD_REQUIRED`; it is never sent
 to an Android `PrintDocumentV2Renderer` or Windows `WpfReceiptRenderer`.
 
-Legacy renderer source may remain for historical development and offline test
-fixtures, but it is unreachable from the production canonical job delivery
-contract. Android and Windows are transport-only in production.
+Legacy business renderer, Base64 decoder, and JSON payload compatibility source
+are absent from the current Android and Windows runtimes. Diagnostic printer
+test raster builders are explicitly named and isolated from `PrintJob`
+execution. Android and Windows are transport-only in production.
 
 Capability names are normalized case-insensitively on write and always stored
 as the canonical keys above. Historical Windows acronym casing remains readable

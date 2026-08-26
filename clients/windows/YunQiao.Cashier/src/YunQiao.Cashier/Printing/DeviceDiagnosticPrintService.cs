@@ -3,7 +3,8 @@ using YunQiao.Cashier.Core.Protocol;
 
 namespace YunQiao.Cashier.Printing;
 
-public sealed class TestPrintService(WpfReceiptRenderer renderer)
+/// <summary>Operator-initiated device diagnostic only; never used by ConnectorService.</summary>
+public sealed class DeviceDiagnosticPrintService(DiagnosticTestPrintRasterBuilder renderer)
 {
     public async Task<TransportResult> PrintAsync(LocalPrinterProfile profile, CancellationToken cancellationToken)
     {

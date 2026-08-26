@@ -256,6 +256,7 @@ function createState() {
           platform: 'ANDROID',
           SERVER_ESC_POS_PAYLOAD_V1: true,
           RAW_PAYLOAD_PASSTHROUGH: true,
+          BINARY_PRINT_ARTIFACT_V1: true,
         },
       },
       deviceIdentifier: 'terminal-instance-1',

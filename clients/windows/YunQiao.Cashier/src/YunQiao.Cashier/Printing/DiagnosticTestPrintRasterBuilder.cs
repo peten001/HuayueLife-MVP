@@ -9,8 +9,8 @@ namespace YunQiao.Cashier.Printing;
 
 public sealed record RenderedReceipt(int Width, int Height, int Stride, byte[] BgraPixels, byte[] EscPosBytes);
 
-/// <summary>WPF port of Android PrintDocumentV2Renderer. Text always becomes raster pixels.</summary>
-public sealed class WpfReceiptRenderer
+/// <summary>DIAGNOSTIC TEST PRINT ONLY. Production PrintJob execution cannot reference this raster builder.</summary>
+public sealed class DiagnosticTestPrintRasterBuilder
 {
     private const double MarginRatio = 0.052;
     private const int MaximumHeight = 8_000;
@@ -18,7 +18,7 @@ public sealed class WpfReceiptRenderer
     private static readonly Typeface Bold = new(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
     private readonly double _pixelsPerDip;
 
-    public WpfReceiptRenderer(double pixelsPerDip = 1.0) => _pixelsPerDip = pixelsPerDip;
+    public DiagnosticTestPrintRasterBuilder(double pixelsPerDip = 1.0) => _pixelsPerDip = pixelsPerDip;
 
     public RenderedReceipt Render(PrintDocument document)
     {
@@ -37,72 +37,6 @@ public sealed class WpfReceiptRenderer
             _ => throw new ArgumentOutOfRangeException(),
         };
         return RenderRows(width, margin, rows, rowGap, document.Copies, cut);
-    }
-
-    public RenderedReceipt RenderLegacy(ReceiptDocumentV1 receipt, PrintPaperWidth paperWidth, DateTimeOffset printedAt)
-    {
-        var width = paperWidth == PrintPaperWidth.MM58 ? 384 : 576;
-        var scale = width / 576d;
-        var margin = Math.Max(14d, width * MarginRatio);
-        var contentWidth = width - margin * 2;
-        var normal = LegacyStyle(false, false, scale);
-        var bold = LegacyStyle(true, false, scale);
-        var title = LegacyStyle(true, true, scale);
-        var divider = new string('-', width <= 384 ? 30 : 44);
-        var rows = new List<RenderRow>();
-        AddLegacyWrapped(rows, receipt.Merchant.Name, title, contentWidth, true);
-        if (!string.IsNullOrWhiteSpace(receipt.Merchant.NameVi) && receipt.Merchant.NameVi != receipt.Merchant.Name)
-            AddLegacyWrapped(rows, receipt.Merchant.NameVi, normal, contentWidth, true);
-        if (!string.IsNullOrWhiteSpace(receipt.Merchant.Address)) AddLegacyWrapped(rows, receipt.Merchant.Address, normal, contentWidth, true);
-        if (!string.IsNullOrWhiteSpace(receipt.Merchant.Phone)) AddLegacyWrapped(rows, receipt.Merchant.Phone, normal, contentWidth, true);
-        rows.Add(new TextRow(divider, normal, PrintAlignment.LEFT));
-        if (receipt.ReceiptType == ReceiptType.ORDER_CUSTOMER)
-        {
-            var order = receipt.Order ?? throw new ReceiptSchemaException("Order context is missing.");
-            rows.Add(new TextRow($"订单 / Đơn: {order.OrderNo}", bold, PrintAlignment.LEFT));
-            if (!string.IsNullOrWhiteSpace(order.TableName)) AddLegacyWrapped(rows, $"桌台 / Bàn: {order.TableName}", normal, contentWidth);
-            rows.Add(new TextRow($"类型 / Loại: {order.OrderType}", normal, PrintAlignment.LEFT));
-            if (order.GuestCount is not null) rows.Add(new TextRow($"人数 / Khách: {order.GuestCount}", normal, PrintAlignment.LEFT));
-            rows.Add(new TextRow($"下单 / Đặt lúc: {FormatTime(order.CreatedAt)}", normal, PrintAlignment.LEFT));
-        }
-        else
-        {
-            var table = receipt.TableSession ?? throw new ReceiptSchemaException("Table context is missing.");
-            AddLegacyWrapped(rows, $"桌账 / Hóa đơn bàn: {table.TableName}", bold, contentWidth);
-            rows.Add(new TextRow($"Session: {table.SessionNo}", normal, PrintAlignment.LEFT));
-            rows.Add(new TextRow($"开台 / Mở bàn: {FormatTime(table.OpenedAt)}", normal, PrintAlignment.LEFT));
-            if (table.OrderNos.Count > 0) AddLegacyWrapped(rows, $"订单 / Đơn: {string.Join(", ", table.OrderNos)}", normal, contentWidth);
-        }
-        rows.Add(new TextRow(divider, normal, PrintAlignment.LEFT));
-        for (var index = 0; index < receipt.Items.Count; index++)
-        {
-            var item = receipt.Items[index];
-            AddLegacyWrapped(rows, $"{index + 1}. {item.Name}", bold, contentWidth);
-            if (!string.IsNullOrWhiteSpace(item.NameVi) && item.NameVi != item.Name) AddLegacyWrapped(rows, $"   {item.NameVi}", normal, contentWidth);
-            if (!string.IsNullOrWhiteSpace(item.NameEn) && item.NameEn != item.Name && item.NameEn != item.NameVi) AddLegacyWrapped(rows, $"   {item.NameEn}", normal, contentWidth);
-            if (!string.IsNullOrWhiteSpace(item.Specification)) AddLegacyWrapped(rows, $"   规格 / Quy cách: {item.Specification}", normal, contentWidth);
-            AddLegacyWrapped(rows, $"   数量 / Số lượng: {item.Quantity}", normal, contentWidth);
-            AddLegacyWrapped(rows, $"   单价 / Đơn giá: {Vnd(item.UnitPrice)} VND", normal, contentWidth);
-            AddLegacyWrapped(rows, $"   金额 / Thành tiền: {Vnd(item.LineTotal)} VND", normal, contentWidth);
-            if (!string.IsNullOrWhiteSpace(item.Note)) AddLegacyWrapped(rows, $"   备注 / Ghi chú: {item.Note}", normal, contentWidth);
-        }
-        rows.Add(new TextRow(divider, normal, PrintAlignment.LEFT));
-        rows.Add(new TextRow($"小计 / Tạm tính: {Vnd(receipt.Totals.Subtotal)} VND", normal, PrintAlignment.LEFT));
-        if (receipt.Totals.Discount is not null) rows.Add(new TextRow($"优惠 / Giảm giá: {Vnd(receipt.Totals.Discount.Value)} VND", normal, PrintAlignment.LEFT));
-        if (receipt.Totals.ServiceFee is not null) rows.Add(new TextRow($"服务费 / Phí dịch vụ: {Vnd(receipt.Totals.ServiceFee.Value)} VND", normal, PrintAlignment.LEFT));
-        rows.Add(new TextRow($"合计 / Tổng cộng: {Vnd(receipt.Totals.Total)} VND", bold, PrintAlignment.LEFT));
-        if (receipt.Totals.OriginalAmount is not null) rows.Add(new TextRow($"原金额 / Tổng tiền ban đầu: {Vnd(receipt.Totals.OriginalAmount.Value)} VND", normal, PrintAlignment.LEFT));
-        if (receipt.Totals.RoundingAmount is > 0) rows.Add(new TextRow($"抹零 / Làm tròn: {Vnd(receipt.Totals.RoundingAmount.Value)} VND", normal, PrintAlignment.LEFT));
-        if (receipt.Totals.ReceivedAmount is not null) rows.Add(new TextRow($"实收 / Thực thu: {Vnd(receipt.Totals.ReceivedAmount.Value)} VND", bold, PrintAlignment.LEFT));
-        if (!string.IsNullOrWhiteSpace(receipt.Note)) AddLegacyWrapped(rows, $"订单备注 / Ghi chú: {receipt.Note}", normal, contentWidth);
-        rows.Add(new TextRow(divider, normal, PrintAlignment.LEFT));
-        rows.Add(new TextRow($"生成 / Tạo: {FormatTime(receipt.GeneratedAt)}", normal, PrintAlignment.LEFT));
-        rows.Add(new TextRow($"打印 / In: {FormatTime(printedAt)}", normal, PrintAlignment.LEFT));
-        var footer = receipt.Footer ?? new ReceiptFooter("谢谢惠顾，欢迎再次光临", "Cảm ơn quý khách, hẹn gặp lại!");
-        rows.Add(new TextRow(divider, normal, PrintAlignment.LEFT));
-        rows.Add(new TextRow(footer.Zh, normal, PrintAlignment.CENTER));
-        rows.Add(new TextRow(footer.Vi, normal, PrintAlignment.CENTER));
-        return RenderRows(width, margin, rows, Math.Max(4, 6 * scale), 1, CutMode.Half);
     }
 
     private RenderedReceipt RenderRows(int width, double margin, IReadOnlyList<RenderRow> rows, double rowGap, int copies, CutMode cut)
@@ -133,23 +67,6 @@ public sealed class WpfReceiptRenderer
         for (var copy = 0; copy < copies; copy++) Buffer.BlockCopy(oneCopy, 0, bytes, copy * oneCopy.Length, oneCopy.Length);
         return new RenderedReceipt(width, height, stride, pixels, bytes);
     }
-
-    private TextStyle LegacyStyle(bool bold, bool title, double scale)
-    {
-        var fontSize = title ? Math.Max(25, 34 * scale) : Math.Max(18, 24 * scale);
-        var typeface = bold ? Bold : Normal;
-        var probe = CreateText("Hg", new TextStyle(typeface, fontSize, false, 1, fontSize * 1.24));
-        return new TextStyle(typeface, fontSize, false, 1, Math.Max(fontSize * 1.24, probe.Height));
-    }
-
-    private void AddLegacyWrapped(List<RenderRow> rows, string value, TextStyle style, double width, bool centered = false)
-    {
-        foreach (var line in Wrap(value, style, width))
-            rows.Add(new TextRow(line, style, centered ? PrintAlignment.CENTER : PrintAlignment.LEFT));
-    }
-
-    private static string Vnd(long value) => value.ToString("N0", CultureInfo.GetCultureInfo("vi-VN"));
-    private static string FormatTime(DateTimeOffset value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     private List<RenderRow> BuildRows(PrintDocument document, double scale, double contentWidth, bool compact)
     {

@@ -27,14 +27,14 @@ public partial class SettingsWindow : Window
     ];
 
     private readonly SettingsService _settingsService;
-    private readonly TestPrintService _testPrintService;
+    private readonly DeviceDiagnosticPrintService _testPrintService;
     private readonly ObservableCollection<LocalPrinterProfile> _profiles = [];
     private AppSettings? _settings;
     private LocalPrinterProfile? _selectedProfile;
     private bool _loadingEditor;
     private bool _printerEnumerationFailed;
 
-    public SettingsWindow(SettingsService settingsService, TestPrintService testPrintService)
+    public SettingsWindow(SettingsService settingsService, DeviceDiagnosticPrintService testPrintService)
     {
         _settingsService = settingsService;
         _testPrintService = testPrintService;

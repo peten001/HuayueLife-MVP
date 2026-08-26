@@ -36,7 +36,6 @@ import { TerminalConnectorService } from '../services/terminal-connector.service
 import { TerminalCredentialsService } from '../services/terminal-credentials.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
-import { terminalSupportsBinaryPrintArtifact } from '../utils/terminal-canonical-capabilities';
 
 const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -93,7 +92,6 @@ export class TerminalConnectorController {
   @UseGuards(ActiveTerminalGuard)
   async activeJob(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
   ) {
     const active = await this.jobs.findActiveTerminalJob(
       terminal.merchantId,
@@ -104,30 +102,14 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       active.id,
-      undefined,
-      undefined,
-      undefined,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = { job };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: active.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
+    return { job };
   }
 
   @Post('jobs/claim')
   @UseGuards(ActiveTerminalGuard)
   async claim(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
     @Body() dto: ClaimPrintJobDto,
   ) {
     const claimed = await this.jobs.claimNextJob(
@@ -141,30 +123,14 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       claimed.id,
-      undefined,
-      undefined,
-      undefined,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = { job };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: claimed.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
+    return { job };
   }
 
   @Post('jobs/:id/printing')
   @UseGuards(ActiveTerminalGuard)
   async markPrinting(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
     @Param() params: IdParamDto,
     @Body() dto: MarkPrintingDto,
   ) {
@@ -182,26 +148,11 @@ export class TerminalConnectorController {
       terminal.merchantId,
       terminal.id,
       result.job.id,
-      undefined,
-      undefined,
-      undefined,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = {
+    return {
       job,
       attempt: result.attempt,
     };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: result.job.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
   }
 
   @Get('jobs/:id/artifact')
@@ -394,10 +345,4 @@ export class TerminalConnectorController {
 function boundedRetryCount(value: string | undefined) {
   if (!value || !/^[0-9]{1,2}$/.test(value)) return 0;
   return Math.min(20, Number(value));
-}
-
-function legacyPayloadBytes(value: object) {
-  if (!('renderedPayloadByteLength' in value)) return 0;
-  const byteLength = value.renderedPayloadByteLength;
-  return typeof byteLength === 'number' ? byteLength : 0;
 }

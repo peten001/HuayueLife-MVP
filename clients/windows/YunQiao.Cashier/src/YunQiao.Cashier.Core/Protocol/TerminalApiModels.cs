@@ -3,8 +3,8 @@ namespace YunQiao.Cashier.Core.Protocol;
 public static class TerminalCompatibility
 {
     // The server feature gate accepts only this Android-compatible syntax.
-    public const string AppVersion = "2.0.0-rc14";
-    public const int AppVersionCode = 102;
+    public const string AppVersion = "2.0.0-rc15";
+    public const int AppVersionCode = 103;
 }
 
 public sealed record TerminalBootstrap(
@@ -83,19 +83,16 @@ public sealed record ClaimedPrintJob(
     long LeaseVersion,
     DateTimeOffset LeaseExpiresAt,
     string ContentHash,
-    int SnapshotSchemaVersion,
-    string ReceiptSnapshotJson,
     RouteIdentity Route,
     string Adapter,
-    string? RenderProtocol = null,
-    string? CanonicalTemplateVersion = null,
-    byte[]? RenderedPayload = null,
-    string? RenderedPayloadSha256 = null,
-    int? RenderedPayloadByteLength = null,
-    int? PaperWidthMm = null,
-    int? WidthDots = null,
-    string? PayloadTransport = null,
-    string? ArtifactPath = null)
+    string RenderProtocol,
+    string CanonicalTemplateVersion,
+    string RenderedPayloadSha256,
+    int RenderedPayloadByteLength,
+    int? PaperWidthMm,
+    int? WidthDots,
+    string PayloadTransport,
+    string ArtifactPath)
 {
     public int ExpectedAttemptNo => CurrentAttemptNo ?? AttemptCount + 1;
 }

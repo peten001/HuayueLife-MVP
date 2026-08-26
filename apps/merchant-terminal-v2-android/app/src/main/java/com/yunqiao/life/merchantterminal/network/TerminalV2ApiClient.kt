@@ -5,7 +5,6 @@ import com.yunqiao.life.merchantterminal.BuildConfig
 import com.yunqiao.life.merchantterminal.model.LocalPrinterBinding
 import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.printing.PaperWidth
-import com.yunqiao.life.merchantterminal.security.CanonicalReceiptHash
 import com.yunqiao.life.merchantterminal.security.SecretRedactor
 import com.yunqiao.life.merchantterminal.runtime.StartupTrace
 import org.json.JSONArray
@@ -435,22 +434,12 @@ class TerminalV2ApiClient(
         transport: String = "UNKNOWN",
     ): ClaimedV2PrintJob {
         val id = job.requiredNumericString("id")
-        val payloadTransport = job.optString("payloadTransport")
-            .takeIf { it.isNotBlank() && it != "null" }
-        val binary = payloadTransport == BINARY_PRINT_ARTIFACT_V1
-        if (payloadTransport != null && !binary) {
-            throw V2ApiException(200, "INVALID_RESPONSE", message = "Unsupported payload transport.")
+        val payloadTransport = job.requiredString("payloadTransport", 64)
+        if (payloadTransport != BINARY_PRINT_ARTIFACT_V1) {
+            throw V2ApiException(200, "CLIENT_UPGRADE_REQUIRED", message = "Binary print artifact is required.")
         }
-        val snapshot = if (binary) null else job.requiredObject("receiptSnapshot")
         val hash = job.requiredString("contentHash", 64).lowercase()
         require(SHA256.matches(hash))
-        if (snapshot != null && !CanonicalReceiptHash.matches(snapshot, hash)) {
-            throw V2ApiException(
-                200,
-                "CONTENT_HASH_MISMATCH",
-                message = "Authenticated receipt content hash mismatch.",
-            )
-        }
         val route = job.requiredObject("route")
         val source = job.optString("source", "UNKNOWN").take(32)
         if (!allowAutomatic && source == "AUTOMATIC") {
@@ -466,17 +455,8 @@ class TerminalV2ApiClient(
             bindingVersion = route.requiredPositiveLong("bindingVersion"),
             transport = transport,
         )
-        val renderProtocol = job.optString("renderProtocol").takeIf { it.isNotBlank() && it != "null" }
-        val payloadSha = job.optString(
-            if (binary) "payloadSha256" else "renderedPayloadSha256",
-        ).takeIf { it.isNotBlank() && it != "null" }
-        val payload = if (!binary && renderProtocol == "ESC_POS_RASTER_V1") {
-            ServerPayloadIntegrity.decodeBase64(
-                job.requiredString("renderedPayloadBase64", 20_000_000),
-                job.getInt("renderedPayloadByteLength"),
-                payloadSha,
-            )
-        } else null
+        val renderProtocol = job.requiredString("renderProtocol", 64)
+        val payloadSha = job.requiredString("payloadSha256", 64).lowercase()
         return ClaimedV2PrintJob(
             id = id,
             merchantId = job.requiredNumericString("merchantId"),
@@ -491,38 +471,25 @@ class TerminalV2ApiClient(
             leaseVersion = job.requiredPositiveLong("leaseVersion"),
             leaseExpiresAt = job.requiredInstant("leaseExpiresAt"),
             contentHash = hash,
-            snapshotSchemaVersion = snapshot?.getInt("schemaVersion") ?: 0,
-            receiptSnapshotJson = snapshot?.toString().orEmpty(),
             renderProtocol = renderProtocol,
-            canonicalTemplateVersion = job.optString("canonicalTemplateVersion").takeIf { it.isNotBlank() && it != "null" },
-            renderedPayload = payload,
+            canonicalTemplateVersion = job.requiredString("canonicalTemplateVersion", 64),
             renderedPayloadSha256 = payloadSha,
-            renderedPayloadByteLength = job.optInt(
-                if (binary) "payloadByteLength" else "renderedPayloadByteLength",
-                -1,
-            ).takeIf { it >= 0 },
+            renderedPayloadByteLength = job.getInt("payloadByteLength"),
             paperWidthMm = job.optInt("paperWidthMm", -1).takeIf { it > 0 },
             widthDots = job.optInt("widthDots", -1).takeIf { it > 0 },
             route = routeIdentity,
             adapter = route.requiredString("adapter", 80),
             payloadTransport = payloadTransport,
-            artifactPath = if (binary) {
-                job.requiredString("artifactPath", 256).also {
-                    require(it == "/terminal/jobs/$id/artifact")
-                }
-            } else null,
+            artifactPath = job.requiredString("artifactPath", 256).also {
+                require(it == "/terminal/jobs/$id/artifact")
+            },
         ).also {
             require(it.printerId == routeIdentity.printerId)
             require(it.status == "CLAIMED" || it.status == "PRINTING")
-            require(binary || it.snapshotSchemaVersion in 1..3)
-            if (binary) {
-                require(it.renderProtocol == "ESC_POS_RASTER_V1")
-                require(it.renderedPayload == null)
-                require(it.renderedPayloadByteLength in 1..MAX_BINARY_ARTIFACT_BYTES)
-                require(it.renderedPayloadSha256?.matches(SHA256) == true)
-                require(!job.has("renderedPayloadBase64"))
-                require(!job.has("receiptSnapshot"))
-            }
+            require(it.renderProtocol == "ESC_POS_RASTER_V1")
+            require(it.canonicalTemplateVersion == "YQ_CANONICAL_RECEIPT_V1")
+            require(it.renderedPayloadByteLength in 1..MAX_BINARY_ARTIFACT_BYTES)
+            require(it.renderedPayloadSha256.matches(SHA256))
         }
     }
 
@@ -533,9 +500,9 @@ class TerminalV2ApiClient(
         retryCount: Int,
     ): DownloadedPrintArtifact {
         require(job.payloadTransport == BINARY_PRINT_ARTIFACT_V1)
-        val artifactPath = requireNotNull(job.artifactPath)
-        val expectedLength = requireNotNull(job.renderedPayloadByteLength)
-        val expectedSha = requireNotNull(job.renderedPayloadSha256).lowercase()
+        val artifactPath = job.artifactPath
+        val expectedLength = job.renderedPayloadByteLength
+        val expectedSha = job.renderedPayloadSha256.lowercase()
         require(expectedLength in 1..MAX_BINARY_ARTIFACT_BYTES)
         require(SHA256.matches(expectedSha))
         require(cacheDirectory.mkdirs() || cacheDirectory.isDirectory)

@@ -8,7 +8,6 @@ import com.yunqiao.life.merchantterminal.model.LocalTransportConfig
 import com.yunqiao.life.merchantterminal.model.PhysicalStatus
 import com.yunqiao.life.merchantterminal.model.PrinterTransport
 import com.yunqiao.life.merchantterminal.printing.PaperWidth
-import com.yunqiao.life.merchantterminal.security.CanonicalReceiptHash
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
@@ -216,47 +215,6 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
-    fun usbActiveAcceptsPrintDocumentV2Snapshot() {
-        MockWebServer().use { server ->
-            val snapshot = JSONObject(
-                """{"documentType":"PRINT_DOCUMENT","schemaVersion":2,"paperWidth":"MM80","copies":1,"blocks":[{"type":"TEXT","text":"PrintDocument V2","align":"CENTER","bold":true,"fontSize":"NORMAL","underline":false}]}""",
-            )
-            val job = usbJobJson()
-                .put("snapshotSchemaVersion", 2)
-                .put("receiptSnapshot", snapshot)
-                .put("contentHash", CanonicalReceiptHash.compute(snapshot))
-            server.enqueue(okData(JSONObject().put("job", job)))
-            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
-
-            val active = requireNotNull(client.activeJob(TERMINAL_TOKEN))
-
-            assertEquals(2, active.snapshotSchemaVersion)
-            assertEquals(2, JSONObject(active.receiptSnapshotJson).getInt("schemaVersion"))
-            assertEquals("PRINT_DOCUMENT", JSONObject(active.receiptSnapshotJson).getString("documentType"))
-        }
-    }
-
-    @Test
-    fun usbActiveAcceptsMeasuredPrintDocumentV3Snapshot() {
-        MockWebServer().use { server ->
-            val snapshot = JSONObject(
-                """{"documentType":"PRINT_DOCUMENT","schemaVersion":3,"paperWidth":"MM58","copies":1,"blocks":[{"type":"COLUMNS","gapDots":6,"cells":[{"text":"Món","weight":82,"align":"LEFT","bold":true,"fontSize":"SMALL","overflow":"FIT","paddingDots":0},{"text":"SL","weight":18,"align":"CENTER","bold":true,"fontSize":"SMALL","overflow":"FIT","paddingDots":0}]}]}""",
-            )
-            val job = usbJobJson()
-                .put("snapshotSchemaVersion", 3)
-                .put("receiptSnapshot", snapshot)
-                .put("contentHash", CanonicalReceiptHash.compute(snapshot))
-            server.enqueue(okData(JSONObject().put("job", job)))
-            val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
-
-            val active = requireNotNull(client.activeJob(TERMINAL_TOKEN))
-
-            assertEquals(3, active.snapshotSchemaVersion)
-            assertEquals(3, JSONObject(active.receiptSnapshotJson).getInt("schemaVersion"))
-        }
-    }
-
-    @Test
     fun usbJobWithoutProductionRouteIsRejectedInsteadOfUsingAFalseFixture() {
         MockWebServer().use { server ->
             val withoutRoute = usbJobJson().apply { remove("route") }
@@ -362,40 +320,6 @@ class TerminalV2ApiClientTest {
             )
             assertFalse(listOf(printing, extend, succeeded, failed).any { it.path!!.contains("/terminal/v2/") })
             assertEquals(5, server.requestCount)
-        }
-    }
-
-    @Test
-    fun rc13Accepts500And750KiBCanonicalPayloadResponses() {
-        for (payloadBytes in listOf(500 * 1024, 750 * 1024)) {
-            MockWebServer().use { server ->
-                val payload = ByteArray(payloadBytes) { index -> (index % 251).toByte() }
-                server.enqueue(okData(JSONObject().put("job", canonicalUsbJob(payload))))
-                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
-
-                val job = requireNotNull(client.activeJob(TERMINAL_TOKEN))
-
-                assertEquals(payloadBytes, job.renderedPayload?.size)
-                assertEquals(payloadBytes, job.renderedPayloadByteLength)
-                assertEquals(1, server.requestCount)
-            }
-        }
-    }
-
-    @Test
-    fun rc13Rejects1And2MiBCanonicalPayloadResponsesAtTheGlobalResponseLimit() {
-        for (payloadBytes in listOf(1 * 1024 * 1024, 2 * 1024 * 1024)) {
-            MockWebServer().use { server ->
-                val payload = ByteArray(payloadBytes) { index -> (index % 251).toByte() }
-                server.enqueue(okData(JSONObject().put("job", canonicalUsbJob(payload))))
-                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
-
-                val error = runCatching { client.activeJob(TERMINAL_TOKEN) }.exceptionOrNull()
-
-                assertTrue(error is V2ApiException)
-                assertEquals("RESPONSE_TOO_LARGE", (error as V2ApiException).errorCode)
-                assertEquals(1, server.requestCount)
-            }
         }
     }
 
@@ -549,7 +473,6 @@ class TerminalV2ApiClientTest {
                     val job = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
 
                     assertEquals("BINARY_PRINT_ARTIFACT_V1", job.payloadTransport)
-                    assertEquals(null, job.renderedPayload)
                     assertEquals(payload.size, job.renderedPayloadByteLength)
                     val artifact = client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
 
@@ -726,10 +649,9 @@ class TerminalV2ApiClientTest {
         return null
     }
 
-    private fun lanJobJson(): JSONObject {
-        val snapshot = JSONObject().put("schemaVersion", 1)
-        return JSONObject()
+    private fun lanJobJson(): JSONObject = JSONObject()
             .put("id", "267")
+            .put("jobId", "267")
             .put("merchantId", "2")
             .put("printerId", "18")
             .put("status", "CLAIMED")
@@ -738,9 +660,13 @@ class TerminalV2ApiClientTest {
             .put("attemptCount", 0)
             .put("leaseVersion", 1)
             .put("leaseExpiresAt", "2030-01-01T00:00:00Z")
-            .put("contentHash", CanonicalReceiptHash.compute(snapshot))
-            .put("snapshotSchemaVersion", 1)
-            .put("receiptSnapshot", snapshot)
+            .put("contentHash", "a".repeat(64))
+            .put("canonicalTemplateVersion", "YQ_CANONICAL_RECEIPT_V1")
+            .put("renderProtocol", "ESC_POS_RASTER_V1")
+            .put("payloadTransport", "BINARY_PRINT_ARTIFACT_V1")
+            .put("payloadByteLength", 1)
+            .put("payloadSha256", "b".repeat(64))
+            .put("artifactPath", "/terminal/jobs/267/artifact")
             .put(
                 "route",
                 JSONObject()
@@ -749,7 +675,6 @@ class TerminalV2ApiClientTest {
                     .put("bindingVersion", 1)
                     .put("adapter", "ANDROID_LAN_ESCPOS"),
             )
-    }
 
     private fun usbBinding() = LocalPrinterBinding(
         merchantId = "11",
@@ -779,44 +704,7 @@ class TerminalV2ApiClientTest {
         lastStatusReportAt = null,
     )
 
-    private fun usbJobJson(): JSONObject {
-        val snapshot = JSONObject().put("schemaVersion", 1)
-        return JSONObject()
-            .put("id", "267")
-            .put("merchantId", "11")
-            .put("printerId", "37")
-            .put("status", "CLAIMED")
-            .put("receiptType", "ORDER_CUSTOMER")
-            .put("source", "TEST")
-            .put("attemptCount", 0)
-            .put("leaseVersion", 1)
-            .put("leaseExpiresAt", "2030-01-01T00:00:00Z")
-            .put("contentHash", CanonicalReceiptHash.compute(snapshot))
-            .put("snapshotSchemaVersion", 1)
-            .put("receiptSnapshot", snapshot)
-            .put(
-                "route",
-                JSONObject()
-                    .put("printerId", "37")
-                    .put("localBindingId", "123e4567-e89b-12d3-a456-426614174000")
-                    .put("bindingVersion", 4)
-                    .put("adapter", "ANDROID_USB_ESCPOS"),
-            )
-    }
-
-    private fun canonicalUsbJob(payload: ByteArray): JSONObject {
-        val sha = MessageDigest.getInstance("SHA-256")
-            .digest(payload)
-            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-        return usbJobJson()
-            .put("canonicalTemplateVersion", "YQ_CANONICAL_RECEIPT_V1")
-            .put("renderProtocol", "ESC_POS_RASTER_V1")
-            .put("renderedPayloadBase64", Base64.getEncoder().encodeToString(payload))
-            .put("renderedPayloadSha256", sha)
-            .put("renderedPayloadByteLength", payload.size)
-            .put("paperWidthMm", 80)
-            .put("widthDots", 576)
-    }
+    private fun usbJobJson(): JSONObject = binaryUsbJob(1, "b".repeat(64))
 
     private fun binaryUsbJob(byteLength: Int, sha: String): JSONObject = JSONObject()
         .put("id", "267")

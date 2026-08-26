@@ -21,6 +21,7 @@ import {
   ANDROID_LAN_ESCPOS_ADAPTER,
   lanBindingMetadata,
 } from '../types/lan-terminal-binding';
+import { terminalSupportsBinaryPrintArtifact } from '../utils/terminal-canonical-capabilities';
 
 export interface StartPrintingInput {
   merchantId: bigint;
@@ -474,12 +475,18 @@ export class PrintAttemptsService {
   private async requireActiveTerminal(merchantId: bigint, terminalId: bigint) {
     const terminal = await this.prisma.merchantTerminal.findFirst({
       where: { id: terminalId, merchantId, status: 'ACTIVE', revokedAt: null },
-      select: { id: true },
+      select: { id: true, capabilities: true },
     });
     if (!terminal) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.PERMISSION_DENIED,
         message: '终端未启用或不属于当前商家',
+      });
+    }
+    if (!terminalSupportsBinaryPrintArtifact(terminal.capabilities)) {
+      throw new BadRequestException({
+        code: PRINTING_ERROR_CODES.TERMINAL_UPGRADE_REQUIRED,
+        message: '当前终端不支持 Binary Print Artifact V1，请升级正式客户端',
       });
     }
   }

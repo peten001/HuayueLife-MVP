@@ -12,23 +12,21 @@ No database migration is required. The artifact source is the existing
 `PrintJob.renderedPayload` together with `renderedPayloadByteLength`,
 `renderedPayloadSha256`, and `renderProtocol`.
 
-## Negotiation and dual path
+## Required terminal capability
 
-A terminal opts in only by reporting the exact boolean capability:
+A production terminal must report the exact boolean capability:
 
 ```json
 { "BINARY_PRINT_ARTIFACT_V1": true }
 ```
 
-For an opted-in terminal, active, claim, and printing responses contain a small
+Active, claim, and printing responses contain a small
 descriptor with `payloadTransport`, `payloadByteLength`, `payloadSha256`, and
 `artifactPath`. They contain no Base64 payload, receipt snapshot, print
 document, or semantic document.
 
-Terminals without the capability continue to receive the existing guarded
-Base64/JSON response. The legacy path must remain enabled until every current
-active print terminal has upgraded and a real paper print has been confirmed on
-the binary path.
+Terminals without the capability receive `CLIENT_UPGRADE_REQUIRED`. There is no
+Base64/JSON response and no client-side business receipt renderer fallback.
 
 ## Artifact contract
 
@@ -76,15 +74,20 @@ printed and is reported without returning artifact content.
 
 ## Operations and rollback
 
-Deploy the server dual path before distributing either new client. Do not
-install a client without an onsite operator able to confirm the resulting paper.
+Deploy the server and distribute the required client versions as one controlled
+release. Do not install a client without an onsite operator able to confirm the
+resulting paper unless the user has explicitly waived that physical check.
 
 Structured download logs use only
 `PRINT_ARTIFACT_DOWNLOAD_STARTED`, `PRINT_ARTIFACT_DOWNLOAD_COMPLETED`, and
 `PRINT_ARTIFACT_DOWNLOAD_FAILED`, with job/terminal IDs, byte count, duration,
 SHA status, and retry count. They never contain receipt bytes or Base64.
 
-Rollback is capability-based: stop distributing the new clients or disable the
-terminal, while leaving the legacy server path in place. Do not remove the
-binary endpoint or legacy path during an incident unless all claimed jobs and
-terminal versions have first been audited.
+Rollback switches the API release and client package to the retained prior
+artifacts after the queue and terminal versions are audited. Historical jobs,
+attempts, logs, releases, and installation packages are retained; the current
+runtime does not retain an executable legacy payload path.
+
+Full suites and large fixtures run only on local, CI, build, or shadow systems.
+`NO_HEAVY_FULL_TESTS_ON_LIVE_PRODUCTION_HOST` is mandatory: the live PM2 host
+runs only release verification, lightweight smoke checks, and health checks.

@@ -9,7 +9,7 @@
 #endif
 
 #define AppName "YunQiao Cashier"
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #define AppPublisher "YunQiao"
 #define AppExeName "YunQiao.Cashier.exe"
 

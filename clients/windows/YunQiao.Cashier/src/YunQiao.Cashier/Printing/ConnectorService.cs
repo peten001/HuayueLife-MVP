@@ -1,4 +1,3 @@
-using System.Windows;
 using YunQiao.Cashier.Core.Printing;
 using YunQiao.Cashier.Core.Protocol;
 using YunQiao.Cashier.Core.Queue;
@@ -13,7 +12,6 @@ public sealed class ConnectorService : IAsyncDisposable
     private readonly SettingsService _settingsService;
     private readonly DpapiCredentialStore _credentialStore;
     private readonly TerminalApiClient _api;
-    private readonly WpfReceiptRenderer _renderer;
     private readonly ExecutionLedger _ledger;
     private readonly PendingReportStore _pendingReports;
     private readonly SemaphoreSlim _sessionGate = new(1, 1);
@@ -28,13 +26,11 @@ public sealed class ConnectorService : IAsyncDisposable
     public ConnectorService(
         SettingsService settingsService,
         DpapiCredentialStore credentialStore,
-        TerminalApiClient api,
-        WpfReceiptRenderer renderer)
+        TerminalApiClient api)
     {
         _settingsService = settingsService;
         _credentialStore = credentialStore;
         _api = api;
-        _renderer = renderer;
         var state = Path.Combine(SettingsService.RootDirectory, "state");
         _ledger = new ExecutionLedger(Path.Combine(state, "execution-ledger.json"));
         _pendingReports = new PendingReportStore(Path.Combine(state, "pending-operations.json"));
@@ -256,41 +252,40 @@ public sealed class ConnectorService : IAsyncDisposable
         CancellationToken cancellationToken,
         Func<CancellationToken, Task> heartbeatDuringDownload)
     {
-        PreparedArtifact? preparedArtifact = null;
-        if (job.PayloadTransport == "BINARY_PRINT_ARTIFACT_V1")
+        if (job.PayloadTransport != "BINARY_PRINT_ARTIFACT_V1")
+            throw new TerminalApiException(426, "CLIENT_UPGRADE_REQUIRED", "Binary print artifact is required.");
+        PreparedArtifact preparedArtifact;
+        try
         {
-            try
-            {
-                preparedArtifact = await DownloadBinaryWithKeepAliveAsync(
-                    bearer,
-                    job,
-                    heartbeatDuringDownload,
-                    cancellationToken);
-            }
-            catch (ArtifactDownloadException failure)
-            {
-                var error = failure.ApiError;
-                AppLog.Warn("PRINT_ARTIFACT_REFUSED", $"jobId={job.Id} code={error.ErrorCode}");
-                if (error.ErrorCode is "PAYLOAD_LENGTH_MISMATCH" or "PAYLOAD_SHA_MISMATCH")
-                {
-                    try
-                    {
-                        await _api.ReportArtifactFailureAsync(
-                            bearer,
-                            job,
-                            failure.LeaseVersion,
-                            error.ErrorCode,
-                            cancellationToken);
-                    }
-                    catch (TerminalApiException reportError)
-                    {
-                        AppLog.Warn("PRINT_ARTIFACT_FAILURE_REPORT_PENDING", $"jobId={job.Id} code={reportError.ErrorCode}");
-                    }
-                }
-                return;
-            }
+            preparedArtifact = await DownloadBinaryWithKeepAliveAsync(
+                bearer,
+                job,
+                heartbeatDuringDownload,
+                cancellationToken);
         }
-        using var artifactCleanup = preparedArtifact?.Artifact;
+        catch (ArtifactDownloadException failure)
+        {
+            var error = failure.ApiError;
+            AppLog.Warn("PRINT_ARTIFACT_REFUSED", $"jobId={job.Id} code={error.ErrorCode}");
+            if (error.ErrorCode is "PAYLOAD_LENGTH_MISMATCH" or "PAYLOAD_SHA_MISMATCH")
+            {
+                try
+                {
+                    await _api.ReportArtifactFailureAsync(
+                        bearer,
+                        job,
+                        failure.LeaseVersion,
+                        error.ErrorCode,
+                        cancellationToken);
+                }
+                catch (TerminalApiException reportError)
+                {
+                    AppLog.Warn("PRINT_ARTIFACT_FAILURE_REPORT_PENDING", $"jobId={job.Id} code={reportError.ErrorCode}");
+                }
+            }
+            return;
+        }
+        using var artifactCleanup = preparedArtifact.Artifact;
         var registration = await _ledger.RegisterAsync(job.MerchantId, job.Id, job.ExpectedAttemptNo, job.ContentHash, cancellationToken);
         if (registration.Disposition != RegistrationDisposition.Ready)
         {
@@ -298,46 +293,7 @@ public sealed class ConnectorService : IAsyncDisposable
             return;
         }
 
-        byte[] bytes = [];
-        try
-        {
-            if (preparedArtifact is null)
-            {
-                var expectedWidthDots = profile.PaperWidth == PrintPaperWidth.MM58 ? 384 : 576;
-                var canonicalPayload = CanonicalServerPayload.ForJob(job, expectedWidthDots);
-                if (canonicalPayload is not null)
-                {
-                    bytes = canonicalPayload;
-                }
-                else
-                {
-                    RenderedReceipt rendered;
-                    if (job.SnapshotSchemaVersion == 1)
-                    {
-                        var legacy = ReceiptDocumentV1Parser.Parse(job.ReceiptSnapshotJson);
-                        if (legacy.ReceiptType.ToString() != job.ReceiptType) throw new ReceiptSchemaException("Receipt type mismatch.");
-                        rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.RenderLegacy(legacy, profile.PaperWidth, DateTimeOffset.Now));
-                    }
-                    else
-                    {
-                        var document = PrintDocumentParser.Parse(job.ReceiptSnapshotJson);
-                        if (document.PaperWidth != profile.PaperWidth) throw new PrintDocumentException("Print document paper width mismatch.");
-                        rendered = await Application.Current.Dispatcher.InvokeAsync(() => _renderer.Render(document));
-                    }
-                    bytes = rendered.EscPosBytes;
-                }
-            }
-        }
-        catch (Exception error)
-        {
-            AppLog.Warn("PRINT_PREFLIGHT_FAILED", $"jobId={job.Id} type={error.GetType().Name}");
-            await ReportPreflightFailureAsync(bearer, job, registration.Entry, error, cancellationToken);
-            return;
-        }
-
-        var leaseJob = preparedArtifact is null
-            ? job
-            : job with { LeaseVersion = preparedArtifact.LeaseVersion };
+        var leaseJob = job with { LeaseVersion = preparedArtifact.LeaseVersion };
         var lease = await _api.ExtendLeaseAsync(bearer, leaseJob, cancellationToken);
         var started = job.Status == "PRINTING" && job.CurrentAttemptNo is not null
             ? new StartPrintingResult(job.CurrentAttemptNo.Value, lease.LeaseVersion, lease.LeaseExpiresAt)
@@ -351,23 +307,21 @@ public sealed class ConnectorService : IAsyncDisposable
         var printing = await _ledger.UpdateAsync(registration.Entry with
         {
             State = ExecutionState.Printing,
-            PlannedBytes = preparedArtifact?.Artifact.ByteLength ?? bytes.Length,
+            PlannedBytes = preparedArtifact.Artifact.ByteLength,
             IoAttempted = true,
         }, cancellationToken);
-        var plannedBytes = preparedArtifact?.Artifact.ByteLength ?? bytes.Length;
+        var plannedBytes = preparedArtifact.Artifact.ByteLength;
         AppLog.Info("PRINT_EXECUTE_START", $"jobId={job.Id} attempt={started.AttemptNo} bytes={plannedBytes} transport={profile.Transport}");
         var transport = ResolveTransport(profile);
         TransportResult result;
         try
         {
-            result = preparedArtifact is not null
-                ? transport is IStreamPrinterTransport streaming
-                    ? await streaming.SendFileAsync(
-                        preparedArtifact.Artifact.Path,
-                        preparedArtifact.Artifact.ByteLength,
-                        cancellationToken)
-                    : TransportResult.Failure("CONFIG_INVALID", "Binary artifact transport is not stream-capable.", false)
-                : await transport.SendAsync(bytes, cancellationToken);
+            result = transport is IStreamPrinterTransport streaming
+                ? await streaming.SendFileAsync(
+                    preparedArtifact.Artifact.Path,
+                    preparedArtifact.Artifact.ByteLength,
+                    cancellationToken)
+                : TransportResult.Failure("CONFIG_INVALID", "Binary artifact transport is not stream-capable.", false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -483,21 +437,6 @@ public sealed class ConnectorService : IAsyncDisposable
             leaseVersion);
     }
 
-    private async Task ReportPreflightFailureAsync(
-        string bearer,
-        ClaimedPrintJob job,
-        ExecutionEntry entry,
-        Exception error,
-        CancellationToken cancellationToken)
-    {
-        var started = job.Status == "PRINTING" && job.CurrentAttemptNo is not null
-            ? new StartPrintingResult(job.CurrentAttemptNo.Value, job.LeaseVersion, job.LeaseExpiresAt)
-            : await _api.MarkPrintingAsync(bearer, job, job.LeaseVersion, cancellationToken);
-        var result = TransportResult.Failure("TEMPLATE_INVALID", error.GetType().Name, false);
-        var completed = await _ledger.UpdateAsync(entry with { State = ExecutionState.Failed, ErrorCode = "TEMPLATE_INVALID" }, cancellationToken);
-        await ReportOrQueueAsync(bearer, CreatePending(job, started.AttemptNo, started.LeaseVersion, result, ExecutionState.Failed), completed, cancellationToken);
-    }
-
     private async Task ReportOrQueueAsync(
         string bearer,
         PendingPrintReport report,
@@ -536,8 +475,10 @@ public sealed class ConnectorService : IAsyncDisposable
         var job = new ClaimedPrintJob(
             report.JobId, report.MerchantId, report.PrinterId, "PRINTING", report.ReceiptType,
             report.Source, report.AttemptNo - 1, report.AttemptNo, report.LeaseVersion,
-            DateTimeOffset.UtcNow.AddMinutes(1), report.ContentHash, 2, "{}", report.Route, report.Adapter,
-            RenderedPayloadSha256: report.RenderedPayloadSha256);
+            DateTimeOffset.UtcNow.AddMinutes(1), report.ContentHash, report.Route, report.Adapter,
+            "ESC_POS_RASTER_V1", "YQ_CANONICAL_RECEIPT_V1",
+            report.RenderedPayloadSha256 ?? string.Empty, Math.Max(1, report.BytesWritten),
+            null, null, "BINARY_PRINT_ARTIFACT_V1", $"/terminal/jobs/{report.JobId}/artifact");
         return report.State == ExecutionState.Succeeded
             ? _api.ReportSucceededAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten, cancellationToken)
             : _api.ReportFailedAsync(bearer, job, report.AttemptNo, report.LeaseVersion, report.BytesWritten,

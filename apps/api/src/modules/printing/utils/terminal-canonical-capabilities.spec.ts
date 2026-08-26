@@ -2,7 +2,6 @@ import {
   normalizeTerminalCapabilities,
   reportedTerminalPlatform,
   terminalSupportsBinaryPrintArtifact,
-  terminalSupportsCanonicalPayload,
 } from './terminal-canonical-capabilities';
 
 describe('terminal canonical capabilities', () => {
@@ -23,23 +22,7 @@ describe('terminal canonical capabilities', () => {
       },
       reportedPlatform: 'WINDOWS',
     });
-    expect(terminalSupportsCanonicalPayload(normalized)).toBe(true);
     expect(reportedTerminalPlatform(normalized)).toBe('WINDOWS');
-  });
-
-  it('reads dirty legacy keys but requires both capability values to be true', () => {
-    expect(terminalSupportsCanonicalPayload({
-      connector: {
-        serveR_ESC_POS_PAYLOAD_V1: true,
-        raW_PAYLOAD_PASSTHROUGH: true,
-      },
-    })).toBe(true);
-    expect(terminalSupportsCanonicalPayload({
-      connector: {
-        SERVER_ESC_POS_PAYLOAD_V1: true,
-        RAW_PAYLOAD_PASSTHROUGH: false,
-      },
-    })).toBe(false);
   });
 
   it('does not manufacture canonical support from unrelated capability data', () => {
@@ -47,7 +30,6 @@ describe('terminal canonical capabilities', () => {
       connector: { platform: 'ANDROID', channels: ['LOCAL_USB_ESCPOS'] },
     });
 
-    expect(terminalSupportsCanonicalPayload(normalized)).toBe(false);
     expect(normalized).not.toHaveProperty('SERVER_ESC_POS_PAYLOAD_V1');
     expect(normalized).not.toHaveProperty('RAW_PAYLOAD_PASSTHROUGH');
   });

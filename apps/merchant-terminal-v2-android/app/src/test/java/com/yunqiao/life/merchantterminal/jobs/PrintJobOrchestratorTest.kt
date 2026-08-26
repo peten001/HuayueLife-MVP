@@ -229,14 +229,18 @@ class PrintJobOrchestratorTest {
         leaseVersion = 1,
         leaseExpiresAt = Long.MAX_VALUE,
         contentHash = "a".repeat(64),
-        snapshotSchemaVersion = 1,
-        receiptSnapshotJson = "{}",
         route = V2RouteIdentity.from(binding),
         adapter = if (binding.transport == PrinterTransport.LAN) {
             "ANDROID_LAN_ESCPOS"
         } else {
             "ANDROID_USB_ESCPOS"
         },
+        renderProtocol = "ESC_POS_RASTER_V1",
+        canonicalTemplateVersion = "YQ_CANONICAL_RECEIPT_V1",
+        renderedPayloadSha256 = "b".repeat(64),
+        renderedPayloadByteLength = 1,
+        payloadTransport = "BINARY_PRINT_ARTIFACT_V1",
+        artifactPath = "/terminal/jobs/267/artifact",
     )
 
     private class FakeApiAdapter(

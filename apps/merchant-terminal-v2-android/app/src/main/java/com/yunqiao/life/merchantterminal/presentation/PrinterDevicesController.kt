@@ -613,7 +613,7 @@ class PrinterDevicesController(
                 val result = printOnce(
                     binding,
                     PrintableDocument(
-                        LocalTestDocumentFactory.render(binding),
+                        PrinterDiagnosticRasterBuilder.render(binding),
                         "local-printer-test",
                     ),
                 )
@@ -972,7 +972,7 @@ class PrinterDevicesController(
                 val result = printOnce(
                     binding,
                     PrintableDocument(
-                        LocalTestDocumentFactory.render(binding),
+                        PrinterDiagnosticRasterBuilder.render(binding),
                         "local-printer-test",
                     ),
                 )
@@ -1147,7 +1147,8 @@ private fun PrinterOperation.isBusy(): Boolean = this in setOf(
     PrinterOperation.SYNCING,
 )
 
-object LocalTestDocumentFactory {
+/** DIAGNOSTIC TEST PRINT ONLY. Production PrintJob execution cannot reference this builder. */
+object PrinterDiagnosticRasterBuilder {
     fun render(binding: LocalPrinterBinding): ByteArray {
         val width = binding.paperWidth.defaultDots
         val bitmap = Bitmap.createBitmap(width, 440, Bitmap.Config.ARGB_8888)

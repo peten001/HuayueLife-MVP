@@ -32,7 +32,6 @@ import { TerminalCredentialsService } from '../services/terminal-credentials.ser
 import { ANDROID_LAN_ESCPOS_ADAPTER } from '../types/lan-terminal-binding';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import { AuthenticatedTerminal } from '../types/terminal-auth';
-import { terminalSupportsBinaryPrintArtifact } from '../utils/terminal-canonical-capabilities';
 
 const SAFE_ZERO_BYTE_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.NETWORK_TIMEOUT,
@@ -81,7 +80,6 @@ export class LanTerminalConnectorController {
   @UseGuards(ActiveTerminalGuard)
   async activeJob(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
     @Query() query: LanActiveJobQueryDto,
   ) {
     const printerId = databaseId(query.printerId, 'printerId');
@@ -100,27 +98,14 @@ export class LanTerminalConnectorController {
       printerId,
       query.localBindingId,
       query.bindingVersion,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = { job };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: active.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
+    return { job };
   }
 
   @Post('jobs/claim')
   @UseGuards(ActiveTerminalGuard)
   async claim(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
     @Body() dto: ClaimLanPrintJobDto,
   ) {
     const printerId = databaseId(dto.printerId, 'printerId');
@@ -141,27 +126,14 @@ export class LanTerminalConnectorController {
       printerId,
       dto.localBindingId,
       dto.bindingVersion,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = { job };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: claimed.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
+    return { job };
   }
 
   @Post('jobs/:id/printing')
   @UseGuards(ActiveTerminalGuard)
   async markPrinting(
     @CurrentTerminal() terminal: AuthenticatedTerminal,
-    @Req() request: RequestWithContext,
     @Param() params: IdParamDto,
     @Body() dto: MarkLanPrintingDto,
   ) {
@@ -186,23 +158,11 @@ export class LanTerminalConnectorController {
       printerId,
       dto.localBindingId,
       dto.bindingVersion,
-      terminalSupportsBinaryPrintArtifact(terminal.capabilities),
     );
-    const response = {
+    return {
       job,
       attempt: result.attempt,
     };
-    if (terminalSupportsBinaryPrintArtifact(terminal.capabilities)) return response;
-    return this.jobs.guardLegacyPayloadTransfer({
-      responseData: response,
-      requestId: request.requestId,
-      jobId: result.job.id,
-      merchantId: terminal.merchantId,
-      terminalId: terminal.id,
-      printType: job.receiptType,
-      payloadBytes: legacyPayloadBytes(job),
-      clientVersion: terminal.appVersion,
-    });
   }
 
   @Post('jobs/:id/succeeded')
@@ -352,10 +312,4 @@ function databaseId(value: string, name: string) {
     });
   }
   return parsed;
-}
-
-function legacyPayloadBytes(value: object) {
-  if (!('renderedPayloadByteLength' in value)) return 0;
-  const byteLength = value.renderedPayloadByteLength;
-  return typeof byteLength === 'number' ? byteLength : 0;
 }

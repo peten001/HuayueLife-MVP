@@ -110,7 +110,8 @@ public sealed class TerminalApiClientTests
             var job = Assert.IsType<ClaimedPrintJob>(await api.ClaimJobAsync(
                 new string('t', 24), route, false, CancellationToken.None));
             Assert.Equal("BINARY_PRINT_ARTIFACT_V1", job.PayloadTransport);
-            Assert.Null(job.RenderedPayload);
+            Assert.Equal(payload.Length, job.RenderedPayloadByteLength);
+            Assert.Equal(sha, job.RenderedPayloadSha256);
 
             using (var artifact = await api.DownloadArtifactAsync(
                 new string('t', 24), job, cache, 0, CancellationToken.None))

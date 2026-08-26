@@ -68,13 +68,7 @@ import {
 } from './canonical-print-artifact.service';
 import {
   terminalSupportsBinaryPrintArtifact,
-  terminalSupportsCanonicalPayload,
 } from '../utils/terminal-canonical-capabilities';
-import { serializeApiSuccessResponse } from '../../../common/utils/api-success-response';
-import {
-  LEGACY_JSON_RESPONSE_SAFE_MAX_CHARS,
-  printPayloadCapacityLevel,
-} from '../types/printing-payload-capacity';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 
@@ -164,17 +158,6 @@ export interface CreateTestJobInput {
   requestId?: string;
   requestKey: string;
   document: ReceiptDocument;
-}
-
-export interface GuardLegacyPayloadTransferInput<T> {
-  responseData: T;
-  requestId: string;
-  jobId: bigint;
-  merchantId: bigint;
-  terminalId: bigint;
-  printType: string;
-  payloadBytes: number;
-  clientVersion?: string | null;
 }
 
 @Injectable()
@@ -1410,7 +1393,7 @@ export class PrintJobsService {
         message: '终端未启用或不属于当前商家',
       });
     }
-    this.assertCanonicalTerminalCapability(terminal.capabilities);
+    this.assertBinaryArtifactTerminalCapability(terminal.capabilities);
     if (!terminal.boundPrinterId) {
       throw new BadRequestException({
         code: PRINTING_ERROR_CODES.CONFIG_INVALID,
@@ -1530,7 +1513,7 @@ export class PrintJobsService {
     this.flags.assertExecutionEnabled();
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     this.assertAuthenticatedTerminalConnector(terminalId);
-    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
+    await this.requireBinaryArtifactTerminalCapability(merchantId, terminalId);
     const printer = printerId
       ? await this.requireUsablePrinter(merchantId, printerId, true)
       : await this.requireDefaultReadyUsbPrinter(merchantId);
@@ -1699,8 +1682,9 @@ export class PrintJobsService {
       },
       select: { boundPrinterId: true, capabilities: true },
     });
-    if (!terminal?.boundPrinterId) return null;
-    this.assertCanonicalTerminalCapability(terminal.capabilities);
+    if (!terminal) return null;
+    this.assertBinaryArtifactTerminalCapability(terminal.capabilities);
+    if (!terminal.boundPrinterId) return null;
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
@@ -1721,7 +1705,7 @@ export class PrintJobsService {
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     this.assertAuthenticatedTerminalConnector(terminalId);
-    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
+    await this.requireBinaryArtifactTerminalCapability(merchantId, terminalId);
     return this.prisma.printJob.findFirst({
       where: {
         merchantId,
@@ -1746,7 +1730,7 @@ export class PrintJobsService {
     bindingVersion: number,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
-    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
+    await this.requireBinaryArtifactTerminalCapability(merchantId, terminalId);
     await this.lanBindings.requireClaimable(
       merchantId,
       printerId,
@@ -1769,11 +1753,10 @@ export class PrintJobsService {
     printerId?: bigint,
     localBindingId?: string,
     bindingVersion?: number,
-    binaryTransport = false,
   ) {
     await this.settings.assertMerchantPrintingEnabled(merchantId);
     this.assertAuthenticatedTerminalConnector(terminalId);
-    await this.requireCanonicalTerminalCapability(merchantId, terminalId);
+    await this.requireBinaryArtifactTerminalCapability(merchantId, terminalId);
     const job = await this.prisma.printJob.findFirst({
       where: {
         id: jobId,
@@ -1843,7 +1826,6 @@ export class PrintJobsService {
         data: { receiptSnapshotHash: contentHash },
       });
     }
-    const snapshot = job.receiptSnapshot as Record<string, unknown>;
     const binding = job.printer.channelType === 'LOCAL_LAN_ESCPOS'
       ? lanBindingMetadata(job.printer.capabilities)
       : terminalId !== null
@@ -1859,75 +1841,30 @@ export class PrintJobsService {
         message: '任务终端与 USB Binding 不匹配',
       });
     }
-    if (binaryTransport) {
-      this.assertBinaryArtifactSize(job.renderedPayloadByteLength);
-      return {
-        id: job.id,
-        jobId: job.id,
-        merchantId: merchantId.toString(),
-        printerId: job.printerId,
-        receiptType: job.receiptType,
-        source: job.source,
-        status: job.status,
-        attemptCount: job.attemptCount,
-        leaseVersion: job.leaseVersion,
-        leaseExpiresAt: job.leaseExpiresAt,
-        contentHash,
-        renderProtocol: job.renderProtocol,
-        canonicalTemplateVersion: job.canonicalTemplateVersion,
-        payloadTransport: BINARY_PRINT_ARTIFACT_TRANSPORT,
-        payloadByteLength: job.renderedPayloadByteLength,
-        payloadSha256: job.renderedPayloadSha256,
-        artifactPath: `/terminal/jobs/${job.id.toString()}/artifact`,
-        paperWidthMm: job.renderedPaperWidthMm,
-        widthDots: job.renderedWidthDots,
-        currentAttempt: job.attempts[0]
-          ? { attemptNo: job.attempts[0].attemptNo }
-          : null,
-        ...(binding
-          ? {
-              route: {
-                printerId: job.printerId,
-                localBindingId: binding.localBindingId,
-                bindingVersion: binding.bindingVersion,
-                adapter:
-                  job.printer.channelType === 'LOCAL_LAN_ESCPOS'
-                    ? ANDROID_LAN_ESCPOS_ADAPTER
-                    : ANDROID_USB_ESCPOS_ADAPTER,
-              },
-            }
-          : {}),
-      };
-    }
+    this.assertBinaryArtifactSize(job.renderedPayloadByteLength);
     return {
       id: job.id,
+      jobId: job.id,
       merchantId: merchantId.toString(),
       printerId: job.printerId,
       receiptType: job.receiptType,
-      triggerEvent: job.triggerEvent,
       source: job.source,
       status: job.status,
-      priority: job.priority,
-      copyIndex: job.copyIndex,
-      copyCount: job.copyCount,
       attemptCount: job.attemptCount,
-      maxAttempts: job.maxAttempts,
       leaseVersion: job.leaseVersion,
       leaseExpiresAt: job.leaseExpiresAt,
       contentHash,
-      snapshotSchemaVersion: snapshot.schemaVersion,
-      receiptSnapshot: job.receiptSnapshot,
-      canonicalTemplateVersion: job.canonicalTemplateVersion,
       renderProtocol: job.renderProtocol,
-      renderedPayloadBase64: job.renderedPayload
-        ? Buffer.from(job.renderedPayload).toString('base64')
-        : null,
-      renderedPayloadSha256: job.renderedPayloadSha256,
-      renderedPayloadByteLength: job.renderedPayloadByteLength,
+      canonicalTemplateVersion: job.canonicalTemplateVersion,
+      payloadTransport: BINARY_PRINT_ARTIFACT_TRANSPORT,
+      payloadByteLength: job.renderedPayloadByteLength,
+      payloadSha256: job.renderedPayloadSha256,
+      artifactPath: `/terminal/jobs/${job.id.toString()}/artifact`,
       paperWidthMm: job.renderedPaperWidthMm,
       widthDots: job.renderedWidthDots,
-      printer: job.printer,
-      currentAttempt: job.attempts[0] ?? null,
+      currentAttempt: job.attempts[0]
+        ? { attemptNo: job.attempts[0].attemptNo }
+        : null,
       ...(binding
         ? {
             route: {
@@ -2057,115 +1994,6 @@ export class PrintJobsService {
       this.stateConflict('artifact 失败上报时任务租约已变化');
     }
     return { jobId, status: 'FAILED' as const };
-  }
-
-  async guardLegacyPayloadTransfer<T>(
-    input: GuardLegacyPayloadTransferInput<T>,
-  ): Promise<T> {
-    const serializedResponseChars = serializeApiSuccessResponse(
-      input.responseData,
-      input.requestId,
-    ).length;
-    const capacityLevel = printPayloadCapacityLevel(
-      input.payloadBytes,
-      serializedResponseChars,
-    );
-    if (capacityLevel !== 'NORMAL') {
-      this.logger.warn(
-        JSON.stringify({
-          event:
-            capacityLevel === 'CRITICAL'
-              ? 'PRINT_PAYLOAD_CAPACITY_CRITICAL'
-              : 'PRINT_PAYLOAD_CAPACITY_WARN',
-          jobId: input.jobId.toString(),
-          merchantId: input.merchantId.toString(),
-          printType: input.printType,
-          payloadBytes: input.payloadBytes,
-          serializedResponseChars,
-          clientVersion: input.clientVersion ?? null,
-        }),
-      );
-    }
-    if (serializedResponseChars <= LEGACY_JSON_RESPONSE_SAFE_MAX_CHARS) {
-      return input.responseData;
-    }
-
-    const safelyFinalized = await this.failOversizedLegacyPayloadJob(input);
-    if (!safelyFinalized) {
-      this.stateConflict(
-        '超限打印任务状态已变化；响应已拒绝，需刷新任务状态后继续',
-      );
-    }
-    throw new PayloadTooLargeException({
-      code: PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
-      message: '打印内容超过当前客户端安全传输上限，任务已安全终止',
-    });
-  }
-
-  private failOversizedLegacyPayloadJob(
-    input: GuardLegacyPayloadTransferInput<unknown>,
-  ) {
-    return this.prisma.$transaction(async (tx) => {
-      const job = await tx.printJob.findFirst({
-        where: {
-          id: input.jobId,
-          merchantId: input.merchantId,
-          claimedByTerminalId: input.terminalId,
-          status: { in: ['CLAIMED', 'PRINTING'] },
-        },
-        select: {
-          id: true,
-          status: true,
-          leaseVersion: true,
-          attemptCount: true,
-        },
-      });
-      if (!job) return false;
-      const now = new Date();
-      const errorMessage =
-        '打印内容超过当前客户端安全传输上限，未向终端下发';
-      const changed = await tx.printJob.updateMany({
-        where: {
-          id: job.id,
-          merchantId: input.merchantId,
-          claimedByTerminalId: input.terminalId,
-          status: job.status,
-          leaseVersion: job.leaseVersion,
-        },
-        data: {
-          status: 'FAILED',
-          claimedAt: null,
-          claimedByTerminalId: null,
-          leaseExpiresAt: null,
-          leaseVersion: { increment: 1 },
-          completedAt: now,
-          retryBlocked: true,
-          lastErrorCode:
-            PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
-          lastErrorMessage: errorMessage,
-        },
-      });
-      if (changed.count !== 1) return false;
-      if (job.status === 'PRINTING') {
-        await tx.printAttempt.updateMany({
-          where: {
-            jobId: job.id,
-            attemptNo: job.attemptCount,
-            terminalId: input.terminalId,
-            finishedAt: null,
-          },
-          data: {
-            finishedAt: now,
-            result: 'FAILED',
-            errorCode:
-              PRINTING_ERROR_CODES.PAYLOAD_EXCEEDS_LEGACY_CLIENT_LIMIT,
-            errorMessage,
-            bytesWritten: 0,
-          },
-        });
-      }
-      return true;
-    });
   }
 
   async reportMerchantConnectorPrinterStatus(
@@ -2535,7 +2363,7 @@ export class PrintJobsService {
     return supportsPrintDocumentV3Version(terminal?.appVersion);
   }
 
-  private async requireCanonicalTerminalCapability(
+  private async requireBinaryArtifactTerminalCapability(
     merchantId: bigint,
     terminalId: bigint,
   ) {
@@ -2554,7 +2382,7 @@ export class PrintJobsService {
         message: '终端未启用或不属于当前商家',
       });
     }
-    this.assertCanonicalTerminalCapability(terminal.capabilities);
+    this.assertBinaryArtifactTerminalCapability(terminal.capabilities);
   }
 
   private assertAuthenticatedTerminalConnector(
@@ -2567,11 +2395,11 @@ export class PrintJobsService {
     });
   }
 
-  private assertCanonicalTerminalCapability(capabilities: Prisma.JsonValue) {
-    if (terminalSupportsCanonicalPayload(capabilities)) return;
+  private assertBinaryArtifactTerminalCapability(capabilities: Prisma.JsonValue) {
+    if (terminalSupportsBinaryPrintArtifact(capabilities)) return;
     throw new BadRequestException({
       code: PRINTING_ERROR_CODES.TERMINAL_UPGRADE_REQUIRED,
-      message: '当前终端不支持服务端 canonical payload，请升级正式客户端',
+      message: '当前终端不支持 Binary Print Artifact V1，请升级正式客户端',
     });
   }
 

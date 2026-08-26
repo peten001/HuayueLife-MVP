@@ -16,7 +16,7 @@ public partial class MainWindow : Window
 {
     private readonly SettingsService _settingsService = new();
     private readonly DpapiCredentialStore _credentialStore = new();
-    private readonly WpfReceiptRenderer _renderer = new();
+    private readonly DiagnosticTestPrintRasterBuilder _diagnosticTestPrintRasterBuilder = new();
     private readonly TerminalApiClient _api = new();
     private readonly SemaphoreSlim _sessionRefresh = new(1, 1);
     private WebViewHost? _webHost;
@@ -46,7 +46,7 @@ public partial class MainWindow : Window
             Height = Math.Clamp(_settings.Window.Height, MinHeight, Math.Max(MinHeight, workArea.Height));
             if (_settings.Window.Maximized) WindowState = WindowState.Maximized;
 
-            _connector = new ConnectorService(_settingsService, _credentialStore, _api, _renderer);
+            _connector = new ConnectorService(_settingsService, _credentialStore, _api);
             _connector.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => UpdateConnectorStatus(value));
             _webHost = new WebViewHost(CashierWebView);
             _webHost.StatusChanged += (_, value) => Dispatcher.InvokeAsync(() => UpdateWebStatus(value));
@@ -95,7 +95,7 @@ public partial class MainWindow : Window
 
     private async void OpenSettings()
     {
-        var dialog = new SettingsWindow(_settingsService, new TestPrintService(_renderer)) { Owner = this };
+        var dialog = new SettingsWindow(_settingsService, new DeviceDiagnosticPrintService(_diagnosticTestPrintRasterBuilder)) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             _settings = await _settingsService.LoadAsync();

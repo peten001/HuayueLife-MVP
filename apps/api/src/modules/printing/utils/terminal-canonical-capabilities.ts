@@ -19,15 +19,6 @@ export function normalizeTerminalCapabilities(
   return root;
 }
 
-export function terminalSupportsCanonicalPayload(value: unknown) {
-  if (!isPlainObject(value)) return false;
-  const connector = isPlainObject(value.connector) ? value.connector : value;
-  return (
-    capabilityValue(connector, SERVER_PAYLOAD_CAPABILITY) === true &&
-    capabilityValue(connector, RAW_PAYLOAD_CAPABILITY) === true
-  );
-}
-
 export function terminalSupportsBinaryPrintArtifact(value: unknown) {
   if (!isPlainObject(value)) return false;
   const connector = isPlainObject(value.connector) ? value.connector : value;
