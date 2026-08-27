@@ -42,6 +42,8 @@ import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import TableGrid from '@/components/tables/TableGrid.vue';
 import TableTransferDialog from '@/components/tables/TableTransferDialog.vue';
 import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
+import { useMediaQuery } from '@/composables';
+import { resolveTableSelectionView } from '@/components/tables/table-selection-view';
 
 const route = useRoute();
 const router = useRouter();
@@ -51,6 +53,7 @@ const networkStore = useNetworkStore();
 const ordersStore = useOrdersStore();
 const tablesStore = useTablesStore();
 const uiStore = useUiStore();
+const isMobile = useMediaQuery('(max-width: 899px)');
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
 const { selectedOrder } = storeToRefs(ordersStore);
@@ -165,10 +168,11 @@ async function refresh(showToast = true) {
 async function selectTable(tableId: string) {
   const card = tableCards.value.find((table) => table.id === tableId);
   if (!card) return;
+  const view = resolveTableSelectionView(isMobile.value, card.operationalStatus);
   await router.push({
     name: 'tables',
     params: { tableId },
-    query: {},
+    query: view ? { view } : {},
   });
 }
 
@@ -603,7 +607,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
 
     <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(selectedTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
       <button
-        v-if="selectedTableId"
+        v-if="selectedTableId && !isMobile"
         type="button"
         class="table-route-detail__back"
         :aria-label="t('fulfillment.backToTables')"

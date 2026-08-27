@@ -1229,6 +1229,119 @@
   .cashier-shell--workflow .table-route-detail { width: auto; }
 }
 
+/* Mobile ordering release V1: the phone uses one direct table-to-menu/bill
+   flow. Desktop keeps the established primary tabs and split workbench. */
+@media (max-width: 899px) {
+  :root {
+    --cashier-header-height: 60px;
+    --cashier-mobile-nav-height: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .cashier-header--main-tabs {
+    height: var(--cashier-header-height);
+    grid-template-rows: 48px;
+    padding-block: 6px;
+  }
+
+  .cashier-header--main-tabs .cashier-toolbar-primary {
+    display: none;
+  }
+
+  .cashier-header--main-tabs .cashier-top-status {
+    grid-row: 1;
+    height: 48px;
+  }
+
+  .cashier-workspace__content--table-overview {
+    padding-top: 6px;
+  }
+
+  .table-main-toolbar {
+    min-height: 44px;
+    padding-bottom: 4px;
+  }
+
+  .table-ordering-workspace--embedded {
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 0;
+    border-radius: 0;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header {
+    display: grid;
+    min-height: 56px;
+    padding: 6px 8px;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-search kbd {
+    display: none;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-products {
+    padding: 4px 8px 8px;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-category-strip {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+    padding-bottom: 6px;
+    overflow: visible;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-category-strip button {
+    min-height: 36px;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cashier-mobile-navigation {
+    box-sizing: border-box;
+    min-height: var(--cashier-mobile-nav-height);
+    padding: 4px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .cashier-mobile-navigation a {
+    min-height: 56px;
+  }
+
+  .table-route-detail {
+    top: 0;
+    right: 0;
+    bottom: var(--cashier-mobile-nav-height);
+    left: 0;
+    z-index: 85;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .table-route-detail--open {
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .table-route-detail__back {
+    display: none;
+  }
+
+  .table-route-detail .detail-panel-content {
+    padding: calc(10px + var(--cashier-safe-area-top)) 10px 10px;
+  }
+
+  .table-bill-shell__header {
+    min-height: 52px;
+    padding-bottom: 6px;
+  }
+
+  .table-bill-shell__body {
+    padding-block: 4px;
+  }
+}
+
 .table-item-summary-row {
   grid-template-columns: 34px 6px minmax(0, 1fr) 6px max-content 2px 66px;
   column-gap: 0;

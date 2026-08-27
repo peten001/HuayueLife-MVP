@@ -19,6 +19,7 @@ import {
 } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useUiStore } from '@/stores';
+import { useMediaQuery } from '@/composables';
 import type {
   CashierMenuCategory,
   CashierMenuProduct,
@@ -63,6 +64,7 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 const uiStore = useUiStore();
+const mobileOrderingLayout = useMediaQuery('(max-width: 899px)');
 const categories = ref<CashierMenuCategory[]>([]);
 const products = ref<CashierMenuProduct[]>([]);
 const activeCategoryId = ref('ALL');
@@ -474,7 +476,7 @@ function hideBrokenImage(event: Event) {
           <span>{{ t('ordering.tableContext', { table: submittedContext?.tableLabel || tableLabel }) }}</span>
           <h2>{{ t('ordering.title') }}</h2>
         </div>
-        <Teleport to="#cashier-toolbar-menu-search" :disabled="!embedded">
+        <Teleport to="#cashier-toolbar-menu-search" :disabled="!embedded || mobileOrderingLayout">
           <label class="table-ordering-search" data-testid="table-ordering-search">
             <Search :size="18" aria-hidden="true" />
             <input
