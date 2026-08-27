@@ -35,6 +35,7 @@ export function apiErrorTranslationKey(
   if (error.code === 'TABLE_SESSION_HAS_UNFINISHED_ORDERS') {
     return 'table.closeConflict';
   }
+  if (error.code.startsWith('TABLE_TRANSFER_')) return 'tableTransfer.failed';
   const itemAdjustmentKey = ITEM_ADJUSTMENT_ERROR_KEYS[error.code];
   if (itemAdjustmentKey) return itemAdjustmentKey;
   if (error.code === 'NETWORK_ERROR') return 'error.network';

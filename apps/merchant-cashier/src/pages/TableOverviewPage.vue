@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft } from '@lucide/vue';
+import { ArrowLeft, RefreshCw } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
@@ -11,12 +11,15 @@ import {
   isMutationOutcomeUncertain,
   returnMerchantOrderItem,
   setTableSessionSettlementAdjustment,
+  transferTableSession,
   shouldRefreshAfterItemAdjustmentError,
 } from '@/api';
 import {
   getOrCreatePendingDecreaseMutation,
   getOrCreatePendingReturnMutation,
   canCheckoutTableSession,
+  canReturnOrderItems,
+  createMutationKey,
   hasUnresolvedCashierMutation,
   shouldBlockCashierMutationNavigation,
   type PendingDecreaseMutation,
@@ -24,17 +27,20 @@ import {
 } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useAuthStore, useNetworkStore, useOrdersStore, useTablesStore, useUiStore } from '@/stores';
-import type { MerchantOrderMutationResult, OrderItem, PaymentMethod, TableSessionOrder } from '@/types';
+import type { CashierOrderingDraftLine, MerchantOrderMutationResult, OrderItem, PaymentMethod, TableSessionOrder, TransferTableSessionInput } from '@/types';
 import type { CashierOrderItemView } from '@/components/common/view-models';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
+import EmptyState from '@/components/common/EmptyState.vue';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import CheckoutPaymentDialog from '@/components/settlement/CheckoutPaymentDialog.vue';
 import TableOrderingWorkspace from '@/components/ordering/TableOrderingWorkspace.vue';
 import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
 import PendingDecreaseRecovery from '@/components/orders/PendingDecreaseRecovery.vue';
 import TableBillDetail from '@/components/bills/TableBillDetail.vue';
 import TableGrid from '@/components/tables/TableGrid.vue';
+import TableTransferDialog from '@/components/tables/TableTransferDialog.vue';
 import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
 
 const route = useRoute();
@@ -51,7 +57,17 @@ const { selectedOrder } = storeToRefs(ordersStore);
 const checkoutConfirmOpen = ref(false);
 const adjustmentOpen = ref(false);
 const settlementAdjustmentLoading = ref(false);
-const orderingOpen = ref(false);
+const activeMainTab = computed<'TABLES' | 'MENU'>(() => route.query.view === 'menu' ? 'MENU' : 'TABLES');
+const orderingWorkspace = ref<{
+  queueProductAddition: (
+    productId: string,
+    lineId?: string,
+    sourceItemId?: string,
+    mergeKey?: string,
+    remark?: string,
+  ) => boolean;
+} | null>(null);
+const orderingDraftLines = ref<CashierOrderingDraftLine[]>([]);
 const orderingMutationLocked = ref(false);
 const adjustmentLoadingId = ref('');
 const pendingDecreaseMutation = ref<PendingDecreaseMutation | null>(null);
@@ -60,6 +76,12 @@ const returnDialogOrderId = ref('');
 const returnDialogLastOrderItem = ref(false);
 const returnDialogLastTableItem = ref(false);
 const pendingReturnMutation = ref<PendingReturnMutation | null>(null);
+const directReturnInFlight = ref(false);
+const pendingDecreaseConfirm = ref<{ item: OrderItem; order: TableSessionOrder } | null>(null);
+const transferOpen = ref(false);
+const transferLoading = ref(false);
+const transferError = ref('');
+const pendingTransfer = ref<TransferTableSessionInput | null>(null);
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
@@ -85,11 +107,27 @@ const unresolvedMutation = computed(() => hasUnresolvedCashierMutation({
   orderingLocked: orderingMutationLocked.value,
   pendingDecrease: pendingDecreaseMutation.value,
   pendingReturn: pendingReturnMutation.value,
-}));
+}) || Boolean(pendingTransfer.value));
+const transferTargets = computed(() => tableCards.value.filter((table) =>
+  table.id !== selectedTableId.value
+  && table.status === 'ACTIVE'
+  && table.operationalStatus === 'AVAILABLE'
+  && !table.currentSession,
+));
+const topOrderingDialogOpen = computed(() => Boolean(
+  checkoutConfirmOpen.value
+  || adjustmentOpen.value
+  || returnDialogItem.value
+  || pendingDecreaseConfirm.value
+  || transferOpen.value
+  || (pendingDecreaseMutation.value && !adjustmentLoadingId.value),
+));
 const activeStatus = computed(() => {
   const status = route.query.status;
-  return status === 'AVAILABLE' || status === 'IN_USE' || status === 'DISABLED' ? status : 'ALL';
+  return status === 'AVAILABLE' || status === 'IN_USE' ? status : 'ALL';
 });
+const availableTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length);
+const inUseTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length);
 const filteredTables = computed(() => {
   return tableCards.value.filter((table) => {
     if (activeStatus.value !== 'ALL' && table.operationalStatus !== activeStatus.value) return false;
@@ -134,9 +172,20 @@ async function selectTable(tableId: string) {
   });
 }
 
+async function selectTableFilter(status: 'ALL' | 'IN_USE' | 'AVAILABLE') {
+  const query = { ...route.query };
+  delete query.status;
+  if (status !== 'ALL') query.status = status;
+  await router.replace({
+    name: 'tables',
+    params: route.params,
+    query,
+  });
+}
+
 async function selectSessionOrder(order: TableSessionOrder) {
   if (!selectedTableId.value) return;
-  await router.replace({ name: 'tables', params: { tableId: selectedTableId.value }, query: { order: order.id } });
+  await router.replace({ name: 'tables', params: { tableId: selectedTableId.value }, query: { ...route.query, order: order.id } });
 }
 
 async function syncRouteSelection() {
@@ -190,9 +239,16 @@ async function checkout(paymentMethod: PaymentMethod) {
   }
 }
 
+function replaceMainTab(tab: 'TABLES' | 'MENU') {
+  const query = { ...route.query };
+  if (tab === 'MENU') query.view = 'menu';
+  else delete query.view;
+  return router.replace({ name: 'tables', params: route.params, query });
+}
+
 function openOrdering() {
   if (writeDisabled.value || !selectedTable.value || selectedTable.value.status === 'DISABLED') return;
-  orderingOpen.value = true;
+  void replaceMainTab('MENU');
 }
 
 function closeOrdering() {
@@ -200,7 +256,7 @@ function closeOrdering() {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
     return;
   }
-  orderingOpen.value = false;
+  void replaceMainTab('TABLES');
 }
 
 function applyItemMutation(result: MerchantOrderMutationResult) {
@@ -223,9 +279,69 @@ function applyItemMutation(result: MerchantOrderMutationResult) {
 
 async function handleTableOrderCreated(result: MerchantOrderMutationResult) {
   applyItemMutation(result);
-  orderingOpen.value = false;
   if (result.order && selectedTableId.value) {
-    await router.replace({ name: 'tables', params: { tableId: selectedTableId.value }, query: { order: result.order.id } });
+    await router.replace({ name: 'tables', params: { tableId: selectedTableId.value }, query: { ...route.query, order: result.order.id } });
+  }
+}
+
+async function increaseCommittedItem(item: OrderItem, _order: TableSessionOrder, mergeKey: string) {
+  if (!item.productId || !selectedTableId.value || writeDisabled.value || orderingMutationLocked.value) return;
+  orderingWorkspace.value?.queueProductAddition(
+    item.productId,
+    `canonical:${mergeKey}`,
+    item.id,
+    mergeKey,
+    item.remark || undefined,
+  );
+}
+
+function handleDraftChanged(lines: CashierOrderingDraftLine[]) {
+  orderingDraftLines.value = lines;
+}
+
+function openTransfer() {
+  if (!session.value || writeDisabled.value) return;
+  transferError.value = '';
+  transferOpen.value = true;
+}
+
+function cancelTransfer() {
+  if (transferLoading.value) return;
+  if (pendingTransfer.value) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return;
+  }
+  transferOpen.value = false;
+  transferError.value = '';
+}
+
+async function confirmTransfer(targetTableId: string) {
+  if (!session.value || transferLoading.value || writeDisabled.value) return;
+  if (pendingTransfer.value && pendingTransfer.value.targetTableId !== targetTableId) {
+    transferError.value = t('tableTransfer.pendingOtherTarget');
+    return;
+  }
+  pendingTransfer.value ??= {
+    targetTableId,
+    expectedSourceTableId: session.value.tableId,
+    requestKey: createMutationKey('transfer'),
+  };
+  transferLoading.value = true;
+  transferError.value = '';
+  try {
+    const updated = await transferTableSession(session.value.id, pendingTransfer.value);
+    pendingTransfer.value = null;
+    tablesStore.applySessionSnapshot(updated);
+    transferOpen.value = false;
+    await router.replace({ name: 'tables', params: { tableId: updated.tableId }, query: {} });
+  } catch (caught) {
+    if (isDefinitiveMutationRejection(caught)) pendingTransfer.value = null;
+    transferError.value = isMutationOutcomeUncertain(caught)
+      ? t('mutation.outcomeUncertain')
+      : t(apiErrorTranslationKey(caught, 'tableTransfer.failed'));
+    await refreshAdjustmentContext(true);
+  } finally {
+    transferLoading.value = false;
   }
 }
 
@@ -235,7 +351,7 @@ async function refreshAdjustmentContext(force = false) {
 
 async function handleOrderingFailure(caught: unknown) {
   await refreshAdjustmentContext(isMutationOutcomeUncertain(caught) || shouldRefreshAfterItemAdjustmentError(caught));
-  if (caught instanceof CashierApiError && ['TABLE_SESSION_NOT_OPEN', 'TABLE_ALREADY_OPEN', 'TABLE_SESSION_CLOSED', 'TABLE_NOT_AVAILABLE', 'TABLE_NOT_FOUND'].includes(caught.code)) orderingOpen.value = false;
+  if (caught instanceof CashierApiError && ['TABLE_SESSION_NOT_OPEN', 'TABLE_ALREADY_OPEN', 'TABLE_SESSION_CLOSED', 'TABLE_NOT_AVAILABLE', 'TABLE_NOT_FOUND'].includes(caught.code)) void replaceMainTab('TABLES');
 }
 
 async function decreaseItem(item: OrderItem, sourceOrder?: TableSessionOrder) {
@@ -276,6 +392,47 @@ async function executeDecrease(mutation: PendingDecreaseMutation) {
   } finally {
     adjustmentLoadingId.value = '';
   }
+}
+
+function returnContext(order: TableSessionOrder) {
+  return {
+    orderType: 'DINE_IN' as const,
+    tableSessionId: session.value?.id,
+    status: order.status,
+  };
+}
+
+async function handleCommittedDecrease(item: OrderItem, order: TableSessionOrder, canonicalQuantity: number) {
+  if (canonicalQuantity <= 0 || Number(item.quantity || 0) <= 0) return;
+  if (canonicalQuantity === 1) {
+    if (canReturnOrderItems(returnContext(order))) requestReturn(item, order);
+    else pendingDecreaseConfirm.value = { item, order };
+    return;
+  }
+  if (!canReturnOrderItems(returnContext(order))) {
+    await decreaseItem(item, order);
+    return;
+  }
+  requestReturn(item, order);
+  if (returnDialogItem.value?.id !== item.id) return;
+  directReturnInFlight.value = true;
+  try {
+    await confirmReturn(1);
+  } finally {
+    directReturnInFlight.value = false;
+  }
+}
+
+function cancelPendingDecreaseConfirm() {
+  if (adjustmentLoadingId.value) return;
+  pendingDecreaseConfirm.value = null;
+}
+
+async function confirmPendingDecrease() {
+  const target = pendingDecreaseConfirm.value;
+  if (!target || adjustmentLoadingId.value) return;
+  pendingDecreaseConfirm.value = null;
+  await decreaseItem(target.item, target.order);
 }
 
 function requestReturn(item: OrderItem, sourceOrder?: TableSessionOrder) {
@@ -377,6 +534,10 @@ onBeforeRouteUpdate((to) => guardMutationNavigation(to.name));
 onBeforeRouteLeave((to) => guardMutationNavigation(to.name));
 
 watch(() => [route.params.tableId, route.query.order], () => void syncRouteSelection(), { immediate: true });
+watch(selectedTableId, () => {
+  orderingDraftLines.value = [];
+  pendingDecreaseConfirm.value = null;
+});
 onMounted(() => {
   window.addEventListener('beforeunload', protectUnload);
   void refresh(false);
@@ -387,17 +548,60 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
 <template>
   <section
     class="cashier-workspace cashier-workspace--table-overview table-overview-route"
-    :class="{ 'has-selection': Boolean(selectedTableId) }"
+    :class="{
+      'has-selection': Boolean(selectedTableId),
+      'is-menu-tab': activeMainTab === 'MENU',
+    }"
     data-page="TableOverviewPage"
     data-testid="table-overview-workspace"
   >
     <div class="cashier-workspace__content cashier-workspace__content--table-overview">
-      <LoadingState v-if="loading && !tableCards.length" :label="t('table.loading')" />
-      <ErrorState v-else-if="errorKey && !tableCards.length" :title="t('error.title')" :description="t(errorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
-      <TableGrid v-else :tables="filteredTables" :selected-table-id="selectedTableId" @select="selectTable" />
+      <header v-if="activeMainTab === 'TABLES'" class="table-main-toolbar">
+        <div class="table-filter-chips" :aria-label="t('stats.title')">
+          <button type="button" data-testid="table-filter-all" :class="{ 'is-active': activeStatus === 'ALL' }" :aria-pressed="activeStatus === 'ALL'" @click="selectTableFilter('ALL')">
+            {{ t('common.all') }} <b>{{ tableCards.length }}</b>
+          </button>
+          <button type="button" data-testid="table-filter-in-use" :class="{ 'is-active': activeStatus === 'IN_USE' }" :aria-pressed="activeStatus === 'IN_USE'" @click="selectTableFilter('IN_USE')">
+            {{ t('table.status.inUse') }} <b>{{ inUseTableCount }}</b>
+          </button>
+          <button type="button" data-testid="table-filter-available" :class="{ 'is-active': activeStatus === 'AVAILABLE' }" :aria-pressed="activeStatus === 'AVAILABLE'" @click="selectTableFilter('AVAILABLE')">
+            {{ t('table.status.available') }} <b>{{ availableTableCount }}</b>
+          </button>
+          <button type="button" class="table-main-refresh" data-testid="table-main-refresh" :aria-label="t('common.refresh')" :title="t('common.refresh')" :disabled="loading" @click="refresh(true)">
+            <RefreshCw :size="18" :class="{ spinning: loading }" aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      <div v-show="activeMainTab === 'TABLES'" class="table-main-pane table-main-pane--tables">
+        <LoadingState v-if="loading && !tableCards.length" :label="t('table.loading')" />
+        <ErrorState v-else-if="errorKey && !tableCards.length" :title="t('error.title')" :description="t(errorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
+        <TableGrid v-else :tables="filteredTables" :selected-table-id="selectedTableId" @select="selectTable" />
+      </div>
+
+      <div v-show="activeMainTab === 'MENU'" class="table-main-pane table-main-pane--menu">
+        <TableOrderingWorkspace
+          v-if="selectedTable && selectedTable.status !== 'DISABLED'"
+          :key="selectedTable.id"
+          ref="orderingWorkspace"
+          open
+          embedded
+          :table-id="selectedTable.id"
+          :table-label="session?.tableNo || selectedTable.tableNo || t('table.numberFallback')"
+          :session-id="session?.id || ''"
+          :disabled="writeDisabled"
+          :top-dialog-open="topOrderingDialogOpen"
+          @close="closeOrdering"
+          @created="handleTableOrderCreated"
+          @failed="handleOrderingFailure"
+          @mutation-lock-changed="orderingMutationLocked = $event"
+          @draft-changed="handleDraftChanged"
+        />
+        <EmptyState v-else :title="t('cashierV2.menuNeedsTableTitle')" :description="t('cashierV2.menuNeedsTableDescription')" />
+      </div>
     </div>
 
-    <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(selectedTableId) }" data-testid="table-route-detail">
+    <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(selectedTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
       <button
         v-if="selectedTableId"
         type="button"
@@ -412,22 +616,33 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         :session="session"
         :checkout-disabled="!canCheckout"
         :checking-out="checkingOut"
-        :actions-disabled="writeDisabled || Boolean(adjustmentLoadingId) || settlementAdjustmentLoading"
+        :actions-disabled="writeDisabled || orderingMutationLocked || Boolean(adjustmentLoadingId) || settlementAdjustmentLoading"
         :adjustment-loading-id="adjustmentLoadingId"
         :pending-adjustment-item-id="pendingDecreaseMutation?.itemId"
         :adjustment-applied="Boolean(session?.discountPayableRateBps != null || session?.roundingApplied)"
         :payable-amount="session?.payableAmountVnd || session?.totalAmountVnd || '0'"
+        :transfer-disabled="!session || !transferTargets.length"
+        :draft-lines="orderingDraftLines"
         @order-items="openOrdering"
-        @decrease-item="decreaseItem"
-        @return-item="requestReturn"
+        @decrease-item="handleCommittedDecrease"
+        @increase-item="increaseCommittedItem"
+        @transfer="openTransfer"
         @checkout="checkoutConfirmOpen = true"
         @adjustment="openSettlementAdjustment"
       />
     </aside>
-
-    <TableOrderingWorkspace :open="orderingOpen" :table-id="selectedTable?.id || ''" :table-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :session-id="session?.id || ''" :disabled="writeDisabled" @close="closeOrdering" @created="handleTableOrderCreated" @failed="handleOrderingFailure" @mutation-lock-changed="orderingMutationLocked = $event" />
     <PendingDecreaseRecovery :open="Boolean(pendingDecreaseMutation) && !adjustmentLoadingId" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" @retry="pendingDecreaseMutation && executeDecrease(pendingDecreaseMutation)" />
-    <ReturnItemDialog :open="Boolean(returnDialogItem)" :item="returnDialogItem" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" :outcome-uncertain="Boolean(pendingReturnMutation) && !adjustmentLoadingId" :fixed-quantity="pendingReturnMutation?.returnQuantity" :last-order-item="returnDialogLastOrderItem" :last-table-item="returnDialogLastTableItem" @cancel="cancelReturn" @confirm="confirmReturn" />
+    <ConfirmDialog
+      :open="Boolean(pendingDecreaseConfirm)"
+      :title="t('itemAdjustment.removeLastTitle')"
+      :description="t('itemAdjustment.removeLastDescription')"
+      :cancel-label="t('common.cancel')"
+      :confirm-label="t('itemAdjustment.removeLastConfirm')"
+      :loading="Boolean(adjustmentLoadingId)"
+      @cancel="cancelPendingDecreaseConfirm"
+      @confirm="confirmPendingDecrease"
+    />
+    <ReturnItemDialog :open="Boolean(returnDialogItem) && !directReturnInFlight" :item="returnDialogItem" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" :outcome-uncertain="Boolean(pendingReturnMutation) && !adjustmentLoadingId" :fixed-quantity="pendingReturnMutation?.returnQuantity" :last-order-item="returnDialogLastOrderItem" :last-table-item="returnDialogLastTableItem" @cancel="cancelReturn" @confirm="confirmReturn" />
     <CheckoutPaymentDialog
       :open="checkoutConfirmOpen"
       :amount-vnd="session?.payableAmountVnd ?? session?.totalAmountVnd ?? '0'"
@@ -444,6 +659,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
       :loading="settlementAdjustmentLoading"
       @cancel="adjustmentOpen = false"
       @confirm="saveSettlementAdjustment"
+    />
+    <TableTransferDialog
+      :open="transferOpen"
+      :source-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')"
+      :targets="transferTargets"
+      :loading="transferLoading"
+      :error="transferError"
+      @cancel="cancelTransfer"
+      @confirm="confirmTransfer"
     />
   </section>
 </template>

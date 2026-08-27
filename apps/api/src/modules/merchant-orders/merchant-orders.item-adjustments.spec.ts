@@ -158,6 +158,60 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
+  it('keeps consecutive same-item direct adds as separate audited orders with the existing print trigger semantics', async () => {
+    const tableRow = { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' };
+    const productRow = {
+      id: 61n,
+      name_zh: '鱼香茄子',
+      image_url: null,
+      price_vnd: 6000n,
+      product_type: 'FOOD',
+      status: 'ON_SALE',
+      category_active: 1,
+    };
+    const tx = {
+      order: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+          .mockResolvedValueOnce({ id: 41n, tableSessionId: 51n, statusLogs: [{ id: 701n }] })
+          .mockResolvedValueOnce({ id: 42n, tableSessionId: 51n, statusLogs: [{ id: 702n }] }),
+      },
+      $queryRaw: jest.fn()
+        .mockResolvedValueOnce([tableRow])
+        .mockResolvedValueOnce([productRow])
+        .mockResolvedValueOnce([tableRow])
+        .mockResolvedValueOnce([productRow]),
+      tableSession: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const printJobs = {
+      enqueueAutomaticTriggersForOrderTransition: jest.fn()
+        .mockResolvedValueOnce([{ id: 801n }])
+        .mockResolvedValueOnce([{ id: 802n }]),
+      processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
+    };
+    const { service } = buildService(tx, { printJobs });
+
+    await service.createTableOrder(7n, 3n, 11n, {
+      idempotencyKey: 'staff_same_item_0001',
+      items: [{ productId: '61', quantity: 1 }],
+    });
+    await service.createTableOrder(7n, 3n, 11n, {
+      idempotencyKey: 'staff_same_item_0002',
+      items: [{ productId: '61', quantity: 1 }],
+    });
+
+    expect(tx.order.create).toHaveBeenCalledTimes(2);
+    expect(tx.order.create.mock.calls.map(([input]) => input.data.idempotencyKey)).toEqual([
+      'staff_same_item_0001',
+      'staff_same_item_0002',
+    ]);
+    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledTimes(2);
+    expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(1, [801n]);
+    expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(2, [802n]);
+  });
+
   it('returns the existing add-on order for the same staff idempotency key', async () => {
     const tx = {
       order: {

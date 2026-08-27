@@ -146,6 +146,25 @@ describe('real merchant API contracts', () => {
     ]);
   });
 
+  it('transfers one existing TableSession with an idempotent request contract', async () => {
+    const { api } = await loadApi();
+    const transferred = { ...session, tableId: 'table-2', tableNo: 'A02', status: 'OPEN', closedAt: null };
+    fetchMock.mockResolvedValueOnce(apiResponse({ session: transferred }));
+
+    await expect(api.transferTableSession(session.id, {
+      targetTableId: 'table-2',
+      expectedSourceTableId: 'table-1',
+      requestKey: 'transfer-request-1',
+    })).resolves.toEqual(transferred);
+    expect(requestPath(fetchMock.mock.calls[0])).toBe(`/api/v1/merchant/table-sessions/${session.id}/transfer`);
+    expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(JSON.parse(String(requestInit(fetchMock.mock.calls[0]).body))).toEqual({
+      targetTableId: 'table-2',
+      expectedSourceTableId: 'table-1',
+      requestKey: 'transfer-request-1',
+    });
+  });
+
   it('loads pending orders with the real status query', async () => {
     const { api } = await loadApi();
     fetchMock.mockResolvedValueOnce(apiResponse([order]));

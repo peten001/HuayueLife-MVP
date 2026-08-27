@@ -42,6 +42,7 @@ export interface TableSessionSummary {
 
 export interface TableSessionOrderItem {
   id: string;
+  productId?: string | null;
   productNameZhSnapshot: string;
   productNameViSnapshot?: string | null;
   productNameEnSnapshot?: string | null;
@@ -51,6 +52,7 @@ export interface TableSessionOrderItem {
   quantity: number;
   unitPriceVnd: string;
   subtotalVnd: string;
+  remark?: string | null;
 }
 
 export interface TableSessionOrder {
@@ -78,6 +80,12 @@ export interface MerchantOrderMutationResult {
 export interface TableSessionCheckoutResult {
   session: TableSessionDetail;
   orders: MerchantOrder[];
+}
+
+export interface TransferTableSessionInput {
+  targetTableId: string;
+  expectedSourceTableId: string;
+  requestKey: string;
 }
 
 export type TableOperationalStatus =

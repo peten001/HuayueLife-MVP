@@ -35,6 +35,12 @@ type SettlementAdjustmentRequest = {
   roundingEnabled: boolean;
 };
 
+type TransferTableSessionRequest = {
+  targetTableId: bigint;
+  expectedSourceTableId: bigint;
+  requestKey: string;
+};
+
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
   'ACCEPTED',
@@ -151,6 +157,127 @@ export class TableSessionsService {
 
   async getSessionDetail(merchantId: bigint, sessionId: bigint) {
     return this.getSessionDetailWithClient(this.prisma, merchantId, sessionId);
+  }
+
+  async transferSession(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    input: TransferTableSessionRequest,
+  ) {
+    if (input.targetTableId === input.expectedSourceTableId) {
+      throw new BadRequestException({
+        code: 'TABLE_TRANSFER_SAME_TABLE',
+        message: '目标桌台不能与当前桌台相同',
+      });
+    }
+
+    const transfer = await this.prisma.$transaction(async (tx) => {
+      const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
+      const tableIds = [...new Set([sessionRef.tableId, input.targetTableId])]
+        .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+      let targetStatus = '';
+      for (const tableId of tableIds) {
+        const table = await this.lockTableRow(tx, merchantId, tableId);
+        if (tableId === input.targetTableId) targetStatus = table.status;
+      }
+      if (targetStatus !== 'ACTIVE') {
+        throw new BadRequestException({
+          code: 'TABLE_TRANSFER_TARGET_NOT_AVAILABLE',
+          message: '目标桌台当前不可用',
+        });
+      }
+
+      const session = await this.requireOwnedSessionRowForUpdate(tx, merchantId, sessionId);
+      if (session.status !== 'OPEN' || session.open_table_id === null) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_NOT_OPEN',
+          message: '桌台会话已关闭，无法转台',
+        });
+      }
+      if (session.table_id === input.targetTableId && session.open_table_id === input.targetTableId) {
+        return { sourceTableId: input.expectedSourceTableId, targetTableId: input.targetTableId };
+      }
+      if (
+        session.table_id !== input.expectedSourceTableId
+        || session.open_table_id !== input.expectedSourceTableId
+      ) {
+        throw new ConflictException({
+          code: 'TABLE_TRANSFER_SOURCE_CHANGED',
+          message: '当前桌台已变化，请刷新后重试',
+        });
+      }
+
+      const occupied = await tx.$queryRaw<Array<{ id: bigint }>>`
+        SELECT id
+        FROM table_sessions
+        WHERE merchant_id = ${merchantId}
+          AND open_table_id = ${input.targetTableId}
+          AND status = 'OPEN'
+          AND id <> ${sessionId}
+        FOR UPDATE
+      `;
+      if (occupied.length > 0) {
+        throw new ConflictException({
+          code: 'TABLE_TRANSFER_TARGET_OCCUPIED',
+          message: '目标桌台已有进行中的账单',
+        });
+      }
+
+      const sessionOrders = await tx.$queryRaw<Array<{
+        id: bigint;
+        status: OrderStatus;
+      }>>`
+        SELECT id, status
+        FROM orders
+        WHERE merchant_id = ${merchantId}
+          AND table_session_id = ${sessionId}
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      await tx.tableSession.update({
+        where: { id: sessionId },
+        data: {
+          tableId: input.targetTableId,
+          openTableId: input.targetTableId,
+        },
+      });
+      await tx.order.updateMany({
+        where: { merchantId, tableSessionId: sessionId },
+        data: { tableId: input.targetTableId },
+      });
+      if (sessionOrders.length > 0) {
+        await tx.orderStatusLog.createMany({
+          data: sessionOrders.map((order) => ({
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: order.status,
+            operatorType: 'MERCHANT_STAFF',
+            operatorStaffId: staffId,
+            action: 'TABLE_SESSION_TRANSFERRED',
+            requestKey: input.requestKey,
+            remark: '整桌转台',
+            metadata: {
+              tableSessionId: sessionId.toString(),
+              sourceTableId: input.expectedSourceTableId.toString(),
+              targetTableId: input.targetTableId.toString(),
+            },
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return {
+        sourceTableId: input.expectedSourceTableId,
+        targetTableId: input.targetTableId,
+      };
+    });
+
+    this.logger.log(
+      `Transferred table session ${sessionId.toString()} from ${transfer.sourceTableId.toString()} to ${transfer.targetTableId.toString()} for merchant ${merchantId.toString()}`,
+    );
+    return this.getSessionDetail(merchantId, sessionId);
   }
 
   async getSessionDetailWithClient(
@@ -901,9 +1028,12 @@ export class TableSessionsService {
         tableNoSnapshot: order.tableNoSnapshot,
         items: order.items.map((item) => ({
           id: item.id,
+          productId: item.productId,
           productNameZhSnapshot: item.productNameZhSnapshot,
           productNameZh: item.product?.nameZh ?? null,
           productNameVi: item.product?.nameVi ?? null,
+          productNameEn: item.product?.nameEn ?? null,
+          remark: item.remark,
           quantity: item.quantity,
           unitPriceVnd: item.unitPriceVnd,
           subtotalVnd: item.subtotalVnd,
@@ -925,9 +1055,11 @@ export class TableSessionsService {
         items: {
           select: {
             id: true,
+            productId: true,
             productNameZhSnapshot: true,
+            remark: true,
             product: {
-              select: { nameZh: true, nameVi: true },
+              select: { nameZh: true, nameVi: true, nameEn: true },
             },
             quantity: true,
             unitPriceVnd: true,

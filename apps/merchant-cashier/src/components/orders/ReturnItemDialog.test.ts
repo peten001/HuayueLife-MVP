@@ -78,7 +78,7 @@ describe('ReturnItemDialog', () => {
 
     expect(wrapper.get('[data-testid="last-item-return-danger"]').text())
       .toContain('桌账会自动关闭并释放桌台');
-    expect(wrapper.get('h3').text()).toContain('最后一份');
+    expect(wrapper.get('h3').text()).toBe('确定退掉最后 1 份该菜品吗？');
 
     setLocale('vi');
     await wrapper.vm.$nextTick();
@@ -92,6 +92,20 @@ describe('ReturnItemDialog', () => {
 
     await wrapper.get('button.primary-action').trigger('click');
     expect(wrapper.emitted('confirm')).toEqual([[1]]);
+  });
+
+  it('uses the exact last-serving prompt for a quantity-one item even when its order has other items', () => {
+    const wrapper = mount(ReturnItemDialog, {
+      props: {
+        open: true,
+        item: { ...item, quantity: 1 },
+        lastOrderItem: false,
+        lastTableItem: false,
+      },
+    });
+
+    expect(wrapper.get('h3').text()).toBe('确定退掉最后 1 份该菜品吗？');
+    expect(wrapper.find('[data-testid="last-item-return-danger"]').exists()).toBe(false);
   });
 
   it('uses the normal confirmation for a partial return and warns only at the full quantity', async () => {

@@ -17,6 +17,7 @@ import type {
   TableSessionCheckoutResult,
   TableSessionDetail,
   TableSessionSummary,
+  TransferTableSessionInput,
   BusinessDaySummary,
 } from '@/types';
 import { CashierApiError } from '@/api/error';
@@ -39,18 +40,26 @@ function cloneFixture<T>(value: T): T {
 
 let orders = cloneFixture(initialDemoOrders);
 let sessionClosed = false;
+let sessionTableId = 'demo-table-1';
 let roundingApplied = false;
 let sessionDiscountPayableRateBps: number | null = null;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
+let nextExtraSession = 2;
+let extraSessions = new Map<string, { id: string; tableId: string; openedAt: string }>();
+let openMutationResults = new Map<string, MerchantOrderMutationResult>();
 
 export function resetDemoRepository() {
   orders = cloneFixture(initialDemoOrders);
   sessionClosed = false;
+  sessionTableId = 'demo-table-1';
   roundingApplied = false;
   sessionDiscountPayableRateBps = null;
   nextAddedOrder = 1;
   adjustmentResults = new Map();
+  nextExtraSession = 2;
+  extraSessions = new Map();
+  openMutationResults = new Map();
   resetDemoChatRepository();
 }
 
@@ -143,12 +152,18 @@ export const demoRepository = {
     return applyDemoOrderSettlement(order, input);
   },
   tables: () => cloneFixture(demoTables),
-  openSessions: () => sessionClosed ? [] : [buildSessionSummary()],
-  currentSession: (tableId: string) =>
-    tableId === 'demo-table-1' && !sessionClosed ? buildSessionSummary() : null,
+  openSessions: () => [
+    ...(!sessionClosed ? [buildSessionSummary()] : []),
+    ...[...extraSessions.values()].map((session) => buildSessionSummary(session.id)),
+  ],
+  currentSession: (tableId: string) => {
+    if (tableId === sessionTableId && !sessionClosed) return buildSessionSummary();
+    const session = [...extraSessions.values()].find((candidate) => candidate.tableId === tableId);
+    return session ? buildSessionSummary(session.id) : null;
+  },
   session: (id: string) => {
-    if (id !== 'demo-session-1') throw notFound('Demo table session not found');
-    return buildSessionDetail();
+    if (id !== 'demo-session-1' && !extraSessions.has(id)) throw notFound('Demo table session not found');
+    return buildSessionDetail(id);
   },
   setSessionRounding: (id: string, enabled: boolean) => {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
@@ -161,6 +176,24 @@ export const demoRepository = {
     if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
     sessionDiscountPayableRateBps = input.discountPayableRateBps;
     roundingApplied = input.roundingEnabled;
+    return buildSessionDetail();
+  },
+  transferSession: (id: string, input: TransferTableSessionInput) => {
+    if (id !== 'demo-session-1') throw notFound('Demo table session not found');
+    if (sessionClosed) throw conflict('TABLE_SESSION_NOT_OPEN', 'Demo table session is closed');
+    if (input.targetTableId === sessionTableId) return buildSessionDetail();
+    if (input.expectedSourceTableId !== sessionTableId) {
+      throw conflict('TABLE_TRANSFER_SOURCE_CHANGED', 'Demo source table changed');
+    }
+    const target = demoTables.find((table) => table.id === input.targetTableId);
+    if (!target || target.status !== 'ACTIVE') {
+      throw conflict('TABLE_TRANSFER_TARGET_NOT_AVAILABLE', 'Demo target table unavailable');
+    }
+    sessionTableId = target.id;
+    for (const order of tableOrders()) {
+      order.tableId = target.id;
+      order.table = { id: target.id, tableNo: target.tableNo, tableName: target.tableName };
+    }
     return buildSessionDetail();
   },
   closeSession: (id: string) => {
@@ -229,18 +262,23 @@ export const demoRepository = {
     tableId: string,
     input: CreateMerchantTableOrderInput,
   ): MerchantOrderMutationResult {
-    requireOpenDemoTable(tableId);
+    const cachedOpen = openMutationResults.get(input.idempotencyKey);
+    if (cachedOpen) return cloneFixture(cachedOpen);
     const existing = orders.find((order) =>
       order.createdByStaffId === demoStaffSession.id
       && order.idempotencyKey === input.idempotencyKey,
     );
     if (existing) return mutationResult(existing);
 
+    const sessionId = ensureOpenDemoTable(tableId);
+
     if (!input.items.length) {
-      return { order: null, session: buildSessionDetail() };
+      const result = { order: null, session: buildSessionDetail(sessionId) };
+      openMutationResults.set(input.idempotencyKey, cloneFixture(result));
+      return result;
     }
 
-    clearDemoSessionRounding();
+    if (sessionId === 'demo-session-1') clearDemoSessionRounding();
 
     const selected = input.items
       .filter((item) => item.quantity > 0)
@@ -273,8 +311,8 @@ export const demoRepository = {
       createdByStaffId: demoStaffSession.id,
       merchantId: demoStaffSession.merchant.id,
       tableId,
-      tableSessionId: 'demo-session-1',
-      tableNoSnapshot: 'A01',
+      tableSessionId: sessionId,
+      tableNoSnapshot: demoTables.find((table) => table.id === tableId)?.tableNo ?? null,
       orderType: 'DINE_IN',
       status: 'ACCEPTED',
       itemAmountVnd: total,
@@ -283,7 +321,10 @@ export const demoRepository = {
       settlementStatus: 'UNSETTLED',
       createdAt: now,
       updatedAt: now,
-      table: { id: tableId, tableNo: 'A01', tableName: '演示桌 A01' },
+      table: (() => {
+        const table = demoTables.find((candidate) => candidate.id === tableId)!;
+        return { id: table.id, tableNo: table.tableNo, tableName: table.tableName };
+      })(),
       items: selected,
     };
     orders.unshift(order);
@@ -413,14 +454,28 @@ function requireOrderItem(order: MerchantOrder, itemId: string) {
   return item;
 }
 
-function requireOpenDemoTable(tableId: string) {
-  if (tableId !== 'demo-table-1' || sessionClosed) {
-    throw conflict('TABLE_SESSION_NOT_OPEN', 'Demo table session is not open');
+function ensureOpenDemoTable(tableId: string) {
+  const table = demoTables.find((candidate) => candidate.id === tableId);
+  if (!table || table.status !== 'ACTIVE') {
+    throw conflict('TABLE_NOT_AVAILABLE', 'Demo table is not available');
   }
+  if (tableId === sessionTableId && !sessionClosed) return 'demo-session-1';
+  const existing = [...extraSessions.values()].find((session) => session.tableId === tableId);
+  if (existing) return existing.id;
+  const session = {
+    id: `demo-session-${nextExtraSession++}`,
+    tableId,
+    openedAt: new Date().toISOString(),
+  };
+  extraSessions.set(session.id, session);
+  return session.id;
 }
 
 function requireOpenDemoSession(order: MerchantOrder) {
-  if (sessionClosed || order.tableSessionId !== 'demo-session-1') {
+  const primaryClosed = order.tableSessionId === 'demo-session-1' && sessionClosed;
+  const extraMissing = order.tableSessionId !== 'demo-session-1'
+    && !extraSessions.has(order.tableSessionId ?? '');
+  if (primaryClosed || extraMissing) {
     throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
   }
 }
@@ -433,7 +488,7 @@ function recalculateDemoOrder(order: MerchantOrder) {
 }
 
 function mutationResult(order: MerchantOrder): MerchantOrderMutationResult {
-  return { order: cloneFixture(order), session: buildSessionDetail() };
+  return { order: cloneFixture(order), session: buildSessionDetail(order.tableSessionId ?? 'demo-session-1') };
 }
 
 function cacheAdjustmentResult(order: MerchantOrder, requestKey: string) {
@@ -455,8 +510,8 @@ function nextStatus(order: MerchantOrder, action: MerchantOrderAction): Merchant
   return 'COMPLETED';
 }
 
-function tableOrders() {
-  const sessionOrders = orders.filter((order) => order.tableSessionId === 'demo-session-1');
+function tableOrders(sessionId = 'demo-session-1') {
+  const sessionOrders = orders.filter((order) => order.tableSessionId === sessionId);
     return import.meta.env.VITE_CASHIER_LARGE_AMOUNT_FIXTURE === 'true'
     ? sessionOrders.filter((order) => ['demo-order-1001', 'demo-order-1006'].includes(order.id))
     : sessionOrders;
@@ -467,20 +522,28 @@ function clearDemoSessionRounding() {
   sessionDiscountPayableRateBps = null;
 }
 
-function buildSessionSummary(): TableSessionSummary {
-  const related = tableOrders();
+function buildSessionSummary(sessionId = 'demo-session-1'): TableSessionSummary {
+  const related = tableOrders(sessionId);
   const billable = related.filter((order) => order.status !== 'CANCELLED');
   const unfinished = related.filter((order) => !['COMPLETED', 'CANCELLED'].includes(order.status));
   const firstOpenedOrder = related[related.length - 1];
   const totalAmountVnd = billable.reduce((sum, order) => sum + BigInt(order.totalAmountVnd), 0n);
+  const extraSession = extraSessions.get(sessionId);
+  const tableId = extraSession?.tableId ?? sessionTableId;
+  const table = demoTables.find((candidate) => candidate.id === tableId) ?? demoTables[0]!;
+  const isPrimary = sessionId === 'demo-session-1';
+  const sessionRoundingApplied = isPrimary ? roundingApplied : false;
+  const sessionDiscountRate = isPrimary ? sessionDiscountPayableRateBps : null;
+  const sessionClosedState = isPrimary ? sessionClosed : false;
+  const sessionOpenedAt = extraSession?.openedAt ?? firstOpenedOrder?.createdAt ?? new Date().toISOString();
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: totalAmountVnd,
-    discountPayableRateBps: sessionDiscountPayableRateBps,
-    roundingEnabled: roundingApplied,
+    discountPayableRateBps: sessionDiscountRate,
+    roundingEnabled: sessionRoundingApplied,
   });
   return {
-    id: 'demo-session-1', sessionNo: 'DEMO-SESSION-1', merchantId: 'demo-merchant', tableId: 'demo-table-1', tableNo: 'A01', tableName: '演示桌 A01', status: sessionClosed ? 'CLOSED' : 'OPEN', openedAt: firstOpenedOrder?.createdAt ?? new Date().toISOString(), closedAt: sessionClosed ? new Date().toISOString() : null,
-    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountPayableRateBps, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: sessionDiscountPayableRateBps === null ? null : demoStaffSession.id, discountAppliedAt: sessionDiscountPayableRateBps === null ? null : new Date().toISOString(), roundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
+    id: sessionId, sessionNo: `DEMO-SESSION-${sessionId.replace('demo-session-', '')}`, merchantId: 'demo-merchant', tableId: table.id, tableNo: table.tableNo, tableName: table.tableName, status: sessionClosedState ? 'CLOSED' : 'OPEN', openedAt: sessionOpenedAt, closedAt: sessionClosedState ? new Date().toISOString() : null,
+    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountRate, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: sessionDiscountRate === null ? null : demoStaffSession.id, discountAppliedAt: sessionDiscountRate === null ? null : new Date().toISOString(), roundingApplied: sessionRoundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
 }
 
@@ -513,10 +576,10 @@ function applyDemoOrderSettlement(
   return cloneFixture(order);
 }
 
-function buildSessionDetail(): TableSessionDetail {
+function buildSessionDetail(sessionId = 'demo-session-1'): TableSessionDetail {
   return {
-    ...buildSessionSummary(),
-    orders: tableOrders().map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productNameZhSnapshot: item.productNameZhSnapshot, productNameViSnapshot: item.productNameViSnapshot, productNameEnSnapshot: item.productNameEnSnapshot, productNameZh: item.productNameZh, productNameVi: item.productNameVi, productNameEn: item.productNameEn, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
+    ...buildSessionSummary(sessionId),
+    orders: tableOrders(sessionId).map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productId: item.productId, productNameZhSnapshot: item.productNameZhSnapshot, productNameViSnapshot: item.productNameViSnapshot, productNameEnSnapshot: item.productNameEnSnapshot, productNameZh: item.productNameZh, productNameVi: item.productNameVi, productNameEn: item.productNameEn, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
   };
 }
 

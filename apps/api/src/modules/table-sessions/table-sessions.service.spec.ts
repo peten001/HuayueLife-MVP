@@ -26,8 +26,10 @@ describe('TableSessionsService checkout', () => {
             tableNoSnapshot: 'A01',
             items: [{
               id: 23n,
+              productId: 29n,
               productNameZhSnapshot: '小炒肉',
-              product: { nameZh: '小炒肉', nameVi: 'Thịt xào' },
+              product: { nameZh: '小炒肉', nameVi: 'Thịt xào', nameEn: 'Stir-fried pork' },
+              remark: '少辣',
               quantity: 1,
               unitPriceVnd: 50_000n,
               subtotalVnd: 50_000n,
@@ -42,8 +44,11 @@ describe('TableSessionsService checkout', () => {
 
     expect(result.session.orders[0]?.items[0]).toMatchObject({
       productNameZhSnapshot: '小炒肉',
+      productId: 29n,
       productNameZh: '小炒肉',
       productNameVi: 'Thịt xào',
+      productNameEn: 'Stir-fried pork',
+      remark: '少辣',
     });
     expect(prisma.tableSession.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       include: expect.objectContaining({

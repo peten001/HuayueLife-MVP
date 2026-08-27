@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { ImageIcon, Minus, Plus, Search, ShoppingBasket, X } from '@lucide/vue';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ImageIcon, Search, X } from '@lucide/vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   apiErrorTranslationKey,
+  CashierApiError,
   createMerchantTableOrder,
   isDefinitiveMutationRejection,
   isMutationOutcomeUncertain,
   listCashierMenuCategories,
   listCashierMenuProducts,
 } from '@/api';
-import { createMutationKey, formatVnd, resolveMediaUrl } from '@/domain';
+import {
+  createMutationKey,
+  formatItemPrice,
+  productDirectMergeKey,
+  productMatchesQuery,
+  resolveMediaUrl,
+} from '@/domain';
 import { useI18n } from '@/i18n';
 import { useUiStore } from '@/stores';
 import type {
   CashierMenuCategory,
   CashierMenuProduct,
+  CashierOrderingDraftLine,
   CreateMerchantTableOrderInput,
   MerchantOrderMutationResult,
 } from '@/types';
@@ -22,8 +30,17 @@ import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 
-interface Selection {
-  quantity: number;
+interface DirectAddAction {
+  tableId: string;
+  tableLabel: string;
+  productId: string;
+  lineId: string;
+  mergeKey: string;
+  firstAddedAt: string;
+  firstAddedSequence: number;
+  sourceItemId?: string;
+  remark?: string;
+  payload: CreateMerchantTableOrderInput;
 }
 
 const props = defineProps<{
@@ -32,6 +49,8 @@ const props = defineProps<{
   tableLabel: string;
   sessionId: string;
   disabled?: boolean;
+  topDialogOpen?: boolean;
+  embedded?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,6 +58,7 @@ const emit = defineEmits<{
   created: [result: MerchantOrderMutationResult];
   failed: [error: unknown];
   mutationLockChanged: [locked: boolean];
+  draftChanged: [lines: CashierOrderingDraftLine[]];
 }>();
 
 const { t, locale } = useI18n();
@@ -47,113 +67,177 @@ const categories = ref<CashierMenuCategory[]>([]);
 const products = ref<CashierMenuProduct[]>([]);
 const activeCategoryId = ref('ALL');
 const query = ref('');
-const selections = ref<Record<string, Selection>>({});
 const loading = ref(false);
-const submitting = ref(false);
+const processing = ref(false);
 const loadErrorKey = ref('');
-const idempotencyKey = ref('');
+const directAddQueue = ref<DirectAddAction[]>([]);
+const pendingOpenPayload = ref<CreateMerchantTableOrderInput | null>(null);
+const effectiveSessionId = ref(props.sessionId);
 const submittedPayload = ref<CreateMerchantTableOrderInput | null>(null);
-const mutationLocked = computed(() => Boolean(submittedPayload.value));
-const outcomeUncertain = computed(() => mutationLocked.value && !submitting.value);
-const submittedContext = ref<{
-  tableId: string;
-  sessionId: string;
-  tableLabel: string;
-} | null>(null);
-const targetTableLabel = computed(() => submittedContext.value?.tableLabel ?? props.tableLabel);
+const submittedContext = ref<{ tableId: string; tableLabel: string } | null>(null);
+const outcomeUncertain = ref(false);
+const workspace = ref<HTMLElement | null>(null);
+const searchInput = ref<HTMLInputElement | null>(null);
+const activeResultIndex = ref(-1);
+const productCards = ref<HTMLElement[]>([]);
+let previouslyFocused: HTMLElement | null = null;
+let nextDirectAddSequence = 0;
 
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
 const orderableProducts = computed(() => products.value.filter((product) =>
   product.status === 'ON_SALE' && categoryIds.value.has(product.categoryId),
 ));
-const filteredProducts = computed(() => {
-  const keyword = query.value.trim().toLocaleLowerCase();
-  return orderableProducts.value.filter((product) =>
-    (activeCategoryId.value === 'ALL' || product.categoryId === activeCategoryId.value)
-    && (!keyword || [product.nameZh, product.nameVi, product.description]
-      .some((value) => value?.toLocaleLowerCase().includes(keyword))),
-  );
-});
-const selectedLines = computed(() => orderableProducts.value.flatMap((product) => {
-  const selection = selections.value[product.id];
-  return selection?.quantity > 0 ? [{ product, ...selection }] : [];
-}));
-const selectedQuantity = computed(() => selectedLines.value.reduce(
-  (total, line) => total + line.quantity,
-  0,
+const filteredProducts = computed(() => orderableProducts.value.filter((product) =>
+  (activeCategoryId.value === 'ALL' || product.categoryId === activeCategoryId.value)
+  && productMatchesQuery(product, query.value),
 ));
-const hasOpenSession = computed(() => Boolean(props.sessionId));
-const selectedTotal = computed(() => selectedLines.value.reduce(
-  (total, line) => total + BigInt(line.product.priceVnd) * BigInt(line.quantity),
-  0n,
-).toString());
-const canSubmit = computed(() =>
-  (!hasOpenSession.value || selectedQuantity.value > 0)
-  && !props.disabled
-  && !loading.value
-  && !submitting.value,
-);
-const submitLabel = computed(() => {
-  if (outcomeUncertain.value) return t('mutation.retrySameRequest');
-  if (selectedQuantity.value === 0) return t('ordering.openTableOnly');
-  return t('ordering.openTableAndAddItems');
-});
-
+const productById = computed(() => new Map(orderableProducts.value.map((product) => [product.id, product])));
+const pendingAdditions = computed(() => directAddQueue.value.reduce((lines, action) => {
+  const current = lines.get(action.mergeKey);
+  if (current) {
+    current.quantity += 1;
+    if (!current.sourceItemId && action.sourceItemId) current.sourceItemId = action.sourceItemId;
+  }
+  else lines.set(action.mergeKey, {
+    lineId: action.lineId,
+    mergeKey: action.mergeKey,
+    productId: action.productId,
+    quantity: 1,
+    firstAddedAt: action.firstAddedAt,
+    firstAddedSequence: action.firstAddedSequence,
+    ...(action.sourceItemId ? { sourceItemId: action.sourceItemId } : {}),
+    ...(action.remark ? { remark: action.remark } : {}),
+  });
+  return lines;
+}, new Map<string, { lineId: string; mergeKey: string; productId: string; quantity: number; firstAddedAt: string; firstAddedSequence: number; sourceItemId?: string; remark?: string }>));
+const draftLines = computed<CashierOrderingDraftLine[]>(() => [...pendingAdditions.value.values()].flatMap((line) => {
+  const product = productById.value.get(line.productId);
+  return product ? [{
+    lineId: line.lineId,
+    mergeKey: line.mergeKey,
+    product,
+    quantity: line.quantity,
+    firstAddedAt: line.firstAddedAt,
+    firstAddedSequence: line.firstAddedSequence,
+    ...(line.sourceItemId ? { sourceItemId: line.sourceItemId } : {}),
+    ...(line.remark ? { remark: line.remark } : {}),
+  }] : [];
+}));
+const mutationLocked = computed(() => Boolean(
+  processing.value
+  || submittedPayload.value
+  || directAddQueue.value.length,
+));
 watch(mutationLocked, (locked) => emit('mutationLockChanged', locked), {
   immediate: true,
   flush: 'sync',
+});
+
+watch(draftLines, (lines) => emit('draftChanged', lines), {
+  immediate: true,
+  deep: true,
 });
 
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    if (submittedPayload.value) return;
-    resetWorkspace();
+    previouslyFocused = !props.embedded && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    resetWorkspaceView();
     void loadCatalog();
+    if (!props.embedded) void nextTick(() => searchInput.value?.focus());
   },
   { immediate: true },
 );
 
+watch(() => props.open, (open, wasOpen) => {
+  if (!open && wasOpen) {
+    previouslyFocused?.focus();
+    previouslyFocused = null;
+  }
+});
+
+watch(() => props.sessionId, (sessionId) => {
+  if (sessionId) effectiveSessionId.value = sessionId;
+});
+
+watch([query, activeCategoryId], () => {
+  activeResultIndex.value = -1;
+  productCards.value = [];
+});
+
 function productName(product: CashierMenuProduct) {
-  return locale.value === 'vi' ? product.nameVi || product.nameZh : product.nameZh;
+  if (locale.value === 'vi') return product.nameVi || product.nameZh;
+  if (locale.value === 'en') return product.nameEn || product.nameZh;
+  return product.nameZh;
 }
 
 function categoryName(category: CashierMenuCategory) {
-  return locale.value === 'vi' ? category.nameVi || category.nameZh : category.nameZh;
+  if (locale.value === 'vi') return category.nameVi || category.nameZh;
+  if (locale.value === 'en') return category.nameEn || category.nameZh;
+  return category.nameZh;
 }
 
-function selectionFor(productId: string): Selection {
-  return selections.value[productId] ?? { quantity: 0 };
+function productDirectLineId(productId: string) {
+  return `product:${productId}`;
 }
 
-function quantityFor(productId: string) {
-  return selectionFor(productId).quantity;
+function pendingQuantityForProduct(productId: string) {
+  return directAddQueue.value.reduce(
+    (quantity, action) => quantity + (action.productId === productId ? 1 : 0),
+    0,
+  );
 }
 
-function controlsDisabled() {
-  return props.disabled || submitting.value || Boolean(submittedPayload.value);
+function productInteractionDisabled(productId: string) {
+  if (props.disabled || loading.value) return true;
+  return outcomeUncertain.value && directAddQueue.value[0]?.productId !== productId;
 }
 
-function changeQuantity(productId: string, delta: number) {
-  if (controlsDisabled()) return;
-  const current = selectionFor(productId);
-  const quantity = Math.max(0, Math.min(99, current.quantity + delta));
-  selections.value = {
-    ...selections.value,
-    [productId]: { ...current, quantity },
-  };
+function queueProductAddition(
+  productId: string,
+  lineId = productDirectLineId(productId),
+  sourceItemId?: string,
+  mergeKey = productDirectMergeKey(productId),
+  remark?: string,
+) {
+  if (!props.open || props.disabled || loading.value) return false;
+  if (outcomeUncertain.value) {
+    if (directAddQueue.value[0]?.productId !== productId) return false;
+    void drainDirectAddQueue();
+    return false;
+  }
+  if (!productById.value.has(productId)) return false;
+  const firstAddedAt = new Date().toISOString();
+  directAddQueue.value.push({
+    tableId: props.tableId,
+    tableLabel: props.tableLabel,
+    productId,
+    lineId,
+    mergeKey,
+    firstAddedAt,
+    firstAddedSequence: nextDirectAddSequence++,
+    ...(sourceItemId ? { sourceItemId } : {}),
+    ...(remark ? { remark } : {}),
+    payload: {
+      idempotencyKey: createMutationKey('add'),
+      items: [{ productId, quantity: 1, ...(remark ? { remark } : {}) }],
+    },
+  });
+  void drainDirectAddQueue();
+  return true;
 }
 
-function resetWorkspace() {
+defineExpose({ queueProductAddition, retryPendingDirectAdd: drainDirectAddQueue });
+
+function resetWorkspaceView() {
   activeCategoryId.value = 'ALL';
   query.value = '';
-  selections.value = {};
   loadErrorKey.value = '';
-  idempotencyKey.value = createMutationKey('add');
-  submittedPayload.value = null;
-  submittedContext.value = null;
+  activeResultIndex.value = -1;
 }
 
 async function loadCatalog() {
@@ -175,51 +259,92 @@ async function loadCatalog() {
   }
 }
 
-async function submit() {
-  if (!canSubmit.value || !idempotencyKey.value) return;
-  submitting.value = true;
+function notifyMutationFailure(error: unknown) {
+  uiStore.pushToast(t(
+    isMutationOutcomeUncertain(error)
+      ? 'mutation.outcomeUncertain'
+      : apiErrorTranslationKey(error, 'ordering.createFailed'),
+  ), isMutationOutcomeUncertain(error) ? 'warning' : 'error');
+  emit('failed', error);
+}
+
+function clearSubmittedMutation() {
+  submittedPayload.value = null;
+  submittedContext.value = null;
+}
+
+async function ensureTableSession(action: DirectAddAction) {
+  if (effectiveSessionId.value) return true;
+  pendingOpenPayload.value ??= {
+    idempotencyKey: createMutationKey('add'),
+    items: [],
+  };
+  submittedPayload.value = pendingOpenPayload.value;
+  submittedContext.value = { tableId: action.tableId, tableLabel: action.tableLabel };
   try {
-    const payload = submittedPayload.value ?? {
-      idempotencyKey: idempotencyKey.value,
-      items: selectedLines.value.map(({ product, quantity }) => ({
-        productId: product.id,
-        quantity,
-      })),
-    };
-    submittedPayload.value = payload;
-    submittedContext.value ??= {
-      tableId: props.tableId,
-      sessionId: props.sessionId,
-      tableLabel: props.tableLabel,
-    };
-    const result = await createMerchantTableOrder(submittedContext.value.tableId, payload);
-    submittedPayload.value = null;
-    submittedContext.value = null;
+    const result = await createMerchantTableOrder(action.tableId, pendingOpenPayload.value);
+    effectiveSessionId.value = result.session.id;
+    pendingOpenPayload.value = null;
+    clearSubmittedMutation();
     emit('created', result);
+    return true;
   } catch (error) {
-    if (isDefinitiveMutationRejection(error)) {
-      submittedPayload.value = null;
-      submittedContext.value = null;
-      idempotencyKey.value = createMutationKey('add');
+    if (error instanceof CashierApiError && error.code === 'TABLE_ALREADY_OPEN') {
+      effectiveSessionId.value = 'OPEN_SESSION_CONFIRMED_BY_SERVER';
+      pendingOpenPayload.value = null;
+      clearSubmittedMutation();
+      return true;
     }
-    uiStore.pushToast(t(
-      isMutationOutcomeUncertain(error)
-        ? 'mutation.outcomeUncertain'
-        : apiErrorTranslationKey(error, 'ordering.createFailed'),
-    ), isMutationOutcomeUncertain(error) ? 'warning' : 'error');
-    emit('failed', error);
-    if (isDefinitiveMutationRejection(error)
-      && apiErrorTranslationKey(error) === 'ordering.productUnavailable') {
-      await loadCatalog();
+    notifyMutationFailure(error);
+    if (isDefinitiveMutationRejection(error)) {
+      pendingOpenPayload.value = null;
+      directAddQueue.value.shift();
+      clearSubmittedMutation();
+    } else {
+      outcomeUncertain.value = true;
+    }
+    return false;
+  }
+}
+
+async function drainDirectAddQueue() {
+  if (processing.value || !directAddQueue.value.length) return;
+  processing.value = true;
+  outcomeUncertain.value = false;
+  try {
+    while (directAddQueue.value.length) {
+      const action = directAddQueue.value[0]!;
+      if (!(await ensureTableSession(action))) break;
+      submittedPayload.value = submittedPayload.value ?? action.payload;
+      submittedContext.value ??= { tableId: action.tableId, tableLabel: action.tableLabel };
+      try {
+        const result = await createMerchantTableOrder(
+          submittedContext.value.tableId,
+          submittedPayload.value,
+        );
+        effectiveSessionId.value = result.session.id;
+        directAddQueue.value.shift();
+        clearSubmittedMutation();
+        emit('created', result);
+      } catch (error) {
+        notifyMutationFailure(error);
+        if (isDefinitiveMutationRejection(error)) {
+          directAddQueue.value.shift();
+          clearSubmittedMutation();
+          if (apiErrorTranslationKey(error) === 'ordering.productUnavailable') await loadCatalog();
+          continue;
+        }
+        outcomeUncertain.value = true;
+        break;
+      }
     }
   } finally {
-    submitting.value = false;
+    processing.value = false;
   }
 }
 
 function requestClose() {
-  if (submitting.value) return;
-  if (outcomeUncertain.value) {
+  if (mutationLocked.value) {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
     return;
   }
@@ -227,19 +352,105 @@ function requestClose() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (props.open && event.key === 'Escape') requestClose();
+  if (!props.open || props.topDialogOpen) return;
+  const target = event.target as HTMLElement | null;
+  const isTyping = target instanceof HTMLInputElement
+    || target instanceof HTMLTextAreaElement
+    || target instanceof HTMLSelectElement
+    || Boolean(target?.isContentEditable);
+  if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
+    event.preventDefault();
+    searchInput.value?.focus();
+    return;
+  }
+  if (event.key === '/' && !isTyping) {
+    event.preventDefault();
+    searchInput.value?.focus();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (query.value) {
+      query.value = '';
+      activeResultIndex.value = -1;
+      searchInput.value?.focus();
+    } else requestClose();
+    return;
+  }
+  if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && query.value.trim() && filteredProducts.value.length) {
+    event.preventDefault();
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    const next = activeResultIndex.value < 0
+      ? direction > 0 ? 0 : filteredProducts.value.length - 1
+      : (activeResultIndex.value + direction + filteredProducts.value.length) % filteredProducts.value.length;
+    activeResultIndex.value = next;
+    void nextTick(() => productCards.value[next]?.focus());
+    return;
+  }
+  const activeCard = productCards.value[activeResultIndex.value];
+  if (
+    event.key === 'Enter'
+    && activeResultIndex.value >= 0
+    && query.value.trim()
+    && (event.target === searchInput.value || event.target === activeCard)
+  ) {
+    const selected = filteredProducts.value[activeResultIndex.value];
+    if (!selected) return;
+    event.preventDefault();
+    queueProductAddition(selected.id);
+    return;
+  }
+  if (props.embedded || event.key !== 'Tab' || !workspace.value) return;
+  const focusable = [...workspace.value.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]')];
+  if (!focusable.length) return;
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (!props.embedded || !props.open || props.topDialogOpen) return;
+  const target = event.target as HTMLElement | null;
+  const isTyping = target instanceof HTMLInputElement
+    || target instanceof HTMLTextAreaElement
+    || target instanceof HTMLSelectElement
+    || Boolean(target?.isContentEditable);
+  if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
+    event.preventDefault();
+    searchInput.value?.focus();
+  } else if (event.key === '/' && !isTyping) {
+    event.preventDefault();
+    searchInput.value?.focus();
+  }
+}
+
+function onProductCardKeydown(productId: string, event: KeyboardEvent) {
+  if (!['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  queueProductAddition(productId);
+}
+
+onMounted(() => document.addEventListener('keydown', onDocumentKeydown));
+onBeforeUnmount(() => document.removeEventListener('keydown', onDocumentKeydown));
+
+function setProductCardRef(element: Element | null, index: number) {
+  if (element instanceof HTMLElement) productCards.value[index] = element;
 }
 
 function hideBrokenImage(event: Event) {
   (event.currentTarget as HTMLImageElement).hidden = true;
 }
-
-onMounted(() => document.addEventListener('keydown', onKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="embedded">
     <div
       v-if="mutationLocked"
       class="table-ordering-navigation-guard"
@@ -248,38 +459,52 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
     />
     <section
       v-if="open"
+      ref="workspace"
       class="table-ordering-workspace"
+      :class="{ 'table-ordering-workspace--embedded': embedded }"
       data-testid="table-ordering-workspace"
-      :data-session-id="sessionId"
-      role="dialog"
-      aria-modal="true"
+      :data-session-id="effectiveSessionId"
+      :role="embedded ? 'region' : 'dialog'"
+      :aria-modal="embedded ? undefined : 'true'"
       :aria-label="t('ordering.title')"
+      @keydown="onKeydown"
     >
       <header class="table-ordering-header">
-        <div>
-          <span>{{ t('ordering.tableContext', { table: targetTableLabel }) }}</span>
+        <div v-if="!embedded">
+          <span>{{ t('ordering.tableContext', { table: submittedContext?.tableLabel || tableLabel }) }}</span>
           <h2>{{ t('ordering.title') }}</h2>
         </div>
-        <label class="table-ordering-search">
-          <Search :size="18" aria-hidden="true" />
-          <input v-model="query" type="search" :placeholder="t('ordering.searchPlaceholder')" />
-        </label>
+        <Teleport to="#cashier-toolbar-menu-search" :disabled="!embedded">
+          <label class="table-ordering-search" data-testid="table-ordering-search">
+            <Search :size="18" aria-hidden="true" />
+            <input
+              ref="searchInput"
+              v-model="query"
+              type="search"
+              :placeholder="t('ordering.searchPlaceholder')"
+              :aria-label="t('ordering.searchLabel')"
+              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
+              autocomplete="off"
+              @keydown.stop="onKeydown"
+            />
+            <kbd>{{ t('ordering.searchShortcut') }}</kbd>
+          </label>
+        </Teleport>
         <button
+          v-if="!embedded"
           type="button"
           class="table-ordering-close"
           :aria-label="t('common.cancel')"
-          :disabled="submitting || outcomeUncertain"
+          :disabled="mutationLocked"
           @click="requestClose"
         ><X :size="22" aria-hidden="true" /></button>
       </header>
 
       <div class="table-ordering-body">
         <nav class="table-ordering-categories" :aria-label="t('ordering.categories')">
-          <button
-            type="button"
-            :class="{ 'is-active': activeCategoryId === 'ALL' }"
-            @click="activeCategoryId = 'ALL'"
-          >{{ t('common.all') }}</button>
+          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+            {{ t('common.all') }}
+          </button>
           <button
             v-for="category in activeCategories"
             :key="category.id"
@@ -291,16 +516,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
 
         <div class="table-ordering-products">
           <div class="table-ordering-products__scroller" data-testid="table-ordering-products-scroller">
-            <nav
-              class="table-ordering-category-strip"
-              :aria-label="t('ordering.categories')"
-              data-testid="table-ordering-category-strip"
-            >
-              <button
-                type="button"
-                :class="{ 'is-active': activeCategoryId === 'ALL' }"
-                @click="activeCategoryId = 'ALL'"
-              >{{ t('common.all') }}</button>
+            <nav class="table-ordering-category-strip" :aria-label="t('ordering.categories')" data-testid="table-ordering-category-strip">
+              <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+                {{ t('common.all') }}
+              </button>
               <button
                 v-for="category in activeCategories"
                 :key="`strip-${category.id}`"
@@ -325,98 +544,50 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
             />
             <div v-else class="table-ordering-product-grid">
               <article
-                v-for="product in filteredProducts"
+                v-for="(product, index) in filteredProducts"
                 :key="product.id"
+                :id="`ordering-product-${product.id}`"
+                :ref="(element) => setProductCardRef(element as Element | null, index)"
                 class="table-ordering-product"
                 :class="{
-                  'is-selected': quantityFor(product.id) > 0,
+                  'is-selected': pendingQuantityForProduct(product.id) > 0,
+                  'is-keyboard-active': activeResultIndex === index,
+                  'is-submitting': pendingQuantityForProduct(product.id) > 0,
                 }"
                 :data-product-id="product.id"
+                :tabindex="embedded ? 0 : activeResultIndex === index ? 0 : -1"
+                role="button"
+                :aria-busy="pendingQuantityForProduct(product.id) > 0"
+                :aria-disabled="productInteractionDisabled(product.id)"
+                @click="queueProductAddition(product.id)"
+                @keydown="onProductCardKeydown(product.id, $event)"
               >
-                <span class="table-ordering-product__image" aria-hidden="true">
+                <span class="table-ordering-product__image">
                   <img
                     v-if="resolveMediaUrl(product.imageUrl)"
-                    :src="resolveMediaUrl(product.imageUrl)"
+                    v-bind="{ src: resolveMediaUrl(product.imageUrl) }"
                     alt=""
                     loading="lazy"
                     @error="hideBrokenImage"
                   />
-                  <ImageIcon :size="24" />
+                  <ImageIcon :size="24" aria-hidden="true" />
+                  <b class="table-ordering-product__price">{{ formatItemPrice(product.priceVnd, locale) }}</b>
+                  <div v-if="pendingQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
+                    <output>×{{ pendingQuantityForProduct(product.id) }}</output>
+                  </div>
                 </span>
                 <div class="table-ordering-product__content">
                   <strong>{{ productName(product) }}</strong>
-                  <div class="table-ordering-product__bottom">
-                    <b>{{ formatVnd(product.priceVnd, locale) }}</b>
-                    <div
-                      v-if="quantityFor(product.id) === 0"
-                      class="table-ordering-product__quantity"
-                      :aria-label="t('ordering.quantityFor', { name: productName(product) })"
-                    >
-                      <div class="table-ordering-quantity is-empty">
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.increaseQuantity')"
-                          :disabled="controlsDisabled()"
-                          @click="changeQuantity(product.id, 1)"
-                        ><Plus :size="18" aria-hidden="true" /></button>
-                      </div>
-                    </div>
-                    <div
-                      v-else
-                      class="table-ordering-product__quantity"
-                      :aria-label="t('ordering.quantityFor', { name: productName(product) })"
-                    >
-                      <div class="table-ordering-quantity has-quantity">
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.decreaseQuantity')"
-                          :disabled="quantityFor(product.id) === 0 || controlsDisabled()"
-                          @click="changeQuantity(product.id, -1)"
-                        ><Minus :size="18" aria-hidden="true" /></button>
-                        <output>{{ quantityFor(product.id) }}</output>
-                        <button
-                          type="button"
-                          :aria-label="t('ordering.increaseQuantity')"
-                          :disabled="controlsDisabled() || quantityFor(product.id) >= 99"
-                          @click="changeQuantity(product.id, 1)"
-                        ><Plus :size="18" aria-hidden="true" /></button>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </article>
             </div>
           </div>
         </div>
-      </div>
 
-      <footer class="table-ordering-footer">
-        <div class="table-ordering-summary">
-          <ShoppingBasket :size="22" aria-hidden="true" />
-          <span>{{ t('ordering.selected', { count: selectedQuantity }) }}</span>
-          <strong>{{ formatVnd(selectedTotal, locale) }}</strong>
-          <small v-if="outcomeUncertain" data-testid="ordering-outcome-uncertain" role="alert">
-            {{ t('mutation.outcomeUncertain') }}
-          </small>
-        </div>
-        <button
-          type="button"
-          class="secondary-action"
-          :disabled="submitting || outcomeUncertain"
-          @click="requestClose"
-        >
-          {{ t('common.cancel') }}
-        </button>
-    <button
-      type="button"
-      class="primary-action"
-      data-testid="confirm-table-order"
-      :disabled="!canSubmit"
-      @click="submit"
-    >{{ submitting
-      ? t('ordering.submitting')
-      : submitLabel }}</button>
-  </footer>
-  </section>
+        <aside v-if="!embedded" class="table-ordering-current-order" data-testid="ordering-current-order">
+          <slot name="current-order" />
+        </aside>
+      </div>
+    </section>
   </Teleport>
 </template>

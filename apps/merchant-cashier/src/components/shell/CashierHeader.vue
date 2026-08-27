@@ -30,6 +30,9 @@ const props = defineProps<{
   printingAvailability: CashierPrintingAvailability;
   activeTableFilter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED';
   refreshingTables?: boolean;
+  showTableMetrics?: boolean;
+  showMainTabs?: boolean;
+  activeMainTab?: 'TABLES' | 'MENU';
 }>();
 
 const emit = defineEmits<{
@@ -37,6 +40,7 @@ const emit = defineEmits<{
   toggleSound: [];
   fullscreenError: [];
   selectTableFilter: [filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'];
+  selectMainTab: [tab: 'TABLES' | 'MENU'];
   refreshTables: [];
 }>();
 
@@ -127,8 +131,40 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="cashier-header" data-testid="cashier-topbar">
-    <section class="cashier-top-metrics" :aria-label="t('stats.title')" data-testid="top-metrics">
+  <header
+    class="cashier-header"
+    :class="{
+      'cashier-header--status-only': showTableMetrics === false && !showMainTabs,
+      'cashier-header--main-tabs': showMainTabs,
+    }"
+    data-testid="cashier-topbar"
+  >
+    <div v-if="showMainTabs" class="cashier-toolbar-primary" data-testid="cashier-toolbar-primary">
+      <nav class="cashier-primary-tabs" :aria-label="t('cashierV2.mainTabs')" data-testid="cashier-primary-tabs">
+        <button
+          type="button"
+          data-testid="main-tab-tables"
+          :class="{ 'is-active': activeMainTab !== 'MENU' }"
+          :aria-pressed="activeMainTab !== 'MENU'"
+          @click="$emit('selectMainTab', 'TABLES')"
+        >{{ t('cashierV2.tablesTab') }}</button>
+        <button
+          type="button"
+          data-testid="main-tab-menu"
+          :class="{ 'is-active': activeMainTab === 'MENU' }"
+          :aria-pressed="activeMainTab === 'MENU'"
+          @click="$emit('selectMainTab', 'MENU')"
+        >{{ t('cashierV2.menuTab') }}</button>
+      </nav>
+      <div
+        v-show="activeMainTab === 'MENU'"
+        id="cashier-toolbar-menu-search"
+        class="cashier-toolbar-menu-search"
+        data-testid="cashier-toolbar-menu-search"
+      />
+    </div>
+
+    <section v-else-if="showTableMetrics !== false" class="cashier-top-metrics" :aria-label="t('stats.title')" data-testid="top-metrics">
       <button
         v-for="item in stats"
         :key="item.key"

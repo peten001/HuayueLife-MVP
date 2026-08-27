@@ -6,6 +6,7 @@ import type {
   TableSessionSummary,
   SettlementAdjustmentInput,
   PaymentMethod,
+  TransferTableSessionInput,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -69,6 +70,18 @@ export async function setTableSessionSettlementAdjustment(
   }
   const result = await requestApi<{ session: TableSessionDetail }>(
     `/merchant/table-sessions/${encodeURIComponent(sessionId)}/settlement-adjustment`,
+    { method: 'POST', body: input },
+  );
+  return result.session;
+}
+
+export async function transferTableSession(
+  sessionId: string,
+  input: TransferTableSessionInput,
+): Promise<TableSessionDetail> {
+  if (isDemoSessionActive()) return demoRepository.transferSession(sessionId, input);
+  const result = await requestApi<{ session: TableSessionDetail }>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/transfer`,
     { method: 'POST', body: input },
   );
   return result.session;

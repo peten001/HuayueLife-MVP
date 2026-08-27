@@ -18,6 +18,7 @@ import './styles/final-layout.css';
 import './styles/item-adjustments.css';
 import './styles/pwa-install.css';
 import './styles/workflow.css';
+import './styles/cashier-v2-phase1.css';
 
 declare global {
   interface Window {

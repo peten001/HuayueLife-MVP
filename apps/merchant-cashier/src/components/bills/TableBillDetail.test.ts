@@ -35,6 +35,7 @@ const order: MerchantOrder = {
   customerRemark: '少辣',
   items: [{
     id: 'item-1',
+    productId: 'product-1',
     productNameZhSnapshot: '牛肉粉',
     productNameViSnapshot: 'Phở bò',
     productNameEnSnapshot: 'Beef pho',
@@ -69,6 +70,7 @@ function session(pendingOrderCount = 0): TableSessionDetail {
       totalAmountVnd: order.totalAmountVnd,
       items: order.items.map((item) => ({
         id: item.id,
+        productId: item.productId,
         productNameZhSnapshot: item.productNameZhSnapshot,
         productNameViSnapshot: item.productNameViSnapshot,
         productNameEnSnapshot: item.productNameEnSnapshot,
@@ -110,7 +112,7 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.find('[data-testid="dinein-accept"]').exists()).toBe(false);
   });
 
-  it('counts total dish quantity and keeps every source row adjustable while the session is open', async () => {
+  it('counts total dish quantity while merging same-identity source facts into one adjustable row', async () => {
     const base = session();
     const customerOrder = {
       ...base.orders[0]!,
@@ -136,15 +138,18 @@ describe('TableBillDetail V2 table workspace', () => {
     });
     expect(wrapper.get('.table-detail-header__meta').text()).toContain('7 个菜');
     const rows = wrapper.findAll('.table-item-summary-row');
-    expect(rows).toHaveLength(3);
-    expect(wrapper.findAll('[data-testid="decrease-order-item"]')).toHaveLength(3);
+    expect(rows).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="decrease-order-item"]')).toHaveLength(1);
     expect(wrapper.findAll('[data-testid="decrease-order-item"]').every((button) => button.attributes('disabled') === undefined)).toBe(true);
-    expect(rows[2]!.text()).toContain('× 2');
-    await rows[2]!.get('[data-testid="decrease-order-item"]').trigger('click');
-    expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({ id: 'item-last' });
+    expect(rows[0]!.get('.committed-item-stepper output').text()).toBe('7');
+    expect(rows[0]!.attributes('data-raw-item-ids')).toBe('item-1,item-staff,item-last');
+    await rows[0]!.get('[data-testid="decrease-order-item"]').trigger('click');
+    expect(wrapper.emitted('decreaseItem')?.[0]?.[0]).toMatchObject({ id: 'item-last' });
+    expect(wrapper.emitted('decreaseItem')?.[0]?.[2]).toBe(7);
     await wrapper.setProps({ session: { ...base, orderCount: 2, itemCount: 5, orders: [customerOrder, staffOrder] } });
     expect(wrapper.get('.table-detail-header__meta').text()).toContain('5 个菜');
-    expect(wrapper.findAll('.table-item-summary-row')).toHaveLength(2);
+    expect(wrapper.findAll('.table-item-summary-row')).toHaveLength(1);
+    expect(wrapper.get('.committed-item-stepper output').text()).toBe('5');
   });
 
   it('keeps the adjustment column but disables completed rows with a status reason', () => {
@@ -170,7 +175,7 @@ describe('TableBillDetail V2 table workspace', () => {
 
     expect(button.attributes('disabled')).toBeUndefined();
     await button.trigger('click');
-    expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({
+    expect(wrapper.emitted('decreaseItem')?.[0]?.[0]).toMatchObject({
       id: 'item-1',
       quantity: 1,
     });
@@ -260,6 +265,48 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.get('.table-item-summary-row').find('[data-testid="decrease-order-item"]').exists()).toBe(true);
   });
 
+  it('keeps the item price anchor fixed through 9,999,999 and expands at 10,000,000', async () => {
+    const base = session();
+    const withSubtotal = (subtotalVnd: string) => ({
+      ...base,
+      orders: [{
+        ...base.orders[0]!,
+        items: [{ ...base.orders[0]!.items[0]!, unitPriceVnd: subtotalVnd, quantity: 1, subtotalVnd }],
+      }],
+    });
+    const wrapper = mountDetail({ session: withSubtotal('9999999') });
+
+    expect(wrapper.get('.table-item-summary-row').classes()).not.toContain('table-item-summary-row--extended-price');
+    await wrapper.setProps({ session: withSubtotal('10000000') });
+    expect(wrapper.get('.table-item-summary-row').classes()).toContain('table-item-summary-row--extended-price');
+  });
+
+  it.each([
+    [1, false],
+    [99, false],
+    [100, true],
+    [999, true],
+    [1000, true],
+  ])('uses the expanding quantity slot at the 100 boundary for quantity %i', (quantity, expectedWide) => {
+    const base = session();
+    const wrapper = mountDetail({
+      session: {
+        ...base,
+        orders: [{
+          ...base.orders[0]!,
+          items: [{
+            ...base.orders[0]!.items[0]!,
+            quantity,
+            subtotalVnd: String(60_000 * quantity),
+          }],
+        }],
+      },
+    });
+
+    expect(wrapper.get('.committed-item-stepper').classes().includes('committed-item-stepper--wide-quantity'))
+      .toBe(expectedWide);
+  });
+
   it('renders the production-sized discount amounts completely without zero rounding rows', () => {
     const wrapper = mountDetail({
       session: {
@@ -296,7 +343,22 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(row.text()).toContain('120,000');
     expect(row.find('[data-testid="decrease-order-item"]').exists()).toBe(true);
     await row.get('[data-testid="decrease-order-item"]').trigger('click');
-    expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({ id: 'item-1' });
+    expect(wrapper.emitted('decreaseItem')?.[0]?.[0]).toMatchObject({ id: 'item-1' });
+  });
+
+  it('exposes inline minus and plus without mutating the committed quantity locally', async () => {
+    const wrapper = mountDetail();
+    const row = wrapper.get('.table-item-summary-row');
+    expect(row.get('.committed-item-stepper output').text()).toBe('2');
+
+    await row.get('[data-testid="increase-committed-item"]').trigger('click');
+
+    expect(wrapper.emitted('increaseItem')?.[0]?.[0]).toMatchObject({
+      id: 'item-1',
+      productId: 'product-1',
+      quantity: 2,
+    });
+    expect(row.get('.committed-item-stepper output').text()).toBe('2');
   });
 
   it('keeps print, adjustment and checkout in the bottom action dock', async () => {
@@ -317,14 +379,39 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.text()).not.toContain('接单');
   });
 
-  it('preserves empty-table opening without showing dine-in chat', async () => {
+  it('keeps the empty-table shell without opening hints or an open-table action', () => {
     const empty = { ...table, operationalStatus: 'AVAILABLE' as const };
     const wrapper = mountDetail({ table: empty, session: null });
-    const open = wrapper.get('[data-testid="table-order-items"]');
-    expect(open.text()).toContain('开台点菜');
+    expect(wrapper.find('[data-testid="right-panel-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="right-panel-body"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="right-panel-footer"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="empty-order-primary"]').text()).toBe('订单中没有商品');
+    expect(wrapper.get('[data-testid="empty-order-secondary"]').text()).toBe('请从屏幕左侧的菜单中选择');
+    expect(wrapper.find('[data-testid="empty-order-icon"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="right-panel-body"]').text()).not.toContain('当前桌台空闲');
+    expect(wrapper.get('[data-testid="right-panel-body"]').text()).not.toContain('此桌台空闲，可直接开台点菜');
+    expect(wrapper.find('[data-testid="right-panel-body"] [data-testid="table-order-items"]').exists()).toBe(false);
     expect(wrapper.find('.order-chat-workspace').exists()).toBe(false);
-    await open.trigger('click');
-    expect(wrapper.emitted('orderItems')).toEqual([[]]);
+    expect(wrapper.findAll('[data-testid="right-panel-footer"] button').every((button) => button.attributes('disabled') !== undefined)).toBe(true);
+  });
+
+  it('keeps the same fixed shell when no table is selected', () => {
+    const wrapper = mountDetail({ table: null, session: null });
+
+    expect(wrapper.get('[data-testid="table-detail"]').classes()).toContain('table-bill-shell--no-selection');
+    expect(wrapper.get('[data-testid="right-panel-header"]').text()).toContain('请选择桌台');
+    expect(wrapper.get('[data-testid="right-panel-body"]').text()).toContain('选择占用中的桌台');
+    expect(wrapper.find('[data-testid="right-panel-footer"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="right-panel-footer"] button').every((button) => button.attributes('disabled') !== undefined)).toBe(true);
+  });
+
+  it('keeps the same fixed shell for an active table', () => {
+    const wrapper = mountDetail();
+
+    expect(wrapper.get('[data-testid="table-detail"]').classes()).toContain('table-bill-shell--active');
+    expect(wrapper.get('[data-testid="right-panel-header"]').text()).toContain('A01');
+    expect(wrapper.get('[data-testid="right-panel-body"]').text()).toContain('牛肉粉');
+    expect(wrapper.get('[data-testid="right-panel-footer"]').text()).toContain('结账');
   });
 
   it('labels staff additions as 加菜 and keeps the remove action after amount', async () => {
@@ -336,6 +423,233 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.get('.table-item-summary-row__source').text()).toContain('加菜');
     expect(wrapper.find('[data-testid="decrease-order-item"]').exists()).toBe(true);
     await wrapper.get('[data-testid="decrease-order-item"]').trigger('click');
-    expect(wrapper.emitted('returnItem')?.[0]?.[0]).toMatchObject({ id: 'item-1' });
+    expect(wrapper.emitted('decreaseItem')?.[0]?.[0]).toMatchObject({ id: 'item-1' });
+  });
+
+  it('merges pending additions into the current row without changing authoritative payable', async () => {
+    const wrapper = mountDetail({
+      draftLines: [{ lineId: 'committed:item-1', sourceItemId: 'item-1', product: {
+        id: 'product-1',
+        categoryId: 'category-1',
+        nameZh: '牛肉粉',
+        nameVi: 'Phở bò',
+        nameEn: 'Beef pho',
+        priceVnd: '60000',
+        sortOrder: 1,
+        status: 'ON_SALE',
+        productType: 'FOOD',
+      }, quantity: 1 }],
+    });
+    const row = wrapper.get('.table-item-summary-row');
+
+    expect(row.get('.committed-item-stepper output').text()).toBe('3');
+    expect(row.text()).not.toContain('×');
+    expect(row.text()).toContain('180,000');
+    expect(row.get('.table-item-summary-row__item-price').text()).toBe('180,000');
+    expect(row.get('.table-item-summary-row__item-price').text()).not.toMatch(/VND|₫/);
+    expect(row.get('[data-testid="pending-line-note"]').text()).toContain('+1');
+    expect(wrapper.get('.dinein-settlement-summary .is-pending').text()).toContain('60,000');
+    expect(wrapper.get('.dinein-settlement-summary .is-pending').text()).toContain('VND');
+    expect(wrapper.get('.dinein-settlement-summary .is-payable').text()).toContain('120,000');
+    expect(wrapper.get('.dinein-settlement-summary .is-payable').text()).toContain('VND');
+
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    await row.get('[data-testid="decrease-order-item"]').trigger('click');
+    expect(wrapper.emitted('decreaseItem')).toBeUndefined();
+  });
+
+  it('merges one pending product increment into the same canonical committed row', () => {
+    const base = session();
+    const secondOrder = {
+      ...base.orders[0]!,
+      id: 'order-2',
+      items: [{ ...base.orders[0]!.items[0]!, id: 'item-2', quantity: 2 }],
+    };
+    const wrapper = mountDetail({
+      session: { ...base, orders: [base.orders[0]!, secondOrder] },
+      draftLines: [{ lineId: 'committed:item-2', sourceItemId: 'item-2', product: {
+        id: 'product-1',
+        categoryId: 'category-1',
+        nameZh: '牛肉粉',
+        priceVnd: '60000',
+        sortOrder: 1,
+        status: 'ON_SALE',
+        productType: 'FOOD',
+      }, quantity: 1 }],
+    });
+    const rows = wrapper.findAll('.table-item-summary-row');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.get('.committed-item-stepper output').text()).toBe('5');
+    expect(rows[0]!.get('[data-testid="pending-line-note"]').text()).toContain('+1');
+    expect(rows[0]!.attributes('data-raw-item-ids')).toBe('item-1,item-2');
+  });
+
+  it('keeps one canonical same-product row stable after raw order facts reorder', async () => {
+    const base = session();
+    const itemA = { ...base.orders[0]!.items[0]!, id: 'item-a', quantity: 3, subtotalVnd: '180000' };
+    const itemB = { ...base.orders[0]!.items[0]!, id: 'item-b', quantity: 2, subtotalVnd: '120000' };
+    const itemC = { ...base.orders[0]!.items[0]!, id: 'item-c', quantity: 1, subtotalVnd: '60000' };
+    const orders = [
+      { ...base.orders[0]!, id: 'order-a', items: [itemA] },
+      { ...base.orders[0]!, id: 'order-b', items: [itemB] },
+      { ...base.orders[0]!, id: 'order-c', items: [itemC] },
+    ];
+    const draftLines = [
+      { lineId: 'committed:item-a', sourceItemId: 'item-a', product: productFixture(), quantity: 1 },
+      { lineId: 'committed:item-b', sourceItemId: 'item-b', product: productFixture(), quantity: 2 },
+    ];
+    const wrapper = mountDetail({ session: { ...base, orders }, draftLines });
+
+    let rows = wrapper.findAll('.table-item-summary-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.get('.committed-item-stepper output').text()).toBe('9');
+    expect(rows[0]!.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    const mergeKey = rows[0]!.attributes('data-merge-key');
+    await rows[0]!.get('[data-testid="decrease-order-item"]').trigger('click');
+    await rows[0]!.get('[data-testid="increase-committed-item"]').trigger('click');
+    expect(wrapper.emitted('decreaseItem')).toBeUndefined();
+    expect(wrapper.emitted('increaseItem')?.[0]?.[0]).toMatchObject({ id: 'item-c' });
+    expect(wrapper.emitted('increaseItem')?.[0]?.[2]).toBe(mergeKey);
+
+    await wrapper.setProps({ session: { ...base, orders: [orders[2]!, orders[0]!, orders[1]!] } });
+    rows = wrapper.findAll('.table-item-summary-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.attributes('data-merge-key')).toBe(mergeKey);
+    expect(rows[0]!.attributes('data-raw-item-ids')).toBe('item-c,item-a,item-b');
+    await rows[0]!.get('[data-testid="increase-committed-item"]').trigger('click');
+    expect(wrapper.emitted('increaseItem')?.[1]?.[0]).toMatchObject({ id: 'item-b' });
+  });
+
+  it('renders distinct products by earliest source fact after increments and snapshot reordering', async () => {
+    const base = session();
+    const fact = (productId: string, second: number, suffix: string) => ({
+      ...base.orders[0]!,
+      id: `order-${suffix}`,
+      orderNo: `O-${suffix}`,
+      createdAt: `2026-07-24T01:00:0${second}.000Z`,
+      items: [{
+        ...base.orders[0]!.items[0]!,
+        id: `item-${suffix}`,
+        productId,
+        productNameZhSnapshot: `菜品 ${productId}`,
+        quantity: 1,
+        subtotalVnd: '60000',
+      }],
+    });
+    const a = fact('A', 1, 'a');
+    const b = fact('B', 2, 'b');
+    const c = fact('C', 3, 'c');
+    const bPlus = fact('B', 4, 'b-plus');
+    const aPlus = fact('A', 5, 'a-plus');
+    const wrapper = mountDetail({ session: { ...base, orders: [c, b, a] } });
+    const renderedIds = () => wrapper.findAll('.table-item-summary-row')
+      .map((row) => row.attributes('data-product-id'));
+
+    expect(renderedIds()).toEqual(['A', 'B', 'C']);
+
+    await wrapper.setProps({ session: { ...base, orders: [bPlus, c, a, b] } });
+    expect(renderedIds()).toEqual(['A', 'B', 'C']);
+    expect(wrapper.findAll('.committed-item-stepper output').map((output) => output.text()))
+      .toEqual(['1', '2', '1']);
+
+    await wrapper.setProps({ session: { ...base, orders: [c, aPlus, b, a, bPlus] } });
+    expect(renderedIds()).toEqual(['A', 'B', 'C']);
+    expect(wrapper.findAll('.committed-item-stepper output').map((output) => output.text()))
+      .toEqual(['2', '2', '1']);
+  });
+
+  it('keeps the rendered merge-key ledger stable through minus snapshots, refresh and zero re-add', async () => {
+    const base = session();
+    const fact = (productId: string, second: number, suffix: string, quantity = 1) => ({
+      ...base.orders[0]!,
+      id: `order-${suffix}`,
+      orderNo: `O-${suffix}`,
+      createdAt: `2026-07-24T01:00:0${second}.000Z`,
+      items: [{
+        ...base.orders[0]!.items[0]!,
+        id: `item-${suffix}`,
+        productId,
+        productNameZhSnapshot: `菜品 ${productId}`,
+        quantity,
+        subtotalVnd: String(60_000 * quantity),
+      }],
+    });
+    const a = fact('A', 1, 'a', 2);
+    const b = fact('B', 2, 'b', 4);
+    const c = fact('C', 3, 'c', 2);
+    const d = fact('D', 4, 'd');
+    const bPlus = fact('B', 5, 'b-plus');
+    const wrapper = mountDetail({ session: { ...base, orders: [d, bPlus, c, b, a] } });
+    const renderedIds = () => wrapper.findAll('.table-item-summary-row')
+      .map((row) => row.attributes('data-product-id'));
+
+    expect(renderedIds()).toEqual(['A', 'B', 'C', 'D']);
+
+    const bAfterMinus = fact('B', 2, 'b', 3);
+    await wrapper.setProps({ session: { ...base, orders: [c, bPlus, a, d, bAfterMinus] } });
+    expect(renderedIds()).toEqual(['A', 'B', 'C', 'D']);
+    expect(wrapper.findAll('.committed-item-stepper output').map((output) => output.text()))
+      .toEqual(['2', '4', '2', '1']);
+
+    const bAfterRepeatedMinus = fact('B', 2, 'b', 2);
+    const aAfterMinus = fact('A', 1, 'a');
+    const cAfterMinus = fact('C', 3, 'c');
+    await wrapper.setProps({
+      session: { ...base, orders: [bPlus, d, cAfterMinus, bAfterRepeatedMinus, aAfterMinus] },
+    });
+    expect(renderedIds()).toEqual(['A', 'B', 'C', 'D']);
+
+    await wrapper.setProps({
+      session: { ...base, orders: [d, aAfterMinus, bAfterRepeatedMinus, cAfterMinus, bPlus] },
+    });
+    expect(renderedIds()).toEqual(['A', 'B', 'C', 'D']);
+
+    await wrapper.setProps({ session: { ...base, orders: [d, cAfterMinus, aAfterMinus] } });
+    expect(renderedIds()).toEqual(['A', 'C', 'D']);
+
+    await wrapper.setProps({
+      session: { ...base, orders: [d, cAfterMinus, aAfterMinus] },
+      draftLines: [{
+        lineId: 'product:B:readded',
+        product: { ...productFixture(), id: 'B', nameZh: '菜品 B' },
+        quantity: 1,
+        firstAddedAt: '2026-07-24T01:00:08.000Z',
+        firstAddedSequence: 8,
+      }],
+    });
+    expect(renderedIds()).toEqual(['A', 'C', 'D', 'B']);
+  });
+
+  it('keeps same-product rows separate when normalized remarks differ', () => {
+    const base = session();
+    const plain = { ...base.orders[0]!.items[0]!, id: 'item-plain', quantity: 1, subtotalVnd: '60000', remark: null };
+    const lessSalt = { ...plain, id: 'item-less-salt', remark: ' 少盐 ' };
+    const wrapper = mountDetail({
+      session: {
+        ...base,
+        orders: [
+          { ...base.orders[0]!, id: 'order-plain', items: [plain] },
+          { ...base.orders[0]!, id: 'order-less-salt', items: [lessSalt] },
+        ],
+      },
+    });
+
+    const rows = wrapper.findAll('.table-item-summary-row');
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.find('[data-testid="canonical-line-remark"]').text() === '少盐'))
+      .toBeDefined();
   });
 });
+
+function productFixture() {
+  return {
+    id: 'product-1',
+    categoryId: 'category-1',
+    nameZh: '牛肉粉',
+    priceVnd: '60000',
+    sortOrder: 1,
+    status: 'ON_SALE' as const,
+    productType: 'FOOD' as const,
+  };
+}

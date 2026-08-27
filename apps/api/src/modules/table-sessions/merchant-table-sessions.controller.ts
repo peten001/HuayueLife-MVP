@@ -19,6 +19,7 @@ import { TableIdParamDto } from './dto/table-id-param.dto';
 import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
 import { PaymentMethodDto } from '../orders/payment-method.dto';
 import { TableSessionsService } from './table-sessions.service';
+import { TransferTableSessionDto } from './dto/transfer-table-session.dto';
 
 class TableSessionRoundingDto {
   @IsBoolean()
@@ -110,6 +111,25 @@ export class MerchantTableSessionsController {
       BigInt(staff.sub),
       BigInt(params.id),
       body,
+    );
+  }
+
+  @Post('table-sessions/:id/transfer')
+  transferSession(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() body: TransferTableSessionDto,
+  ) {
+    return this.service.transferSession(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      {
+        targetTableId: BigInt(body.targetTableId),
+        expectedSourceTableId: BigInt(body.expectedSourceTableId),
+        requestKey: body.requestKey,
+      },
     );
   }
 }

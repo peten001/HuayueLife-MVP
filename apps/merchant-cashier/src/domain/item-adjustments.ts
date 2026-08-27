@@ -34,7 +34,7 @@ export function canReturnOrderItems(
     && RETURNABLE_STATUSES.has(order.status);
 }
 
-export function createMutationKey(prefix: 'add' | 'decrease' | 'return') {
+export function createMutationKey(prefix: 'add' | 'decrease' | 'return' | 'transfer') {
   const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;

@@ -2,8 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
+import { productDirectMergeKey } from '@/domain';
 import { setLocale } from '@/i18n';
-import type { MerchantOrderMutationResult } from '@/types';
+import type { CashierMenuProduct, MerchantOrderMutationResult } from '@/types';
 
 const apiMocks = vi.hoisted(() => ({
   listCashierMenuCategories: vi.fn(),
@@ -22,75 +23,100 @@ const category = {
   id: 'category-1',
   nameZh: '主食',
   nameVi: 'Món chính',
+  nameEn: 'Mains',
   sortOrder: 1,
   isActive: true,
 };
-const product = {
+const secondCategory = {
+  ...category,
+  id: 'category-2',
+  nameZh: '饮品',
+  nameVi: 'Đồ uống',
+  nameEn: 'Drinks',
+  sortOrder: 2,
+};
+const product: CashierMenuProduct = {
   id: 'product-1',
   categoryId: category.id,
   nameZh: '牛肉粉',
   nameVi: 'Phở bò',
+  nameEn: 'Beef pho',
   priceVnd: '60000',
   sortOrder: 1,
-  status: 'ON_SALE' as const,
-  productType: 'FOOD' as const,
+  status: 'ON_SALE',
+  productType: 'FOOD',
   category,
 };
-const longNameProduct = {
+const secondProduct: CashierMenuProduct = {
   ...product,
-  id: 'product-long',
-  nameZh: '非常长的牛肉粉菜名用于验证两行截断与可读性',
-  nameVi: 'Phở bò với cà chua sốt đen và rau thơm nhiều món để測試長文本',
-  description: 'A very long product description that validates Vietnamese wrapping and line handling in compact card layouts.',
-};
-const result: MerchantOrderMutationResult = {
-  order: {
-    id: 'order-added',
-    orderNo: 'ADD-1',
-    merchantId: 'merchant-1',
-    tableId: 'table-1',
-    tableSessionId: 'session-1',
-    orderType: 'DINE_IN',
-    status: 'PENDING_ACCEPTANCE',
-    itemAmountVnd: '60000',
-    deliveryFeeVnd: '0',
-    totalAmountVnd: '60000',
-    settlementStatus: 'UNSETTLED',
-    createdAt: '2026-07-17T00:00:00.000Z',
-    updatedAt: '2026-07-17T00:00:00.000Z',
-    items: [{
-      id: 'item-added',
-      productId: product.id,
-      productNameZhSnapshot: product.nameZh,
-      unitPriceVnd: product.priceVnd,
-      quantity: 1,
-      subtotalVnd: product.priceVnd,
-    }],
-  },
-  session: {
-    id: 'session-1',
-    sessionNo: 'S-1',
-    merchantId: 'merchant-1',
-    tableId: 'table-1',
-    tableNo: 'A01',
-    status: 'OPEN',
-    openedAt: '2026-07-17T00:00:00.000Z',
-    orderCount: 1,
-    itemCount: 1,
-    totalAmountVnd: '60000',
-    pendingOrderCount: 1,
-    unfinishedOrderCount: 1,
-    orders: [],
-  },
+  id: 'product-2',
+  categoryId: secondCategory.id,
+  nameZh: '冰咖啡',
+  nameVi: 'Cà phê đá',
+  nameEn: 'Iced coffee',
+  priceVnd: '30000',
+  category: secondCategory,
 };
 
-function mountWorkspace(overrides?: { sessionId?: string }) {
+function mutationResult(
+  selectedProduct: CashierMenuProduct = product,
+  sessionId = 'session-1',
+): MerchantOrderMutationResult {
+  return {
+    order: {
+      id: `order-${selectedProduct.id}`,
+      orderNo: `ADD-${selectedProduct.id}`,
+      merchantId: 'merchant-1',
+      tableId: 'table-1',
+      tableSessionId: sessionId,
+      orderType: 'DINE_IN',
+      status: 'ACCEPTED',
+      itemAmountVnd: selectedProduct.priceVnd,
+      deliveryFeeVnd: '0',
+      totalAmountVnd: selectedProduct.priceVnd,
+      settlementStatus: 'UNSETTLED',
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+      items: [{
+        id: `item-${selectedProduct.id}`,
+        productId: selectedProduct.id,
+        productNameZhSnapshot: selectedProduct.nameZh,
+        unitPriceVnd: selectedProduct.priceVnd,
+        quantity: 1,
+        subtotalVnd: selectedProduct.priceVnd,
+      }],
+    },
+    session: {
+      id: sessionId,
+      sessionNo: 'S-1',
+      merchantId: 'merchant-1',
+      tableId: 'table-1',
+      tableNo: 'A01',
+      status: 'OPEN',
+      openedAt: '2026-08-27T00:00:00.000Z',
+      orderCount: 1,
+      itemCount: 1,
+      totalAmountVnd: selectedProduct.priceVnd,
+      pendingOrderCount: 0,
+      unfinishedOrderCount: 1,
+      orders: [],
+    },
+  };
+}
+
+function openResult(sessionId = 'session-1'): MerchantOrderMutationResult {
+  return { ...mutationResult(product, sessionId), order: null };
+}
+
+function mountWorkspace(overrides: { sessionId?: string; embedded?: boolean; disabled?: boolean } = {}) {
   return mount(TableOrderingWorkspace, {
     props: {
       open: true,
       tableId: 'table-1',
       tableLabel: 'A01',
-      sessionId: overrides?.sessionId ?? 'session-1',
+      sessionId: overrides.sessionId ?? 'session-1',
+      embedded: overrides.embedded,
+      disabled: overrides.disabled,
     },
     global: {
       plugins: [createPinia()],
@@ -99,292 +125,348 @@ function mountWorkspace(overrides?: { sessionId?: string }) {
   });
 }
 
-describe('TableOrderingWorkspace', () => {
+function productCard(wrapper: ReturnType<typeof mountWorkspace>, productId = product.id) {
+  return wrapper.get(`.table-ordering-product[data-product-id="${productId}"]`);
+}
+
+describe('TableOrderingWorkspace V6 direct ordering', () => {
   afterEach(() => setLocale('zh'));
 
   beforeEach(() => {
-    apiMocks.listCashierMenuCategories.mockReset().mockResolvedValue([category]);
+    apiMocks.listCashierMenuCategories.mockReset().mockResolvedValue([category, secondCategory]);
     apiMocks.listCashierMenuProducts.mockReset().mockResolvedValue([
       product,
+      secondProduct,
       { ...product, id: 'product-off', nameZh: '停售菜', status: 'OFF_SALE' },
     ]);
     apiMocks.createMerchantTableOrder.mockReset();
   });
 
-  it('loads categories, searches products and excludes zero-quantity items', async () => {
-    const wrapper = mountWorkspace();
+  it('loads the orderable catalog, keeps currency compact and removes the confirmation footer', async () => {
+    const wrapper = mountWorkspace({ embedded: true });
     await flushPromises();
-
-    expect(wrapper.text()).toContain('主食');
     expect(wrapper.text()).toContain('牛肉粉');
+    expect(wrapper.text()).toContain('冰咖啡');
     expect(wrapper.text()).not.toContain('停售菜');
-    expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeDefined();
-
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity output').text()).toBe('1');
-    expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeUndefined();
-
-    await wrapper.get('[aria-label="减少数量"]').trigger('click');
-    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity').findAll('output')).toHaveLength(0);
-    expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeDefined();
-
-    await wrapper.get('input[type="search"]').setValue('不存在');
-    expect(wrapper.text()).toContain('暂无可点菜品');
+    expect(productCard(wrapper).get('.table-ordering-product__price').text()).toBe('60,000');
+    expect(wrapper.find('.table-ordering-footer').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="confirm-table-order"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('待提交');
   });
 
-  it('submits one open-only request when no session exists', async () => {
-    const deferred = createDeferred<MerchantOrderMutationResult>();
-    const openOnlyResult: MerchantOrderMutationResult = {
-      ...result,
-      order: null,
-    };
-    apiMocks.createMerchantTableOrder.mockReturnValueOnce(deferred.promise);
-    const wrapper = mountWorkspace({ sessionId: '' });
+  it('shows a recoverable catalog failure and reloads from the visible retry action', async () => {
+    apiMocks.listCashierMenuProducts
+      .mockRejectedValueOnce(new CashierApiError({ code: 'NETWORK_ERROR', message: 'offline' }))
+      .mockResolvedValueOnce([product]);
+    const wrapper = mountWorkspace();
     await flushPromises();
+    expect(wrapper.text()).toContain('网络连接失败');
+    await wrapper.get('.state-panel--error button').trigger('click');
+    await flushPromises();
+    expect(apiMocks.listCashierMenuProducts).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain('牛肉粉');
+  });
 
-    const confirm = wrapper.get('[data-testid="confirm-table-order"]');
-    expect(confirm.text()).toContain('仅开台');
-    expect(confirm.attributes('disabled')).toBeUndefined();
-    await confirm.trigger('click');
+  it('persists one direct add when an active-table product card is clicked', async () => {
+    const result = mutationResult();
+    apiMocks.createMerchantTableOrder.mockResolvedValueOnce(result);
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    await productCard(wrapper).trigger('click');
+    await flushPromises();
     expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
     expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledWith('table-1', {
+      idempotencyKey: expect.stringMatching(/^add-/),
+      items: [{ productId: product.id, quantity: 1 }],
+    });
+    expect(wrapper.emitted('created')).toEqual([[result]]);
+    expect(wrapper.find('[data-testid="confirm-table-order"]').exists()).toBe(false);
+  });
+
+  it('opens an empty table through the formal open-only contract before adding the clicked product', async () => {
+    const opened = openResult('session-new');
+    const added = mutationResult(product, 'session-new');
+    apiMocks.createMerchantTableOrder.mockResolvedValueOnce(opened).mockResolvedValueOnce(added);
+    const wrapper = mountWorkspace({ sessionId: '' });
+    await flushPromises();
+    await productCard(wrapper).trigger('click');
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenNthCalledWith(1, 'table-1', {
       idempotencyKey: expect.stringMatching(/^add-/),
       items: [],
     });
-
-    deferred.resolve(openOnlyResult);
-    await flushPromises();
-    expect(wrapper.emitted('created')).toEqual([[openOnlyResult]]);
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenNthCalledWith(2, 'table-1', {
+      idempotencyKey: expect.stringMatching(/^add-/),
+      items: [{ productId: product.id, quantity: 1 }],
+    });
+    expect(wrapper.emitted('created')).toEqual([[opened], [added]]);
+    expect(wrapper.get('[data-testid="table-ordering-workspace"]').attributes('data-session-id')).toBe('session-new');
   });
 
-  it.each([
-    ['zh', '仅开台'],
-    ['vi', 'Chỉ mở bàn'],
-    ['en', 'Open table only'],
-  ])('shows open-only submit label in %s locale', (locale, label) => {
-    setLocale(locale as 'zh' | 'vi' | 'en');
-    const wrapper = mountWorkspace({ sessionId: '' });
-
-    expect(wrapper.get('[data-testid="confirm-table-order"]').text()).toContain(label);
-  });
-
-  it('shows only add button when quantity is zero', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    const quantityControl = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
-
-    expect(quantityControl.findAll('button')).toHaveLength(1);
-    expect(quantityControl.findAll('output')).toHaveLength(0);
-    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(false);
-    expect(quantityControl.text()).toBe('');
-  });
-
-  it('shows minus, quantity and add controls when quantity is greater than zero', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-
-    const quantityControl = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
-    expect(wrapper.findAll('.table-ordering-product[data-product-id="product-1"] .table-ordering-remark-button')).toHaveLength(0);
-    const buttons = quantityControl.findAll('button');
-
-    expect(buttons).toHaveLength(2);
-    expect(quantityControl.classes()).toContain('has-quantity');
-    expect(quantityControl.findAll('output')).toHaveLength(1);
-    expect(quantityControl.find('output').text()).toBe('1');
-    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(true);
-  });
-
-  it('returns to single add button when quantity decreases to zero', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    const productQuantity = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity');
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    await wrapper.get('[aria-label="减少数量"]').trigger('click');
-
-    expect(productQuantity.findAll('button')).toHaveLength(1);
-    expect(productQuantity.findAll('output')).toHaveLength(0);
-    expect(wrapper.find('[aria-label="减少数量"]').exists()).toBe(false);
-  });
-
-  it('keeps compact card height when adding and removing items', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-
-    const product = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
-    const beforeHeight = product.element.getBoundingClientRect().height;
-    const updatedProduct = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
-
-    expect(updatedProduct.element.getBoundingClientRect().height).toBe(beforeHeight);
-
-    await wrapper.get('[aria-label="减少数量"]').trigger('click');
-    const zeroQuantityProduct = wrapper.get('.table-ordering-product[data-product-id="product-1"]');
-    expect(wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-quantity').findAll('output')).toHaveLength(0);
-    expect(zeroQuantityProduct.element.getBoundingClientRect().height).toBe(beforeHeight);
-  });
-
-  it.each([
-    ['zh', longNameProduct.nameZh],
-    ['vi', longNameProduct.nameVi],
-  ])('renders long %s dish names in card copy', async (locale, expectedName) => {
-    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([longNameProduct]);
-    setLocale(locale as 'zh' | 'vi');
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    expect(wrapper.get('.table-ordering-product__content strong').text()).toContain(expectedName);
-  });
-
-  it('keeps dish name to at most two lines via webkit line clamp', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    const name = wrapper.get('.table-ordering-product__content strong');
-    const styles = window.getComputedStyle(name.element);
-
-    expect(styles).toBeDefined();
-    if (styles.display) {
-      expect(styles.display).toBe('-webkit-box');
-    }
-    if (styles.webkitLineClamp) {
-      expect(styles.webkitLineClamp).toBe('2');
-    }
-    if (styles.webkitBoxOrient) {
-      expect(styles.webkitBoxOrient).toBe('vertical');
-    }
-  });
-
-  it('places price and quantity control in the same row', async () => {
-    const wrapper = mountWorkspace();
-    await flushPromises();
-    const bottom = wrapper.get('.table-ordering-product[data-product-id="product-1"] .table-ordering-product__bottom');
-    const price = bottom.get('b');
-    const quantity = bottom.get('.table-ordering-product__quantity');
-
-    expect(bottom.element.contains(price.element)).toBe(true);
-    expect(bottom.element.contains(quantity.element)).toBe(true);
-  });
-
-  it.each([
-    ['zh', '增加数量', '确认开台并点菜'],
-    ['vi', 'Tăng số lượng', 'Mở bàn và gọi món'],
-    ['en', 'Increase quantity', 'Open Table & Add Items'],
-  ])('shows open+add submit label in %s locale', async (locale, increaseLabel, label) => {
-    setLocale(locale as 'zh' | 'vi' | 'en');
+  it('serializes rapid empty-table clicks behind one open-only mutation', async () => {
+    const deferredOpen = createDeferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder
+      .mockReturnValueOnce(deferredOpen.promise)
+      .mockResolvedValueOnce(mutationResult(product, 'session-new'))
+      .mockResolvedValueOnce(mutationResult(product, 'session-new'));
     const wrapper = mountWorkspace({ sessionId: '' });
     await flushPromises();
-
-    const increaseButton = wrapper.get(`[aria-label="${increaseLabel}"]`);
-    await increaseButton.trigger('click');
-    expect(wrapper.get('[data-testid="confirm-table-order"]').text()).toContain(label);
+    await productCard(wrapper).trigger('click');
+    await productCard(wrapper).trigger('click');
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
+    deferredOpen.resolve(openResult('session-new'));
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(3);
+    expect(apiMocks.createMerchantTableOrder.mock.calls.filter(([, payload]) => payload.items.length === 0)).toHaveLength(1);
+    expect(apiMocks.createMerchantTableOrder.mock.calls.slice(1).map(([, payload]) => payload.items)).toEqual([
+      [{ productId: product.id, quantity: 1 }],
+      [{ productId: product.id, quantity: 1 }],
+    ]);
+    expect(new Set(apiMocks.createMerchantTableOrder.mock.calls.map(([, payload]) => payload.idempotencyKey)).size).toBe(3);
   });
 
-  it('submits one new order with one stable idempotency key despite repeated clicks', async () => {
+  it('exposes five rapid same-item clicks as one optimistic quantity-five canonical line', async () => {
+    const deferred = createDeferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder
+      .mockReturnValueOnce(deferred.promise)
+      .mockResolvedValue(mutationResult());
+    const wrapper = mountWorkspace();
+    await flushPromises();
+
+    for (let index = 0; index < 5; index += 1) await productCard(wrapper).trigger('click');
+    await wrapper.vm.$nextTick();
+
+    const pending = wrapper.emitted('draftChanged')?.at(-1)?.[0] as Array<Record<string, unknown>>;
+    expect(pending).toEqual([expect.objectContaining({
+      mergeKey: productDirectMergeKey(product.id),
+      quantity: 5,
+      firstAddedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      firstAddedSequence: 0,
+    })]);
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
+
+    deferred.resolve(mutationResult());
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(5);
+    expect(apiMocks.createMerchantTableOrder.mock.calls.map(([, payload]) => payload.items)).toEqual(
+      Array.from({ length: 5 }, () => [{ productId: product.id, quantity: 1 }]),
+    );
+  });
+
+  it('merges three card clicks and two right-stepper clicks into one optimistic quantity-five line', async () => {
+    const deferred = createDeferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder
+      .mockReturnValueOnce(deferred.promise)
+      .mockResolvedValue(mutationResult());
+    const wrapper = mountWorkspace();
+    await flushPromises();
+
+    await productCard(wrapper).trigger('click');
+    await productCard(wrapper).trigger('click');
+    await productCard(wrapper).trigger('click');
+    const exposed = wrapper.vm as unknown as {
+      queueProductAddition: (
+        productId: string,
+        lineId?: string,
+        sourceItemId?: string,
+        mergeKey?: string,
+        remark?: string,
+      ) => boolean;
+    };
+    const mergeKey = productDirectMergeKey(product.id);
+    expect(exposed.queueProductAddition(product.id, `canonical:${mergeKey}`, 'item-9', mergeKey)).toBe(true);
+    expect(exposed.queueProductAddition(product.id, `canonical:${mergeKey}`, 'item-9', mergeKey)).toBe(true);
+    await wrapper.vm.$nextTick();
+
+    const pending = wrapper.emitted('draftChanged')?.at(-1)?.[0] as Array<Record<string, unknown>>;
+    expect(pending).toEqual([expect.objectContaining({
+      mergeKey,
+      sourceItemId: 'item-9',
+      quantity: 5,
+    })]);
+
+    deferred.resolve(mutationResult());
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(5);
+  });
+
+  it('preserves first-click metadata and queue order for different pending products', async () => {
+    const deferred = createDeferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder
+      .mockReturnValueOnce(deferred.promise)
+      .mockResolvedValue(mutationResult(secondProduct));
+    const wrapper = mountWorkspace();
+    await flushPromises();
+
+    await productCard(wrapper, product.id).trigger('click');
+    await productCard(wrapper, secondProduct.id).trigger('click');
+    await wrapper.vm.$nextTick();
+
+    const pending = wrapper.emitted('draftChanged')?.at(-1)?.[0] as Array<Record<string, unknown>>;
+    expect(pending.map((line) => line.product && (line.product as CashierMenuProduct).id))
+      .toEqual([product.id, secondProduct.id]);
+    expect(pending.map((line) => line.firstAddedSequence)).toEqual([0, 1]);
+    expect(pending.every((line) => typeof line.firstAddedAt === 'string')).toBe(true);
+
+    deferred.resolve(mutationResult(product));
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves clicked-product identity across consecutive different products', async () => {
+    apiMocks.createMerchantTableOrder
+      .mockResolvedValueOnce(mutationResult(product))
+      .mockResolvedValueOnce(mutationResult(secondProduct));
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    await productCard(wrapper, product.id).trigger('click');
+    await productCard(wrapper, secondProduct.id).trigger('click');
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder.mock.calls.map(([, payload]) => payload.items)).toEqual([
+      [{ productId: product.id, quantity: 1 }],
+      [{ productId: secondProduct.id, quantity: 1 }],
+    ]);
+  });
+
+  it('keeps committed-row identity in the optimistic line while persisting one unit', async () => {
     const deferred = createDeferred<MerchantOrderMutationResult>();
     apiMocks.createMerchantTableOrder.mockReturnValueOnce(deferred.promise);
     const wrapper = mountWorkspace();
     await flushPromises();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
+    const exposed = wrapper.vm as unknown as {
+      queueProductAddition: (
+        productId: string,
+        lineId?: string,
+        sourceItemId?: string,
+        mergeKey?: string,
+        remark?: string,
+      ) => boolean;
+    };
+    const mergeKey = productDirectMergeKey(product.id, '少盐');
+    expect(exposed.queueProductAddition(product.id, 'committed:item-9', 'item-9', mergeKey, '少盐')).toBe(true);
+    await wrapper.vm.$nextTick();
+    const drafts = wrapper.emitted('draftChanged')?.at(-1)?.[0] as Array<Record<string, unknown>>;
+    expect(drafts).toEqual([expect.objectContaining({
+      lineId: 'committed:item-9',
+      mergeKey,
+      sourceItemId: 'item-9',
+      remark: '少盐',
+      quantity: 1,
+    })]);
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledWith('table-1', expect.objectContaining({
+      items: [{ productId: product.id, quantity: 1, remark: '少盐' }],
+    }));
+    deferred.resolve(mutationResult());
     await flushPromises();
-
-    const confirm = wrapper.get('[data-testid="confirm-table-order"]');
-    await confirm.trigger('click');
-    await confirm.trigger('click');
-
-    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
-    expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
-    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledWith('table-1', {
-      idempotencyKey: expect.stringMatching(/^add-/),
-      items: [{ productId: 'product-1', quantity: 1 }],
-    });
-
-    deferred.resolve(result);
-    await flushPromises();
-    expect(wrapper.emitted('created')).toEqual([[result]]);
+    expect(wrapper.emitted('draftChanged')?.at(-1)?.[0]).toEqual([]);
   });
 
-  it.each([
-    ['transport', new CashierApiError({ code: 'NETWORK_ERROR', message: 'offline' })],
-    ['408', new CashierApiError({ code: 'HTTP_408', message: 'timeout', status: 408 })],
-    ['429', new CashierApiError({ code: 'HTTP_429', message: 'throttled', status: 429 })],
-    ['500', new CashierApiError({ code: 'HTTP_500', message: 'server error', status: 500 })],
-  ])('freezes an uncertain %s response and retries the exact same payload', async (_label, error) => {
+  it('retries an uncertain direct add with the exact same table and payload', async () => {
     apiMocks.createMerchantTableOrder
-      .mockRejectedValueOnce(error)
-      .mockResolvedValueOnce(result);
+      .mockRejectedValueOnce(new CashierApiError({ code: 'NETWORK_ERROR', message: 'offline' }))
+      .mockResolvedValueOnce(mutationResult());
     const wrapper = mountWorkspace();
     await flushPromises();
-    const increase = wrapper.get('[aria-label="增加数量"]');
-    await increase.trigger('click');
-
-    const confirm = wrapper.get('[data-testid="confirm-table-order"]');
-    await confirm.trigger('click');
+    await productCard(wrapper).trigger('click');
     await flushPromises();
-    expect(wrapper.get('[aria-label="增加数量"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('[aria-label="减少数量"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('[data-testid="ordering-outcome-uncertain"]').text()).toContain('结果尚未确认');
-    expect(wrapper.get('.table-ordering-close').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('button.secondary-action').attributes('disabled')).toBeDefined();
-    await wrapper.trigger('keydown', { key: 'Escape' });
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(wrapper.emitted('close')).toBeUndefined();
+    const original = apiMocks.createMerchantTableOrder.mock.calls[0];
     expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
-
-    await wrapper.setProps({ open: false });
-    expect(wrapper.find('[data-testid="table-ordering-workspace"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
-    await wrapper.setProps({ open: true });
-    expect(wrapper.get('output').text()).toBe('1');
-
-    await wrapper.get('[data-testid="confirm-table-order"]').trigger('click');
+    expect(productCard(wrapper).attributes('aria-disabled')).toBe('false');
+    expect(productCard(wrapper, secondProduct.id).attributes('aria-disabled')).toBe('true');
+    await productCard(wrapper, secondProduct.id).trigger('click');
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
+    await wrapper.setProps({ tableId: 'table-2', tableLabel: 'B02', sessionId: 'session-2' });
+    await productCard(wrapper).trigger('click');
     await flushPromises();
     expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
-    expect(apiMocks.createMerchantTableOrder.mock.calls[1]?.[1]).toEqual(
-      apiMocks.createMerchantTableOrder.mock.calls[0]?.[1],
-    );
-    expect(wrapper.emitted('created')).toEqual([[result]]);
+    expect(apiMocks.createMerchantTableOrder.mock.calls[1]).toEqual(original);
     expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(false);
   });
 
-  it('releases the key and payload only after a definitive 4xx rejection', async () => {
+  it('releases a definitively rejected direct add and assigns the next click a new key', async () => {
     apiMocks.createMerchantTableOrder
-      .mockRejectedValueOnce(new CashierApiError({ code: 'ORDER_STATUS_CHANGED', message: 'changed', status: 409 }))
-      .mockResolvedValueOnce(result);
+      .mockRejectedValueOnce(new CashierApiError({ code: 'PRODUCT_NOT_AVAILABLE', message: 'gone', status: 409 }))
+      .mockResolvedValueOnce(mutationResult());
     const wrapper = mountWorkspace();
     await flushPromises();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    await wrapper.get('[data-testid="confirm-table-order"]').trigger('click');
+    await productCard(wrapper).trigger('click');
     await flushPromises();
-
-    expect(wrapper.find('[data-testid="ordering-outcome-uncertain"]').exists()).toBe(false);
-    expect(wrapper.get('[aria-label="增加数量"]').attributes('disabled')).toBeUndefined();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    await wrapper.get('[data-testid="confirm-table-order"]').trigger('click');
+    await productCard(wrapper).trigger('click');
     await flushPromises();
-
     const firstPayload = apiMocks.createMerchantTableOrder.mock.calls[0]?.[1];
     const secondPayload = apiMocks.createMerchantTableOrder.mock.calls[1]?.[1];
-    expect(secondPayload?.idempotencyKey).not.toBe(firstPayload?.idempotencyKey);
-    expect(secondPayload?.items).toEqual([{ productId: 'product-1', quantity: 2 }]);
+    expect(secondPayload.idempotencyKey).not.toBe(firstPayload.idempotencyKey);
+    expect(secondPayload.items).toEqual([{ productId: product.id, quantity: 1 }]);
   });
 
-  it('retries an uncertain payload against its captured table even if live context changes', async () => {
+  it('recovers an open race signalled by TABLE_ALREADY_OPEN and still adds the intended product', async () => {
     apiMocks.createMerchantTableOrder
-      .mockRejectedValueOnce(new CashierApiError({ code: 'HTTP_500', message: 'failed', status: 500 }))
-      .mockResolvedValueOnce(result);
+      .mockRejectedValueOnce(new CashierApiError({ code: 'TABLE_ALREADY_OPEN', message: 'open', status: 409 }))
+      .mockResolvedValueOnce(mutationResult(product, 'session-race'));
+    const wrapper = mountWorkspace({ sessionId: '' });
+    await flushPromises();
+    await productCard(wrapper).trigger('click');
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
+    expect(apiMocks.createMerchantTableOrder.mock.calls[1]?.[1].items).toEqual([
+      { productId: product.id, quantity: 1 },
+    ]);
+  });
+
+  it('keeps category and multilingual search paths bound to direct add', async () => {
+    apiMocks.createMerchantTableOrder
+      .mockResolvedValueOnce(mutationResult(secondProduct))
+      .mockResolvedValueOnce(mutationResult(product));
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+    const categoryButtons = wrapper.findAll('[data-testid="table-ordering-category-strip"] button');
+    await categoryButtons.find((button) => button.text() === '饮品')!.trigger('click');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    await productCard(wrapper, secondProduct.id).trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-testid="table-ordering-category-strip"] button').trigger('click');
+    await wrapper.get('input[type="search"]').setValue('niuroufen');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    await productCard(wrapper).trigger('click');
+    await flushPromises();
+    expect(apiMocks.createMerchantTableOrder.mock.calls.map(([, payload]) => payload.items[0]?.productId)).toEqual([
+      secondProduct.id,
+      product.id,
+    ]);
+  });
+
+  it('supports explicit keyboard result selection without adding on an unselected Enter', async () => {
+    apiMocks.createMerchantTableOrder.mockResolvedValueOnce(mutationResult());
     const wrapper = mountWorkspace();
     await flushPromises();
-    await wrapper.get('[aria-label="增加数量"]').trigger('click');
-    await wrapper.get('[data-testid="confirm-table-order"]').trigger('click');
+    const search = wrapper.get('input[type="search"]');
+    await search.setValue('牛');
+    await search.trigger('keydown', { key: 'Enter' });
+    expect(apiMocks.createMerchantTableOrder).not.toHaveBeenCalled();
+    await search.trigger('keydown', { key: 'ArrowDown' });
+    await productCard(wrapper).trigger('keydown', { key: 'Enter' });
     await flushPromises();
-    const originalPayload = apiMocks.createMerchantTableOrder.mock.calls[0]?.[1];
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledOnce();
+  });
 
-    await wrapper.setProps({ tableId: 'table-2', sessionId: 'session-2', tableLabel: 'B02' });
-    expect(wrapper.get('[data-testid="confirm-table-order"]').attributes('disabled')).toBeUndefined();
-    expect(wrapper.text()).toContain('A01 号桌');
-    await wrapper.get('[data-testid="confirm-table-order"]').trigger('click');
+  it.each([
+    ['zh', '牛肉粉'],
+    ['vi', 'Phở bò'],
+    ['en', 'Beef pho'],
+  ])('renders the direct-order catalog in %s without legacy submit copy', async (locale, expected) => {
+    setLocale(locale as 'zh' | 'vi' | 'en');
+    const wrapper = mountWorkspace();
     await flushPromises();
-    expect(apiMocks.createMerchantTableOrder).toHaveBeenNthCalledWith(2, 'table-1', originalPayload);
-    expect(apiMocks.createMerchantTableOrder.mock.calls[1]?.[1]).toEqual(originalPayload);
+    expect(wrapper.text()).toContain(expected);
+    expect(wrapper.find('.table-ordering-footer').exists()).toBe(false);
+  });
+
+  it('does not enqueue a direct add when writes are disabled', async () => {
+    const wrapper = mountWorkspace({ disabled: true });
+    await flushPromises();
+    await productCard(wrapper).trigger('click');
+    expect(apiMocks.createMerchantTableOrder).not.toHaveBeenCalled();
   });
 });
 

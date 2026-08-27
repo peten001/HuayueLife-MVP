@@ -15,6 +15,14 @@ export function formatVnd(value: string | number | bigint | null | undefined, lo
     : `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount)} VND`;
 }
 
+export function formatItemPrice(value: string | number | bigint | null | undefined, locale: Locale = 'vi') {
+  const numericValue = typeof value === 'bigint' ? Number(value) : Number(value ?? 0);
+  const amount = Number.isFinite(numericValue) ? numericValue : 0;
+  return new Intl.NumberFormat(locale === 'vi' ? 'vi-VN' : 'en-US', {
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 export function formatVietnamDateTime(
   value: string | Date | null | undefined,
   locale: Locale = 'vi',

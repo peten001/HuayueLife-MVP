@@ -29,6 +29,9 @@ const returnsFullQuantity = computed(() =>
 const dangerousFullReturn = computed(() =>
   Boolean(props.lastOrderItem) && returnsFullQuantity.value,
 );
+const titleKey = computed(() =>
+  returnsFullQuantity.value ? 'itemAdjustment.lastItemReturnTitle' : 'itemAdjustment.returnTitle',
+);
 
 watch(
   () => [props.open, props.item?.id, props.fixedQuantity] as const,
@@ -62,7 +65,7 @@ function cancel() {
       :class="{ 'item-return-dialog--danger': dangerousFullReturn }"
       role="alertdialog"
       aria-modal="true"
-      :aria-label="t(dangerousFullReturn ? 'itemAdjustment.lastItemReturnTitle' : 'itemAdjustment.returnTitle', { name: itemName() })"
+      :aria-label="t(titleKey, { name: itemName() })"
       data-testid="return-item-dialog"
     >
       <span class="confirm-dialog__icon" aria-hidden="true">
@@ -70,7 +73,7 @@ function cancel() {
         <RotateCcw v-else :size="26" />
       </span>
       <div>
-        <h3>{{ t(dangerousFullReturn ? 'itemAdjustment.lastItemReturnTitle' : 'itemAdjustment.returnTitle', { name: itemName() }) }}</h3>
+        <h3>{{ t(titleKey, { name: itemName() }) }}</h3>
         <p
           v-if="dangerousFullReturn"
           class="item-return-danger-description"

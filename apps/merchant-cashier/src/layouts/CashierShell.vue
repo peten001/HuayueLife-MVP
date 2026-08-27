@@ -82,6 +82,11 @@ const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(
   return filter === 'AVAILABLE' || filter === 'IN_USE' || filter === 'DISABLED' ? filter : 'ALL';
 });
 const showOrientationNotice = computed(() => router.currentRoute.value.name !== 'tables');
+const showTableMetrics = computed(() => router.currentRoute.value.name !== 'tables');
+const showMainTabs = computed(() => router.currentRoute.value.name === 'tables');
+const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
+  router.currentRoute.value.query.view === 'menu' ? 'MENU' : 'TABLES',
+);
 
 async function logout() {
   if (loggingOut.value) return;
@@ -134,6 +139,14 @@ async function selectTableFilter(filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISAB
     name: 'tables',
     query: filter === 'ALL' ? {} : { status: filter },
   });
+}
+
+async function selectMainTab(tab: 'TABLES' | 'MENU') {
+  const current = router.currentRoute.value;
+  const query = { ...current.query };
+  if (tab === 'MENU') query.view = 'menu';
+  else delete query.view;
+  await router.replace({ name: 'tables', params: current.params, query });
 }
 
 async function refreshTables() {
@@ -211,7 +224,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="cashier-shell cashier-shell--workflow">
+  <div
+    class="cashier-shell cashier-shell--workflow"
+    :class="{ 'cashier-shell--table-toolbar': showMainTabs }"
+  >
     <CashierSidebar
       :merchant-name="identity.merchantName"
       :merchant-image-urls="identity.merchantImageUrls"
@@ -243,10 +259,14 @@ onBeforeUnmount(() => {
       :printing-availability="printingAvailability"
       :active-table-filter="activeTableFilter"
       :refreshing-tables="refreshingTables"
+      :show-table-metrics="showTableMetrics"
+      :show-main-tabs="showMainTabs"
+      :active-main-tab="activeMainTab"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
       @select-table-filter="selectTableFilter"
+      @select-main-tab="selectMainTab"
       @refresh-tables="refreshTables"
     />
 

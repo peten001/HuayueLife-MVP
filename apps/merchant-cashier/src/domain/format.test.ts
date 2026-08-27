@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatVnd, formatVietnamDateFilter, formatVietnamDateFilterAria } from './format';
+import { formatItemPrice, formatVnd, formatVietnamDateFilter, formatVietnamDateFilterAria } from './format';
 
 describe('history date filter formatting', () => {
   it('shows month/day while retaining a full accessible date', () => {
@@ -30,5 +30,18 @@ describe('VND formatting', () => {
       expect(formatVnd('88000', locale)).not.toContain('¥');
       expect(formatVnd('88000', locale)).not.toContain('$');
     }
+  });
+});
+
+describe('item price formatting', () => {
+  it('formats a dish price without a currency suffix in every Cashier locale', () => {
+    expect(formatItemPrice('68000', 'zh')).toBe('68,000');
+    expect(formatItemPrice('68000', 'en')).toBe('68,000');
+    expect(formatItemPrice('68000', 'vi')).toBe('68.000');
+  });
+
+  it('keeps invalid item-price input safe without inventing a currency marker', () => {
+    expect(formatItemPrice('not-a-number', 'zh')).toBe('0');
+    expect(formatItemPrice(undefined, 'vi')).toBe('0');
   });
 });

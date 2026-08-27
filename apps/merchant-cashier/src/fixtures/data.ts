@@ -35,7 +35,7 @@ export const demoStaffSession: MerchantStaffSession = {
 
 export const demoMerchantProfile: MerchantProfile = {
   id: 'demo-merchant', nameZh: '演示餐厅（非真实数据）', nameVi: 'Nhà hàng demo (không phải dữ liệu thật)', nameEn: 'Demo Restaurant (not real data)', merchantType: 'RESTAURANT', merchantMode: 'QR_ORDER', contactName: 'Demo', contactPhone: '', province: 'Demo', city: 'Demo', addressDetail: 'Demo only', latitude: '0', longitude: '0', businessHours: { monday: ['00:00-23:59'], tuesday: ['00:00-23:59'], wednesday: ['00:00-23:59'], thursday: ['00:00-23:59'], friday: ['00:00-23:59'], saturday: ['00:00-23:59'], sunday: ['00:00-23:59'] }, minimumDeliveryAmountVnd: '0', deliveryFeeVnd: '0', deliveryRadiusKm: '0', dineInEnabled: true, pickupEnabled: true, deliveryEnabled: true, isVisibleOnClient: false, status: 'ACTIVE', capabilities: demoStaffSession.merchant.capabilities,
-  images: [{ id: 'demo-store-image', imageType: 'STORE', imageUrl: '/uploads/merchants/merchant-1782718009620-2b540ff7290a49a18e9ddee540d3470d.png', sortOrder: 0, isVisible: true }],
+  images: [],
 };
 
 export const demoMenuCategories: CashierMenuCategory[] = [
@@ -49,6 +49,7 @@ export const demoMenuProducts: CashierMenuProduct[] = [
     categoryId: 'demo-category-main',
     nameZh: '演示牛肉粉',
     nameVi: 'Phở bò demo',
+    nameEn: 'Demo beef pho',
     description: '演示数据 / Dữ liệu demo',
     imageUrl: null,
     priceVnd: '68000',
@@ -62,6 +63,7 @@ export const demoMenuProducts: CashierMenuProduct[] = [
     categoryId: 'demo-category-main',
     nameZh: '演示炒饭',
     nameVi: 'Cơm chiên demo',
+    nameEn: 'Demo fried rice',
     description: '演示数据 / Dữ liệu demo',
     imageUrl: null,
     priceVnd: '52000',
@@ -75,6 +77,7 @@ export const demoMenuProducts: CashierMenuProduct[] = [
     categoryId: 'demo-category-drink',
     nameZh: '演示柠檬茶',
     nameVi: 'Trà chanh demo',
+    nameEn: 'Demo lemon tea',
     description: '演示数据 / Dữ liệu demo',
     imageUrl: null,
     priceVnd: '30000',
@@ -82,6 +85,20 @@ export const demoMenuProducts: CashierMenuProduct[] = [
     status: 'ON_SALE',
     productType: 'FOOD',
     category: demoMenuCategories[1],
+  },
+  {
+    id: 'demo-product-long-name',
+    categoryId: 'demo-category-main',
+    nameZh: '越式香茅烤鸡配青木瓜沙拉',
+    nameVi: 'Gà nướng sả ăn kèm gỏi đu đủ xanh',
+    nameEn: 'Lemongrass chicken with green papaya salad',
+    description: 'V5 本地长菜名排版验证 / Dữ liệu demo',
+    imageUrl: null,
+    priceVnd: '88000',
+    sortOrder: 3,
+    status: 'ON_SALE',
+    productType: 'FOOD',
+    category: demoMenuCategories[0],
   },
 ];
 
@@ -160,7 +177,7 @@ function makeOrder(
     pickupCode: orderType === 'PICKUP' ? orderNo.replace(/\D/g, '').slice(-4) : null,
     estimatedReadyAt: orderType === 'PICKUP' ? new Date(Date.parse(isoMinutesAgo(minutesAgo)) + 30 * 60_000).toISOString() : null,
     table: tableNo ? { id: 'demo-table-1', tableNo, tableName: '演示桌 A01' } : null,
-    items: [{ id: `${id}-item`, productNameZhSnapshot: fixtureAmount === 14_000_000 ? '演示大额菜品（非真实）' : '演示菜品（非真实）', productNameViSnapshot: 'Món ăn demo (dữ liệu giả)', productNameEnSnapshot: 'Demo dish (not real data)', quantity: fixtureQuantity, unitPriceVnd: String(fixtureAmount / fixtureQuantity), subtotalVnd: String(fixtureAmount), remark: 'Demo' }],
+    items: [{ id: `${id}-item`, productId: 'demo-product-beef', productNameZhSnapshot: fixtureAmount === 14_000_000 ? '演示大额菜品（非真实）' : '演示菜品（非真实）', productNameViSnapshot: 'Món ăn demo (dữ liệu giả)', productNameEnSnapshot: 'Demo dish (not real data)', productNameZh: '演示牛肉粉', productNameVi: 'Phở bò demo', productNameEn: 'Demo beef pho', quantity: fixtureQuantity, unitPriceVnd: String(fixtureAmount / fixtureQuantity), subtotalVnd: String(fixtureAmount), remark: 'Demo' }],
     statusLogs: id === 'demo-order-0995' ? [{
       id: `log-${id}`,
       action: 'TABLE_SESSION_CHECKOUT',

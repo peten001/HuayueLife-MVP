@@ -21,6 +21,33 @@ describe('fixture repository WebView compatibility', () => {
     expect(demoRepository.openSessions()[0]?.openedAt).toBeTruthy();
   });
 
+  it('opens one empty demo table session and persists direct product additions into it', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+
+    expect(demoRepository.currentSession('demo-table-10')).toBeNull();
+    const opened = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'add-open-b04',
+      items: [],
+    });
+    const replay = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'add-open-b04',
+      items: [],
+    });
+    const added = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'add-product-b04',
+      items: [{ productId: demoRepository.products()[0]!.id, quantity: 1 }],
+    });
+
+    expect(opened).toEqual(replay);
+    expect(opened.order).toBeNull();
+    expect(opened.session).toEqual(expect.objectContaining({ tableId: 'demo-table-10', tableNo: 'B04', status: 'OPEN' }));
+    expect(added.order).toEqual(expect.objectContaining({ tableId: 'demo-table-10', tableSessionId: opened.session.id }));
+    expect(added.session.itemCount).toBe(1);
+    expect(demoRepository.openSessions().filter((session) => session.tableId === 'demo-table-10')).toHaveLength(1);
+  });
+
   it('keeps demo checkout isolated when new dine-in orders are already accepted', async () => {
     vi.resetModules();
     const { demoRepository, resetDemoRepository } = await import('./repository');
