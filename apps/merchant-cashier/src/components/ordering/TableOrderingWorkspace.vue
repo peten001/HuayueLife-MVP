@@ -476,7 +476,25 @@ function hideBrokenImage(event: Event) {
           <span>{{ t('ordering.tableContext', { table: submittedContext?.tableLabel || tableLabel }) }}</span>
           <h2>{{ t('ordering.title') }}</h2>
         </div>
-        <Teleport to="#cashier-toolbar-menu-search" :disabled="!embedded || mobileOrderingLayout">
+        <label
+          v-if="embedded && mobileOrderingLayout"
+          class="table-ordering-search"
+          data-testid="table-ordering-search"
+        >
+          <Search :size="18" aria-hidden="true" />
+          <input
+            ref="searchInput"
+            v-model="query"
+            type="search"
+            :placeholder="t('ordering.searchPlaceholder')"
+            :aria-label="t('ordering.searchLabel')"
+            :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
+            autocomplete="off"
+            @keydown.stop="onKeydown"
+          />
+          <kbd>{{ t('ordering.searchShortcut') }}</kbd>
+        </label>
+        <Teleport v-else to="#cashier-toolbar-menu-search" :disabled="!embedded">
           <label class="table-ordering-search" data-testid="table-ordering-search">
             <Search :size="18" aria-hidden="true" />
             <input
@@ -492,6 +510,23 @@ function hideBrokenImage(event: Event) {
             <kbd>{{ t('ordering.searchShortcut') }}</kbd>
           </label>
         </Teleport>
+        <nav
+          v-if="embedded && mobileOrderingLayout"
+          class="table-ordering-category-strip"
+          :aria-label="t('ordering.categories')"
+          data-testid="table-ordering-category-strip"
+        >
+          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+            {{ t('common.all') }}
+          </button>
+          <button
+            v-for="category in activeCategories"
+            :key="`mobile-strip-${category.id}`"
+            type="button"
+            :class="{ 'is-active': activeCategoryId === category.id }"
+            @click="activeCategoryId = category.id"
+          >{{ categoryName(category) }}</button>
+        </nav>
         <button
           v-if="!embedded"
           type="button"
@@ -518,7 +553,12 @@ function hideBrokenImage(event: Event) {
 
         <div class="table-ordering-products">
           <div class="table-ordering-products__scroller" data-testid="table-ordering-products-scroller">
-            <nav class="table-ordering-category-strip" :aria-label="t('ordering.categories')" data-testid="table-ordering-category-strip">
+            <nav
+              v-if="!embedded || !mobileOrderingLayout"
+              class="table-ordering-category-strip"
+              :aria-label="t('ordering.categories')"
+              data-testid="table-ordering-category-strip"
+            >
               <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
                 {{ t('common.all') }}
               </button>

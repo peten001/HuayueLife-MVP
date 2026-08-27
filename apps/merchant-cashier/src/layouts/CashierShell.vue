@@ -82,7 +82,7 @@ const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(
   return filter === 'AVAILABLE' || filter === 'IN_USE' || filter === 'DISABLED' ? filter : 'ALL';
 });
 const showOrientationNotice = computed(() => router.currentRoute.value.name !== 'tables');
-const showTableMetrics = computed(() => router.currentRoute.value.name !== 'tables');
+const showTableMetrics = computed(() => router.currentRoute.value.name === 'tables');
 const showMainTabs = computed(() => router.currentRoute.value.name === 'tables');
 const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
   router.currentRoute.value.query.view === 'menu' ? 'MENU' : 'TABLES',

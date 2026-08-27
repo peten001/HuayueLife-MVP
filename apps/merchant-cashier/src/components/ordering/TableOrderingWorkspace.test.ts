@@ -130,7 +130,10 @@ function productCard(wrapper: ReturnType<typeof mountWorkspace>, productId = pro
 }
 
 describe('TableOrderingWorkspace V6 direct ordering', () => {
-  afterEach(() => setLocale('zh'));
+  afterEach(() => {
+    setLocale('zh');
+    vi.unstubAllGlobals();
+  });
 
   beforeEach(() => {
     apiMocks.listCashierMenuCategories.mockReset().mockResolvedValue([category, secondCategory]);
@@ -434,6 +437,24 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
       secondProduct.id,
       product.id,
     ]);
+  });
+
+  it('keeps the mobile search and all category rows outside the product scroller', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+
+    const header = wrapper.get('.table-ordering-header');
+    const scroller = wrapper.get('[data-testid="table-ordering-products-scroller"]');
+    expect(wrapper.findAll('[data-testid="table-ordering-category-strip"]')).toHaveLength(1);
+    expect(header.find('[data-testid="table-ordering-search"]').exists()).toBe(true);
+    expect(header.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
+    expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
+    expect(header.element.querySelector('label + nav')).not.toBeNull();
   });
 
   it('supports explicit keyboard result selection without adding on an unselected Enter', async () => {

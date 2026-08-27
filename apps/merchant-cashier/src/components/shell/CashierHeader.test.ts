@@ -60,6 +60,13 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(source).not.toContain('data-testid="main-tab-menu"');
   });
 
+  it('keeps shared table metrics gated to the table route', () => {
+    const shellPath = resolve(process.cwd(), 'src/layouts/CashierShell.vue');
+    const source = readFileSync(shellPath, 'utf8');
+    expect(source).toContain("const showTableMetrics = computed(() => router.currentRoute.value.name === 'tables');");
+    expect(source).not.toContain("const showTableMetrics = computed(() => router.currentRoute.value.name !== 'tables');");
+  });
+
   it('keeps the right tool rail anchored while only the menu search visibility changes', () => {
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
     expect(styles).toContain('/* V6: one continuous POS toolbar and click-to-persist ordering.');
