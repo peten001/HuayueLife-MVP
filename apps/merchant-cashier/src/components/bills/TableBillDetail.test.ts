@@ -361,6 +361,31 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(row.get('.committed-item-stepper output').text()).toBe('2');
   });
 
+  it('shows row-local decrease busy feedback without freezing plus or another bill action', async () => {
+    const base = session();
+    const mergeKey = JSON.stringify({ productId: 'product-1', remark: '' });
+    const wrapper = mountDetail({
+      pendingDecreaseMergeKeys: new Set([mergeKey]),
+      orderableProductIds: new Set(['product-1']),
+    });
+    const row = wrapper.get('.table-item-summary-row');
+    expect(row.classes()).toContain('table-item-summary-row--mutation-busy');
+    expect(row.get('.committed-item-stepper').attributes('aria-busy')).toBe('true');
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    expect(row.find('.row-mutation-spinner').exists()).toBe(true);
+    expect(row.get('[data-testid="increase-committed-item"]').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('[data-testid="table-order-items"]').attributes('disabled')).toBeUndefined();
+    expect(base.orders[0]!.items[0]!.quantity).toBe(2);
+  });
+
+  it('keeps a historical unavailable row visible while disabling only its plus action', () => {
+    const wrapper = mountDetail({ orderableProductIds: new Set<string>() });
+    const row = wrapper.get('.table-item-summary-row');
+    expect(row.text()).toContain('牛肉粉');
+    expect(row.get('[data-testid="increase-committed-item"]').attributes('disabled')).toBeDefined();
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeUndefined();
+  });
+
   it('keeps print, adjustment and checkout in the bottom action dock', async () => {
     const wrapper = mountDetail({
       actionsDisabled: true,
@@ -453,9 +478,9 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(wrapper.get('.dinein-settlement-summary .is-payable').text()).toContain('120,000');
     expect(wrapper.get('.dinein-settlement-summary .is-payable').text()).toContain('VND');
 
-    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeUndefined();
     await row.get('[data-testid="decrease-order-item"]').trigger('click');
-    expect(wrapper.emitted('decreaseItem')).toBeUndefined();
+    expect(wrapper.emitted('decreaseItem')).toHaveLength(1);
   });
 
   it('merges one pending product increment into the same canonical committed row', () => {
@@ -504,11 +529,11 @@ describe('TableBillDetail V2 table workspace', () => {
     let rows = wrapper.findAll('.table-item-summary-row');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.get('.committed-item-stepper output').text()).toBe('9');
-    expect(rows[0]!.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    expect(rows[0]!.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeUndefined();
     const mergeKey = rows[0]!.attributes('data-merge-key');
     await rows[0]!.get('[data-testid="decrease-order-item"]').trigger('click');
     await rows[0]!.get('[data-testid="increase-committed-item"]').trigger('click');
-    expect(wrapper.emitted('decreaseItem')).toBeUndefined();
+    expect(wrapper.emitted('decreaseItem')).toHaveLength(1);
     expect(wrapper.emitted('increaseItem')?.[0]?.[0]).toMatchObject({ id: 'item-c' });
     expect(wrapper.emitted('increaseItem')?.[0]?.[2]).toBe(mergeKey);
 

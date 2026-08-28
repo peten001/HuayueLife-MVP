@@ -3,16 +3,7 @@ import { ImageIcon, Search, X } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import {
-  apiErrorTranslationKey,
-  CashierApiError,
-  createMerchantTableOrder,
-  isDefinitiveMutationRejection,
-  isMutationOutcomeUncertain,
-} from '@/api';
-import {
-  createMutationKey,
   formatItemPrice,
-  productDirectMergeKey,
   productMatchesQuery,
   resolveMediaUrl,
 } from '@/domain';
@@ -22,26 +13,10 @@ import { useMediaQuery } from '@/composables';
 import type {
   CashierMenuCategory,
   CashierMenuProduct,
-  CashierOrderingDraftLine,
-  CreateMerchantTableOrderInput,
-  MerchantOrderMutationResult,
 } from '@/types';
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
-
-interface DirectAddAction {
-  tableId: string;
-  tableLabel: string;
-  productId: string;
-  lineId: string;
-  mergeKey: string;
-  firstAddedAt: string;
-  firstAddedSequence: number;
-  sourceItemId?: string;
-  remark?: string;
-  payload: CreateMerchantTableOrderInput;
-}
 
 const props = defineProps<{
   open: boolean;
@@ -52,14 +27,13 @@ const props = defineProps<{
   topDialogOpen?: boolean;
   embedded?: boolean;
   productQuantities?: Record<string, number>;
+  pendingAddQuantities?: Record<string, number>;
+  mutationLocked?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  created: [result: MerchantOrderMutationResult];
-  failed: [error: unknown];
-  mutationLockChanged: [locked: boolean];
-  draftChanged: [lines: CashierOrderingDraftLine[]];
+  addProduct: [productId: string];
 }>();
 
 const { t, locale } = useI18n();
@@ -69,19 +43,11 @@ const { categories, products, loading, errorKey: loadErrorKey } = storeToRefs(ca
 const mobileOrderingLayout = useMediaQuery('(max-width: 899px)');
 const activeCategoryId = ref('ALL');
 const query = ref('');
-const processing = ref(false);
-const directAddQueue = ref<DirectAddAction[]>([]);
-const pendingOpenPayload = ref<CreateMerchantTableOrderInput | null>(null);
-const effectiveSessionId = ref(props.sessionId);
-const submittedPayload = ref<CreateMerchantTableOrderInput | null>(null);
-const submittedContext = ref<{ tableId: string; tableLabel: string } | null>(null);
-const outcomeUncertain = ref(false);
 const workspace = ref<HTMLElement | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
 const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
 let previouslyFocused: HTMLElement | null = null;
-let nextDirectAddSequence = 0;
 
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
@@ -92,52 +58,6 @@ const filteredProducts = computed(() => orderableProducts.value.filter((product)
   (activeCategoryId.value === 'ALL' || product.categoryId === activeCategoryId.value)
   && productMatchesQuery(product, query.value),
 ));
-const productById = computed(() => new Map(orderableProducts.value.map((product) => [product.id, product])));
-const pendingAdditions = computed(() => directAddQueue.value.reduce((lines, action) => {
-  const current = lines.get(action.mergeKey);
-  if (current) {
-    current.quantity += 1;
-    if (!current.sourceItemId && action.sourceItemId) current.sourceItemId = action.sourceItemId;
-  }
-  else lines.set(action.mergeKey, {
-    lineId: action.lineId,
-    mergeKey: action.mergeKey,
-    productId: action.productId,
-    quantity: 1,
-    firstAddedAt: action.firstAddedAt,
-    firstAddedSequence: action.firstAddedSequence,
-    ...(action.sourceItemId ? { sourceItemId: action.sourceItemId } : {}),
-    ...(action.remark ? { remark: action.remark } : {}),
-  });
-  return lines;
-}, new Map<string, { lineId: string; mergeKey: string; productId: string; quantity: number; firstAddedAt: string; firstAddedSequence: number; sourceItemId?: string; remark?: string }>));
-const draftLines = computed<CashierOrderingDraftLine[]>(() => [...pendingAdditions.value.values()].flatMap((line) => {
-  const product = productById.value.get(line.productId);
-  return product ? [{
-    lineId: line.lineId,
-    mergeKey: line.mergeKey,
-    product,
-    quantity: line.quantity,
-    firstAddedAt: line.firstAddedAt,
-    firstAddedSequence: line.firstAddedSequence,
-    ...(line.sourceItemId ? { sourceItemId: line.sourceItemId } : {}),
-    ...(line.remark ? { remark: line.remark } : {}),
-  }] : [];
-}));
-const mutationLocked = computed(() => Boolean(
-  processing.value
-  || submittedPayload.value
-  || directAddQueue.value.length,
-));
-watch(mutationLocked, (locked) => emit('mutationLockChanged', locked), {
-  immediate: true,
-  flush: 'sync',
-});
-
-watch(draftLines, (lines) => emit('draftChanged', lines), {
-  immediate: true,
-  deep: true,
-});
 
 watch(
   () => props.open,
@@ -158,10 +78,6 @@ watch(() => props.open, (open, wasOpen) => {
     previouslyFocused?.focus();
     previouslyFocused = null;
   }
-});
-
-watch(() => props.sessionId, (sessionId) => {
-  if (sessionId) effectiveSessionId.value = sessionId;
 });
 
 watch([query, activeCategoryId], () => {
@@ -189,15 +105,8 @@ function selectCategory(categoryId: string, event: MouseEvent) {
   });
 }
 
-function productDirectLineId(productId: string) {
-  return `product:${productId}`;
-}
-
 function pendingQuantityForProduct(productId: string) {
-  return directAddQueue.value.reduce(
-    (quantity, action) => quantity + (action.productId === productId ? 1 : 0),
-    0,
-  );
+  return props.pendingAddQuantities?.[productId] || 0;
 }
 
 function canonicalQuantityForProduct(productId: string) {
@@ -208,45 +117,14 @@ function canonicalQuantityForProduct(productId: string) {
 }
 
 function productInteractionDisabled(productId: string) {
-  if (props.disabled || loading.value) return true;
-  return outcomeUncertain.value && directAddQueue.value[0]?.productId !== productId;
+  return Boolean(props.disabled || loading.value || !orderableProducts.value.some((product) => product.id === productId));
 }
 
-function queueProductAddition(
-  productId: string,
-  lineId = productDirectLineId(productId),
-  sourceItemId?: string,
-  mergeKey = productDirectMergeKey(productId),
-  remark?: string,
-) {
-  if (!props.open || props.disabled || loading.value) return false;
-  if (outcomeUncertain.value) {
-    if (directAddQueue.value[0]?.productId !== productId) return false;
-    void drainDirectAddQueue();
-    return false;
-  }
-  if (!productById.value.has(productId)) return false;
-  const firstAddedAt = new Date().toISOString();
-  directAddQueue.value.push({
-    tableId: props.tableId,
-    tableLabel: props.tableLabel,
-    productId,
-    lineId,
-    mergeKey,
-    firstAddedAt,
-    firstAddedSequence: nextDirectAddSequence++,
-    ...(sourceItemId ? { sourceItemId } : {}),
-    ...(remark ? { remark } : {}),
-    payload: {
-      idempotencyKey: createMutationKey('add'),
-      items: [{ productId, quantity: 1, ...(remark ? { remark } : {}) }],
-    },
-  });
-  void drainDirectAddQueue();
+function queueProductAddition(productId: string) {
+  if (!props.open || productInteractionDisabled(productId)) return false;
+  emit('addProduct', productId);
   return true;
 }
-
-defineExpose({ queueProductAddition, retryPendingDirectAdd: drainDirectAddQueue });
 
 function resetWorkspaceView() {
   activeCategoryId.value = 'ALL';
@@ -264,94 +142,8 @@ async function loadCatalog() {
   }
 }
 
-function notifyMutationFailure(error: unknown) {
-  uiStore.pushToast(t(
-    isMutationOutcomeUncertain(error)
-      ? 'mutation.outcomeUncertain'
-      : apiErrorTranslationKey(error, 'ordering.createFailed'),
-  ), isMutationOutcomeUncertain(error) ? 'warning' : 'error');
-  emit('failed', error);
-}
-
-function clearSubmittedMutation() {
-  submittedPayload.value = null;
-  submittedContext.value = null;
-}
-
-async function ensureTableSession(action: DirectAddAction) {
-  if (effectiveSessionId.value) return true;
-  pendingOpenPayload.value ??= {
-    idempotencyKey: createMutationKey('add'),
-    items: [],
-  };
-  submittedPayload.value = pendingOpenPayload.value;
-  submittedContext.value = { tableId: action.tableId, tableLabel: action.tableLabel };
-  try {
-    const result = await createMerchantTableOrder(action.tableId, pendingOpenPayload.value);
-    effectiveSessionId.value = result.session.id;
-    pendingOpenPayload.value = null;
-    clearSubmittedMutation();
-    emit('created', result);
-    return true;
-  } catch (error) {
-    if (error instanceof CashierApiError && error.code === 'TABLE_ALREADY_OPEN') {
-      effectiveSessionId.value = 'OPEN_SESSION_CONFIRMED_BY_SERVER';
-      pendingOpenPayload.value = null;
-      clearSubmittedMutation();
-      return true;
-    }
-    notifyMutationFailure(error);
-    if (isDefinitiveMutationRejection(error)) {
-      pendingOpenPayload.value = null;
-      directAddQueue.value.shift();
-      clearSubmittedMutation();
-    } else {
-      outcomeUncertain.value = true;
-    }
-    return false;
-  }
-}
-
-async function drainDirectAddQueue() {
-  if (processing.value || !directAddQueue.value.length) return;
-  processing.value = true;
-  outcomeUncertain.value = false;
-  try {
-    while (directAddQueue.value.length) {
-      const action = directAddQueue.value[0]!;
-      if (!(await ensureTableSession(action))) break;
-      submittedPayload.value = submittedPayload.value ?? action.payload;
-      submittedContext.value ??= { tableId: action.tableId, tableLabel: action.tableLabel };
-      try {
-        const result = await createMerchantTableOrder(
-          submittedContext.value.tableId,
-          submittedPayload.value,
-        );
-        effectiveSessionId.value = result.session.id;
-        directAddQueue.value.shift();
-        clearSubmittedMutation();
-        emit('created', result);
-      } catch (error) {
-        notifyMutationFailure(error);
-        if (isDefinitiveMutationRejection(error)) {
-          directAddQueue.value.shift();
-          clearSubmittedMutation();
-          if (apiErrorTranslationKey(error) === 'ordering.productUnavailable') {
-            await catalogStore.loadCatalog({ force: true });
-          }
-          continue;
-        }
-        outcomeUncertain.value = true;
-        break;
-      }
-    }
-  } finally {
-    processing.value = false;
-  }
-}
-
 function requestClose() {
-  if (mutationLocked.value) {
+  if (props.mutationLocked) {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
     return;
   }
@@ -470,7 +262,7 @@ function hideBrokenImage(event: Event) {
       class="table-ordering-workspace"
       :class="{ 'table-ordering-workspace--embedded': embedded }"
       data-testid="table-ordering-workspace"
-      :data-session-id="effectiveSessionId"
+      :data-session-id="sessionId"
       :role="embedded ? 'region' : 'dialog'"
       :aria-modal="embedded ? undefined : 'true'"
       :aria-label="t('ordering.title')"
@@ -478,7 +270,7 @@ function hideBrokenImage(event: Event) {
     >
       <header class="table-ordering-header">
         <div v-if="!embedded">
-          <span>{{ t('ordering.tableContext', { table: submittedContext?.tableLabel || tableLabel }) }}</span>
+          <span>{{ t('ordering.tableContext', { table: tableLabel }) }}</span>
           <h2>{{ t('ordering.title') }}</h2>
         </div>
         <Teleport v-if="embedded && mobileOrderingLayout" to="#cashier-mobile-menu-search">

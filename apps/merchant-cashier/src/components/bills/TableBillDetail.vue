@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRightLeft, CreditCard, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
+import { ArrowRightLeft, CreditCard, LoaderCircle, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
 import { computed } from 'vue';
 import {
   buildCanonicalTableBillLines,
@@ -22,8 +22,11 @@ const props = defineProps<{
   checkingOut?: boolean;
   checkoutDisabled?: boolean;
   actionsDisabled?: boolean;
+  itemActionsDisabled?: boolean;
   adjustmentLoadingId?: string;
   pendingAdjustmentItemId?: string;
+  pendingDecreaseMergeKeys?: Set<string>;
+  orderableProductIds?: Set<string>;
   adjustmentApplied?: boolean;
   payableAmount?: string;
   embedded?: boolean;
@@ -33,7 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   orderItems: [];
-  decreaseItem: [item: OrderItem, order: TableSessionOrder, canonicalQuantity: number];
+  decreaseItem: [item: OrderItem, order: TableSessionOrder, canonicalQuantity: number, mergeKey: string];
   returnItem: [item: OrderItem, order: TableSessionOrder];
   increaseItem: [item: OrderItem, order: TableSessionOrder, mergeKey: string];
   transfer: [];
@@ -77,9 +80,18 @@ const tableStatusLabel = computed(() => {
   return t('table.status.inUse');
 });
 
-function adjustmentDisabled(itemId: string) {
+function rowActionsDisabled() {
+  return props.itemActionsDisabled ?? props.actionsDisabled;
+}
+
+function lineMutationBusy(line: CanonicalTableBillLine) {
+  return Boolean(props.pendingDecreaseMergeKeys?.has(line.mergeKey));
+}
+
+function adjustmentDisabled(itemId: string, line: CanonicalTableBillLine) {
   return Boolean(
-    props.actionsDisabled
+    rowActionsDisabled()
+    || lineMutationBusy(line)
     || props.adjustmentLoadingId
     || (props.pendingAdjustmentItemId && props.pendingAdjustmentItemId !== itemId),
   );
@@ -88,8 +100,9 @@ function adjustmentDisabled(itemId: string) {
 function increaseDisabled(item?: OrderItem) {
   return Boolean(
     !item?.productId
-    || props.actionsDisabled
-    || props.adjustmentLoadingId,
+    || rowActionsDisabled()
+    || props.adjustmentLoadingId
+    || (props.orderableProductIds && !props.orderableProductIds.has(item.productId)),
   );
 }
 
@@ -130,7 +143,7 @@ function canonicalName(line: CanonicalTableBillLine) {
 }
 
 function adjustmentTitle(line: CanonicalTableBillLine) {
-  if (line.pendingQuantity > 0) return t('ordering.decreasePendingFirst');
+  if (lineMutationBusy(line)) return t('common.processing');
   const target = adjustmentEntry(line);
   if (!target || line.committedQuantity <= 0) return t('itemAdjustment.noReturnableQuantity');
   return canAdjust(target.item, target.order)
@@ -141,7 +154,7 @@ function adjustmentTitle(line: CanonicalTableBillLine) {
 function emitItemAdjustment(line: CanonicalTableBillLine) {
   const target = adjustmentEntry(line);
   if (!target || !canAdjust(target.item, target.order) || !props.session) return;
-  emit('decreaseItem', target.item, target.order, line.committedQuantity);
+  emit('decreaseItem', target.item, target.order, line.committedQuantity, line.mergeKey);
 }
 
 function emitItemIncrease(line: CanonicalTableBillLine) {
@@ -223,6 +236,7 @@ function priceCanExpand(line: CanonicalTableBillLine) {
             :class="{
               'table-item-summary-row--pending': !entry.committedEntries.length,
               'table-item-summary-row--extended-price': priceCanExpand(entry),
+              'table-item-summary-row--mutation-busy': lineMutationBusy(entry),
             }"
             :data-order-id="sourceOrder(entry)?.id"
             :data-item-id="entry.item?.id"
@@ -246,22 +260,23 @@ function priceCanExpand(line: CanonicalTableBillLine) {
               class="committed-item-stepper"
               :class="{ 'committed-item-stepper--wide-quantity': entry.quantity >= 100 }"
               :aria-label="t('ordering.quantityFor', { name: canonicalName(entry) })"
+              :aria-busy="lineMutationBusy(entry)"
             >
               <button
                 type="button"
                 :data-testid="entry.committedEntries.length ? 'decrease-order-item' : 'decrease-draft-item'"
                 :aria-label="`${t('itemAdjustment.decrease')} ${canonicalName(entry)}`"
-                :disabled="entry.pendingQuantity > 0 || adjustmentDisabled(adjustmentItemId(entry)) || !lineCanAdjust(entry)"
+                :disabled="adjustmentDisabled(adjustmentItemId(entry), entry) || !lineCanAdjust(entry)"
                 :title="adjustmentTitle(entry)"
                 @click="emitItemAdjustment(entry)"
-              ><Minus :size="16" aria-hidden="true" /></button>
+              ><LoaderCircle v-if="lineMutationBusy(entry)" :size="16" class="row-mutation-spinner" aria-hidden="true" /><Minus v-else :size="16" aria-hidden="true" /></button>
               <output>{{ entry.quantity }}</output>
               <button
                 type="button"
                 :data-testid="entry.committedEntries.length ? 'increase-committed-item' : 'increase-draft-item'"
                 :aria-label="`${t('ordering.increaseQuantity')} ${canonicalName(entry)}`"
                 :disabled="increaseDisabled(entry.item)"
-                :title="entry.item?.productId ? t('ordering.addOneAsPending') : t('ordering.historicalProductUnavailable')"
+                :title="increaseDisabled(entry.item) && (!entry.item?.productId || (orderableProductIds && !orderableProductIds.has(entry.item.productId))) ? t('ordering.historicalProductUnavailable') : t('ordering.addOneAsPending')"
                 @click="emitItemIncrease(entry)"
               ><Plus :size="16" aria-hidden="true" /></button>
             </div>
@@ -339,4 +354,8 @@ function priceCanExpand(line: CanonicalTableBillLine) {
 .dinein-settlement-summary .is-payable dt { color: var(--cashier-shell-text); font-size: 16px; font-weight: 600; }
 .dinein-settlement-summary .is-payable dd { color: var(--cashier-detail-total); font-size: 21px; font-weight: 700; }
 .dinein-settlement-summary .is-pending dd { color: var(--cashier-green); }
+.table-item-summary-row--mutation-busy .committed-item-stepper { box-shadow: 0 0 0 2px color-mix(in srgb, var(--cashier-green) 18%, transparent); }
+.row-mutation-spinner { animation: row-mutation-spin 0.7s linear infinite; }
+@keyframes row-mutation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .row-mutation-spinner { animation: none; } }
 </style>
