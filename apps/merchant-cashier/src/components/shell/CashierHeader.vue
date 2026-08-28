@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   Bell,
-  ChevronDown,
   Clock,
   LoaderCircle,
   Maximize,
@@ -15,6 +14,7 @@ import {
   WifiOff,
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useI18n } from '@/i18n';
 import type { CashierPrintingAvailability } from '@/types';
 
@@ -48,6 +48,7 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale } = useI18n();
+const mobileViewport = useMediaQuery('(max-width: 899px)');
 const now = ref(new Date());
 const fullscreen = ref(Boolean(document.fullscreenElement));
 let timer: number | undefined;
@@ -106,6 +107,11 @@ const stats = computed(() => [
   { key: 'in-use', filter: 'IN_USE' as const, label: t('stats.inUseTables'), value: props.inUseTableCount, tone: 'info' },
   { key: 'disabled', filter: 'DISABLED' as const, label: t('stats.disabledTables'), value: props.disabledTableCount, tone: 'muted' },
 ]);
+const mobileTableStats = computed(() => [
+  { key: 'all', filter: 'ALL' as const, label: t('common.all'), value: props.totalTableCount },
+  { key: 'in-use', filter: 'IN_USE' as const, label: t('table.status.inUse'), value: props.inUseTableCount },
+  { key: 'available', filter: 'AVAILABLE' as const, label: t('table.status.available'), value: props.availableTableCount },
+]);
 
 async function toggleFullscreen() {
   try {
@@ -139,10 +145,32 @@ onBeforeUnmount(() => {
     :class="{
       'cashier-header--status-only': showTableMetrics === false && !showMainTabs,
       'cashier-header--main-tabs': showMainTabs,
+      'cashier-header--table-route': showMainTabs && activeMainTab !== 'MENU',
+      'cashier-header--menu-route': showMainTabs && activeMainTab === 'MENU',
     }"
     data-testid="cashier-topbar"
   >
-    <div v-if="showMainTabs" class="cashier-mobile-ordering-toolbar" data-testid="cashier-mobile-ordering-toolbar">
+    <nav
+      v-if="showMainTabs && activeMainTab !== 'MENU' && mobileViewport"
+      class="cashier-mobile-table-filters"
+      :aria-label="t('stats.title')"
+      data-testid="cashier-mobile-table-filters"
+    >
+      <button
+        v-for="item in mobileTableStats"
+        :key="item.key"
+        type="button"
+        :class="{ 'is-active': activeTableFilter === item.filter }"
+        :data-testid="`mobile-table-filter-${item.key}`"
+        :aria-pressed="activeTableFilter === item.filter"
+        @click="$emit('selectTableFilter', item.filter)"
+      >
+        <span>{{ item.label }}</span>
+        <b>{{ item.value }}</b>
+      </button>
+    </nav>
+
+    <div v-if="showMainTabs && activeMainTab === 'MENU'" class="cashier-mobile-ordering-toolbar" data-testid="cashier-mobile-ordering-toolbar">
       <div class="cashier-mobile-search-context">
         <div
           id="cashier-mobile-menu-search"
@@ -150,7 +178,7 @@ onBeforeUnmount(() => {
           data-testid="cashier-mobile-menu-search"
         >
           <button
-            v-if="activeMainTab !== 'MENU' || !currentTableLabel"
+            v-if="!currentTableLabel"
             type="button"
             class="cashier-mobile-search-placeholder"
             :class="{ 'is-disabled': !currentTableLabel }"
@@ -161,16 +189,14 @@ onBeforeUnmount(() => {
             <span>{{ t('ordering.searchPlaceholder') }}</span>
           </button>
         </div>
-        <button
-          type="button"
+        <output
           class="cashier-mobile-current-table"
           data-testid="cashier-mobile-current-table"
           :title="currentTableLabel ? t('cashierV2.currentTableCompact', { table: currentTableLabel }) : t('cashierV2.selectTable')"
-          @click="$emit('selectMainTab', 'TABLES')"
+          aria-live="polite"
         >
           <span>{{ currentTableLabel ? t('cashierV2.currentTableCompact', { table: currentTableLabel }) : t('cashierV2.selectTable') }}</span>
-          <ChevronDown :size="15" aria-hidden="true" />
-        </button>
+        </output>
       </div>
     </div>
 
@@ -231,6 +257,7 @@ onBeforeUnmount(() => {
 
     <section class="cashier-top-status" data-testid="top-status">
       <button
+        v-if="!mobileViewport || !showMainTabs || activeMainTab === 'MENU'"
         type="button"
         class="top-status-item top-status-item--new-order"
         :class="{ 'top-status-item--active': newOrderCount > 0 }"
@@ -299,6 +326,7 @@ onBeforeUnmount(() => {
       </span>
 
       <button
+        v-if="!mobileViewport || !showMainTabs"
         type="button"
         class="top-status-item top-status-item--fullscreen"
         :aria-label="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
@@ -314,6 +342,7 @@ onBeforeUnmount(() => {
       </button>
 
       <div
+        v-if="!mobileViewport || !showMainTabs"
         class="top-status-item top-status-item--clock"
         :aria-label="t('shell.currentTime')"
         data-testid="top-clock"

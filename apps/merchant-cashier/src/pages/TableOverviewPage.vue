@@ -569,7 +569,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
     data-testid="table-overview-workspace"
   >
     <div class="cashier-workspace__content cashier-workspace__content--table-overview">
-      <header v-if="activeMainTab === 'TABLES'" class="table-main-toolbar">
+      <header v-if="activeMainTab === 'TABLES' && !isMobile" class="table-main-toolbar">
         <div class="table-filter-chips" :aria-label="t('stats.title')">
           <button type="button" data-testid="table-filter-all" :class="{ 'is-active': activeStatus === 'ALL' }" :aria-pressed="activeStatus === 'ALL'" @click="selectTableFilter('ALL')">
             {{ t('common.all') }} <b>{{ tableCards.length }}</b>

@@ -184,6 +184,14 @@ function categoryName(category: CashierMenuCategory) {
   return category.nameZh;
 }
 
+function selectCategory(categoryId: string, event: MouseEvent) {
+  activeCategoryId.value = categoryId;
+  (event.currentTarget as HTMLElement | null)?.scrollIntoView?.({
+    block: 'nearest',
+    inline: 'nearest',
+  });
+}
+
 function productDirectLineId(productId: string) {
   return `product:${productId}`;
 }
@@ -530,7 +538,7 @@ function hideBrokenImage(event: Event) {
             :key="`mobile-strip-${category.id}`"
             type="button"
             :class="{ 'is-active': activeCategoryId === category.id }"
-            @click="activeCategoryId = category.id"
+            @click="selectCategory(category.id, $event)"
           >{{ categoryName(category) }}</button>
         </nav>
         <button
@@ -553,7 +561,7 @@ function hideBrokenImage(event: Event) {
             :key="category.id"
             type="button"
             :class="{ 'is-active': activeCategoryId === category.id }"
-            @click="activeCategoryId = category.id"
+            @click="selectCategory(category.id, $event)"
           >{{ categoryName(category) }}</button>
         </nav>
 
@@ -573,7 +581,7 @@ function hideBrokenImage(event: Event) {
                 :key="`strip-${category.id}`"
                 type="button"
                 :class="{ 'is-active': activeCategoryId === category.id }"
-                @click="activeCategoryId = category.id"
+                @click="selectCategory(category.id, $event)"
               >{{ categoryName(category) }}</button>
             </nav>
 

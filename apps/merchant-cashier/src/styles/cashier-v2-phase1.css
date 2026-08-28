@@ -1503,6 +1503,7 @@
 /* Mobile ordering V5: one deep-navy search/table context, four operational
    actions, compact wrapped categories and a four-column direct-order grid. */
 .cashier-mobile-ordering-toolbar,
+.cashier-mobile-table-filters,
 .account-menu__mobile-label,
 .top-status-item__label--mobile { display: none; }
 
@@ -1826,5 +1827,128 @@
     width: min(260px, calc(100vw - 12px));
     max-height: calc(100dvh - var(--cashier-mobile-nav-height) - 24px);
     overflow-y: auto;
+  }
+}
+
+/* Mobile header responsibility split V6 FINAL: table context owns only table
+   status filters, while menu context owns search/table/order operations. */
+@media (max-width: 899px) {
+  .cashier-header--main-tabs.cashier-header--table-route {
+    grid-template-columns: minmax(0, 1fr) 132px;
+  }
+
+  .cashier-header--main-tabs.cashier-header--menu-route {
+    grid-template-columns: minmax(0, 1fr) 176px;
+  }
+
+  .cashier-mobile-table-filters {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    min-width: 0;
+    height: 50px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 2px;
+    padding: 1px;
+    overflow: hidden;
+    border: 1px solid rgb(153 190 208 / 13%);
+    border-radius: 9px;
+    background: #102a39;
+  }
+
+  .cashier-mobile-table-filters button {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 2px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 7px;
+    color: #b7c9d1;
+    background: transparent;
+    font: inherit;
+    font-size: clamp(9px, 2.7vw, 11px);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .cashier-mobile-table-filters button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cashier-mobile-table-filters button b {
+    flex: 0 0 auto;
+    color: #eff8f6;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cashier-mobile-table-filters button.is-active {
+    color: #eafff4;
+    background: rgb(46 159 98 / 24%);
+    box-shadow: inset 0 0 0 1px rgb(142 226 184 / 28%);
+  }
+
+  .cashier-mobile-table-filters button.is-active b { color: #8ee2b8; }
+  .cashier-mobile-table-filters button:focus-visible {
+    outline: 1px solid rgb(142 226 184 / 72%);
+    outline-offset: -2px;
+  }
+
+  .cashier-header--table-route .cashier-top-status {
+    grid-template-columns: repeat(3, 44px);
+    width: 132px;
+  }
+
+  .cashier-header--menu-route .cashier-top-status {
+    grid-template-columns: repeat(4, 44px);
+    width: 176px;
+  }
+
+  .cashier-mobile-current-table {
+    flex-basis: 72px;
+    width: 72px;
+    min-width: 72px;
+    cursor: default;
+    user-select: none;
+  }
+
+  .cashier-mobile-current-table:focus-visible { outline: none; }
+
+  .cashier-workspace__content--table-overview {
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header .table-ordering-category-strip {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-inline: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header .table-ordering-category-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header .table-ordering-category-strip button {
+    min-width: max-content;
+    margin-block: -1px;
+    overflow-wrap: normal;
+    scroll-snap-align: nearest;
+    white-space: nowrap;
   }
 }

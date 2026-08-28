@@ -1,10 +1,10 @@
 import { mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import CashierHeader from './CashierHeader.vue';
 
-function mountHeader() {
+function mountHeader(overrides: Partial<InstanceType<typeof CashierHeader>['$props']> = {}) {
   return mount(CashierHeader, {
     props: {
       totalTableCount: 15,
@@ -22,8 +22,17 @@ function mountHeader() {
       showTableMetrics: false,
       showMainTabs: true,
       activeMainTab: 'TABLES',
+      ...overrides,
     },
   });
+}
+
+function useMobileViewport() {
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+    matches: true,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
 }
 
 describe('CashierHeader main table and menu tabs', () => {
@@ -31,6 +40,7 @@ describe('CashierHeader main table and menu tabs', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+    vi.unstubAllGlobals();
   });
 
   it('replaces the former KPI region with exactly one main tab group', async () => {
@@ -53,22 +63,45 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.get('[data-testid="cashier-toolbar-menu-search"]').attributes('style') || '').not.toContain('display: none');
   });
 
-  it('exposes the mobile dark-toolbar search host, live table context and exactly four useful actions', async () => {
+  it('keeps the mobile table route to three filters and three operational statuses only', async () => {
+    useMobileViewport();
     wrapper = mountHeader();
-    await wrapper.setProps({ activeMainTab: 'MENU', currentTableLabel: 'A03' });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('[data-testid="cashier-mobile-table-filters"] button')).toHaveLength(3);
+    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('全部15');
+    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('用餐中1');
+    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('空闲13');
+    expect(wrapper.find('[data-testid="cashier-mobile-ordering-toolbar"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
+  });
+
+  it('exposes only the menu search, readonly table context and four useful actions on mobile', async () => {
+    useMobileViewport();
+    wrapper = mountHeader({ activeMainTab: 'MENU', currentTableLabel: 'A03' });
+    await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll('[data-testid="cashier-mobile-ordering-toolbar"]')).toHaveLength(1);
     expect(wrapper.findAll('[data-testid="cashier-mobile-menu-search"]')).toHaveLength(1);
-    expect(wrapper.get('[data-testid="cashier-mobile-current-table"]').text()).toContain('桌台 A03');
+    const currentTable = wrapper.get('[data-testid="cashier-mobile-current-table"]');
+    expect(currentTable.element.tagName).toBe('OUTPUT');
+    expect(currentTable.attributes('tabindex')).toBeUndefined();
+    expect(currentTable.find('svg').exists()).toBe(false);
+    expect(currentTable.text()).toContain('桌台 A03');
+    expect(wrapper.find('[data-testid="cashier-mobile-table-filters"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="top-network-status"]').text()).toContain('网络');
     expect(wrapper.get('[data-testid="top-sound-status"]').text()).toContain('声音');
     expect(wrapper.get('[data-testid="top-print-status"]').text()).toContain('打印');
+    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(4);
 
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
-    const mobileV5 = styles.slice(styles.indexOf('/* Mobile ordering V5:'));
-    expect(mobileV5).toMatch(/\.cashier-top-status\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*44px\);/s);
-    expect(mobileV5).toMatch(/\.top-status-item--fullscreen,[^}]*\.top-status-item--clock\s*\{\s*display:\s*none;/s);
-    expect(mobileV5).toMatch(/\.top-status-item\s*\{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
+    const mobileV6 = styles.slice(styles.indexOf('/* Mobile header responsibility split V6 FINAL:'));
+    expect(mobileV6).toMatch(/\.cashier-header--table-route \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
+    expect(mobileV6).toMatch(/\.cashier-header--menu-route \.cashier-top-status\s*\{[^}]*repeat\(4,\s*44px\);[^}]*width:\s*176px;/s);
   });
 
   it('keeps the content-level table page free of a duplicate main tab instance', () => {
@@ -76,6 +109,7 @@ describe('CashierHeader main table and menu tabs', () => {
     const source = readFileSync(pagePath, 'utf8');
     expect(source).not.toContain('data-testid="main-tab-tables"');
     expect(source).not.toContain('data-testid="main-tab-menu"');
+    expect(source).toContain("v-if=\"activeMainTab === 'TABLES' && !isMobile\"");
   });
 
   it('keeps shared table metrics gated to the table route', () => {

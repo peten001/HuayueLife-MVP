@@ -447,7 +447,11 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
     const wrapper = mountWorkspace({ embedded: true });
     await flushPromises();
     const categoryButtons = wrapper.findAll('[data-testid="table-ordering-category-strip"] button');
-    await categoryButtons.find((button) => button.text() === '饮品')!.trigger('click');
+    const drinksButton = categoryButtons.find((button) => button.text() === '饮品')!;
+    const scrollIntoView = vi.fn();
+    drinksButton.element.scrollIntoView = scrollIntoView;
+    await drinksButton.trigger('click');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
     expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
     await productCard(wrapper, secondProduct.id).trigger('click');
     await flushPromises();
@@ -512,6 +516,18 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
     expect(mobileV5).toMatch(/\.table-ordering-product__quick-add output\s*\{[^}]*max-width:\s*none;[^}]*overflow:\s*visible;[^}]*background:\s*#2e9f62;/s);
     expect(source).toContain('X{{ canonicalQuantityForProduct(product.id) }}');
     expect(source).not.toContain('<output>×');
+  });
+
+  it('pins the V6 category strip to one scrollable line with hidden scrollbars', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
+    const mobileV6 = styles.slice(styles.indexOf('/* Mobile header responsibility split V6 FINAL:'));
+    const source = readFileSync(resolve(process.cwd(), 'src/components/ordering/TableOrderingWorkspace.vue'), 'utf8');
+
+    expect(mobileV6).toMatch(/\.table-ordering-category-strip\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;[^}]*scrollbar-width:\s*none;/s);
+    expect(mobileV6).toMatch(/\.table-ordering-category-strip::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+    expect(mobileV6).toMatch(/\.table-ordering-category-strip button\s*\{[^}]*white-space:\s*nowrap;/s);
+    expect(source).toContain("scrollIntoView?.({");
+    expect(source).toContain("inline: 'nearest'");
   });
 
   it('supports explicit keyboard result selection without adding on an unselected Enter', async () => {
