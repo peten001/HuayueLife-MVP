@@ -89,6 +89,7 @@ const pendingTransfer = ref<TransferTableSessionInput | null>(null);
 let routeSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
+const routeTableId = computed(() => typeof route.params.tableId === 'string' ? route.params.tableId : '');
 const session = computed(() => {
   const current = selectedSessionDetail.value;
   if (!current) return null;
@@ -562,7 +563,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
   <section
     class="cashier-workspace cashier-workspace--table-overview table-overview-route"
     :class="{
-      'has-selection': Boolean(selectedTableId),
+      'has-selection': Boolean(routeTableId),
       'is-menu-tab': activeMainTab === 'MENU',
     }"
     data-page="TableOverviewPage"
@@ -594,7 +595,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
 
       <div v-show="activeMainTab === 'MENU'" class="table-main-pane table-main-pane--menu">
         <TableOrderingWorkspace
-          v-if="selectedTable && selectedTable.status !== 'DISABLED'"
+          v-if="activeMainTab === 'MENU' && selectedTable && selectedTable.status !== 'DISABLED'"
           :key="selectedTable.id"
           ref="orderingWorkspace"
           open
@@ -611,11 +612,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
           @mutation-lock-changed="orderingMutationLocked = $event"
           @draft-changed="handleDraftChanged"
         />
-        <EmptyState v-else :title="t('cashierV2.menuNeedsTableTitle')" :description="t('cashierV2.menuNeedsTableDescription')" />
+        <EmptyState v-else-if="activeMainTab === 'MENU'" :title="t('cashierV2.menuNeedsTableTitle')" :description="t('cashierV2.menuNeedsTableDescription')" />
       </div>
     </div>
 
-    <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(selectedTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
+    <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(routeTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
       <button
         v-if="selectedTableId && !isMobile"
         type="button"

@@ -26,6 +26,7 @@ import type { MerchantOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
 import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.vue';
+import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
 import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
 
@@ -90,6 +91,43 @@ const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
 const currentTableLabel = computed(() =>
   selectedSessionDetail.value?.tableNo || selectedTable.value?.tableNo || '',
 );
+const mobileOperationalContext = computed<'pickup' | 'delivery' | undefined>(() => {
+  if (router.currentRoute.value.name === 'pickup-orders') return 'pickup';
+  if (router.currentRoute.value.name === 'delivery-orders') return 'delivery';
+  return undefined;
+});
+const mobileOperationalFilters = computed(() => {
+  if (mobileOperationalContext.value === 'pickup') {
+    return [
+      { value: 'ALL', label: t('fulfillment.pickupAll') },
+      { value: 'PENDING_ACCEPTANCE', label: t('fulfillment.pickupPending') },
+      { value: 'PREPARING', label: t('fulfillment.pickupPreparing') },
+      { value: 'READY', label: t('fulfillment.pickupReadyShort') },
+    ];
+  }
+  if (mobileOperationalContext.value === 'delivery') {
+    return [
+      { value: 'ALL', label: t('fulfillment.deliveryAll') },
+      { value: 'PENDING_ACCEPTANCE', label: t('fulfillment.deliveryPending') },
+      { value: 'PREPARING', label: t('fulfillment.deliveryPreparing') },
+      { value: 'READY', label: t('fulfillment.deliveryReadyShort') },
+      { value: 'DELIVERING', label: t('fulfillment.deliveryEnRoute') },
+    ];
+  }
+  return [];
+});
+const activeMobileOperationalFilter = computed(() => {
+  const requested = router.currentRoute.value.query.status;
+  return typeof requested === 'string'
+    && mobileOperationalFilters.value.some((item) => item.value === requested)
+    ? requested
+    : 'ALL';
+});
+const mobileOperationalFilterAriaLabel = computed(() => {
+  if (mobileOperationalContext.value === 'pickup') return t('nav.pickup');
+  if (mobileOperationalContext.value === 'delivery') return t('nav.delivery');
+  return '';
+});
 
 async function logout() {
   if (loggingOut.value) return;
@@ -150,6 +188,15 @@ async function selectMainTab(tab: 'TABLES' | 'MENU') {
   if (tab === 'MENU') query.view = 'menu';
   else delete query.view;
   await router.replace({ name: 'tables', params: current.params, query });
+}
+
+async function selectMobileOperationalFilter(filter: string) {
+  if (!mobileOperationalFilters.value.some((item) => item.value === filter)) return;
+  const current = router.currentRoute.value;
+  const query = { ...current.query };
+  if (filter === 'ALL') delete query.status;
+  else query.status = filter;
+  await router.replace({ path: current.path, query });
 }
 
 async function refreshTables() {
@@ -266,11 +313,16 @@ onBeforeUnmount(() => {
       :show-main-tabs="showMainTabs"
       :active-main-tab="activeMainTab"
       :current-table-label="currentTableLabel"
+      :mobile-operational-context="mobileOperationalContext"
+      :mobile-operational-filters="mobileOperationalFilters"
+      :active-mobile-operational-filter="activeMobileOperationalFilter"
+      :mobile-operational-filter-aria-label="mobileOperationalFilterAriaLabel"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
       @select-table-filter="selectTableFilter"
       @select-main-tab="selectMainTab"
+      @select-mobile-operational-filter="selectMobileOperationalFilter"
       @refresh-tables="refreshTables"
     />
 

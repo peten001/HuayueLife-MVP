@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { apiErrorTranslationKey } from '@/api';
+import { useMediaQuery } from '@/composables/useMediaQuery';
 import {
   fulfillmentActionSequence,
   mergeOrders,
@@ -27,6 +28,13 @@ import { OrderChatWorkspace } from '@/features/chat';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 
 type DeliveryFilter = 'ALL' | 'PENDING_ACCEPTANCE' | 'PREPARING' | 'READY' | 'DELIVERING';
+const filters: Array<{ value: DeliveryFilter; key: string }> = [
+  { value: 'ALL', key: 'fulfillment.deliveryAll' },
+  { value: 'PENDING_ACCEPTANCE', key: 'fulfillment.deliveryPending' },
+  { value: 'PREPARING', key: 'fulfillment.deliveryPreparing' },
+  { value: 'READY', key: 'fulfillment.deliveryReadyShort' },
+  { value: 'DELIVERING', key: 'fulfillment.deliveryEnRoute' },
+];
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
@@ -36,7 +44,13 @@ const networkStore = useNetworkStore();
 const uiStore = useUiStore();
 const { pendingOrders, activeOrders, selectedOrder, detailLoading, actionLoadingId, error, activeErrorKey } = storeToRefs(ordersStore);
 const { online, apiReachable } = storeToRefs(networkStore);
-const filter = ref<DeliveryFilter>('ALL');
+const mobileViewport = useMediaQuery('(max-width: 899px)');
+const filter = computed<DeliveryFilter>(() => {
+  const requested = route.query.status;
+  return typeof requested === 'string' && filters.some((item) => item.value === requested)
+    ? requested as DeliveryFilter
+    : 'ALL';
+});
 const activePane = ref<'detail' | 'chat'>('detail');
 const refreshing = ref(false);
 const rejectOpen = ref(false);
@@ -64,14 +78,6 @@ const roundingDisabledReasonKey = computed(() => {
   return '';
 });
 const roundingDisabled = computed(() => Boolean(roundingDisabledReasonKey.value));
-const filters: Array<{ value: DeliveryFilter; key: string }> = [
-  { value: 'ALL', key: 'fulfillment.deliveryAll' },
-  { value: 'PENDING_ACCEPTANCE', key: 'fulfillment.deliveryPending' },
-  { value: 'PREPARING', key: 'fulfillment.deliveryPreparing' },
-  { value: 'READY', key: 'fulfillment.deliveryReadyShort' },
-  { value: 'DELIVERING', key: 'fulfillment.deliveryEnRoute' },
-];
-
 async function refresh(showToast = true) {
   if (refreshing.value) return;
   refreshing.value = true;
@@ -85,6 +91,13 @@ async function refresh(showToast = true) {
   } finally {
     refreshing.value = false;
   }
+}
+
+async function selectFilter(nextFilter: DeliveryFilter) {
+  const query = { ...route.query };
+  if (nextFilter === 'ALL') delete query.status;
+  else query.status = nextFilter;
+  await router.replace({ path: route.path, query });
 }
 
 async function selectOrder(id: string) {
@@ -177,9 +190,9 @@ onMounted(() => void refresh(false));
   <section class="fulfillment-page delivery-page" :class="{ 'has-selection': Boolean(order), 'pane-chat': activePane === 'chat' }">
     <div class="fulfillment-workspace">
       <aside class="fulfillment-queue">
-        <div class="pickup-queue-toolbar delivery-queue-toolbar">
+        <div v-if="!mobileViewport" class="pickup-queue-toolbar delivery-queue-toolbar">
           <div class="workflow-filter-chips">
-            <button v-for="item in filters" :key="item.value" type="button" :class="{ 'is-active': filter === item.value }" @click="filter = item.value">{{ t(item.key) }}</button>
+            <button v-for="item in filters" :key="item.value" type="button" :class="{ 'is-active': filter === item.value }" @click="selectFilter(item.value)">{{ t(item.key) }}</button>
           </div>
           <button type="button" class="workflow-refresh-button" :aria-label="t('common.refresh')" :title="t('common.refresh')" :disabled="refreshing" @click="refresh()">
             <RefreshCw :size="17" :class="{ spinning: refreshing }" aria-hidden="true" />

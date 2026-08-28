@@ -79,7 +79,7 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
   });
 
-  it('exposes only the menu search, readonly table context and four useful actions on mobile', async () => {
+  it('exposes only the menu search, readonly table context and three device statuses on mobile', async () => {
     useMobileViewport();
     wrapper = mountHeader({ activeMainTab: 'MENU', currentTableLabel: 'A03' });
     await wrapper.vm.$nextTick();
@@ -92,16 +92,43 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(currentTable.find('svg').exists()).toBe(false);
     expect(currentTable.text()).toContain('桌台 A03');
     expect(wrapper.find('[data-testid="cashier-mobile-table-filters"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="top-network-status"]').text()).toContain('网络');
     expect(wrapper.get('[data-testid="top-sound-status"]').text()).toContain('声音');
     expect(wrapper.get('[data-testid="top-print-status"]').text()).toContain('打印');
-    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(4);
+    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
 
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
-    const mobileV6 = styles.slice(styles.indexOf('/* Mobile header responsibility split V6 FINAL:'));
-    expect(mobileV6).toMatch(/\.cashier-header--table-route \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
-    expect(mobileV6).toMatch(/\.cashier-header--menu-route \.cashier-top-status\s*\{[^}]*repeat\(4,\s*44px\);[^}]*width:\s*176px;/s);
+    const mobileV7 = styles.slice(styles.indexOf('/* Mobile unified operational headers V7 FINAL:'));
+    expect(mobileV7).toMatch(/:root\.cashier-standalone \.cashier-header \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
+  });
+
+  it('moves delivery filters into one scrolling mobile header group', async () => {
+    useMobileViewport();
+    wrapper = mountHeader({
+      showMainTabs: false,
+      showTableMetrics: false,
+      mobileOperationalContext: 'delivery',
+      activeMobileOperationalFilter: 'READY',
+      mobileOperationalFilters: [
+        { value: 'ALL', label: '全部' },
+        { value: 'PENDING_ACCEPTANCE', label: '待接单' },
+        { value: 'PREPARING', label: '制作中' },
+        { value: 'READY', label: '待配送' },
+        { value: 'DELIVERING', label: '配送中' },
+      ],
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('[data-testid="cashier-mobile-delivery-filters"] button')).toHaveLength(5);
+    expect(wrapper.get('[data-testid="mobile-delivery-filter-ready"]').attributes('aria-pressed')).toBe('true');
+    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
+
+    await wrapper.get('[data-testid="mobile-delivery-filter-delivering"]').trigger('click');
+    expect(wrapper.emitted('selectMobileOperationalFilter')).toEqual([['DELIVERING']]);
   });
 
   it('keeps the content-level table page free of a duplicate main tab instance', () => {
@@ -117,6 +144,15 @@ describe('CashierHeader main table and menu tabs', () => {
     const source = readFileSync(shellPath, 'utf8');
     expect(source).toContain("const showTableMetrics = computed(() => router.currentRoute.value.name === 'tables');");
     expect(source).not.toContain("const showTableMetrics = computed(() => router.currentRoute.value.name !== 'tables');");
+  });
+
+  it('keeps fulfillment filters and refresh desktop-only in their route pages', () => {
+    for (const page of ['PickupOrdersPage.vue', 'DeliveryOrdersPage.vue']) {
+      const source = readFileSync(resolve(process.cwd(), `src/pages/${page}`), 'utf8');
+      expect(source).toContain('v-if="!mobileViewport" class="pickup-queue-toolbar');
+      expect(source).toContain('class="workflow-refresh-button"');
+      expect(source).toContain("useMediaQuery('(max-width: 899px)')");
+    }
   });
 
   it('keeps the right tool rail anchored while only the menu search visibility changes', () => {

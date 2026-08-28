@@ -1503,6 +1503,7 @@
 /* Mobile ordering V5: one deep-navy search/table context, four operational
    actions, compact wrapped categories and a four-column direct-order grid. */
 .cashier-mobile-ordering-toolbar,
+.cashier-mobile-route-filters,
 .cashier-mobile-table-filters,
 .account-menu__mobile-label,
 .top-status-item__label--mobile { display: none; }
@@ -1951,4 +1952,147 @@
     scroll-snap-align: nearest;
     white-space: nowrap;
   }
+}
+
+/* Mobile unified operational headers V7 FINAL: every phone route reserves one
+   fixed three-slot device cluster and gives all variable width to route work. */
+@media (max-width: 899px) {
+  .cashier-header--main-tabs,
+  .cashier-header--status-only {
+    box-sizing: border-box;
+    height: var(--cashier-header-height);
+    grid-template-columns: minmax(0, 1fr) 132px;
+    grid-template-rows: 50px;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .cashier-mobile-route-filters {
+    grid-column: 1;
+    grid-row: 1;
+    box-sizing: border-box;
+    min-width: 0;
+    height: 50px;
+    align-items: stretch;
+    padding: 1px;
+    border: 1px solid rgb(153 190 208 / 13%);
+    border-radius: 9px;
+    color: #e9f3f6;
+    background: #102a39;
+  }
+
+  .cashier-mobile-table-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .cashier-mobile-operational-filters {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cashier-mobile-operational-filters::-webkit-scrollbar { display: none; }
+
+  .cashier-mobile-route-filters button {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 7px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 7px;
+    color: #b7c9d1;
+    background: transparent;
+    font: inherit;
+    font-size: clamp(10px, 2.8vw, 11px);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .cashier-mobile-operational-filters button {
+    min-width: max-content;
+    flex: 0 0 auto;
+    padding-inline: 12px;
+  }
+
+  .cashier-mobile-route-filters button + button {
+    box-shadow: inset 1px 0 rgb(153 190 208 / 10%);
+  }
+
+  .cashier-mobile-route-filters button.is-active {
+    color: #eafff4;
+    background: rgb(46 159 98 / 24%);
+    box-shadow: inset 0 0 0 1px rgb(142 226 184 / 28%);
+  }
+
+  .cashier-mobile-route-filters button.is-active b { color: #8ee2b8; }
+  .cashier-mobile-route-filters button:focus-visible {
+    outline: 1px solid rgb(142 226 184 / 72%);
+    outline-offset: -2px;
+  }
+
+  .cashier-header--main-tabs .cashier-top-status,
+  .cashier-header--status-only .cashier-top-status,
+  :root.cashier-standalone .cashier-header .cashier-top-status {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, 44px);
+    width: 132px;
+    min-width: 132px;
+    max-width: 132px;
+    height: 50px;
+    justify-content: stretch;
+    gap: 0;
+    padding: 0;
+  }
+
+  .cashier-header .cashier-top-status > * { grid-column: auto; }
+
+  .cashier-header .cashier-top-status .top-status-item {
+    box-sizing: border-box;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 48px;
+    min-height: 44px;
+    gap: 2px;
+    padding: 2px 1px;
+    border-left: 0;
+    border-radius: 7px;
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item__label--full,
+  .cashier-header .cashier-top-status .top-status-item__label--short { display: none; }
+  .cashier-header .cashier-top-status .top-status-item__label--mobile {
+    display: inline;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item--fullscreen,
+  .cashier-header .cashier-top-status .top-status-item--clock { display: none; }
 }

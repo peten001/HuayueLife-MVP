@@ -18,6 +18,11 @@ import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useI18n } from '@/i18n';
 import type { CashierPrintingAvailability } from '@/types';
 
+type MobileOperationalFilter = {
+  value: string;
+  label: string;
+};
+
 const props = defineProps<{
   totalTableCount: number;
   availableTableCount: number;
@@ -36,6 +41,10 @@ const props = defineProps<{
   showMainTabs?: boolean;
   activeMainTab?: 'TABLES' | 'MENU';
   currentTableLabel?: string;
+  mobileOperationalContext?: 'pickup' | 'delivery';
+  mobileOperationalFilters?: readonly MobileOperationalFilter[];
+  activeMobileOperationalFilter?: string;
+  mobileOperationalFilterAriaLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -44,6 +53,7 @@ const emit = defineEmits<{
   fullscreenError: [];
   selectTableFilter: [filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'];
   selectMainTab: [tab: 'TABLES' | 'MENU'];
+  selectMobileOperationalFilter: [filter: string];
   refreshTables: [];
 }>();
 
@@ -147,12 +157,13 @@ onBeforeUnmount(() => {
       'cashier-header--main-tabs': showMainTabs,
       'cashier-header--table-route': showMainTabs && activeMainTab !== 'MENU',
       'cashier-header--menu-route': showMainTabs && activeMainTab === 'MENU',
+      'cashier-header--operation-route': Boolean(mobileOperationalFilters?.length),
     }"
     data-testid="cashier-topbar"
   >
     <nav
       v-if="showMainTabs && activeMainTab !== 'MENU' && mobileViewport"
-      class="cashier-mobile-table-filters"
+      class="cashier-mobile-route-filters cashier-mobile-table-filters"
       :aria-label="t('stats.title')"
       data-testid="cashier-mobile-table-filters"
     >
@@ -167,6 +178,26 @@ onBeforeUnmount(() => {
       >
         <span>{{ item.label }}</span>
         <b>{{ item.value }}</b>
+      </button>
+    </nav>
+
+    <nav
+      v-if="mobileViewport && mobileOperationalFilters?.length"
+      class="cashier-mobile-route-filters cashier-mobile-operational-filters"
+      :class="`cashier-mobile-operational-filters--${mobileOperationalContext || 'route'}`"
+      :aria-label="mobileOperationalFilterAriaLabel || t('stats.title')"
+      :data-testid="`cashier-mobile-${mobileOperationalContext || 'route'}-filters`"
+    >
+      <button
+        v-for="item in mobileOperationalFilters"
+        :key="item.value"
+        type="button"
+        :class="{ 'is-active': activeMobileOperationalFilter === item.value }"
+        :data-testid="`mobile-${mobileOperationalContext || 'route'}-filter-${item.value.toLowerCase()}`"
+        :aria-pressed="activeMobileOperationalFilter === item.value"
+        @click="$emit('selectMobileOperationalFilter', item.value)"
+      >
+        <span>{{ item.label }}</span>
       </button>
     </nav>
 
@@ -257,7 +288,7 @@ onBeforeUnmount(() => {
 
     <section class="cashier-top-status" data-testid="top-status">
       <button
-        v-if="!mobileViewport || !showMainTabs || activeMainTab === 'MENU'"
+        v-if="!mobileViewport"
         type="button"
         class="top-status-item top-status-item--new-order"
         :class="{ 'top-status-item--active': newOrderCount > 0 }"
@@ -326,7 +357,7 @@ onBeforeUnmount(() => {
       </span>
 
       <button
-        v-if="!mobileViewport || !showMainTabs"
+        v-if="!mobileViewport"
         type="button"
         class="top-status-item top-status-item--fullscreen"
         :aria-label="fullscreen ? t('shell.exitFullscreen') : t('shell.enterFullscreen')"
@@ -342,7 +373,7 @@ onBeforeUnmount(() => {
       </button>
 
       <div
-        v-if="!mobileViewport || !showMainTabs"
+        v-if="!mobileViewport"
         class="top-status-item top-status-item--clock"
         :aria-label="t('shell.currentTime')"
         data-testid="top-clock"
