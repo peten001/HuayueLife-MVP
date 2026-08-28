@@ -1302,8 +1302,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* Mobile hotfix V2: keep one stable search/category block while only the
-     catalog below it scrolls. The route already begins below the 60px shell
+  /* Mobile density hotfix V4: keep one stable search/category block while only
+     the catalog below it scrolls. The route already begins below the 60px shell
      header, so top: 0 is the real status-bar edge without a second safe-area. */
   .table-overview-route.is-menu-tab > .cashier-workspace__content--table-overview {
     display: grid;
@@ -1325,9 +1325,9 @@
     top: 0;
     grid-template-rows: auto auto;
     align-content: start;
-    gap: 4px;
+    gap: 2px;
     min-height: 0;
-    padding: 4px 8px 6px;
+    padding: 2px 8px;
     border-bottom: 1px solid var(--cashier-border);
     background: var(--cashier-workspace-bg);
     box-shadow: 0 1px 2px rgb(8 35 52 / 6%);
@@ -1338,7 +1338,7 @@
     display: flex;
     grid-row: 2;
     flex-wrap: wrap;
-    row-gap: 4px;
+    row-gap: 0;
     column-gap: 10px;
     margin: 0;
     padding: 0;
@@ -1350,11 +1350,25 @@
 
   .table-ordering-workspace--embedded .table-ordering-header > .table-ordering-search {
     grid-row: 1;
+    height: 42px;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header > .table-ordering-search:focus-within {
+    border-color: var(--cashier-green-alpha-35);
+    box-shadow: inset 0 0 0 1px var(--cashier-green-alpha-14);
   }
 
   .table-ordering-workspace--embedded .table-ordering-header > .table-ordering-search input {
+    height: 100%;
+    min-height: 0;
     font-size: 16px;
     line-height: 1.25;
+  }
+
+  .table-ordering-workspace--embedded .table-ordering-header > .table-ordering-search input:focus-visible {
+    outline: none;
+    outline-offset: 0;
+    box-shadow: none;
   }
 
   .table-ordering-workspace--embedded .table-ordering-header .table-ordering-category-strip button {
@@ -1368,7 +1382,7 @@
 
   .table-ordering-workspace--embedded .table-ordering-products {
     min-height: 0;
-    padding: 3px 8px 8px;
+    padding: 2px 8px 8px;
     overflow: hidden;
   }
 

@@ -462,12 +462,17 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
   it('keeps one top safe-area owner and the iOS search and category density contracts', () => {
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
     const viewport = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
-    const mobileHotfix = styles.slice(styles.indexOf('/* Mobile hotfix V2:'));
+    const mobileHotfix = styles.slice(styles.indexOf('/* Mobile density hotfix V4:'));
 
     expect(styles).toMatch(/\.table-ordering-workspace--embedded\s*\{[^}]*padding-top:\s*0;/s);
-    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search input\s*\{[^}]*font-size:\s*16px;/s);
-    expect(mobileHotfix).toMatch(/\.table-ordering-category-strip\s*\{[^}]*row-gap:\s*4px;[^}]*column-gap:\s*10px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header\s*\{[^}]*gap:\s*2px;[^}]*padding:\s*2px 8px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search\s*\{[^}]*height:\s*42px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search:focus-within\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search input\s*\{[^}]*min-height:\s*0;[^}]*font-size:\s*16px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search input:focus-visible\s*\{[^}]*outline:\s*none;[^}]*box-shadow:\s*none;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-category-strip\s*\{[^}]*row-gap:\s*0;[^}]*column-gap:\s*10px;/s);
     expect(mobileHotfix).toMatch(/\.table-ordering-category-strip button\s*\{[^}]*min-height:\s*44px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-products\s*\{[^}]*padding:\s*2px 8px 8px;/s);
     expect(viewport).toContain('viewport-fit=cover');
     expect(viewport).not.toMatch(/maximum-scale|user-scalable\s*=\s*no/i);
   });
