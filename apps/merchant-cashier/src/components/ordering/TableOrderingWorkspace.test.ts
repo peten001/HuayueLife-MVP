@@ -1,4 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createPinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
@@ -455,6 +457,19 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
     expect(header.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
     expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
     expect(header.element.querySelector('label + nav')).not.toBeNull();
+  });
+
+  it('keeps one top safe-area owner and the iOS search and category density contracts', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
+    const viewport = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+    const mobileHotfix = styles.slice(styles.indexOf('/* Mobile hotfix V2:'));
+
+    expect(styles).toMatch(/\.table-ordering-workspace--embedded\s*\{[^}]*padding-top:\s*0;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-header > \.table-ordering-search input\s*\{[^}]*font-size:\s*16px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-category-strip\s*\{[^}]*row-gap:\s*4px;[^}]*column-gap:\s*10px;/s);
+    expect(mobileHotfix).toMatch(/\.table-ordering-category-strip button\s*\{[^}]*min-height:\s*44px;/s);
+    expect(viewport).toContain('viewport-fit=cover');
+    expect(viewport).not.toMatch(/maximum-scale|user-scalable\s*=\s*no/i);
   });
 
   it('supports explicit keyboard result selection without adding on an unselected Enter', async () => {

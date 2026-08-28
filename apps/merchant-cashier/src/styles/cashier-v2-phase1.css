@@ -1263,6 +1263,9 @@
 
   .table-ordering-workspace--embedded {
     grid-template-rows: auto minmax(0, 1fr);
+    /* The mobile shell already owns the iPhone top safe area. Embedded menu
+       content must not consume the same inset a second time. */
+    padding-top: 0;
     border: 0;
     border-radius: 0;
   }
@@ -1322,9 +1325,9 @@
     top: 0;
     grid-template-rows: auto auto;
     align-content: start;
-    gap: 8px;
+    gap: 4px;
     min-height: 0;
-    padding: 6px 8px 8px;
+    padding: 4px 8px 6px;
     border-bottom: 1px solid var(--cashier-border);
     background: var(--cashier-workspace-bg);
     box-shadow: 0 1px 2px rgb(8 35 52 / 6%);
@@ -1335,7 +1338,8 @@
     display: flex;
     grid-row: 2;
     flex-wrap: wrap;
-    gap: 6px;
+    row-gap: 4px;
+    column-gap: 10px;
     margin: 0;
     padding: 0;
     overflow: visible;
@@ -1348,10 +1352,16 @@
     grid-row: 1;
   }
 
+  .table-ordering-workspace--embedded .table-ordering-header > .table-ordering-search input {
+    font-size: 16px;
+    line-height: 1.25;
+  }
+
   .table-ordering-workspace--embedded .table-ordering-header .table-ordering-category-strip button {
     flex: 0 0 auto;
     min-height: 44px;
-    padding: 7px 10px;
+    padding: 5px 9px;
+    line-height: 1.15;
     overflow-wrap: anywhere;
     white-space: normal;
   }
