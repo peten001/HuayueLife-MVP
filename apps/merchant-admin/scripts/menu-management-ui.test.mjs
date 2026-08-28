@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('../src/pages/ProductsPage.vue', import.meta.url), 'utf8');
 
 assert.match(page, /class="table-shell product-table-shell"/, 'product table should have an overflow-specific shell');
+assert.match(page, /v-if="!isMobileProductList" class="table-shell product-table-shell"/, 'desktop and mobile product trees must not mount together');
+assert.match(page, /v-else-if="filteredProducts\.length" class="product-mobile-list"/, 'mobile product cards should mount only at the mobile breakpoint');
+assert.match(page, /window\.matchMedia\('\(max-width: 768px\)'\)/, 'runtime product tree should share the CSS breakpoint');
+assert.match(page, /loading="lazy" decoding="async"/, 'product images should defer decoding and offscreen loading');
 assert.match(page, /<colgroup>[\s\S]*?product-column[\s\S]*?actions-column/, 'desktop product table should declare all six column tracks');
 assert.match(page, /\.product-table \{[\s\S]*?min-width: 0;[\s\S]*?table-layout: fixed;/, 'desktop product table should size from its real container');
 assert.match(page, /\.product-table-shell \{[\s\S]*?overflow-x: clip;/, 'desktop product list must not depend on horizontal scrolling');

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiningTable, TableSessionDetail, TableSessionSummary } from '@/types';
 
 const apiMocks = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ vi.mock('@/api', async (importOriginal) => ({
   ...apiMocks,
 }));
 
-import { useTablesStore } from './tables';
+import { TABLE_SESSION_DETAIL_TTL_MS, useTablesStore } from './tables';
 
 const table: DiningTable = {
   id: 'table-1',
@@ -51,6 +51,7 @@ const detail: TableSessionDetail = {
 };
 
 describe('cashier table store real-session refresh', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     setActivePinia(createPinia());
     apiMocks.listDiningTables.mockReset().mockResolvedValue([table]);
@@ -61,6 +62,7 @@ describe('cashier table store real-session refresh', () => {
   });
 
   it('refreshes the selected TableSession without dropping the selection', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
     const store = useTablesStore();
     await store.fetchTables();
     await store.selectTable(table.id);
@@ -70,18 +72,22 @@ describe('cashier table store real-session refresh', () => {
       ...detail,
       totalAmountVnd: '75000',
     });
+    now.mockReturnValue(1_000 + TABLE_SESSION_DETAIL_TTL_MS + 1);
     await store.fetchTables();
+    await Promise.resolve();
 
     expect(store.selectedTableId).toBe(table.id);
     expect(store.selectedSessionDetail?.totalAmountVnd).toBe('75000');
   });
 
   it('keeps the last successful detail visible during a background refresh and on failure', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
     const store = useTablesStore();
     await store.fetchTables();
     await store.selectTable(table.id);
     const deferred = createDeferred<TableSessionDetail>();
     apiMocks.getTableSessionDetail.mockReturnValueOnce(deferred.promise);
+    now.mockReturnValue(1_000 + TABLE_SESSION_DETAIL_TTL_MS + 1);
 
     const refresh = store.fetchTables();
     await Promise.resolve();
@@ -188,24 +194,39 @@ describe('cashier table store real-session refresh', () => {
     expect(store.detailLoading).toBe(false);
   });
 
-  it('force refresh bypasses an in-flight request and only applies the newest revision', async () => {
-    const staleSessions = createDeferred<TableSessionSummary[]>();
-    const refreshedSummary = { ...summary, itemCount: 2, totalAmountVnd: '75000' };
-    apiMocks.listOpenTableSessions
-      .mockReturnValueOnce(staleSessions.promise)
-      .mockResolvedValueOnce([refreshedSummary]);
+  it('force refresh reuses an in-flight request instead of creating a duplicate first wave', async () => {
+    const sessions = createDeferred<TableSessionSummary[]>();
+    apiMocks.listOpenTableSessions.mockReturnValueOnce(sessions.promise);
     const store = useTablesStore();
 
-    const staleRequest = store.fetchTables();
+    const firstRequest = store.fetchTables();
     const forcedRequest = store.fetchTables({ force: true });
-    await forcedRequest;
-    staleSessions.resolve([summary]);
-    await staleRequest;
+    expect(apiMocks.listDiningTables).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listOpenTableSessions).toHaveBeenCalledTimes(1);
+    sessions.resolve([summary]);
+    await Promise.all([firstRequest, forcedRequest]);
 
-    expect(apiMocks.listDiningTables).toHaveBeenCalledTimes(2);
-    expect(apiMocks.listOpenTableSessions).toHaveBeenCalledTimes(2);
-    expect(store.openSessions[0]?.totalAmountVnd).toBe('75000');
+    expect(apiMocks.listDiningTables).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listOpenTableSessions).toHaveBeenCalledTimes(1);
+    expect(store.openSessions[0]?.totalAmountVnd).toBe('50000');
     expect(store.loading).toBe(false);
+  });
+
+  it('deduplicates session detail and reuses a fresh detail without blocking HTTP', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    const pending = createDeferred<TableSessionDetail>();
+    apiMocks.getTableSessionDetail.mockReturnValueOnce(pending.promise);
+
+    const first = store.selectTable(table.id);
+    const second = store.selectTable(table.id);
+    pending.resolve(detail);
+    await Promise.all([first, second]);
+    expect(apiMocks.getTableSessionDetail).toHaveBeenCalledTimes(1);
+
+    await store.selectTable(table.id);
+    expect(apiMocks.getTableSessionDetail).toHaveBeenCalledTimes(1);
+    expect(store.selectedSessionDetail).toEqual(detail);
   });
 
   it('checks out an accepted table session and removes it from the open-session list', async () => {

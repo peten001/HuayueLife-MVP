@@ -10,8 +10,6 @@ import {
   listOpenTableSessions,
   messageFromApiError,
 } from '@/api';
-import { usePollingTask } from '@/composables';
-import { cashierConfig } from '@/config';
 import { buildTableCards, canCloseTableSession } from '@/domain';
 import type {
   DiningTable,
@@ -19,6 +17,13 @@ import type {
   TableSessionDetail,
   TableSessionSummary,
 } from '@/types';
+
+export const TABLE_SESSION_DETAIL_TTL_MS = 10_000;
+
+interface CachedSessionDetail {
+  detail: TableSessionDetail;
+  fetchedAt: number;
+}
 
 export const useTablesStore = defineStore('cashier-tables', () => {
   const tables = ref<DiningTable[]>([]);
@@ -36,6 +41,8 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   let detailRequestSequence = 0;
   let dataGeneration = 0;
   let queryRevision = 0;
+  const detailCache = new Map<string, CachedSessionDetail>();
+  const detailRequests = new Map<string, Promise<TableSessionDetail>>();
 
   const tableCards = computed(() => buildTableCards(tables.value, openSessions.value));
   const selectedTable = computed(
@@ -44,8 +51,8 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   const canCloseSelectedSession = computed(() => canCloseTableSession(selectedSessionDetail.value));
 
   function fetchTables(options: { force?: boolean } = {}) {
-    if (options.force) invalidateTableRequests();
     if (fetchRequest) return fetchRequest;
+    if (options.force) queryRevision += 1;
     const generation = dataGeneration;
     const revision = queryRevision;
     loading.value = true;
@@ -92,13 +99,27 @@ export const useTablesStore = defineStore('cashier-tables', () => {
       : tableOrId;
     if (!table) throw new Error('Table not loaded');
     selectedTableId.value = table.id;
+    if (!table.currentSession) {
+      selectedSessionDetail.value = null;
+      detailLoading.value = false;
+      return null;
+    }
+    const sessionId = table.currentSession.id;
+    const cached = detailCache.get(sessionId);
+    if (cached) {
+      selectedSessionDetail.value = cached.detail;
+      detailLoading.value = false;
+      if (Date.now() - cached.fetchedAt >= TABLE_SESSION_DETAIL_TTL_MS) {
+        void refreshSelectedSession(queryRevision);
+      }
+      return cached.detail;
+    }
     selectedSessionDetail.value = null;
-    if (!table.currentSession) return null;
     detailLoading.value = true;
     error.value = '';
     errorKey.value = '';
     try {
-      const detail = await getTableSessionDetail(table.currentSession.id);
+      const detail = await requestSessionDetail(sessionId);
       if (generation === dataGeneration && requestSequence === detailRequestSequence) {
         selectedSessionDetail.value = detail;
       }
@@ -195,10 +216,25 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     const sessionId = table.currentSession.id;
     const requestSequence = ++detailRequestSequence;
     const changedSession = selectedSessionDetail.value?.id !== sessionId;
+    const cached = detailCache.get(sessionId);
+    if (cached) {
+      selectedSessionDetail.value = cached.detail;
+      detailLoading.value = false;
+      if (Date.now() - cached.fetchedAt < TABLE_SESSION_DETAIL_TTL_MS) {
+        return cached.detail;
+      }
+      void refreshSessionDetailInBackground(
+        sessionId,
+        tableId,
+        expectedRevision,
+        requestSequence,
+      );
+      return cached.detail;
+    }
     if (changedSession) selectedSessionDetail.value = null;
-    detailLoading.value = selectedSessionDetail.value === null;
+    detailLoading.value = true;
     try {
-      const detail = await getTableSessionDetail(sessionId);
+      const detail = await requestSessionDetail(sessionId);
       if (
         expectedRevision === queryRevision
         && requestSequence === detailRequestSequence
@@ -227,12 +263,17 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   function applySessionSnapshot(session: TableSessionDetail) {
     // Keep the mutation response authoritative over any older table/session
     // polling request that may still be in flight.
-    invalidateTableRequests();
+    invalidateTableSnapshot();
     detailRequestSequence += 1;
     detailLoading.value = false;
     openSessions.value = session.status === 'OPEN'
       ? [...openSessions.value.filter((candidate) => candidate.id !== session.id), session]
       : openSessions.value.filter((candidate) => candidate.id !== session.id);
+    if (session.status === 'OPEN') {
+      detailCache.set(session.id, { detail: session, fetchedAt: Date.now() });
+    } else {
+      detailCache.delete(session.id);
+    }
     if (selectedSessionDetail.value?.id === session.id && session.status === 'OPEN') {
       selectedTableId.value = session.tableId;
       selectedSessionDetail.value = session;
@@ -246,7 +287,10 @@ export const useTablesStore = defineStore('cashier-tables', () => {
 
   function clear() {
     dataGeneration += 1;
-    invalidateTableRequests();
+    invalidateTableSnapshot();
+    fetchRequest = null;
+    detailRequests.clear();
+    detailCache.clear();
     tables.value = [];
     openSessions.value = [];
     clearSelection();
@@ -256,24 +300,57 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     closing.value = false;
     checkingOut.value = false;
     lastRefreshAt.value = null;
-    livePolling.stop();
   }
 
-  function invalidateTableRequests() {
+  function invalidateTableSnapshot() {
     queryRevision += 1;
-    fetchRequest = null;
     loading.value = false;
   }
 
-  const livePolling = usePollingTask(async () => {
-    await fetchTables();
-  }, {
-    intervalMs: cashierConfig.livePollingIntervalMs,
-    runWhenHidden: false,
-    runWhenOffline: false,
-  });
-  const startLivePolling = () => livePolling.start(true);
-  const stopLivePolling = () => livePolling.stop();
+  function requestSessionDetail(sessionId: string) {
+    const existing = detailRequests.get(sessionId);
+    if (existing) return existing;
+    const generation = dataGeneration;
+    const request = getTableSessionDetail(sessionId)
+      .then((detail) => {
+        if (generation === dataGeneration) {
+          detailCache.set(sessionId, { detail, fetchedAt: Date.now() });
+        }
+        return detail;
+      })
+      .finally(() => {
+        if (detailRequests.get(sessionId) === request) detailRequests.delete(sessionId);
+      });
+    detailRequests.set(sessionId, request);
+    return request;
+  }
+
+  async function refreshSessionDetailInBackground(
+    sessionId: string,
+    tableId: string,
+    expectedRevision: number,
+    requestSequence: number,
+  ) {
+    try {
+      const detail = await requestSessionDetail(sessionId);
+      if (
+        expectedRevision === queryRevision
+        && requestSequence === detailRequestSequence
+        && selectedTableId.value === tableId
+      ) {
+        selectedSessionDetail.value = detail;
+      }
+    } catch (caught) {
+      if (expectedRevision === queryRevision && requestSequence === detailRequestSequence) {
+        error.value = messageFromApiError(caught);
+        errorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        if (caught instanceof CashierApiError && caught.code === 'TABLE_SESSION_NOT_FOUND') {
+          selectedSessionDetail.value = null;
+          detailCache.delete(sessionId);
+        }
+      }
+    }
+  }
 
   return {
     tables,
@@ -289,15 +366,12 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     error,
     errorKey,
     lastRefreshAt,
-    polling: livePolling.started,
     canCloseSelectedSession,
     fetchTables,
     selectTable,
     closeSelectedSession,
     checkoutSelectedSession,
     applySessionSnapshot,
-    startLivePolling,
-    stopLivePolling,
     clearSelection,
     clear,
   };

@@ -12,7 +12,6 @@ import {
   setMerchantOrderRounding,
   setMerchantOrderSettlementAdjustment,
 } from '@/api';
-import { cashierConfig } from '@/config';
 import {
   ACTIVE_ORDER_STATUSES,
   HISTORY_ORDER_STATUSES,
@@ -21,7 +20,6 @@ import {
   replaceOrder,
   todayInVietnam,
 } from '@/domain';
-import { usePollingTask } from '@/composables';
 import type {
   MerchantOrder,
   MerchantOrderAction,
@@ -114,11 +112,9 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     activeLoading.value = true;
     error.value = '';
     activeErrorKey.value = '';
-    const request = Promise.all(
-        ACTIVE_ORDER_STATUSES.map((status) => listMerchantOrders({ status })),
-      )
-      .then((groups) => {
-        const nextOrders = mergeOrders(...groups);
+    const request = listMerchantOrders({ statuses: [...ACTIVE_ORDER_STATUSES] })
+      .then((orders) => {
+        const nextOrders = mergeOrders(orders);
         if (generation === dataGeneration && revision === liveQueryRevision) {
           activeOrders.value = nextOrders;
         }
@@ -142,18 +138,44 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   }
 
   function refreshLiveOrders(options: { force?: boolean } = {}) {
-    if (options.force) invalidateLiveRequests();
     if (liveRequest) return liveRequest;
+    if (options.force) liveQueryRevision += 1;
     const generation = dataGeneration;
     const revision = liveQueryRevision;
-    const request = Promise.all([fetchPending(), fetchActive()])
-      .then(async () => {
+    pendingLoading.value = true;
+    activeLoading.value = true;
+    error.value = '';
+    pendingErrorKey.value = '';
+    activeErrorKey.value = '';
+    const request = listMerchantOrders({
+      statuses: ['PENDING_ACCEPTANCE', ...ACTIVE_ORDER_STATUSES],
+    })
+      .then(async (orders) => {
         if (generation !== dataGeneration || revision !== liveQueryRevision) return;
+        pendingOrders.value = mergeOrders(
+          orders.filter((order) => order.status === 'PENDING_ACCEPTANCE'),
+        );
+        activeOrders.value = mergeOrders(
+          orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status)),
+        );
+        notifyPendingSnapshot();
         lastLiveRefreshAt.value = new Date().toISOString();
         await refreshSelectedOrder();
       })
+      .catch((caught) => {
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          error.value = messageFromApiError(caught);
+          pendingErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+          activeErrorKey.value = apiErrorTranslationKey(caught, 'error.description');
+        }
+        throw caught;
+      })
       .finally(() => {
         if (liveRequest === request) liveRequest = null;
+        if (generation === dataGeneration && revision === liveQueryRevision) {
+          pendingLoading.value = false;
+          activeLoading.value = false;
+        }
       });
     liveRequest = request;
     return request;
@@ -490,9 +512,6 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
 
   function invalidateLiveRequests() {
     liveQueryRevision += 1;
-    pendingRequest = null;
-    activeRequest = null;
-    liveRequest = null;
     pendingLoading.value = false;
     activeLoading.value = false;
   }
@@ -500,6 +519,9 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
   function clear() {
     dataGeneration += 1;
     invalidateLiveRequests();
+    pendingRequest = null;
+    activeRequest = null;
+    liveRequest = null;
     historyRequestSequence += 1;
     settlementRequestSequence += 1;
     settlementDetailRequestSequence += 1;
@@ -527,16 +549,7 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     detailErrorKey.value = '';
     lastLiveRefreshAt.value = null;
     lastHistoryRefreshAt.value = null;
-    livePolling.stop();
   }
-
-  const livePolling = usePollingTask(refreshLiveOrders, {
-    intervalMs: cashierConfig.livePollingIntervalMs,
-    runWhenHidden: false,
-    runWhenOffline: false,
-  });
-  const startLivePolling = () => livePolling.start(true);
-  const stopLivePolling = () => livePolling.stop();
 
   return {
     pendingOrders,
@@ -565,7 +578,6 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     historyFilters,
     loading,
     liveOrders,
-    polling: livePolling.started,
     fetchPending,
     fetchActive,
     refreshLiveOrders,
@@ -580,8 +592,6 @@ export const useOrdersStore = defineStore('cashier-orders', () => {
     runAction,
     setRounding,
     setSettlementAdjustment,
-    startLivePolling,
-    stopLivePolling,
     clear,
   };
 });

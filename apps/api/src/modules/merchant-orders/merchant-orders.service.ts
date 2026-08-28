@@ -177,7 +177,7 @@ export class MerchantOrdersService {
     const orders = await this.prisma.order.findMany({
       where: {
         merchantId,
-        status: query.status,
+        status: query.status ?? (query.statuses?.length ? { in: query.statuses } : undefined),
         orderType: query.orderType,
         ...dateWhere,
       },
@@ -209,7 +209,7 @@ export class MerchantOrdersService {
     const orders = await this.prisma.order.findMany({
       where: {
         merchantId,
-        status: query.status,
+        status: query.status ?? (query.statuses?.length ? { in: query.statuses } : undefined),
         orderType: query.orderType,
         ...dateWhere,
       },

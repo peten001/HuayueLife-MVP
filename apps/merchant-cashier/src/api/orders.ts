@@ -22,6 +22,7 @@ export function listMerchantOrders(filters: MerchantOrderFilters = {}): Promise<
     : requestApi<MerchantOrder[]>('/merchant/orders', {
       query: {
         status: filters.status,
+        statuses: filters.statuses?.join(','),
         orderType: filters.orderType,
         date: filters.date,
       },

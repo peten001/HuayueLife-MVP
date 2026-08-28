@@ -288,28 +288,48 @@ describe('cashier order store request isolation', () => {
     expect(store.detailLoading).toBe(false);
   });
 
-  it('force live refresh bypasses in-flight polling and only applies the newest revision', async () => {
+  it('force live refresh reuses in-flight polling instead of starting a duplicate first wave', async () => {
     const stalePolling = createDeferred<MerchantOrder[]>();
-    const forcedPolling = createDeferred<MerchantOrder[]>();
     let pendingCall = 0;
-    apiMocks.listMerchantOrders.mockImplementation((filters: { status?: string }) => {
-      if (filters.status !== 'PENDING_ACCEPTANCE') return Promise.resolve([]);
+    apiMocks.listMerchantOrders.mockImplementation((filters: { statuses?: string[] }) => {
+      if (!filters.statuses?.includes('PENDING_ACCEPTANCE')) return Promise.resolve([]);
       pendingCall += 1;
-      return pendingCall === 1 ? stalePolling.promise : forcedPolling.promise;
+      return stalePolling.promise;
     });
     const store = useOrdersStore();
 
     const staleRequest = store.refreshLiveOrders();
     const forcedRequest = store.refreshLiveOrders({ force: true });
-    const refreshed = { ...pendingOrder, totalAmountVnd: '75000', itemAmountVnd: '75000' };
-    forcedPolling.resolve([refreshed]);
-    await forcedRequest;
+    expect(pendingCall).toBe(1);
     stalePolling.resolve([pendingOrder]);
-    await staleRequest;
+    await Promise.all([staleRequest, forcedRequest]);
 
-    expect(pendingCall).toBe(2);
-    expect(store.pendingOrders[0]?.totalAmountVnd).toBe('75000');
+    expect(pendingCall).toBe(1);
+    expect(store.pendingOrders[0]?.totalAmountVnd).toBe('50000');
     expect(store.pendingLoading).toBe(false);
+  });
+
+  it('loads every active status through one backward-compatible multi-status request', async () => {
+    apiMocks.listMerchantOrders.mockResolvedValueOnce([]);
+    const store = useOrdersStore();
+    await store.fetchActive();
+
+    expect(apiMocks.listMerchantOrders).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listMerchantOrders).toHaveBeenCalledWith({
+      statuses: ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'],
+    });
+  });
+
+  it('reduces the five live status requests to one union-equivalent request', async () => {
+    apiMocks.listMerchantOrders.mockResolvedValueOnce([pendingOrder]);
+    const store = useOrdersStore();
+    await store.refreshLiveOrders();
+
+    expect(apiMocks.listMerchantOrders).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listMerchantOrders).toHaveBeenCalledWith({
+      statuses: ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'],
+    });
+    expect(store.pendingOrders).toEqual([pendingOrder]);
   });
 });
 

@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
+import { cashierConfig } from '@/config';
+import { usePollingTask } from '@/composables';
 import {
   cashierWorkspaceEnabled,
   firstEnabledCashierWorkspace,
@@ -15,6 +17,7 @@ import {
 import { resolveOrderLocation } from '@/domain/order-location';
 import {
   useAuthStore,
+  useCatalogStore,
   useNetworkStore,
   useOrdersStore,
   usePrintingStore,
@@ -22,6 +25,7 @@ import {
   useTablesStore,
   useUiStore,
 } from '@/stores';
+import { bootstrapCashier } from './cashier-bootstrap';
 import type { MerchantOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
@@ -33,6 +37,7 @@ import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
 const router = useRouter();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
+const catalogStore = useCatalogStore();
 const ordersStore = useOrdersStore();
 const printingStore = usePrintingStore();
 const tablesStore = useTablesStore();
@@ -48,7 +53,19 @@ const { availability: printingAvailability } = storeToRefs(printingStore);
 const loggingOut = ref(false);
 const inboxOpen = ref(false);
 const refreshingTables = ref(false);
+const cashierReady = ref(false);
 let printingStatusTimer: number | undefined;
+
+const livePolling = usePollingTask(async () => {
+  await Promise.allSettled([
+    ordersStore.refreshLiveOrders(),
+    tablesStore.fetchTables(),
+  ]);
+}, {
+  intervalMs: cashierConfig.livePollingIntervalMs,
+  runWhenHidden: false,
+  runWhenOffline: false,
+});
 
 const identity = computed(() => ({
   merchantName:
@@ -133,10 +150,10 @@ async function logout() {
   if (loggingOut.value) return;
   loggingOut.value = true;
   try {
-    ordersStore.stopLivePolling();
-    tablesStore.stopLivePolling();
+    livePolling.stop();
     ordersStore.clear();
     tablesStore.clear();
+    catalogStore.clear();
     printingStore.clear();
     inboxOpen.value = false;
     await authStore.logout();
@@ -169,8 +186,7 @@ async function openInboxOrder(order: MerchantOrder) {
 async function recoverData() {
   await Promise.allSettled([
     ...(profile.value ? [] : [authStore.refreshProfile()]),
-    ordersStore.refreshLiveOrders(),
-    tablesStore.fetchTables(),
+    livePolling.runNow(),
     printingStore.refreshStatus(),
   ]);
 }
@@ -216,8 +232,10 @@ async function refreshTables() {
 
 watch(isAuthenticated, async (authenticated) => {
   if (!authenticated && !loggingOut.value) {
+    livePolling.stop();
     ordersStore.clear();
     tablesStore.clear();
+    catalogStore.clear();
     inboxOpen.value = false;
     await router.replace({ path: '/login', query: { expired: '1' } });
   }
@@ -253,21 +271,20 @@ watch(
 
 onMounted(async () => {
   networkStore.start();
-  ordersStore.startLivePolling();
-  tablesStore.startLivePolling();
-  await Promise.allSettled([
-    ordersStore.refreshLiveOrders(),
-    tablesStore.fetchTables(),
-    printingStore.refreshStatus(),
-  ]);
+  await bootstrapCashier({
+    loadTables: () => tablesStore.fetchTables(),
+    loadOrders: () => ordersStore.refreshLiveOrders(),
+    loadPrinting: () => printingStore.refreshStatus(),
+    markReady: () => { cashierReady.value = true; },
+    startPolling: () => livePolling.start(false),
+  });
   printingStatusTimer = window.setInterval(() => {
     if (online.value) void printingStore.refreshStatus().catch(() => undefined);
   }, 15_000);
 });
 
 onBeforeUnmount(() => {
-  ordersStore.stopLivePolling();
-  tablesStore.stopLivePolling();
+  livePolling.stop();
   networkStore.stop();
   if (printingStatusTimer !== undefined) window.clearInterval(printingStatusTimer);
 });
@@ -277,6 +294,7 @@ onBeforeUnmount(() => {
   <div
     class="cashier-shell cashier-shell--workflow"
     :class="{ 'cashier-shell--table-toolbar': showMainTabs }"
+    :data-cashier-ready="cashierReady ? 'true' : 'false'"
   >
     <CashierSidebar
       :merchant-name="identity.merchantName"

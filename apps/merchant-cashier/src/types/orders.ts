@@ -153,6 +153,7 @@ export interface MerchantOrderChatConversation {
 
 export interface MerchantOrderFilters {
   status?: OrderStatus;
+  statuses?: OrderStatus[];
   orderType?: OrderType;
   date?: string;
 }

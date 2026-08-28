@@ -41,6 +41,7 @@ import {
   type MerchantFeature,
 } from '@/utils/merchant-capabilities';
 import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
+import { resolveCachedMerchantSession } from './merchant-session-cache';
 
 type RouteRole = MerchantStaffRole;
 type RouteArea = 'merchant' | 'platform';
@@ -56,30 +57,33 @@ interface RouteMeta {
 
 async function resolveMerchantSession() {
   const stored = getMerchantStaff();
-  if (!getMerchantToken()) {
+  const token = getMerchantToken();
+  if (!token) {
     return null;
   }
   try {
-    const body = await getMerchantMe();
-    const user = body.user;
-    const role = user?.role;
-    if (!role) return null;
-    const session = {
-      id: user?.sub ?? '',
-      displayName: user?.username ?? '',
-      role,
-      mustChangePassword: Boolean(user?.mustChangePassword),
-      merchant: {
-        id: user?.merchantId ?? '',
-        nameZh: user?.merchant?.nameZh ?? '',
-        status: user?.merchant?.status ?? '',
-        merchantMode: user?.merchant?.merchantMode,
-        reportFeatureEnabled: user?.merchant?.reportFeatureEnabled,
-        capabilities: user?.merchant?.capabilities ?? [],
-      },
-    };
-    setMerchantStaff(session);
-    return session;
+    return await resolveCachedMerchantSession(token, async () => {
+      const body = await getMerchantMe();
+      const user = body.user;
+      const role = user?.role;
+      if (!role) return null;
+      const session = {
+        id: user?.sub ?? '',
+        displayName: user?.username ?? '',
+        role,
+        mustChangePassword: Boolean(user?.mustChangePassword),
+        merchant: {
+          id: user?.merchantId ?? '',
+          nameZh: user?.merchant?.nameZh ?? '',
+          status: user?.merchant?.status ?? '',
+          merchantMode: user?.merchant?.merchantMode,
+          reportFeatureEnabled: user?.merchant?.reportFeatureEnabled,
+          capabilities: user?.merchant?.capabilities ?? [],
+        },
+      };
+      setMerchantStaff(session);
+      return session;
+    });
   } catch {
     if (stored?.role && stored?.mustChangePassword !== undefined) {
       return stored;

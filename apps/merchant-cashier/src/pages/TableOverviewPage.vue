@@ -202,7 +202,7 @@ async function selectSessionOrder(order: TableSessionOrder) {
 
 async function syncRouteSelection() {
   const sequence = ++routeSequence;
-  if (!tableCards.value.length) await tablesStore.fetchTables();
+  if (!tableCards.value.length) return;
   const tableId = typeof route.params.tableId === 'string' ? route.params.tableId : '';
   const orderId = typeof route.query.order === 'string' ? route.query.order : '';
   if (!tableId) {
@@ -542,14 +542,15 @@ function guardMutationNavigation(destinationName: string | symbol | null | undef
 onBeforeRouteUpdate((to) => guardMutationNavigation(to.name));
 onBeforeRouteLeave((to) => guardMutationNavigation(to.name));
 
-watch(() => [route.params.tableId, route.query.order], () => void syncRouteSelection(), { immediate: true });
+watch(
+  () => [route.params.tableId, route.query.order, tableCards.value.length],
+  () => void syncRouteSelection(),
+  { immediate: true },
+);
 watch(selectedTableId, () => {
   orderingDraftLines.value = [];
 });
-onMounted(() => {
-  window.addEventListener('beforeunload', protectUnload);
-  void refresh(false);
-});
+onMounted(() => window.addEventListener('beforeunload', protectUnload));
 onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload));
 </script>
 

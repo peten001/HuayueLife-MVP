@@ -4,8 +4,14 @@ const PLATFORM_TOKEN_KEY = 'huayue_platform_token';
 const PLATFORM_ADMIN_KEY = 'huayue_platform_admin';
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+export const setToken = (token: string) => {
+  invalidateMerchantSessionCache();
+  localStorage.setItem(TOKEN_KEY, token);
+};
+export const clearToken = () => {
+  invalidateMerchantSessionCache();
+  localStorage.removeItem(TOKEN_KEY);
+};
 
 export function getMerchantStaff() {
   const raw = localStorage.getItem(STAFF_KEY);
@@ -96,3 +102,4 @@ export function setPlatformAdmin(admin: { username: string } | null) {
 export function clearPlatformAdmin() {
   localStorage.removeItem(PLATFORM_ADMIN_KEY);
 }
+import { invalidateMerchantSessionCache } from '@/router/merchant-session-cache';

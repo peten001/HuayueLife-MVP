@@ -1,6 +1,51 @@
 import { TableSessionsService } from './table-sessions.service';
 
 describe('TableSessionsService checkout', () => {
+  it('loads open-session summaries without product detail or full order items', async () => {
+    const prisma = {
+      tableSession: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: 17n,
+          sessionNo: 'TS-17',
+          merchantId: 7n,
+          tableId: 13n,
+          status: 'OPEN',
+          openedAt: new Date('2026-07-29T00:00:00.000Z'),
+          closedAt: null,
+          discountPayableRateBps: null,
+          discountAmountVnd: 0n,
+          discountAppliedByStaffId: null,
+          discountAppliedAt: null,
+          roundingAppliedByStaffId: null,
+          roundingAmountVnd: 0n,
+          table: { id: 13n, tableNo: 'A01', tableName: null },
+          orders: [{
+            status: 'ACCEPTED',
+            createdAt: new Date('2026-07-29T00:01:00.000Z'),
+            totalAmountVnd: 50_000n,
+            items: [{ quantity: 2 }],
+          }],
+        }]),
+      },
+    };
+    const service = new TableSessionsService(prisma as never, {} as never);
+
+    await expect(service.listOpenSessions(7n)).resolves.toEqual({
+      sessions: [expect.objectContaining({
+        id: 17n,
+        tableId: 13n,
+        orderCount: 1,
+        itemCount: 2,
+        totalAmountVnd: 50_000n,
+      })],
+    });
+
+    const query = prisma.tableSession.findMany.mock.calls[0]?.[0];
+    expect(query).not.toHaveProperty('include');
+    expect(query.select.orders.select.items.select).toEqual({ quantity: true });
+    expect(query.select.orders.select.items.select).not.toHaveProperty('product');
+  });
+
   it('passes through the existing related Chinese and Vietnamese product names for cashier display', async () => {
     const prisma = {
       tableSession: {

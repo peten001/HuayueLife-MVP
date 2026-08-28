@@ -1,5 +1,6 @@
 export * from './auth';
 export * from './chat';
+export * from './catalog';
 export * from './network';
 export * from './orders';
 export * from './printing';

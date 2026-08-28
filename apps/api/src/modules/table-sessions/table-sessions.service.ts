@@ -58,6 +58,42 @@ const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
   'DELIVERING',
 ];
 
+const OPEN_SESSION_SUMMARY_SELECT = {
+  id: true,
+  sessionNo: true,
+  merchantId: true,
+  tableId: true,
+  status: true,
+  openedAt: true,
+  closedAt: true,
+  discountPayableRateBps: true,
+  discountAmountVnd: true,
+  discountAppliedByStaffId: true,
+  discountAppliedAt: true,
+  roundingAppliedByStaffId: true,
+  roundingAmountVnd: true,
+  table: {
+    select: {
+      id: true,
+      tableNo: true,
+      tableName: true,
+    },
+  },
+  orders: {
+    select: {
+      status: true,
+      createdAt: true,
+      totalAmountVnd: true,
+      items: { select: { quantity: true } },
+    },
+    orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
+  },
+} satisfies Prisma.TableSessionSelect;
+
+type OpenSessionSummaryRow = Prisma.TableSessionGetPayload<{
+  select: typeof OPEN_SESSION_SUMMARY_SELECT;
+}>;
+
 @Injectable()
 export class TableSessionsService {
   private readonly logger = new Logger(TableSessionsService.name);
@@ -140,7 +176,7 @@ export class TableSessionsService {
   async listOpenSessions(merchantId: bigint) {
     const sessions = await this.prisma.tableSession.findMany({
       where: { merchantId, status: 'OPEN' },
-      include: this.sessionOrdersInclude,
+      select: OPEN_SESSION_SUMMARY_SELECT,
       orderBy: [{ openedAt: 'desc' }, { id: 'desc' }],
     });
 
@@ -949,7 +985,7 @@ export class TableSessionsService {
   }
 
   private serializeSessionSummary(
-    session: Awaited<ReturnType<typeof this.requireOwnedSession>>,
+    session: OpenSessionSummaryRow,
     table: { id: bigint; tableNo: string; tableName: string | null },
   ) {
     const summary = this.summarizeOrders(session.orders);

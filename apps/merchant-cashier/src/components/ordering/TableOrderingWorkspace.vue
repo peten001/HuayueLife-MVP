@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ImageIcon, Search, X } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import {
   apiErrorTranslationKey,
   CashierApiError,
   createMerchantTableOrder,
   isDefinitiveMutationRejection,
   isMutationOutcomeUncertain,
-  listCashierMenuCategories,
-  listCashierMenuProducts,
 } from '@/api';
 import {
   createMutationKey,
@@ -18,7 +17,7 @@ import {
   resolveMediaUrl,
 } from '@/domain';
 import { useI18n } from '@/i18n';
-import { useUiStore } from '@/stores';
+import { useCatalogStore, useUiStore } from '@/stores';
 import { useMediaQuery } from '@/composables';
 import type {
   CashierMenuCategory,
@@ -65,14 +64,12 @@ const emit = defineEmits<{
 
 const { t, locale } = useI18n();
 const uiStore = useUiStore();
+const catalogStore = useCatalogStore();
+const { categories, products, loading, errorKey: loadErrorKey } = storeToRefs(catalogStore);
 const mobileOrderingLayout = useMediaQuery('(max-width: 899px)');
-const categories = ref<CashierMenuCategory[]>([]);
-const products = ref<CashierMenuProduct[]>([]);
 const activeCategoryId = ref('ALL');
 const query = ref('');
-const loading = ref(false);
 const processing = ref(false);
-const loadErrorKey = ref('');
 const directAddQueue = ref<DirectAddAction[]>([]);
 const pendingOpenPayload = ref<CreateMerchantTableOrderInput | null>(null);
 const effectiveSessionId = ref(props.sessionId);
@@ -259,21 +256,11 @@ function resetWorkspaceView() {
 }
 
 async function loadCatalog() {
-  if (!props.open || loading.value) return;
-  loading.value = true;
-  loadErrorKey.value = '';
+  if (!props.open) return;
   try {
-    const [nextCategories, nextProducts] = await Promise.all([
-      listCashierMenuCategories(),
-      listCashierMenuProducts(),
-    ]);
-    if (!props.open) return;
-    categories.value = nextCategories;
-    products.value = nextProducts;
-  } catch (error) {
-    loadErrorKey.value = apiErrorTranslationKey(error, 'ordering.loadFailed');
-  } finally {
-    loading.value = false;
+    await catalogStore.loadCatalog();
+  } catch {
+    // The shared store exposes the localized loading error to this workspace.
   }
 }
 
@@ -349,7 +336,9 @@ async function drainDirectAddQueue() {
         if (isDefinitiveMutationRejection(error)) {
           directAddQueue.value.shift();
           clearSubmittedMutation();
-          if (apiErrorTranslationKey(error) === 'ordering.productUnavailable') await loadCatalog();
+          if (apiErrorTranslationKey(error) === 'ordering.productUnavailable') {
+            await catalogStore.loadCatalog({ force: true });
+          }
           continue;
         }
         outcomeUncertain.value = true;

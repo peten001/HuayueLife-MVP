@@ -76,6 +76,7 @@ export const demoRepository = {
   orders: (filters: MerchantOrderFilters = {}) => cloneFixture(
     orders.filter((order) =>
       (!filters.status || order.status === filters.status) &&
+      (!filters.statuses?.length || filters.statuses.includes(order.status)) &&
       (!filters.orderType || order.orderType === filters.orderType),
     ),
   ),

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, MessageCircle, RefreshCw, XCircle } from '@lucide/vue';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { apiErrorTranslationKey } from '@/api';
@@ -183,7 +183,6 @@ watch(
   },
   { immediate: true },
 );
-onMounted(() => void refresh(false));
 </script>
 
 <template>

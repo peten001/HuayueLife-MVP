@@ -40,7 +40,9 @@ const deletingProduct = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const deleteDialog = ref<HTMLElement | null>(null);
 const deleteCancelButton = ref<HTMLButtonElement | null>(null);
+const isMobileProductList = ref(false);
 let deleteTrigger: HTMLElement | null = null;
+let productListMedia: MediaQueryList | null = null;
 
 const searchKeyword = ref('');
 const selectedCategoryId = ref<'all' | string>('all');
@@ -630,7 +632,14 @@ function onDeleteDialogKeydown(event: KeyboardEvent) {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 }
 window.addEventListener('keydown', onDeleteDialogKeydown);
-onBeforeUnmount(() => window.removeEventListener('keydown', onDeleteDialogKeydown));
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onDeleteDialogKeydown);
+  productListMedia?.removeEventListener('change', syncProductListLayout);
+});
+
+function syncProductListLayout(event?: MediaQueryListEvent) {
+  isMobileProductList.value = event?.matches ?? productListMedia?.matches ?? false;
+}
 
 function openImagePicker() {
   fileInput.value?.click();
@@ -663,6 +672,9 @@ function clearImage() {
 }
 
 onMounted(async () => {
+  productListMedia = window.matchMedia('(max-width: 768px)');
+  syncProductListLayout();
+  productListMedia.addEventListener('change', syncProductListLayout);
   await loadData();
   resetCategoryForm();
   resetProductForm();
@@ -777,7 +789,7 @@ onMounted(async () => {
 
         <p v-if="productMessage" class="section-message">{{ productMessage }}</p>
 
-        <div class="table-shell product-table-shell">
+        <div v-if="!isMobileProductList" class="table-shell product-table-shell">
           <table class="product-table">
             <colgroup>
               <col class="product-column" />
@@ -802,7 +814,7 @@ onMounted(async () => {
                 <td>
                   <div class="product-cell">
                     <div class="product-thumb">
-                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" />
+                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" />
                       <span v-else>{{ pageCopy.noImage }}</span>
                     </div>
                     <div class="product-copy">
@@ -900,11 +912,11 @@ onMounted(async () => {
           </table>
         </div>
 
-        <div v-if="filteredProducts.length" class="product-mobile-list">
+        <div v-else-if="filteredProducts.length" class="product-mobile-list">
           <article v-for="row in filteredProducts" :key="row.id" class="product-mobile-card">
             <div class="product-mobile-head">
               <div class="product-thumb product-mobile-thumb">
-                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" />
+                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" />
                 <span v-else>{{ pageCopy.noImage }}</span>
               </div>
               <div class="product-copy product-mobile-copy">
@@ -984,7 +996,7 @@ onMounted(async () => {
             </div>
           </article>
         </div>
-        <div v-else class="product-mobile-empty empty-state">
+        <div v-else-if="isMobileProductList" class="product-mobile-empty empty-state">
           <strong>{{ pageCopy.listTitle }}</strong>
           <p>{{ pageCopy.searchPlaceholder }}</p>
         </div>
@@ -1216,7 +1228,7 @@ onMounted(async () => {
                 @change="onImageSelected"
               />
               <div class="image-preview-box">
-                <img v-if="imagePreviewUrl" v-bind="{ src: imagePreviewUrl }" :alt="pageCopy.imagePlaceholder" />
+                <img v-if="imagePreviewUrl" v-bind="{ src: imagePreviewUrl }" :alt="pageCopy.imagePlaceholder" loading="lazy" decoding="async" />
                 <span v-else>{{ pageCopy.imagePlaceholder }}</span>
               </div>
             </div>
