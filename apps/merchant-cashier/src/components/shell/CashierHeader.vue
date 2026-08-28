@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import {
   Bell,
+  ChevronDown,
   Clock,
   LoaderCircle,
   Maximize,
   Minimize,
   Printer,
   RefreshCw,
+  Search,
   Volume2,
   VolumeX,
   Wifi,
@@ -33,6 +35,7 @@ const props = defineProps<{
   showTableMetrics?: boolean;
   showMainTabs?: boolean;
   activeMainTab?: 'TABLES' | 'MENU';
+  currentTableLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -139,6 +142,38 @@ onBeforeUnmount(() => {
     }"
     data-testid="cashier-topbar"
   >
+    <div v-if="showMainTabs" class="cashier-mobile-ordering-toolbar" data-testid="cashier-mobile-ordering-toolbar">
+      <div class="cashier-mobile-search-context">
+        <div
+          id="cashier-mobile-menu-search"
+          class="cashier-mobile-menu-search"
+          data-testid="cashier-mobile-menu-search"
+        >
+          <button
+            v-if="activeMainTab !== 'MENU' || !currentTableLabel"
+            type="button"
+            class="cashier-mobile-search-placeholder"
+            :class="{ 'is-disabled': !currentTableLabel }"
+            :disabled="!currentTableLabel"
+            @click="$emit('selectMainTab', 'MENU')"
+          >
+            <Search :size="18" aria-hidden="true" />
+            <span>{{ t('ordering.searchPlaceholder') }}</span>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="cashier-mobile-current-table"
+          data-testid="cashier-mobile-current-table"
+          :title="currentTableLabel ? t('cashierV2.currentTableCompact', { table: currentTableLabel }) : t('cashierV2.selectTable')"
+          @click="$emit('selectMainTab', 'TABLES')"
+        >
+          <span>{{ currentTableLabel ? t('cashierV2.currentTableCompact', { table: currentTableLabel }) : t('cashierV2.selectTable') }}</span>
+          <ChevronDown :size="15" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+
     <div v-if="showMainTabs" class="cashier-toolbar-primary" data-testid="cashier-toolbar-primary">
       <nav class="cashier-primary-tabs" :aria-label="t('cashierV2.mainTabs')" data-testid="cashier-primary-tabs">
         <button
@@ -223,6 +258,7 @@ onBeforeUnmount(() => {
         </span>
         <span class="top-status-item__label top-status-item__label--full">{{ networkStatus.label }}</span>
         <span class="top-status-item__label top-status-item__label--short">{{ networkStatus.shortLabel }}</span>
+        <span class="top-status-item__label top-status-item__label--mobile">{{ t('cashierV2.mobileNetwork') }}</span>
       </span>
 
       <button
@@ -246,6 +282,7 @@ onBeforeUnmount(() => {
         <span class="top-status-item__label top-status-item__label--short">
           {{ soundEnabled ? t('sound.enabledShort') : t('sound.disabledShort') }}
         </span>
+        <span class="top-status-item__label top-status-item__label--mobile">{{ t('cashierV2.mobileSound') }}</span>
       </button>
 
       <span
@@ -258,6 +295,7 @@ onBeforeUnmount(() => {
         <span class="top-status-item__icon"><Printer :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
         <span class="top-status-item__label top-status-item__label--full">{{ printingStatus.label }}</span>
         <span class="top-status-item__label top-status-item__label--short">{{ printingStatus.shortLabel }}</span>
+        <span class="top-status-item__label top-status-item__label--mobile">{{ t('cashierV2.mobilePrint') }}</span>
       </span>
 
       <button

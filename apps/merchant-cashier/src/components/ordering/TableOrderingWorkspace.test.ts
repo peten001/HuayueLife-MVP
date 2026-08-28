@@ -110,7 +110,12 @@ function openResult(sessionId = 'session-1'): MerchantOrderMutationResult {
   return { ...mutationResult(product, sessionId), order: null };
 }
 
-function mountWorkspace(overrides: { sessionId?: string; embedded?: boolean; disabled?: boolean } = {}) {
+function mountWorkspace(overrides: {
+  sessionId?: string;
+  embedded?: boolean;
+  disabled?: boolean;
+  productQuantities?: Record<string, number>;
+} = {}) {
   return mount(TableOrderingWorkspace, {
     props: {
       open: true,
@@ -119,6 +124,7 @@ function mountWorkspace(overrides: { sessionId?: string; embedded?: boolean; dis
       sessionId: overrides.sessionId ?? 'session-1',
       embedded: overrides.embedded,
       disabled: overrides.disabled,
+      productQuantities: overrides.productQuantities,
     },
     global: {
       plugins: [createPinia()],
@@ -157,6 +163,21 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
     expect(wrapper.find('.table-ordering-footer').exists()).toBe(false);
     expect(wrapper.find('[data-testid="confirm-table-order"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('待提交');
+  });
+
+  it('renders only the canonical product quantity as an X badge and lets three digits expand', async () => {
+    const wrapper = mountWorkspace({ embedded: true, productQuantities: {} });
+    await flushPromises();
+    expect(productCard(wrapper).find('.table-ordering-product__quick-add').exists()).toBe(false);
+
+    await wrapper.setProps({ productQuantities: { [product.id]: 1 } });
+    expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X1');
+
+    await wrapper.setProps({ productQuantities: { [product.id]: 2 } });
+    expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X2');
+
+    await wrapper.setProps({ productQuantities: { [product.id]: 100 } });
+    expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X100');
   });
 
   it('shows a recoverable catalog failure and reloads from the visible retry action', async () => {
@@ -452,11 +473,11 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
 
     const header = wrapper.get('.table-ordering-header');
     const scroller = wrapper.get('[data-testid="table-ordering-products-scroller"]');
+    const search = header.get('[data-testid="table-ordering-search"]');
+    const categoryStrip = header.get('[data-testid="table-ordering-category-strip"]');
     expect(wrapper.findAll('[data-testid="table-ordering-category-strip"]')).toHaveLength(1);
-    expect(header.find('[data-testid="table-ordering-search"]').exists()).toBe(true);
-    expect(header.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
     expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
-    expect(header.element.querySelector('label + nav')).not.toBeNull();
+    expect(search.element.compareDocumentPosition(categoryStrip.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it('keeps one top safe-area owner and the iOS search and category density contracts', () => {
@@ -475,6 +496,22 @@ describe('TableOrderingWorkspace V6 direct ordering', () => {
     expect(mobileHotfix).toMatch(/\.table-ordering-products\s*\{[^}]*padding:\s*2px 8px 8px;/s);
     expect(viewport).toContain('viewport-fit=cover');
     expect(viewport).not.toMatch(/maximum-scale|user-scalable\s*=\s*no/i);
+  });
+
+  it('pins the V5 mobile four-column density, dark search and safe interaction contracts', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
+    const mobileV5 = styles.slice(styles.indexOf('/* Mobile ordering V5:'));
+    const source = readFileSync(resolve(process.cwd(), 'src/components/ordering/TableOrderingWorkspace.vue'), 'utf8');
+
+    expect(mobileV5).toMatch(/\.cashier-mobile-search-context\s*\{[^}]*background:\s*#102a39;/s);
+    expect(mobileV5).toMatch(/\.cashier-mobile-menu-search \.table-ordering-search:focus-within\s*\{[^}]*box-shadow:\s*none;/s);
+    expect(mobileV5).toMatch(/\.cashier-mobile-menu-search \.table-ordering-search input\s*\{[^}]*font-size:\s*16px;/s);
+    expect(mobileV5).toMatch(/\.table-ordering-product-grid\s*\{[^}]*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*5px;/s);
+    expect(mobileV5).toMatch(/\.table-ordering-product\s*\{[^}]*min-height:\s*116px;/s);
+    expect(mobileV5).toMatch(/\.table-ordering-product__content strong\s*\{[^}]*font-size:\s*12px;[^}]*-webkit-line-clamp:\s*2;/s);
+    expect(mobileV5).toMatch(/\.table-ordering-product__quick-add output\s*\{[^}]*max-width:\s*none;[^}]*overflow:\s*visible;[^}]*background:\s*#2e9f62;/s);
+    expect(source).toContain('X{{ canonicalQuantityForProduct(product.id) }}');
+    expect(source).not.toContain('<output>×');
   });
 
   it('supports explicit keyboard result selection without adding on an unselected Enter', async () => {

@@ -52,6 +52,7 @@ const props = defineProps<{
   disabled?: boolean;
   topDialogOpen?: boolean;
   embedded?: boolean;
+  productQuantities?: Record<string, number>;
 }>();
 
 const emit = defineEmits<{
@@ -192,6 +193,13 @@ function pendingQuantityForProduct(productId: string) {
     (quantity, action) => quantity + (action.productId === productId ? 1 : 0),
     0,
   );
+}
+
+function canonicalQuantityForProduct(productId: string) {
+  const canonicalQuantity = props.productQuantities?.[productId];
+  return canonicalQuantity === undefined
+    ? pendingQuantityForProduct(productId)
+    : Math.max(0, canonicalQuantity);
 }
 
 function productInteractionDisabled(productId: string) {
@@ -476,24 +484,22 @@ function hideBrokenImage(event: Event) {
           <span>{{ t('ordering.tableContext', { table: submittedContext?.tableLabel || tableLabel }) }}</span>
           <h2>{{ t('ordering.title') }}</h2>
         </div>
-        <label
-          v-if="embedded && mobileOrderingLayout"
-          class="table-ordering-search"
-          data-testid="table-ordering-search"
-        >
-          <Search :size="18" aria-hidden="true" />
-          <input
-            ref="searchInput"
-            v-model="query"
-            type="search"
-            :placeholder="t('ordering.searchPlaceholder')"
-            :aria-label="t('ordering.searchLabel')"
-            :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
-            autocomplete="off"
-            @keydown.stop="onKeydown"
-          />
-          <kbd>{{ t('ordering.searchShortcut') }}</kbd>
-        </label>
+        <Teleport v-if="embedded && mobileOrderingLayout" to="#cashier-mobile-menu-search">
+          <label class="table-ordering-search" data-testid="table-ordering-search">
+            <Search :size="18" aria-hidden="true" />
+            <input
+              ref="searchInput"
+              v-model="query"
+              type="search"
+              :placeholder="t('ordering.searchPlaceholder')"
+              :aria-label="t('ordering.searchLabel')"
+              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
+              autocomplete="off"
+              @keydown.stop="onKeydown"
+            />
+            <kbd>{{ t('ordering.searchShortcut') }}</kbd>
+          </label>
+        </Teleport>
         <Teleport v-else to="#cashier-toolbar-menu-search" :disabled="!embedded">
           <label class="table-ordering-search" data-testid="table-ordering-search">
             <Search :size="18" aria-hidden="true" />
@@ -592,7 +598,7 @@ function hideBrokenImage(event: Event) {
                 :ref="(element) => setProductCardRef(element as Element | null, index)"
                 class="table-ordering-product"
                 :class="{
-                  'is-selected': pendingQuantityForProduct(product.id) > 0,
+                  'is-selected': canonicalQuantityForProduct(product.id) > 0,
                   'is-keyboard-active': activeResultIndex === index,
                   'is-submitting': pendingQuantityForProduct(product.id) > 0,
                 }"
@@ -614,8 +620,8 @@ function hideBrokenImage(event: Event) {
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
                   <b class="table-ordering-product__price">{{ formatItemPrice(product.priceVnd, locale) }}</b>
-                  <div v-if="pendingQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
-                    <output>×{{ pendingQuantityForProduct(product.id) }}</output>
+                  <div v-if="canonicalQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
+                    <output>X{{ canonicalQuantityForProduct(product.id) }}</output>
                   </div>
                 </span>
                 <div class="table-ordering-product__content">

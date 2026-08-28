@@ -19,6 +19,7 @@ import {
   getOrCreatePendingReturnMutation,
   canCheckoutTableSession,
   canReturnOrderItems,
+  buildCanonicalTableBillLines,
   createMutationKey,
   hasUnresolvedCashierMutation,
   shouldBlockCashierMutationNavigation,
@@ -98,6 +99,14 @@ const session = computed(() => {
     ),
   };
 });
+const orderingProductQuantities = computed<Record<string, number>>(() =>
+  buildCanonicalTableBillLines(session.value?.orders || [], orderingDraftLines.value)
+    .reduce<Record<string, number>>((quantities, line) => {
+      const productId = line.item?.productId || line.product?.id;
+      if (productId) quantities[productId] = (quantities[productId] || 0) + line.quantity;
+      return quantities;
+    }, {}),
+);
 const dineInOrder = computed(() => {
   const order = selectedOrder.value;
   if (!order || order.orderType !== 'DINE_IN') return null;
@@ -595,6 +604,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
           :session-id="session?.id || ''"
           :disabled="writeDisabled"
           :top-dialog-open="topOrderingDialogOpen"
+          :product-quantities="orderingProductQuantities"
           @close="closeOrdering"
           @created="handleTableOrderCreated"
           @failed="handleOrderingFailure"

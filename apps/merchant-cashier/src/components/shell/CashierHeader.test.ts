@@ -53,6 +53,24 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.get('[data-testid="cashier-toolbar-menu-search"]').attributes('style') || '').not.toContain('display: none');
   });
 
+  it('exposes the mobile dark-toolbar search host, live table context and exactly four useful actions', async () => {
+    wrapper = mountHeader();
+    await wrapper.setProps({ activeMainTab: 'MENU', currentTableLabel: 'A03' });
+
+    expect(wrapper.findAll('[data-testid="cashier-mobile-ordering-toolbar"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="cashier-mobile-menu-search"]')).toHaveLength(1);
+    expect(wrapper.get('[data-testid="cashier-mobile-current-table"]').text()).toContain('桌台 A03');
+    expect(wrapper.get('[data-testid="top-network-status"]').text()).toContain('网络');
+    expect(wrapper.get('[data-testid="top-sound-status"]').text()).toContain('声音');
+    expect(wrapper.get('[data-testid="top-print-status"]').text()).toContain('打印');
+
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
+    const mobileV5 = styles.slice(styles.indexOf('/* Mobile ordering V5:'));
+    expect(mobileV5).toMatch(/\.cashier-top-status\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*44px\);/s);
+    expect(mobileV5).toMatch(/\.top-status-item--fullscreen,[^}]*\.top-status-item--clock\s*\{\s*display:\s*none;/s);
+    expect(mobileV5).toMatch(/\.top-status-item\s*\{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
+  });
+
   it('keeps the content-level table page free of a duplicate main tab instance', () => {
     const pagePath = resolve(process.cwd(), 'src/pages/TableOverviewPage.vue');
     const source = readFileSync(pagePath, 'utf8');

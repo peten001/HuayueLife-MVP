@@ -40,7 +40,7 @@ const soundStore = useSoundStore();
 const uiStore = useUiStore();
 const { session, profile, isAuthenticated, demoMode } = storeToRefs(authStore);
 const { pendingOrders } = storeToRefs(ordersStore);
-const { tableCards } = storeToRefs(tablesStore);
+const { tableCards, selectedTable, selectedSessionDetail } = storeToRefs(tablesStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { enabled: soundEnabled, supported: soundSupported, lastError: soundError } = storeToRefs(soundStore);
 const { availability: printingAvailability } = storeToRefs(printingStore);
@@ -86,6 +86,9 @@ const showTableMetrics = computed(() => router.currentRoute.value.name === 'tabl
 const showMainTabs = computed(() => router.currentRoute.value.name === 'tables');
 const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
   router.currentRoute.value.query.view === 'menu' ? 'MENU' : 'TABLES',
+);
+const currentTableLabel = computed(() =>
+  selectedSessionDetail.value?.tableNo || selectedTable.value?.tableNo || '',
 );
 
 async function logout() {
@@ -262,6 +265,7 @@ onBeforeUnmount(() => {
       :show-table-metrics="showTableMetrics"
       :show-main-tabs="showMainTabs"
       :active-main-tab="activeMainTab"
+      :current-table-label="currentTableLabel"
       @open-new-orders="openNewOrders"
       @toggle-sound="toggleSound"
       @fullscreen-error="uiStore.pushToast(t('error.operationFailed'), 'warning')"
@@ -276,9 +280,13 @@ onBeforeUnmount(() => {
     </main>
 
     <CashierMobileNavigation
+      :merchant-name="identity.merchantName"
+      :role="identity.role"
+      :logging-out="loggingOut"
       :show-tables="capabilities.tables"
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
+      @logout="logout"
     />
     <NewOrderInbox :open="inboxOpen" :orders="pendingOrders" @close="inboxOpen = false" @select="openInboxOrder" />
     <ToastRegion />
