@@ -2096,3 +2096,117 @@
   .cashier-header .cashier-top-status .top-status-item--fullscreen,
   .cashier-header .cashier-top-status .top-status-item--clock { display: none; }
 }
+
+/* Mobile unified header shell V8 FINAL: route controls and terminal status now
+   share one physical surface instead of rendering as adjacent dark cards. */
+@media (max-width: 899px) {
+  .cashier-header {
+    --mobile-header-shell-bg: #102a39;
+    --mobile-header-shell-border: rgb(153 190 208 / 18%);
+    --mobile-header-divider: rgb(183 215 228 / 16%);
+    --mobile-header-selected-bg: rgb(46 159 98 / 24%);
+    --mobile-header-selected-border: rgb(142 226 184 / 28%);
+    --mobile-header-focus: rgb(142 226 184 / 72%);
+    box-sizing: border-box;
+    height: var(--cashier-header-height);
+    grid-template-columns: minmax(0, 1fr) 132px;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0;
+    padding: 4px;
+    overflow: hidden;
+    border: 1px solid var(--mobile-header-shell-border);
+    border-radius: 10px;
+    color: #e9f3f6;
+    background: var(--mobile-header-shell-bg);
+  }
+
+  .cashier-header.cashier-header--main-tabs,
+  .cashier-header.cashier-header--status-only {
+    grid-template-columns: minmax(0, 1fr) 132px;
+  }
+
+  .cashier-header .cashier-mobile-route-filters,
+  .cashier-header .cashier-mobile-ordering-toolbar {
+    grid-column: 1;
+    grid-row: 1;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .cashier-header .cashier-mobile-search-context {
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .cashier-header .cashier-mobile-route-filters button {
+    min-height: 44px;
+    border-radius: 7px;
+  }
+
+  .cashier-header .cashier-mobile-route-filters button.is-active {
+    background: var(--mobile-header-selected-bg);
+    box-shadow: inset 0 0 0 1px var(--mobile-header-selected-border);
+  }
+
+  .cashier-header .cashier-mobile-route-filters button:focus-visible,
+  .cashier-header .cashier-mobile-search-placeholder:focus-visible {
+    outline-color: var(--mobile-header-focus);
+  }
+
+  .cashier-header .cashier-top-status,
+  :root.cashier-standalone .cashier-header .cashier-top-status {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, 44px);
+    width: 132px;
+    min-width: 132px;
+    max-width: 132px;
+    height: 100%;
+    justify-content: stretch;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-left: 1px solid var(--mobile-header-divider);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 100%;
+    min-height: 44px;
+    gap: 2px;
+    padding: 2px 1px;
+    border: 0;
+    border-radius: 7px;
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item + .top-status-item {
+    box-shadow: inset 1px 0 var(--mobile-header-divider);
+  }
+
+  .cashier-header .cashier-top-status .top-status-item:focus-visible {
+    outline: 1px solid var(--mobile-header-focus);
+    outline-offset: -2px;
+  }
+
+  .cashier-header .cashier-top-status .top-status-item__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+}

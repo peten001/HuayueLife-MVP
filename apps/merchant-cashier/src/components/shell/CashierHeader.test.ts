@@ -45,6 +45,7 @@ describe('CashierHeader main table and menu tabs', () => {
 
   it('replaces the former KPI region with exactly one main tab group', async () => {
     wrapper = mountHeader();
+    expect(wrapper.get('[data-testid="cashier-topbar"]').attributes('data-mobile-unified-shell')).toBeUndefined();
     expect(wrapper.findAll('[data-testid="cashier-primary-tabs"]')).toHaveLength(1);
     expect(wrapper.findAll('[data-testid^="main-tab-"]')).toHaveLength(2);
     expect(wrapper.find('[data-testid="top-metrics"]').exists()).toBe(false);
@@ -77,6 +78,16 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
+    const shell = wrapper.get('[data-testid="cashier-topbar"]');
+    expect(shell.attributes('data-mobile-unified-shell')).toBe('true');
+    expect(shell.attributes('data-mobile-header-context')).toBe('tables');
+    expect(shell.get('[data-testid="cashier-mobile-table-filters"]').attributes('data-mobile-business-context')).toBe('tables');
+    expect(shell.findAll('[data-status-role]')).toHaveLength(3);
+    expect(shell.findAll('[data-status-role]').map((item) => item.attributes('data-status-role'))).toEqual([
+      'network',
+      'sound',
+      'printer',
+    ]);
   });
 
   it('exposes only the menu search, readonly table context and three device statuses on mobile', async () => {
@@ -97,10 +108,13 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.get('[data-testid="top-sound-status"]').text()).toContain('声音');
     expect(wrapper.get('[data-testid="top-print-status"]').text()).toContain('打印');
     expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
+    expect(wrapper.get('[data-testid="cashier-topbar"]').attributes('data-mobile-header-context')).toBe('menu');
 
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
-    const mobileV7 = styles.slice(styles.indexOf('/* Mobile unified operational headers V7 FINAL:'));
-    expect(mobileV7).toMatch(/:root\.cashier-standalone \.cashier-header \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
+    const mobileV8 = styles.slice(styles.indexOf('/* Mobile unified header shell V8 FINAL:'));
+    expect(mobileV8).toMatch(/\.cashier-header\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 132px;[^}]*padding:\s*4px;[^}]*border-radius:\s*10px;/s);
+    expect(mobileV8).toMatch(/:root\.cashier-standalone \.cashier-header \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
+    expect(mobileV8).toMatch(/\.cashier-header \.cashier-mobile-route-filters,[\s\S]*?background:\s*transparent;/s);
   });
 
   it('moves delivery filters into one scrolling mobile header group', async () => {
@@ -126,9 +140,19 @@ describe('CashierHeader main table and menu tabs', () => {
     expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
+    expect(wrapper.get('[data-testid="cashier-topbar"]').attributes('data-mobile-header-context')).toBe('delivery');
 
     await wrapper.get('[data-testid="mobile-delivery-filter-delivering"]').trigger('click');
     expect(wrapper.emitted('selectMobileOperationalFilter')).toEqual([['DELIVERING']]);
+  });
+
+  it('uses the topbar itself as the single mobile shell without route-specific outer containers', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/shell/CashierHeader.vue'), 'utf8');
+    expect(source.match(/data-testid="cashier-topbar"/g)).toHaveLength(1);
+    expect(source).toContain(':data-mobile-unified-shell="mobileViewport ? \'true\' : undefined"');
+    expect(source).not.toContain('UnifiedMobileHeaderShell');
+    expect(source).not.toContain('MobileHeaderBusinessArea');
+    expect(source).not.toContain('MobileHeaderStatusGrid');
   });
 
   it('keeps the content-level table page free of a duplicate main tab instance', () => {

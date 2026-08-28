@@ -122,6 +122,10 @@ const mobileTableStats = computed(() => [
   { key: 'in-use', filter: 'IN_USE' as const, label: t('table.status.inUse'), value: props.inUseTableCount },
   { key: 'available', filter: 'AVAILABLE' as const, label: t('table.status.available'), value: props.availableTableCount },
 ]);
+const mobileHeaderContext = computed<'tables' | 'menu' | 'pickup' | 'delivery' | 'status'>(() => {
+  if (props.showMainTabs) return props.activeMainTab === 'MENU' ? 'menu' : 'tables';
+  return props.mobileOperationalContext || 'status';
+});
 
 async function toggleFullscreen() {
   try {
@@ -159,12 +163,15 @@ onBeforeUnmount(() => {
       'cashier-header--menu-route': showMainTabs && activeMainTab === 'MENU',
       'cashier-header--operation-route': Boolean(mobileOperationalFilters?.length),
     }"
+    :data-mobile-header-context="mobileViewport ? mobileHeaderContext : undefined"
+    :data-mobile-unified-shell="mobileViewport ? 'true' : undefined"
     data-testid="cashier-topbar"
   >
     <nav
       v-if="showMainTabs && activeMainTab !== 'MENU' && mobileViewport"
       class="cashier-mobile-route-filters cashier-mobile-table-filters"
       :aria-label="t('stats.title')"
+      data-mobile-business-context="tables"
       data-testid="cashier-mobile-table-filters"
     >
       <button
@@ -186,6 +193,7 @@ onBeforeUnmount(() => {
       class="cashier-mobile-route-filters cashier-mobile-operational-filters"
       :class="`cashier-mobile-operational-filters--${mobileOperationalContext || 'route'}`"
       :aria-label="mobileOperationalFilterAriaLabel || t('stats.title')"
+      :data-mobile-business-context="mobileOperationalContext || 'route'"
       :data-testid="`cashier-mobile-${mobileOperationalContext || 'route'}-filters`"
     >
       <button
@@ -201,7 +209,12 @@ onBeforeUnmount(() => {
       </button>
     </nav>
 
-    <div v-if="showMainTabs && activeMainTab === 'MENU'" class="cashier-mobile-ordering-toolbar" data-testid="cashier-mobile-ordering-toolbar">
+    <div
+      v-if="showMainTabs && activeMainTab === 'MENU'"
+      class="cashier-mobile-ordering-toolbar"
+      :data-mobile-business-context="mobileViewport ? 'menu' : undefined"
+      data-testid="cashier-mobile-ordering-toolbar"
+    >
       <div class="cashier-mobile-search-context">
         <div
           id="cashier-mobile-menu-search"
@@ -286,7 +299,11 @@ onBeforeUnmount(() => {
       </button>
     </section>
 
-    <section class="cashier-top-status" data-testid="top-status">
+    <section
+      class="cashier-top-status"
+      :data-mobile-status-grid="mobileViewport ? 'network-sound-printer' : undefined"
+      data-testid="top-status"
+    >
       <button
         v-if="!mobileViewport"
         type="button"
@@ -310,6 +327,7 @@ onBeforeUnmount(() => {
         :title="networkStatus.label"
         aria-live="polite"
         data-testid="top-network-status"
+        data-status-role="network"
       >
         <span class="top-status-item__icon">
           <component :is="networkStatus.icon" :size="28" :stroke-width="1.9" aria-hidden="true" />
@@ -328,6 +346,7 @@ onBeforeUnmount(() => {
         :aria-pressed="soundEnabled"
         :title="soundEnabled ? t('sound.enabled') : t('sound.disabled')"
         data-testid="top-sound-status"
+        data-status-role="sound"
         @click="$emit('toggleSound')"
       >
         <span class="top-status-item__icon">
@@ -349,6 +368,7 @@ onBeforeUnmount(() => {
         aria-disabled="true"
         data-testid="top-print-status"
         data-terminal-action="printer-diagnostics"
+        data-status-role="printer"
       >
         <span class="top-status-item__icon"><Printer :size="28" :stroke-width="1.9" aria-hidden="true" /></span>
         <span class="top-status-item__label top-status-item__label--full">{{ printingStatus.label }}</span>
