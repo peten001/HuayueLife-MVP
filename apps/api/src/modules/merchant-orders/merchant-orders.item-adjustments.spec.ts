@@ -631,6 +631,44 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     },
   );
 
+  it('removes a quantity-one item without cancelling or releasing while the same order has another item', async () => {
+    const tx = adjustmentTx('ACCEPTED', { itemQuantity: 1, otherItemCount: 1 });
+    const { service } = buildService(tx);
+
+    await service.returnOrderItem(7n, 3n, 41n, 71n, {
+      requestKey: 'return_quantity_one_with_other_item',
+      expectedQuantity: 1,
+      returnQuantity: 1,
+    });
+
+    expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
+    expect(tx.order.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 41n,
+        merchantId: 7n,
+        status: 'ACCEPTED',
+        tableSessionId: 51n,
+      },
+      data: { itemAmountVnd: 1000n, totalAmountVnd: 1000n },
+    });
+    expect(tx.order.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'CANCELLED' }),
+    }));
+    expect(tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
+    }));
+    expect(tx.orderStatusLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'ORDER_ITEM_RETURNED',
+        metadata: expect.objectContaining({
+          afterQuantity: 0,
+          tableSessionAutoClosed: false,
+          tableReleased: false,
+        }),
+      }),
+    });
+  });
+
   it('cancels only the emptied order while another effective order keeps the table open', async () => {
     const tx = adjustmentTx('ACCEPTED', {
       otherOrders: [{ id: 42n, status: 'PREPARING', itemQuantity: 1 }],

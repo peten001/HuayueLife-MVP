@@ -18,6 +18,8 @@ export interface PendingReturnMutation {
   returnQuantity: number;
 }
 
+export type CommittedDecreaseExecutionPath = 'DECREASE' | 'RETURN';
+
 export function canDecreaseOrderItems(
   order: Pick<MerchantOrder, 'orderType' | 'status' | 'tableSessionId'>,
 ) {
@@ -32,6 +34,25 @@ export function canReturnOrderItems(
   return order.orderType === 'DINE_IN'
     && Boolean(order.tableSessionId)
     && RETURNABLE_STATUSES.has(order.status);
+}
+
+export function resolveCommittedDecreaseExecutionPath(
+  order: Pick<MerchantOrder, 'orderType' | 'status' | 'tableSessionId'>,
+  canonicalQuantity: number,
+  itemQuantity: number,
+): CommittedDecreaseExecutionPath | null {
+  if (canonicalQuantity <= 0 || itemQuantity <= 0) return null;
+  if (canReturnOrderItems(order)) return 'RETURN';
+  if (canDecreaseOrderItems(order)) return 'DECREASE';
+  return null;
+}
+
+export function hasItemAdjustmentInFlight(input: {
+  adjustmentLoadingId: string;
+  pendingDecrease: PendingDecreaseMutation | null;
+  pendingReturn: PendingReturnMutation | null;
+}) {
+  return Boolean(input.adjustmentLoadingId || input.pendingDecrease || input.pendingReturn);
 }
 
 export function createMutationKey(prefix: 'add' | 'decrease' | 'return' | 'transfer') {

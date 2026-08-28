@@ -5,8 +5,10 @@ import {
   createMutationKey,
   getOrCreatePendingDecreaseMutation,
   getOrCreatePendingReturnMutation,
+  hasItemAdjustmentInFlight,
   hasUnresolvedCashierMutation,
   isPendingDecreaseInlineRetryReachable,
+  resolveCommittedDecreaseExecutionPath,
   shouldBlockCashierMutationNavigation,
 } from './item-adjustments';
 
@@ -50,6 +52,63 @@ describe('cashier item-adjustment policy', () => {
       })).toBe(false);
     },
   );
+
+  it('routes pending quantities 2→1 and 1→0 directly through the canonical decrease path', () => {
+    const order = {
+      orderType: 'DINE_IN' as const,
+      status: 'PENDING_ACCEPTANCE' as const,
+      tableSessionId: 'session-1',
+    };
+
+    expect(resolveCommittedDecreaseExecutionPath(order, 2, 2)).toBe('DECREASE');
+    expect(resolveCommittedDecreaseExecutionPath(order, 1, 1)).toBe('DECREASE');
+  });
+
+  it.each(['ACCEPTED', 'PREPARING', 'READY'] as const)(
+    'routes the final serving in %s directly through the canonical return path',
+    (status) => {
+      expect(resolveCommittedDecreaseExecutionPath({
+        orderType: 'DINE_IN',
+        status,
+        tableSessionId: 'session-1',
+      }, 1, 1)).toBe('RETURN');
+    },
+  );
+
+  it('does not start an adjustment for an empty or ineligible committed row', () => {
+    expect(resolveCommittedDecreaseExecutionPath({
+      orderType: 'DINE_IN',
+      status: 'PENDING_ACCEPTANCE',
+      tableSessionId: 'session-1',
+    }, 0, 1)).toBeNull();
+    expect(resolveCommittedDecreaseExecutionPath({
+      orderType: 'DINE_IN',
+      status: 'COMPLETED',
+      tableSessionId: 'session-1',
+    }, 1, 1)).toBeNull();
+  });
+
+  it('blocks rapid repeat adjustment starts while a request or retry key is active', () => {
+    const decrease = getOrCreatePendingDecreaseMutation(null, {
+      orderId: 'order-1', itemId: 'item-1', expectedQuantity: 1,
+    }, () => 'decrease-target-zero');
+    const returned = getOrCreatePendingReturnMutation(null, {
+      orderId: 'order-1', itemId: 'item-1', expectedQuantity: 1, returnQuantity: 1,
+    }, () => 'return-target-zero');
+
+    expect(hasItemAdjustmentInFlight({
+      adjustmentLoadingId: '', pendingDecrease: null, pendingReturn: null,
+    })).toBe(false);
+    expect(hasItemAdjustmentInFlight({
+      adjustmentLoadingId: 'item-1', pendingDecrease: null, pendingReturn: null,
+    })).toBe(true);
+    expect(hasItemAdjustmentInFlight({
+      adjustmentLoadingId: '', pendingDecrease: decrease, pendingReturn: null,
+    })).toBe(true);
+    expect(hasItemAdjustmentInFlight({
+      adjustmentLoadingId: '', pendingDecrease: null, pendingReturn: returned,
+    })).toBe(true);
+  });
 
   it('creates distinct operation-scoped keys', () => {
     const first = createMutationKey('add');

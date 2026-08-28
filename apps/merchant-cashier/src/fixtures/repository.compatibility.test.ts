@@ -148,6 +148,42 @@ describe('fixture repository WebView compatibility', () => {
     })).toThrowError(expect.objectContaining({ code: 'TABLE_SESSION_CLOSED' }));
   });
 
+  it('closes and releases a dynamically opened demo table after its final item is returned', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+
+    const opened = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'fixture-open-dynamic-table',
+      items: [],
+    });
+    const added = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'fixture-add-dynamic-table-item',
+      items: [{ productId: demoRepository.products()[0]!.id, quantity: 1 }],
+    });
+    const item = added.order!.items[0]!;
+    const returned = demoRepository.returnOrderItem(added.order!.id, item.id, {
+      requestKey: 'fixture-return-dynamic-table-final-item',
+      expectedQuantity: 1,
+      returnQuantity: 1,
+    });
+
+    expect(returned.order).toEqual(expect.objectContaining({
+      status: 'CANCELLED',
+      settlementStatus: 'UNSETTLED',
+      items: [],
+    }));
+    expect(returned.session).toEqual(expect.objectContaining({
+      id: opened.session.id,
+      tableId: 'demo-table-10',
+      status: 'CLOSED',
+      itemCount: 0,
+      totalAmountVnd: '0',
+    }));
+    expect(demoRepository.currentSession('demo-table-10')).toBeNull();
+    expect(demoRepository.openSessions().some((session) => session.id === opened.session.id)).toBe(false);
+  });
+
   it('keeps the order and table open after a partial return', async () => {
     vi.resetModules();
     const { demoRepository, resetDemoRepository } = await import('./repository');

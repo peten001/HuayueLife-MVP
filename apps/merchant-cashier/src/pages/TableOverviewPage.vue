@@ -18,10 +18,11 @@ import {
   getOrCreatePendingDecreaseMutation,
   getOrCreatePendingReturnMutation,
   canCheckoutTableSession,
-  canReturnOrderItems,
   buildCanonicalTableBillLines,
   createMutationKey,
+  hasItemAdjustmentInFlight,
   hasUnresolvedCashierMutation,
+  resolveCommittedDecreaseExecutionPath,
   shouldBlockCashierMutationNavigation,
   type PendingDecreaseMutation,
   type PendingReturnMutation,
@@ -34,7 +35,6 @@ import { networkWritesDisabled } from '@/layouts/network-write-guard';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import CheckoutPaymentDialog from '@/components/settlement/CheckoutPaymentDialog.vue';
 import TableOrderingWorkspace from '@/components/ordering/TableOrderingWorkspace.vue';
 import ReturnItemDialog from '@/components/orders/ReturnItemDialog.vue';
@@ -81,7 +81,6 @@ const returnDialogLastOrderItem = ref(false);
 const returnDialogLastTableItem = ref(false);
 const pendingReturnMutation = ref<PendingReturnMutation | null>(null);
 const directReturnInFlight = ref(false);
-const pendingDecreaseConfirm = ref<{ item: OrderItem; order: TableSessionOrder } | null>(null);
 const transferOpen = ref(false);
 const transferLoading = ref(false);
 const transferError = ref('');
@@ -131,7 +130,6 @@ const topOrderingDialogOpen = computed(() => Boolean(
   checkoutConfirmOpen.value
   || adjustmentOpen.value
   || returnDialogItem.value
-  || pendingDecreaseConfirm.value
   || transferOpen.value
   || (pendingDecreaseMutation.value && !adjustmentLoadingId.value),
 ));
@@ -417,16 +415,21 @@ function returnContext(order: TableSessionOrder) {
 }
 
 async function handleCommittedDecrease(item: OrderItem, order: TableSessionOrder, canonicalQuantity: number) {
-  if (canonicalQuantity <= 0 || Number(item.quantity || 0) <= 0) return;
-  if (canonicalQuantity === 1) {
-    if (canReturnOrderItems(returnContext(order))) requestReturn(item, order);
-    else pendingDecreaseConfirm.value = { item, order };
-    return;
-  }
-  if (!canReturnOrderItems(returnContext(order))) {
+  if (hasItemAdjustmentInFlight({
+    adjustmentLoadingId: adjustmentLoadingId.value,
+    pendingDecrease: pendingDecreaseMutation.value,
+    pendingReturn: pendingReturnMutation.value,
+  })) return;
+  const executionPath = resolveCommittedDecreaseExecutionPath(
+    returnContext(order),
+    canonicalQuantity,
+    Number(item.quantity || 0),
+  );
+  if (executionPath === 'DECREASE') {
     await decreaseItem(item, order);
     return;
   }
+  if (executionPath !== 'RETURN') return;
   requestReturn(item, order);
   if (returnDialogItem.value?.id !== item.id) return;
   directReturnInFlight.value = true;
@@ -437,20 +440,12 @@ async function handleCommittedDecrease(item: OrderItem, order: TableSessionOrder
   }
 }
 
-function cancelPendingDecreaseConfirm() {
-  if (adjustmentLoadingId.value) return;
-  pendingDecreaseConfirm.value = null;
-}
-
-async function confirmPendingDecrease() {
-  const target = pendingDecreaseConfirm.value;
-  if (!target || adjustmentLoadingId.value) return;
-  pendingDecreaseConfirm.value = null;
-  await decreaseItem(target.item, target.order);
-}
-
 function requestReturn(item: OrderItem, sourceOrder?: TableSessionOrder) {
-  if (writeDisabled.value || pendingDecreaseMutation.value) return;
+  if (writeDisabled.value || hasItemAdjustmentInFlight({
+    adjustmentLoadingId: adjustmentLoadingId.value,
+    pendingDecrease: pendingDecreaseMutation.value,
+    pendingReturn: pendingReturnMutation.value,
+  })) return;
   if (Number(item.quantity || 0) <= 0) {
     uiStore.pushToast(t('itemAdjustment.noReturnableQuantity'), 'error');
     return;
@@ -550,7 +545,6 @@ onBeforeRouteLeave((to) => guardMutationNavigation(to.name));
 watch(() => [route.params.tableId, route.query.order], () => void syncRouteSelection(), { immediate: true });
 watch(selectedTableId, () => {
   orderingDraftLines.value = [];
-  pendingDecreaseConfirm.value = null;
 });
 onMounted(() => {
   window.addEventListener('beforeunload', protectUnload);
@@ -647,16 +641,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
       />
     </aside>
     <PendingDecreaseRecovery :open="Boolean(pendingDecreaseMutation) && !adjustmentLoadingId" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" @retry="pendingDecreaseMutation && executeDecrease(pendingDecreaseMutation)" />
-    <ConfirmDialog
-      :open="Boolean(pendingDecreaseConfirm)"
-      :title="t('itemAdjustment.removeLastTitle')"
-      :description="t('itemAdjustment.removeLastDescription')"
-      :cancel-label="t('common.cancel')"
-      :confirm-label="t('itemAdjustment.removeLastConfirm')"
-      :loading="Boolean(adjustmentLoadingId)"
-      @cancel="cancelPendingDecreaseConfirm"
-      @confirm="confirmPendingDecrease"
-    />
     <ReturnItemDialog :open="Boolean(returnDialogItem) && !directReturnInFlight" :item="returnDialogItem" :loading="Boolean(adjustmentLoadingId)" :disabled="writeDisabled" :outcome-uncertain="Boolean(pendingReturnMutation) && !adjustmentLoadingId" :fixed-quantity="pendingReturnMutation?.returnQuantity" :last-order-item="returnDialogLastOrderItem" :last-table-item="returnDialogLastTableItem" @cancel="cancelReturn" @confirm="confirmReturn" />
     <CheckoutPaymentDialog
       :open="checkoutConfirmOpen"

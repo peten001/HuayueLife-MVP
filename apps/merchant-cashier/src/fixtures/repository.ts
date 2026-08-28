@@ -46,7 +46,12 @@ let sessionDiscountPayableRateBps: number | null = null;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 let nextExtraSession = 2;
-let extraSessions = new Map<string, { id: string; tableId: string; openedAt: string }>();
+let extraSessions = new Map<string, {
+  id: string;
+  tableId: string;
+  openedAt: string;
+  closedAt: string | null;
+}>();
 let openMutationResults = new Map<string, MerchantOrderMutationResult>();
 
 export function resetDemoRepository() {
@@ -154,11 +159,15 @@ export const demoRepository = {
   tables: () => cloneFixture(demoTables),
   openSessions: () => [
     ...(!sessionClosed ? [buildSessionSummary()] : []),
-    ...[...extraSessions.values()].map((session) => buildSessionSummary(session.id)),
+    ...[...extraSessions.values()]
+      .filter((session) => !session.closedAt)
+      .map((session) => buildSessionSummary(session.id)),
   ],
   currentSession: (tableId: string) => {
     if (tableId === sessionTableId && !sessionClosed) return buildSessionSummary();
-    const session = [...extraSessions.values()].find((candidate) => candidate.tableId === tableId);
+    const session = [...extraSessions.values()].find(
+      (candidate) => candidate.tableId === tableId && !candidate.closedAt,
+    );
     return session ? buildSessionSummary(session.id) : null;
   },
   session: (id: string) => {
@@ -386,11 +395,12 @@ export const demoRepository = {
       order.cancelledAt = order.updatedAt;
       order.cancelReason = 'Demo order automatically cancelled after its final item was returned';
     }
-    const effectiveQuantity = tableOrders()
+    const sessionId = order.tableSessionId ?? 'demo-session-1';
+    const effectiveQuantity = tableOrders(sessionId)
       .filter((candidate) => candidate.status !== 'CANCELLED')
       .flatMap((candidate) => candidate.items)
       .reduce((sum, candidate) => sum + candidate.quantity, 0);
-    if (effectiveQuantity === 0) sessionClosed = true;
+    if (effectiveQuantity === 0) closeDemoSession(sessionId);
     return cacheAdjustmentResult(order, input.requestKey);
   },
 };
@@ -460,12 +470,15 @@ function ensureOpenDemoTable(tableId: string) {
     throw conflict('TABLE_NOT_AVAILABLE', 'Demo table is not available');
   }
   if (tableId === sessionTableId && !sessionClosed) return 'demo-session-1';
-  const existing = [...extraSessions.values()].find((session) => session.tableId === tableId);
+  const existing = [...extraSessions.values()].find(
+    (session) => session.tableId === tableId && !session.closedAt,
+  );
   if (existing) return existing.id;
   const session = {
     id: `demo-session-${nextExtraSession++}`,
     tableId,
     openedAt: new Date().toISOString(),
+    closedAt: null,
   };
   extraSessions.set(session.id, session);
   return session.id;
@@ -473,11 +486,21 @@ function ensureOpenDemoTable(tableId: string) {
 
 function requireOpenDemoSession(order: MerchantOrder) {
   const primaryClosed = order.tableSessionId === 'demo-session-1' && sessionClosed;
-  const extraMissing = order.tableSessionId !== 'demo-session-1'
-    && !extraSessions.has(order.tableSessionId ?? '');
-  if (primaryClosed || extraMissing) {
+  const extraSession = order.tableSessionId === 'demo-session-1'
+    ? null
+    : extraSessions.get(order.tableSessionId ?? '');
+  if (primaryClosed || (order.tableSessionId !== 'demo-session-1' && (!extraSession || extraSession.closedAt))) {
     throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
   }
+}
+
+function closeDemoSession(sessionId: string) {
+  if (sessionId === 'demo-session-1') {
+    sessionClosed = true;
+    return;
+  }
+  const session = extraSessions.get(sessionId);
+  if (session) session.closedAt = new Date().toISOString();
 }
 
 function recalculateDemoOrder(order: MerchantOrder) {
@@ -534,7 +557,7 @@ function buildSessionSummary(sessionId = 'demo-session-1'): TableSessionSummary 
   const isPrimary = sessionId === 'demo-session-1';
   const sessionRoundingApplied = isPrimary ? roundingApplied : false;
   const sessionDiscountRate = isPrimary ? sessionDiscountPayableRateBps : null;
-  const sessionClosedState = isPrimary ? sessionClosed : false;
+  const sessionClosedState = isPrimary ? sessionClosed : Boolean(extraSession?.closedAt);
   const sessionOpenedAt = extraSession?.openedAt ?? firstOpenedOrder?.createdAt ?? new Date().toISOString();
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: totalAmountVnd,
@@ -542,7 +565,7 @@ function buildSessionSummary(sessionId = 'demo-session-1'): TableSessionSummary 
     roundingEnabled: sessionRoundingApplied,
   });
   return {
-    id: sessionId, sessionNo: `DEMO-SESSION-${sessionId.replace('demo-session-', '')}`, merchantId: 'demo-merchant', tableId: table.id, tableNo: table.tableNo, tableName: table.tableName, status: sessionClosedState ? 'CLOSED' : 'OPEN', openedAt: sessionOpenedAt, closedAt: sessionClosedState ? new Date().toISOString() : null,
+    id: sessionId, sessionNo: `DEMO-SESSION-${sessionId.replace('demo-session-', '')}`, merchantId: 'demo-merchant', tableId: table.id, tableNo: table.tableNo, tableName: table.tableName, status: sessionClosedState ? 'CLOSED' : 'OPEN', openedAt: sessionOpenedAt, closedAt: isPrimary ? (sessionClosedState ? new Date().toISOString() : null) : extraSession?.closedAt ?? null,
     orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountRate, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: sessionDiscountRate === null ? null : demoStaffSession.id, discountAppliedAt: sessionDiscountRate === null ? null : new Date().toISOString(), roundingApplied: sessionRoundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
 }
