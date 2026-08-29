@@ -294,7 +294,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 
-  it('opens a new session and creates an order when table is idle', async () => {
+  it('opens a new session and creates one order containing the whole first A/B/C batch', async () => {
     const tx = {
       order: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -308,17 +308,15 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
         ])
-        .mockResolvedValueOnce([
-          {
-            id: 61n,
-            name_zh: '鱼香茄子',
-            image_url: null,
-            price_vnd: 6000n,
-            product_type: 'FOOD',
-            status: 'ON_SALE',
-            category_active: 1,
-          },
-        ]),
+        .mockResolvedValueOnce([61n, 62n, 63n].map((id) => ({
+          id,
+          name_zh: `菜品${id.toString()}`,
+          image_url: null,
+          price_vnd: 6000n,
+          product_type: 'FOOD',
+          status: 'ON_SALE',
+          category_active: 1,
+        }))),
     };
     const { service } = buildService(tx, {
       sessionCreateResult: { id: sessionResult.id, created: true },
@@ -326,16 +324,28 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     await expect(
       service.createTableOrder(7n, 3n, 11n, {
         idempotencyKey: 'staff_add_0005',
-        items: [{ productId: '61', quantity: 1 }],
+        items: [
+          { productId: '61', quantity: 1 },
+          { productId: '62', quantity: 1 },
+          { productId: '63', quantity: 1 },
+        ],
       }),
     ).resolves.toEqual({ order: orderResult, session: sessionResult });
     expect(tx.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           tableSessionId: sessionResult.id,
+          items: {
+            create: [
+              expect.objectContaining({ productId: 61n, quantity: 1 }),
+              expect.objectContaining({ productId: 62n, quantity: 1 }),
+              expect.objectContaining({ productId: 63n, quantity: 1 }),
+            ],
+          },
         }),
       }),
     );
+    expect(tx.order.create).toHaveBeenCalledTimes(1);
   });
 
   it('rejects open-only ordering when a session is already open', async () => {

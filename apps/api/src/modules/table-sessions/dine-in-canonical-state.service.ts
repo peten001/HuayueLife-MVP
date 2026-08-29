@@ -23,6 +23,7 @@ export type DineInCanonicalSessionRow = {
   openTableId: bigint | null;
   tableNo: string;
   tableName: string | null;
+  openedAt: Date;
   discountPayableRateBps: number | null;
   discountAmountVnd: bigint;
   discountAppliedByStaffId: bigint | null;
@@ -39,6 +40,7 @@ export type DineInCanonicalOrderRow = {
   itemAmountVnd: bigint;
   deliveryFeeVnd: bigint;
   totalAmountVnd: bigint;
+  createdAt: Date;
 };
 
 export type DineInCanonicalItemRow = {
@@ -53,6 +55,7 @@ export type DineInCanonicalItemRow = {
   unitPriceVnd: bigint;
   quantity: number;
   subtotalVnd: bigint;
+  createdAt: Date;
 };
 
 export type DineInCanonicalSource = {
@@ -69,6 +72,8 @@ export type DineInCanonicalLineInternal = {
   productNameEn: string | null;
   remark: string;
   optionSignature: string;
+  activeSince: string;
+  displayOrderKey: string;
   unitPriceVnd: string;
   quantity: number;
   lockedQuantity: number;
@@ -85,6 +90,7 @@ export type DineInCanonicalLineInternal = {
     orderStatus: OrderStatus;
     quantity: number;
     unitPriceVnd: bigint;
+    createdAt: Date;
   }>;
 };
 
@@ -93,6 +99,7 @@ export type DineInCanonicalStateInternal = {
   tableId: string;
   tableNo: string;
   tableName: string | null;
+  openedAt: string;
   sessionStatus: string;
   revision: string;
   items: DineInCanonicalLineInternal[];
@@ -133,6 +140,7 @@ export class DineInCanonicalStateService {
         tableId: true,
         status: true,
         openTableId: true,
+        openedAt: true,
         discountPayableRateBps: true,
         discountAmountVnd: true,
         discountAppliedByStaffId: true,
@@ -149,6 +157,7 @@ export class DineInCanonicalStateService {
             itemAmountVnd: true,
             deliveryFeeVnd: true,
             totalAmountVnd: true,
+            createdAt: true,
             items: {
               select: {
                 id: true,
@@ -162,6 +171,7 @@ export class DineInCanonicalStateService {
                 unitPriceVnd: true,
                 quantity: true,
                 subtotalVnd: true,
+                createdAt: true,
               },
               orderBy: { id: 'asc' },
             },
@@ -185,6 +195,7 @@ export class DineInCanonicalStateService {
         openTableId: session.openTableId,
         tableNo: session.table.tableNo,
         tableName: session.table.tableName,
+        openedAt: session.openedAt,
         discountPayableRateBps: session.discountPayableRateBps,
         discountAmountVnd: session.discountAmountVnd,
         discountAppliedByStaffId: session.discountAppliedByStaffId,
@@ -204,6 +215,7 @@ export class DineInCanonicalStateService {
         unitPriceVnd: item.unitPriceVnd,
         quantity: item.quantity,
         subtotalVnd: item.subtotalVnd,
+        createdAt: item.createdAt,
       }))),
     };
     return this.toPublicState(this.build(source));
@@ -226,6 +238,7 @@ export class DineInCanonicalStateService {
       open_table_id: bigint | null;
       table_no: string;
       table_name: string | null;
+      opened_at: Date;
       discount_payable_rate_bps: number | null;
       discount_amount_vnd: bigint;
       discount_applied_by_staff_id: bigint | null;
@@ -233,6 +246,7 @@ export class DineInCanonicalStateService {
       rounding_applied_by_staff_id: bigint | null;
     }>>`
       SELECT ts.id, ts.merchant_id, ts.table_id, ts.status, ts.open_table_id,
+             ts.opened_at,
              dt.table_no, dt.table_name,
              ts.discount_payable_rate_bps, ts.discount_amount_vnd,
              ts.discount_applied_by_staff_id, ts.rounding_amount_vnd,
@@ -258,9 +272,10 @@ export class DineInCanonicalStateService {
       item_amount_vnd: bigint;
       delivery_fee_vnd: bigint;
       total_amount_vnd: bigint;
+      created_at: Date;
     }>>`
       SELECT id, status, order_type, user_id, created_by_staff_id,
-             item_amount_vnd, delivery_fee_vnd, total_amount_vnd
+             item_amount_vnd, delivery_fee_vnd, total_amount_vnd, created_at
       FROM orders
       WHERE table_session_id = ${sessionId} AND merchant_id = ${merchantId}
       ORDER BY id
@@ -275,10 +290,12 @@ export class DineInCanonicalStateService {
       unit_price_vnd: bigint;
       quantity: number;
       subtotal_vnd: bigint;
+      created_at: Date;
     }>>`
       SELECT oi.id, oi.order_id, oi.product_id,
              oi.product_name_zh_snapshot,
-             oi.remark, oi.unit_price_vnd, oi.quantity, oi.subtotal_vnd
+             oi.remark, oi.unit_price_vnd, oi.quantity, oi.subtotal_vnd,
+             oi.created_at
       FROM order_items oi
       INNER JOIN orders o ON o.id = oi.order_id
       WHERE o.table_session_id = ${sessionId} AND o.merchant_id = ${merchantId}
@@ -309,6 +326,7 @@ export class DineInCanonicalStateService {
         openTableId: lockedSession.open_table_id,
         tableNo: lockedSession.table_no,
         tableName: lockedSession.table_name,
+        openedAt: lockedSession.opened_at,
         discountPayableRateBps: lockedSession.discount_payable_rate_bps,
         discountAmountVnd: lockedSession.discount_amount_vnd,
         discountAppliedByStaffId: lockedSession.discount_applied_by_staff_id,
@@ -324,6 +342,7 @@ export class DineInCanonicalStateService {
         itemAmountVnd: order.item_amount_vnd,
         deliveryFeeVnd: order.delivery_fee_vnd,
         totalAmountVnd: order.total_amount_vnd,
+        createdAt: order.created_at,
       })),
       items: itemRows.map((item) => {
         const product = item.product_id
@@ -341,6 +360,7 @@ export class DineInCanonicalStateService {
           unitPriceVnd: item.unit_price_vnd,
           quantity: item.quantity,
           subtotalVnd: item.subtotal_vnd,
+          createdAt: item.created_at,
         };
       }),
     });
@@ -383,6 +403,8 @@ export class DineInCanonicalStateService {
         productNameEn: item.productNameEn,
         remark,
         optionSignature,
+        activeSince: item.createdAt.toISOString(),
+        displayOrderKey: '',
         unitPriceVnd: item.unitPriceVnd.toString(),
         quantity: 0,
         lockedQuantity: 0,
@@ -404,17 +426,25 @@ export class DineInCanonicalStateService {
         orderStatus: order.status,
         quantity: item.quantity,
         unitPriceVnd: item.unitPriceVnd,
+        createdAt: item.createdAt,
       });
       grouped.set(lineKey, current);
     }
 
     const items = [...grouped.values()]
-      .map((line) => ({
-        ...line,
-        adjustability: resolveAdjustability(line.rawItems),
-        rawItems: [...line.rawItems].sort(compareRawItems),
-      }))
-      .sort((left, right) => left.lineKey.localeCompare(right.lineKey));
+      .map((line) => {
+        const rawItems = [...line.rawItems].sort(compareRawItems);
+        const first = [...rawItems].sort(compareRawItemsByActivation)[0];
+        const activeSince = first.createdAt.toISOString();
+        return {
+          ...line,
+          activeSince,
+          displayOrderKey: `${activeSince}:${first.itemId.toString()}:${line.lineKey}`,
+          adjustability: resolveAdjustability(rawItems),
+          rawItems,
+        };
+      })
+      .sort(compareCanonicalLinesByActivation);
     const originalAmountVnd = items.reduce(
       (sum, item) => sum + BigInt(item.subtotalVnd),
       0n,
@@ -431,6 +461,7 @@ export class DineInCanonicalStateService {
         merchantId: source.session.merchantId.toString(),
         tableId: source.session.tableId.toString(),
         status: source.session.status,
+        openedAt: source.session.openedAt.toISOString(),
         openTableId: source.session.openTableId?.toString() ?? null,
         discountPayableRateBps: source.session.discountPayableRateBps,
         discountAmountVnd: source.session.discountAmountVnd.toString(),
@@ -449,6 +480,7 @@ export class DineInCanonicalStateService {
           itemAmountVnd: order.itemAmountVnd.toString(),
           deliveryFeeVnd: order.deliveryFeeVnd.toString(),
           totalAmountVnd: order.totalAmountVnd.toString(),
+          createdAt: order.createdAt.toISOString(),
         })),
       items: [...source.items]
         .sort((left, right) => compareBigInt(left.id, right.id))
@@ -461,6 +493,7 @@ export class DineInCanonicalStateService {
           unitPriceVnd: item.unitPriceVnd.toString(),
           quantity: item.quantity,
           subtotalVnd: item.subtotalVnd.toString(),
+          createdAt: item.createdAt.toISOString(),
         })),
     };
     return {
@@ -468,6 +501,7 @@ export class DineInCanonicalStateService {
       tableId: source.session.tableId.toString(),
       tableNo: source.session.tableNo,
       tableName: source.session.tableName,
+      openedAt: source.session.openedAt.toISOString(),
       sessionStatus: source.session.status,
       revision: `dcs2:sha256:${sha256(stableStringify(revisionPayload))}`,
       items,
@@ -551,6 +585,25 @@ function compareRawItems(
   return rank(left.orderStatus) - rank(right.orderStatus)
     || compareBigInt(left.orderId, right.orderId)
     || compareBigInt(left.itemId, right.itemId);
+}
+
+function compareRawItemsByActivation(
+  left: DineInCanonicalLineInternal['rawItems'][number],
+  right: DineInCanonicalLineInternal['rawItems'][number],
+) {
+  return left.createdAt.getTime() - right.createdAt.getTime()
+    || compareBigInt(left.itemId, right.itemId);
+}
+
+function compareCanonicalLinesByActivation(
+  left: DineInCanonicalLineInternal,
+  right: DineInCanonicalLineInternal,
+) {
+  const leftFirst = [...left.rawItems].sort(compareRawItemsByActivation)[0];
+  const rightFirst = [...right.rawItems].sort(compareRawItemsByActivation)[0];
+  return leftFirst.createdAt.getTime() - rightFirst.createdAt.getTime()
+    || compareBigInt(leftFirst.itemId, rightFirst.itemId)
+    || left.lineKey.localeCompare(right.lineKey);
 }
 
 function compareBigInt(left: bigint, right: bigint) {

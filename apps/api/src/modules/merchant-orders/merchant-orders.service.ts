@@ -724,6 +724,9 @@ export class MerchantOrdersService {
         return {
           state: this.canonicalState.toPublicState(before),
           idempotentReplay: true,
+          releasedBecause: priorRows.some((entry) =>
+            this.parseJsonRecord(entry.metadata).tableSessionAutoClosed === true,
+          ) ? 'EMPTY_AFTER_RECONCILE' as const : undefined,
           printTriggerIds: [] as bigint[],
         };
       }
@@ -831,6 +834,7 @@ export class MerchantOrdersService {
         return {
           state: this.canonicalState.toPublicState(before),
           idempotentReplay: false,
+          releasedBecause: undefined,
           printTriggerIds: [] as bigint[],
         };
       }
@@ -1013,6 +1017,17 @@ export class MerchantOrdersService {
             reason: '整桌目标态将未接单订单全部减为零，订单已取消',
             itemAmountVnd,
             totalAmountVnd,
+            internalAudit: {
+              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              metadata: {
+                visibility: 'INTERNAL',
+                cancelKind: 'DINE_IN_CANONICAL_REBALANCE',
+                canonicalRequestKey: dto.requestKey,
+                tableSessionId: sessionId.toString(),
+                tableSessionAutoClosed: false,
+                tableReleased: false,
+              },
+            },
           });
         } else {
           const cancelled = await tx.order.updateMany({
@@ -1045,6 +1060,8 @@ export class MerchantOrdersService {
               operatorStaffId: staffId,
               action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
               metadata: {
+                visibility: 'INTERNAL',
+                cancelKind: 'DINE_IN_CANONICAL_REBALANCE',
                 canonicalRequestKey: dto.requestKey,
                 tableSessionId: sessionId.toString(),
                 tableSessionAutoClosed: false,
@@ -1057,13 +1074,79 @@ export class MerchantOrdersService {
       }
 
       await this.clearSessionAdjustment(tx, sessionId);
-      const after = await this.canonicalState.buildLockedWithClient(
+      let after = await this.canonicalState.buildLockedWithClient(
         tx,
         merchantId,
         sessionId,
       );
       const anchorOrderId = createdOrderId
         ?? [...touchedOrderIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)[0];
+      let tableSessionAutoClosed = false;
+      if (
+        after.items.length === 0
+        && after.totals.originalAmountVnd === '0'
+        && after.totals.payableAmountVnd === '0'
+        && after.blockers.length === 0
+      ) {
+        const closedAt = new Date();
+        const closed = await tx.tableSession.updateMany({
+          where: {
+            id: sessionId,
+            merchantId,
+            status: 'OPEN',
+            openTableId: sessionRef.tableId,
+          },
+          data: {
+            status: 'CLOSED',
+            openTableId: null,
+            closedAt,
+          },
+        });
+        if (closed.count !== 1) {
+          throw new ConflictException({
+            code: 'TABLE_SESSION_EXTERNALLY_CLOSED',
+            message: '桌账已由其他终端关闭。',
+            latestState: this.canonicalState.toPublicState(after),
+          });
+        }
+        tableSessionAutoClosed = true;
+        if (anchorOrderId) {
+          const anchor = await tx.order.findUnique({
+            where: { id: anchorOrderId },
+            select: { status: true },
+          });
+          if (!anchor) {
+            throw new ConflictException({ code: 'ORDER_NOT_FOUND', message: '订单不存在' });
+          }
+          await tx.orderStatusLog.create({
+            data: {
+              orderId: anchorOrderId,
+              fromStatus: anchor.status,
+              toStatus: anchor.status,
+              operatorType: OperatorType.MERCHANT_STAFF,
+              operatorStaffId: staffId,
+              action: 'DINE_IN_AUTO_RELEASED_EMPTY',
+              metadata: {
+                visibility: 'INTERNAL',
+                canonicalRequestKey: dto.requestKey,
+                tableSessionId: sessionId.toString(),
+                tableId: sessionRef.tableId.toString(),
+                tableSessionAutoClosed: true,
+                tableReleased: true,
+                settlementCreated: false,
+                paymentCreated: false,
+                checkoutPrintTriggered: false,
+              },
+              remark: '堂食目标态已清空，桌账自动关闭并释放桌台',
+            },
+          });
+        }
+        after = await this.canonicalState.buildLockedWithClient(
+          tx,
+          merchantId,
+          sessionId,
+        );
+      }
       let printTriggerIds: bigint[] = [];
       if (anchorOrderId) {
         const anchor = await tx.order.findUnique({
@@ -1091,10 +1174,13 @@ export class MerchantOrdersService {
               lineChanges,
               createdOrderId: createdOrderId?.toString() ?? null,
               touchedOrderIds: [...touchedOrderIds].map((id) => id.toString()),
-              tableSessionAutoClosed: false,
-              tableReleased: false,
+              tableSessionAutoClosed,
+              tableReleased: tableSessionAutoClosed,
+              visibility: 'INTERNAL',
             },
-            remark: '堂食整桌目标态已对账',
+            remark: tableSessionAutoClosed
+              ? '堂食整桌目标态已对账，空账已自动释放'
+              : '堂食整桌目标态已对账',
           },
         });
         if (createdOrderId) {
@@ -1111,6 +1197,9 @@ export class MerchantOrdersService {
       return {
         state: this.canonicalState.toPublicState(after),
         idempotentReplay: false,
+        releasedBecause: tableSessionAutoClosed
+          ? 'EMPTY_AFTER_RECONCILE' as const
+          : undefined,
         printTriggerIds,
       };
     });
@@ -1128,6 +1217,7 @@ export class MerchantOrdersService {
       ...result.state,
       idempotentReplay: result.idempotentReplay,
       appliedRevision: result.state.revision,
+      ...(result.releasedBecause ? { releasedBecause: result.releasedBecause } : {}),
     };
   }
 
@@ -1852,10 +1942,6 @@ export class MerchantOrdersService {
         remark,
         desiredQuantity: item.desiredQuantity,
       };
-    }).sort((left, right) => {
-      const leftKey = left.lineKey ?? `${left.productId?.toString()}\u0000${left.remark}`;
-      const rightKey = right.lineKey ?? `${right.productId?.toString()}\u0000${right.remark}`;
-      return leftKey.localeCompare(rightKey);
     });
   }
 

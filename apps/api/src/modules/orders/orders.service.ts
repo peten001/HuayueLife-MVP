@@ -22,7 +22,10 @@ import { OrderRequestDto } from './dto/order-request.dto';
 import { withPickupFulfillmentFields } from './order-fulfillment-fields';
 import { OrderCreatorInvariantService } from './order-creator-invariant.service';
 import { PendingOrderCancellationService } from './pending-order-cancellation.service';
-import { isInternalOrderStatusLogAction } from './order-status-log-visibility';
+import {
+  isInternalOrderStatusLogAction,
+  toCustomerVisibleOrderStatusLogs,
+} from './order-status-log-visibility';
 
 @Injectable()
 export class OrdersService {
@@ -489,6 +492,7 @@ export class OrdersService {
       createdAt: Date;
       readyAt: Date | null;
       statusLogs?: ReadonlyArray<{
+        toStatus: string;
         action: string | null;
         metadata: Prisma.JsonValue | null;
         requestKey: string | null;
@@ -502,17 +506,19 @@ export class OrdersService {
 
     return withPickupFulfillmentFields({
       ...withoutCreator,
-      statusLogs: order.statusLogs
-        .filter((log) => !isInternalOrderStatusLogAction(log.action))
-        .map((log) => {
-          const {
-            action: _action,
-            metadata: _metadata,
-            requestKey: _requestKey,
-            ...publicLog
-          } = log;
-          return publicLog;
-        }),
+      statusLogs: order.orderType === 'DINE_IN'
+        ? toCustomerVisibleOrderStatusLogs(order.statusLogs)
+        : order.statusLogs
+            .filter((log) => !isInternalOrderStatusLogAction(log.action))
+            .map((log) => {
+              const {
+                action: _action,
+                metadata: _metadata,
+                requestKey: _requestKey,
+                ...publicLog
+              } = log;
+              return publicLog;
+            }),
     });
   }
 
@@ -537,7 +543,10 @@ export class OrdersService {
   private readonly orderDetailInclude = {
     ...this.orderListInclude,
     statusLogs: {
-      orderBy: { createdAt: 'asc' as const },
+      orderBy: [
+        { createdAt: 'asc' as const },
+        { id: 'asc' as const },
+      ],
     },
   };
 

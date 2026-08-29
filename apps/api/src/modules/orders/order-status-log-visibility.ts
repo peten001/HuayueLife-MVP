@@ -4,6 +4,9 @@ export const INTERNAL_ORDER_STATUS_LOG_ACTIONS = [
   'MERCHANT_ADD_ITEMS',
   'ORDER_ITEM_DECREASED',
   'ORDER_ITEM_RETURNED',
+  'DINE_IN_CANONICAL_RECONCILED',
+  'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+  'DINE_IN_AUTO_RELEASED_EMPTY',
   'TABLE_SESSION_CHECKOUT',
   'PICKUP_ORDER_ROUNDING_APPLIED',
   'PICKUP_ORDER_ROUNDING_CANCELLED',
@@ -32,6 +35,39 @@ export function isInternalOrderStatusLogAction(
   return INTERNAL_ORDER_STATUS_LOG_ACTIONS.some(
     (internalAction) => internalAction === action,
   );
+}
+
+export function toCustomerVisibleOrderStatusLogs<
+  T extends {
+    toStatus: string;
+    action: string | null;
+    metadata: Prisma.JsonValue | null;
+    requestKey: string | null;
+  },
+>(logs: ReadonlyArray<T>) {
+  const visible: Array<Omit<T, 'action' | 'metadata' | 'requestKey'>> = [];
+  for (const log of logs) {
+    if (isCustomerInternalOrderStatusLog(log)) continue;
+    const {
+      action: _action,
+      metadata: _metadata,
+      requestKey: _requestKey,
+      ...publicLog
+    } = log;
+    if (visible.at(-1)?.toStatus === publicLog.toStatus) continue;
+    visible.push(publicLog);
+  }
+  return visible;
+}
+
+function isCustomerInternalOrderStatusLog(log: {
+  action: string | null;
+  metadata: Prisma.JsonValue | null;
+}) {
+  if (isInternalOrderStatusLogAction(log.action)) return true;
+  if (!isJsonObject(log.metadata)) return false;
+  return log.metadata.visibility === 'INTERNAL'
+    || log.metadata.cancelKind === 'DINE_IN_CANONICAL_REBALANCE';
 }
 
 /**

@@ -14,6 +14,23 @@ describe('MerchantOrdersService canonical reconcile', () => {
     expect(result.items[0]?.quantity).toBe(1 + delta);
   });
 
+  it('creates at most one Order with every new dish in one reconcile batch', async () => {
+    const harness = buildHarness({ baseQuantity: 0, desiredQuantity: 2, afterQuantity: 2, emptyState: true });
+    harness.dto.desiredItems = [
+      { productId: '31', desiredQuantity: 1 },
+      { productId: '32', desiredQuantity: 2 },
+    ];
+    harness.tx.$queryRaw.mockReset()
+      .mockResolvedValueOnce([{ id: 11n, table_no: 'A01', status: 'ACTIVE' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([product(31n), product(32n)]);
+
+    await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+
+    expect(harness.tx.order.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.order.create.mock.calls[0]?.[0].data.items.create).toHaveLength(2);
+  });
+
   it.each([1, 10])('applies -%i through deterministic raw item allocation', async (delta) => {
     const harness = buildHarness({
       baseQuantity: 11,
@@ -26,12 +43,47 @@ describe('MerchantOrdersService canonical reconcile', () => {
     else expect(harness.tx.orderItem.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ quantity: 10 }) }));
   });
 
-  it('keeps the OPEN session and openTableId when the last item changes 1 to 0', async () => {
+  it('closes and releases the OPEN session when the last item changes 1 to 0', async () => {
     const harness = buildHarness({ desiredQuantity: 0, afterQuantity: 0, aggregateCount: 0 });
-    await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+    const result = await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
     expect(harness.tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED' }) }));
-    expect(harness.tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CLOSED', openTableId: null }) }));
-    expect(harness.tx.orderStatusLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ tableSessionAutoClosed: false, tableReleased: false }) }) }));
+    expect(harness.tx.tableSession.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CLOSED', openTableId: null }) }));
+    expect(harness.tx.orderStatusLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'DINE_IN_AUTO_RELEASED_EMPTY', metadata: expect.objectContaining({ tableSessionAutoClosed: true, tableReleased: true, settlementCreated: false, paymentCreated: false, checkoutPrintTriggered: false }) }) }));
+    expect(result.sessionStatus).toBe('CLOSED');
+    expect(result.releasedBecause).toBe('EMPTY_AFTER_RECONCILE');
+    expect(harness.printJobs.enqueueAutomaticTriggersForOrderTransition).not.toHaveBeenCalled();
+    expect(harness.printJobs.processAutomaticTriggerIds).not.toHaveBeenCalled();
+  });
+
+  it('releases only after every line in a multi-item bill reaches zero', async () => {
+    const harness = buildHarness({ desiredQuantity: 0, afterQuantity: 0, aggregateCount: 0 });
+    const first = harness.before.items[0]!;
+    harness.before.items.push({
+      ...first,
+      lineKey: `dline:sha256:${'2'.repeat(64)}`,
+      productId: '32',
+      productNameZh: '酸辣蕨根粉',
+      activeSince: '2026-08-30T00:00:02.000Z',
+      displayOrderKey: '2026-08-30T00:00:02.000Z:72:line',
+      rawItems: [{
+        ...first.rawItems[0]!,
+        itemId: 72n,
+        orderId: 42n,
+        createdAt: new Date('2026-08-30T00:00:02.000Z'),
+      }],
+    });
+    harness.before.totals.originalAmountVnd = '24000';
+    harness.before.totals.payableAmountVnd = '24000';
+    harness.dto.desiredItems = harness.before.items.map((line) => ({
+      lineKey: line.lineKey,
+      desiredQuantity: 0,
+    }));
+
+    const result = await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+
+    expect(harness.tx.orderItem.delete).toHaveBeenCalledTimes(2);
+    expect(harness.tx.order.updateMany).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ sessionStatus: 'CLOSED', releasedBecause: 'EMPTY_AFTER_RECONCILE' });
   });
 
   it('returns an empty-session no-op without creating a fake order', async () => {
@@ -42,8 +94,25 @@ describe('MerchantOrdersService canonical reconcile', () => {
     expect(harness.tx.orderStatusLog.create).not.toHaveBeenCalled();
   });
 
-  it('applies add and remove changes in the same atomic transaction', async () => {
+  it.each([
+    ['non-zero payable', { payable: '100', blocker: null }],
+    ['canonical blocker', { payable: '0', blocker: 'UNACCEPTED_ORDER' }],
+  ])('does not auto-release an empty state with %s', async (_label, guard) => {
     const harness = buildHarness({ desiredQuantity: 0, afterQuantity: 0, aggregateCount: 0 });
+    harness.after.totals.payableAmountVnd = guard.payable;
+    if (guard.blocker) harness.after.blockers.push(guard.blocker);
+
+    const result = await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+
+    expect(result.sessionStatus).toBe('OPEN');
+    expect(result.releasedBecause).toBeUndefined();
+    expect(harness.tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
+    }));
+  });
+
+  it('applies add and remove changes in the same atomic transaction', async () => {
+    const harness = buildHarness({ desiredQuantity: 0, afterQuantity: 2, aggregateCount: 0 });
     harness.dto.desiredItems.push({ productId: '32', desiredQuantity: 2 });
     harness.tx.$queryRaw.mockReset()
       .mockResolvedValueOnce([{ id: 11n, table_no: 'A01', status: 'ACTIVE' }])
@@ -137,6 +206,7 @@ function buildHarness(options: {
   const afterQuantity = options.afterQuantity ?? desiredQuantity;
   const before = state(baseQuantity, options.lockedQuantity ?? 0, options.blockers ?? [], options.emptyState);
   const after = state(afterQuantity, 0, [], afterQuantity === 0);
+  const closed = { ...after, sessionStatus: 'CLOSED', revision: `dcs2:sha256:${'c'.repeat(64)}` };
   const tx = {
     $queryRaw: jest.fn()
       .mockResolvedValueOnce([{ id: 11n, table_no: 'A01', status: 'ACTIVE' }])
@@ -163,7 +233,10 @@ function buildHarness(options: {
   };
   if (before.items[0]?.rawItems[0]) before.items[0].rawItems[0].quantity = options.rawQuantity ?? baseQuantity;
   const canonical = new DineInCanonicalStateService({} as never);
-  jest.spyOn(canonical, 'buildLockedWithClient').mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+  jest.spyOn(canonical, 'buildLockedWithClient')
+    .mockResolvedValueOnce(before)
+    .mockResolvedValueOnce(after)
+    .mockResolvedValueOnce(closed);
   const prisma = {
     tableSession: { findFirst: jest.fn().mockResolvedValue({ id: 51n, tableId: 11n }) },
     $transaction: jest.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
@@ -187,21 +260,21 @@ function buildHarness(options: {
     baseRevision: before.revision,
     desiredItems: options.emptyState ? [] : [{ lineKey: before.items[0]!.lineKey, desiredQuantity }],
   };
-  return { service, prisma, tx, canonical, dto, before, after };
+  return { service, prisma, tx, canonical, dto, before, after, printJobs };
 }
 
 function state(quantity: number, lockedQuantity: number, blockers: string[], empty = false): DineInCanonicalStateInternal {
   const lineKey = `dline:sha256:${'1'.repeat(64)}`;
   return {
-    sessionId: '51', tableId: '11', tableNo: 'A01', tableName: null,
+    sessionId: '51', tableId: '11', tableNo: 'A01', tableName: null, openedAt: '2026-08-30T00:00:00.000Z',
     sessionStatus: 'OPEN', revision: `dcs2:sha256:${quantity.toString().padStart(64, '0')}`,
     items: empty ? [] : [{
       lineKey, productId: '31', productNameZh: '鱼香茄子', productNameVi: null, productNameEn: null,
-      remark: '', optionSignature: '', unitPriceVnd: '12000', quantity,
+      remark: '', optionSignature: '', activeSince: '2026-08-30T00:00:01.000Z', displayOrderKey: '2026-08-30T00:00:01.000Z:71:line', unitPriceVnd: '12000', quantity,
       lockedQuantity, adjustableQuantity: quantity - lockedQuantity,
       subtotalVnd: (BigInt(quantity) * 12_000n).toString(), adjustability: lockedQuantity === quantity ? 'LOCKED' : 'RETURN',
       sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
-      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, unitPriceVnd: 12_000n }],
+      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
     }],
     totals: { originalAmountVnd: (BigInt(quantity) * 12_000n).toString(), discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: (BigInt(quantity) * 12_000n).toString() },
     blockers, generatedAt: '2026-08-30T00:00:00.000Z',

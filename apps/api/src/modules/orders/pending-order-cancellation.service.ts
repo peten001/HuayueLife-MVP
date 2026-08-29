@@ -14,6 +14,10 @@ type PendingCancellationInput = {
   reason: string;
   itemAmountVnd?: bigint;
   totalAmountVnd?: bigint;
+  internalAudit?: {
+    action: string;
+    metadata: Prisma.InputJsonValue;
+  };
 };
 
 /** Shared transactional cancellation for a still-pending order. */
@@ -77,6 +81,8 @@ export class PendingOrderCancellationService {
         operatorType,
         operatorUserId: input.operatorUserId,
         operatorStaffId: input.operatorStaffId,
+        action: input.internalAudit?.action,
+        metadata: input.internalAudit?.metadata,
         remark: input.reason,
       },
     });

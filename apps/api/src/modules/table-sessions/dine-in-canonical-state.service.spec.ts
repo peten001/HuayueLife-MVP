@@ -41,6 +41,34 @@ describe('DineInCanonicalStateService builder', () => {
     expect(service.build(input).items.map((line) => line.unitPriceVnd).sort()).toEqual(['12000', '15000']);
   });
 
+  it('keeps first-active dish order stable and appends a removed then re-added dish', () => {
+    const input = source();
+    input.items[0]!.createdAt = new Date('2026-08-30T00:00:01.000Z');
+    input.orders.push(
+      order(42n, 'ACCEPTED', 3n),
+      order(43n, 'ACCEPTED', 3n),
+      order(44n, 'ACCEPTED', 3n),
+    );
+    // A was increased later, but its earliest still-positive contribution is
+    // unchanged. B's old row is gone and its re-add receives the newest time.
+    input.items.push(
+      item(72n, 42n, { productId: 32n, productNameZhSnapshot: 'B', productNameZh: 'B', createdAt: new Date('2026-08-30T00:00:02.000Z') }),
+      item(73n, 43n, { productId: 31n, productNameZhSnapshot: 'A', productNameZh: 'A', createdAt: new Date('2026-08-30T00:00:03.000Z') }),
+      item(74n, 44n, { productId: 33n, productNameZhSnapshot: 'C', productNameZh: 'C', createdAt: new Date('2026-08-30T00:00:04.000Z') }),
+    );
+    input.items = input.items.filter((entry) => entry.id !== 72n);
+    input.items.push(item(75n, 44n, { productId: 32n, productNameZhSnapshot: 'B', productNameZh: 'B', createdAt: new Date('2026-08-30T00:00:05.000Z') }));
+
+    const built = service.build(input);
+    expect(built.items.map((line) => line.productNameZh)).toEqual(['鱼香茄子', 'C', 'B']);
+    expect(built.items[0]?.quantity).toBe(2);
+    expect(built.items.map((line) => line.activeSince)).toEqual([
+      input.items[0]!.createdAt.toISOString(),
+      '2026-08-30T00:00:04.000Z',
+      '2026-08-30T00:00:05.000Z',
+    ]);
+  });
+
   it('marks accepted items as RETURN', () => {
     expect(service.build(source()).items[0]?.adjustability).toBe('RETURN');
   });
@@ -128,6 +156,7 @@ function source(status: OrderStatus = 'ACCEPTED'): DineInCanonicalSource {
       openTableId: 11n,
       tableNo: 'A01',
       tableName: null,
+      openedAt: new Date('2026-08-30T00:00:00.000Z'),
       discountPayableRateBps: null,
       discountAmountVnd: 0n,
       discountAppliedByStaffId: null,
@@ -149,6 +178,7 @@ function order(id: bigint, status: OrderStatus, staffId: bigint | null, userId: 
     itemAmountVnd: 12_000n,
     deliveryFeeVnd: 0n,
     totalAmountVnd: 12_000n,
+    createdAt: new Date(Date.UTC(2026, 7, 30, 0, 0, Number(id))),
   };
 }
 
@@ -165,6 +195,7 @@ function item(id: bigint, orderId: bigint, overrides: Partial<DineInCanonicalSou
     unitPriceVnd: 12_000n,
     quantity: 1,
     subtotalVnd: 12_000n,
+    createdAt: new Date(Date.UTC(2026, 7, 30, 0, 0, Number(id))),
     ...overrides,
   };
 }
