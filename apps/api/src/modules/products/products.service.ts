@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -9,10 +10,16 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { ListProductsQueryDto } from './dto/list-products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
+import { ProductMenuThumbnailService } from './product-menu-thumbnail.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ProductsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly menuThumbnails: ProductMenuThumbnailService,
+  ) {}
 
   list(merchantId: bigint, query: ListProductsQueryDto) {
     return this.prisma.product.findMany({
@@ -36,7 +43,7 @@ export class ProductsService {
     const categoryId = BigInt(dto.categoryId);
     await this.requireActiveCategory(merchantId, categoryId);
 
-    return this.prisma.product.create({
+    const product = await this.prisma.product.create({
       data: {
         merchantId,
         categoryId,
@@ -52,10 +59,11 @@ export class ProductsService {
       },
       include: { category: true },
     });
+    return this.attachMenuThumbnail(product);
   }
 
   async update(merchantId: bigint, id: bigint, dto: UpdateProductDto) {
-    await this.requireOwnedProduct(merchantId, id);
+    const current = await this.requireOwnedProduct(merchantId, id);
     const categoryId = dto.categoryId ? BigInt(dto.categoryId) : undefined;
     if (categoryId) {
       await this.requireActiveCategory(merchantId, categoryId);
@@ -67,17 +75,27 @@ export class ProductsService {
       nameEn: dto.nameEn,
       description: dto.description,
       imageUrl: dto.imageUrl,
+      menuThumbnailUrl: dto.imageUrl !== undefined && dto.imageUrl !== current.imageUrl
+        ? null
+        : undefined,
       priceVnd: dto.priceVnd === undefined ? undefined : BigInt(dto.priceVnd),
       unit: dto.unit,
       sortOrder: dto.sortOrder,
       category: categoryId ? { connect: { id: categoryId } } : undefined,
     };
 
-    return this.prisma.product.update({
+    const product = await this.prisma.product.update({
       where: { id },
       data,
       include: { category: true },
     });
+    if (
+      dto.imageUrl === undefined
+      || (dto.imageUrl === current.imageUrl && product.menuThumbnailUrl)
+    ) {
+      return product;
+    }
+    return this.attachMenuThumbnail(product);
   }
 
   async updateStatus(
@@ -115,6 +133,28 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
     return product;
+  }
+
+  private async attachMenuThumbnail<T extends {
+    id: bigint;
+    imageUrl: string | null;
+    menuThumbnailUrl: string | null;
+  }>(product: T): Promise<T> {
+    if (!product.imageUrl) return product;
+    try {
+      const thumbnail = await this.menuThumbnails.generate(product.id, product.imageUrl);
+      if (!thumbnail.url || thumbnail.url === product.menuThumbnailUrl) return product;
+      return await this.prisma.product.update({
+        where: { id: product.id },
+        data: { menuThumbnailUrl: thumbnail.url },
+        include: { category: true },
+      }) as unknown as T;
+    } catch (error) {
+      this.logger.warn(
+        `Product ${product.id.toString()} menu thumbnail generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return product;
+    }
   }
 
   private async requireActiveCategory(merchantId: bigint, categoryId: bigint) {

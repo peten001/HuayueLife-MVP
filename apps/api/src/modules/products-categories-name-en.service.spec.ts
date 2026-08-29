@@ -5,7 +5,10 @@ describe('Product and Category nameEn persistence', () => {
   it('keeps Product nameEn optional, writes it, and clears it through update', async () => {
     const product: any = { create: jest.fn(async ({ data }) => data), update: jest.fn(async ({ data }) => data), findFirst: jest.fn(async () => ({ id: 1n, categoryId: 2n, category: {} })) };
     const category: any = { findFirst: jest.fn(async () => ({ id: 2n, isActive: true })) };
-    const service = new ProductsService({ product, category } as never);
+    const service = new ProductsService(
+      { product, category } as never,
+      { generate: jest.fn().mockResolvedValue({ status: 'NO_SOURCE', url: null }) } as never,
+    );
     await expect(service.create(1n, { categoryId: '2', nameZh: '中', nameVi: 'Vi', priceVnd: 1 })).resolves.toMatchObject({ nameEn: undefined });
     await expect(service.create(1n, { categoryId: '2', nameZh: '中', nameVi: 'Vi', nameEn: 'English', priceVnd: 1 })).resolves.toMatchObject({ nameEn: 'English' });
     await service.update(1n, 1n, { nameZh: '中', nameVi: 'Vi', nameEn: null });

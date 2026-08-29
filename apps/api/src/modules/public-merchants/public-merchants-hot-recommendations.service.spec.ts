@@ -63,6 +63,7 @@ describe('PublicMerchantsService hot recommendations', () => {
       nameVi: null,
       nameEn: `Dish ${index + 1}`,
       imageUrl: `/dish-${index + 1}.jpg`,
+      menuThumbnailUrl: `/thumb-${index + 1}.webp`,
       priceVnd: BigInt((index + 1) * 25_000),
       sortOrder: index,
       status: 'ON_SALE',
@@ -81,6 +82,7 @@ describe('PublicMerchantsService hot recommendations', () => {
     expect(result.map((item: any) => item.id)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8'].map(BigInt));
     expect(result.map((item: any) => item.hotRank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(result[0].priceVnd).toBe(25_000n);
+    expect(result[0].imageUrl).toBe('/dish-1.jpg');
 
     const groupBy = ((service as any).prisma.orderItem.groupBy as jest.Mock).mock.calls[0][0];
     expect(groupBy.where).toMatchObject({

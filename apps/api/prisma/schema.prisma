@@ -613,6 +613,7 @@ model Product {
   productType ProductType   @default(FOOD) @map("product_type")
   description String?       @db.Text
   imageUrl    String?       @map("image_url") @db.VarChar(500)
+  menuThumbnailUrl String?       @map("menu_thumbnail_url") @db.VarChar(500)
   priceVnd    BigInt        @map("price_vnd")
   unit        String?       @db.VarChar(32)
   sortOrder   Int           @default(0) @map("sort_order")
