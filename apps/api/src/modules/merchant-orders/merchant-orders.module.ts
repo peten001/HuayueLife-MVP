@@ -10,6 +10,7 @@ import { MerchantAnalyticsService } from './merchant-analytics.service';
 import { MerchantTableOrdersController } from './merchant-table-orders.controller';
 import { MerchantSettlementsController } from './merchant-settlements.controller';
 import { MerchantSettlementsService } from './merchant-settlements.service';
+import { MerchantDineInCanonicalController } from './merchant-dine-in-canonical.controller';
 
 @Module({
   imports: [PrintersModule, PrintingModule, OrdersModule, TableSessionsModule],
@@ -18,6 +19,7 @@ import { MerchantSettlementsService } from './merchant-settlements.service';
     MerchantTableOrdersController,
     MerchantAnalyticsController,
     MerchantSettlementsController,
+    MerchantDineInCanonicalController,
   ],
   providers: [
     MerchantOrdersService,

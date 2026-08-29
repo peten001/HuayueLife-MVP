@@ -17,9 +17,10 @@ import { MerchantRoleGuard } from '../../common/guards/merchant-role.guard';
 import { AuthUser } from '../../common/types/auth-user.type';
 import { TableIdParamDto } from './dto/table-id-param.dto';
 import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
-import { PaymentMethodDto } from '../orders/payment-method.dto';
 import { TableSessionsService } from './table-sessions.service';
 import { TransferTableSessionDto } from './dto/transfer-table-session.dto';
+import { CashierCheckoutV2Dto } from './dto/cashier-checkout-v2.dto';
+import { ReleaseEmptyTableSessionDto } from './dto/dine-in-canonical-state.dto';
 
 class TableSessionRoundingDto {
   @IsBoolean()
@@ -53,6 +54,14 @@ export class MerchantTableSessionsController {
     return this.service.getSessionDetail(merchantId, BigInt(params.id));
   }
 
+  @Get('table-sessions/:id/canonical-state')
+  getCanonicalState(
+    @MerchantId() merchantId: bigint,
+    @Param() params: IdParamDto,
+  ) {
+    return this.service.getCanonicalState(merchantId, BigInt(params.id));
+  }
+
   @Post('table-sessions/:id/close')
   closeSession(
     @MerchantId() merchantId: bigint,
@@ -79,13 +88,32 @@ export class MerchantTableSessionsController {
     @MerchantId() merchantId: bigint,
     @CurrentUser() staff: AuthUser,
     @Param() params: IdParamDto,
-    @Body() dto: PaymentMethodDto,
+    @Body() dto: CashierCheckoutV2Dto,
   ) {
     return this.service.checkoutSession(
       merchantId,
       BigInt(staff.sub),
       BigInt(params.id),
       dto.paymentMethod,
+      {
+        expectedRevision: dto.expectedRevision,
+        requestKey: dto.requestKey,
+      },
+    );
+  }
+
+  @Post('table-sessions/:id/release-empty')
+  releaseEmptySession(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: ReleaseEmptyTableSessionDto,
+  ) {
+    return this.service.releaseEmptySession(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto,
     );
   }
 

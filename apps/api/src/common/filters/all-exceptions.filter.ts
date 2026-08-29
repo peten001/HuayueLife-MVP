@@ -45,6 +45,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       requestId: request.requestId,
       timestamp: new Date().toISOString(),
       path: request.originalUrl,
+      ...this.resolveSafeDetails(exceptionResponse),
     };
 
     response.status(status).json(body);
@@ -68,5 +69,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return String((response as { code: unknown }).code);
     }
     return `HTTP_${status}`;
+  }
+
+  private resolveSafeDetails(response: string | object | undefined) {
+    if (!response || typeof response !== 'object') return {};
+    const value = response as Record<string, unknown>;
+    return {
+      ...(value.latestState && typeof value.latestState === 'object'
+        ? { latestState: value.latestState }
+        : {}),
+      ...(typeof value.lineKey === 'string' ? { lineKey: value.lineKey } : {}),
+      ...(typeof value.lockedQuantity === 'number'
+        ? { lockedQuantity: value.lockedQuantity }
+        : {}),
+    };
   }
 }

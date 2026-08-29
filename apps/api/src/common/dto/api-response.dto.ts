@@ -13,4 +13,7 @@ export interface ApiErrorResponse {
   requestId: string;
   timestamp: string;
   path: string;
+  latestState?: unknown;
+  lineKey?: string;
+  lockedQuantity?: number;
 }

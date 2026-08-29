@@ -567,7 +567,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
   });
 
   it.each(['ACCEPTED', 'PREPARING', 'READY'])(
-    'returns the final table item in %s, cancels the empty order, and releases the table',
+    'returns the final table item in %s, cancels the empty order, and keeps the table session open',
     async (status) => {
       const tx = adjustmentTx(status, { otherItemCount: 0 });
       const { service, cancellation, printJobs } = buildService(tx);
@@ -595,33 +595,17 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
           totalAmountVnd: 0n,
         }),
       });
-      expect(tx.tableSession.updateMany).toHaveBeenCalledWith({
-        where: {
-          id: 51n,
-          merchantId: 7n,
-          status: 'OPEN',
-          openTableId: 11n,
-        },
-        data: expect.objectContaining({
-          status: 'CLOSED',
-          openTableId: null,
-          closedAt: expect.any(Date),
-          discountPayableRateBps: null,
-          discountAmountVnd: 0n,
-          discountAppliedByStaffId: null,
-          discountAppliedAt: null,
-          roundingAmountVnd: 0n,
-          roundingAppliedByStaffId: null,
-        }),
-      });
+      expect(tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
+      }));
       expect(tx.orderStatusLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
           fromStatus: status,
           toStatus: 'CANCELLED',
           metadata: expect.objectContaining({
-            tableSessionAutoClosed: true,
-            tableReleased: true,
+            tableSessionAutoClosed: false,
+            tableReleased: false,
             effectiveQuantityAfterAdjustment: 0,
           }),
         }),
@@ -699,7 +683,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
-  it('ignores residual rows from cancelled orders when deciding to release the table', async () => {
+  it('keeps the table session open even when only cancelled history remains', async () => {
     const tx = adjustmentTx('READY', {
       otherOrders: [{ id: 42n, status: 'CANCELLED', itemQuantity: 4 }],
     });
@@ -711,13 +695,12 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       returnQuantity: 2,
     });
 
-    expect(tx.tableSession.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ openTableId: 11n }),
+    expect(tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
     }));
   });
 
-  it('rolls back the final return when the locked session cannot be closed', async () => {
+  it('does not depend on a session-close write when the final item is returned', async () => {
     const tx = adjustmentTx('ACCEPTED', { sessionCloseCount: 0 });
     const { service } = buildService(tx);
 
@@ -727,9 +710,10 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         expectedQuantity: 2,
         returnQuantity: 2,
       }),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'TABLE_SESSION_STATUS_CHANGED' }),
-    });
+    ).resolves.toEqual({ order: orderResult, session: sessionResult });
+    expect(tx.tableSession.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'CLOSED', openTableId: null }),
+    }));
   });
 
   it.each([

@@ -14,6 +14,10 @@ import { PrintJobsService } from '../printing/services/print-jobs.service';
 import { resolveBusinessDate } from '../../common/utils/merchant-hours';
 import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import {
+  canonicalPayloadHash,
+  DineInCanonicalStateService,
+} from './dine-in-canonical-state.service';
+import {
   calculateSettlementAdjustment,
   normalizeDiscountPayableRateBps,
 } from '../orders/settlement-adjustment';
@@ -38,6 +42,16 @@ type SettlementAdjustmentRequest = {
 type TransferTableSessionRequest = {
   targetTableId: bigint;
   expectedSourceTableId: bigint;
+  requestKey: string;
+};
+
+type CheckoutV2Request = {
+  expectedRevision?: string;
+  requestKey?: string;
+};
+
+type ReleaseEmptyRequest = {
+  expectedRevision: string;
   requestKey: string;
 };
 
@@ -97,11 +111,19 @@ type OpenSessionSummaryRow = Prisma.TableSessionGetPayload<{
 @Injectable()
 export class TableSessionsService {
   private readonly logger = new Logger(TableSessionsService.name);
+  private readonly canonicalState: DineInCanonicalStateService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly printJobs: PrintJobsService,
-  ) {}
+    canonicalState?: DineInCanonicalStateService,
+  ) {
+    this.canonicalState = canonicalState ?? new DineInCanonicalStateService(prisma);
+  }
+
+  getCanonicalState(merchantId: bigint, sessionId: bigint) {
+    return this.canonicalState.getState(merchantId, sessionId);
+  }
 
   async getOrCreateOpenSession(
     tx: Prisma.TransactionClient,
@@ -408,18 +430,99 @@ export class TableSessionsService {
     staffId: bigint,
     sessionId: bigint,
     paymentMethod?: PaymentMethod,
+    v2: CheckoutV2Request = {},
   ) {
+    if (Boolean(v2.expectedRevision) !== Boolean(v2.requestKey)) {
+      throw new BadRequestException({
+        code: 'CHECKOUT_V2_FIELDS_REQUIRED_TOGETHER',
+        message: 'expectedRevision 与 requestKey 必须同时提供。',
+      });
+    }
+    const checkoutPayloadHash = v2.expectedRevision && v2.requestKey
+      ? canonicalPayloadHash({
+          sessionId: sessionId.toString(),
+          expectedRevision: v2.expectedRevision,
+          paymentMethod: paymentMethod ?? null,
+        })
+      : null;
     const result = await this.prisma.$transaction(async (tx) => {
       const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
       await this.lockTableRow(tx, merchantId, sessionRef.tableId);
+
+      const canonical = v2.expectedRevision
+        ? await this.canonicalState.buildLockedWithClient(tx, merchantId, sessionId)
+        : null;
+      if (canonical && canonical.tableId !== sessionRef.tableId.toString()) {
+          throw new ConflictException({
+            code: 'TABLE_SESSION_TABLE_CHANGED',
+            message: '桌台已变化，请刷新后重试。',
+            latestState: this.canonicalState.toPublicState(canonical),
+          });
+        }
 
       const session = await this.requireOwnedSessionRowForUpdate(
         tx,
         merchantId,
         sessionId,
       );
+      if (v2.requestKey && checkoutPayloadHash) {
+        const priorRequestRows = await tx.$queryRaw<Array<{
+          action: string | null;
+          metadata: Prisma.JsonValue | string | null;
+        }>>`
+          SELECT osl.action, osl.metadata
+          FROM order_status_logs osl
+          INNER JOIN orders o ON o.id = osl.order_id
+          WHERE o.table_session_id = ${sessionId}
+            AND o.merchant_id = ${merchantId}
+            AND osl.request_key = ${v2.requestKey}
+          ORDER BY osl.id
+          FOR UPDATE
+        `;
+        if (priorRequestRows.length > 0) {
+          const matches = priorRequestRows.every((entry) => {
+            const metadata = this.parseJsonMetadata(entry.metadata);
+            return entry.action === 'TABLE_SESSION_CHECKOUT'
+              || entry.action === 'TABLE_SESSION_CHECKOUT_CONFIRMED'
+              ? metadata.payloadHash === checkoutPayloadHash
+              : false;
+          });
+          if (!matches) {
+            throw new ConflictException({
+              code: 'CHECKOUT_REQUEST_KEY_CONFLICT',
+              message: '结账请求标识已用于其他操作。',
+            });
+          }
+          return { sessionId, printTriggerIds: [] as bigint[] };
+        }
+      }
       if (session.status === 'CLOSED') {
+        if (v2.expectedRevision) {
+          throw new ConflictException({
+            code: 'TABLE_SESSION_EXTERNALLY_CLOSED',
+            message: '桌账已由其他终端关闭。',
+            latestState: canonical ? this.canonicalState.toPublicState(canonical) : undefined,
+          });
+        }
         return { sessionId, printTriggerIds: [] as bigint[] };
+      }
+      if (v2.expectedRevision && canonical && canonical.revision !== v2.expectedRevision) {
+        throw new ConflictException({
+          code: 'CHECKOUT_REVISION_CONFLICT',
+          message: '桌账已变化，请核对最新菜品与金额。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
+      }
+      if (
+        v2.expectedRevision
+        && canonical
+        && (canonical.items.length === 0 || canonical.totals.payableAmountVnd === '0')
+      ) {
+        throw new ConflictException({
+          code: 'EMPTY_TABLE_SESSION_REQUIRES_RELEASE',
+          message: '空桌请使用释放空桌，不执行收款结账。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
       }
       const merchant = await tx.merchant.findUnique({
         where: { id: merchantId },
@@ -518,7 +621,10 @@ export class TableSessionsService {
             operatorType: 'MERCHANT_STAFF',
             operatorStaffId: staffId,
             action: 'TABLE_SESSION_CHECKOUT',
+            requestKey: v2.requestKey,
             metadata: {
+              payloadHash: checkoutPayloadHash,
+              expectedRevision: v2.expectedRevision ?? null,
               tableSessionId: sessionId.toString(),
               originalAmountVnd: itemAmountVnd.toString(),
               itemAmountVnd: itemAmountVnd.toString(),
@@ -544,6 +650,37 @@ export class TableSessionsService {
           },
         );
         printTriggerIds.push(...triggers.map(({ id }) => id));
+      }
+
+      if (v2.requestKey && checkoutPayloadHash) {
+        const alreadyAnchored = sessionOrders.some((order) =>
+          ['ACCEPTED', 'PREPARING', 'READY'].includes(order.status),
+        );
+        if (!alreadyAnchored) {
+          const anchor = sessionOrders.find((order) =>
+            order.status !== 'CANCELLED' && order.order_type === 'DINE_IN',
+          );
+          if (anchor) {
+            await tx.orderStatusLog.create({
+              data: {
+                orderId: anchor.id,
+                fromStatus: anchor.status,
+                toStatus: anchor.status,
+                operatorType: 'MERCHANT_STAFF',
+                operatorStaffId: staffId,
+                action: 'TABLE_SESSION_CHECKOUT_CONFIRMED',
+                requestKey: v2.requestKey,
+                metadata: {
+                  payloadHash: checkoutPayloadHash,
+                  expectedRevision: v2.expectedRevision,
+                  tableSessionId: sessionId.toString(),
+                  payableAmountVnd: amounts.payableAmountVnd.toString(),
+                },
+                remark: '桌台账单复核后结账',
+              },
+            });
+          }
+        }
       }
 
       const completedWithoutBusinessDate = sessionOrders.filter(
@@ -612,6 +749,155 @@ export class TableSessionsService {
     }
 
     return this.getCheckoutSnapshot(merchantId, result.sessionId);
+  }
+
+  async releaseEmptySession(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    input: ReleaseEmptyRequest,
+  ) {
+    const payloadHash = canonicalPayloadHash({
+      sessionId: sessionId.toString(),
+      expectedRevision: input.expectedRevision,
+      action: 'RELEASE_EMPTY',
+    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
+      await this.lockTableRow(tx, merchantId, sessionRef.tableId);
+      const canonical = await this.canonicalState.buildLockedWithClient(
+        tx,
+        merchantId,
+        sessionId,
+      );
+      if (canonical.tableId !== sessionRef.tableId.toString()) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_TABLE_CHANGED',
+          message: '桌台已变化，请刷新后重试。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
+      }
+
+      const priorRequestRows = await tx.$queryRaw<Array<{
+        action: string | null;
+        metadata: Prisma.JsonValue | string | null;
+      }>>`
+        SELECT osl.action, osl.metadata
+        FROM order_status_logs osl
+        INNER JOIN orders o ON o.id = osl.order_id
+        WHERE o.table_session_id = ${sessionId}
+          AND o.merchant_id = ${merchantId}
+          AND osl.request_key = ${input.requestKey}
+        ORDER BY osl.id
+        FOR UPDATE
+      `;
+      if (priorRequestRows.length > 0) {
+        const matches = priorRequestRows.every((entry) => {
+          const metadata = this.parseJsonMetadata(entry.metadata);
+          return entry.action === 'DINE_IN_EMPTY_SESSION_RELEASED'
+            && metadata.payloadHash === payloadHash;
+        });
+        if (!matches) {
+          throw new ConflictException({
+            code: 'CANONICAL_REQUEST_KEY_CONFLICT',
+            message: '请求标识已用于其他操作。',
+          });
+        }
+        return { sessionId };
+      }
+
+      if (canonical.sessionStatus !== 'OPEN') {
+        // A never-ordered empty session has no Order row on which to persist a
+        // request key without creating a fake business order. Treat the
+        // already released, still-zero state as the idempotent terminal result.
+        if (
+          canonical.items.length === 0
+          && canonical.totals.originalAmountVnd === '0'
+          && canonical.totals.payableAmountVnd === '0'
+          && canonical.blockers.length === 0
+        ) {
+          return { sessionId };
+        }
+        throw new ConflictException({
+          code: 'TABLE_SESSION_EXTERNALLY_CLOSED',
+          message: '桌账已由其他终端关闭。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
+      }
+      if (canonical.revision !== input.expectedRevision) {
+        throw new ConflictException({
+          code: 'CANONICAL_REVISION_CONFLICT',
+          message: '桌账已变化，请刷新后重试。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
+      }
+      if (
+        canonical.items.some((item) => item.quantity > 0)
+        || canonical.totals.originalAmountVnd !== '0'
+        || canonical.totals.payableAmountVnd !== '0'
+        || canonical.blockers.length > 0
+      ) {
+        throw new ConflictException({
+          code: 'CANONICAL_EMPTY_RELEASE_NOT_ALLOWED',
+          message: '当前桌账不为空，不能释放空桌。',
+          latestState: this.canonicalState.toPublicState(canonical),
+        });
+      }
+
+      const anchorOrder = await tx.order.findFirst({
+          where: { merchantId, tableSessionId: sessionId },
+          select: { id: true, status: true },
+          orderBy: { id: 'asc' },
+        });
+      if (anchorOrder) {
+          await tx.orderStatusLog.create({
+            data: {
+              orderId: anchorOrder.id,
+              fromStatus: anchorOrder.status,
+              toStatus: anchorOrder.status,
+              operatorType: 'MERCHANT_STAFF',
+              operatorStaffId: staffId,
+              action: 'DINE_IN_EMPTY_SESSION_RELEASED',
+              requestKey: input.requestKey,
+              metadata: {
+                payloadHash,
+                expectedRevision: input.expectedRevision,
+                tableSessionId: sessionId.toString(),
+                tableId: canonical.tableId,
+              },
+              remark: '员工确认释放空桌',
+            },
+          });
+      }
+
+      const closed = await tx.tableSession.updateMany({
+        where: {
+          id: sessionId,
+          merchantId,
+          status: 'OPEN',
+          openTableId: sessionRef.tableId,
+        },
+        data: {
+          status: 'CLOSED',
+          openTableId: null,
+          closedAt: new Date(),
+          discountPayableRateBps: null,
+          discountAmountVnd: 0n,
+          discountAppliedByStaffId: null,
+          discountAppliedAt: null,
+          roundingAmountVnd: 0n,
+          roundingAppliedByStaffId: null,
+        },
+      });
+      if (closed.count !== 1) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_STATUS_CHANGED',
+          message: '桌账状态已变化，请刷新后重试。',
+        });
+      }
+      return { sessionId };
+    });
+    return this.getSessionDetail(merchantId, result.sessionId);
   }
 
   async setRounding(merchantId: bigint, staffId: bigint, sessionId: bigint, enabled: boolean) {
@@ -1180,5 +1466,20 @@ export class TableSessionsService {
         productNameVi: product?.nameVi ?? null,
       };
     });
+  }
+
+  private parseJsonMetadata(value: Prisma.JsonValue | string | null) {
+    if (!value) return {} as Record<string, unknown>;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as Record<string, unknown>;
+      } catch {
+        return {} as Record<string, unknown>;
+      }
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return {} as Record<string, unknown>;
   }
 }

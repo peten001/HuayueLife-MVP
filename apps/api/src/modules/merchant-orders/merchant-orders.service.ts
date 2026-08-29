@@ -48,6 +48,15 @@ import {
 } from './merchant-settlements';
 import { formatBilingualDishName } from '../printing/types/bilingual-receipt';
 import type { PrintBlock } from '../printing/types/print-document';
+import {
+  canonicalPayloadHash,
+  DineInCanonicalStateService,
+  normalizeCanonicalText,
+} from '../table-sessions/dine-in-canonical-state.service';
+import type {
+  DineInCanonicalDesiredItemDto,
+  ReconcileDineInCanonicalStateDto,
+} from '../table-sessions/dto/dine-in-canonical-state.dto';
 
 type MerchantOrderAction =
   | 'ACCEPT'
@@ -153,6 +162,7 @@ const TRANSITIONS: Record<MerchantOrderAction, TransitionRule> = {
 @Injectable()
 export class MerchantOrdersService {
   private readonly logger = new Logger(MerchantOrdersService.name);
+  private readonly canonicalState: DineInCanonicalStateService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -160,7 +170,10 @@ export class MerchantOrdersService {
     private readonly tableSessions: TableSessionsService,
     private readonly creatorInvariant: OrderCreatorInvariantService,
     private readonly pendingCancellation: PendingOrderCancellationService,
-  ) {}
+    canonicalState?: DineInCanonicalStateService,
+  ) {
+    this.canonicalState = canonicalState ?? new DineInCanonicalStateService(prisma);
+  }
 
   async list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
     let dateWhere: Prisma.OrderWhereInput = {};
@@ -619,6 +632,503 @@ export class MerchantOrdersService {
     }
 
     return this.buildMutationResponse(merchantId, result.orderId, result.sessionId);
+  }
+
+  async reconcileDineInCanonicalState(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    dto: ReconcileDineInCanonicalStateDto,
+  ) {
+    const desired = this.normalizeCanonicalDesiredItems(dto.desiredItems);
+    const payloadHash = canonicalPayloadHash({
+      sessionId: sessionId.toString(),
+      baseRevision: dto.baseRevision,
+      desiredItems: desired.map((item) => ({
+        lineKey: item.lineKey ?? null,
+        productId: item.productId?.toString() ?? null,
+        remark: item.remark,
+        desiredQuantity: item.desiredQuantity,
+      })),
+    });
+    const sessionRef = await this.prisma.tableSession.findFirst({
+      where: { id: sessionId, merchantId },
+      select: { id: true, tableId: true },
+    });
+    if (!sessionRef) {
+      throw new NotFoundException({
+        code: 'TABLE_SESSION_NOT_FOUND',
+        message: '桌台会话不存在',
+      });
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const creator = await this.creatorInvariant.assertValid(tx, {
+        merchantId,
+        userId: null,
+        createdByStaffId: staffId,
+      });
+      const tableRows = await tx.$queryRaw<Array<{
+        id: bigint;
+        table_no: string;
+        status: string;
+      }>>`
+        SELECT id, table_no, status
+        FROM dining_tables
+        WHERE id = ${sessionRef.tableId} AND merchant_id = ${merchantId}
+        FOR UPDATE
+      `;
+      const table = tableRows[0];
+      if (!table) {
+        throw new NotFoundException({ code: 'TABLE_NOT_FOUND', message: '桌台不存在' });
+      }
+
+      const before = await this.canonicalState.buildLockedWithClient(
+        tx,
+        merchantId,
+        sessionId,
+      );
+      if (before.tableId !== sessionRef.tableId.toString()) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_TABLE_CHANGED',
+          message: '桌台已变化，请刷新后重试。',
+          latestState: this.canonicalState.toPublicState(before),
+        });
+      }
+
+      const priorRows = await tx.$queryRaw<Array<{
+        action: string | null;
+        metadata: Prisma.JsonValue | string | null;
+      }>>`
+        SELECT osl.action, osl.metadata
+        FROM order_status_logs osl
+        INNER JOIN orders o ON o.id = osl.order_id
+        WHERE o.table_session_id = ${sessionId}
+          AND o.merchant_id = ${merchantId}
+          AND osl.request_key = ${dto.requestKey}
+        ORDER BY osl.id
+        FOR UPDATE
+      `;
+      if (priorRows.length > 0) {
+        const matches = priorRows.every((entry) => {
+          const metadata = this.parseJsonRecord(entry.metadata);
+          return entry.action === 'DINE_IN_CANONICAL_RECONCILED'
+            && metadata.payloadHash === payloadHash;
+        });
+        if (!matches) {
+          throw new ConflictException({
+            code: 'CANONICAL_REQUEST_KEY_CONFLICT',
+            message: '请求标识已用于其他桌账操作。',
+          });
+        }
+        return {
+          state: this.canonicalState.toPublicState(before),
+          idempotentReplay: true,
+          printTriggerIds: [] as bigint[],
+        };
+      }
+
+      this.canonicalState.assertOpenDineInState(before);
+      if (before.revision !== dto.baseRevision) {
+        throw new ConflictException({
+          code: 'CANONICAL_REVISION_CONFLICT',
+          message: '桌账已变化，请核对最新菜品数量。',
+          latestState: this.canonicalState.toPublicState(before),
+        });
+      }
+
+      const existingByKey = new Map(before.items.map((item) => [item.lineKey, item]));
+      const desiredExisting = new Map(
+        desired.filter((item) => item.lineKey).map((item) => [item.lineKey!, item]),
+      );
+      for (const lineKey of desiredExisting.keys()) {
+        if (!existingByKey.has(lineKey)) {
+          throw new ConflictException({
+            code: 'CANONICAL_LINE_NOT_FOUND',
+            message: '菜品行已变化，请刷新后重试。',
+            latestState: this.canonicalState.toPublicState(before),
+          });
+        }
+      }
+
+      const positive = new Map<string, {
+        productId: bigint;
+        quantity: number;
+        remark: string;
+        expectedUnitPriceVnd?: bigint;
+      }>();
+      const negative: Array<{
+        line: (typeof before.items)[number];
+        removeQuantity: number;
+        desiredQuantity: number;
+      }> = [];
+      const lineChanges: Array<{
+        lineKey: string | null;
+        productId: string | null;
+        beforeQuantity: number;
+        afterQuantity: number;
+      }> = [];
+
+      for (const line of before.items) {
+        const target = desiredExisting.get(line.lineKey)?.desiredQuantity ?? 0;
+        if (target < line.lockedQuantity) {
+          throw new ConflictException({
+            code: 'CANONICAL_LINE_LOCKED',
+            message: '该菜品已有不可调整数量，请按最新桌账处理。',
+            lineKey: line.lineKey,
+            lockedQuantity: line.lockedQuantity,
+            latestState: this.canonicalState.toPublicState(before),
+          });
+        }
+        if (target > line.quantity) {
+          if (!line.productId) {
+            throw new ConflictException({
+              code: 'CANONICAL_LINE_LOCKED',
+              message: '历史菜品无法继续增加。',
+              lineKey: line.lineKey,
+            });
+          }
+          positive.set(`line:${line.lineKey}`, {
+            productId: BigInt(line.productId),
+            quantity: target - line.quantity,
+            remark: line.remark,
+            expectedUnitPriceVnd: BigInt(line.unitPriceVnd),
+          });
+        } else if (target < line.quantity) {
+          negative.push({
+            line,
+            removeQuantity: line.quantity - target,
+            desiredQuantity: target,
+          });
+        }
+        if (target !== line.quantity) {
+          lineChanges.push({
+            lineKey: line.lineKey,
+            productId: line.productId,
+            beforeQuantity: line.quantity,
+            afterQuantity: target,
+          });
+        }
+      }
+
+      for (const item of desired.filter((entry) => entry.productId)) {
+        if (item.desiredQuantity <= 0) continue;
+        const key = `new:${item.productId!.toString()}\u0000${item.remark}`;
+        positive.set(key, {
+          productId: item.productId!,
+          quantity: item.desiredQuantity,
+          remark: item.remark,
+        });
+        lineChanges.push({
+          lineKey: null,
+          productId: item.productId!.toString(),
+          beforeQuantity: 0,
+          afterQuantity: item.desiredQuantity,
+        });
+      }
+
+      if (positive.size === 0 && negative.length === 0) {
+        return {
+          state: this.canonicalState.toPublicState(before),
+          idempotentReplay: false,
+          printTriggerIds: [] as bigint[],
+        };
+      }
+
+      const merchant = await tx.merchant.findUnique({
+        where: { id: merchantId },
+        select: { businessHours: true },
+      });
+      const positiveRows = [...positive.values()];
+      const productIds = [...new Set(positiveRows.map((item) => item.productId))]
+        .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+      const products = productIds.length
+        ? await tx.$queryRaw<LockedProductRow[]>(Prisma.sql`
+            SELECT p.id, p.name_zh, p.image_url, p.price_vnd,
+                   p.product_type, p.status, p.deleted_at,
+                   c.is_active AS category_active
+            FROM products p
+            INNER JOIN categories c ON c.id = p.category_id
+            WHERE p.merchant_id = ${merchantId}
+              AND p.id IN (${Prisma.join(productIds)})
+            ORDER BY p.id
+            FOR SHARE
+          `)
+        : [];
+      const productsById = new Map(products.map((product) => [product.id, product]));
+      const pricedPositive = positiveRows.map((item) => {
+        const product = productsById.get(item.productId);
+        if (
+          !product
+          || product.product_type !== 'FOOD'
+          || product.status !== 'ON_SALE'
+          || product.deleted_at !== null
+          || !Boolean(product.category_active)
+        ) {
+          throw new ConflictException({
+            code: 'PRODUCT_NOT_AVAILABLE',
+            message: '菜品已下架、售罄或不属于当前商家。',
+          });
+        }
+        if (
+          item.expectedUnitPriceVnd !== undefined
+          && item.expectedUnitPriceVnd !== product.price_vnd
+        ) {
+          throw new ConflictException({
+            code: 'CANONICAL_LINE_PRICE_CHANGED',
+            message: '菜品价格已变化，请从菜单重新添加。',
+            latestState: this.canonicalState.toPublicState(before),
+          });
+        }
+        return {
+          ...item,
+          product,
+          subtotalVnd: product.price_vnd * BigInt(item.quantity),
+        };
+      });
+
+      let createdOrderId: bigint | null = null;
+      if (pricedPositive.length > 0) {
+        const createdAt = new Date();
+        const itemAmountVnd = pricedPositive.reduce((sum, item) => sum + item.subtotalVnd, 0n);
+        const created = await tx.order.create({
+          data: {
+            orderNo: this.generateOrderNo(),
+            idempotencyKey: dto.requestKey,
+            userId: null,
+            createdByStaffId: staffId,
+            merchantId,
+            tableId: sessionRef.tableId,
+            tableSessionId: sessionId,
+            tableNoSnapshot: table.table_no,
+            orderType: 'DINE_IN',
+            itemAmountVnd,
+            deliveryFeeVnd: 0n,
+            totalAmountVnd: itemAmountVnd,
+            businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
+            createdAt,
+            status: 'ACCEPTED',
+            acceptedAt: createdAt,
+            items: {
+              create: pricedPositive.map((item) => ({
+                productId: item.product.id,
+                productNameZhSnapshot: item.product.name_zh,
+                imageUrlSnapshot: item.product.image_url,
+                unitPriceVnd: item.product.price_vnd,
+                quantity: item.quantity,
+                subtotalVnd: item.subtotalVnd,
+                remark: item.remark || undefined,
+              })),
+            },
+          },
+          select: { id: true },
+        });
+        createdOrderId = created.id;
+      }
+
+      const touchedOrderIds = new Set<bigint>();
+      for (const change of negative) {
+        let remaining = change.removeQuantity;
+        for (const raw of change.line.rawItems) {
+          if (remaining <= 0) break;
+          if (!['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(raw.orderStatus)) continue;
+          const decrease = Math.min(remaining, raw.quantity);
+          const targetQuantity = raw.quantity - decrease;
+          const afterSubtotalVnd = raw.unitPriceVnd * BigInt(targetQuantity);
+          if (targetQuantity === 0) await tx.orderItem.delete({ where: { id: raw.itemId } });
+          else {
+            await tx.orderItem.update({
+              where: { id: raw.itemId },
+              data: { quantity: targetQuantity, subtotalVnd: afterSubtotalVnd },
+            });
+          }
+          await tx.orderStatusLog.create({
+            data: {
+              orderId: raw.orderId,
+              fromStatus: raw.orderStatus,
+              toStatus: raw.orderStatus,
+              operatorType: OperatorType.MERCHANT_STAFF,
+              operatorStaffId: staffId,
+              action: raw.orderStatus === 'PENDING_ACCEPTANCE'
+                ? 'ORDER_ITEM_DECREASED'
+                : 'ORDER_ITEM_RETURNED',
+              metadata: {
+                canonicalRequestKey: dto.requestKey,
+                lineKey: change.line.lineKey,
+                orderItemId: raw.itemId.toString(),
+                beforeQuantity: raw.quantity,
+                afterQuantity: targetQuantity,
+                delta: -decrease,
+                unitPriceVnd: raw.unitPriceVnd.toString(),
+                tableSessionAutoClosed: false,
+                tableReleased: false,
+              },
+              remark: raw.orderStatus === 'PENDING_ACCEPTANCE'
+                ? '整桌目标态减少未接单菜品'
+                : '整桌目标态退菜',
+            },
+          });
+          touchedOrderIds.add(raw.orderId);
+          remaining -= decrease;
+        }
+        if (remaining > 0) {
+          throw new ConflictException({
+            code: 'CANONICAL_LINE_LOCKED',
+            message: '可调整菜品数量不足，请刷新后重试。',
+            lineKey: change.line.lineKey,
+          });
+        }
+      }
+
+      for (const orderId of [...touchedOrderIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)) {
+        const order = await tx.order.findFirst({
+          where: { id: orderId, merchantId, tableSessionId: sessionId },
+          select: { id: true, status: true, deliveryFeeVnd: true },
+        });
+        if (!order) {
+          throw new ConflictException({
+            code: 'ORDER_STATUS_CHANGED',
+            message: '订单状态已变化，请刷新后重试。',
+          });
+        }
+        const aggregate = await tx.orderItem.aggregate({
+          where: { orderId },
+          _sum: { subtotalVnd: true },
+          _count: { id: true },
+        });
+        const itemAmountVnd = aggregate._sum.subtotalVnd ?? 0n;
+        const totalAmountVnd = itemAmountVnd + order.deliveryFeeVnd;
+        if (aggregate._count.id > 0) {
+          await tx.order.update({
+            where: { id: orderId },
+            data: { itemAmountVnd, totalAmountVnd },
+          });
+          continue;
+        }
+        if (order.status === 'PENDING_ACCEPTANCE') {
+          await this.pendingCancellation.cancel(tx, {
+            orderId,
+            merchantId,
+            operatorStaffId: staffId,
+            reason: '整桌目标态将未接单订单全部减为零，订单已取消',
+            itemAmountVnd,
+            totalAmountVnd,
+          });
+        } else {
+          const cancelled = await tx.order.updateMany({
+            where: {
+              id: orderId,
+              merchantId,
+              tableSessionId: sessionId,
+              status: order.status,
+            },
+            data: {
+              status: 'CANCELLED',
+              cancelledAt: new Date(),
+              cancelReason: '整桌目标态退空订单，订单已自动取消',
+              itemAmountVnd,
+              totalAmountVnd,
+            },
+          });
+          if (cancelled.count !== 1) {
+            throw new ConflictException({
+              code: 'ORDER_STATUS_CHANGED',
+              message: '订单状态已变化，请刷新后重试。',
+            });
+          }
+          await tx.orderStatusLog.create({
+            data: {
+              orderId,
+              fromStatus: order.status,
+              toStatus: 'CANCELLED',
+              operatorType: OperatorType.MERCHANT_STAFF,
+              operatorStaffId: staffId,
+              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              metadata: {
+                canonicalRequestKey: dto.requestKey,
+                tableSessionId: sessionId.toString(),
+                tableSessionAutoClosed: false,
+                tableReleased: false,
+              },
+              remark: '订单退空，订单已自动取消，桌台保持用餐中',
+            },
+          });
+        }
+      }
+
+      await this.clearSessionAdjustment(tx, sessionId);
+      const after = await this.canonicalState.buildLockedWithClient(
+        tx,
+        merchantId,
+        sessionId,
+      );
+      const anchorOrderId = createdOrderId
+        ?? [...touchedOrderIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)[0];
+      let printTriggerIds: bigint[] = [];
+      if (anchorOrderId) {
+        const anchor = await tx.order.findUnique({
+          where: { id: anchorOrderId },
+          select: { status: true },
+        });
+        if (!anchor) throw new ConflictException({ code: 'ORDER_NOT_FOUND', message: '订单不存在' });
+        const batchLog = await tx.orderStatusLog.create({
+          data: {
+            orderId: anchorOrderId,
+            fromStatus: createdOrderId ? null : anchor.status,
+            toStatus: anchor.status,
+            operatorType: OperatorType.MERCHANT_STAFF,
+            operatorStaffId: staffId,
+            action: 'DINE_IN_CANONICAL_RECONCILED',
+            requestKey: dto.requestKey,
+            metadata: {
+              payloadHash,
+              baseRevision: dto.baseRevision,
+              appliedRevision: after.revision,
+              tableSessionId: sessionId.toString(),
+              tableId: sessionRef.tableId.toString(),
+              actorId: staffId.toString(),
+              actorRole: creator.staffRole,
+              lineChanges,
+              createdOrderId: createdOrderId?.toString() ?? null,
+              touchedOrderIds: [...touchedOrderIds].map((id) => id.toString()),
+              tableSessionAutoClosed: false,
+              tableReleased: false,
+            },
+            remark: '堂食整桌目标态已对账',
+          },
+        });
+        if (createdOrderId) {
+          const triggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+            merchantId,
+            orderId: createdOrderId,
+            orderStatusLogId: batchLog.id,
+            orderType: 'DINE_IN',
+            status: 'ACCEPTED',
+          });
+          printTriggerIds = triggers.map(({ id }) => id);
+        }
+      }
+      return {
+        state: this.canonicalState.toPublicState(after),
+        idempotentReplay: false,
+        printTriggerIds,
+      };
+    });
+
+    if (result.printTriggerIds.length > 0) {
+      try {
+        await this.printJobs.processAutomaticTriggerIds(result.printTriggerIds);
+      } catch (error) {
+        this.logger.warn(
+          `Canonical reconcile print processing deferred merchant=${merchantId} session=${sessionId} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
+    }
+    return {
+      ...result.state,
+      idempotentReplay: result.idempotentReplay,
+      appliedRevision: result.state.revision,
+    };
   }
 
   decreaseOrderItem(
@@ -1156,11 +1666,6 @@ export class MerchantOrdersService {
         }
         return sum + (current.id === itemId ? input.targetQuantity : current.quantity);
       }, 0);
-      const closeEmptySession =
-        input.kind === 'RETURN' &&
-        cancelEmptyOrder &&
-        effectiveQuantityAfterAdjustment === 0;
-
       if (!cancelEmptyOrder) {
         const updated = await tx.order.updateMany({
           where: {
@@ -1207,8 +1712,8 @@ export class MerchantOrdersService {
             beforeOrderAmountVnd: order.total_amount_vnd.toString(),
             afterOrderAmountVnd: afterOrderAmountVnd.toString(),
             orderAutoCancelled: cancelEmptyOrder,
-            tableSessionAutoClosed: closeEmptySession,
-            tableReleased: closeEmptySession,
+            tableSessionAutoClosed: false,
+            tableReleased: false,
             merchantId: merchantId.toString(),
             orderId: orderId.toString(),
             tableSessionId: orderRef.tableSessionId.toString(),
@@ -1255,34 +1760,6 @@ export class MerchantOrdersService {
             });
           }
 
-          if (closeEmptySession) {
-            const closed = await tx.tableSession.updateMany({
-              where: {
-                id: orderRef.tableSessionId,
-                merchantId,
-                status: 'OPEN',
-                openTableId: orderRef.tableId,
-              },
-              data: {
-                status: 'CLOSED',
-                openTableId: null,
-                closedAt: cancelledAt,
-                discountPayableRateBps: null,
-                discountAmountVnd: 0n,
-                discountAppliedByStaffId: null,
-                discountAppliedAt: null,
-                roundingAmountVnd: 0n,
-                roundingAppliedByStaffId: null,
-              },
-            });
-            if (closed.count !== 1) {
-              throw new ConflictException({
-                code: 'TABLE_SESSION_STATUS_CHANGED',
-                message: '桌账状态已变化，请刷新后重试',
-              });
-            }
-          }
-
           await tx.orderStatusLog.create({
             data: {
               orderId,
@@ -1296,21 +1773,19 @@ export class MerchantOrdersService {
                 orderId: orderId.toString(),
                 tableSessionId: orderRef.tableSessionId.toString(),
                 tableId: orderRef.tableId.toString(),
-                tableSessionAutoClosed: closeEmptySession,
-                tableReleased: closeEmptySession,
+                tableSessionAutoClosed: false,
+                tableReleased: false,
                 effectiveQuantityAfterAdjustment,
               },
-              remark: closeEmptySession
-                ? '订单退空自动取消，桌账已自动关闭并释放桌台'
-                : '订单退空，订单已自动取消',
+              remark: '订单退空，订单已自动取消，桌台保持用餐中',
             },
           });
         }
       }
 
-      if (!closeEmptySession) {
-        await this.clearSessionAdjustment(tx, orderRef.tableSessionId);
-      }
+      // Emptying a raw order never releases a DINE_IN table. Only the explicit
+      // release-empty endpoint may close the still-open zero-item session.
+      await this.clearSessionAdjustment(tx, orderRef.tableSessionId);
 
       return { orderId, sessionId: orderRef.tableSessionId };
     });
@@ -1344,6 +1819,59 @@ export class MerchantOrdersService {
       normalized.set(key, { productId, quantity, remark });
     }
     return [...normalized.values()];
+  }
+
+  private normalizeCanonicalDesiredItems(
+    items: DineInCanonicalDesiredItemDto[],
+  ) {
+    const seen = new Set<string>();
+    return items.map((item) => {
+      const hasLineKey = Boolean(item.lineKey);
+      const hasProductId = Boolean(item.productId);
+      if (hasLineKey === hasProductId) {
+        throw new BadRequestException({
+          code: 'INVALID_CANONICAL_DESIRED_ITEM',
+          message: '每个目标菜品必须且只能指定 lineKey 或 productId。',
+        });
+      }
+      const remark = normalizeCanonicalText(item.remark);
+      const productId = item.productId ? BigInt(item.productId) : undefined;
+      const key = item.lineKey
+        ? `line:${item.lineKey}`
+        : `product:${productId!.toString()}\u0000${remark}`;
+      if (seen.has(key)) {
+        throw new BadRequestException({
+          code: 'DUPLICATE_CANONICAL_DESIRED_ITEM',
+          message: '目标菜品列表包含重复行。',
+        });
+      }
+      seen.add(key);
+      return {
+        lineKey: item.lineKey,
+        productId,
+        remark,
+        desiredQuantity: item.desiredQuantity,
+      };
+    }).sort((left, right) => {
+      const leftKey = left.lineKey ?? `${left.productId?.toString()}\u0000${left.remark}`;
+      const rightKey = right.lineKey ?? `${right.productId?.toString()}\u0000${right.remark}`;
+      return leftKey.localeCompare(rightKey);
+    });
+  }
+
+  private parseJsonRecord(value: Prisma.JsonValue | string | null) {
+    if (!value) return {} as Record<string, unknown>;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as Record<string, unknown>;
+      } catch {
+        return {} as Record<string, unknown>;
+      }
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return {} as Record<string, unknown>;
   }
 
   private metadataMatchesAddOrder(
