@@ -48,16 +48,14 @@ describe('OrdersService dine-in auto acceptance', () => {
         cartId: 31n,
         merchant: { id: 7n, nameZh: 'Test merchant' },
         table: orderType === 'DINE_IN' ? { id: 11n } : null,
-        items: [
-          {
-            product: { id: 41n, nameZh: 'Test item', priceVnd: 1000n },
-            quantity: 1,
-            subtotalVnd: 1000n,
-          },
-        ],
-        itemAmountVnd: 1000n,
+        items: [41n, 42n, 43n].map((id) => ({
+          product: { id, nameZh: `Test item ${id.toString()}`, priceVnd: 1000n },
+          quantity: 1,
+          subtotalVnd: 1000n,
+        })),
+        itemAmountVnd: 3000n,
         deliveryFeeVnd: 0n,
-        totalAmountVnd: 1000n,
+        totalAmountVnd: 3000n,
       }),
     });
     return { service, tx, printJobs };
@@ -85,6 +83,8 @@ describe('OrdersService dine-in auto acceptance', () => {
         }),
       }),
     );
+    expect(tx.order.create.mock.calls[0]?.[0].data.items.create).toHaveLength(3);
+    expect(tx.order.create).toHaveBeenCalledTimes(1);
     expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledTimes(1);
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([801n]);
   });
