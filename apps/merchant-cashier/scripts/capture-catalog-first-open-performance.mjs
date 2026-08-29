@@ -16,6 +16,7 @@ assert.ok(Number.isInteger(iterations) && iterations >= 5, 'At least 5 iteration
 const apiEvents = [];
 const imageEvents = [];
 const browserErrors = [];
+let imageFailureMode = 'none';
 const merchant = {
   id: 'catalog-perf-merchant',
   nameZh: '菜单性能测试餐厅',
@@ -114,6 +115,9 @@ const context = await browser.newContext({
 });
 await context.addInitScript(() => {
   window.__catalogPerfLayoutShift = 0;
+  window.__cashierImageAssignments = [];
+  window.__cashierImageLifecycle = [];
+  window.__cashierIoTrace = [];
   try {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -123,10 +127,105 @@ await context.addInitScript(() => {
   } catch {
     // LayoutShift is not available in every browser build.
   }
+
+  const recordAssignedImage = (image) => {
+    if (!(image instanceof HTMLImageElement)) return;
+    const src = image.getAttribute('src');
+    if (!src || !src.includes('catalog-perf-product-')) return;
+    if (window.__cashierImageAssignments.some((entry) => entry.image === image && entry.src === src)) return;
+    const assignment = { image, src, assignedAt: performance.now(), decodedAt: null, decodeFailed: false };
+    window.__cashierImageAssignments.push(assignment);
+    image.decode().then(() => {
+      assignment.decodedAt = performance.now();
+    }).catch(() => {
+      assignment.decodeFailed = true;
+    });
+  };
+  new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.type === 'attributes') recordAssignedImage(record.target);
+      for (const node of record.addedNodes || []) {
+        if (!(node instanceof Element)) continue;
+        recordAssignedImage(node);
+        node.querySelectorAll?.('img').forEach(recordAssignedImage);
+      }
+    }
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+  document.addEventListener('load', (event) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement)) return;
+    const src = image.getAttribute('src');
+    if (!src?.includes('catalog-perf-product-')) return;
+    window.__cashierImageLifecycle.push({ image, src, loadedAt: performance.now() });
+  }, true);
+
+  const NativeIntersectionObserver = window.IntersectionObserver;
+  if (NativeIntersectionObserver) {
+    window.IntersectionObserver = class TracedIntersectionObserver {
+      constructor(callback, options = {}) {
+        this.root = options.root || null;
+        this.rootMargin = options.rootMargin || '0px';
+        this.thresholds = Array.isArray(options.threshold)
+          ? options.threshold
+          : [options.threshold ?? 0];
+        this.trace = {
+          rootClass: this.root instanceof Element ? this.root.className : null,
+          rootMargin: this.rootMargin,
+          thresholds: this.thresholds,
+          rootRectAtCreation: this.root instanceof Element
+            ? rectToJson(this.root.getBoundingClientRect())
+            : null,
+          observedCount: 0,
+          callbacks: [],
+          disconnectCount: 0,
+        };
+        window.__cashierIoTrace.push(this.trace);
+        this.native = new NativeIntersectionObserver((entries) => {
+          this.trace.callbacks.push({
+            at: performance.now(),
+            total: entries.length,
+            intersecting: entries.filter((entry) => entry.isIntersecting).length,
+            rootBounds: entries[0]?.rootBounds ? rectToJson(entries[0].rootBounds) : null,
+          });
+          callback(entries, this);
+        }, options);
+      }
+
+      observe(element) {
+        this.trace.observedCount += 1;
+        this.native.observe(element);
+      }
+
+      unobserve(element) {
+        this.native.unobserve(element);
+      }
+
+      disconnect() {
+        this.trace.disconnectCount += 1;
+        this.native.disconnect();
+      }
+
+      takeRecords() {
+        return this.native.takeRecords();
+      }
+    };
+  }
+
+  function rectToJson(rect) {
+    return {
+      top: Math.round(rect.top),
+      right: Math.round(rect.right),
+      bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+  }
 });
 const page = await context.newPage();
 
 page.on('console', (message) => {
+  if (imageFailureMode !== 'none' && message.text().includes('status of 503')) return;
   if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
 });
 page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
@@ -146,14 +245,18 @@ await context.route('**/*', async (route) => {
   const request = route.request();
   const url = new URL(request.url());
   if (url.pathname.includes('/api/v1/uploads/products/catalog-perf-product-')) {
-    const event = { url: url.pathname, startedAt: Date.now(), completedAt: 0 };
+    const shouldFail = imageFailureMode === 'all'
+      || (imageFailureMode === 'first' && url.pathname.includes('catalog-perf-product-1.svg'));
+    const event = { url: url.pathname, startedAt: Date.now(), completedAt: 0, status: shouldFail ? 503 : 200 };
     imageEvents.push(event);
     await delay(imageDelayMs);
     event.completedAt = Date.now();
     await route.fulfill({
-      status: 200,
+      status: event.status,
       contentType: 'image/svg+xml',
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#e9f4ef"/><circle cx="320" cy="240" r="120" fill="#36a270"/></svg>',
+      body: shouldFail
+        ? ''
+        : '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#e9f4ef"/><circle cx="320" cy="240" r="120" fill="#36a270"/></svg>',
     });
     return;
   }
@@ -193,44 +296,55 @@ await context.route('**/*', async (route) => {
 
 try {
   await signIn();
-  const bootstrap = await measureBootstrap();
-  const noCacheImmediate = await measureFirstOpen({ waitBeforeOpenMs: 0, clearCatalog: true });
-  const noCachePrefetchWindow = await measureFirstOpen({ waitBeforeOpenMs: 1_500, clearCatalog: true });
-  await primeCatalog();
-  const persistentReload = [];
-  for (let index = 0; index < iterations; index += 1) {
-    persistentReload.push(await measureFirstOpen({ waitBeforeOpenMs: 0, clearCatalog: false }));
+  let result;
+  if (process.env.CASHIER_CATALOG_CRITIQUE_ONLY === '1') {
+    result = {
+      label,
+      generatedAt: new Date().toISOString(),
+      uiCritique: await captureUiCritique(),
+      browserErrors,
+    };
+  } else {
+    const bootstrap = await measureBootstrap();
+    const noCacheImmediate = await measureFirstOpen({ waitBeforeOpenMs: 0, clearCatalog: true });
+    const noCachePrefetchWindow = await measureFirstOpen({ waitBeforeOpenMs: 1_500, clearCatalog: true });
+    await primeCatalog();
+    const persistentReload = [];
+    for (let index = 0; index < iterations; index += 1) {
+      persistentReload.push(await measureFirstOpen({ waitBeforeOpenMs: 0, clearCatalog: false }));
+    }
+    const reopen = await measureReopen();
+    const tableSwitch = await measureTableSwitch();
+    const imageLoading = await measureImageFanout();
+    const responsiveMenu = await measureResponsiveMenu();
+    const mobileImageRegression = await measureMobileImageRegression();
+    result = {
+      label,
+      generatedAt: new Date().toISOString(),
+      configuration: {
+        products: products.length,
+        categories: categories.length,
+        iterations,
+        catalogDelayMs,
+        bootstrapDelayMs,
+        imageDelayMs,
+        viewport: '1280x800',
+      },
+      bootstrap,
+      scenarios: {
+        noCacheImmediate,
+        noCachePrefetchWindow,
+        persistentReload: summarizeRuns(persistentReload),
+        persistentReloadRuns: persistentReload,
+        reopen,
+        tableSwitch,
+      },
+      imageLoading,
+      responsiveMenu,
+      mobileImageRegression,
+      browserErrors,
+    };
   }
-  const reopen = await measureReopen();
-  const tableSwitch = await measureTableSwitch();
-  const imageLoading = await measureImageFanout();
-  const responsiveMenu = await measureResponsiveMenu();
-
-  const result = {
-    label,
-    generatedAt: new Date().toISOString(),
-    configuration: {
-      products: products.length,
-      categories: categories.length,
-      iterations,
-      catalogDelayMs,
-      bootstrapDelayMs,
-      imageDelayMs,
-      viewport: '1280x800',
-    },
-    bootstrap,
-    scenarios: {
-      noCacheImmediate,
-      noCachePrefetchWindow,
-      persistentReload: summarizeRuns(persistentReload),
-      persistentReloadRuns: persistentReload,
-      reopen,
-      tableSwitch,
-    },
-    imageLoading,
-    responsiveMenu,
-    browserErrors,
-  };
   await mkdir(outputDirectory, { recursive: true });
   const outputPath = `${outputDirectory}/${label}.json`;
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
@@ -492,6 +606,237 @@ async function measureResponsiveMenu() {
   }
   await page.setViewportSize({ width: 1280, height: 800 });
   return results;
+}
+
+async function measureMobileImageRegression() {
+  const targets = [
+    { width: 430, height: 932 },
+    { width: 390, height: 844 },
+    { width: 375, height: 812 },
+  ];
+  const results = [];
+  for (const target of targets) {
+    const runs = [];
+    for (let iteration = 0; iteration < iterations; iteration += 1) {
+      await page.setViewportSize(target);
+      await page.goto(`${baseUrl}/tables`, { waitUntil: 'domcontentloaded' });
+      await page.locator('[data-cashier-ready="true"]').waitFor();
+      const targetTable = page.getByTestId(`table-card-${tables[0].id}`);
+      await targetTable.waitFor();
+      await page.evaluate(() => {
+        window.__cashierImageAssignments = [];
+        window.__cashierImageLifecycle = [];
+        window.__cashierIoTrace = [];
+      });
+      const apiIndex = apiEvents.length;
+      const imageIndex = imageEvents.length;
+      const clickedAt = Date.now();
+      const clickedAtPerformance = await page.evaluate(() => performance.now());
+      await targetTable.click();
+      await waitForSelectedTable(tables[0].id);
+      await waitForMenuReady();
+      const samples = {};
+      for (const sampleMs of [100, 500, 2_000]) {
+        await page.waitForTimeout(Math.max(0, sampleMs - (Date.now() - clickedAt)));
+        samples[sampleMs] = await captureMobileImageSample(clickedAtPerformance);
+        samples[sampleMs].requestCount = imageEvents.slice(imageIndex)
+          .filter((event) => event.startedAt <= clickedAt + sampleMs).length;
+      }
+      const scroller = page.getByTestId('table-ordering-products-scroller');
+      const scrollStartedAt = Date.now();
+      await scroller.evaluate((element) => { element.scrollTop = Math.min(element.clientHeight, element.scrollHeight); });
+      await page.waitForFunction(
+        () => document.querySelectorAll('.table-ordering-product img[src]').length
+          > Number(document.body.dataset.beforeScrollSrcCount || 0),
+        null,
+        { timeout: 2_000 },
+      ).catch(() => undefined);
+      const afterOneScreen = await captureMobileImageSample(clickedAtPerformance);
+      afterOneScreen.triggerLatencyMs = Date.now() - scrollStartedAt;
+      await scroller.evaluate(async (element) => {
+        for (let top = element.scrollTop; top <= element.scrollHeight; top += Math.max(1, element.clientHeight)) {
+          element.scrollTop = top;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      });
+      await page.waitForTimeout(imageDelayMs + 100);
+      const fullScroll = await captureMobileImageSample(clickedAtPerformance);
+      const catalogEvents = apiEvents.slice(apiIndex).filter(isCatalogEvent);
+      runs.push({
+        samples,
+        afterOneScreen,
+        fullScroll,
+        categoriesHttp: catalogEvents.filter((event) => event.path === '/merchant/categories').length,
+        productsHttp: catalogEvents.filter((event) => event.path === '/merchant/products').length,
+      });
+    }
+    results.push({ viewport: `${target.width}x${target.height}`, runs });
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  return results;
+}
+
+async function captureMobileImageSample(clickedAtPerformance) {
+  return page.evaluate((clickAt) => {
+    const scroller = document.querySelector('[data-testid="table-ordering-products-scroller"]');
+    if (!(scroller instanceof HTMLElement)) return null;
+    const rootRect = scroller.getBoundingClientRect();
+    const cards = Array.from(document.querySelectorAll('.table-ordering-product'));
+    const withImages = cards.filter((card) => card.querySelector('img'));
+    const visible = withImages.filter((card) => {
+      const rect = card.getBoundingClientRect();
+      return rect.bottom > rootRect.top && rect.top < rootRect.bottom;
+    });
+    const srcAssigned = (card) => Boolean(card.querySelector('img')?.getAttribute('src'));
+    const assignments = window.__cashierImageAssignments || [];
+    const lifecycle = window.__cashierImageLifecycle || [];
+    const resources = performance.getEntriesByType('resource');
+    const details = withImages.slice(0, 10).map((card, index) => {
+      const image = card.querySelector('img');
+      const rect = image?.getBoundingClientRect();
+      const assignment = assignments.find((entry) => entry.image === image);
+      const loaded = lifecycle.find((entry) => entry.image === image && entry.src === image?.getAttribute('src'));
+      const resource = resources.find((entry) => entry.name.includes(image?.getAttribute('src') || '__missing__'));
+      const style = image ? getComputedStyle(image) : null;
+      return {
+        index,
+        hasSrc: Boolean(image?.getAttribute('src')),
+        loading: image?.getAttribute('loading') || null,
+        decoding: image?.getAttribute('decoding') || null,
+        loadReason: image?.dataset.loadReason || null,
+        hidden: image?.hidden || false,
+        visible: Boolean(image && rect && !image.hidden && style?.display !== 'none' && style?.visibility !== 'hidden'
+          && rect.bottom > rootRect.top && rect.top < rootRect.bottom),
+        complete: image?.complete || false,
+        naturalWidth: image?.naturalWidth || 0,
+        rect: rect ? {
+          top: Math.round(rect.top),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        } : null,
+        assignedAfterClickMs: assignment ? Math.round(assignment.assignedAt - clickAt) : null,
+        requestStartedAfterClickMs: resource ? Math.round(resource.startTime - clickAt) : null,
+        responseCompletedAfterClickMs: resource ? Math.round(resource.responseEnd - clickAt) : null,
+        loadedAfterClickMs: loaded ? Math.round(loaded.loadedAt - clickAt) : null,
+        decodedAfterClickMs: assignment?.decodedAt ? Math.round(assignment.decodedAt - clickAt) : null,
+      };
+    });
+    document.body.dataset.beforeScrollSrcCount = String(withImages.filter(srcAssigned).length);
+    return {
+      visibleImageNodes: visible.length,
+      visibleWithSrc: visible.filter(srcAssigned).length,
+      visibleLoaded: visible.filter((card) => {
+        const image = card.querySelector('img');
+        return image?.complete && image.naturalWidth > 0 && !image.hidden;
+      }).length,
+      visibleSrcPercent: visible.length ? Math.round(visible.filter(srcAssigned).length / visible.length * 100) : 100,
+      totalImageNodes: withImages.length,
+      totalWithSrc: withImages.filter(srcAssigned).length,
+      scroller: {
+        scrollHeight: scroller.scrollHeight,
+        clientHeight: scroller.clientHeight,
+        scrollTop: scroller.scrollTop,
+        overflowY: getComputedStyle(scroller).overflowY,
+        rect: {
+          top: Math.round(rootRect.top),
+          bottom: Math.round(rootRect.bottom),
+          width: Math.round(rootRect.width),
+          height: Math.round(rootRect.height),
+        },
+      },
+      observer: (window.__cashierIoTrace || []).map((trace) => ({ ...trace })),
+      details,
+      layoutShift: window.__catalogPerfLayoutShift || 0,
+      bodyHorizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    };
+  }, clickedAtPerformance);
+}
+
+async function captureUiCritique() {
+  await mkdir(outputDirectory, { recursive: true });
+  const viewports = [
+    { width: 430, height: 932 },
+    { width: 390, height: 844 },
+    { width: 375, height: 812 },
+  ];
+  const defaultStates = [];
+  for (const viewport of viewports) {
+    await openMobileMenu(viewport);
+    await page.waitForTimeout(imageDelayMs + 120);
+    const state = await captureMobileImageSample(performance.now());
+    await page.screenshot({
+      path: `${outputDirectory}/${label}-${viewport.width}-default.png`,
+      fullPage: false,
+    });
+    defaultStates.push({
+      viewport: `${viewport.width}x${viewport.height}`,
+      visibleImageNodes: state.visibleImageNodes,
+      visibleWithSrc: state.visibleWithSrc,
+      visibleLoaded: state.visibleLoaded,
+      bodyHorizontalOverflowPx: state.bodyHorizontalOverflowPx,
+    });
+  }
+
+  await openMobileMenu({ width: 390, height: 844 });
+  const categoryButtons = page.locator('[data-testid="table-ordering-category-strip"] button');
+  await categoryButtons.nth(2).click();
+  await page.waitForFunction(() => {
+    const cards = document.querySelectorAll('.table-ordering-product');
+    return cards.length > 0 && cards.length < 201
+      && [...cards].filter((card) => card.querySelector('img')).every((card) => card.querySelector('img')?.hasAttribute('src'));
+  });
+  await page.waitForTimeout(imageDelayMs + 80);
+  const categoryState = await captureMobileImageSample(performance.now());
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-category.png`, fullPage: false });
+
+  await page.getByTestId('table-ordering-search').locator('input').fill('性能测试菜品002');
+  await page.waitForFunction(() => document.querySelectorAll('.table-ordering-product').length === 1);
+  await page.waitForTimeout(imageDelayMs + 80);
+  const searchState = await captureMobileImageSample(performance.now());
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-search.png`, fullPage: false });
+
+  imageFailureMode = 'first';
+  await openMobileMenu({ width: 390, height: 844 });
+  await page.waitForTimeout(imageDelayMs + 120);
+  const imageErrorState = await page.evaluate(() => {
+    const firstImage = document.querySelector('.table-ordering-product img');
+    const firstPlaceholder = document.querySelector('.table-ordering-product .table-ordering-product__image svg');
+    return {
+      failedImageHidden: firstImage instanceof HTMLImageElement && firstImage.hidden,
+      placeholderPresent: firstPlaceholder instanceof SVGElement,
+      horizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    };
+  });
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-image-error.png`, fullPage: false });
+  imageFailureMode = 'none';
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  return {
+    defaultStates,
+    category: {
+      visibleImageNodes: categoryState.visibleImageNodes,
+      visibleWithSrc: categoryState.visibleWithSrc,
+      bodyHorizontalOverflowPx: categoryState.bodyHorizontalOverflowPx,
+    },
+    search: {
+      resultImageNodes: searchState.totalImageNodes,
+      resultWithSrc: searchState.totalWithSrc,
+      bodyHorizontalOverflowPx: searchState.bodyHorizontalOverflowPx,
+    },
+    imageError: imageErrorState,
+  };
+}
+
+async function openMobileMenu(viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}/tables`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-cashier-ready="true"]').waitFor();
+  const targetTable = page.getByTestId(`table-card-${tables[0].id}`);
+  await targetTable.waitFor();
+  await targetTable.click();
+  await waitForSelectedTable(tables[0].id);
+  await waitForMenuReady();
 }
 
 async function waitForMenuReady() {

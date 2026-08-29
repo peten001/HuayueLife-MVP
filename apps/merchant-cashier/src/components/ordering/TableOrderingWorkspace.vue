@@ -401,6 +401,7 @@ function setProductCardRef(element: Element | null, index: number) {
                   <DeferredCatalogImage
                     v-if="resolveMediaUrl(product.imageUrl)"
                     :src="resolveMediaUrl(product.imageUrl)"
+                    :alt="productName(product)"
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
                   <b class="table-ordering-product__price">

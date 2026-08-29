@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import { observeCatalogImage, type CatalogImageLoadReason } from './catalog-image-visibility';
+
 const props = defineProps<{
   src: string;
   alt?: string;
@@ -9,33 +11,26 @@ const props = defineProps<{
 const image = ref<HTMLImageElement | null>(null);
 const resolvedSrc = ref('');
 const failed = ref(false);
-let observer: IntersectionObserver | null = null;
+const loadReason = ref<CatalogImageLoadReason | ''>('');
+let stopObserving: (() => void) | null = null;
 
 function prepare() {
-  observer?.disconnect();
-  observer = null;
+  stopObserving?.();
+  stopObserving = null;
   resolvedSrc.value = '';
   failed.value = false;
+  loadReason.value = '';
   if (!props.src || !image.value) return;
-  if (typeof IntersectionObserver === 'undefined') {
+  stopObserving = observeCatalogImage(image.value, (reason) => {
     resolvedSrc.value = props.src;
-    return;
-  }
-  observer = new IntersectionObserver((entries) => {
-    if (!entries.some((entry) => entry.isIntersecting)) return;
-    resolvedSrc.value = props.src;
-    observer?.disconnect();
-    observer = null;
-  }, {
-    root: image.value.closest('.table-ordering-products__scroller'),
-    rootMargin: '100% 0px',
+    loadReason.value = reason;
+    stopObserving = null;
   });
-  observer.observe(image.value);
 }
 
 watch(() => props.src, () => void nextTick(prepare));
 onMounted(prepare);
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => stopObserving?.());
 </script>
 
 <template>
@@ -43,9 +38,10 @@ onBeforeUnmount(() => observer?.disconnect());
     ref="image"
     :src="resolvedSrc || undefined"
     :alt="alt || ''"
-    loading="lazy"
+    :loading="resolvedSrc ? 'eager' : 'lazy'"
     decoding="async"
-    fetchpriority="low"
+    fetchpriority="auto"
+    :data-load-reason="loadReason || undefined"
     :hidden="failed"
     @error="failed = true"
   />

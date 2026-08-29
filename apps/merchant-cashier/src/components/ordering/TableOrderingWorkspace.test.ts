@@ -181,6 +181,38 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.emitted('addProduct')).toEqual([[secondProduct.id]]);
   });
 
+  it('loads the visible image again after category and search result changes', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function getRect(this: HTMLElement) {
+      if (this.classList.contains('table-ordering-products__scroller')) {
+        return { top: 100, bottom: 700, left: 0, right: 390, width: 390, height: 600 } as DOMRect;
+      }
+      if (this instanceof HTMLImageElement) {
+        return { top: 140, bottom: 220, left: 20, right: 100, width: 80, height: 80 } as DOMRect;
+      }
+      return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect;
+    });
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([
+      { ...product, imageUrl: '/uploads/beef-pho.jpg' },
+      { ...secondProduct, imageUrl: '/uploads/iced-coffee.jpg' },
+    ]);
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    expect(wrapper.findAll('.table-ordering-product img[src]')).toHaveLength(2);
+
+    const drinks = wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
+      .find((button) => button.text() === '饮品');
+    expect(drinks).toBeDefined();
+    await drinks!.trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.table-ordering-product img').attributes('src')).toContain('/uploads/iced-coffee.jpg');
+
+    await wrapper.get('input[type="search"]').setValue('冰咖啡');
+    await flushPromises();
+    expect(wrapper.get('.table-ordering-product img').attributes('src')).toContain('/uploads/iced-coffee.jpg');
+    wrapper.unmount();
+  });
+
   it('keeps the mobile search and category strip outside the product scroller', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
