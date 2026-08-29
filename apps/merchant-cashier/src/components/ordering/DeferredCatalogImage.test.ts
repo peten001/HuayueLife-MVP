@@ -81,9 +81,15 @@ function createScroller(clientHeight = 500, scrollHeight = 4_000) {
   return root;
 }
 
-function mountInExistingScroller(root: HTMLElement, src: string, alt: string, cacheKey = alt) {
+function mountInExistingScroller(
+  root: HTMLElement,
+  src: string,
+  alt: string,
+  cacheKey = alt,
+  eager = false,
+) {
   const wrapper = mount(DeferredCatalogImage, {
-    props: { src, alt, cacheKey },
+    props: { src, alt, cacheKey, eager },
     attachTo: root,
   });
   mounted.push({ wrapper, root });
@@ -130,7 +136,14 @@ describe('DeferredCatalogImage', () => {
     expect(wrapper.get('img').attributes('loading')).toBe('eager');
     expect(wrapper.get('img').attributes('decoding')).toBe('async');
     expect(wrapper.get('img').attributes('data-load-reason')).toBe('initial');
+    expect(wrapper.get('img').attributes('data-load-state')).toBe('loading');
     expect(observer.observe).not.toHaveBeenCalled();
+
+    await wrapper.get('img').trigger('load');
+    expect(wrapper.get('img').attributes('data-load-state')).toBe('loaded');
+    await wrapper.get('img').trigger('error');
+    expect(wrapper.get('img').attributes('data-load-state')).toBe('loaded');
+    expect(wrapper.get('img').attributes('hidden')).toBeUndefined();
   });
 
   it('assigns an eager-window image without waiting for layout or an observer', async () => {
@@ -168,6 +181,61 @@ describe('DeferredCatalogImage', () => {
     expect(wrapper.get('img').attributes('src')).toBe('/dish.jpg');
     expect(wrapper.get('img').attributes('data-load-reason')).toBe('intersection');
     expect(observer.unobserve).toHaveBeenCalledOnce();
+  });
+
+  it('ignores an error before a deferred image receives its real source', async () => {
+    const observer = installObserver();
+    imageTops.set('deferred error', 1_600);
+    const { wrapper } = mountInScroller('/dish.jpg', 'deferred error');
+    flushAnimationFrames();
+
+    const image = wrapper.get('img');
+    expect(image.attributes('src')).toBeUndefined();
+    expect(image.attributes('data-load-state')).toBe('deferred');
+    await image.trigger('error');
+
+    expect(image.attributes('hidden')).toBeUndefined();
+    expect(image.attributes('src')).toBeUndefined();
+    expect(image.attributes('data-load-state')).toBe('deferred');
+    expect(image.element.getBoundingClientRect().height).toBe(80);
+
+    observer.callback?.([
+      { isIntersecting: true, target: image.element } as unknown as IntersectionObserverEntry,
+    ], {} as IntersectionObserver);
+    await flushPromises();
+
+    expect(image.attributes('src')).toBe('/dish.jpg');
+    expect(image.attributes('data-load-reason')).toBe('intersection');
+    expect(image.attributes('data-load-state')).toBe('loading');
+  });
+
+  it('keeps item 21 eligible after a premature error in a 201-product menu', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const root = createScroller(600, 20_200);
+    const wrappers = Array.from({ length: 201 }, (_, index) => {
+      const alt = `boundary-${index + 1}`;
+      imageTops.set(alt, 100 + index * 100);
+      return mountInExistingScroller(root, `/dish-${index + 1}.jpg`, alt, `product-${index + 1}`, index < 20);
+    });
+    await flushPromises();
+
+    expect(wrappers.slice(0, 20).every((wrapper) => Boolean(wrapper.get('img').attributes('src')))).toBe(true);
+    const item21 = wrappers[20]!.get('img');
+    expect(item21.attributes('src')).toBeUndefined();
+    await item21.trigger('error');
+    expect(item21.attributes('hidden')).toBeUndefined();
+    expect(item21.attributes('data-load-state')).toBe('deferred');
+    expect(item21.element.getBoundingClientRect().height).toBe(80);
+
+    flushAnimationFrames();
+    root.scrollTop = 1_400;
+    root.dispatchEvent(new Event('scroll'));
+    flushAnimationFrames();
+    await flushPromises();
+
+    expect(item21.attributes('src')).toBe('/dish-21.jpg');
+    expect(item21.attributes('data-load-state')).toBe('loading');
+    expect(item21.attributes('data-load-reason')).toBe('scroll');
   });
 
   it('uses the bounded fallback when an observer callback stalls without loading the whole list', async () => {
@@ -208,8 +276,8 @@ describe('DeferredCatalogImage', () => {
 
   it('loads every traversed image from deterministic scroll geometry with IntersectionObserver disabled', async () => {
     vi.stubGlobal('IntersectionObserver', undefined);
-    const root = createScroller();
-    const wrappers = Array.from({ length: 40 }, (_, index) => {
+    const root = createScroller(500, 20_200);
+    const wrappers = Array.from({ length: 201 }, (_, index) => {
       const alt = `scroll-${index}`;
       imageTops.set(alt, 100 + index * 100);
       return mountInExistingScroller(root, `/dish-${index}.jpg`, alt);
@@ -218,7 +286,7 @@ describe('DeferredCatalogImage', () => {
     await flushPromises();
 
     expect(wrappers.filter((wrapper) => wrapper.get('img').attributes('src')).length).toBeLessThan(wrappers.length);
-    for (const scrollTop of [500, 1_000, 1_500, 2_000, 2_500, 3_000, 3_500]) {
+    for (let scrollTop = 500; scrollTop <= 20_000; scrollTop += 500) {
       root.scrollTop = scrollTop;
       root.dispatchEvent(new Event('scroll'));
       flushAnimationFrames();
@@ -292,10 +360,24 @@ describe('DeferredCatalogImage', () => {
 
   it('keeps the existing no-retry fallback visible after an image error', async () => {
     installObserver();
-    imageTops.set('broken', 140);
-    const { wrapper } = mountInScroller('/broken.jpg', 'broken');
+    const root = createScroller();
+    const imageSlot = document.createElement('span');
+    imageSlot.className = 'table-ordering-product__image';
+    root.append(imageSlot);
+    vi.spyOn(imageSlot, 'getBoundingClientRect').mockReturnValue(rect(140, 80, 20, 80));
+    const wrapper = mount(DeferredCatalogImage, {
+      props: { src: '/broken.jpg', alt: 'broken', eager: true },
+      attachTo: imageSlot,
+    });
+    mounted.push({ wrapper, root });
+    await flushPromises();
+    expect(wrapper.get('img').attributes('src')).toBe('/broken.jpg');
+    expect(wrapper.get('img').attributes('data-load-state')).toBe('loading');
     await wrapper.get('img').trigger('error');
     expect(wrapper.get('img').attributes('hidden')).toBeDefined();
+    expect(wrapper.get('img').attributes('data-load-state')).toBe('failed');
+    expect(imageSlot.contains(wrapper.get('img').element)).toBe(true);
+    expect(imageSlot.getBoundingClientRect().height).toBe(80);
   });
 
   it('does not retry a failed stable product URL in the same menu root and retries after the URL changes', async () => {
@@ -321,5 +403,6 @@ describe('DeferredCatalogImage', () => {
     await flushPromises();
     expect(retry.get('img').attributes('src')).toBe('/fixed.jpg');
     expect(retry.get('img').attributes('hidden')).toBeUndefined();
+    expect(retry.get('img').attributes('data-load-state')).toBe('loading');
   });
 });

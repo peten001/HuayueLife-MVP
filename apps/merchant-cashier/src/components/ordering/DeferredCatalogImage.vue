@@ -17,7 +17,8 @@ const props = defineProps<{
 
 const image = ref<HTMLImageElement | null>(null);
 const resolvedSrc = ref('');
-const failed = ref(false);
+type CatalogImageLoadState = 'deferred' | 'loading' | 'loaded' | 'failed';
+const loadState = ref<CatalogImageLoadState>('deferred');
 const loadReason = ref<CatalogImageLoadReason | ''>('');
 let stopObserving: (() => void) | null = null;
 let sessionRoot: HTMLElement | null = null;
@@ -27,36 +28,42 @@ function ensureImageLoaded(reason: CatalogImageLoadReason) {
   if (!props.src || resolvedSrc.value === props.src) return;
   const status = catalogImageSessionStatus(sessionRoot, sessionKey);
   if (status === 'failed') {
-    failed.value = true;
+    loadState.value = 'failed';
     loadReason.value = 'session-cache';
     return;
   }
   if (!status) setCatalogImageSessionStatus(sessionRoot, sessionKey, 'loading');
+  loadState.value = 'loading';
   resolvedSrc.value = props.src;
   loadReason.value = status ? 'session-cache' : reason;
 }
 
 function markLoaded() {
+  if (loadState.value !== 'loading' || resolvedSrc.value !== props.src) return;
   setCatalogImageSessionStatus(sessionRoot, sessionKey, 'loaded');
+  loadState.value = 'loaded';
 }
 
 function markFailed() {
+  if (loadState.value !== 'loading' || resolvedSrc.value !== props.src) return;
   setCatalogImageSessionStatus(sessionRoot, sessionKey, 'failed');
-  failed.value = true;
+  loadState.value = 'failed';
 }
 
 function prepare() {
   stopObserving?.();
   stopObserving = null;
   resolvedSrc.value = '';
-  failed.value = false;
+  loadState.value = 'deferred';
   loadReason.value = '';
+  sessionRoot = null;
+  sessionKey = '';
   if (!props.src || !image.value) return;
   sessionRoot = image.value.closest<HTMLElement>('.table-ordering-products__scroller');
   sessionKey = `${props.cacheKey || props.src}\u0000${props.src}`;
   const sessionStatus = catalogImageSessionStatus(sessionRoot, sessionKey);
   if (sessionStatus === 'failed') {
-    failed.value = true;
+    loadState.value = 'failed';
     loadReason.value = 'session-cache';
     return;
   }
@@ -84,7 +91,8 @@ onBeforeUnmount(() => stopObserving?.());
     decoding="async"
     fetchpriority="auto"
     :data-load-reason="loadReason || undefined"
-    :hidden="failed"
+    :data-load-state="loadState"
+    :hidden="loadState === 'failed'"
     @load="markLoaded"
     @error="markFailed"
   />

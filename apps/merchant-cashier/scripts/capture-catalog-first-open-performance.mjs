@@ -10,6 +10,7 @@ const catalogDelayMs = Number(process.env.CASHIER_CATALOG_PERF_DELAY_MS || 550);
 const bootstrapDelayMs = Number(process.env.CASHIER_BOOTSTRAP_PERF_DELAY_MS || 80);
 const imageDelayMs = Number(process.env.CASHIER_IMAGE_PERF_DELAY_MS || 240);
 const imageObserverMode = process.env.CASHIER_CATALOG_IMAGE_OBSERVER_MODE || 'native';
+const preSourceError = process.env.CASHIER_CATALOG_PRE_SOURCE_ERROR === '1';
 const cacheOnly = process.env.CASHIER_CATALOG_CACHE_ONLY === '1';
 
 assert.ok(outputDirectory, 'CASHIER_CATALOG_PERF_OUTPUT is required');
@@ -117,10 +118,12 @@ const context = await browser.newContext({
   deviceScaleFactor: 1,
   reducedMotion: 'reduce',
 });
-await context.addInitScript((observerMode) => {
+await context.addInitScript(({ observerMode, dispatchPreSourceError }) => {
   window.__catalogPerfLayoutShift = 0;
   window.__cashierImageAssignments = [];
+  window.__cashierImageMountedAt = new WeakMap();
   window.__cashierImageLifecycle = [];
+  window.__cashierPreSourceErrors = [];
   window.__cashierIoTrace = [];
   window.__cashierLongTasks = [];
   try {
@@ -142,12 +145,24 @@ await context.addInitScript((observerMode) => {
     // LongTask is not available in every browser build.
   }
 
+  const recordMountedImage = (image) => {
+    if (!(image instanceof HTMLImageElement) || window.__cashierImageMountedAt.has(image)) return;
+    window.__cashierImageMountedAt.set(image, performance.now());
+  };
   const recordAssignedImage = (image) => {
     if (!(image instanceof HTMLImageElement)) return;
     const src = image.getAttribute('src');
     if (!src || !src.includes('catalog-perf-product-')) return;
     if (window.__cashierImageAssignments.some((entry) => entry.image === image && entry.src === src)) return;
-    const assignment = { image, src, assignedAt: performance.now(), decodedAt: null, decodeFailed: false };
+    const assignedAt = performance.now();
+    const assignment = {
+      image,
+      src,
+      assignedAt,
+      assignedAfterMountMs: assignedAt - (window.__cashierImageMountedAt.get(image) ?? assignedAt),
+      decodedAt: null,
+      decodeFailed: false,
+    };
     window.__cashierImageAssignments.push(assignment);
     image.decode().then(() => {
       assignment.decodedAt = performance.now();
@@ -155,13 +170,42 @@ await context.addInitScript((observerMode) => {
       assignment.decodeFailed = true;
     });
   };
+  const scheduledPreSourceErrors = new WeakSet();
+  const schedulePreSourceError = (image) => {
+    if (!dispatchPreSourceError || !(image instanceof HTMLImageElement) || scheduledPreSourceErrors.has(image)) return;
+    scheduledPreSourceErrors.add(image);
+    setTimeout(() => {
+      if (
+        !image.isConnected
+        || image.hasAttribute('src')
+        || image.dataset.loadState !== 'deferred'
+      ) return;
+      const entry = {
+        alt: image.alt,
+        stateBefore: image.dataset.loadState,
+        hiddenBefore: image.hidden,
+        stateAfter: null,
+        hiddenAfter: null,
+      };
+      image.dispatchEvent(new Event('error'));
+      entry.stateAfter = image.dataset.loadState;
+      entry.hiddenAfter = image.hidden;
+      window.__cashierPreSourceErrors.push(entry);
+    }, 0);
+  };
   new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === 'attributes') recordAssignedImage(record.target);
       for (const node of record.addedNodes || []) {
         if (!(node instanceof Element)) continue;
+        recordMountedImage(node);
         recordAssignedImage(node);
-        node.querySelectorAll?.('img').forEach(recordAssignedImage);
+        schedulePreSourceError(node);
+        node.querySelectorAll?.('img').forEach((image) => {
+          recordMountedImage(image);
+          recordAssignedImage(image);
+          schedulePreSourceError(image);
+        });
       }
     }
   }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
@@ -238,7 +282,7 @@ await context.addInitScript((observerMode) => {
       height: Math.round(rect.height),
     };
   }
-}, imageObserverMode);
+}, { observerMode: imageObserverMode, dispatchPreSourceError: preSourceError });
 const page = await context.newPage();
 
 page.on('console', (message) => {
@@ -340,7 +384,7 @@ try {
     result = {
       label,
       generatedAt: new Date().toISOString(),
-      configuration: { iterations, imageObserverMode, cacheOnly },
+      configuration: { iterations, imageObserverMode, preSourceError, cacheOnly },
       persistentReload: persistentSummary,
       runs: persistentReload,
       reopen: await measureReopen(),
@@ -380,6 +424,7 @@ try {
         bootstrapDelayMs,
         imageDelayMs,
         imageObserverMode,
+        preSourceError,
         viewport: '1280x800',
       },
       bootstrap,
@@ -744,6 +789,18 @@ async function measureMobileImageRegression() {
         productsHttp: catalogEvents.filter((event) => event.path === '/merchant/products').length,
       });
     }
+    const assignmentTiming = {
+      initialP95Ms: summarizeNumbers(runs.map((run) => run.samples[100].initialAssignmentP95Ms)).p95,
+      item21P95Ms: summarizeNumbers(runs.map((run) => run.samples[100].item21AssignmentMs)).p95,
+    };
+    assert.ok(
+      assignmentTiming.initialP95Ms !== null && assignmentTiming.initialP95Ms <= 100,
+      `${target.width}px: initial image src assignment p95 must be <=100ms, got ${assignmentTiming.initialP95Ms}ms`,
+    );
+    assert.ok(
+      assignmentTiming.item21P95Ms !== null && assignmentTiming.item21P95Ms <= 100,
+      `${target.width}px: item21 src assignment p95 must be <=100ms, got ${assignmentTiming.item21P95Ms}ms`,
+    );
     await openMobileMenu(target);
     await page.evaluate(() => {
       window.__cashierImageAssignments = [];
@@ -764,7 +821,7 @@ async function measureMobileImageRegression() {
     );
     assert.ok(quickJump.scrollMetrics.longestFrameMs < 8, `${target.width}px quick jump must stay below 8ms`);
     assert.equal(quickJump.longTasks.length, 0, `${target.width}px quick jump must not produce long tasks`);
-    results.push({ viewport: `${target.width}x${target.height}`, runs, quickJump });
+    results.push({ viewport: `${target.width}x${target.height}`, runs, assignmentTiming, quickJump });
   }
   await page.setViewportSize({ width: 1280, height: 800 });
   return results;
@@ -818,6 +875,7 @@ async function captureFullScrollCheckpoint() {
         lastReleasedCount: metrics.lastReleasedCount,
       },
       longTasks: [...(window.__cashierLongTasks || [])],
+      preSourceErrors: [...(window.__cashierPreSourceErrors || [])],
       bodyHorizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
     };
   });
@@ -907,6 +965,22 @@ async function captureMobileImageSample(clickedAtPerformance) {
     const assignments = window.__cashierImageAssignments || [];
     const lifecycle = window.__cashierImageLifecycle || [];
     const resources = performance.getEntriesByType('resource');
+    const assignmentAfterEligibility = (card) => {
+      const image = card.querySelector('img');
+      const assignment = assignments.find((entry) => entry.image === image);
+      return assignment?.assignedAfterMountMs ?? null;
+    };
+    const initialAssignmentSamples = withImages.slice(0, 20)
+      .map(assignmentAfterEligibility)
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => left - right);
+    const initialAssignmentP95Ms = initialAssignmentSamples.length
+      ? initialAssignmentSamples[Math.min(
+        initialAssignmentSamples.length - 1,
+        Math.ceil(initialAssignmentSamples.length * 0.95) - 1,
+      )]
+      : null;
+    const item21AssignmentMs = withImages[20] ? assignmentAfterEligibility(withImages[20]) : null;
     const details = withImages.slice(0, 10).map((card, index) => {
       const image = card.querySelector('img');
       const rect = image?.getBoundingClientRect();
@@ -932,6 +1006,7 @@ async function captureMobileImageSample(clickedAtPerformance) {
           height: Math.round(rect.height),
         } : null,
         assignedAfterClickMs: assignment ? Math.round(assignment.assignedAt - clickAt) : null,
+        assignedAfterMountMs: assignment ? Math.round(assignment.assignedAfterMountMs) : null,
         requestStartedAfterClickMs: resource ? Math.round(resource.startTime - clickAt) : null,
         responseCompletedAfterClickMs: resource ? Math.round(resource.responseEnd - clickAt) : null,
         loadedAfterClickMs: loaded ? Math.round(loaded.loadedAt - clickAt) : null,
@@ -949,6 +1024,8 @@ async function captureMobileImageSample(clickedAtPerformance) {
       visibleSrcPercent: visible.length ? Math.round(visible.filter(srcAssigned).length / visible.length * 100) : 100,
       totalImageNodes: withImages.length,
       totalWithSrc: withImages.filter(srcAssigned).length,
+      initialAssignmentP95Ms,
+      item21AssignmentMs,
       scroller: {
         scrollHeight: scroller.scrollHeight,
         clientHeight: scroller.clientHeight,
@@ -964,6 +1041,7 @@ async function captureMobileImageSample(clickedAtPerformance) {
       observer: (window.__cashierIoTrace || []).map((trace) => ({ ...trace })),
       details,
       layoutShift: window.__catalogPerfLayoutShift || 0,
+      preSourceErrors: [...(window.__cashierPreSourceErrors || [])],
       bodyHorizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
     };
   }, clickedAtPerformance);
@@ -981,6 +1059,13 @@ async function captureUiCritique() {
     await openMobileMenu(viewport);
     await page.waitForTimeout(imageDelayMs + 120);
     const state = await captureMobileImageSample(await page.evaluate(() => performance.now()));
+    if (preSourceError) {
+      assert.ok(state.preSourceErrors.length > 0, `${viewport.width}px must dispatch deferred pre-source errors`);
+      assert.ok(
+        state.preSourceErrors.every((entry) => entry.stateAfter === 'deferred' && entry.hiddenAfter === false),
+        `${viewport.width}px deferred pre-source errors must remain visible and deferred`,
+      );
+    }
     await page.screenshot({
       path: `${outputDirectory}/${label}-${viewport.width}-default.png`,
       fullPage: false,
@@ -1017,6 +1102,7 @@ async function captureUiCritique() {
       visibleWithSrc: state.visibleWithSrc,
       visibleLoaded: state.visibleLoaded,
       bodyHorizontalOverflowPx: state.bodyHorizontalOverflowPx,
+      preSourceErrorCount: state.preSourceErrors.length,
       slowScrollCoverage,
     });
   }
