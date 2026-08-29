@@ -12,7 +12,7 @@ import type {
   MerchantOrderMutationResult,
 } from '@/types';
 
-const MAX_PENDING_INTENTS_PER_PRODUCT = 12;
+const MAX_PENDING_QUANTITY_PER_PRODUCT = 12;
 
 type IntentStatus = 'QUEUED' | 'IN_FLIGHT' | 'UNCERTAIN';
 
@@ -22,6 +22,7 @@ interface BaseIntent {
   productId: string;
   mergeKey: string;
   status: IntentStatus;
+  quantity: number;
 }
 
 export interface TableOrderAddIntent extends BaseIntent {
@@ -47,6 +48,12 @@ export interface TableOrderDecreaseExecution {
   productId: string;
   mergeKey: string;
   requestKey: string;
+  quantity: number;
+}
+
+export interface TableOrderDecreaseExecutionResult {
+  result: MerchantOrderMutationResult;
+  appliedQuantity: number;
 }
 
 export interface TableOrderMutationControllerOptions {
@@ -54,43 +61,45 @@ export interface TableOrderMutationControllerOptions {
   sessionId: () => string;
   disabled: () => boolean;
   orderableProducts: () => CashierMenuProduct[];
-  executeDecrease: (input: TableOrderDecreaseExecution) => Promise<MerchantOrderMutationResult>;
+  executeDecrease: (input: TableOrderDecreaseExecution) => Promise<TableOrderDecreaseExecutionResult>;
   onResult: (result: MerchantOrderMutationResult, intent: TableOrderMutationIntent | null) => void | Promise<void>;
   onFailure: (error: unknown, intent: TableOrderMutationIntent | null) => void | Promise<void>;
   onBackpressure?: (productId: string) => void;
 }
 
 /**
- * Stable page-level owner for table order writes. UI components only enqueue
- * immutable intents; idempotency, ordering, optimistic presentation and retry
- * all remain alive even while the menu workspace is unmounted.
+ * Stable page-level owner for table order writes. UI components enqueue desired
+ * quantity changes; idempotency, ordered coalescing, optimistic presentation and
+ * retry all remain alive even while the menu workspace is unmounted.
  */
 export function useTableOrderMutationController(options: TableOrderMutationControllerOptions) {
   const intents = ref<TableOrderMutationIntent[]>([]);
   const effectiveSessionId = ref(options.sessionId());
   const pendingOpenPayload = ref<CreateMerchantTableOrderInput | null>(null);
   const activeLanes = new Set<string>();
+  const flushWaiters = new Set<(settled: boolean) => void>();
   let openingPromise: Promise<boolean> | null = null;
   let nextSequence = 0;
 
   const orderableProductById = computed(() => new Map(
     options.orderableProducts().map((product) => [product.id, product]),
   ));
-  const mutationLocked = computed(() => Boolean(intents.value.length || pendingOpenPayload.value));
+  const mutationPending = computed(() => Boolean(intents.value.length || pendingOpenPayload.value));
+  const mutationLocked = computed(() => intents.value.some((intent) => intent.status === 'UNCERTAIN'));
   const draftLines = computed<CashierOrderingDraftLine[]>(() => {
     const grouped = new Map<string, CashierOrderingDraftLine>();
     for (const intent of intents.value) {
       if (intent.kind !== 'ADD') continue;
       const current = grouped.get(intent.mergeKey);
       if (current) {
-        current.quantity += 1;
+        current.quantity += intent.quantity;
         continue;
       }
       grouped.set(intent.mergeKey, {
         lineId: intent.lineId,
         mergeKey: intent.mergeKey,
         product: intent.product,
-        quantity: 1,
+        quantity: intent.quantity,
         firstAddedAt: intent.firstAddedAt,
         firstAddedSequence: intent.firstAddedSequence,
         ...(intent.sourceItemId ? { sourceItemId: intent.sourceItemId } : {}),
@@ -102,12 +111,24 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
   const pendingAddQuantities = computed<Record<string, number>>(() => {
     const quantities: Record<string, number> = {};
     for (const intent of intents.value) {
-      if (intent.kind === 'ADD') quantities[intent.productId] = (quantities[intent.productId] || 0) + 1;
+      if (intent.kind === 'ADD') quantities[intent.productId] = (quantities[intent.productId] || 0) + intent.quantity;
     }
     return quantities;
   });
   const pendingDecreaseMergeKeys = computed(() => new Set(
     intents.value.filter((intent) => intent.kind === 'DECREASE').map((intent) => intent.mergeKey),
+  ));
+  const pendingDecreaseQuantities = computed<Record<string, number>>(() => {
+    const quantities: Record<string, number> = {};
+    for (const intent of intents.value) {
+      if (intent.kind === 'DECREASE') quantities[intent.mergeKey] = (quantities[intent.mergeKey] || 0) + intent.quantity;
+    }
+    return quantities;
+  });
+  const uncertainDecreaseMergeKeys = computed(() => new Set(
+    intents.value
+      .filter((intent) => intent.kind === 'DECREASE' && intent.status === 'UNCERTAIN')
+      .map((intent) => intent.mergeKey),
   ));
   const uncertainDecreaseIntent = computed(() => intents.value.find(
     (intent): intent is TableOrderDecreaseIntent => intent.kind === 'DECREASE' && intent.status === 'UNCERTAIN',
@@ -124,22 +145,40 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
 
   function touchIntents() {
     intents.value = [...intents.value];
+    notifyFlushWaiters();
   }
 
-  function productIntentCount(productId: string) {
-    return intents.value.filter((intent) => intent.productId === productId).length;
+  function productPendingQuantity(productId: string) {
+    return intents.value
+      .filter((intent) => intent.productId === productId)
+      .reduce((total, intent) => total + intent.quantity, 0);
   }
 
   function atCapacity(productId: string) {
-    return productIntentCount(productId) >= MAX_PENDING_INTENTS_PER_PRODUCT;
+    return productPendingQuantity(productId) >= MAX_PENDING_QUANTITY_PER_PRODUCT;
   }
 
   function removeIntent(id: string) {
     intents.value = intents.value.filter((intent) => intent.id !== id);
+    notifyFlushWaiters();
   }
 
   function rollbackTableIntents(tableId: string) {
     intents.value = intents.value.filter((intent) => intent.tableId !== tableId);
+    notifyFlushWaiters();
+  }
+
+  function settledState() {
+    if (mutationLocked.value) return false;
+    if (mutationPending.value) return null;
+    return true;
+  }
+
+  function notifyFlushWaiters() {
+    const state = settledState();
+    if (state == null) return;
+    flushWaiters.forEach((resolve) => resolve(state));
+    flushWaiters.clear();
   }
 
   async function ensureTableSession(intent: TableOrderMutationIntent) {
@@ -164,6 +203,7 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
       .then(async (result) => {
         effectiveSessionId.value = result.session.id;
         pendingOpenPayload.value = null;
+        notifyFlushWaiters();
         await options.onResult(result, null);
         resumeOpenIntents();
         return true;
@@ -172,6 +212,7 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
         if (error instanceof CashierApiError && error.code === 'TABLE_ALREADY_OPEN') {
           effectiveSessionId.value = 'OPEN_SESSION_CONFIRMED_BY_SERVER';
           pendingOpenPayload.value = null;
+          notifyFlushWaiters();
           resumeOpenIntents();
           return true;
         }
@@ -195,13 +236,17 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
 
   async function executeIntent(intent: TableOrderMutationIntent) {
     if (intent.kind === 'ADD') {
-      return createMerchantTableOrder(intent.tableId, intent.payload);
+      return {
+        result: await createMerchantTableOrder(intent.tableId, intent.payload),
+        appliedQuantity: intent.quantity,
+      };
     }
     return options.executeDecrease({
       tableId: intent.tableId,
       productId: intent.productId,
       mergeKey: intent.mergeKey,
       requestKey: intent.requestKey,
+      quantity: intent.quantity,
     });
   }
 
@@ -216,12 +261,10 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
         if (!intent) break;
         intent.status = 'IN_FLIGHT';
         touchIntents();
+        let execution: { result: MerchantOrderMutationResult; appliedQuantity: number };
         try {
           if (!(await ensureTableSession(intent))) break;
-          const result = await executeIntent(intent);
-          effectiveSessionId.value = result.session.id;
-          await options.onResult(result, intent);
-          removeIntent(intent.id);
+          execution = await executeIntent(intent);
         } catch (error) {
           await options.onFailure(error, intent);
           if (isDefinitiveMutationRejection(error)) {
@@ -232,6 +275,32 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
           touchIntents();
           break;
         }
+        const appliedQuantity = Math.min(intent.quantity, Math.max(0, execution.appliedQuantity));
+        if (!appliedQuantity) {
+          await options.onFailure(new CashierApiError({
+            message: 'The mutation did not apply any quantity.',
+            status: 409,
+            code: 'ORDER_ITEM_QUANTITY_CHANGED',
+          }), intent);
+          removeIntent(intent.id);
+          continue;
+        }
+        effectiveSessionId.value = execution.result.session.id;
+        const appliedIntent = { ...intent, quantity: appliedQuantity } as TableOrderMutationIntent;
+        const hasDecreaseRemainder = intent.kind === 'DECREASE' && appliedQuantity < intent.quantity;
+        if (hasDecreaseRemainder && intent.kind === 'DECREASE') {
+          intent.quantity -= appliedQuantity;
+          intent.requestKey = createMutationKey('decrease');
+          intent.status = 'QUEUED';
+          touchIntents();
+        } else {
+          // Retire the optimistic quantity before applying the canonical snapshot
+          // so Vue observes one atomic desired quantity rather than a double count.
+          intents.value = intents.value.filter((candidate) => candidate.id !== intent.id);
+        }
+        await options.onResult(execution.result, appliedIntent);
+        notifyFlushWaiters();
+        if (hasDecreaseRemainder) continue;
       }
     } finally {
       activeLanes.delete(productId);
@@ -247,9 +316,33 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
       retryIntent(uncertain.id);
       return false;
     }
+    const previous = [...intents.value].reverse().find((candidate) => candidate.productId === intent.productId);
+    if (
+      previous?.status === 'QUEUED'
+      && previous.mergeKey === intent.mergeKey
+      && previous.kind !== intent.kind
+    ) {
+      previous.quantity -= intent.quantity;
+      if (previous.quantity <= 0) removeIntent(previous.id);
+      else {
+        if (previous.kind === 'ADD') previous.payload.items[0]!.quantity = previous.quantity;
+        touchIntents();
+      }
+      return true;
+    }
     if (atCapacity(intent.productId)) {
       options.onBackpressure?.(intent.productId);
       return false;
+    }
+    if (
+      previous?.status === 'QUEUED'
+      && previous.kind === intent.kind
+      && previous.mergeKey === intent.mergeKey
+    ) {
+      previous.quantity += intent.quantity;
+      if (previous.kind === 'ADD') previous.payload.items[0]!.quantity = previous.quantity;
+      touchIntents();
+      return true;
     }
     intents.value.push(intent);
     touchIntents();
@@ -272,6 +365,7 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
       id: idempotencyKey,
       kind: 'ADD',
       status: 'QUEUED',
+      quantity: 1,
       tableId: options.tableId(),
       productId,
       product,
@@ -294,6 +388,7 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
       id: requestKey,
       kind: 'DECREASE',
       status: 'QUEUED',
+      quantity: 1,
       tableId: options.tableId(),
       productId,
       mergeKey,
@@ -323,12 +418,25 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
       && !atCapacity(productId);
   }
 
+  function flush() {
+    const state = settledState();
+    if (state != null) return Promise.resolve(state);
+    const productIds = new Set(intents.value
+      .filter((intent) => intent.status === 'QUEUED')
+      .map((intent) => intent.productId));
+    productIds.forEach((productId) => void drainLane(productId));
+    return new Promise<boolean>((resolve) => flushWaiters.add(resolve));
+  }
+
   return {
     intents,
+    mutationPending,
     mutationLocked,
     draftLines,
     pendingAddQuantities,
     pendingDecreaseMergeKeys,
+    pendingDecreaseQuantities,
+    uncertainDecreaseMergeKeys,
     uncertainDecreaseIntent,
     addProduct,
     decreaseProduct,
@@ -336,5 +444,6 @@ export function useTableOrderMutationController(options: TableOrderMutationContr
     retryProduct,
     canAddProduct,
     atCapacity,
+    flush,
   };
 }

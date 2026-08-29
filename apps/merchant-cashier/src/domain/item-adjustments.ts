@@ -124,3 +124,10 @@ export function shouldBlockCashierMutationNavigation(input: {
   if (!input.unresolvedMutation) return false;
   return !(input.authenticated === false && input.destinationName === 'login');
 }
+
+export function shouldExitMenuAfterItemMutation(input: {
+  session: { status: 'OPEN' | 'CLOSED' };
+  order?: { status: string } | null;
+}) {
+  return input.session.status === 'CLOSED';
+}

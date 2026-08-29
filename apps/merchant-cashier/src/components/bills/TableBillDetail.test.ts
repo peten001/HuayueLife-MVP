@@ -378,6 +378,40 @@ describe('TableBillDetail V2 table workspace', () => {
     expect(base.orders[0]!.items[0]!.quantity).toBe(2);
   });
 
+  it('renders normal pending decreases optimistically without disabling repeated minus or plus', async () => {
+    const mergeKey = JSON.stringify({ productId: 'product-1', remark: '' });
+    const wrapper = mountDetail({
+      pendingDecreaseQuantities: { [mergeKey]: 1 },
+      pendingDecreaseMergeKeys: new Set<string>(),
+      orderableProductIds: new Set(['product-1']),
+    });
+    const row = wrapper.get('.table-item-summary-row');
+    expect(row.get('.committed-item-stepper output').text()).toBe('1');
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeUndefined();
+    expect(row.get('[data-testid="increase-committed-item"]').attributes('disabled')).toBeUndefined();
+    expect(row.find('.row-mutation-spinner').exists()).toBe(false);
+
+    await row.get('[data-testid="decrease-order-item"]').trigger('click');
+    expect(wrapper.emitted('decreaseItem')).toHaveLength(1);
+  });
+
+  it('keeps the zero-quantity row in place until the 1-to-0 response reconciles', () => {
+    const mergeKey = JSON.stringify({ productId: 'product-1', remark: '' });
+    const oneItemSession = session();
+    oneItemSession.orders[0]!.items[0]!.quantity = 1;
+    oneItemSession.orders[0]!.items[0]!.subtotalVnd = '60000';
+    const wrapper = mountDetail({
+      session: oneItemSession,
+      pendingDecreaseQuantities: { [mergeKey]: 1 },
+      pendingDecreaseMergeKeys: new Set<string>(),
+      orderableProductIds: new Set(['product-1']),
+    });
+    const row = wrapper.get('.table-item-summary-row');
+    expect(row.get('.committed-item-stepper output').text()).toBe('0');
+    expect(row.get('[data-testid="decrease-order-item"]').attributes('disabled')).toBeDefined();
+    expect(row.get('[data-testid="increase-committed-item"]').attributes('disabled')).toBeUndefined();
+  });
+
   it('keeps a historical unavailable row visible while disabling only its plus action', () => {
     const wrapper = mountDetail({ orderableProductIds: new Set<string>() });
     const row = wrapper.get('.table-item-summary-row');

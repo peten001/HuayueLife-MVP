@@ -8,7 +8,8 @@ vi.mock('@/api', async (importOriginal) => ({
   createMerchantTableOrder: apiMocks.createMerchantTableOrder,
 }));
 
-import { useTableOrderMutationController } from '@/composables';
+import { useTableOrderMutationController, type TableOrderDecreaseExecutionResult } from '@/composables';
+import { productDirectMergeKey } from '@/domain';
 
 const product: CashierMenuProduct = {
   id: 'product-1', categoryId: 'category-1', nameZh: '牛肉粉', priceVnd: '60000', sortOrder: 1,
@@ -37,9 +38,9 @@ function p95(samples: number[]) {
 }
 
 describe('Cashier table mutation interaction latency', () => {
-  it('keeps five right-plus, menu-plus and right-minus feedback samples below 100ms p95', () => {
+  it('keeps five right-plus, menu-plus and right-minus feedback samples below 50ms p95', () => {
     const addRequest = deferred<MerchantOrderMutationResult>();
-    const decreaseRequest = deferred<MerchantOrderMutationResult>();
+    const decreaseRequest = deferred<TableOrderDecreaseExecutionResult>();
     apiMocks.createMerchantTableOrder.mockReset().mockReturnValue(addRequest.promise);
     const executeDecrease = vi.fn().mockReturnValue(decreaseRequest.promise);
     const tableId = ref('table-1');
@@ -56,14 +57,15 @@ describe('Cashier table mutation interaction latency', () => {
     const rightPlus: number[] = [];
     const menuPlus: number[] = [];
     const rightMinus: number[] = [];
+    const mergeKey = productDirectMergeKey(product.id);
     for (let index = 0; index < 5; index += 1) {
       const beforeRightPlus = performance.now();
-      controller.addProduct(product.id, `right-${index}`, undefined, `right-${index}`);
+      controller.addProduct(product.id, `right-${index}`, undefined, mergeKey);
       expect(controller.pendingAddQuantities.value[product.id]).toBe(index * 2 + 1);
       rightPlus.push(performance.now() - beforeRightPlus);
 
       const beforeMenuPlus = performance.now();
-      controller.addProduct(product.id, `menu-${index}`, undefined, `menu-${index}`);
+      controller.addProduct(product.id, `menu-${index}`, undefined, mergeKey);
       expect(controller.pendingAddQuantities.value[product.id]).toBe(index * 2 + 2);
       menuPlus.push(performance.now() - beforeMenuPlus);
     }
@@ -91,11 +93,32 @@ describe('Cashier table mutation interaction latency', () => {
       rightMinusP95Ms: p95(rightMinus),
     };
     console.info('CASHIER_MUTATION_LATENCY', JSON.stringify(metrics));
-    expect(metrics.rightPlusP95Ms).toBeLessThan(100);
-    expect(metrics.menuPlusP95Ms).toBeLessThan(100);
-    expect(metrics.rightMinusP95Ms).toBeLessThan(100);
-    expect(controller.intents.value).toHaveLength(10);
+    expect(metrics.rightPlusP95Ms).toBeLessThan(50);
+    expect(metrics.menuPlusP95Ms).toBeLessThan(50);
+    expect(metrics.rightMinusP95Ms).toBeLessThan(50);
+    expect(controller.intents.value).toHaveLength(2);
     addRequest.resolve(mutationResult());
-    decreaseRequest.resolve(mutationResult());
+    decreaseRequest.resolve({ result: mutationResult(), appliedQuantity: 1 });
+  });
+
+  it.each([50, 200, 500, 1_000])('keeps optimistic feedback below 50ms with a %dms response', async (delayMs) => {
+    apiMocks.createMerchantTableOrder.mockReset().mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve(mutationResult()), delayMs);
+    }));
+    const controller = useTableOrderMutationController({
+      tableId: () => 'table-latency',
+      sessionId: () => 'session-latency',
+      disabled: () => false,
+      orderableProducts: () => [product],
+      executeDecrease: vi.fn(),
+      onResult: () => undefined,
+      onFailure: () => undefined,
+    });
+    const startedAt = performance.now();
+    controller.addProduct(product.id);
+    const feedbackMs = performance.now() - startedAt;
+    expect(controller.pendingAddQuantities.value[product.id]).toBe(1);
+    expect(feedbackMs).toBeLessThan(50);
+    await expect(controller.flush()).resolves.toBe(true);
   });
 });

@@ -26,6 +26,7 @@ const props = defineProps<{
   adjustmentLoadingId?: string;
   pendingAdjustmentItemId?: string;
   pendingDecreaseMergeKeys?: Set<string>;
+  pendingDecreaseQuantities?: Record<string, number>;
   orderableProductIds?: Set<string>;
   adjustmentApplied?: boolean;
   payableAmount?: string;
@@ -36,9 +37,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   orderItems: [];
-  decreaseItem: [item: OrderItem, order: TableSessionOrder, canonicalQuantity: number, mergeKey: string];
+  decreaseItem:
+    | [item: OrderItem, order: TableSessionOrder, canonicalQuantity: number, mergeKey: string]
+    | [productId: string, mergeKey: string];
   returnItem: [item: OrderItem, order: TableSessionOrder];
-  increaseItem: [item: OrderItem, order: TableSessionOrder, mergeKey: string];
+  increaseItem:
+    | [item: OrderItem, order: TableSessionOrder, mergeKey: string]
+    | [productId: string, sourceItemId: undefined, remark: string, mergeKey: string];
   transfer: [];
   checkout: [];
   adjustment: [];
@@ -53,7 +58,34 @@ const canonicalLines = computed(() => {
   const lines = buildCanonicalTableBillLines(
     props.session?.orders || [],
     props.draftLines || [],
-  );
+  ).map((line) => {
+    const requestedDecrease = props.pendingDecreaseQuantities?.[line.mergeKey] || 0;
+    if (!requestedDecrease) return line;
+    const decreaseQuantity = Math.min(line.quantity, requestedDecrease);
+    let remainingCommittedDecrease = Math.min(line.committedQuantity, decreaseQuantity);
+    let subtotalVnd = BigInt(line.subtotalVnd || '0');
+    for (const { item } of [...line.committedEntries].reverse()) {
+      if (!remainingCommittedDecrease) break;
+      const itemQuantity = Number(item.quantity || 0);
+      const itemDecrease = Math.min(itemQuantity, remainingCommittedDecrease);
+      const unitPriceVnd = BigInt(item.unitPriceVnd || (itemQuantity ? BigInt(item.subtotalVnd || '0') / BigInt(itemQuantity) : 0n));
+      subtotalVnd -= unitPriceVnd * BigInt(itemDecrease);
+      remainingCommittedDecrease -= itemDecrease;
+    }
+    const committedDecrease = Math.min(line.committedQuantity, decreaseQuantity);
+    const pendingDecrease = Math.min(line.pendingQuantity, decreaseQuantity - committedDecrease);
+    if (pendingDecrease) {
+      const pendingUnitPriceVnd = BigInt(line.product?.priceVnd || line.draftLines[0]?.product.priceVnd || '0');
+      subtotalVnd -= pendingUnitPriceVnd * BigInt(pendingDecrease);
+    }
+    return {
+      ...line,
+      committedQuantity: line.committedQuantity - committedDecrease,
+      pendingQuantity: line.pendingQuantity - pendingDecrease,
+      quantity: line.quantity - decreaseQuantity,
+      subtotalVnd: (subtotalVnd > 0n ? subtotalVnd : 0n).toString(),
+    };
+  });
   const sessionKey = props.session?.id
     ? `session:${props.session.id}`
     : `table:${props.table?.id || 'unselected'}`;
@@ -97,12 +129,13 @@ function adjustmentDisabled(itemId: string, line: CanonicalTableBillLine) {
   );
 }
 
-function increaseDisabled(item?: OrderItem) {
+function increaseDisabled(line: CanonicalTableBillLine) {
+  const productId = line.item?.productId || line.product?.id;
   return Boolean(
-    !item?.productId
+    !productId
     || rowActionsDisabled()
     || props.adjustmentLoadingId
-    || (props.orderableProductIds && !props.orderableProductIds.has(item.productId)),
+    || (props.orderableProductIds && !props.orderableProductIds.has(productId)),
   );
 }
 
@@ -144,6 +177,8 @@ function canonicalName(line: CanonicalTableBillLine) {
 
 function adjustmentTitle(line: CanonicalTableBillLine) {
   if (lineMutationBusy(line)) return t('common.processing');
+  if (line.quantity <= 0) return t('itemAdjustment.noReturnableQuantity');
+  if (line.pendingQuantity > 0) return t('itemAdjustment.decrease');
   const target = adjustmentEntry(line);
   if (!target || line.committedQuantity <= 0) return t('itemAdjustment.noReturnableQuantity');
   return canAdjust(target.item, target.order)
@@ -152,14 +187,24 @@ function adjustmentTitle(line: CanonicalTableBillLine) {
 }
 
 function emitItemAdjustment(line: CanonicalTableBillLine) {
+  const productId = line.item?.productId || line.product?.id;
+  if (!productId || line.quantity <= 0) return;
   const target = adjustmentEntry(line);
-  if (!target || !canAdjust(target.item, target.order) || !props.session) return;
-  emit('decreaseItem', target.item, target.order, line.committedQuantity, line.mergeKey);
+  if (target && canAdjust(target.item, target.order) && props.session) {
+    emit('decreaseItem', target.item, target.order, line.committedQuantity, line.mergeKey);
+    return;
+  }
+  if (line.pendingQuantity > 0) emit('decreaseItem', productId, line.mergeKey);
 }
 
 function emitItemIncrease(line: CanonicalTableBillLine) {
-  if (!line.item || !line.order) return;
-  emit('increaseItem', line.item, line.order, line.mergeKey);
+  const productId = line.item?.productId || line.product?.id;
+  if (!productId) return;
+  if (line.item && line.order) {
+    emit('increaseItem', line.item, line.order, line.mergeKey);
+    return;
+  }
+  emit('increaseItem', productId, undefined, line.remark, line.mergeKey);
 }
 
 function sourceOrder(line: CanonicalTableBillLine) {
@@ -177,6 +222,8 @@ function sourceDescriptionForLine(line: CanonicalTableBillLine) {
 }
 
 function lineCanAdjust(line: CanonicalTableBillLine) {
+  if (line.quantity <= 0) return false;
+  if (line.pendingQuantity > 0) return true;
   const target = adjustmentEntry(line);
   return Boolean(target && canAdjust(target.item, target.order));
 }
@@ -275,8 +322,8 @@ function priceCanExpand(line: CanonicalTableBillLine) {
                 type="button"
                 :data-testid="entry.committedEntries.length ? 'increase-committed-item' : 'increase-draft-item'"
                 :aria-label="`${t('ordering.increaseQuantity')} ${canonicalName(entry)}`"
-                :disabled="increaseDisabled(entry.item)"
-                :title="increaseDisabled(entry.item) && (!entry.item?.productId || (orderableProductIds && !orderableProductIds.has(entry.item.productId))) ? t('ordering.historicalProductUnavailable') : t('ordering.addOneAsPending')"
+                :disabled="increaseDisabled(entry)"
+                :title="increaseDisabled(entry) && (!(entry.item?.productId || entry.product?.id) || (orderableProductIds && !orderableProductIds.has(entry.item?.productId || entry.product?.id || ''))) ? t('ordering.historicalProductUnavailable') : t('ordering.addOneAsPending')"
                 @click="emitItemIncrease(entry)"
               ><Plus :size="16" aria-hidden="true" /></button>
             </div>

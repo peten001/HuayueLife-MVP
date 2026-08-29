@@ -215,6 +215,21 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
   });
 
+  it('keeps normal pending additions interactive and allows the menu to close', async () => {
+    const wrapper = mountWorkspace({
+      embedded: false,
+      productQuantities: { [product.id]: 5 },
+      pendingAddQuantities: { [product.id]: 3 },
+      mutationLocked: false,
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(false);
+    const close = wrapper.get('.table-ordering-close');
+    expect(close.attributes('disabled')).toBeUndefined();
+    await close.trigger('click');
+    expect(wrapper.emitted('close')).toHaveLength(1);
+  });
+
   it('preserves pending mutation UI while a stale catalog revalidates', async () => {
     const pinia = createPinia();
     const wrapper = mountWorkspace({

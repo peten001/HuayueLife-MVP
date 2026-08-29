@@ -10,6 +10,7 @@ import {
   isPendingDecreaseInlineRetryReachable,
   resolveCommittedDecreaseExecutionPath,
   shouldBlockCashierMutationNavigation,
+  shouldExitMenuAfterItemMutation,
 } from './item-adjustments';
 
 describe('cashier item-adjustment policy', () => {
@@ -227,5 +228,16 @@ describe('cashier item-adjustment policy', () => {
     expect(shouldBlockCashierMutationNavigation({
       unresolvedMutation: false, authenticated: true, destinationName: 'tables',
     })).toBe(false);
+  });
+
+  it('keeps the menu route when the adjusted order is cancelled but the table session remains open', () => {
+    expect(shouldExitMenuAfterItemMutation({
+      session: { status: 'OPEN' },
+      order: { status: 'CANCELLED' },
+    })).toBe(false);
+    expect(shouldExitMenuAfterItemMutation({
+      session: { status: 'CLOSED' },
+      order: { status: 'CANCELLED' },
+    })).toBe(true);
   });
 });

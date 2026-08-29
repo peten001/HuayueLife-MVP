@@ -22,6 +22,7 @@ import {
   canReturnOrderItems,
   resolveCommittedDecreaseExecutionPath,
   shouldBlockCashierMutationNavigation,
+  shouldExitMenuAfterItemMutation,
 } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useAuthStore, useCatalogStore, useNetworkStore, useOrdersStore, useTablesStore, useUiStore } from '@/stores';
@@ -92,12 +93,16 @@ const orderingController = useTableOrderMutationController({
   onBackpressure: () => uiStore.pushToast(t('ordering.pendingLimit'), 'warning'),
 });
 const orderingDraftLines = orderingController.draftLines;
+const orderingMutationPending = orderingController.mutationPending;
 const orderingMutationLocked = orderingController.mutationLocked;
 const orderingProductQuantities = computed<Record<string, number>>(() =>
   buildCanonicalTableBillLines(session.value?.orders || [], orderingDraftLines.value)
     .reduce<Record<string, number>>((quantities, line) => {
       const productId = line.item?.productId || line.product?.id;
-      if (productId) quantities[productId] = (quantities[productId] || 0) + line.quantity;
+      if (productId) {
+        quantities[productId] = (quantities[productId] || 0)
+          + Math.max(0, line.quantity - (orderingController.pendingDecreaseQuantities.value[line.mergeKey] || 0));
+      }
       return quantities;
     }, {}),
 );
@@ -128,8 +133,17 @@ const filteredTables = computed(() => {
   });
 });
 
-function openSettlementAdjustment() {
+async function reconcilePendingOrderingMutations() {
+  if (!orderingMutationPending.value) return true;
+  const settled = await orderingController.flush();
+  if (settled) return true;
+  uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
+  return false;
+}
+
+async function openSettlementAdjustment() {
   if (!session.value || writeDisabled.value) return;
+  if (!(await reconcilePendingOrderingMutations())) return;
   adjustmentOpen.value = true;
 }
 
@@ -158,6 +172,7 @@ async function refresh(showToast = true) {
 async function selectTable(tableId: string) {
   const card = tableCards.value.find((table) => table.id === tableId);
   if (!card) return;
+  if (!(await reconcilePendingOrderingMutations())) return;
   const view = resolveTableSelectionView(isMobile.value, card.operationalStatus);
   await router.push({
     name: 'tables',
@@ -220,7 +235,8 @@ async function syncRouteSelection() {
 }
 
 async function checkout(paymentMethod: PaymentMethod) {
-  if (!canCheckout.value || writeDisabled.value || checkingOut.value) return;
+  if (writeDisabled.value || checkingOut.value) return;
+  if (!(await reconcilePendingOrderingMutations()) || !canCheckout.value) return;
   try {
     const result = await tablesStore.checkoutSelectedSession(paymentMethod);
     result.orders.forEach((order) => ordersStore.applyOrderSnapshot(order));
@@ -231,6 +247,12 @@ async function checkout(paymentMethod: PaymentMethod) {
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.checkoutFailed')), 'error');
   }
+}
+
+async function openCheckout() {
+  if (writeDisabled.value || checkingOut.value) return;
+  if (!(await reconcilePendingOrderingMutations()) || !canCheckout.value) return;
+  checkoutConfirmOpen.value = true;
 }
 
 function replaceMainTab(tab: 'TABLES' | 'MENU') {
@@ -256,10 +278,7 @@ function closeOrdering() {
 function applyItemMutation(result: MerchantOrderMutationResult) {
   if (result.order) ordersStore.applyOrderSnapshot(result.order, true);
   tablesStore.applySessionSnapshot(result.session);
-  if (
-    result.session.status === 'CLOSED'
-    || result.order?.status === 'CANCELLED'
-  ) {
+  if (shouldExitMenuAfterItemMutation(result)) {
     void ordersStore.selectOrder(null);
     if (selectedTableId.value) {
       void router.replace({
@@ -271,14 +290,23 @@ function applyItemMutation(result: MerchantOrderMutationResult) {
   }
 }
 
-function increaseCommittedItem(item: { id: string; productId?: string | null; remark?: string | null }, _order: TableSessionOrder, mergeKey: string) {
-  if (!item.productId || !selectedTableId.value || writeDisabled.value) return;
+function increaseCommittedItem(
+  itemOrProductId: { id: string; productId?: string | null; remark?: string | null } | string,
+  _orderOrSourceItemId: TableSessionOrder | undefined,
+  remarkOrMergeKey: string,
+  draftMergeKey?: string,
+) {
+  const productId = typeof itemOrProductId === 'string' ? itemOrProductId : itemOrProductId.productId;
+  const sourceItemId = typeof itemOrProductId === 'string' ? undefined : itemOrProductId.id;
+  const remark = typeof itemOrProductId === 'string' ? remarkOrMergeKey : itemOrProductId.remark || '';
+  const mergeKey = typeof itemOrProductId === 'string' ? draftMergeKey : remarkOrMergeKey;
+  if (!productId || !selectedTableId.value || writeDisabled.value) return;
   orderingController.addProduct(
-    item.productId,
+    productId,
     `canonical:${mergeKey}`,
-    item.id,
+    sourceItemId,
     mergeKey,
-    item.remark || undefined,
+    remark || undefined,
   );
 }
 
@@ -286,8 +314,9 @@ function addMenuProduct(productId: string) {
   orderingController.addProduct(productId);
 }
 
-function openTransfer() {
+async function openTransfer() {
   if (!session.value || writeDisabled.value) return;
+  if (!(await reconcilePendingOrderingMutations())) return;
   transferError.value = '';
   transferOpen.value = true;
 }
@@ -344,9 +373,16 @@ function returnContext(order: TableSessionOrder) {
   };
 }
 
-function handleCommittedDecrease(item: { productId?: string | null }, _order: TableSessionOrder, _canonicalQuantity: number, mergeKey: string) {
-  if (!item.productId || writeDisabled.value) return;
-  orderingController.decreaseProduct(item.productId, mergeKey);
+function handleCommittedDecrease(
+  itemOrProductId: { productId?: string | null } | string,
+  orderOrMergeKey: TableSessionOrder | string,
+  _canonicalQuantity?: number,
+  committedMergeKey?: string,
+) {
+  const productId = typeof itemOrProductId === 'string' ? itemOrProductId : itemOrProductId.productId;
+  const mergeKey = typeof orderOrMergeKey === 'string' ? orderOrMergeKey : committedMergeKey;
+  if (!productId || writeDisabled.value) return;
+  if (mergeKey) orderingController.decreaseProduct(productId, mergeKey);
 }
 
 async function executeQueuedDecrease(input: TableOrderDecreaseExecution) {
@@ -364,24 +400,31 @@ async function executeQueuedDecrease(input: TableOrderDecreaseExecution) {
     });
   }
   const expectedQuantity = Number(target.item.quantity || 0);
+  const appliedQuantity = Math.min(input.quantity, expectedQuantity);
   const executionPath = resolveCommittedDecreaseExecutionPath(
     returnContext(target.order),
     line.committedQuantity,
     expectedQuantity,
   );
   if (executionPath === 'DECREASE') {
-    return decreaseMerchantOrderItem(target.order.id, target.item.id, {
+    return {
+      result: await decreaseMerchantOrderItem(target.order.id, target.item.id, {
       requestKey: input.requestKey,
       expectedQuantity,
-      targetQuantity: expectedQuantity - 1,
-    });
+      targetQuantity: expectedQuantity - appliedQuantity,
+      }),
+      appliedQuantity,
+    };
   }
   if (executionPath === 'RETURN') {
-    return returnMerchantOrderItem(target.order.id, target.item.id, {
+    return {
+      result: await returnMerchantOrderItem(target.order.id, target.item.id, {
       requestKey: input.requestKey,
       expectedQuantity,
-      returnQuantity: 1,
-    });
+      returnQuantity: appliedQuantity,
+      }),
+      appliedQuantity,
+    };
   }
   throw new CashierApiError({
     message: 'The order status no longer permits item adjustment.',
@@ -400,7 +443,10 @@ async function handleSharedMutationFailure(caught: unknown, intent: TableOrderMu
     await refreshAdjustmentContext(true);
   }
   if (caught instanceof CashierApiError && ['TABLE_SESSION_NOT_OPEN', 'TABLE_ALREADY_OPEN', 'TABLE_SESSION_CLOSED', 'TABLE_NOT_AVAILABLE', 'TABLE_NOT_FOUND'].includes(caught.code)) {
-    void replaceMainTab('TABLES');
+    await refreshAdjustmentContext(true);
+    if (!selectedSessionDetail.value || selectedSessionDetail.value.status === 'CLOSED') {
+      void replaceMainTab('TABLES');
+    }
   }
   if (!uncertain && intent?.kind === 'ADD' && apiErrorTranslationKey(caught) === 'ordering.productUnavailable') {
     await catalogStore.loadCatalog({ force: true });
@@ -413,19 +459,27 @@ function protectUnload(event: BeforeUnloadEvent) {
   event.returnValue = '';
 }
 
-function guardMutationNavigation(destinationName: string | symbol | null | undefined) {
+async function guardMutationNavigation(to: { name?: string | symbol | null; params: Record<string, unknown> }) {
   const blocked = shouldBlockCashierMutationNavigation({
     unresolvedMutation: unresolvedMutation.value,
     authenticated: authStore.isAuthenticated,
-    destinationName,
+    destinationName: to.name,
   });
-  if (!blocked) return true;
-  uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
-  return false;
+  if (blocked) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return false;
+  }
+  const destinationTableId = typeof to.params.tableId === 'string' ? to.params.tableId : '';
+  const changingTable = destinationTableId !== routeTableId.value;
+  const leavingTableWorkspace = to.name !== 'tables';
+  if (orderingMutationPending.value && (changingTable || leavingTableWorkspace)) {
+    return reconcilePendingOrderingMutations();
+  }
+  return true;
 }
 
-onBeforeRouteUpdate((to) => guardMutationNavigation(to.name));
-onBeforeRouteLeave((to) => guardMutationNavigation(to.name));
+onBeforeRouteUpdate((to) => guardMutationNavigation(to));
+onBeforeRouteLeave((to) => guardMutationNavigation(to));
 
 watch(
   () => [route.params.tableId, route.query.order, tableCards.value.length],
@@ -508,7 +562,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         :checking-out="checkingOut"
         :actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading"
         :item-actions-disabled="writeDisabled || settlementAdjustmentLoading"
-        :pending-decrease-merge-keys="orderingController.pendingDecreaseMergeKeys.value"
+        :pending-decrease-merge-keys="orderingController.uncertainDecreaseMergeKeys.value"
+        :pending-decrease-quantities="orderingController.pendingDecreaseQuantities.value"
         :orderable-product-ids="orderableProductIds"
         :adjustment-applied="Boolean(session?.discountPayableRateBps != null || session?.roundingApplied)"
         :payable-amount="session?.payableAmountVnd || session?.totalAmountVnd || '0'"
@@ -518,7 +573,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload))
         @decrease-item="handleCommittedDecrease"
         @increase-item="increaseCommittedItem"
         @transfer="openTransfer"
-        @checkout="checkoutConfirmOpen = true"
+        @checkout="openCheckout"
         @adjustment="openSettlementAdjustment"
       />
     </aside>

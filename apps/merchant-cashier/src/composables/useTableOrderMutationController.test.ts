@@ -11,7 +11,11 @@ vi.mock('@/api', async (importOriginal) => ({
   createMerchantTableOrder: apiMocks.createMerchantTableOrder,
 }));
 
-import { useTableOrderMutationController, type TableOrderDecreaseExecution } from './useTableOrderMutationController';
+import {
+  useTableOrderMutationController,
+  type TableOrderDecreaseExecution,
+  type TableOrderDecreaseExecutionResult,
+} from './useTableOrderMutationController';
 
 const category = {
   id: 'category-1', nameZh: '主食', sortOrder: 1, isActive: true,
@@ -52,7 +56,7 @@ function flush() {
 
 function setup(options: {
   sessionId?: string;
-  executeDecrease?: (input: TableOrderDecreaseExecution) => Promise<MerchantOrderMutationResult>;
+  executeDecrease?: (input: TableOrderDecreaseExecution) => Promise<TableOrderDecreaseExecutionResult>;
 } = {}) {
   const tableId = ref('table-1');
   const sessionId = ref(options.sessionId ?? 'session-1');
@@ -64,7 +68,7 @@ function setup(options: {
     sessionId: () => sessionId.value,
     disabled: () => false,
     orderableProducts: () => products.value,
-    executeDecrease: options.executeDecrease || vi.fn().mockResolvedValue(result()),
+    executeDecrease: options.executeDecrease || vi.fn().mockResolvedValue({ result: result(), appliedQuantity: 1 }),
     onResult: (next, intent) => { applied.push({ result: next, kind: intent?.kind || 'OPEN' }); },
     onFailure: (error, intent) => { failures.push({ error, kind: intent?.kind || 'OPEN' }); },
   });
@@ -95,8 +99,8 @@ describe('useTableOrderMutationController', () => {
     expect(pageSource).toContain("activeMainTab === 'MENU'");
   });
 
-  it('shows three rapid same-product clicks immediately and persists three stable unique intents in order', async () => {
-    const requests = [deferred<MerchantOrderMutationResult>(), deferred<MerchantOrderMutationResult>(), deferred<MerchantOrderMutationResult>()];
+  it('shows three rapid same-product clicks immediately and coalesces the queued quantity behind one in-flight request', async () => {
+    const requests = [deferred<MerchantOrderMutationResult>(), deferred<MerchantOrderMutationResult>()];
     requests.forEach((request) => apiMocks.createMerchantTableOrder.mockReturnValueOnce(request.promise));
     const { controller } = setup();
 
@@ -110,18 +114,15 @@ describe('useTableOrderMutationController', () => {
     requests[0]!.resolve(result(1));
     await flush();
     expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
-    requests[1]!.resolve(result(2));
-    await flush();
-    requests[2]!.resolve(result(3));
+    requests[1]!.resolve(result(3));
     await flush();
 
     const payloads = apiMocks.createMerchantTableOrder.mock.calls.map((call) => call[1]);
     expect(payloads.map((payload) => payload.items)).toEqual([
       [{ productId: product.id, quantity: 1 }],
-      [{ productId: product.id, quantity: 1 }],
-      [{ productId: product.id, quantity: 1 }],
+      [{ productId: product.id, quantity: 2 }],
     ]);
-    expect(new Set(payloads.map((payload) => payload.idempotencyKey)).size).toBe(3);
+    expect(new Set(payloads.map((payload) => payload.idempotencyKey)).size).toBe(2);
     expect(controller.draftLines.value).toEqual([]);
   });
 
@@ -140,7 +141,27 @@ describe('useTableOrderMutationController', () => {
     await flush();
   });
 
-  it('preserves mixed + + - + click order in the same product lane', async () => {
+  it('turns ten rapid same-product adds into one in-flight request plus one queued batch', async () => {
+    const first = deferred<MerchantOrderMutationResult>();
+    const second = deferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { controller } = setup();
+
+    for (let index = 0; index < 10; index += 1) controller.addProduct(product.id);
+    expect(controller.pendingAddQuantities.value[product.id]).toBe(10);
+    await Promise.resolve();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(1);
+    first.resolve(result(1));
+    await flush();
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
+    expect(apiMocks.createMerchantTableOrder.mock.calls[1]?.[1].items).toEqual([
+      { productId: product.id, quantity: 9 },
+    ]);
+    second.resolve(result(10));
+    await flush();
+  });
+
+  it('neutralizes opposite queued clicks while preserving the mixed + + - + desired quantity', async () => {
     const trace: string[] = [];
     apiMocks.createMerchantTableOrder.mockImplementation(async () => {
       trace.push('ADD');
@@ -148,22 +169,18 @@ describe('useTableOrderMutationController', () => {
     });
     const executeDecrease = vi.fn(async () => {
       trace.push('DECREASE');
-      return result();
+      return { result: result(), appliedQuantity: 1 };
     });
     const { controller } = setup({ executeDecrease });
 
-    controller.addProduct(product.id);
-    controller.addProduct(product.id);
+    controller.addProduct(product.id, 'line-1', undefined, 'line-1');
+    controller.addProduct(product.id, 'line-1', undefined, 'line-1');
     controller.decreaseProduct(product.id, 'line-1');
-    controller.addProduct(product.id);
+    controller.addProduct(product.id, 'line-1', undefined, 'line-1');
     await flush();
     await flush();
-    expect(trace).toEqual(['ADD', 'ADD', 'DECREASE', 'ADD']);
-    expect(executeDecrease).toHaveBeenCalledWith(expect.objectContaining({
-      productId: product.id,
-      mergeKey: 'line-1',
-      requestKey: expect.stringMatching(/^decrease-/),
-    }));
+    expect(trace).toEqual(['ADD', 'ADD']);
+    expect(executeDecrease).not.toHaveBeenCalled();
   });
 
   it('rolls back only a definitively failed second add and continues later intents', async () => {
@@ -177,8 +194,8 @@ describe('useTableOrderMutationController', () => {
     controller.addProduct(product.id);
     await flush();
     await flush();
-    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(3);
-    expect(applied.filter((entry) => entry.kind === 'ADD')).toHaveLength(2);
+    expect(apiMocks.createMerchantTableOrder).toHaveBeenCalledTimes(2);
+    expect(applied.filter((entry) => entry.kind === 'ADD')).toHaveLength(1);
     expect(failures).toHaveLength(1);
     expect(controller.draftLines.value).toEqual([]);
   });
@@ -198,6 +215,29 @@ describe('useTableOrderMutationController', () => {
     await flush();
     expect(apiMocks.createMerchantTableOrder.mock.calls[1]).toEqual(firstCall);
     expect(controller.draftLines.value).toEqual([]);
+  });
+
+  it('retries an uncertain coalesced decrease with the exact same request key and quantity', async () => {
+    const first = deferred<TableOrderDecreaseExecutionResult>();
+    const executeDecrease = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ result: result(), appliedQuantity: 2 });
+    const { controller } = setup({ executeDecrease });
+    controller.decreaseProduct(product.id, 'line-1');
+    controller.decreaseProduct(product.id, 'line-1');
+    controller.decreaseProduct(product.id, 'line-1');
+    first.resolve({ result: result(), appliedQuantity: 1 });
+    await flush();
+    await flush();
+    const uncertainCall = executeDecrease.mock.calls[1]?.[0];
+    expect(controller.mutationLocked.value).toBe(true);
+
+    controller.retryProduct(product.id);
+    await flush();
+    const retryCall = executeDecrease.mock.calls[2]?.[0];
+    expect(retryCall).toEqual(uncertainCall);
+    expect(retryCall).toMatchObject({ quantity: 2, requestKey: expect.stringMatching(/^decrease-/) });
   });
 
   it('uses one formal open-only mutation before draining an empty-table add', async () => {
@@ -248,24 +288,66 @@ describe('useTableOrderMutationController', () => {
 
   it('provides synchronous optimistic feedback and row-level decrease busy state', async () => {
     const add = deferred<MerchantOrderMutationResult>();
-    const decrease = deferred<MerchantOrderMutationResult>();
+    const decrease = deferred<TableOrderDecreaseExecutionResult>();
     apiMocks.createMerchantTableOrder.mockReturnValueOnce(add.promise);
     const { controller } = setup({ executeDecrease: vi.fn().mockReturnValue(decrease.promise) });
 
     const startedAt = performance.now();
     controller.addProduct(product.id);
-    expect(performance.now() - startedAt).toBeLessThan(100);
+    expect(performance.now() - startedAt).toBeLessThan(50);
     expect(controller.pendingAddQuantities.value[product.id]).toBe(1);
     add.resolve(result());
     await flush();
 
     const minusStartedAt = performance.now();
     controller.decreaseProduct(product.id, 'line-1');
-    expect(performance.now() - minusStartedAt).toBeLessThan(100);
+    expect(performance.now() - minusStartedAt).toBeLessThan(50);
     expect(controller.pendingDecreaseMergeKeys.value.has('line-1')).toBe(true);
-    decrease.resolve(result());
+    decrease.resolve({ result: result(), appliedQuantity: 1 });
     await flush();
     expect(controller.pendingDecreaseMergeKeys.value.has('line-1')).toBe(false);
     await nextTick();
+  });
+
+  it('coalesces ten rapid decreases into one in-flight request and one queued batch', async () => {
+    const first = deferred<TableOrderDecreaseExecutionResult>();
+    const second = deferred<TableOrderDecreaseExecutionResult>();
+    const executeDecrease = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const { controller } = setup({ executeDecrease });
+
+    for (let index = 0; index < 10; index += 1) controller.decreaseProduct(product.id, 'line-1');
+    expect(controller.pendingDecreaseQuantities.value['line-1']).toBe(10);
+    await Promise.resolve();
+    expect(executeDecrease).toHaveBeenCalledTimes(1);
+    expect(executeDecrease.mock.calls[0]?.[0].quantity).toBe(1);
+
+    first.resolve({ result: result(), appliedQuantity: 1 });
+    await flush();
+    expect(executeDecrease).toHaveBeenCalledTimes(2);
+    expect(executeDecrease.mock.calls[1]?.[0].quantity).toBe(9);
+    second.resolve({ result: result(), appliedQuantity: 9 });
+    await flush();
+    expect(controller.pendingDecreaseQuantities.value['line-1']).toBeUndefined();
+  });
+
+  it('keeps normal pending non-blocking, locks only uncertain outcome, and flushes after settlement', async () => {
+    const request = deferred<MerchantOrderMutationResult>();
+    apiMocks.createMerchantTableOrder.mockReturnValueOnce(request.promise);
+    const { controller } = setup();
+    controller.addProduct(product.id);
+    expect(controller.mutationPending.value).toBe(true);
+    expect(controller.mutationLocked.value).toBe(false);
+    const settled = controller.flush();
+    request.resolve(result());
+    await expect(settled).resolves.toBe(true);
+
+    apiMocks.createMerchantTableOrder.mockRejectedValueOnce(new Error('response lost'));
+    controller.addProduct(product.id);
+    await flush();
+    expect(controller.mutationPending.value).toBe(true);
+    expect(controller.mutationLocked.value).toBe(true);
+    await expect(controller.flush()).resolves.toBe(false);
   });
 });
