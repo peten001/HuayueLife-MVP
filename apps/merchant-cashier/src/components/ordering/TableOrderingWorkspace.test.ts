@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createPinia, type Pinia } from 'pinia';
+import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
 import { setLocale } from '@/i18n';
@@ -18,6 +18,7 @@ vi.mock('@/api', async (importOriginal) => ({
 }));
 
 import TableOrderingWorkspace from './TableOrderingWorkspace.vue';
+import { useCatalogStore } from '@/stores';
 
 const category = {
   id: 'category-1', nameZh: '主食', nameVi: 'Món chính', nameEn: 'Mains', sortOrder: 1, isActive: true,
@@ -27,7 +28,7 @@ const secondCategory = {
 };
 const product: CashierMenuProduct = {
   id: 'product-1', categoryId: category.id, nameZh: '牛肉粉', nameVi: 'Phở bò', nameEn: 'Beef pho',
-  priceVnd: '60000', sortOrder: 1, status: 'ON_SALE', productType: 'FOOD', category,
+  priceVnd: '60000', unit: '份', sortOrder: 1, status: 'ON_SALE', productType: 'FOOD', category,
 };
 const secondProduct: CashierMenuProduct = {
   ...product, id: 'product-2', categoryId: secondCategory.id, nameZh: '冰咖啡', nameVi: 'Cà phê đá',
@@ -42,6 +43,9 @@ function mountWorkspace(overrides: {
   mutationLocked?: boolean;
   pinia?: Pinia;
 } = {}) {
+  const pinia = overrides.pinia || createPinia();
+  setActivePinia(pinia);
+  useCatalogStore().activateMerchant('merchant-1');
   return mount(TableOrderingWorkspace, {
     props: {
       open: true,
@@ -54,7 +58,7 @@ function mountWorkspace(overrides: {
       pendingAddQuantities: overrides.pendingAddQuantities,
       mutationLocked: overrides.mutationLocked,
     },
-    global: { plugins: [overrides.pinia || createPinia()], stubs: { Teleport: true } },
+    global: { plugins: [pinia], stubs: { Teleport: true } },
   });
 }
 
@@ -69,6 +73,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
   });
 
   beforeEach(() => {
+    localStorage.clear();
     apiMocks.listCashierMenuCategories.mockReset().mockResolvedValue([category, secondCategory]);
     apiMocks.listCashierMenuProducts.mockReset().mockResolvedValue([
       product,
@@ -82,7 +87,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('牛肉粉');
     expect(wrapper.text()).not.toContain('停售菜');
-    expect(productCard(wrapper).get('.table-ordering-product__price').text()).toBe('60,000');
+    expect(productCard(wrapper).get('.table-ordering-product__price').text()).toBe('60,000/份');
 
     await productCard(wrapper).trigger('click');
     expect(wrapper.emitted('addProduct')).toEqual([[product.id]]);
@@ -103,6 +108,31 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X5');
     expect(productCard(wrapper).attributes('aria-busy')).toBe('true');
     expect(wrapper.find('[data-testid="ordering-navigation-guard"]').exists()).toBe(true);
+  });
+
+  it('preserves pending mutation UI while a stale catalog revalidates', async () => {
+    const pinia = createPinia();
+    const wrapper = mountWorkspace({
+      pinia,
+      embedded: true,
+      productQuantities: { [product.id]: 4 },
+      pendingAddQuantities: { [product.id]: 2 },
+      mutationLocked: true,
+    });
+    await flushPromises();
+    const refresh = deferred<CashierMenuProduct[]>();
+    apiMocks.listCashierMenuProducts.mockReturnValueOnce(refresh.promise);
+    const store = useCatalogStore();
+    store.invalidate();
+    await store.loadCatalog();
+
+    expect(store.revalidating).toBe(true);
+    expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X4');
+    expect(productCard(wrapper).attributes('aria-busy')).toBe('true');
+
+    refresh.resolve([product, secondProduct]);
+    await flushPromises();
+    expect(productCard(wrapper).get('.table-ordering-product__quick-add output').text()).toBe('X4');
   });
 
   it('does not emit when writes are disabled', async () => {
@@ -174,3 +204,9 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(mobileV6).toMatch(/\.table-ordering-category-strip button\s*\{[^}]*white-space:\s*nowrap;/s);
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}

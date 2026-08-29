@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { bootstrapCashier } from './cashier-bootstrap';
 
 describe('cashier bootstrap owner', () => {
@@ -24,6 +26,17 @@ describe('cashier bootstrap owner', () => {
     await request;
 
     expect(events).toEqual(['ready', 'polling']);
+  });
+
+  it('keeps catalog prefetch after the ready render boundary', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/layouts/CashierShell.vue'), 'utf8');
+    const bootstrapIndex = source.indexOf('await bootstrapCashier');
+    const renderBoundaryIndex = source.indexOf('await nextTick()', bootstrapIndex);
+    const prefetchIndex = source.indexOf('catalogPrefetch.markReady()', renderBoundaryIndex);
+
+    expect(bootstrapIndex).toBeGreaterThan(-1);
+    expect(renderBoundaryIndex).toBeGreaterThan(bootstrapIndex);
+    expect(prefetchIndex).toBeGreaterThan(renderBoundaryIndex);
   });
 });
 

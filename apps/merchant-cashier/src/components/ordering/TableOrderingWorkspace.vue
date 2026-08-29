@@ -17,6 +17,7 @@ import type {
 import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
+import DeferredCatalogImage from './DeferredCatalogImage.vue';
 
 const props = defineProps<{
   open: boolean;
@@ -243,9 +244,6 @@ function setProductCardRef(element: Element | null, index: number) {
   if (element instanceof HTMLElement) productCards.value[index] = element;
 }
 
-function hideBrokenImage(event: Event) {
-  (event.currentTarget as HTMLImageElement).hidden = true;
-}
 </script>
 
 <template>
@@ -400,15 +398,14 @@ function hideBrokenImage(event: Event) {
                 @keydown="onProductCardKeydown(product.id, $event)"
               >
                 <span class="table-ordering-product__image">
-                  <img
+                  <DeferredCatalogImage
                     v-if="resolveMediaUrl(product.imageUrl)"
-                    v-bind="{ src: resolveMediaUrl(product.imageUrl) }"
-                    alt=""
-                    loading="lazy"
-                    @error="hideBrokenImage"
+                    :src="resolveMediaUrl(product.imageUrl)"
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
-                  <b class="table-ordering-product__price">{{ formatItemPrice(product.priceVnd, locale) }}</b>
+                  <b class="table-ordering-product__price">
+                    {{ formatItemPrice(product.priceVnd, locale) }}<small v-if="product.unit">/{{ product.unit }}</small>
+                  </b>
                   <div v-if="canonicalQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
                     <output>X{{ canonicalQuantityForProduct(product.id) }}</output>
                   </div>

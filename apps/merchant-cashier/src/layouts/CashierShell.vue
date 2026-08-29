@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
@@ -26,6 +26,7 @@ import {
   useUiStore,
 } from '@/stores';
 import { bootstrapCashier } from './cashier-bootstrap';
+import { createCatalogPrefetchCoordinator } from './catalog-prefetch';
 import type { MerchantOrder } from '@/types';
 import CashierSidebar from '@/components/shell/CashierSidebar.vue';
 import CashierHeader from '@/components/shell/CashierHeader.vue';
@@ -55,6 +56,9 @@ const inboxOpen = ref(false);
 const refreshingTables = ref(false);
 const cashierReady = ref(false);
 let printingStatusTimer: number | undefined;
+const catalogPrefetch = createCatalogPrefetchCoordinator({
+  prefetch: () => catalogStore.loadCatalog(),
+});
 
 const livePolling = usePollingTask(async () => {
   await Promise.allSettled([
@@ -242,6 +246,12 @@ watch(isAuthenticated, async (authenticated) => {
 });
 
 watch(
+  () => session.value?.merchant.id,
+  (merchantId) => { catalogStore.activateMerchant(merchantId); },
+  { immediate: true },
+);
+
+watch(
   () => [online.value, apiReachable.value] as const,
   ([nextOnline, nextApi], previous) => {
     const recovered = nextOnline && nextApi !== false && previous && (!previous[0] || previous[1] === false);
@@ -275,9 +285,15 @@ onMounted(async () => {
     loadTables: () => tablesStore.fetchTables(),
     loadOrders: () => ordersStore.refreshLiveOrders(),
     loadPrinting: () => printingStore.refreshStatus(),
-    markReady: () => { cashierReady.value = true; },
+    markReady: () => {
+      cashierReady.value = true;
+      performance.mark('cashier-bootstrap-ready');
+    },
     startPolling: () => livePolling.start(false),
   });
+  await nextTick();
+  document.addEventListener('visibilitychange', catalogPrefetch.handleVisibilityChange);
+  catalogPrefetch.markReady();
   printingStatusTimer = window.setInterval(() => {
     if (online.value) void printingStore.refreshStatus().catch(() => undefined);
   }, 15_000);
@@ -285,6 +301,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   livePolling.stop();
+  catalogPrefetch.stop();
+  document.removeEventListener('visibilitychange', catalogPrefetch.handleVisibilityChange);
   networkStore.stop();
   if (printingStatusTimer !== undefined) window.clearInterval(printingStatusTimer);
 });

@@ -811,6 +811,7 @@
   white-space: nowrap;
   transform: translateX(-50%);
 }
+.table-ordering-product__price small { font-size: .82em; font-weight: 700; }
 .table-ordering-workspace--embedded .table-ordering-product__price { bottom: -11px; }
 .table-ordering-workspace--embedded .table-ordering-product__content {
   grid-column: 1;

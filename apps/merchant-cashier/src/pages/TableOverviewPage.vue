@@ -432,10 +432,6 @@ watch(
   () => void syncRouteSelection(),
   { immediate: true },
 );
-watch(selectedTableId, (tableId) => {
-  if (!tableId) return;
-  void catalogStore.loadCatalog().catch(() => undefined);
-}, { immediate: true });
 onMounted(() => window.addEventListener('beforeunload', protectUnload));
 onBeforeUnmount(() => window.removeEventListener('beforeunload', protectUnload));
 </script>
