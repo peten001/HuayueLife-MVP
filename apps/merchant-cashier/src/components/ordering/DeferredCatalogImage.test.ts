@@ -110,6 +110,24 @@ describe('DeferredCatalogImage', () => {
     expect(observer.observe).not.toHaveBeenCalled();
   });
 
+  it('assigns an eager-window image without waiting for layout or an observer', async () => {
+    const observer = installObserver();
+    const root = document.createElement('div');
+    root.className = 'table-ordering-products__scroller';
+    document.body.append(root);
+    const wrapper = mount(DeferredCatalogImage, {
+      props: { src: '/eager.jpg', alt: 'eager', eager: true },
+      attachTo: root,
+    });
+    mounted.push({ wrapper, root });
+    await flushPromises();
+
+    expect(wrapper.get('img').attributes('src')).toBe('/eager.jpg');
+    expect(wrapper.get('img').attributes('data-load-reason')).toBe('initial');
+    expect(observer.observe).not.toHaveBeenCalled();
+    expect(frames.size).toBe(0);
+  });
+
   it('shares the real internal root and defers images beyond the 1.5-screen preload margin', async () => {
     const observer = installObserver();
     imageTops.set('far', 1_600);

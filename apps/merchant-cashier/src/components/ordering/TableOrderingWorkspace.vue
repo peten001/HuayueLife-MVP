@@ -50,6 +50,15 @@ const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
 let previouslyFocused: HTMLElement | null = null;
 
+// Mobile V6 renders four 116px cards per row with a 17px row gap. The fixed
+// header/search/category/footer chrome leaves innerHeight - 196px for products.
+// This derives the eager window from the same measured 430/390/375 geometry.
+const initialMobileImageCount = computed(() => {
+  if (!mobileOrderingLayout.value || typeof window === 'undefined') return 0;
+  const visibleProductHeight = Math.max(0, window.innerHeight - 196);
+  return 4 * Math.max(1, Math.ceil(visibleProductHeight / 133));
+});
+
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
 const orderableProducts = computed(() => products.value.filter((product) =>
@@ -402,6 +411,7 @@ function setProductCardRef(element: Element | null, index: number) {
                     v-if="resolveMediaUrl(product.imageUrl)"
                     :src="resolveMediaUrl(product.imageUrl)"
                     :alt="productName(product)"
+                    :eager="index < initialMobileImageCount"
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
                   <b class="table-ordering-product__price">

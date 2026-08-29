@@ -6,6 +6,7 @@ import { observeCatalogImage, type CatalogImageLoadReason } from './catalog-imag
 const props = defineProps<{
   src: string;
   alt?: string;
+  eager?: boolean;
 }>();
 
 const image = ref<HTMLImageElement | null>(null);
@@ -21,6 +22,11 @@ function prepare() {
   failed.value = false;
   loadReason.value = '';
   if (!props.src || !image.value) return;
+  if (props.eager) {
+    resolvedSrc.value = props.src;
+    loadReason.value = 'initial';
+    return;
+  }
   stopObserving = observeCatalogImage(image.value, (reason) => {
     resolvedSrc.value = props.src;
     loadReason.value = reason;
@@ -28,7 +34,7 @@ function prepare() {
   });
 }
 
-watch(() => props.src, () => void nextTick(prepare));
+watch(() => [props.src, props.eager], () => void nextTick(prepare));
 onMounted(prepare);
 onBeforeUnmount(() => stopObserving?.());
 </script>
