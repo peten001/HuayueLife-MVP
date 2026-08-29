@@ -203,7 +203,7 @@ describe('fixture repository WebView compatibility', () => {
     expect(result.session.itemCount).toBe(6);
   });
 
-  it('keeps an empty canonical session open until explicit release', async () => {
+  it('auto-closes an empty canonical session without an explicit release', async () => {
     vi.resetModules();
     const { demoRepository, resetDemoRepository } = await import('./repository');
     resetDemoRepository();
@@ -223,13 +223,8 @@ describe('fixture repository WebView compatibility', () => {
     });
 
     expect(empty.items).toEqual([]);
-    expect(empty.sessionStatus).toBe('OPEN');
-    expect(demoRepository.currentSession('demo-table-10')).not.toBeNull();
-
-    demoRepository.releaseEmptySession(opened.session.id, {
-      requestKey: 'canonical-release-b04',
-      expectedRevision: empty.revision,
-    });
+    expect(empty.sessionStatus).toBe('CLOSED');
+    expect(empty.releasedBecause).toBe('EMPTY_AFTER_RECONCILE');
     expect(demoRepository.currentSession('demo-table-10')).toBeNull();
   });
 

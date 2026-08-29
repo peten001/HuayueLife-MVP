@@ -90,6 +90,8 @@ export interface DineInCanonicalLine {
   productNameEn?: string | null;
   remark: string;
   optionSignature: string;
+  activeSince: string;
+  displayOrderKey: string;
   unitPriceVnd: string;
   quantity: number;
   lockedQuantity: number;
@@ -107,6 +109,7 @@ export interface DineInCanonicalState {
   tableId: string;
   tableNo: string;
   tableName?: string | null;
+  openedAt: string;
   sessionStatus: TableSessionStatus;
   revision: string;
   items: DineInCanonicalLine[];
@@ -121,6 +124,7 @@ export interface DineInCanonicalState {
   generatedAt: string;
   idempotentReplay?: boolean;
   appliedRevision?: string;
+  releasedBecause?: 'EMPTY_AFTER_RECONCILE';
 }
 
 export interface ReconcileDineInCanonicalStateInput {

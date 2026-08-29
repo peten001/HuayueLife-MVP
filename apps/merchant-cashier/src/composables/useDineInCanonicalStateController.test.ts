@@ -1,4 +1,3 @@
-import { nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CashierApiError } from '@/api';
 import type { CashierMenuProduct, DineInCanonicalState } from '@/types';
@@ -57,16 +56,18 @@ describe('useDineInCanonicalStateController', () => {
     expect(apiMocks.reconcileDineInCanonicalState.mock.calls[0]?.[1].desiredItems).toContainEqual(expect.objectContaining({ desiredQuantity: 11 }));
   });
 
-  it('keeps the OPEN session context when the last item changes 1 to 0', async () => {
+  it('adopts the server auto-closed state when the last item changes 1 to 0', async () => {
     apiMocks.getDineInCanonicalState.mockResolvedValue(state(1));
-    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(state(0));
+    const closed = state(0);
+    closed.sessionStatus = 'CLOSED';
+    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(closed);
     const controller = createController();
     await controller.load(true);
     controller.decreaseLine(controller.presentedState.value!.items[0]!);
     expect(controller.presentedState.value?.sessionStatus).toBe('OPEN');
     expect(controller.presentedState.value?.items).toEqual([]);
     await controller.flush();
-    expect(controller.canonicalState.value?.sessionStatus).toBe('OPEN');
+    expect(controller.canonicalState.value?.sessionStatus).toBe('CLOSED');
     expect(controller.canonicalState.value?.items).toEqual([]);
   });
 
@@ -111,7 +112,8 @@ describe('useDineInCanonicalStateController', () => {
     const controller = createController();
     await controller.load(true);
     controller.addProduct('product-1');
-    await waitUntil(() => Boolean(controller.uncertainBatch.value));
+    await controller.flush();
+    expect(controller.uncertainBatch.value).toBeTruthy();
     const firstInput = apiMocks.reconcileDineInCanonicalState.mock.calls[0]?.[1];
     await controller.retryUncertain();
     expect(apiMocks.reconcileDineInCanonicalState.mock.calls[1]?.[1]).toEqual(firstInput);
@@ -167,13 +169,13 @@ function canonicalState(lines: Array<{ product: CashierMenuProduct; quantity: nu
   const items = lines.filter(({ quantity }) => quantity > 0).map(({ product, quantity }, index) => ({
     lineKey: `dline:sha256:${String(index + 1).repeat(64)}`,
     productId: product.id, productNameZh: product.nameZh, productNameVi: product.nameVi, productNameEn: product.nameEn,
-    remark: '', optionSignature: '', unitPriceVnd: product.priceVnd, quantity, lockedQuantity: 0, adjustableQuantity: quantity,
+    remark: '', optionSignature: '', activeSince: `2026-08-30T00:00:0${index + 1}.000Z`, displayOrderKey: `2026-08-30T00:00:0${index + 1}.000Z:${index + 1}:line`, unitPriceVnd: product.priceVnd, quantity, lockedQuantity: 0, adjustableQuantity: quantity,
     subtotalVnd: (BigInt(product.priceVnd) * BigInt(quantity)).toString(), adjustability: 'RETURN' as const,
     sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
   }));
   const total = items.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n).toString();
   return {
-    sessionId: 'session-1', tableId: 'table-1', tableNo: 'A01', tableName: null, sessionStatus: 'OPEN',
+    sessionId: 'session-1', tableId: 'table-1', tableNo: 'A01', tableName: null, openedAt: '2026-08-30T00:00:00.000Z', sessionStatus: 'OPEN',
     revision: `dcs2:sha256:${lines.map(({ quantity }) => quantity).join('').padStart(64, '0')}`,
     items,
     totals: { originalAmountVnd: total, discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: total },
@@ -189,13 +191,4 @@ function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
-}
-
-async function waitUntil(predicate: () => boolean) {
-  for (let index = 0; index < 20; index += 1) {
-    await nextTick();
-    await Promise.resolve();
-    if (predicate()) return;
-  }
-  throw new Error('condition not reached');
 }

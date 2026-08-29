@@ -96,6 +96,9 @@ describe('useTableOrderMutationController', () => {
     const pageSource = readFileSync(resolve(process.cwd(), 'src/pages/TableOverviewPage.vue'), 'utf8');
     expect(pageSource).not.toContain('orderingWorkspace.value?.');
     expect(pageSource).toContain('canonicalController.addProduct(');
+    expect(pageSource).toContain('pendingInitialItems');
+    expect(pageSource).toContain('createMerchantTableOrder(batch.tableId, batch.input)');
+    expect(pageSource).not.toContain('items: [],');
     expect(pageSource).toContain("activeMainTab === 'MENU'");
   });
 

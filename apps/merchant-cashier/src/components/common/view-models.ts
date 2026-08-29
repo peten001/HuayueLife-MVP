@@ -92,8 +92,10 @@ export function tableLabel(order?: CashierOrderView | null) {
 export function elapsedDuration(value?: string | null, maxHours = 18) {
   if (!value) return null;
   const startedAt = new Date(value).getTime();
-  const elapsed = Date.now() - startedAt;
-  if (!Number.isFinite(startedAt) || elapsed < 0) return { abnormal: true, hours: 0, minutes: 0 };
+  if (!Number.isFinite(startedAt)) return { abnormal: true, hours: 0, minutes: 0 };
+  // The API timestamp is authoritative. A small terminal/server clock skew must
+  // render as zero elapsed time, never as a negative/abnormal flash.
+  const elapsed = Math.max(0, Date.now() - startedAt);
   const totalMinutes = Math.floor(elapsed / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   return {

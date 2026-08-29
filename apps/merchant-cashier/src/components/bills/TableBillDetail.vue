@@ -18,8 +18,6 @@ const props = defineProps<{
   adjustmentApplied?: boolean;
   embedded?: boolean;
   transferDisabled?: boolean;
-  releaseEligible?: boolean;
-  releasing?: boolean;
   // Compatibility-only props retained for older isolated component fixtures.
   draftLines?: unknown[];
   pendingDecreaseMergeKeys?: Set<string>;
@@ -36,7 +34,6 @@ const emit = defineEmits<{
   transfer: [];
   checkout: [];
   adjustment: [];
-  releaseEmpty: [];
   decreaseItem: [unknown, unknown?, number?, string?];
   increaseItem: [unknown, unknown?, string?, string?];
   returnItem: [unknown, unknown];
@@ -152,7 +149,7 @@ function priceCanExpand(line: DineInCanonicalLine) {
         </dl>
       </div>
 
-      <DineInActionDock v-if="session" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" :release-eligible="releaseEligible" :releasing="releasing" @adjustment="emit('adjustment')" @checkout="emit('checkout')" @release-empty="emit('releaseEmpty')" />
+      <DineInActionDock v-if="session" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
       <div v-else class="dinein-action-dock dinein-action-dock--placeholder" data-testid="dinein-action-dock-placeholder">
         <button type="button" class="secondary-action detail-print-action dinein-action-button" disabled><Printer :size="18" aria-hidden="true" />{{ t('print.action') }}</button>
         <button type="button" class="dinein-action-dock__action dinein-action-button dinein-action-dock__rounding" disabled>{{ t('discount.entry') }}</button>

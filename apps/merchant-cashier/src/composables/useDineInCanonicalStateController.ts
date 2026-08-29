@@ -26,6 +26,8 @@ type FrozenBatch = {
   overrides: DesiredOverride[];
 };
 
+export const CANONICAL_BATCH_WINDOW_MS = 180;
+
 export function useDineInCanonicalStateController(options: {
   sessionId: () => string;
   disabled: () => boolean;
@@ -41,8 +43,10 @@ export function useDineInCanonicalStateController(options: {
   const conflict = ref(false);
   const uncertainBatch = ref<FrozenBatch | null>(null);
   let scheduled = false;
+  let scheduledTimer: ReturnType<typeof setTimeout> | null = null;
   let inFlight: FrozenBatch | null = null;
   let loadSequence = 0;
+  let stateEpoch = 0;
 
   const presentedState = computed<DineInCanonicalState | null>(() => {
     const state = canonicalState.value;
@@ -69,6 +73,8 @@ export function useDineInCanonicalStateController(options: {
         productNameEn: product.nameEn,
         remark: override.remark,
         optionSignature: '',
+        activeSince: new Date().toISOString(),
+        displayOrderKey: `local:${Date.now()}:${override.productId}`,
         unitPriceVnd: product.priceVnd,
         quantity: override.desiredQuantity,
         lockedQuantity: 0,
@@ -112,10 +118,11 @@ export function useDineInCanonicalStateController(options: {
       return null;
     }
     const sequence = ++loadSequence;
+    const epoch = stateEpoch;
     if (!canonicalState.value || force) loading.value = true;
     try {
       const state = await getDineInCanonicalState(sessionId);
-      if (sequence !== loadSequence || sessionId !== options.sessionId()) return state;
+      if (sequence !== loadSequence || epoch !== stateEpoch || sessionId !== options.sessionId()) return state;
       if (!inFlight && desiredOverrides.value.size === 0 && !uncertainBatch.value) {
         canonicalState.value = state;
       } else if (canonicalState.value?.revision === state.revision) {
@@ -191,10 +198,11 @@ export function useDineInCanonicalStateController(options: {
   function scheduleSync() {
     if (scheduled || inFlight || mutationLocked.value || options.disabled()) return;
     scheduled = true;
-    queueMicrotask(() => {
+    scheduledTimer = setTimeout(() => {
       scheduled = false;
+      scheduledTimer = null;
       void syncNextBatch();
-    });
+    }, CANONICAL_BATCH_WINDOW_MS);
   }
 
   async function syncNextBatch() {
@@ -246,6 +254,7 @@ export function useDineInCanonicalStateController(options: {
   }
 
   function applyCommittedBatch(batch: FrozenBatch, next: DineInCanonicalState) {
+    stateEpoch += 1;
     canonicalState.value = next;
     const remaining = new Map(desiredOverrides.value);
     for (const sent of batch.overrides) {
@@ -289,6 +298,7 @@ export function useDineInCanonicalStateController(options: {
     });
     let keepLocal = true;
     if (overlaps) keepLocal = await options.confirmSameLineConflict?.() ?? false;
+    stateEpoch += 1;
     canonicalState.value = latest;
     conflict.value = false;
     if (!keepLocal) {
@@ -351,7 +361,12 @@ export function useDineInCanonicalStateController(options: {
   }
 
   async function flush() {
-    if (scheduled) await nextTick();
+    if (scheduledTimer) {
+      clearTimeout(scheduledTimer);
+      scheduledTimer = null;
+      scheduled = false;
+      await syncNextBatch();
+    }
     while ((inFlight || desiredOverrides.value.size > 0) && !mutationLocked.value) {
       if (!inFlight) await syncNextBatch();
       else await new Promise((resolve) => window.setTimeout(resolve, 10));
@@ -364,7 +379,17 @@ export function useDineInCanonicalStateController(options: {
     desiredOverrides.value = new Map();
   }
 
+  function adoptCommittedState(state: DineInCanonicalState) {
+    stateEpoch += 1;
+    loadSequence += 1;
+    canonicalState.value = state;
+    desiredOverrides.value = new Map();
+    uncertainBatch.value = null;
+    conflict.value = false;
+  }
+
   function reset() {
+    stateEpoch += 1;
     loadSequence += 1;
     canonicalState.value = null;
     desiredOverrides.value = new Map();
@@ -372,6 +397,8 @@ export function useDineInCanonicalStateController(options: {
     conflict.value = false;
     syncing.value = false;
     scheduled = false;
+    if (scheduledTimer) clearTimeout(scheduledTimer);
+    scheduledTimer = null;
     inFlight = null;
   }
 
@@ -392,6 +419,7 @@ export function useDineInCanonicalStateController(options: {
     retryUncertain,
     flush,
     acceptLatestAfterConflict,
+    adoptCommittedState,
     reset,
   };
 }

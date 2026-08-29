@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DiningTable, TableSessionDetail, TableSessionSummary } from '@/types';
+import type { DiningTable, DineInCanonicalState, TableSessionDetail, TableSessionSummary } from '@/types';
 
 const apiMocks = vi.hoisted(() => ({
   listDiningTables: vi.fn(),
@@ -194,6 +194,24 @@ describe('cashier table store real-session refresh', () => {
     expect(store.detailLoading).toBe(false);
   });
 
+  it('patches the table amount from canonical state immediately and rejects a stale poll', async () => {
+    const store = useTablesStore();
+    await store.fetchTables();
+    await store.selectTable(table.id);
+    const staleSessions = createDeferred<TableSessionSummary[]>();
+    apiMocks.listOpenTableSessions.mockReturnValueOnce(staleSessions.promise);
+    const staleRequest = store.fetchTables();
+
+    store.applyCanonicalTableSnapshot(canonical('75000', 3));
+    expect(store.selectedTable?.currentSession?.totalAmountVnd).toBe('75000');
+    expect(store.selectedTable?.currentSession?.itemCount).toBe(3);
+    expect(store.selectedSessionDetail?.payableAmountVnd).toBe('75000');
+
+    staleSessions.resolve([summary]);
+    await staleRequest;
+    expect(store.selectedTable?.currentSession?.totalAmountVnd).toBe('75000');
+  });
+
   it('force refresh reuses an in-flight request instead of creating a duplicate first wave', async () => {
     const sessions = createDeferred<TableSessionSummary[]>();
     apiMocks.listOpenTableSessions.mockReturnValueOnce(sessions.promise);
@@ -263,4 +281,41 @@ function createDeferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function canonical(total: string, quantity: number): DineInCanonicalState {
+  return {
+    sessionId: summary.id,
+    tableId: table.id,
+    tableNo: table.tableNo,
+    tableName: table.tableName,
+    openedAt: summary.openedAt,
+    sessionStatus: 'OPEN',
+    revision: `dcs2:sha256:${'1'.repeat(64)}`,
+    items: [{
+      lineKey: `dline:sha256:${'2'.repeat(64)}`,
+      productId: 'product-1',
+      productNameZh: '牛肉粉',
+      remark: '',
+      optionSignature: '',
+      activeSince: '2026-07-15T00:05:00.000Z',
+      displayOrderKey: '2026-07-15T00:05:00.000Z:1:line',
+      unitPriceVnd: (BigInt(total) / BigInt(quantity)).toString(),
+      quantity,
+      lockedQuantity: 0,
+      adjustableQuantity: quantity,
+      subtotalVnd: total,
+      adjustability: 'RETURN',
+      sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
+    }],
+    totals: {
+      originalAmountVnd: total,
+      discountPayableRateBps: null,
+      discountAmountVnd: '0',
+      roundingAmountVnd: '0',
+      payableAmountVnd: total,
+    },
+    blockers: [],
+    generatedAt: '2026-08-30T00:00:00.000Z',
+  };
 }

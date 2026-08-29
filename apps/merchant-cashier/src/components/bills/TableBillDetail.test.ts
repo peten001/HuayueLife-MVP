@@ -40,22 +40,14 @@ describe('TableBillDetail canonical-state UI', () => {
     expect(wrapper.emitted('decreaseLine')?.[0]?.[0]).toMatchObject({ lineKey: canonical().items[0]!.lineKey, quantity: 2 });
   });
 
-  it('keeps the OPEN table context after the final item changes 1 to 0', async () => {
-    const wrapper = mountDetail({ canonicalState: canonical(1) });
-    await wrapper.setProps({ canonicalState: canonical(0), releaseEligible: true });
+  it('does not expose a manual empty-release action in the V2.1 bill dock', async () => {
+    const wrapper = mountDetail({ canonicalState: canonical(1), checkoutDisabled: true });
+    await wrapper.setProps({ canonicalState: canonical(0) });
     expect(wrapper.get('[data-testid="right-panel-header"]').text()).toContain('A01');
     expect(wrapper.get('[data-testid="right-panel-header"]').text()).toContain('用餐中');
     expect(wrapper.find('[data-testid="right-panel-empty-table"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="dinein-release-empty"]').text()).toContain('释放空桌');
-    expect(wrapper.find('[data-testid="dinein-checkout"]').exists()).toBe(false);
-  });
-
-  it('requires an explicit release-empty click and keeps the action secondary to the normal dock', async () => {
-    const wrapper = mountDetail({ canonicalState: canonical(0), releaseEligible: true });
-    await wrapper.get('[data-testid="dinein-release-empty"]').trigger('click');
-    expect(wrapper.emitted('releaseEmpty')).toHaveLength(1);
-    expect(wrapper.find('[data-testid="print-primary"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="dinein-settlement-adjustment"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dinein-release-empty"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="dinein-checkout"]').attributes('disabled')).toBeDefined();
   });
 
   it('disables decrement below locked quantity and disables historical product increment', () => {
@@ -124,11 +116,11 @@ function mountDetail(extraProps: Record<string, unknown> = {}) {
 
 function canonical(quantity = 2): DineInCanonicalState {
   return {
-    sessionId: 'session-1', tableId: 'table-1', tableNo: 'A01', tableName: null, sessionStatus: 'OPEN',
+    sessionId: 'session-1', tableId: 'table-1', tableNo: 'A01', tableName: null, openedAt: '2026-08-30T00:00:00.000Z', sessionStatus: 'OPEN',
     revision: `dcs2:sha256:${'1'.repeat(64)}`,
     items: quantity ? [{
       lineKey: `dline:sha256:${'1'.repeat(64)}`, productId: 'product-1', productNameZh: '牛肉粉', productNameVi: 'Phở bò', productNameEn: 'Beef pho',
-      remark: '', optionSignature: '', unitPriceVnd: '60000', quantity, lockedQuantity: 0, adjustableQuantity: quantity,
+      remark: '', optionSignature: '', activeSince: '2026-08-30T00:00:01.000Z', displayOrderKey: '2026-08-30T00:00:01.000Z:1:line', unitPriceVnd: '60000', quantity, lockedQuantity: 0, adjustableQuantity: quantity,
       subtotalVnd: (BigInt(quantity) * 60_000n).toString(), adjustability: 'RETURN', sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
     }] : [],
     totals: { originalAmountVnd: (BigInt(quantity) * 60_000n).toString(), discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: (BigInt(quantity) * 60_000n).toString() },

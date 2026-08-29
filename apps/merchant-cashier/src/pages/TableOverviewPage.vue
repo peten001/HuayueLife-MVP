@@ -8,14 +8,13 @@ import {
   createMerchantTableOrder,
   isDefinitiveMutationRejection,
   isMutationOutcomeUncertain,
-  releaseEmptyTableSession,
   setTableSessionSettlementAdjustment,
   transferTableSession,
 } from '@/api';
 import { createMutationKey, shouldBlockCashierMutationNavigation } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useAuthStore, useCatalogStore, useNetworkStore, useOrdersStore, useTablesStore, useUiStore } from '@/stores';
-import type { PaymentMethod, TableSessionOrder, TransferTableSessionInput } from '@/types';
+import type { CreateMerchantTableOrderInput, PaymentMethod, TableSessionOrder, TransferTableSessionInput } from '@/types';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
@@ -50,10 +49,12 @@ const transferOpen = ref(false);
 const transferLoading = ref(false);
 const transferError = ref('');
 const pendingTransfer = ref<TransferTableSessionInput | null>(null);
-const releasingEmpty = ref(false);
-const retainedRelease = ref<{ sessionId: string; expectedRevision: string; requestKey: string } | null>(null);
 const retainedCheckout = ref<{ sessionId: string; paymentMethod: PaymentMethod; expectedRevision: string; requestKey: string } | null>(null);
-let openingSession: Promise<void> | null = null;
+const pendingInitialItems = ref(new Map<string, number>());
+const retainedInitialBatch = ref<{ tableId: string; input: CreateMerchantTableOrderInput } | null>(null);
+const initialBatchSyncing = ref(false);
+let initialBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let initialBatchRequest: Promise<void> | null = null;
 let canonicalPollTimer: number | null = null;
 let routeSequence = 0;
 
@@ -68,15 +69,27 @@ const canonicalController = useDineInCanonicalStateController({
   disabled: () => writeDisabled.value,
   products: () => orderableProducts.value,
   confirmSameLineConflict: () => window.confirm(t('canonical.sameLineConflict')),
+  onCommitted: (state) => {
+    tablesStore.applyCanonicalTableSnapshot(state);
+    if (state.sessionStatus === 'CLOSED' && state.releasedBecause === 'EMPTY_AFTER_RECONCILE') {
+      window.setTimeout(() => { void router.replace('/tables'); }, 0);
+    }
+  },
   onFailure: (caught) => {
     const uncertain = isMutationOutcomeUncertain(caught);
     uiStore.pushToast(t(uncertain ? 'mutation.outcomeUncertain' : apiErrorTranslationKey(caught, 'error.operationFailed')), uncertain ? 'warning' : 'error');
   },
 });
 const presentedCanonicalState = canonicalController.presentedState;
-const orderingMutationPending = canonicalController.mutationPending;
-const orderingMutationLocked = canonicalController.mutationLocked;
-const orderingProductQuantities = canonicalController.productQuantities;
+const orderingMutationPending = computed(() => canonicalController.mutationPending.value || pendingInitialItems.value.size > 0 || initialBatchSyncing.value);
+const orderingMutationLocked = computed(() => canonicalController.mutationLocked.value || Boolean(retainedInitialBatch.value));
+const orderingProductQuantities = computed(() => {
+  const quantities = { ...canonicalController.productQuantities.value };
+  for (const [productId, quantity] of pendingInitialItems.value) {
+    quantities[productId] = (quantities[productId] ?? 0) + quantity;
+  }
+  return quantities;
+});
 const canCheckout = computed(() => Boolean(
   session.value?.status === 'OPEN'
   && presentedCanonicalState.value
@@ -84,23 +97,23 @@ const canCheckout = computed(() => Boolean(
   && BigInt(presentedCanonicalState.value.totals.payableAmountVnd) > 0n
   && presentedCanonicalState.value.blockers.length === 0,
 ));
-const releaseEligible = computed(() => Boolean(
-  session.value?.status === 'OPEN'
-  && presentedCanonicalState.value
-  && presentedCanonicalState.value.items.length === 0
-  && presentedCanonicalState.value.totals.originalAmountVnd === '0'
-  && presentedCanonicalState.value.totals.payableAmountVnd === '0'
-  && presentedCanonicalState.value.blockers.length === 0,
-));
-const unresolvedMutation = computed(() => orderingMutationLocked.value || Boolean(pendingTransfer.value) || Boolean(retainedRelease.value) || Boolean(retainedCheckout.value));
+const unresolvedMutation = computed(() => orderingMutationLocked.value || Boolean(pendingTransfer.value) || Boolean(retainedCheckout.value));
+const unfinishedMutation = computed(() => unresolvedMutation.value || orderingMutationPending.value);
 const transferTargets = computed(() => tableCards.value.filter((table) => table.id !== selectedTableId.value && table.status === 'ACTIVE' && table.operationalStatus === 'AVAILABLE' && !table.currentSession));
-const topOrderingDialogOpen = computed(() => Boolean(checkoutConfirmOpen.value || adjustmentOpen.value || transferOpen.value || canonicalController.uncertainBatch.value));
+const topOrderingDialogOpen = computed(() => Boolean(checkoutConfirmOpen.value || adjustmentOpen.value || transferOpen.value || canonicalController.uncertainBatch.value || retainedInitialBatch.value));
 const activeStatus = computed(() => route.query.status === 'AVAILABLE' || route.query.status === 'IN_USE' ? route.query.status : 'ALL');
 const availableTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length);
 const inUseTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length);
 const filteredTables = computed(() => tableCards.value.filter((table) => activeStatus.value === 'ALL' || table.operationalStatus === activeStatus.value));
 
 async function reconcilePendingOrderingMutations() {
+  if (initialBatchTimer) {
+    clearTimeout(initialBatchTimer);
+    initialBatchTimer = null;
+    await syncInitialBatch();
+  }
+  if (initialBatchRequest) await initialBatchRequest;
+  if (retainedInitialBatch.value) return false;
   if (!orderingMutationPending.value) return !orderingMutationLocked.value;
   const settled = await canonicalController.flush();
   if (settled) return true;
@@ -108,34 +121,89 @@ async function reconcilePendingOrderingMutations() {
   return false;
 }
 
-async function ensureOpenCanonicalSession() {
-  if (session.value) {
-    if (!canonicalController.canonicalState.value) await canonicalController.load(true);
+async function addMenuProduct(productId: string) {
+  if (writeDisabled.value || orderingMutationLocked.value) return;
+  if (!session.value) {
+    const next = new Map(pendingInitialItems.value);
+    next.set(productId, Math.min(999, (next.get(productId) ?? 0) + 1));
+    pendingInitialItems.value = next;
+    scheduleInitialBatch();
     return;
   }
-  if (!selectedTableId.value) return;
-  if (!openingSession) {
-    openingSession = (async () => {
-      const result = await createMerchantTableOrder(selectedTableId.value, {
-        idempotencyKey: createMutationKey('add'),
-        items: [],
-      });
-      tablesStore.applySessionSnapshot(result.session);
-      await canonicalController.load(true);
-    })().finally(() => { openingSession = null; });
-  }
-  await openingSession;
-}
-
-async function addMenuProduct(productId: string) {
-  if (writeDisabled.value) return;
   try {
-    await ensureOpenCanonicalSession();
+    if (!canonicalController.canonicalState.value) await canonicalController.load(true);
     canonicalController.addProduct(productId);
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'ordering.createFailed')), 'error');
     await refreshAdjustmentContext(true);
   }
+}
+
+function scheduleInitialBatch() {
+  if (initialBatchTimer || initialBatchRequest || retainedInitialBatch.value) return;
+  initialBatchTimer = setTimeout(() => {
+    initialBatchTimer = null;
+    void syncInitialBatch();
+  }, 180);
+}
+
+async function syncInitialBatch(retry = retainedInitialBatch.value) {
+  if (initialBatchRequest || writeDisabled.value) return;
+  const tableId = retry?.tableId ?? selectedTableId.value;
+  const input = retry?.input ?? {
+    idempotencyKey: createMutationKey('add'),
+    items: [...pendingInitialItems.value]
+      .filter(([, quantity]) => quantity > 0)
+      .map(([productId, quantity]) => ({ productId, quantity })),
+  };
+  if (!tableId || input.items.length === 0) return;
+  const batch = { tableId, input };
+  initialBatchSyncing.value = true;
+  initialBatchRequest = (async () => {
+    try {
+      const result = await createMerchantTableOrder(batch.tableId, batch.input);
+      retainedInitialBatch.value = null;
+      const remaining = new Map(pendingInitialItems.value);
+      for (const sent of batch.input.items) {
+        const quantity = Math.max(0, (remaining.get(sent.productId) ?? 0) - sent.quantity);
+        if (quantity) remaining.set(sent.productId, quantity); else remaining.delete(sent.productId);
+      }
+      tablesStore.applySessionSnapshot(result.session);
+      const canonicalState = await canonicalController.load(true);
+      if (canonicalState) canonicalController.adoptCommittedState(canonicalState);
+      pendingInitialItems.value = new Map();
+      for (const [productId, quantity] of remaining) {
+        for (let index = 0; index < quantity; index += 1) canonicalController.addProduct(productId);
+      }
+    } catch (caught) {
+      if (isMutationOutcomeUncertain(caught)) {
+        retainedInitialBatch.value = batch;
+        uiStore.pushToast(t('mutation.outcomeUncertain'), 'warning');
+      } else {
+        const remaining = new Map(pendingInitialItems.value);
+        for (const sent of batch.input.items) {
+          const quantity = Math.max(0, (remaining.get(sent.productId) ?? 0) - sent.quantity);
+          if (quantity) remaining.set(sent.productId, quantity); else remaining.delete(sent.productId);
+        }
+        pendingInitialItems.value = remaining;
+        uiStore.pushToast(t(apiErrorTranslationKey(caught, 'ordering.createFailed')), 'error');
+        await refreshAdjustmentContext(true);
+      }
+    }
+  })().finally(() => {
+    initialBatchRequest = null;
+    initialBatchSyncing.value = false;
+    if (!retainedInitialBatch.value && pendingInitialItems.value.size > 0 && !session.value) scheduleInitialBatch();
+  });
+  await initialBatchRequest;
+}
+
+async function retryUncertainOrderingMutation() {
+  if (retainedInitialBatch.value) {
+    await syncInitialBatch(retainedInitialBatch.value);
+    return;
+  }
+  await canonicalController.retryUncertain();
 }
 
 async function openSettlementAdjustment() {
@@ -261,32 +329,6 @@ async function openCheckout() {
   checkoutConfirmOpen.value = true;
 }
 
-async function releaseEmpty() {
-  if (!session.value || writeDisabled.value || releasingEmpty.value) return;
-  if (!(await reconcilePendingOrderingMutations())) return;
-  if (!retainedRelease.value) {
-    const exact = await canonicalController.load(true);
-    if (!exact || exact.items.length > 0 || exact.totals.payableAmountVnd !== '0' || exact.blockers.length > 0) return;
-    if (!window.confirm(t('canonical.releaseConfirm'))) return;
-    retainedRelease.value = { sessionId: session.value.id, expectedRevision: exact.revision, requestKey: createMutationKey('release') };
-  }
-  releasingEmpty.value = true;
-  try {
-    const closed = await releaseEmptyTableSession(session.value.id, retainedRelease.value);
-    retainedRelease.value = null;
-    canonicalController.reset();
-    tablesStore.applySessionSnapshot(closed);
-    await tablesStore.fetchTables({ force: true });
-    await router.replace('/tables');
-  } catch (caught) {
-    if (isDefinitiveMutationRejection(caught)) retainedRelease.value = null;
-    uiStore.pushToast(t(isMutationOutcomeUncertain(caught) ? 'mutation.outcomeUncertain' : 'canonical.releaseFailed'), isMutationOutcomeUncertain(caught) ? 'warning' : 'error');
-    if (!isMutationOutcomeUncertain(caught)) await canonicalController.load(true).catch(() => undefined);
-  } finally {
-    releasingEmpty.value = false;
-  }
-}
-
 function replaceMainTab(tab: 'TABLES' | 'MENU') {
   const query = { ...route.query };
   if (tab === 'MENU') query.view = 'menu'; else delete query.view;
@@ -330,7 +372,7 @@ async function refreshAdjustmentContext(force = false) {
   await Promise.allSettled([ordersStore.refreshLiveOrders({ force }), tablesStore.fetchTables({ force })]);
   if (session.value) await canonicalController.load(true).catch(() => undefined);
 }
-function protectUnload(event: BeforeUnloadEvent) { if (unresolvedMutation.value) { event.preventDefault(); event.returnValue = ''; } }
+function protectUnload(event: BeforeUnloadEvent) { if (unfinishedMutation.value) { event.preventDefault(); event.returnValue = ''; } }
 async function guardMutationNavigation(to: { name?: string | symbol | null; params: Record<string, unknown> }) {
   if (shouldBlockCashierMutationNavigation({ unresolvedMutation: unresolvedMutation.value, authenticated: authStore.isAuthenticated, destinationName: to.name })) {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
@@ -346,11 +388,15 @@ onBeforeRouteLeave((to) => guardMutationNavigation(to));
 watch(() => [route.params.tableId, route.query.order, tableCards.value.length], () => void syncRouteSelection(), { immediate: true });
 watch(() => session.value?.id || '', async (sessionId, previous) => {
   if (sessionId === previous) return;
+  if (sessionId && initialBatchSyncing.value) return;
+  if (sessionId && canonicalController.canonicalState.value?.sessionId === sessionId) return;
   canonicalController.reset();
-  retainedRelease.value = null;
   retainedCheckout.value = null;
   if (sessionId) await canonicalController.load(true).catch(() => uiStore.pushToast(t('error.refreshFailed'), 'error'));
 });
+watch(presentedCanonicalState, (state) => {
+  if (state) tablesStore.applyCanonicalTableSnapshot(state);
+}, { deep: true });
 onMounted(() => {
   window.addEventListener('beforeunload', protectUnload);
   canonicalPollTimer = window.setInterval(() => {
@@ -359,6 +405,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', protectUnload);
+  if (initialBatchTimer) clearTimeout(initialBatchTimer);
   if (canonicalPollTimer !== null) window.clearInterval(canonicalPollTimer);
 });
 </script>
@@ -390,10 +437,10 @@ onBeforeUnmount(() => {
     <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(routeTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
       <button v-if="selectedTableId && !isMobile" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="router.push('/tables')"><ArrowLeft :size="20" aria-hidden="true" /></button>
       <LoadingState v-if="detailLoading && !selectedSessionDetail" :label="t('table.loading')" />
-      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :release-eligible="releaseEligible" :releasing="releasingEmpty" @order-items="openOrdering" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" @release-empty="releaseEmpty" />
+      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" @order-items="openOrdering" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
     </aside>
 
-    <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value)" :loading="canonicalController.syncing.value" :disabled="writeDisabled" @retry="canonicalController.retryUncertain" />
+    <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value || retainedInitialBatch)" :loading="canonicalController.syncing.value || initialBatchSyncing" :disabled="writeDisabled" @retry="retryUncertainOrderingMutation" />
     <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
     <SettlementAdjustmentDialog v-if="session" :open="adjustmentOpen" :item-amount-vnd="presentedCanonicalState?.totals.originalAmountVnd || '0'" :discount-payable-rate-bps="presentedCanonicalState?.totals.discountPayableRateBps ?? null" :rounding-enabled="BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n" :loading="settlementAdjustmentLoading" @cancel="adjustmentOpen = false" @confirm="saveSettlementAdjustment" />
     <TableTransferDialog :open="transferOpen" :source-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :targets="transferTargets" :loading="transferLoading" :error="transferError" @cancel="cancelTransfer" @confirm="confirmTransfer" />

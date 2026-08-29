@@ -13,6 +13,7 @@ import {
 import { buildTableCards, canCloseTableSession } from '@/domain';
 import type {
   DiningTable,
+  DineInCanonicalState,
   TableCardView,
   TableSessionDetail,
   TableSessionSummary,
@@ -37,6 +38,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
   const error = ref('');
   const errorKey = ref('');
   const lastRefreshAt = ref<string | null>(null);
+  const canonicalRevisionBySession = ref<Record<string, string>>({});
   let fetchRequest: Promise<TableCardView[]> | null = null;
   let detailRequestSequence = 0;
   let dataGeneration = 0;
@@ -290,6 +292,48 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     }
   }
 
+  function applyCanonicalTableSnapshot(state: DineInCanonicalState) {
+    // Canonical optimistic/success state is newer than any list/detail poll
+    // already in flight. Invalidate both channels before patching the card and
+    // selected bill so a stale response cannot restore the previous amount.
+    invalidateTableSnapshot();
+    canonicalRevisionBySession.value = {
+      ...canonicalRevisionBySession.value,
+      [state.sessionId]: state.revision,
+    };
+    detailRequestSequence += 1;
+    detailLoading.value = false;
+    if (state.sessionStatus !== 'OPEN') {
+      openSessions.value = openSessions.value.filter((session) => session.id !== state.sessionId);
+      detailCache.delete(state.sessionId);
+      if (selectedSessionDetail.value?.id === state.sessionId) selectedSessionDetail.value = null;
+      return;
+    }
+    const itemCount = state.items.reduce((sum, item) => sum + item.quantity, 0);
+    const patch = <T extends TableSessionSummary>(session: T): T => ({
+      ...session,
+      tableId: state.tableId,
+      tableNo: state.tableNo,
+      tableName: state.tableName,
+      openedAt: state.openedAt,
+      itemCount,
+      totalAmountVnd: state.totals.originalAmountVnd,
+      originalAmountVnd: state.totals.originalAmountVnd,
+      discountPayableRateBps: state.totals.discountPayableRateBps,
+      discountAmountVnd: state.totals.discountAmountVnd,
+      roundingAmountVnd: state.totals.roundingAmountVnd,
+      payableAmountVnd: state.totals.payableAmountVnd,
+    });
+    openSessions.value = openSessions.value.map((session) =>
+      session.id === state.sessionId ? patch(session) : session,
+    );
+    if (selectedSessionDetail.value?.id === state.sessionId) {
+      const detail = patch(selectedSessionDetail.value);
+      selectedSessionDetail.value = detail;
+      detailCache.set(state.sessionId, { detail, fetchedAt: Date.now() });
+    }
+  }
+
   function clear() {
     dataGeneration += 1;
     invalidateTableSnapshot();
@@ -305,6 +349,7 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     closing.value = false;
     checkingOut.value = false;
     lastRefreshAt.value = null;
+    canonicalRevisionBySession.value = {};
   }
 
   function invalidateTableSnapshot() {
@@ -371,12 +416,14 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     error,
     errorKey,
     lastRefreshAt,
+    canonicalRevisionBySession,
     canCloseSelectedSession,
     fetchTables,
     selectTable,
     closeSelectedSession,
     checkoutSelectedSession,
     applySessionSnapshot,
+    applyCanonicalTableSnapshot,
     clearSelection,
     clear,
   };

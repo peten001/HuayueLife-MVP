@@ -23,6 +23,14 @@ try {
   for (const [label, width, height] of viewports) {
     const context = await browser.newContext({ viewport: { width, height } });
     const page = await context.newPage();
+    await page.addInitScript(() => {
+      window.__cashierV21LongTasks = [];
+      if ('PerformanceObserver' in window) {
+        new PerformanceObserver((list) => {
+          window.__cashierV21LongTasks.push(...list.getEntries().map((entry) => entry.duration));
+        }).observe({ type: 'longtask', buffered: true });
+      }
+    });
     page.setDefaultTimeout(15_000);
     page.on('console', (message) => {
       if (message.type() === 'error') browserErrors.push(`${label} console: ${message.text()}`);
@@ -59,6 +67,7 @@ try {
       await categoryButtons.first().click();
       const firstProduct = page.locator('.table-ordering-product').first();
       await firstProduct.waitFor();
+      await page.evaluate(() => { window.__cashierV21LongTasks = []; });
       const initialQuantity = await quickAddQuantity(firstProduct);
       for (let index = 0; index < 10; index += 1) await firstProduct.click();
       await waitUntil(async () => (await quickAddQuantity(firstProduct)) >= initialQuantity + 10, `${label}: quick +10 did not converge`);
@@ -66,14 +75,19 @@ try {
       await page.screenshot({ path: `${outputDirectory}/${label}-menu.png`, fullPage: false });
 
       await page.getByTestId('main-tab-tables').evaluate((element) => element.click());
-      await page.getByTestId('table-detail').waitFor();
+      await page.getByTestId('table-detail').waitFor({ state: 'attached' });
       await page.waitForTimeout(120);
+      const mutationLongTasks = await page.evaluate(() => window.__cashierV21LongTasks || []);
+      assert.equal(mutationLongTasks.filter((duration) => duration > 50).length, 0, `${label}: V2.1 mutation caused a >50ms long task ${JSON.stringify(mutationLongTasks)}`);
       const afterStressText = (await page.getByTestId('table-detail').textContent()) || '';
       assert.equal(afterStressText.includes('待提交'), false, `${label}: quick +10 exposed pending copy`);
       assert.equal(afterStressText.includes('本次待加'), false, `${label}: quick +10 exposed staged-add copy`);
 
-      if (label === 'desktop-1280-d10') await verifyEmptyRelease(page);
-      results.push({ label, width, height, bill: 'PASS', menu: 'PASS', quickAdd10: 'PASS', overflow: 'NONE' });
+      if (label === 'desktop-1280-d10') {
+        await verifyAutoRelease(page);
+        await verifyFirstAtomicBatch(page);
+      }
+      results.push({ label, width, height, bill: 'PASS', menu: 'PASS', quickAdd10: 'PASS', overflow: 'NONE', mutationLongTaskMaxMs: Math.max(0, ...mutationLongTasks) });
     } finally {
       await context.close();
     }
@@ -95,25 +109,38 @@ async function enterDemo(page) {
   await page.getByTestId('table-grid').waitFor();
 }
 
-async function verifyEmptyRelease(page) {
+async function verifyAutoRelease(page) {
   for (let attempts = 0; attempts < 80; attempts += 1) {
-    if (await page.getByTestId('right-panel-empty-table').isVisible().catch(() => false)) break;
+    if (!/\/tables\/demo-table-1/.test(page.url())) break;
     const decrement = page.locator('[data-testid="decrease-canonical-line"]:not([disabled])').first();
     if (!(await decrement.count()) || await decrement.isDisabled()) break;
     await decrement.click();
     await page.waitForTimeout(20);
   }
-  await page.getByTestId('right-panel-empty-table').waitFor();
-  assert.match((await page.getByTestId('right-panel-header').textContent()) || '', /用餐中/);
-  assert.match(page.url(), /\/tables\/demo-table-1/);
-  assert.equal(await page.getByTestId('dinein-checkout').count(), 0, 'empty session must not show checkout');
-  await page.getByTestId('dinein-release-empty').waitFor();
-  await page.screenshot({ path: `${outputDirectory}/desktop-1280-d10-empty-open.png`, fullPage: false });
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByTestId('dinein-release-empty').click();
   await page.waitForURL(/\/tables(?:\?.*)?$/);
   await page.getByTestId('table-card-demo-table-1').waitFor();
+  assert.equal(await page.getByTestId('dinein-release-empty').count(), 0, 'V2.1 must not expose manual empty release');
   assert.match((await page.getByTestId('table-card-demo-table-1').textContent()) || '', /空闲/);
+  await page.screenshot({ path: `${outputDirectory}/desktop-1280-d10-auto-released.png`, fullPage: false });
+}
+
+async function verifyFirstAtomicBatch(page) {
+  await page.getByTestId('table-card-demo-table-10').click();
+  await page.waitForURL(/\/tables\/demo-table-10/);
+  await page.getByTestId('main-tab-menu').evaluate((element) => element.click());
+  await page.getByTestId('table-ordering-workspace').waitFor();
+  const products = page.locator('.table-ordering-product');
+  assert.ok(await products.count() >= 3, 'first-open batch requires three products');
+  for (let index = 0; index < 3; index += 1) await products.nth(index).click();
+  for (let index = 0; index < 3; index += 1) {
+    assert.equal(await quickAddQuantity(products.nth(index)), 1, `first-open product ${index + 1} lost its first click`);
+  }
+  await page.waitForTimeout(420);
+  await page.getByTestId('main-tab-tables').evaluate((element) => element.click());
+  await page.getByTestId('table-detail').waitFor();
+  assert.equal(await page.locator('.canonical-table-item-row').count(), 3, 'first-open batch did not hydrate three dishes');
+  assert.equal(((await page.getByTestId('right-panel-header').textContent()) || '').includes('时间异常'), false, 'first-open timestamp flickered');
+  await page.screenshot({ path: `${outputDirectory}/desktop-1280-d10-first-atomic-three.png`, fullPage: false });
 }
 
 async function quickAddQuantity(product) {

@@ -236,14 +236,19 @@ export const demoRepository = {
       }
       if (removeQuantity > 0) throw conflict('CANONICAL_QUANTITY_LOCKED', 'Demo canonical quantity is locked');
     }
-    for (const addition of additions) {
+    if (additions.length > 0) {
       demoRepository.createTableOrder(before.tableId, {
-        idempotencyKey: `${input.requestKey}:${addition.productId}:${addition.remark ?? ''}`,
-        items: [addition],
+        idempotencyKey: `${input.requestKey}:batch`,
+        items: additions,
       });
     }
     if (id === 'demo-session-1') clearDemoSessionRounding();
-    const after = buildDemoCanonicalState(id);
+    let after = buildDemoCanonicalState(id);
+    if (after.items.length === 0 && after.totals.payableAmountVnd === '0' && after.blockers.length === 0) {
+      closeDemoSession(id);
+      after = buildDemoCanonicalState(id);
+      after.releasedBecause = 'EMPTY_AFTER_RECONCILE';
+    }
     canonicalMutationResults.set(`${id}:${input.requestKey}`, cloneFixture(after));
     return after;
   },
@@ -527,6 +532,8 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
         productNameEn: product?.nameEn ?? null,
         remark,
         optionSignature: '',
+        activeSince: order.createdAt,
+        displayOrderKey: `${order.createdAt}:${item.id}:${lineKey}`,
         unitPriceVnd: item.unitPriceVnd ?? '0',
         quantity: 0,
         lockedQuantity: 0,
@@ -554,7 +561,8 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
           ? 'DECREASE' as const
           : 'RETURN' as const,
     }))
-    .sort((left, right) => left.lineKey.localeCompare(right.lineKey));
+    .sort((left, right) => left.activeSince.localeCompare(right.activeSince)
+      || left.displayOrderKey.localeCompare(right.displayOrderKey));
   const originalAmountVnd = items.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n);
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: originalAmountVnd,
@@ -585,6 +593,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
     tableId: detail.tableId,
     tableNo: detail.tableNo,
     tableName: detail.tableName,
+    openedAt: detail.openedAt,
     sessionStatus: detail.status,
     revision: `demo-dcs2:${demoHash(JSON.stringify(revisionSource))}`,
     items,
