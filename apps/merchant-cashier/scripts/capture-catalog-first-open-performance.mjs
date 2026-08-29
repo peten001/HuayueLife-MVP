@@ -9,13 +9,17 @@ const iterations = Number(process.env.CASHIER_CATALOG_PERF_ITERATIONS || 5);
 const catalogDelayMs = Number(process.env.CASHIER_CATALOG_PERF_DELAY_MS || 550);
 const bootstrapDelayMs = Number(process.env.CASHIER_BOOTSTRAP_PERF_DELAY_MS || 80);
 const imageDelayMs = Number(process.env.CASHIER_IMAGE_PERF_DELAY_MS || 240);
+const imageObserverMode = process.env.CASHIER_CATALOG_IMAGE_OBSERVER_MODE || 'native';
+const cacheOnly = process.env.CASHIER_CATALOG_CACHE_ONLY === '1';
 
 assert.ok(outputDirectory, 'CASHIER_CATALOG_PERF_OUTPUT is required');
 assert.ok(Number.isInteger(iterations) && iterations >= 5, 'At least 5 iterations are required');
+assert.ok(['native', 'stalled', 'disabled'].includes(imageObserverMode), 'Invalid image observer mode');
 
 const apiEvents = [];
 const imageEvents = [];
 const browserErrors = [];
+const expectedAbortedImageUrls = new Set();
 let imageFailureMode = 'none';
 const merchant = {
   id: 'catalog-perf-merchant',
@@ -113,11 +117,12 @@ const context = await browser.newContext({
   deviceScaleFactor: 1,
   reducedMotion: 'reduce',
 });
-await context.addInitScript(() => {
+await context.addInitScript((observerMode) => {
   window.__catalogPerfLayoutShift = 0;
   window.__cashierImageAssignments = [];
   window.__cashierImageLifecycle = [];
   window.__cashierIoTrace = [];
+  window.__cashierLongTasks = [];
   try {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -126,6 +131,15 @@ await context.addInitScript(() => {
     }).observe({ type: 'layout-shift', buffered: true });
   } catch {
     // LayoutShift is not available in every browser build.
+  }
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        window.__cashierLongTasks.push({ startTime: entry.startTime, duration: entry.duration });
+      }
+    }).observe({ type: 'longtask', buffered: true });
+  } catch {
+    // LongTask is not available in every browser build.
   }
 
   const recordAssignedImage = (image) => {
@@ -160,7 +174,9 @@ await context.addInitScript(() => {
   }, true);
 
   const NativeIntersectionObserver = window.IntersectionObserver;
-  if (NativeIntersectionObserver) {
+  if (observerMode === 'disabled') {
+    window.IntersectionObserver = undefined;
+  } else if (NativeIntersectionObserver) {
     window.IntersectionObserver = class TracedIntersectionObserver {
       constructor(callback, options = {}) {
         this.root = options.root || null;
@@ -185,9 +201,10 @@ await context.addInitScript(() => {
             at: performance.now(),
             total: entries.length,
             intersecting: entries.filter((entry) => entry.isIntersecting).length,
+            scrollTop: this.root instanceof HTMLElement ? this.root.scrollTop : null,
             rootBounds: entries[0]?.rootBounds ? rectToJson(entries[0].rootBounds) : null,
           });
-          callback(entries, this);
+          if (observerMode !== 'stalled') callback(entries, this);
         }, options);
       }
 
@@ -221,15 +238,17 @@ await context.addInitScript(() => {
       height: Math.round(rect.height),
     };
   }
-});
+}, imageObserverMode);
 const page = await context.newPage();
 
 page.on('console', (message) => {
   if (imageFailureMode !== 'none' && message.text().includes('status of 503')) return;
+  if (imageFailureMode === 'offline' && message.text().includes('ERR_INTERNET_DISCONNECTED')) return;
   if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`);
 });
 page.on('pageerror', (error) => browserErrors.push(`page: ${error.message}`));
 page.on('requestfailed', (request) => {
+  if (expectedAbortedImageUrls.delete(request.url())) return;
   if (
     (
       request.url().includes('/uploads/products/catalog-perf-product-')
@@ -245,12 +264,23 @@ await context.route('**/*', async (route) => {
   const request = route.request();
   const url = new URL(request.url());
   if (url.pathname.includes('/api/v1/uploads/products/catalog-perf-product-')) {
+    const shouldAbort = imageFailureMode === 'offline';
     const shouldFail = imageFailureMode === 'all'
       || (imageFailureMode === 'first' && url.pathname.includes('catalog-perf-product-1.svg'));
-    const event = { url: url.pathname, startedAt: Date.now(), completedAt: 0, status: shouldFail ? 503 : 200 };
+    const event = {
+      url: url.pathname,
+      startedAt: Date.now(),
+      completedAt: 0,
+      status: shouldAbort ? 0 : shouldFail ? 503 : 200,
+    };
     imageEvents.push(event);
     await delay(imageDelayMs);
     event.completedAt = Date.now();
+    if (shouldAbort) {
+      expectedAbortedImageUrls.add(request.url());
+      await route.abort('internetdisconnected');
+      return;
+    }
     await route.fulfill({
       status: event.status,
       contentType: 'image/svg+xml',
@@ -297,7 +327,27 @@ await context.route('**/*', async (route) => {
 try {
   await signIn();
   let result;
-  if (process.env.CASHIER_CATALOG_CRITIQUE_ONLY === '1') {
+  if (cacheOnly) {
+    await primeCatalog();
+    const persistentReload = [];
+    for (let index = 0; index < iterations; index += 1) {
+      persistentReload.push(await measureFirstOpen({ waitBeforeOpenMs: 0, clearCatalog: false }));
+    }
+    const persistentSummary = summarizeRuns(persistentReload);
+    assert.ok(persistentSummary.p95 <= 200, `Persistent MENU_UI_READY p95 must be <=200ms, got ${persistentSummary.p95}ms`);
+    assert.equal(persistentSummary.categoriesHttp, 0, 'Persistent reload must not request categories');
+    assert.equal(persistentSummary.productsHttp, 0, 'Persistent reload must not request products');
+    result = {
+      label,
+      generatedAt: new Date().toISOString(),
+      configuration: { iterations, imageObserverMode, cacheOnly },
+      persistentReload: persistentSummary,
+      runs: persistentReload,
+      reopen: await measureReopen(),
+      tableSwitch: await measureTableSwitch(),
+      browserErrors,
+    };
+  } else if (process.env.CASHIER_CATALOG_CRITIQUE_ONLY === '1') {
     result = {
       label,
       generatedAt: new Date().toISOString(),
@@ -318,6 +368,7 @@ try {
     const imageLoading = await measureImageFanout();
     const responsiveMenu = await measureResponsiveMenu();
     const mobileImageRegression = await measureMobileImageRegression();
+    const interactionScrollRegression = await measureInteractionScrollRegression();
     result = {
       label,
       generatedAt: new Date().toISOString(),
@@ -328,6 +379,7 @@ try {
         catalogDelayMs,
         bootstrapDelayMs,
         imageDelayMs,
+        imageObserverMode,
         viewport: '1280x800',
       },
       bootstrap,
@@ -342,6 +394,7 @@ try {
       imageLoading,
       responsiveMenu,
       mobileImageRegression,
+      interactionScrollRegression,
       browserErrors,
     };
   }
@@ -627,6 +680,7 @@ async function measureMobileImageRegression() {
         window.__cashierImageAssignments = [];
         window.__cashierImageLifecycle = [];
         window.__cashierIoTrace = [];
+        window.__cashierLongTasks = [];
       });
       const apiIndex = apiEvents.length;
       const imageIndex = imageEvents.length;
@@ -642,38 +696,200 @@ async function measureMobileImageRegression() {
         samples[sampleMs].requestCount = imageEvents.slice(imageIndex)
           .filter((event) => event.startedAt <= clickedAt + sampleMs).length;
       }
+      // Attribute long tasks to the scroll loader separately from initial menu rendering.
+      await page.evaluate(() => { window.__cashierLongTasks = []; });
       const scroller = page.getByTestId('table-ordering-products-scroller');
-      const scrollStartedAt = Date.now();
-      await scroller.evaluate((element) => { element.scrollTop = Math.min(element.clientHeight, element.scrollHeight); });
-      await page.waitForFunction(
-        () => document.querySelectorAll('.table-ordering-product img[src]').length
-          > Number(document.body.dataset.beforeScrollSrcCount || 0),
-        null,
-        { timeout: 2_000 },
-      ).catch(() => undefined);
-      const afterOneScreen = await captureMobileImageSample(clickedAtPerformance);
-      afterOneScreen.triggerLatencyMs = Date.now() - scrollStartedAt;
-      await scroller.evaluate(async (element) => {
-        for (let top = element.scrollTop; top <= element.scrollHeight; top += Math.max(1, element.clientHeight)) {
-          element.scrollTop = top;
-          await new Promise((resolve) => setTimeout(resolve, 20));
+      const checkpoints = [];
+      let previousSrcCount = 0;
+      for (let percent = 0; percent <= 100; percent += 10) {
+        if (percent > 0) {
+          await scroller.evaluate((element, nextPercent) => {
+            element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * nextPercent / 100);
+          }, percent);
+          // Let the current scroll frame and its deliberately delayed image responses settle.
+          // A separate quick-jump scenario below covers fast flicks without this pacing.
+          await page.waitForTimeout(Math.max(160, imageDelayMs + 40));
         }
-      });
+        const checkpoint = await captureFullScrollCheckpoint();
+        checkpoint.requestCount = imageEvents.slice(imageIndex).length;
+        assert.equal(
+          checkpoint.visibleWithSrc,
+          checkpoint.visibleImageCount,
+          `${target.width}px ${percent}%: every visible image must have src`,
+        );
+        assert.ok(
+          checkpoint.cumulativeSrcCount >= previousSrcCount,
+          `${target.width}px ${percent}%: cumulative src count must be monotonic`,
+        );
+        previousSrcCount = checkpoint.cumulativeSrcCount;
+        checkpoints.push({ percent, ...checkpoint });
+      }
       await page.waitForTimeout(imageDelayMs + 100);
-      const fullScroll = await captureMobileImageSample(clickedAtPerformance);
+      const fullScroll = await captureFullScrollCheckpoint();
+      fullScroll.requestCount = imageEvents.slice(imageIndex).length;
       const catalogEvents = apiEvents.slice(apiIndex).filter(isCatalogEvent);
+      assert.ok(
+        samples[2_000].totalWithSrc < samples[2_000].totalImageNodes,
+        `${target.width}px: no-scroll state must not assign every image`,
+      );
+      assert.equal(fullScroll.cumulativeSrcCount, fullScroll.totalImageCount, `${target.width}px: full scroll must cover all images`);
+      assert.ok(fullScroll.scrollMetrics.longestFrameMs < 8, `${target.width}px: longest scroll callback must stay below 8ms`);
+      assert.equal(fullScroll.longTasks.length, 0, `${target.width}px: scroll phase must not produce long tasks`);
       runs.push({
         samples,
-        afterOneScreen,
+        checkpoints,
+        afterOneScreen: checkpoints[1],
         fullScroll,
         categoriesHttp: catalogEvents.filter((event) => event.path === '/merchant/categories').length,
         productsHttp: catalogEvents.filter((event) => event.path === '/merchant/products').length,
       });
     }
-    results.push({ viewport: `${target.width}x${target.height}`, runs });
+    await openMobileMenu(target);
+    await page.evaluate(() => {
+      window.__cashierImageAssignments = [];
+      window.__cashierImageLifecycle = [];
+      window.__cashierIoTrace = [];
+      window.__cashierLongTasks = [];
+    });
+    const quickJumpScroller = page.getByTestId('table-ordering-products-scroller');
+    await quickJumpScroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight - element.clientHeight;
+    });
+    await page.waitForTimeout(280);
+    const quickJump = await captureFullScrollCheckpoint();
+    assert.equal(
+      quickJump.visibleWithSrc,
+      quickJump.visibleImageCount,
+      `${target.width}px quick jump: settle fallback must fill the current viewport`,
+    );
+    assert.ok(quickJump.scrollMetrics.longestFrameMs < 8, `${target.width}px quick jump must stay below 8ms`);
+    assert.equal(quickJump.longTasks.length, 0, `${target.width}px quick jump must not produce long tasks`);
+    results.push({ viewport: `${target.width}x${target.height}`, runs, quickJump });
   }
   await page.setViewportSize({ width: 1280, height: 800 });
   return results;
+}
+
+async function captureFullScrollCheckpoint() {
+  return page.evaluate(() => {
+    const scroller = document.querySelector('[data-testid="table-ordering-products-scroller"]');
+    if (!(scroller instanceof HTMLElement)) throw new Error('Missing product scroller');
+    const rootRect = scroller.getBoundingClientRect();
+    const cards = [...document.querySelectorAll('.table-ordering-product')];
+    const images = [...document.querySelectorAll('.table-ordering-product img')];
+    const visibleCardIndexes = cards
+      .map((card, index) => ({ index, rect: card.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom > rootRect.top && rect.top < rootRect.bottom)
+      .map(({ index }) => index);
+    const visibleImages = images.filter((image) => {
+      const rect = image.getBoundingClientRect();
+      return rect.bottom > rootRect.top && rect.top < rootRect.bottom;
+    });
+    const hasSrc = (image) => Boolean(image.getAttribute('src'));
+    const metrics = scroller.__cashierCatalogImageScrollMetrics || {
+      samples: [],
+      frameCount: 0,
+      settleCount: 0,
+      longestFrameMs: 0,
+      lastExaminedCount: 0,
+      lastReleasedCount: 0,
+    };
+    const observerCallbacks = (window.__cashierIoTrace || []).flatMap((trace) => trace.callbacks || []);
+    return {
+      scrollTop: scroller.scrollTop,
+      clientHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+      visibleCardIndexes,
+      visibleImageCount: visibleImages.length,
+      visibleWithSrc: visibleImages.filter(hasSrc).length,
+      visibleLoaded: visibleImages.filter((image) => image.complete && image.naturalWidth > 0 && !image.hidden).length,
+      stuckVisibleNoSrc: visibleImages.filter((image) => !hasSrc(image)).length,
+      cumulativeSrcCount: images.filter(hasSrc).length,
+      totalImageCount: images.length,
+      observerCallbackCount: observerCallbacks.length,
+      observerEntryCount: observerCallbacks.reduce((total, callback) => total + callback.total, 0),
+      lastObserverScrollTop: observerCallbacks.at(-1)?.scrollTop ?? null,
+      scrollMetrics: {
+        samples: [...metrics.samples],
+        frameCount: metrics.frameCount,
+        settleCount: metrics.settleCount,
+        longestFrameMs: metrics.longestFrameMs,
+        lastExaminedCount: metrics.lastExaminedCount,
+        lastReleasedCount: metrics.lastReleasedCount,
+      },
+      longTasks: [...(window.__cashierLongTasks || [])],
+      bodyHorizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    };
+  });
+}
+
+async function measureInteractionScrollRegression() {
+  const target = { width: 390, height: 844 };
+  await openMobileMenu(target);
+  const categoryButtons = page.locator('[data-testid="table-ordering-category-strip"] button');
+  await categoryButtons.nth(1).click();
+  await page.waitForFunction(() => {
+    const count = document.querySelectorAll('.table-ordering-product').length;
+    return count > 20 && count < 201;
+  });
+  const categoryScroller = page.getByTestId('table-ordering-products-scroller');
+  await categoryScroller.evaluate((element) => { element.scrollTop = element.scrollHeight - element.clientHeight; });
+  await page.waitForTimeout(280);
+  const category = await captureFullScrollCheckpoint();
+
+  await categoryButtons.nth(0).click();
+  const search = page.getByTestId('table-ordering-search').locator('input');
+  await search.fill('性能测试菜品1');
+  await page.waitForFunction(() => {
+    const count = document.querySelectorAll('.table-ordering-product').length;
+    return count > 20 && count < 201;
+  });
+  const searchScroller = page.getByTestId('table-ordering-products-scroller');
+  await searchScroller.evaluate((element) => { element.scrollTop = element.scrollHeight - element.clientHeight; });
+  await page.waitForTimeout(280);
+  const searchResult = await captureFullScrollCheckpoint();
+
+  await search.fill('');
+  const reopenApiIndex = apiEvents.length;
+  await page.getByRole('link', { name: '桌台总览' }).click();
+  await page.getByTestId(`table-card-${tables[0].id}`).click();
+  await waitForSelectedTable(tables[0].id);
+  await waitForMenuReady();
+  const reopenScroller = page.getByTestId('table-ordering-products-scroller');
+  await reopenScroller.evaluate((element) => { element.scrollTop = element.scrollHeight - element.clientHeight; });
+  await page.waitForTimeout(280);
+  const reopen = await captureFullScrollCheckpoint();
+  const reopenCatalog = apiEvents.slice(reopenApiIndex).filter(isCatalogEvent);
+
+  await page.getByRole('link', { name: '桌台总览' }).click();
+  const tableApiIndex = apiEvents.length;
+  await page.getByTestId(`table-card-${tables[1].id}`).click();
+  await waitForSelectedTable(tables[1].id);
+  await waitForMenuReady();
+  const tableScroller = page.getByTestId('table-ordering-products-scroller');
+  await tableScroller.evaluate((element) => { element.scrollTop = element.scrollHeight - element.clientHeight; });
+  await page.waitForTimeout(280);
+  const tableSwitch = await captureFullScrollCheckpoint();
+  const tableCatalog = apiEvents.slice(tableApiIndex).filter(isCatalogEvent);
+
+  for (const [name, result] of Object.entries({ category, searchResult, reopen, tableSwitch })) {
+    assert.equal(result.visibleWithSrc, result.visibleImageCount, `${name}: visible image src coverage must be 100%`);
+  }
+
+  return {
+    category,
+    search: searchResult,
+    reopen: {
+      ...reopen,
+      categoriesHttp: reopenCatalog.filter((event) => event.path === '/merchant/categories').length,
+      productsHttp: reopenCatalog.filter((event) => event.path === '/merchant/products').length,
+    },
+    tableSwitch: {
+      ...tableSwitch,
+      categoriesHttp: tableCatalog.filter((event) => event.path === '/merchant/categories').length,
+      productsHttp: tableCatalog.filter((event) => event.path === '/merchant/products').length,
+    },
+  };
 }
 
 async function captureMobileImageSample(clickedAtPerformance) {
@@ -764,19 +980,56 @@ async function captureUiCritique() {
   for (const viewport of viewports) {
     await openMobileMenu(viewport);
     await page.waitForTimeout(imageDelayMs + 120);
-    const state = await captureMobileImageSample(performance.now());
+    const state = await captureMobileImageSample(await page.evaluate(() => performance.now()));
     await page.screenshot({
       path: `${outputDirectory}/${label}-${viewport.width}-default.png`,
       fullPage: false,
     });
+    const scroller = page.getByTestId('table-ordering-products-scroller');
+    const slowScrollCoverage = [];
+    for (const percent of [25, 50, 75, 100]) {
+      await scroller.evaluate((element, nextPercent) => {
+        element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * nextPercent / 100);
+      }, percent);
+      await page.waitForTimeout(imageDelayMs + 80);
+      const checkpoint = await captureFullScrollCheckpoint();
+      assert.equal(
+        checkpoint.visibleWithSrc,
+        checkpoint.visibleImageCount,
+        `${viewport.width}px UI critique ${percent}%: visible images must have src`,
+      );
+      slowScrollCoverage.push({
+        percent,
+        visible: `${checkpoint.visibleWithSrc}/${checkpoint.visibleImageCount}`,
+        cumulativeSrcCount: checkpoint.cumulativeSrcCount,
+        stuckVisibleNoSrc: checkpoint.stuckVisibleNoSrc,
+      });
+      if (percent === 50 || percent === 100) {
+        await page.screenshot({
+          path: `${outputDirectory}/${label}-${viewport.width}-${percent === 50 ? 'middle' : 'bottom'}.png`,
+          fullPage: false,
+        });
+      }
+    }
     defaultStates.push({
       viewport: `${viewport.width}x${viewport.height}`,
       visibleImageNodes: state.visibleImageNodes,
       visibleWithSrc: state.visibleWithSrc,
       visibleLoaded: state.visibleLoaded,
       bodyHorizontalOverflowPx: state.bodyHorizontalOverflowPx,
+      slowScrollCoverage,
     });
   }
+
+  await openMobileMenu({ width: 390, height: 844 });
+  const quickJumpScroller = page.getByTestId('table-ordering-products-scroller');
+  await quickJumpScroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight - element.clientHeight;
+  });
+  await page.waitForTimeout(280);
+  const quickJump = await captureFullScrollCheckpoint();
+  assert.equal(quickJump.visibleWithSrc, quickJump.visibleImageCount, 'UI critique quick jump must fill viewport');
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-quick-bottom.png`, fullPage: false });
 
   await openMobileMenu({ width: 390, height: 844 });
   const categoryButtons = page.locator('[data-testid="table-ordering-category-strip"] button');
@@ -787,13 +1040,13 @@ async function captureUiCritique() {
       && [...cards].filter((card) => card.querySelector('img')).every((card) => card.querySelector('img')?.hasAttribute('src'));
   });
   await page.waitForTimeout(imageDelayMs + 80);
-  const categoryState = await captureMobileImageSample(performance.now());
+  const categoryState = await captureMobileImageSample(await page.evaluate(() => performance.now()));
   await page.screenshot({ path: `${outputDirectory}/${label}-390-category.png`, fullPage: false });
 
   await page.getByTestId('table-ordering-search').locator('input').fill('性能测试菜品002');
   await page.waitForFunction(() => document.querySelectorAll('.table-ordering-product').length === 1);
   await page.waitForTimeout(imageDelayMs + 80);
-  const searchState = await captureMobileImageSample(performance.now());
+  const searchState = await captureMobileImageSample(await page.evaluate(() => performance.now()));
   await page.screenshot({ path: `${outputDirectory}/${label}-390-search.png`, fullPage: false });
 
   imageFailureMode = 'first';
@@ -809,7 +1062,35 @@ async function captureUiCritique() {
     };
   });
   await page.screenshot({ path: `${outputDirectory}/${label}-390-image-error.png`, fullPage: false });
+
+  imageFailureMode = 'offline';
+  await openMobileMenu({ width: 390, height: 844 });
+  await page.waitForTimeout(imageDelayMs + 120);
+  const offlineState = await page.evaluate(() => ({
+    visiblePlaceholderCards: [...document.querySelectorAll('.table-ordering-product')].filter((card) => {
+      const root = document.querySelector('[data-testid="table-ordering-products-scroller"]');
+      if (!(root instanceof HTMLElement)) return false;
+      const rootRect = root.getBoundingClientRect();
+      const rect = card.getBoundingClientRect();
+      return rect.bottom > rootRect.top
+        && rect.top < rootRect.bottom
+        && card.querySelector('.table-ordering-product__image svg') instanceof SVGElement;
+    }).length,
+    placeholders: document.querySelectorAll('.table-ordering-product__image svg').length,
+  }));
+  assert.ok(offlineState.visiblePlaceholderCards > 0, 'Offline state must show visible placeholders');
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-offline.png`, fullPage: false });
+
   imageFailureMode = 'none';
+  await openMobileMenu({ width: 390, height: 844 });
+  await page.waitForTimeout(imageDelayMs + 120);
+  const onlineRecovery = await captureFullScrollCheckpoint();
+  assert.equal(
+    onlineRecovery.visibleLoaded,
+    onlineRecovery.visibleImageCount,
+    'New menu session must recover after network returns',
+  );
+  await page.screenshot({ path: `${outputDirectory}/${label}-390-online-recovery.png`, fullPage: false });
   await page.setViewportSize({ width: 1280, height: 800 });
 
   return {
@@ -824,7 +1105,16 @@ async function captureUiCritique() {
       resultWithSrc: searchState.totalWithSrc,
       bodyHorizontalOverflowPx: searchState.bodyHorizontalOverflowPx,
     },
+    quickJump: {
+      visible: `${quickJump.visibleWithSrc}/${quickJump.visibleImageCount}`,
+      stuckVisibleNoSrc: quickJump.stuckVisibleNoSrc,
+      settleCount: quickJump.scrollMetrics.settleCount,
+    },
     imageError: imageErrorState,
+    offlineToOnline: {
+      ...offlineState,
+      recoveredVisible: `${onlineRecovery.visibleLoaded}/${onlineRecovery.visibleImageCount}`,
+    },
   };
 }
 

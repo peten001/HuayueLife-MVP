@@ -198,18 +198,20 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     ]);
     const wrapper = mountWorkspace();
     await flushPromises();
-    expect(wrapper.findAll('.table-ordering-product img[src]')).toHaveLength(2);
+    await vi.waitFor(() => expect(wrapper.findAll('.table-ordering-product img[src]')).toHaveLength(2));
 
     const drinks = wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
       .find((button) => button.text() === '饮品');
     expect(drinks).toBeDefined();
     await drinks!.trigger('click');
     await flushPromises();
-    expect(wrapper.get('.table-ordering-product img').attributes('src')).toContain('/uploads/iced-coffee.jpg');
+    await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
+      .toContain('/uploads/iced-coffee.jpg'));
 
     await wrapper.get('input[type="search"]').setValue('冰咖啡');
     await flushPromises();
-    expect(wrapper.get('.table-ordering-product img').attributes('src')).toContain('/uploads/iced-coffee.jpg');
+    await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
+      .toContain('/uploads/iced-coffee.jpg'));
     wrapper.unmount();
   });
 

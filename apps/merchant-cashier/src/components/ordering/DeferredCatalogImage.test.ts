@@ -2,7 +2,11 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DeferredCatalogImage from './DeferredCatalogImage.vue';
-import { CATALOG_IMAGE_FALLBACK_MS, CATALOG_IMAGE_ROOT_MARGIN } from './catalog-image-visibility';
+import {
+  CATALOG_IMAGE_FALLBACK_MS,
+  CATALOG_IMAGE_ROOT_MARGIN,
+  CATALOG_IMAGE_SCROLL_SETTLE_MS,
+} from './catalog-image-visibility';
 
 interface ObserverHarness {
   callback?: IntersectionObserverCallback;
@@ -65,6 +69,25 @@ function mountInScroller(src: string, alt: string) {
     .mockImplementation(() => rect(imageTops.get(alt) ?? 1_600, 80, 20, 80));
   mounted.push({ wrapper, root });
   return { wrapper, root };
+}
+
+function createScroller(clientHeight = 500, scrollHeight = 4_000) {
+  const root = document.createElement('div');
+  root.className = 'table-ordering-products__scroller';
+  document.body.append(root);
+  Object.defineProperty(root, 'clientHeight', { configurable: true, value: clientHeight });
+  Object.defineProperty(root, 'scrollHeight', { configurable: true, value: scrollHeight });
+  vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(rect(100, clientHeight));
+  return root;
+}
+
+function mountInExistingScroller(root: HTMLElement, src: string, alt: string, cacheKey = alt) {
+  const wrapper = mount(DeferredCatalogImage, {
+    props: { src, alt, cacheKey },
+    attachTo: root,
+  });
+  mounted.push({ wrapper, root });
+  return wrapper;
 }
 
 describe('DeferredCatalogImage', () => {
@@ -175,12 +198,64 @@ describe('DeferredCatalogImage', () => {
     flushAnimationFrames();
     expect(wrapper.get('img').attributes('src')).toBeUndefined();
 
-    imageTops.set('scroll target', 800);
+    root.scrollTop = 800;
     root.dispatchEvent(new Event('scroll'));
     flushAnimationFrames();
     await flushPromises();
     expect(wrapper.get('img').attributes('src')).toBe('/dish.jpg');
-    expect(wrapper.get('img').attributes('data-load-reason')).toBe('scroll-fallback');
+    expect(wrapper.get('img').attributes('data-load-reason')).toBe('scroll');
+  });
+
+  it('loads every traversed image from deterministic scroll geometry with IntersectionObserver disabled', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const root = createScroller();
+    const wrappers = Array.from({ length: 40 }, (_, index) => {
+      const alt = `scroll-${index}`;
+      imageTops.set(alt, 100 + index * 100);
+      return mountInExistingScroller(root, `/dish-${index}.jpg`, alt);
+    });
+    flushAnimationFrames();
+    await flushPromises();
+
+    expect(wrappers.filter((wrapper) => wrapper.get('img').attributes('src')).length).toBeLessThan(wrappers.length);
+    for (const scrollTop of [500, 1_000, 1_500, 2_000, 2_500, 3_000, 3_500]) {
+      root.scrollTop = scrollTop;
+      root.dispatchEvent(new Event('scroll'));
+      flushAnimationFrames();
+      await flushPromises();
+    }
+
+    expect(wrappers.every((wrapper) => Boolean(wrapper.get('img').attributes('src')))).toBe(true);
+    const metrics = (root as HTMLElement & {
+      __cashierCatalogImageScrollMetrics?: { lastExaminedCount: number; samples: number[] };
+    }).__cashierCatalogImageScrollMetrics;
+    expect(metrics?.lastExaminedCount).toBeLessThan(wrappers.length);
+    expect(metrics?.samples.length).toBeGreaterThan(0);
+  });
+
+  it('uses one bounded settle timer to fill a fast-jump viewport before its RAF runs', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    const root = createScroller();
+    const wrappers = Array.from({ length: 40 }, (_, index) => {
+      const alt = `jump-${index}`;
+      imageTops.set(alt, 100 + index * 100);
+      return mountInExistingScroller(root, `/jump-${index}.jpg`, alt);
+    });
+    flushAnimationFrames();
+    await flushPromises();
+
+    root.scrollTop = 3_500;
+    root.dispatchEvent(new Event('scroll'));
+    root.dispatchEvent(new Event('scroll'));
+    expect(vi.getTimerCount()).toBe(2);
+    await vi.advanceTimersByTimeAsync(CATALOG_IMAGE_SCROLL_SETTLE_MS);
+    await flushPromises();
+
+    expect(wrappers.slice(-5).every((wrapper) => Boolean(wrapper.get('img').attributes('src')))).toBe(true);
+    const metrics = (root as HTMLElement & {
+      __cashierCatalogImageScrollMetrics?: { settleCount: number };
+    }).__cashierCatalogImageScrollMetrics;
+    expect(metrics?.settleCount).toBe(1);
   });
 
   it('re-registers a changed source and loads the new visible result', async () => {
@@ -193,19 +268,25 @@ describe('DeferredCatalogImage', () => {
 
     await wrapper.setProps({ src: '/second.jpg' });
     await flushPromises();
+    flushAnimationFrames();
+    await flushPromises();
     expect(wrapper.get('img').attributes('src')).toBe('/second.jpg');
     expect(wrapper.get('img').attributes('data-load-reason')).toBe('initial');
   });
 
-  it('cleans observer registration and fallback timer on unmount', () => {
+  it('cleans observer, scroll listener, pending RAF and both timers on unmount', () => {
     const observer = installObserver();
     imageTops.set('far', 1_600);
-    const { wrapper } = mountInScroller('/dish.jpg', 'far');
+    const { wrapper, root } = mountInScroller('/dish.jpg', 'far');
     flushAnimationFrames();
+    const removeEventListener = vi.spyOn(root, 'removeEventListener');
+    root.dispatchEvent(new Event('scroll'));
     wrapper.unmount();
 
     expect(observer.unobserve).toHaveBeenCalledOnce();
     expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+    expect(frames.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -215,5 +296,30 @@ describe('DeferredCatalogImage', () => {
     const { wrapper } = mountInScroller('/broken.jpg', 'broken');
     await wrapper.get('img').trigger('error');
     expect(wrapper.get('img').attributes('hidden')).toBeDefined();
+  });
+
+  it('does not retry a failed stable product URL in the same menu root and retries after the URL changes', async () => {
+    installObserver();
+    const root = createScroller();
+    imageTops.set('broken first', 140);
+    const first = mountInExistingScroller(root, '/broken.jpg', 'broken first', 'product-1');
+    flushAnimationFrames();
+    await flushPromises();
+    await first.get('img').trigger('error');
+    first.unmount();
+
+    imageTops.set('broken retry', 140);
+    const retry = mountInExistingScroller(root, '/broken.jpg', 'broken retry', 'product-1');
+    flushAnimationFrames();
+    await flushPromises();
+    expect(retry.get('img').attributes('src')).toBeUndefined();
+    expect(retry.get('img').attributes('hidden')).toBeDefined();
+
+    await retry.setProps({ src: '/fixed.jpg' });
+    await flushPromises();
+    flushAnimationFrames();
+    await flushPromises();
+    expect(retry.get('img').attributes('src')).toBe('/fixed.jpg');
+    expect(retry.get('img').attributes('hidden')).toBeUndefined();
   });
 });

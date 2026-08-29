@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { observeCatalogImage, type CatalogImageLoadReason } from './catalog-image-visibility';
+import {
+  catalogImageSessionStatus,
+  observeCatalogImage,
+  setCatalogImageSessionStatus,
+  type CatalogImageLoadReason,
+} from './catalog-image-visibility';
 
 const props = defineProps<{
   src: string;
   alt?: string;
   eager?: boolean;
+  cacheKey?: string;
 }>();
 
 const image = ref<HTMLImageElement | null>(null);
@@ -14,6 +20,30 @@ const resolvedSrc = ref('');
 const failed = ref(false);
 const loadReason = ref<CatalogImageLoadReason | ''>('');
 let stopObserving: (() => void) | null = null;
+let sessionRoot: HTMLElement | null = null;
+let sessionKey = '';
+
+function ensureImageLoaded(reason: CatalogImageLoadReason) {
+  if (!props.src || resolvedSrc.value === props.src) return;
+  const status = catalogImageSessionStatus(sessionRoot, sessionKey);
+  if (status === 'failed') {
+    failed.value = true;
+    loadReason.value = 'session-cache';
+    return;
+  }
+  if (!status) setCatalogImageSessionStatus(sessionRoot, sessionKey, 'loading');
+  resolvedSrc.value = props.src;
+  loadReason.value = status ? 'session-cache' : reason;
+}
+
+function markLoaded() {
+  setCatalogImageSessionStatus(sessionRoot, sessionKey, 'loaded');
+}
+
+function markFailed() {
+  setCatalogImageSessionStatus(sessionRoot, sessionKey, 'failed');
+  failed.value = true;
+}
 
 function prepare() {
   stopObserving?.();
@@ -22,19 +52,25 @@ function prepare() {
   failed.value = false;
   loadReason.value = '';
   if (!props.src || !image.value) return;
-  if (props.eager) {
-    resolvedSrc.value = props.src;
-    loadReason.value = 'initial';
+  sessionRoot = image.value.closest<HTMLElement>('.table-ordering-products__scroller');
+  sessionKey = `${props.cacheKey || props.src}\u0000${props.src}`;
+  const sessionStatus = catalogImageSessionStatus(sessionRoot, sessionKey);
+  if (sessionStatus === 'failed') {
+    failed.value = true;
+    loadReason.value = 'session-cache';
+    return;
+  }
+  if (sessionStatus) {
+    ensureImageLoaded('session-cache');
     return;
   }
   stopObserving = observeCatalogImage(image.value, (reason) => {
-    resolvedSrc.value = props.src;
-    loadReason.value = reason;
+    ensureImageLoaded(reason);
     stopObserving = null;
-  });
+  }, { eager: props.eager });
 }
 
-watch(() => [props.src, props.eager], () => void nextTick(prepare));
+watch(() => [props.src, props.eager, props.cacheKey], () => void nextTick(prepare));
 onMounted(prepare);
 onBeforeUnmount(() => stopObserving?.());
 </script>
@@ -49,6 +85,7 @@ onBeforeUnmount(() => stopObserving?.());
     fetchpriority="auto"
     :data-load-reason="loadReason || undefined"
     :hidden="failed"
-    @error="failed = true"
+    @load="markLoaded"
+    @error="markFailed"
   />
 </template>

@@ -412,6 +412,7 @@ function setProductCardRef(element: Element | null, index: number) {
                     :src="resolveMediaUrl(product.imageUrl)"
                     :alt="productName(product)"
                     :eager="index < initialMobileImageCount"
+                    :cache-key="product.id"
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
                   <b class="table-ordering-product__price">
