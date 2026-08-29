@@ -357,7 +357,22 @@ function productStatusClass(status: ProductStatus) {
 }
 
 function productImage(product: Product) {
-  return product.imageUrl ? resolveMediaUrl(product.imageUrl) : '';
+  const thumbnailUrl = product.menuThumbnailUrl?.trim();
+  const source = thumbnailUrl && !failedListImageUrls.value.has(thumbnailUrl)
+    ? thumbnailUrl
+    : product.imageUrl;
+  return source ? resolveMediaUrl(source) : '';
+}
+
+const failedListImageUrls = ref(new Set<string>());
+
+function handleListImageError(product: Product) {
+  const thumbnailUrl = product.menuThumbnailUrl?.trim();
+  const originalUrl = product.imageUrl?.trim();
+  if (!thumbnailUrl || !originalUrl || thumbnailUrl === originalUrl) return;
+  if (!failedListImageUrls.value.has(thumbnailUrl)) {
+    failedListImageUrls.value = new Set([...failedListImageUrls.value, thumbnailUrl]);
+  }
 }
 
 function resetCategoryForm() {
@@ -814,7 +829,7 @@ onMounted(async () => {
                 <td>
                   <div class="product-cell">
                     <div class="product-thumb">
-                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" />
+                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" @error="handleListImageError(row)" />
                       <span v-else>{{ pageCopy.noImage }}</span>
                     </div>
                     <div class="product-copy">
@@ -916,7 +931,7 @@ onMounted(async () => {
           <article v-for="row in filteredProducts" :key="row.id" class="product-mobile-card">
             <div class="product-mobile-head">
               <div class="product-thumb product-mobile-thumb">
-                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" />
+                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" @error="handleListImageError(row)" />
                 <span v-else>{{ pageCopy.noImage }}</span>
               </div>
               <div class="product-copy product-mobile-copy">

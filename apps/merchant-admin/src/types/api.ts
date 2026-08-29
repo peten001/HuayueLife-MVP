@@ -732,6 +732,7 @@ export interface Product {
   nameEn?: string | null;
   description?: string;
   imageUrl?: string;
+  menuThumbnailUrl?: string | null;
   priceVnd: string;
   unit?: string | null;
   sortOrder: number;
