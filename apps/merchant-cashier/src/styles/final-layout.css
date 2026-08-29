@@ -996,8 +996,8 @@
   .toast-region { right: 10px; }
 }
 
-/* D2/P10 compact operator geometry: preserve the right-side bill as the primary
-   work surface while letting its content absorb older WebView width limits. */
+/* D2/P10 compact operator geometry: the bill is a fixed drawer at this
+   breakpoint, so the route keeps one full-width ordering column. */
 @media (min-width: 900px) and (max-width: 1179px) {
   :root {
     --cashier-sidebar-width: 72px;
@@ -1006,7 +1006,7 @@
   }
 
   .cashier-shell--workflow .table-overview-route {
-    grid-template-columns: minmax(0, 1fr) var(--cashier-detail-width);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .cashier-shell--workflow .table-route-detail { width: auto; }

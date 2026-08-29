@@ -568,7 +568,7 @@
 }
 .dinein-settlement-summary .is-pending dd { color: var(--cashier-green); }
 
-@media (min-width: 900px) {
+@media (min-width: 1180px) {
   .table-overview-route,
   .table-overview-route:not(.has-selection) {
     --cashier-detail-width: clamp(350px, 24vw, 390px);
@@ -1221,7 +1221,12 @@
     height: 52px;
     min-height: 44px;
   }
+}
 
+/* The bill is a drawer below 1180px, so it must not reserve a second grid
+   column while off canvas. Static desktop layouts keep the established bill
+   boundary and center the menu inside the remaining ordering pane. */
+@media (min-width: 1180px) {
   .cashier-shell--workflow .table-overview-route {
     --cashier-v7-detail-width: clamp(380px, 22vw, 420px);
     grid-template-columns: minmax(0, 1fr) var(--cashier-v7-detail-width);
