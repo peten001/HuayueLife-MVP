@@ -48,6 +48,7 @@ const workspace = ref<HTMLElement | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
 const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
+const failedThumbnailUrls = ref(new Set<string>());
 let previouslyFocused: HTMLElement | null = null;
 
 // Mobile V6 renders four 116px cards per row with a 17px row gap. The fixed
@@ -99,6 +100,20 @@ function productName(product: CashierMenuProduct) {
   if (locale.value === 'vi') return product.nameVi || product.nameZh;
   if (locale.value === 'en') return product.nameEn || product.nameZh;
   return product.nameZh;
+}
+
+function productCardImage(product: CashierMenuProduct) {
+  const thumbnailUrl = product.menuThumbnailUrl?.trim();
+  if (thumbnailUrl && !failedThumbnailUrls.value.has(thumbnailUrl)) return thumbnailUrl;
+  return product.imageUrl?.trim() || '';
+}
+
+function handleProductImageError(product: CashierMenuProduct) {
+  const thumbnailUrl = product.menuThumbnailUrl?.trim();
+  const originalUrl = product.imageUrl?.trim();
+  if (!thumbnailUrl || !originalUrl || thumbnailUrl === originalUrl) return;
+  if (productCardImage(product) !== thumbnailUrl) return;
+  failedThumbnailUrls.value = new Set([...failedThumbnailUrls.value, thumbnailUrl]);
 }
 
 function categoryName(category: CashierMenuCategory) {
@@ -408,11 +423,12 @@ function setProductCardRef(element: Element | null, index: number) {
               >
                 <span class="table-ordering-product__image">
                   <DeferredCatalogImage
-                    v-if="resolveMediaUrl(product.imageUrl)"
-                    :src="resolveMediaUrl(product.imageUrl)"
+                    v-if="resolveMediaUrl(productCardImage(product))"
+                    :src="resolveMediaUrl(productCardImage(product))"
                     :alt="productName(product)"
                     :eager="index < initialMobileImageCount"
                     :cache-key="product.id"
+                    @error="handleProductImageError(product)"
                   />
                   <ImageIcon :size="24" aria-hidden="true" />
                   <b class="table-ordering-product__price">

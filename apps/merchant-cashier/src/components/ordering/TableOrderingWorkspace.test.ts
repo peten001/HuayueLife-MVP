@@ -215,6 +215,33 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     wrapper.unmount();
   });
 
+  it('prefers the menu thumbnail and falls back to the original when the thumbnail fails', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function getRect(this: HTMLElement) {
+      if (this.classList.contains('table-ordering-products__scroller')) {
+        return { top: 0, bottom: 700, left: 0, right: 390, width: 390, height: 700 } as DOMRect;
+      }
+      if (this instanceof HTMLImageElement) {
+        return { top: 20, bottom: 100, left: 20, right: 100, width: 80, height: 80 } as DOMRect;
+      }
+      return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect;
+    });
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([{
+      ...product,
+      imageUrl: '/uploads/products/original.jpg',
+      menuThumbnailUrl: '/uploads/product-thumbnails/1/hash-menu.webp',
+    }]);
+    const wrapper = mountWorkspace();
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
+      .toContain('/uploads/product-thumbnails/1/hash-menu.webp'));
+
+    await wrapper.get('.table-ordering-product img').trigger('error');
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
+      .toContain('/uploads/products/original.jpg'));
+  });
+
   it('keeps the mobile search and category strip outside the product scroller', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),

@@ -12,7 +12,7 @@ import {
 } from '@/platform/safe-storage';
 import type { CashierMenuCategory, CashierMenuProduct } from '@/types';
 
-export const CASHIER_CATALOG_CACHE_SCHEMA_VERSION = 1;
+export const CASHIER_CATALOG_CACHE_SCHEMA_VERSION = 2;
 export const CASHIER_CATALOG_FRESH_TTL_MS = 2 * 60_000;
 export const CASHIER_CATALOG_MAX_STALE_MS = 24 * 60 * 60_000;
 export const CASHIER_CATALOG_TTL_MS = CASHIER_CATALOG_FRESH_TTL_MS;
@@ -310,6 +310,7 @@ function parseProduct(value: unknown): CashierMenuProduct | null {
     nameEn: nullableString(value.nameEn),
     description: nullableString(value.description),
     imageUrl: nullableString(value.imageUrl),
+    menuThumbnailUrl: nullableString(value.menuThumbnailUrl),
     priceVnd: value.priceVnd,
     unit: nullableString(value.unit),
     sortOrder: value.sortOrder,

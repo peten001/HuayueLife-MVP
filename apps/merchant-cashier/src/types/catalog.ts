@@ -17,6 +17,7 @@ export interface CashierMenuProduct {
   nameEn?: string | null;
   description?: string | null;
   imageUrl?: string | null;
+  menuThumbnailUrl?: string | null;
   priceVnd: string;
   unit?: string | null;
   sortOrder: number;

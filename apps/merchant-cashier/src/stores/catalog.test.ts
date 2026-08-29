@@ -29,6 +29,7 @@ const products = [{
   nameEn: null,
   description: null,
   imageUrl: null,
+  menuThumbnailUrl: null,
   priceVnd: '88000',
   unit: '份',
   status: 'ON_SALE' as const,
@@ -96,6 +97,7 @@ describe('cashier persistent catalog SWR', () => {
 
   it.each([
     ['corrupt JSON', '{broken'],
+    ['previous schema version', JSON.stringify({ ...cachePayload(merchantId, Date.now()), schemaVersion: 1 })],
     ['wrong schema version', JSON.stringify({ ...cachePayload(merchantId, Date.now()), schemaVersion: 999 })],
   ])('ignores %s and falls back to the canonical fetch', async (_label, value) => {
     const key = cashierCatalogStorageKey(merchantId);
@@ -188,6 +190,22 @@ describe('cashier persistent catalog SWR', () => {
     await request;
     expect(store.products).toEqual([]);
     expect(store.activeMerchantId).toBe('merchant-2');
+  });
+
+  it('persists and hydrates the nullable menu thumbnail field', async () => {
+    const productWithThumbnail = {
+      ...products[0]!,
+      menuThumbnailUrl: '/uploads/product-thumbnails/1/hash-menu.webp',
+    };
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([productWithThumbnail]);
+    const store = activeStore();
+    await store.loadCatalog();
+    await Promise.resolve();
+
+    expect(store.products[0]?.menuThumbnailUrl).toBe(productWithThumbnail.menuThumbnailUrl);
+    const persisted = JSON.parse(localStorage.getItem(cashierCatalogStorageKey(merchantId)) || '{}');
+    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.products[0].menuThumbnailUrl).toBe(productWithThumbnail.menuThumbnailUrl);
   });
 });
 
