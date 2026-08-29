@@ -26,13 +26,13 @@ function fixture() {
     }
     return {
       status: 'GENERATED',
-      url: `/uploads/product-thumbnails/${id}/hash-menu.webp`,
+      url: `/uploads/product-thumbnails/${id}/hash-menu-v2-224.webp`,
       sourcePath: imageUrl,
       outputPath: `/tmp/${id}.webp`,
       sourceHash: 'hash',
       originalBytes: 100_000,
       thumbnailBytes: 20_000,
-      width: 320,
+      width: 224,
       height: 240,
       quality: 70,
       dryRun: options.dryRun,
@@ -50,7 +50,7 @@ describe('menu thumbnail backfill', () => {
       concurrency: 2,
     }, () => undefined);
 
-    expect(stats).toMatchObject({ scanned: 4, existing: 1, generated: 2, remoteSkipped: 1, failed: 0 });
+    expect(stats).toMatchObject({ scanned: 4, existing: 0, upgraded: 1, generated: 3, remoteSkipped: 1, failed: 0 });
     expect(stats.savedPercent).toBe(80);
     expect(prisma.product.update).not.toHaveBeenCalled();
   });

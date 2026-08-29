@@ -3,6 +3,7 @@ import { loadEnvFile } from 'node:process';
 import { PrismaClient } from '@prisma/client';
 import {
   ProductMenuThumbnailService,
+  isCurrentMenuThumbnailUrl,
   type MenuThumbnailResult,
 } from '../src/modules/products/product-menu-thumbnail.service';
 
@@ -19,6 +20,7 @@ export interface MenuThumbnailBackfillStats {
   dryRun: boolean;
   scanned: number;
   existing: number;
+  upgraded: number;
   generated: number;
   reused: number;
   remoteSkipped: number;
@@ -46,6 +48,7 @@ export async function backfillMenuThumbnails(
     dryRun: options.dryRun,
     scanned: 0,
     existing: 0,
+    upgraded: 0,
     generated: 0,
     reused: 0,
     remoteSkipped: 0,
@@ -85,7 +88,7 @@ export async function backfillMenuThumbnails(
 
     await mapConcurrent(rows, options.concurrency, async (product) => {
       stats.scanned += 1;
-      if (product.menuThumbnailUrl) {
+      if (isCurrentMenuThumbnailUrl(product.menuThumbnailUrl)) {
         stats.existing += 1;
         return;
       }
@@ -94,6 +97,7 @@ export async function backfillMenuThumbnails(
           dryRun: options.dryRun,
         });
         recordGenerationResult(stats, thumbnailSizes, result);
+        if (product.menuThumbnailUrl && result.url) stats.upgraded += 1;
         if (!options.dryRun && result.url) {
           await prisma.product.update({
             where: { id: product.id },
@@ -118,6 +122,7 @@ export async function backfillMenuThumbnails(
       cursor: stats.lastCursor,
       scanned: stats.scanned,
       generated: stats.generated,
+      upgraded: stats.upgraded,
       existing: stats.existing,
       failed: stats.failed,
     }));

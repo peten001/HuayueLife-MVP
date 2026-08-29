@@ -12,9 +12,10 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import sharp = require('sharp');
 
-export const MENU_THUMBNAIL_MAX_DIMENSION = 320;
-export const MENU_THUMBNAIL_DEFAULT_QUALITY = 70;
-export const MENU_THUMBNAIL_SOFT_HARD_BYTES = 80 * 1024;
+export const MENU_THUMBNAIL_SPEC_VERSION = 'v2-224';
+export const MENU_THUMBNAIL_MAX_DIMENSION = 224;
+export const MENU_THUMBNAIL_DEFAULT_QUALITY = 69;
+export const MENU_THUMBNAIL_SOFT_TARGET_BYTES = 10 * 1024;
 
 export type MenuThumbnailResult =
   | {
@@ -49,11 +50,16 @@ type EncodedThumbnail = {
 };
 
 const ENCODE_ATTEMPTS = [
-  { maxDimension: 320, quality: 70 },
-  { maxDimension: 320, quality: 65 },
-  { maxDimension: 288, quality: 65 },
-  { maxDimension: 256, quality: 62 },
+  { maxDimension: 224, quality: 69 },
+  { maxDimension: 224, quality: 66 },
+  { maxDimension: 208, quality: 66 },
+  { maxDimension: 192, quality: 64 },
 ] as const;
+
+export function isCurrentMenuThumbnailUrl(url: string | null | undefined) {
+  const pathname = url?.trim().split(/[?#]/, 1)[0] ?? '';
+  return pathname.endsWith(`-menu-${MENU_THUMBNAIL_SPEC_VERSION}.webp`);
+}
 
 @Injectable()
 export class ProductMenuThumbnailService {
@@ -74,7 +80,7 @@ export class ProductMenuThumbnailService {
 
     const input = await readFile(source.path);
     const sourceHash = createHash('sha256').update(input).digest('hex');
-    const fileName = `${sourceHash.slice(0, 24)}-menu.webp`;
+    const fileName = `${sourceHash.slice(0, 24)}-menu-${MENU_THUMBNAIL_SPEC_VERSION}.webp`;
     const outputPath = join(
       options.rootDir ?? process.cwd(),
       'uploads',
@@ -146,7 +152,7 @@ async function encodeMenuThumbnail(input: Buffer): Promise<EncodedThumbnail> {
       height: info.height,
       quality: attempt.quality,
     };
-    if (data.byteLength <= MENU_THUMBNAIL_SOFT_HARD_BYTES) break;
+    if (data.byteLength <= MENU_THUMBNAIL_SOFT_TARGET_BYTES) break;
   }
   if (!latest) throw new Error('Menu thumbnail encoding produced no output');
   return latest;
@@ -158,7 +164,12 @@ async function existingThumbnail(outputPath: string) {
       stat(outputPath),
       sharp(outputPath, { failOn: 'error' }).metadata(),
     ]);
-    if (metadata.format !== 'webp' || !metadata.width || !metadata.height) return null;
+    if (
+      metadata.format !== 'webp'
+      || !metadata.width
+      || !metadata.height
+      || Math.max(metadata.width, metadata.height) > MENU_THUMBNAIL_MAX_DIMENSION
+    ) return null;
     return { bytes: file.size, width: metadata.width, height: metadata.height };
   } catch {
     return null;

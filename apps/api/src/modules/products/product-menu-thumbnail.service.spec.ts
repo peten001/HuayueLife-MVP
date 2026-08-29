@@ -5,6 +5,7 @@ import sharp = require('sharp');
 import {
   MENU_THUMBNAIL_MAX_DIMENSION,
   ProductMenuThumbnailService,
+  isCurrentMenuThumbnailUrl,
 } from './product-menu-thumbnail.service';
 
 describe('ProductMenuThumbnailService', () => {
@@ -21,7 +22,7 @@ describe('ProductMenuThumbnailService', () => {
     await rm(rootDir, { recursive: true, force: true });
   });
 
-  it('converts JPG to a metadata-free WebP within the 320px bound', async () => {
+  it('converts JPG to a metadata-free versioned WebP within the 224px bound', async () => {
     const original = await sharp({
       create: { width: 900, height: 600, channels: 3, background: '#b51f28' },
     }).jpeg({ quality: 92 }).withMetadata({ orientation: 1 }).toBuffer();
@@ -36,6 +37,7 @@ describe('ProductMenuThumbnailService', () => {
     expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBe(MENU_THUMBNAIL_MAX_DIMENSION);
     expect(metadata.exif).toBeUndefined();
     expect(result.originalBytes).toBe(original.byteLength);
+    expect(isCurrentMenuThumbnailUrl(result.url)).toBe(true);
   });
 
   it('preserves PNG alpha and does not upscale a small source', async () => {
@@ -66,6 +68,11 @@ describe('ProductMenuThumbnailService', () => {
     expect(second.status).toBe('EXISTING');
     expect(second.url).toBe(first.url);
     if (second.url) expect((await readFile(join(rootDir, second.url))).byteLength).toBe(second.thumbnailBytes);
+  });
+
+  it('does not classify the retained 320px V1 URL as the current spec', () => {
+    expect(isCurrentMenuThumbnailUrl('/uploads/product-thumbnails/13/hash-menu.webp')).toBe(false);
+    expect(isCurrentMenuThumbnailUrl('/uploads/product-thumbnails/13/hash-menu-v2-224.webp')).toBe(true);
   });
 
   it('plans a dry-run without writing and skips remote sources', async () => {
