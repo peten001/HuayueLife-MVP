@@ -13,6 +13,8 @@ export interface ApiErrorResponse {
   requestId?: string;
   timestamp?: string;
   path?: string;
+  latestState?: import('./tables').DineInCanonicalState;
+  [key: string]: unknown;
 }
 
 export type ApiActivityDetail =

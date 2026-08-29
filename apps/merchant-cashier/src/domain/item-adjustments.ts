@@ -55,7 +55,7 @@ export function hasItemAdjustmentInFlight(input: {
   return Boolean(input.adjustmentLoadingId || input.pendingDecrease || input.pendingReturn);
 }
 
-export function createMutationKey(prefix: 'add' | 'decrease' | 'return' | 'transfer') {
+export function createMutationKey(prefix: 'add' | 'decrease' | 'return' | 'transfer' | 'canonical' | 'checkout' | 'release') {
   const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;

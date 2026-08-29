@@ -19,6 +19,11 @@ import type {
   TableSessionSummary,
   TransferTableSessionInput,
   BusinessDaySummary,
+  CheckoutTableSessionV2Input,
+  DineInCanonicalLine,
+  DineInCanonicalState,
+  ReconcileDineInCanonicalStateInput,
+  ReleaseEmptyTableSessionInput,
 } from '@/types';
 import { CashierApiError } from '@/api/error';
 import {
@@ -53,6 +58,8 @@ let extraSessions = new Map<string, {
   closedAt: string | null;
 }>();
 let openMutationResults = new Map<string, MerchantOrderMutationResult>();
+let canonicalMutationResults = new Map<string, DineInCanonicalState>();
+let releaseMutationResults = new Map<string, TableSessionDetail>();
 
 export function resetDemoRepository() {
   orders = cloneFixture(initialDemoOrders);
@@ -65,6 +72,8 @@ export function resetDemoRepository() {
   nextExtraSession = 2;
   extraSessions = new Map();
   openMutationResults = new Map();
+  canonicalMutationResults = new Map();
+  releaseMutationResults = new Map();
   resetDemoChatRepository();
 }
 
@@ -175,6 +184,84 @@ export const demoRepository = {
     if (id !== 'demo-session-1' && !extraSessions.has(id)) throw notFound('Demo table session not found');
     return buildSessionDetail(id);
   },
+  canonicalState: (id: string) => buildDemoCanonicalState(id),
+  reconcileCanonicalState: (id: string, input: ReconcileDineInCanonicalStateInput) => {
+    const replay = canonicalMutationResults.get(`${id}:${input.requestKey}`);
+    if (replay) return { ...cloneFixture(replay), idempotentReplay: true };
+    const before = buildDemoCanonicalState(id);
+    if (before.revision !== input.baseRevision) {
+      throw new CashierApiError({
+        message: '演示桌账已被其他终端更新',
+        status: 409,
+        code: 'CANONICAL_REVISION_CONFLICT',
+        details: { latestState: cloneFixture(before) },
+      });
+    }
+    const desiredByKey = new Map(input.desiredItems
+      .filter((item) => item.lineKey)
+      .map((item) => [item.lineKey!, item.desiredQuantity]));
+    const additions: Array<{ productId: string; quantity: number; remark?: string }> = [];
+    for (const desired of input.desiredItems) {
+      if (!desired.lineKey && desired.productId && desired.desiredQuantity > 0) {
+        additions.push({ productId: desired.productId, quantity: desired.desiredQuantity, remark: desired.remark });
+      }
+    }
+    for (const line of before.items) {
+      const desiredQuantity = desiredByKey.get(line.lineKey) ?? 0;
+      if (desiredQuantity < line.lockedQuantity || desiredQuantity < 0) {
+        throw conflict('CANONICAL_QUANTITY_LOCKED', 'Demo canonical quantity is locked');
+      }
+      let removeQuantity = line.quantity - desiredQuantity;
+      if (removeQuantity <= 0) {
+        if (removeQuantity < 0 && line.productId) {
+          additions.push({ productId: line.productId, quantity: -removeQuantity, remark: line.remark });
+        }
+        continue;
+      }
+      const candidates = demoRawItemsForLine(id, line)
+        .filter(({ order }) => ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status));
+      for (const { order, item } of candidates) {
+        if (removeQuantity <= 0) break;
+        const removed = Math.min(removeQuantity, item.quantity);
+        item.quantity -= removed;
+        item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
+        removeQuantity -= removed;
+        if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
+        recalculateDemoOrder(order);
+        if (!order.items.length) {
+          order.status = 'CANCELLED';
+          order.cancelledAt = order.updatedAt;
+          order.cancelReason = 'Demo canonical order automatically cancelled after final item removal';
+        }
+      }
+      if (removeQuantity > 0) throw conflict('CANONICAL_QUANTITY_LOCKED', 'Demo canonical quantity is locked');
+    }
+    for (const addition of additions) {
+      demoRepository.createTableOrder(before.tableId, {
+        idempotencyKey: `${input.requestKey}:${addition.productId}:${addition.remark ?? ''}`,
+        items: [addition],
+      });
+    }
+    if (id === 'demo-session-1') clearDemoSessionRounding();
+    const after = buildDemoCanonicalState(id);
+    canonicalMutationResults.set(`${id}:${input.requestKey}`, cloneFixture(after));
+    return after;
+  },
+  releaseEmptySession: (id: string, input: ReleaseEmptyTableSessionInput) => {
+    const replay = releaseMutationResults.get(`${id}:${input.requestKey}`);
+    if (replay) return cloneFixture(replay);
+    const state = buildDemoCanonicalState(id);
+    if (state.revision !== input.expectedRevision) {
+      throw new CashierApiError({ message: '演示桌账已变化', status: 409, code: 'CANONICAL_REVISION_CONFLICT', details: { latestState: cloneFixture(state) } });
+    }
+    if (state.items.length || state.totals.payableAmountVnd !== '0') {
+      throw conflict('CANONICAL_EMPTY_RELEASE_NOT_ALLOWED', 'Demo table is not empty');
+    }
+    closeDemoSession(id);
+    const detail = buildSessionDetail(id);
+    releaseMutationResults.set(`${id}:${input.requestKey}`, cloneFixture(detail));
+    return detail;
+  },
   setSessionRounding: (id: string, enabled: boolean) => {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
@@ -215,10 +302,19 @@ export const demoRepository = {
     sessionClosed = true;
     return buildSessionDetail();
   },
-  checkoutSession: (id: string): TableSessionCheckoutResult => {
+  checkoutSession: (id: string, v2?: CheckoutTableSessionV2Input): TableSessionCheckoutResult => {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     if (sessionClosed) {
       return { session: buildSessionDetail(), orders: cloneFixture(tableOrders()) };
+    }
+    if (v2) {
+      const state = buildDemoCanonicalState(id);
+      if (state.revision !== v2.expectedRevision) {
+        throw new CashierApiError({ message: '演示桌账已变化', status: 409, code: 'CANONICAL_REVISION_CONFLICT', details: { latestState: cloneFixture(state) } });
+      }
+      if (!state.items.length || state.totals.payableAmountVnd === '0') {
+        throw conflict('CANONICAL_EMPTY_CHECKOUT_NOT_ALLOWED', 'Demo empty table cannot checkout');
+      }
     }
     if (tableOrders().some((order) => order.status === 'PENDING_ACCEPTANCE')) {
       throw conflict('TABLE_SESSION_HAS_UNACCEPTED_ORDERS', 'Demo table has unaccepted orders');
@@ -405,6 +501,133 @@ export const demoRepository = {
     return cacheAdjustmentResult(order, input.requestKey);
   },
 };
+
+function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
+  if (sessionId !== 'demo-session-1' && !extraSessions.has(sessionId)) {
+    throw notFound('Demo table session not found');
+  }
+  const detail = buildSessionDetail(sessionId);
+  const grouped = new Map<string, DineInCanonicalLine>();
+  const billableOrders = tableOrders(sessionId).filter((order) =>
+    ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERING', 'COMPLETED'].includes(order.status),
+  );
+  for (const order of billableOrders) {
+    for (const item of order.items) {
+      const remark = normalizeDemoText(item.remark);
+      const lineKey = demoCanonicalLineKey(item, remark);
+      const product = item.productId
+        ? demoMenuProducts.find((candidate) => candidate.id === item.productId)
+        : undefined;
+      const locked = order.status === 'DELIVERING' || order.status === 'COMPLETED';
+      const current = grouped.get(lineKey) ?? {
+        lineKey,
+        productId: item.productId ?? null,
+        productNameZh: product?.nameZh ?? item.productNameZhSnapshot,
+        productNameVi: product?.nameVi ?? item.productNameViSnapshot ?? null,
+        productNameEn: product?.nameEn ?? null,
+        remark,
+        optionSignature: '',
+        unitPriceVnd: item.unitPriceVnd ?? '0',
+        quantity: 0,
+        lockedQuantity: 0,
+        adjustableQuantity: 0,
+        subtotalVnd: '0',
+        adjustability: 'LOCKED',
+        sourceSummary: { staffQuantity: 0, qrQuantity: 0 },
+      } satisfies DineInCanonicalLine;
+      current.quantity += item.quantity;
+      current.subtotalVnd = (BigInt(current.subtotalVnd) + BigInt(item.subtotalVnd)).toString();
+      if (locked) current.lockedQuantity += item.quantity;
+      else current.adjustableQuantity += item.quantity;
+      if (order.createdByStaffId) current.sourceSummary.staffQuantity += item.quantity;
+      else current.sourceSummary.qrQuantity += item.quantity;
+      grouped.set(lineKey, current);
+    }
+  }
+  const items = [...grouped.values()]
+    .map((line) => ({
+      ...line,
+      adjustability: line.adjustableQuantity === 0
+        ? 'LOCKED' as const
+        : billableOrders.some((order) => order.status === 'PENDING_ACCEPTANCE'
+          && order.items.some((item) => demoCanonicalLineKey(item, normalizeDemoText(item.remark)) === line.lineKey))
+          ? 'DECREASE' as const
+          : 'RETURN' as const,
+    }))
+    .sort((left, right) => left.lineKey.localeCompare(right.lineKey));
+  const originalAmountVnd = items.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n);
+  const amounts = previewSettlementAdjustment({
+    itemAmountVnd: originalAmountVnd,
+    discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
+    roundingEnabled: sessionId === 'demo-session-1' && roundingApplied,
+  });
+  const revisionSource = {
+    sessionId,
+    tableId: detail.tableId,
+    status: detail.status,
+    discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
+    roundingApplied: sessionId === 'demo-session-1' && roundingApplied,
+    orders: tableOrders(sessionId).map((order) => ({
+      id: order.id,
+      status: order.status,
+      items: order.items.map((item) => ({
+        id: item.id,
+        productId: item.productId ?? null,
+        name: item.productNameZhSnapshot,
+        remark: normalizeDemoText(item.remark),
+        price: item.unitPriceVnd,
+        quantity: item.quantity,
+      })),
+    })),
+  };
+  return {
+    sessionId,
+    tableId: detail.tableId,
+    tableNo: detail.tableNo,
+    tableName: detail.tableName,
+    sessionStatus: detail.status,
+    revision: `demo-dcs2:${demoHash(JSON.stringify(revisionSource))}`,
+    items,
+    totals: {
+      originalAmountVnd: originalAmountVnd.toString(),
+      discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
+      discountAmountVnd: amounts.discountAmountVnd,
+      roundingAmountVnd: amounts.roundingAmountVnd,
+      payableAmountVnd: amounts.payableAmountVnd,
+    },
+    blockers: billableOrders.some((order) => order.status === 'PENDING_ACCEPTANCE')
+      ? ['UNACCEPTED_ORDER']
+      : [],
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function demoRawItemsForLine(sessionId: string, line: DineInCanonicalLine) {
+  return tableOrders(sessionId).flatMap((order) => order.items
+    .filter((item) => demoCanonicalLineKey(item, normalizeDemoText(item.remark)) === line.lineKey)
+    .map((item) => ({ order, item })));
+}
+
+function demoCanonicalLineKey(
+  item: MerchantOrder['items'][number],
+  remark: string,
+) {
+  const identity = item.productId ?? `historical:${normalizeDemoText(item.productNameZhSnapshot).toLowerCase()}`;
+  return `demo-dline:${demoHash(JSON.stringify([identity, remark, item.unitPriceVnd ?? '0', '']))}`;
+}
+
+function normalizeDemoText(value: string | null | undefined) {
+  return (value ?? '').normalize('NFC').trim().replace(/\s+/gu, ' ');
+}
+
+function demoHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
 
 function buildBusinessDaySummary(requestedDate?: string): BusinessDaySummary {
   const businessDate = requestedDate || new Intl.DateTimeFormat('en-CA', {

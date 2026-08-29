@@ -95,7 +95,7 @@ describe('useTableOrderMutationController', () => {
 
     const pageSource = readFileSync(resolve(process.cwd(), 'src/pages/TableOverviewPage.vue'), 'utf8');
     expect(pageSource).not.toContain('orderingWorkspace.value?.');
-    expect(pageSource).toContain('orderingController.addProduct(');
+    expect(pageSource).toContain('canonicalController.addProduct(');
     expect(pageSource).toContain("activeMainTab === 'MENU'");
   });
 

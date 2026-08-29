@@ -203,6 +203,55 @@ describe('fixture repository WebView compatibility', () => {
     expect(result.session.itemCount).toBe(6);
   });
 
+  it('keeps an empty canonical session open until explicit release', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+    const opened = demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'canonical-open-b04',
+      items: [],
+    });
+    demoRepository.createTableOrder('demo-table-10', {
+      idempotencyKey: 'canonical-add-b04',
+      items: [{ productId: demoRepository.products()[0]!.id, quantity: 1 }],
+    });
+    const before = demoRepository.canonicalState(opened.session.id);
+    const empty = demoRepository.reconcileCanonicalState(opened.session.id, {
+      requestKey: 'canonical-empty-b04',
+      baseRevision: before.revision,
+      desiredItems: before.items.map((line) => ({ lineKey: line.lineKey, desiredQuantity: 0 })),
+    });
+
+    expect(empty.items).toEqual([]);
+    expect(empty.sessionStatus).toBe('OPEN');
+    expect(demoRepository.currentSession('demo-table-10')).not.toBeNull();
+
+    demoRepository.releaseEmptySession(opened.session.id, {
+      requestKey: 'canonical-release-b04',
+      expectedRevision: empty.revision,
+    });
+    expect(demoRepository.currentSession('demo-table-10')).toBeNull();
+  });
+
+  it('replays an exact canonical desired-state request without a second write', async () => {
+    vi.resetModules();
+    const { demoRepository, resetDemoRepository } = await import('./repository');
+    resetDemoRepository();
+    const before = demoRepository.canonicalState('demo-session-1');
+    const input = {
+      requestKey: 'canonical-replay-a01',
+      baseRevision: before.revision,
+      desiredItems: before.items.map((line, index) => ({
+        lineKey: line.lineKey,
+        desiredQuantity: line.quantity + (index === 0 ? 1 : 0),
+      })),
+    };
+    const first = demoRepository.reconcileCanonicalState('demo-session-1', input);
+    const replay = demoRepository.reconcileCanonicalState('demo-session-1', input);
+    expect(replay.revision).toBe(first.revision);
+    expect(replay.idempotentReplay).toBe(true);
+  });
+
   it('exposes completed history as settlement records with search and pagination', async () => {
     vi.resetModules();
     const { demoRepository, resetDemoRepository } = await import('./repository');

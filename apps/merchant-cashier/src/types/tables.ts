@@ -82,6 +82,68 @@ export interface TableSessionCheckoutResult {
   orders: MerchantOrder[];
 }
 
+export interface DineInCanonicalLine {
+  lineKey: string;
+  productId: string | null;
+  productNameZh: string;
+  productNameVi?: string | null;
+  productNameEn?: string | null;
+  remark: string;
+  optionSignature: string;
+  unitPriceVnd: string;
+  quantity: number;
+  lockedQuantity: number;
+  adjustableQuantity: number;
+  subtotalVnd: string;
+  adjustability: 'DECREASE' | 'RETURN' | 'LOCKED';
+  sourceSummary: {
+    staffQuantity: number;
+    qrQuantity: number;
+  };
+}
+
+export interface DineInCanonicalState {
+  sessionId: string;
+  tableId: string;
+  tableNo: string;
+  tableName?: string | null;
+  sessionStatus: TableSessionStatus;
+  revision: string;
+  items: DineInCanonicalLine[];
+  totals: {
+    originalAmountVnd: string;
+    discountPayableRateBps: number | null;
+    discountAmountVnd: string;
+    roundingAmountVnd: string;
+    payableAmountVnd: string;
+  };
+  blockers: string[];
+  generatedAt: string;
+  idempotentReplay?: boolean;
+  appliedRevision?: string;
+}
+
+export interface ReconcileDineInCanonicalStateInput {
+  requestKey: string;
+  baseRevision: string;
+  desiredItems: Array<{
+    lineKey?: string;
+    productId?: string;
+    remark?: string;
+    desiredQuantity: number;
+  }>;
+}
+
+export interface ReleaseEmptyTableSessionInput {
+  requestKey: string;
+  expectedRevision: string;
+}
+
+export interface CheckoutTableSessionV2Input {
+  expectedRevision: string;
+  requestKey: string;
+}
+
 export interface TransferTableSessionInput {
   targetTableId: string;
   expectedSourceTableId: string;

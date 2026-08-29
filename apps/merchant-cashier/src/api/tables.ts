@@ -7,6 +7,10 @@ import type {
   SettlementAdjustmentInput,
   PaymentMethod,
   TransferTableSessionInput,
+  CheckoutTableSessionV2Input,
+  DineInCanonicalState,
+  ReconcileDineInCanonicalStateInput,
+  ReleaseEmptyTableSessionInput,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -47,12 +51,50 @@ export async function closeTableSession(sessionId: string): Promise<TableSession
   return result.session;
 }
 
-export async function checkoutTableSession(sessionId: string, paymentMethod: PaymentMethod): Promise<TableSessionCheckoutResult> {
-  if (isDemoSessionActive()) return demoRepository.checkoutSession(sessionId);
+export async function checkoutTableSession(
+  sessionId: string,
+  paymentMethod: PaymentMethod,
+  v2?: CheckoutTableSessionV2Input,
+): Promise<TableSessionCheckoutResult> {
+  if (isDemoSessionActive()) return demoRepository.checkoutSession(sessionId, v2);
   return requestApi<TableSessionCheckoutResult>(
     `/merchant/table-sessions/${encodeURIComponent(sessionId)}/cashier-checkout`,
-    { method: 'POST', body: { paymentMethod } },
+    { method: 'POST', body: { paymentMethod, ...v2 } },
   );
+}
+
+export function getDineInCanonicalState(sessionId: string) {
+  if (isDemoSessionActive()) return Promise.resolve(demoRepository.canonicalState(sessionId));
+  return requestApi<DineInCanonicalState>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/canonical-state`,
+  );
+}
+
+export function reconcileDineInCanonicalState(
+  sessionId: string,
+  input: ReconcileDineInCanonicalStateInput,
+) {
+  if (isDemoSessionActive()) {
+    return Promise.resolve(demoRepository.reconcileCanonicalState(sessionId, input));
+  }
+  return requestApi<DineInCanonicalState>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/canonical-state/reconcile`,
+    { method: 'POST', body: input },
+  );
+}
+
+export async function releaseEmptyTableSession(
+  sessionId: string,
+  input: ReleaseEmptyTableSessionInput,
+) {
+  if (isDemoSessionActive()) {
+    return demoRepository.releaseEmptySession(sessionId, input);
+  }
+  const result = await requestApi<{ session: TableSessionDetail }>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/release-empty`,
+    { method: 'POST', body: input },
+  );
+  return result.session;
 }
 
 export async function setTableSessionRounding(sessionId: string, enabled: boolean): Promise<TableSessionDetail> {
