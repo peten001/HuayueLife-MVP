@@ -12,6 +12,7 @@ const imageDelayMs = Number(process.env.CASHIER_IMAGE_PERF_DELAY_MS || 240);
 const imageObserverMode = process.env.CASHIER_CATALOG_IMAGE_OBSERVER_MODE || 'native';
 const preSourceError = process.env.CASHIER_CATALOG_PRE_SOURCE_ERROR === '1';
 const cacheOnly = process.env.CASHIER_CATALOG_CACHE_ONLY === '1';
+const captureScreenshots = process.env.CASHIER_CATALOG_CAPTURE_SCREENSHOTS !== '0';
 
 assert.ok(outputDirectory, 'CASHIER_CATALOG_PERF_OUTPUT is required');
 assert.ok(Number.isInteger(iterations) && iterations >= 5, 'At least 5 iterations are required');
@@ -85,16 +86,17 @@ const tables = Array.from({ length: 3 }, (_, index) => ({
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
 }));
-const categories = Array.from({ length: 8 }, (_, index) => ({
+const categories = Array.from({ length: 24 }, (_, index) => ({
   id: `catalog-perf-category-${index + 1}`,
-  nameZh: `分类${index + 1}`,
-  nameVi: `Danh mục ${index + 1}`,
-  nameEn: `Category ${index + 1}`,
+  nameZh: `分类${index + 1}号长名称`,
+  nameVi: `Danh mục dài ${index + 1}`,
+  nameEn: `Long category ${index + 1}`,
   sortOrder: index + 1,
   isActive: true,
 }));
+let categoryFixtureCount = 8;
 const products = Array.from({ length: 201 }, (_, index) => {
-  const category = categories[index % categories.length];
+  const category = categories[index % 8];
   return {
     id: `catalog-perf-product-${index + 1}`,
     categoryId: category.id,
@@ -391,6 +393,15 @@ try {
       tableSwitch: await measureTableSwitch(),
       browserErrors,
     };
+  } else if (process.env.CASHIER_DESKTOP_PAGINATION_ONLY === '1') {
+    result = {
+      label,
+      generatedAt: new Date().toISOString(),
+      responsiveMenu: await measureResponsiveMenu(),
+      desktopPagination: await measureDesktopPagination(),
+      categoryWrapping: await measureCategoryWrapping(),
+      browserErrors,
+    };
   } else if (process.env.CASHIER_CATALOG_CRITIQUE_ONLY === '1') {
     result = {
       label,
@@ -438,6 +449,8 @@ try {
       },
       imageLoading,
       responsiveMenu,
+      desktopPagination: await measureDesktopPagination(),
+      categoryWrapping: await measureCategoryWrapping(),
       mobileImageRegression,
       interactionScrollRegression,
       browserErrors,
@@ -488,7 +501,7 @@ function responseFor(method, path) {
     };
   }
   if (path === '/merchant/printing/printers' && method === 'GET') return { data: [] };
-  if (path === '/merchant/categories' && method === 'GET') return { data: categories };
+  if (path === '/merchant/categories' && method === 'GET') return { data: categories.slice(0, categoryFixtureCount) };
   if (path === '/merchant/products' && method === 'GET') return { data: products };
   return { status: 404, data: { code: 'HTTP_404', message: `Unhandled ${method} ${path}` } };
 }
@@ -662,10 +675,16 @@ async function measureImageFanout() {
 
 async function measureResponsiveMenu() {
   const targets = [
+    { width: 1920, height: 1080 },
+    { width: 1600, height: 900 },
+    { width: 1440, height: 900 },
+    { width: 1366, height: 768 },
     { width: 1280, height: 800 },
     { width: 1024, height: 768 },
     { width: 768, height: 1024 },
+    { width: 430, height: 932 },
     { width: 390, height: 844 },
+    { width: 375, height: 812 },
   ];
   const results = [];
   for (const target of targets) {
@@ -679,12 +698,26 @@ async function measureResponsiveMenu() {
       const scroller = document.querySelector('[data-testid="table-ordering-products-scroller"]');
       const firstProduct = document.querySelector('.table-ordering-product');
       const firstPrice = document.querySelector('.table-ordering-product__price');
+      const cards = [...document.querySelectorAll('.table-ordering-product')];
+      const grid = document.querySelector('.table-ordering-product-grid');
+      const viewport = document.querySelector('[data-testid="table-ordering-products-viewport"]');
+      const categoryStrip = document.querySelector('[data-testid="table-ordering-category-strip"]');
+      const pagination = document.querySelector('[data-testid="table-ordering-pagination"]');
       if (!(workspace instanceof HTMLElement) || !(scroller instanceof HTMLElement) || !(firstProduct instanceof HTMLElement)) {
         return null;
       }
       const workspaceRect = workspace.getBoundingClientRect();
       const productRect = firstProduct.getBoundingClientRect();
+      const distinctColumns = new Set(cards.map((card) => Math.round(card.getBoundingClientRect().left))).size;
+      const distinctRows = new Set(cards.map((card) => Math.round(card.getBoundingClientRect().top))).size;
+      const desktop = window.innerWidth >= 900;
+      const gridRect = grid?.getBoundingClientRect();
+      const viewportRect = viewport?.getBoundingClientRect();
       return {
+        desktop,
+        mountedProductCount: cards.length,
+        distinctColumns,
+        distinctRows,
         bodyHorizontalOverflowPx: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         workspaceInsideViewport: workspaceRect.left >= -1 && workspaceRect.right <= window.innerWidth + 1,
         firstProductInsideScroller: productRect.left >= scroller.getBoundingClientRect().left - 1
@@ -692,6 +725,14 @@ async function measureResponsiveMenu() {
         firstProductClickable: firstProduct.getAttribute('aria-disabled') !== 'true'
           && productRect.width >= 44 && productRect.height >= 44,
         unitVisible: firstPrice?.textContent?.includes('/份') || false,
+        productScrollOverflowPx: Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+        gridInsideViewport: !gridRect || !viewportRect
+          ? false
+          : gridRect.top >= viewportRect.top - 1 && gridRect.bottom <= viewportRect.bottom + 1,
+        categoryHorizontalOverflowPx: categoryStrip instanceof HTMLElement
+          ? Math.max(0, categoryStrip.scrollWidth - categoryStrip.clientWidth)
+          : 0,
+        paginationVisible: pagination instanceof HTMLElement,
       };
     });
     assert.ok(geometry, `${target.width}x${target.height}: menu geometry must be available`);
@@ -700,9 +741,125 @@ async function measureResponsiveMenu() {
     assert.equal(geometry.firstProductInsideScroller, true, `${target.width}x${target.height}: product must stay inside scroller`);
     assert.equal(geometry.firstProductClickable, true, `${target.width}x${target.height}: product target must remain clickable`);
     assert.equal(geometry.unitVisible, true, `${target.width}x${target.height}: product unit must remain visible`);
+    if (geometry.desktop) {
+      assert.equal(geometry.mountedProductCount, 20, `${target.width}x${target.height}: desktop must mount one 20-item page`);
+      assert.equal(geometry.distinctColumns, 5, `${target.width}x${target.height}: desktop must render five columns`);
+      assert.equal(geometry.distinctRows, 4, `${target.width}x${target.height}: desktop must render four rows`);
+      assert.ok(geometry.productScrollOverflowPx <= 1, `${target.width}x${target.height}: desktop menu must not vertically scroll`);
+      assert.equal(geometry.gridInsideViewport, true, `${target.width}x${target.height}: desktop grid must fit its viewport`);
+      assert.equal(geometry.categoryHorizontalOverflowPx, 0, `${target.width}x${target.height}: categories must not scroll horizontally`);
+      assert.equal(geometry.paginationVisible, true, `${target.width}x${target.height}: pagination must remain visible`);
+    } else {
+      assert.equal(geometry.mountedProductCount, products.length, `${target.width}x${target.height}: mobile must keep the complete catalog`);
+      assert.equal(geometry.paginationVisible, false, `${target.width}x${target.height}: mobile must not render desktop pagination`);
+    }
+    if (captureScreenshots) {
+      await page.screenshot({
+        path: `${outputDirectory}/${label}-responsive-${target.width}x${target.height}.png`,
+        fullPage: false,
+      });
+    }
     results.push({ viewport: `${target.width}x${target.height}`, ...geometry });
   }
   await page.setViewportSize({ width: 1280, height: 800 });
+  return results;
+}
+
+async function measureDesktopPagination() {
+  categoryFixtureCount = 8;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await clearCatalogCache();
+  await page.goto(`${baseUrl}/tables/${tables[0].id}?view=menu`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-cashier-ready="true"]').waitFor();
+  await waitForSelectedTable(tables[0].id);
+  await waitForMenuReady();
+  await page.evaluate(() => {
+    window.__cashierLongTasks = [];
+    window.__catalogPerfLayoutShift = 0;
+  });
+  const eventIndex = apiEvents.length;
+  const durations = [];
+  const totalPages = Math.ceil(products.length / 20);
+  for (let pageNumber = 2; pageNumber <= totalPages; pageNumber += 1) {
+    const expectedFirstId = `catalog-perf-product-${(pageNumber - 1) * 20 + 1}`;
+    durations.push(await page.evaluate(async (expectedId) => {
+      const button = document.querySelector('[data-testid="ordering-next-page"]');
+      if (!(button instanceof HTMLButtonElement)) throw new Error('Next-page button is missing');
+      const startedAt = performance.now();
+      button.click();
+      await new Promise((resolve) => {
+        const check = () => {
+          if (document.querySelector('.table-ordering-product')?.getAttribute('data-product-id') === expectedId) {
+            requestAnimationFrame(resolve);
+          } else {
+            requestAnimationFrame(check);
+          }
+        };
+        check();
+      });
+      return performance.now() - startedAt;
+    }, expectedFirstId));
+  }
+  const events = apiEvents.slice(eventIndex);
+  const summary = summarizeNumbers(durations);
+  const browserMetrics = await page.evaluate(() => ({
+    mountedProducts: document.querySelectorAll('.table-ordering-product').length,
+    imageNodes: document.querySelectorAll('.table-ordering-product img').length,
+    domNodes: document.querySelectorAll('*').length,
+    layoutShift: window.__catalogPerfLayoutShift || 0,
+    longTasksOver50Ms: (window.__cashierLongTasks || []).filter((entry) => entry.duration > 50),
+  }));
+  const catalogGets = events.filter((event) => event.method === 'GET' && isCatalogEvent(event));
+  const businessGets = events.filter((event) => event.method === 'GET' && !isCatalogEvent(event));
+  assert.ok(summary.p95 <= 100, `Desktop page-turn p95 must be <=100ms, got ${summary.p95}ms`);
+  assert.equal(catalogGets.length, 0, 'Desktop page turns must not request the catalog');
+  assert.equal(businessGets.length, 0, 'Desktop page turns must not issue business GET requests');
+  assert.ok(browserMetrics.mountedProducts <= 20, 'Desktop must mount at most 20 products');
+  assert.ok(browserMetrics.imageNodes <= 20, 'Desktop must mount at most 20 image nodes');
+  assert.equal(browserMetrics.longTasksOver50Ms.length, 0, 'Desktop page turns must not create >50ms long tasks');
+  assert.ok(browserMetrics.layoutShift <= 0.01, `Desktop page-turn CLS must remain near zero, got ${browserMetrics.layoutShift}`);
+  return {
+    ...summary,
+    transitions: durations.length,
+    catalogGetDelta: catalogGets.length,
+    businessGetDelta: businessGets.length,
+    ...browserMetrics,
+  };
+}
+
+async function measureCategoryWrapping() {
+  const results = [];
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (const count of [8, 12, 18, 24]) {
+    categoryFixtureCount = count;
+    await clearCatalogCache();
+    await page.goto(`${baseUrl}/tables/${tables[0].id}?view=menu`, { waitUntil: 'domcontentloaded' });
+    await page.locator('[data-cashier-ready="true"]').waitFor();
+    await waitForSelectedTable(tables[0].id);
+    await waitForMenuReady();
+    const state = await page.evaluate(() => {
+      const strip = document.querySelector('[data-testid="table-ordering-category-strip"]');
+      const cards = [...document.querySelectorAll('.table-ordering-product')];
+      if (!(strip instanceof HTMLElement)) return null;
+      return {
+        buttons: strip.querySelectorAll('button').length,
+        horizontalOverflowPx: Math.max(0, strip.scrollWidth - strip.clientWidth),
+        wrappedRows: new Set([...strip.querySelectorAll('button')].map((button) => Math.round(button.getBoundingClientRect().top))).size,
+        mountedProducts: cards.length,
+      };
+    });
+    assert.ok(state, `${count} categories: category strip must exist`);
+    assert.equal(state.buttons, count + 1, `${count} categories: all filters including All must render`);
+    assert.equal(state.horizontalOverflowPx, 0, `${count} categories: no horizontal scrolling`);
+    assert.equal(state.mountedProducts, 20, `${count} categories: pagination must still mount 20 cards`);
+    assert.ok(state.wrappedRows >= 1, `${count} categories: category rows must remain measurable`);
+    if (captureScreenshots) {
+      await page.screenshot({ path: `${outputDirectory}/${label}-categories-${count}.png`, fullPage: false });
+    }
+    results.push({ categoryCount: count, ...state });
+  }
+  categoryFixtureCount = 8;
+  await clearCatalogCache();
   return results;
 }
 
@@ -1049,6 +1206,8 @@ async function captureMobileImageSample(clickedAtPerformance) {
 
 async function captureUiCritique() {
   await mkdir(outputDirectory, { recursive: true });
+  const responsiveMenu = await measureResponsiveMenu();
+  const categoryWrapping = await measureCategoryWrapping();
   const viewports = [
     { width: 430, height: 932 },
     { width: 390, height: 844 },
@@ -1180,6 +1339,8 @@ async function captureUiCritique() {
   await page.setViewportSize({ width: 1280, height: 800 });
 
   return {
+    responsiveMenu,
+    categoryWrapping,
     defaultStates,
     category: {
       visibleImageNodes: categoryState.visibleImageNodes,
@@ -1217,11 +1378,15 @@ async function openMobileMenu(viewport) {
 
 async function waitForMenuReady() {
   await page.getByTestId('table-ordering-workspace').waitFor();
+  const expectedProducts = await page.evaluate(
+    ({ total, desktopPageSize }) => window.innerWidth >= 900 ? Math.min(total, desktopPageSize) : total,
+    { total: products.length, desktopPageSize: 20 },
+  );
   await page.waitForFunction(
     (expected) => document.querySelectorAll('.table-ordering-product').length === expected,
-    products.length,
+    expectedProducts,
   );
-  assert.equal(await page.locator('.table-ordering-product').count(), products.length);
+  assert.equal(await page.locator('.table-ordering-product').count(), expectedProducts);
 }
 
 async function waitForSelectedTable(tableId) {

@@ -35,6 +35,17 @@ const secondProduct: CashierMenuProduct = {
   nameEn: 'Iced coffee', priceVnd: '30000', category: secondCategory,
 };
 
+function catalogProducts(count: number) {
+  return Array.from({ length: count }, (_, index): CashierMenuProduct => ({
+    ...product,
+    id: `product-${index + 1}`,
+    nameZh: `分页菜品${String(index + 1).padStart(3, '0')}`,
+    nameVi: `Món phân trang ${index + 1}`,
+    nameEn: `Paged dish ${index + 1}`,
+    sortOrder: index + 1,
+  }));
+}
+
 function mountWorkspace(overrides: {
   embedded?: boolean;
   disabled?: boolean;
@@ -95,6 +106,100 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/ordering/TableOrderingWorkspace.vue'), 'utf8');
     expect(source).not.toContain('createMerchantTableOrder');
     expect(source).not.toContain('directAddQueue');
+  });
+
+  it('renders only the active 20-item desktop page without issuing catalog requests on page turns', async () => {
+    apiMocks.listCashierMenuCategories.mockResolvedValueOnce([category]);
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce(catalogProducts(45));
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(20);
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 3');
+    expect(wrapper.text()).toContain('分页菜品001');
+    expect(wrapper.text()).not.toContain('分页菜品021');
+
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(20);
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('2 / 3');
+    expect(wrapper.text()).toContain('分页菜品021');
+    expect(wrapper.text()).not.toContain('分页菜品001');
+    expect(apiMocks.listCashierMenuCategories).toHaveBeenCalledOnce();
+    expect(apiMocks.listCashierMenuProducts).toHaveBeenCalledOnce();
+
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(5);
+    expect(wrapper.get('[data-testid="ordering-next-page"]').attributes('disabled')).toBeDefined();
+  });
+
+  it('resets desktop pagination after search and table context changes', async () => {
+    apiMocks.listCashierMenuCategories.mockResolvedValueOnce([category]);
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce(catalogProducts(45));
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('2 / 3');
+
+    await wrapper.get('input[type="search"]').setValue('分页菜品045');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 1');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+
+    await wrapper.get('input[type="search"]').setValue('');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 3');
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    await wrapper.setProps({ tableId: 'table-2' });
+    await flushPromises();
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 3');
+    expect(wrapper.text()).toContain('分页菜品001');
+  });
+
+  it('resets to page one after category selection and a changed catalog identity', async () => {
+    const firstCategoryProducts = catalogProducts(25);
+    const secondCategoryProducts = catalogProducts(25).map((item, index) => ({
+      ...item,
+      id: `drink-${index + 1}`,
+      categoryId: secondCategory.id,
+      nameZh: `饮品分页${String(index + 1).padStart(3, '0')}`,
+      category: secondCategory,
+    }));
+    apiMocks.listCashierMenuCategories.mockResolvedValueOnce([category, secondCategory]);
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([...firstCategoryProducts, ...secondCategoryProducts]);
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('2 / 3');
+
+    const drinks = wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
+      .find((button) => button.text() === '饮品');
+    expect(drinks).toBeDefined();
+    await drinks!.trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 2');
+    expect(wrapper.text()).toContain('饮品分页001');
+
+    await wrapper.get('[data-testid="ordering-next-page"]').trigger('click');
+    const store = useCatalogStore();
+    store.products = secondCategoryProducts.slice(0, 5);
+    await flushPromises();
+    expect(wrapper.get('[data-testid="table-ordering-pagination"]').text()).toContain('1 / 1');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(5);
+  });
+
+  it('keeps the complete scrollable catalog and hides pagination on mobile', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    apiMocks.listCashierMenuCategories.mockResolvedValueOnce([category]);
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce(catalogProducts(45));
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(45);
+    expect(wrapper.find('[data-testid="table-ordering-pagination"]').exists()).toBe(false);
   });
 
   it('renders immediate shared pending quantity and navigation lock without layout replacement', async () => {
@@ -263,6 +368,11 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(mobileV5).toMatch(/\.table-ordering-product\s*\{[^}]*min-height:\s*116px;/s);
     expect(mobileV6).toMatch(/\.table-ordering-category-strip\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto/s);
     expect(mobileV6).toMatch(/\.table-ordering-category-strip button\s*\{[^}]*white-space:\s*nowrap;/s);
+    const desktopV9 = styles.slice(styles.indexOf('/* Desktop menu pagination V9:'));
+    expect(desktopV9).toMatch(/grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/);
+    expect(desktopV9).toMatch(/grid-template-rows:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
+    expect(desktopV9).toMatch(/\.table-ordering-category-strip\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/s);
+    expect(desktopV9).toMatch(/\.table-ordering-products__scroller\s*\{[^}]*overflow:\s*hidden;[^}]*contain:\s*none;/s);
   });
 });
 

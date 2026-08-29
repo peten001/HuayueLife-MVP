@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ImageIcon, Search, X } from '@lucide/vue';
+import { ChevronLeft, ChevronRight, ImageIcon, Search, X } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import {
@@ -49,7 +49,9 @@ const searchInput = ref<HTMLInputElement | null>(null);
 const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
 const failedThumbnailUrls = ref(new Set<string>());
+const currentPage = ref(1);
 let previouslyFocused: HTMLElement | null = null;
+const DESKTOP_PAGE_SIZE = 20;
 
 // Mobile V6 renders four 116px cards per row with a 17px row gap. The fixed
 // header/search/category/footer chrome leaves innerHeight - 196px for products.
@@ -69,6 +71,16 @@ const filteredProducts = computed(() => orderableProducts.value.filter((product)
   (activeCategoryId.value === 'ALL' || product.categoryId === activeCategoryId.value)
   && productMatchesQuery(product, query.value),
 ));
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredProducts.value.length / DESKTOP_PAGE_SIZE)));
+const visiblePageProducts = computed(() => {
+  if (mobileOrderingLayout.value) return filteredProducts.value;
+  const start = (currentPage.value - 1) * DESKTOP_PAGE_SIZE;
+  return filteredProducts.value.slice(start, start + DESKTOP_PAGE_SIZE);
+});
+const catalogIdentity = computed(() => [
+  ...activeCategories.value.map((category) => `category:${category.id}`),
+  ...orderableProducts.value.map((product) => `product:${product.id}:${product.categoryId}:${product.status}`),
+].join('|'));
 
 watch(
   () => props.open,
@@ -92,6 +104,28 @@ watch(() => props.open, (open, wasOpen) => {
 });
 
 watch([query, activeCategoryId], () => {
+  currentPage.value = 1;
+  activeResultIndex.value = -1;
+  productCards.value = [];
+});
+
+watch(() => props.tableId, () => {
+  currentPage.value = 1;
+  activeResultIndex.value = -1;
+  productCards.value = [];
+});
+
+watch(catalogIdentity, () => {
+  currentPage.value = 1;
+  activeResultIndex.value = -1;
+  productCards.value = [];
+});
+
+watch(totalPages, (nextTotalPages) => {
+  if (currentPage.value > nextTotalPages) currentPage.value = nextTotalPages;
+});
+
+watch(currentPage, () => {
   activeResultIndex.value = -1;
   productCards.value = [];
 });
@@ -155,7 +189,12 @@ function resetWorkspaceView() {
   activeCategoryId.value = 'ALL';
   query.value = '';
   loadErrorKey.value = '';
+  currentPage.value = 1;
   activeResultIndex.value = -1;
+}
+
+function goToPage(page: number) {
+  currentPage.value = Math.min(totalPages.value, Math.max(1, page));
 }
 
 async function loadCatalog() {
@@ -201,12 +240,12 @@ function onKeydown(event: KeyboardEvent) {
     } else requestClose();
     return;
   }
-  if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && query.value.trim() && filteredProducts.value.length) {
+  if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && query.value.trim() && visiblePageProducts.value.length) {
     event.preventDefault();
     const direction = event.key === 'ArrowDown' ? 1 : -1;
     const next = activeResultIndex.value < 0
-      ? direction > 0 ? 0 : filteredProducts.value.length - 1
-      : (activeResultIndex.value + direction + filteredProducts.value.length) % filteredProducts.value.length;
+      ? direction > 0 ? 0 : visiblePageProducts.value.length - 1
+      : (activeResultIndex.value + direction + visiblePageProducts.value.length) % visiblePageProducts.value.length;
     activeResultIndex.value = next;
     void nextTick(() => productCards.value[next]?.focus());
     return;
@@ -218,7 +257,7 @@ function onKeydown(event: KeyboardEvent) {
     && query.value.trim()
     && (event.target === searchInput.value || event.target === activeCard)
   ) {
-    const selected = filteredProducts.value[activeResultIndex.value];
+    const selected = visiblePageProducts.value[activeResultIndex.value];
     if (!selected) return;
     event.preventDefault();
     queueProductAddition(selected.id);
@@ -304,7 +343,7 @@ function setProductCardRef(element: Element | null, index: number) {
               type="search"
               :placeholder="t('ordering.searchPlaceholder')"
               :aria-label="t('ordering.searchLabel')"
-              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
+              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
               autocomplete="off"
               @keydown.stop="onKeydown"
             />
@@ -320,7 +359,7 @@ function setProductCardRef(element: Element | null, index: number) {
               type="search"
               :placeholder="t('ordering.searchPlaceholder')"
               :aria-label="t('ordering.searchLabel')"
-              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${filteredProducts[activeResultIndex]?.id}` : undefined"
+              :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
               autocomplete="off"
               @keydown.stop="onKeydown"
             />
@@ -333,7 +372,7 @@ function setProductCardRef(element: Element | null, index: number) {
           :aria-label="t('ordering.categories')"
           data-testid="table-ordering-category-strip"
         >
-          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" :aria-pressed="activeCategoryId === 'ALL'" @click="activeCategoryId = 'ALL'">
             {{ t('common.all') }}
           </button>
           <button
@@ -341,6 +380,7 @@ function setProductCardRef(element: Element | null, index: number) {
             :key="`mobile-strip-${category.id}`"
             type="button"
             :class="{ 'is-active': activeCategoryId === category.id }"
+            :aria-pressed="activeCategoryId === category.id"
             @click="selectCategory(category.id, $event)"
           >{{ categoryName(category) }}</button>
         </nav>
@@ -356,7 +396,7 @@ function setProductCardRef(element: Element | null, index: number) {
 
       <div class="table-ordering-body">
         <nav class="table-ordering-categories" :aria-label="t('ordering.categories')">
-          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+          <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" :aria-pressed="activeCategoryId === 'ALL'" @click="activeCategoryId = 'ALL'">
             {{ t('common.all') }}
           </button>
           <button
@@ -364,6 +404,7 @@ function setProductCardRef(element: Element | null, index: number) {
             :key="category.id"
             type="button"
             :class="{ 'is-active': activeCategoryId === category.id }"
+            :aria-pressed="activeCategoryId === category.id"
             @click="selectCategory(category.id, $event)"
           >{{ categoryName(category) }}</button>
         </nav>
@@ -376,7 +417,7 @@ function setProductCardRef(element: Element | null, index: number) {
               :aria-label="t('ordering.categories')"
               data-testid="table-ordering-category-strip"
             >
-              <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" @click="activeCategoryId = 'ALL'">
+              <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" :aria-pressed="activeCategoryId === 'ALL'" @click="activeCategoryId = 'ALL'">
                 {{ t('common.all') }}
               </button>
               <button
@@ -384,65 +425,91 @@ function setProductCardRef(element: Element | null, index: number) {
                 :key="`strip-${category.id}`"
                 type="button"
                 :class="{ 'is-active': activeCategoryId === category.id }"
+                :aria-pressed="activeCategoryId === category.id"
                 @click="selectCategory(category.id, $event)"
               >{{ categoryName(category) }}</button>
             </nav>
 
-            <LoadingState v-if="loading" :label="t('ordering.loading')" />
-            <ErrorState
-              v-else-if="loadErrorKey"
-              :title="t('error.title')"
-              :description="t(loadErrorKey)"
-              :retry-label="t('common.retry')"
-              @retry="loadCatalog"
-            />
-            <EmptyState
-              v-else-if="!filteredProducts.length"
-              :title="t('ordering.emptyTitle')"
-              :description="t('ordering.emptyDescription')"
-            />
-            <div v-else class="table-ordering-product-grid">
-              <article
-                v-for="(product, index) in filteredProducts"
-                :key="product.id"
-                :id="`ordering-product-${product.id}`"
-                :ref="(element) => setProductCardRef(element as Element | null, index)"
-                class="table-ordering-product"
-                :class="{
-                  'is-selected': canonicalQuantityForProduct(product.id) > 0,
-                  'is-keyboard-active': activeResultIndex === index,
-                  'is-submitting': pendingQuantityForProduct(product.id) > 0,
-                }"
-                :data-product-id="product.id"
-                :tabindex="embedded ? 0 : activeResultIndex === index ? 0 : -1"
-                role="button"
-                :aria-busy="pendingQuantityForProduct(product.id) > 0"
-                :aria-disabled="productInteractionDisabled(product.id)"
-                @click="queueProductAddition(product.id)"
-                @keydown="onProductCardKeydown(product.id, $event)"
-              >
-                <span class="table-ordering-product__image">
-                  <DeferredCatalogImage
-                    v-if="resolveMediaUrl(productCardImage(product))"
-                    :src="resolveMediaUrl(productCardImage(product))"
-                    :alt="productName(product)"
-                    :eager="index < initialMobileImageCount"
-                    :cache-key="product.id"
-                    @error="handleProductImageError(product)"
-                  />
-                  <ImageIcon :size="24" aria-hidden="true" />
-                  <b class="table-ordering-product__price">
-                    {{ formatItemPrice(product.priceVnd, locale) }}<small v-if="product.unit">/{{ product.unit }}</small>
-                  </b>
-                  <div v-if="canonicalQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
-                    <output>X{{ canonicalQuantityForProduct(product.id) }}</output>
+            <div class="table-ordering-products__viewport" data-testid="table-ordering-products-viewport">
+              <LoadingState v-if="loading" :label="t('ordering.loading')" />
+              <ErrorState
+                v-else-if="loadErrorKey"
+                :title="t('error.title')"
+                :description="t(loadErrorKey)"
+                :retry-label="t('common.retry')"
+                @retry="loadCatalog"
+              />
+              <EmptyState
+                v-else-if="!filteredProducts.length"
+                :title="t('ordering.emptyTitle')"
+                :description="t('ordering.emptyDescription')"
+              />
+              <div v-else class="table-ordering-product-grid">
+                <article
+                  v-for="(product, index) in visiblePageProducts"
+                  :key="product.id"
+                  :id="`ordering-product-${product.id}`"
+                  :ref="(element) => setProductCardRef(element as Element | null, index)"
+                  class="table-ordering-product"
+                  :class="{
+                    'is-selected': canonicalQuantityForProduct(product.id) > 0,
+                    'is-keyboard-active': activeResultIndex === index,
+                    'is-submitting': pendingQuantityForProduct(product.id) > 0,
+                  }"
+                  :data-product-id="product.id"
+                  :tabindex="embedded ? 0 : activeResultIndex === index ? 0 : -1"
+                  role="button"
+                  :aria-busy="pendingQuantityForProduct(product.id) > 0"
+                  :aria-disabled="productInteractionDisabled(product.id)"
+                  @click="queueProductAddition(product.id)"
+                  @keydown="onProductCardKeydown(product.id, $event)"
+                >
+                  <span class="table-ordering-product__image">
+                    <DeferredCatalogImage
+                      v-if="resolveMediaUrl(productCardImage(product))"
+                      :src="resolveMediaUrl(productCardImage(product))"
+                      :alt="productName(product)"
+                      :eager="index < initialMobileImageCount"
+                      :cache-key="product.id"
+                      @error="handleProductImageError(product)"
+                    />
+                    <ImageIcon :size="24" aria-hidden="true" />
+                    <b class="table-ordering-product__price">
+                      {{ formatItemPrice(product.priceVnd, locale) }}<small v-if="product.unit">/{{ product.unit }}</small>
+                    </b>
+                    <div v-if="canonicalQuantityForProduct(product.id) > 0" class="table-ordering-product__quick-add" aria-live="polite">
+                      <output>X{{ canonicalQuantityForProduct(product.id) }}</output>
+                    </div>
+                  </span>
+                  <div class="table-ordering-product__content">
+                    <strong>{{ productName(product) }}</strong>
                   </div>
-                </span>
-                <div class="table-ordering-product__content">
-                  <strong>{{ productName(product) }}</strong>
-                </div>
-              </article>
+                </article>
+              </div>
             </div>
+
+            <footer
+              v-if="!mobileOrderingLayout"
+              class="table-ordering-pagination"
+              :aria-label="t('ordering.pagination')"
+              data-testid="table-ordering-pagination"
+            >
+              <button
+                type="button"
+                :aria-label="t('ordering.previousPage')"
+                :disabled="currentPage <= 1"
+                data-testid="ordering-previous-page"
+                @click="goToPage(currentPage - 1)"
+              ><ChevronLeft :size="20" aria-hidden="true" /></button>
+              <output aria-live="polite">{{ t('ordering.pageStatus', { current: currentPage, total: totalPages }) }}</output>
+              <button
+                type="button"
+                :aria-label="t('ordering.nextPage')"
+                :disabled="currentPage >= totalPages"
+                data-testid="ordering-next-page"
+                @click="goToPage(currentPage + 1)"
+              ><ChevronRight :size="20" aria-hidden="true" /></button>
+            </footer>
           </div>
         </div>
 
