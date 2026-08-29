@@ -68,6 +68,15 @@ const settlement = computed(() =>
     ? selectedSettlement.value
     : null,
 );
+const settlementPrintTarget = computed(() => {
+  if (settlement.value?.tableSessionId) {
+    return { tableSessionId: settlement.value.tableSessionId };
+  }
+  if (settlement.value?.orderIds.length === 1) {
+    return { orderId: settlement.value.orderIds[0] };
+  }
+  return null;
+});
 
 function orderTypeKey(orderTypeValue: OrderType) {
   return orderTypeValue === 'DINE_IN' ? 'dineIn' : orderTypeValue.toLowerCase();
@@ -315,6 +324,13 @@ onMounted(async () => {
               <div class="settlement-financial-total"><dt>{{ t('settlement.finalReceivable') }}</dt><dd>{{ formatVnd(settlement.finalReceivableVnd, locale) }}</dd></div>
               <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
             </dl>
+            <PrintJobActions
+              v-if="settlementPrintTarget"
+              compact
+              compact-mode="inline"
+              :table-session-id="settlementPrintTarget.tableSessionId"
+              :order-id="settlementPrintTarget.orderId"
+            />
           </section>
 
           <section v-if="settlement.sourceOrders.length > 1 || settlement.kind === 'TABLE_SESSION'" class="workflow-section settlement-source-section">
@@ -331,8 +347,6 @@ onMounted(async () => {
               </div>
             </div>
           </section>
-
-          <PrintJobActions v-if="settlement.orderIds.length === 1" compact :order-id="settlement.orderIds[0]" />
         </article>
         <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
       </main>

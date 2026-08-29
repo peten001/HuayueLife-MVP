@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  assertReceiptDocument,
   assertReceiptTemplateDefinition,
   DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
   ReceiptDocument,
@@ -30,6 +31,15 @@ describe('ReceiptSnapshotService validation', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.merchant)).toBe(true);
     expect(Object.isFrozen(snapshot.items[0])).toBe(true);
+  });
+
+  it('keeps paymentMethod optional for historical receipts and accepts the existing enum values', () => {
+    expect(() => assertReceiptDocument(validReceipt())).not.toThrow();
+    expect(() => assertReceiptDocument({ ...validReceipt(), paymentMethod: 'CASH' })).not.toThrow();
+    expect(() => assertReceiptDocument({ ...validReceipt(), paymentMethod: 'BANK_TRANSFER' })).not.toThrow();
+    expect(() => assertReceiptDocument({ ...validReceipt(), paymentMethod: 'CARD' })).toThrow(
+      'Receipt totals are invalid',
+    );
   });
 
   it('clones and freezes a strict schema 3 print snapshot without rewriting it', () => {
@@ -596,6 +606,53 @@ describe('ReceiptSnapshotService validation', () => {
       total: 461_300,
       currency: 'VND',
     });
+  });
+
+  it.each([
+    ['CASH', 'CASH'],
+    ['BANK_TRANSFER', 'BANK_TRANSFER'],
+    [null, undefined],
+  ] as const)('copies authoritative TableSession payment method %s into a new snapshot', async (
+    paymentMethod,
+    expected,
+  ) => {
+    prisma.tableSession.findFirst.mockResolvedValue({
+      id: 49n,
+      sessionNo: 'TS-49',
+      openedAt: new Date('2026-08-29T01:00:00.000Z'),
+      closedAt: new Date('2026-08-29T02:00:00.000Z'),
+      paymentMethod,
+      discountAmountVnd: 0n,
+      roundingAmountVnd: 0n,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        nameVi: 'Nhà hàng thử nghiệm',
+        addressZh: '测试地址',
+        addressDetail: null,
+        contactPhone: '0900000000',
+      },
+      table: { tableNo: 'A01', tableName: null },
+      orders: [{
+        orderNo: 'TEST-PAYMENT-METHOD',
+        itemAmountVnd: 100_000n,
+        totalAmountVnd: 100_000n,
+        items: [{
+          productNameZhSnapshot: '支付方式验收菜品',
+          product: { nameVi: 'Món kiểm tra thanh toán' },
+          quantity: 1,
+          unitPriceVnd: 100_000n,
+          subtotalVnd: 100_000n,
+          remark: null,
+        }],
+      }],
+    });
+
+    const snapshot = await service.fromTableSession(merchantId, 49n);
+
+    expect(snapshot.paymentMethod).toBe(expected);
+    expect(Object.prototype.hasOwnProperty.call(snapshot, 'paymentMethod'))
+      .toBe(expected !== undefined);
   });
 });
 

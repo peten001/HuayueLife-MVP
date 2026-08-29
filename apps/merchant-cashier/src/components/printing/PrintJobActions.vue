@@ -12,6 +12,7 @@ const props = defineProps<{
   tableSessionId?: string;
   disabled?: boolean;
   compact?: boolean;
+  compactMode?: 'standard' | 'inline';
 }>();
 
 const { t } = useI18n();
@@ -23,15 +24,17 @@ const { online, apiReachable } = storeToRefs(networkStore);
 const selectedPrinterId = ref('');
 const jobs = ref<CashierPrintJob[]>([]);
 const jobsLoading = ref(false);
+const submitPending = ref(false);
 const reprintOpen = ref(false);
 const reprintReason = ref('');
 let refreshTimer: number | undefined;
 
 const latestJob = computed(() => jobs.value[0] ?? null);
-const entityKey = computed(() => props.orderId || props.tableSessionId || '');
+const entityKey = computed(() => props.tableSessionId || props.orderId || '');
 const networkReady = computed(() => online.value && apiReachable.value !== false);
 const canSubmit = computed(
-  () => printingStore.ready && networkReady.value && !props.disabled && !submitting.value,
+  () => printingStore.ready && networkReady.value && !props.disabled &&
+    !submitting.value && !submitPending.value,
 );
 const statusLabel = computed(() => {
   if (availability.value === 'READY') return t('print.ready');
@@ -64,8 +67,8 @@ async function refreshJobs() {
   jobsLoading.value = true;
   try {
     jobs.value = await printingStore.listEntityJobs({
-      ...(props.orderId ? { orderId: props.orderId } : {}),
       ...(props.tableSessionId ? { tableSessionId: props.tableSessionId } : {}),
+      ...(!props.tableSessionId && props.orderId ? { orderId: props.orderId } : {}),
     });
   } catch {
     // The top-level availability remains visible; avoid obscuring order details.
@@ -75,17 +78,20 @@ async function refreshJobs() {
 }
 
 async function print() {
-  if (!canSubmit.value || !selectedPrinterId.value) return;
+  if (!canSubmit.value || !selectedPrinterId.value || submitPending.value) return;
+  submitPending.value = true;
   try {
-    const job = props.orderId
-      ? await printingStore.printOrder(props.orderId, selectedPrinterId.value)
-      : props.tableSessionId
-        ? await printingStore.printTableBill(props.tableSessionId, selectedPrinterId.value)
+    const job = props.tableSessionId
+      ? await printingStore.printTableBill(props.tableSessionId, selectedPrinterId.value)
+      : props.orderId
+        ? await printingStore.printOrder(props.orderId, selectedPrinterId.value)
         : null;
     if (!job) return;
     jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)];
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'print.createFailed')), 'error');
+  } finally {
+    submitPending.value = false;
   }
 }
 
@@ -122,6 +128,7 @@ onBeforeUnmount(() => {
       'secondary-action',
       'detail-print-action',
       'dinein-action-button',
+      compactMode === 'inline' ? 'detail-print-action--inline' : '',
       orderId ? 'order-print-action' : 'table-print-action',
     ]"
     data-testid="print-primary"

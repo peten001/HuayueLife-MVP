@@ -204,6 +204,36 @@ describe('CanonicalPrintArtifactService', () => {
     }));
   });
 
+  it('rasterizes CASH, BANK_TRANSFER, and unrecorded TABLE_BILL receipts through the same artifact contract', () => {
+    const render = (paymentMethod: 'CASH' | 'BANK_TRANSFER' | undefined) => {
+      const receipt = canonicalTableBillSettlementFixture('NONE');
+      receipt.paymentMethod = paymentMethod;
+      const document = renderPrintDocumentV3({
+        receipt,
+        paperWidth: 'MM80',
+        purpose: 'FRONT_DESK',
+      });
+      return service.render(document, 'MM80', 'FRONT_DESK', 'TABLE_BILL');
+    };
+
+    const cash = render('CASH');
+    const bankTransfer = render('BANK_TRANSFER');
+    const unrecorded = render(undefined);
+
+    for (const artifact of [cash, bankTransfer, unrecorded]) {
+      expect(artifact).toEqual(expect.objectContaining({
+        canonicalTemplateVersion: 'YQ_CANONICAL_RECEIPT_V1',
+        renderProtocol: 'ESC_POS_RASTER_V1',
+        paperWidthMm: 80,
+        widthDots: 576,
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        byteLength: expect.any(Number),
+      }));
+      expect(artifact.byteLength).toBe(artifact.payload.length);
+    }
+    expect(new Set([cash.sha256, bankTransfer.sha256, unrecorded.sha256]).size).toBe(3);
+  });
+
   it.each<{
     name: CanonicalSettlementFixtureName;
     discount: number;

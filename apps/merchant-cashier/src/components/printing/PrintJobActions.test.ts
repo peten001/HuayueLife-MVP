@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore, useNetworkStore, usePrintingStore, useUiStore } from '@/stores';
+import type { CashierPrintJob } from '@/types';
 import PrintJobActions from './PrintJobActions.vue';
 
 const printer = {
@@ -95,6 +96,53 @@ describe('PrintJobActions compact action', () => {
     await wrapper.get('button').trigger('click');
     await flushPromises();
     expect(printOrder).toHaveBeenCalledWith('order-1', 'printer-1');
+    expect(useUiStore().toasts).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('prioritizes one TABLE_BILL request, keeps the compact print label, and blocks a rapid second click', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    const listEntityJobs = vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
+    let resolveJob!: (job: CashierPrintJob) => void;
+    const printTableBill = vi.spyOn(printing, 'printTableBill').mockImplementation(
+      () => new Promise<CashierPrintJob>((resolve) => { resolveJob = resolve; }),
+    );
+    const printOrder = vi.spyOn(printing, 'printOrder');
+    const wrapper = mount(PrintJobActions, {
+      props: {
+        compact: true,
+        tableSessionId: 'session-417',
+        orderId: 'order-652',
+        compactMode: 'inline',
+      },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').classes()).toContain('detail-print-action--inline');
+    expect(listEntityJobs).toHaveBeenCalledWith({ tableSessionId: 'session-417' });
+    await wrapper.get('button').trigger('click');
+    await wrapper.get('button').trigger('click');
+
+    expect(printTableBill).toHaveBeenCalledTimes(1);
+    expect(printTableBill).toHaveBeenCalledWith('session-417', 'printer-1');
+    expect(printOrder).not.toHaveBeenCalled();
+
+    resolveJob({
+      id: 'job-table-1',
+      tableSessionId: 'session-417',
+      printerId: printer.id,
+      receiptType: 'TABLE_BILL',
+      source: 'MANUAL',
+      status: 'PENDING',
+      attemptCount: 0,
+      maxAttempts: 3,
+      createdAt: '2026-08-29T02:00:00.000Z',
+    });
+    await flushPromises();
     expect(useUiStore().toasts).toEqual([]);
     wrapper.unmount();
   });

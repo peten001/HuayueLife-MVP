@@ -1,3 +1,5 @@
+import { PaymentMethod } from '@prisma/client';
+
 export const RECEIPT_TYPES = ['ORDER_CUSTOMER', 'TABLE_BILL'] as const;
 export type ReceiptTypeValue = (typeof RECEIPT_TYPES)[number];
 
@@ -50,6 +52,7 @@ export interface ReceiptDocument {
     total: number;
     currency: 'VND';
   };
+  paymentMethod?: PaymentMethod;
   note?: string;
   verificationCode?: string;
   footer?: {
@@ -128,6 +131,7 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
       'tableSession',
       'items',
       'totals',
+      'paymentMethod',
       'note',
       'verificationCode',
       'footer',
@@ -276,6 +280,8 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
     (document.totals.serviceFee !== undefined &&
       (!Number.isSafeInteger(document.totals.serviceFee) ||
         document.totals.serviceFee < 0)) ||
+    (document.paymentMethod !== undefined &&
+      !Object.values(PaymentMethod).includes(document.paymentMethod)) ||
     (document.note !== undefined && !isBoundedText(document.note, 0, 500)) ||
     (document.footer !== undefined && (!isPlainObject(document.footer) || !hasOnlyKeys(document.footer, ['zh', 'vi']) || !isBoundedText(document.footer.zh, 0, 60) || !isBoundedText(document.footer.vi, 0, 60))) ||
     (document.verificationCode !== undefined &&

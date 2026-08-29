@@ -232,6 +232,7 @@ export class ReceiptSnapshotService {
         total: safeVnd(finalReceivable),
         currency: 'VND',
       },
+      paymentMethod: session.paymentMethod ?? undefined,
       verificationCode: `YQ:TABLE:${session.id}:${session.sessionNo}`,
     };
     return this.validateAndFreeze(document);

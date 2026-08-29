@@ -13,6 +13,7 @@ import {
   DEFAULT_RECEIPT_FOOTER_VI,
   DEFAULT_RECEIPT_FOOTER_ZH,
   formatBilingualDishName,
+  formatBilingualPaymentMethod,
 } from '../types/bilingual-receipt';
 import {
   DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
@@ -444,6 +445,10 @@ function tableBillTotalBlocks(
   const rounding = document.totals.roundingAmount ?? document.totals.discount ?? 0;
   if (rounding > 0) {
     blocks.push(rowV3('抹零 / Làm tròn', formatCanonicalDeductionAmount(rounding)));
+  }
+  const paymentMethod = formatBilingualPaymentMethod(document.paymentMethod);
+  if (paymentMethod) {
+    blocks.push(rowV3('支付方式 / Phương thức', paymentMethod));
   }
   blocks.push({ type: 'DIVIDER' });
   blocks.push(rowV3(

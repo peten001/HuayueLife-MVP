@@ -346,11 +346,45 @@
 }
 .history-detail .detail-print-action:hover:not(:disabled) { border-color: #6f8276; background: #edf3ef; }
 .history-detail .detail-print-action:disabled { border-color: #aab6bf; color: #526275; background: #eef2f5; opacity: 1; }
+.history-detail .detail-print-action--inline {
+  display: flex;
+  width: fit-content;
+  min-width: 0;
+  min-height: 40px;
+  margin-left: auto;
+  gap: 6px;
+  border-color: #c7d4cc;
+  border-radius: 9px;
+  padding: 0 14px;
+  color: #365544;
+  background: #fbfdfc;
+  box-shadow: 0 1px 2px rgb(31 54 41 / 6%);
+  font-size: 13px;
+  font-weight: 750;
+}
+.history-detail .detail-print-action--inline svg { width: 16px; height: 16px; }
+.history-detail .detail-print-action--inline:hover:not(:disabled) {
+  border-color: #91aa99;
+  background: #f2f7f4;
+}
+.history-detail .detail-print-action--inline:disabled {
+  border-color: #d5ddd8;
+  color: #718078;
+  background: #f5f7f6;
+  box-shadow: none;
+}
 .history-order-card__top b,
 .history-detail .order-checkout-settlement dd,
 .history-detail .bill-summary__total,
 .history-detail .bill-summary__amount { color: var(--cashier-money-strong); }
 .history-detail .order-checkout-settlement dd:last-child { font-weight: 800; }
+
+@media (max-width: 899px) {
+  .history-detail .detail-print-action--inline {
+    width: fit-content;
+    min-height: 44px;
+  }
+}
 
 @media (min-width: 1180px) and (max-width: 1399px) {
   .cashier-shell--workflow { grid-template-columns: 186px minmax(0, 1fr); }

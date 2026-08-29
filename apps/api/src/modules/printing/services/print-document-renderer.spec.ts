@@ -925,6 +925,33 @@ describe('PrintDocument V2 server renderer', () => {
   });
 
   it.each([
+    ['CASH', '现金 / Tiền mặt'],
+    ['BANK_TRANSFER', '银行转账 / Chuyển khoản'],
+    [undefined, undefined],
+  ] as const)('renders TABLE_BILL payment method %s without fabricating a missing value', (
+    paymentMethod,
+    expected,
+  ) => {
+    const value = tableBillReceipt({
+      subtotal: 100_000,
+      originalAmount: 100_000,
+      receivedAmount: 100_000,
+      total: 100_000,
+    });
+    value.paymentMethod = paymentMethod;
+    const content = renderedContent(renderTableBillV3('MM80', {}, value));
+
+    if (expected) {
+      expect(content).toContain(`支付方式 / Phương thức ${expected}`);
+      expect((content.match(/支付方式 \/ Phương thức/g) ?? [])).toHaveLength(1);
+    } else {
+      expect(content).not.toContain('支付方式 / Phương thức');
+      expect(content).not.toMatch(/现金 \/ Tiền mặt|银行转账 \/ Chuyển khoản/);
+    }
+    expect(content).toContain('最终应收 / Phải thu 100.000 VND');
+  });
+
+  it.each([
     { name: 'none', discount: 0, rounding: 0, final: 536_000, discountRows: 0, roundingRows: 0 },
     { name: 'discount only', discount: 20_000, rounding: 0, final: 516_000, discountRows: 1, roundingRows: 0 },
     { name: 'rounding only', discount: 0, rounding: 6_000, final: 530_000, discountRows: 0, roundingRows: 1 },

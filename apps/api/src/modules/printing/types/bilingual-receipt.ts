@@ -1,3 +1,5 @@
+import type { PaymentMethod } from '@prisma/client';
+
 export const DEFAULT_RECEIPT_FOOTER_ZH = '谢谢惠顾，欢迎再次光临';
 export const DEFAULT_RECEIPT_FOOTER_VI = 'Cảm ơn quý khách, hẹn gặp lại!';
 
@@ -42,6 +44,14 @@ export function footerFromTemplateDefinition(definition: unknown): BilingualRece
     };
   }
   return splitBilingualFooter(value.footerText);
+}
+
+export function formatBilingualPaymentMethod(
+  paymentMethod: PaymentMethod | undefined,
+): string | undefined {
+  if (paymentMethod === 'CASH') return '现金 / Tiền mặt';
+  if (paymentMethod === 'BANK_TRANSFER') return '银行转账 / Chuyển khoản';
+  return undefined;
 }
 
 function defaults(): BilingualReceiptFooter {
