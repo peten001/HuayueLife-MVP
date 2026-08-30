@@ -33,6 +33,7 @@ describe('TableTransferDialog', () => {
 
   it('requires one empty target and confirms only that target', async () => {
     const wrapper = mountDialog();
+    expect(wrapper.get('.table-transfer-target-grid').findAll('[role="radio"]')).toHaveLength(1);
     const confirm = wrapper.get('[data-testid="confirm-table-transfer"]');
     expect(confirm.attributes('disabled')).toBeDefined();
 

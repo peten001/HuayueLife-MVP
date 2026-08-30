@@ -80,20 +80,22 @@ function onKeydown(event: KeyboardEvent) {
 
         <fieldset class="table-transfer-targets">
           <legend>{{ t('tableTransfer.target') }}</legend>
-          <p v-if="!targets.length" class="table-transfer-empty">{{ t('tableTransfer.noEmptyTables') }}</p>
-          <button
-            v-for="table in targets"
-            :key="table.id"
-            type="button"
-            role="radio"
-            :aria-checked="selectedTargetId === table.id"
-            :class="{ 'is-selected': selectedTargetId === table.id }"
-            :disabled="loading"
-            @click="selectedTargetId = table.id"
-          >
-            <strong>{{ table.tableNo }}</strong>
-            <span>{{ table.tableName || t('table.numberFallback') }}</span>
-          </button>
+          <div class="table-transfer-target-grid">
+            <p v-if="!targets.length" class="table-transfer-empty">{{ t('tableTransfer.noEmptyTables') }}</p>
+            <button
+              v-for="table in targets"
+              :key="table.id"
+              type="button"
+              role="radio"
+              :aria-checked="selectedTargetId === table.id"
+              :class="{ 'is-selected': selectedTargetId === table.id }"
+              :disabled="loading"
+              @click="selectedTargetId = table.id"
+            >
+              <strong>{{ table.tableNo }}</strong>
+              <span>{{ table.tableName || t('table.numberFallback') }}</span>
+            </button>
+          </div>
         </fieldset>
 
         <p class="table-transfer-consequence">{{ t('tableTransfer.consequence') }}</p>

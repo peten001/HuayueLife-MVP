@@ -230,7 +230,9 @@
 .table-transfer-backdrop { z-index: 170; padding: 16px; background: var(--cashier-scrim-68); }
 .table-transfer-dialog {
   width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
+  box-sizing: border-box;
   overflow: auto;
   border: 1px solid var(--cashier-shell-border);
   border-radius: 16px;
@@ -255,9 +257,10 @@
 }
 .table-transfer-dialog h3 { margin: 0; font-size: 20px; }
 .table-transfer-dialog header p { margin: 5px 0 0; color: var(--cashier-shell-muted); font-size: 12px; line-height: 1.5; }
-.table-transfer-targets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 18px 0 0; padding: 0; border: 0; }
-.table-transfer-targets legend { grid-column: 1 / -1; margin-bottom: 2px; color: var(--cashier-shell-muted); font-size: 12px; font-weight: 800; }
-.table-transfer-targets > button {
+.table-transfer-targets { min-width: 0; margin: 18px 0 0; padding: 0; border: 0; }
+.table-transfer-targets legend { margin-bottom: 2px; color: var(--cashier-shell-muted); font-size: 12px; font-weight: 800; }
+.table-transfer-target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.table-transfer-target-grid > button {
   display: grid;
   min-width: 0;
   min-height: 64px;
@@ -269,9 +272,9 @@
   text-align: start;
   cursor: pointer;
 }
-.table-transfer-targets > button.is-selected { border-color: var(--cashier-green); background: var(--cashier-green-alpha-12); box-shadow: inset 0 0 0 1px var(--cashier-green); }
-.table-transfer-targets strong { font-size: 15px; }
-.table-transfer-targets span { overflow: hidden; color: var(--cashier-shell-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.table-transfer-target-grid > button.is-selected { border-color: var(--cashier-green); background: var(--cashier-green-alpha-12); box-shadow: inset 0 0 0 1px var(--cashier-green); }
+.table-transfer-target-grid strong { font-size: 15px; }
+.table-transfer-target-grid span { overflow: hidden; color: var(--cashier-shell-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .table-transfer-empty { grid-column: 1 / -1; margin: 0; padding: 18px; color: var(--cashier-shell-muted); text-align: center; }
 .table-transfer-consequence { margin: 14px 0 0; color: var(--cashier-shell-muted); font-size: 12px; line-height: 1.5; }
 .table-transfer-error { margin: 10px 0 0; color: #ff8791; font-size: 12px; }
