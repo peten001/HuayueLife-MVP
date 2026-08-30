@@ -120,6 +120,26 @@ describe('useDineInCanonicalStateController', () => {
     expect(controller.productQuantities.value['product-1']).toBe(2);
   });
 
+  it('keeps an uncertain retry bound to the table session that created the batch', async () => {
+    let selectedSessionId = 'session-1';
+    apiMocks.getDineInCanonicalState.mockResolvedValue(state(1));
+    apiMocks.reconcileDineInCanonicalState
+      .mockRejectedValueOnce(new CashierApiError({ message: 'timeout', code: 'REQUEST_ABORTED' }))
+      .mockResolvedValueOnce(state(2));
+    const controller = createController(undefined, () => selectedSessionId);
+    await controller.load(true);
+    controller.addProduct('product-1');
+    await controller.flush();
+
+    selectedSessionId = 'session-2';
+    await controller.retryUncertain();
+
+    expect(apiMocks.reconcileDineInCanonicalState.mock.calls.map((call) => call[0])).toEqual([
+      'session-1',
+      'session-1',
+    ]);
+  });
+
   it('rolls back a definitively unavailable product without leaving a pending badge', async () => {
     apiMocks.getDineInCanonicalState.mockResolvedValue(state(0));
     apiMocks.reconcileDineInCanonicalState.mockRejectedValue(new CashierApiError({ message: 'sold out', status: 409, code: 'PRODUCT_NOT_AVAILABLE' }));
@@ -143,9 +163,12 @@ describe('useDineInCanonicalStateController', () => {
   });
 });
 
-function createController(confirmSameLineConflict = vi.fn().mockReturnValue(true)) {
+function createController(
+  confirmSameLineConflict = vi.fn().mockReturnValue(true),
+  sessionId = () => 'session-1',
+) {
   return useDineInCanonicalStateController({
-    sessionId: () => 'session-1',
+    sessionId,
     disabled: () => false,
     products: () => products,
     confirmSameLineConflict,

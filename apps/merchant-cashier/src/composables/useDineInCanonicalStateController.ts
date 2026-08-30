@@ -21,6 +21,7 @@ type DesiredOverride = {
 };
 
 type FrozenBatch = {
+  sessionId: string;
   input: ReconcileDineInCanonicalStateInput;
   baseState: DineInCanonicalState;
   overrides: DesiredOverride[];
@@ -227,11 +228,11 @@ export function useDineInCanonicalStateController(options: {
         })),
       ],
     };
-    const batch = { input, baseState: state, overrides };
+    const batch = { sessionId: state.sessionId, input, baseState: state, overrides };
     inFlight = batch;
     syncing.value = true;
     try {
-      const next = await reconcileDineInCanonicalState(options.sessionId(), input);
+      const next = await reconcileDineInCanonicalState(batch.sessionId, input);
       applyCommittedBatch(batch, next);
       await options.onCommitted?.(next);
     } catch (error) {
@@ -243,7 +244,7 @@ export function useDineInCanonicalStateController(options: {
       } else {
         desiredOverrides.value = new Map();
         await options.onFailure?.(error);
-        await load(true).catch(() => undefined);
+        if (batch.sessionId === options.sessionId()) await load(true).catch(() => undefined);
       }
     } finally {
       if (inFlight === batch) inFlight = null;
@@ -345,7 +346,7 @@ export function useDineInCanonicalStateController(options: {
     inFlight = batch;
     syncing.value = true;
     try {
-      const next = await reconcileDineInCanonicalState(options.sessionId(), batch.input);
+      const next = await reconcileDineInCanonicalState(batch.sessionId, batch.input);
       applyCommittedBatch(batch, next);
       await options.onCommitted?.(next);
       return true;

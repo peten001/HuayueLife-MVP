@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, RefreshCw } from '@lucide/vue';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import {
@@ -28,6 +28,7 @@ import TableTransferDialog from '@/components/tables/TableTransferDialog.vue';
 import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjustmentDialog.vue';
 import { useDineInCanonicalStateController, useMediaQuery } from '@/composables';
 import { resolveTableSelectionView } from '@/components/tables/table-selection-view';
+import { beginImmediateTableSelectionTransition } from '@/components/tables/table-selection-transition';
 
 const route = useRoute();
 const router = useRouter();
@@ -51,12 +52,14 @@ const transferError = ref('');
 const pendingTransfer = ref<TransferTableSessionInput | null>(null);
 const retainedCheckout = ref<{ sessionId: string; paymentMethod: PaymentMethod; expectedRevision: string; requestKey: string } | null>(null);
 const pendingInitialItems = ref(new Map<string, number>());
+const pendingInitialTableId = ref('');
 const retainedInitialBatch = ref<{ tableId: string; input: CreateMerchantTableOrderInput } | null>(null);
 const initialBatchSyncing = ref(false);
 let initialBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let initialBatchRequest: Promise<void> | null = null;
 let canonicalPollTimer: number | null = null;
 let routeSequence = 0;
+let sessionSequence = 0;
 
 const writeDisabled = computed(() => !authStore.demoMode && networkWritesDisabled(online.value, apiReachable.value));
 const routeTableId = computed(() => typeof route.params.tableId === 'string' ? route.params.tableId : '');
@@ -71,7 +74,11 @@ const canonicalController = useDineInCanonicalStateController({
   confirmSameLineConflict: () => window.confirm(t('canonical.sameLineConflict')),
   onCommitted: (state) => {
     tablesStore.applyCanonicalTableSnapshot(state);
-    if (state.sessionStatus === 'CLOSED' && state.releasedBecause === 'EMPTY_AFTER_RECONCILE') {
+    if (
+      state.tableId === selectedTableId.value
+      && state.sessionStatus === 'CLOSED'
+      && state.releasedBecause === 'EMPTY_AFTER_RECONCILE'
+    ) {
       window.setTimeout(() => { void router.replace('/tables'); }, 0);
     }
   },
@@ -80,13 +87,32 @@ const canonicalController = useDineInCanonicalStateController({
     uiStore.pushToast(t(uncertain ? 'mutation.outcomeUncertain' : apiErrorTranslationKey(caught, 'error.operationFailed')), uncertain ? 'warning' : 'error');
   },
 });
-const presentedCanonicalState = canonicalController.presentedState;
+const presentedCanonicalState = computed(() => {
+  const state = canonicalController.presentedState.value;
+  return state?.tableId === selectedTableId.value ? state : null;
+});
 const orderingMutationPending = computed(() => canonicalController.mutationPending.value || pendingInitialItems.value.size > 0 || initialBatchSyncing.value);
-const orderingMutationLocked = computed(() => canonicalController.mutationLocked.value || Boolean(retainedInitialBatch.value));
+const orderingMutationLocked = computed(() => (
+  canonicalController.mutationLocked.value
+  || Boolean(retainedInitialBatch.value)
+  || Boolean(
+    canonicalController.canonicalState.value
+    && canonicalController.canonicalState.value.tableId !== selectedTableId.value
+  )
+  || Boolean(
+    pendingInitialItems.value.size
+    && pendingInitialTableId.value
+    && pendingInitialTableId.value !== selectedTableId.value
+  )
+));
 const orderingProductQuantities = computed(() => {
-  const quantities = { ...canonicalController.productQuantities.value };
-  for (const [productId, quantity] of pendingInitialItems.value) {
-    quantities[productId] = (quantities[productId] ?? 0) + quantity;
+  const quantities = canonicalController.canonicalState.value?.tableId === selectedTableId.value
+    ? { ...canonicalController.productQuantities.value }
+    : {};
+  if (pendingInitialTableId.value === selectedTableId.value) {
+    for (const [productId, quantity] of pendingInitialItems.value) {
+      quantities[productId] = (quantities[productId] ?? 0) + quantity;
+    }
   }
   return quantities;
 });
@@ -97,7 +123,12 @@ const canCheckout = computed(() => Boolean(
   && BigInt(presentedCanonicalState.value.totals.payableAmountVnd) > 0n
   && presentedCanonicalState.value.blockers.length === 0,
 ));
-const unresolvedMutation = computed(() => orderingMutationLocked.value || Boolean(pendingTransfer.value) || Boolean(retainedCheckout.value));
+const unresolvedMutation = computed(() => (
+  canonicalController.mutationLocked.value
+  || Boolean(retainedInitialBatch.value)
+  || Boolean(pendingTransfer.value)
+  || Boolean(retainedCheckout.value)
+));
 const unfinishedMutation = computed(() => unresolvedMutation.value || orderingMutationPending.value);
 const transferTargets = computed(() => tableCards.value.filter((table) => table.id !== selectedTableId.value && table.status === 'ACTIVE' && table.operationalStatus === 'AVAILABLE' && !table.currentSession));
 const topOrderingDialogOpen = computed(() => Boolean(checkoutConfirmOpen.value || adjustmentOpen.value || transferOpen.value || canonicalController.uncertainBatch.value || retainedInitialBatch.value));
@@ -124,6 +155,7 @@ async function reconcilePendingOrderingMutations() {
 async function addMenuProduct(productId: string) {
   if (writeDisabled.value || orderingMutationLocked.value) return;
   if (!session.value) {
+    pendingInitialTableId.value ||= selectedTableId.value;
     const next = new Map(pendingInitialItems.value);
     next.set(productId, Math.min(999, (next.get(productId) ?? 0) + 1));
     pendingInitialItems.value = next;
@@ -149,7 +181,7 @@ function scheduleInitialBatch() {
 
 async function syncInitialBatch(retry = retainedInitialBatch.value) {
   if (initialBatchRequest || writeDisabled.value) return;
-  const tableId = retry?.tableId ?? selectedTableId.value;
+  const tableId = retry?.tableId || pendingInitialTableId.value || selectedTableId.value;
   const input = retry?.input ?? {
     idempotencyKey: createMutationKey('add'),
     items: [...pendingInitialItems.value]
@@ -169,11 +201,17 @@ async function syncInitialBatch(retry = retainedInitialBatch.value) {
         if (quantity) remaining.set(sent.productId, quantity); else remaining.delete(sent.productId);
       }
       tablesStore.applySessionSnapshot(result.session);
-      const canonicalState = await canonicalController.load(true);
-      if (canonicalState) canonicalController.adoptCommittedState(canonicalState);
-      pendingInitialItems.value = new Map();
-      for (const [productId, quantity] of remaining) {
-        for (let index = 0; index < quantity; index += 1) canonicalController.addProduct(productId);
+      if (selectedTableId.value === batch.tableId) {
+        const canonicalState = await canonicalController.load(true);
+        if (canonicalState) canonicalController.adoptCommittedState(canonicalState);
+        pendingInitialItems.value = new Map();
+        pendingInitialTableId.value = '';
+        for (const [productId, quantity] of remaining) {
+          for (let index = 0; index < quantity; index += 1) canonicalController.addProduct(productId);
+        }
+      } else {
+        pendingInitialItems.value = remaining;
+        pendingInitialTableId.value = remaining.size ? batch.tableId : '';
       }
     } catch (caught) {
       if (isMutationOutcomeUncertain(caught)) {
@@ -186,6 +224,7 @@ async function syncInitialBatch(retry = retainedInitialBatch.value) {
           if (quantity) remaining.set(sent.productId, quantity); else remaining.delete(sent.productId);
         }
         pendingInitialItems.value = remaining;
+        if (!remaining.size) pendingInitialTableId.value = '';
         uiStore.pushToast(t(apiErrorTranslationKey(caught, 'ordering.createFailed')), 'error');
         await refreshAdjustmentContext(true);
       }
@@ -193,7 +232,11 @@ async function syncInitialBatch(retry = retainedInitialBatch.value) {
   })().finally(() => {
     initialBatchRequest = null;
     initialBatchSyncing.value = false;
-    if (!retainedInitialBatch.value && pendingInitialItems.value.size > 0 && !session.value) scheduleInitialBatch();
+    if (
+      !retainedInitialBatch.value
+      && pendingInitialItems.value.size > 0
+      && (pendingInitialTableId.value !== selectedTableId.value || !session.value)
+    ) scheduleInitialBatch();
   });
   await initialBatchRequest;
 }
@@ -203,7 +246,16 @@ async function retryUncertainOrderingMutation() {
     await syncInitialBatch(retainedInitialBatch.value);
     return;
   }
-  await canonicalController.retryUncertain();
+  const currentSessionId = session.value?.id || '';
+  const settled = await canonicalController.retryUncertain();
+  if (
+    settled
+    && currentSessionId
+    && canonicalController.canonicalState.value?.sessionId !== currentSessionId
+  ) {
+    canonicalController.reset();
+    await canonicalController.load(true).catch(() => uiStore.pushToast(t('error.refreshFailed'), 'error'));
+  }
 }
 
 async function openSettlementAdjustment() {
@@ -236,11 +288,26 @@ async function refresh(showToast = true) {
   }
 }
 
-async function selectTable(tableId: string) {
+function selectTable(tableId: string) {
   const card = tableCards.value.find((table) => table.id === tableId);
-  if (!card || !(await reconcilePendingOrderingMutations())) return;
+  if (!card) return;
+  if (unresolvedMutation.value) {
+    uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
+    return;
+  }
   const view = resolveTableSelectionView(isMobile.value, card.operationalStatus);
-  await router.push({ name: 'tables', params: { tableId }, query: view ? { view } : {} });
+  const navigation = beginImmediateTableSelectionTransition({
+    primeSelection: () => tablesStore.primeTableSelection(card),
+    navigate: () => router.push({ name: 'tables', params: { tableId }, query: view ? { view } : {} }),
+    afterDomCommit: () => orderingMutationPending.value
+      ? reconcilePendingOrderingMutations().then(() => undefined)
+      : undefined,
+  });
+  void navigation
+    .catch(() => {
+      if (selectedTableId.value === tableId) void syncRouteSelection();
+      uiStore.pushToast(t('error.refreshFailed'), 'error');
+    });
 }
 
 async function selectTableFilter(status: 'ALL' | 'IN_USE' | 'AVAILABLE') {
@@ -269,7 +336,10 @@ async function syncRouteSelection() {
     await router.replace('/tables');
     return;
   }
-  if (selectedTableId.value !== tableId || selectedSessionDetail.value?.tableId !== tableId) await tablesStore.selectTable(tableId);
+  if (selectedTableId.value !== tableId) tablesStore.primeTableSelection(tableId);
+  await nextTick();
+  if (sequence !== routeSequence || selectedTableId.value !== tableId) return;
+  await tablesStore.hydrateTableSelection(tableId).catch(() => undefined);
   if (sequence !== routeSequence) return;
   const fallbackOrder = selectedSessionDetail.value?.orders.find((order) => order.status === 'PENDING_ACCEPTANCE') || selectedSessionDetail.value?.orders[0];
   if (!orderId) {
@@ -373,27 +443,40 @@ async function refreshAdjustmentContext(force = false) {
   if (session.value) await canonicalController.load(true).catch(() => undefined);
 }
 function protectUnload(event: BeforeUnloadEvent) { if (unfinishedMutation.value) { event.preventDefault(); event.returnValue = ''; } }
-async function guardMutationNavigation(to: { name?: string | symbol | null; params: Record<string, unknown> }) {
+function guardMutationNavigation(to: { name?: string | symbol | null; params: Record<string, unknown> }) {
   if (shouldBlockCashierMutationNavigation({ unresolvedMutation: unresolvedMutation.value, authenticated: authStore.isAuthenticated, destinationName: to.name })) {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
     return false;
   }
   const destinationTableId = typeof to.params.tableId === 'string' ? to.params.tableId : '';
-  if (orderingMutationPending.value && (destinationTableId !== routeTableId.value || to.name !== 'tables')) return reconcilePendingOrderingMutations();
+  if (orderingMutationPending.value && destinationTableId !== routeTableId.value && to.name === 'tables') {
+    return true;
+  }
+  if (orderingMutationPending.value && to.name !== 'tables') return reconcilePendingOrderingMutations();
   return true;
 }
 
 onBeforeRouteUpdate((to) => guardMutationNavigation(to));
 onBeforeRouteLeave((to) => guardMutationNavigation(to));
 watch(() => [route.params.tableId, route.query.order, tableCards.value.length], () => void syncRouteSelection(), { immediate: true });
-watch(() => session.value?.id || '', async (sessionId, previous) => {
-  if (sessionId === previous) return;
-  if (sessionId && initialBatchSyncing.value) return;
+watch(() => [session.value?.id || '', routeTableId.value] as const, async ([sessionId, currentRouteTableId], previous) => {
+  const sequence = ++sessionSequence;
+  if (
+    sessionId === previous?.[0]
+    && currentRouteTableId === previous?.[1]
+  ) return;
+  if (currentRouteTableId !== selectedTableId.value) return;
   if (sessionId && canonicalController.canonicalState.value?.sessionId === sessionId) return;
+  if (orderingMutationPending.value && !(await reconcilePendingOrderingMutations())) return;
+  if (
+    sequence !== sessionSequence
+    || canonicalController.mutationLocked.value
+    || Boolean(retainedInitialBatch.value)
+  ) return;
   canonicalController.reset();
   retainedCheckout.value = null;
   if (sessionId) await canonicalController.load(true).catch(() => uiStore.pushToast(t('error.refreshFailed'), 'error'));
-});
+}, { flush: 'post' });
 watch(presentedCanonicalState, (state) => {
   if (state) tablesStore.applyCanonicalTableSnapshot(state);
 }, { deep: true });

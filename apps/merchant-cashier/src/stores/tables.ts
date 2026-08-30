@@ -87,9 +87,8 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     return request;
   }
 
-  async function selectTable(tableOrId: TableCardView | string | null) {
-    const generation = dataGeneration;
-    const requestSequence = ++detailRequestSequence;
+  function primeTableSelection(tableOrId: TableCardView | string | null) {
+    detailRequestSequence += 1;
     if (!tableOrId) {
       selectedTableId.value = '';
       selectedSessionDetail.value = null;
@@ -104,30 +103,63 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     if (!table.currentSession) {
       selectedSessionDetail.value = null;
       detailLoading.value = false;
-      return null;
+      return table;
     }
     const sessionId = table.currentSession.id;
     const cached = detailCache.get(sessionId);
     if (cached) {
       selectedSessionDetail.value = cached.detail;
       detailLoading.value = false;
+      return table;
+    }
+    selectedSessionDetail.value = null;
+    detailLoading.value = true;
+    return table;
+  }
+
+  async function hydrateTableSelection(tableOrId: TableCardView | string) {
+    const generation = dataGeneration;
+    const table = typeof tableOrId === 'string'
+      ? tableCards.value.find((item) => item.id === tableOrId)
+      : tableOrId;
+    if (!table) throw new Error('Table not loaded');
+    if (selectedTableId.value !== table.id || !table.currentSession) return null;
+    const sessionId = table.currentSession.id;
+    const cached = detailCache.get(sessionId);
+    if (cached) {
+      selectedSessionDetail.value = cached.detail;
+      detailLoading.value = false;
       if (Date.now() - cached.fetchedAt >= TABLE_SESSION_DETAIL_TTL_MS) {
-        void refreshSelectedSession(queryRevision);
+        const requestSequence = ++detailRequestSequence;
+        void refreshSessionDetailInBackground(
+          sessionId,
+          table.id,
+          queryRevision,
+          requestSequence,
+        );
       }
       return cached.detail;
     }
-    selectedSessionDetail.value = null;
+    const requestSequence = ++detailRequestSequence;
     detailLoading.value = true;
     error.value = '';
     errorKey.value = '';
     try {
       const detail = await requestSessionDetail(sessionId);
-      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
+      if (
+        generation === dataGeneration
+        && requestSequence === detailRequestSequence
+        && selectedTableId.value === table.id
+      ) {
         selectedSessionDetail.value = detail;
       }
       return detail;
     } catch (caught) {
-      if (generation === dataGeneration && requestSequence === detailRequestSequence) {
+      if (
+        generation === dataGeneration
+        && requestSequence === detailRequestSequence
+        && selectedTableId.value === table.id
+      ) {
         error.value = messageFromApiError(caught);
         errorKey.value = apiErrorTranslationKey(caught, 'error.description');
       }
@@ -135,6 +167,12 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     } finally {
       if (requestSequence === detailRequestSequence) detailLoading.value = false;
     }
+  }
+
+  async function selectTable(tableOrId: TableCardView | string | null) {
+    const table = primeTableSelection(tableOrId);
+    if (!table?.currentSession) return null;
+    return hydrateTableSelection(table);
   }
 
   async function closeSelectedSession() {
@@ -419,6 +457,8 @@ export const useTablesStore = defineStore('cashier-tables', () => {
     canonicalRevisionBySession,
     canCloseSelectedSession,
     fetchTables,
+    primeTableSelection,
+    hydrateTableSelection,
     selectTable,
     closeSelectedSession,
     checkoutSelectedSession,

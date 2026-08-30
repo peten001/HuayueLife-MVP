@@ -50,6 +50,29 @@ const detail: TableSessionDetail = {
   orders: [],
 };
 
+const secondTable: DiningTable = {
+  ...table,
+  id: 'table-2',
+  tableNo: 'A02',
+  tableName: 'Door',
+  qrToken: 'table-test-token-2',
+};
+
+const secondSummary: TableSessionSummary = {
+  ...summary,
+  id: 'session-2',
+  sessionNo: 'SESSION-2',
+  tableId: secondTable.id,
+  tableNo: secondTable.tableNo,
+  tableName: secondTable.tableName,
+  totalAmountVnd: '90000',
+};
+
+const secondDetail: TableSessionDetail = {
+  ...secondSummary,
+  orders: [],
+};
+
 describe('cashier table store real-session refresh', () => {
   afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
@@ -245,6 +268,68 @@ describe('cashier table store real-session refresh', () => {
     await store.selectTable(table.id);
     expect(apiMocks.getTableSessionDetail).toHaveBeenCalledTimes(1);
     expect(store.selectedSessionDetail).toEqual(detail);
+  });
+
+  it('primes an occupied table synchronously before starting its delayed detail hydration', async () => {
+    const delayedDetail = createDeferred<TableSessionDetail>();
+    apiMocks.getTableSessionDetail.mockReturnValueOnce(delayedDetail.promise);
+    const store = useTablesStore();
+    await store.fetchTables();
+
+    store.primeTableSelection(table.id);
+
+    expect(store.selectedTableId).toBe(table.id);
+    expect(store.detailLoading).toBe(true);
+    expect(apiMocks.getTableSessionDetail).not.toHaveBeenCalled();
+
+    const hydration = store.hydrateTableSelection(table.id);
+    expect(apiMocks.getTableSessionDetail).toHaveBeenCalledWith(summary.id);
+    expect(store.selectedTableId).toBe(table.id);
+    delayedDetail.resolve(detail);
+    await hydration;
+    expect(store.selectedSessionDetail).toEqual(detail);
+  });
+
+  it('selects an empty table immediately without starting detail or session work', async () => {
+    apiMocks.listOpenTableSessions.mockResolvedValueOnce([]);
+    const store = useTablesStore();
+    await store.fetchTables();
+
+    store.primeTableSelection(table.id);
+    const hydration = await store.hydrateTableSelection(table.id);
+
+    expect(store.selectedTableId).toBe(table.id);
+    expect(store.selectedTable?.operationalStatus).toBe('AVAILABLE');
+    expect(store.selectedSessionDetail).toBeNull();
+    expect(hydration).toBeNull();
+    expect(apiMocks.getTableSessionDetail).not.toHaveBeenCalled();
+  });
+
+  it('does not let a delayed table A detail overwrite a faster table B selection', async () => {
+    apiMocks.listDiningTables.mockResolvedValueOnce([table, secondTable]);
+    apiMocks.listOpenTableSessions.mockResolvedValueOnce([summary, secondSummary]);
+    const first = createDeferred<TableSessionDetail>();
+    const second = createDeferred<TableSessionDetail>();
+    apiMocks.getTableSessionDetail.mockImplementation((sessionId: string) => (
+      sessionId === summary.id ? first.promise : second.promise
+    ));
+    const store = useTablesStore();
+    await store.fetchTables();
+
+    store.primeTableSelection(table.id);
+    const firstHydration = store.hydrateTableSelection(table.id);
+    store.primeTableSelection(secondTable.id);
+    const secondHydration = store.hydrateTableSelection(secondTable.id);
+
+    second.resolve(secondDetail);
+    await secondHydration;
+    expect(store.selectedTableId).toBe(secondTable.id);
+    expect(store.selectedSessionDetail).toEqual(secondDetail);
+
+    first.resolve(detail);
+    await firstHydration;
+    expect(store.selectedTableId).toBe(secondTable.id);
+    expect(store.selectedSessionDetail).toEqual(secondDetail);
   });
 
   it('checks out an accepted table session and removes it from the open-session list', async () => {
