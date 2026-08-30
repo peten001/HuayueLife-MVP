@@ -30,11 +30,17 @@ const reprintReason = ref('');
 let refreshTimer: number | undefined;
 
 const latestJob = computed(() => jobs.value[0] ?? null);
+const hasInFlightJob = computed(() => jobs.value.some((job) =>
+  job.status === 'PENDING'
+  || job.status === 'CLAIMED'
+  || job.status === 'PRINTING'
+  || job.status === 'RETRY_WAIT',
+));
 const entityKey = computed(() => props.tableSessionId || props.orderId || '');
 const networkReady = computed(() => online.value && apiReachable.value !== false);
 const canSubmit = computed(
   () => printingStore.ready && networkReady.value && !props.disabled &&
-    !submitting.value && !submitPending.value,
+    !submitting.value && !submitPending.value && !hasInFlightJob.value,
 );
 const statusLabel = computed(() => {
   if (availability.value === 'READY') return t('print.ready');

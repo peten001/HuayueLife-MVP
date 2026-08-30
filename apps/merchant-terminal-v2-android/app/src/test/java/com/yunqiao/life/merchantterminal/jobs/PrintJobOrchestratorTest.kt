@@ -27,7 +27,7 @@ class PrintJobOrchestratorTest {
     }
 
     @Test
-    fun usbAndLanUseTheSameActiveClaimExecuteSequence() = runBlocking {
+    fun usbAndLanUseTheSameClaimExecuteSequence() = runBlocking {
         listOf(PrinterTransport.USB, PrinterTransport.LAN).forEach { transport ->
             val binding = binding(transport)
             val events = mutableListOf<String>()
@@ -41,41 +41,58 @@ class PrintJobOrchestratorTest {
             val result = orchestrator.poll(api, TOKEN, listOf(binding), allowAutomatic = false)
 
             assertEquals(JobExecutionResult.SUCCEEDED, result)
-            assertEquals(listOf("active", "claim:false", "execute:267"), events)
-            assertEquals(listOf(V2RouteIdentity.from(binding)), api.activeRoutes.single())
+            assertEquals(listOf("claim:false", "execute:267"), events)
             assertEquals(listOf(V2RouteIdentity.from(binding)), api.claimRoutes.single())
         }
     }
 
     @Test
-    fun activeJobResumesWithoutClaim() = runBlocking {
+    fun claimResponseCanResumeAnAlreadyClaimedJob() = runBlocking {
         val binding = binding(PrinterTransport.LAN, enabled = false)
-        val api = FakeApiAdapter("LAN", active = job("TEST", binding))
+        val api = FakeApiAdapter("LAN", claimed = job("TEST", binding))
         val orchestrator = PrintJobOrchestrator()
 
-        orchestrator.poll(api, TOKEN, listOf(binding), allowAutomatic = false)
+        assertEquals(
+            JobExecutionResult.SUCCEEDED,
+            orchestrator.poll(api, TOKEN, listOf(binding), allowAutomatic = false),
+        )
 
-        assertEquals(0, api.claimRoutes.size)
+        assertEquals(1, api.claimRoutes.size)
     }
 
     @Test
-    fun sourceFilterIsSharedForTestManualAndAutomatic() = runBlocking {
-        assertTrue(PrintJobSourcePolicy.mayAccept("TEST", allowAutomatic = false))
-        assertTrue(PrintJobSourcePolicy.mayAccept("MANUAL", allowAutomatic = false))
-        assertFalse(PrintJobSourcePolicy.mayAccept("AUTOMATIC", allowAutomatic = false))
-        assertTrue(PrintJobSourcePolicy.mayAccept("AUTOMATIC", allowAutomatic = true))
-
-        val binding = binding(PrinterTransport.LAN)
-        val automatic = FakeApiAdapter("LAN", claimed = job("AUTOMATIC", binding))
-        var executed = false
+    fun anAlreadyClaimedAutomaticJobCanResumeAfterAutomaticCreationIsDisabled() = runBlocking {
+        val binding = binding(PrinterTransport.USB)
+        val events = mutableListOf<String>()
+        val resumable = FakeApiAdapter(
+            channel = "USB",
+            claimed = job("AUTOMATIC", binding),
+            events = events,
+        )
         val orchestrator = PrintJobOrchestrator()
-        automatic.onExecute = { executed = true }
 
-        val error = runCatching {
-            orchestrator.poll(automatic, TOKEN, listOf(binding), allowAutomatic = false)
-        }.exceptionOrNull()
+        assertEquals(
+            JobExecutionResult.SUCCEEDED,
+            orchestrator.poll(resumable, TOKEN, listOf(binding), allowAutomatic = false),
+        )
+        assertEquals(listOf("claim:false", "execute:267"), events)
+    }
 
-        assertTrue(error is IllegalStateException)
+    @Test
+    fun anUnknownServerJobSourceCannotReachPhysicalExecution() = runBlocking {
+        val binding = binding(PrinterTransport.USB)
+        val api = FakeApiAdapter("USB", claimed = job("UNEXPECTED", binding))
+        var executed = false
+        api.onExecute = { executed = true }
+
+        val result = PrintJobOrchestrator().poll(
+            api,
+            TOKEN,
+            listOf(binding),
+            allowAutomatic = false,
+        )
+
+        assertNull(result)
         assertFalse(executed)
     }
 
@@ -106,7 +123,6 @@ class PrintJobOrchestratorTest {
         val orchestrator = PrintJobOrchestrator()
 
         assertNull(orchestrator.poll(api, TOKEN, emptyList(), allowAutomatic = false))
-        assertTrue(api.activeRoutes.isEmpty())
         assertTrue(api.claimRoutes.isEmpty())
     }
 
@@ -128,7 +144,6 @@ class PrintJobOrchestratorTest {
                     allowAutomatic,
                 ),
             )
-            assertTrue(api.activeRoutes.isEmpty())
             assertTrue(api.claimRoutes.isEmpty())
         }
     }
@@ -163,7 +178,7 @@ class PrintJobOrchestratorTest {
             JobExecutionResult.SUCCEEDED,
             PrintJobOrchestrator().poll(api, TOKEN, listOf(stale), true),
         )
-        assertEquals(listOf("active", "claim:true", "execute:267"), events)
+        assertEquals(listOf("claim:true", "execute:267"), events)
     }
 
     @Test
@@ -178,7 +193,6 @@ class PrintJobOrchestratorTest {
         )
 
         assertNull(PrintJobOrchestrator().poll(api, TOKEN, listOf(disconnected), false))
-        assertTrue(api.activeRoutes.isEmpty())
         assertTrue(api.claimRoutes.isEmpty())
     }
 
@@ -245,26 +259,14 @@ class PrintJobOrchestratorTest {
 
     private class FakeApiAdapter(
         override val channel: String,
-        private val active: ClaimedV2PrintJob? = null,
         private val claimed: ClaimedV2PrintJob? = null,
         private val events: MutableList<String> = mutableListOf(),
         private val readiness: (LocalPrinterBinding) -> Boolean = { true },
     ) : PrintChannelAdapter {
-        val activeRoutes = mutableListOf<List<V2RouteIdentity>>()
         val claimRoutes = mutableListOf<List<V2RouteIdentity>>()
         var onExecute: () -> Unit = {}
 
         override fun isReady(binding: LocalPrinterBinding): Boolean = readiness(binding)
-
-        override fun activeJob(
-            terminalBearer: String,
-            routes: List<V2RouteIdentity>,
-        ): ClaimedV2PrintJob? {
-            assertEquals(TOKEN, terminalBearer)
-            events += "active"
-            activeRoutes += routes
-            return active
-        }
 
         override fun claim(
             terminalBearer: String,

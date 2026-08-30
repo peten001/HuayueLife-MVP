@@ -24,11 +24,6 @@ internal interface PrintChannelAdapter {
 
     fun isReady(binding: LocalPrinterBinding): Boolean
 
-    fun activeJob(
-        terminalBearer: String,
-        routes: List<V2RouteIdentity>,
-    ): ClaimedV2PrintJob?
-
     fun claim(
         terminalBearer: String,
         routes: List<V2RouteIdentity>,
@@ -46,11 +41,6 @@ internal class TerminalUsbJobApiAdapter(
     private val executor: V2PrintJobExecutor,
 ) : PrintChannelAdapter {
     override val channel: String = "USB"
-
-    override fun activeJob(
-        terminalBearer: String,
-        routes: List<V2RouteIdentity>,
-    ): ClaimedV2PrintJob? = api.activeJob(terminalBearer)
 
     override fun claim(
         terminalBearer: String,
@@ -80,13 +70,6 @@ internal class TerminalLanJobApiAdapter(
 ) : PrintChannelAdapter {
     override val channel: String = "LAN"
 
-    override fun activeJob(
-        terminalBearer: String,
-        routes: List<V2RouteIdentity>,
-    ): ClaimedV2PrintJob? = routes.firstNotNullOfOrNull { route ->
-        api.activeLanJob(terminalBearer, route)
-    }
-
     override fun claim(
         terminalBearer: String,
         routes: List<V2RouteIdentity>,
@@ -107,14 +90,6 @@ internal class TerminalLanJobApiAdapter(
 internal object LanJobClaimPolicy {
     fun isReady(binding: LocalPrinterBinding): Boolean =
         binding.transport.name == "LAN" && binding.localStatus.name == "CONNECTED"
-}
-
-internal object PrintJobSourcePolicy {
-    fun mayAccept(source: String, allowAutomatic: Boolean): Boolean = when (source) {
-        "TEST", "MANUAL", "MANUAL_REPRINT" -> true
-        "AUTOMATIC" -> allowAutomatic
-        else -> false
-    }
 }
 
 /**
@@ -153,20 +128,17 @@ internal class PrintJobOrchestrator {
         val readyBindings = bindings.filter(adapter::isReady)
         if (readyBindings.isEmpty()) return null
         val routes = readyBindings.map(adapter::routeIdentity)
-        StartupTrace.event("PRINT_ACTIVE_CHECK channel=${adapter.channel}")
-        val active = adapter.activeJob(terminalBearer, routes)
-        val job = active ?: run {
-            StartupTrace.event("PRINT_CLAIM_START channel=${adapter.channel}")
-            adapter.claim(terminalBearer, routes, allowAutomatic)?.also { claimed ->
-                StartupTrace.event(
-                    "PRINT_CLAIM_SUCCESS channel=${adapter.channel} jobId=${claimed.id} printerId=${claimed.printerId} bindingVersion=${claimed.route.bindingVersion}",
-                )
-            }
+        // The claim endpoints already return the terminal's live CLAIMED/PRINTING
+        // job before attempting to lease a new one. Calling active first doubles
+        // the idle network round trips and makes every USB poll wait behind an
+        // unnecessary request without improving crash recovery.
+        StartupTrace.event("PRINT_CLAIM_START channel=${adapter.channel}")
+        val job = adapter.claim(terminalBearer, routes, allowAutomatic)?.also { claimed ->
+            StartupTrace.event(
+                "PRINT_CLAIM_SUCCESS channel=${adapter.channel} jobId=${claimed.id} printerId=${claimed.printerId} bindingVersion=${claimed.route.bindingVersion}",
+            )
         } ?: return null
 
-        if (active == null && !PrintJobSourcePolicy.mayAccept(job.source, allowAutomatic)) {
-            error("${job.source} job returned while source claiming is disabled.")
-        }
         val binding = readyBindings.firstOrNull { candidate ->
             candidate.printerId == job.route.printerId &&
                 candidate.localBindingId == job.route.localBindingId &&

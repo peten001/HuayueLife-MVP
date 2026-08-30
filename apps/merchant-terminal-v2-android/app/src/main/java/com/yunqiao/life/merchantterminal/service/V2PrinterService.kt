@@ -13,6 +13,7 @@ import com.yunqiao.life.merchantterminal.TerminalApplication
 import com.yunqiao.life.merchantterminal.jobs.LanReadinessCoordinator
 import com.yunqiao.life.merchantterminal.jobs.LanReadinessProbe
 import com.yunqiao.life.merchantterminal.jobs.LanReadinessRecorder
+import com.yunqiao.life.merchantterminal.jobs.ConnectorPollSchedule
 import com.yunqiao.life.merchantterminal.jobs.PrintExecutionLedger
 import com.yunqiao.life.merchantterminal.jobs.PrintChannelAdapter
 import com.yunqiao.life.merchantterminal.jobs.PrintJobOrchestrator
@@ -194,7 +195,8 @@ class V2PrinterService : Service() {
                 }
             }
             try {
-                val now = System.currentTimeMillis()
+                val cycleStartedAt = System.currentTimeMillis()
+                val now = cycleStartedAt
                 if (now - lastHeartbeatAt >= credential.heartbeatSeconds * 1_000L) {
                     StartupTrace.event("HEARTBEAT_START")
                     graph.api.heartbeat(
@@ -300,24 +302,29 @@ class V2PrinterService : Service() {
                     executor.recoverPendingReports(credential.merchantId)
                     pollChannel(
                         orchestrator,
-                        lanJobApi,
-                        readyLanBindings,
-                        credential,
-                        config.automaticCreationEnabled,
-                    )
-                    pollChannel(
-                        orchestrator,
                         usbJobApi,
                         readyUsbBindings,
                         credential,
                         config.automaticCreationEnabled,
                     )
+                    pollChannel(
+                        orchestrator,
+                        lanJobApi,
+                        readyLanBindings,
+                        credential,
+                        config.automaticCreationEnabled,
+                    )
                 }
                 networkBackoffMs = 2_000L
+                val pollIntervalMs = minOf(
+                    config.pollIntervalSeconds * 1_000L,
+                    LanReadinessCoordinator.LAN_READINESS_INTERVAL_MS,
+                )
                 awaitWakeOrTimeout(
-                    minOf(
-                        config.pollIntervalSeconds * 1_000L,
-                        LanReadinessCoordinator.LAN_READINESS_INTERVAL_MS,
+                    ConnectorPollSchedule.remainingDelayMs(
+                        intervalMs = pollIntervalMs,
+                        cycleStartedAtMs = cycleStartedAt,
+                        nowMs = System.currentTimeMillis(),
                     ),
                 )
             } catch (error: V2ApiException) {

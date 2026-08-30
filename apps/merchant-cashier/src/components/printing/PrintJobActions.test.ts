@@ -143,7 +143,35 @@ describe('PrintJobActions compact action', () => {
       createdAt: '2026-08-29T02:00:00.000Z',
     });
     await flushPromises();
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    await wrapper.get('button').trigger('click');
+    expect(printTableBill).toHaveBeenCalledTimes(1);
     expect(useUiStore().toasts).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('blocks a new direct print while the same entity already has an in-flight job', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([
+      {
+        ...existingJob,
+        tableSessionId: 'session-417',
+        orderId: null,
+        status: 'CLAIMED',
+      },
+    ]);
+    const printTableBill = vi.spyOn(printing, 'printTableBill');
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, tableSessionId: 'session-417' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    await wrapper.get('button').trigger('click');
+    expect(printTableBill).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
