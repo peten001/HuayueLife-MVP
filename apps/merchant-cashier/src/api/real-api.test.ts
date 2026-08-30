@@ -195,6 +195,9 @@ describe('real merchant API contracts', () => {
       `/api/v1/merchant/orders/order-1/${action === 'complete' ? 'cashier-complete' : action}`,
     );
     expect(requestInit(fetchMock.mock.calls[0]).method).toBe('POST');
+    expect(JSON.parse(String(requestInit(fetchMock.mock.calls[0]).body))).toEqual(
+      action === 'complete' ? { paymentMethod: 'CASH' } : {},
+    );
 
     fetchMock.mockResolvedValueOnce(apiError(409, 'ORDER_STATUS_CONFLICT', 'Order status changed'));
     await expect(api.runMerchantOrderAction(

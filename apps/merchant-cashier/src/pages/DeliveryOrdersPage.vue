@@ -7,6 +7,7 @@ import { apiErrorTranslationKey } from '@/api';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import {
   fulfillmentActionSequence,
+  executeFulfillmentActionSequence,
   mergeOrders,
   todayInVietnam,
   type FulfillmentWorkflowAction,
@@ -142,14 +143,19 @@ async function saveSettlementAdjustment(input: { discountPayableRateBps: number 
 async function runActionSequence(actions: readonly MerchantOrderAction[], paymentMethod?: PaymentMethod) {
   const currentOrder = order.value;
   if (!currentOrder || !actions.length || writeDisabled.value || actionLoadingId.value) return false;
-  const orderId = currentOrder.id;
   try {
-    let updated = currentOrder;
-    for (const action of actions) {
-      updated = await ordersStore.runAction(orderId, action, undefined, action === 'complete' ? paymentMethod : undefined);
+    const result = await executeFulfillmentActionSequence({
+      order: currentOrder,
+      actions,
+      paymentMethod,
+      runAction: (id, action, method) => ordersStore.runAction(id, action, undefined, method),
+      refresh: () => ordersStore.refreshLiveOrders(),
+      resolveLocation: resolveOrderLocation,
+      navigate: (location) => router.replace(location),
+    });
+    if (result.aftercareFailures.length > 0) {
+      uiStore.pushToast(t('error.refreshFailed'), 'error');
     }
-    await ordersStore.refreshLiveOrders();
-    if (['COMPLETED', 'CANCELLED'].includes(updated.status)) await router.replace(resolveOrderLocation(updated));
     return true;
   } catch (caught) {
     const errorText = t(apiErrorTranslationKey(caught, 'order.actionFailed'));

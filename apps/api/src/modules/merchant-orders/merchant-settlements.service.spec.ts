@@ -1,6 +1,7 @@
 import { MerchantSettlementsService } from './merchant-settlements.service';
 import {
   deliveryTwoOrdersFixture,
+  pickupTwoOrdersFixture,
   session415Fixture,
   session417Fixture,
 } from './__fixtures__/settlement-view.fixture';
@@ -88,6 +89,13 @@ describe('MerchantSettlementsService', () => {
     expect(detail.sourceOrders).toHaveLength(5);
     expect(detail.originalAmountVnd).toBe('1458000');
     expect(detail.finalReceivableVnd).toBe('1450000');
+  });
+
+  it('resolves a final raw order id to its canonical settlement detail', async () => {
+    const { service } = serviceWith(pickupTwoOrdersFixture());
+    const detail = await service.get(11n, '811');
+    expect(detail.settlementId).toBe('order:811');
+    expect(detail.orderIds).toEqual(['811']);
   });
 
   it('scopes every query to the authenticated merchant', async () => {

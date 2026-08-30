@@ -101,7 +101,8 @@ export class MerchantSettlementsService {
       pageSize: undefined,
     });
     const settlement = buildMerchantSettlements(orders, resolver).find(
-      (candidate) => candidate.settlementId === settlementId,
+      (candidate) => candidate.settlementId === settlementId
+        || candidate.orderIds.includes(settlementId),
     );
     if (!settlement) {
       throw new NotFoundException('Settlement not found');
