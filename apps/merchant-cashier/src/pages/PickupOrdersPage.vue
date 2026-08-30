@@ -27,6 +27,7 @@ import PickupOrderDetail from '@/features/pickup/PickupOrderDetail.vue';
 import FulfillmentActionDock from '@/features/fulfillment/FulfillmentActionDock.vue';
 import { OrderChatWorkspace } from '@/features/chat';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
+import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
 
 type PickupFilter = 'ALL' | 'PENDING_ACCEPTANCE' | 'PREPARING' | 'READY';
 const filters: Array<{ value: PickupFilter; key: string }> = [
@@ -45,6 +46,7 @@ const uiStore = useUiStore();
 const { pendingOrders, activeOrders, selectedOrder, detailLoading, actionLoadingId, error, activeErrorKey } = storeToRefs(ordersStore);
 const { online, apiReachable } = storeToRefs(networkStore);
 const mobileViewport = useMediaQuery('(max-width: 899px)');
+const mobileV2Preview = computed(() => route.meta.mobileV2Preview === true);
 const filter = computed<PickupFilter>(() => {
   const requested = route.query.status;
   return typeof requested === 'string' && filters.some((item) => item.value === requested)
@@ -104,7 +106,10 @@ async function selectFilter(nextFilter: PickupFilter) {
 
 async function selectOrder(id: string) {
   activePane.value = 'detail';
-  await router.push({ name: 'pickup-orders', params: { orderId: id } });
+  await router.push(resolveCashierPresentationLocation(mobileV2Preview.value, {
+    name: 'pickup-orders',
+    params: { orderId: id },
+  }));
 }
 
 async function runFulfillmentAction(action: FulfillmentWorkflowAction) {
@@ -152,7 +157,7 @@ async function runActionSequence(actions: readonly MerchantOrderAction[], paymen
       runAction: (id, action, method) => ordersStore.runAction(id, action, undefined, method),
       refresh: () => ordersStore.refreshLiveOrders(),
       resolveLocation: resolveOrderLocation,
-      navigate: (location) => router.replace(location),
+      navigate: (location) => router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, location)),
     });
     if (result.aftercareFailures.length > 0) {
       uiStore.pushToast(t('error.refreshFailed'), 'error');
@@ -182,7 +187,7 @@ watch(
       const loaded = await ordersStore.selectOrder(id);
       if (sequence !== routeSequence || !loaded) return;
       if (loaded.orderType !== 'PICKUP' || ['COMPLETED', 'CANCELLED'].includes(loaded.status)) {
-        await router.replace(resolveOrderLocation(loaded));
+        await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, resolveOrderLocation(loaded)));
       }
     } catch {
       if (sequence === routeSequence) uiStore.pushToast(t('error.operationFailed'), 'error');
@@ -190,6 +195,10 @@ watch(
   },
   { immediate: true },
 );
+
+function backToPickup() {
+  return router.push(resolveCashierPresentationLocation(mobileV2Preview.value, '/pickup'));
+}
 
 </script>
 
@@ -215,7 +224,7 @@ watch(
 
       <section class="fulfillment-main">
         <div v-if="order" class="fulfillment-main__topbar">
-          <button type="button" class="mobile-workspace-back" @click="router.push('/pickup')"><ArrowLeft :size="18" aria-hidden="true" />{{ t('fulfillment.backToList') }}</button>
+          <button type="button" class="mobile-workspace-back" @click="backToPickup"><ArrowLeft :size="18" aria-hidden="true" />{{ t('fulfillment.backToList') }}</button>
           <nav v-if="order" class="fulfillment-pane-tabs">
             <button type="button" :class="{ 'is-active': activePane === 'detail' }" @click="activePane = 'detail'">{{ t('order.detailTitle') }}</button>
             <button type="button" :class="{ 'is-active': activePane === 'chat' }" @click="activePane = 'chat'"><MessageCircle :size="16" aria-hidden="true" />{{ t('cashier.chat.title') }}<b v-if="order.chatConversation?.merchantUnreadCount">{{ order.chatConversation.merchantUnreadCount }}</b></button>

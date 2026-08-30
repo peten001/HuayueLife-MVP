@@ -17,14 +17,17 @@ const remember = ref(true);
 const loading = ref(false);
 const errorText = ref(route.query.expired === '1' ? t('error.unauthorized') : '');
 
+function requestedRedirect() {
+  return typeof route.query.redirect === 'string' ? route.query.redirect : '/tables';
+}
+
 async function submit() {
   if (loading.value) return;
   loading.value = true;
   errorText.value = '';
   try {
     await authStore.login(username.value.trim(), password.value, remember.value);
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/tables';
-    await router.replace(authStore.mustChangePassword ? '/change-password' : redirect);
+    await router.replace(authStore.mustChangePassword ? '/change-password' : requestedRedirect());
   } catch {
     errorText.value = t('auth.loginFailed');
   } finally {
@@ -35,7 +38,7 @@ async function submit() {
 async function enterDemo() {
   if (!authStore.fixturesAvailable || loading.value) return;
   authStore.enterDemoSession();
-  await router.replace('/tables');
+  await router.replace(requestedRedirect());
 }
 
 function changeLocale(event: Event) {

@@ -30,6 +30,10 @@ import SettlementAdjustmentDialog from '@/components/settlement/SettlementAdjust
 import { useDineInCanonicalStateController, useMediaQuery } from '@/composables';
 import { resolveTableSelectionView } from '@/components/tables/table-selection-view';
 import { beginImmediateTableSelectionTransition } from '@/components/tables/table-selection-transition';
+import {
+  canonicalCashierRouteName,
+  resolveCashierPresentationLocation,
+} from '@/mobile-v2/navigation';
 
 const route = useRoute();
 const router = useRouter();
@@ -41,6 +45,7 @@ const tablesStore = useTablesStore();
 const uiStore = useUiStore();
 const catalogStore = useCatalogStore();
 const isMobile = useMediaQuery('(max-width: 899px)');
+const mobileV2Preview = computed(() => route.meta.mobileV2Preview === true);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
 const checkoutConfirmOpen = ref(false);
@@ -82,7 +87,9 @@ const canonicalController = useDineInCanonicalStateController({
       && state.sessionStatus === 'CLOSED'
       && state.releasedBecause === 'EMPTY_AFTER_RECONCILE'
     ) {
-      window.setTimeout(() => { void router.replace('/tables'); }, 0);
+      window.setTimeout(() => {
+        void router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, '/tables'));
+      }, 0);
     }
   },
   onFailure: (caught) => {
@@ -301,7 +308,11 @@ function selectTable(tableId: string) {
   const view = resolveTableSelectionView(isMobile.value, card.operationalStatus);
   const navigation = beginImmediateTableSelectionTransition({
     primeSelection: () => tablesStore.primeTableSelection(card),
-    navigate: () => router.push({ name: 'tables', params: { tableId }, query: view ? { view } : {} }),
+    navigate: () => router.push(resolveCashierPresentationLocation(mobileV2Preview.value, {
+      name: 'tables',
+      params: { tableId },
+      query: view ? { view } : {},
+    })),
     afterDomCommit: () => orderingMutationPending.value
       ? reconcilePendingOrderingMutations().then(() => undefined)
       : undefined,
@@ -317,11 +328,17 @@ async function selectTableFilter(status: 'ALL' | 'IN_USE' | 'AVAILABLE') {
   const query = { ...route.query };
   delete query.status;
   if (status !== 'ALL') query.status = status;
-  await router.replace({ name: 'tables', params: route.params, query });
+  await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'tables', params: route.params, query }));
 }
 
 async function selectSessionOrder(order: TableSessionOrder) {
-  if (selectedTableId.value) await router.replace({ name: 'tables', params: { tableId: selectedTableId.value }, query: { ...route.query, order: order.id } });
+  if (selectedTableId.value) {
+    await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, {
+      name: 'tables',
+      params: { tableId: selectedTableId.value },
+      query: { ...route.query, order: order.id },
+    }));
+  }
 }
 
 async function syncRouteSelection() {
@@ -336,7 +353,7 @@ async function syncRouteSelection() {
     return;
   }
   if (!tableCards.value.some((table) => table.id === tableId)) {
-    await router.replace('/tables');
+    await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, '/tables'));
     return;
   }
   if (selectedTableId.value !== tableId) tablesStore.primeTableSelection(tableId);
@@ -386,7 +403,7 @@ async function checkout(paymentMethod: PaymentMethod) {
     canonicalController.reset();
     tablesStore.clearSelection();
     await ordersStore.selectOrder(null);
-    await router.replace('/tables');
+    await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, '/tables'));
   } catch (caught) {
     if (isDefinitiveMutationRejection(caught)) retainedCheckout.value = null;
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.checkoutFailed')), 'error');
@@ -459,7 +476,7 @@ async function notifyProduction() {
 function replaceMainTab(tab: 'TABLES' | 'MENU') {
   const query = { ...route.query };
   if (tab === 'MENU') query.view = 'menu'; else delete query.view;
-  return router.replace({ name: 'tables', params: route.params, query });
+  return router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'tables', params: route.params, query }));
 }
 function closeOrdering() { if (!orderingMutationLocked.value) void replaceMainTab('TABLES'); else uiStore.pushToast(t('mutation.closeBlocked'), 'warning'); }
 
@@ -486,7 +503,11 @@ async function confirmTransfer(targetTableId: string) {
     tablesStore.applySessionSnapshot(updated);
     await canonicalController.load(true);
     transferOpen.value = false;
-    await router.replace({ name: 'tables', params: { tableId: updated.tableId }, query: {} });
+    await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, {
+      name: 'tables',
+      params: { tableId: updated.tableId },
+      query: {},
+    }));
   } catch (caught) {
     if (isDefinitiveMutationRejection(caught)) pendingTransfer.value = null;
     transferError.value = isMutationOutcomeUncertain(caught) ? t('mutation.outcomeUncertain') : t(apiErrorTranslationKey(caught, 'tableTransfer.failed'));
@@ -500,16 +521,21 @@ async function refreshAdjustmentContext(force = false) {
 }
 function protectUnload(event: BeforeUnloadEvent) { if (unfinishedMutation.value) { event.preventDefault(); event.returnValue = ''; } }
 function guardMutationNavigation(to: { name?: string | symbol | null; params: Record<string, unknown> }) {
-  if (shouldBlockCashierMutationNavigation({ unresolvedMutation: unresolvedMutation.value, authenticated: authStore.isAuthenticated, destinationName: to.name })) {
+  const destinationName = canonicalCashierRouteName(to.name);
+  if (shouldBlockCashierMutationNavigation({ unresolvedMutation: unresolvedMutation.value, authenticated: authStore.isAuthenticated, destinationName })) {
     uiStore.pushToast(t('mutation.closeBlocked'), 'warning');
     return false;
   }
   const destinationTableId = typeof to.params.tableId === 'string' ? to.params.tableId : '';
-  if (orderingMutationPending.value && destinationTableId !== routeTableId.value && to.name === 'tables') {
+  if (orderingMutationPending.value && destinationTableId !== routeTableId.value && destinationName === 'tables') {
     return true;
   }
-  if (orderingMutationPending.value && to.name !== 'tables') return reconcilePendingOrderingMutations();
+  if (orderingMutationPending.value && destinationName !== 'tables') return reconcilePendingOrderingMutations();
   return true;
+}
+
+function backToTables() {
+  return router.push(resolveCashierPresentationLocation(mobileV2Preview.value, '/tables'));
 }
 
 onBeforeRouteUpdate((to) => guardMutationNavigation(to));
@@ -575,9 +601,9 @@ onBeforeUnmount(() => {
     </div>
 
     <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(routeTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
-      <button v-if="selectedTableId && !isMobile" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="router.push('/tables')"><ArrowLeft :size="20" aria-hidden="true" /></button>
+      <button v-if="selectedTableId && (!isMobile || mobileV2Preview)" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="backToTables"><ArrowLeft :size="20" aria-hidden="true" /></button>
       <LoadingState v-if="detailLoading && !selectedSessionDetail" :label="t('table.loading')" />
-      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
+      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :mobile-v2-presentation="mobileV2Preview" @order-items="openOrdering" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
     </aside>
 
     <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value || retainedInitialBatch)" :loading="canonicalController.syncing.value || initialBatchSyncing" :disabled="writeDisabled" @retry="retryUncertainOrderingMutation" />

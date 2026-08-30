@@ -166,8 +166,9 @@ describe('CashierHeader main table and menu tabs', () => {
   it('keeps shared table metrics gated to the table route', () => {
     const shellPath = resolve(process.cwd(), 'src/layouts/CashierShell.vue');
     const source = readFileSync(shellPath, 'utf8');
-    expect(source).toContain("const showTableMetrics = computed(() => router.currentRoute.value.name === 'tables');");
-    expect(source).not.toContain("const showTableMetrics = computed(() => router.currentRoute.value.name !== 'tables');");
+    expect(source).toContain('const currentCanonicalRouteName = computed(() => canonicalCashierRouteName(route.name));');
+    expect(source).toContain("const showTableMetrics = computed(() => currentCanonicalRouteName.value === 'tables');");
+    expect(source).not.toContain("const showTableMetrics = computed(() => currentCanonicalRouteName.value !== 'tables');");
   });
 
   it('keeps fulfillment filters and refresh desktop-only in their route pages', () => {

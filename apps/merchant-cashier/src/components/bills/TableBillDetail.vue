@@ -5,6 +5,7 @@ import { formatItemPrice, formatVietnamTime, formatVnd } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { DineInCanonicalLine, DineInCanonicalState, TableCardView, TableSessionDetail } from '@/types';
 import DineInActionDock from '@/features/dine-in/DineInActionDock.vue';
+import MobileV2BillActionDock from '@/mobile-v2/MobileV2BillActionDock.vue';
 
 const props = defineProps<{
   table?: TableCardView | null;
@@ -19,6 +20,7 @@ const props = defineProps<{
   embedded?: boolean;
   transferDisabled?: boolean;
   notificationLoading?: boolean;
+  mobileV2Presentation?: boolean;
   // Compatibility-only props retained for older isolated component fixtures.
   draftLines?: unknown[];
   pendingDecreaseMergeKeys?: Set<string>;
@@ -113,7 +115,7 @@ function priceCanExpand(line: DineInCanonicalLine) {
         <h3>{{ canonicalState?.tableNo || session.tableNo || table?.tableNo || t('table.numberFallback') }}</h3>
         <span :class="`table-detail-state table-detail-state--${tableStatus.toLowerCase().replace(/_/g, '-')}`">{{ tableStatusLabel }}</span>
         <span class="table-detail-header__meta">{{ t('table.openedAtValue', { time: formatVietnamTime(session.openedAt, locale) }) }} | {{ dishCountLabel }}</span>
-        <button type="button" class="table-transfer-entry" data-testid="table-transfer-entry" :aria-label="t('tableTransfer.open')" :title="t('tableTransfer.open')" :disabled="transferDisabled || actionsDisabled" @click="emit('transfer')"><ArrowRightLeft :size="18" aria-hidden="true" /></button>
+        <button v-if="!mobileV2Presentation" type="button" class="table-transfer-entry" data-testid="table-transfer-entry" :aria-label="t('tableTransfer.open')" :title="t('tableTransfer.open')" :disabled="transferDisabled || actionsDisabled" @click="emit('transfer')"><ArrowRightLeft :size="18" aria-hidden="true" /></button>
       </div>
       <div v-else-if="table" class="table-detail-header__line">
         <h3>{{ table.tableNo || t('table.numberFallback') }}</h3>
@@ -164,7 +166,8 @@ function priceCanExpand(line: DineInCanonicalLine) {
         </dl>
       </div>
 
-      <DineInActionDock v-if="session" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
+      <MobileV2BillActionDock v-if="session && mobileV2Presentation" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :transfer-disabled="transferDisabled" :adjustment-applied="adjustmentApplied" @transfer="emit('transfer')" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
+      <DineInActionDock v-else-if="session" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
       <div v-else class="dinein-action-dock dinein-action-dock--placeholder" data-testid="dinein-action-dock-placeholder">
         <button type="button" class="secondary-action detail-print-action dinein-action-button" disabled><Printer :size="18" aria-hidden="true" />{{ t('print.action') }}</button>
         <button type="button" class="dinein-action-dock__action dinein-action-button dinein-action-dock__rounding" disabled>{{ t('discount.entry') }}</button>

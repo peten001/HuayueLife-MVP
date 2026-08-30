@@ -39,8 +39,8 @@ export const demoMerchantProfile: MerchantProfile = {
 };
 
 export const demoMenuCategories: CashierMenuCategory[] = [
-  { id: 'demo-category-main', nameZh: '招牌菜', nameVi: 'Món đặc trưng', sortOrder: 1, isActive: true },
-  { id: 'demo-category-drink', nameZh: '饮品', nameVi: 'Đồ uống', sortOrder: 2, isActive: true },
+  { id: 'demo-category-main', nameZh: '招牌菜', nameVi: 'Món đặc trưng', nameEn: 'Signature dishes', sortOrder: 1, isActive: true },
+  { id: 'demo-category-drink', nameZh: '饮品', nameVi: 'Đồ uống', nameEn: 'Drinks', sortOrder: 2, isActive: true },
 ];
 
 export const demoMenuProducts: CashierMenuProduct[] = [

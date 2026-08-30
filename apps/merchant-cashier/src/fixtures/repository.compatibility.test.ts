@@ -268,5 +268,6 @@ describe('fixture repository WebView compatibility', () => {
     const detail = demoRepository.settlement('order:demo-order-0997');
     expect(detail.orderType).toBe('DELIVERY');
     expect(detail.sourceOrders).toHaveLength(1);
+    expect(demoRepository.settlement('demo-order-0997').settlementId).toBe(detail.settlementId);
   });
 });

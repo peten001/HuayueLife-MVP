@@ -7,11 +7,17 @@ import {
   resolveCashierWorkspaceCapabilities,
 } from '@/domain';
 import { useAuthStore } from '@/stores/auth';
+import {
+  canonicalCashierRouteName,
+  resolveCashierPresentationLocation,
+} from '@/mobile-v2/navigation';
+import { mobileV2PreviewRoutes } from '@/mobile-v2/routes';
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean;
     guestOnly?: boolean;
+    mobileV2Preview?: boolean;
   }
 }
 
@@ -71,6 +77,7 @@ const router = createRouter({
           name: 'order-history',
           component: () => import('@/pages/OrderHistoryPage.vue'),
         },
+        ...mobileV2PreviewRoutes,
       ],
     },
     {
@@ -134,8 +141,11 @@ router.beforeEach(async (to) => {
 
   if (auth.isAuthenticated && !auth.mustChangePassword) {
     const capabilities = resolveCashierWorkspaceCapabilities(auth.profile, auth.merchant);
-    if (!cashierWorkspaceEnabled(to.name, capabilities)) {
-      return { name: firstEnabledCashierWorkspace(capabilities) };
+    if (!cashierWorkspaceEnabled(canonicalCashierRouteName(to.name), capabilities)) {
+      return resolveCashierPresentationLocation(
+        to.meta.mobileV2Preview === true,
+        { name: firstEnabledCashierWorkspace(capabilities) },
+      );
     }
   }
 

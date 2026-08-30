@@ -120,7 +120,9 @@ export const demoRepository = {
     const settlements = buildDemoSettlements(orders.filter(
       (order) => order.status === 'COMPLETED' || order.status === 'CANCELLED',
     ));
-    const settlement = settlements.find((item) => item.settlementId === id);
+    const settlement = settlements.find((item) => (
+      item.settlementId === id || item.orderIds.includes(id)
+    ));
     if (!settlement) {
       throw new CashierApiError({ message: '结账记录不存在', status: 404, code: 'HTTP_404' });
     }

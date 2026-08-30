@@ -14,6 +14,7 @@ import LoadingState from '@/components/common/LoadingState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import PrintJobActions from '@/components/printing/PrintJobActions.vue';
 import BusinessDaySummaryDialog from '@/components/reports/BusinessDaySummaryDialog.vue';
+import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
 
 const route = useRoute();
 const router = useRouter();
@@ -41,6 +42,7 @@ const summaryDate = ref('');
 const businessSummary = ref<BusinessDaySummary | null>(null);
 const sourceOrdersOpen = ref(false);
 let routeSequence = 0;
+const mobileV2Preview = computed(() => route?.meta?.mobileV2Preview === true);
 
 const dateFilterLabel = computed(() => formatVietnamDateFilter(date.value, locale.value));
 const dateFilterAriaLabel = computed(() => `${t('orders.filterDate')} ${formatVietnamDateFilterAria(date.value, locale.value)}`);
@@ -104,6 +106,7 @@ function mergedSettlementItems(item: MerchantSettlement) {
     key: string;
     productNameZh: string;
     productNameVi: string | null;
+    productNameEn: string | null;
     unitPriceVnd: string;
     quantity: number;
     subtotalVnd: string;
@@ -127,6 +130,7 @@ function mergedSettlementItems(item: MerchantSettlement) {
         key,
         productNameZh: row.productNameZh,
         productNameVi: row.productNameVi,
+        productNameEn: row.productNameEn,
         unitPriceVnd: row.unitPriceVnd,
         quantity: row.quantity,
         subtotalVnd: row.subtotalVnd,
@@ -137,8 +141,9 @@ function mergedSettlementItems(item: MerchantSettlement) {
   return merged;
 }
 
-function dishName(row: { productNameZh: string; productNameVi: string | null }) {
+function dishName(row: { productNameZh: string; productNameVi: string | null; productNameEn: string | null }) {
   if (locale.value === 'vi' && row.productNameVi) return row.productNameVi;
+  if (mobileV2Preview.value && locale.value === 'en' && row.productNameEn) return row.productNameEn;
   return row.productNameZh;
 }
 
@@ -204,7 +209,14 @@ async function printSummary() {
 }
 
 async function selectSettlement(id: string) {
-  await router.push({ name: 'order-history', params: { orderId: id } });
+  await router.push(resolveCashierPresentationLocation(mobileV2Preview.value, {
+    name: 'order-history',
+    params: { orderId: id },
+  }));
+}
+
+function backToHistory() {
+  return router.push(resolveCashierPresentationLocation(mobileV2Preview.value, '/orders/history'));
 }
 
 watch([date, status, orderType], () => { if (initialized.value) void refresh(false); });
@@ -287,7 +299,7 @@ onMounted(async () => {
         <EmptyState v-else :title="t('orders.historyEmptyTitle')" :description="t('orders.historyEmptyDescription')" />
       </aside>
       <main class="history-detail">
-        <button type="button" class="mobile-workspace-back" @click="router.push('/orders/history')"><ArrowLeft :size="18" aria-hidden="true" />{{ t('fulfillment.backToList') }}</button>
+        <button type="button" class="mobile-workspace-back" @click="backToHistory"><ArrowLeft :size="18" aria-hidden="true" />{{ t('fulfillment.backToList') }}</button>
         <LoadingState v-if="settlementDetailLoading" :label="t('orders.loading')" />
         <article v-else-if="settlement" class="history-detail__content">
           <header class="history-detail__identity">
@@ -297,7 +309,7 @@ onMounted(async () => {
           </header>
           <dl class="history-detail__facts">
             <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(settlement.settledAt, locale) }}</dd></div>
-            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate }}</dd></div>
+            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate || (mobileV2Preview ? t('settlement.unrecorded') : '') }}</dd></div>
             <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
           </dl>
 

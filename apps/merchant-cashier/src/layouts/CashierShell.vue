@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
 import { cashierConfig } from '@/config';
 import { usePollingTask } from '@/composables';
@@ -34,8 +34,17 @@ import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.
 import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
 import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
+import {
+  cashierPresentationWorkspace,
+  canonicalCashierRouteName,
+  resolveCashierPresentationLocation,
+} from '@/mobile-v2/navigation';
 
 const router = useRouter();
+const route = useRoute();
+const MobileV2PreviewFrame = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('@/mobile-v2/MobileV2PreviewFrame.vue'))
+  : null;
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
@@ -99,13 +108,16 @@ const businessHoursLabel = computed(() => {
   if (!plannedHoursRange.value) return t('shell.businessClosed');
   return `${t(plannedBusinessOpen.value ? 'shell.businessOpen' : 'shell.businessClosed')} · ${plannedHoursRange.value}`;
 });
+const mobileV2Preview = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
+const currentCanonicalRouteName = computed(() => canonicalCashierRouteName(route.name));
+const mobileV2Workspace = computed(() => cashierPresentationWorkspace(route.name) ?? 'history');
 const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(() => {
   const filter = router.currentRoute.value.query.status;
   return filter === 'AVAILABLE' || filter === 'IN_USE' || filter === 'DISABLED' ? filter : 'ALL';
 });
-const showOrientationNotice = computed(() => router.currentRoute.value.name !== 'tables');
-const showTableMetrics = computed(() => router.currentRoute.value.name === 'tables');
-const showMainTabs = computed(() => router.currentRoute.value.name === 'tables');
+const showOrientationNotice = computed(() => currentCanonicalRouteName.value !== 'tables');
+const showTableMetrics = computed(() => currentCanonicalRouteName.value === 'tables');
+const showMainTabs = computed(() => currentCanonicalRouteName.value === 'tables');
 const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
   router.currentRoute.value.query.view === 'menu' ? 'MENU' : 'TABLES',
 );
@@ -113,8 +125,8 @@ const currentTableLabel = computed(() =>
   selectedSessionDetail.value?.tableNo || selectedTable.value?.tableNo || '',
 );
 const mobileOperationalContext = computed<'pickup' | 'delivery' | undefined>(() => {
-  if (router.currentRoute.value.name === 'pickup-orders') return 'pickup';
-  if (router.currentRoute.value.name === 'delivery-orders') return 'delivery';
+  if (currentCanonicalRouteName.value === 'pickup-orders') return 'pickup';
+  if (currentCanonicalRouteName.value === 'delivery-orders') return 'delivery';
   return undefined;
 });
 const mobileOperationalFilters = computed(() => {
@@ -184,7 +196,7 @@ async function openNewOrders() {
 
 async function openInboxOrder(order: MerchantOrder) {
   inboxOpen.value = false;
-  await router.push(resolveOrderLocation(order));
+  await router.push(resolveCashierPresentationLocation(mobileV2Preview.value, resolveOrderLocation(order)));
 }
 
 async function recoverData() {
@@ -196,10 +208,10 @@ async function recoverData() {
 }
 
 async function selectTableFilter(filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED') {
-  await router.push({
+  await router.push(resolveCashierPresentationLocation(mobileV2Preview.value, {
     name: 'tables',
     query: filter === 'ALL' ? {} : { status: filter },
-  });
+  }));
 }
 
 async function selectMainTab(tab: 'TABLES' | 'MENU') {
@@ -207,7 +219,7 @@ async function selectMainTab(tab: 'TABLES' | 'MENU') {
   const query = { ...current.query };
   if (tab === 'MENU') query.view = 'menu';
   else delete query.view;
-  await router.replace({ name: 'tables', params: current.params, query });
+  await router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, { name: 'tables', params: current.params, query }));
 }
 
 async function selectMobileOperationalFilter(filter: string) {
@@ -268,12 +280,15 @@ watch(
     capabilities.value.tables,
     capabilities.value.pickup,
     capabilities.value.delivery,
-    router.currentRoute.value.name,
+    currentCanonicalRouteName.value,
   ] as const,
   ([tables, pickup, delivery, routeName]) => {
     const nextCapabilities = { tables, pickup, delivery };
     if (!cashierWorkspaceEnabled(routeName, nextCapabilities)) {
-      void router.replace({ name: firstEnabledCashierWorkspace(nextCapabilities) });
+      void router.replace(resolveCashierPresentationLocation(
+        mobileV2Preview.value,
+        { name: firstEnabledCashierWorkspace(nextCapabilities) },
+      ));
     }
   },
   { immediate: true },
@@ -311,10 +326,50 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="cashier-shell cashier-shell--workflow"
-    :class="{ 'cashier-shell--table-toolbar': showMainTabs }"
+    :class="{
+      'cashier-shell--table-toolbar': showMainTabs && !mobileV2Preview,
+      'cashier-shell--mobile-v2-preview': mobileV2Preview,
+    }"
     :data-cashier-ready="cashierReady ? 'true' : 'false'"
   >
-    <CashierSidebar
+    <MobileV2PreviewFrame
+      v-if="mobileV2Preview"
+      :workspace="mobileV2Workspace"
+      :merchant-name="identity.merchantName"
+      :role="identity.role"
+      :logging-out="loggingOut"
+      :current-table-label="currentTableLabel"
+      :total-table-count="tableCards.length"
+      :available-table-count="availableTableCount"
+      :in-use-table-count="inUseTableCount"
+      :new-order-count="pendingOrders.length"
+      :online="online"
+      :api-reachable="apiReachable"
+      :reconnecting="online && apiReachable === null"
+      :sound-enabled="soundEnabled"
+      :sound-supported="soundSupported"
+      :printing-availability="printingAvailability"
+      :active-table-filter="activeTableFilter"
+      :refreshing-tables="refreshingTables"
+      :active-main-tab="activeMainTab"
+      :operational-filters="mobileOperationalFilters"
+      :active-operational-filter="activeMobileOperationalFilter"
+      :show-tables="capabilities.tables"
+      :show-pickup="capabilities.pickup"
+      :show-delivery="capabilities.delivery"
+      @logout="logout"
+      @open-new-orders="openNewOrders"
+      @toggle-sound="toggleSound"
+      @select-table-filter="selectTableFilter"
+      @select-main-tab="selectMainTab"
+      @select-operational-filter="selectMobileOperationalFilter"
+      @refresh-tables="refreshTables"
+    >
+      <RouterView />
+    </MobileV2PreviewFrame>
+
+    <template v-else>
+      <CashierSidebar
       :merchant-name="identity.merchantName"
       :merchant-image-urls="identity.merchantImageUrls"
       :business-open="plannedBusinessOpen"
@@ -329,9 +384,9 @@ onBeforeUnmount(() => {
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
       @logout="logout"
-    />
+      />
 
-    <CashierHeader
+      <CashierHeader
       :total-table-count="tableCards.length"
       :available-table-count="availableTableCount"
       :in-use-table-count="inUseTableCount"
@@ -360,14 +415,14 @@ onBeforeUnmount(() => {
       @select-main-tab="selectMainTab"
       @select-mobile-operational-filter="selectMobileOperationalFilter"
       @refresh-tables="refreshTables"
-    />
+      />
 
-    <main class="cashier-shell__route cashier-shell__route--workflow">
-      <OrientationNotice v-if="showOrientationNotice" />
-      <RouterView />
-    </main>
+      <main class="cashier-shell__route cashier-shell__route--workflow">
+        <OrientationNotice v-if="showOrientationNotice" />
+        <RouterView />
+      </main>
 
-    <CashierMobileNavigation
+      <CashierMobileNavigation
       :merchant-name="identity.merchantName"
       :role="identity.role"
       :logging-out="loggingOut"
@@ -375,7 +430,8 @@ onBeforeUnmount(() => {
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
       @logout="logout"
-    />
+      />
+    </template>
     <NewOrderInbox :open="inboxOpen" :orders="pendingOrders" @close="inboxOpen = false" @select="openInboxOrder" />
     <ToastRegion />
   </div>
