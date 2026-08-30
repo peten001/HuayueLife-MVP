@@ -2222,6 +2222,13 @@
    from its natural top-left origin; no centered max-width or visual offset is
    allowed to displace it. Catalog and ordering controllers stay shared. */
 @media (min-width: 900px) {
+  .table-ordering-workspace--embedded {
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+  }
+
   .table-ordering-workspace--embedded .table-ordering-products__scroller {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) 48px;

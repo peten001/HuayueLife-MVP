@@ -390,6 +390,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     const desktopV9 = styles.slice(styles.indexOf('/* Desktop menu pagination V9:'));
     expect(desktopV9).toMatch(/grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/);
     expect(desktopV9).toMatch(/grid-template-rows:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
+    expect(desktopV9).toMatch(/\.table-ordering-workspace--embedded\s*\{[^}]*top:\s*auto\s*!important;[^}]*right:\s*auto\s*!important;[^}]*bottom:\s*auto\s*!important;[^}]*left:\s*auto\s*!important;/s);
     expect(desktopV9).toMatch(/\.table-ordering-category-strip\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/s);
     expect(desktopV9).toMatch(/\.table-ordering-products__scroller\s*\{[^}]*overflow:\s*hidden;[^}]*contain:\s*none;/s);
     expect(desktopV9).toMatch(/\.table-ordering-products__scroller\s*\{[^}]*justify-content:\s*stretch;[^}]*align-content:\s*start;/s);
