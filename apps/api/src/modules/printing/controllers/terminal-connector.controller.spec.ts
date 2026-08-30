@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { PassThrough } from 'node:stream';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { TerminalAuthGuard } from '../guards/terminal-auth.guard';
 import { ActiveTerminalGuard } from '../guards/active-terminal.guard';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
@@ -104,6 +105,7 @@ describe('terminal connector controller contract', () => {
       terminal,
       { id: '301' },
       '2',
+      undefined,
       response as never,
     );
 
@@ -117,6 +119,74 @@ describe('terminal connector controller contract', () => {
       'x-yunqiao-render-protocol': 'ESC_POS_RASTER_V1',
     }));
     expect(Buffer.concat(chunks)).toEqual(payload);
+  });
+
+  it('serves gzip only to connectors that explicitly opt in and preserves raw identity headers', async () => {
+    const payload = Buffer.alloc(100 * 1024, 0);
+    const sha256 = createHash('sha256').update(payload).digest('hex');
+    const jobs = {
+      binaryArtifact: jest.fn().mockResolvedValue({
+        jobId: 302n,
+        terminalId: 30n,
+        payload,
+        byteLength: payload.length,
+        sha256,
+        renderProtocol: 'ESC_POS_RASTER_V1',
+      }),
+    };
+    const controller = new TerminalConnectorController(
+      {} as never,
+      jobs as never,
+      {} as never,
+    );
+    const response = new PassThrough() as PassThrough & {
+      statusCode: number;
+      headers: Record<string, string>;
+      status(code: number): typeof response;
+      setHeader(name: string, value: string): typeof response;
+    };
+    response.headers = {};
+    response.status = (code) => {
+      response.statusCode = code;
+      return response;
+    };
+    response.setHeader = (name, value) => {
+      response.headers[name.toLowerCase()] = value;
+      return response;
+    };
+    const chunks: Buffer[] = [];
+    response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    const terminal = {
+      id: 30n,
+      merchantId: 11n,
+      boundPrinterId: 38n,
+      name: '收银终端',
+      platform: 'ANDROID' as const,
+      status: 'ACTIVE' as const,
+      tokenVersion: 1,
+      capabilities: { connector: { BINARY_PRINT_ARTIFACT_V1: true } },
+    };
+
+    await controller.artifact(
+      terminal,
+      { id: '302' },
+      '0',
+      'gzip-v1',
+      response as never,
+    );
+
+    const compressed = Buffer.concat(chunks);
+    expect(response.statusCode).toBe(200);
+    expect(response.headers).toEqual(expect.objectContaining({
+      'content-type': 'application/octet-stream',
+      'content-length': compressed.length.toString(),
+      'content-encoding': 'gzip',
+      'x-yunqiao-artifact-encoding': 'gzip-v1',
+      'x-yunqiao-uncompressed-length': payload.length.toString(),
+      'x-yunqiao-payload-sha256': sha256,
+    }));
+    expect(compressed.length).toBeLessThan(payload.length);
+    expect(gunzipSync(compressed)).toEqual(payload);
   });
 
   it('requires ACTIVE status only on execution and printer mutation routes', () => {

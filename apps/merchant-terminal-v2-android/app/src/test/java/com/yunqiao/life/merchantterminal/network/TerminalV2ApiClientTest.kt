@@ -15,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeNotNull
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -22,6 +23,7 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.zip.GZIPOutputStream
 import kotlin.io.path.createTempDirectory
 
 class TerminalV2ApiClientTest {
@@ -492,6 +494,64 @@ class TerminalV2ApiClientTest {
     }
 
     @Test
+    fun gzipArtifactOptInDownloadsTenPercentWirePayloadAndVerifiesRawBytes() {
+        MockWebServer().use { server ->
+            val payload = ByteArray(100 * 1024) { index -> if (index % 128 < 8) 0x2a else 0x00 }
+            val sha = sha256(payload)
+            val compressed = gzip(payload)
+            server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+            server.enqueue(gzipBinaryResponse(payload, compressed, sha))
+            val cache = createTempDirectory("yq-artifact-gzip-").toFile()
+            try {
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+                val job = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
+
+                client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0).use { artifact ->
+                    assertEquals(payload.size, artifact.byteLength)
+                    assertEquals(sha, artifact.sha256)
+                    assertArrayEquals(payload, artifact.file.readBytes())
+                }
+
+                assertTrue(compressed.size < payload.size / 10)
+                server.takeRequest()
+                val artifactRequest = server.takeRequest()
+                assertEquals("gzip", artifactRequest.getHeader("Accept-Encoding"))
+                assertEquals("gzip-v1", artifactRequest.getHeader("X-YunQiao-Accept-Artifact-Encoding"))
+                assertTrue(cache.listFiles().orEmpty().isEmpty())
+            } finally {
+                cache.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun gzipArtifactRejectsMismatchedRawLengthHeaderAndCleansTemporaryFile() {
+        MockWebServer().use { server ->
+            val payload = ByteArray(32 * 1024) { 0x2a }
+            val sha = sha256(payload)
+            val compressed = gzip(payload)
+            server.enqueue(okData(JSONObject().put("job", binaryUsbJob(payload.size, sha))))
+            server.enqueue(
+                gzipBinaryResponse(payload, compressed, sha)
+                    .setHeader("X-YunQiao-Uncompressed-Length", payload.size - 1),
+            )
+            val cache = createTempDirectory("yq-artifact-gzip-header-").toFile()
+            try {
+                val client = TerminalV2ApiClient(endpointResolver = { path -> server.url(path).toString() })
+                val job = requireNotNull(client.claim(TERMINAL_TOKEN, allowAutomatic = false))
+                val error = runCatching {
+                    client.downloadArtifact(TERMINAL_TOKEN, job, cache, retryCount = 0)
+                }.exceptionOrNull() as V2ApiException
+
+                assertEquals("INVALID_RESPONSE", error.errorCode)
+                assertTrue(cache.listFiles().orEmpty().isEmpty())
+            } finally {
+                cache.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun shaMismatchRefusesArtifactAndCleansTemporaryFile() {
         MockWebServer().use { server ->
             val expected = ByteArray(1024 * 1024) { 0x2a }
@@ -741,6 +801,20 @@ class TerminalV2ApiClientTest {
         .setHeader("X-YunQiao-Payload-SHA256", sha)
         .setHeader("X-YunQiao-Render-Protocol", "ESC_POS_RASTER_V1")
         .setBody(Buffer().write(payload))
+
+    private fun gzipBinaryResponse(
+        payload: ByteArray,
+        compressed: ByteArray,
+        sha: String,
+    ) = binaryResponse(compressed, sha)
+        .setHeader("Content-Encoding", "gzip")
+        .setHeader("X-YunQiao-Artifact-Encoding", "gzip-v1")
+        .setHeader("X-YunQiao-Uncompressed-Length", payload.size)
+
+    private fun gzip(payload: ByteArray): ByteArray = ByteArrayOutputStream().use { output ->
+        GZIPOutputStream(output).use { it.write(payload) }
+        output.toByteArray()
+    }
 
     private fun sha256(payload: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(payload)

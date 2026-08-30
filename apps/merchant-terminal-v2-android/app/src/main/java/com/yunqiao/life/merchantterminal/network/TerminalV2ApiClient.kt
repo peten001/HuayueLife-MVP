@@ -18,6 +18,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 
 class TerminalV2ApiClient(
     private val endpointResolver: (String) -> String = ::productionEndpoint,
@@ -518,9 +519,11 @@ class TerminalV2ApiClient(
             instanceFollowRedirects = false
             useCaches = false
             setRequestProperty("Accept", "application/octet-stream")
+            setRequestProperty("Accept-Encoding", "gzip")
             setRequestProperty("Authorization", "Terminal $terminalBearer")
             setRequestProperty("X-Terminal-App-Version", BuildConfig.VERSION_NAME.take(64))
             setRequestProperty("X-YunQiao-Artifact-Retry-Count", retryCount.coerceIn(0, 20).toString())
+            setRequestProperty("X-YunQiao-Accept-Artifact-Encoding", GZIP_ARTIFACT_ENCODING)
         }
         try {
             val status = connection.responseCode
@@ -530,12 +533,22 @@ class TerminalV2ApiClient(
             if (status !in 200..299) {
                 throw V2ApiException(status, "HTTP_$status", message = "Artifact request failed.")
             }
-            if (connection.contentType?.substringBefore(';')?.trim() != "application/octet-stream" ||
-                !connection.contentEncoding.isNullOrBlank()
-            ) {
+            if (connection.contentType?.substringBefore(';')?.trim() != "application/octet-stream") {
                 throw V2ApiException(status, "INVALID_RESPONSE", message = "Artifact response headers are invalid.")
             }
-            if (connection.contentLengthLong != expectedLength.toLong()) {
+            val contentEncoding = connection.contentEncoding?.trim()?.lowercase().orEmpty()
+            val gzipEncoded = contentEncoding == "gzip"
+            if (contentEncoding.isNotEmpty() && !gzipEncoded) {
+                throw V2ApiException(status, "INVALID_RESPONSE", message = "Artifact response encoding is unsupported.")
+            }
+            if (gzipEncoded) {
+                if (connection.getHeaderField("X-YunQiao-Artifact-Encoding") != GZIP_ARTIFACT_ENCODING ||
+                    connection.getHeaderFieldLong("X-YunQiao-Uncompressed-Length", -1L) != expectedLength.toLong() ||
+                    connection.contentLengthLong !in 1L..MAX_GZIP_WIRE_BYTES
+                ) {
+                    throw V2ApiException(status, "INVALID_RESPONSE", message = "Compressed artifact headers are invalid.")
+                }
+            } else if (connection.contentLengthLong != expectedLength.toLong()) {
                 throw V2ApiException(status, "PAYLOAD_LENGTH_MISMATCH", message = "Artifact Content-Length mismatch.")
             }
             val headerSha = connection.getHeaderField("X-YunQiao-Payload-SHA256")?.lowercase()
@@ -546,7 +559,12 @@ class TerminalV2ApiClient(
             }
             val digest = MessageDigest.getInstance("SHA-256")
             var actualLength = 0L
-            connection.inputStream.use { input ->
+            val artifactInput = if (gzipEncoded) {
+                GZIPInputStream(connection.inputStream, 64 * 1024)
+            } else {
+                connection.inputStream
+            }
+            artifactInput.use { input ->
                 FileOutputStream(temporary).buffered(64 * 1024).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
@@ -569,7 +587,7 @@ class TerminalV2ApiClient(
                 throw V2ApiException(status, "PAYLOAD_SHA_MISMATCH", message = "Artifact SHA-256 mismatch.")
             }
             StartupTrace.event(
-                "PRINT_ARTIFACT_DOWNLOAD_COMPLETED jobId=${job.id} bytes=$actualLength durationMs=${System.currentTimeMillis() - startedAt} shaStatus=MATCH retryCount=${retryCount.coerceIn(0, 20)}",
+                "PRINT_ARTIFACT_DOWNLOAD_COMPLETED jobId=${job.id} bytes=$actualLength wireBytes=${connection.contentLengthLong} encoding=${if (gzipEncoded) GZIP_ARTIFACT_ENCODING else "identity"} durationMs=${System.currentTimeMillis() - startedAt} shaStatus=MATCH retryCount=${retryCount.coerceIn(0, 20)}",
             )
             return DownloadedPrintArtifact(temporary, expectedLength, actualSha)
         } catch (error: Throwable) {
@@ -805,6 +823,8 @@ class TerminalV2ApiClient(
         private const val ARTIFACT_READ_TIMEOUT_MS = 60_000
         private const val MAX_RESPONSE_CHARS = 1_048_576
         private const val MAX_BINARY_ARTIFACT_BYTES = 20 * 1024 * 1024
+        private const val MAX_GZIP_WIRE_BYTES = MAX_BINARY_ARTIFACT_BYTES + 64 * 1024L
+        private const val GZIP_ARTIFACT_ENCODING = "gzip-v1"
         private const val BINARY_PRINT_ARTIFACT_V1 = "BINARY_PRINT_ARTIFACT_V1"
 
         private fun productionEndpoint(path: String): String {

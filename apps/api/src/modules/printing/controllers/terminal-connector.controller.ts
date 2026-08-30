@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { once } from 'node:events';
 import type { Response } from 'express';
+import { promisify } from 'node:util';
+import { gzip as gzipCallback } from 'node:zlib';
 import { IdParamDto } from '../../../common/dto/id-param.dto';
 import { RequestWithContext } from '../../../common/types/request.type';
 import { CurrentTerminal } from '../decorators/current-terminal.decorator';
@@ -43,6 +45,8 @@ const SAFE_AUTOMATIC_RETRY_CODES = new Set<string>([
   PRINTING_ERROR_CODES.USB_DEVICE_DETACHED,
   PRINTING_ERROR_CODES.USB_WRITE_FAILED,
 ]);
+const gzip = promisify(gzipCallback);
+const GZIP_ARTIFACT_ENCODING = 'gzip-v1';
 
 @Controller('terminal')
 export class TerminalPairingController {
@@ -161,6 +165,7 @@ export class TerminalConnectorController {
     @CurrentTerminal() terminal: AuthenticatedTerminal,
     @Param() params: IdParamDto,
     @Headers('x-yunqiao-artifact-retry-count') retryHeader: string | undefined,
+    @Headers('x-yunqiao-accept-artifact-encoding') acceptedEncoding: string | undefined,
     @Res() response: Response,
   ) {
     const startedAt = Date.now();
@@ -170,6 +175,12 @@ export class TerminalConnectorController {
       terminal.id,
       BigInt(params.id),
     );
+    const encoding = acceptedEncoding === GZIP_ARTIFACT_ENCODING
+      ? GZIP_ARTIFACT_ENCODING
+      : 'identity';
+    const wirePayload = encoding === GZIP_ARTIFACT_ENCODING
+      ? await gzip(artifact.payload)
+      : artifact.payload;
     let completed = false;
     this.logger.log(
       JSON.stringify({
@@ -177,6 +188,8 @@ export class TerminalConnectorController {
         jobId: artifact.jobId.toString(),
         terminalId: artifact.terminalId.toString(),
         bytes: artifact.byteLength,
+        wireBytes: wirePayload.byteLength,
+        encoding,
         durationMs: 0,
         shaStatus: 'PENDING',
         retryCount,
@@ -184,11 +197,16 @@ export class TerminalConnectorController {
     );
     response.status(200);
     response.setHeader('Content-Type', 'application/octet-stream');
-    response.setHeader('Content-Length', artifact.byteLength.toString());
+    response.setHeader('Content-Length', wirePayload.byteLength.toString());
     response.setHeader('Cache-Control', 'private, no-store');
     response.setHeader('X-Accel-Buffering', 'no');
     response.setHeader('X-YunQiao-Payload-SHA256', artifact.sha256);
     response.setHeader('X-YunQiao-Render-Protocol', artifact.renderProtocol);
+    if (encoding === GZIP_ARTIFACT_ENCODING) {
+      response.setHeader('Content-Encoding', 'gzip');
+      response.setHeader('X-YunQiao-Artifact-Encoding', GZIP_ARTIFACT_ENCODING);
+      response.setHeader('X-YunQiao-Uncompressed-Length', artifact.byteLength.toString());
+    }
     response.once('finish', () => {
       completed = true;
       this.logger.log(
@@ -197,6 +215,8 @@ export class TerminalConnectorController {
           jobId: artifact.jobId.toString(),
           terminalId: artifact.terminalId.toString(),
           bytes: artifact.byteLength,
+          wireBytes: wirePayload.byteLength,
+          encoding,
           durationMs: Date.now() - startedAt,
           shaStatus: 'MATCH',
           retryCount,
@@ -211,14 +231,16 @@ export class TerminalConnectorController {
           jobId: artifact.jobId.toString(),
           terminalId: artifact.terminalId.toString(),
           bytes: artifact.byteLength,
+          wireBytes: wirePayload.byteLength,
+          encoding,
           durationMs: Date.now() - startedAt,
           shaStatus: 'INCOMPLETE',
           retryCount,
         }),
       );
     });
-    for (let offset = 0; offset < artifact.payload.length; offset += 64 * 1024) {
-      if (!response.write(artifact.payload.subarray(offset, offset + 64 * 1024))) {
+    for (let offset = 0; offset < wirePayload.length; offset += 64 * 1024) {
+      if (!response.write(wirePayload.subarray(offset, offset + 64 * 1024))) {
         await once(response, 'drain');
       }
     }
