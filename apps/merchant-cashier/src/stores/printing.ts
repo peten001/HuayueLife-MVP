@@ -5,6 +5,8 @@ import {
   createPrintJobReprint,
   createTableBillPrintJob,
   getCashierPrintingFeatureState,
+  isDefinitiveMutationRejection,
+  isMutationOutcomeUncertain,
   listCashierPrintJobs,
   listCashierPrintingPrinters,
   messageFromApiError,
@@ -139,8 +141,29 @@ export const usePrintingStore = defineStore('cashier-printing', () => {
       clearRequestKey(operationKey);
       return result;
     } catch (caught) {
-      error.value = messageFromApiError(caught);
-      throw caught;
+      if (isDefinitiveMutationRejection(caught)) {
+        clearRequestKey(operationKey);
+        error.value = messageFromApiError(caught);
+        throw caught;
+      }
+      if (!isMutationOutcomeUncertain(caught)) {
+        error.value = messageFromApiError(caught);
+        throw caught;
+      }
+      try {
+        // The first response may have been lost after the server committed the
+        // PrintJob. Repeating the exact request key reconciles that outcome
+        // without creating a duplicate physical print.
+        const reconciled = await operation(requestKey);
+        clearRequestKey(operationKey);
+        return reconciled;
+      } catch (reconcileError) {
+        if (isDefinitiveMutationRejection(reconcileError)) {
+          clearRequestKey(operationKey);
+        }
+        error.value = messageFromApiError(reconcileError);
+        throw reconcileError;
+      }
     } finally {
       submitting.value = false;
     }

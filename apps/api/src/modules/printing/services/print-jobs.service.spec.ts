@@ -517,17 +517,17 @@ describe('PrintJobsService', () => {
         orderId,
         eventKey: 'order-status-log:9001',
       }),
-    ).resolves.toEqual([existing]);
+    ).resolves.toEqual([{ id: 99n }]);
 
     expect(flags.assertAutomaticCreationEnabled).toHaveBeenCalledTimes(1);
     expect(snapshots.fromOrder).toHaveBeenCalledWith(merchantId, orderId);
-    expect(prisma.printJob.findMany).toHaveBeenCalledWith({
+    expect(prisma.printJob.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         merchantId,
         dedupeKey: { in: [expect.stringMatching(/^auto:[a-f0-9]{64}$/)] },
       },
       orderBy: { copyIndex: 'asc' },
-    });
+    }));
   });
 
   it.each([
@@ -905,6 +905,56 @@ describe('PrintJobsService', () => {
     );
   });
 
+  it('returns only a compact job summary after creating a binary print artifact', async () => {
+    configureRc12UsbTest(prisma);
+    prisma.order.findFirst.mockResolvedValue({ id: orderId });
+    prisma.printJob.create.mockResolvedValue({
+      id: 224n,
+      merchantId,
+      orderId,
+      printerId,
+      receiptType: 'ORDER_CUSTOMER',
+      source: 'MANUAL',
+      status: 'PENDING',
+      attemptCount: 0,
+      maxAttempts: 3,
+      createdAt: new Date('2026-08-30T00:00:00.000Z'),
+      dedupeKey: 'must-not-leak',
+      receiptSnapshot: { oversized: 'x'.repeat(64_000) },
+      renderedPayload: Buffer.alloc(256_000, 0xff),
+    });
+
+    const result = await service.createManualPrintJob({
+      merchantId,
+      createdByStaffId: 3n,
+      requestKey: 'compact-create-response',
+      printerId,
+      orderId,
+      receiptType: 'ORDER_CUSTOMER',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      id: 224n,
+      orderId,
+      printerId,
+      status: 'PENDING',
+    }));
+    expect(result).not.toHaveProperty('merchantId');
+    expect(result).not.toHaveProperty('dedupeKey');
+    expect(result).not.toHaveProperty('receiptSnapshot');
+    expect(result).not.toHaveProperty('renderedPayload');
+    const serialized = JSON.stringify(
+      result,
+      (_key, value) => typeof value === 'bigint' ? value.toString() : value,
+    );
+    expect(Buffer.byteLength(serialized)).toBeLessThan(4_096);
+    expect(prisma.printJob.create).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ id: true, printerId: true }),
+    }));
+    expect(prisma.printJob.create.mock.calls[0][0].select)
+      .not.toHaveProperty('renderedPayload');
+  });
+
   it.each([
     ['front-desk order receipt', 'FRONT_DESK'],
     ['kitchen receipt', 'KITCHEN'],
@@ -1095,7 +1145,14 @@ describe('PrintJobsService', () => {
   });
 
   it('preserves Web order print requestKey deduplication with current resolution', async () => {
-    const existing = { id: 232n, merchantId, printerId };
+    const existing = {
+      id: 232n,
+      merchantId,
+      printerId,
+      dedupeKey: 'must-not-leak',
+      receiptSnapshot: { oversized: 'x'.repeat(64_000) },
+      renderedPayload: Buffer.alloc(256_000, 0xff),
+    };
     configureRc12UsbTest(prisma);
     prisma.order.findFirst.mockResolvedValue({ id: orderId });
     prisma.printJob.create.mockRejectedValue(uniqueViolation());
@@ -1108,12 +1165,13 @@ describe('PrintJobsService', () => {
       printerId,
       orderId,
       receiptType: 'ORDER_CUSTOMER',
-    })).resolves.toBe(existing);
+    })).resolves.toEqual({ id: 232n, printerId });
 
     expect(prisma.printJob.create).toHaveBeenCalledTimes(1);
-    expect(prisma.printJob.findUnique).toHaveBeenCalledWith({
+    expect(prisma.printJob.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       where: { dedupeKey: expect.stringMatching(/^manual:[a-f0-9]{64}$/) },
-    });
+      select: expect.objectContaining({ id: true, merchantId: true, printerId: true }),
+    }));
   });
 
   it('renders an applied ORDER_CUSTOMER template display definition into the stored V2 snapshot', async () => {
@@ -1707,7 +1765,12 @@ describe('PrintJobsService', () => {
         'req-lan-test-2',
         'lan-test-2',
       ),
-    ).resolves.toBe(active);
+    ).resolves.toEqual({
+      id: 224n,
+      printerId,
+      source: 'TEST',
+      status: 'PENDING',
+    });
     expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
@@ -3091,7 +3154,7 @@ describe('PrintJobsService', () => {
 
     await expect(
       service.retry(merchantId, 3n, 'req-schema', failed.id, '兼容重试'),
-    ).resolves.toEqual({ id: 302n, merchantId });
+    ).resolves.toEqual({ id: 302n });
 
     expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     expect(prisma.printAttempt.updateMany).not.toHaveBeenCalled();

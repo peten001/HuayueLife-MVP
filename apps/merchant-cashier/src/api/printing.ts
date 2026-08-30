@@ -25,6 +25,7 @@ export function createOrderPrintJob(orderId: string, printerId: string, requestK
   return requestApi<CashierPrintJob>('/merchant/printing/jobs/order', {
     method: 'POST',
     body: { orderId, printerId, requestKey },
+    trackNetworkActivity: false,
   });
 }
 
@@ -36,6 +37,7 @@ export function createTableBillPrintJob(
   return requestApi<CashierPrintJob>('/merchant/printing/jobs/table-bill', {
     method: 'POST',
     body: { tableSessionId, printerId, requestKey },
+    trackNetworkActivity: false,
   });
 }
 
@@ -45,6 +47,6 @@ export function createPrintJobReprint(
 ) {
   return requestApi<CashierPrintJob>(
     `/merchant/printing/jobs/${encodeURIComponent(jobId)}/reprint`,
-    { method: 'POST', body: payload },
+    { method: 'POST', body: payload, trackNetworkActivity: false },
   );
 }

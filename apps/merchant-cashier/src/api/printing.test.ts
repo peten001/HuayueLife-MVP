@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cashierStorageKeys } from '@/config';
+import { CASHIER_API_ACTIVITY_EVENT, cashierStorageKeys } from '@/config';
 import {
   createOrderPrintJob,
   createPrintJobReprint,
@@ -72,5 +72,21 @@ describe('cashier printing API contract', () => {
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toContain('tableSessionId=session-1');
     expect(url).toContain('limit=20');
+  });
+
+  it('does not mark the whole cashier network offline when a print response is lost', async () => {
+    const activity = vi.fn();
+    window.addEventListener(CASHIER_API_ACTIVITY_EVENT, activity);
+    fetchMock.mockRejectedValueOnce(new Error('response lost'));
+    try {
+      await expect(createOrderPrintJob(
+        'order-1',
+        'printer-1',
+        'cashier.request-lost',
+      )).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+      expect(activity).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CASHIER_API_ACTIVITY_EVENT, activity);
+    }
   });
 });

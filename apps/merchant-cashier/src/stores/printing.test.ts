@@ -17,6 +17,7 @@ vi.mock('@/api', async (importOriginal) => ({
 
 import { usePrintingStore } from './printing';
 import { useAuthStore } from './auth';
+import { CashierApiError } from '@/api/error';
 
 const enabledFeature = {
   taskCenterEnabled: true,
@@ -277,7 +278,7 @@ describe('cashier printing gate', () => {
     });
   });
 
-  it('reuses the same persisted request key after an ambiguous network failure', async () => {
+  it('automatically reconciles an ambiguous response with the same request key', async () => {
     const job = {
       id: 'job-1',
       orderId: 'order-1',
@@ -295,10 +296,39 @@ describe('cashier printing gate', () => {
     const store = usePrintingStore();
     await store.refreshStatus();
 
-    await expect(store.printOrder('order-1', 'printer-1')).rejects.toThrow('response lost');
-    const firstKey = apiMocks.createOrderPrintJob.mock.calls[0]?.[2];
     await expect(store.printOrder('order-1', 'printer-1')).resolves.toEqual(job);
+    const firstKey = apiMocks.createOrderPrintJob.mock.calls[0]?.[2];
     expect(apiMocks.createOrderPrintJob.mock.calls[1]?.[2]).toBe(firstKey);
+    expect(apiMocks.createOrderPrintJob).toHaveBeenCalledTimes(2);
+    expect(window.localStorage.getItem('yunqiao_cashier_print_request_keys')).toBe('{}');
+  });
+
+  it('retains the request key when both the initial response and reconciliation are uncertain', async () => {
+    apiMocks.createOrderPrintJob.mockRejectedValue(new Error('network unavailable'));
+    const store = usePrintingStore();
+    await store.refreshStatus();
+
+    await expect(store.printOrder('order-1', 'printer-1'))
+      .rejects.toThrow('network unavailable');
+    const firstKey = apiMocks.createOrderPrintJob.mock.calls[0]?.[2];
+    expect(apiMocks.createOrderPrintJob).toHaveBeenCalledTimes(2);
+    expect(apiMocks.createOrderPrintJob.mock.calls[1]?.[2]).toBe(firstKey);
+    expect(window.localStorage.getItem('yunqiao_cashier_print_request_keys'))
+      .toContain(String(firstKey));
+  });
+
+  it('releases the request key after a definitive server rejection', async () => {
+    apiMocks.createOrderPrintJob.mockRejectedValue(new CashierApiError({
+      message: 'Printer is not available',
+      status: 400,
+      code: 'PRINTER_NOT_READY',
+    }));
+    const store = usePrintingStore();
+    await store.refreshStatus();
+
+    await expect(store.printOrder('order-1', 'printer-1'))
+      .rejects.toThrow('Printer is not available');
+    expect(apiMocks.createOrderPrintJob).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem('yunqiao_cashier_print_request_keys')).toBe('{}');
   });
 });

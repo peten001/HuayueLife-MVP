@@ -89,6 +89,74 @@ const ANDROID_USB_ESCPOS_ADAPTER = 'ANDROID_USB_ESCPOS';
 export const BINARY_PRINT_ARTIFACT_TRANSPORT = 'BINARY_PRINT_ARTIFACT_V1';
 export const MAX_BINARY_PRINT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 
+const PRINT_JOB_MUTATION_SELECT = Prisma.validator<Prisma.PrintJobSelect>()({
+  id: true,
+  orderId: true,
+  tableSessionId: true,
+  printerId: true,
+  receiptType: true,
+  triggerEvent: true,
+  source: true,
+  status: true,
+  priority: true,
+  requestGroupId: true,
+  copyIndex: true,
+  copyCount: true,
+  attemptCount: true,
+  maxAttempts: true,
+  retryBlocked: true,
+  availableAt: true,
+  completedAt: true,
+  cancelledAt: true,
+  lastErrorCode: true,
+  lastErrorMessage: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+const PRINT_JOB_MUTATION_LOOKUP_SELECT = Prisma.validator<Prisma.PrintJobSelect>()({
+  ...PRINT_JOB_MUTATION_SELECT,
+  merchantId: true,
+});
+
+type PrintJobMutationResult = Prisma.PrintJobGetPayload<{
+  select: typeof PRINT_JOB_MUTATION_SELECT;
+}>;
+
+function toPrintJobMutationResult(
+  job: Partial<PrintJobMutationResult>,
+): PrintJobMutationResult {
+  const summary = {
+    id: job.id,
+    orderId: job.orderId,
+    tableSessionId: job.tableSessionId,
+    printerId: job.printerId,
+    receiptType: job.receiptType,
+    triggerEvent: job.triggerEvent,
+    source: job.source,
+    status: job.status,
+    priority: job.priority,
+    requestGroupId: job.requestGroupId,
+    copyIndex: job.copyIndex,
+    copyCount: job.copyCount,
+    attemptCount: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    retryBlocked: job.retryBlocked,
+    availableAt: job.availableAt,
+    completedAt: job.completedAt,
+    cancelledAt: job.cancelledAt,
+    lastErrorCode: job.lastErrorCode,
+    lastErrorMessage: job.lastErrorMessage === undefined
+      ? undefined
+      : sanitizePrintingError(job.lastErrorMessage),
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+  return Object.fromEntries(
+    Object.entries(summary).filter(([, value]) => value !== undefined),
+  ) as PrintJobMutationResult;
+}
+
 export interface CreateAutomaticJobInput {
   merchantId: bigint;
   ruleId: bigint;
@@ -194,6 +262,7 @@ export class PrintJobsService {
         id: true,
         orderId: true,
         tableSessionId: true,
+        printerId: true,
         receiptType: true,
         triggerEvent: true,
         source: true,
@@ -719,9 +788,12 @@ export class PrintJobsService {
     );
     const alreadyCreated = await this.prisma.printJob.findMany({
       where: { merchantId: input.merchantId, dedupeKey: { in: dedupeKeys } },
+      select: PRINT_JOB_MUTATION_SELECT,
       orderBy: { copyIndex: 'asc' },
     });
-    if (alreadyCreated.length === dedupeKeys.length) return alreadyCreated;
+    if (alreadyCreated.length === dedupeKeys.length) {
+      return alreadyCreated.map(toPrintJobMutationResult);
+    }
     const kitchenRoute = input.orderId && this.routing
       ? await this.routing.kitchenRoutingForOrder(
           input.merchantId,
@@ -783,10 +855,11 @@ export class PrintJobsService {
       if (!isUniqueViolation(error)) throw error;
       const existing = await this.prisma.printJob.findMany({
         where: { merchantId: input.merchantId, dedupeKey: { in: dedupeKeys } },
+        select: PRINT_JOB_MUTATION_SELECT,
         orderBy: { copyIndex: 'asc' },
       });
       if (existing.length !== dedupeKeys.length) throw error;
-      return existing;
+      return existing.map(toPrintJobMutationResult);
     }
   }
 
@@ -858,9 +931,12 @@ export class PrintJobsService {
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      const existing = await this.prisma.printJob.findUnique({
+        where: { dedupeKey },
+        select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
+      });
       if (!existing || existing.merchantId !== input.merchantId) throw error;
-      return existing;
+      return toPrintJobMutationResult(existing);
     }
   }
 
@@ -909,9 +985,12 @@ export class PrintJobsService {
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      const existing = await this.prisma.printJob.findUnique({
+        where: { dedupeKey },
+        select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
+      });
       if (!existing || existing.merchantId !== input.merchantId) throw error;
-      return existing;
+      return toPrintJobMutationResult(existing);
     }
   }
 
@@ -984,9 +1063,12 @@ export class PrintJobsService {
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      const existing = await this.prisma.printJob.findUnique({
+        where: { dedupeKey },
+        select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
+      });
       if (!existing || existing.merchantId !== input.merchantId) throw error;
-      return existing;
+      return toPrintJobMutationResult(existing);
     }
   }
 
@@ -1007,6 +1089,7 @@ export class PrintJobsService {
     );
     const sameRequest = await this.prisma.printJob.findUnique({
       where: { dedupeKey },
+      select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
     });
     if (sameRequest) {
       if (sameRequest.merchantId !== input.merchantId) {
@@ -1015,7 +1098,7 @@ export class PrintJobsService {
           message: '测试任务幂等键冲突',
         });
       }
-      return sameRequest;
+      return toPrintJobMutationResult(sameRequest);
     }
     const activeTest = await this.prisma.printJob.findFirst({
       where: {
@@ -1024,9 +1107,10 @@ export class PrintJobsService {
         source: 'TEST',
         status: { in: ['PENDING', 'CLAIMED', 'PRINTING'] },
       },
+      select: PRINT_JOB_MUTATION_SELECT,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    if (activeTest) return activeTest;
+    if (activeTest) return toPrintJobMutationResult(activeTest);
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (input.createdByStaffId) {
@@ -1072,9 +1156,12 @@ export class PrintJobsService {
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      const existing = await this.prisma.printJob.findUnique({ where: { dedupeKey } });
+      const existing = await this.prisma.printJob.findUnique({
+        where: { dedupeKey },
+        select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
+      });
       if (!existing || existing.merchantId !== input.merchantId) throw error;
-      return existing;
+      return toPrintJobMutationResult(existing);
     }
   }
 
@@ -2245,7 +2332,7 @@ export class PrintJobsService {
       printer.purpose,
       input.receiptType,
     );
-    return client.printJob.create({
+    const created = await client.printJob.create({
       data: {
         merchantId: input.merchantId,
         orderId: input.orderId,
@@ -2275,7 +2362,9 @@ export class PrintJobsService {
         renderedWidthDots: artifact.widthDots,
         createdByStaffId: input.createdByStaffId,
       },
+      select: PRINT_JOB_MUTATION_SELECT,
     });
+    return toPrintJobMutationResult(created);
   }
 
   private async snapshotForPrinter(
@@ -2528,9 +2617,10 @@ export class PrintJobsService {
       if (!isUniqueViolation(error)) throw error;
       const existing = await this.prisma.printJob.findUnique({
         where: { dedupeKey },
+        select: PRINT_JOB_MUTATION_LOOKUP_SELECT,
       });
       if (!existing || existing.merchantId !== merchantId) throw error;
-      return existing;
+      return toPrintJobMutationResult(existing);
     }
   }
 
