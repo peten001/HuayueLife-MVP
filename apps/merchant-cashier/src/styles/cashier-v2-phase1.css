@@ -2218,14 +2218,22 @@
 }
 
 /* Desktop menu pagination V9: category filters wrap above a fixed 5 x 4
-   render window. Only the product slice changes; the catalog and ordering
-   controllers remain shared with mobile and the bill. */
+   render window. D2 origin contract V14 makes the desktop menu own the pane
+   from its natural top-left origin; no centered max-width or visual offset is
+   allowed to displace it. Catalog and ordering controllers stay shared. */
 @media (min-width: 900px) {
   .table-ordering-workspace--embedded .table-ordering-products__scroller {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) 48px;
+    width: 100%;
     height: 100%;
     min-height: 0;
+    max-width: none;
+    margin: 0;
+    justify-content: stretch;
+    align-content: start;
+    justify-items: stretch;
+    align-items: stretch;
     overflow: hidden;
     contain: none;
   }
@@ -2233,8 +2241,13 @@
   .table-ordering-workspace--embedded .table-ordering-category-strip {
     position: static;
     display: flex;
+    width: 100%;
+    max-width: none;
     flex-wrap: wrap;
+    justify-content: flex-start;
     align-content: start;
+    align-self: start;
+    justify-self: stretch;
     row-gap: 4px;
     column-gap: 4px;
     margin: 0;
@@ -2251,8 +2264,13 @@
   }
 
   .table-ordering-workspace--embedded .table-ordering-products__viewport {
+    width: 100%;
     min-width: 0;
     min-height: 0;
+    max-width: none;
+    margin: 0;
+    align-self: stretch;
+    justify-self: stretch;
     padding-top: 5px;
     overflow: hidden;
   }
@@ -2265,10 +2283,15 @@
     grid-template-columns: repeat(5, minmax(0, 1fr));
     grid-template-rows: repeat(4, minmax(0, 1fr));
     grid-auto-rows: 0;
+    width: 100%;
     align-items: stretch;
-    align-content: stretch;
+    justify-items: stretch;
+    justify-content: start;
+    align-content: start;
     height: 100%;
     min-height: 0;
+    max-width: none;
+    margin: 0;
     gap: 6px;
     overflow: hidden;
   }

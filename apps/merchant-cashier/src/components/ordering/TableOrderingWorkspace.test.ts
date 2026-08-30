@@ -392,6 +392,10 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(desktopV9).toMatch(/grid-template-rows:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
     expect(desktopV9).toMatch(/\.table-ordering-category-strip\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/s);
     expect(desktopV9).toMatch(/\.table-ordering-products__scroller\s*\{[^}]*overflow:\s*hidden;[^}]*contain:\s*none;/s);
+    expect(desktopV9).toMatch(/\.table-ordering-products__scroller\s*\{[^}]*justify-content:\s*stretch;[^}]*align-content:\s*start;/s);
+    expect(desktopV9).toMatch(/\.table-ordering-category-strip\s*\{[^}]*justify-content:\s*flex-start;[^}]*align-content:\s*start;/s);
+    expect(desktopV9).toMatch(/\.table-ordering-products__viewport\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*none;[^}]*margin:\s*0;/s);
+    expect(desktopV9).toMatch(/\.table-ordering-product-grid\s*\{[^}]*justify-content:\s*start;[^}]*align-content:\s*start;[^}]*max-width:\s*none;[^}]*margin:\s*0;/s);
   });
 });
 
