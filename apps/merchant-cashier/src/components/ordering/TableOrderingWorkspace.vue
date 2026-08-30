@@ -18,6 +18,10 @@ import EmptyState from '@/components/common/EmptyState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import DeferredCatalogImage from './DeferredCatalogImage.vue';
+import {
+  createMobileMenuProgressiveRender,
+  mobileMenuInitialRenderCount,
+} from './mobile-menu-progressive-render';
 
 const props = defineProps<{
   open: boolean;
@@ -50,8 +54,19 @@ const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
 const failedThumbnailUrls = ref(new Set<string>());
 const currentPage = ref(1);
+const mobileVisibleProductCount = ref(0);
 let previouslyFocused: HTMLElement | null = null;
+let firstMenuPaintMarked = false;
+let firstProductCardMarked = false;
 const DESKTOP_PAGE_SIZE = 20;
+
+function markMenuPerformance(name: string) {
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+    performance.mark(name);
+  }
+}
+
+markMenuPerformance('menu_component_mount_start');
 
 // Mobile V6 renders four 116px cards per row with a 17px row gap. The fixed
 // header/search/category/footer chrome leaves innerHeight - 196px for products.
@@ -61,26 +76,48 @@ const initialMobileImageCount = computed(() => {
   const visibleProductHeight = Math.max(0, window.innerHeight - 196);
   return 4 * Math.max(1, Math.ceil(visibleProductHeight / 133));
 });
+const initialMobileProductCount = computed(() =>
+  mobileMenuInitialRenderCount(initialMobileImageCount.value),
+);
 
 const activeCategories = computed(() => categories.value.filter((category) => category.isActive));
 const categoryIds = computed(() => new Set(activeCategories.value.map((category) => category.id)));
 const orderableProducts = computed(() => products.value.filter((product) =>
   product.status === 'ON_SALE' && categoryIds.value.has(product.categoryId),
 ));
-const filteredProducts = computed(() => orderableProducts.value.filter((product) =>
-  (activeCategoryId.value === 'ALL' || product.categoryId === activeCategoryId.value)
-  && productMatchesQuery(product, query.value),
-));
+const orderableProductIds = computed(() => new Set(orderableProducts.value.map((product) => product.id)));
+const filteredProducts = computed(() => {
+  const categoryProducts = activeCategoryId.value === 'ALL'
+    ? orderableProducts.value
+    : orderableProducts.value.filter((product) => product.categoryId === activeCategoryId.value);
+  if (!query.value.trim()) return categoryProducts;
+  return categoryProducts.filter((product) => productMatchesQuery(product, query.value));
+});
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredProducts.value.length / DESKTOP_PAGE_SIZE)));
 const visiblePageProducts = computed(() => {
-  if (mobileOrderingLayout.value) return filteredProducts.value;
+  if (mobileOrderingLayout.value) {
+    return filteredProducts.value.slice(0, mobileVisibleProductCount.value);
+  }
   const start = (currentPage.value - 1) * DESKTOP_PAGE_SIZE;
   return filteredProducts.value.slice(start, start + DESKTOP_PAGE_SIZE);
 });
-const catalogIdentity = computed(() => [
-  ...activeCategories.value.map((category) => `category:${category.id}`),
-  ...orderableProducts.value.map((product) => `product:${product.id}:${product.categoryId}:${product.status}`),
-].join('|'));
+const progressiveRender = createMobileMenuProgressiveRender({
+  onVisibleCountChange: (count) => {
+    mobileVisibleProductCount.value = count;
+    if (!firstProductCardMarked && count > 0) {
+      void nextTick(() => {
+        if (firstProductCardMarked || !productCards.value.length) return;
+        firstProductCardMarked = true;
+        markMenuPerformance('first_product_card_rendered');
+      });
+    }
+  },
+  onFirstPaint: () => {
+    if (firstMenuPaintMarked) return;
+    firstMenuPaintMarked = true;
+    markMenuPerformance('menu_first_paint');
+  },
+});
 
 watch(
   () => props.open,
@@ -115,11 +152,32 @@ watch(() => props.tableId, () => {
   productCards.value = [];
 });
 
-watch(catalogIdentity, () => {
+watch([categories, products], () => {
   currentPage.value = 1;
   activeResultIndex.value = -1;
   productCards.value = [];
 });
+
+watch(
+  [filteredProducts, mobileOrderingLayout, initialMobileProductCount],
+  ([nextProducts, mobile]) => {
+    const progressive = mobile && activeCategoryId.value === 'ALL' && !query.value.trim();
+    progressiveRender.reset({
+      totalCount: nextProducts.length,
+      initialCount: initialMobileProductCount.value,
+      progressive,
+    });
+  },
+  { immediate: true, flush: 'post' },
+);
+
+watch(categories, (nextCategories) => {
+  if (nextCategories.length) markMenuPerformance('category_data_ready');
+}, { immediate: true });
+
+watch(products, (nextProducts) => {
+  if (nextProducts.length) markMenuPerformance('product_data_ready');
+}, { immediate: true });
 
 watch(totalPages, (nextTotalPages) => {
   if (currentPage.value > nextTotalPages) currentPage.value = nextTotalPages;
@@ -176,7 +234,7 @@ function canonicalQuantityForProduct(productId: string) {
 }
 
 function productInteractionDisabled(productId: string) {
-  return Boolean(props.disabled || loading.value || !orderableProducts.value.some((product) => product.id === productId));
+  return Boolean(props.disabled || loading.value || !orderableProductIds.value.has(productId));
 }
 
 function queueProductAddition(productId: string) {
@@ -300,8 +358,15 @@ function onProductCardKeydown(productId: string, event: KeyboardEvent) {
   queueProductAddition(productId);
 }
 
-onMounted(() => document.addEventListener('keydown', onDocumentKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', onDocumentKeydown));
+onMounted(() => {
+  markMenuPerformance('menu_component_mount_end');
+  document.addEventListener('keydown', onDocumentKeydown);
+  void nextTick(() => markMenuPerformance('menu_first_dom_commit'));
+});
+onBeforeUnmount(() => {
+  progressiveRender.stop();
+  document.removeEventListener('keydown', onDocumentKeydown);
+});
 
 function setProductCardRef(element: Element | null, index: number) {
   if (element instanceof HTMLElement) productCards.value[index] = element;
@@ -444,7 +509,12 @@ function setProductCardRef(element: Element | null, index: number) {
                 :title="t('ordering.emptyTitle')"
                 :description="t('ordering.emptyDescription')"
               />
-              <div v-else class="table-ordering-product-grid">
+              <div
+                v-else
+                class="table-ordering-product-grid"
+                :data-visible-product-count="visiblePageProducts.length"
+                :data-total-product-count="filteredProducts.length"
+              >
                 <article
                   v-for="(product, index) in visiblePageProducts"
                   :key="product.id"

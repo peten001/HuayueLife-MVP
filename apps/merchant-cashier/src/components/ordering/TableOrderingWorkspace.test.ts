@@ -189,7 +189,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.findAll('.table-ordering-product')).toHaveLength(5);
   });
 
-  it('keeps the complete scrollable catalog and hides pagination on mobile', async () => {
+  it('paints the mobile first screen before progressively completing the same scrollable catalog', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
@@ -198,8 +198,12 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     const wrapper = mountWorkspace({ embedded: true });
     await flushPromises();
 
-    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(45);
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(20);
+    expect(wrapper.get('.table-ordering-product-grid').attributes('data-total-product-count')).toBe('45');
     expect(wrapper.find('[data-testid="table-ordering-pagination"]').exists()).toBe(false);
+    await vi.waitFor(() => expect(wrapper.findAll('.table-ordering-product')).toHaveLength(45));
+    expect(wrapper.findAll('.table-ordering-product').map((card) => card.attributes('data-product-id')))
+      .toEqual(catalogProducts(45).map((item) => item.id));
   });
 
   it('renders immediate shared pending quantity and navigation lock without layout replacement', async () => {
