@@ -58,10 +58,19 @@ export type DineInCanonicalItemRow = {
   createdAt: Date;
 };
 
+export type DineInCanonicalStatusLogRow = {
+  id: bigint;
+  orderId: bigint;
+  action: string | null;
+  metadata: Prisma.JsonValue | null;
+  createdAt: Date;
+};
+
 export type DineInCanonicalSource = {
   session: DineInCanonicalSessionRow;
   orders: DineInCanonicalOrderRow[];
   items: DineInCanonicalItemRow[];
+  statusLogs: DineInCanonicalStatusLogRow[];
 };
 
 export type DineInCanonicalLineInternal = {
@@ -95,6 +104,7 @@ export type DineInCanonicalLineInternal = {
 };
 
 export type DineInCanonicalStateInternal = {
+  orders: DineInCanonicalOrderRow[];
   sessionId: string;
   tableId: string;
   tableNo: string;
@@ -158,6 +168,16 @@ export class DineInCanonicalStateService {
             deliveryFeeVnd: true,
             totalAmountVnd: true,
             createdAt: true,
+            statusLogs: {
+              select: {
+                id: true,
+                orderId: true,
+                action: true,
+                metadata: true,
+                createdAt: true,
+              },
+              orderBy: { id: 'asc' },
+            },
             items: {
               select: {
                 id: true,
@@ -202,7 +222,7 @@ export class DineInCanonicalStateService {
         roundingAmountVnd: session.roundingAmountVnd,
         roundingAppliedByStaffId: session.roundingAppliedByStaffId,
       },
-      orders: session.orders.map(({ items: _items, ...order }) => order),
+      orders: session.orders.map(({ items: _items, statusLogs: _statusLogs, ...order }) => order),
       items: session.orders.flatMap((order) => order.items.map((item) => ({
         id: item.id,
         orderId: item.orderId,
@@ -217,6 +237,7 @@ export class DineInCanonicalStateService {
         subtotalVnd: item.subtotalVnd,
         createdAt: item.createdAt,
       }))),
+      statusLogs: session.orders.flatMap((order) => order.statusLogs),
     };
     return this.toPublicState(this.build(source));
   }
@@ -302,6 +323,19 @@ export class DineInCanonicalStateService {
       ORDER BY oi.order_id, oi.id
       FOR UPDATE
     `;
+    const statusLogRows = await tx.orderStatusLog.findMany({
+      where: {
+        order: { tableSessionId: sessionId, merchantId },
+      },
+      select: {
+        id: true,
+        orderId: true,
+        action: true,
+        metadata: true,
+        createdAt: true,
+      },
+      orderBy: { id: 'asc' },
+    });
     // Product names are cosmetic. Read them only after the canonical write-lock
     // chain is complete so product maintenance can never invert the required
     // table -> session -> orders -> items lock order.
@@ -363,6 +397,7 @@ export class DineInCanonicalStateService {
           createdAt: item.created_at,
         };
       }),
+      statusLogs: statusLogRows,
     });
   }
 
@@ -434,12 +469,12 @@ export class DineInCanonicalStateService {
     const items = [...grouped.values()]
       .map((line) => {
         const rawItems = [...line.rawItems].sort(compareRawItems);
-        const first = [...rawItems].sort(compareRawItemsByActivation)[0];
-        const activeSince = first.createdAt.toISOString();
+        const epoch = resolveCurrentActiveEpoch(line, source);
+        const activeSince = epoch.at.toISOString();
         return {
           ...line,
           activeSince,
-          displayOrderKey: `${activeSince}:${first.itemId.toString()}:${line.lineKey}`,
+          displayOrderKey: `${activeSince}:${epoch.eventKey}:${line.lineKey}`,
           adjustability: resolveAdjustability(rawItems),
           rawItems,
         };
@@ -497,6 +532,7 @@ export class DineInCanonicalStateService {
         })),
     };
     return {
+      orders: [...source.orders],
       sessionId: source.session.id.toString(),
       tableId: source.session.tableId.toString(),
       tableNo: source.session.tableNo,
@@ -518,8 +554,9 @@ export class DineInCanonicalStateService {
   }
 
   toPublicState(state: DineInCanonicalStateInternal) {
+    const { orders: _orders, ...publicState } = state;
     return {
-      ...state,
+      ...publicState,
       items: state.items.map(({ rawItems: _rawItems, ...item }) => item),
     };
   }
@@ -587,23 +624,159 @@ function compareRawItems(
     || compareBigInt(left.itemId, right.itemId);
 }
 
-function compareRawItemsByActivation(
-  left: DineInCanonicalLineInternal['rawItems'][number],
-  right: DineInCanonicalLineInternal['rawItems'][number],
-) {
-  return left.createdAt.getTime() - right.createdAt.getTime()
-    || compareBigInt(left.itemId, right.itemId);
-}
-
 function compareCanonicalLinesByActivation(
   left: DineInCanonicalLineInternal,
   right: DineInCanonicalLineInternal,
 ) {
-  const leftFirst = [...left.rawItems].sort(compareRawItemsByActivation)[0];
-  const rightFirst = [...right.rawItems].sort(compareRawItemsByActivation)[0];
-  return leftFirst.createdAt.getTime() - rightFirst.createdAt.getTime()
-    || compareBigInt(leftFirst.itemId, rightFirst.itemId)
+  return left.activeSince.localeCompare(right.activeSince)
+    || left.displayOrderKey.localeCompare(right.displayOrderKey)
     || left.lineKey.localeCompare(right.lineKey);
+}
+
+type CanonicalEpochEvent = {
+  at: Date;
+  eventKey: string;
+  kind: 'POSITIVE' | 'ZERO' | 'ACTIVATED';
+};
+
+/**
+ * Reconstruct the current positive epoch instead of using the oldest surviving
+ * raw contribution. Removing one contribution while the aggregate stays
+ * positive must not move the line; only a real aggregate 0 -> positive starts
+ * a new epoch.
+ */
+function resolveCurrentActiveEpoch(
+  line: DineInCanonicalLineInternal,
+  source: DineInCanonicalSource,
+) {
+  const events: CanonicalEpochEvent[] = line.rawItems.map((item) => ({
+    at: item.createdAt,
+    eventKey: `item:${item.itemId.toString().padStart(20, '0')}`,
+    kind: 'POSITIVE',
+  }));
+  const ordersById = new Map(source.orders.map((order) => [order.id, order]));
+  let hasAuditedPositive = false;
+
+  for (const log of source.statusLogs) {
+    const metadata = jsonRecord(log.metadata);
+    const lineChanges = Array.isArray(metadata.lineChanges)
+      ? metadata.lineChanges
+      : [];
+    for (const rawChange of lineChanges) {
+      const change = jsonRecord(rawChange);
+      if (change.lineKey !== line.lineKey) continue;
+      const beforeQuantity = jsonInteger(change.beforeQuantity);
+      const afterQuantity = jsonInteger(change.afterQuantity);
+      if (beforeQuantity === null || afterQuantity === null) continue;
+      if (beforeQuantity === 0 && afterQuantity > 0) {
+        events.push({
+          at: log.createdAt,
+          eventKey: `log:${log.id.toString().padStart(20, '0')}`,
+          kind: 'ACTIVATED',
+        });
+        hasAuditedPositive = true;
+      } else if (beforeQuantity > 0 && afterQuantity === 0) {
+        events.push({
+          at: log.createdAt,
+          eventKey: `log:${log.id.toString().padStart(20, '0')}`,
+          kind: 'ZERO',
+        });
+      }
+    }
+
+    const addedItems = Array.isArray(metadata.printDeltaItems)
+      ? metadata.printDeltaItems
+      : Array.isArray(metadata.items)
+        ? metadata.items
+        : [];
+    for (const rawItem of addedItems) {
+      const item = jsonRecord(rawItem);
+      if (!additionMatchesLine(item, line, source.session.id)) continue;
+      events.push({
+        at: log.createdAt,
+        eventKey: `log:${log.id.toString().padStart(20, '0')}`,
+        kind: 'POSITIVE',
+      });
+      hasAuditedPositive = true;
+    }
+  }
+
+  // V2.0/V2.1 adjustment logs identify deleted raw contributions by lineKey,
+  // while their original Order still preserves a deterministic creation time.
+  // Use that only as a compatibility fallback when no audited add event exists.
+  if (!hasAuditedPositive) {
+    for (const log of source.statusLogs) {
+      const metadata = jsonRecord(log.metadata);
+      if (metadata.lineKey !== line.lineKey) continue;
+      const order = ordersById.get(log.orderId);
+      if (!order) continue;
+      events.push({
+        at: order.createdAt,
+        eventKey: `order:${order.id.toString().padStart(20, '0')}`,
+        kind: 'POSITIVE',
+      });
+    }
+  }
+
+  events.sort((left, right) => left.at.getTime() - right.at.getTime()
+    || left.eventKey.localeCompare(right.eventKey)
+    || left.kind.localeCompare(right.kind));
+  let epoch: CanonicalEpochEvent | null = null;
+  for (const event of events) {
+    if (event.kind === 'ZERO') epoch = null;
+    else if (event.kind === 'ACTIVATED' || epoch === null) epoch = event;
+  }
+  return epoch ?? {
+    at: line.rawItems[0]!.createdAt,
+    eventKey: `item:${line.rawItems[0]!.itemId.toString().padStart(20, '0')}`,
+    kind: 'POSITIVE' as const,
+  };
+}
+
+function additionMatchesLine(
+  item: Record<string, unknown>,
+  line: DineInCanonicalLineInternal,
+  sessionId: bigint,
+) {
+  const productId = typeof item.productId === 'string'
+    ? item.productId
+    : typeof item.productId === 'number'
+      ? String(item.productId)
+      : null;
+  const unitPrice = typeof item.unitPriceVnd === 'string'
+    ? item.unitPriceVnd
+    : typeof item.unitPriceVnd === 'number'
+      ? String(item.unitPriceVnd)
+      : null;
+  if (!productId || !/^\d+$/.test(productId) || !unitPrice || !/^\d+$/.test(unitPrice)) {
+    return false;
+  }
+  return canonicalLineKey({
+    sessionId,
+    identity: `product:${productId}`,
+    remark: normalizeCanonicalText(typeof item.remark === 'string' ? item.remark : ''),
+    unitPriceVnd: BigInt(unitPrice),
+    optionSignature: normalizeCanonicalText(
+      typeof item.optionSignature === 'string' ? item.optionSignature : '',
+    ),
+  }) === line.lineKey;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    try {
+      return jsonRecord(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function jsonInteger(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
 }
 
 function compareBigInt(left: bigint, right: bigint) {

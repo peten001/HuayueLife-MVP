@@ -166,6 +166,7 @@ function sessionRow(status: string) {
 
 function state(quantity: number): DineInCanonicalStateInternal {
   return {
+    orders: [],
     sessionId: '51', tableId: '11', tableNo: 'A01', tableName: null, openedAt: '2026-08-30T00:00:00.000Z', sessionStatus: 'OPEN',
     revision: `dcs2:sha256:${quantity.toString().padStart(64, '0')}`,
     items: quantity ? [{

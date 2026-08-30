@@ -69,6 +69,65 @@ describe('DineInCanonicalStateService builder', () => {
     ]);
   });
 
+  it('does not reorder a positive line when its oldest raw contribution is removed', () => {
+    const input = source();
+    input.items[0]!.createdAt = new Date('2026-08-30T00:00:01.000Z');
+    input.orders.push(order(42n, 'ACCEPTED', 3n), order(43n, 'ACCEPTED', 3n));
+    input.items.push(
+      item(72n, 42n, { productId: 32n, productNameZhSnapshot: 'B', productNameZh: 'B', createdAt: new Date('2026-08-30T00:00:02.000Z') }),
+      item(73n, 43n, { productId: 31n, productNameZhSnapshot: 'A', productNameZh: 'A', createdAt: new Date('2026-08-30T00:00:03.000Z') }),
+    );
+    input.statusLogs.push(
+      additionLog(101n, 41n, '2026-08-30T00:00:01.000Z', 31n, '鱼香茄子'),
+      additionLog(102n, 42n, '2026-08-30T00:00:02.000Z', 32n, 'B'),
+      additionLog(103n, 43n, '2026-08-30T00:00:03.000Z', 31n, 'A'),
+    );
+
+    input.items = input.items.filter((entry) => entry.id !== 71n);
+    const built = service.build(input);
+
+    expect(built.items.map((line) => line.productNameZh)).toEqual(['A', 'B']);
+    expect(built.items[0]).toMatchObject({
+      quantity: 1,
+      activeSince: '2026-08-30T00:00:01.000Z',
+    });
+  });
+
+  it('starts a new ordering epoch only after aggregate zero then re-add', () => {
+    const input = source();
+    const lineKey = service.build(input).items[0]!.lineKey;
+    input.orders.push(order(42n, 'ACCEPTED', 3n));
+    input.items.push(item(72n, 42n, {
+      productId: 32n,
+      productNameZhSnapshot: 'B',
+      productNameZh: 'B',
+      createdAt: new Date('2026-08-30T00:00:02.000Z'),
+    }));
+    input.statusLogs.push(
+      additionLog(101n, 41n, '2026-08-30T00:00:01.000Z', 31n, '鱼香茄子'),
+      additionLog(102n, 42n, '2026-08-30T00:00:02.000Z', 32n, 'B'),
+      {
+        id: 103n,
+        orderId: 41n,
+        action: 'DINE_IN_CANONICAL_RECONCILED',
+        createdAt: new Date('2026-08-30T00:00:04.000Z'),
+        metadata: { lineChanges: [{ lineKey, beforeQuantity: 1, afterQuantity: 0 }] },
+      },
+      {
+        id: 104n,
+        orderId: 41n,
+        action: 'DINE_IN_CANONICAL_RECONCILED',
+        createdAt: new Date('2026-08-30T00:00:05.000Z'),
+        metadata: { lineChanges: [{ lineKey, beforeQuantity: 0, afterQuantity: 1 }] },
+      },
+    );
+    input.items[0]!.createdAt = new Date('2026-08-30T00:00:05.000Z');
+
+    const built = service.build(input);
+    expect(built.items.map((line) => line.productNameZh)).toEqual(['B', '鱼香茄子']);
+    expect(built.items[1]?.activeSince).toBe('2026-08-30T00:00:05.000Z');
+  });
+
   it('marks accepted items as RETURN', () => {
     expect(service.build(source()).items[0]?.adjustability).toBe('RETURN');
   });
@@ -165,6 +224,32 @@ function source(status: OrderStatus = 'ACCEPTED'): DineInCanonicalSource {
     },
     orders: [order(41n, status, 3n)],
     items: [item(71n, 41n)],
+    statusLogs: [],
+  };
+}
+
+function additionLog(
+  id: bigint,
+  orderId: bigint,
+  createdAt: string,
+  productId: bigint,
+  productNameSnapshot: string,
+) {
+  return {
+    id,
+    orderId,
+    action: 'MERCHANT_ADD_ITEMS',
+    createdAt: new Date(createdAt),
+    metadata: {
+      items: [{
+        productId: productId.toString(),
+        productNameSnapshot,
+        quantity: 1,
+        remark: null,
+        unitPriceVnd: '12000',
+        subtotalVnd: '12000',
+      }],
+    },
   };
 }
 
