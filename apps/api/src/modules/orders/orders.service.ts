@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { OrderType, Prisma } from '@prisma/client';
+import { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
@@ -26,6 +26,14 @@ import {
   isInternalOrderStatusLogAction,
   toCustomerVisibleOrderStatusLogs,
 } from './order-status-log-visibility';
+
+const REUSABLE_DINE_IN_CUSTOMER_ORDER_STATUSES = new Set<OrderStatus>([
+  'PENDING_ACCEPTANCE',
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'CANCELLED',
+]);
 
 @Injectable()
 export class OrdersService {
@@ -75,18 +83,24 @@ export class OrdersService {
   async create(userId: bigint, idempotencyKey: string, dto: OrderRequestDto) {
     this.appConfig.assertOrderingEnabled();
     this.validateIdempotencyKey(idempotencyKey);
-    const existing = await this.findByIdempotency(userId, idempotencyKey);
+    const existing = await this.findByIdempotency(
+      userId,
+      idempotencyKey,
+      this.prisma,
+      dto.orderType === 'DINE_IN',
+    );
     if (existing) return this.serializeCustomerOrder(existing);
 
     try {
       let shouldAutoPrint = false;
-      const order = await this.prisma.$transaction(async (tx) => {
-        const duplicate = await tx.order.findUnique({
-          where: {
-            userId_idempotencyKey: { userId, idempotencyKey },
-          },
-          include: this.orderInclude,
-        });
+      const order = await retryWriteConflict(() => this.prisma.$transaction(async (tx) => {
+        shouldAutoPrint = false;
+        const duplicate = await this.findByIdempotency(
+          userId,
+          idempotencyKey,
+          tx,
+          dto.orderType === 'DINE_IN',
+        );
         if (duplicate) return { order: duplicate, printTriggerIds: [] };
 
         const preview = await this.validateAndPrice(tx, userId, dto);
@@ -106,38 +120,174 @@ export class OrdersService {
         const autoAcceptDineIn = dto.orderType === 'DINE_IN';
         const acceptedAt = autoAcceptDineIn ? new Date() : undefined;
         const createdAt = new Date();
-        const order = await tx.order.create({
-          data: {
-            orderNo: this.generateOrderNo(),
-            idempotencyKey,
+        let order;
+        if (autoAcceptDineIn && tableSession) {
+          const lockedOrders = await tx.$queryRaw<Array<{
+            id: bigint;
+            status: OrderStatus;
+            user_id: bigint | null;
+            item_amount_vnd: bigint;
+          }>>`
+            SELECT id, status, user_id, item_amount_vnd
+            FROM orders
+            WHERE table_session_id = ${tableSession.id}
+              AND merchant_id = ${preview.merchant.id}
+              AND order_type = 'DINE_IN'
+              AND user_id = ${userId}
+            ORDER BY id
+            FOR UPDATE
+          `;
+          const duplicateAfterLock = await this.findByIdempotency(
             userId,
-            merchantId: preview.merchant.id,
-            tableId: preview.table?.id,
-            tableSessionId: tableSession?.id,
-            tableNoSnapshot: preview.table?.tableNo,
-            orderType: dto.orderType,
-            contactName: dto.orderType === 'DINE_IN' ? undefined : dto.contactName,
-            contactPhone:
-              dto.orderType === 'DINE_IN' ? undefined : dto.contactPhone,
-            deliveryAddress:
-              dto.orderType === 'DELIVERY' ? dto.deliveryAddress : undefined,
-            deliveryLatitude:
-              dto.orderType === 'DELIVERY' ? dto.deliveryLatitude : undefined,
-            deliveryLongitude:
-              dto.orderType === 'DELIVERY' ? dto.deliveryLongitude : undefined,
-            customerRemark: dto.customerRemark,
-            itemAmountVnd: preview.itemAmountVnd,
-            deliveryFeeVnd: preview.deliveryFeeVnd,
-            totalAmountVnd: preview.totalAmountVnd,
-            businessDate: businessDateSnapshotValue(
-              preview.merchant.businessHours ?? null,
+            idempotencyKey,
+            tx,
+            true,
+          );
+          if (duplicateAfterLock) {
+            return { order: duplicateAfterLock, printTriggerIds: [] };
+          }
+          const primary = lockedOrders
+            .filter((candidate) => candidate.user_id === userId
+              && REUSABLE_DINE_IN_CUSTOMER_ORDER_STATUSES.has(candidate.status)
+              && (candidate.status !== 'CANCELLED' || candidate.item_amount_vnd === 0n))
+            .sort((left, right) => {
+              const leftCancelled = left.status === 'CANCELLED' ? 1 : 0;
+              const rightCancelled = right.status === 'CANCELLED' ? 1 : 0;
+              return leftCancelled - rightCancelled
+                || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+            })[0];
+          const printDeltaItems = preview.items.map((item) => ({
+            productId: item.product.id.toString(),
+            productNameSnapshot: item.product.nameZh,
+            quantity: item.quantity,
+            remark: item.remark ?? null,
+            unitPriceVnd: item.product.priceVnd.toString(),
+            subtotalVnd: item.subtotalVnd.toString(),
+          }));
+          if (primary) {
+            const restoreToAccepted = primary.status === 'PENDING_ACCEPTANCE'
+              || primary.status === 'CANCELLED';
+            const currentItems = await tx.orderItem.findMany({
+              where: { orderId: primary.id },
+              select: {
+                id: true,
+                productId: true,
+                unitPriceVnd: true,
+                quantity: true,
+                remark: true,
+              },
+              orderBy: { id: 'asc' },
+            });
+            for (const item of preview.items) {
+              const remark = item.remark?.trim() ?? '';
+              const existing = currentItems.find((candidate) =>
+                candidate.productId === item.product.id
+                && candidate.unitPriceVnd === item.product.priceVnd
+                && (candidate.remark?.trim() ?? '') === remark,
+              );
+              if (existing) {
+                const quantity = existing.quantity + item.quantity;
+                await tx.orderItem.update({
+                  where: { id: existing.id },
+                  data: {
+                    quantity,
+                    subtotalVnd: item.product.priceVnd * BigInt(quantity),
+                  },
+                });
+                existing.quantity = quantity;
+              } else {
+                await tx.orderItem.create({
+                  data: {
+                    orderId: primary.id,
+                    productId: item.product.id,
+                    productNameZhSnapshot: item.product.nameZh,
+                    imageUrlSnapshot: item.product.imageUrl,
+                    unitPriceVnd: item.product.priceVnd,
+                    quantity: item.quantity,
+                    subtotalVnd: item.subtotalVnd,
+                    remark: item.remark || undefined,
+                  },
+                });
+              }
+            }
+            const aggregate = await tx.orderItem.aggregate({
+              where: { orderId: primary.id },
+              _sum: { subtotalVnd: true },
+            });
+            const amount = aggregate._sum.subtotalVnd ?? 0n;
+            await tx.order.update({
+              where: { id: primary.id },
+              data: {
+                status: restoreToAccepted ? 'ACCEPTED' : primary.status,
+                acceptedAt: restoreToAccepted ? acceptedAt : undefined,
+                cancelledAt: primary.status === 'CANCELLED' ? null : undefined,
+                cancelReason: primary.status === 'CANCELLED' ? null : undefined,
+                itemAmountVnd: amount,
+                totalAmountVnd: amount,
+              },
+            });
+            const statusLog = await tx.orderStatusLog.create({
+              data: {
+                orderId: primary.id,
+                fromStatus: primary.status,
+                toStatus: restoreToAccepted ? 'ACCEPTED' : primary.status,
+                operatorType: 'SYSTEM',
+                operatorUserId: userId,
+                action: 'DINE_IN_CUSTOMER_ITEMS_ADDED',
+                requestKey: idempotencyKey,
+                metadata: {
+                  tableSessionId: tableSession.id.toString(),
+                  userId: userId.toString(),
+                  items: printDeltaItems,
+                  printDeltaItems,
+                  reusedOrder: true,
+                  restoredCancelledOrder: primary.status === 'CANCELLED',
+                  autoAcceptedPendingOrder: primary.status === 'PENDING_ACCEPTANCE',
+                },
+                remark: restoreToAccepted
+                  ? '堂食顾客恢复原扫码订单并追加菜品'
+                  : '堂食顾客追加菜品到当前扫码订单',
+              },
+            });
+            const printTriggers = this.printJobs
+              ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+                  merchantId: preview.merchant.id,
+                  orderId: primary.id,
+                  orderStatusLogId: statusLog.id,
+                  orderType: 'DINE_IN',
+                  status: 'ACCEPTED',
+                })
+              : [];
+            order = await tx.order.findUniqueOrThrow({
+              where: { id: primary.id },
+              include: this.orderInclude,
+            });
+            await tx.cart.update({ where: { id: preview.cartId }, data: { status: 'CHECKED_OUT' } });
+            // The outbox snapshot above prints only this append event. The
+            // legacy printer path can only render the whole reused Order, so
+            // it must stay off or it would reprint historical dishes.
+            shouldAutoPrint = false;
+            return { order, printTriggerIds: printTriggers.map(({ id }) => id) };
+          }
+          order = await tx.order.create({
+            data: {
+              orderNo: this.generateOrderNo(),
+              idempotencyKey,
+              userId,
+              merchantId: preview.merchant.id,
+              tableId: preview.table?.id,
+              tableSessionId: tableSession.id,
+              tableNoSnapshot: preview.table?.tableNo,
+              orderType: 'DINE_IN',
+              customerRemark: dto.customerRemark,
+              itemAmountVnd: preview.itemAmountVnd,
+              deliveryFeeVnd: 0n,
+              totalAmountVnd: preview.itemAmountVnd,
+              businessDate: businessDateSnapshotValue(preview.merchant.businessHours ?? null, createdAt),
               createdAt,
-            ),
-            createdAt,
-            status: autoAcceptDineIn ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
-            acceptedAt,
-            items: {
-              create: preview.items.map((item) => ({
+              status: 'ACCEPTED',
+              acceptedAt,
+              items: { create: preview.items.map((item) => ({
                 productId: item.product.id,
                 productNameZhSnapshot: item.product.nameZh,
                 imageUrlSnapshot: item.product.imageUrl,
@@ -145,21 +295,57 @@ export class OrdersService {
                 quantity: item.quantity,
                 subtotalVnd: item.subtotalVnd,
                 remark: item.remark || undefined,
-              })),
-            },
-            statusLogs: {
-              create: {
+              })) },
+              statusLogs: { create: {
                 fromStatus: null,
-                toStatus: autoAcceptDineIn ? 'ACCEPTED' : 'PENDING_ACCEPTANCE',
-                operatorType: autoAcceptDineIn ? 'SYSTEM' : 'USER',
-                operatorUserId: autoAcceptDineIn ? undefined : userId,
-                action: autoAcceptDineIn ? 'DINE_IN_AUTO_ACCEPTED' : undefined,
-                remark: autoAcceptDineIn ? '堂食顾客扫码订单自动接单' : '用户提交订单',
-              },
+                toStatus: 'ACCEPTED',
+                operatorType: 'SYSTEM',
+                operatorUserId: userId,
+                action: 'DINE_IN_AUTO_ACCEPTED',
+                requestKey: idempotencyKey,
+                metadata: {
+                  tableSessionId: tableSession.id.toString(),
+                  userId: userId.toString(),
+                  items: printDeltaItems,
+                  printDeltaItems,
+                  reusedOrder: false,
+                },
+                remark: '堂食顾客扫码订单自动接单',
+              } },
             },
-          },
-          include: this.orderInclude,
-        });
+            include: this.orderInclude,
+          });
+        } else {
+          order = await tx.order.create({
+            data: {
+              orderNo: this.generateOrderNo(), idempotencyKey, userId,
+              merchantId: preview.merchant.id, tableId: preview.table?.id,
+              tableSessionId: tableSession?.id, tableNoSnapshot: preview.table?.tableNo,
+              orderType: dto.orderType,
+              contactName: dto.contactName, contactPhone: dto.contactPhone,
+              deliveryAddress: dto.orderType === 'DELIVERY' ? dto.deliveryAddress : undefined,
+              deliveryLatitude: dto.orderType === 'DELIVERY' ? dto.deliveryLatitude : undefined,
+              deliveryLongitude: dto.orderType === 'DELIVERY' ? dto.deliveryLongitude : undefined,
+              customerRemark: dto.customerRemark,
+              itemAmountVnd: preview.itemAmountVnd,
+              deliveryFeeVnd: preview.deliveryFeeVnd,
+              totalAmountVnd: preview.totalAmountVnd,
+              businessDate: businessDateSnapshotValue(preview.merchant.businessHours ?? null, createdAt),
+              createdAt, status: 'PENDING_ACCEPTANCE',
+              items: { create: preview.items.map((item) => ({
+                productId: item.product.id, productNameZhSnapshot: item.product.nameZh,
+                imageUrlSnapshot: item.product.imageUrl, unitPriceVnd: item.product.priceVnd,
+                quantity: item.quantity, subtotalVnd: item.subtotalVnd,
+                remark: item.remark || undefined,
+              })) },
+              statusLogs: { create: {
+                fromStatus: null, toStatus: 'PENDING_ACCEPTANCE', operatorType: 'USER',
+                operatorUserId: userId, remark: '用户提交订单',
+              } },
+            },
+            include: this.orderInclude,
+          });
+        }
         const printTriggers = autoAcceptDineIn && this.printJobs
           ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
               merchantId: order.merchantId,
@@ -179,7 +365,7 @@ export class OrdersService {
           order,
           printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
         };
-      });
+      }));
       if (order.printTriggerIds.length > 0) {
         try {
           await this.printJobs?.processAutomaticTriggerIds(order.printTriggerIds);
@@ -206,7 +392,12 @@ export class OrdersService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        const duplicate = await this.findByIdempotency(userId, idempotencyKey);
+        const duplicate = await this.findByIdempotency(
+          userId,
+          idempotencyKey,
+          this.prisma,
+          dto.orderType === 'DINE_IN',
+        );
         if (duplicate) return this.serializeCustomerOrder(duplicate);
       }
       throw error;
@@ -397,8 +588,8 @@ export class OrdersService {
       requiresPhoneConfirmation:
         dto.orderType === 'DELIVERY' &&
         !deliveryPricing.deliveryRangeVerified,
-    };
-  }
+  };
+}
 
   private resolveDeliveryPricing(
     merchant: {
@@ -451,11 +642,37 @@ export class OrdersService {
     };
   }
 
-  private findByIdempotency(userId: bigint, idempotencyKey: string) {
-    return this.prisma.order.findUnique({
+  private async findByIdempotency(
+    userId: bigint,
+    idempotencyKey: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+    includeDineInAppend = false,
+  ) {
+    const direct = await client.order.findUnique({
       where: {
         userId_idempotencyKey: { userId, idempotencyKey },
       },
+      include: this.orderInclude,
+    });
+    if (direct) return direct;
+    if (!includeDineInAppend) return null;
+
+    // Reused DINE_IN orders keep their original Order.idempotencyKey. Each
+    // later cart submission therefore owns its retry identity in the append
+    // audit row instead of creating another Order solely for deduplication.
+    const append = await client.orderStatusLog.findFirst({
+      where: {
+        requestKey: idempotencyKey,
+        operatorUserId: userId,
+        action: { in: ['DINE_IN_AUTO_ACCEPTED', 'DINE_IN_CUSTOMER_ITEMS_ADDED'] },
+        order: { userId, orderType: 'DINE_IN' },
+      },
+      select: { orderId: true },
+      orderBy: { id: 'asc' },
+    });
+    if (!append) return null;
+    return client.order.findFirst({
+      where: { id: append.orderId, userId },
       include: this.orderInclude,
     });
   }
@@ -551,4 +768,17 @@ export class OrdersService {
   };
 
   private readonly orderInclude = this.orderDetailInclude;
+}
+
+async function retryWriteConflict<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const retryable = error instanceof Prisma.PrismaClientKnownRequestError
+        && error.code === 'P2034';
+      if (!retryable || attempt === 2) throw error;
+    }
+  }
+  throw new Error('unreachable write-conflict retry state');
 }

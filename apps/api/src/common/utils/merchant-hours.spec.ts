@@ -46,6 +46,18 @@ describe('canonical merchant business day', () => {
     expect(normalizeBusinessHours({ tuesday: { segments: [{ start: '10:00', end: '13:00' }] } }).tuesday).toEqual(['10:00-13:00']);
   });
 
+  it('keeps 24:00 as an exclusive all-day end but rejects it as a start', () => {
+    const schedule = { monday: ['00:00-24:00'] };
+    expect(validateBusinessHoursSchedule(schedule).monday).toEqual(['00:00-24:00']);
+    expect(businessDayWindow(schedule, '2026-08-31')).toEqual(
+      expect.objectContaining({
+        start: new Date('2026-08-30T17:00:00.000Z'),
+        end: new Date('2026-08-31T17:00:00.000Z'),
+      }),
+    );
+    expect(() => validateBusinessHoursSchedule({ monday: ['24:00-02:00'] })).toThrow(/HH:mm/);
+  });
+
   it('assigns by createdAt: 00:50-created orders stay on the previous business day even if completed at 01:10', () => {
     const schedule = { saturday: ['15:00-01:00'] };
     const createdAt = new Date('2026-08-15T17:50:00.000Z'); // 8/16 00:50 local

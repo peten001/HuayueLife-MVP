@@ -43,6 +43,7 @@ import { PrintingFeatureFlagsService } from './printing-feature-flags.service';
 import { PrintingSettingsService } from './printing-settings.service';
 import {
   PrintingSnapshot,
+  NoPrintableOrderDeltaError,
   ReceiptSnapshotService,
 } from './receipt-snapshot.service';
 import {
@@ -631,6 +632,7 @@ export class PrintJobsService {
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
         orderId: trigger.orderId ?? undefined,
+        orderStatusLogId: trigger.orderStatusLogId ?? undefined,
         tableSessionId: trigger.tableSessionId ?? undefined,
         eventKey: trigger.eventKey,
         rule: {
@@ -684,6 +686,7 @@ export class PrintJobsService {
   private async createAutomaticJobsFromRuleSnapshot(input: {
     merchantId: bigint;
     orderId?: bigint;
+    orderStatusLogId?: bigint;
     tableSessionId?: bigint;
     eventKey: string;
     rule: AutomaticRuleSnapshot;
@@ -730,13 +733,20 @@ export class PrintJobsService {
     if (kitchenRoute?.isKitchen && kitchenRoute.categoryIds.length === 0) {
       return [];
     }
-    const snapshot = await this.createSnapshot(
-      input.merchantId,
-      rule.receiptType,
-      input.orderId,
-      input.tableSessionId,
-      kitchenRoute?.isKitchen ? kitchenRoute.categoryIds : undefined,
-    );
+    let snapshot: PrintingSnapshot;
+    try {
+      snapshot = await this.createSnapshot(
+        input.merchantId,
+        rule.receiptType,
+        input.orderId,
+        input.tableSessionId,
+        kitchenRoute?.isKitchen ? kitchenRoute.categoryIds : undefined,
+        input.orderStatusLogId,
+      );
+    } catch (error) {
+      if (error instanceof NoPrintableOrderDeltaError) return [];
+      throw error;
+    }
     this.assertSnapshotMerchant(input.merchantId, snapshot);
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -2530,8 +2540,17 @@ export class PrintJobsService {
     orderId?: bigint,
     tableSessionId?: bigint,
     categoryIds?: bigint[],
+    orderStatusLogId?: bigint,
   ) {
     if (receiptType === 'ORDER_CUSTOMER' && orderId) {
+      if (orderStatusLogId) {
+        return this.snapshots.fromOrderAddition(
+          merchantId,
+          orderId,
+          orderStatusLogId,
+          categoryIds,
+        );
+      }
       return categoryIds
         ? this.snapshots.fromOrder(merchantId, orderId, categoryIds)
         : this.snapshots.fromOrder(merchantId, orderId);

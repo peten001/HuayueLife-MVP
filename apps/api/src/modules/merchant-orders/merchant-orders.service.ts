@@ -107,6 +107,14 @@ type LockedProductRow = {
   category_active: number | boolean;
 };
 
+const REUSABLE_DINE_IN_STAFF_ORDER_STATUSES = new Set<OrderStatus>([
+  'PENDING_ACCEPTANCE',
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'CANCELLED',
+]);
+
 const ORDER_ROUNDING_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
   'ACCEPTED',
@@ -367,34 +375,18 @@ export class MerchantOrdersService {
           select: { businessHours: true },
         });
 
-        const duplicate = await tx.order.findUnique({
-          where: {
-            merchantId_createdByStaffId_idempotencyKey: {
-              merchantId,
-              createdByStaffId: staffId,
-              idempotencyKey: dto.idempotencyKey,
-            },
-          },
-          select: {
-            id: true,
-            tableId: true,
-            tableSessionId: true,
-            statusLogs: {
-              where: {
-                action: 'MERCHANT_ADD_ITEMS',
-                requestKey: dto.idempotencyKey,
-              },
-              select: { metadata: true },
-              take: 1,
-            },
-          },
-        });
+        const duplicate = await this.findStaffAddRequest(
+          tx,
+          merchantId,
+          staffId,
+          dto.idempotencyKey,
+        );
         if (duplicate) {
           if (
             duplicate.tableId !== tableId ||
             !duplicate.tableSessionId ||
             !this.metadataMatchesAddOrder(
-              duplicate.statusLogs[0]?.metadata ?? null,
+              duplicate.metadata,
               normalizedItems,
             )
           ) {
@@ -438,6 +430,45 @@ export class MerchantOrdersService {
           merchantId,
           tableId,
         );
+
+        const lockedStaffOrders = await tx.$queryRaw<Array<{
+          id: bigint;
+          status: OrderStatus;
+          user_id: bigint | null;
+          created_by_staff_id: bigint | null;
+          item_amount_vnd: bigint;
+        }>>`
+          SELECT id, status, user_id, created_by_staff_id, item_amount_vnd
+          FROM orders
+          WHERE table_session_id = ${session.id}
+            AND merchant_id = ${merchantId}
+            AND order_type = 'DINE_IN'
+          ORDER BY id
+          FOR UPDATE
+        `;
+        const duplicateAfterLock = await this.findStaffAddRequest(
+          tx,
+          merchantId,
+          staffId,
+          dto.idempotencyKey,
+        );
+        if (duplicateAfterLock) {
+          if (
+            duplicateAfterLock.tableId !== tableId
+            || duplicateAfterLock.tableSessionId !== session.id
+            || !this.metadataMatchesAddOrder(duplicateAfterLock.metadata, normalizedItems)
+          ) {
+            throw new ConflictException({
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: '点菜请求标识已用于其他请求',
+            });
+          }
+          return {
+            orderId: duplicateAfterLock.id,
+            sessionId: session.id,
+            printTriggerIds: [],
+          };
+        }
 
         if (normalizedItems.length === 0) {
           if (!session.created) {
@@ -488,26 +519,136 @@ export class MerchantOrdersService {
         );
 
         const createdAt = new Date();
-        const created = await tx.order.create({
-          data: {
-            orderNo: this.generateOrderNo(),
-            idempotencyKey: dto.idempotencyKey,
-            userId: null,
-            createdByStaffId: staffId,
-            merchantId,
-            tableId,
-            tableSessionId: session.id,
-            tableNoSnapshot: table.table_no,
-            orderType: 'DINE_IN',
-            itemAmountVnd,
-            deliveryFeeVnd: 0n,
-            totalAmountVnd: itemAmountVnd,
-            businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
-            createdAt,
-            status: 'ACCEPTED',
-            acceptedAt: new Date(),
-            items: {
-              create: pricedItems.map((item) => ({
+        const printDeltaItems = pricedItems.map((item) => ({
+          productId: item.product.id.toString(),
+          productNameSnapshot: item.product.name_zh,
+          quantity: item.quantity,
+          remark: item.remark ?? null,
+          unitPriceVnd: item.product.price_vnd.toString(),
+          subtotalVnd: item.subtotalVnd.toString(),
+        }));
+        const primary = lockedStaffOrders
+          .filter((order) => order.user_id === null
+            && order.created_by_staff_id !== null
+            && REUSABLE_DINE_IN_STAFF_ORDER_STATUSES.has(order.status)
+            && (order.status !== 'CANCELLED' || order.item_amount_vnd === 0n))
+          .sort((left, right) => {
+            const leftCancelled = left.status === 'CANCELLED' ? 1 : 0;
+            const rightCancelled = right.status === 'CANCELLED' ? 1 : 0;
+            return leftCancelled - rightCancelled
+              || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+          })[0];
+        let orderId: bigint;
+        let statusLogId: bigint;
+        if (primary) {
+          const restoreToAccepted = primary.status === 'PENDING_ACCEPTANCE'
+            || primary.status === 'CANCELLED';
+          const existingItems = await tx.orderItem.findMany({
+            where: { orderId: primary.id },
+            select: {
+              id: true,
+              productId: true,
+              unitPriceVnd: true,
+              quantity: true,
+              remark: true,
+            },
+            orderBy: { id: 'asc' },
+          });
+          for (const item of pricedItems) {
+            const existing = existingItems.find((candidate) =>
+              candidate.productId === item.product.id
+              && candidate.unitPriceVnd === item.product.price_vnd
+              && normalizeCanonicalText(candidate.remark) === normalizeCanonicalText(item.remark),
+            );
+            if (existing) {
+              const quantity = existing.quantity + item.quantity;
+              await tx.orderItem.update({
+                where: { id: existing.id },
+                data: {
+                  quantity,
+                  subtotalVnd: item.product.price_vnd * BigInt(quantity),
+                },
+              });
+            } else {
+              await tx.orderItem.create({
+                data: {
+                  orderId: primary.id,
+                  productId: item.product.id,
+                  productNameZhSnapshot: item.product.name_zh,
+                  imageUrlSnapshot: item.product.image_url,
+                  unitPriceVnd: item.product.price_vnd,
+                  quantity: item.quantity,
+                  subtotalVnd: item.subtotalVnd,
+                  remark: item.remark || undefined,
+                },
+              });
+            }
+          }
+          const aggregate = await tx.orderItem.aggregate({
+            where: { orderId: primary.id },
+            _sum: { subtotalVnd: true },
+          });
+          const total = aggregate._sum.subtotalVnd ?? 0n;
+          await tx.order.update({
+            where: { id: primary.id },
+            data: {
+              status: restoreToAccepted ? 'ACCEPTED' : primary.status,
+              acceptedAt: restoreToAccepted ? createdAt : undefined,
+              cancelledAt: primary.status === 'CANCELLED' ? null : undefined,
+              cancelReason: primary.status === 'CANCELLED' ? null : undefined,
+              itemAmountVnd: total,
+              totalAmountVnd: total,
+            },
+          });
+          const log = await tx.orderStatusLog.create({
+            data: {
+              orderId: primary.id,
+              fromStatus: primary.status,
+              toStatus: restoreToAccepted ? 'ACCEPTED' : primary.status,
+              operatorType: OperatorType.MERCHANT_STAFF,
+              operatorStaffId: staffId,
+              action: 'MERCHANT_ADD_ITEMS',
+              requestKey: dto.idempotencyKey,
+              metadata: {
+                actorId: staffId.toString(),
+                actorRole: creator.staffRole,
+                tableId: tableId.toString(),
+                tableSessionId: session.id.toString(),
+                itemAmountVnd: itemAmountVnd.toString(),
+                items: printDeltaItems,
+                printDeltaItems,
+                reusedOrder: true,
+                restoredCancelledOrder: primary.status === 'CANCELLED',
+                autoAcceptedPendingOrder: primary.status === 'PENDING_ACCEPTANCE',
+              },
+              remark: restoreToAccepted
+                ? '商家点菜恢复原员工单并追加菜品'
+                : '商家点菜追加到当前员工单',
+            },
+            select: { id: true },
+          });
+          orderId = primary.id;
+          statusLogId = log.id;
+        } else {
+          const created = await tx.order.create({
+            data: {
+              orderNo: this.generateOrderNo(),
+              idempotencyKey: dto.idempotencyKey,
+              userId: null,
+              createdByStaffId: staffId,
+              merchantId,
+              tableId,
+              tableSessionId: session.id,
+              tableNoSnapshot: table.table_no,
+              orderType: 'DINE_IN',
+              itemAmountVnd,
+              deliveryFeeVnd: 0n,
+              totalAmountVnd: itemAmountVnd,
+              businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
+              createdAt,
+              status: 'ACCEPTED',
+              acceptedAt: createdAt,
+              items: { create: pricedItems.map((item) => ({
                 productId: item.product.id,
                 productNameZhSnapshot: item.product.name_zh,
                 imageUrlSnapshot: item.product.image_url,
@@ -515,51 +656,43 @@ export class MerchantOrdersService {
                 quantity: item.quantity,
                 subtotalVnd: item.subtotalVnd,
                 remark: item.remark || undefined,
-              })),
-            },
-            statusLogs: {
-              create: [
-                {
-                  fromStatus: null,
-                  toStatus: 'ACCEPTED',
-                  operatorType: OperatorType.MERCHANT_STAFF,
-                  operatorStaffId: staffId,
-                  action: 'MERCHANT_ADD_ITEMS',
-                  requestKey: dto.idempotencyKey,
-                  metadata: {
-                    actorId: staffId.toString(),
-                    actorRole: creator.staffRole,
-                    tableId: tableId.toString(),
-                    tableSessionId: session.id.toString(),
-                    itemAmountVnd: itemAmountVnd.toString(),
-                    items: pricedItems.map((item) => ({
-                      productId: item.product.id.toString(),
-                      productNameSnapshot: item.product.name_zh,
-                      quantity: item.quantity,
-                      remark: item.remark ?? null,
-                      unitPriceVnd: item.product.price_vnd.toString(),
-                      subtotalVnd: item.subtotalVnd.toString(),
-                    })),
-                  },
-                  remark: '商家点菜创建追加订单并自动接单',
+              })) },
+              statusLogs: { create: [{
+                fromStatus: null,
+                toStatus: 'ACCEPTED',
+                operatorType: OperatorType.MERCHANT_STAFF,
+                operatorStaffId: staffId,
+                action: 'MERCHANT_ADD_ITEMS',
+                requestKey: dto.idempotencyKey,
+                metadata: {
+                  actorId: staffId.toString(),
+                  actorRole: creator.staffRole,
+                  tableId: tableId.toString(),
+                  tableSessionId: session.id.toString(),
+                  itemAmountVnd: itemAmountVnd.toString(),
+                  items: printDeltaItems,
+                  printDeltaItems,
+                  reusedOrder: false,
                 },
-              ],
+                remark: '商家点菜创建员工单并自动接单',
+              }] },
             },
-          },
-          select: {
-            id: true,
-            tableSessionId: true,
-            statusLogs: {
-              where: { action: 'MERCHANT_ADD_ITEMS', requestKey: dto.idempotencyKey },
-              select: { id: true },
-              take: 1,
+            select: {
+              id: true,
+              statusLogs: {
+                where: { action: 'MERCHANT_ADD_ITEMS', requestKey: dto.idempotencyKey },
+                select: { id: true },
+                take: 1,
+              },
             },
-          },
-        });
+          });
+          orderId = created.id;
+          statusLogId = created.statusLogs[0]!.id;
+        }
         const printTriggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
           merchantId,
-          orderId: created.id,
-          orderStatusLogId: created.statusLogs[0].id,
+          orderId,
+          orderStatusLogId: statusLogId,
           orderType: 'DINE_IN',
           status: 'ACCEPTED',
         });
@@ -568,8 +701,8 @@ export class MerchantOrdersService {
         // discount or rounding amount calculated from an older bill total.
         await this.clearSessionAdjustment(tx, session.id);
         return {
-          orderId: created.id,
-          sessionId: created.tableSessionId!,
+          orderId,
+          sessionId: session.id,
           printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
         };
       });
@@ -580,28 +713,12 @@ export class MerchantOrdersService {
       ) {
         throw error;
       }
-      const duplicate = await this.prisma.order.findUnique({
-        where: {
-          merchantId_createdByStaffId_idempotencyKey: {
-            merchantId,
-            createdByStaffId: staffId,
-            idempotencyKey: dto.idempotencyKey,
-          },
-        },
-        select: {
-          id: true,
-          tableId: true,
-          tableSessionId: true,
-          statusLogs: {
-            where: {
-              action: 'MERCHANT_ADD_ITEMS',
-              requestKey: dto.idempotencyKey,
-            },
-            select: { metadata: true },
-            take: 1,
-          },
-        },
-      });
+      const duplicate = await this.findStaffAddRequest(
+        this.prisma,
+        merchantId,
+        staffId,
+        dto.idempotencyKey,
+      );
       if (!duplicate) {
         throw error;
       }
@@ -609,7 +726,7 @@ export class MerchantOrdersService {
         !duplicate.tableSessionId ||
         duplicate.tableId !== tableId ||
         !this.metadataMatchesAddOrder(
-          duplicate.statusLogs[0]?.metadata ?? null,
+          duplicate.metadata,
           normalizedItems,
         )
       ) {
@@ -768,6 +885,8 @@ export class MerchantOrdersService {
       const lineChanges: Array<{
         lineKey: string | null;
         productId: string | null;
+        remark: string;
+        unitPriceVnd: string | null;
         beforeQuantity: number;
         afterQuantity: number;
       }> = [];
@@ -808,6 +927,8 @@ export class MerchantOrdersService {
           lineChanges.push({
             lineKey: line.lineKey,
             productId: line.productId,
+            remark: line.remark,
+            unitPriceVnd: line.unitPriceVnd,
             beforeQuantity: line.quantity,
             afterQuantity: target,
           });
@@ -825,6 +946,8 @@ export class MerchantOrdersService {
         lineChanges.push({
           lineKey: null,
           productId: item.productId!.toString(),
+          remark: item.remark,
+          unitPriceVnd: null,
           beforeQuantity: 0,
           afterQuantity: item.desiredQuantity,
         });
@@ -891,43 +1014,135 @@ export class MerchantOrdersService {
         };
       });
 
-      let createdOrderId: bigint | null = null;
+      let positiveOrderId: bigint | null = null;
+      const printDeltaItems: Array<{
+        productId: string;
+        productNameSnapshot: string;
+        quantity: number;
+        remark: string | null;
+        unitPriceVnd: string;
+        subtotalVnd: string;
+      }> = [];
       if (pricedPositive.length > 0) {
         const createdAt = new Date();
-        const itemAmountVnd = pricedPositive.reduce((sum, item) => sum + item.subtotalVnd, 0n);
-        const created = await tx.order.create({
-          data: {
-            orderNo: this.generateOrderNo(),
-            idempotencyKey: dto.requestKey,
-            userId: null,
-            createdByStaffId: staffId,
-            merchantId,
-            tableId: sessionRef.tableId,
-            tableSessionId: sessionId,
-            tableNoSnapshot: table.table_no,
-            orderType: 'DINE_IN',
-            itemAmountVnd,
-            deliveryFeeVnd: 0n,
-            totalAmountVnd: itemAmountVnd,
-            businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
-            createdAt,
-            status: 'ACCEPTED',
-            acceptedAt: createdAt,
-            items: {
-              create: pricedPositive.map((item) => ({
-                productId: item.product.id,
-                productNameZhSnapshot: item.product.name_zh,
-                imageUrlSnapshot: item.product.image_url,
-                unitPriceVnd: item.product.price_vnd,
-                quantity: item.quantity,
-                subtotalVnd: item.subtotalVnd,
-                remark: item.remark || undefined,
-              })),
+        const primary = [...before.orders]
+          .filter((order) => order.orderType === 'DINE_IN'
+            && order.userId === null
+            && order.createdByStaffId !== null
+            && REUSABLE_DINE_IN_STAFF_ORDER_STATUSES.has(order.status)
+            && (order.status !== 'CANCELLED' || order.itemAmountVnd === 0n))
+          .sort((left, right) => {
+            const leftCancelled = left.status === 'CANCELLED' ? 1 : 0;
+            const rightCancelled = right.status === 'CANCELLED' ? 1 : 0;
+            return leftCancelled - rightCancelled
+              || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+          })[0];
+
+        if (primary) {
+          const restoreToAccepted = primary.status === 'PENDING_ACCEPTANCE'
+            || primary.status === 'CANCELLED';
+          positiveOrderId = primary.id;
+          for (const item of pricedPositive) {
+            const existingLine = before.items.find((line) =>
+              line.productId === item.product.id.toString()
+              && line.remark === item.remark
+              && line.unitPriceVnd === item.product.price_vnd.toString(),
+            );
+            const existingRaw = existingLine?.rawItems.find(
+              (raw) => raw.orderId === primary.id,
+            );
+            if (existingRaw) {
+              const nextQuantity = existingRaw.quantity + item.quantity;
+              await tx.orderItem.update({
+                where: { id: existingRaw.itemId },
+                data: {
+                  quantity: nextQuantity,
+                  subtotalVnd: item.product.price_vnd * BigInt(nextQuantity),
+                },
+              });
+            } else {
+              await tx.orderItem.create({
+                data: {
+                  orderId: primary.id,
+                  productId: item.product.id,
+                  productNameZhSnapshot: item.product.name_zh,
+                  imageUrlSnapshot: item.product.image_url,
+                  unitPriceVnd: item.product.price_vnd,
+                  quantity: item.quantity,
+                  subtotalVnd: item.subtotalVnd,
+                  remark: item.remark || undefined,
+                },
+              });
+            }
+            printDeltaItems.push({
+              productId: item.product.id.toString(),
+              productNameSnapshot: item.product.name_zh,
+              quantity: item.quantity,
+              remark: item.remark || null,
+              unitPriceVnd: item.product.price_vnd.toString(),
+              subtotalVnd: item.subtotalVnd.toString(),
+            });
+          }
+          const aggregate = await tx.orderItem.aggregate({
+            where: { orderId: primary.id },
+            _sum: { subtotalVnd: true },
+          });
+          const itemAmountVnd = aggregate._sum.subtotalVnd ?? 0n;
+          await tx.order.update({
+            where: { id: primary.id },
+            data: {
+              status: restoreToAccepted ? 'ACCEPTED' : primary.status,
+              acceptedAt: restoreToAccepted ? createdAt : undefined,
+              cancelledAt: primary.status === 'CANCELLED' ? null : undefined,
+              cancelReason: primary.status === 'CANCELLED' ? null : undefined,
+              itemAmountVnd,
+              totalAmountVnd: itemAmountVnd,
             },
-          },
-          select: { id: true },
-        });
-        createdOrderId = created.id;
+          });
+        } else {
+          const itemAmountVnd = pricedPositive.reduce((sum, item) => sum + item.subtotalVnd, 0n);
+          const created = await tx.order.create({
+            data: {
+              orderNo: this.generateOrderNo(),
+              idempotencyKey: dto.requestKey,
+              userId: null,
+              createdByStaffId: staffId,
+              merchantId,
+              tableId: sessionRef.tableId,
+              tableSessionId: sessionId,
+              tableNoSnapshot: table.table_no,
+              orderType: 'DINE_IN',
+              itemAmountVnd,
+              deliveryFeeVnd: 0n,
+              totalAmountVnd: itemAmountVnd,
+              businessDate: businessDateSnapshotValue(merchant?.businessHours ?? null, createdAt),
+              createdAt,
+              status: 'ACCEPTED',
+              acceptedAt: createdAt,
+              items: {
+                create: pricedPositive.map((item) => ({
+                  productId: item.product.id,
+                  productNameZhSnapshot: item.product.name_zh,
+                  imageUrlSnapshot: item.product.image_url,
+                  unitPriceVnd: item.product.price_vnd,
+                  quantity: item.quantity,
+                  subtotalVnd: item.subtotalVnd,
+                  remark: item.remark || undefined,
+                })),
+              },
+            },
+            select: { id: true },
+          });
+          positiveOrderId = created.id;
+          printDeltaItems.push(...pricedPositive.map((item) => ({
+            productId: item.product.id.toString(),
+            productNameSnapshot: item.product.name_zh,
+            quantity: item.quantity,
+            remark: item.remark || null,
+            unitPriceVnd: item.product.price_vnd.toString(),
+            subtotalVnd: item.subtotalVnd.toString(),
+          })));
+        }
       }
 
       const touchedOrderIds = new Set<bigint>();
@@ -1079,7 +1294,7 @@ export class MerchantOrdersService {
         merchantId,
         sessionId,
       );
-      const anchorOrderId = createdOrderId
+      const anchorOrderId = positiveOrderId
         ?? [...touchedOrderIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)[0];
       let tableSessionAutoClosed = false;
       if (
@@ -1157,7 +1372,7 @@ export class MerchantOrdersService {
         const batchLog = await tx.orderStatusLog.create({
           data: {
             orderId: anchorOrderId,
-            fromStatus: createdOrderId ? null : anchor.status,
+            fromStatus: anchor.status,
             toStatus: anchor.status,
             operatorType: OperatorType.MERCHANT_STAFF,
             operatorStaffId: staffId,
@@ -1172,7 +1387,8 @@ export class MerchantOrdersService {
               actorId: staffId.toString(),
               actorRole: creator.staffRole,
               lineChanges,
-              createdOrderId: createdOrderId?.toString() ?? null,
+              positiveOrderId: positiveOrderId?.toString() ?? null,
+              printDeltaItems,
               touchedOrderIds: [...touchedOrderIds].map((id) => id.toString()),
               tableSessionAutoClosed,
               tableReleased: tableSessionAutoClosed,
@@ -1183,10 +1399,10 @@ export class MerchantOrdersService {
               : '堂食整桌目标态已对账',
           },
         });
-        if (createdOrderId) {
+        if (positiveOrderId) {
           const triggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
             merchantId,
-            orderId: createdOrderId,
+            orderId: positiveOrderId,
             orderStatusLogId: batchLog.id,
             orderType: 'DINE_IN',
             status: 'ACCEPTED',
@@ -1960,8 +2176,48 @@ export class MerchantOrdersService {
     return {} as Record<string, unknown>;
   }
 
+  private async findStaffAddRequest(
+    client: PrismaService | Prisma.TransactionClient,
+    merchantId: bigint,
+    staffId: bigint,
+    requestKey: string,
+  ) {
+    const log = await client.orderStatusLog.findFirst({
+      where: {
+        action: 'MERCHANT_ADD_ITEMS',
+        requestKey,
+        operatorStaffId: staffId,
+        order: {
+          merchantId,
+          orderType: 'DINE_IN',
+          userId: null,
+          createdByStaffId: { not: null },
+        },
+      },
+      select: {
+        metadata: true,
+        order: {
+          select: {
+            id: true,
+            tableId: true,
+            tableSessionId: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+    return log
+      ? {
+          id: log.order.id,
+          tableId: log.order.tableId,
+          tableSessionId: log.order.tableSessionId,
+          metadata: log.metadata,
+        }
+      : null;
+  }
+
   private metadataMatchesAddOrder(
-    value: Prisma.JsonValue,
+    value: Prisma.JsonValue | null,
     items: Array<{ productId: bigint; quantity: number; remark?: string }>,
   ) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -2379,7 +2635,13 @@ export class MerchantOrdersService {
         }),
       } : {}),
     };
-    const pickupProjection = withPickupFulfillmentFields(localizedOrder);
+    const visibleOrder = order.statusLogs
+      ? {
+          ...localizedOrder,
+          statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
+        }
+      : localizedOrder;
+    const pickupProjection = withPickupFulfillmentFields(visibleOrder);
     if (
       !['PICKUP', 'DELIVERY'].includes(pickupProjection.orderType) ||
       pickupProjection.totalAmountVnd === undefined
@@ -2389,13 +2651,7 @@ export class MerchantOrdersService {
     const settlementOrder = pickupProjection as typeof pickupProjection & {
       totalAmountVnd: bigint | number;
     };
-    if (!order.statusLogs) {
-      return withOrderSettlementFields(settlementOrder);
-    }
-    return withOrderSettlementFields({
-      ...localizedOrder,
-      statusLogs: order.statusLogs.map(toMerchantVisibleOrderStatusLog),
-    } as typeof settlementOrder);
+    return withOrderSettlementFields(settlementOrder);
   }
 
   private readonly listInclude = {

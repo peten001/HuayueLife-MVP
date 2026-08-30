@@ -23,6 +23,15 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         }),
       };
     }
+    if (!tx.orderStatusLog) {
+      tx.orderStatusLog = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 700n }),
+      };
+    } else {
+      const statusLogs = tx.orderStatusLog as Record<string, unknown>;
+      if (!statusLogs.findFirst) statusLogs.findFirst = jest.fn().mockResolvedValue(null);
+    }
     const txOrder = tx.order as Record<string, unknown> | undefined;
     if (txOrder && !txOrder.findFirstOrThrow) {
       txOrder.findFirstOrThrow = jest.fn().mockResolvedValue(
@@ -79,6 +88,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
         ])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
           {
             id: 61n,
@@ -158,7 +168,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
-  it('keeps consecutive same-item direct adds as separate audited orders with the existing print trigger semantics', async () => {
+  it('keeps consecutive same-item direct adds in one staff Order with separate print events', async () => {
     const tableRow = { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' };
     const productRow = {
       id: 61n,
@@ -172,14 +182,25 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     const tx = {
       order: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn()
-          .mockResolvedValueOnce({ id: 41n, tableSessionId: 51n, statusLogs: [{ id: 701n }] })
-          .mockResolvedValueOnce({ id: 42n, tableSessionId: 51n, statusLogs: [{ id: 702n }] }),
+        create: jest.fn().mockResolvedValueOnce({ id: 41n, tableSessionId: 51n, statusLogs: [{ id: 701n }] }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      orderItem: {
+        findMany: jest.fn().mockResolvedValue([{ id: 601n, productId: 61n, unitPriceVnd: 6000n, quantity: 1, remark: null }]),
+        update: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({}),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { subtotalVnd: 12000n } }),
+      },
+      orderStatusLog: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 702n }),
       },
       $queryRaw: jest.fn()
         .mockResolvedValueOnce([tableRow])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([productRow])
         .mockResolvedValueOnce([tableRow])
+        .mockResolvedValueOnce([{ id: 41n, status: 'ACCEPTED', user_id: null, created_by_staff_id: 3n }])
         .mockResolvedValueOnce([productRow]),
       tableSession: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -202,11 +223,20 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       items: [{ productId: '61', quantity: 1 }],
     });
 
-    expect(tx.order.create).toHaveBeenCalledTimes(2);
-    expect(tx.order.create.mock.calls.map(([input]) => input.data.idempotencyKey)).toEqual([
-      'staff_same_item_0001',
-      'staff_same_item_0002',
-    ]);
+    expect(tx.order.create).toHaveBeenCalledTimes(1);
+    expect(tx.order.create.mock.calls[0]?.[0].data.idempotencyKey).toBe('staff_same_item_0001');
+    expect(tx.orderItem.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 601n },
+      data: { quantity: 2, subtotalVnd: 12000n },
+    }));
+    expect(tx.orderStatusLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        orderId: 41n,
+        action: 'MERCHANT_ADD_ITEMS',
+        requestKey: 'staff_same_item_0002',
+        metadata: expect.objectContaining({ reusedOrder: true, printDeltaItems: expect.any(Array) }),
+      }),
+    }));
     expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledTimes(2);
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(1, [801n]);
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(2, [802n]);
@@ -215,19 +245,12 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
   it('returns the existing add-on order for the same staff idempotency key', async () => {
     const tx = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 41n,
-          tableId: 11n,
-          tableSessionId: 51n,
-          statusLogs: [
-            {
-              metadata: {
-                items: [
-                  { productId: '61', quantity: 2, remark: null },
-                ],
-              },
-            },
-          ],
+        findUnique: jest.fn(),
+      },
+      orderStatusLog: {
+        findFirst: jest.fn().mockResolvedValue({
+          metadata: { items: [{ productId: '61', quantity: 2, remark: null }] },
+          order: { id: 41n, tableId: 11n, tableSessionId: 51n },
         }),
       },
       $queryRaw: jest.fn(),
@@ -243,17 +266,12 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
   it('rejects reusing an add-order idempotency key with different items', async () => {
     const tx = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 41n,
-          tableId: 11n,
-          tableSessionId: 51n,
-          statusLogs: [
-            {
-              metadata: {
-                items: [{ productId: '61', quantity: 2, remark: null }],
-              },
-            },
-          ],
+        findUnique: jest.fn(),
+      },
+      orderStatusLog: {
+        findFirst: jest.fn().mockResolvedValue({
+          metadata: { items: [{ productId: '61', quantity: 2, remark: null }] },
+          order: { id: 41n, tableId: 11n, tableSessionId: 51n },
         }),
       },
       $queryRaw: jest.fn(),
@@ -279,7 +297,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .fn()
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
-        ]),
+        ])
+        .mockResolvedValueOnce([]),
     };
     const { service, tableSessions } = buildService(tx, {
       sessionCreateResult: { id: sessionResult.id, created: true },
@@ -308,6 +327,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         .mockResolvedValueOnce([
           { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
         ])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([61n, 62n, 63n].map((id) => ({
           id,
           name_zh: `菜品${id.toString()}`,
@@ -355,7 +375,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       },
       $queryRaw: jest.fn().mockResolvedValueOnce([
         { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' },
-      ]),
+      ]).mockResolvedValueOnce([]),
     };
     const { service } = buildService(tx);
     await expect(
@@ -377,6 +397,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       $queryRaw: jest
         .fn()
         .mockResolvedValueOnce([{ id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' }])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
           {
             id: 61n,

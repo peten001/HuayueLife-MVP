@@ -31,6 +31,22 @@ describe('MerchantOrdersService canonical reconcile', () => {
     expect(harness.tx.order.create.mock.calls[0]?.[0].data.items.create).toHaveLength(2);
   });
 
+  it('reuses the deterministic active staff Order for a positive canonical delta', async () => {
+    const harness = buildHarness({ desiredQuantity: 2, afterQuantity: 2, reusableStaffOrder: true });
+
+    await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+
+    expect(harness.tx.order.create).not.toHaveBeenCalled();
+    expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
+      where: { id: 71n },
+      data: { quantity: 2, subtotalVnd: 24_000n },
+    });
+    expect(harness.tx.order.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 41n },
+      data: expect.objectContaining({ itemAmountVnd: 24_000n, totalAmountVnd: 24_000n }),
+    }));
+  });
+
   it.each([1, 10])('applies -%i through deterministic raw item allocation', async (delta) => {
     const harness = buildHarness({
       baseQuantity: 11,
@@ -200,6 +216,7 @@ function buildHarness(options: {
   aggregateCount?: number;
   emptyState?: boolean;
   blockers?: string[];
+  reusableStaffOrder?: boolean;
 }) {
   const baseQuantity = options.baseQuantity ?? 1;
   const desiredQuantity = options.desiredQuantity ?? 2;
@@ -222,6 +239,7 @@ function buildHarness(options: {
     },
     orderItem: {
       update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
       aggregate: jest.fn().mockResolvedValue({
         _sum: { subtotalVnd: afterQuantity > 0 ? BigInt(afterQuantity) * 12_000n : null },
@@ -231,6 +249,19 @@ function buildHarness(options: {
     orderStatusLog: { create: jest.fn().mockResolvedValue({ id: 91n }) },
     tableSession: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   };
+  if (options.reusableStaffOrder) {
+    before.orders = [{
+      id: 41n,
+      status: 'ACCEPTED',
+      orderType: 'DINE_IN',
+      userId: null,
+      createdByStaffId: 3n,
+      itemAmountVnd: 12_000n,
+      deliveryFeeVnd: 0n,
+      totalAmountVnd: 12_000n,
+      createdAt: new Date('2026-08-30T00:00:00.000Z'),
+    }];
+  }
   if (before.items[0]?.rawItems[0]) before.items[0].rawItems[0].quantity = options.rawQuantity ?? baseQuantity;
   const canonical = new DineInCanonicalStateService({} as never);
   jest.spyOn(canonical, 'buildLockedWithClient')
@@ -266,6 +297,7 @@ function buildHarness(options: {
 function state(quantity: number, lockedQuantity: number, blockers: string[], empty = false): DineInCanonicalStateInternal {
   const lineKey = `dline:sha256:${'1'.repeat(64)}`;
   return {
+    orders: [],
     sessionId: '51', tableId: '11', tableNo: 'A01', tableName: null, openedAt: '2026-08-30T00:00:00.000Z',
     sessionStatus: 'OPEN', revision: `dcs2:sha256:${quantity.toString().padStart(64, '0')}`,
     items: empty ? [] : [{

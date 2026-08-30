@@ -392,7 +392,7 @@ describe('Table session workflow', () => {
       .get(`/api/v1/orders/${tableOneFirstOrderId}`)
       .set('Authorization', `Bearer ${userOneToken}`)
       .expect(200);
-    expect(remaining.body.data.status).toBe('PENDING_ACCEPTANCE');
+    expect(remaining.body.data.status).toBe('ACCEPTED');
 
     const detail = await getSessionDetail(tokenOne, tableOneFirstSessionId);
     expect(detail.session).toEqual(
@@ -400,7 +400,7 @@ describe('Table session workflow', () => {
         orderCount: 1,
         itemCount: 2,
         totalAmountVnd: '100000',
-        pendingOrderCount: 1,
+        pendingOrderCount: 0,
         unfinishedOrderCount: 1,
       }),
     );
@@ -421,11 +421,6 @@ describe('Table session workflow', () => {
   });
 
   it('closes a completed session and creates a new session on the next order', async () => {
-    await request(app.getHttpServer())
-      .post(`/api/v1/merchant/orders/${tableOneFirstOrderId}/accept`)
-      .set('Authorization', `Bearer ${tokenOne}`)
-      .send({})
-      .expect(201);
     await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${tableOneFirstOrderId}/start-preparing`)
       .set('Authorization', `Bearer ${tokenOne}`)
@@ -470,7 +465,7 @@ describe('Table session workflow', () => {
     expect(reopened.tableSessionId).not.toBe(tableOneFirstSessionId);
   });
 
-  it('rejects checkout while the table still has an unaccepted order', async () => {
+  it('rejects checkout when a legacy table session still has an unaccepted order', async () => {
     const table = await createDiningTable('CHECKOUT-PENDING');
     await addDineInItem(userOneToken, table.qrToken, 1);
     const order = await createDineInOrder(
@@ -481,6 +476,10 @@ describe('Table session workflow', () => {
     if (!order.tableSessionId) {
       throw new Error('Expected pending checkout order to bind a table session');
     }
+    await prisma.order.update({
+      where: { id: BigInt(order.id) },
+      data: { status: 'PENDING_ACCEPTANCE', acceptedAt: null },
+    });
 
     const response = await request(app.getHttpServer())
       .post(`/api/v1/merchant/table-sessions/${order.tableSessionId}/checkout`)
@@ -515,7 +514,6 @@ describe('Table session workflow', () => {
       const createdOrder = await prisma.order.findUniqueOrThrow({ where: { id: BigInt(order.id) } });
       expect(createdOrder.totalAmountVnd).toBe(513000n);
 
-      await merchantOrderAction(order.id, 'accept');
       const rounded = await request(app.getHttpServer())
         .post(`/api/v1/merchant/table-sessions/${order.tableSessionId}/rounding`)
         .set('Authorization', `Bearer ${tokenOne}`)
@@ -568,30 +566,35 @@ describe('Table session workflow', () => {
     }
   });
 
-  it('atomically completes accepted dine-in orders and closes checkout idempotently', async () => {
+  it('completes one reused QR order per customer identity and closes checkout idempotently', async () => {
     const table = await createDiningTable('CHECKOUT-COMPLETE');
-    const orders = [] as Array<{ id: string; tableSessionId: string | null }>;
-    for (let index = 0; index < 3; index += 1) {
-      await addDineInItem(userOneToken, table.qrToken, 1);
-      orders.push(
-        await createDineInOrder(
-          userOneToken,
-          `table_checkout_complete_${index}_${suffix}`,
-          table.qrToken,
-        ),
-      );
-    }
-    const sessionId = orders[0]?.tableSessionId;
+    await addDineInItem(userOneToken, table.qrToken, 1);
+    const customerOneFirst = await createDineInOrder(
+      userOneToken,
+      `table_checkout_complete_a1_${suffix}`,
+      table.qrToken,
+    );
+    await addDineInItem(userTwoToken, table.qrToken, 1);
+    const customerTwo = await createDineInOrder(
+      userTwoToken,
+      `table_checkout_complete_b_${suffix}`,
+      table.qrToken,
+    );
+    await addDineInItem(userOneToken, table.qrToken, 1);
+    const customerOneAppend = await createDineInOrder(
+      userOneToken,
+      `table_checkout_complete_a2_${suffix}`,
+      table.qrToken,
+    );
+    const orders = [customerOneFirst, customerTwo];
+    const sessionId = customerOneFirst.tableSessionId;
     if (!sessionId || orders.some((order) => order.tableSessionId !== sessionId)) {
       throw new Error('Expected checkout orders to share one table session');
     }
+    expect(customerOneAppend.id).toBe(customerOneFirst.id);
+    expect(customerOneAppend.tableSessionId).toBe(sessionId);
 
-    await merchantOrderAction(orders[0]!.id, 'accept');
-    await merchantOrderAction(orders[1]!.id, 'accept');
-    await merchantOrderAction(orders[1]!.id, 'start-preparing');
-    await merchantOrderAction(orders[2]!.id, 'accept');
-    await merchantOrderAction(orders[2]!.id, 'start-preparing');
-    await merchantOrderAction(orders[2]!.id, 'ready');
+    await merchantOrderAction(customerTwo.id, 'start-preparing');
 
     const [first, second] = await Promise.all([
       request(app.getHttpServer())
@@ -608,14 +611,14 @@ describe('Table session workflow', () => {
     expect(second.body.data.session.status).toBe('CLOSED');
     expect(first.body.data.session.closedAt).toBeTruthy();
     expect(second.body.data.session.closedAt).toBe(first.body.data.session.closedAt);
-    expect(first.body.data.session.orders).toHaveLength(3);
+    expect(first.body.data.session.orders).toHaveLength(2);
     expect(
       first.body.data.session.orders.every(
         (order: { status: string }) => order.status === 'COMPLETED',
       ),
     ).toBe(true);
-    expect(first.body.data.orders).toHaveLength(3);
-    expect(second.body.data.orders).toHaveLength(3);
+    expect(first.body.data.orders).toHaveLength(2);
+    expect(second.body.data.orders).toHaveLength(2);
     for (const order of first.body.data.orders as Array<Record<string, unknown>>) {
       expect(order).toEqual(
         expect.objectContaining({
@@ -629,7 +632,7 @@ describe('Table session workflow', () => {
           items: expect.arrayContaining([
             expect.objectContaining({
               productNameZhSnapshot: '桌台测试菜品',
-              quantity: 1,
+              quantity: expect.any(Number),
             }),
           ]),
           statusLogs: expect.arrayContaining([
@@ -662,15 +665,14 @@ describe('Table session workflow', () => {
     expect(storedSession.status).toBe('CLOSED');
     expect(storedSession.openTableId).toBeNull();
     expect(storedSession.closedAt?.toISOString()).toBe(first.body.data.session.closedAt);
-    expect(storedOrders).toHaveLength(3);
+    expect(storedOrders).toHaveLength(2);
     expect(storedOrders.every((order) => order.status === 'COMPLETED')).toBe(true);
     expect(storedOrders.every((order) => order.completedAt !== null)).toBe(true);
     expect(storedOrders.every((order) => order.settlementStatus === 'UNSETTLED')).toBe(true);
-    expect(checkoutLogs).toHaveLength(3);
+    expect(checkoutLogs).toHaveLength(2);
     expect(checkoutLogs.map((log) => log.fromStatus)).toEqual([
       'ACCEPTED',
       'PREPARING',
-      'READY',
     ]);
     expect(checkoutLogs.every((log) => log.toStatus === 'COMPLETED')).toBe(true);
     expect(checkoutLogs.every((log) => log.operatorType === 'MERCHANT_STAFF')).toBe(true);
@@ -688,8 +690,6 @@ describe('Table session workflow', () => {
     if (!dineInOrder.tableSessionId) {
       throw new Error('Expected checkout type order to bind a table session');
     }
-    await merchantOrderAction(dineInOrder.id, 'accept');
-
     const pickupOrder = await prisma.order.create({
       data: {
         orderNo: `CTYPE${Date.now()}${Math.random().toString().slice(2, 8)}`,
@@ -1003,11 +1003,6 @@ describe('Table session workflow', () => {
       throw new Error('Expected completed session seed order to bind a table session');
     }
 
-    await request(app.getHttpServer())
-      .post(`/api/v1/merchant/orders/${order.id}/accept`)
-      .set('Authorization', `Bearer ${tokenOne}`)
-      .send({})
-      .expect(201);
     await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${order.id}/start-preparing`)
       .set('Authorization', `Bearer ${tokenOne}`)

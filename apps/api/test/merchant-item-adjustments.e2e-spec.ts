@@ -501,11 +501,21 @@ describe('Merchant add/decrease/return items', () => {
       createTableOrder(body),
     ]);
     expect(first.order.id).toBe(second.order.id);
-    expect(
-      await prisma.order.count({
-        where: { merchantId, idempotencyKey: body.idempotencyKey },
-      }),
-    ).toBe(1);
+    expect(await prisma.orderStatusLog.count({
+      where: {
+        orderId: BigInt(first.order.id),
+        action: 'MERCHANT_ADD_ITEMS',
+        requestKey: body.idempotencyKey,
+      },
+    })).toBe(1);
+    expect(await prisma.order.count({
+      where: {
+        merchantId,
+        tableSessionId: BigInt(first.session.id),
+        userId: null,
+        createdByStaffId: { not: null },
+      },
+    })).toBe(1);
   });
 
   it('does not serialize independent same-merchant creates on actor/product SHARE locks', async () => {
@@ -703,7 +713,11 @@ describe('Merchant add/decrease/return items', () => {
   });
 
   it('returns an accepted item, cancels the emptied order, keeps a non-empty session open, and emits no outbox', async () => {
-    const created = await createTableOrder(createBody('e2e_return_01', 2));
+    const isolatedTable = await createIsolatedTable('RETURN');
+    const created = await createTableOrder(
+      createBody('e2e_return_01', 2),
+      isolatedTable.id,
+    );
     const itemId = created.order.items[0].id as string;
     await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${created.order.id}/items/${itemId}/return`)
@@ -774,7 +788,7 @@ describe('Merchant add/decrease/return items', () => {
     ).toBe(1);
   });
 
-  it('returns the only table item, closes the session, releases the table, and replays idempotently', async () => {
+  it('returns the only raw order item, keeps the session open, and replays idempotently', async () => {
     const created = await createTableOrder(
       createBody('e2e_return_final_table_item', 1),
       lastReturnTableId,
@@ -806,7 +820,7 @@ describe('Merchant add/decrease/return items', () => {
       items: [],
     }));
     expect(first.body.data.session).toEqual(expect.objectContaining({
-      status: 'CLOSED',
+      status: 'OPEN',
       itemCount: 0,
       totalAmountVnd: '0',
     }));
@@ -814,9 +828,9 @@ describe('Merchant add/decrease/return items', () => {
       where: { id: BigInt(created.session.id) },
     });
     expect(storedSession).toEqual(expect.objectContaining({
-      status: 'CLOSED',
-      openTableId: null,
-      closedAt: expect.any(Date),
+      status: 'OPEN',
+      openTableId: lastReturnTableId,
+      closedAt: null,
       roundingAmountVnd: 0n,
       roundingAppliedByStaffId: null,
     }));
@@ -841,19 +855,18 @@ describe('Merchant add/decrease/return items', () => {
       }),
     ).toBe(1);
 
-    const afterClose = await request(app.getHttpServer())
+    const afterEmpty = await request(app.getHttpServer())
       .post(`/api/v1/merchant/orders/${orderId}/items/${itemId}/return`)
       .set('Authorization', `Bearer ${token}`)
       .send({ ...body, requestKey: 'e2e_return_after_close' })
       .expect(409);
-    expect(afterClose.body.code).toBe('TABLE_SESSION_CLOSED');
+    expect(afterEmpty.body.code).toBe('ORDER_STATUS_CHANGED');
   });
 
-  it('rolls back item, order, session, rounding, and logs when the final session close conflicts', async () => {
-    // Deliberately point openTableId at a separate marker table. The locked
-    // session remains OPEN long enough for the return transaction to mutate
-    // the item/order and then fail its guarded close, exercising real database
-    // rollback without adding a test-only production hook.
+  it('does not attempt implicit table release when the final raw item is returned', async () => {
+    // Deliberately point openTableId at a separate marker table. Raw-order
+    // return must not try to close or release the session; Canonical reconcile
+    // and the explicit release-empty endpoint own that table-level decision.
     const rollbackSession = await prisma.tableSession.create({
       data: {
         merchantId,
@@ -899,23 +912,20 @@ describe('Merchant add/decrease/return items', () => {
       )
       .set('Authorization', `Bearer ${token}`)
       .send({ requestKey, expectedQuantity: 1, returnQuantity: 1 })
-      .expect(409);
+      .expect(201);
 
-    expect(response.body.code).toBe('TABLE_SESSION_STATUS_CHANGED');
-    await expect(
-      prisma.orderItem.findUniqueOrThrow({
-        where: { id: rollbackOrder.items[0]!.id },
-      }),
-    ).resolves.toEqual(expect.objectContaining({ quantity: 1, subtotalVnd: 6000n }));
+    expect(response.body.data.session.status).toBe('OPEN');
+    await expect(prisma.orderItem.findUnique({
+      where: { id: rollbackOrder.items[0]!.id },
+    })).resolves.toBeNull();
     await expect(
       prisma.order.findUniqueOrThrow({ where: { id: rollbackOrder.id } }),
     ).resolves.toEqual(expect.objectContaining({
-      status: 'ACCEPTED',
+      status: 'CANCELLED',
       settlementStatus: 'UNSETTLED',
-      itemAmountVnd: 6000n,
-      totalAmountVnd: 6000n,
-      cancelledAt: null,
-      cancelReason: null,
+      itemAmountVnd: 0n,
+      totalAmountVnd: 0n,
+      cancelledAt: expect.any(Date),
     }));
     await expect(
       prisma.tableSession.findUniqueOrThrow({ where: { id: rollbackSession.id } }),
@@ -923,8 +933,8 @@ describe('Merchant add/decrease/return items', () => {
       status: 'OPEN',
       openTableId: returnRollbackMarkerTableId,
       closedAt: null,
-      roundingAmountVnd: 3000n,
-      roundingAppliedByStaffId: staffId,
+      roundingAmountVnd: 0n,
+      roundingAppliedByStaffId: null,
     }));
     expect(
       await prisma.orderStatusLog.count({
@@ -936,7 +946,7 @@ describe('Merchant add/decrease/return items', () => {
           ],
         },
       }),
-    ).toBe(0);
+    ).toBe(2);
     expect(
       await prisma.printTriggerOutbox.count({ where: { orderId: rollbackOrder.id } }),
     ).toBe(0);
@@ -1102,6 +1112,7 @@ describe('Merchant add/decrease/return items', () => {
   });
 
   it('uses the current committed product price after waiting on its SHARE lock', async () => {
+    const isolatedTable = await createIsolatedTable('PRICE');
     let releaseProduct!: () => void;
     let productLocked!: () => void;
     const allowPriceUpdate = new Promise<void>((resolve) => {
@@ -1125,7 +1136,7 @@ describe('Merchant add/decrease/return items', () => {
     await locked;
     const pendingCreate = createTableOrder(
       createBody('e2e_current_price', 2),
-      parallelTableId,
+      isolatedTable.id,
     );
     let created: Awaited<ReturnType<typeof createTableOrder>>;
     try {
@@ -1189,6 +1200,16 @@ describe('Merchant add/decrease/return items', () => {
       .post(`/api/v1/merchant/tables/${targetTableId}/orders`)
       .set('Authorization', `Bearer ${token}`)
       .send(body);
+  }
+
+  function createIsolatedTable(label: string) {
+    return prisma.diningTable.create({
+      data: {
+        merchantId,
+        tableNo: `${label}-${randomBytes(4).toString('hex')}`,
+        qrToken: randomBytes(32).toString('hex'),
+      },
+    });
   }
 
   async function createPendingOrder(idempotencyKey: string, quantity: number) {

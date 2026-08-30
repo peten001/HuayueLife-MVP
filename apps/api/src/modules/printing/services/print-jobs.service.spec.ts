@@ -10,7 +10,10 @@ import {
   receiptTemplateDisplayFromDefinition,
 } from '../types/receipt-document';
 import { PrintJobsService } from './print-jobs.service';
-import { ReceiptSnapshotService } from './receipt-snapshot.service';
+import {
+  NoPrintableOrderDeltaError,
+  ReceiptSnapshotService,
+} from './receipt-snapshot.service';
 
 const merchantId = 7n;
 const printerId = 17n;
@@ -40,6 +43,7 @@ describe('PrintJobsService', () => {
   let flags: ReturnType<typeof createFlagsMock>;
   let snapshots: {
     fromOrder: jest.Mock;
+    fromOrderAddition: jest.Mock;
     fromTableSession: jest.Mock;
     cloneAndValidate: jest.Mock;
     withTemplate: jest.Mock;
@@ -67,6 +71,7 @@ describe('PrintJobsService', () => {
     const snapshotService = new ReceiptSnapshotService({} as never);
     snapshots = {
       fromOrder: jest.fn().mockResolvedValue(receipt),
+      fromOrderAddition: jest.fn().mockResolvedValue(receipt),
       fromTableSession: jest.fn(),
       cloneAndValidate: jest.fn((value: ReceiptDocument) =>
         JSON.parse(JSON.stringify(value)),
@@ -2032,7 +2037,12 @@ describe('PrintJobsService', () => {
       { id: trigger.id, outcome: 'PROCESSED' },
     ]);
 
-    expect(snapshots.fromOrder).toHaveBeenCalledWith(merchantId, orderId);
+    expect(snapshots.fromOrderAddition).toHaveBeenCalledWith(
+      merchantId,
+      orderId,
+      trigger.orderStatusLogId,
+      undefined,
+    );
     expect(prisma.printJob.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -2146,7 +2156,7 @@ describe('PrintJobsService', () => {
       }),
       totals: { subtotal: 1_500, total: 1_500, currency: 'VND' },
     };
-    snapshots.fromOrder.mockResolvedValue(filteredReceipt);
+    snapshots.fromOrderAddition.mockResolvedValue(filteredReceipt);
     const trigger = pendingTrigger({
       status: 'PROCESSING',
       leaseVersion: 1,
@@ -2174,7 +2184,12 @@ describe('PrintJobsService', () => {
       orderId,
       ruleId,
     );
-    expect(snapshots.fromOrder).toHaveBeenCalledWith(merchantId, orderId, [81n]);
+    expect(snapshots.fromOrderAddition).toHaveBeenCalledWith(
+      merchantId,
+      orderId,
+      trigger.orderStatusLogId,
+      [81n],
+    );
     const data = prisma.printJob.create.mock.calls[0][0].data;
     const blocks = data.receiptSnapshot.blocks as Array<Record<string, unknown>>;
     expect(data.receiptTemplateId).toBe(93n);
@@ -2204,6 +2219,35 @@ describe('PrintJobsService', () => {
       left: '最终应收 / Phải thu',
       right: '1.500 VND',
     }));
+  });
+
+  it('marks a category outbox event processed when this add has no item for that route', async () => {
+    flags.taskCenterEnabled.mockReturnValue(true);
+    flags.automaticCreationEnabled.mockReturnValue(true);
+    const routing = {
+      kitchenRoutingForOrder: jest.fn().mockResolvedValue({ isKitchen: true, categoryIds: [81n] }),
+    };
+    service = new PrintJobsService(
+      prisma as never,
+      flags as never,
+      snapshots as never,
+      audit as never,
+      settings as never,
+      lanBindings as never,
+      templates as never,
+      routing as never,
+    );
+    const trigger = pendingTrigger({ status: 'PROCESSING', leaseVersion: 1, attemptCount: 1 });
+    prisma.printTriggerOutbox.findFirst.mockResolvedValue(pendingTrigger());
+    prisma.printTriggerOutbox.updateMany.mockResolvedValue({ count: 1 });
+    prisma.printTriggerOutbox.findUniqueOrThrow.mockResolvedValue(trigger);
+    prisma.printJob.findMany.mockResolvedValue([]);
+    snapshots.fromOrderAddition.mockRejectedValue(new NoPrintableOrderDeltaError());
+
+    await expect(service.processAutomaticTriggerIds([trigger.id])).resolves.toEqual([
+      { id: trigger.id, outcome: 'PROCESSED' },
+    ]);
+    expect(prisma.printJob.create).not.toHaveBeenCalled();
   });
 
   it('marks a recovered outbox event processed when its deduplicated job already exists', async () => {

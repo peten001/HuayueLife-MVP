@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { PRINTING_ERROR_CODES } from '../types/printing-errors';
 import {
@@ -26,6 +26,13 @@ import {
 } from '../types/print-document';
 
 export type PrintingSnapshot = ReceiptDocument | PrintDocument;
+
+export class NoPrintableOrderDeltaError extends Error {
+  constructor() {
+    super('No printable items in this order event');
+    this.name = 'NoPrintableOrderDeltaError';
+  }
+}
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [
   'PENDING_ACCEPTANCE',
@@ -126,6 +133,83 @@ export class ReceiptSnapshotService {
       verificationCode: `YQ:ORDER:${order.id}:${order.orderNo}`,
     };
     return this.validateAndFreeze(document);
+  }
+
+  /**
+   * Build an automatic receipt from the immutable positive delta captured by
+   * the order-status event. Reusing one logical DINE_IN order must never make a
+   * later add print the dishes that were already printed by earlier events.
+   */
+  async fromOrderAddition(
+    merchantId: bigint,
+    orderId: bigint,
+    orderStatusLogId: bigint,
+    categoryIds?: bigint[],
+  ): Promise<ReceiptDocument> {
+    const [base, statusLog] = await Promise.all([
+      this.fromOrder(merchantId, orderId),
+      this.prisma.orderStatusLog.findFirst({
+        where: {
+          id: orderStatusLogId,
+          orderId,
+          order: { merchantId },
+        },
+        select: { action: true, metadata: true },
+      }),
+    ]);
+    if (!statusLog) this.notFound('订单打印事件不存在');
+    const rawItems = printDeltaItems(statusLog.metadata);
+    // Backward compatibility for already-committed outbox rows created before
+    // event deltas existed. New append events are required to carry a delta.
+    if (!rawItems) return categoryIds
+      ? this.fromOrder(merchantId, orderId, categoryIds)
+      : base;
+    if (rawItems.length === 0) {
+      throw new NoPrintableOrderDeltaError();
+    }
+
+    const productIds = [...new Set(rawItems.map((item) => item.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { merchantId, id: { in: productIds } },
+      select: { id: true, nameVi: true, categoryId: true },
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const categoryIdSet = categoryIds ? new Set(categoryIds) : null;
+    const routed = rawItems.filter((item) => {
+      if (!categoryIdSet) return true;
+      const categoryId = productById.get(item.productId)?.categoryId;
+      return categoryId !== undefined && categoryIdSet.has(categoryId);
+    });
+    if (categoryIdSet && routed.length === 0) {
+      throw new NoPrintableOrderDeltaError();
+    }
+    const items = aggregateReceiptItems(routed.map((item) => {
+      const unitPrice = safeVnd(item.unitPriceVnd);
+      const lineTotal = safeVnd(item.unitPriceVnd * BigInt(item.quantity));
+      return {
+        name: item.productNameSnapshot,
+        nameVi: productById.get(item.productId)?.nameVi ?? undefined,
+        quantity: item.quantity,
+        unitPrice,
+        lineTotal,
+        note: item.remark ?? undefined,
+      };
+    }));
+    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    return this.validateAndFreeze({
+      ...base,
+      generatedAt: new Date().toISOString(),
+      items,
+      totals: {
+        subtotal,
+        originalAmount: subtotal,
+        roundingAmount: 0,
+        receivedAmount: subtotal,
+        total: subtotal,
+        currency: 'VND',
+      },
+      verificationCode: `YQ:ORDER_DELTA:${orderId}:${orderStatusLogId}`,
+    });
   }
 
   async fromTableSession(
@@ -303,6 +387,53 @@ function safeVnd(value: bigint) {
     });
   }
   return number;
+}
+
+interface PrintDeltaItem {
+  productId: bigint;
+  productNameSnapshot: string;
+  quantity: number;
+  remark: string | null;
+  unitPriceVnd: bigint;
+}
+
+function printDeltaItems(metadata: Prisma.JsonValue | null): PrintDeltaItem[] | null {
+  if (!metadata || Array.isArray(metadata) || typeof metadata !== 'object') return null;
+  const value = (metadata as Prisma.JsonObject).printDeltaItems;
+  if (value === undefined) return null;
+  if (!Array.isArray(value)) invalidPrintDelta();
+  return value.map((entry) => {
+    if (!entry || Array.isArray(entry) || typeof entry !== 'object') invalidPrintDelta();
+    const item = entry as Prisma.JsonObject;
+    if (
+      typeof item.productId !== 'string'
+      || !/^\d+$/.test(item.productId)
+      || typeof item.productNameSnapshot !== 'string'
+      || !item.productNameSnapshot.trim()
+      || typeof item.quantity !== 'number'
+      || !Number.isSafeInteger(item.quantity)
+      || item.quantity <= 0
+      || typeof item.unitPriceVnd !== 'string'
+      || !/^\d+$/.test(item.unitPriceVnd)
+      || (item.remark !== null && item.remark !== undefined && typeof item.remark !== 'string')
+    ) {
+      invalidPrintDelta();
+    }
+    return {
+      productId: BigInt(item.productId),
+      productNameSnapshot: item.productNameSnapshot,
+      quantity: item.quantity,
+      remark: typeof item.remark === 'string' ? item.remark : null,
+      unitPriceVnd: BigInt(item.unitPriceVnd),
+    };
+  });
+}
+
+function invalidPrintDelta(): never {
+  throw new BadRequestException({
+    code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+    message: '订单新增菜品打印快照无效',
+  });
 }
 
 function deepFreeze<T>(value: T): T {

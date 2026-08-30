@@ -25,7 +25,10 @@ export interface BusinessDayWindow {
   end: Date;
 }
 
-const TIME_RANGE = /^(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$/;
+// 24:00 is valid only as the exclusive end of a business interval. This keeps
+// the established all-day 00:00-24:00 profile contract without admitting
+// invalid starts such as 24:00-02:00 or values beyond the day boundary.
+const TIME_RANGE = /^(?:[01]\d|2[0-3]):[0-5]\d-(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
 const BUSINESS_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Normalize historical single-range and segment-object shapes at one boundary. */

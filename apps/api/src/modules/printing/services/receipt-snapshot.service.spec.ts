@@ -11,12 +11,19 @@ import { ReceiptSnapshotService } from './receipt-snapshot.service';
 const merchantId = 7n;
 
 describe('ReceiptSnapshotService validation', () => {
-  let prisma: { order: { findFirst: jest.Mock }; tableSession: { findFirst: jest.Mock } };
+  let prisma: {
+    order: { findFirst: jest.Mock };
+    orderStatusLog: { findFirst: jest.Mock };
+    product: { findMany: jest.Mock };
+    tableSession: { findFirst: jest.Mock };
+  };
   let service: ReceiptSnapshotService;
 
   beforeEach(() => {
     prisma = {
       order: { findFirst: jest.fn() },
+      orderStatusLog: { findFirst: jest.fn() },
+      product: { findMany: jest.fn() },
       tableSession: { findFirst: jest.fn() },
     };
     service = new ReceiptSnapshotService(prisma as never);
@@ -394,6 +401,76 @@ describe('ReceiptSnapshotService validation', () => {
       receivedAmount: 1500,
       total: 1500,
     }));
+  });
+
+  it('prints only each immutable add-event delta when one dine-in Order is reused', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 42n,
+      merchantId,
+      merchant: {
+        id: merchantId,
+        nameZh: '测试商家',
+        nameVi: null,
+        addressZh: null,
+        addressDetail: null,
+        contactPhone: null,
+      },
+      table: { tableNo: 'A01', tableName: null },
+      tableNoSnapshot: 'A01',
+      orderNo: 'REUSED-42',
+      orderType: 'DINE_IN',
+      createdAt: new Date('2026-08-30T00:00:00.000Z'),
+      completedAt: null,
+      items: [
+        { productNameZhSnapshot: '历史菜 A', product: { nameVi: null, categoryId: 81n }, quantity: 1, unitPriceVnd: 1000n, subtotalVnd: 1000n, remark: null },
+        { productNameZhSnapshot: '本次菜 D', product: { nameVi: 'Món D', categoryId: 81n }, quantity: 1, unitPriceVnd: 2000n, subtotalVnd: 2000n, remark: '少辣' },
+        { productNameZhSnapshot: '下次菜 E', product: { nameVi: 'Món E', categoryId: 82n }, quantity: 2, unitPriceVnd: 3000n, subtotalVnd: 6000n, remark: null },
+      ],
+      itemAmountVnd: 9000n,
+      totalAmountVnd: 9000n,
+      discountAmountVnd: 0n,
+      roundingAmountVnd: 0n,
+      roundingAppliedByStaffId: null,
+      roundingAppliedAt: null,
+      customerRemark: null,
+    });
+    prisma.orderStatusLog.findFirst
+      .mockResolvedValueOnce({
+        action: 'MERCHANT_ADD_ITEMS',
+        metadata: {
+          printDeltaItems: [{
+            productId: '102', productNameSnapshot: '本次菜 D', quantity: 1,
+            remark: '少辣', unitPriceVnd: '2000', subtotalVnd: '2000',
+          }],
+        },
+      })
+      .mockResolvedValueOnce({
+        action: 'MERCHANT_ADD_ITEMS',
+        metadata: {
+          printDeltaItems: [{
+            productId: '103', productNameSnapshot: '下次菜 E', quantity: 2,
+            remark: null, unitPriceVnd: '3000', subtotalVnd: '6000',
+          }],
+        },
+      });
+    prisma.product.findMany
+      .mockResolvedValueOnce([{ id: 102n, nameVi: 'Món D', categoryId: 81n }])
+      .mockResolvedValueOnce([{ id: 103n, nameVi: 'Món E', categoryId: 82n }]);
+
+    const firstAdd = await service.fromOrderAddition(merchantId, 42n, 901n);
+    const secondAdd = await service.fromOrderAddition(merchantId, 42n, 902n, [82n]);
+
+    expect(firstAdd.items).toEqual([{
+      name: '本次菜 D', nameVi: 'Món D', quantity: 1,
+      unitPrice: 2000, lineTotal: 2000, note: '少辣',
+    }]);
+    expect(firstAdd.totals).toMatchObject({ subtotal: 2000, total: 2000 });
+    expect(firstAdd.verificationCode).toBe('YQ:ORDER_DELTA:42:901');
+    expect(secondAdd.items).toEqual([{
+      name: '下次菜 E', nameVi: 'Món E', quantity: 2,
+      unitPrice: 3000, lineTotal: 6000, note: undefined,
+    }]);
+    expect(secondAdd.items.map((item) => item.name)).not.toContain('历史菜 A');
   });
 
   it('prints pickup rounding from the persisted order amount fields', async () => {

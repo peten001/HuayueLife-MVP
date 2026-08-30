@@ -129,7 +129,9 @@ describe('MerchantOrdersService printing outbox', () => {
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([502n]);
   });
 
-  it('stores payment method and business date in the same non-table completion transaction', async () => {
+  it.each(['CASH', 'BANK_TRANSFER'] as const)(
+    'stores %s and business date in the same non-table completion transaction',
+    async (paymentMethod) => {
     const completed = {
       id: 39n,
       merchantId: 7n,
@@ -164,7 +166,7 @@ describe('MerchantOrdersService printing outbox', () => {
       {} as never,
     );
 
-    await service.transition(7n, 3n, 39n, 'COMPLETE', undefined, 'CASH');
+    await service.transition(7n, 3n, 39n, 'COMPLETE', undefined, paymentMethod);
 
     expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 39n, merchantId: 7n, status: 'READY' },
@@ -172,8 +174,9 @@ describe('MerchantOrdersService printing outbox', () => {
         status: 'COMPLETED',
         completedAt: expect.any(Date),
         businessDate: expect.any(Date),
-        paymentMethod: 'CASH',
+        paymentMethod,
       }),
     }));
-  });
+    },
+  );
 });
