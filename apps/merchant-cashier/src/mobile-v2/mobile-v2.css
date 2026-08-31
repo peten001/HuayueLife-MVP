@@ -1184,11 +1184,12 @@ body.cashier-mobile-v2-preview-active #app {
   .mobile-v2-header {
     z-index: var(--mobile-v2-layer-header);
     grid-template-columns: var(--mobile-v2-control) minmax(0, 1fr) auto;
-    gap: clamp(4px, 1.538vw, 7px);
+    column-gap: clamp(4px, 1.538vw, 7px);
+    row-gap: 0;
     padding:
       max(clamp(7px, 2.308vw, 11px), env(safe-area-inset-top, 0px))
       var(--mobile-v2-phone-gutter)
-      clamp(5px, 1.795vw, 8px);
+      clamp(3px, 1.282vw, 5px);
     border-bottom-color: var(--mobile-v2-line);
     background: rgb(251 252 250 / 94%);
     box-shadow: 0 5px 20px rgb(25 49 34 / 6%);
@@ -1475,16 +1476,16 @@ body.cashier-mobile-v2-preview-active #app {
   }
   .table-ordering-mobile-v2-search-trigger { background: var(--mobile-v2-surface-muted); }
   .table-ordering-mobile-v2-search-mode {
-    min-height: clamp(58px, 16.41vw, 72px);
+    min-height: clamp(52px, 13.333vw, 56px);
     grid-template-columns: var(--mobile-v2-control) minmax(0, 1fr);
     gap: var(--mobile-v2-phone-gap);
-    padding: 3px var(--mobile-v2-phone-gutter) clamp(7px, 2.051vw, 10px);
+    padding: 2px var(--mobile-v2-phone-gutter) clamp(5px, 1.538vw, 7px);
   }
   .cashier-shell--mobile-v2-preview .table-ordering-mobile-v2-search-mode .table-ordering-search {
-    height: clamp(46px, 12.821vw, 56px);
-    min-height: clamp(46px, 12.821vw, 56px);
+    height: clamp(44px, 11.282vw, 48px);
+    min-height: clamp(44px, 11.282vw, 48px);
     border-color: var(--mobile-v2-line);
-    border-radius: var(--mobile-v2-radius-card);
+    border-radius: var(--mobile-v2-radius-control);
     background: var(--mobile-v2-surface-muted);
     transition: background-color 160ms ease, border-color 160ms ease;
   }
@@ -1526,6 +1527,12 @@ body.cashier-mobile-v2-preview-active #app {
   .cashier-shell--mobile-v2-preview .table-ordering-workspace--mobile-v2 .table-ordering-product:active {
     transform: none;
     background: var(--mobile-v2-green-wash);
+  }
+  .cashier-shell--mobile-v2-preview .table-ordering-workspace--mobile-v2 .table-ordering-product.is-selected {
+    cursor: default;
+  }
+  .cashier-shell--mobile-v2-preview .table-ordering-workspace--mobile-v2 .table-ordering-product.is-selected:active {
+    background: transparent;
   }
   .cashier-shell--mobile-v2-preview .table-ordering-workspace--mobile-v2 .table-ordering-product__image {
     width: clamp(56px, 14.872vw, 62px);

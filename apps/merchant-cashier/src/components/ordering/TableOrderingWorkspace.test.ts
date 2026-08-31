@@ -417,6 +417,45 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.find('.table-ordering-mobile-v2-topbar').exists()).toBe(true);
   });
 
+  it('dismisses the mobile keyboard when the user touches the product area', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const blur = vi.spyOn(HTMLInputElement.prototype, 'blur');
+    const wrapper = mountWorkspace({ embedded: true, mobileV2Presentation: true });
+    await flushPromises();
+
+    await wrapper.get('.table-ordering-mobile-v2-search-trigger').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-testid="table-ordering-products-scroller"]').trigger('pointerdown');
+
+    expect(blur).toHaveBeenCalledOnce();
+  });
+
+  it('locks a selected mobile V2 product row to its explicit plus and minus controls', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const wrapper = mountWorkspace({
+      embedded: true,
+      mobileV2Presentation: true,
+      productQuantities: { [product.id]: 1 },
+    });
+    await flushPromises();
+
+    await productCard(wrapper).trigger('click');
+    expect(wrapper.emitted('addProduct')).toBeUndefined();
+
+    const stepperButtons = productCard(wrapper).findAll('.table-ordering-product__stepper button');
+    await stepperButtons[0]!.trigger('click');
+    await stepperButtons[1]!.trigger('click');
+    expect(wrapper.emitted('removeProduct')).toEqual([[product.id]]);
+    expect(wrapper.emitted('addProduct')).toEqual([[product.id]]);
+
+    await productCard(wrapper, secondProduct.id).trigger('click');
+    expect(wrapper.emitted('addProduct')).toEqual([[product.id], [secondProduct.id]]);
+  });
+
   it('retains the compact Cashier density, touch and horizontal category contracts', () => {
     const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
     const mobileV5 = styles.slice(styles.indexOf('/* Mobile ordering V5:'));

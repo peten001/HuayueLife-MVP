@@ -267,6 +267,16 @@ function queueProductRemoval(productId: string) {
   return true;
 }
 
+function handleProductCardActivation(productId: string) {
+  if (mobileV2Menu.value && canonicalQuantityForProduct(productId) > 0) return false;
+  return queueProductAddition(productId);
+}
+
+function dismissMobileKeyboard() {
+  if (!mobileV2Menu.value || !mobileSearchOpen.value) return;
+  searchInput.value?.blur();
+}
+
 function openMobileSearch() {
   activeCategoryId.value = 'ALL';
   mobileSearchOpen.value = true;
@@ -398,7 +408,7 @@ function onProductCardKeydown(productId: string, event: KeyboardEvent) {
   if (!['Enter', ' '].includes(event.key)) return;
   event.preventDefault();
   event.stopPropagation();
-  queueProductAddition(productId);
+  handleProductCardActivation(productId);
 }
 
 onMounted(() => {
@@ -581,7 +591,11 @@ function setProductCardRef(element: Element | null, index: number) {
         </nav>
 
         <div class="table-ordering-products">
-          <div class="table-ordering-products__scroller" data-testid="table-ordering-products-scroller">
+          <div
+            class="table-ordering-products__scroller"
+            data-testid="table-ordering-products-scroller"
+            @pointerdown="dismissMobileKeyboard"
+          >
             <nav
               v-if="!embedded || !mobileOrderingLayout"
               class="table-ordering-category-strip"
@@ -637,7 +651,7 @@ function setProductCardRef(element: Element | null, index: number) {
                   :role="mobileV2Menu ? undefined : 'button'"
                   :aria-busy="pendingQuantityForProduct(product.id) > 0"
                   :aria-disabled="productInteractionDisabled(product.id)"
-                  @click="queueProductAddition(product.id)"
+                  @click="handleProductCardActivation(product.id)"
                   @keydown="onProductCardKeydown(product.id, $event)"
                 >
                   <span class="table-ordering-product__image">
