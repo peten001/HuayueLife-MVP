@@ -207,9 +207,7 @@ function productName(product: CashierMenuProduct) {
 }
 
 function productCardImage(product: CashierMenuProduct) {
-  const thumbnailUrl = product.menuThumbnailUrl?.trim();
-  if (thumbnailUrl) return thumbnailUrl;
-  return product.imageUrl?.trim() || '';
+  return product.menuThumbnailUrl?.trim() || '';
 }
 
 function categoryName(category: CashierMenuCategory) {

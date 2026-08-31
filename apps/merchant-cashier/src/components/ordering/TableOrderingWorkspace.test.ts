@@ -344,8 +344,8 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
       return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect;
     });
     apiMocks.listCashierMenuProducts.mockResolvedValueOnce([
-      { ...product, imageUrl: '/uploads/beef-pho.jpg' },
-      { ...secondProduct, imageUrl: '/uploads/iced-coffee.jpg' },
+      { ...product, menuThumbnailUrl: '/uploads/product-thumbnails/beef-pho.webp' },
+      { ...secondProduct, menuThumbnailUrl: '/uploads/product-thumbnails/iced-coffee.webp' },
     ]);
     const wrapper = mountWorkspace();
     await flushPromises();
@@ -357,13 +357,27 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     await drinks!.trigger('click');
     await flushPromises();
     await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
-      .toContain('/uploads/iced-coffee.jpg'));
+      .toContain('/uploads/product-thumbnails/iced-coffee.webp'));
 
     await wrapper.get('input[type="search"]').setValue('冰咖啡');
     await flushPromises();
     await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
-      .toContain('/uploads/iced-coffee.jpg'));
+      .toContain('/uploads/product-thumbnails/iced-coffee.webp'));
     wrapper.unmount();
+  });
+
+  it('shows the placeholder without requesting an original when the thumbnail is absent', async () => {
+    apiMocks.listCashierMenuProducts.mockResolvedValueOnce([{
+      ...product,
+      imageUrl: '/uploads/products/original.jpg',
+      menuThumbnailUrl: null,
+    }]);
+    const wrapper = mountWorkspace();
+    await flushPromises();
+
+    expect(wrapper.find('.table-ordering-product img').exists()).toBe(false);
+    expect(wrapper.html()).not.toContain('/uploads/products/original.jpg');
+    expect(wrapper.find('.table-ordering-product__image svg').exists()).toBe(true);
   });
 
   it('never amplifies a thumbnail failure into a full-size original request', async () => {
