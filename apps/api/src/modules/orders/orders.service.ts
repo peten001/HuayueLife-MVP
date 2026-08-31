@@ -250,12 +250,13 @@ export class OrdersService {
               },
             });
             const printTriggers = this.printJobs
-              ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+              ? await this.printJobs.enqueueAutomaticProductionTriggersForOrderDelta(tx, {
                   merchantId: preview.merchant.id,
                   orderId: primary.id,
                   orderStatusLogId: statusLog.id,
                   orderType: 'DINE_IN',
                   status: 'ACCEPTED',
+                  itemDeltas: printDeltaItems,
                 })
               : [];
             order = await tx.order.findUniqueOrThrow({
@@ -347,12 +348,18 @@ export class OrdersService {
           });
         }
         const printTriggers = autoAcceptDineIn && this.printJobs
-          ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
+          ? await this.printJobs.enqueueAutomaticProductionTriggersForOrderDelta(tx, {
               merchantId: order.merchantId,
               orderId: order.id,
               orderStatusLogId: order.statusLogs[0].id,
               orderType: order.orderType,
               status: 'ACCEPTED',
+              itemDeltas: preview.items.map((item) => ({
+                productId: item.product.id.toString(),
+                quantity: item.quantity,
+                remark: item.remark ?? null,
+                unitPriceVnd: item.product.priceVnd.toString(),
+              })),
             })
           : [];
         shouldAutoPrint = true;

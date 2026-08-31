@@ -20,7 +20,10 @@ import { SettlementAdjustmentDto } from '../orders/settlement-adjustment.dto';
 import { TableSessionsService } from './table-sessions.service';
 import { TransferTableSessionDto } from './dto/transfer-table-session.dto';
 import { CashierCheckoutV2Dto } from './dto/cashier-checkout-v2.dto';
-import { ReleaseEmptyTableSessionDto } from './dto/dine-in-canonical-state.dto';
+import {
+  NotifyTableSessionProductionDto,
+  ReleaseEmptyTableSessionDto,
+} from './dto/dine-in-canonical-state.dto';
 
 class TableSessionRoundingDto {
   @IsBoolean()
@@ -114,6 +117,21 @@ export class MerchantTableSessionsController {
       BigInt(staff.sub),
       BigInt(params.id),
       dto,
+    );
+  }
+
+  @Post('table-sessions/:id/production-notifications')
+  notifyProduction(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: NotifyTableSessionProductionDto,
+  ) {
+    return this.service.notifyProduction(
+      merchantId,
+      BigInt(staff.sub),
+      BigInt(params.id),
+      dto.requestKey,
     );
   }
 

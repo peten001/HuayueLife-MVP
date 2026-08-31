@@ -238,6 +238,7 @@ function buildHarness(options: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     orderItem: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       update: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
@@ -275,6 +276,12 @@ function buildHarness(options: {
   const printJobs = {
     enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([]),
     processAutomaticTriggerIds: jest.fn().mockResolvedValue(undefined),
+    getProductionNotificationState: jest.fn().mockResolvedValue({
+      status: 'READY',
+      pendingItemQuantity: Math.max(0, afterQuantity - baseQuantity),
+      pendingOrderCount: afterQuantity > baseQuantity ? 1 : 0,
+      configuredDestinationCount: 1,
+    }),
   };
   const creator = { assertValid: jest.fn().mockResolvedValue({ staffRole: 'STAFF' }) };
   const cancellation = { cancel: jest.fn().mockResolvedValue({ id: 92n }) };

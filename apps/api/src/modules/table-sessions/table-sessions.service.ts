@@ -121,8 +121,26 @@ export class TableSessionsService {
     this.canonicalState = canonicalState ?? new DineInCanonicalStateService(prisma);
   }
 
-  getCanonicalState(merchantId: bigint, sessionId: bigint) {
-    return this.canonicalState.getState(merchantId, sessionId);
+  async getCanonicalState(merchantId: bigint, sessionId: bigint) {
+    const [state, productionNotification] = await Promise.all([
+      this.canonicalState.getState(merchantId, sessionId),
+      this.printJobs.getProductionNotificationState(merchantId, sessionId),
+    ]);
+    return { ...state, productionNotification };
+  }
+
+  notifyProduction(
+    merchantId: bigint,
+    staffId: bigint,
+    sessionId: bigint,
+    requestKey: string,
+  ) {
+    return this.printJobs.notifyTableSessionProduction({
+      merchantId,
+      tableSessionId: sessionId,
+      createdByStaffId: staffId,
+      requestKey,
+    });
   }
 
   async getOrCreateOpenSession(

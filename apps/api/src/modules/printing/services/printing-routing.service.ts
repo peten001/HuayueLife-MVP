@@ -220,7 +220,9 @@ export class PrintingRoutingService {
         const existing = managed.find((rule) => rule.name === name);
         const data = {
           autoPrint: entry.newOrderAutoPrint,
-          enabled: entry.newOrderAutoPrint,
+          // A configured route must remain available to an explicit cashier
+          // notification even when automatic customer-order printing is off.
+          enabled: true,
           copies: 1,
           priority: 100,
         };

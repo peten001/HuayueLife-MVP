@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRightLeft, CreditCard, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
+import { ArrowRightLeft, Bell, CreditCard, LoaderCircle, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
 import { computed } from 'vue';
 import { formatItemPrice, formatVietnamTime, formatVnd } from '@/domain';
 import { useI18n } from '@/i18n';
@@ -18,6 +18,7 @@ const props = defineProps<{
   adjustmentApplied?: boolean;
   embedded?: boolean;
   transferDisabled?: boolean;
+  notificationLoading?: boolean;
   // Compatibility-only props retained for older isolated component fixtures.
   draftLines?: unknown[];
   pendingDecreaseMergeKeys?: Set<string>;
@@ -28,7 +29,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  orderItems: [];
+  notifyProduction: [];
   decreaseLine: [line: DineInCanonicalLine];
   increaseLine: [line: DineInCanonicalLine];
   transfer: [];
@@ -50,9 +51,23 @@ const totals = computed(() => props.canonicalState?.totals ?? {
 });
 const totalDishQuantity = computed(() => canonicalLines.value.reduce((total, line) => total + line.quantity, 0));
 const dishCountLabel = computed(() => t(totalDishQuantity.value === 1 ? 'table.dishCountOne' : 'table.dishCount', { count: totalDishQuantity.value }));
-const canOrderItems = computed(() => props.session
-  ? props.session.status === 'OPEN' && props.table?.status !== 'DISABLED'
-  : props.table?.status === 'ACTIVE');
+const productionNotification = computed(() => props.canonicalState?.productionNotification);
+const canNotifyProduction = computed(() => Boolean(
+  props.session?.status === 'OPEN'
+  && props.table?.status !== 'DISABLED'
+  && productionNotification.value?.status === 'READY'
+  && productionNotification.value.pendingItemQuantity > 0,
+));
+const productionNotificationTitle = computed(() => {
+  if (productionNotification.value?.status === 'READY') {
+    return t('productionNotification.pending', {
+      count: productionNotification.value.pendingItemQuantity,
+    });
+  }
+  if (productionNotification.value?.status === 'UNCONFIGURED') return t('productionNotification.unconfigured');
+  if (productionNotification.value?.status === 'UNAVAILABLE') return t('productionNotification.unavailable');
+  return t('productionNotification.upToDate');
+});
 const tableStatus = computed(() => props.table?.operationalStatus || 'IN_USE');
 const tableStatusLabel = computed(() => {
   if (tableStatus.value === 'DISABLED') return t('table.status.disabled');
@@ -136,8 +151,8 @@ function priceCanExpand(line: DineInCanonicalLine) {
 
     <footer class="table-bill-shell__footer" data-testid="right-panel-footer">
       <div class="table-bill-total-row dinein-summary-row" :class="{ 'dinein-summary-row--placeholder': !session }">
-        <button v-if="session && canOrderItems && !embedded" type="button" class="secondary-action dinein-action-button" data-testid="table-order-items" :disabled="actionsDisabled" @click="emit('orderItems')"><UtensilsCrossed :size="18" aria-hidden="true" />{{ t('table.addItems') }}</button>
-        <button v-else-if="!session" type="button" class="secondary-action dinein-action-button" disabled><UtensilsCrossed :size="18" aria-hidden="true" />{{ t('table.addItems') }}</button>
+        <button v-if="session && !embedded" type="button" class="secondary-action dinein-action-button production-notify-action" :class="{ 'production-notify-action--ready': canNotifyProduction }" data-testid="table-production-notify" :aria-busy="notificationLoading" :title="productionNotificationTitle" :disabled="actionsDisabled || notificationLoading || !canNotifyProduction" @click="emit('notifyProduction')"><LoaderCircle v-if="notificationLoading" :size="18" class="spinning" aria-hidden="true" /><Bell v-else :size="18" aria-hidden="true" />{{ t(notificationLoading ? 'productionNotification.loading' : 'productionNotification.action') }}</button>
+        <button v-else-if="!session" type="button" class="secondary-action dinein-action-button production-notify-action" disabled><Bell :size="18" aria-hidden="true" />{{ t('productionNotification.action') }}</button>
         <dl class="dinein-settlement-summary">
           <template v-if="session">
             <div><dt>{{ t('discount.cashierOriginal') }}</dt><dd>{{ formatVnd(totals.originalAmountVnd, locale) }}</dd></div>
@@ -168,6 +183,16 @@ function priceCanExpand(line: DineInCanonicalLine) {
 .dinein-settlement-summary .is-payable { margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--cashier-shell-border); }
 .dinein-settlement-summary .is-payable dt { color: var(--cashier-shell-text); font-size: 16px; font-weight: 600; }
 .dinein-settlement-summary .is-payable dd { color: var(--cashier-detail-total); font-size: 21px; font-weight: 700; }
+.production-notify-action--ready { border-color: var(--cashier-green-alpha-52); background: var(--cashier-green-alpha-13); }
+.production-notify-action .spinning { animation: production-notify-spin 800ms linear infinite; }
+.production-notify-action--ready:active:not(:disabled) { transform: translateY(1px); }
+@media (hover: hover) and (pointer: fine) {
+  .production-notify-action--ready:hover:not(:disabled) { border-color: var(--cashier-green); background: var(--cashier-green-alpha-22); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .production-notify-action .spinning { animation: none; }
+}
+@keyframes production-notify-spin { to { transform: rotate(360deg); } }
 .canonical-table-item-row { grid-template-columns: minmax(0, 1fr) 116px auto !important; }
 .canonical-table-item-row .table-item-summary-row__name { grid-column: 1 !important; }
 .canonical-table-item-row .committed-item-stepper { grid-column: 2 !important; }

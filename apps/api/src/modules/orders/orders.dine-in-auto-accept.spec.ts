@@ -49,6 +49,7 @@ describe('OrdersService dine-in auto acceptance', () => {
     };
     const printJobs = {
       enqueueAutomaticTriggersForOrderTransition: jest.fn().mockResolvedValue([{ id: 801n }]),
+      enqueueAutomaticProductionTriggersForOrderDelta: jest.fn().mockResolvedValue([{ id: 801n }]),
       processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
     };
     const service = new OrdersService(
@@ -106,7 +107,7 @@ describe('OrdersService dine-in auto acceptance', () => {
     );
     expect(tx.order.create.mock.calls[0]?.[0].data.items.create).toHaveLength(3);
     expect(tx.order.create).toHaveBeenCalledTimes(1);
-    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledTimes(1);
+    expect(printJobs.enqueueAutomaticProductionTriggersForOrderDelta).toHaveBeenCalledTimes(1);
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([801n]);
   });
 
@@ -124,6 +125,7 @@ describe('OrdersService dine-in auto acceptance', () => {
       );
       expect(tx.order.create.mock.calls[0]?.[0].data).not.toHaveProperty('acceptedAt');
       expect(printJobs.enqueueAutomaticTriggersForOrderTransition).not.toHaveBeenCalled();
+      expect(printJobs.enqueueAutomaticProductionTriggersForOrderDelta).not.toHaveBeenCalled();
     },
   );
 
@@ -147,9 +149,13 @@ describe('OrdersService dine-in auto acceptance', () => {
         metadata: expect.objectContaining({ reusedOrder: true, printDeltaItems: expect.any(Array) }),
       }),
     }));
-    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledWith(
+    expect(printJobs.enqueueAutomaticProductionTriggersForOrderDelta).toHaveBeenCalledWith(
       tx,
-      expect.objectContaining({ orderId: 91n, orderStatusLogId: 702n }),
+      expect.objectContaining({
+        orderId: 91n,
+        orderStatusLogId: 702n,
+        itemDeltas: expect.any(Array),
+      }),
     );
   });
 

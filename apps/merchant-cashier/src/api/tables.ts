@@ -11,6 +11,7 @@ import type {
   DineInCanonicalState,
   ReconcileDineInCanonicalStateInput,
   ReleaseEmptyTableSessionInput,
+  ProductionNotificationResult,
 } from '@/types';
 import { requestApi } from './http';
 
@@ -80,6 +81,30 @@ export function reconcileDineInCanonicalState(
   return requestApi<DineInCanonicalState>(
     `/merchant/table-sessions/${encodeURIComponent(sessionId)}/canonical-state/reconcile`,
     { method: 'POST', body: input },
+  );
+}
+
+export function notifyTableSessionProduction(
+  sessionId: string,
+  requestKey: string,
+): Promise<ProductionNotificationResult> {
+  if (isDemoSessionActive()) {
+    return Promise.resolve({
+      notification: {
+        status: 'UP_TO_DATE',
+        pendingItemQuantity: 0,
+        pendingOrderCount: 0,
+        configuredDestinationCount: 1,
+      },
+      queuedItemQuantity: 0,
+      queuedOrderCount: 0,
+      queuedDestinationCount: 0,
+      idempotentReplay: false,
+    });
+  }
+  return requestApi<ProductionNotificationResult>(
+    `/merchant/table-sessions/${encodeURIComponent(sessionId)}/production-notifications`,
+    { method: 'POST', body: { requestKey } },
   );
 }
 

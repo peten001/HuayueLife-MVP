@@ -929,7 +929,7 @@
 
 .toast-region { position: fixed; top: calc(var(--cashier-header-height) + 10px); right: calc(var(--cashier-detail-width) + 12px); z-index: 130; display: grid; gap: 7px; width: min(340px, calc(100vw - 24px)); pointer-events: none; }
 .cashier-toast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 11px; border: 1px solid var(--cashier-border); border-radius: 9px; color: var(--cashier-text); background: var(--cashier-surface); box-shadow: var(--cashier-shadow-md); font-size: 11px; pointer-events: auto; }
-.cashier-toast--success { border-color: var(--cashier-green); }
+.cashier-toast--success { border-color: var(--cashier-green-alpha-52); color: var(--cashier-money-strong); background: var(--cashier-green-soft); }
 .cashier-toast--warning { border-color: var(--cashier-yellow); }
 .cashier-toast--error { border-color: var(--cashier-red); }
 .cashier-toast button { display: grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0; color: var(--cashier-text-muted); background: var(--cashier-transparent); }

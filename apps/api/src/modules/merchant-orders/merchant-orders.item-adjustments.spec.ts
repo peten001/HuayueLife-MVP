@@ -168,7 +168,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
-  it('keeps consecutive same-item direct adds in one staff Order with separate print events', async () => {
+  it('keeps consecutive same-item direct adds in one staff Order pending an explicit production notification', async () => {
     const tableRow = { id: 11n, table_no: 'A01', table_name: null, status: 'ACTIVE' };
     const productRow = {
       id: 61n,
@@ -237,9 +237,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         metadata: expect.objectContaining({ reusedOrder: true, printDeltaItems: expect.any(Array) }),
       }),
     }));
-    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledTimes(2);
-    expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(1, [801n]);
-    expect(printJobs.processAutomaticTriggerIds).toHaveBeenNthCalledWith(2, [802n]);
+    expect(printJobs.enqueueAutomaticTriggersForOrderTransition).not.toHaveBeenCalled();
+    expect(printJobs.processAutomaticTriggerIds).not.toHaveBeenCalled();
   });
 
   it('returns the existing add-on order for the same staff idempotency key', async () => {
@@ -450,6 +449,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         create: jest.fn().mockResolvedValue({ id: 91n }),
       },
       orderItem: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         update: jest.fn().mockResolvedValue({}),
         delete: jest.fn().mockResolvedValue({}),
       },

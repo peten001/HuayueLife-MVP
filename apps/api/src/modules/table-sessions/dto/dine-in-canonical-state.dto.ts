@@ -63,3 +63,9 @@ export class ReleaseEmptyTableSessionDto {
   @Matches(REVISION)
   expectedRevision!: string;
 }
+
+export class NotifyTableSessionProductionDto {
+  @IsString()
+  @Matches(REQUEST_KEY)
+  requestKey!: string;
+}

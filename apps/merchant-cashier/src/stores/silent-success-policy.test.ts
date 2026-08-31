@@ -23,7 +23,13 @@ describe('cashier silent-success feedback policy', () => {
         ['success helper', /\b(?:show|notify|display|open)Success[A-Za-z0-9_]*\s*\(/g],
         ['success banner state', /\b(?:successMessage|successModal|successBanner|successNotification)\s*=\s*(?!false\b|null\b|undefined\b|['"]['"])/g],
       ] as const) {
-        if (pattern.test(source)) violations.push(`${relativePath}: ${label}`);
+        const matches = [...source.matchAll(new RegExp(pattern.source, pattern.flags))];
+        for (const match of matches) {
+          const approvedProductionNotification = label === 'success toast'
+            && relativePath === 'src/pages/TableOverviewPage.vue'
+            && match[0].includes("t('productionNotification.success')");
+          if (!approvedProductionNotification) violations.push(`${relativePath}: ${label}`);
+        }
       }
     }
 

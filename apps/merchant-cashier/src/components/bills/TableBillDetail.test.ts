@@ -100,6 +100,25 @@ describe('TableBillDetail canonical-state UI', () => {
     expect(wrapper.get('.committed-item-stepper output').text()).toBe('123');
     expect(wrapper.get('.table-item-summary-row__item-price').text()).toContain('14,000,000');
   });
+
+  it('uses the amount-row action as a stateful production notification', async () => {
+    const wrapper = mountDetail();
+    const button = wrapper.get('[data-testid="table-production-notify"]');
+    expect(button.text()).toContain('通知');
+    expect(button.attributes('disabled')).toBeUndefined();
+    await button.trigger('click');
+    expect(wrapper.emitted('notifyProduction')).toHaveLength(1);
+
+    const state = canonical();
+    state.productionNotification = {
+      status: 'UP_TO_DATE',
+      pendingItemQuantity: 0,
+      pendingOrderCount: 0,
+      configuredDestinationCount: 2,
+    };
+    await wrapper.setProps({ canonicalState: state });
+    expect(wrapper.get('[data-testid="table-production-notify"]').attributes('disabled')).toBeDefined();
+  });
 });
 
 function mountDetail(extraProps: Record<string, unknown> = {}) {
@@ -124,6 +143,7 @@ function canonical(quantity = 2): DineInCanonicalState {
       subtotalVnd: (BigInt(quantity) * 60_000n).toString(), adjustability: 'RETURN', sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
     }] : [],
     totals: { originalAmountVnd: (BigInt(quantity) * 60_000n).toString(), discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: (BigInt(quantity) * 60_000n).toString() },
+    productionNotification: { status: 'READY', pendingItemQuantity: quantity, pendingOrderCount: quantity ? 1 : 0, configuredDestinationCount: 2 },
     blockers: [], generatedAt: '2026-08-30T00:00:00.000Z',
   };
 }

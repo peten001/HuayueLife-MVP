@@ -11,6 +11,7 @@ import {
   PrintJobSource,
   PrintJobStatus,
   PrintTriggerEvent,
+  OrderStatus,
   OrderType,
   Prisma,
   PrinterChannelType,
@@ -55,6 +56,7 @@ import { LanTerminalBindingsService } from './lan-terminal-bindings.service';
 import { ReceiptTemplatesService } from './receipt-templates.service';
 import {
   isManagedKitchenRuleName,
+  KITCHEN_RULE_PREFIX,
   MANAGED_RULE_PREFIX,
   PrintingRoutingService,
 } from './printing-routing.service';
@@ -177,6 +179,25 @@ export interface EnqueueTableSessionCheckoutInput {
   merchantId: bigint;
   tableSessionId: bigint;
 }
+
+export type ProductionNotificationItemDelta = {
+  productId: string;
+  quantity: number;
+  remark?: string | null;
+  unitPriceVnd: string;
+};
+
+export interface EnqueueAutomaticProductionTriggerInput
+  extends EnqueueAutomaticTriggerInput {
+  itemDeltas: ProductionNotificationItemDelta[];
+}
+
+export type ProductionNotificationState = {
+  status: 'READY' | 'UP_TO_DATE' | 'UNCONFIGURED' | 'UNAVAILABLE';
+  pendingItemQuantity: number;
+  pendingOrderCount: number;
+  configuredDestinationCount: number;
+};
 
 interface AutomaticRuleSnapshot {
   id: bigint;
@@ -558,6 +579,472 @@ export class PrintJobsService {
   }
 
   /**
+   * Queues only the managed kitchen/bar routes for one customer dine-in
+   * submission. The item ledger is advanced in the same transaction only
+   * when at least one automatic production destination accepted the event.
+   */
+  async enqueueAutomaticProductionTriggersForOrderDelta(
+    tx: Prisma.TransactionClient,
+    input: EnqueueAutomaticProductionTriggerInput,
+  ) {
+    if (!this.automaticTriggeringEnabled()) return [];
+    if (!(await this.merchantAutomaticCreationEnabled(input.merchantId, tx))) return [];
+    const merchant = await tx.merchant.findUnique({
+      where: { id: input.merchantId },
+      select: { status: true, printingEnabled: true },
+    });
+    if (merchant?.status !== 'ACTIVE' || !merchant.printingEnabled) return [];
+    const rules = await this.productionRules(tx, input.merchantId, true);
+    if (rules.length === 0) return [];
+    return this.enqueueProductionTriggerRecords(tx, {
+      ...input,
+      rules,
+      source: 'AUTOMATIC',
+    });
+  }
+
+  async getProductionNotificationState(
+    merchantId: bigint,
+    tableSessionId: bigint,
+  ): Promise<ProductionNotificationState> {
+    const [merchant, session, destinationCount] = await Promise.all([
+      this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { status: true, printingEnabled: true },
+      }),
+      this.prisma.tableSession.findFirst({
+        where: { id: tableSessionId, merchantId },
+        select: {
+          status: true,
+          orders: {
+            where: {
+              orderType: 'DINE_IN',
+              status: { in: ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'] },
+            },
+            select: {
+              id: true,
+              items: {
+                select: { quantity: true, productionNotifiedQuantity: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.printRule.count({
+        where: {
+          merchantId,
+          name: { startsWith: KITCHEN_RULE_PREFIX },
+          enabled: true,
+          triggerEvent: 'ORDER_ACCEPTED',
+          receiptType: 'ORDER_CUSTOMER',
+          OR: [{ orderType: 'DINE_IN' }, { orderType: null }],
+          printer: {
+            enabled: true,
+            deletedAt: null,
+            channelType: {
+              in: [
+                'LOCAL_USB_ESCPOS',
+                'LOCAL_LAN_ESCPOS',
+                'CLOUD_FEIE',
+                'CLOUD_YILIAN',
+              ],
+            },
+          },
+        },
+      }),
+    ]);
+    if (!session) {
+      throw new NotFoundException({
+        code: 'TABLE_SESSION_NOT_FOUND',
+        message: '桌台会话不存在',
+      });
+    }
+    const pendingByOrder = session.orders.map((order) => ({
+      orderId: order.id,
+      quantity: order.items.reduce(
+        (sum, item) => sum + Math.max(0, item.quantity - item.productionNotifiedQuantity),
+        0,
+      ),
+    }));
+    const pendingItemQuantity = pendingByOrder.reduce((sum, order) => sum + order.quantity, 0);
+    const unavailable = !this.flags.taskCenterEnabled()
+      || merchant?.status !== 'ACTIVE'
+      || !merchant.printingEnabled
+      || session.status !== 'OPEN';
+    return {
+      status: unavailable
+        ? 'UNAVAILABLE'
+        : pendingItemQuantity === 0
+          ? 'UP_TO_DATE'
+          : destinationCount === 0
+            ? 'UNCONFIGURED'
+            : 'READY',
+      pendingItemQuantity,
+      pendingOrderCount: pendingByOrder.filter((order) => order.quantity > 0).length,
+      configuredDestinationCount: destinationCount,
+    };
+  }
+
+  async notifyTableSessionProduction(input: {
+    merchantId: bigint;
+    tableSessionId: bigint;
+    createdByStaffId: bigint;
+    requestKey: string;
+  }) {
+    this.flags.assertTaskCenterEnabled();
+    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    await this.requireOwnedStaff(
+      this.prisma,
+      input.merchantId,
+      input.createdByStaffId,
+    );
+    const result = await this.prisma.$transaction(async (tx) => {
+      const sessionRef = await tx.tableSession.findFirst({
+        where: { id: input.tableSessionId, merchantId: input.merchantId },
+        select: { id: true, tableId: true, status: true, openTableId: true },
+      });
+      if (!sessionRef) {
+        throw new NotFoundException({
+          code: 'TABLE_SESSION_NOT_FOUND',
+          message: '桌台会话不存在',
+        });
+      }
+      await tx.$queryRaw`
+        SELECT id
+        FROM dining_tables
+        WHERE id = ${sessionRef.tableId} AND merchant_id = ${input.merchantId}
+        FOR UPDATE
+      `;
+      const lockedSessions = await tx.$queryRaw<Array<{
+        id: bigint;
+        status: string;
+        open_table_id: bigint | null;
+      }>>`
+        SELECT id, status, open_table_id
+        FROM table_sessions
+        WHERE id = ${input.tableSessionId} AND merchant_id = ${input.merchantId}
+        FOR UPDATE
+      `;
+      if (
+        lockedSessions[0]?.status !== 'OPEN'
+        || lockedSessions[0]?.open_table_id === null
+      ) {
+        throw new ConflictException({
+          code: 'TABLE_SESSION_CLOSED',
+          message: '桌账已关闭，不能通知制作',
+        });
+      }
+
+      const replayLogs = await tx.orderStatusLog.findMany({
+        where: {
+          action: 'TABLE_SESSION_PRODUCTION_NOTIFIED',
+          requestKey: input.requestKey,
+          order: {
+            merchantId: input.merchantId,
+            tableSessionId: input.tableSessionId,
+          },
+        },
+        select: { id: true },
+      });
+      if (replayLogs.length > 0) {
+        const triggers = await tx.printTriggerOutbox.findMany({
+          where: { orderStatusLogId: { in: replayLogs.map(({ id }) => id) } },
+          select: { id: true },
+          orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+        });
+        return {
+          triggerIds: triggers.map(({ id }) => id),
+          queuedItemQuantity: 0,
+          queuedOrderCount: replayLogs.length,
+          idempotentReplay: true,
+        };
+      }
+
+      const rules = await this.productionRules(tx, input.merchantId, false);
+      if (rules.length === 0) {
+        throw new BadRequestException({
+          code: PRINTING_ERROR_CODES.CONFIG_INVALID,
+          message: '请先配置并启用厨房或吧台打印机',
+        });
+      }
+      const rows = await tx.$queryRaw<Array<{
+        id: bigint;
+        order_id: bigint;
+        order_status: string;
+        product_id: bigint | null;
+        product_name_zh_snapshot: string;
+        unit_price_vnd: bigint;
+        quantity: number;
+        production_notified_quantity: number;
+        remark: string | null;
+      }>>`
+        SELECT oi.id, oi.order_id, o.status AS order_status, oi.product_id,
+               oi.product_name_zh_snapshot, oi.unit_price_vnd, oi.quantity,
+               oi.production_notified_quantity, oi.remark
+        FROM order_items oi
+        INNER JOIN orders o ON o.id = oi.order_id
+        WHERE o.table_session_id = ${input.tableSessionId}
+          AND o.merchant_id = ${input.merchantId}
+          AND o.order_type = 'DINE_IN'
+          AND o.status IN ('PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY')
+        ORDER BY oi.order_id, oi.id
+        FOR UPDATE
+      `;
+      const pendingRows = rows.filter(
+        (row) => row.quantity > row.production_notified_quantity,
+      );
+      if (pendingRows.length === 0) {
+        return {
+          triggerIds: [] as bigint[],
+          queuedItemQuantity: 0,
+          queuedOrderCount: 0,
+          idempotentReplay: false,
+        };
+      }
+      const byOrder = new Map<bigint, typeof pendingRows>();
+      for (const row of pendingRows) {
+        byOrder.set(row.order_id, [...(byOrder.get(row.order_id) ?? []), row]);
+      }
+      const triggerIds: bigint[] = [];
+      let queuedItemQuantity = 0;
+      for (const [orderId, items] of byOrder) {
+        const printDeltaItems = items.map((item) => {
+          const quantity = item.quantity - item.production_notified_quantity;
+          queuedItemQuantity += quantity;
+          return {
+            orderItemId: item.id.toString(),
+            productId: item.product_id?.toString() ?? '',
+            productNameSnapshot: item.product_name_zh_snapshot,
+            quantity,
+            remark: item.remark,
+            unitPriceVnd: item.unit_price_vnd.toString(),
+            subtotalVnd: (item.unit_price_vnd * BigInt(quantity)).toString(),
+          };
+        });
+        const log = await tx.orderStatusLog.create({
+          data: {
+            orderId,
+            fromStatus: items[0]!.order_status as OrderStatus,
+            toStatus: items[0]!.order_status as OrderStatus,
+            operatorType: 'MERCHANT_STAFF',
+            operatorStaffId: input.createdByStaffId,
+            action: 'TABLE_SESSION_PRODUCTION_NOTIFIED',
+            requestKey: input.requestKey,
+            metadata: {
+              tableSessionId: input.tableSessionId.toString(),
+              printDeltaItems,
+              items: printDeltaItems,
+            },
+            remark: '收银台通知厨房或吧台制作新增菜品',
+          },
+          select: { id: true },
+        });
+        const triggers = await this.enqueueProductionTriggerRecords(tx, {
+          merchantId: input.merchantId,
+          orderId,
+          orderStatusLogId: log.id,
+          orderType: 'DINE_IN',
+          status: 'ACCEPTED',
+          itemDeltas: printDeltaItems,
+          rules,
+          source: 'MANUAL',
+          createdByStaffId: input.createdByStaffId,
+        });
+        triggerIds.push(...triggers.map(({ id }) => id));
+      }
+      return {
+        triggerIds,
+        queuedItemQuantity,
+        queuedOrderCount: byOrder.size,
+        idempotentReplay: false,
+      };
+    });
+
+    if (result.triggerIds.length > 0) {
+      try {
+        await this.processAutomaticTriggerIds(result.triggerIds);
+      } catch (error) {
+        this.logger.warn(
+          `Production notification processing deferred merchant=${input.merchantId} session=${input.tableSessionId} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+        );
+      }
+    }
+    return {
+      notification: await this.getProductionNotificationState(
+        input.merchantId,
+        input.tableSessionId,
+      ),
+      queuedItemQuantity: result.queuedItemQuantity,
+      queuedOrderCount: result.queuedOrderCount,
+      queuedDestinationCount: result.triggerIds.length,
+      idempotentReplay: result.idempotentReplay,
+    };
+  }
+
+  private async productionRules(
+    client: DbClient,
+    merchantId: bigint,
+    autoOnly: boolean,
+  ): Promise<AutomaticRuleSnapshot[]> {
+    const rules = await client.printRule.findMany({
+      where: {
+        merchantId,
+        name: { startsWith: KITCHEN_RULE_PREFIX },
+        enabled: true,
+        ...(autoOnly ? { autoPrint: true } : {}),
+        triggerEvent: 'ORDER_ACCEPTED',
+        receiptType: 'ORDER_CUSTOMER',
+        OR: [{ orderType: 'DINE_IN' }, { orderType: null }],
+        printer: {
+          enabled: true,
+          deletedAt: null,
+          channelType: {
+            in: [
+              'LOCAL_USB_ESCPOS',
+              'LOCAL_LAN_ESCPOS',
+              'CLOUD_FEIE',
+              'CLOUD_YILIAN',
+            ],
+          },
+        },
+      },
+      select: {
+        id: true,
+        printerId: true,
+        receiptTemplateId: true,
+        receiptType: true,
+        triggerEvent: true,
+        copies: true,
+        priority: true,
+        updatedAt: true,
+      },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+    return rules.map((rule) => ({
+      id: rule.id,
+      printerId: rule.printerId,
+      receiptTemplateId: rule.receiptTemplateId,
+      receiptType: rule.receiptType,
+      triggerEvent: rule.triggerEvent,
+      copies: Math.max(1, Math.min(3, rule.copies)),
+      priority: rule.priority,
+      ruleVersion: rule.updatedAt.toISOString(),
+    }));
+  }
+
+  private async enqueueProductionTriggerRecords(
+    tx: Prisma.TransactionClient,
+    input: EnqueueAutomaticTriggerInput & {
+      itemDeltas: ProductionNotificationItemDelta[];
+      rules: AutomaticRuleSnapshot[];
+      source: PrintJobSource;
+      createdByStaffId?: bigint;
+    },
+  ) {
+    const currentOrderTemplate = input.rules.some(
+      (rule) => rule.receiptTemplateId === null,
+    )
+      ? await this.templates.resolveCurrentOrderCustomer(input.merchantId, tx)
+      : null;
+    const records = input.rules.map((rule) => ({
+      merchantId: input.merchantId,
+      orderId: input.orderId,
+      orderStatusLogId: input.orderStatusLogId,
+      printRuleId: rule.id,
+      printerId: rule.printerId,
+      receiptTemplateId: rule.receiptTemplateId ?? currentOrderTemplate?.id ?? null,
+      eventKey: this.productionTriggerEventKey(
+        input.merchantId,
+        input.orderStatusLogId,
+        rule.id,
+      ),
+      triggerEvent: rule.triggerEvent,
+      ruleVersion: rule.ruleVersion,
+      receiptType: rule.receiptType,
+      copies: rule.copies,
+      priority: rule.priority,
+      source: input.source,
+      createdByStaffId: input.createdByStaffId ?? null,
+    }));
+    const priorIntent = await tx.printTriggerOutbox.findFirst({
+      where: {
+        merchantId: input.merchantId,
+        orderStatusLogId: input.orderStatusLogId,
+        printRule: { name: { startsWith: KITCHEN_RULE_PREFIX } },
+      },
+      select: { id: true },
+    });
+    const created = await tx.printTriggerOutbox.createMany({
+      data: records,
+      skipDuplicates: true,
+    });
+    if (!priorIntent && created.count > 0) {
+      await this.markProductionItemsNotified(
+        tx,
+        input.merchantId,
+        input.orderId,
+        input.itemDeltas,
+      );
+    }
+    return tx.printTriggerOutbox.findMany({
+      where: { eventKey: { in: records.map((record) => record.eventKey) } },
+      select: { id: true },
+      orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  private async markProductionItemsNotified(
+    tx: Prisma.TransactionClient,
+    merchantId: bigint,
+    orderId: bigint,
+    deltas: ProductionNotificationItemDelta[],
+  ) {
+    const items = await tx.orderItem.findMany({
+      where: { orderId, order: { merchantId } },
+      select: {
+        id: true,
+        productId: true,
+        unitPriceVnd: true,
+        remark: true,
+        quantity: true,
+        productionNotifiedQuantity: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    for (const delta of deltas) {
+      if (!Number.isInteger(delta.quantity) || delta.quantity <= 0) continue;
+      const productId = /^\d+$/.test(delta.productId) ? BigInt(delta.productId) : null;
+      const unitPriceVnd = BigInt(delta.unitPriceVnd);
+      let remaining = delta.quantity;
+      for (const item of items) {
+        if (
+          remaining <= 0
+          || item.productId !== productId
+          || item.unitPriceVnd !== unitPriceVnd
+          || normalizeProductionRemark(item.remark) !== normalizeProductionRemark(delta.remark)
+        ) {
+          continue;
+        }
+        const available = Math.max(0, item.quantity - item.productionNotifiedQuantity);
+        const applied = Math.min(available, remaining);
+        if (applied === 0) continue;
+        item.productionNotifiedQuantity += applied;
+        remaining -= applied;
+        await tx.orderItem.update({
+          where: { id: item.id },
+          data: { productionNotifiedQuantity: item.productionNotifiedQuantity },
+        });
+      }
+      if (remaining > 0) {
+        throw new ConflictException({
+          code: 'PRODUCTION_NOTIFICATION_DELTA_CHANGED',
+          message: '待通知菜品已变化，请刷新后重试',
+        });
+      }
+    }
+  }
+
+  /**
    * Records one independent table-checkout intent after the session settlement
    * has been persisted in the same transaction. A checkout has no order
    * status-log owner, so the outbox is keyed by tableSessionId instead.
@@ -697,13 +1184,17 @@ export class PrintJobsService {
     });
     try {
       await this.settings.assertMerchantPrintingEnabled(trigger.merchantId);
-      await this.settings.assertMerchantAutomaticCreationEnabled(trigger.merchantId);
+      if (trigger.source === 'AUTOMATIC') {
+        await this.settings.assertMerchantAutomaticCreationEnabled(trigger.merchantId);
+      }
       await this.createAutomaticJobsFromRuleSnapshot({
         merchantId: trigger.merchantId,
         orderId: trigger.orderId ?? undefined,
         orderStatusLogId: trigger.orderStatusLogId ?? undefined,
         tableSessionId: trigger.tableSessionId ?? undefined,
         eventKey: trigger.eventKey,
+        source: trigger.source,
+        createdByStaffId: trigger.createdByStaffId ?? undefined,
         rule: {
           id: trigger.printRuleId,
           printerId: trigger.printerId,
@@ -742,11 +1233,11 @@ export class PrintJobsService {
           claimedAt: null,
           leaseExpiresAt: null,
           lastErrorCode: errorCode(error),
-          lastErrorMessage: '自动打印触发事件处理失败；等待安全重试',
+          lastErrorMessage: '打印通知事件处理失败；等待安全重试',
         },
       });
       this.logger.warn(
-        `Automatic print outbox processing failed id=${id} attempt=${trigger.attemptCount} code=${errorCode(error)}`,
+        `Print notification outbox processing failed id=${id} attempt=${trigger.attemptCount} code=${errorCode(error)}`,
       );
       return { id, outcome: failedPermanently ? ('FAILED' as const) : ('RETRY' as const) };
     }
@@ -758,6 +1249,8 @@ export class PrintJobsService {
     orderStatusLogId?: bigint;
     tableSessionId?: bigint;
     eventKey: string;
+    source?: PrintJobSource;
+    createdByStaffId?: bigint;
     rule: AutomaticRuleSnapshot;
   }) {
     this.assertAutomaticEventKey(input.eventKey);
@@ -839,11 +1332,12 @@ export class PrintJobsService {
                 receiptTemplateId: rule.receiptTemplateId ?? undefined,
                 receiptType: rule.receiptType,
                 triggerEvent: rule.triggerEvent,
-                source: 'AUTOMATIC',
+                source: input.source ?? 'AUTOMATIC',
                 priority: rule.priority,
                 dedupeKey: dedupeKeys[index],
                 snapshot,
                 renderMode: kitchenRoute?.isKitchen ? 'CUSTOMER' : undefined,
+                createdByStaffId: input.createdByStaffId,
               },
               tx,
             ),
@@ -2859,7 +3353,7 @@ export class PrintJobsService {
 
   private assertAutomaticEventKey(eventKey: string) {
     if (!eventKey.trim() || eventKey.length > 191) {
-      this.referenceError('自动打印事件标识不能为空且不能超过 191 个字符');
+      this.referenceError('打印事件标识不能为空且不能超过 191 个字符');
     }
   }
 
@@ -2878,6 +3372,17 @@ export class PrintJobsService {
       )
       .digest('hex');
     return `auto-trigger:${digest}`;
+  }
+
+  private productionTriggerEventKey(
+    merchantId: bigint,
+    orderStatusLogId: bigint,
+    ruleId: bigint,
+  ) {
+    const digest = createHash('sha256')
+      .update(['production-v1', merchantId, orderStatusLogId, ruleId].join(':'))
+      .digest('hex');
+    return `production-trigger:${digest}`;
   }
 
   private automaticDedupeKey(input: {
@@ -3119,4 +3624,8 @@ function assertNoSensitiveConnectorKeys(value: unknown) {
     }
     assertNoSensitiveConnectorKeys(nested);
   }
+}
+
+function normalizeProductionRemark(value: string | null | undefined) {
+  return value?.trim() ?? '';
 }

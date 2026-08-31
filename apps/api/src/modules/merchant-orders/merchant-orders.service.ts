@@ -539,7 +539,6 @@ export class MerchantOrdersService {
               || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
           })[0];
         let orderId: bigint;
-        let statusLogId: bigint;
         if (primary) {
           const restoreToAccepted = primary.status === 'PENDING_ACCEPTANCE'
             || primary.status === 'CANCELLED';
@@ -600,7 +599,7 @@ export class MerchantOrdersService {
               totalAmountVnd: total,
             },
           });
-          const log = await tx.orderStatusLog.create({
+          await tx.orderStatusLog.create({
             data: {
               orderId: primary.id,
               fromStatus: primary.status,
@@ -625,10 +624,8 @@ export class MerchantOrdersService {
                 ? '商家点菜恢复原员工单并追加菜品'
                 : '商家点菜追加到当前员工单',
             },
-            select: { id: true },
           });
           orderId = primary.id;
-          statusLogId = log.id;
         } else {
           const created = await tx.order.create({
             data: {
@@ -677,25 +674,10 @@ export class MerchantOrdersService {
                 remark: '商家点菜创建员工单并自动接单',
               }] },
             },
-            select: {
-              id: true,
-              statusLogs: {
-                where: { action: 'MERCHANT_ADD_ITEMS', requestKey: dto.idempotencyKey },
-                select: { id: true },
-                take: 1,
-              },
-            },
+            select: { id: true },
           });
           orderId = created.id;
-          statusLogId = created.statusLogs[0]!.id;
         }
-        const printTriggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
-          merchantId,
-          orderId,
-          orderStatusLogId: statusLogId,
-          orderType: 'DINE_IN',
-          status: 'ACCEPTED',
-        });
         // Any order mutation invalidates the current settlement adjustment.
         // Clear it atomically so refresh/checkout/printing cannot reuse a
         // discount or rounding amount calculated from an older bill total.
@@ -703,7 +685,7 @@ export class MerchantOrdersService {
         return {
           orderId,
           sessionId: session.id,
-          printTriggerIds: printTriggers.map(({ id: triggerId }) => triggerId),
+          printTriggerIds: [],
         };
       });
     } catch (error) {
@@ -1156,6 +1138,13 @@ export class MerchantOrdersService {
           const afterSubtotalVnd = raw.unitPriceVnd * BigInt(targetQuantity);
           if (targetQuantity === 0) await tx.orderItem.delete({ where: { id: raw.itemId } });
           else {
+            await tx.orderItem.updateMany({
+              where: {
+                id: raw.itemId,
+                productionNotifiedQuantity: { gt: targetQuantity },
+              },
+              data: { productionNotifiedQuantity: targetQuantity },
+            });
             await tx.orderItem.update({
               where: { id: raw.itemId },
               data: { quantity: targetQuantity, subtotalVnd: afterSubtotalVnd },
@@ -1362,14 +1351,14 @@ export class MerchantOrdersService {
           sessionId,
         );
       }
-      let printTriggerIds: bigint[] = [];
+      const printTriggerIds: bigint[] = [];
       if (anchorOrderId) {
         const anchor = await tx.order.findUnique({
           where: { id: anchorOrderId },
           select: { status: true },
         });
         if (!anchor) throw new ConflictException({ code: 'ORDER_NOT_FOUND', message: '订单不存在' });
-        const batchLog = await tx.orderStatusLog.create({
+        await tx.orderStatusLog.create({
           data: {
             orderId: anchorOrderId,
             fromStatus: anchor.status,
@@ -1399,16 +1388,6 @@ export class MerchantOrdersService {
               : '堂食整桌目标态已对账',
           },
         });
-        if (positiveOrderId) {
-          const triggers = await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
-            merchantId,
-            orderId: positiveOrderId,
-            orderStatusLogId: batchLog.id,
-            orderType: 'DINE_IN',
-            status: 'ACCEPTED',
-          });
-          printTriggerIds = triggers.map(({ id }) => id);
-        }
       }
       return {
         state: this.canonicalState.toPublicState(after),
@@ -1429,8 +1408,13 @@ export class MerchantOrdersService {
         );
       }
     }
+    const productionNotification = await this.printJobs.getProductionNotificationState(
+      merchantId,
+      sessionId,
+    );
     return {
       ...result.state,
+      productionNotification,
       idempotentReplay: result.idempotentReplay,
       appliedRevision: result.state.revision,
       ...(result.releasedBecause ? { releasedBecause: result.releasedBecause } : {}),
@@ -1944,6 +1928,13 @@ export class MerchantOrdersService {
       if (input.targetQuantity === 0) {
         await tx.orderItem.delete({ where: { id: itemId } });
       } else {
+        await tx.orderItem.updateMany({
+          where: {
+            id: itemId,
+            productionNotifiedQuantity: { gt: input.targetQuantity },
+          },
+          data: { productionNotifiedQuantity: input.targetQuantity },
+        });
         await tx.orderItem.update({
           where: { id: itemId },
           data: {

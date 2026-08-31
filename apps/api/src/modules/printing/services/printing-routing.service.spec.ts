@@ -243,6 +243,43 @@ describe('PrintingRoutingService current configuration', () => {
     expect(audit.record).toHaveBeenCalled();
   });
 
+  it('keeps a configured route enabled when automatic printing is switched off', async () => {
+    const { service, prisma } = createRoutingService();
+    prisma.printer.findMany
+      .mockResolvedValueOnce([{ id: newPrinterId, enabled: true }])
+      .mockResolvedValueOnce([{ id: newPrinterId }]);
+    prisma.printRule.findMany
+      .mockResolvedValueOnce([{
+        id: 71n,
+        printerId: newPrinterId,
+        name: `__ROUTING_NEW_ORDER__:KITCHEN:${newPrinterId}`,
+      }])
+      .mockResolvedValueOnce([
+        managedRule(newPrinterId, 'KITCHEN', false),
+      ]);
+
+    await service.update(merchantId, 3n, 'request-manual-route', {
+      checkoutDefaultPrinterId: null,
+      defaultKitchenPrinterId: newPrinterId.toString(),
+      frontDeskPrinters: [],
+      kitchenPrinters: [{
+        printerId: newPrinterId.toString(),
+        newOrderAutoPrint: false,
+        categoryIds: [],
+      }],
+    });
+
+    expect(prisma.printRule.update).toHaveBeenCalledWith({
+      where: { id: 71n },
+      data: {
+        autoPrint: false,
+        enabled: true,
+        copies: 1,
+        priority: 100,
+      },
+    });
+  });
+
   it('continues to reject a directly submitted archived printer id', async () => {
     const { service, prisma } = createRoutingService();
     prisma.printer.findMany.mockResolvedValue([]);

@@ -121,10 +121,26 @@ export interface DineInCanonicalState {
     payableAmountVnd: string;
   };
   blockers: string[];
+  productionNotification?: ProductionNotificationState;
   generatedAt: string;
   idempotentReplay?: boolean;
   appliedRevision?: string;
   releasedBecause?: 'EMPTY_AFTER_RECONCILE';
+}
+
+export interface ProductionNotificationState {
+  status: 'READY' | 'UP_TO_DATE' | 'UNCONFIGURED' | 'UNAVAILABLE';
+  pendingItemQuantity: number;
+  pendingOrderCount: number;
+  configuredDestinationCount: number;
+}
+
+export interface ProductionNotificationResult {
+  notification: ProductionNotificationState;
+  queuedItemQuantity: number;
+  queuedOrderCount: number;
+  queuedDestinationCount: number;
+  idempotentReplay: boolean;
 }
 
 export interface ReconcileDineInCanonicalStateInput {
