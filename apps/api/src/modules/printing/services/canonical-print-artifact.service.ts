@@ -42,10 +42,12 @@ export const TABLE_BILL_FOOTER_FONT_TOKEN = 'NORMAL';
 export const TABLE_BILL_FOOTER_FONT_WEIGHT = 500;
 export const TABLE_BILL_FOOTER_LINE_GAP_DOTS = 5;
 export const TABLE_BILL_FINAL_RECEIVABLE_FONT_WEIGHT = 700;
-export const TABLE_BILL_BOTTOM_SAFE_MM = 25;
-export const TABLE_BILL_BOTTOM_SAFE_DOTS = Math.round(
-  TABLE_BILL_BOTTOM_SAFE_MM * CANONICAL_DOTS_PER_MM,
+export const CANONICAL_RECEIPT_BOTTOM_SAFE_MM = 25;
+export const CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS = Math.round(
+  CANONICAL_RECEIPT_BOTTOM_SAFE_MM * CANONICAL_DOTS_PER_MM,
 );
+export const TABLE_BILL_BOTTOM_SAFE_MM = CANONICAL_RECEIPT_BOTTOM_SAFE_MM;
+export const TABLE_BILL_BOTTOM_SAFE_DOTS = CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS;
 export const TABLE_BILL_ORDER_INFO_ROW_GAP_DOTS = 6;
 export const TABLE_BILL_TOTAL_ROW_GAP_DOTS = 8;
 export const TABLE_BILL_FINAL_TOTAL_BOTTOM_DOTS = 14;
@@ -102,8 +104,8 @@ export interface CanonicalLayoutDiagnostics {
   finalReceivableBlackPixelRatio: number;
   footerLastInkY: number;
   cutReferenceY: number;
-  bottomSafeMm: typeof TABLE_BILL_BOTTOM_SAFE_MM | 0;
-  bottomSafeDots: typeof TABLE_BILL_BOTTOM_SAFE_DOTS | 0;
+  bottomSafeMm: typeof CANONICAL_RECEIPT_BOTTOM_SAFE_MM;
+  bottomSafeDots: typeof CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS;
   bottomBlankDots: number;
   bottomBlankMm: number;
   bottomBlankAreaIsRaster: boolean;
@@ -412,7 +414,7 @@ function layoutDocument(
   const operations: DrawOperation[] = [];
   const contentWidth = widthDots - marginDots * 2;
   let y = 18;
-  let feedLines = 0;
+  const feedLines = 0;
   let cutMode: 'NONE' | 'HALF' | 'FULL' = 'NONE';
   let sectionIndex = 0;
   let totalsStarted = false;
@@ -653,7 +655,9 @@ function layoutDocument(
         break;
       }
       case 'FEED':
-        if (!tableBill) feedLines += block.lines;
+        // Canonical raster receipts carry their cut-safe bottom area inside
+        // the bitmap. Plain LF bytes are not a reliable paper advance on all
+        // Android USB printers after a GS v 0 raster command.
         break;
       case 'CUT':
         cutMode = block.mode;
@@ -672,9 +676,10 @@ function layoutDocument(
   );
   return {
     operations,
-    height: profile === 'TABLE_BILL_V2'
-      ? Math.max(baseHeight, Math.ceil(lastVisibleBottom) + TABLE_BILL_BOTTOM_SAFE_DOTS + 4)
-      : baseHeight,
+    height: Math.max(
+      baseHeight,
+      Math.ceil(lastVisibleBottom) + CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS + 4,
+    ),
     feedLines,
     cutMode,
   };
@@ -926,19 +931,18 @@ function inspectLayout(
   const blackPixelRatioAt205 = roundedRatio(countBlackPixels(raster), totalRasterPixels);
   const rowBytes = Math.ceil(widthDots / 8);
   const footerLastInkY = lastRasterInkY(raster, rowBytes, heightDots);
-  const bottomBlankDots = profile === 'TABLE_BILL_V2'
-    ? Math.max(0, heightDots - footerLastInkY)
-    : 0;
-  const bottomBlankStart = Math.max(0, heightDots - TABLE_BILL_BOTTOM_SAFE_DOTS);
-  const bottomBlankBlackPixelCount = profile === 'TABLE_BILL_V2'
-    ? countBlackPixels(raster.subarray(bottomBlankStart * rowBytes))
-    : 0;
-  const bottomBlankAreaIsRaster = profile === 'TABLE_BILL_V2' &&
+  const bottomBlankDots = Math.max(0, heightDots - footerLastInkY);
+  const bottomBlankStart = Math.max(
+    0,
+    heightDots - CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS,
+  );
+  const bottomBlankBlackPixelCount = countBlackPixels(
+    raster.subarray(bottomBlankStart * rowBytes),
+  );
+  const bottomBlankAreaIsRaster =
     bottomBlankBlackPixelCount === 0 &&
-    bottomBlankDots >= TABLE_BILL_BOTTOM_SAFE_DOTS;
-  const footerToCutDots = profile === 'TABLE_BILL_V2'
-    ? bottomBlankDots
-    : Math.max(0, Math.floor(heightDots - lastVisibleBottom));
+    bottomBlankDots >= CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS;
+  const footerToCutDots = bottomBlankDots;
   const layoutFingerprint = createHash('sha256')
     .update(JSON.stringify({
       profile,
@@ -977,8 +981,8 @@ function inspectLayout(
     finalReceivableBlackPixelRatio,
     footerLastInkY,
     cutReferenceY: heightDots,
-    bottomSafeMm: profile === 'TABLE_BILL_V2' ? TABLE_BILL_BOTTOM_SAFE_MM : 0,
-    bottomSafeDots: profile === 'TABLE_BILL_V2' ? TABLE_BILL_BOTTOM_SAFE_DOTS : 0,
+    bottomSafeMm: CANONICAL_RECEIPT_BOTTOM_SAFE_MM,
+    bottomSafeDots: CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS,
     bottomBlankDots,
     bottomBlankMm: Math.round(bottomBlankDots / CANONICAL_DOTS_PER_MM * 100) / 100,
     bottomBlankAreaIsRaster,

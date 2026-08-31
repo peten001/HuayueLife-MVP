@@ -6,6 +6,8 @@ import {
   CANONICAL_FONT_FAMILY,
   CANONICAL_FONT_LICENSE,
   CANONICAL_FONT_PACKAGE,
+  CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS,
+  CANONICAL_RECEIPT_BOTTOM_SAFE_MM,
   CANONICAL_THRESHOLD,
   CANONICAL_THRESHOLD_BASELINE,
   CANONICAL_TEXT_EMBOLDEN_DOTS,
@@ -27,6 +29,7 @@ import {
   TABLE_BILL_TOTAL_ROW_GAP_DOTS,
 } from './canonical-print-artifact.service';
 import { renderPrintDocumentV3 } from './print-document-renderer';
+import { DEFAULT_RECEIPT_TEMPLATE_DISPLAY } from '../types/receipt-document';
 import {
   canonicalTableBillGoldenFixture,
   canonicalTableBillSettlementFixture,
@@ -351,6 +354,59 @@ describe('CanonicalPrintArtifactService', () => {
     expect(evidence.layout.bottomBlankMm).toBeLessThanOrEqual(27);
   });
 
+  it('keeps a footer-disabled ORDER_CUSTOMER total clear of the physical cut', () => {
+    const receipt = {
+      ...goldenDocument(2),
+      receiptType: 'ORDER_CUSTOMER' as const,
+      order: {
+        id: '2077',
+        orderNo: 'HY2608311023043A3873BC',
+        orderType: 'DINE_IN',
+        tableName: '1F-A10',
+        createdAt: '2026-08-31T10:23:00.000Z',
+      },
+      footer: {
+        zh: '这段页脚不应打印-test',
+        vi: 'Dong chan trang nay khong duoc in-test',
+      },
+    };
+    const snapshot = renderPrintDocumentV3({
+      receipt,
+      paperWidth: 'MM80',
+      purpose: 'FRONT_DESK',
+      display: {
+        ...DEFAULT_RECEIPT_TEMPLATE_DISPLAY,
+        footer: false,
+      },
+    });
+    const evidence = service.renderEvidence(
+      snapshot,
+      'MM80',
+      'FRONT_DESK',
+      'ORDER_CUSTOMER',
+    );
+
+    expect(snapshot.blocks.slice(-3).map((block) => block.type)).toEqual([
+      'COLUMNS',
+      'FEED',
+      'CUT',
+    ]);
+    expect(JSON.stringify(snapshot)).not.toContain('-test');
+    expect(evidence.layout.layoutVersion).toBe('DEFAULT');
+    expect(evidence.layout.bottomSafeMm).toBe(CANONICAL_RECEIPT_BOTTOM_SAFE_MM);
+    expect(evidence.layout.bottomSafeDots).toBe(CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS);
+    expect(evidence.layout.bottomBlankDots).toBeGreaterThanOrEqual(
+      CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS,
+    );
+    expect(evidence.layout.bottomBlankMm).toBeGreaterThanOrEqual(23);
+    expect(evidence.layout.bottomBlankMm).toBeLessThanOrEqual(27);
+    expect(evidence.layout.bottomBlankBlackPixelCount).toBe(0);
+    expect(evidence.layout.bottomBlankAreaIsRaster).toBe(true);
+    expect(evidence.artifact.payload.subarray(-3)).toEqual(
+      Buffer.from([0x1d, 0x56, 0x01]),
+    );
+  });
+
   it('renders a legacy semantic kitchen job with the server kitchen layout', () => {
     const receipt = {
       schemaVersion: 1 as const,
@@ -373,12 +429,17 @@ describe('CanonicalPrintArtifactService', () => {
 
     expect(kitchen.sha256).not.toBe(customer.sha256);
     expect(kitchen.heightDots).toBeLessThan(customer.heightDots);
-    expect(customer.payload.subarray(-6)).toEqual(Buffer.from([
-      0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x01,
-    ]));
+    expect(customer.payload.subarray(-3)).toEqual(Buffer.from([0x1d, 0x56, 0x01]));
     expect(customerEvidence.layout.layoutVersion).toBe('DEFAULT');
-    expect(customerEvidence.layout.bottomSafeDots).toBe(0);
-    expect(customerEvidence.layout.bottomBlankAreaIsRaster).toBe(false);
+    expect(customerEvidence.layout.bottomSafeMm).toBe(CANONICAL_RECEIPT_BOTTOM_SAFE_MM);
+    expect(customerEvidence.layout.bottomSafeDots).toBe(CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS);
+    expect(customerEvidence.layout.bottomBlankDots).toBeGreaterThanOrEqual(
+      CANONICAL_RECEIPT_BOTTOM_SAFE_DOTS,
+    );
+    expect(customerEvidence.layout.bottomBlankMm).toBeGreaterThanOrEqual(23);
+    expect(customerEvidence.layout.bottomBlankMm).toBeLessThanOrEqual(27);
+    expect(customerEvidence.layout.bottomBlankBlackPixelCount).toBe(0);
+    expect(customerEvidence.layout.bottomBlankAreaIsRaster).toBe(true);
   });
 });
 
