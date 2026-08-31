@@ -278,7 +278,6 @@ function dismissMobileKeyboard() {
 }
 
 function openMobileSearch() {
-  activeCategoryId.value = 'ALL';
   mobileSearchOpen.value = true;
   void nextTick(() => searchInput.value?.focus());
 }

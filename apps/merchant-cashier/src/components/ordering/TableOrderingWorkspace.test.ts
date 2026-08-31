@@ -307,6 +307,31 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.emitted('addProduct')).toEqual([[secondProduct.id]]);
   });
 
+  it('scopes desktop search to the active category and searches globally only in All', async () => {
+    const wrapper = mountWorkspace({ embedded: true });
+    await flushPromises();
+
+    const categories = wrapper.findAll('[data-testid="table-ordering-category-strip"] button');
+    const all = categories.find((button) => button.text() === '全部');
+    const drinks = categories.find((button) => button.text() === '饮品');
+    expect(all).toBeDefined();
+    expect(drinks).toBeDefined();
+
+    await drinks!.trigger('click');
+    const search = wrapper.get('input[type="search"]');
+    await search.setValue('牛肉粉');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(0);
+
+    await search.setValue('冰咖啡');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    expect(wrapper.text()).toContain('冰咖啡');
+
+    await all!.trigger('click');
+    await search.setValue('牛肉粉');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    expect(wrapper.text()).toContain('牛肉粉');
+  });
+
   it('loads the visible image again after category and search result changes', async () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function getRect(this: HTMLElement) {
@@ -381,7 +406,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
   });
 
-  it('switches mobile V2 search into a focused global-search header', async () => {
+  it('keeps mobile V2 search scoped to the selected category and uses All globally', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
@@ -408,13 +433,29 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
 
     const search = wrapper.get('[data-testid="table-ordering-search"] input');
     await search.setValue('牛肉粉');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(0);
+
+    await search.setValue('冰咖啡');
     expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
-    expect(wrapper.text()).toContain('牛肉粉');
+    expect(wrapper.text()).toContain('冰咖啡');
 
     await wrapper.get('.table-ordering-mobile-v2-search-back').trigger('click');
     expect(wrapper.find('[data-testid="table-ordering-mobile-v2-search-mode"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
     expect(wrapper.find('.table-ordering-mobile-v2-topbar').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
+      .find((button) => button.text() === '饮品')?.classes()).toContain('is-active');
+
+    const all = wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
+      .find((button) => button.text() === '全部');
+    expect(all).toBeDefined();
+    await all!.trigger('click');
+    await wrapper.get('.table-ordering-mobile-v2-search-trigger').trigger('click');
+    await flushPromises();
+    const globalSearch = wrapper.get('[data-testid="table-ordering-search"] input');
+    await globalSearch.setValue('牛肉粉');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    expect(wrapper.text()).toContain('牛肉粉');
   });
 
   it('dismisses the mobile keyboard when the user touches the product area', async () => {
