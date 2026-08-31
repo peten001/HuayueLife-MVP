@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const mobileV2Files = [
-  'MobileV2Navigation.vue',
+  'MobileV2Drawer.vue',
   'MobileV2Header.vue',
   'MobileV2PreviewFrame.vue',
   'MobileV2BillActionDock.vue',
@@ -38,5 +38,24 @@ describe('isolated Mobile V2 architecture', () => {
     expect(routes).toContain('import.meta.env.DEV');
     expect(routes).toContain("path: '__preview/mobile-v2/tables/:tableId?'");
     expect(routes).not.toContain("path: 'tables/:tableId?'");
+  });
+
+  it('moves preview destinations into the drawer and leaves the frame without a bottom navigation', () => {
+    const drawer = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Drawer.vue'), 'utf8');
+    const header = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Header.vue'), 'utf8');
+    const frame = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2PreviewFrame.vue'), 'utf8');
+    expect(drawer).toContain('mobileV2PreviewRouteNames.pickup');
+    expect(drawer).toContain('mobileV2PreviewRouteNames.delivery');
+    expect(drawer).toContain('mobileV2PreviewRouteNames.history');
+    expect(drawer).toContain('Globe2');
+    expect(drawer).toContain('setLocale');
+    expect(header).toContain('yunqiao-cashier-mark.png');
+    expect(header).toContain('>YunQiao</strong>');
+    expect(header).toContain('mobile-v2-header__refresh');
+    expect(header).not.toContain('mobile-v2-filter-strip__refresh');
+    expect(header).not.toContain('cashierV2.tablesTab');
+    expect(header).not.toContain('cashierV2.menuTab');
+    expect(header).not.toContain('Globe2');
+    expect(frame).not.toContain('MobileV2Navigation');
   });
 });

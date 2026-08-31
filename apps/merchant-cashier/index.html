@@ -9,6 +9,32 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="YunQiao Cashier" />
     <meta name="color-scheme" content="light" />
+    <style>
+      html.cashier-mobile-v2-preview-active,
+      html.cashier-mobile-v2-preview-active body {
+        background: #f3f6f1;
+        color-scheme: light;
+      }
+    </style>
+    <script>
+      if (window.location.pathname.startsWith('/__preview/mobile-v2/')) {
+        const overrideMeta = (name, content) => {
+          const meta = document.querySelector(`meta[name="${name}"]`);
+          if (!meta) return;
+          if (!meta.hasAttribute('data-mobile-v2-original-content')) {
+            meta.setAttribute('data-mobile-v2-original-content', meta.getAttribute('content') || '');
+          }
+          meta.setAttribute('content', content);
+        };
+        document.documentElement.classList.add('cashier-mobile-v2-preview-active');
+        overrideMeta(
+          'viewport',
+          'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content',
+        );
+        overrideMeta('theme-color', '#fbfcfa');
+        overrideMeta('apple-mobile-web-app-status-bar-style', 'default');
+      }
+    </script>
     <link rel="stylesheet" href="/terminal-bootstrap.css" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png" />

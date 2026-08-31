@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ArrowRightLeft, Bell, CreditCard, LoaderCircle, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
-import { computed } from 'vue';
+import { ArrowRightLeft, Bell, ChevronLeft, CreditCard, Ellipsis, LoaderCircle, Minus, Plus, Printer, ShoppingBasket, UtensilsCrossed } from '@lucide/vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { formatItemPrice, formatVietnamTime, formatVnd } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { DineInCanonicalLine, DineInCanonicalState, TableCardView, TableSessionDetail } from '@/types';
@@ -37,6 +37,8 @@ const emit = defineEmits<{
   transfer: [];
   checkout: [];
   adjustment: [];
+  back: [];
+  addItems: [];
   decreaseItem: [unknown, unknown?, number?, string?];
   increaseItem: [unknown, unknown?, string?, string?];
   returnItem: [unknown, unknown];
@@ -76,6 +78,31 @@ const tableStatusLabel = computed(() => {
   if (tableStatus.value === 'AVAILABLE') return t('table.status.available');
   return t('table.status.inUse');
 });
+const mobileActionsOpen = ref(false);
+const mobileActionsRoot = ref<HTMLElement | null>(null);
+
+function closeMobileActionsOnOutside(event: PointerEvent) {
+  if (!mobileActionsRoot.value?.contains(event.target as Node)) mobileActionsOpen.value = false;
+}
+
+function closeMobileActionsOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') mobileActionsOpen.value = false;
+}
+
+function openTransferFromMobileActions() {
+  mobileActionsOpen.value = false;
+  emit('transfer');
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', closeMobileActionsOnOutside);
+  document.addEventListener('keydown', closeMobileActionsOnEscape);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeMobileActionsOnOutside);
+  document.removeEventListener('keydown', closeMobileActionsOnEscape);
+});
 
 function canonicalName(line: DineInCanonicalLine) {
   if (locale.value === 'vi') return line.productNameVi || line.productNameZh;
@@ -110,7 +137,30 @@ function priceCanExpand(line: DineInCanonicalLine) {
     }"
     data-testid="table-detail"
   >
-    <header class="table-detail-header table-bill-shell__header" data-testid="right-panel-header">
+    <header v-if="mobileV2Presentation" class="mobile-v2-bill-header" data-testid="right-panel-header">
+      <button type="button" class="mobile-v2-bill-header__back" :aria-label="t('fulfillment.backToTables')" data-testid="mobile-v2-bill-back" @click="emit('back')">
+        <ChevronLeft :size="28" aria-hidden="true" />
+      </button>
+      <div class="mobile-v2-bill-header__identity">
+        <strong>{{ canonicalState?.tableNo || session?.tableNo || table?.tableNo || t('table.numberFallback') }}</strong>
+        <small v-if="session">{{ tableStatusLabel }} · {{ formatVietnamTime(session.openedAt, locale) }} · {{ dishCountLabel }}</small>
+        <small v-else-if="table">{{ tableStatusLabel }}</small>
+      </div>
+      <div ref="mobileActionsRoot" class="mobile-v2-bill-header__actions">
+        <button type="button" class="mobile-v2-bill-header__more" :aria-label="t('cashierV2.moreActions')" :aria-expanded="mobileActionsOpen" data-testid="mobile-v2-bill-more" @click="mobileActionsOpen = !mobileActionsOpen">
+          <Ellipsis :size="25" aria-hidden="true" />
+        </button>
+        <Transition name="mobile-v2-more-menu">
+          <section v-if="mobileActionsOpen" class="mobile-v2-bill-header__menu" :aria-label="t('cashierV2.moreActions')">
+            <button type="button" data-testid="mobile-v2-bill-transfer" :disabled="transferDisabled || actionsDisabled || !session" @click="openTransferFromMobileActions">
+              <ArrowRightLeft :size="19" aria-hidden="true" />{{ t('tableTransfer.open') }}
+            </button>
+          </section>
+        </Transition>
+      </div>
+    </header>
+
+    <header v-else class="table-detail-header table-bill-shell__header" data-testid="right-panel-header">
       <div v-if="session" class="table-detail-header__line">
         <h3>{{ canonicalState?.tableNo || session.tableNo || table?.tableNo || t('table.numberFallback') }}</h3>
         <span :class="`table-detail-state table-detail-state--${tableStatus.toLowerCase().replace(/_/g, '-')}`">{{ tableStatusLabel }}</span>
@@ -152,6 +202,9 @@ function priceCanExpand(line: DineInCanonicalLine) {
     </section>
 
     <footer class="table-bill-shell__footer" data-testid="right-panel-footer">
+      <button v-if="session && mobileV2Presentation" type="button" class="mobile-v2-bill-add-items" data-testid="mobile-v2-bill-add-items" :aria-label="t('table.addItems')" :title="t('table.addItems')" :disabled="actionsDisabled" @click="emit('addItems')">
+        <Plus :size="28" aria-hidden="true" />
+      </button>
       <div class="table-bill-total-row dinein-summary-row" :class="{ 'dinein-summary-row--placeholder': !session }">
         <button v-if="session && !embedded" type="button" class="secondary-action dinein-action-button production-notify-action" :class="{ 'production-notify-action--ready': canNotifyProduction }" data-testid="table-production-notify" :aria-busy="notificationLoading" :title="productionNotificationTitle" :disabled="actionsDisabled || notificationLoading || !canNotifyProduction" @click="emit('notifyProduction')"><LoaderCircle v-if="notificationLoading" :size="18" class="spinning" aria-hidden="true" /><Bell v-else :size="18" aria-hidden="true" />{{ t(notificationLoading ? 'productionNotification.loading' : 'productionNotification.action') }}</button>
         <button v-else-if="!session" type="button" class="secondary-action dinein-action-button production-notify-action" disabled><Bell :size="18" aria-hidden="true" />{{ t('productionNotification.action') }}</button>
@@ -166,7 +219,7 @@ function priceCanExpand(line: DineInCanonicalLine) {
         </dl>
       </div>
 
-      <MobileV2BillActionDock v-if="session && mobileV2Presentation" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :transfer-disabled="transferDisabled" :adjustment-applied="adjustmentApplied" @transfer="emit('transfer')" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
+      <MobileV2BillActionDock v-if="session && mobileV2Presentation" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
       <DineInActionDock v-else-if="session" :session-id="session.id" :checkout-disabled="checkoutDisabled" :checking-out="checkingOut" :actions-disabled="actionsDisabled" :adjustment-applied="adjustmentApplied" @adjustment="emit('adjustment')" @checkout="emit('checkout')" />
       <div v-else class="dinein-action-dock dinein-action-dock--placeholder" data-testid="dinein-action-dock-placeholder">
         <button type="button" class="secondary-action detail-print-action dinein-action-button" disabled><Printer :size="18" aria-hidden="true" />{{ t('print.action') }}</button>

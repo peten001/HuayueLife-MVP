@@ -35,6 +35,12 @@ import {
   resolveCashierPresentationLocation,
 } from '@/mobile-v2/navigation';
 
+const props = withDefaults(defineProps<{
+  mobileV2Presentation?: boolean;
+}>(), {
+  mobileV2Presentation: false,
+});
+
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
@@ -45,7 +51,7 @@ const tablesStore = useTablesStore();
 const uiStore = useUiStore();
 const catalogStore = useCatalogStore();
 const isMobile = useMediaQuery('(max-width: 899px)');
-const mobileV2Preview = computed(() => route.meta.mobileV2Preview === true);
+const mobileV2Preview = computed(() => props.mobileV2Presentation || route.meta.mobileV2Preview === true);
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
 const checkoutConfirmOpen = ref(false);
@@ -63,6 +69,8 @@ const pendingInitialItems = ref(new Map<string, number>());
 const pendingInitialTableId = ref('');
 const retainedInitialBatch = ref<{ tableId: string; input: CreateMerchantTableOrderInput } | null>(null);
 const initialBatchSyncing = ref(false);
+const resettingMenuSelection = ref(false);
+const openingCurrentOrder = ref(false);
 let initialBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let initialBatchRequest: Promise<void> | null = null;
 let canonicalPollTimer: number | null = null;
@@ -87,6 +95,7 @@ const canonicalController = useDineInCanonicalStateController({
       && state.sessionStatus === 'CLOSED'
       && state.releasedBecause === 'EMPTY_AFTER_RECONCILE'
     ) {
+      if (mobileV2Preview.value && activeMainTab.value === 'MENU') return;
       window.setTimeout(() => {
         void router.replace(resolveCashierPresentationLocation(mobileV2Preview.value, '/tables'));
       }, 0);
@@ -178,6 +187,66 @@ async function addMenuProduct(productId: string) {
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'ordering.createFailed')), 'error');
     await refreshAdjustmentContext(true);
+  }
+}
+
+function decreaseMenuProduct(productId: string) {
+  if (writeDisabled.value || orderingMutationLocked.value) return;
+  const pendingQuantity = pendingInitialItems.value.get(productId) ?? 0;
+  if (pendingQuantity > 0) {
+    const next = new Map(pendingInitialItems.value);
+    if (pendingQuantity > 1) next.set(productId, pendingQuantity - 1);
+    else next.delete(productId);
+    pendingInitialItems.value = next;
+    if (!next.size) {
+      pendingInitialTableId.value = '';
+      if (initialBatchTimer) {
+        clearTimeout(initialBatchTimer);
+        initialBatchTimer = null;
+      }
+    }
+    return;
+  }
+  const line = presentedCanonicalState.value?.items.find((item) => (
+    item.productId === productId && item.quantity > item.lockedQuantity
+  ));
+  if (line) canonicalController.decreaseLine(line);
+}
+
+async function resetMenuSelection() {
+  if (writeDisabled.value || orderingMutationLocked.value || resettingMenuSelection.value) return;
+  resettingMenuSelection.value = true;
+  try {
+    if (initialBatchTimer) {
+      clearTimeout(initialBatchTimer);
+      initialBatchTimer = null;
+    }
+    pendingInitialItems.value = new Map();
+    pendingInitialTableId.value = '';
+    if (initialBatchRequest) await initialBatchRequest;
+    if (!session.value) return;
+    if (!presentedCanonicalState.value) await canonicalController.load(true);
+    const adjustableLines = [...(presentedCanonicalState.value?.items ?? [])];
+    for (const initialLine of adjustableLines) {
+      for (let remaining = initialLine.adjustableQuantity; remaining > 0; remaining -= 1) {
+        const current = presentedCanonicalState.value?.items.find((item) => item.lineKey === initialLine.lineKey);
+        if (!current || current.quantity <= current.lockedQuantity) break;
+        canonicalController.decreaseLine(current);
+      }
+    }
+  } finally {
+    resettingMenuSelection.value = false;
+  }
+}
+
+async function viewCurrentOrder() {
+  if (openingCurrentOrder.value || orderingMutationLocked.value) return;
+  openingCurrentOrder.value = true;
+  try {
+    if (!(await reconcilePendingOrderingMutations())) return;
+    await replaceMainTab('TABLES');
+  } finally {
+    openingCurrentOrder.value = false;
   }
 }
 
@@ -595,19 +664,38 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-show="activeMainTab === 'MENU'" class="table-main-pane table-main-pane--menu">
-        <TableOrderingWorkspace v-if="activeMainTab === 'MENU' && selectedTable && selectedTable.status !== 'DISABLED'" :key="selectedTable.id" open embedded :table-id="selectedTable.id" :table-label="session?.tableNo || selectedTable.tableNo || t('table.numberFallback')" :session-id="session?.id || ''" :disabled="writeDisabled" :top-dialog-open="topOrderingDialogOpen" :product-quantities="orderingProductQuantities" :mutation-locked="orderingMutationLocked" @close="closeOrdering" @add-product="addMenuProduct" />
+        <TableOrderingWorkspace
+          v-if="activeMainTab === 'MENU' && selectedTable && selectedTable.status !== 'DISABLED'"
+          :key="selectedTable.id"
+          open
+          embedded
+          :table-id="selectedTable.id"
+          :table-label="session?.tableNo || selectedTable.tableNo || t('table.numberFallback')"
+          :table-secondary-label="session?.tableName || selectedTable.tableName || ''"
+          :session-id="session?.id || ''"
+          :disabled="writeDisabled || resettingMenuSelection || openingCurrentOrder"
+          :top-dialog-open="topOrderingDialogOpen"
+          :product-quantities="orderingProductQuantities"
+          :mutation-locked="orderingMutationLocked"
+          :mobile-v2-presentation="mobileV2Preview"
+          @close="mobileV2Preview ? backToTables() : closeOrdering()"
+          @add-product="addMenuProduct"
+          @remove-product="decreaseMenuProduct"
+          @reset-selection="resetMenuSelection"
+          @view-order="viewCurrentOrder"
+        />
         <EmptyState v-else-if="activeMainTab === 'MENU'" :title="t('cashierV2.menuNeedsTableTitle')" :description="t('cashierV2.menuNeedsTableDescription')" />
       </div>
     </div>
 
     <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(routeTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
-      <button v-if="selectedTableId && (!isMobile || mobileV2Preview)" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="backToTables"><ArrowLeft :size="20" aria-hidden="true" /></button>
+      <button v-if="selectedTableId && !mobileV2Preview && !isMobile" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="backToTables"><ArrowLeft :size="20" aria-hidden="true" /></button>
       <LoadingState v-if="detailLoading && !selectedSessionDetail" :label="t('table.loading')" />
-      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :mobile-v2-presentation="mobileV2Preview" @order-items="openOrdering" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
+      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :mobile-v2-presentation="mobileV2Preview" @back="backToTables" @add-items="replaceMainTab('MENU')" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
     </aside>
 
     <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value || retainedInitialBatch)" :loading="canonicalController.syncing.value || initialBatchSyncing" :disabled="writeDisabled" @retry="retryUncertainOrderingMutation" />
-    <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
+    <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" :show-description="!mobileV2Preview" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
     <SettlementAdjustmentDialog v-if="session" :open="adjustmentOpen" :item-amount-vnd="presentedCanonicalState?.totals.originalAmountVnd || '0'" :discount-payable-rate-bps="presentedCanonicalState?.totals.discountPayableRateBps ?? null" :rounding-enabled="BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n" :loading="settlementAdjustmentLoading" @cancel="adjustmentOpen = false" @confirm="saveSettlementAdjustment" />
     <TableTransferDialog :open="transferOpen" :source-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :targets="transferTargets" :loading="transferLoading" :error="transferError" @cancel="cancelTransfer" @confirm="confirmTransfer" />
   </section>

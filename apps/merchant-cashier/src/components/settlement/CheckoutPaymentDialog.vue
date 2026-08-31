@@ -10,6 +10,7 @@ const props = defineProps<{
   amountVnd: string | number;
   loading?: boolean;
   error?: string;
+  showDescription?: boolean;
 }>();
 const emit = defineEmits<{ cancel: []; confirm: [paymentMethod: PaymentMethod] }>();
 const { locale, t } = useI18n();
@@ -57,7 +58,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       <header>
         <div>
           <h3>{{ t('payment.title') }}</h3>
-          <p>{{ t('payment.description') }}</p>
+          <p v-if="showDescription !== false">{{ t('payment.description') }}</p>
         </div>
         <button type="button" class="payment-dialog__close" :aria-label="t('common.cancel')" :disabled="loading" @click="cancel">
           <X :size="20" aria-hidden="true" />

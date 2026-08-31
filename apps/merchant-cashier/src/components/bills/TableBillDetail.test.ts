@@ -119,6 +119,26 @@ describe('TableBillDetail canonical-state UI', () => {
     await wrapper.setProps({ canonicalState: state });
     expect(wrapper.get('[data-testid="table-production-notify"]').attributes('disabled')).toBeDefined();
   });
+
+  it('uses the isolated mobile V2 bill navigation and direct action dock', async () => {
+    const wrapper = mountDetail({ mobileV2Presentation: true });
+
+    await wrapper.get('[data-testid="mobile-v2-bill-back"]').trigger('click');
+    await wrapper.get('[data-testid="mobile-v2-bill-add-items"]').trigger('click');
+    expect(wrapper.emitted('back')).toHaveLength(1);
+    expect(wrapper.emitted('addItems')).toHaveLength(1);
+
+    await wrapper.get('[data-testid="mobile-v2-bill-more"]').trigger('click');
+    expect(wrapper.get('[data-testid="mobile-v2-bill-transfer"]').text()).toContain('整桌转台');
+    await wrapper.get('[data-testid="mobile-v2-bill-transfer"]').trigger('click');
+    expect(wrapper.emitted('transfer')).toHaveLength(1);
+
+    const dock = wrapper.get('[data-testid="mobile-v2-bill-action-dock"]');
+    expect(dock.find('[data-testid="print-primary"]').exists()).toBe(true);
+    expect(dock.find('[data-testid="mobile-v2-bill-adjustment"]').exists()).toBe(true);
+    expect(dock.find('[data-testid="dinein-checkout"]').exists()).toBe(true);
+    expect(dock.text()).not.toContain('更多');
+  });
 });
 
 function mountDetail(extraProps: Record<string, unknown> = {}) {

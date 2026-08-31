@@ -52,6 +52,7 @@ function mountWorkspace(overrides: {
   productQuantities?: Record<string, number>;
   pendingAddQuantities?: Record<string, number>;
   mutationLocked?: boolean;
+  mobileV2Presentation?: boolean;
   pinia?: Pinia;
 } = {}) {
   const pinia = overrides.pinia || createPinia();
@@ -68,6 +69,7 @@ function mountWorkspace(overrides: {
       productQuantities: overrides.productQuantities,
       pendingAddQuantities: overrides.pendingAddQuantities,
       mutationLocked: overrides.mutationLocked,
+      mobileV2Presentation: overrides.mobileV2Presentation,
     },
     global: { plugins: [pinia], stubs: { Teleport: true } },
   });
@@ -377,6 +379,42 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(header.find('[data-testid="table-ordering-search"]').exists()).toBe(true);
     expect(header.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
     expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
+  });
+
+  it('switches mobile V2 search into a focused global-search header', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const wrapper = mountWorkspace({ embedded: true, mobileV2Presentation: true });
+    await flushPromises();
+
+    const tableContext = wrapper.get('.table-ordering-mobile-v2-topbar').element;
+    const categories = wrapper.get('[data-testid="table-ordering-category-strip"]').element;
+    expect(tableContext.nextElementSibling).toBe(categories);
+    const mobileV2Styles = readFileSync(resolve(process.cwd(), 'src/mobile-v2/mobile-v2.css'), 'utf8');
+    expect(mobileV2Styles).toMatch(/\.table-ordering-workspace--mobile-v2 \.table-ordering-header \.table-ordering-mobile-v2-categories\s*\{[^}]*grid-row:\s*2;/s);
+    expect(mobileV2Styles).toMatch(/\.table-ordering-mobile-v2-search-mode \.table-ordering-search input:focus-visible\s*\{[^}]*outline:\s*none;[^}]*box-shadow:\s*none;/s);
+
+    const drinks = wrapper.findAll('[data-testid="table-ordering-category-strip"] button')
+      .find((button) => button.text() === '饮品');
+    await drinks!.trigger('click');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+
+    await wrapper.get('.table-ordering-mobile-v2-search-trigger').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="table-ordering-mobile-v2-search-mode"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
+    expect(wrapper.find('.table-ordering-mobile-v2-topbar').exists()).toBe(false);
+
+    const search = wrapper.get('[data-testid="table-ordering-search"] input');
+    await search.setValue('牛肉粉');
+    expect(wrapper.findAll('.table-ordering-product')).toHaveLength(1);
+    expect(wrapper.text()).toContain('牛肉粉');
+
+    await wrapper.get('.table-ordering-mobile-v2-search-back').trigger('click');
+    expect(wrapper.find('[data-testid="table-ordering-mobile-v2-search-mode"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
+    expect(wrapper.find('.table-ordering-mobile-v2-topbar').exists()).toBe(true);
   });
 
   it('retains the compact Cashier density, touch and horizontal category contracts', () => {

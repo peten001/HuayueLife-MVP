@@ -2,15 +2,13 @@
 import {
   Bell,
   LoaderCircle,
+  Menu,
   Printer,
   RefreshCw,
-  Volume2,
-  VolumeX,
   Wifi,
   WifiOff,
 } from '@lucide/vue';
 import { computed } from 'vue';
-import AccountMenu from '@/components/shell/AccountMenu.vue';
 import { useI18n } from '@/i18n';
 import type { CashierPrintingAvailability } from '@/types';
 import type { CashierPresentationWorkspace } from './navigation';
@@ -22,10 +20,6 @@ type MobileOperationalFilter = {
 
 const props = withDefaults(defineProps<{
   workspace: CashierPresentationWorkspace;
-  merchantName?: string;
-  role?: string;
-  loggingOut?: boolean;
-  currentTableLabel?: string;
   totalTableCount: number;
   availableTableCount: number;
   inUseTableCount: number;
@@ -33,8 +27,6 @@ const props = withDefaults(defineProps<{
   online: boolean;
   apiReachable: boolean | null;
   reconnecting: boolean;
-  soundEnabled: boolean;
-  soundSupported: boolean;
   printingAvailability: CashierPrintingAvailability;
   activeTableFilter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED';
   refreshingTables?: boolean;
@@ -48,11 +40,9 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  logout: [];
+  openNavigation: [];
   openNewOrders: [];
-  toggleSound: [];
   selectTableFilter: [filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'];
-  selectMainTab: [tab: 'TABLES' | 'MENU'];
   selectOperationalFilter: [filter: string];
   refreshTables: [];
 }>();
@@ -64,12 +54,6 @@ const title = computed(() => t({
   delivery: 'nav.delivery',
   history: 'nav.history',
 }[props.workspace]));
-const contextLabel = computed(() => {
-  if (props.workspace === 'tables' && props.currentTableLabel) {
-    return t('cashierV2.currentTableCompact', { table: props.currentTableLabel });
-  }
-  return props.merchantName || t('shell.merchantFallback');
-});
 const networkStatus = computed(() => {
   if (!props.online) return { tone: 'danger', label: t('network.offline'), icon: WifiOff } as const;
   if (props.reconnecting || props.apiReachable === null) return { tone: 'warning', label: t('network.reconnecting'), icon: LoaderCircle } as const;
@@ -92,11 +76,21 @@ const tableFilters = computed(() => [
 
 <template>
   <header class="mobile-v2-header">
+    <button
+      type="button"
+      class="mobile-v2-header__menu-button"
+      :aria-label="t('account.menu')"
+      aria-haspopup="dialog"
+      @click="emit('openNavigation')"
+    >
+      <Menu :size="25" :stroke-width="2.2" aria-hidden="true" />
+    </button>
     <div class="mobile-v2-header__identity">
-      <span class="mobile-v2-header__eyebrow" :aria-label="t('cashierV2.previewLabel')" :title="t('cashierV2.previewLabel')"><span aria-hidden="true">V2</span></span>
-      <div>
-        <h1>{{ title }}</h1>
-        <p>{{ contextLabel }}</p>
+      <div class="cashier-brand mobile-v2-header__brand" aria-label="YunQiao">
+        <span class="cashier-brand__logo" aria-hidden="true">
+          <img src="/yunqiao-cashier-mark.png" alt="" width="48" height="48" />
+        </span>
+        <strong class="cashier-brand__name">YunQiao</strong>
       </div>
     </div>
 
@@ -111,24 +105,19 @@ const tableFilters = computed(() => [
         <Bell :size="18" aria-hidden="true" />
         <b v-if="newOrderCount">{{ newOrderCount > 99 ? '99+' : newOrderCount }}</b>
       </button>
-      <button type="button" class="mobile-v2-header__icon-button" :disabled="!soundSupported" :aria-label="t(soundEnabled ? 'sound.enabled' : 'sound.enable')" @click="emit('toggleSound')">
-        <Volume2 v-if="soundEnabled" :size="18" aria-hidden="true" />
-        <VolumeX v-else :size="18" aria-hidden="true" />
+      <button
+        v-if="workspace === 'tables'"
+        type="button"
+        class="mobile-v2-header__icon-button mobile-v2-header__refresh"
+        :disabled="refreshingTables"
+        :aria-label="t('common.refresh')"
+        @click="emit('refreshTables')"
+      >
+        <RefreshCw :size="18" :class="{ spinning: refreshingTables }" aria-hidden="true" />
       </button>
-      <AccountMenu
-        class="mobile-v2-account"
-        :merchant-name="merchantName"
-        :role="role"
-        :logging-out="loggingOut"
-        @logout="emit('logout')"
-      />
     </div>
 
     <div v-if="workspace === 'tables'" class="mobile-v2-header__controls">
-      <div class="mobile-v2-segmented" :aria-label="t('cashierV2.mainTabs')">
-        <button type="button" :class="{ 'is-active': activeMainTab === 'TABLES' }" :aria-pressed="activeMainTab === 'TABLES'" @click="emit('selectMainTab', 'TABLES')">{{ t('cashierV2.tablesTab') }}</button>
-        <button type="button" :class="{ 'is-active': activeMainTab === 'MENU' }" :aria-pressed="activeMainTab === 'MENU'" @click="emit('selectMainTab', 'MENU')">{{ t('cashierV2.menuTab') }}</button>
-      </div>
       <div
         v-show="activeMainTab === 'MENU'"
         id="cashier-mobile-menu-search"
@@ -147,7 +136,6 @@ const tableFilters = computed(() => [
             <span>{{ item.label }}</span><b>{{ item.count }}</b>
           </button>
         </div>
-        <button type="button" class="mobile-v2-filter-strip__refresh" :disabled="refreshingTables" :aria-label="t('common.refresh')" @click="emit('refreshTables')"><RefreshCw :size="17" :class="{ spinning: refreshingTables }" aria-hidden="true" /></button>
       </div>
     </div>
 

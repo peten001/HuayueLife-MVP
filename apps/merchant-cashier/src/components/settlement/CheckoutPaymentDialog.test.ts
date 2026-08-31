@@ -16,6 +16,14 @@ describe('CheckoutPaymentDialog', () => {
     document.body.innerHTML = '';
   });
 
+  it('can omit the descriptive copy without changing the checkout controls', () => {
+    const wrapper = mountDialog({ showDescription: false });
+
+    expect(wrapper.find('.payment-dialog header p').exists()).toBe(false);
+    expect(wrapper.find('.payment-options').exists()).toBe(true);
+    expect(wrapper.find('.payment-dialog footer').exists()).toBe(true);
+  });
+
   it('requires an explicit payment choice before confirming', async () => {
     const wrapper = mountDialog();
     const confirm = wrapper.get('footer .primary-action');
