@@ -12,7 +12,10 @@ import {
 } from '@/platform/safe-storage';
 import type { CashierMenuCategory, CashierMenuProduct } from '@/types';
 
-export const CASHIER_CATALOG_CACHE_SCHEMA_VERSION = 2;
+// V3 guarantees that hydrated products contain the menuThumbnailUrl field.
+// Older snapshots can silently fall back to full-size originals and overload
+// the same API transport used by order mutations on weak mobile networks.
+export const CASHIER_CATALOG_CACHE_SCHEMA_VERSION = 3;
 export const CASHIER_CATALOG_FRESH_TTL_MS = 2 * 60_000;
 export const CASHIER_CATALOG_MAX_STALE_MS = 24 * 60 * 60_000;
 export const CASHIER_CATALOG_TTL_MS = CASHIER_CATALOG_FRESH_TTL_MS;

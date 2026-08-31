@@ -57,7 +57,6 @@ const workspace = ref<HTMLElement | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
 const activeResultIndex = ref(-1);
 const productCards = ref<HTMLElement[]>([]);
-const failedThumbnailUrls = ref(new Set<string>());
 const currentPage = ref(1);
 const mobileVisibleProductCount = ref(0);
 const mobileSearchOpen = ref(false);
@@ -209,16 +208,8 @@ function productName(product: CashierMenuProduct) {
 
 function productCardImage(product: CashierMenuProduct) {
   const thumbnailUrl = product.menuThumbnailUrl?.trim();
-  if (thumbnailUrl && !failedThumbnailUrls.value.has(thumbnailUrl)) return thumbnailUrl;
+  if (thumbnailUrl) return thumbnailUrl;
   return product.imageUrl?.trim() || '';
-}
-
-function handleProductImageError(product: CashierMenuProduct) {
-  const thumbnailUrl = product.menuThumbnailUrl?.trim();
-  const originalUrl = product.imageUrl?.trim();
-  if (!thumbnailUrl || !originalUrl || thumbnailUrl === originalUrl) return;
-  if (productCardImage(product) !== thumbnailUrl) return;
-  failedThumbnailUrls.value = new Set([...failedThumbnailUrls.value, thumbnailUrl]);
 }
 
 function categoryName(category: CashierMenuCategory) {
@@ -660,7 +651,6 @@ function setProductCardRef(element: Element | null, index: number) {
                       :alt="productName(product)"
                       :eager="index < initialMobileImageCount"
                       :cache-key="product.id"
-                      @error="handleProductImageError(product)"
                     />
                     <ImageIcon :size="24" aria-hidden="true" />
                     <span v-if="mobileV2Menu && canonicalQuantityForProduct(product.id) > 0" class="table-ordering-product__selection-check" aria-hidden="true">

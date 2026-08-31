@@ -89,7 +89,7 @@ onBeforeUnmount(() => stopObserving?.());
     :alt="alt || ''"
     :loading="resolvedSrc ? 'eager' : 'lazy'"
     decoding="async"
-    fetchpriority="auto"
+    fetchpriority="low"
     :data-load-reason="loadReason || undefined"
     :data-load-state="loadState"
     :hidden="loadState === 'failed'"

@@ -366,7 +366,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     wrapper.unmount();
   });
 
-  it('prefers the menu thumbnail and falls back to the original when the thumbnail fails', async () => {
+  it('never amplifies a thumbnail failure into a full-size original request', async () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function getRect(this: HTMLElement) {
       if (this.classList.contains('table-ordering-products__scroller')) {
@@ -389,8 +389,9 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
 
     await wrapper.get('.table-ordering-product img').trigger('error');
     await flushPromises();
-    await vi.waitFor(() => expect(wrapper.get('.table-ordering-product img').attributes('src'))
-      .toContain('/uploads/products/original.jpg'));
+    expect(wrapper.get('.table-ordering-product img').attributes('src'))
+      .toContain('/uploads/product-thumbnails/1/hash-menu.webp');
+    expect(wrapper.get('.table-ordering-product img').attributes()).toHaveProperty('hidden');
   });
 
   it('keeps the mobile search and category strip outside the product scroller', async () => {

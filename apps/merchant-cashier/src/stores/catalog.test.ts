@@ -97,7 +97,7 @@ describe('cashier persistent catalog SWR', () => {
 
   it.each([
     ['corrupt JSON', '{broken'],
-    ['previous schema version', JSON.stringify({ ...cachePayload(merchantId, Date.now()), schemaVersion: 1 })],
+    ['previous schema version', JSON.stringify({ ...cachePayload(merchantId, Date.now()), schemaVersion: 2 })],
     ['wrong schema version', JSON.stringify({ ...cachePayload(merchantId, Date.now()), schemaVersion: 999 })],
   ])('ignores %s and falls back to the canonical fetch', async (_label, value) => {
     const key = cashierCatalogStorageKey(merchantId);
@@ -204,7 +204,7 @@ describe('cashier persistent catalog SWR', () => {
 
     expect(store.products[0]?.menuThumbnailUrl).toBe(productWithThumbnail.menuThumbnailUrl);
     const persisted = JSON.parse(localStorage.getItem(cashierCatalogStorageKey(merchantId)) || '{}');
-    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.schemaVersion).toBe(CASHIER_CATALOG_CACHE_SCHEMA_VERSION);
     expect(persisted.products[0].menuThumbnailUrl).toBe(productWithThumbnail.menuThumbnailUrl);
   });
 });
