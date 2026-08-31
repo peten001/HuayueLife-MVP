@@ -17,7 +17,10 @@
       }
     </style>
     <script>
-      if (window.location.pathname.startsWith('/__preview/mobile-v2/')) {
+      const mobileV2PreviewPath = window.location.pathname.startsWith('/__preview/mobile-v2/');
+      const mobileV2FormalPath = /^\/(?:tables|pickup|delivery|orders\/history)(?:\/|$)/.test(window.location.pathname);
+      const mobileV2Viewport = window.matchMedia('(max-width: 899px)').matches;
+      if (mobileV2PreviewPath || (mobileV2FormalPath && mobileV2Viewport)) {
         const overrideMeta = (name, content) => {
           const meta = document.querySelector(`meta[name="${name}"]`);
           if (!meta) return;

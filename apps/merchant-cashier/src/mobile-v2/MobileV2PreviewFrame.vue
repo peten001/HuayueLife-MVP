@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useMediaQuery } from '@/composables';
 import type { CashierPrintingAvailability } from '@/types';
@@ -101,12 +101,29 @@ function restoreDocumentShell() {
   previousMetaContent.clear();
 }
 
+async function resetWorkspaceScroll() {
+  await nextTick();
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  document.querySelectorAll<HTMLElement>([
+    '.mobile-v2-preview-main',
+    '.fulfillment-queue__list',
+    '.fulfillment-main__body',
+    '.history-queue__list',
+    '.history-detail',
+  ].join(',')).forEach((element) => {
+    element.scrollTop = 0;
+    element.scrollLeft = 0;
+  });
+}
+
 watch(() => route.fullPath, () => {
   drawerOpen.value = false;
+  void resetWorkspaceScroll();
 });
 
 onMounted(() => {
   applyMobileV2AppShell();
+  void resetWorkspaceScroll();
 });
 
 onBeforeUnmount(() => {

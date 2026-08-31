@@ -13,8 +13,9 @@ import {
   X,
 } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n, type Locale } from '@/i18n';
-import { mobileV2PreviewRouteNames } from './navigation';
+import { resolveCashierPresentationLocation } from './navigation';
 
 const props = withDefaults(defineProps<{
   role?: string;
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale, localeName, setLocale } = useI18n();
+const route = useRoute();
 const panel = ref<HTMLElement | null>(null);
 const languageOpen = ref(false);
 const normalizedRole = computed(() => (
@@ -43,11 +45,12 @@ const normalizedRole = computed(() => (
 ));
 const roleLabel = computed(() => t(`auth.role.${normalizedRole.value.toLowerCase()}`));
 const roleAccountLabel = computed(() => t(`auth.roleAccount.${normalizedRole.value.toLowerCase()}`));
+const previewRoute = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
 const destinations = computed(() => [
-  ...(props.showTables ? [{ name: mobileV2PreviewRouteNames.tables, label: t('nav.tables'), icon: LayoutGrid }] : []),
-  ...(props.showPickup ? [{ name: mobileV2PreviewRouteNames.pickup, label: t('nav.pickup'), icon: ShoppingBag }] : []),
-  ...(props.showDelivery ? [{ name: mobileV2PreviewRouteNames.delivery, label: t('nav.delivery'), icon: Bike }] : []),
-  { name: mobileV2PreviewRouteNames.history, label: t('nav.history'), icon: History },
+  ...(props.showTables ? [{ name: 'tables', label: t('nav.tables'), icon: LayoutGrid }] : []),
+  ...(props.showPickup ? [{ name: 'pickup-orders', label: t('nav.pickup'), icon: ShoppingBag }] : []),
+  ...(props.showDelivery ? [{ name: 'delivery-orders', label: t('nav.delivery'), icon: Bike }] : []),
+  { name: 'order-history', label: t('nav.history'), icon: History },
 ]);
 const languages = computed(() => [
   { value: 'zh' as const, label: t('language.zh') },
@@ -69,6 +72,10 @@ function selectLanguage(nextLocale: Locale) {
 function logout() {
   emit('close');
   emit('logout');
+}
+
+function destinationLocation(name: string) {
+  return resolveCashierPresentationLocation(previewRoute.value, { name });
 }
 
 onMounted(async () => {
@@ -112,7 +119,7 @@ onBeforeUnmount(() => {
         <RouterLink
           v-for="destination in destinations"
           :key="destination.name"
-          :to="{ name: destination.name }"
+          :to="destinationLocation(destination.name)"
           @click="emit('close')"
         >
           <component :is="destination.icon" :size="22" :stroke-width="1.9" aria-hidden="true" />

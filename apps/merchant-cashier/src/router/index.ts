@@ -18,6 +18,7 @@ declare module 'vue-router' {
     requiresAuth?: boolean;
     guestOnly?: boolean;
     mobileV2Preview?: boolean;
+    mobileV2Enabled?: boolean;
   }
 }
 
@@ -49,16 +50,19 @@ const router = createRouter({
           path: 'tables/:tableId?',
           name: 'tables',
           component: () => import('@/pages/TableOverviewPage.vue'),
+          meta: { mobileV2Enabled: true },
         },
         {
           path: 'pickup/:orderId?',
           name: 'pickup-orders',
           component: () => import('@/pages/PickupOrdersPage.vue'),
+          meta: { mobileV2Enabled: true },
         },
         {
           path: 'delivery/:orderId?',
           name: 'delivery-orders',
           component: () => import('@/pages/DeliveryOrdersPage.vue'),
+          meta: { mobileV2Enabled: true },
         },
         {
           path: 'orders/new',
@@ -76,6 +80,7 @@ const router = createRouter({
           path: 'orders/history/:orderId?',
           name: 'order-history',
           component: () => import('@/pages/OrderHistoryPage.vue'),
+          meta: { mobileV2Enabled: true },
         },
         ...mobileV2PreviewRoutes,
       ],
@@ -154,11 +159,24 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to, _from, failure) => {
   if (failure) return;
+  if (to.meta.mobileV2Enabled !== true && to.meta.mobileV2Preview !== true) {
+    restoreEarlyMobileV2Shell();
+  }
   markTerminalStep('ROUTE_RESOLVED', {
     currentRoute: to.path,
     sessionState: describeSessionState(useAuthStore()),
   });
 });
+
+function restoreEarlyMobileV2Shell() {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.remove('cashier-mobile-v2-preview-active');
+  document.body.classList.remove('cashier-mobile-v2-preview-active');
+  for (const meta of document.head.querySelectorAll<HTMLMetaElement>('[data-mobile-v2-original-content]')) {
+    meta.setAttribute('content', meta.getAttribute('data-mobile-v2-original-content') || '');
+    meta.removeAttribute('data-mobile-v2-original-content');
+  }
+}
 
 function describeSessionState(auth: ReturnType<typeof useAuthStore>) {
   if (!auth.hydrated) return 'UNKNOWN';

@@ -40,13 +40,14 @@ describe('isolated Mobile V2 architecture', () => {
     expect(routes).not.toContain("path: 'tables/:tableId?'");
   });
 
-  it('moves preview destinations into the drawer and leaves the frame without a bottom navigation', () => {
+  it('moves canonical destinations into the drawer while preserving the development preview namespace', () => {
     const drawer = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Drawer.vue'), 'utf8');
     const header = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Header.vue'), 'utf8');
     const frame = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2PreviewFrame.vue'), 'utf8');
-    expect(drawer).toContain('mobileV2PreviewRouteNames.pickup');
-    expect(drawer).toContain('mobileV2PreviewRouteNames.delivery');
-    expect(drawer).toContain('mobileV2PreviewRouteNames.history');
+    expect(drawer).toContain("name: 'pickup-orders'");
+    expect(drawer).toContain("name: 'delivery-orders'");
+    expect(drawer).toContain("name: 'order-history'");
+    expect(drawer).toContain('resolveCashierPresentationLocation(previewRoute.value');
     expect(drawer).toContain('Globe2');
     expect(drawer).toContain('setLocale');
     expect(header).toContain('yunqiao-cashier-mark.png');
@@ -57,5 +58,14 @@ describe('isolated Mobile V2 architecture', () => {
     expect(header).not.toContain('cashierV2.menuTab');
     expect(header).not.toContain('Globe2');
     expect(frame).not.toContain('MobileV2Navigation');
+  });
+
+  it('enables Mobile V2 only for canonical phone routes while retaining the old desktop shell', () => {
+    const router = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8');
+    const shell = readFileSync(resolve(process.cwd(), 'src/layouts/CashierShell.vue'), 'utf8');
+    expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(4);
+    expect(shell).toContain("useMediaQuery('(max-width: 899px)')");
+    expect(shell).toContain('mobileLayout.value && route.meta.mobileV2Enabled === true');
+    expect(shell).toContain('<template v-else>');
   });
 });

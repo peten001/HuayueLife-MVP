@@ -15,9 +15,11 @@ import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import PrintJobActions from '@/components/printing/PrintJobActions.vue';
 import BusinessDaySummaryDialog from '@/components/reports/BusinessDaySummaryDialog.vue';
 import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
+import { useMediaQuery } from '@/composables';
 
 const route = useRoute();
 const router = useRouter();
+const mobileViewport = useMediaQuery('(max-width: 899px)');
 const { t, locale } = useI18n();
 const ordersStore = useOrdersStore();
 const uiStore = useUiStore();
@@ -43,6 +45,9 @@ const businessSummary = ref<BusinessDaySummary | null>(null);
 const sourceOrdersOpen = ref(false);
 let routeSequence = 0;
 const mobileV2Preview = computed(() => route?.meta?.mobileV2Preview === true);
+const mobileV2Presentation = computed(() => (
+  mobileV2Preview.value || (mobileViewport.value && route?.meta?.mobileV2Enabled === true)
+));
 
 const dateFilterLabel = computed(() => formatVietnamDateFilter(date.value, locale.value));
 const dateFilterAriaLabel = computed(() => `${t('orders.filterDate')} ${formatVietnamDateFilterAria(date.value, locale.value)}`);
@@ -143,7 +148,7 @@ function mergedSettlementItems(item: MerchantSettlement) {
 
 function dishName(row: { productNameZh: string; productNameVi: string | null; productNameEn: string | null }) {
   if (locale.value === 'vi' && row.productNameVi) return row.productNameVi;
-  if (mobileV2Preview.value && locale.value === 'en' && row.productNameEn) return row.productNameEn;
+  if (mobileV2Presentation.value && locale.value === 'en' && row.productNameEn) return row.productNameEn;
   return row.productNameZh;
 }
 
@@ -309,7 +314,7 @@ onMounted(async () => {
           </header>
           <dl class="history-detail__facts">
             <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(settlement.settledAt, locale) }}</dd></div>
-            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate || (mobileV2Preview ? t('settlement.unrecorded') : '') }}</dd></div>
+            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate || (mobileV2Presentation ? t('settlement.unrecorded') : '') }}</dd></div>
             <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
           </dl>
 

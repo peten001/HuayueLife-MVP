@@ -25,7 +25,7 @@ const browser = await chromium.launch({
 });
 
 try {
-  results.previewBoot = await verifyEarlyPreviewBoot(browser);
+  results.formalMobileBoot = await verifyEarlyMobileV2Boot(browser);
 
   for (const [label, viewport] of mobileViewports) {
     const context = await browser.newContext({ viewport, deviceScaleFactor: 1, reducedMotion: 'reduce' });
@@ -35,7 +35,7 @@ try {
 
     try {
       await enterDemo(page);
-      await openPreview(page, '/__preview/mobile-v2/tables');
+      await openMobileV2(page, '/tables');
       const appShellSignature = await verifyMobileAppShell(page, label);
       const tableSignature = await verifyTableOverview(page, label);
       await page.screenshot({ path: `${outputDirectory}/mobile-${label}-01-tables.png`, animations: 'disabled' });
@@ -50,7 +50,7 @@ try {
       await page.locator('.mobile-v2-drawer__close').click();
 
       await page.getByTestId('table-card-demo-table-2').click();
-      await page.waitForURL((url) => url.pathname.endsWith('/__preview/mobile-v2/tables/demo-table-2') && url.searchParams.get('view') === 'menu');
+      await page.waitForURL((url) => url.pathname === '/tables/demo-table-2' && url.searchParams.get('view') === 'menu');
       await page.getByTestId('table-ordering-workspace').waitFor();
       const menuSignature = await verifyMenu(page, label);
       await page.screenshot({ path: `${outputDirectory}/mobile-${label}-03-menu.png`, animations: 'disabled' });
@@ -104,7 +104,7 @@ try {
 
       const workflowSignature = await verifyMobileWorkflows(page, label);
       results.mobile[label] = { viewport, appShellSignature, tableSignature, drawerPolish, menuSignature, selectedMenuPolish, billSignature, eightItemFit, workflowSignature };
-      await verifyFormalShellRestored(page, label);
+      await verifyFormalMobileShell(page, label);
     } finally {
       await context.close();
     }
@@ -152,7 +152,7 @@ try {
 
   assert.deepEqual(results.browserErrors, [], `browser errors:\n${results.browserErrors.join('\n')}`);
   await writeFile(`${outputDirectory}/results.json`, `${JSON.stringify(results, null, 2)}\n`, 'utf8');
-  process.stdout.write(`MOBILE_V2_ISOLATED_UI=PASS mobile=375,390,430 desktop=1024,1280,1440 output=${outputDirectory}\n`);
+  process.stdout.write(`MOBILE_V2_RELEASE_UI=PASS mobile=375,390,430 desktop=1024,1280,1440 output=${outputDirectory}\n`);
 } finally {
   await browser.close();
 }
@@ -164,12 +164,12 @@ async function enterDemo(page) {
   await page.getByTestId('table-grid').waitFor();
 }
 
-async function verifyEarlyPreviewBoot(browser) {
+async function verifyEarlyMobileV2Boot(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   const page = await context.newPage();
   await page.route('**/src/main.ts', (route) => route.abort());
   try {
-    await page.goto(`${baseUrl}/__preview/mobile-v2/tables`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${baseUrl}/tables`, { waitUntil: 'domcontentloaded' });
     const signature = await page.evaluate(() => ({
       rootClass: document.documentElement.classList.contains('cashier-mobile-v2-preview-active'),
       viewport: document.querySelector('meta[name="viewport"]')?.getAttribute('content') || '',
@@ -181,7 +181,7 @@ async function verifyEarlyPreviewBoot(browser) {
       htmlBackground: getComputedStyle(document.documentElement).backgroundColor,
       bodyBackground: getComputedStyle(document.body).backgroundColor,
     }));
-    assert.equal(signature.rootClass, true, 'direct V2 boot must set the light app-shell marker before Vue mounts');
+    assert.equal(signature.rootClass, true, 'direct formal mobile boot must set the light app-shell marker before Vue mounts');
     assert.match(signature.viewport, /user-scalable=no/, 'direct V2 boot must set fixed app scale before Vue mounts');
     assert.match(signature.viewportOriginal, /viewport-fit=cover/, 'direct V2 boot must retain the formal viewport for restoration');
     assert.equal(signature.themeColor, '#fbfcfa', 'direct V2 boot must set the light browser chrome color');
@@ -196,25 +196,25 @@ async function verifyEarlyPreviewBoot(browser) {
   }
 }
 
-async function openPreview(page, route) {
+async function openMobileV2(page, route) {
   await spaNavigate(page, route);
   await page.waitForURL((url) => url.pathname === route);
   await page.getByTestId('mobile-v2-preview-frame').waitFor();
   await page.waitForTimeout(180);
-  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 1, 'preview marker missing');
-  assert.equal(await page.locator('html.cashier-mobile-v2-preview-active').count(), 1, 'preview root marker missing');
+  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 1, 'Mobile V2 body marker missing');
+  assert.equal(await page.locator('html.cashier-mobile-v2-preview-active').count(), 1, 'Mobile V2 root marker missing');
 }
 
-async function verifyFormalShellRestored(page, label) {
+async function verifyFormalMobileShell(page, label) {
   await spaNavigate(page, '/tables');
   await page.waitForURL((url) => url.pathname === '/tables');
   await page.getByTestId('table-grid').waitFor();
-  assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(), 0, `${label}: formal route must keep the old UI after leaving V2`);
-  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 0, `${label}: V2 body marker did not restore`);
-  assert.equal(await page.locator('html.cashier-mobile-v2-preview-active').count(), 0, `${label}: V2 root marker did not restore`);
-  assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), '#010911', `${label}: theme color did not restore after V2`);
-  assert.equal(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content'), 'black-translucent', `${label}: iOS status style did not restore after V2`);
-  assert.equal((await page.locator('meta[name="viewport"]').getAttribute('content'))?.includes('user-scalable=no'), false, `${label}: viewport zoom policy leaked out of V2`);
+  assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(), 1, `${label}: formal phone route must use Mobile V2`);
+  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 1, `${label}: formal Mobile V2 body marker missing`);
+  assert.equal(await page.locator('html.cashier-mobile-v2-preview-active').count(), 1, `${label}: formal Mobile V2 root marker missing`);
+  assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), '#fbfcfa', `${label}: formal Mobile V2 theme color changed`);
+  assert.equal(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content'), 'default', `${label}: formal Mobile V2 iOS status style changed`);
+  assert.equal((await page.locator('meta[name="viewport"]').getAttribute('content'))?.includes('user-scalable=no'), true, `${label}: formal Mobile V2 viewport must prevent browser zoom`);
 }
 
 async function verifyMobileAppShell(page, label) {
@@ -419,7 +419,7 @@ async function verifyEightVisibleProducts(page, label) {
 async function verifyMobileWorkflows(page, label) {
   const signature = {};
 
-  await openPreview(page, '/__preview/mobile-v2/pickup');
+  await openMobileV2(page, '/pickup');
   const pickupCard = page.getByTestId('pickup-order-demo-order-1004');
   await pickupCard.waitFor();
   signature.pickupListCards = await page.locator('[data-testid^="pickup-order-"]').count();
@@ -428,31 +428,36 @@ async function verifyMobileWorkflows(page, label) {
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-08-pickup-list.png`, animations: 'disabled' });
   await pickupCard.click();
   await page.locator('.pickup-order-detail').waitFor();
+  await assertWorkspaceStartsAtTop(page, `${label}-pickup-detail`, '.fulfillment-main__body', '.mobile-workspace-back');
   signature.pickupDetail = await page.locator('.pickup-order-detail').count();
   await assertNoOverflow(page, `mobile-${label}-pickup-detail`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-09-pickup-detail.png`, animations: 'disabled' });
 
-  await navigateThroughDrawer(page, '商家配送', '/__preview/mobile-v2/delivery');
+  await navigateThroughDrawer(page, '商家配送', '/delivery');
   const deliveryCard = page.getByTestId('delivery-order-demo-order-1005');
   await deliveryCard.waitFor();
+  await assertWorkspaceStartsAtTop(page, `${label}-delivery-list`, '.fulfillment-queue__list', '.mobile-v2-header__identity');
   signature.deliveryListCards = await page.locator('[data-testid^="delivery-order-"]').count();
   signature.deliveryFilterRows = await visibleHeaderFilterRows(page);
   await assertNoOverflow(page, `mobile-${label}-delivery-list`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-10-delivery-list.png`, animations: 'disabled' });
   await deliveryCard.click();
   await page.locator('.delivery-order-detail').waitFor();
+  await assertWorkspaceStartsAtTop(page, `${label}-delivery-detail`, '.fulfillment-main__body', '.mobile-workspace-back');
   signature.deliveryDetail = await page.locator('.delivery-order-detail').count();
   await assertNoOverflow(page, `mobile-${label}-delivery-detail`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-11-delivery-detail.png`, animations: 'disabled' });
 
-  await navigateThroughDrawer(page, '订单记录', '/__preview/mobile-v2/history');
+  await navigateThroughDrawer(page, '订单记录', '/orders/history');
   const historyCard = page.locator('.history-queue__list button').first();
   await historyCard.waitFor();
+  await assertWorkspaceStartsAtTop(page, `${label}-history-list`, '.history-queue__list', '.mobile-v2-header__identity');
   signature.historyListCards = await page.locator('.history-queue__list button').count();
   await assertNoOverflow(page, `mobile-${label}-history-list`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-12-history-list.png`, animations: 'disabled' });
   await historyCard.click();
   await page.locator('.history-detail__content').waitFor();
+  await assertWorkspaceStartsAtTop(page, `${label}-history-detail`, '.history-detail', '.mobile-workspace-back');
   signature.historyDetail = await page.locator('.history-detail__content').count();
   await assertNoOverflow(page, `mobile-${label}-history-detail`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-13-history-detail.png`, animations: 'disabled' });
@@ -480,7 +485,28 @@ async function navigateThroughDrawer(page, linkName, route) {
   await page.waitForURL((url) => url.pathname === route);
   await page.getByTestId('mobile-v2-preview-frame').waitFor();
   await page.waitForTimeout(180);
-  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 1, `${linkName}: preview marker missing`);
+  assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 1, `${linkName}: Mobile V2 marker missing`);
+}
+
+async function assertWorkspaceStartsAtTop(page, label, scrollSelector, topSelector) {
+  await page.waitForTimeout(80);
+  const metrics = await page.evaluate(({ scrollSelector: scrollTarget, topSelector: visibleTarget }) => {
+    const scroller = document.querySelector(scrollTarget);
+    const topElement = document.querySelector(visibleTarget);
+    const topRect = topElement?.getBoundingClientRect();
+    const headerRect = document.querySelector('.mobile-v2-header')?.getBoundingClientRect();
+    return {
+      scrollTop: scroller?.scrollTop ?? -1,
+      topElement: topRect ? { top: topRect.top, bottom: topRect.bottom } : null,
+      header: headerRect ? { top: headerRect.top, bottom: headerRect.bottom } : null,
+      viewportHeight: innerHeight,
+    };
+  }, { scrollSelector, topSelector });
+  assert.equal(metrics.scrollTop, 0, `${label}: workspace scroll position must reset (${JSON.stringify(metrics)})`);
+  assert.ok(metrics.topElement, `${label}: expected top control is missing`);
+  assert.ok(metrics.topElement.top >= -1 && metrics.topElement.bottom <= metrics.viewportHeight + 1, `${label}: top control must be visible (${JSON.stringify(metrics)})`);
+  assert.ok(metrics.header && metrics.header.top >= -1, `${label}: Mobile V2 header must not be clipped (${JSON.stringify(metrics)})`);
+  return metrics;
 }
 
 async function assertNoOverflow(page, label) {

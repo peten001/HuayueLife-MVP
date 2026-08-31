@@ -15,6 +15,7 @@ body.cashier-mobile-v2-preview-active #app {
 }
 
 html.cashier-mobile-v2-preview-active {
+  overflow: hidden;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }

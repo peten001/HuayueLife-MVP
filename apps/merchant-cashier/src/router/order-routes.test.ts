@@ -30,6 +30,14 @@ describe('cashier order routes', () => {
     expect(router.resolve({ name: 'order-history' }).fullPath).toBe('/orders/history');
   });
 
+  it('marks the four canonical cashier workspaces for phone-only Mobile V2 presentation', () => {
+    expect(router.resolve({ name: 'tables' }).meta.mobileV2Enabled).toBe(true);
+    expect(router.resolve({ name: 'pickup-orders' }).meta.mobileV2Enabled).toBe(true);
+    expect(router.resolve({ name: 'delivery-orders' }).meta.mobileV2Enabled).toBe(true);
+    expect(router.resolve({ name: 'order-history' }).meta.mobileV2Enabled).toBe(true);
+    expect(router.resolve({ name: 'legacy-new-orders' }).meta.mobileV2Enabled).not.toBe(true);
+  });
+
   it('keeps development-only Mobile V2 routes isolated from canonical routes', () => {
     expect(router.resolve({
       name: 'mobile-v2-preview-tables',

@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
 import { cashierConfig } from '@/config';
-import { usePollingTask } from '@/composables';
+import { useMediaQuery, usePollingTask } from '@/composables';
 import {
   cashierWorkspaceEnabled,
   firstEnabledCashierWorkspace,
@@ -42,9 +42,7 @@ import {
 
 const router = useRouter();
 const route = useRoute();
-const MobileV2PreviewFrame = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('@/mobile-v2/MobileV2PreviewFrame.vue'))
-  : null;
+const MobileV2PreviewFrame = defineAsyncComponent(() => import('@/mobile-v2/MobileV2PreviewFrame.vue'));
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
@@ -64,6 +62,7 @@ const loggingOut = ref(false);
 const inboxOpen = ref(false);
 const refreshingTables = ref(false);
 const cashierReady = ref(false);
+const mobileLayout = useMediaQuery('(max-width: 899px)');
 let printingStatusTimer: number | undefined;
 const catalogPrefetch = createCatalogPrefetchCoordinator({
   prefetch: () => catalogStore.loadCatalog(),
@@ -109,6 +108,9 @@ const businessHoursLabel = computed(() => {
   return `${t(plannedBusinessOpen.value ? 'shell.businessOpen' : 'shell.businessClosed')} · ${plannedHoursRange.value}`;
 });
 const mobileV2Preview = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
+const mobileV2Presentation = computed(() => (
+  mobileV2Preview.value || (mobileLayout.value && route.meta.mobileV2Enabled === true)
+));
 const currentCanonicalRouteName = computed(() => canonicalCashierRouteName(route.name));
 const mobileV2Workspace = computed(() => cashierPresentationWorkspace(route.name) ?? 'history');
 const activeTableFilter = computed<'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'>(() => {
@@ -327,13 +329,13 @@ onBeforeUnmount(() => {
   <div
     class="cashier-shell cashier-shell--workflow"
     :class="{
-      'cashier-shell--table-toolbar': showMainTabs && !mobileV2Preview,
-      'cashier-shell--mobile-v2-preview': mobileV2Preview,
+      'cashier-shell--table-toolbar': showMainTabs && !mobileV2Presentation,
+      'cashier-shell--mobile-v2-preview': mobileV2Presentation,
     }"
     :data-cashier-ready="cashierReady ? 'true' : 'false'"
   >
     <MobileV2PreviewFrame
-      v-if="mobileV2Preview"
+      v-if="mobileV2Presentation"
       :workspace="mobileV2Workspace"
       :role="identity.role"
       :logging-out="loggingOut"
