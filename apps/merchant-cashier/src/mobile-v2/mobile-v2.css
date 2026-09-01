@@ -676,6 +676,32 @@ body.cashier-mobile-v2-preview-active #app {
 .mobile-v2-bill-checkout:disabled,
 .mobile-v2-bill-adjustment:disabled,
 .mobile-v2-bill-action-dock > .detail-print-action:disabled { opacity: .5; cursor: not-allowed; }
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="ready"],
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="busy"] {
+  border-color: var(--cashier-blue);
+  color: var(--cashier-status-blue-text);
+  background: var(--cashier-blue-soft);
+}
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="success"] {
+  border-color: var(--cashier-green-strong);
+  color: var(--cashier-green-strong);
+  background: var(--cashier-green-soft);
+}
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="warning"] {
+  border-color: var(--cashier-yellow);
+  color: var(--cashier-yellow);
+  background: var(--cashier-yellow-soft);
+}
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="error"] {
+  border-color: var(--cashier-red);
+  color: var(--cashier-red);
+  background: var(--cashier-red-soft);
+}
+.cashier-shell--mobile-v2-preview .mobile-v2-bill-action-dock > .detail-print-action[data-print-tone="muted"] {
+  border-color: var(--cashier-border-strong);
+  color: var(--cashier-text-muted);
+  background: var(--cashier-surface-muted);
+}
 
 .cashier-shell--mobile-v2-preview .table-ordering-workspace--embedded,
 .cashier-shell--mobile-v2-preview .table-ordering-header { background: var(--mobile-v2-bg); }

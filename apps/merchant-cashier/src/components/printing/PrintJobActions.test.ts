@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CashierApiError } from '@/api';
 import { useAuthStore, useNetworkStore, usePrintingStore, useUiStore } from '@/stores';
 import type { CashierPrintJob } from '@/types';
 import PrintJobActions from './PrintJobActions.vue';
@@ -69,6 +70,10 @@ describe('PrintJobActions compact action', () => {
     setActivePinia(createPinia());
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('uses the existing order PrintJob flow without rendering the standalone card', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -122,6 +127,7 @@ describe('PrintJobActions compact action', () => {
     await flushPromises();
 
     expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('ready');
     expect(wrapper.get('button').classes()).toContain('detail-print-action--inline');
     expect(listEntityJobs).toHaveBeenCalledWith({ tableSessionId: 'session-417' });
     await wrapper.get('button').trigger('click');
@@ -130,6 +136,9 @@ describe('PrintJobActions compact action', () => {
     expect(printTableBill).toHaveBeenCalledTimes(1);
     expect(printTableBill).toHaveBeenCalledWith('session-417', 'printer-1');
     expect(printOrder).not.toHaveBeenCalled();
+    expect(wrapper.get('button').text()).toContain('提交中');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('submitting');
+    expect(wrapper.get('button').attributes('aria-busy')).toBe('true');
 
     resolveJob({
       id: 'job-table-1',
@@ -144,6 +153,8 @@ describe('PrintJobActions compact action', () => {
     });
     await flushPromises();
     expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('button').text()).toContain('打印中');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
     await wrapper.get('button').trigger('click');
     expect(printTableBill).toHaveBeenCalledTimes(1);
     expect(useUiStore().toasts).toEqual([]);
@@ -170,17 +181,172 @@ describe('PrintJobActions compact action', () => {
     await flushPromises();
 
     expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('button').text()).toContain('打印中');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
     await wrapper.get('button').trigger('click');
     expect(printTableBill).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
-  it('keeps a visible error when creating a print job fails', async () => {
+  it('renders an offline printer as a grey disabled action with an explicit reason', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    printing.$patch({
+      printers: [{
+        ...printer,
+        status: 'OFFLINE',
+        readiness: { ...printer.readiness, state: 'DEVICE_OFFLINE', statusReady: false },
+      }],
+    });
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    const button = wrapper.get('button');
+    expect(button.text()).toContain('设备离线');
+    expect(button.attributes('data-print-state')).toBe('offline');
+    expect(button.attributes('data-print-tone')).toBe('muted');
+    expect(button.attributes('disabled')).toBeDefined();
+    expect(button.attributes('title')).toBe('打印设备离线');
+    wrapper.unmount();
+  });
+
+  it('shows checking and blocks the print while API reachability is unknown', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    readyStores();
+    useNetworkStore().$patch({ apiReachable: null });
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('button').text()).toContain('检查打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('checking');
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('button').attributes('aria-busy')).toBe('true');
+    wrapper.unmount();
+  });
+
+  it('renders a confirmed API outage as an offline disabled action', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    readyStores();
+    useNetworkStore().$patch({ apiReachable: false });
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('button').text()).toContain('网络断开');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('network-offline');
+    expect(wrapper.get('button').attributes('data-print-tone')).toBe('muted');
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+  });
+
+  it('shows a transient success state after the active job succeeds', async () => {
+    vi.useFakeTimers();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    const pendingJob: CashierPrintJob = {
+      id: 'job-success',
+      tableSessionId: 'session-417',
+      printerId: printer.id,
+      receiptType: 'TABLE_BILL',
+      source: 'MANUAL',
+      status: 'PENDING',
+      attemptCount: 0,
+      maxAttempts: 3,
+      createdAt: '2026-09-01T01:00:00.000Z',
+    };
+    vi.spyOn(printing, 'listEntityJobs')
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ ...pendingJob, status: 'SUCCEEDED', completedAt: '2026-09-01T01:00:02.000Z' }]);
+    vi.spyOn(printing, 'printTableBill').mockResolvedValue(pendingJob);
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, tableSessionId: 'session-417' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushPromises();
+    expect(wrapper.get('button').text()).toContain('已打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('success');
+    expect(wrapper.get('button').attributes('data-print-tone')).toBe('success');
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    await flushPromises();
+    expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('ready');
+    wrapper.unmount();
+  });
+
+  it('locks an active job whose server outcome is unknown so it cannot be printed twice', async () => {
+    vi.useFakeTimers();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    const pendingJob: CashierPrintJob = {
+      id: 'job-unknown',
+      orderId: 'order-1',
+      printerId: printer.id,
+      receiptType: 'ORDER_CUSTOMER',
+      source: 'MANUAL',
+      status: 'PENDING',
+      attemptCount: 0,
+      maxAttempts: 3,
+      createdAt: '2026-09-01T01:00:00.000Z',
+    };
+    vi.spyOn(printing, 'listEntityJobs')
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{
+        ...pendingJob,
+        status: 'FAILED',
+        lastErrorCode: 'PRINT_OUTCOME_UNKNOWN',
+      }]);
+    const printOrder = vi.spyOn(printing, 'printOrder').mockResolvedValue(pendingJob);
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushPromises();
+
+    expect(wrapper.get('button').text()).toContain('结果未知');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('unknown');
+    expect(wrapper.get('button').attributes('data-print-tone')).toBe('warning');
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
+    await wrapper.get('button').trigger('click');
+    expect(printOrder).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('keeps a visible retry action when creating a print job is definitively rejected', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const printing = readyStores();
     vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
-    vi.spyOn(printing, 'printOrder').mockRejectedValue(new Error('printer unavailable'));
+    vi.spyOn(printing, 'printOrder').mockRejectedValue(new CashierApiError({
+      status: 409,
+      code: 'PRINTER_OFFLINE',
+      message: 'printer unavailable',
+    }));
     const wrapper = mount(PrintJobActions, {
       props: { compact: true, orderId: 'order-1' },
       global: { plugins: [pinia] },
@@ -191,6 +357,35 @@ describe('PrintJobActions compact action', () => {
     await flushPromises();
 
     expect(useUiStore().toasts.map((toast) => toast.tone)).toEqual(['error']);
+    expect(wrapper.get('button').text()).toContain('重试打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('error');
+    expect(wrapper.get('button').attributes('data-print-tone')).toBe('error');
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('keeps an uncertain result visible and reconciles with the same request on retry', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const printing = readyStores();
+    vi.spyOn(printing, 'listEntityJobs').mockResolvedValue([]);
+    const printOrder = vi.spyOn(printing, 'printOrder').mockRejectedValue(new Error('connection lost'));
+    const wrapper = mount(PrintJobActions, {
+      props: { compact: true, orderId: 'order-1' },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+
+    expect(useUiStore().toasts.map((toast) => toast.tone)).toEqual(['warning']);
+    expect(wrapper.get('button').text()).toContain('结果未知');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('unknown');
+    expect(wrapper.get('button').attributes('data-print-tone')).toBe('warning');
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined();
+    await wrapper.get('button').trigger('click');
+    expect(printOrder).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
 

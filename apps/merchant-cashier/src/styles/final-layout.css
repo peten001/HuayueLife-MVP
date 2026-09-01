@@ -1218,6 +1218,33 @@
   background: var(--cashier-white-alpha-05);
 }
 
+.table-route-detail .detail-print-action[data-print-tone="ready"],
+.table-route-detail .detail-print-action[data-print-tone="busy"] {
+  border-color: var(--cashier-blue);
+  color: var(--cashier-shell-text);
+  background: var(--cashier-blue-alpha-22);
+}
+.table-route-detail .detail-print-action[data-print-tone="success"] {
+  border-color: var(--cashier-green);
+  color: var(--cashier-shell-text);
+  background: var(--cashier-green-alpha-22);
+}
+.table-route-detail .detail-print-action[data-print-tone="warning"] {
+  border-color: var(--cashier-yellow);
+  color: var(--cashier-detail-notice-text);
+  background: var(--cashier-yellow-alpha-18);
+}
+.table-route-detail .detail-print-action[data-print-tone="error"] {
+  border-color: var(--cashier-red);
+  color: var(--cashier-danger-action-text);
+  background: var(--cashier-red-alpha-28);
+}
+.table-route-detail .detail-print-action[data-print-tone="muted"] {
+  border-color: var(--cashier-white-alpha-14);
+  color: var(--cashier-shell-muted);
+  background: var(--cashier-white-alpha-05);
+}
+
 .table-bill-content {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

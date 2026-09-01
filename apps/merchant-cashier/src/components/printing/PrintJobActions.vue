@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Printer, RefreshCw, RotateCcw } from '@lucide/vue';
+import { CircleCheck, LoaderCircle, Printer, RefreshCw, RotateCcw, TriangleAlert, WifiOff } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { apiErrorTranslationKey } from '@/api';
+import { apiErrorTranslationKey, isMutationOutcomeUncertain } from '@/api';
 import { useI18n } from '@/i18n';
 import { useNetworkStore, usePrintingStore, useUiStore } from '@/stores';
 import type { CashierPrintJob } from '@/types';
@@ -27,17 +27,27 @@ const jobsLoading = ref(false);
 const submitPending = ref(false);
 const reprintOpen = ref(false);
 const reprintReason = ref('');
+const activeJobId = ref('');
+const localFeedback = ref<'IDLE' | 'ERROR' | 'UNKNOWN'>('IDLE');
 let refreshTimer: number | undefined;
+let successFeedbackTimer: number | undefined;
 
 const latestJob = computed(() => jobs.value[0] ?? null);
+const activeJob = computed(() => jobs.value.find((job) => job.id === activeJobId.value) ?? null);
 const hasInFlightJob = computed(() => jobs.value.some((job) =>
   job.status === 'PENDING'
   || job.status === 'CLAIMED'
   || job.status === 'PRINTING'
   || job.status === 'RETRY_WAIT',
 ));
+const inFlightJob = computed(() => jobs.value.find((job) =>
+  job.status === 'PENDING'
+  || job.status === 'CLAIMED'
+  || job.status === 'PRINTING'
+  || job.status === 'RETRY_WAIT',
+) ?? null);
 const entityKey = computed(() => props.tableSessionId || props.orderId || '');
-const networkReady = computed(() => online.value && apiReachable.value !== false);
+const networkReady = computed(() => online.value && apiReachable.value === true);
 const canSubmit = computed(
   () => printingStore.ready && networkReady.value && !props.disabled &&
     !submitting.value && !submitPending.value && !hasInFlightJob.value,
@@ -52,6 +62,66 @@ const statusLabel = computed(() => {
 const latestStatusLabel = computed(() =>
   latestJob.value ? t('print.jobStatus', { status: latestJob.value.status }) : '',
 );
+const compactVisualState = computed(() => {
+  if (submitPending.value || submitting.value) {
+    return compactState('submitting', 'busy', t('print.submitting'), t('print.submitting'), true, true);
+  }
+
+  const currentJob = activeJob.value || inFlightJob.value;
+  if (currentJob?.status === 'SUCCEEDED') {
+    return compactState('success', 'success', t('print.succeeded'), t('print.succeeded'), true);
+  }
+  if (currentJob?.status === 'FAILED' && currentJob.lastErrorCode === 'PRINT_OUTCOME_UNKNOWN') {
+    return compactState('unknown', 'warning', t('print.outcomeUnknown'), t('print.outcomeUnknownLockedHint'), true);
+  }
+  if (currentJob?.status === 'FAILED' || currentJob?.status === 'CANCELLED') {
+    return compactState('error', 'error', t('print.retryAction'), t('print.retryHint'), !canSubmit.value);
+  }
+
+  if (localFeedback.value === 'UNKNOWN') {
+    return compactState('unknown', 'warning', t('print.outcomeUnknown'), t('print.outcomeUnknownHint'), !canSubmit.value);
+  }
+  if (localFeedback.value === 'ERROR') {
+    return compactState('error', 'error', t('print.retryAction'), t('print.retryHint'), !canSubmit.value);
+  }
+
+  if (!online.value || apiReachable.value === false) {
+    return compactState('network-offline', 'muted', t('print.networkUnavailableShort'), t('print.networkUnavailable'), true);
+  }
+  if (apiReachable.value === null || availability.value === 'LOADING') {
+    return compactState('checking', 'muted', t('print.checkingShort'), t('print.checking'), true, true);
+  }
+  if (availability.value === 'DEVICE_OFFLINE') {
+    return compactState('offline', 'muted', t('print.terminalOfflineShort'), t('print.terminalOffline'), true);
+  }
+  if (availability.value === 'NOT_CONFIGURED') {
+    return compactState('not-configured', 'muted', t('print.configurationRequiredShort'), t('print.configurationRequired'), true);
+  }
+  if (availability.value === 'NOT_ENABLED') {
+    return compactState('not-enabled', 'muted', t('print.disabledShort'), t('print.disabled'), true);
+  }
+  if (props.disabled) {
+    return compactState('blocked', 'muted', t('print.action'), t('print.blocked'), true);
+  }
+  if (currentJob?.status === 'PENDING' || currentJob?.status === 'CLAIMED' || currentJob?.status === 'PRINTING') {
+    return compactState('printing', 'busy', t('print.inProgress'), t('print.inProgress'), true, true);
+  }
+  if (currentJob?.status === 'RETRY_WAIT') {
+    return compactState('retrying', 'warning', t('print.retrying'), t('print.retrying'), true, true);
+  }
+  return compactState('ready', 'ready', t('print.action'), t('print.ready'), !canSubmit.value);
+});
+
+function compactState(
+  state: string,
+  tone: 'ready' | 'muted' | 'busy' | 'warning' | 'success' | 'error',
+  label: string,
+  title: string,
+  disabled: boolean,
+  busy = false,
+) {
+  return { state, tone, label, title, disabled, busy } as const;
+}
 
 watch(
   readyUsbPrinters,
@@ -64,6 +134,15 @@ watch(
 );
 
 watch(entityKey, () => void refreshJobs(), { immediate: true });
+watch(activeJob, (job) => {
+  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
+  successFeedbackTimer = undefined;
+  if (job?.status !== 'SUCCEEDED') return;
+  successFeedbackTimer = window.setTimeout(() => {
+    if (activeJobId.value === job.id) activeJobId.value = '';
+    successFeedbackTimer = undefined;
+  }, 2_500);
+});
 
 async function refreshJobs() {
   if (!entityKey.value || availability.value !== 'READY') {
@@ -85,6 +164,10 @@ async function refreshJobs() {
 
 async function print() {
   if (!canSubmit.value || !selectedPrinterId.value || submitPending.value) return;
+  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
+  successFeedbackTimer = undefined;
+  activeJobId.value = '';
+  localFeedback.value = 'IDLE';
   submitPending.value = true;
   try {
     const job = props.tableSessionId
@@ -93,9 +176,15 @@ async function print() {
         ? await printingStore.printOrder(props.orderId, selectedPrinterId.value)
         : null;
     if (!job) return;
+    activeJobId.value = job.id;
     jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)];
   } catch (caught) {
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'print.createFailed')), 'error');
+    const uncertain = isMutationOutcomeUncertain(caught);
+    localFeedback.value = uncertain ? 'UNKNOWN' : 'ERROR';
+    uiStore.pushToast(
+      t(uncertain ? 'print.outcomeUnknownHint' : apiErrorTranslationKey(caught, 'print.createFailed')),
+      uncertain ? 'warning' : 'error',
+    );
   } finally {
     submitPending.value = false;
   }
@@ -123,6 +212,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
 });
 </script>
 
@@ -136,15 +226,23 @@ onBeforeUnmount(() => {
       'dinein-action-button',
       compactMode === 'inline' ? 'detail-print-action--inline' : '',
       orderId ? 'order-print-action' : 'table-print-action',
+      `detail-print-action--${compactVisualState.tone}`,
     ]"
     data-testid="print-primary"
-    :title="statusLabel"
-    :aria-label="`${t('print.action')} · ${statusLabel}`"
-    :disabled="!canSubmit || !selectedPrinterId"
+    :data-print-state="compactVisualState.state"
+    :data-print-tone="compactVisualState.tone"
+    :title="compactVisualState.title"
+    :aria-label="`${compactVisualState.label} · ${compactVisualState.title}`"
+    :aria-busy="compactVisualState.busy"
+    :disabled="compactVisualState.disabled || !selectedPrinterId"
     @click="print"
   >
-    <Printer :size="18" aria-hidden="true" />
-    {{ t('print.action') }}
+    <LoaderCircle v-if="compactVisualState.busy" :size="18" class="detail-print-action__spinner" aria-hidden="true" />
+    <CircleCheck v-else-if="compactVisualState.state === 'success'" :size="18" aria-hidden="true" />
+    <WifiOff v-else-if="compactVisualState.state === 'offline' || compactVisualState.state === 'network-offline'" :size="18" aria-hidden="true" />
+    <TriangleAlert v-else-if="compactVisualState.tone === 'error' || compactVisualState.tone === 'warning'" :size="18" aria-hidden="true" />
+    <Printer v-else :size="18" aria-hidden="true" />
+    <span class="detail-print-action__label" aria-live="polite">{{ compactVisualState.label }}</span>
   </button>
 
   <section v-else class="print-job-actions" :aria-label="t('print.sectionTitle')">
@@ -221,3 +319,29 @@ onBeforeUnmount(() => {
     </form>
   </section>
 </template>
+
+<style scoped>
+/* finesse · component: print action button · register=product
+ * states: default · hover · focus-visible · active · disabled · loading · error · success
+ * tokens: inherited (apps/merchant-cashier/src/styles/tokens.css) */
+.detail-print-action {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, transform 90ms ease;
+}
+.detail-print-action__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-print-action__spinner { animation: detail-print-action-spin 780ms linear infinite; }
+.detail-print-action:focus-visible { outline-color: var(--cashier-blue); }
+.detail-print-action:active:not(:disabled) { transform: translateY(1px); }
+.detail-print-action:disabled { cursor: not-allowed; opacity: .5; }
+@media (hover: hover) and (pointer: fine) {
+  .detail-print-action--ready:hover:not(:disabled) { border-color: var(--cashier-blue); }
+  .detail-print-action--error:hover:not(:disabled) { border-color: var(--cashier-red); }
+  .detail-print-action--warning:hover:not(:disabled) { border-color: var(--cashier-yellow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-print-action { transition: none; }
+  .detail-print-action__spinner { animation: none; }
+}
+@keyframes detail-print-action-spin { to { transform: rotate(360deg); } }
+</style>

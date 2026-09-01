@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Print action states</title>
+  <!-- finesse · component preview: print action button · register=product -->
+  <style>
+    /* finesse · component preview: print action button · register=product */
+    :root {
+      --preview-bg: #061522;
+      --preview-panel: #081d2c;
+      --preview-text: #f4fafc;
+      --preview-muted: #9dafbb;
+      --preview-line: rgb(124 171 191 / 16%);
+      --preview-blue: #3b82f6;
+      --preview-blue-soft: rgb(59 130 246 / 22%);
+      --preview-green: #19c37d;
+      --preview-green-soft: rgb(25 195 125 / 22%);
+      --preview-yellow: #d99a17;
+      --preview-yellow-soft: rgb(217 154 23 / 18%);
+      --preview-red: #f04454;
+      --preview-red-soft: rgb(240 68 84 / 28%);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--preview-text);
+      background: var(--preview-bg);
+    }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; padding: 32px; background: var(--preview-bg); }
+    main { width: min(720px, 100%); margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 0 0 24px; color: var(--preview-muted); }
+    section { display: grid; gap: 10px; padding: 18px; border: 1px solid var(--preview-line); border-radius: 14px; background: var(--preview-panel); }
+    article { display: grid; grid-template-columns: 120px minmax(0, 220px) minmax(0, 1fr); align-items: center; gap: 16px; }
+    article > span, article > small { color: var(--preview-muted); }
+    button {
+      display: inline-flex;
+      min-width: 0;
+      min-height: 52px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--preview-blue);
+      border-radius: 8px;
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+      color: var(--preview-text);
+      background: var(--preview-blue-soft);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button.is-hover { background: rgb(59 130 246 / 36%); }
+    button.is-focus { outline-color: var(--preview-blue); }
+    button.is-active { transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    button.is-loading .icon { animation: spin 780ms linear infinite; }
+    button.is-error { border-color: var(--preview-red); color: #ffbcc4; background: var(--preview-red-soft); }
+    button.is-success { border-color: var(--preview-green); background: var(--preview-green-soft); }
+    button.is-warning { border-color: var(--preview-yellow); color: #ffe1a2; background: var(--preview-yellow-soft); }
+    button.is-muted { border-color: var(--preview-line); color: var(--preview-muted); background: rgb(255 255 255 / 5%); }
+    .icon { display: inline-grid; width: 18px; height: 18px; place-items: center; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 620px) {
+      body { padding: 16px; }
+      article { grid-template-columns: 88px minmax(0, 1fr); }
+      article > small { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      button.is-loading .icon { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>打印按钮状态预览</h1>
+    <p>仅用于开发验收，不进入生产页面。</p>
+    <section aria-label="打印按钮状态">
+      <article><span>default</span><button><span class="icon">▣</span>打印</button><small>打印机在线，可以提交</small></article>
+      <article><span>hover</span><button class="is-hover"><span class="icon">▣</span>打印</button><small>鼠标悬停反馈</small></article>
+      <article><span>focus</span><button class="is-focus"><span class="icon">▣</span>打印</button><small>键盘焦点立即可见</small></article>
+      <article><span>active</span><button class="is-active"><span class="icon">▣</span>打印</button><small>按下移动 1px</small></article>
+      <article><span>disabled</span><button class="is-muted" disabled><span class="icon">⌁</span>设备离线</button><small>灰色、不可点击、原因可见</small></article>
+      <article><span>loading</span><button class="is-loading" disabled><span class="icon">↻</span>提交中</button><small>固定宽度，不发生位移</small></article>
+      <article><span>error</span><button class="is-error"><span class="icon">!</span>重试打印</button><small>明确失败，并给出修复动作</small></article>
+      <article><span>success</span><button class="is-success" disabled><span class="icon">✓</span>已打印</button><small>短暂停留后回到默认</small></article>
+      <article><span>printing</span><button class="is-loading" disabled><span class="icon">↻</span>打印中</button><small>任务执行期间禁止重复点击</small></article>
+      <article><span>unknown</span><button class="is-warning"><span class="icon">!</span>结果未知</button><small>使用同一请求再次确认</small></article>
+    </section>
+  </main>
+</body>
+</html>
