@@ -12,7 +12,8 @@
 | `PORT` | 是 | API 监听端口，默认 `3001` |
 | `DATABASE_URL` | 是 | MySQL 8 连接串 |
 | `JWT_SECRET` | 是 | 至少 32 字节的随机密钥 |
-| `JWT_EXPIRES_IN` | 是 | JWT 有效期，例如 `7d` |
+| `JWT_EXPIRES_IN` | 是 | 普通用户及平台账号 JWT 有效期，例如 `7d` |
+| `MERCHANT_STAFF_JWT_EXPIRES_IN` | 是 | 商家员工登录有效期；Web 收银与商家后台共用，当前为 `360d` |
 | `WECHAT_APP_ID` | 正式版是 | 微信小程序 AppID |
 | `WECHAT_APP_SECRET` | 正式版是 | 微信小程序密钥，只保存在服务端 |
 | `MINIAPP_QR_ENTRY_URL` | 是 | 桌台普通二维码 HTTPS base，例如 `https://api.example.com/t`；API 追加 `/{qrToken}` |

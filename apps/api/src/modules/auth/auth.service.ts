@@ -49,6 +49,8 @@ interface WechatIdentity {
   unionid?: string;
 }
 
+const DEFAULT_MERCHANT_STAFF_JWT_EXPIRES_IN = '360d';
+
 @Injectable()
 export class AuthService {
   private wechatAccessTokenCache: { token: string; expiresAt: number } | null =
@@ -137,7 +139,11 @@ export class AuthService {
     };
 
     return {
-      accessToken: this.jwtService.sign(payload),
+      accessToken: this.jwtService.sign(payload, {
+        expiresIn:
+          this.configService.get<string>('MERCHANT_STAFF_JWT_EXPIRES_IN')
+          ?? DEFAULT_MERCHANT_STAFF_JWT_EXPIRES_IN,
+      }),
       staff: {
         id: staff.id,
         displayName: staff.displayName,
