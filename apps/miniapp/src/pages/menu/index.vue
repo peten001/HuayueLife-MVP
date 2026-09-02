@@ -88,6 +88,9 @@ const visibleCategories = computed(() => {
 const currentCategory = computed(
   () => visibleCategories.value.find((category) => category.id === activeCategory.value) ?? null,
 );
+const cartItemsByProductId = computed(
+  () => new Map((cartStore.cart?.items ?? []).map((item) => [item.product.id, item])),
+);
 
 watch(isSearching, (searching) => {
   if (searching) {
@@ -425,15 +428,36 @@ function hotRank(product: Product) {
   return hotRanks.value.get(product.id) ?? 0;
 }
 
+function cartItemFor(productId: string) {
+  return cartItemsByProductId.value.get(productId) ?? null;
+}
+
+function productQuantity(productId: string) {
+  return cartItemFor(productId)?.quantity ?? 0;
+}
+
 async function add(product: Product) {
   if (orderingUnavailable.value || !appConfig.platformOrderingEnabled) return;
   if (product.status === 'SOLD_OUT') return;
   try {
     await cartStore.add(product.id);
-    uni.showToast({ title: t('addToCartSuccess'), icon: 'success' });
   } catch (caught) {
     uni.showToast({
       title: caught instanceof Error ? caught.message : t('addToCartFailed'),
+      icon: 'none',
+    });
+  }
+}
+
+async function decrease(productId: string) {
+  if (orderingUnavailable.value || !appConfig.platformOrderingEnabled) return;
+  const item = cartItemFor(productId);
+  if (!item) return;
+  try {
+    await cartStore.setQuantity(item.id, item.quantity - 1);
+  } catch (caught) {
+    uni.showToast({
+      title: caught instanceof Error ? caught.message : t('updateFailed'),
       icon: 'none',
     });
   }
@@ -555,8 +579,30 @@ function goHome() {
                     {{ formatProductUnitSuffix(product.unit) }}
                   </text>
                 </view>
+                <view
+                  v-if="product.status !== 'SOLD_OUT' && productQuantity(product.id) > 0"
+                  class="quantity-stepper"
+                  @click.stop
+                >
+                  <button
+                    class="quantity-button quantity-minus"
+                    :aria-label="t('decreaseQuantity')"
+                    @click.stop="decrease(product.id)"
+                  >
+                    −
+                  </button>
+                  <text class="product-quantity">{{ productQuantity(product.id) }}</text>
+                  <button
+                    class="quantity-button quantity-plus"
+                    :disabled="productQuantity(product.id) >= 99"
+                    :aria-label="t('increaseQuantity')"
+                    @click.stop="add(product)"
+                  >
+                    +
+                  </button>
+                </view>
                 <button
-                  v-if="product.status !== 'SOLD_OUT'"
+                  v-else-if="product.status !== 'SOLD_OUT'"
                   class="add"
                   :aria-label="t('addToCart')"
                   @click.stop="add(product)"
@@ -1062,6 +1108,58 @@ function goHome() {
 
 .add::after {
   border: 0;
+}
+
+.quantity-stepper {
+  display: flex;
+  min-height: 38px;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.quantity-button {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  flex: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 36px;
+}
+
+.quantity-button::after {
+  border: 0;
+}
+
+.quantity-minus {
+  border: 1px solid #43a047;
+  color: #2e7d32;
+  background: #fff;
+}
+
+.quantity-plus {
+  border: 0;
+  color: #fff;
+  background: #43a047;
+}
+
+.quantity-plus[disabled] {
+  color: #fff;
+  background: #a8c9ad;
+  opacity: 1;
+}
+
+.product-quantity {
+  min-width: 18px;
+  color: #1f2d24;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .empty {
