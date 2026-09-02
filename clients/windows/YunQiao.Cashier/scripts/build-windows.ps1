@@ -25,8 +25,30 @@ $PublishDirectory = Join-Path $Artifacts "publish\win-x64"
 $TestResults = Join-Path $Artifacts "test-results"
 $InstallerStaging = Join-Path $Artifacts "installer-staging"
 $InstallerOutput = Join-Path $Artifacts "installer"
+$BrandingAssets = @(
+    (Join-Path $ProjectRoot "assets\YunQiao.Cashier.ico"),
+    (Join-Path $ProjectRoot "assets\installer-wizard.png"),
+    (Join-Path $ProjectRoot "assets\installer-small.png")
+)
 
 New-Item -ItemType Directory -Force -Path $Artifacts, $TestResults, $InstallerStaging, $InstallerOutput | Out-Null
+
+$CurrentStage = "Read Windows application version"
+[xml]$ApplicationProjectXml = Get-Content -LiteralPath $ApplicationProject
+$AppVersion = $ApplicationProjectXml.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace([string]$AppVersion)) {
+    throw "Windows application version is missing from $ApplicationProject"
+}
+
+$CurrentStage = "Validate Windows branding assets"
+foreach ($BrandingAsset in $BrandingAssets) {
+    if (-not (Test-Path $BrandingAsset -PathType Leaf)) {
+        throw "Required Windows branding asset is missing: $BrandingAsset"
+    }
+    if ((Get-Item $BrandingAsset).Length -le 0) {
+        throw "Required Windows branding asset is empty: $BrandingAsset"
+    }
+}
 
 $CurrentStage = "Restore solution"
 dotnet restore $Solution
@@ -78,6 +100,7 @@ $IsccOutput = @(& $Iscc `
     "/DSourceDir=$PublishDirectory" `
     "/DWebViewBootstrapper=$Bootstrapper" `
     "/DOutputDir=$InstallerOutput" `
+    "/DAppVersion=$AppVersion" `
     (Join-Path $ProjectRoot "installer\YunQiao.Cashier.iss") 2>&1)
 $IsccExitCode = $LASTEXITCODE
 $IsccOutput | ForEach-Object { Write-Host $_ }

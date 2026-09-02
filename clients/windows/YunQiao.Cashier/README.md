@@ -23,7 +23,7 @@
 
 - Windows 10/11 x64；
 - .NET 8 SDK；
-- Inno Setup 6（仅生成安装包时需要）。
+- Inno Setup 6.5.2 或更高版本（仅生成安装包时需要）。
 
 在本目录运行：
 
@@ -46,6 +46,8 @@ artifacts/test-results/
 ```
 
 应用使用 self-contained `win-x64` publish；安装脚本同时部署/修复 Microsoft Edge WebView2 Evergreen Runtime。
+
+安装器、开始菜单、卸载列表与桌面快捷方式统一显示为 `YunQiao Cashier`。桌面快捷方式默认创建，并使用与 Windows 主程序一致的 YunQiao 品牌图标；安装欢迎页、过程页和完成页使用 `assets/` 下的品牌图标与向导图片。
 
 ## 本地数据
 

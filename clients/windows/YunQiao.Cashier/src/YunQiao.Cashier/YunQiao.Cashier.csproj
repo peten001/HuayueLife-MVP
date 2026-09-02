@@ -6,6 +6,14 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>YunQiao.Cashier</AssemblyName>
     <RootNamespace>YunQiao.Cashier</RootNamespace>
+    <Version>1.2.2</Version>
+    <AssemblyVersion>1.2.2.0</AssemblyVersion>
+    <FileVersion>1.2.2.0</FileVersion>
+    <AssemblyTitle>YunQiao Cashier</AssemblyTitle>
+    <Product>YunQiao Cashier</Product>
+    <Company>YunQiao</Company>
+    <Description>YunQiao Cashier for Windows</Description>
+    <ApplicationIcon>..\..\assets\YunQiao.Cashier.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\YunQiao.Cashier.Core\YunQiao.Cashier.Core.csproj" />
