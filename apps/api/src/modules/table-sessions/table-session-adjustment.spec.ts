@@ -48,6 +48,51 @@ function buildHarness(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TableSessionsService settlement adjustment', () => {
+  it('persists an exact fixed VND discount for the table session', async () => {
+    const harness = buildHarness();
+
+    await harness.service.setSettlementAdjustment(
+      harness.merchantId,
+      harness.staffId,
+      harness.sessionId,
+      { discountPayableRateBps: null, discountAmountVnd: '16000', roundingEnabled: false },
+    );
+
+    expect(harness.transaction.tableSession.update).toHaveBeenCalledWith({
+      where: { id: harness.sessionId },
+      data: expect.objectContaining({
+        discountPayableRateBps: null,
+        discountAmountVnd: 16_000n,
+        discountAppliedByStaffId: harness.staffId,
+        discountAppliedAt: expect.any(Date),
+      }),
+    });
+  });
+
+  it('keeps a fixed discount when the legacy rounding endpoint changes only rounding', async () => {
+    const harness = buildHarness({
+      discount_payable_rate_bps: null,
+      discount_amount_vnd: 16_000n,
+      discount_applied_by_staff_id: 29n,
+      discount_applied_at: new Date('2026-09-03T02:00:00.000Z'),
+    });
+
+    await harness.service.setRounding(
+      harness.merchantId,
+      harness.staffId,
+      harness.sessionId,
+      true,
+    );
+
+    expect(harness.transaction.tableSession.update).toHaveBeenCalledWith({
+      where: { id: harness.sessionId },
+      data: {
+        roundingAmountVnd: 7_000n,
+        roundingAppliedByStaffId: harness.staffId,
+      },
+    });
+  });
+
   it('persists discount and rounding together under the existing locks', async () => {
     const harness = buildHarness();
 

@@ -184,7 +184,6 @@ function sessionRoundingValue(session: SettlementSessionRow): bigint {
 }
 
 function orderDiscountValue(order: SettlementOrderRow): bigint {
-  if (order.discountPayableRateBps === null) return 0n;
   return order.discountAmountVnd == null ? 0n : asBigInt(order.discountAmountVnd);
 }
 

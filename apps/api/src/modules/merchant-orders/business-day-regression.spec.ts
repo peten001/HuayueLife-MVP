@@ -45,6 +45,27 @@ describe('Business Day anonymous regression fixtures', () => {
     expect(net.cashRevenueVnd).toBe(779_000n);
   });
 
+  it('counts an exact fixed VND discount without requiring a percentage rate', () => {
+    const totals = completedRevenueTotals([
+      {
+        id: 201n,
+        totalAmountVnd: 316_000n,
+        tableSessionId: null,
+        discountPayableRateBps: null,
+        discountAmountVnd: 16_000n,
+        roundingAmountVnd: 0n,
+        paymentMethod: 'CASH',
+      },
+    ]);
+
+    expect(totals).toMatchObject({
+      grossAmountVnd: 316_000n,
+      discountAmountVnd: 16_000n,
+      netSettledAmountVnd: 300_000n,
+      cashRevenueVnd: 300_000n,
+    });
+  });
+
   it('keeps the canonical candidate superset and resolver in sync for the contract fixture', () => {
     const orders = contractFixture();
     const candidateWhere = businessDateCandidateWhere(

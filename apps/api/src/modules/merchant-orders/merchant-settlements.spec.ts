@@ -10,6 +10,7 @@ import {
   dineInWithoutSessionFixture,
   pickupTwoOrdersFixture,
   sameTableDifferentSessionsFixture,
+  settlementFixtureOrder,
   session415Fixture,
   session417Fixture,
 } from './__fixtures__/settlement-view.fixture';
@@ -87,6 +88,30 @@ describe('Merchant Settlement View canonical builder', () => {
     );
     expect(settlements).toHaveLength(2);
     expect(settlements.every((item) => item.kind === 'ORDER')).toBe(true);
+  });
+
+  it('keeps an exact fixed VND discount when no percentage rate is stored', () => {
+    const settlements = buildMerchantSettlements([
+      settlementFixtureOrder({
+        id: 881n,
+        orderNo: 'HY-TEST-FIXED-881',
+        orderType: 'PICKUP',
+        createdAt: '2026-09-03T02:00:00.000Z',
+        completedAt: '2026-09-03T02:15:00.000Z',
+        businessDate: '2026-09-03',
+        totalAmountVnd: 316_000n,
+        discountPayableRateBps: null,
+        discountAmountVnd: 16_000n,
+        paymentMethod: 'CASH',
+      }),
+    ], identityDateResolver);
+
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({
+      originalAmountVnd: '316000',
+      discountAmountVnd: '16000',
+      finalReceivableVnd: '300000',
+    });
   });
 
   it('does not force-merge DINE_IN orders without a closed session', () => {

@@ -16,9 +16,7 @@ export function withOrderSettlementFields<T extends OrderSettlementSource>(
 ) {
   const roundingAmountVnd = order.roundingAmountVnd ?? 0n;
   const discountPayableRateBps = order.discountPayableRateBps ?? null;
-  const discountAmountVnd = discountPayableRateBps === null
-    ? 0n
-    : order.discountAmountVnd ?? 0n;
+  const discountAmountVnd = order.discountAmountVnd ?? 0n;
   const originalAmountVnd =
     typeof order.totalAmountVnd === 'bigint'
       ? order.totalAmountVnd

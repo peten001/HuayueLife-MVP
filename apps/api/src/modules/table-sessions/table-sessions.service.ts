@@ -36,6 +36,7 @@ type CheckoutOrderRow = {
 
 type SettlementAdjustmentRequest = {
   discountPayableRateBps: number | null;
+  discountAmountVnd?: string;
   roundingEnabled: boolean;
 };
 
@@ -597,6 +598,10 @@ export class TableSessionsService {
       const amounts = calculateSettlementAdjustment({
         itemAmountVnd,
         discountPayableRateBps: session.discount_payable_rate_bps ?? null,
+        discountAmountVnd: session.discount_payable_rate_bps === null
+          && session.discount_amount_vnd > 0n
+          ? session.discount_amount_vnd
+          : undefined,
         roundingEnabled: roundingApplied,
       });
       const completedAt = new Date();
@@ -933,10 +938,21 @@ export class TableSessionsService {
     sessionId: bigint,
     input: SettlementAdjustmentRequest,
   ) {
+    const discountPayableRateBps = normalizeDiscountPayableRateBps(
+      input.discountPayableRateBps,
+    );
+    const discountAmountVnd = input.discountAmountVnd === undefined
+      ? undefined
+      : BigInt(input.discountAmountVnd);
+    if (discountPayableRateBps !== null && discountAmountVnd !== undefined) {
+      throw new BadRequestException({
+        code: 'DISCOUNT_INPUT_CONFLICT',
+        message: '折扣百分比与固定减免金额不能同时提交。',
+      });
+    }
     return this.updateSettlementAdjustment(merchantId, staffId, sessionId, {
-      discountPayableRateBps: normalizeDiscountPayableRateBps(
-        input.discountPayableRateBps,
-      ),
+      discountPayableRateBps,
+      discountAmountVnd,
       roundingEnabled: input.roundingEnabled,
     });
   }
@@ -947,6 +963,7 @@ export class TableSessionsService {
     sessionId: bigint,
     input: {
       discountPayableRateBps: number | null | undefined;
+      discountAmountVnd?: bigint;
       roundingEnabled: boolean;
     },
   ) {
@@ -978,9 +995,23 @@ export class TableSessionsService {
       const discountPayableRateBps = input.discountPayableRateBps === undefined
         ? session.discount_payable_rate_bps ?? null
         : input.discountPayableRateBps;
+      const fixedDiscountAmountVnd = input.discountAmountVnd !== undefined
+        ? input.discountAmountVnd
+        : input.discountPayableRateBps === undefined
+          && session.discount_payable_rate_bps === null
+          && session.discount_amount_vnd > 0n
+          ? session.discount_amount_vnd
+          : undefined;
+      if (fixedDiscountAmountVnd !== undefined && fixedDiscountAmountVnd > itemAmountVnd) {
+        throw new BadRequestException({
+          code: 'DISCOUNT_AMOUNT_EXCEEDS_ITEM_AMOUNT',
+          message: '减免金额不能超过商品金额。',
+        });
+      }
       const amounts = calculateSettlementAdjustment({
         itemAmountVnd,
         discountPayableRateBps,
+        discountAmountVnd: fixedDiscountAmountVnd,
         roundingEnabled: input.roundingEnabled,
       });
       const discountChanged =
@@ -1002,9 +1033,9 @@ export class TableSessionsService {
                 discountPayableRateBps: amounts.discountPayableRateBps,
                 discountAmountVnd: amounts.discountAmountVnd,
                 discountAppliedByStaffId:
-                  amounts.discountPayableRateBps === null ? null : staffId,
+                  amounts.discountAmountVnd === 0n ? null : staffId,
                 discountAppliedAt:
-                  amounts.discountPayableRateBps === null ? null : now,
+                  amounts.discountAmountVnd === 0n ? null : now,
               }
             : {}),
           ...(roundingChanged
@@ -1298,9 +1329,7 @@ export class TableSessionsService {
       ? session.roundingAmountVnd
       : 0n;
     const discountPayableRateBps = session.discountPayableRateBps ?? null;
-    const discountAmountVnd = discountPayableRateBps === null
-      ? 0n
-      : session.discountAmountVnd;
+    const discountAmountVnd = session.discountAmountVnd ?? 0n;
     return {
       id: session.id,
       sessionNo: session.sessionNo,
@@ -1333,9 +1362,7 @@ export class TableSessionsService {
       ? session.roundingAmountVnd
       : 0n;
     const discountPayableRateBps = session.discountPayableRateBps ?? null;
-    const discountAmountVnd = discountPayableRateBps === null
-      ? 0n
-      : session.discountAmountVnd;
+    const discountAmountVnd = session.discountAmountVnd ?? 0n;
     return {
       id: session.id,
       sessionNo: session.sessionNo,

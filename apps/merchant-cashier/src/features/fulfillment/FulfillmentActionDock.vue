@@ -66,7 +66,7 @@ const icon = computed(() => {
       type="button"
       class="secondary-action fulfillment-action-dock__rounding"
       data-testid="order-settlement-adjustment"
-      :class="{ 'is-applied': order.discountPayableRateBps != null || order.roundingApplied }"
+      :class="{ 'is-applied': order.discountPayableRateBps != null || BigInt(order.discountAmountVnd || '0') > 0n || order.roundingApplied }"
       :disabled="adjustmentLoading || disabled || adjustmentDisabled"
       :title="adjustmentDisabledReason"
       @click="emit('adjustment')"

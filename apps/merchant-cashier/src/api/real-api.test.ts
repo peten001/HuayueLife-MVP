@@ -257,14 +257,16 @@ describe('real merchant API contracts', () => {
       .mockResolvedValueOnce(apiResponse({ session: adjustedSession }));
 
     await expect(api.setMerchantOrderSettlementAdjustment(order.id, {
-      discountPayableRateBps: 9000,
+      discountPayableRateBps: null,
+      discountAmountVnd: '16000',
       roundingEnabled: true,
     })).resolves.toEqual(adjustedOrder);
     expect(requestPath(fetchMock.mock.calls[0])).toBe(
       '/api/v1/merchant/orders/order-1/settlement-adjustment',
     );
     expect(requestInit(fetchMock.mock.calls[0]).body).toBe(JSON.stringify({
-      discountPayableRateBps: 9000,
+      discountPayableRateBps: null,
+      discountAmountVnd: '16000',
       roundingEnabled: true,
     }));
 

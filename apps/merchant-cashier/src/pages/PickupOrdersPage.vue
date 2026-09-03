@@ -136,7 +136,7 @@ function openSettlementAdjustment() {
   adjustmentOpen.value = true;
 }
 
-async function saveSettlementAdjustment(input: { discountPayableRateBps: number | null; roundingEnabled: boolean }) {
+async function saveSettlementAdjustment(input: { discountPayableRateBps: number | null; discountAmountVnd?: string; roundingEnabled: boolean }) {
   if (!order.value || writeDisabled.value || actionLoadingId.value || roundingDisabled.value) return;
   try {
     await ordersStore.setSettlementAdjustment(order.value.id, input);
@@ -263,6 +263,7 @@ function backToPickup() {
       :open="adjustmentOpen"
       :item-amount-vnd="order.itemAmountVnd"
       :discount-payable-rate-bps="order.discountPayableRateBps"
+      :discount-amount-vnd="order.discountAmountVnd"
       :rounding-enabled="order.roundingApplied"
       :loading="actionLoadingId === order.id"
       @cancel="adjustmentOpen = false"

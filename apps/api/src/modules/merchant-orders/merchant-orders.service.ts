@@ -2373,16 +2373,31 @@ export class MerchantOrdersService {
     merchantId: bigint,
     staffId: bigint,
     id: bigint,
-    input: { discountPayableRateBps: number | null; roundingEnabled: boolean },
+    input: {
+      discountPayableRateBps: number | null;
+      discountAmountVnd?: string;
+      roundingEnabled: boolean;
+    },
   ) {
+    const discountPayableRateBps = normalizeDiscountPayableRateBps(
+      input.discountPayableRateBps,
+    );
+    const discountAmountVnd = input.discountAmountVnd === undefined
+      ? undefined
+      : BigInt(input.discountAmountVnd);
+    if (discountPayableRateBps !== null && discountAmountVnd !== undefined) {
+      throw new BadRequestException({
+        code: 'DISCOUNT_INPUT_CONFLICT',
+        message: '折扣百分比与固定减免金额不能同时提交。',
+      });
+    }
     return this.updateSettlementAdjustment(
       merchantId,
       staffId,
       id,
       {
-        discountPayableRateBps: normalizeDiscountPayableRateBps(
-          input.discountPayableRateBps,
-        ),
+        discountPayableRateBps,
+        discountAmountVnd,
         roundingEnabled: input.roundingEnabled,
       },
       'ADJUSTMENT',
@@ -2395,6 +2410,7 @@ export class MerchantOrdersService {
     id: bigint,
     input: {
       discountPayableRateBps: number | null | undefined;
+      discountAmountVnd?: bigint;
       roundingEnabled: boolean;
     },
     source: 'ROUNDING' | 'ADJUSTMENT',
@@ -2450,10 +2466,24 @@ export class MerchantOrdersService {
         : 0n;
       const itemAmountVnd = current.itemAmountVnd
         ?? current.totalAmountVnd - nonDiscountableFeeVnd;
+      const fixedDiscountAmountVnd = input.discountAmountVnd !== undefined
+        ? input.discountAmountVnd
+        : input.discountPayableRateBps === undefined
+          && current.discountPayableRateBps === null
+          && current.discountAmountVnd > 0n
+          ? current.discountAmountVnd
+          : undefined;
+      if (fixedDiscountAmountVnd !== undefined && fixedDiscountAmountVnd > itemAmountVnd) {
+        throw new BadRequestException({
+          code: 'DISCOUNT_AMOUNT_EXCEEDS_ITEM_AMOUNT',
+          message: '减免金额不能超过商品金额。',
+        });
+      }
       const amounts = calculateSettlementAdjustment({
         itemAmountVnd,
         nonDiscountableFeeVnd,
         discountPayableRateBps,
+        discountAmountVnd: fixedDiscountAmountVnd,
         roundingEnabled: input.roundingEnabled,
       });
       const currentlyApplied = current.roundingAppliedByStaffId !== null;
@@ -2487,9 +2517,9 @@ export class MerchantOrdersService {
                 discountPayableRateBps: amounts.discountPayableRateBps,
                 discountAmountVnd: amounts.discountAmountVnd,
                 discountAppliedByStaffId:
-                  amounts.discountPayableRateBps === null ? null : staffId,
+                  amounts.discountAmountVnd === 0n ? null : staffId,
                 discountAppliedAt:
-                  amounts.discountPayableRateBps === null ? null : now,
+                  amounts.discountAmountVnd === 0n ? null : now,
               }
             : {}),
           ...(roundingChanged

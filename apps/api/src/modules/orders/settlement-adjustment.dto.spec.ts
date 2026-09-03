@@ -10,6 +10,25 @@ describe('SettlementAdjustmentDto', () => {
     })).resolves.toHaveLength(0);
   });
 
+  it('accepts an exact fixed VND discount with a null percentage rate', async () => {
+    await expect(validateDto({
+      discountPayableRateBps: null,
+      discountAmountVnd: '16000',
+      roundingEnabled: false,
+    })).resolves.toHaveLength(0);
+  });
+
+  it.each(['-1', '16,000', '1.5', 'abc', 16000])(
+    'rejects invalid fixed amount %p',
+    async (discountAmountVnd) => {
+      expect(await validateDto({
+        discountPayableRateBps: null,
+        discountAmountVnd,
+        roundingEnabled: false,
+      })).not.toHaveLength(0);
+    },
+  );
+
   it.each([-1, 10_001, 8_500.5, '9000', undefined])(
     'rejects invalid rate %p',
     async (rate) => {

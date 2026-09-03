@@ -174,6 +174,39 @@ describe('MerchantOrdersService pickup rounding', () => {
 });
 
 describe('MerchantOrdersService settlement adjustment', () => {
+  it('persists an exact fixed VND discount and keeps the percentage rate null', async () => {
+    const { service, tx } = buildHarness({ itemAmountVnd: 316_000n, totalAmountVnd: 316_000n });
+
+    await expect(service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: null,
+      discountAmountVnd: '16000',
+      roundingEnabled: false,
+    })).resolves.toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      payableAmountVnd: 300_000n,
+    });
+    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        discountPayableRateBps: null,
+        discountAmountVnd: 16_000n,
+        discountAppliedByStaffId: 11n,
+      }),
+    }));
+  });
+
+  it('rejects a fixed VND discount above the item amount', async () => {
+    const { service } = buildHarness({ itemAmountVnd: 316_000n, totalAmountVnd: 316_000n });
+
+    await expect(service.setSettlementAdjustment(7n, 11n, 41n, {
+      discountPayableRateBps: null,
+      discountAmountVnd: '316001',
+      roundingEnabled: false,
+    })).rejects.toMatchObject({
+      response: { code: 'DISCOUNT_AMOUNT_EXCEEDS_ITEM_AMOUNT' },
+    });
+  });
+
   it('applies, changes, and cancels a pickup discount', async () => {
     const applied = buildHarness({ itemAmountVnd: 1_003_000n, totalAmountVnd: 1_003_000n });
     await expect(applied.service.setSettlementAdjustment(7n, 11n, 41n, {
@@ -242,6 +275,27 @@ describe('MerchantOrdersService settlement adjustment', () => {
       discountAppliedByStaffId: 12n,
       discountAppliedAt: appliedAt,
       roundingAmountVnd: 2_700n,
+    });
+  });
+
+  it('keeps an exact fixed discount when the legacy rounding endpoint changes only rounding', async () => {
+    const appliedAt = new Date('2026-09-03T08:00:00.000Z');
+    const { service } = buildHarness({
+      itemAmountVnd: 316_000n,
+      totalAmountVnd: 316_000n,
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      discountAppliedByStaffId: 12n,
+      discountAppliedAt: appliedAt,
+    });
+
+    await expect(service.setRounding(7n, 11n, 41n, true)).resolves.toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      discountAppliedByStaffId: 12n,
+      discountAppliedAt: appliedAt,
+      roundingAmountVnd: 0n,
+      payableAmountVnd: 300_000n,
     });
   });
 

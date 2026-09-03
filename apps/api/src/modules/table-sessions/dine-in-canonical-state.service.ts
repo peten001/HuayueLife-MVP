@@ -488,6 +488,10 @@ export class DineInCanonicalStateService {
     const settlement = calculateSettlementAdjustment({
       itemAmountVnd: originalAmountVnd,
       discountPayableRateBps: source.session.discountPayableRateBps,
+      discountAmountVnd: source.session.discountPayableRateBps === null
+        && source.session.discountAmountVnd > 0n
+        ? source.session.discountAmountVnd
+        : undefined,
       roundingEnabled,
     });
     const revisionPayload = {

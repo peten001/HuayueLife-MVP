@@ -5,6 +5,8 @@ export type SettlementAdjustmentInput = {
   itemAmountVnd: bigint;
   nonDiscountableFeeVnd?: bigint;
   discountPayableRateBps: number | null;
+  /** Exact client-requested deduction. Undefined keeps percentage calculation semantics. */
+  discountAmountVnd?: bigint;
   roundingEnabled: boolean;
 };
 
@@ -39,13 +41,29 @@ export function calculateSettlementAdjustment(
   const discountPayableRateBps = normalizeDiscountPayableRateBps(
     input.discountPayableRateBps,
   );
+  const fixedDiscountAmountVnd = input.discountAmountVnd;
+  if (fixedDiscountAmountVnd !== undefined) {
+    if (discountPayableRateBps !== null) {
+      throw new RangeError('Fixed discount and percentage discount cannot be combined');
+    }
+    if (fixedDiscountAmountVnd < 0n) {
+      throw new RangeError('Fixed discount cannot be negative');
+    }
+  }
+  const boundedFixedDiscountAmountVnd = fixedDiscountAmountVnd === undefined
+    ? undefined
+    : fixedDiscountAmountVnd > input.itemAmountVnd
+      ? input.itemAmountVnd
+      : fixedDiscountAmountVnd;
   const effectiveRate = BigInt(
     discountPayableRateBps ?? SETTLEMENT_RATE_DENOMINATOR_BPS,
   );
   const denominator = BigInt(SETTLEMENT_RATE_DENOMINATOR_BPS);
-  const discountedItemAmountVnd =
-    (input.itemAmountVnd * effectiveRate + denominator / 2n) / denominator;
-  const discountAmountVnd = input.itemAmountVnd - discountedItemAmountVnd;
+  const discountedItemAmountVnd = boundedFixedDiscountAmountVnd === undefined
+    ? (input.itemAmountVnd * effectiveRate + denominator / 2n) / denominator
+    : input.itemAmountVnd - boundedFixedDiscountAmountVnd;
+  const discountAmountVnd = boundedFixedDiscountAmountVnd
+    ?? input.itemAmountVnd - discountedItemAmountVnd;
   const beforeRoundingAmountVnd =
     discountedItemAmountVnd + nonDiscountableFeeVnd;
   const roundingAmountVnd = input.roundingEnabled

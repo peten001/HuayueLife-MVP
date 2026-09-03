@@ -210,12 +210,11 @@ export function completedRevenueTotals(
   for (const order of orders) {
     const orderAttribution = attribution.get(order.id) ?? {
       grossAmountVnd: order.totalAmountVnd,
-      discountAmountVnd:
-        order.discountPayableRateBps === null ? 0n : order.discountAmountVnd ?? 0n,
+      discountAmountVnd: order.discountAmountVnd ?? 0n,
       roundingAmountVnd: order.roundingAmountVnd ?? 0n,
       netSettledAmountVnd:
         order.totalAmountVnd -
-        (order.discountPayableRateBps === null ? 0n : order.discountAmountVnd ?? 0n) -
+        (order.discountAmountVnd ?? 0n) -
         (order.roundingAmountVnd ?? 0n),
       paymentMethod: order.paymentMethod ?? null,
     };

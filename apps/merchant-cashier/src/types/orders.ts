@@ -137,6 +137,8 @@ export interface OrderStatusLog {
 
 export interface SettlementAdjustmentInput {
   discountPayableRateBps: number | null;
+  /** Present only for an exact fixed-amount discount. Percent discounts remain server-calculated. */
+  discountAmountVnd?: string;
   roundingEnabled: boolean;
 }
 

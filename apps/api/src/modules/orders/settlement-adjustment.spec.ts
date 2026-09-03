@@ -58,6 +58,38 @@ describe('settlement adjustment calculator', () => {
     });
   });
 
+  it('keeps an exact fixed VND discount without percentage conversion', () => {
+    expect(calculateSettlementAdjustment({
+      itemAmountVnd: 316_000n,
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      roundingEnabled: false,
+    })).toMatchObject({
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      discountedItemAmountVnd: 300_000n,
+      payableAmountVnd: 300_000n,
+    });
+  });
+
+  it('caps a persisted fixed discount if a later item reduction lowers the total', () => {
+    expect(calculateSettlementAdjustment({
+      itemAmountVnd: 10_000n,
+      discountPayableRateBps: null,
+      discountAmountVnd: 16_000n,
+      roundingEnabled: false,
+    }).discountAmountVnd).toBe(10_000n);
+  });
+
+  it('rejects combining percentage and fixed discount inputs', () => {
+    expect(() => calculateSettlementAdjustment({
+      itemAmountVnd: 316_000n,
+      discountPayableRateBps: 9_000,
+      discountAmountVnd: 16_000n,
+      roundingEnabled: false,
+    })).toThrow('cannot be combined');
+  });
+
   it('applies discount before rounding and keeps totals nonnegative below one unit', () => {
     expect(calculateSettlementAdjustment({
       itemAmountVnd: 15_001n,

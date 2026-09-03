@@ -48,6 +48,7 @@ let sessionClosed = false;
 let sessionTableId = 'demo-table-1';
 let roundingApplied = false;
 let sessionDiscountPayableRateBps: number | null = null;
+let sessionDiscountAmountVnd: string | undefined;
 let nextAddedOrder = 1;
 let adjustmentResults = new Map<string, MerchantOrderMutationResult>();
 let nextExtraSession = 2;
@@ -67,6 +68,7 @@ export function resetDemoRepository() {
   sessionTableId = 'demo-table-1';
   roundingApplied = false;
   sessionDiscountPayableRateBps = null;
+  sessionDiscountAmountVnd = undefined;
   nextAddedOrder = 1;
   adjustmentResults = new Map();
   nextExtraSession = 2;
@@ -279,6 +281,7 @@ export const demoRepository = {
     if (id !== 'demo-session-1') throw notFound('Demo table session not found');
     if (sessionClosed) throw conflict('TABLE_SESSION_CLOSED', 'Demo table session is closed');
     sessionDiscountPayableRateBps = input.discountPayableRateBps;
+    sessionDiscountAmountVnd = input.discountAmountVnd;
     roundingApplied = input.roundingEnabled;
     return buildSessionDetail();
   },
@@ -332,6 +335,7 @@ export const demoRepository = {
     const amounts = previewSettlementAdjustment({
       itemAmountVnd: originalAmountVnd,
       discountPayableRateBps: sessionDiscountPayableRateBps,
+      discountAmountVnd: sessionDiscountAmountVnd,
       roundingEnabled: roundingApplied,
     });
     const completedAt = new Date().toISOString();
@@ -569,6 +573,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: originalAmountVnd,
     discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
+    discountAmountVnd: sessionId === 'demo-session-1' ? sessionDiscountAmountVnd : undefined,
     roundingEnabled: sessionId === 'demo-session-1' && roundingApplied,
   });
   const revisionSource = {
@@ -576,6 +581,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
     tableId: detail.tableId,
     status: detail.status,
     discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
+    discountAmountVnd: sessionId === 'demo-session-1' ? sessionDiscountAmountVnd : undefined,
     roundingApplied: sessionId === 'demo-session-1' && roundingApplied,
     orders: tableOrders(sessionId).map((order) => ({
       id: order.id,
@@ -778,6 +784,7 @@ function tableOrders(sessionId = 'demo-session-1') {
 function clearDemoSessionRounding() {
   roundingApplied = false;
   sessionDiscountPayableRateBps = null;
+  sessionDiscountAmountVnd = undefined;
 }
 
 function buildSessionSummary(sessionId = 'demo-session-1'): TableSessionSummary {
@@ -797,11 +804,12 @@ function buildSessionSummary(sessionId = 'demo-session-1'): TableSessionSummary 
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: totalAmountVnd,
     discountPayableRateBps: sessionDiscountRate,
+    discountAmountVnd: isPrimary ? sessionDiscountAmountVnd : undefined,
     roundingEnabled: sessionRoundingApplied,
   });
   return {
     id: sessionId, sessionNo: `DEMO-SESSION-${sessionId.replace('demo-session-', '')}`, merchantId: 'demo-merchant', tableId: table.id, tableNo: table.tableNo, tableName: table.tableName, status: sessionClosedState ? 'CLOSED' : 'OPEN', openedAt: sessionOpenedAt, closedAt: isPrimary ? (sessionClosedState ? new Date().toISOString() : null) : extraSession?.closedAt ?? null,
-    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountRate, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: sessionDiscountRate === null ? null : demoStaffSession.id, discountAppliedAt: sessionDiscountRate === null ? null : new Date().toISOString(), roundingApplied: sessionRoundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
+    orderCount: billable.length, itemCount: billable.flatMap((order) => order.items).reduce((sum, item) => sum + item.quantity, 0), totalAmountVnd: totalAmountVnd.toString(), originalAmountVnd: totalAmountVnd.toString(), discountPayableRateBps: sessionDiscountRate, discountAmountVnd: amounts.discountAmountVnd, discountAppliedByStaffId: BigInt(amounts.discountAmountVnd) === 0n ? null : demoStaffSession.id, discountAppliedAt: BigInt(amounts.discountAmountVnd) === 0n ? null : new Date().toISOString(), roundingApplied: sessionRoundingApplied, roundingAmountVnd: amounts.roundingAmountVnd, payableAmountVnd: amounts.payableAmountVnd, latestOrderAt: related[0]?.createdAt ?? null, pendingOrderCount: related.filter((order) => order.status === 'PENDING_ACCEPTANCE').length, unfinishedOrderCount: unfinished.length,
   };
 }
 
@@ -815,16 +823,17 @@ function applyDemoOrderSettlement(
       ? order.deliveryFeeVnd
       : '0',
     discountPayableRateBps: input.discountPayableRateBps,
+    discountAmountVnd: input.discountAmountVnd,
     roundingEnabled: input.roundingEnabled,
   });
   const now = new Date().toISOString();
   order.originalAmountVnd = order.totalAmountVnd;
   order.discountPayableRateBps = input.discountPayableRateBps;
   order.discountAmountVnd = amounts.discountAmountVnd;
-  order.discountAppliedByStaffId = input.discountPayableRateBps === null
+  order.discountAppliedByStaffId = BigInt(amounts.discountAmountVnd) === 0n
     ? null
     : demoStaffSession.id;
-  order.discountAppliedAt = input.discountPayableRateBps === null ? null : now;
+  order.discountAppliedAt = BigInt(amounts.discountAmountVnd) === 0n ? null : now;
   order.roundingAmountVnd = amounts.roundingAmountVnd;
   order.payableAmountVnd = amounts.payableAmountVnd;
   order.roundingApplied = input.roundingEnabled;
