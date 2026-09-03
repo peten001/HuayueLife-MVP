@@ -1004,7 +1004,6 @@
 .remember-field { display: inline-flex; align-items: center; gap: 8px; width: fit-content; color: var(--cashier-text-secondary); font-size: 11px; cursor: pointer; }
 .remember-field input { width: 17px; height: 17px; min-height: 0; accent-color: var(--cashier-green); }
 .auth-submit { width: 100%; }
-.auth-admin-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 8px; color: var(--cashier-blue); font-size: 11px; font-weight: 600; text-decoration: none; }
 .form-error { margin: 0; padding: 9px 10px; border: 1px solid var(--cashier-red-alpha-28); border-radius: 8px; color: var(--cashier-form-error-text); background: var(--cashier-red-soft); font-size: 11px; line-height: 1.4; }
 .demo-entry { display: grid; gap: 7px; margin-top: 8px; padding: 10px; border: 1px solid var(--cashier-demo-border); border-radius: 9px; background: var(--cashier-yellow-soft); }
 .demo-entry > div { display: flex; align-items: center; gap: 8px; }

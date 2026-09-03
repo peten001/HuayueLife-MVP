@@ -164,6 +164,8 @@ try {
 
 async function enterDemo(page, mobileLabel) {
   await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('enter-demo').waitFor();
+  assert.equal(await page.locator('.auth-admin-link').count(), 0, 'staff login must not link to the owner admin portal');
   if (mobileLabel) {
     await page.locator('.auth-input input').first().waitFor();
     const loginControlFontSizes = await page.locator('.auth-input input, .auth-language select').evaluateAll((elements) => (

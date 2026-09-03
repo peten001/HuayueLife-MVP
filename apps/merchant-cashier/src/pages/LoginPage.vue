@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ExternalLink, Languages, LockKeyhole, LogIn, UserRound } from '@lucide/vue';
+import { Languages, LockKeyhole, LogIn, UserRound } from '@lucide/vue';
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { cashierConfig } from '@/config';
 import { useI18n, type Locale } from '@/i18n';
 import { useAuthStore } from '@/stores';
 import CashierBrand from '@/components/shell/CashierBrand.vue';
@@ -113,16 +112,6 @@ function changeLocale(event: Event) {
           {{ loading ? t('auth.loggingIn') : t('auth.login') }}
         </button>
       </form>
-
-      <a
-        class="auth-admin-link"
-        :href="cashierConfig.merchantAdminUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <ExternalLink :size="17" aria-hidden="true" />
-        {{ t('auth.backToAdmin') }}
-      </a>
 
       <section v-if="authStore.fixturesAvailable" class="demo-entry" role="note">
         <div><b>{{ t('demo.badge') }}</b><span>{{ t('auth.demoTitle') }}</span></div>

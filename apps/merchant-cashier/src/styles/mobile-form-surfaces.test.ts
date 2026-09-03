@@ -7,6 +7,7 @@ const adjustmentDialog = readFileSync(
   resolve(process.cwd(), 'src/components/settlement/SettlementAdjustmentDialog.vue'),
   'utf8',
 );
+const loginPage = readFileSync(resolve(process.cwd(), 'src/pages/LoginPage.vue'), 'utf8');
 
 describe('mobile cashier form surfaces', () => {
   it('uses light mobile tokens for the settlement adjustment dialog', () => {
@@ -23,5 +24,11 @@ describe('mobile cashier form surfaces', () => {
     expect(cashierStyles).toMatch(
       /@media \(max-width: 620px\)[\s\S]*\.auth-input input,\s*\.auth-language select\s*\{\s*font-size:\s*16px;\s*\}/,
     );
+  });
+
+  it('keeps the staff cashier login separate from the owner admin portal', () => {
+    expect(loginPage).not.toContain('auth-admin-link');
+    expect(loginPage).not.toContain('auth.backToAdmin');
+    expect(loginPage).not.toContain('merchantAdminUrl');
   });
 });
