@@ -1165,6 +1165,9 @@
   .cashier-brand--auth .cashier-brand__name { display: block; font-size: clamp(21px, 6vw, 25px); }
   .cashier-brand--auth .cashier-brand__logo { width: 52px; height: 52px; flex-basis: 52px; }
   .auth-card { width: min(500px, 100%); max-height: none; margin: auto; padding: 18px 15px; }
+  /* iOS zooms focused form controls below 16px, including home-screen PWAs. */
+  .auth-input input,
+  .auth-language select { font-size: 16px; }
   .confirm-dialog { grid-template-columns: 1fr; }
   .confirm-dialog footer { grid-column: 1; }
 }

@@ -34,7 +34,7 @@ try {
     recordBrowserErrors(page, `mobile-${label}`);
 
     try {
-      await enterDemo(page);
+      await enterDemo(page, label);
       await openMobileV2(page, '/tables');
       const appShellSignature = await verifyMobileAppShell(page, label);
       const tableSignature = await verifyTableOverview(page, label);
@@ -96,10 +96,15 @@ try {
       await page.locator('.payment-dialog__close').click();
 
       await page.getByTestId('mobile-v2-bill-adjustment').click();
-      const discountInput = page.locator('#discount-rate-input');
+      const discountDialog = page.locator('.settlement-adjustment-dialog');
+      const discountInput = page.locator('#discount-value-input');
       await discountInput.waitFor();
+      const discountBackground = await discountDialog.evaluate((element) => getComputedStyle(element).backgroundColor);
+      assert.equal(discountBackground, 'rgb(251, 252, 250)', `${label}: discount dialog must use the light mobile surface`);
       const discountInputFontSize = await discountInput.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
       assert.ok(discountInputFontSize >= 16, `${label}: discount input must not trigger iPhone input zoom (${discountInputFontSize}px)`);
+      await assertNoOverflow(page, `mobile-${label}-discount`);
+      await page.screenshot({ path: `${outputDirectory}/mobile-${label}-08-discount.png`, animations: 'disabled' });
       await page.getByTestId('discount-cancel').click();
 
       const workflowSignature = await verifyMobileWorkflows(page, label);
@@ -157,8 +162,20 @@ try {
   await browser.close();
 }
 
-async function enterDemo(page) {
+async function enterDemo(page, mobileLabel) {
   await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+  if (mobileLabel) {
+    await page.locator('.auth-input input').first().waitFor();
+    const loginControlFontSizes = await page.locator('.auth-input input, .auth-language select').evaluateAll((elements) => (
+      elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    ));
+    assert.equal(loginControlFontSizes.length, 3, `${mobileLabel}: login must expose two inputs and one language control`);
+    assert.ok(
+      loginControlFontSizes.every((fontSize) => fontSize >= 16),
+      `${mobileLabel}: login controls must not trigger iPhone input zoom (${loginControlFontSizes.join(', ')}px)`,
+    );
+    await page.screenshot({ path: `${outputDirectory}/mobile-${mobileLabel}-00-login.png`, animations: 'disabled' });
+  }
   await page.getByTestId('enter-demo').click();
   await page.waitForURL((url) => url.pathname === '/tables');
   await page.getByTestId('table-grid').waitFor();
