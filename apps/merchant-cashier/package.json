@@ -12,6 +12,7 @@
     "test:ui": "node scripts/capture-v2-final-review.mjs --verify-only",
     "test:ui:v2-final": "node scripts/capture-v2-final-review.mjs --verify-only",
     "test:ui:mobile-v2-isolated": "node scripts/verify-mobile-v2-isolated.mjs",
+    "test:ui:summary-scroll": "node scripts/verify-summary-mobile-scroll.mjs",
     "test:ui:real-api": "node scripts/capture-real-api-ui.mjs --verify-only",
     "test:ui:canonical-v2": "node scripts/capture-canonical-state-v2-review.mjs",
     "test:perf:catalog-first-open": "node scripts/capture-catalog-first-open-performance.mjs",

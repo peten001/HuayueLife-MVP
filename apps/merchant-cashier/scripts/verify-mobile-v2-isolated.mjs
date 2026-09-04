@@ -474,6 +474,18 @@ async function verifyMobileWorkflows(page, label) {
   signature.historyListCards = await page.locator('.history-queue__list button').count();
   await assertNoOverflow(page, `mobile-${label}-history-list`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-12-history-list.png`, animations: 'disabled' });
+  await page.locator('.summary-open-button').click();
+  await page.locator('.summary-money').waitFor();
+  const summaryScroll = await page.locator('.business-summary-dialog').evaluate((element) => ({
+    width: element.clientWidth,
+    contentWidth: element.scrollWidth,
+    overflowX: getComputedStyle(element).overflowX,
+    touchAction: getComputedStyle(element).touchAction,
+  }));
+  assert.equal(summaryScroll.contentWidth, summaryScroll.width, `${label}: business summary must not overflow horizontally`);
+  assert.equal(summaryScroll.overflowX, 'hidden', `${label}: business summary must lock horizontal scrolling`);
+  assert.match(summaryScroll.touchAction, /pan-y/, `${label}: business summary must preserve vertical-only touch panning`);
+  await page.locator('.summary-close').click();
   await historyCard.click();
   await page.locator('.history-detail__content').waitFor();
   await assertWorkspaceStartsAtTop(page, `${label}-history-detail`, '.history-detail', '.mobile-workspace-back');

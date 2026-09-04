@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>BusinessDaySummaryDialog · local preview</title>
+  <style>
+    .preview-gallery { height: auto; padding: 16px; overflow-y: auto; }
+    .preview-gallery article { margin-bottom: 24px; }
+    .preview-gallery iframe { display: block; width: min(100%, 430px); height: 800px; border: 1px solid var(--cashier-border); }
+    .preview-gallery h1 { font-size: 20px; }
+    .preview-gallery h2 { font-size: 16px; }
+    .preview-hover .summary-close { background: var(--cashier-surface-muted); }
+    .preview-active .summary-close { transform: translateY(1px) scale(.975); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createApp, h, nextTick } from 'vue';
+    import { setLocale } from '/src/i18n/index.ts';
+    import Dialog from '/src/components/reports/BusinessDaySummaryDialog.vue';
+    import '/src/styles/tokens.css';
+    import '/src/styles/base.css';
+    import '/src/styles/cashier.css';
+    import '/src/mobile-v2/mobile-v2.css';
+
+    // Development-only: real component and styles, synthetic data, no API or print calls.
+    const params = new URLSearchParams(location.search);
+    const state = params.get('state');
+    const states = ['default', 'hover', 'focus-visible', 'active', 'disabled', 'loading', 'error', 'success'];
+    if (!state) {
+      document.body.classList.add('preview-gallery');
+      createApp({ render: () => h('main', [
+        h('h1', '营业汇总 · 本地八状态预览'),
+        h('p', '仅使用演示数据，不连接后台，不创建打印任务。'),
+        ...states.map(value => h('article', [h('h2', value), h('iframe', {
+          title: value, src: `${location.pathname}?state=${value}`,
+        })])),
+      ]) }).mount('#app');
+    } else {
+      setLocale(params.get('locale') || 'zh');
+      if (innerWidth <= 899) {
+        document.documentElement.classList.add('cashier-mobile-v2-preview-active');
+        document.body.classList.add('cashier-mobile-v2-preview-active');
+        document.getElementById('app').classList.add('cashier-shell--mobile-v2-preview');
+      }
+      document.body.classList.add(`preview-${state}`);
+      const summary = {
+        merchant: { id: 'demo', nameZh: '营业汇总测试餐厅', nameVi: 'Nhà hàng kiểm thử' },
+        businessDate: '2026-09-04', segments: [{ start: '15:00', end: '01:00', crossesMidnight: true }],
+        orderCount: 48,
+        itemSummary: Array.from({ length: 40 }, (_, i) => ({
+          nameZh: `招牌牛肉锅 ${i + 1}`, nameVi: 'Nồi bò đặc sản', quantity: 128,
+        })),
+        discountAmountVnd: '123000', roundingAmountVnd: '1000', totalRevenueVnd: '1234567890123',
+        cashRevenueVnd: '1234567890000', bankTransferRevenueVnd: '123', unrecordedRevenueVnd: '0',
+        generatedAt: '2026-09-04T06:00:00Z',
+      };
+      if (params.has('stress')) {
+        summary.merchant.nameZh = 'LongUnbrokenMerchantName'.repeat(5);
+        summary.itemSummary[0].nameVi = 'LongUnbrokenDishName'.repeat(8);
+      }
+      createApp({ render: () => h(Dialog, {
+        open: true, businessDate: summary.businessDate, summary,
+        loading: state === 'loading', printing: state === 'disabled',
+        error: state === 'error' ? '读取失败，请关闭后重新打开。' : '',
+        status: state === 'success' ? '本地状态预览：打印任务已创建（未实际打印）。' : '',
+      }) }).mount('#app');
+      if (state === 'focus-visible') {
+        await nextTick();
+        document.querySelector('.summary-close')?.focus();
+      }
+    }
+  </script>
+</body>
+</html>

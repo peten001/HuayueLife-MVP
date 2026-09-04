@@ -112,6 +112,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </template>
 
 <style scoped>
+/* finesse · component: business-day-summary-dialog · register=product
+ * states: existing default / hover / focus-visible / active / disabled / loading / error / success
+ * tokens: inherited; this change only contains mobile scrolling. */
 .summary-backdrop{padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
 .business-summary-dialog{width:min(560px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--cashier-border);border-radius:18px;background:var(--cashier-surface);box-shadow:0 24px 70px rgba(18,42,29,.2);padding:20px}
 .business-summary-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.business-summary-dialog h3,.business-summary-dialog h4{margin:0;color:var(--cashier-text)}.business-summary-dialog header p{margin:5px 0 0;color:var(--cashier-text-muted);font-size:13px}.summary-close{display:grid;flex:0 0 44px;width:44px;height:44px;place-items:center;border:0;border-radius:11px;background:var(--cashier-surface-soft);color:var(--cashier-text)}
@@ -128,4 +131,36 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .business-summary-dialog:focus{outline:none}.summary-status{margin:8px 0;color:var(--cashier-action-primary);font-size:13px;font-weight:700;text-align:center}
 .business-summary-dialog button:focus-visible,.summary-date input:focus-visible{outline:2px solid var(--cashier-green-strong);outline-offset:2px}
 @media(max-width:600px){.summary-backdrop{align-items:end;padding:0}.business-summary-dialog{width:100%;max-height:92dvh;border-radius:20px 20px 0 0;padding:18px 16px max(18px,env(safe-area-inset-bottom))}.summary-date{grid-template-columns:1fr}.summary-date input{width:100%}.summary-segments>div,.summary-money dl>div{grid-template-columns:minmax(0,1fr) auto}.business-summary-dialog>footer{bottom:calc(-1 * max(18px,env(safe-area-inset-bottom)));margin-bottom:calc(-1 * max(18px,env(safe-area-inset-bottom)))}}
+
+/* Mobile summary only: preserve the existing vertical scrollers and sticky footer.
+   Fit content first, then block sideways gestures and elastic overscroll. */
+@media (max-width: 899px) {
+  .summary-backdrop {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .business-summary-dialog,
+  .summary-items {
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-x: none;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .business-summary-dialog > header > div,
+  .summary-section,
+  .summary-section h4 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .summary-date input {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
 </style>
