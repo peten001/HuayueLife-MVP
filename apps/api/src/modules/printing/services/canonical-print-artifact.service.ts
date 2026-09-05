@@ -487,9 +487,11 @@ function layoutDocument(
         break;
       }
       case 'ROW': {
-        const size = tableBill && defaultRegion === 'ORDER_INFO'
-          ? fontPixels('SMALL')
-          : fontPixels('NORMAL');
+        y += block.gapBeforeDots ?? 0;
+        // Keep enlarged two-column rows on the same 28-dot scale as COLUMNS.
+        const size = block.fontSize === 'LARGE' ? 28 : fontPixels(block.fontSize ?? (
+          tableBill && defaultRegion === 'ORDER_INFO' ? 'SMALL' : 'NORMAL'
+        ));
         const lineHeight = Math.ceil(size * 1.35);
         const stable = tableBill && (defaultRegion === 'ORDER_INFO' || defaultRegion === 'TOTALS');
         if (stable && defaultRegion === 'TOTALS' && !totalsStarted) {

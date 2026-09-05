@@ -21,7 +21,12 @@ export type TextPrintBlockV3 = TextPrintBlock & {
   overflow?: (typeof PRINT_COLUMN_OVERFLOWS)[number];
 };
 
-export type RowPrintBlock = { type: 'ROW'; left: string; right: string; bold: boolean };
+export type RowPrintBlock = {
+  type: 'ROW'; left: string; right: string; bold: boolean;
+  /** Optional server-rendered typography; omitted values preserve existing receipts. */
+  fontSize?: (typeof PRINT_FONT_SIZES)[number];
+  gapBeforeDots?: number;
+};
 export type DividerPrintBlock = { type: 'DIVIDER' };
 export type FeedPrintBlock = { type: 'FEED'; lines: number };
 export type CutPrintBlock = { type: 'CUT'; mode: (typeof PRINT_CUT_MODES)[number] };
@@ -167,10 +172,14 @@ function assertBlock(value: unknown, index: number, schemaVersion: 2 | 3) {
       return;
     case 'ROW':
       if (
-        !hasOnlyKeys(value, ['type', 'left', 'right', 'bold']) ||
+        !hasOnlyKeys(value, ['type', 'left', 'right', 'bold', 'fontSize', 'gapBeforeDots']) ||
         !boundedText(value.left, 0, 1_000) ||
         !boundedText(value.right, 0, 1_000) ||
-        typeof value.bold !== 'boolean'
+        typeof value.bold !== 'boolean' ||
+        (value.fontSize !== undefined && !PRINT_FONT_SIZES.includes(value.fontSize as never)) ||
+        (value.gapBeforeDots !== undefined && (
+          !Number.isSafeInteger(value.gapBeforeDots) || !inRange(Number(value.gapBeforeDots), 0, 80)
+        ))
       ) throw new Error(`ROW block ${index} is invalid`);
       return;
     case 'DIVIDER':

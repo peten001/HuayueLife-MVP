@@ -1696,13 +1696,13 @@ export class MerchantOrdersService {
       )),
       { type: 'ROW', left: '已完成订单 / Đơn hoàn tất', right: String(summary.orderCount), bold: true },
       ...buildTopItemsBlocks(summary.itemSummary),
-      { type: 'ROW', left: '折扣 / Giảm giá', right: money(summary.discountAmountVnd), bold: false },
-      { type: 'ROW', left: '抹零 / Làm tròn', right: money(summary.roundingAmountVnd), bold: false },
-      { type: 'ROW', left: '总收入 / Doanh thu', right: money(summary.totalRevenueVnd), bold: true },
-      { type: 'ROW', left: '现金 / Tiền mặt', right: money(summary.cashRevenueVnd), bold: false },
-      { type: 'ROW', left: '银行转账 / Chuyển khoản', right: money(summary.bankTransferRevenueVnd), bold: false },
+      summaryMoneyRow('折扣 / Giảm giá', money(summary.discountAmountVnd)),
+      summaryMoneyRow('抹零 / Làm tròn', money(summary.roundingAmountVnd)),
+      summaryMoneyRow('总收入 / Doanh thu', money(summary.totalRevenueVnd), true),
+      summaryMoneyRow('现金 / Tiền mặt', money(summary.cashRevenueVnd)),
+      summaryMoneyRow('银行转账 / Chuyển khoản', money(summary.bankTransferRevenueVnd)),
       ...(summary.unrecordedRevenueVnd !== '0'
-        ? [{ type: 'ROW' as const, left: '历史未记录 / Chưa ghi nhận', right: money(summary.unrecordedRevenueVnd), bold: false }]
+        ? [summaryMoneyRow('历史未记录 / Chưa ghi nhận', money(summary.unrecordedRevenueVnd))]
         : []),
     ];
     const job = await this.printJobs.createBusinessSummaryPrintJob({
@@ -2873,6 +2873,11 @@ function buildTopItemsBlocks(
     }
   });
   return blocks;
+}
+
+function summaryMoneyRow(left: string, right: string, bold = false): PrintBlock {
+  // Match the breathing room between dish rows without inserting a separator.
+  return { type: 'ROW', left, right, bold, fontSize: 'LARGE', gapBeforeDots: 24 };
 }
 
 function minutesOfDay(value: string) {

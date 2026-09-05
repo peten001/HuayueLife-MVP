@@ -1,4 +1,7 @@
 import { MerchantOrdersService } from './merchant-orders.service';
+import { CanonicalPrintArtifactService } from '../printing/services/canonical-print-artifact.service';
+import { createPrintDocumentV2 } from '../printing/services/print-document-renderer';
+import type { PrintBlock } from '../printing/types/print-document';
 
 describe('MerchantOrdersService.summary', () => {
   it('returns full server-side counts and excludes cancelled order amounts', async () => {
@@ -401,5 +404,24 @@ describe('MerchantOrdersService.summary', () => {
       right?: string;
     }>;
     expect(blocks.some((block) => block.left?.includes('历史未记录'))).toBe(true);
+
+    const allBlocks = createBusinessSummaryPrintJob.mock.calls[0]![0].blocks as PrintBlock[];
+    const moneyStart = allBlocks.findIndex((block) => block.type === 'ROW' && block.left === '折扣 / Giảm giá');
+    const moneyBlocks = allBlocks.slice(moneyStart);
+    expect(moneyBlocks).toHaveLength(6);
+    expect(moneyBlocks.every((block) => block.type === 'ROW')).toBe(true);
+    const originalBlocks = allBlocks.map((block) => {
+      if (block.type !== 'ROW') return block;
+      return { type: block.type, left: block.left, right: block.right, bold: block.bold };
+    });
+    const renderer = new CanonicalPrintArtifactService();
+    for (const paperWidth of ['MM80', 'MM58'] as const) {
+      const evidence = renderer.renderEvidence(createPrintDocumentV2(paperWidth, allBlocks), paperWidth, 'FRONT_DESK', 'TABLE_BILL');
+      const before = renderer.render(createPrintDocumentV2(paperWidth, originalBlocks), paperWidth, 'FRONT_DESK', 'TABLE_BILL');
+      expect(evidence.artifact.heightDots).toBeGreaterThan(before.heightDots + 120);
+      expect(evidence.layout.visibleTextClippingCount).toBe(0);
+      expect(evidence.layout.textOverlapCount).toBe(0);
+      expect(evidence.layout.bottomBlankDots).toBeGreaterThanOrEqual(200);
+    }
   });
 });

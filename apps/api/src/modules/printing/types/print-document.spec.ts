@@ -1,6 +1,22 @@
 import { assertPrintDocumentV2, assertPrintDocumentV3 } from './print-document';
 
 describe('PrintDocument V2 schema', () => {
+  it('validates optional server row typography without accepting invalid spacing or font sizes', () => {
+    const row = { type: 'ROW', left: '总收入 / Doanh thu', right: '11.242.000 VND', bold: true };
+    const document = {
+      documentType: 'PRINT_DOCUMENT', schemaVersion: 2, paperWidth: 'MM80', copies: 1,
+      blocks: [{ ...row, fontSize: 'LARGE', gapBeforeDots: 24 }],
+    };
+    expect(() => assertPrintDocumentV2(document)).not.toThrow();
+    for (const style of [
+      { fontSize: 'HUGE' }, { gapBeforeDots: -1 }, { gapBeforeDots: 81 },
+      { gapBeforeDots: 1.5 }, { gapBeforeDots: '24' },
+    ]) {
+      expect(() => assertPrintDocumentV2({ ...document, blocks: [{ ...row, ...style }] }))
+        .toThrow('ROW block 0 is invalid');
+    }
+  });
+
   it('accepts presentation blocks and rejects business fields', () => {
     const document = {
       documentType: 'PRINT_DOCUMENT', schemaVersion: 2, paperWidth: 'MM58', copies: 1,
