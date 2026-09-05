@@ -165,12 +165,18 @@ export class TableSessionsService {
     }
 
     try {
+      const merchant = await tx.merchant.findUniqueOrThrow({
+        where: { id: merchantId }, select: { businessHours: true },
+      });
+      const openedAt = new Date();
       const created = await tx.tableSession.create({
         data: {
           merchantId,
           tableId,
           openTableId: tableId,
           sessionNo: this.generateSessionNo(),
+          openedAt,
+          openedBusinessDate: businessDateSnapshotValue(merchant.businessHours, openedAt),
         },
       });
       return { id: created.id, created: true };

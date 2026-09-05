@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { effectiveOrderWhere } from '../orders/effective-order';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { addBusinessDays } from '../../common/utils/merchant-hours';
 import { normalizeBusinessHours } from '../../common/utils/merchant-hours';
 import { resolveBusinessDate } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
@@ -125,8 +124,8 @@ export class MerchantSettlementsService {
         throw new BadRequestException('Invalid date');
       }
       where.OR = businessDateRangeCandidateWhere(
-        addBusinessDays(query.date, -1),
-        addBusinessDays(query.date, 1),
+        query.date,
+        query.date,
       ).OR;
     }
     const rows = await this.prisma.order.findMany({
@@ -135,6 +134,8 @@ export class MerchantSettlementsService {
         tableSession: {
           select: {
             id: true,
+            openedAt: true,
+            openedBusinessDate: true,
             status: true,
             closedAt: true,
             businessDate: true,

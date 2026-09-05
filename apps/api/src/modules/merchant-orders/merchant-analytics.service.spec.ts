@@ -9,6 +9,20 @@ import {
 } from './merchant-analytics.service';
 
 describe('MerchantAnalyticsService', () => {
+  it('defaults to the store business day after midnight while preserving explicit historical dates', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-03T18:00:00.000Z'));
+    try {
+      const service = new MerchantAnalyticsService({
+        merchant: { findUnique: jest.fn().mockResolvedValue({ businessHours: { thursday: ['18:00-02:00'] } }) },
+        order: { findMany: jest.fn().mockResolvedValue([]) },
+      } as never);
+      const current = await service.getAnalytics(42n, {});
+      expect(current.period).toMatchObject({ startDate: '2026-09-03', endDate: '2026-09-03' });
+      const explicit = await service.getAnalytics(42n, { dateFrom: '2026-09-04', dateTo: '2026-09-04' });
+      expect(explicit.period).toMatchObject({ startDate: '2026-09-04', endDate: '2026-09-04' });
+    } finally { jest.useRealTimers(); }
+  });
+
   it('scopes every summary to the authenticated merchant and COMPLETED orders', async () => {
     const findMany = jest.fn().mockResolvedValue([
       {
@@ -255,7 +269,7 @@ describe('MerchantAnalyticsService', () => {
     ).toBe(BigInt(result.overview.funds.netSettledAmountVnd));
   });
 
-  it('buckets trend and time distribution by settledAt (checkout/completion time)', async () => {
+  it('buckets trend and time distribution by business start, not late completion', async () => {
     const service = new MerchantAnalyticsService({
       merchant: { findUnique: jest.fn().mockResolvedValue({ businessHours: {} }) },
       order: {
@@ -281,21 +295,20 @@ describe('MerchantAnalyticsService', () => {
       dateTo: '2026-08-15',
     });
 
-    // Created 23:00 local on 8/15; completed 02:30 local on 8/16. The
-    // settlement fact uses settledAt so the transaction lands in the 02:00
-    // bucket on the following local weekday, not the creation hour.
+    // Started 23:00 local on 8/15; completed 02:30 local on 8/16.
+    // Both charts remain on the business-start date/hour.
     expect(result.trend.find((item) => item.key === '23')).toEqual(
-      expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }),
+      expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }),
     );
     expect(result.trend.find((item) => item.key === '02')).toEqual(
-      expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }),
+      expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }),
     );
     expect(result.timeDistribution.find(
       (item) => item.weekday === 5 && item.startHour === 22,
-    )).toEqual(expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }));
+    )).toEqual(expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }));
     expect(result.timeDistribution.find(
       (item) => item.weekday === 6 && item.startHour === 2,
-    )).toEqual(expect.objectContaining({ settlementCount: 1, revenueVnd: '120000' }));
+    )).toEqual(expect.objectContaining({ settlementCount: 0, revenueVnd: '0' }));
   });
 
   it('keeps today, custom-range and per-day buckets on the same business-date attribution', async () => {

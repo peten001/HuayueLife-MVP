@@ -12,7 +12,7 @@ const zh = {
   MISTAKE: '误操作', DUPLICATE: '重复记录', TEST: '测试单', OTHER: '其他',
   warning: '将同步撤销对应营业额及收款统计，原始记录保留在“已作废”中。',
   noRefund: '只更正系统记录，不会自动退还现金或银行转账，也不会恢复库存。',
-  originalDate: '原结账营业日', originalTime: '原结账时间', table: '桌台', scope: '关联原单', scopeHint: '包含同一桌账内的已取消原单。', settlementCount: '结账笔数',
+  originalDate: '原统计营业日', originalTime: '原结账时间', table: '桌台', scope: '关联原单', scopeHint: '包含同一桌账内的已取消原单。', settlementCount: '结账笔数',
   original: '原金额', discount: '折扣', rounding: '抹零', net: '原应收金额', payment: '付款方式',
   CASH: '现金', BANK_TRANSFER: '银行转账', UNRECORDED: '未登记', DINE_IN: '堂食', PICKUP: '自取', DELIVERY: '配送',
   impacts: '原单营业汇总减少', settlementImpact: '结账统计减少', noImpact: '已取消记录，收入减少 0 VND。',

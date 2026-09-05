@@ -22,6 +22,8 @@ export const REGRESSION_SCHEDULE = Object.fromEntries(
 ) as Record<string, string[]>;
 
 export type FixtureSession = {
+  openedAt?: Date;
+  openedBusinessDate?: Date | null;
   id: bigint;
   status: 'CLOSED' | 'OPEN';
   discountAmountVnd: bigint | null;

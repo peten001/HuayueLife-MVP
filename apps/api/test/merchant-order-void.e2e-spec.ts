@@ -13,11 +13,14 @@ import { MerchantAnalyticsService } from '../src/modules/merchant-orders/merchan
 import { OrdersService } from '../src/modules/orders/orders.service';
 import { TableSessionsService } from '../src/modules/table-sessions/table-sessions.service';
 import { PlatformAnalyticsService } from '../src/modules/platform/platform-analytics.service';
+import { PlatformMerchantsService } from '../src/modules/platform/platform-merchants.service';
 import { MerchantReportsService } from '../src/modules/merchant-reports/merchant-reports.service';
 import { PublicMerchantsService } from '../src/modules/public-merchants/public-merchants.service';
 import { effectiveOrderWhere, lockEffectivePrintTarget } from '../src/modules/orders/effective-order';
 import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { resolveBusinessDate } from '../src/common/utils/merchant-hours';
+import { backfillSessionOpeningDays } from '../scripts/backfill-session-opening-days';
 
 // Never silently fall back to a developer/production DATABASE_URL.
 const url = process.env.ORDER_VOID_TEST_DATABASE_URL;
@@ -35,6 +38,8 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
   const analytics = new MerchantAnalyticsService(prisma);
   const sessions = new TableSessionsService(prisma, { getProductionNotificationState: async () => ({}) } as never);
   const platformAnalytics = new PlatformAnalyticsService(prisma);
+  const platformMerchants = new PlatformMerchantsService(prisma, {} as never, {} as never, {} as never,
+    { automaticCreationEnabled: () => false } as never);
   const reports = new MerchantReportsService(prisma, { renderDailyReport: async () => ({ imageUrl: 'fixture://not-sent' }) } as never, {} as never);
   const publicMerchants = new PublicMerchantsService(prisma, {} as never, {} as never);
   const customer = new OrdersService(prisma, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
@@ -103,7 +108,7 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
   async function tableScope() {
     const table = await prisma.diningTable.create({ data: { merchantId, tableNo: 'A05', qrToken: randomUUID() } });
     const session = await prisma.tableSession.create({ data: { merchantId, tableId: table.id, sessionNo: randomUUID().slice(0, 30),
-      status: 'CLOSED', closedAt: createdAt, businessDate, paymentMethod: 'CASH', discountAmountVnd: 20000n, roundingAmountVnd: 1000n } });
+      status: 'CLOSED', openedAt: createdAt, closedAt: createdAt, businessDate, paymentMethod: 'CASH', discountAmountVnd: 20000n, roundingAmountVnd: 1000n } });
     const a = await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id });
     const b = await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id });
     const cancelled = await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id, status: 'CANCELLED', completedAt: null, cancelledAt: createdAt });
@@ -179,13 +184,13 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
     expect((await revenue()).summary.COMPLETED.amountVnd).toBe('0');
   });
 
-  it('preserves cross-business-day allocation and legacy null date fallback without deducting again today', async () => {
+  it('attributes legacy cross-day children to opening day without deducting again on void day', async () => {
     const scope = await tableScope();
-    await prisma.tableSession.update({ where: { id: scope.session.id }, data: { discountAmountVnd: 0n, roundingAmountVnd: 0n } });
+    await prisma.tableSession.update({ where: { id: scope.session.id }, data: { openedAt: new Date('2026-09-03T04:00:00Z'), discountAmountVnd: 0n, roundingAmountVnd: 0n } });
     await prisma.order.update({ where: { id: scope.b.id }, data: { businessDate: null, createdAt: new Date('2026-09-03T05:00:00Z'), completedAt: createdAt } });
     const preview = await service.preview(merchantId, staffId, scope.target);
-    expect(preview.businessDayImpacts.map(row => row.businessDate)).toEqual(['2026-09-03', '2026-09-04']);
-    expect(preview.businessDayImpacts.map(row => row.netSettledAmountVnd)).toEqual(['100000', '100000']);
+    expect(preview.businessDayImpacts.map(row => row.businessDate)).toEqual(['2026-09-03']);
+    expect(preview.businessDayImpacts.map(row => row.netSettledAmountVnd)).toEqual(['200000']);
     const before3 = await summaries.businessDaySummary(merchantId, '2026-09-03');
     const before4 = await summaries.businessDaySummary(merchantId, '2026-09-04');
     await execute(scope.target, preview);
@@ -196,14 +201,176 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
     expect((await summaries.businessDaySummary(merchantId, '2026-09-05')).totalRevenueVnd).toBe('0');
   });
 
-  it('fails closed on the existing cross-date adjustment mismatch without rewriting financial history', async () => {
+  it('keeps next-day checkouts visible until they are actually voided, then removes every statistics contribution', async () => {
+    const previousDate = new Date('2026-09-03T00:00:00Z');
+    const placedAt = new Date('2026-09-03T05:00:00Z');
+    const targets: string[] = [];
+    for (const [index, amount, discount, rounding, paymentMethod] of [
+      [0, 470000n, 235000n, 5000n, 'BANK_TRANSFER'],
+      [1, 247000n, 0n, 0n, 'CASH'],
+    ] as const) {
+      const table = await prisma.diningTable.create({ data: { merchantId, tableNo: `T${index}`, qrToken: randomUUID() } });
+      const session = await prisma.tableSession.create({ data: { merchantId, tableId: table.id, sessionNo: randomUUID().slice(0, 30),
+        status: 'CLOSED', openedAt: placedAt, closedAt: createdAt, businessDate, paymentMethod,
+        discountAmountVnd: discount, roundingAmountVnd: rounding } });
+      await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id, businessDate: previousDate,
+        createdAt: placedAt, completedAt: createdAt, itemAmountVnd: amount, totalAmountVnd: amount });
+      targets.push(`session:${session.id}`);
+    }
+    // The immutable opening day is Sep 3 even though actual checkout is Sep 4.
+    expect((await summaries.businessDaySummary(merchantId, '2026-09-03')).totalRevenueVnd).toBe('477000');
+    expect((await summaries.summary(merchantId, { date: '2026-09-04' })).COMPLETED.amountVnd).toBe('0');
+    const before = await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-03', dateTo: '2026-09-03' });
+    expect(before.overview).toMatchObject({ revenueVnd: '477000', settlementCount: 2,
+      funds: { discountAmountVnd: '235000', roundingAmountVnd: '5000', cashRevenueVnd: '247000', bankTransferRevenueVnd: '230000' } });
+    expect(before.topDishes).toHaveLength(1);
+    expect((await settlements.list(merchantId, { date: '2026-09-03' })).total).toBe(2);
+    expect((await settlements.list(merchantId, { date: '2026-09-04' })).total).toBe(0);
+    const nextDay = await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-04', dateTo: '2026-09-04' });
+    expect(nextDay.overview.revenueVnd).toBe('0');
+    expect(nextDay.overview.previous.revenueVnd).toBe('477000');
+    for (const target of targets) {
+      const preview = await service.preview(merchantId, staffId, target);
+      expect(preview.businessDayImpacts.map(impact => impact.businessDate)).toEqual(['2026-09-03']);
+      expect(preview.settlementImpact.businessDate).toBe('2026-09-03');
+      await execute(target, preview);
+    }
+    for (const date of ['2026-09-03', '2026-09-04', '2026-09-05']) {
+      const stats = await analytics.getAnalytics(merchantId, { dateFrom: date, dateTo: date });
+      expect(stats.overview).toMatchObject({ revenueVnd: '0', settlementCount: 0, averageOrderValueVnd: '0',
+        funds: { grossAmountVnd: '0', discountAmountVnd: '0', roundingAmountVnd: '0', netSettledAmountVnd: '0',
+          cashRevenueVnd: '0', bankTransferRevenueVnd: '0', unrecordedRevenueVnd: '0' } });
+      expect(stats.topDishes).toEqual([]);
+      expect(stats.peakPeriod).toBeNull();
+      expect(stats.trend.every(row => row.revenueVnd === '0' && row.settlementCount === 0)).toBe(true);
+      expect(stats.timeDistribution.every(row => row.revenueVnd === '0' && row.settlementCount === 0)).toBe(true);
+      expect((await summaries.summary(merchantId, { date })).COMPLETED.amountVnd).toBe('0');
+      expect((await summaries.businessDaySummary(merchantId, date)).totalRevenueVnd).toBe('0');
+      expect((await settlements.list(merchantId, { date })).total).toBe(0);
+    }
+    expect((await publicMerchants['salesByProductId'](merchantId)).has(String(productId))).toBe(false);
+    expect((await service.list(merchantId, staffId, {})).total).toBe(2);
+  });
+
+  it.each(['ORDER', 'SESSION'] as const)('excludes a voided %s from the latest-order metric but preserves raw history', async scope => {
+    const olderAt = new Date('2026-09-03T05:00:00Z');
+    const older = await order({ createdAt: olderAt, completedAt: olderAt, businessDate: new Date('2026-09-03T00:00:00Z') });
+    const target = scope === 'SESSION' ? (await tableScope()).target : `order:${(await order()).id}`;
+    expect((await platformMerchants.detail(merchantId)).metrics.lastOrderAt).toBe(createdAt.toISOString());
+    await execute(target);
+    const after = await platformMerchants.detail(merchantId);
+    expect(after.metrics.lastOrderAt).toBe(olderAt.toISOString());
+    expect(after.recentOrders.length).toBeGreaterThan(1);
+    await execute(`order:${older.id}`);
+    const empty = await platformMerchants.detail(merchantId);
+    expect(empty.metrics.lastOrderAt).toBeNull();
+    expect(empty.recentOrders).toHaveLength(after.recentOrders.length);
+  });
+
+  it.each([false, true])('uses one opening day for multi-day add-ons, late checkout, charts and void (snapshot=%s)', async snapshot => {
+    const schedule = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, ['18:00-02:00']]));
+    await prisma.merchant.update({ where: { id: merchantId }, data: { businessHours: schedule } });
+    const openedAt = new Date('2026-09-03T18:30:00Z'); // Sep 4 01:30, still Sep 3 business day.
+    const openingDate = new Date('2026-09-03T00:00:00Z');
+    const checkoutAt = new Date('2026-09-08T05:00:00Z');
+    const table = await prisma.diningTable.create({ data: { merchantId, tableNo: 'Late', qrToken: randomUUID() } });
+    const session = await prisma.tableSession.create({ data: {
+      merchantId, tableId: table.id, sessionNo: randomUUID().slice(0, 30), status: 'CLOSED', openedAt,
+      openedBusinessDate: snapshot ? openingDate : null, closedAt: checkoutAt,
+      businessDate: new Date('2026-09-08T00:00:00Z'), discountAmountVnd: 50000n, roundingAmountVnd: 1000n, paymentMethod: 'CASH',
+    } });
+    const a = await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id,
+      createdAt: new Date('2026-09-04T10:00:00Z'), businessDate, completedAt: checkoutAt,
+      itemAmountVnd: 200000n, totalAmountVnd: 200000n });
+    const b = await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id,
+      createdAt: new Date('2026-09-07T05:00:00Z'), businessDate: new Date('2026-09-07T00:00:00Z'), completedAt: checkoutAt,
+      itemAmountVnd: 300000n, totalAmountVnd: 300000n });
+    // Historical cancelled child may retain item rows/amounts, but contributes zero.
+    await order({ orderType: 'DINE_IN', tableId: table.id, tableSessionId: session.id, status: 'CANCELLED',
+      completedAt: null, cancelledAt: checkoutAt });
+    if (snapshot) {
+      // Later hours edits must not move a frozen opening date.
+      await prisma.merchant.update({ where: { id: merchantId }, data: { businessHours: {} } });
+    }
+    const report = await summaries.businessDaySummary(merchantId, '2026-09-03');
+    expect(report).toMatchObject({ totalRevenueVnd: '449000', orderCount: 2, settlementCount: 1,
+      cashRevenueVnd: '449000', discountAmountVnd: '50000', roundingAmountVnd: '1000' });
+    expect(report.itemSummary.reduce((sum, row) => sum + row.quantity, 0)).toBe(2);
+    const rows = await summaries.list(merchantId, { date: '2026-09-03', status: 'COMPLETED' });
+    expect(new Set(rows.map(row => String(row.id)))).toEqual(new Set([String(a.id), String(b.id)]));
+    expect((await summaries.summary(merchantId, { date: '2026-09-03' })).COMPLETED).toMatchObject({ count: 2, settlementCount: 1, amountVnd: '449000' });
+    const stats = await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-03', dateTo: '2026-09-03' });
+    expect(stats.overview).toMatchObject({ revenueVnd: '449000', settlementCount: 1, averageOrderValueVnd: '449000' });
+    expect(stats.topDishes.reduce((sum, row) => sum + row.quantity, 0)).toBe(2);
+    expect(stats.trend.find(row => row.key === '01')).toMatchObject({ settlementCount: 1, revenueVnd: '449000' });
+    expect(stats.timeDistribution.filter(row => row.settlementCount)).toEqual([expect.objectContaining({ weekday: 3, startHour: 0, settlementCount: 1 })]);
+    const history = await settlements.list(merchantId, { date: '2026-09-03', pageSize: 1 });
+    expect(history.total).toBe(1);
+    expect(history.items[0]).toMatchObject({ orderCount: 2, finalReceivableVnd: '449000', businessDate: '2026-09-03', settledAt: checkoutAt.toISOString() });
+    expect(history.items[0]!.sourceOrders).toHaveLength(3);
+    for (const date of ['2026-09-04', '2026-09-07', '2026-09-08']) {
+      expect((await summaries.businessDaySummary(merchantId, date)).totalRevenueVnd).toBe('0');
+      expect((await summaries.summary(merchantId, { date })).COMPLETED.count).toBe(0);
+      expect((await settlements.list(merchantId, { date })).total).toBe(0);
+      expect((await analytics.getAnalytics(merchantId, { dateFrom: date, dateTo: date })).overview.revenueVnd).toBe('0');
+    }
+    expect((await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-04', dateTo: '2026-09-04' })).overview.previous.revenueVnd).toBe('449000');
+    expect((await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-03', dateTo: '2026-09-08' })).overview).toMatchObject({ revenueVnd: '449000', settlementCount: 1 });
+    const preview = await service.preview(merchantId, staffId, `session:${session.id}`);
+    expect(preview.businessDayImpacts).toEqual([expect.objectContaining({ businessDate: '2026-09-03', netSettledAmountVnd: '449000' })]);
+    expect(preview.settlementImpact).toEqual({ businessDate: '2026-09-03', settlementCount: 1, revenueVnd: '449000' });
+    await execute(`session:${session.id}`, preview);
+    expect((await summaries.businessDaySummary(merchantId, '2026-09-03')).totalRevenueVnd).toBe('0');
+    expect((await analytics.getAnalytics(merchantId, { dateFrom: '2026-09-03', dateTo: '2026-09-08' })).overview.revenueVnd).toBe('0');
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: b.id } })).businessDate?.toISOString().slice(0, 10)).toBe('2026-09-07');
+    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: session.id } })).businessDate?.toISOString().slice(0, 10)).toBe('2026-09-08');
+  });
+
+  it('freezes opening business date on actual table creation and does not rewrite it when reused', async () => {
+    const table = await prisma.diningTable.create({ data: { merchantId, tableNo: 'Open', qrToken: randomUUID() } });
+    const opened = await prisma.$transaction(tx => sessions.getOrCreateOpenSession(tx, merchantId, table.id));
+    const first = await prisma.tableSession.findUniqueOrThrow({ where: { id: opened.id } });
+    const merchant = await prisma.merchant.findUniqueOrThrow({ where: { id: merchantId } });
+    expect(first.openedBusinessDate?.toISOString().slice(0, 10)).toBe(resolveBusinessDate(merchant.businessHours, first.openedAt));
+    await prisma.merchant.update({ where: { id: merchantId }, data: { businessHours: {} } });
+    expect(await prisma.$transaction(tx => sessions.getOrCreateOpenSession(tx, merchantId, table.id))).toEqual({ id: opened.id, created: false });
+    expect(await prisma.tableSession.findUniqueOrThrow({ where: { id: opened.id } })).toEqual(first);
+  });
+
+  it('backfills only null opening snapshots, preserves original timestamps and is retry-safe', async () => {
     const scope = await tableScope();
+    const prior = await prisma.tableSession.findUniqueOrThrow({ where: { id: scope.session.id } });
+    expect(await backfillSessionOpeningDays(prisma, merchantId)).toEqual({ mode: 'DRY_RUN', examined: 1, updated: 0, remaining: 1 });
+    expect(await prisma.tableSession.findUniqueOrThrow({ where: { id: prior.id } })).toEqual(prior);
+    expect(await backfillSessionOpeningDays(prisma, merchantId, true)).toEqual({ mode: 'APPLY', examined: 1, updated: 1, remaining: 0 });
+    expect(await prisma.tableSession.findUniqueOrThrow({ where: { id: prior.id } })).toEqual({ ...prior, openedBusinessDate: businessDate });
+    await prisma.merchant.update({ where: { id: merchantId }, data: { businessHours: {} } });
+    expect(await backfillSessionOpeningDays(prisma, merchantId, true)).toEqual({ mode: 'APPLY', examined: 0, updated: 0, remaining: 0 });
+    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: prior.id } })).openedBusinessDate).toEqual(businessDate);
+  });
+
+  it('does not treat an empty cancelled closed table as a settlement even with stale checkout fields', async () => {
+    const scope = await tableScope();
+    await prisma.order.updateMany({ where: { tableSessionId: scope.session.id }, data: { status: 'CANCELLED', completedAt: null, cancelledAt: createdAt } });
+    const result = await revenue();
+    expect(result.day.totalRevenueVnd).toBe('0');
+    expect(result.analytics.overview).toMatchObject({ revenueVnd: '0', settlementCount: 0 });
+    expect(result.analytics.topDishes).toEqual([]);
+    expect(result.settlements.total).toBe(0);
+  });
+
+  it('loads the whole cross-day session once so discount and rounding are not allocated twice', async () => {
+    const scope = await tableScope();
+    await prisma.tableSession.update({ where: { id: scope.session.id }, data: { openedAt: new Date('2026-09-03T04:00:00Z') } });
     await prisma.order.update({ where: { id: scope.b.id }, data: { businessDate: null, createdAt: new Date('2026-09-03T05:00:00Z') } });
     const day3 = await summaries.businessDaySummary(merchantId, '2026-09-03');
     const day4 = await summaries.businessDaySummary(merchantId, '2026-09-04');
-    expect(BigInt(day3.totalRevenueVnd) + BigInt(day4.totalRevenueVnd)).toBe(168500n);
-    await expect(service.preview(merchantId, staffId, scope.target)).rejects.toMatchObject({ response: { code: 'VOID_BUSINESS_DAY_CONFLICT' } });
-    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: scope.session.id } })).voidedAt).toBeNull();
+    expect(day3.totalRevenueVnd).toBe('179000');
+    expect(day4.totalRevenueVnd).toBe('0');
+    const preview = await service.preview(merchantId, staffId, scope.target);
+    expect(preview.businessDayImpacts.map(row => [row.businessDate, row.netSettledAmountVnd])).toEqual([['2026-09-03', '179000']]);
+    await execute(scope.target, preview);
+    expect((await summaries.businessDaySummary(merchantId, '2026-09-03')).totalRevenueVnd).toBe('0');
   });
 
   it('keeps calendar-midnight orders in the original overnight business day with discount and rounding', async () => {
@@ -211,7 +378,7 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
     const overnight = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, ['18:00-02:00']]));
     await prisma.merchant.update({ where: { id: merchantId }, data: { businessHours: overnight } });
     const closedAt = new Date('2026-09-03T18:30:00Z'); // 01:30 on Sep 4 in Vietnam.
-    await prisma.tableSession.update({ where: { id: scope.session.id }, data: { businessDate: new Date('2026-09-03T00:00:00Z'), closedAt } });
+    await prisma.tableSession.update({ where: { id: scope.session.id }, data: { openedAt: new Date('2026-09-03T16:00:00Z'), businessDate: new Date('2026-09-03T00:00:00Z'), closedAt } });
     await prisma.order.update({ where: { id: scope.a.id }, data: { businessDate: null, createdAt: new Date('2026-09-03T16:00:00Z'), completedAt: closedAt } });
     await prisma.order.update({ where: { id: scope.b.id }, data: { businessDate: null, createdAt: new Date('2026-09-03T18:00:00Z'), completedAt: closedAt } });
     await prisma.order.update({ where: { id: scope.cancelled.id }, data: { businessDate: new Date('2026-09-03T00:00:00Z'), createdAt: new Date('2026-09-03T16:00:00Z') } });
@@ -298,11 +465,17 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
   it('handles two distinct request keys and rejects reuse of a key on a different target', async () => {
     const source = await order(); const target = `order:${source.id}`;
     const preview = await service.preview(merchantId, staffId, target);
-    const key = randomUUID();
-    const results = await Promise.all([key, randomUUID()].map(requestKey => service.void(merchantId, staffId, target, { reason: 'TEST', version: preview.version, requestKey })));
+    const keys = [randomUUID(), randomUUID()];
+    const results = await Promise.all(keys.map(requestKey => service.void(merchantId, staffId, target, { reason: 'TEST', version: preview.version, requestKey })));
     expect(results[0]!.operationId).toBe(results[1]!.operationId);
+    // Either request can win the row lock; only the committed key is recorded.
+    const log = await prisma.orderStatusLog.findFirstOrThrow({ where: { orderId: source.id, action: 'MERCHANT_ORDER_VOID' } });
+    expect(keys.map(key => `void:${key}`)).toContain(log.requestKey);
+    const committedKey = log.requestKey!.slice('void:'.length);
     const other = await order();
-    await expect(service.void(merchantId, staffId, `order:${other.id}`, { reason: 'TEST', version: preview.version, requestKey: key })).rejects.toMatchObject({ response: { code: 'VOID_REQUEST_KEY_CONFLICT' } });
+    const otherPreview = await service.preview(merchantId, staffId, `order:${other.id}`);
+    await expect(service.void(merchantId, staffId, `order:${other.id}`, { reason: 'TEST', version: otherPreview.version, requestKey: committedKey })).rejects.toMatchObject({ response: { code: 'VOID_REQUEST_KEY_CONFLICT' } });
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: other.id } })).voidedAt).toBeNull();
     expect(await prisma.orderStatusLog.count({ where: { orderId: source.id, action: 'MERCHANT_ORDER_VOID' } })).toBe(1);
   });
 

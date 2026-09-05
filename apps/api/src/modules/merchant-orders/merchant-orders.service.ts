@@ -250,6 +250,8 @@ export class MerchantOrdersService {
         tableSession: {
           select: {
             id: true,
+            openedAt: true,
+            openedBusinessDate: true,
             status: true,
             closedAt: true,
             businessDate: true,
@@ -1610,6 +1612,8 @@ export class MerchantOrdersService {
         tableSession: {
           select: {
             id: true,
+            openedAt: true,
+            openedBusinessDate: true,
             status: true,
             closedAt: true,
             businessDate: true,
@@ -2679,6 +2683,7 @@ export class MerchantOrdersService {
   }
 
   private readonly listInclude = {
+    tableSession: { select: { openedAt: true, openedBusinessDate: true } },
     table: {
       select: { id: true, tableNo: true, tableName: true },
     },
@@ -2803,6 +2808,8 @@ function toSettlementRow(order: {
   tableNoSnapshot: string | null;
   tableSession: {
     id: bigint;
+    openedAt?: Date;
+    openedBusinessDate?: Date | null;
     status: string;
     closedAt: Date | null;
     businessDate: Date | null;

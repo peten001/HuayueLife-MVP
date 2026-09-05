@@ -26,20 +26,20 @@ const rankingExpanded = ref(false);
 const failedImages = ref(new Set<string>());
 let requestSequence = 0;
 
-const today = todayInVietnam();
+let today = todayInVietnam();
 const filters = reactive({ dateFrom: today, dateTo: today });
 
 const copyByLocale = {
   zh: {
     title: '经营分析', subtitle: '数据驱动经营，让生意更好做', today: '今日', sevenDays: '近7天', thirtyDays: '近30天', custom: '自定义',
     startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '净营业额', orders: '结账笔数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
-    fundsTitle: '资金概览', fundsDescription: '按已完成订单最终结账金额统计', discountAmount: '折扣金额', roundingAmount: '抹零金额', netRevenue: '净营业额', cashRevenue: '现金收入', bankTransferRevenue: '银行转账收入', unrecordedRevenue: '历史未记录',
+    fundsTitle: '资金概览', fundsDescription: '已完成订单净额：堂食按开台营业日，自取/配送按下单营业日', discountAmount: '折扣金额', roundingAmount: '抹零金额', netRevenue: '净营业额', cashRevenue: '现金收入', bankTransferRevenue: '银行转账收入', unrecordedRevenue: '历史未记录',
     orderUnit: '笔', salesUnit: '份', noData: '暂无数据', noComparison: '暂无可比数据', comparedWith: '较上一周期', briefTitle: 'AI经营简报',
     insufficientBrief: '当前周期暂无已完成订单，简报将在真实经营数据积累后自动生成。', viewDetails: '查看详情', hideDetails: '收起详情',
-    trendTitle: '营业趋势', trendDescription: '营业额与结账笔数趋势', trendEmpty: '当前周期暂无营业趋势数据', timeTitle: '时段分析', timeDescription: '结账高峰热力图',
+    trendTitle: '营业趋势', trendDescription: '营业额与结账笔数趋势', trendEmpty: '当前周期暂无营业趋势数据', timeTitle: '时段分析', timeDescription: '已完成订单的开台 / 下单时段',
     less: '少', more: '多', peakPeriod: '高峰时段', rankingTitle: '菜品销售排行 TOP5', expandedRankingTitle: '菜品销售排行 TOP10', mobileRankingTitle: '菜品销售排行 TOP5', rankingDescription: '按已完成订单销量排序', expandRanking: '展开 TOP10', collapseRanking: '收起至 TOP5',
     rank: '排名', dish: '菜品', quantity: '销量', salesAmount: '销售额', comparison: '环比', rankingEmpty: '当前周期暂无菜品销售数据',
-    shareTitle: '时段营业额占比', shareDescription: '按结账时间统计营业额分布', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
+    shareTitle: '时段营业额占比', shareDescription: '按开台 / 下单时间归属', suggestionsTitle: 'AI经营建议', updatedAt: '数据更新于', loading: '经营数据加载中…', retry: '重新加载',
     currentPeriod: '当前周期', previousPeriod: '对比周期', chartAria: '营业额和订单数趋势图', shareAria: '各时段营业额占比图', sparkAria: '指标趋势', dishPlaceholder: '菜', filtersAria: '经营分析日期筛选', timeEmpty: '当前周期暂无时段数据',
     weekdays: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], otherPeriod: '其他时段', revenueShare: '营业额占比',
     suggestionCards: ['主推菜品与备货', '高峰时段准备', '周期经营观察'],
@@ -47,13 +47,13 @@ const copyByLocale = {
   vi: {
     title: 'Phân tích kinh doanh', subtitle: 'Dữ liệu giúp vận hành tốt hơn mỗi ngày', today: 'Hôm nay', sevenDays: '7 ngày', thirtyDays: '30 ngày', custom: 'Tùy chọn',
     startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu ròng', orders: 'Số lần thanh toán', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
-    fundsTitle: 'Tổng quan tiền mặt', fundsDescription: 'Theo tổng thanh toán cuối cùng của đơn đã hoàn tất', discountAmount: 'Tiền giảm giá', roundingAmount: 'Tiền làm tròn', netRevenue: 'Doanh thu ròng', cashRevenue: 'Tiền mặt', bankTransferRevenue: 'Chuyển khoản', unrecordedRevenue: 'Chưa ghi nhận',
+    fundsTitle: 'Tổng quan tiền mặt', fundsDescription: 'Doanh thu ròng của đơn hoàn tất: theo ngày kinh doanh mở bàn; mang đi/giao hàng theo ngày kinh doanh đặt đơn', discountAmount: 'Tiền giảm giá', roundingAmount: 'Tiền làm tròn', netRevenue: 'Doanh thu ròng', cashRevenue: 'Tiền mặt', bankTransferRevenue: 'Chuyển khoản', unrecordedRevenue: 'Chưa ghi nhận',
     orderUnit: 'lượt', salesUnit: 'phần', noData: 'Chưa có dữ liệu', noComparison: 'Chưa thể so sánh', comparedWith: 'So với kỳ trước', briefTitle: 'Tóm tắt AI',
     insufficientBrief: 'Chưa có đơn hoàn thành trong kỳ này. Bản tóm tắt sẽ tự cập nhật khi có dữ liệu thực.', viewDetails: 'Xem chi tiết', hideDetails: 'Thu gọn',
-    trendTitle: 'Xu hướng kinh doanh', trendDescription: 'Doanh thu và số đơn hoàn thành', trendEmpty: 'Chưa có dữ liệu xu hướng', timeTitle: 'Phân tích thời gian', timeDescription: 'Bản đồ nhiệt giờ cao điểm',
+    trendTitle: 'Xu hướng kinh doanh', trendDescription: 'Doanh thu và số đơn hoàn thành', trendEmpty: 'Chưa có dữ liệu xu hướng', timeTitle: 'Phân tích thời gian', timeDescription: 'Giờ mở bàn / đặt đơn của đơn hoàn tất',
     less: 'Ít', more: 'Nhiều', peakPeriod: 'Giờ cao điểm', rankingTitle: 'TOP5 món bán chạy', expandedRankingTitle: 'TOP10 món bán chạy', mobileRankingTitle: 'TOP5 món bán chạy', rankingDescription: 'Theo số lượng trong đơn hoàn thành', expandRanking: 'Mở TOP10', collapseRanking: 'Thu gọn TOP5',
     rank: 'Hạng', dish: 'Món', quantity: 'Số lượng', salesAmount: 'Doanh thu', comparison: 'So sánh', rankingEmpty: 'Chưa có dữ liệu món ăn',
-    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo thời gian thanh toán', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
+    shareTitle: 'Tỷ trọng doanh thu theo giờ', shareDescription: 'Theo giờ mở bàn / đặt đơn', suggestionsTitle: 'Gợi ý kinh doanh AI', updatedAt: 'Cập nhật lúc', loading: 'Đang tải dữ liệu…', retry: 'Tải lại',
     currentPeriod: 'Kỳ hiện tại', previousPeriod: 'Kỳ so sánh', chartAria: 'Biểu đồ doanh thu và số đơn', shareAria: 'Biểu đồ tỷ trọng doanh thu theo giờ', sparkAria: 'Xu hướng chỉ số', dishPlaceholder: 'Món', filtersAria: 'Bộ lọc ngày phân tích kinh doanh', timeEmpty: 'Chưa có dữ liệu theo giờ trong kỳ này',
     weekdays: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'], otherPeriod: 'Khung giờ khác', revenueShare: 'Tỷ trọng',
     suggestionCards: ['Món chủ lực và tồn kho', 'Chuẩn bị giờ cao điểm', 'Theo dõi theo kỳ'],
@@ -61,13 +61,13 @@ const copyByLocale = {
   en: {
     title: 'Business Analytics', subtitle: 'Use real data to make better business decisions', today: 'Today', sevenDays: 'Last 7 days', thirtyDays: 'Last 30 days', custom: 'Custom',
     startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Net revenue', orders: 'Settlements', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
-    fundsTitle: 'Funds overview', fundsDescription: 'Based on final settled amounts of completed orders', discountAmount: 'Discount', roundingAmount: 'Rounding', netRevenue: 'Net revenue', cashRevenue: 'Cash', bankTransferRevenue: 'Bank transfer', unrecordedRevenue: 'Unrecorded',
+    fundsTitle: 'Funds overview', fundsDescription: 'Completed-order net amounts: dine-in by table-opening business date; pickup/delivery by order business date', discountAmount: 'Discount', roundingAmount: 'Rounding', netRevenue: 'Net revenue', cashRevenue: 'Cash', bankTransferRevenue: 'Bank transfer', unrecordedRevenue: 'Unrecorded',
     orderUnit: 'settlements', salesUnit: 'sold', noData: 'No data', noComparison: 'No comparison', comparedWith: 'Vs previous period', briefTitle: 'AI Business Brief',
     insufficientBrief: 'There are no completed orders in this period. The brief will update when real data is available.', viewDetails: 'View details', hideDetails: 'Hide details',
-    trendTitle: 'Business Trend', trendDescription: 'Revenue and completed-order trend', trendEmpty: 'No trend data in this period', timeTitle: 'Time Analysis', timeDescription: 'Peak-order heatmap',
+    trendTitle: 'Business Trend', trendDescription: 'Revenue and completed-order trend', trendEmpty: 'No trend data in this period', timeTitle: 'Time Analysis', timeDescription: 'Table-opening / order times of completed orders',
     less: 'Less', more: 'More', peakPeriod: 'Peak time', rankingTitle: 'Top 5 Dishes', expandedRankingTitle: 'Top 10 Dishes', mobileRankingTitle: 'Top 5 Dishes', rankingDescription: 'Ranked by completed-order quantity', expandRanking: 'Show top 10', collapseRanking: 'Show top 5',
     rank: 'Rank', dish: 'Dish', quantity: 'Quantity', salesAmount: 'Revenue', comparison: 'Change', rankingEmpty: 'No dish sales in this period',
-    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on settlement time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
+    shareTitle: 'Revenue Share by Time', shareDescription: 'Based on table-opening / order time', suggestionsTitle: 'AI Business Suggestions', updatedAt: 'Updated at', loading: 'Loading analytics…', retry: 'Reload',
     currentPeriod: 'Current period', previousPeriod: 'Previous period', chartAria: 'Revenue and order trend chart', shareAria: 'Revenue share by time chart', sparkAria: 'Metric trend', dishPlaceholder: 'Dish', filtersAria: 'Business analytics date filters', timeEmpty: 'No time-distribution data in this period',
     weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], otherPeriod: 'Other hours', revenueShare: 'Revenue share',
     suggestionCards: ['Featured dish and stock', 'Peak-time preparation', 'Period performance'],
@@ -179,8 +179,9 @@ function addDays(date: string, days: number) {
 
 async function selectPreset(preset: Exclude<Preset, 'custom'>) {
   activePreset.value = preset;
+  if (preset === 'today') return loadAnalytics(true);
   filters.dateTo = today;
-  filters.dateFrom = preset === 'today' ? today : addDays(today, preset === 'sevenDays' ? -6 : -29);
+  filters.dateFrom = addDays(today, preset === 'sevenDays' ? -6 : -29);
   await loadAnalytics();
 }
 
@@ -193,13 +194,20 @@ async function applyCustomDates() {
   await loadAnalytics();
 }
 
-async function loadAnalytics() {
+async function loadAnalytics(currentBusinessDay = false) {
   const sequence = ++requestSequence;
   loading.value = true;
   message.value = '';
   try {
-    const result = await getMerchantAnalytics({ dateFrom: filters.dateFrom, dateTo: filters.dateTo });
+    // An omitted range lets the server resolve the same current business day
+    // as Cashier / Dashboard, including the previous day after midnight.
+    const result = await getMerchantAnalytics(currentBusinessDay ? {} : { dateFrom: filters.dateFrom, dateTo: filters.dateTo });
     if (sequence === requestSequence) {
+      if (currentBusinessDay) {
+        today = result.period.endDate;
+        filters.dateFrom = result.period.startDate;
+        filters.dateTo = result.period.endDate;
+      }
       analytics.value = result;
       failedImages.value = new Set();
       briefExpanded.value = false;
@@ -319,7 +327,7 @@ onMounted(() => void selectPreset('today'));
     </section>
 
     <section v-if="message" class="card analytics-error" role="alert">
-      <p>{{ message }}</p><button type="button" class="secondary" @click="loadAnalytics">{{ copy.retry }}</button>
+      <p>{{ message }}</p><button type="button" class="secondary" @click="loadAnalytics(activePreset === 'today')">{{ copy.retry }}</button>
     </section>
 
     <div v-if="loading && !analytics" class="analytics-loading" aria-live="polite">

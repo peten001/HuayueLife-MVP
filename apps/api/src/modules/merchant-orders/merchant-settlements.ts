@@ -1,5 +1,6 @@
 import { OrderStatus, OrderType, PaymentMethod } from '@prisma/client';
 import { isEffectiveOrder } from '../orders/effective-order';
+import { resolveOrderBusinessDateWithResolver } from './business-day-accounting';
 
 /**
  * Canonical merchant Settlement Read Model.
@@ -16,15 +17,19 @@ import { isEffectiveOrder } from '../orders/effective-order';
  * The raw Order rows are never merged, mutated or deleted; this module only
  * produces a read-only view. Financial truth for a closed session comes from
  * the persisted TableSession row (discountAmountVnd / roundingAmountVnd /
- * paymentMethod / closedAt / businessDate), never from duplicated
+ * paymentMethod / closedAt), never from duplicated
  * TABLE_SESSION_CHECKOUT status-log metadata. Duplicated logs are treated as
  * the same checkout evidence; conflicting logs are recorded as invariant
  * violations while the persisted session values remain the UI truth.
+ * Reporting uses openedBusinessDate (legacy fallback: openedAt), not the old
+ * checkout businessDate; the actual checkout timestamp remains unchanged.
  */
 
 export const SETTLEMENT_VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export type SettlementSessionRow = {
+  openedAt?: Date;
+  openedBusinessDate?: Date | null;
   voidedAt?: Date | null;
   id: bigint;
   status: string;
@@ -124,6 +129,8 @@ export interface MerchantSettlement {
   orderType: OrderType;
   status: OrderStatus;
   businessDate: string;
+  /** Opening/order instant for business-day charts; settledAt remains actual checkout. */
+  businessStartedAt?: string;
   settledAt: string;
   tableSessionId: string | null;
   tableId: string | null;
@@ -147,6 +154,7 @@ export interface MerchantSettlementFact {
   kind: 'TABLE_SESSION' | 'ORDER';
   orderType: OrderType;
   businessDate: string;
+  businessStartedAt: Date;
   settledAt: Date;
   originalAmountVnd: bigint;
   discountAmountVnd: bigint;
@@ -172,10 +180,6 @@ function asBigInt(value: bigint | number | string): bigint {
 
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
-}
-
-function dateOnly(value: Date | null | undefined): string | null {
-  return value ? value.toISOString().slice(0, 10) : null;
 }
 
 function sessionDiscountValue(session: SettlementSessionRow): bigint {
@@ -264,14 +268,6 @@ function sessionSettledAt(
   return completedOrders[0]?.createdAt ?? new Date(0);
 }
 
-function resolveSettlementBusinessDate(
-  value: Date | null | undefined,
-  fallback: Date,
-  resolver: BusinessDateResolver,
-): string {
-  return dateOnly(value) ?? resolver(fallback);
-}
-
 function checkoutEvidenceSignature(log: SettlementCheckoutLogRow): string {
   return [
     log.originalAmountVnd ?? '',
@@ -349,11 +345,8 @@ function buildTableSessionSettlement(
     kind: 'TABLE_SESSION',
     orderType: 'DINE_IN',
     status: 'COMPLETED',
-    businessDate: resolveSettlementBusinessDate(
-      session.businessDate,
-      settledAt,
-      resolver,
-    ),
+    businessDate: resolveOrderBusinessDateWithResolver(representative, resolver),
+    businessStartedAt: (session.openedAt ?? representative.createdAt).toISOString(),
     settledAt: settledAt.toISOString(),
     tableSessionId: sessionId.toString(),
     tableId: representative.tableId?.toString() ?? firstOrder.table?.id?.toString() ?? null,
@@ -397,11 +390,8 @@ function buildOrderSettlement(
     kind: 'ORDER',
     orderType: order.orderType,
     status: order.status,
-    businessDate: resolveSettlementBusinessDate(
-      order.businessDate,
-      settledAt,
-      resolver,
-    ),
+    businessDate: resolveOrderBusinessDateWithResolver(order, resolver),
+    businessStartedAt: order.createdAt.toISOString(),
     settledAt: settledAt.toISOString(),
     tableSessionId: order.tableSessionId?.toString() ?? null,
     tableId: order.tableId?.toString() ?? order.table?.id?.toString() ?? null,
@@ -489,6 +479,7 @@ export function toSettlementFacts(
       kind: settlement.kind,
       orderType: settlement.orderType,
       businessDate: settlement.businessDate,
+      businessStartedAt: new Date(settlement.businessStartedAt ?? settlement.sourceOrders[0]!.createdAt),
       settledAt: new Date(settlement.settledAt),
       originalAmountVnd: BigInt(settlement.originalAmountVnd),
       discountAmountVnd: BigInt(settlement.discountAmountVnd),

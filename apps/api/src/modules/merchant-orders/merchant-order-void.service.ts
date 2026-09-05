@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { resolveBusinessDate } from '../../common/utils/merchant-hours';
 import { buildMerchantSettlements, MerchantSettlement } from './merchant-settlements';
-import { attributeOrderRevenue, businessDateCandidateWhere, completedRevenueTotals, isOrderInBusinessDate } from './business-day-accounting';
+import { attributeOrderRevenue, businessDateCandidateWhere, completedRevenueTotals, isOrderInBusinessDate, resolveOrderBusinessDate } from './business-day-accounting';
 import { ListOrderVoidsDto, VoidOrderDto } from './dto/void-order.dto';
 
 const ACTION = 'MERCHANT_ORDER_VOID';
@@ -21,7 +21,7 @@ export interface OrderVoidPreview {
   settlement: MerchantSettlement;
   affectedOrderIds: string[];
   affectedOrderNos: string[];
-  /** Existing raw-order business-day allocation, not a new negative sale today. */
+  /** Opening/order business-day attribution, never a negative sale on void day. */
   businessDayImpacts: Array<{
     businessDate: string;
     orderCount: number;
@@ -143,10 +143,10 @@ export class MerchantOrderVoidService {
     }
     const completed = orders.filter(order => order.status === 'COMPLETED');
     const attribution = attributeOrderRevenue(completed);
-    const dates = [...new Set(orders.map(order => order.businessDate?.toISOString().slice(0, 10) ?? resolveBusinessDate(schedule, order.createdAt)))].sort();
+    const dates = [...new Set(orders.map(order => resolveOrderBusinessDate(order, schedule)))].sort();
     const businessDayImpacts = dates.map(businessDate => {
       const totals = completedRevenueTotals(completed.filter(order =>
-        (order.businessDate?.toISOString().slice(0, 10) ?? resolveBusinessDate(schedule, order.createdAt)) === businessDate), attribution);
+        resolveOrderBusinessDate(order, schedule) === businessDate), attribution);
       return { businessDate, ...JSON.parse(JSON.stringify(totals, (_key, item) => typeof item === 'bigint' ? item.toString() : item)) } as OrderVoidPreview['businessDayImpacts'][number];
     });
     const version = createHash('sha256').update(JSON.stringify(json({ target, orders, session, schedule }))).digest('hex');
@@ -230,10 +230,8 @@ export class MerchantOrderVoidService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
-  /** Do not silently rewrite the existing business-date accounting contract.
-   * A legacy cross-date session may be only partially loaded by that contract,
-   * causing its adjustment to be allocated more than once. Fail closed if the
-   * existing report's actual reduction disagrees with the full-scope preview.
+  /** The preview and the actual opening-day report must remove the same whole
+   * scope, including cross-day add-ons. Keep failing closed on real mismatches.
    */
   private async assertBusinessDayEvidence(tx: Prisma.TransactionClient, preview: OrderVoidPreview, schedule: unknown) {
     for (const expected of preview.businessDayImpacts) {

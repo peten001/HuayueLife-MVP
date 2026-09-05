@@ -536,7 +536,7 @@ export class PlatformMerchantsService {
         where: { merchantId: id, status: TableStatus.ACTIVE },
       }),
       this.prisma.order.findFirst({
-        where: { merchantId: id },
+        where: effectiveOrderWhere({ merchantId: id }),
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: { createdAt: true },
       }),

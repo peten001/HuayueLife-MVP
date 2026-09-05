@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router';
 import {
   getMerchantOrderSummary,
+  getBusinessDaySummary,
   getMerchantOrders,
   getMerchantSettlements,
   runOrderAction,
@@ -106,6 +107,9 @@ const mobileSearchOpen = ref(false);
 const mobileFilterOpen = ref(false);
 const mobileSearch = ref('');
 const legacyPrintingEnabled = ref(false);
+const initialDatePlaceholder = todayInVietnam();
+let currentBusinessDate = '';
+let currentBusinessDateRequest: Promise<string> | undefined;
 const filters = reactive<{
   status: OrderStatus | '';
   orderType: OrderType | '';
@@ -113,7 +117,7 @@ const filters = reactive<{
 }>({
   status: (route.query.status as OrderStatus | undefined) ?? '',
   orderType: (route.query.orderType as OrderType | undefined) ?? '',
-  date: todayInVietnam(),
+  date: initialDatePlaceholder,
 });
 let timer: number | undefined;
 let highlightTimer: number | undefined;
@@ -447,6 +451,18 @@ function buildSpeechAnnouncement(type: 'enable-sound' | 'new-order'): OrderSpeec
 async function load() {
   settlementLoading.value = isSettlementMode.value;
   try {
+    if (!currentBusinessDate) {
+      // Resolve once from the existing canonical summary before querying a
+      // day. A failed request stays visible and retries; never show a guessed
+      // natural-day zero as the current business day's total.
+      currentBusinessDateRequest ??= getBusinessDaySummary().then(value => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value.businessDate)) throw new Error('Business date unavailable');
+        return value.businessDate;
+      }).finally(() => { currentBusinessDateRequest = undefined; });
+      const resolvedDate = await currentBusinessDateRequest;
+      if (!currentBusinessDate && filters.date === initialDatePlaceholder) filters.date = resolvedDate;
+      currentBusinessDate = resolvedDate;
+    }
     if (isSettlementMode.value) {
       const [loadedSettlements, loadedSummary] = await Promise.all([
         getMerchantSettlements({
@@ -789,7 +805,7 @@ function toggleMobileFilter() {
 function resetMobileFilters() {
   filters.status = '';
   filters.orderType = '';
-  filters.date = todayInVietnam();
+  filters.date = currentBusinessDate || initialDatePlaceholder;
   activeCategory.value = 'ALL';
   activeQuickStatus.value = 'ALL';
 }

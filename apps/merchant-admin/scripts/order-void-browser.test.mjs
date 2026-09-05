@@ -74,6 +74,7 @@ async function contextFor(locale, width, role = 'OWNER', dineIn = false) {
       return respond({ items: matches ? [currentRecord] : [], total: matches ? 1 : 0, hasMore: false });
     }
     if (path === '/merchant/settlements') return respond({ items: voided ? [] : [currentSettlement], total: voided ? 0 : 1 });
+    if (path === '/merchant/orders/business-day-summary') return respond({ businessDate: date });
     if (path === '/merchant/orders/summary') {
       const bucket = { count: voided ? 0 : 1, amountVnd: voided ? '0' : '206000' };
       return respond({ ALL: bucket, DINE_IN: { count: 0, amountVnd: '0' }, PICKUP: bucket, DELIVERY: { count: 0, amountVnd: '0' }, ABNORMAL: { count: 0, amountVnd: '0' }, COMPLETED: { ...bucket, settlementCount: bucket.count, cashRevenueVnd: bucket.amountVnd, bankTransferRevenueVnd: '0', unrecordedRevenueVnd: '0', grossAmountVnd: bucket.amountVnd, discountAmountVnd: '0', roundingAmountVnd: '0' }, statusBreakdown: { COMPLETED: bucket.count } });

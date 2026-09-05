@@ -7,7 +7,7 @@ import {
   normalizeBusinessHours,
   resolveBusinessDate,
 } from '../../common/utils/merchant-hours';
-import { businessDateRangeCandidateWhere } from './business-day-accounting';
+import { businessDateRangeCandidateWhere, resolveOrderBusinessDate } from './business-day-accounting';
 import {
   buildMerchantSettlements,
   toSettlementFacts,
@@ -88,9 +88,7 @@ export class MerchantAnalyticsService {
     );
     const datedOrders = candidates.map((order) => ({
       ...order,
-      resolvedBusinessDate: order.businessDate
-        ? order.businessDate.toISOString().slice(0, 10)
-        : resolveBusinessDate(schedule, order.createdAt),
+      resolvedBusinessDate: resolveOrderBusinessDate(order, schedule),
     }));
     // Financial / transaction facts come from the canonical Settlement Read
     // Model: one closed table-session checkout = one fact, one pickup or
@@ -214,6 +212,8 @@ export class MerchantAnalyticsService {
         tableSession: {
           select: {
             id: true,
+            openedAt: true,
+            openedBusinessDate: true,
             status: true,
             closedAt: true,
             businessDate: true,
@@ -345,8 +345,7 @@ function toSettlementOrderRow(
 function aggregateTrendRows(facts: MerchantSettlementFact[], range: PeriodRange): TrendRow[] {
   const values = new Map<string, { settlementCount: number; revenueVnd: bigint }>();
   for (const fact of facts) {
-    if (!fact.settledAt) continue;
-    const local = new Date(fact.settledAt.getTime() + VIETNAM_OFFSET_MS);
+    const local = new Date(fact.businessStartedAt.getTime() + VIETNAM_OFFSET_MS);
     const bucket = range.granularity === 'hour'
       ? String(local.getUTCHours()).padStart(2, '0')
       : fact.businessDate;
@@ -366,9 +365,8 @@ function aggregateTimeDistributionRows(facts: MerchantSettlementFact[]): TimeDis
     revenueVnd: bigint;
   }>();
   for (const fact of facts) {
-    if (!fact.settledAt) continue;
-    const local = new Date(fact.settledAt.getTime() + VIETNAM_OFFSET_MS);
-    const weekday = (local.getUTCDay() + 6) % 7;
+    const local = new Date(fact.businessStartedAt.getTime() + VIETNAM_OFFSET_MS);
+    const weekday = (new Date(`${fact.businessDate}T00:00:00.000Z`).getUTCDay() + 6) % 7;
     const startHour = Math.floor(local.getUTCHours() / TIME_BUCKET_HOURS) * TIME_BUCKET_HOURS;
     const key = `${weekday}:${startHour}`;
     const value = values.get(key) ?? { weekday, startHour, settlementCount: 0, revenueVnd: 0n };

@@ -2,8 +2,8 @@ import { http } from './http';
 import type { ApiResponse } from '@/types/api';
 
 export interface MerchantAnalyticsFilters {
-  dateFrom: string;
-  dateTo: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface AnalyticsComparison {
@@ -79,7 +79,7 @@ export interface MerchantAnalyticsResponse {
 }
 
 export async function getMerchantAnalytics(
-  filters: MerchantAnalyticsFilters,
+  filters: MerchantAnalyticsFilters = {},
 ) {
   const response = await http.get<ApiResponse<MerchantAnalyticsResponse>>(
     '/merchant/analytics',

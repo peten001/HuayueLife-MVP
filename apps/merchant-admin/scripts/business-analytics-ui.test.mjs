@@ -28,9 +28,9 @@ for (const field of ['discount', 'rounding', 'net-revenue', 'cash', 'bank-transf
 }
 assert.match(page, /v-if="BigInt\(analytics\.overview\.funds\.unrecordedRevenueVnd\) > 0n"[\s\S]{0,140}data-analytics-field="unrecorded"/, 'unrecorded card must be removed from the DOM (not display-hidden) when its amount is zero');
 assert.doesNotMatch(page, /visibility:\s*hidden[\s\S]{0,80}data-analytics-field="unrecorded"/, 'unrecorded must never rely on visibility:hidden placeholders');
-assert.match(page, /fundsDescription: '按已完成订单最终结账金额统计'/, 'funds header must state the final-settled-amount basis');
-assert.match(page, /fundsDescription: 'Theo tổng thanh toán cuối cùng của đơn đã hoàn tất'/, 'Vietnamese funds basis wording must exist');
-assert.match(page, /fundsDescription: 'Based on final settled amounts of completed orders'/, 'English funds basis wording must exist');
+assert.match(page, /fundsDescription: '已完成订单净额：堂食按开台营业日，自取\/配送按下单营业日'/, 'funds header must state opening/order business-date attribution');
+assert.match(page, /fundsDescription: 'Doanh thu ròng của đơn hoàn tất: theo ngày kinh doanh mở bàn; mang đi\/giao hàng theo ngày kinh doanh đặt đơn'/, 'Vietnamese funds basis wording must exist');
+assert.match(page, /fundsDescription: 'Completed-order net amounts: dine-in by table-opening business date; pickup\/delivery by order business date'/, 'English funds basis wording must exist');
 assert.match(page, /analytics-funds-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); gap: 6px; margin: 0; \}/, 'funds block must keep a three-column desktop composition');
 assert.match(page, /@media \(max-width: 768px\)[\s\S]*\.analytics-funds-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 5px; \}/, 'mobile funds must collapse to a two-column grid');
 for (const [className, order] of [
@@ -43,11 +43,14 @@ for (const [className, order] of [
 ]) {
   assert.match(page, new RegExp(`\\.${className} \\{ order: ${order}; \\}`), `mobile funds order must place ${className} at ${order}`);
 }
-assert.match(page, /shareDescription: '按结账时间统计营业额分布'/, 'time revenue share must describe settlement-time attribution');
-assert.match(page, /shareDescription: 'Theo thời gian thanh toán'/, 'Vietnamese share description must use settlement-time wording');
-assert.match(page, /shareDescription: 'Based on settlement time'/, 'English share description must use settlement-time wording');
+assert.match(page, /shareDescription: '按开台 \/ 下单时间归属'/, 'time revenue share must describe opening/order-time attribution');
+assert.match(page, /shareDescription: 'Theo giờ mở bàn \/ đặt đơn'/, 'Vietnamese share description must use opening/order-time wording');
+assert.match(page, /shareDescription: 'Based on table-opening \/ order time'/, 'English share description must use opening/order-time wording');
+assert.doesNotMatch(page, /按结账时间|结账高峰热力图|Based on settlement time|Theo thời gian thanh toán/, 'no stale checkout-time basis may remain');
 
 assert.match(api, /return response\.data\.data/, 'analytics API should return the server payload without demo remapping');
+assert.match(page, /preset === 'today'\) return loadAnalytics\(true\)/, 'Today must use the server-resolved current business date');
+assert.match(page, /currentBusinessDay \? \{\} : \{ dateFrom:/, 'initial/current-day request must omit natural-date overrides');
 assert.match(page, /activePreset === preset\[0\]/, 'period buttons should expose an active state');
 assert.match(page, /analytics-brief-card \{ order: 1;/, 'mobile brief must appear before KPI cards');
 assert.match(page, /analytics-kpi-section \{ order: 2;/, 'mobile KPI cards must appear after the brief');

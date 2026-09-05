@@ -3,56 +3,31 @@ import { isEffectiveOrder } from '../orders/effective-order';
 import {
   addBusinessDays,
   assertBusinessDate,
-  businessDayWindow,
   instantForBusinessDateMinute,
-  normalizeBusinessHours,
   resolveBusinessDate,
 } from '../../common/utils/merchant-hours';
 
 /**
  * Canonical Business Day order scope shared by every merchant-facing page.
  *
- * BusinessDateOrderSet(D) =
- *   { Order.businessDate = D }                        (snapshot, written at creation)
- *   ∪ { businessDate IS NULL ∧ legacyResolver(createdAt) = D }
- *
- * The legacy resolver is resolveBusinessDate(schedule, createdAt): the order
- * belongs to the business date whose accounting window contains its creation
- * instant. This is the ONLY legacy resolver any service may use; services must
- * not re-implement natural-day, completedAt, or segment-sliced scopes.
+ * Dine-in belongs to the table's immutable OPENING business date, including
+ * every later add-on and late checkout. Standalone pickup/delivery retain the
+ * original-order business date. Never use the legacy session.businessDate:
+ * that field records checkout date, not opening date.
  */
 
 /** Candidate superset covers cross-midnight and rest-period orders. */
 export function businessDateCandidateWhere(
-  scheduleValue: unknown,
+  _scheduleValue: unknown,
   businessDate: string,
 ): Prisma.OrderWhereInput {
-  assertBusinessDate(businessDate);
-  const schedule = normalizeBusinessHours(scheduleValue);
-  const window = businessDayWindow(schedule, businessDate);
-  const start = window?.start ?? instantForBusinessDateMinute(businessDate, 0);
-  const end = window?.end ?? instantForBusinessDateMinute(addBusinessDays(businessDate, 1), 0);
-  const broadStart = new Date(Math.min(
-    start.getTime(),
-    instantForBusinessDateMinute(addBusinessDays(businessDate, -1), 0).getTime(),
-  ));
-  const broadEnd = new Date(Math.max(
-    end.getTime(),
-    instantForBusinessDateMinute(addBusinessDays(businessDate, 2), 6 * 60).getTime(),
-  ));
-  return {
-    OR: [
-      { businessDate: new Date(`${businessDate}T00:00:00.000Z`) },
-      { businessDate: null, createdAt: { gte: broadStart, lt: broadEnd } },
-    ],
-  };
+  return businessDateRangeCandidateWhere(businessDate, businessDate);
 }
 
 /**
- * Superset where clause for a business-date range: snapshot rows plus legacy
- * rows created between (startDate - 1 day 00:00) and (endDate + 2 days 06:00)
- * in the business time zone. The exact per-order resolver must still be
- * applied in memory.
+ * Snapshot rows plus a bounded legacy OPENED-at/CREATED-at superset. Do not
+ * bound dine-in by Order.createdAt/businessDate: late add-ons can be many days
+ * after opening. Apply the exact resolver before grouping or summing.
  */
 export function businessDateRangeCandidateWhere(
   startDate: string,
@@ -60,29 +35,55 @@ export function businessDateRangeCandidateWhere(
 ): Prisma.OrderWhereInput {
   assertBusinessDate(startDate);
   assertBusinessDate(endDate);
-  return {
-    OR: [
-      {
-        businessDate: {
-          gte: new Date(`${startDate}T00:00:00.000Z`),
-          lt: new Date(`${addBusinessDays(endDate, 1)}T00:00:00.000Z`),
-        },
-      },
-      {
-        businessDate: null,
-        createdAt: {
-          gte: instantForBusinessDateMinute(addBusinessDays(startDate, -1), 0),
-          lt: instantForBusinessDateMinute(addBusinessDays(endDate, 2), 6 * 60),
-        },
-      },
-    ],
+  const dateRange = {
+    gte: new Date(`${startDate}T00:00:00.000Z`),
+    lt: new Date(`${addBusinessDays(endDate, 1)}T00:00:00.000Z`),
   };
+  const legacyRange = {
+    gte: instantForBusinessDateMinute(addBusinessDays(startDate, -1), 0),
+    lt: instantForBusinessDateMinute(addBusinessDays(endDate, 2), 6 * 60),
+  };
+  return { OR: [
+    { orderType: 'DINE_IN', tableSession: { is: { OR: [
+      { openedBusinessDate: dateRange },
+      { openedBusinessDate: null, openedAt: legacyRange },
+    ] } } },
+    { AND: [
+      { OR: [{ orderType: { not: 'DINE_IN' } }, { tableSessionId: null }] },
+      { OR: [{ businessDate: dateRange }, { businessDate: null, createdAt: legacyRange }] },
+    ] },
+  ] };
 }
 
+export type OpeningBusinessDateSession = {
+  openedBusinessDate?: Date | null;
+  openedAt?: Date;
+};
+
 export type BusinessDateOrderLike = {
+  orderType?: string;
+  tableSession?: OpeningBusinessDateSession | null;
   businessDate?: Date | null;
   createdAt: Date;
 };
+
+export function resolveOrderBusinessDate(
+  order: BusinessDateOrderLike,
+  scheduleValue: unknown,
+): string {
+  return resolveOrderBusinessDateWithResolver(order, at => resolveBusinessDate(scheduleValue, at));
+}
+
+export function resolveOrderBusinessDateWithResolver(
+  order: BusinessDateOrderLike,
+  resolver: (at: Date) => string,
+): string {
+  if (order.orderType === 'DINE_IN' && order.tableSession) {
+    if (order.tableSession.openedBusinessDate) return order.tableSession.openedBusinessDate.toISOString().slice(0, 10);
+    if (order.tableSession.openedAt) return resolver(order.tableSession.openedAt);
+  }
+  return order.businessDate?.toISOString().slice(0, 10) ?? resolver(order.createdAt);
+}
 
 export function isOrderInBusinessDate(
   order: BusinessDateOrderLike,
@@ -90,10 +91,7 @@ export function isOrderInBusinessDate(
   businessDate: string,
 ): boolean {
   assertBusinessDate(businessDate);
-  if (order.businessDate) {
-    return order.businessDate.toISOString().slice(0, 10) === businessDate;
-  }
-  return resolveBusinessDate(scheduleValue, order.createdAt) === businessDate;
+  return resolveOrderBusinessDate(order, scheduleValue) === businessDate;
 }
 
 export function businessDateSnapshotValue(scheduleValue: unknown, at: Date): Date {
@@ -143,8 +141,8 @@ export interface CompletedRevenueTotals {
  * Standalone orders keep their own order-level adjustments.
  *
  * Invariant: Σ per-order net over the session equals the session net, so
- * per-business-date revenue always sums correctly even when one session spans
- * two business dates.
+ * opening-business-date revenue sums correctly across all of a session's
+ * orders, even when they were created or checked out on later days.
  */
 export function attributeOrderRevenue(
   orders: SessionAttributionOrder[],

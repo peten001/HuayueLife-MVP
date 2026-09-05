@@ -661,6 +661,7 @@ model TableSession {
   sessionNo                String             @unique @map("session_no") @db.VarChar(32)
   status                   TableSessionStatus @default(OPEN)
   openedAt                 DateTime           @default(now()) @map("opened_at")
+  openedBusinessDate       DateTime?          @map("opened_business_date") @db.Date
   closedAt                 DateTime?          @map("closed_at")
   businessDate             DateTime?          @map("business_date") @db.Date
   paymentMethod            PaymentMethod?     @map("payment_method")
@@ -687,6 +688,7 @@ model TableSession {
   @@index([merchantId, status])
   @@index([tableId, openedAt])
   @@index([merchantId, openedAt])
+  @@index([merchantId, openedBusinessDate], map: "ix_sessions_opened_business_date")
   @@index([merchantId, businessDate])
   @@index([merchantId, voidedAt, businessDate], map: "ix_sessions_effective_date")
   @@map("table_sessions")
