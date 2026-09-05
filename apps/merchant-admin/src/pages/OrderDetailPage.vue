@@ -281,7 +281,7 @@ type Action =
     :title="order ? t('orderTitle', { orderNo: order.orderNo }) : t('orderDetail')"
     :description="t('detailDescription')"
   >
-    <OrderVoidAction v-if="canVoidOrders && order && ['COMPLETED', 'CANCELLED'].includes(order.status)" :target="`order:${order.id}`" @done="router.replace('/orders')" />
+    <OrderVoidAction v-if="canVoidOrders && order && ['COMPLETED', 'CANCELLED'].includes(order.status)" :target="`order:${order.id}`" mobile-align="start" @done="router.replace('/orders')" />
     <RouterLink class="text-link" to="/orders">{{ t('backToOrders') }}</RouterLink>
   </PageHeader>
   <p class="message">{{ message }}</p>

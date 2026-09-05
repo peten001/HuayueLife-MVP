@@ -7,7 +7,7 @@ import { useOrderVoidText } from '@/i18n/order-void';
 import OrderVoidEvidence from './OrderVoidEvidence.vue';
 import '@/styles/order-void.css';
 
-const props = defineProps<{ target: string }>();
+const props = defineProps<{ target: string; mobileAlign?: 'start' | 'end' }>();
 const emit = defineEmits<{ done: [record: OrderVoidRecord] }>();
 const copy = useOrderVoidText();
 const dialog = ref<HTMLDialogElement>();
@@ -91,7 +91,7 @@ async function submit() {
 onBeforeUnmount(() => { previewGeneration++; dialog.value?.close(); });
 </script>
 <template>
-  <details ref="menu" class="order-void-ui void-menu">
+  <details ref="menu" class="order-void-ui void-menu" :class="{ 'void-menu--mobile-start': mobileAlign === 'start' }">
     <summary>{{ copy.more }}</summary>
     <div class="void-menu-panel"><button class="void-button void-button--danger" type="button" @click="open">{{ copy.action }}</button></div>
   </details>
@@ -127,6 +127,8 @@ onBeforeUnmount(() => { previewGeneration++; dialog.value?.close(); });
 .void-menu { position: relative; flex: none; }
 .void-menu summary { list-style: none; }
 .void-menu-panel { position: absolute; right: 0; top: 100%; z-index: 5; padding: 6px; background: var(--void-surface); box-shadow: var(--void-shadow); border-radius: 10px; }
+/* Match the page header's mobile stack; right-side settlement actions keep end alignment. */
+@media (max-width: 760px) { .void-menu--mobile-start .void-menu-panel { left: 0; right: auto; } }
 .void-dialog { padding: 0; width: min(620px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--void-line); border-radius: 16px; background: var(--void-surface); box-shadow: var(--void-shadow); }
 .void-dialog::backdrop { background: var(--void-mask); }
 .void-dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 28px); }
