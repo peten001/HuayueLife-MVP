@@ -63,6 +63,7 @@ const mobileSearchOpen = ref(false);
 let previouslyFocused: HTMLElement | null = null;
 let firstMenuPaintMarked = false;
 let firstProductCardMarked = false;
+let clearQueryOnNextSearch = false;
 const DESKTOP_PAGE_SIZE = 20;
 
 function markMenuPerformance(name: string) {
@@ -158,7 +159,12 @@ watch([query, activeCategoryId], () => {
   productCards.value = [];
 });
 
+watch(query, () => {
+  clearQueryOnNextSearch = false;
+}, { flush: 'sync' });
+
 watch(() => props.tableId, () => {
+  clearQueryOnNextSearch = false;
   currentPage.value = 1;
   activeResultIndex.value = -1;
   productCards.value = [];
@@ -246,6 +252,7 @@ function productInteractionDisabled(productId: string) {
 
 function queueProductAddition(productId: string) {
   if (!props.open || productInteractionDisabled(productId)) return false;
+  if (query.value.trim()) clearQueryOnNextSearch = true;
   emit('addProduct', productId);
   return true;
 }
@@ -268,7 +275,18 @@ function dismissMobileKeyboard() {
 
 function openMobileSearch() {
   mobileSearchOpen.value = true;
-  void nextTick(() => searchInput.value?.focus());
+  void nextTick(focusSearchInput);
+}
+
+function startNextSearch() {
+  if (!clearQueryOnNextSearch) return;
+  clearQueryOnNextSearch = false;
+  query.value = '';
+}
+
+function focusSearchInput() {
+  startNextSearch();
+  searchInput.value?.focus();
 }
 
 function closeMobileSearch() {
@@ -278,6 +296,7 @@ function closeMobileSearch() {
 }
 
 function resetWorkspaceView() {
+  clearQueryOnNextSearch = false;
   activeCategoryId.value = 'ALL';
   query.value = '';
   loadErrorKey.value = '';
@@ -317,13 +336,13 @@ function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
     event.preventDefault();
     if (mobileV2Menu.value && !mobileSearchOpen.value) openMobileSearch();
-    else searchInput.value?.focus();
+    else focusSearchInput();
     return;
   }
   if (event.key === '/' && !isTyping) {
     event.preventDefault();
     if (mobileV2Menu.value && !mobileSearchOpen.value) openMobileSearch();
-    else searchInput.value?.focus();
+    else focusSearchInput();
     return;
   }
   if (event.key === 'Escape') {
@@ -384,11 +403,11 @@ function onDocumentKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
     event.preventDefault();
     if (mobileV2Menu.value && !mobileSearchOpen.value) openMobileSearch();
-    else searchInput.value?.focus();
+    else focusSearchInput();
   } else if (event.key === '/' && !isTyping) {
     event.preventDefault();
     if (mobileV2Menu.value && !mobileSearchOpen.value) openMobileSearch();
-    else searchInput.value?.focus();
+    else focusSearchInput();
   }
 }
 
@@ -456,6 +475,8 @@ function setProductCardRef(element: Element | null, index: number) {
                 :aria-label="t('ordering.searchLabel')"
                 :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
                 autocomplete="off"
+                @focus="startNextSearch"
+                @click="startNextSearch"
                 @keydown.stop="onKeydown"
               />
             </label>
@@ -513,6 +534,8 @@ function setProductCardRef(element: Element | null, index: number) {
                 :aria-label="t('ordering.searchLabel')"
                 :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
                 autocomplete="off"
+                @focus="startNextSearch"
+                @click="startNextSearch"
                 @keydown.stop="onKeydown"
               />
               <kbd>{{ t('ordering.searchShortcut') }}</kbd>
@@ -529,6 +552,8 @@ function setProductCardRef(element: Element | null, index: number) {
                 :aria-label="t('ordering.searchLabel')"
                 :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
                 autocomplete="off"
+                @focus="startNextSearch"
+                @click="startNextSearch"
                 @keydown.stop="onKeydown"
               />
               <kbd>{{ t('ordering.searchShortcut') }}</kbd>
