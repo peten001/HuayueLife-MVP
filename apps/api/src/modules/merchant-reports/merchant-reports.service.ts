@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import {
   ForbiddenException,
   Injectable,
@@ -290,13 +291,13 @@ export class MerchantReportsService {
     const { startUtc: previousStartUtc, endUtc: previousEndUtc } = getVietnamDayBoundsUtc(previousReportDate);
     const [orders, orderItems, previousStats] = await Promise.all([
       this.prisma.order.findMany({
-        where: {
+        where: effectiveOrderWhere({
           merchantId,
           createdAt: {
             gte: startUtc,
             lt: endUtc,
           },
-        },
+        }),
         select: {
           orderType: true,
           status: true,
@@ -307,13 +308,13 @@ export class MerchantReportsService {
       }),
       this.prisma.orderItem.findMany({
         where: {
-          order: {
+          order: effectiveOrderWhere({
             merchantId,
             createdAt: {
               gte: startUtc,
               lt: endUtc,
             },
-          },
+          }),
         },
         select: {
           productId: true,
@@ -328,13 +329,13 @@ export class MerchantReportsService {
         },
       }),
       this.prisma.order.aggregate({
-        where: {
+        where: effectiveOrderWhere({
           merchantId,
           createdAt: {
             gte: previousStartUtc,
             lt: previousEndUtc,
           },
-        },
+        }),
         _count: { _all: true },
         _sum: { totalAmountVnd: true },
       }),

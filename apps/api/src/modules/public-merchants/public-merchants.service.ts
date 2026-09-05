@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import {
   BadRequestException,
   Injectable,
@@ -550,11 +551,11 @@ export class PublicMerchantsService {
       by: ['productId'],
       where: {
         productId: { not: null },
-        order: {
+        order: effectiveOrderWhere({
           merchantId,
           status: 'COMPLETED',
           orderType: { in: SALES_ORDER_TYPES },
-        },
+        }),
       },
       _sum: { quantity: true },
     });

@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -150,7 +151,7 @@ export class PlatformUsersService {
     });
 
     const allOrders = await this.prisma.order.findMany({
-      where: { userId: user.id },
+      where: effectiveOrderWhere({ userId: user.id }),
       select: {
         status: true,
         totalAmountVnd: true,
@@ -244,25 +245,25 @@ export class PlatformUsersService {
     const [allOrders, completedOrders, cancelledOrders, latestOrders] = await Promise.all([
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: { userId: { in: userIds, not: null } },
+        where: effectiveOrderWhere({ userId: { in: userIds, not: null } }),
         _count: { _all: true },
         _sum: { totalAmountVnd: true },
         _max: { createdAt: true },
       }),
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: {
+        where: effectiveOrderWhere({
           userId: { in: userIds, not: null },
           status: { in: COMPLETED_STATUSES },
-        },
+        }),
         _count: { _all: true },
       }),
       this.prisma.order.groupBy({
         by: ['userId'],
-        where: {
+        where: effectiveOrderWhere({
           userId: { in: userIds, not: null },
           status: { in: CANCELLED_STATUSES },
-        },
+        }),
         _count: { _all: true },
       }),
       this.prisma.order.findMany({

@@ -143,7 +143,7 @@ export class DineInCanonicalStateService {
     sessionId: bigint,
   ) {
     const session = await client.tableSession.findFirst({
-      where: { id: sessionId, merchantId },
+      where: { id: sessionId, merchantId, voidedAt: null },
       select: {
         id: true,
         merchantId: true,
@@ -274,7 +274,7 @@ export class DineInCanonicalStateService {
              ts.rounding_applied_by_staff_id
       FROM table_sessions ts
       INNER JOIN dining_tables dt ON dt.id = ts.table_id
-      WHERE ts.id = ${sessionId} AND ts.merchant_id = ${merchantId}
+      WHERE ts.id = ${sessionId} AND ts.merchant_id = ${merchantId} AND ts.voided_at IS NULL
       FOR UPDATE
     `;
     const lockedSession = sessionRows[0];

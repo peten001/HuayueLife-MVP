@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import OrderVoidAction from '@/components/OrderVoidAction.vue';
 import { getMerchantOrder, printMerchantOrder, runOrderAction } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import { getPrinters } from '@/api/printers';
@@ -15,6 +16,8 @@ import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 import { orderStatusLogActionPresentation } from '@/utils/order-status-log-presentation';
 
 const route = useRoute();
+const router = useRouter();
+const canVoidOrders = getMerchantStaff()?.role === 'OWNER';
 const { locale, t } = useI18n();
 const merchant = getMerchantStaff()?.merchant ?? null;
 const order = ref<MerchantOrder>();
@@ -278,6 +281,7 @@ type Action =
     :title="order ? t('orderTitle', { orderNo: order.orderNo }) : t('orderDetail')"
     :description="t('detailDescription')"
   >
+    <OrderVoidAction v-if="canVoidOrders && order && ['COMPLETED', 'CANCELLED'].includes(order.status)" :target="`order:${order.id}`" @done="router.replace('/orders')" />
     <RouterLink class="text-link" to="/orders">{{ t('backToOrders') }}</RouterLink>
   </PageHeader>
   <p class="message">{{ message }}</p>

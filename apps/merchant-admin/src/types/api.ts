@@ -520,6 +520,7 @@ export interface PlatformDashboardData {
 }
 
 export interface PlatformOrderListItem {
+  voidedAt?: string | null;
   id: string;
   orderNo: string;
   merchantId: string;

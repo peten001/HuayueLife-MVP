@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { MerchantOrderVoidController } from './merchant-order-void.controller';
+import { MerchantOrderVoidService } from './merchant-order-void.service';
 import { PrintersModule } from '../printers/printers.module';
 import { PrintingModule } from '../printing/printing.module';
 import { OrdersModule } from '../orders/orders.module';
@@ -15,6 +17,7 @@ import { MerchantDineInCanonicalController } from './merchant-dine-in-canonical.
 @Module({
   imports: [PrintersModule, PrintingModule, OrdersModule, TableSessionsModule],
   controllers: [
+    MerchantOrderVoidController,
     MerchantOrdersController,
     MerchantTableOrdersController,
     MerchantAnalyticsController,
@@ -22,6 +25,7 @@ import { MerchantDineInCanonicalController } from './merchant-dine-in-canonical.
     MerchantDineInCanonicalController,
   ],
   providers: [
+    MerchantOrderVoidService,
     MerchantOrdersService,
     MerchantAnalyticsService,
     MerchantSettlementsService,

@@ -1,4 +1,5 @@
 import { OrderStatus, OrderType, PaymentMethod } from '@prisma/client';
+import { isEffectiveOrder } from '../orders/effective-order';
 
 /**
  * Canonical merchant Settlement Read Model.
@@ -24,6 +25,7 @@ import { OrderStatus, OrderType, PaymentMethod } from '@prisma/client';
 export const SETTLEMENT_VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export type SettlementSessionRow = {
+  voidedAt?: Date | null;
   id: bigint;
   status: string;
   closedAt: Date | null;
@@ -65,6 +67,7 @@ export type SettlementCheckoutLogRow = {
 };
 
 export type SettlementOrderRow = {
+  voidedAt?: Date | null;
   id: bigint;
   orderNo: string;
   status: OrderStatus;
@@ -427,6 +430,7 @@ export function buildMerchantSettlements(
   orders: SettlementOrderRow[],
   resolver: BusinessDateResolver = defaultBusinessDateResolver,
 ): MerchantSettlement[] {
+  orders = orders.filter(isEffectiveOrder);
   const sessions = new Map<bigint, SettlementOrderRow[]>();
   for (const order of orders) {
     if (

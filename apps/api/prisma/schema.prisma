@@ -672,6 +672,11 @@ model TableSession {
   roundingAppliedByStaffId BigInt?            @map("rounding_applied_by_staff_id")
   createdAt                DateTime           @default(now()) @map("created_at")
   updatedAt                DateTime           @updatedAt @map("updated_at")
+  voidedAt                 DateTime?          @map("voided_at")
+  voidedByStaffId          BigInt?            @map("voided_by_staff_id")
+  voidReason               String?            @map("void_reason") @db.VarChar(32)
+  voidReasonNote           String?            @map("void_reason_note") @db.VarChar(255)
+  voidOperationId         String?            @map("void_operation_id") @db.VarChar(36)
 
   merchant           Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   table              DiningTable          @relation(fields: [tableId], references: [id], onDelete: Cascade)
@@ -683,6 +688,7 @@ model TableSession {
   @@index([tableId, openedAt])
   @@index([merchantId, openedAt])
   @@index([merchantId, businessDate])
+  @@index([merchantId, voidedAt, businessDate], map: "ix_sessions_effective_date")
   @@map("table_sessions")
 }
 
@@ -761,6 +767,11 @@ model Order {
   cancelReason             String?          @map("cancel_reason") @db.VarChar(255)
   createdAt                DateTime         @default(now()) @map("created_at")
   updatedAt                DateTime         @updatedAt @map("updated_at")
+  voidedAt                 DateTime?        @map("voided_at")
+  voidedByStaffId          BigInt?          @map("voided_by_staff_id")
+  voidReason               String?          @map("void_reason") @db.VarChar(32)
+  voidReasonNote           String?          @map("void_reason_note") @db.VarChar(255)
+  voidOperationId         String?          @map("void_operation_id") @db.VarChar(36)
 
   user                   User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   createdByStaff         MerchantStaff?         @relation("StaffCreatedOrders", fields: [createdByStaffId], references: [id], onDelete: Restrict, map: "fk_orders_created_by_staff")
@@ -781,6 +792,8 @@ model Order {
   @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
   @@index([merchantId, status, createdAt])
   @@index([merchantId, businessDate, status])
+  @@index([merchantId, voidedAt, businessDate], map: "ix_orders_effective_date")
+  @@index([merchantId, voidOperationId], map: "ix_orders_void_operation")
   @@index([userId, createdAt])
   @@index([createdByStaffId, createdAt], map: "ix_orders_staff_created")
   @@index([tableSessionId])

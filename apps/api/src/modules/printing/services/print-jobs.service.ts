@@ -1,3 +1,4 @@
+import { lockEffectivePrintTarget } from '../../orders/effective-order';
 import {
   BadRequestException,
   ConflictException,
@@ -1933,6 +1934,7 @@ export class PrintJobsService {
     }
     await this.requireReadyPrinterForMerchantOperation(merchantId, job.printerId);
     return this.prisma.$transaction(async (tx) => {
+      await lockEffectivePrintTarget(tx, merchantId, job);
       const changed = await tx.printJob.updateMany({
         where: { id, merchantId, status: { in: ['FAILED', 'RETRY_WAIT'] } },
         data: {
@@ -2063,6 +2065,7 @@ export class PrintJobsService {
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
+        await lockEffectivePrintTarget(tx, merchantId, candidate);
         this.assertCanonicalJobArtifact(candidate);
         const leaseExpiresAt = new Date(
           now.getTime() + Math.min(120_000, Math.max(5_000, leaseMs)),
@@ -2204,6 +2207,7 @@ export class PrintJobsService {
           orderBy: [{ priority: 'asc' }, { availableAt: 'asc' }, { id: 'asc' }],
         });
         if (!candidate) return null;
+        await lockEffectivePrintTarget(tx, merchantId, candidate);
         this.assertCanonicalJobArtifact(candidate);
         if (printer.channelType === 'LOCAL_LAN_ESCPOS') {
           await this.lanBindings.requireClaimable(
@@ -2775,7 +2779,8 @@ export class PrintJobsService {
     allowDisabledPrinter?: boolean;
     preserveSnapshot?: boolean;
     renderMode?: 'CUSTOMER' | 'KITCHEN';
-  }, client: DbClient = this.prisma) {
+  }, client: Prisma.TransactionClient): Promise<PrintJobMutationResult> {
+    await lockEffectivePrintTarget(client, input.merchantId, input);
     await this.settings.assertMerchantPrintingEnabled(input.merchantId, client);
     const { printer, template } = await this.validateJobReferences(
       input.merchantId,

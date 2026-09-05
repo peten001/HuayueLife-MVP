@@ -277,7 +277,7 @@ function completionText(value: number | null | undefined) {
             <td>{{ money(item.totalAmount) }}</td>
             <td>
               <span class="order-status-pill" :class="statusClass(item.status)">
-                {{ orderStatusLabel(item.status) }}
+                {{ orderStatusLabel(item.status) }}{{ item.voidedAt ? ' · 已作废' : '' }}
               </span>
             </td>
             <td>{{ dateTime(item.createdAt) }}</td>
@@ -335,7 +335,7 @@ function completionText(value: number | null | undefined) {
         <dt>订单号</dt><dd>{{ selectedOrder.orderNo }}</dd>
         <dt>商家名称</dt><dd>{{ selectedOrder.merchantName }}</dd>
         <dt>订单类型</dt><dd>{{ orderTypeLabel(selectedOrder.orderType) }}</dd>
-        <dt>订单状态</dt><dd>{{ orderStatusLabel(selectedOrder.status) }}</dd>
+        <dt>订单状态</dt><dd>{{ orderStatusLabel(selectedOrder.status) }}{{ selectedOrder.voidedAt ? ' · 已作废' : '' }}</dd>
         <dt>下单时间</dt><dd>{{ dateTime(selectedOrder.createdAt) }}</dd>
         <dt>订单金额</dt><dd>{{ money(selectedOrder.totalAmount) }}</dd>
         <dt>联系人</dt><dd>{{ selectedOrder.contactName || '-' }}</dd>

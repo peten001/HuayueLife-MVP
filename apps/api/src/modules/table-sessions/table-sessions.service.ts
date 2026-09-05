@@ -1081,7 +1081,7 @@ export class TableSessionsService {
     sessionId: bigint,
   ) {
     const session = await client.tableSession.findFirst({
-      where: { id: sessionId, merchantId },
+      where: { id: sessionId, merchantId, voidedAt: null },
       include: this.sessionOrdersInclude,
     });
     if (!session) {
@@ -1117,7 +1117,7 @@ export class TableSessionsService {
              discount_payable_rate_bps, discount_amount_vnd,
              discount_applied_by_staff_id, discount_applied_at
       FROM table_sessions
-      WHERE id = ${sessionId} AND merchant_id = ${merchantId}
+      WHERE id = ${sessionId} AND merchant_id = ${merchantId} AND voided_at IS NULL
       FOR UPDATE
     `;
     const session = rows[0];
@@ -1136,7 +1136,7 @@ export class TableSessionsService {
     sessionId: bigint,
   ) {
     const session = await client.tableSession.findFirst({
-      where: { id: sessionId, merchantId },
+      where: { id: sessionId, merchantId, voidedAt: null },
       select: {
         id: true,
         tableId: true,

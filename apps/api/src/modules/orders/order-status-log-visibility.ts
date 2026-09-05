@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 export const INTERNAL_ORDER_STATUS_LOG_ACTIONS = [
+  'MERCHANT_ORDER_VOID',
   'MERCHANT_ADD_ITEMS',
   'DINE_IN_CUSTOMER_ITEMS_ADDED',
   'ORDER_ITEM_DECREASED',

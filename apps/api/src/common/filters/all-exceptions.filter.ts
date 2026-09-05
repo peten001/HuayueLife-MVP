@@ -79,6 +79,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? { latestState: value.latestState }
         : {}),
       ...(typeof value.lineKey === 'string' ? { lineKey: value.lineKey } : {}),
+      ...(value.code === 'VOID_WHOLE_SESSION_REQUIRED' && typeof value.target === 'string' && /^session:[1-9]\d{0,18}$/.test(value.target)
+        ? { target: value.target } : {}),
       ...(typeof value.lockedQuantity === 'number'
         ? { lockedQuantity: value.lockedQuantity }
         : {}),

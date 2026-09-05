@@ -1,3 +1,4 @@
+import { lockEffectivePrintTarget } from '../../orders/effective-order';
 import {
   Injectable,
   Logger,
@@ -224,6 +225,7 @@ export class CloudPrintExecutionService implements OnModuleDestroy {
           },
         });
         if (!job || !isCloudChannel(job.printer.channelType)) return null;
+        await lockEffectivePrintTarget(tx, job.merchantId, job);
         const contentHash =
           job.receiptSnapshotHash ?? receiptSnapshotHash(job.receiptSnapshot);
         const attemptNo = job.attemptCount + 1;

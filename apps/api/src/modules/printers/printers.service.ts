@@ -1,3 +1,4 @@
+import { lockEffectivePrintTarget } from '../orders/effective-order';
 import {
   BadRequestException,
   Injectable,
@@ -291,7 +292,10 @@ export class PrintersService {
     printedBy: PrintLogOperator;
   }) {
     this.printingFlags.assertLegacyPrintingEnabled();
-    return this.prisma.printLog.create({ data });
+    return this.prisma.$transaction(async tx => {
+      await lockEffectivePrintTarget(tx, data.merchantId, data);
+      return tx.printLog.create({ data });
+    });
   }
 
   private async printWithLog(

@@ -1,0 +1,40 @@
+/* Shared semantic tokens inherit the existing merchant-admin color and radius scale. */
+.order-void-ui {
+  --void-ink: #1f2d24;
+  --void-muted: #4c535d;
+  --void-surface: #f7faf8;
+  --void-subtle: #edf4ee;
+  --void-line: #d8dde3;
+  --void-danger: #a82f2f;
+  --void-danger-bg: #fff5f5;
+  --void-focus: #2e7d32;
+  --void-on-danger: #f7faf8;
+  --void-mask: rgb(31 45 36 / 45%);
+  --void-shadow: 0 16px 48px rgb(31 45 36 / 18%);
+  color: var(--void-ink);
+  font: inherit;
+  min-width: 0;
+}
+.order-void-ui .void-button, .order-void-ui summary {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+  border: 1px solid var(--void-line); border-radius: 10px; padding: 10px 14px;
+  color: var(--void-ink); background: var(--void-subtle); cursor: pointer; white-space: nowrap;
+  outline: 2px solid transparent; outline-offset: 2px;
+}
+.order-void-ui .void-button--danger { color: var(--void-danger); background: var(--void-danger-bg); }
+.order-void-ui .void-button[aria-pressed="true"] { border-color: var(--void-focus); color: var(--void-focus); font-weight: 600; }
+.order-void-ui .void-button--confirm { color: var(--void-on-danger); background: var(--void-danger); border-color: var(--void-danger); min-width: 136px; }
+.order-void-ui :is(button, summary, input, select, textarea):focus-visible,
+.order-void-ui .is-focus { outline: 2px solid var(--void-focus); outline-offset: 2px; }
+.order-void-ui .void-button:active, .order-void-ui summary:active, .order-void-ui .is-active { transform: translateY(1px); }
+.order-void-ui button:disabled { opacity: .5; cursor: not-allowed; }
+.order-void-ui .void-error { min-height: 1.5em; color: var(--void-danger); margin: 8px 0; overflow-wrap: anywhere; }
+.order-void-ui .void-success { padding: 12px; border-radius: 10px; background: var(--void-subtle); color: var(--void-focus); }
+.order-void-ui .void-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.order-void-ui label { color: var(--void-muted); }
+.order-void-ui input, .order-void-ui select, .order-void-ui textarea { min-height: 44px; font-size: 16px; color: var(--void-ink); background: var(--void-surface); border: 1px solid var(--void-line); }
+.order-void-ui input::placeholder { color: var(--void-muted); }
+@media (hover: hover) {
+  .order-void-ui .void-button:hover:not(:disabled), .order-void-ui summary:hover, .order-void-ui .is-hover { filter: brightness(.94); }
+}
+@media (prefers-reduced-motion: reduce) { .order-void-ui * { transition: none; animation: none; } }

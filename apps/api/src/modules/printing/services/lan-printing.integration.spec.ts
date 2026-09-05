@@ -576,7 +576,7 @@ function createStatefulPrismaFake(state: MutableState) {
     createMany: jest.fn(),
     updateMany: jest.fn(),
   };
-  prisma.$queryRaw = jest.fn().mockResolvedValue([{ id: merchantId }]);
+  prisma.$queryRaw = jest.fn().mockResolvedValue([{ id: merchantId, table_session_id: null, voided_at: null }]);
   prisma.$transaction = jest
     .fn()
     .mockImplementation(async (callback: (tx: unknown) => unknown) =>

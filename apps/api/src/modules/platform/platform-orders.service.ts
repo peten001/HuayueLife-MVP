@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -78,26 +79,26 @@ export class PlatformOrdersService {
     const [todayOrderCount, pendingOrderCount, todayOrderAmount, completedCount] =
       await Promise.all([
         this.prisma.order.count({
-          where: {
+          where: effectiveOrderWhere({
             status: { not: OrderStatus.CANCELLED },
             createdAt: { gte: todayStart, lt: tomorrowStart },
-          },
+          }),
         }),
         this.prisma.order.count({
-          where: { status: { in: ACTIVE_ORDER_STATUSES } },
+          where: effectiveOrderWhere({ status: { in: ACTIVE_ORDER_STATUSES } }),
         }),
         this.prisma.order.aggregate({
-          where: {
+          where: effectiveOrderWhere({
             status: { not: OrderStatus.CANCELLED },
             createdAt: { gte: todayStart, lt: tomorrowStart },
-          },
+          }),
           _sum: { totalAmountVnd: true },
         }),
         this.prisma.order.count({
-          where: {
+          where: effectiveOrderWhere({
             status: OrderStatus.COMPLETED,
             createdAt: { gte: todayStart, lt: tomorrowStart },
-          },
+          }),
         }),
       ]);
 
@@ -122,6 +123,7 @@ export class PlatformOrdersService {
       merchantDistrict: order.merchant.district,
       orderType: order.orderType,
       status: order.status,
+      voidedAt: order.voidedAt?.toISOString() ?? null,
       totalAmount: order.totalAmountVnd.toString(),
       contactName: order.contactName,
       contactPhone: order.contactPhone,

@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { MerchantOrdersService } from './merchant-orders.service';
 
 describe('MerchantOrdersService printing outbox', () => {
@@ -169,7 +170,7 @@ describe('MerchantOrdersService printing outbox', () => {
     await service.transition(7n, 3n, 39n, 'COMPLETE', undefined, paymentMethod);
 
     expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 39n, merchantId: 7n, status: 'READY' },
+      where: effectiveOrderWhere({ id: 39n, merchantId: 7n, status: 'READY' }),
       data: expect.objectContaining({
         status: 'COMPLETED',
         completedAt: expect.any(Date),

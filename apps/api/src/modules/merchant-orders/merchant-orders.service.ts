@@ -1,3 +1,4 @@
+import { effectiveOrderWhere, lockEffectivePrintTarget } from '../orders/effective-order';
 import {
   BadRequestException,
   ConflictException,
@@ -196,12 +197,12 @@ export class MerchantOrdersService {
       dateWhere = businessDateCandidateWhere(schedule, requestedDate);
     }
     const orders = await this.prisma.order.findMany({
-      where: {
+      where: effectiveOrderWhere({
         merchantId,
         status: query.status ?? (query.statuses?.length ? { in: query.statuses } : undefined),
         orderType: query.orderType,
         ...dateWhere,
-      },
+      }),
       include: this.listInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
@@ -228,12 +229,12 @@ export class MerchantOrdersService {
       dateWhere = businessDateCandidateWhere(schedule, requestedDate);
     }
     const orders = await this.prisma.order.findMany({
-      where: {
+      where: effectiveOrderWhere({
         merchantId,
         status: query.status ?? (query.statuses?.length ? { in: query.statuses } : undefined),
         orderType: query.orderType,
         ...dateWhere,
-      },
+      }),
       select: {
         id: true,
         status: true,
@@ -346,7 +347,7 @@ export class MerchantOrdersService {
 
   async get(merchantId: bigint, id: bigint) {
     const order = await this.prisma.order.findFirst({
-      where: { id, merchantId },
+      where: effectiveOrderWhere({ id, merchantId }),
       include: this.detailInclude,
     });
     if (!order) {
@@ -1190,7 +1191,7 @@ export class MerchantOrdersService {
 
       for (const orderId of [...touchedOrderIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)) {
         const order = await tx.order.findFirst({
-          where: { id: orderId, merchantId, tableSessionId: sessionId },
+          where: effectiveOrderWhere({ id: orderId, merchantId, tableSessionId: sessionId }),
           select: { id: true, status: true, deliveryFeeVnd: true },
         });
         if (!order) {
@@ -1235,12 +1236,12 @@ export class MerchantOrdersService {
           });
         } else {
           const cancelled = await tx.order.updateMany({
-            where: {
+            where: effectiveOrderWhere({
               id: orderId,
               merchantId,
               tableSessionId: sessionId,
               status: order.status,
-            },
+            }),
             data: {
               status: 'CANCELLED',
               cancelledAt: new Date(),
@@ -1473,7 +1474,7 @@ export class MerchantOrdersService {
   ) {
     const transitioned = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
-        where: { id, merchantId },
+        where: effectiveOrderWhere({ id, merchantId }),
         select: {
           id: true,
           status: true,
@@ -1519,7 +1520,7 @@ export class MerchantOrdersService {
             : undefined,
       };
       const updated = await tx.order.updateMany({
-        where: { id, merchantId, status: rule.from },
+        where: effectiveOrderWhere({ id, merchantId, status: rule.from }),
         data,
       });
       if (updated.count !== 1) {
@@ -1585,11 +1586,11 @@ export class MerchantOrdersService {
 
     const schedule = normalizeBusinessHours(merchant.businessHours);
     const candidates = await this.prisma.order.findMany({
-      where: {
+      where: effectiveOrderWhere({
         merchantId,
         status: 'COMPLETED',
         ...businessDateCandidateWhere(schedule, businessDate),
-      },
+      }),
       include: {
         table: {
           select: { id: true, tableNo: true, tableName: true },
@@ -1736,7 +1737,7 @@ export class MerchantOrdersService {
         createdByStaffId: staffId,
       });
       const orderRef = await tx.order.findFirst({
-        where: { id: orderId, merchantId },
+        where: effectiveOrderWhere({ id: orderId, merchantId }),
         select: {
           id: true,
           tableId: true,
@@ -1965,12 +1966,12 @@ export class MerchantOrdersService {
       }, 0);
       if (!cancelEmptyOrder) {
         const updated = await tx.order.updateMany({
-          where: {
+          where: effectiveOrderWhere({
             id: orderId,
             merchantId,
             status: order.status,
             tableSessionId: orderRef.tableSessionId,
-          },
+          }),
           data: {
             itemAmountVnd: afterOrderItemAmountVnd,
             totalAmountVnd: afterOrderAmountVnd,
@@ -2036,12 +2037,12 @@ export class MerchantOrdersService {
         } else {
           const cancelledAt = new Date();
           const cancelled = await tx.order.updateMany({
-            where: {
+            where: effectiveOrderWhere({
               id: orderId,
               merchantId,
               status: order.status,
               tableSessionId: orderRef.tableSessionId,
-            },
+            }),
             data: {
               status: 'CANCELLED',
               cancelledAt,
@@ -2335,8 +2336,9 @@ export class MerchantOrdersService {
 
   settle(merchantId: bigint, id: bigint) {
     return this.prisma.$transaction(async (tx) => {
+      await lockEffectivePrintTarget(tx, merchantId, { orderId: id });
       const order = await tx.order.findFirst({
-        where: { id, merchantId },
+        where: effectiveOrderWhere({ id, merchantId }),
         select: { id: true, settlementStatus: true },
       });
       if (!order) {
@@ -2344,7 +2346,7 @@ export class MerchantOrdersService {
       }
       if (order.settlementStatus === 'UNSETTLED') {
         await tx.order.updateMany({
-          where: { id, merchantId, settlementStatus: 'UNSETTLED' },
+          where: effectiveOrderWhere({ id, merchantId, settlementStatus: 'UNSETTLED' }),
           data: { settlementStatus: 'SETTLED' },
         });
       }
@@ -2416,8 +2418,9 @@ export class MerchantOrdersService {
     source: 'ROUNDING' | 'ADJUSTMENT',
   ) {
     const order = await this.prisma.$transaction(async (tx) => {
+      await lockEffectivePrintTarget(tx, merchantId, { orderId: id });
       const current = await tx.order.findFirst({
-        where: { id, merchantId },
+        where: effectiveOrderWhere({ id, merchantId }),
         select: {
           id: true,
           orderType: true,
@@ -2503,14 +2506,14 @@ export class MerchantOrdersService {
 
       const now = new Date();
       const updated = await tx.order.updateMany({
-        where: {
+        where: effectiveOrderWhere({
           id,
           merchantId,
           orderType: current.orderType,
           status: current.status,
           settlementStatus: 'UNSETTLED',
           updatedAt: current.updatedAt,
-        },
+        }),
         data: {
           ...(discountChanged
             ? {
@@ -2606,7 +2609,7 @@ export class MerchantOrdersService {
     id: bigint,
   ) {
     return tx.order.findFirstOrThrow({
-      where: { id, merchantId },
+      where: effectiveOrderWhere({ id, merchantId }),
       include: this.detailInclude,
     });
   }

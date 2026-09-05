@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { Injectable } from '@nestjs/common';
 import { MerchantStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -36,24 +37,24 @@ export class PlatformDashboardService {
       rankingGroups,
     ] = await Promise.all([
       this.prisma.order.count({
-        where: {
+        where: effectiveOrderWhere({
           status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: todayStart, lt: tomorrowStart },
-        },
+        }),
       }),
       this.prisma.order.aggregate({
-        where: {
+        where: effectiveOrderWhere({
           status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: todayStart, lt: tomorrowStart },
-        },
+        }),
         _sum: { totalAmountVnd: true },
       }),
       this.prisma.order.groupBy({
         by: ['merchantId'],
-        where: {
+        where: effectiveOrderWhere({
           status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: todayStart, lt: tomorrowStart },
-        },
+        }),
       }),
       this.prisma.merchant.count({
         where: {
@@ -62,23 +63,23 @@ export class PlatformDashboardService {
         },
       }),
       this.prisma.order.count({
-        where: { status: OrderStatus.PENDING_ACCEPTANCE },
+        where: effectiveOrderWhere({ status: OrderStatus.PENDING_ACCEPTANCE }),
       }),
       this.prisma.order.count({
-        where: { status: { in: PREPARING_STATUSES } },
+        where: effectiveOrderWhere({ status: { in: PREPARING_STATUSES } }),
       }),
       this.prisma.order.count({
-        where: {
+        where: effectiveOrderWhere({
           status: OrderStatus.PENDING_ACCEPTANCE,
           createdAt: { lt: longPendingBefore },
-        },
+        }),
       }),
       this.prisma.order.groupBy({
         by: ['merchantId'],
-        where: {
+        where: effectiveOrderWhere({
           status: OrderStatus.CANCELLED,
           createdAt: { gte: last7Start, lt: tomorrowStart },
-        },
+        }),
         _count: { _all: true },
       }),
       this.prisma.merchant.findMany({
@@ -86,10 +87,10 @@ export class PlatformDashboardService {
         select: { homepageCategoryKeys: true },
       }),
       this.prisma.order.findMany({
-        where: {
+        where: effectiveOrderWhere({
           status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: last7Start, lt: tomorrowStart },
-        },
+        }),
         select: {
           merchantId: true,
           totalAmountVnd: true,
@@ -98,10 +99,10 @@ export class PlatformDashboardService {
       }),
       this.prisma.order.groupBy({
         by: ['merchantId'],
-        where: {
+        where: effectiveOrderWhere({
           status: { not: OrderStatus.CANCELLED },
           createdAt: { gte: todayStart, lt: tomorrowStart },
-        },
+        }),
         _count: { _all: true },
         _sum: { totalAmountVnd: true },
         orderBy: [{ _count: { id: 'desc' } }],

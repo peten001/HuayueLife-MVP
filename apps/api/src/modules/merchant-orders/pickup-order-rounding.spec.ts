@@ -25,6 +25,7 @@ function buildHarness(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([{ table_session_id: null, voided_at: null }]),
     order: {
       findFirst: jest.fn().mockResolvedValue(current),
       findFirstOrThrow: jest.fn().mockResolvedValue(current),

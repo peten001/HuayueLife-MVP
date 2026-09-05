@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -182,11 +183,11 @@ export class MerchantAnalyticsService {
     endDate: string,
   ) {
     return this.prisma.order.findMany({
-      where: {
+      where: effectiveOrderWhere({
         merchantId,
         status: OrderStatus.COMPLETED,
         ...businessDateRangeCandidateWhere(startDate, endDate),
-      },
+      }),
       select: {
         id: true,
         orderNo: true,

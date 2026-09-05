@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { MerchantOrdersService } from './merchant-orders.service';
 
 describe('MerchantOrdersService table ordering and item adjustments', () => {
@@ -554,7 +555,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     });
   });
 
-  it.each(['ACCEPTED', 'PREPARING', 'READY'])(
+  it.each(['ACCEPTED', 'PREPARING', 'READY'] as const)(
     'returns an item in allowed status %s',
     async (status) => {
       const tx = adjustmentTx(status);
@@ -597,7 +598,7 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
     expect(tx.order.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each(['ACCEPTED', 'PREPARING', 'READY'])(
+  it.each(['ACCEPTED', 'PREPARING', 'READY'] as const)(
     'returns the final table item in %s, cancels the empty order, and keeps the table session open',
     async (status) => {
       const tx = adjustmentTx(status, { otherItemCount: 0 });
@@ -613,12 +614,12 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
 
       expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
       expect(tx.order.updateMany).toHaveBeenCalledWith({
-        where: {
+        where: effectiveOrderWhere({
           id: 41n,
           merchantId: 7n,
           status,
           tableSessionId: 51n,
-        },
+        }),
         data: expect.objectContaining({
           status: 'CANCELLED',
           cancelledAt: expect.any(Date),
@@ -658,12 +659,12 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
 
     expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
     expect(tx.order.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: effectiveOrderWhere({
         id: 41n,
         merchantId: 7n,
         status: 'ACCEPTED',
         tableSessionId: 51n,
-      },
+      }),
       data: { itemAmountVnd: 1000n, totalAmountVnd: 1000n },
     });
     expect(tx.order.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({

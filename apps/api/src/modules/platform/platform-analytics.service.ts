@@ -1,3 +1,4 @@
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -35,7 +36,7 @@ export class PlatformAnalyticsService {
     const where = this.buildWhere(query, range);
     const [orders] = await Promise.all([
       this.prisma.order.findMany({
-        where,
+        where: effectiveOrderWhere(where),
         select: {
           id: true,
           merchantId: true,

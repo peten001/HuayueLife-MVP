@@ -10,6 +10,9 @@ import {
 } from '@/api/orders';
 import { errorMessage } from '@/api/http';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
+import OrderVoidAction from '@/components/OrderVoidAction.vue';
+import OrderVoidHistory from '@/components/OrderVoidHistory.vue';
+import { useOrderVoidText } from '@/i18n/order-void';
 import PageHeader from '@/components/PageHeader.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import {
@@ -61,6 +64,14 @@ const route = useRoute();
 const router = useRouter();
 const { locale, t } = useI18n();
 const merchant = getMerchantStaff()?.merchant ?? null;
+const canVoidOrders = getMerchantStaff()?.role === 'OWNER';
+const voidCopy = useOrderVoidText();
+const archiveOpen = ref(false);
+async function afterOrderVoid() {
+  closeSettlementDetail();
+  await load();
+  message.value = voidCopy.value.success;
+}
 const rows = ref<MerchantOrder[]>([]);
 const settlements = ref<MerchantSettlement[]>([]);
 const settlementLoading = ref(false);
@@ -1124,7 +1135,12 @@ function todayInVietnam() {
 
 <template>
   <div class="merchant-orders-page">
-    <div class="orders-desktop-view desktop-only">
+    <div v-if="canVoidOrders" class="order-void-ui void-actions" :aria-label="t('status')">
+      <button class="void-button" type="button" :aria-pressed="!archiveOpen" @click="archiveOpen = false">{{ voidCopy.effective }}</button>
+      <button class="void-button" type="button" :aria-pressed="archiveOpen" @click="archiveOpen = true">{{ voidCopy.archive }}</button>
+    </div>
+    <OrderVoidHistory v-if="archiveOpen && canVoidOrders" :date="filters.date" />
+    <div v-if="!archiveOpen" class="orders-desktop-view desktop-only">
       <PageHeader
         :title="t('orders')"
         :description="localLabel({
@@ -1449,7 +1465,7 @@ function todayInVietnam() {
       </section>
     </div>
 
-    <section class="orders-mobile-view mobile-only">
+    <section v-if="!archiveOpen" class="orders-mobile-view mobile-only">
       <header class="orders-mobile-header">
         <div>
           <strong class="orders-mobile-title">{{ t('orders') }}</strong>
@@ -1701,6 +1717,7 @@ function todayInVietnam() {
             <strong>{{ settlementPrimaryLabel(selectedSettlement) }}</strong>
             <span>{{ t('settlementCountOrders', { count: selectedSettlement.orderCount, count2: selectedSettlement.itemQuantity }) }}</span>
           </div>
+          <OrderVoidAction v-if="canVoidOrders" :target="selectedSettlement.settlementId" @done="afterOrderVoid" />
           <button type="button" class="settlement-dialog__close" :aria-label="t('close')" @click="closeSettlementDetail">×</button>
         </header>
         <div class="settlement-dialog__body">

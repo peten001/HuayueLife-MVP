@@ -1,4 +1,5 @@
 import { PaymentMethod, Prisma } from '@prisma/client';
+import { isEffectiveOrder } from '../orders/effective-order';
 import {
   addBusinessDays,
   assertBusinessDate,
@@ -100,6 +101,7 @@ export function businessDateSnapshotValue(scheduleValue: unknown, at: Date): Dat
 }
 
 export type SessionAttributionOrder = {
+  voidedAt?: Date | null;
   id: bigint;
   totalAmountVnd: bigint;
   tableSessionId: bigint | null;
@@ -108,6 +110,7 @@ export type SessionAttributionOrder = {
   roundingAmountVnd?: bigint | null;
   paymentMethod?: PaymentMethod | null;
   tableSession?: {
+    voidedAt?: Date | null;
     status?: string | null;
     discountAmountVnd?: bigint | null;
     roundingAmountVnd?: bigint | null;
@@ -146,6 +149,7 @@ export interface CompletedRevenueTotals {
 export function attributeOrderRevenue(
   orders: SessionAttributionOrder[],
 ): Map<bigint, OrderRevenueAttribution> {
+  orders = orders.filter(isEffectiveOrder);
   const attribution = new Map<bigint, OrderRevenueAttribution>();
   const sessions = new Map<string, SessionAttributionOrder[]>();
   for (const order of orders) {
@@ -197,6 +201,7 @@ export function completedRevenueTotals(
   orders: SessionAttributionOrder[],
   attribution: Map<bigint, OrderRevenueAttribution> = attributeOrderRevenue(orders),
 ): CompletedRevenueTotals {
+  orders = orders.filter(isEffectiveOrder);
   const totals: CompletedRevenueTotals = {
     orderCount: 0,
     grossAmountVnd: 0n,

@@ -2736,10 +2736,11 @@ describe('PrintJobsService', () => {
       const first = await service.binaryArtifact(merchantId, terminalId, 301n);
       const second = await service.binaryArtifact(merchantId, terminalId, 301n);
 
-      expect(first.payload).toEqual(payload);
+      // Compare every byte without Jest enumerating millions of Buffer keys.
+      expect(Buffer.compare(first.payload, payload)).toBe(0);
       expect(first.byteLength).toBe(payload.length);
       expect(first.sha256).toBe(sha256);
-      expect(second.payload).toEqual(first.payload);
+      expect(Buffer.compare(second.payload, first.payload)).toBe(0);
       expect(prisma.printJob.updateMany).not.toHaveBeenCalled();
     },
   );
@@ -3262,7 +3263,7 @@ function createPrismaMock() {
       findUniqueOrThrow: jest.fn(),
       updateMany: jest.fn(),
     },
-    $queryRaw: jest.fn().mockResolvedValue([{ id: merchantId }]),
+    $queryRaw: jest.fn().mockResolvedValue([{ id: merchantId, table_session_id: null, voided_at: null }]),
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>

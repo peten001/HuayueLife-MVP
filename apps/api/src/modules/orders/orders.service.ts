@@ -711,6 +711,11 @@ export class OrdersService {
   private serializeCustomerOrder<
     T extends {
       createdByStaffId: bigint | null;
+      voidedAt?: Date | null;
+      voidedByStaffId?: bigint | null;
+      voidReason?: string | null;
+      voidReasonNote?: string | null;
+      voidOperationId?: string | null;
       orderType: OrderType;
       orderNo: string;
       createdAt: Date;
@@ -723,7 +728,12 @@ export class OrdersService {
       }>;
     },
   >(order: T) {
-    const { createdByStaffId: _createdByStaffId, ...withoutCreator } = order;
+    const {
+      createdByStaffId: _createdByStaffId,
+      voidedAt: _voidedAt, voidedByStaffId: _voidedByStaffId,
+      voidReason: _voidReason, voidReasonNote: _voidReasonNote, voidOperationId: _voidOperationId,
+      ...withoutCreator
+    } = order;
     if (!order.statusLogs) {
       return withPickupFulfillmentFields(withoutCreator);
     }

@@ -1,3 +1,4 @@
+import { lockEffectivePrintTarget } from '../../orders/effective-order';
 import {
   BadRequestException,
   ConflictException,
@@ -83,6 +84,7 @@ export class PrintAttemptsService {
     const networkInfo = normalizeNetworkInfo(input.networkInfo);
     return this.prisma.$transaction(async (tx) => {
       const job = await this.requireOwnedJob(tx, input.merchantId, input.jobId);
+      await lockEffectivePrintTarget(tx, input.merchantId, job);
       await this.assertStartStillEnabled(
         tx,
         input.merchantId,

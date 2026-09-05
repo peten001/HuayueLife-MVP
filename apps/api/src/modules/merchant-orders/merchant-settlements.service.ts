@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { effectiveOrderWhere } from '../orders/effective-order';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { addBusinessDays } from '../../common/utils/merchant-hours';
 import { normalizeBusinessHours } from '../../common/utils/merchant-hours';
@@ -129,7 +130,7 @@ export class MerchantSettlementsService {
       ).OR;
     }
     const rows = await this.prisma.order.findMany({
-      where,
+      where: effectiveOrderWhere(where),
       include: {
         tableSession: {
           select: {
