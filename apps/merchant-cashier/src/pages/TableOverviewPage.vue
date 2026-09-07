@@ -72,6 +72,11 @@ const retainedCheckout = ref<{ sessionId: string; paymentMethod: PaymentMethod; 
 const retainedProductionNotification = ref<{ sessionId: string; requestKey: string } | null>(null);
 const pendingInitialItems = ref(new Map<string, number>());
 const pendingInitialTableId = ref('');
+// The menu represents one add-dish round. The bill remains canonical, while
+// product cards show only quantities chosen since this menu entry.
+const currentMenuSelectionQuantities = ref<Record<string, number>>({});
+const currentMenuBaseQuantities = ref<Record<string, number>>({});
+const currentMenuBaseReady = ref(false);
 const retainedInitialBatch = ref<{ tableId: string; input: CreateMerchantTableOrderInput } | null>(null);
 const initialBatchSyncing = ref(false);
 const resettingMenuSelection = ref(false);
@@ -109,6 +114,7 @@ const canonicalController = useDineInCanonicalStateController({
   onFailure: (caught) => {
     const uncertain = isMutationOutcomeUncertain(caught);
     uiStore.pushToast(t(uncertain ? 'mutation.outcomeUncertain' : apiErrorTranslationKey(caught, 'error.operationFailed')), uncertain ? 'warning' : 'error');
+    if (!uncertain) reconcileCurrentMenuSelectionFromCanonical();
   },
 });
 const presentedCanonicalState = computed(() => {
@@ -129,17 +135,6 @@ const orderingMutationLocked = computed(() => (
     && pendingInitialTableId.value !== selectedTableId.value
   )
 ));
-const orderingProductQuantities = computed(() => {
-  const quantities = canonicalController.canonicalState.value?.tableId === selectedTableId.value
-    ? { ...canonicalController.productQuantities.value }
-    : {};
-  if (pendingInitialTableId.value === selectedTableId.value) {
-    for (const [productId, quantity] of pendingInitialItems.value) {
-      quantities[productId] = (quantities[productId] ?? 0) + quantity;
-    }
-  }
-  return quantities;
-});
 const canCheckout = computed(() => Boolean(
   session.value?.status === 'OPEN'
   && presentedCanonicalState.value
@@ -161,6 +156,55 @@ const availableTableCount = computed(() => tableCards.value.filter((table) => ta
 const inUseTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length);
 const filteredTables = computed(() => tableCards.value.filter((table) => activeStatus.value === 'ALL' || table.operationalStatus === activeStatus.value));
 
+function adjustCurrentMenuSelection(productId: string, delta: number) {
+  const next = { ...currentMenuSelectionQuantities.value };
+  const quantity = Math.max(0, (next[productId] ?? 0) + delta);
+  if (quantity > 0) next[productId] = quantity;
+  else delete next[productId];
+  currentMenuSelectionQuantities.value = next;
+  return quantity;
+}
+
+function clearCurrentMenuSelection() {
+  currentMenuSelectionQuantities.value = {};
+}
+
+function captureCurrentMenuBase() {
+  if (!session.value) {
+    currentMenuBaseQuantities.value = {};
+    currentMenuBaseReady.value = Boolean(
+      selectedTable.value && selectedTable.value.operationalStatus !== 'IN_USE',
+    );
+    return currentMenuBaseReady.value;
+  }
+  if (canonicalController.canonicalState.value?.tableId !== selectedTableId.value) return false;
+  currentMenuBaseQuantities.value = { ...canonicalController.productQuantities.value };
+  currentMenuBaseReady.value = true;
+  return true;
+}
+
+function beginCurrentMenuSelectionRound() {
+  clearCurrentMenuSelection();
+  currentMenuBaseQuantities.value = {};
+  currentMenuBaseReady.value = false;
+  captureCurrentMenuBase();
+}
+
+function reconcileCurrentMenuSelectionFromCanonical() {
+  if (!currentMenuBaseReady.value || activeMainTab.value !== 'MENU') return;
+  const canonicalQuantities = canonicalController.productQuantities.value;
+  const next: Record<string, number> = {};
+  for (const [productId, selectedQuantity] of Object.entries(currentMenuSelectionQuantities.value)) {
+    const committedIncrease = Math.max(
+      0,
+      (canonicalQuantities[productId] ?? 0) - (currentMenuBaseQuantities.value[productId] ?? 0),
+    );
+    const retainedQuantity = Math.min(selectedQuantity, committedIncrease);
+    if (retainedQuantity > 0) next[productId] = retainedQuantity;
+  }
+  currentMenuSelectionQuantities.value = next;
+}
+
 async function reconcilePendingOrderingMutations() {
   if (initialBatchTimer) {
     clearTimeout(initialBatchTimer);
@@ -181,14 +225,24 @@ async function addMenuProduct(productId: string) {
   if (!session.value) {
     pendingInitialTableId.value ||= selectedTableId.value;
     const next = new Map(pendingInitialItems.value);
-    next.set(productId, Math.min(999, (next.get(productId) ?? 0) + 1));
+    const previousQuantity = next.get(productId) ?? 0;
+    const nextQuantity = Math.min(999, previousQuantity + 1);
+    if (nextQuantity === previousQuantity) return;
+    next.set(productId, nextQuantity);
     pendingInitialItems.value = next;
+    adjustCurrentMenuSelection(productId, nextQuantity - previousQuantity);
     scheduleInitialBatch();
     return;
   }
   try {
     if (!canonicalController.canonicalState.value) await canonicalController.load(true);
+    if (!currentMenuBaseReady.value) captureCurrentMenuBase();
+    const previousQuantity = canonicalController.productQuantities.value[productId] ?? 0;
     canonicalController.addProduct(productId);
+    const nextQuantity = canonicalController.productQuantities.value[productId] ?? 0;
+    if (nextQuantity > previousQuantity) {
+      adjustCurrentMenuSelection(productId, nextQuantity - previousQuantity);
+    }
   } catch (caught) {
     uiStore.pushToast(t(apiErrorTranslationKey(caught, 'ordering.createFailed')), 'error');
     await refreshAdjustmentContext(true);
@@ -197,6 +251,7 @@ async function addMenuProduct(productId: string) {
 
 function decreaseMenuProduct(productId: string) {
   if (writeDisabled.value || orderingMutationLocked.value) return;
+  if ((currentMenuSelectionQuantities.value[productId] ?? 0) <= 0) return;
   const pendingQuantity = pendingInitialItems.value.get(productId) ?? 0;
   if (pendingQuantity > 0) {
     const next = new Map(pendingInitialItems.value);
@@ -210,12 +265,20 @@ function decreaseMenuProduct(productId: string) {
         initialBatchTimer = null;
       }
     }
+    adjustCurrentMenuSelection(productId, -1);
     return;
   }
   const line = presentedCanonicalState.value?.items.find((item) => (
     item.productId === productId && item.quantity > item.lockedQuantity
   ));
-  if (line) canonicalController.decreaseLine(line);
+  if (line) {
+    const previousQuantity = canonicalController.productQuantities.value[productId] ?? 0;
+    canonicalController.decreaseLine(line);
+    const nextQuantity = canonicalController.productQuantities.value[productId] ?? 0;
+    if (nextQuantity < previousQuantity) {
+      adjustCurrentMenuSelection(productId, nextQuantity - previousQuantity);
+    }
+  }
 }
 
 async function resetMenuSelection() {
@@ -226,17 +289,13 @@ async function resetMenuSelection() {
       clearTimeout(initialBatchTimer);
       initialBatchTimer = null;
     }
-    pendingInitialItems.value = new Map();
-    pendingInitialTableId.value = '';
     if (initialBatchRequest) await initialBatchRequest;
-    if (!session.value) return;
-    if (!presentedCanonicalState.value) await canonicalController.load(true);
-    const adjustableLines = [...(presentedCanonicalState.value?.items ?? [])];
-    for (const initialLine of adjustableLines) {
-      for (let remaining = initialLine.adjustableQuantity; remaining > 0; remaining -= 1) {
-        const current = presentedCanonicalState.value?.items.find((item) => item.lineKey === initialLine.lineKey);
-        if (!current || current.quantity <= current.lockedQuantity) break;
-        canonicalController.decreaseLine(current);
+    const selectedQuantities = { ...currentMenuSelectionQuantities.value };
+    for (const [productId, quantity] of Object.entries(selectedQuantities)) {
+      for (let remaining = quantity; remaining > 0; remaining -= 1) {
+        const before = currentMenuSelectionQuantities.value[productId] ?? 0;
+        decreaseMenuProduct(productId);
+        if ((currentMenuSelectionQuantities.value[productId] ?? 0) >= before) break;
       }
     }
   } finally {
@@ -306,6 +365,7 @@ async function syncInitialBatch(retry = retainedInitialBatch.value) {
         for (const sent of batch.input.items) {
           const quantity = Math.max(0, (remaining.get(sent.productId) ?? 0) - sent.quantity);
           if (quantity) remaining.set(sent.productId, quantity); else remaining.delete(sent.productId);
+          adjustCurrentMenuSelection(sent.productId, -sent.quantity);
         }
         pendingInitialItems.value = remaining;
         if (!remaining.size) pendingInitialTableId.value = '';
@@ -615,6 +675,15 @@ function backToTables() {
 onBeforeRouteUpdate((to) => guardMutationNavigation(to));
 onBeforeRouteLeave((to) => guardMutationNavigation(to));
 watch(() => [route.params.tableId, route.query.order, tableCards.value.length], () => void syncRouteSelection(), { immediate: true });
+watch(activeMainTab, (tab, previousTab) => {
+  if (tab === 'MENU' && previousTab !== 'MENU') beginCurrentMenuSelectionRound();
+  else if (tab !== 'MENU') clearCurrentMenuSelection();
+}, { immediate: true });
+watch(selectedTableId, (tableId, previousTableId) => {
+  if (tableId === previousTableId) return;
+  if (activeMainTab.value === 'MENU') beginCurrentMenuSelectionRound();
+  else clearCurrentMenuSelection();
+});
 watch(() => [session.value?.id || '', routeTableId.value] as const, async ([sessionId, currentRouteTableId], previous) => {
   const sequence = ++sessionSequence;
   if (
@@ -622,7 +691,10 @@ watch(() => [session.value?.id || '', routeTableId.value] as const, async ([sess
     && currentRouteTableId === previous?.[1]
   ) return;
   if (currentRouteTableId !== selectedTableId.value) return;
-  if (sessionId && canonicalController.canonicalState.value?.sessionId === sessionId) return;
+  if (sessionId && canonicalController.canonicalState.value?.sessionId === sessionId) {
+    if (activeMainTab.value === 'MENU' && !currentMenuBaseReady.value) captureCurrentMenuBase();
+    return;
+  }
   if (orderingMutationPending.value && !(await reconcilePendingOrderingMutations())) return;
   if (
     sequence !== sessionSequence
@@ -632,7 +704,10 @@ watch(() => [session.value?.id || '', routeTableId.value] as const, async ([sess
   canonicalController.reset();
   retainedCheckout.value = null;
   retainedProductionNotification.value = null;
-  if (sessionId) await canonicalController.load(true).catch(() => uiStore.pushToast(t('error.refreshFailed'), 'error'));
+  if (sessionId) {
+    await canonicalController.load(true).catch(() => uiStore.pushToast(t('error.refreshFailed'), 'error'));
+    if (activeMainTab.value === 'MENU' && !currentMenuBaseReady.value) captureCurrentMenuBase();
+  }
 }, { flush: 'post' });
 watch(presentedCanonicalState, (state) => {
   if (state) tablesStore.applyCanonicalTableSnapshot(state);
@@ -680,7 +755,7 @@ onBeforeUnmount(() => {
           :session-id="session?.id || ''"
           :disabled="writeDisabled || resettingMenuSelection || openingCurrentOrder"
           :top-dialog-open="topOrderingDialogOpen"
-          :product-quantities="orderingProductQuantities"
+          :product-quantities="currentMenuSelectionQuantities"
           :mutation-locked="orderingMutationLocked"
           :mobile-v2-presentation="mobileV2Presentation"
           @close="mobileV2Presentation ? backToTables() : closeOrdering()"

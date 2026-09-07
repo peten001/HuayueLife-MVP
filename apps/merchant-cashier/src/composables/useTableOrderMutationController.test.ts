@@ -97,6 +97,9 @@ describe('useTableOrderMutationController', () => {
     expect(pageSource).not.toContain('orderingWorkspace.value?.');
     expect(pageSource).toContain('canonicalController.addProduct(');
     expect(pageSource).toContain('pendingInitialItems');
+    expect(pageSource).toContain('currentMenuSelectionQuantities');
+    expect(pageSource).toContain(':product-quantities="currentMenuSelectionQuantities"');
+    expect(pageSource).not.toContain(':product-quantities="orderingProductQuantities"');
     expect(pageSource).toContain('createMerchantTableOrder(batch.tableId, batch.input)');
     expect(pageSource).not.toContain('items: [],');
     expect(pageSource).toContain("activeMainTab === 'MENU'");
