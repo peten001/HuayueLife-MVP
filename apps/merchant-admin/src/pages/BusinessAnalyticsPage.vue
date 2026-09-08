@@ -13,7 +13,7 @@ import BusinessTrendChart from '@/components/BusinessTrendChart.vue';
 import { useI18n } from '@/i18n';
 import { resolveMediaUrl } from '@/utils/media';
 
-type Preset = 'today' | 'sevenDays' | 'thirtyDays' | 'custom';
+type Preset = 'today' | 'yesterday' | 'sevenDays' | 'custom';
 
 const { locale } = useI18n();
 const analytics = ref<MerchantAnalyticsResponse | null>(null);
@@ -31,7 +31,7 @@ const filters = reactive({ dateFrom: today, dateTo: today });
 
 const copyByLocale = {
   zh: {
-    title: '经营分析', subtitle: '数据驱动经营，让生意更好做', today: '今日', sevenDays: '近7天', thirtyDays: '近30天', custom: '自定义',
+    title: '经营分析', subtitle: '数据驱动经营，让生意更好做', today: '今日', yesterday: '昨日', sevenDays: '近7天', custom: '自定义',
     startDate: '开始日期', endDate: '结束日期', apply: '应用日期', revenue: '净营业额', orders: '结账笔数', averageOrder: '客单价', topDish: '热销菜品', growth: '同比增长',
     fundsTitle: '资金概览', fundsDescription: '已完成订单净额：堂食按开台营业日，自取/配送按下单营业日', discountAmount: '折扣金额', roundingAmount: '抹零金额', netRevenue: '净营业额', cashRevenue: '现金收入', bankTransferRevenue: '银行转账收入', unrecordedRevenue: '历史未记录',
     orderUnit: '笔', salesUnit: '份', noData: '暂无数据', noComparison: '暂无可比数据', comparedWith: '较上一周期', briefTitle: 'AI经营简报',
@@ -45,7 +45,7 @@ const copyByLocale = {
     suggestionCards: ['主推菜品与备货', '高峰时段准备', '周期经营观察'],
   },
   vi: {
-    title: 'Phân tích kinh doanh', subtitle: 'Dữ liệu giúp vận hành tốt hơn mỗi ngày', today: 'Hôm nay', sevenDays: '7 ngày', thirtyDays: '30 ngày', custom: 'Tùy chọn',
+    title: 'Phân tích kinh doanh', subtitle: 'Dữ liệu giúp vận hành tốt hơn mỗi ngày', today: 'Hôm nay', yesterday: 'Hôm qua', sevenDays: '7 ngày qua', custom: 'Tùy chọn',
     startDate: 'Từ ngày', endDate: 'Đến ngày', apply: 'Áp dụng', revenue: 'Doanh thu ròng', orders: 'Số lần thanh toán', averageOrder: 'Giá trị TB', topDish: 'Món bán chạy', growth: 'Tăng trưởng',
     fundsTitle: 'Tổng quan tiền mặt', fundsDescription: 'Doanh thu ròng của đơn hoàn tất: theo ngày kinh doanh mở bàn; mang đi/giao hàng theo ngày kinh doanh đặt đơn', discountAmount: 'Tiền giảm giá', roundingAmount: 'Tiền làm tròn', netRevenue: 'Doanh thu ròng', cashRevenue: 'Tiền mặt', bankTransferRevenue: 'Chuyển khoản', unrecordedRevenue: 'Chưa ghi nhận',
     orderUnit: 'lượt', salesUnit: 'phần', noData: 'Chưa có dữ liệu', noComparison: 'Chưa thể so sánh', comparedWith: 'So với kỳ trước', briefTitle: 'Tóm tắt AI',
@@ -59,7 +59,7 @@ const copyByLocale = {
     suggestionCards: ['Món chủ lực và tồn kho', 'Chuẩn bị giờ cao điểm', 'Theo dõi theo kỳ'],
   },
   en: {
-    title: 'Business Analytics', subtitle: 'Use real data to make better business decisions', today: 'Today', sevenDays: 'Last 7 days', thirtyDays: 'Last 30 days', custom: 'Custom',
+    title: 'Business Analytics', subtitle: 'Use real data to make better business decisions', today: 'Today', yesterday: 'Yesterday', sevenDays: 'Last 7 days', custom: 'Custom',
     startDate: 'Start date', endDate: 'End date', apply: 'Apply dates', revenue: 'Net revenue', orders: 'Settlements', averageOrder: 'Average order', topDish: 'Top dish', growth: 'Growth',
     fundsTitle: 'Funds overview', fundsDescription: 'Completed-order net amounts: dine-in by table-opening business date; pickup/delivery by order business date', discountAmount: 'Discount', roundingAmount: 'Rounding', netRevenue: 'Net revenue', cashRevenue: 'Cash', bankTransferRevenue: 'Bank transfer', unrecordedRevenue: 'Unrecorded',
     orderUnit: 'settlements', salesUnit: 'sold', noData: 'No data', noComparison: 'No comparison', comparedWith: 'Vs previous period', briefTitle: 'AI Business Brief',
@@ -180,8 +180,8 @@ function addDays(date: string, days: number) {
 async function selectPreset(preset: Exclude<Preset, 'custom'>) {
   activePreset.value = preset;
   if (preset === 'today') return loadAnalytics(true);
-  filters.dateTo = today;
-  filters.dateFrom = addDays(today, preset === 'sevenDays' ? -6 : -29);
+  filters.dateTo = preset === 'yesterday' ? addDays(today, -1) : today;
+  filters.dateFrom = preset === 'yesterday' ? filters.dateTo : addDays(today, -6);
   await loadAnalytics();
 }
 
@@ -295,9 +295,9 @@ onMounted(() => void selectPreset('today'));
   <div class="business-analytics-page">
     <section class="analytics-controls" :aria-label="copy.filtersAria">
       <div class="analytics-preset-scroll">
-        <button v-for="preset in ([['today', copy.today], ['sevenDays', copy.sevenDays], ['thirtyDays', copy.thirtyDays], ['custom', copy.custom]] as const)"
+        <button v-for="preset in ([['today', copy.today], ['yesterday', copy.yesterday], ['sevenDays', copy.sevenDays], ['custom', copy.custom]] as const)"
           :key="preset[0]" type="button" class="analytics-preset" :class="{ active: activePreset === preset[0] }"
-          :disabled="loading && activePreset === preset[0]"
+          :disabled="loading"
           @click="preset[0] === 'custom' ? selectCustom() : selectPreset(preset[0])">
           {{ preset[1] }}
         </button>

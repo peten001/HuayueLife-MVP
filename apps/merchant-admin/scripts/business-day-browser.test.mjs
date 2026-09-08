@@ -97,6 +97,10 @@ try {
     }
     await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
     if (locale === 'zh' && width === 390) {
+      const yesterdayStart = calls.length;
+      await page.getByRole('button', { name: '昨日', exact: true }).click();
+      await waitForCall(calls, call => call.path === '/merchant/analytics' && call.params.dateFrom === '2026-09-02', yesterdayStart);
+      assert.deepEqual(calls.filter(call => call.path === '/merchant/analytics').at(-1).params, { dateFrom: '2026-09-02', dateTo: '2026-09-02' });
       const sevenDayStart = calls.length;
       await page.getByRole('button', { name: '近7天', exact: true }).click();
       await waitForCall(calls, call => call.path === '/merchant/analytics' && call.params.dateFrom === '2026-08-28', sevenDayStart);
@@ -111,7 +115,7 @@ try {
       await page.getByRole('button', { name: '今日', exact: true }).click();
       await page.locator('.analytics-funds-heading span').waitFor();
       assert.deepEqual(calls.filter(call => call.path === '/merchant/analytics').at(-1).params, {});
-      result.dateChecks.push('Analytics: server opening-day default, 7-day anchor, custom date, Today reset');
+      result.dateChecks.push('Analytics: server opening-day default, previous business day, 7-day anchor, custom date, Today reset');
     }
     const orderStart = calls.length;
     await page.goto(`${base}/orders`);

@@ -21,8 +21,8 @@
   --m-danger-bg: #fff5f5;
   --m-warning: #86581d;
   --m-warning-bg: #fff3dd;
-  --m-blue: #527bb7;
-  --m-focus: #527bb7;
+  --m-blue: #2f9e44;
+  --m-focus: #2f9e44;
   --m-mask: rgb(16 38 26 / 38%);
   --m-shadow-sm: 0 1px 2px rgb(16 38 26 / 4%);
   --m-shadow: 0 8px 28px rgb(16 38 26 / 7%);
@@ -45,6 +45,8 @@
 html.merchant-workbench-root,
 .merchant-workbench-root body { overflow-x: clip; }
 .merchant-workbench * { box-sizing: border-box; }
+.merchant-workbench,
+.merchant-workbench * { -webkit-tap-highlight-color: transparent; }
 .merchant-workbench :is(h1, h2, h3, p, dd) { min-width: 0; overflow-wrap: anywhere; }
 .merchant-workbench :is(button, a, input, select, textarea):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--m-focus) 26%, transparent);

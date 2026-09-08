@@ -43,6 +43,16 @@ try {
  ]);
  await expect(page).toHaveURL(/paymentMethod=CASH/);
  assert((await page.locator('.m-record-status strong').allTextContents()).every(label=>label==='现金'));
+ const cashTabState=await page.locator('.mx-payment-tabs button').filter({hasText:'现金'}).evaluate(element=>({
+  background:getComputedStyle(element).backgroundColor,
+  tapHighlight:getComputedStyle(element).webkitTapHighlightColor,
+  underlineHeight:getComputedStyle(element,'::after').height,
+  underlineColor:getComputedStyle(element,'::after').backgroundColor,
+ }));
+ assert.equal(cashTabState.background,'rgba(0, 0, 0, 0)','selected payment tab must not gain a filled background');
+ assert.equal(cashTabState.tapHighlight,'rgba(0, 0, 0, 0)','touch interaction must not expose the browser blue highlight');
+ assert.equal(cashTabState.underlineHeight,'2px','selected payment tab must use a compact underline');
+ assert.notEqual(cashTabState.underlineColor,'rgba(0, 0, 0, 0)','selected payment underline must remain visible');
  await page.locator('.mx-payment-tabs button').first().click();
  await page.locator('.m-record-row').first().click();
  await expect(page.locator('.mx-settlement-summary')).toBeVisible();
@@ -69,6 +79,7 @@ try {
  pass('analytics failed state remains explicit and retryable');
  await page.goto(base+'/orders?date=2026-09-05');
  await expect(page.locator('.m-record-row')).toHaveCount(20);
+ assert.equal(await page.locator('.m-record-row').first().evaluate(element=>getComputedStyle(element).webkitTapHighlightColor),'rgba(0, 0, 0, 0)','order rows must not expose the browser blue tap highlight');
  await expect(page.locator('.m-unread')).toContainText('2');
  await page.locator('.m-pagination button').last().click();
  await expect(page.locator('.m-record-row')).toHaveCount(6);

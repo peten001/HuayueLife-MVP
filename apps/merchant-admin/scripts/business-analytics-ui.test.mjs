@@ -56,6 +56,11 @@ assert.doesNotMatch(page, /按结账时间|结账高峰热力图|Based on settle
 
 assert.match(api, /return response\.data\.data/, 'analytics API should return the server payload without demo remapping');
 assert.match(page, /preset === 'today'\) return loadAnalytics\(true\)/, 'Today must use the server-resolved current business date');
+assert.match(page, /preset === 'yesterday' \? addDays\(today, -1\) : today/, 'Yesterday must query the previous business date');
+assert.match(page, /preset === 'yesterday' \? filters\.dateTo : addDays\(today, -6\)/, 'Last 7 days must query the current business date plus six preceding days');
+assert.match(page, /\['today', copy\.today\], \['yesterday', copy\.yesterday\], \['sevenDays', copy\.sevenDays\], \['custom', copy\.custom\]/, 'analytics presets must be Today, Yesterday, Last 7 days, and Custom');
+assert.doesNotMatch(page, /thirtyDays|近30天|Last 30 days/, 'the retired 30-day preset must not remain');
+assert.match(page, /:disabled="loading"/, 'period switches must wait for the server-resolved business date before issuing another range');
 assert.match(page, /currentBusinessDay \? \{\} : \{ dateFrom:/, 'initial/current-day request must omit natural-date overrides');
 assert.match(page, /activePreset === preset\[0\]/, 'period buttons should expose an active state');
 assert.match(page, /analytics-brief-card \{ order: 1;/, 'mobile brief must appear before KPI cards');
@@ -86,6 +91,7 @@ assert.match(workbenchStyles, /@media \(max-width: 768px\)/, 'merchant shell sho
 assert.match(workbenchStyles, /\.m-main--analytics[\s\S]*var\(--m-bottom-nav-h\)[\s\S]*env\(safe-area-inset-bottom\)/, 'analytics content must retain mobile bottom-nav clearance');
 assert.match(workbenchStyles, /env\(safe-area-inset-bottom\)/, 'merchant shell should reserve the phone safe area');
 assert.match(workbenchStyles, /env\(safe-area-inset-top\)/, 'merchant shell should reserve the phone top safe area');
+assert.match(workbenchStyles, /-webkit-tap-highlight-color:\s*transparent/, 'merchant interactions must suppress the browser blue tap highlight');
 assert.match(indexHtml, /viewport-fit=cover/, 'viewport should opt into device safe-area coordinates');
 assert.match(workbenchStyles, /\.m-bottom-nav a \{[\s\S]*?min-height: var\(--m-bottom-nav-h\)/, 'mobile navigation targets should stay above the 44px touch floor');
 assert.match(trendChart, /chart\.js\/auto/, 'trend chart must use the existing Chart.js dependency');
