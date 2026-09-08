@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import axios from 'axios';
 import { previewOrderVoid, voidOrder, type OrderVoidPreview, type OrderVoidRecord, type VoidReason } from '@/api/order-voids';
 import { errorMessage } from '@/api/http';
@@ -67,6 +67,12 @@ async function open() {
 function closeMenu() {
   if (menu.value) menu.value.open = false;
 }
+function closeMenuFromOutside(event: PointerEvent) {
+  const root = menu.value;
+  const target = event.target;
+  if (!root?.open || !(target instanceof Node) || root.contains(target)) return;
+  closeMenu();
+}
 function close() {
   if (busy.value) return;
   previewGeneration++;
@@ -91,10 +97,15 @@ async function submit() {
   } catch (caught) { error.value = displayError(caught); }
   finally { busy.value = false; }
 }
-onBeforeUnmount(() => { previewGeneration++; dialog.value?.close(); });
+onMounted(() => document.addEventListener('pointerdown', closeMenuFromOutside, true));
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeMenuFromOutside, true);
+  previewGeneration++;
+  dialog.value?.close();
+});
 </script>
 <template>
-  <details ref="menu" class="order-void-ui void-menu" :class="{ 'void-menu--mobile-start': mobileAlign === 'start' }">
+  <details ref="menu" class="order-void-ui void-menu" :class="{ 'void-menu--mobile-start': mobileAlign === 'start' }" @click.self="closeMenu">
     <summary :aria-label="triggerLabel || copy.more"><slot name="trigger">{{ copy.more }}</slot></summary>
     <div class="void-menu-panel"><slot name="menu" :close-menu="closeMenu" /><button v-if="allowVoid" class="void-button void-button--danger" type="button" @click="open">{{ actionLabel || copy.action }}</button></div>
   </details>

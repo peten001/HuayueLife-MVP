@@ -49,6 +49,9 @@ try {
  await page.locator('.void-menu summary').click();
  await expect(page.locator('.void-menu-print')).toContainText('打印');
  await expect(page.locator('.void-menu-print')).toBeDisabled();
+ await page.mouse.click(12, 420);
+ await expect(page.locator('.void-menu')).not.toHaveAttribute('open', '');
+ await page.locator('.void-menu summary').click();
  await page.locator('.void-menu-cancel').click();
  await page.locator('.m-settlement-detail .m-record-row').first().click();
  await expect(page.locator('.m-order-detail')).toBeVisible();

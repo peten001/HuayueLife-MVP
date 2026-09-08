@@ -103,6 +103,10 @@ async function checkMenu(page) {
     `${surface} action menu stays inside the viewport: ${JSON.stringify(geometry)}`);
   assert.ok(geometry.buttonOverflow <= 1 && geometry.buttonHeight >= 44 && geometry.clickable,
     'the complete delete action is visible and clickable, including both label edges');
+  await page.mouse.click(8, Math.min(400, page.viewportSize().height - 80));
+  assert.equal(await page.locator('.void-menu').evaluate(element => element.open), false,
+    'clicking outside closes the action menu');
+  await page.locator('.void-menu summary').click();
 }
 async function openAction(page) {
   await checkMenu(page);
@@ -132,8 +136,6 @@ try {
     const state = await contextFor(locale, width); const { page } = state;
     if (menuOnly) {
       await page.goto(`${base}/orders/9001`);
-      await checkMenu(page);
-      await page.locator('.void-menu summary').click();
       await checkMenu(page);
       assert.equal(state.posts.length, 0, 'opening and reopening the menu must never void an order');
       result.views.push({ locale, width });

@@ -1,4 +1,5 @@
 import { OrderType, PaymentMethod } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
@@ -34,11 +35,13 @@ export class ListMerchantSettlementsQueryDto {
   search?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(200)
