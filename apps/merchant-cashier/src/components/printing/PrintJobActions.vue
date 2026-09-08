@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, LoaderCircle, Printer, RefreshCw, RotateCcw, TriangleAlert, WifiOff } from '@lucide/vue';
+import { LoaderCircle, Printer, RefreshCw, RotateCcw, TriangleAlert, WifiOff } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { apiErrorTranslationKey, isMutationOutcomeUncertain } from '@/api';
@@ -30,7 +30,6 @@ const reprintReason = ref('');
 const activeJobId = ref('');
 const localFeedback = ref<'IDLE' | 'ERROR' | 'UNKNOWN'>('IDLE');
 let refreshTimer: number | undefined;
-let successFeedbackTimer: number | undefined;
 
 const latestJob = computed(() => jobs.value[0] ?? null);
 const activeJob = computed(() => jobs.value.find((job) => job.id === activeJobId.value) ?? null);
@@ -48,9 +47,12 @@ const inFlightJob = computed(() => jobs.value.find((job) =>
 ) ?? null);
 const entityKey = computed(() => props.tableSessionId || props.orderId || '');
 const networkReady = computed(() => online.value && apiReachable.value === true);
-const canSubmit = computed(
+const canRequestPrint = computed(
   () => printingStore.ready && networkReady.value && !props.disabled &&
-    !submitting.value && !submitPending.value && !hasInFlightJob.value,
+    !submitting.value && !submitPending.value,
+);
+const canSubmit = computed(
+  () => canRequestPrint.value && !hasInFlightJob.value,
 );
 const statusLabel = computed(() => {
   if (availability.value === 'READY') return t('print.ready');
@@ -68,9 +70,6 @@ const compactVisualState = computed(() => {
   }
 
   const currentJob = activeJob.value || inFlightJob.value;
-  if (currentJob?.status === 'SUCCEEDED') {
-    return compactState('success', 'success', t('print.succeeded'), t('print.succeeded'), true);
-  }
   if (currentJob?.status === 'FAILED' && currentJob.lastErrorCode === 'PRINT_OUTCOME_UNKNOWN') {
     return compactState('unknown', 'warning', t('print.outcomeUnknown'), t('print.outcomeUnknownLockedHint'), true);
   }
@@ -103,13 +102,10 @@ const compactVisualState = computed(() => {
   if (props.disabled) {
     return compactState('blocked', 'muted', t('print.action'), t('print.blocked'), true);
   }
-  if (currentJob?.status === 'PENDING' || currentJob?.status === 'CLAIMED' || currentJob?.status === 'PRINTING') {
-    return compactState('printing', 'busy', t('print.inProgress'), t('print.inProgress'), true, true);
+  if (hasInFlightJob.value) {
+    return compactState('accepted', 'ready', t('print.action'), t('print.jobAcceptedHint'), false);
   }
-  if (currentJob?.status === 'RETRY_WAIT') {
-    return compactState('retrying', 'warning', t('print.retrying'), t('print.retrying'), true, true);
-  }
-  return compactState('ready', 'ready', t('print.action'), t('print.ready'), !canSubmit.value);
+  return compactState('ready', 'ready', t('print.action'), t('print.ready'), !canRequestPrint.value);
 });
 
 function compactState(
@@ -134,15 +130,6 @@ watch(
 );
 
 watch(entityKey, () => void refreshJobs(), { immediate: true });
-watch(activeJob, (job) => {
-  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
-  successFeedbackTimer = undefined;
-  if (job?.status !== 'SUCCEEDED') return;
-  successFeedbackTimer = window.setTimeout(() => {
-    if (activeJobId.value === job.id) activeJobId.value = '';
-    successFeedbackTimer = undefined;
-  }, 2_500);
-});
 
 async function refreshJobs() {
   if (!entityKey.value || availability.value !== 'READY') {
@@ -163,9 +150,11 @@ async function refreshJobs() {
 }
 
 async function print() {
-  if (!canSubmit.value || !selectedPrinterId.value || submitPending.value) return;
-  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
-  successFeedbackTimer = undefined;
+  if (!canRequestPrint.value || !selectedPrinterId.value || submitPending.value) return;
+  if (hasInFlightJob.value) {
+    uiStore.pushToast(t('print.jobAcceptedHint'), 'info');
+    return;
+  }
   activeJobId.value = '';
   localFeedback.value = 'IDLE';
   submitPending.value = true;
@@ -212,7 +201,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
-  if (successFeedbackTimer !== undefined) window.clearTimeout(successFeedbackTimer);
 });
 </script>
 
@@ -238,7 +226,6 @@ onBeforeUnmount(() => {
     @click="print"
   >
     <LoaderCircle v-if="compactVisualState.busy" :size="18" class="detail-print-action__spinner" aria-hidden="true" />
-    <CircleCheck v-else-if="compactVisualState.state === 'success'" :size="18" aria-hidden="true" />
     <WifiOff v-else-if="compactVisualState.state === 'offline' || compactVisualState.state === 'network-offline'" :size="18" aria-hidden="true" />
     <TriangleAlert v-else-if="compactVisualState.tone === 'error' || compactVisualState.tone === 'warning'" :size="18" aria-hidden="true" />
     <Printer v-else :size="18" aria-hidden="true" />

@@ -152,16 +152,17 @@ describe('PrintJobActions compact action', () => {
       createdAt: '2026-08-29T02:00:00.000Z',
     });
     await flushPromises();
-    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('button').text()).toContain('打印中');
-    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('accepted');
+    expect(wrapper.get('button').attributes('aria-busy')).toBe('false');
     await wrapper.get('button').trigger('click');
     expect(printTableBill).toHaveBeenCalledTimes(1);
-    expect(useUiStore().toasts).toEqual([]);
+    expect(useUiStore().toasts.map((toast) => toast.tone)).toEqual(['info']);
     wrapper.unmount();
   });
 
-  it('blocks a new direct print while the same entity already has an in-flight job', async () => {
+  it('restores the normal action while preventing a duplicate job for an existing in-flight print', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const printing = readyStores();
@@ -180,11 +181,13 @@ describe('PrintJobActions compact action', () => {
     });
     await flushPromises();
 
-    expect(wrapper.get('button').attributes('disabled')).toBeDefined();
-    expect(wrapper.get('button').text()).toContain('打印中');
-    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('accepted');
+    expect(wrapper.get('button').attributes('aria-busy')).toBe('false');
     await wrapper.get('button').trigger('click');
     expect(printTableBill).not.toHaveBeenCalled();
+    expect(useUiStore().toasts.map((toast) => toast.tone)).toEqual(['info']);
     wrapper.unmount();
   });
 
@@ -250,7 +253,7 @@ describe('PrintJobActions compact action', () => {
     wrapper.unmount();
   });
 
-  it('shows a transient success state after the active job succeeds', async () => {
+  it('restores the normal action as soon as the server accepts the job', async () => {
     vi.useFakeTimers();
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -278,15 +281,11 @@ describe('PrintJobActions compact action', () => {
 
     await wrapper.get('button').trigger('click');
     await flushPromises();
-    expect(wrapper.get('button').attributes('data-print-state')).toBe('printing');
+    expect(wrapper.get('button').text()).toBe('打印');
+    expect(wrapper.get('button').attributes('data-print-state')).toBe('accepted');
+    expect(wrapper.get('button').attributes('aria-busy')).toBe('false');
 
     await vi.advanceTimersByTimeAsync(5_000);
-    await flushPromises();
-    expect(wrapper.get('button').text()).toContain('已打印');
-    expect(wrapper.get('button').attributes('data-print-state')).toBe('success');
-    expect(wrapper.get('button').attributes('data-print-tone')).toBe('success');
-
-    await vi.advanceTimersByTimeAsync(2_500);
     await flushPromises();
     expect(wrapper.get('button').text()).toBe('打印');
     expect(wrapper.get('button').attributes('data-print-state')).toBe('ready');
