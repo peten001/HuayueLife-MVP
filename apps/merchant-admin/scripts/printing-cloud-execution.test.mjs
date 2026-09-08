@@ -65,7 +65,9 @@ try {
     readFile(new URL('../src/i18n/printing.ts', import.meta.url), 'utf8'),
   ]);
   assert.doesNotMatch(page, /window\.confirm/);
-  assert.match(page, /aria-labelledby="printing-job-action-title"/);
+  assert.match(page, /<MerchantDialog :open="!!pendingAction" :title="actionTitle\(\)" aria-describedby="printing-job-action-description"/);
+  const dialog = await readFile(new URL('../src/components/MerchantDialog.vue', import.meta.url), 'utf8');
+  assert.match(dialog, /<dialog[\s\S]*:aria-label="title"/);
   assert.match(page, /actionConfirmButton\.value\?\.focus/);
   assert.match(page, /providerTaskId/);
   assert.match(page, /requestAction\('reprint'/);

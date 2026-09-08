@@ -1,4 +1,4 @@
-import { OrderType } from '@prisma/client';
+import { OrderType, PaymentMethod } from '@prisma/client';
 import {
   IsEnum,
   IsIn,
@@ -19,6 +19,10 @@ export class ListMerchantSettlementsQueryDto {
   @IsOptional()
   @IsEnum(OrderType)
   orderType?: OrderType;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

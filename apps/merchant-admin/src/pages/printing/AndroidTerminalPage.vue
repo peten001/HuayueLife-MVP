@@ -16,7 +16,7 @@ const { t } = useI18n();
       <span class="android-terminal-page__badge">{{ t('androidTerminalReleaseStatus') }}</span>
     </header>
 
-    <section class="android-terminal-card" aria-labelledby="android-terminal-release-title">
+    <div class="mx-terminal-layout"><section class="android-terminal-card" aria-labelledby="android-terminal-release-title">
       <div class="android-terminal-card__heading">
         <div><h3 id="android-terminal-release-title">{{ t('androidTerminalReleaseInfo') }}</h3><p>{{ androidTerminalRelease.appName }}</p></div>
         <strong>v{{ androidTerminalRelease.versionName }}</strong>
@@ -35,7 +35,7 @@ const { t } = useI18n();
       <p class="android-terminal-page__hint">{{ t('androidTerminalDownloadHint') }}</p>
     </section>
 
-    <section class="android-terminal-card">
+    <div class="mx-terminal-guides"><section class="android-terminal-card">
       <h3>{{ t('androidTerminalReleaseNotes') }}</h3>
       <ul class="android-terminal-release-notes">
         <li v-for="noteKey in androidTerminalRelease.releaseNoteKeys" :key="noteKey">{{ t(noteKey) }}</li>
@@ -52,6 +52,7 @@ const { t } = useI18n();
       <ol><li>{{ t('androidTerminalInstallStep1') }}</li><li>{{ t('androidTerminalInstallStep2') }}</li><li>{{ t('androidTerminalInstallStep3') }}</li><li>{{ t('androidTerminalInstallStep4') }}</li></ol>
       <p class="android-terminal-page__hint">{{ t('androidTerminalChecksumHint') }}</p>
     </section>
+    </div></div>
   </section>
 </template>
 

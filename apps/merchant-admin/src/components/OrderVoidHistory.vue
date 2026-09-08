@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { getOrderVoids, type OrderVoidRecord } from '@/api/order-voids';
 import { errorMessage } from '@/api/http';
 import { useOrderVoidText } from '@/i18n/order-void';
+import MerchantDialog from './MerchantDialog.vue';
 import OrderVoidEvidence from './OrderVoidEvidence.vue';
 import '@/styles/order-void.css';
 const props = defineProps<{ date?: string }>();
@@ -11,6 +12,7 @@ const date = ref(props.date || '');
 const search = ref('');
 const page = ref(1);
 const rows = ref<OrderVoidRecord[]>([]);
+const selected = ref<OrderVoidRecord|null>(null);
 const total = ref(0);
 const hasMore = ref(false);
 const loading = ref(false);
@@ -38,11 +40,8 @@ onMounted(() => load());
     <p class="void-error" role="alert">{{ error }}</p>
     <p v-if="loading" role="status">{{ copy.loading }}</p>
     <p v-else-if="!rows.length && !error">{{ copy.empty }}</p>
-    <details v-for="row in rows" :key="row.operationId" class="void-record">
-      <summary><span>{{ row.settlement.tableName || row.affectedOrderNos[0] }} · {{ row.settlement.businessDate }}</span><strong>{{ BigInt(row.settlement.finalReceivableVnd).toLocaleString() }} VND</strong></summary>
-      <p class="void-record-meta">{{ copy[row.reason] }} · {{ row.actor.displayName }}</p>
-      <OrderVoidEvidence :value="row" />
-    </details>
+    <button v-for="row in rows" :key="row.operationId" type="button" class="mx-void-row" @click="selected=row"><div><strong>{{ row.settlement.tableName || row.affectedOrderNos[0] }}</strong><small>{{ row.settlement.businessDate }} · {{ copy[row.reason] }}</small></div><div><strong>{{ BigInt(row.settlement.finalReceivableVnd).toLocaleString() }} VND</strong><small>{{ row.actor.displayName }}</small></div><span aria-hidden="true">›</span></button>
+    <MerchantDialog :open="!!selected" :title="copy.archive" variant="drawer" @close="selected=null"><template v-if="selected"><p class="mx-note">{{ copy[selected.reason] }} · {{ selected.actor.displayName }}</p><OrderVoidEvidence :value="selected" /></template></MerchantDialog>
     <footer class="void-actions"><button class="void-button" type="button" :disabled="loading || page <= 1" @click="turnPage(-1)">{{ copy.prev }}</button><span>{{ page }}</span><button class="void-button" type="button" :disabled="loading || !hasMore" @click="turnPage(1)">{{ copy.next }}</button></footer>
   </section>
 </template>

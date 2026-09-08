@@ -150,6 +150,22 @@ export async function createPrintingTestJob(printerId: string, requestKey: strin
   return response.data.data;
 }
 
+export async function createManualOrderPrintJob(orderId: string, printerId: string, requestKey: string) {
+  const response = await http.post<ApiResponse<PrintingJob>>(
+    '/merchant/printing/jobs/order',
+    { orderId, printerId, requestKey },
+  );
+  return response.data.data;
+}
+
+export async function createManualTableBillPrintJob(tableSessionId: string, printerId: string, requestKey: string) {
+  const response = await http.post<ApiResponse<PrintingJob>>(
+    '/merchant/printing/jobs/table-bill',
+    { tableSessionId, printerId, requestKey },
+  );
+  return response.data.data;
+}
+
 export async function getPrintingTemplates() {
   const response = await http.get<ApiResponse<CollectionResponse<PrintingReceiptTemplate>>>(
     '/merchant/printing/templates',

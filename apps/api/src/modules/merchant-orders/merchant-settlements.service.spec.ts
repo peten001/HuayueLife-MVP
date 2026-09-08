@@ -81,6 +81,16 @@ describe('MerchantSettlementsService', () => {
     expect(empty.total).toBe(0);
   });
 
+  it('filters after canonical aggregation by the settlement payment method', async () => {
+    const { service } = serviceWith([
+      ...session415Fixture(),
+      ...deliveryTwoOrdersFixture(),
+    ]);
+    const result = await service.list(11n, { paymentMethod: 'BANK_TRANSFER' });
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items.every((item) => item.paymentMethod === 'BANK_TRANSFER')).toBe(true);
+  });
+
   it('returns a full settlement detail with all child items and source orders', async () => {
     const { service } = serviceWith(session417Fixture());
     const detail = await service.get(11n, 'session:417');

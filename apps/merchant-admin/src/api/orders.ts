@@ -13,6 +13,8 @@ export interface OrderFilters {
   status?: OrderStatus | '';
   orderType?: OrderType | '';
   date?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface MerchantOrderSummaryBucket {

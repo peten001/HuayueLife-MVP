@@ -38,9 +38,11 @@ import {
 import {
   attributeOrderRevenue,
   businessDateCandidateWhere,
+  businessDateRangeCandidateWhere,
   businessDateSnapshotValue,
   completedRevenueTotals,
   isOrderInBusinessDate,
+  resolveOrderBusinessDate,
 } from './business-day-accounting';
 import {
   buildMerchantSettlements,
@@ -187,14 +189,18 @@ export class MerchantOrdersService {
   async list(merchantId: bigint, query: ListMerchantOrdersQueryDto) {
     let dateWhere: Prisma.OrderWhereInput = {};
     let schedule: ReturnType<typeof normalizeBusinessHours> | null = null;
-    const requestedDate = query.date;
-    if (requestedDate) {
+    const requestedStartDate = query.dateFrom ?? query.date;
+    const requestedEndDate = query.dateTo ?? requestedStartDate;
+    if (requestedStartDate && requestedEndDate && requestedStartDate > requestedEndDate) {
+      throw new BadRequestException('开始营业日不能晚于结束营业日');
+    }
+    if (requestedStartDate && requestedEndDate) {
       const merchant = await this.prisma.merchant.findUnique({
         where: { id: merchantId },
         select: { businessHours: true },
       });
       schedule = normalizeBusinessHours(merchant?.businessHours);
-      dateWhere = businessDateCandidateWhere(schedule, requestedDate);
+      dateWhere = businessDateRangeCandidateWhere(requestedStartDate, requestedEndDate);
     }
     const orders = await this.prisma.order.findMany({
       where: effectiveOrderWhere({
@@ -206,10 +212,18 @@ export class MerchantOrdersService {
       include: this.listInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    const resolvedOrders = requestedDate && schedule
-      ? orders.filter((order) => isOrderInBusinessDate(order, schedule, requestedDate))
+    const resolvedOrders = requestedStartDate && requestedEndDate && schedule
+      ? orders.filter((order) => {
+          const businessDate = resolveOrderBusinessDate(order, schedule);
+          return businessDate >= requestedStartDate && businessDate <= requestedEndDate;
+        })
       : orders;
-    return resolvedOrders.map((order) => this.serializeMerchantOrder(order));
+    return resolvedOrders.map((order) => ({
+      ...this.serializeMerchantOrder(order),
+      reportingBusinessDate: schedule
+        ? resolveOrderBusinessDate(order, schedule)
+        : order.businessDate?.toISOString().slice(0, 10),
+    }));
   }
 
   /**

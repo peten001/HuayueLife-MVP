@@ -293,21 +293,6 @@ onMounted(() => void selectPreset('today'));
 
 <template>
   <div class="business-analytics-page">
-    <header class="analytics-page-header">
-      <div>
-        <h1>{{ copy.title }}</h1>
-        <p>{{ copy.subtitle }}</p>
-      </div>
-      <button type="button" class="analytics-date-button" :aria-label="`${copy.custom}: ${periodLabel}`" @click="selectCustom">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="5" width="18" height="16" rx="3" />
-          <path d="M8 3v4M16 3v4M3 10h18" />
-        </svg>
-        <span class="analytics-date-label">{{ periodLabel }}</span>
-        <span class="analytics-date-chevron" aria-hidden="true">⌄</span>
-      </button>
-    </header>
-
     <section class="analytics-controls" :aria-label="copy.filtersAria">
       <div class="analytics-preset-scroll">
         <button v-for="preset in ([['today', copy.today], ['sevenDays', copy.sevenDays], ['thirtyDays', copy.thirtyDays], ['custom', copy.custom]] as const)"
@@ -361,6 +346,7 @@ onMounted(() => void selectPreset('today'));
             <article class="card analytics-kpi-card analytics-kpi-card--dish">
               <div class="analytics-kpi-heading"><span class="analytics-kpi-icon analytics-kpi-icon--orange"><BusinessAnalyticsIcon name="dish" /></span><span>{{ copy.topDish }}</span></div>
               <div class="analytics-top-dish-value">
+                <!-- impeccable-disable-next-line broken-image: dynamic URL is non-empty before render and swaps to the placeholder on error -->
                 <img v-if="analytics.overview.topDish && dishImage(analytics.overview.topDish)" v-bind="{ src: dishImage(analytics.overview.topDish), alt: analytics.overview.topDish.name }" @error="markImageFailed(analytics.overview.topDish.key)" />
                 <span v-else class="analytics-dish-placeholder">{{ copy.dishPlaceholder }}</span>
                 <div><strong>{{ analytics.overview.topDish?.name || copy.noData }}</strong><small>{{ analytics.overview.topDish ? `${analytics.overview.topDish.quantity} ${copy.salesUnit}` : copy.noData }}</small></div>
@@ -393,6 +379,7 @@ onMounted(() => void selectPreset('today'));
           <article class="card analytics-mobile-hot-dish">
             <div class="analytics-kpi-heading"><span class="analytics-kpi-icon analytics-kpi-icon--orange"><BusinessAnalyticsIcon name="dish" /></span><span>{{ copy.topDish }}</span></div>
             <div class="analytics-top-dish-value">
+              <!-- impeccable-disable-next-line broken-image: dynamic URL is non-empty before render and swaps to the placeholder on error -->
               <img v-if="analytics.overview.topDish && dishImage(analytics.overview.topDish)" v-bind="{ src: dishImage(analytics.overview.topDish), alt: analytics.overview.topDish.name }" @error="markImageFailed(analytics.overview.topDish.key)" />
               <span v-else class="analytics-dish-placeholder">{{ copy.dishPlaceholder }}</span>
               <div><strong>{{ analytics.overview.topDish?.name || copy.noData }}</strong><small>{{ analytics.overview.topDish ? `${analytics.overview.topDish.quantity} ${copy.salesUnit} · ${formatMoney(analytics.overview.topDish.revenueVnd)}` : copy.noData }}</small></div>
@@ -448,6 +435,7 @@ onMounted(() => void selectPreset('today'));
           <div class="analytics-panel-heading"><div><h2 class="desktop-ranking-title">{{ rankingExpanded ? copy.expandedRankingTitle : copy.rankingTitle }}</h2><h2 class="mobile-ranking-title">{{ copy.mobileRankingTitle }}</h2><p>{{ copy.rankingDescription }}</p></div></div>
           <div class="table-wrap analytics-ranking-table-wrap desktop-ranking">
             <table class="analytics-ranking-table"><thead><tr><th>{{ copy.rank }}</th><th>{{ copy.dish }}</th><th>{{ copy.quantity }}</th><th>{{ copy.salesAmount }}</th><th>{{ copy.comparison }}</th></tr></thead>
+              <!-- impeccable-disable-next-line broken-image: every dynamic dish URL is guarded and has an error-state placeholder -->
               <tbody><tr v-for="(dish, index) in desktopTopDishes" :key="dish.key"><td><strong class="analytics-rank-number">{{ index + 1 }}</strong></td><td><div class="analytics-dish-cell"><img v-if="dishImage(dish)" v-bind="{ src: dishImage(dish), alt: dish.name }" @error="markImageFailed(dish.key)" /><span v-else class="analytics-dish-placeholder">{{ copy.dishPlaceholder }}</span><strong>{{ dish.name }}</strong></div></td><td>{{ dish.quantity }} {{ copy.salesUnit }}</td><td>{{ formatMoney(dish.revenueVnd) }}</td><td><span v-if="dish.changePercent !== null" class="analytics-change" :class="changeClass(dish.changePercent)">{{ formatPercent(dish.changePercent) }}</span><span v-else class="analytics-change-empty">—</span></td></tr></tbody>
             </table>
             <div v-if="!analytics.topDishes.length" class="analytics-ranking-empty">{{ copy.rankingEmpty }}</div>
@@ -456,6 +444,7 @@ onMounted(() => void selectPreset('today'));
             {{ rankingExpanded ? copy.collapseRanking : copy.expandRanking }} <span aria-hidden="true">{{ rankingExpanded ? '⌃' : '⌄' }}</span>
           </button>
           <div class="analytics-mobile-ranking mobile-ranking">
+            <!-- impeccable-disable-next-line broken-image: every dynamic dish URL is guarded and has an error-state placeholder -->
             <article v-for="(dish, index) in mobileTopDishes" :key="dish.key" class="analytics-mobile-dish"><strong class="analytics-rank-number">{{ index + 1 }}</strong><img v-if="dishImage(dish)" v-bind="{ src: dishImage(dish), alt: dish.name }" @error="markImageFailed(dish.key)" /><span v-else class="analytics-dish-placeholder">{{ copy.dishPlaceholder }}</span><div><strong>{{ dish.name }}</strong><span>{{ dish.quantity }} {{ copy.salesUnit }} · {{ formatMoney(dish.revenueVnd) }}</span></div><span v-if="dish.changePercent !== null" class="analytics-change" :class="changeClass(dish.changePercent)">{{ formatPercent(dish.changePercent) }}</span></article>
             <div v-if="!mobileTopDishes.length" class="analytics-ranking-empty">{{ copy.rankingEmpty }}</div>
           </div>
@@ -536,13 +525,6 @@ onMounted(() => void selectPreset('today'));
   outline: 3px solid color-mix(in srgb, var(--analytics-brand) 24%, transparent);
   outline-offset: 2px;
 }
-.analytics-page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
-.analytics-page-header h1 { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--analytics-ink); font-size: 28px; line-height: 1.2; letter-spacing: -.025em; text-wrap: balance; }
-.analytics-page-header p { max-width: 70ch; margin: 5px 0 0; color: var(--analytics-ink-3); font-size: 13px; text-wrap: pretty; }
-.analytics-date-button { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--analytics-border); border-radius: var(--analytics-radius-sm); color: var(--analytics-ink-2); background: var(--analytics-panel); box-shadow: var(--analytics-shadow); font-size: 12px; font-weight: 750; white-space: nowrap; }
-.analytics-date-button:hover:not(:disabled) { color: var(--analytics-brand-strong); border-color: color-mix(in srgb, var(--analytics-brand) 38%, var(--analytics-border)); background: var(--analytics-panel); }
-.analytics-date-button svg { width: 17px; height: 17px; flex: 0 0 17px; }
-.analytics-date-chevron { transform: translateY(-1px); }
 .analytics-controls { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; border-bottom: 1px solid var(--analytics-border); }
 .analytics-preset-scroll { display: flex; max-width: 100%; gap: 22px; overflow-x: auto; scrollbar-width: none; }
 .analytics-preset-scroll::-webkit-scrollbar { display: none; }
@@ -707,18 +689,13 @@ onMounted(() => void selectPreset('today'));
 
 @media (max-width: 768px) {
   .business-analytics-page :deep(.card) { margin-bottom: 0; }
-  .analytics-page-header { position: relative; min-height: 44px; align-items: center; justify-content: center; margin-bottom: 6px; }
-  .analytics-page-header > div { min-width: 0; text-align: center; }
-  .analytics-page-header h1 { font-size: 21px; }
-  .analytics-page-header p { display: none; }
-  .analytics-date-button { position: absolute; right: 0; width: 44px; min-height: 44px; justify-content: center; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
-  .analytics-date-button:hover:not(:disabled) { border-color: var(--analytics-border); background: var(--analytics-panel-muted); }
-  .analytics-date-label, .analytics-date-chevron { display: none; }
-  .analytics-controls { min-height: 48px; margin-bottom: 10px; border: 0; }
-  .analytics-preset-scroll { width: 100%; justify-content: stretch; gap: 3px; padding: 3px; border-radius: 12px; background: var(--analytics-panel-muted); overflow: visible; }
-  .analytics-preset { min-width: 0; min-height: 42px; flex: 1 1 0; padding: 8px 4px; border-radius: 9px; font-size: 11px; }
+  .analytics-controls { min-height: 44px; margin-bottom: 6px; border: 0; }
+  .analytics-preset-scroll { width: 100%; justify-content: stretch; gap: 2px; padding: 0 2px; border-radius: 11px; background: var(--analytics-panel-muted); overflow: visible; }
+  .analytics-preset { min-width: 0; min-height: 44px; flex: 1 1 0; isolation: isolate; padding: 7px 4px; border-radius: 9px; font-size: 11px; }
+  .analytics-preset::before { position: absolute; inset: 4px 1px; z-index: -1; border-radius: 8px; background: transparent; content: ''; }
   .analytics-preset::after { display: none; }
-  .analytics-preset.active { background: var(--analytics-panel); box-shadow: 0 1px 4px rgb(27 70 42 / 8%); }
+  .analytics-preset.active { background: transparent; box-shadow: none; }
+  .analytics-preset.active::before { background: var(--analytics-panel); box-shadow: 0 1px 4px rgb(27 70 42 / 8%); }
   .analytics-inline-loading { display: none; }
   .analytics-custom-dates { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px; }
   .analytics-apply { grid-column: 1 / -1; }

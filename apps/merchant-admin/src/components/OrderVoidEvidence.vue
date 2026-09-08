@@ -10,23 +10,22 @@ const { locale } = useI18n();
 const audit = computed(() => 'operationId' in props.value ? props.value : null);
 const amount = (value: string) => `${BigInt(value).toLocaleString()} VND`;
 const dateTime = (value: string) => new Date(value).toLocaleString(({ zh: 'zh-CN', vi: 'vi-VN', en: 'en-GB' })[locale.value], { timeZone: 'Asia/Ho_Chi_Minh' });
+const typeTitle = computed(() => ({ zh: '订单类型', vi: 'Loại đơn', en: 'Order type' })[locale.value]);
+const recordLabel = computed(() => props.value.settlement.tableName || props.value.affectedOrderNos.join('、'));
 </script>
 <template>
   <div class="order-void-ui void-evidence">
     <dl>
-      <div><dt>{{ copy.record }}</dt><dd>{{ value.settlement.tableName || value.affectedOrderNos[0] }} · {{ value.target }}</dd></div>
-      <div><dt>{{ copy.originalDate }}</dt><dd>{{ value.settlement.businessDate }}</dd></div>
-      <div><dt>{{ copy.originalTime }}</dt><dd>{{ dateTime(value.settlement.settledAt) }}</dd></div>
-      <div><dt>{{ copy[value.settlement.orderType] }}</dt><dd>{{ value.settlement.tableName || '—' }}</dd></div>
-      <div><dt>{{ copy.original }}</dt><dd>{{ amount(value.settlement.originalAmountVnd) }}</dd></div>
-      <div><dt>{{ copy.discount }} / {{ copy.rounding }}</dt><dd>{{ amount(value.settlement.discountAmountVnd) }} / {{ amount(value.settlement.roundingAmountVnd) }}</dd></div>
+      <div><dt>{{ copy.record }}</dt><dd>{{ recordLabel }}</dd></div>
+      <div><dt>{{ copy.originalDate }}</dt><dd>{{ value.settlement.businessDate }} · {{ dateTime(value.settlement.settledAt) }}</dd></div>
+      <div><dt>{{ typeTitle }}</dt><dd>{{ copy[value.settlement.orderType] }}</dd></div>
       <div><dt>{{ copy.net }}</dt><dd><strong>{{ amount(value.settlement.finalReceivableVnd) }}</strong></dd></div>
       <div><dt>{{ copy.payment }}</dt><dd>{{ copy[value.settlement.paymentMethod || 'UNRECORDED'] }}</dd></div>
     </dl>
     <details>
       <summary>{{ copy.scope }} · {{ value.affectedOrderIds.length }}</summary>
       <p v-if="value.settlement.orderType === 'DINE_IN'">{{ copy.scopeHint }}</p>
-      <ul class="void-sources"><li v-for="(id, index) in value.affectedOrderIds" :key="id">{{ value.affectedOrderNos[index] }} · ID {{ id }}</li></ul>
+      <ul class="void-sources"><li v-for="(id, index) in value.affectedOrderIds" :key="id">{{ value.affectedOrderNos[index] }}</li></ul>
       <ul class="void-sources"><li v-for="item in value.settlement.items" :key="item.id">{{ (locale === 'vi' ? item.productNameVi : locale === 'en' ? item.productNameEn : item.productNameZh) || item.productNameZh }} × {{ item.quantity }} · {{ amount(item.subtotalVnd) }}</li></ul>
     </details>
     <section class="void-impact">
@@ -36,9 +35,6 @@ const dateTime = (value: string) => new Date(value).toLocaleString(({ zh: 'zh-CN
       <dl v-for="day in value.businessDayImpacts" :key="day.businessDate">
         <div><dt>{{ day.businessDate }} · {{ copy.count }}</dt><dd>{{ day.orderCount }}</dd></div>
         <div><dt>{{ copy.amount }}</dt><dd>{{ amount(day.netSettledAmountVnd) }}</dd></div>
-        <div><dt>{{ copy.cash }}</dt><dd>{{ amount(day.cashRevenueVnd) }}</dd></div>
-        <div><dt>{{ copy.bank }}</dt><dd>{{ amount(day.bankTransferRevenueVnd) }}</dd></div>
-        <div><dt>{{ copy.unrecorded }}</dt><dd>{{ amount(day.unrecordedRevenueVnd) }}</dd></div>
       </dl>
     </section>
     <dl v-if="audit" class="void-audit">

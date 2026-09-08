@@ -122,6 +122,36 @@ describe('cross-service Business Date contract', () => {
     expect(new Set(rows.map((order) => order.id))).toEqual(
       new Set(expected.map((order) => order.id)),
     );
+    expect(rows.every((order) => order.reportingBusinessDate === '2026-08-15')).toBe(true);
+  });
+
+  it('lists an inclusive business-date range and rejects an inverted range', async () => {
+    const service = new MerchantOrdersService(
+      fakePrisma() as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const rows = await service.list(7n, {
+      dateFrom: '2026-08-14',
+      dateTo: '2026-08-15',
+    });
+    expect(new Set(rows.map((order) => order.id))).toEqual(
+      new Set(orders.filter((order) => order.id !== 109n).map((order) => order.id)),
+    );
+    expect(rows.every((order) => {
+      const reportingDate = order.reportingBusinessDate;
+      return Boolean(
+        reportingDate &&
+        reportingDate >= '2026-08-14' &&
+        reportingDate <= '2026-08-15',
+      );
+    })).toBe(true);
+    await expect(service.list(7n, {
+      dateFrom: '2026-08-16',
+      dateTo: '2026-08-15',
+    })).rejects.toThrow('开始营业日不能晚于结束营业日');
   });
 
   it('attributes one cross-business-date session consistently across summary and business summary', async () => {

@@ -60,6 +60,11 @@ export class MerchantSettlementsService {
         (settlement) => settlement.businessDate === query.date,
       );
     }
+    if (query.paymentMethod) {
+      settlements = settlements.filter(
+        (settlement) => settlement.paymentMethod === query.paymentMethod,
+      );
+    }
     if (query.search?.trim()) {
       const keyword = query.search.trim().toLocaleLowerCase('en-US');
       settlements = settlements.filter(
@@ -95,6 +100,7 @@ export class MerchantSettlementsService {
     const orders = await this.loadOrders(merchantId, {
       status: undefined,
       orderType: undefined,
+      paymentMethod: undefined,
       date: undefined,
       search: undefined,
       page: undefined,

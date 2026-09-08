@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
 import { getProfile } from '@/api/merchant';
 import {
@@ -9,6 +9,7 @@ import {
   saveCurrentTableBillReceiptSettings,
 } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
+import { useI18n } from '@/i18n';
 import type { MerchantProfile } from '@/types/api';
 import type {
   PrintingCurrentReceiptSettingsPayload,
@@ -34,6 +35,8 @@ import {
 } from '@/utils/receipt-template-definition';
 
 const { p } = usePrintingI18n();
+const { locale } = useI18n();
+const mobilePane = ref<'settings'|'preview'>('settings');
 const defaults: ReceiptSettings = {
   merchantName: true,
   address: true,
@@ -81,6 +84,12 @@ const success = ref(false);
 const activeState = computed(() => receiptTabs[activeReceiptType.value]);
 const receiptSettings = computed(() => activeState.value.settings);
 const paperWidth = computed<PrintingPaperWidth>(() => activeState.value.paperWidth);
+const previewStage = ref<HTMLElement>();
+const previewAvailableWidth = ref(430);
+const previewZoom = computed(() => Math.min(1, previewAvailableWidth.value / (paperWidth.value === 'MM58' ? 260 : 430)));
+let previewResize: ResizeObserver | undefined;
+onMounted(() => { previewResize = new ResizeObserver(entries => { previewAvailableWidth.value = Math.max(1, entries[0].contentRect.width); }); if(previewStage.value)previewResize.observe(previewStage.value); });
+onBeforeUnmount(() => previewResize?.disconnect());
 const isDirty = computed(
   () => settingSnapshot(activeState.value) !== activeState.value.initialSnapshot,
 );
@@ -331,7 +340,8 @@ onMounted(load);
 
     <p v-if="message" :class="['printing-message', { 'printing-message--success': success }]">{{ message }}</p>
 
-    <div class="receipt-settings-layout">
+    <nav class="mx-receipt-mobile-tabs" :aria-label="p('receiptSettingsTab')"><button type="button" :aria-pressed="mobilePane==='settings'" @click="mobilePane='settings'">{{ locale==='zh'?'显示设置':locale==='vi'?'Thiết lập':'Settings' }}</button><button type="button" :aria-pressed="mobilePane==='preview'" @click="mobilePane='preview'">{{ locale==='zh'?'小票预览':locale==='vi'?'Xem trước':'Preview' }}</button></nav>
+    <div class="receipt-settings-layout" :class="'mx-receipt-pane-'+mobilePane">
       <section class="receipt-settings-card">
         <div class="receipt-settings-card__intro">
           <div>
@@ -367,6 +377,7 @@ onMounted(load);
               :class="{ 'is-disabled': item.disabled }"
               type="button"
               :disabled="item.disabled"
+              role="switch" :aria-checked="receiptSettings[item.key]"
               @click="receiptSettings[item.key] = !receiptSettings[item.key]"
             >
               <span class="receipt-setting-row__copy">
@@ -425,8 +436,8 @@ onMounted(load);
           <div><h3>{{ p('previewTitle') }}</h3><p>{{ p('previewHint') }}</p></div>
           <span class="receipt-paper-profile">{{ paperWidth === 'MM58' ? p('paperWidth58') : p('paperWidth80') }} · {{ p('paperWidthManagedByPrinter') }}</span>
         </div>
-        <div class="receipt-preview-stage">
-          <div class="receipt-paper" :class="paperWidth === 'MM58' ? 'receipt-paper--58' : 'receipt-paper--80'">
+        <div ref="previewStage" class="receipt-preview-stage">
+          <div class="receipt-paper" :style="{ zoom: previewZoom }" :class="paperWidth === 'MM58' ? 'receipt-paper--58' : 'receipt-paper--80'">
             <template v-if="activeReceiptType === 'ORDER_CUSTOMER'">
               <div class="order-preview" :data-paper-profile="paperWidth">
                 <div v-if="previewMerchant.hasName" class="receipt-paper__merchant">

@@ -58,23 +58,35 @@ function buildListOrderChatMessagesParams(query: ListOrderChatMessagesQuery) {
   return params;
 }
 
-export async function getMerchantOrderChat(orderId: string) {
+export async function getMerchantOrderChat(
+  orderId: string,
+): Promise<MerchantChatConversation | null> {
   const response = await http.get<ApiResponse<MerchantChatConversation>>(
     `/merchant/orders/${orderId}/chat`,
   );
-  return response.data.data;
+  return response.data.data ?? null;
 }
 
 export async function listMerchantOrderChatMessages(
   orderId: string,
   query: ListOrderChatMessagesQuery = {},
-) {
+): Promise<ListOrderChatMessagesResult> {
   const params = buildListOrderChatMessagesParams(query);
   const response = await http.get<ApiResponse<ListOrderChatMessagesResult>>(
     `/merchant/orders/${orderId}/chat/messages`,
     { params },
   );
-  return response.data.data;
+  const result = response.data.data;
+  return {
+    items: Array.isArray(result?.items) ? result.items : [],
+    pageInfo: {
+      nextCursor:
+        typeof result?.pageInfo?.nextCursor === 'string'
+          ? result.pageInfo.nextCursor
+          : null,
+      hasMore: Boolean(result?.pageInfo?.hasMore),
+    },
+  };
 }
 
 export async function sendMerchantOrderChatMessage(
@@ -88,9 +100,11 @@ export async function sendMerchantOrderChatMessage(
   return response.data.data;
 }
 
-export async function markMerchantOrderChatRead(orderId: string) {
+export async function markMerchantOrderChatRead(
+  orderId: string,
+): Promise<MerchantChatConversation | null> {
   const response = await http.post<ApiResponse<MerchantChatConversation>>(
     `/merchant/orders/${orderId}/chat/read`,
   );
-  return response.data.data;
+  return response.data.data ?? null;
 }

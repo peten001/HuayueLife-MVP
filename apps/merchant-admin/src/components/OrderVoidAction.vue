@@ -7,7 +7,7 @@ import { useOrderVoidText } from '@/i18n/order-void';
 import OrderVoidEvidence from './OrderVoidEvidence.vue';
 import '@/styles/order-void.css';
 
-const props = defineProps<{ target: string; mobileAlign?: 'start' | 'end' }>();
+const props = withDefaults(defineProps<{ target: string; mobileAlign?: 'start' | 'end'; allowVoid?: boolean; triggerLabel?: string; actionLabel?: string }>(), { allowVoid: true });
 const emit = defineEmits<{ done: [record: OrderVoidRecord] }>();
 const copy = useOrderVoidText();
 const dialog = ref<HTMLDialogElement>();
@@ -64,6 +64,9 @@ async function open() {
   dialog.value?.showModal();
   await refreshPreview();
 }
+function closeMenu() {
+  if (menu.value) menu.value.open = false;
+}
 function close() {
   if (busy.value) return;
   previewGeneration++;
@@ -92,8 +95,8 @@ onBeforeUnmount(() => { previewGeneration++; dialog.value?.close(); });
 </script>
 <template>
   <details ref="menu" class="order-void-ui void-menu" :class="{ 'void-menu--mobile-start': mobileAlign === 'start' }">
-    <summary>{{ copy.more }}</summary>
-    <div class="void-menu-panel"><button class="void-button void-button--danger" type="button" @click="open">{{ copy.action }}</button></div>
+    <summary :aria-label="triggerLabel || copy.more"><slot name="trigger">{{ copy.more }}</slot></summary>
+    <div class="void-menu-panel"><slot name="menu" :close-menu="closeMenu" /><button v-if="allowVoid" class="void-button void-button--danger" type="button" @click="open">{{ actionLabel || copy.action }}</button></div>
   </details>
   <Teleport to="body">
     <dialog ref="dialog" class="order-void-ui void-dialog" aria-labelledby="void-title" @cancel.prevent="close" @keydown.tab="trapFocus">
@@ -126,7 +129,11 @@ onBeforeUnmount(() => { previewGeneration++; dialog.value?.close(); });
  * tokens: shared merchant-admin order-void semantic tokens */
 .void-menu { position: relative; flex: none; }
 .void-menu summary { list-style: none; }
+.void-menu:not([open]) .void-menu-panel { display: none; }
 .void-menu-panel { position: absolute; right: 0; top: 100%; z-index: 5; padding: 6px; background: var(--void-surface); box-shadow: var(--void-shadow); border-radius: 10px; }
+.void-menu-panel :slotted(.void-menu-action) { display: flex; width: 100%; min-width: 148px; min-height: 42px; align-items: center; gap: 9px; justify-content: flex-start; padding: 9px 11px; border: 0; border-radius: 7px; color: var(--void-ink); background: transparent; font: inherit; white-space: nowrap; }
+.void-menu-panel :slotted(.void-menu-action:disabled) { cursor: not-allowed; opacity: .5; }
+.void-menu-panel :slotted(.void-menu-action:not(:disabled):hover), .void-menu-panel :slotted(.void-menu-action:not(:disabled):focus-visible) { background: var(--void-soft); }
 /* Match the page header's mobile stack; right-side settlement actions keep end alignment. */
 @media (max-width: 760px) { .void-menu--mobile-start .void-menu-panel { left: 0; right: auto; } }
 .void-dialog { padding: 0; width: min(620px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--void-line); border-radius: 16px; background: var(--void-surface); box-shadow: var(--void-shadow); }

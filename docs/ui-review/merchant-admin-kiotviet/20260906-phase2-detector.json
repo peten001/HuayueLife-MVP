@@ -1,0 +1,863 @@
+{
+  "p0": 6,
+  "files": [
+    {
+      "file": "apps/merchant-admin/src/components/BusinessTrendChart.vue",
+      "findings": []
+    },
+    {
+      "file": "apps/merchant-admin/src/components/OrderVoidHistory.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/printing/PrintingCenterShell.vue",
+      "findings": [
+        {
+          "id": "pure-bw",
+          "severity": "P2",
+          "label": "Pure #fff / #000 (untinted neutral)",
+          "fix": "soul",
+          "count": 20,
+          "hits": [
+            {
+              "line": 281,
+              "text": "#fff"
+            },
+            {
+              "line": 284,
+              "text": "#fff"
+            },
+            {
+              "line": 287,
+              "text": "#fff"
+            },
+            {
+              "line": 292,
+              "text": "#fff"
+            },
+            {
+              "line": 293,
+              "text": "#fff"
+            },
+            {
+              "line": 296,
+              "text": "#fff"
+            },
+            {
+              "line": 354,
+              "text": "#fff"
+            },
+            {
+              "line": 470,
+              "text": "#fff"
+            }
+          ]
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "inline-color-literal",
+          "severity": "P2",
+          "label": "135 opaque colour literals outside :root (>30) — lift them into named tokens",
+          "fix": "soul",
+          "total": 135,
+          "hits": [
+            {
+              "line": 259,
+              "text": "#24783a"
+            },
+            {
+              "line": 260,
+              "text": "#e8f5eb"
+            },
+            {
+              "line": 261,
+              "text": "#1f2d24"
+            },
+            {
+              "line": 262,
+              "text": "#69766e"
+            },
+            {
+              "line": 263,
+              "text": "#dfe8e1"
+            },
+            {
+              "line": 269,
+              "text": "#f9f9f9"
+            },
+            {
+              "line": 281,
+              "text": "#fff"
+            },
+            {
+              "line": 284,
+              "text": "#fff"
+            }
+          ],
+          "count": 135
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/layouts/MerchantLayout.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "1 local file reference(s) point at nothing on disk: huayueLogo",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 1,
+          "hits": [
+            {
+              "line": 29,
+              "text": "huayueLogo"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/BusinessAnalyticsPage.vue",
+      "findings": [
+        {
+          "id": "inline-color-literal",
+          "severity": "P2",
+          "label": "33 opaque colour literals outside :root (>30) — lift them into named tokens",
+          "fix": "soul",
+          "total": 33,
+          "hits": [
+            {
+              "line": 165,
+              "text": "#2f9e44"
+            },
+            {
+              "line": 166,
+              "text": "#5b8def"
+            },
+            {
+              "line": 167,
+              "text": "#f3a63b"
+            },
+            {
+              "line": 168,
+              "text": "#8a6fd1"
+            },
+            {
+              "line": 169,
+              "text": "#d8e2db"
+            },
+            {
+              "line": 321,
+              "text": "#f0f4f1"
+            },
+            {
+              "line": 321,
+              "text": "#5f6d65"
+            },
+            {
+              "line": 323,
+              "text": "#31543b"
+            }
+          ],
+          "count": 33
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/BusinessSettingsPage.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "1 local file reference(s) point at nothing on disk: coverPreviewUrl",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 1,
+          "hits": [
+            {
+              "line": 143,
+              "text": "coverPreviewUrl"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/ForbiddenPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/LoginPage.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "1 local file reference(s) point at nothing on disk: brandLogo",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 1,
+          "hits": [
+            {
+              "line": 41,
+              "text": "brandLogo"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/MerchantChangePasswordPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/OrderDetailPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/ProductsPage.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "3 local file reference(s) point at nothing on disk: productImage(row), productImage(selectedProduct), imagePreviewUrl",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 3,
+          "hits": [
+            {
+              "line": 728,
+              "text": "productImage(row)"
+            },
+            {
+              "line": 741,
+              "text": "productImage(selectedProduct)"
+            },
+            {
+              "line": 749,
+              "text": "imagePreviewUrl"
+            }
+          ],
+          "count": 3
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/StaffPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/TablesPage.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "1 local file reference(s) point at nothing on disk: qrImageUrl",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 1,
+          "hits": [
+            {
+              "line": 798,
+              "text": "qrImageUrl"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/printing/AndroidTerminalPage.vue",
+      "findings": [
+        {
+          "id": "dead-local-ref",
+          "severity": "P0",
+          "label": "1 local file reference(s) point at nothing on disk: androidTerminalRelease.downloadUrl",
+          "fix": "write the missing file (or fix the path) before delivery",
+          "total": 1,
+          "hits": [
+            {
+              "line": 34,
+              "text": "androidTerminalRelease.downloadUrl"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "pure-bw",
+          "severity": "P2",
+          "label": "Pure #fff / #000 (untinted neutral)",
+          "fix": "soul",
+          "count": 2,
+          "hits": [
+            {
+              "line": 66,
+              "text": "#fff"
+            },
+            {
+              "line": 73,
+              "text": "#fff"
+            }
+          ]
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/printing/PrintingJobsPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/printing/PrintingPrintersPage.vue",
+      "findings": [
+        {
+          "id": "eyebrow-overuse",
+          "severity": "P1",
+          "label": "Eyebrow above 5 of 5 sections (cap 2 = ceil(sections/3))",
+          "fix": "typeset",
+          "hits": [
+            {
+              "line": 0,
+              "text": "5 label-above-heading instances"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/printing/PrintingRulesPage.vue",
+      "findings": [
+        {
+          "id": "pure-bw",
+          "severity": "P2",
+          "label": "Pure #fff / #000 (untinted neutral)",
+          "fix": "soul",
+          "count": 4,
+          "hits": [
+            {
+              "line": 375,
+              "text": "#fff"
+            },
+            {
+              "line": 375,
+              "text": "#fff"
+            },
+            {
+              "line": 375,
+              "text": "#fff"
+            },
+            {
+              "line": 375,
+              "text": "#fff"
+            }
+          ]
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "inline-color-literal",
+          "severity": "P2",
+          "label": "41 opaque colour literals outside :root (>30) — lift them into named tokens",
+          "fix": "soul",
+          "total": 41,
+          "hits": [
+            {
+              "line": 375,
+              "text": "#b9dfc4"
+            },
+            {
+              "line": 375,
+              "text": "#17693c"
+            },
+            {
+              "line": 375,
+              "text": "#f1faf3"
+            },
+            {
+              "line": 375,
+              "text": "#f1c6c2"
+            },
+            {
+              "line": 375,
+              "text": "#ab3128"
+            },
+            {
+              "line": 375,
+              "text": "#fff7f6"
+            },
+            {
+              "line": 375,
+              "text": "#f1d497"
+            },
+            {
+              "line": 375,
+              "text": "#8a5a00"
+            }
+          ],
+          "count": 41
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/printing/PrintingTemplatesPage.vue",
+      "findings": [
+        {
+          "id": "pure-bw",
+          "severity": "P2",
+          "label": "Pure #fff / #000 (untinted neutral)",
+          "fix": "soul",
+          "count": 6,
+          "hits": [
+            {
+              "line": 578,
+              "text": "#fff"
+            },
+            {
+              "line": 591,
+              "text": "#fff"
+            },
+            {
+              "line": 595,
+              "text": "#fff"
+            },
+            {
+              "line": 603,
+              "text": "#fff"
+            },
+            {
+              "line": 611,
+              "text": "#fff"
+            },
+            {
+              "line": 621,
+              "text": "#fff"
+            }
+          ]
+        },
+        {
+          "id": "hard-333-border",
+          "severity": "P2",
+          "label": "Hard #333-ish border instead of translucent",
+          "fix": "soul",
+          "count": 2,
+          "hits": [
+            {
+              "line": 646,
+              "text": "border: 2px solid #222"
+            },
+            {
+              "line": 665,
+              "text": "border: 1.5px solid #222"
+            }
+          ]
+        },
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        },
+        {
+          "id": "inline-color-literal",
+          "severity": "P2",
+          "label": "38 opaque colour literals outside :root (>30) — lift them into named tokens",
+          "fix": "soul",
+          "total": 38,
+          "hits": [
+            {
+              "line": 578,
+              "text": "#fff"
+            },
+            {
+              "line": 585,
+              "text": "#f3f8f4"
+            },
+            {
+              "line": 589,
+              "text": "#edf3ef"
+            },
+            {
+              "line": 591,
+              "text": "#fff"
+            },
+            {
+              "line": 595,
+              "text": "#e1e9e3"
+            },
+            {
+              "line": 595,
+              "text": "#fff"
+            },
+            {
+              "line": 596,
+              "text": "#82b990"
+            },
+            {
+              "line": 596,
+              "text": "#f7fcf8"
+            }
+          ],
+          "count": 38
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/MerchantDatePicker.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/MerchantDialog.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/MerchantIcon.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/MerchantRecentSettlements.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/components/MerchantRecordFilters.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/MerchantHomePage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/MerchantMorePage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/MerchantRecordsPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/pages/MerchantSettlementDetailPage.vue",
+      "findings": [
+        {
+          "id": "missing-stamp",
+          "severity": "P2",
+          "label": "No /* finesse · … */ build stamp — next run has nothing to rotate against",
+          "fix": "divergence §4.2",
+          "hits": [
+            {
+              "line": 0,
+              "text": "no five-axis stamp in CSS"
+            }
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "apps/merchant-admin/src/styles/merchant-pages.css",
+      "findings": []
+    },
+    {
+      "file": "apps/merchant-admin/src/styles/merchant-workbench.css",
+      "findings": []
+    }
+  ],
+  "notCovered": [
+    "default-category aesthetic (the vibe, not just token names — beige+brass craft, AI purple-glow)",
+    "div-based fake screenshots / fake dashboards",
+    "identical / generic card grids (icon + title + text × N)",
+    "zero imagery on an image-implied brief (food / hotel / fashion / travel)",
+    "glassmorphism / AI-purple-glow used as decoration",
+    "layout-family repetition (§5) and whether the soul is actually distinct",
+    "whether the engine RENDERS real pixels (needs the Playwright runtime pass, not a grep)",
+    "mobile-floor M3/M4 — clickable text wrapping to two lines, long-word overflow at 320px (needs a rendered page at 320, not a grep)",
+    "root-relative asset paths (`/img/x.png`) — dead-ref only resolves file-relative ones; a broken `/…` link needs the real serving root"
+  ]
+}

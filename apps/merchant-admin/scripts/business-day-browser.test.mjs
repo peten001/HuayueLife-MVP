@@ -17,6 +17,16 @@ summary.statusBreakdown = {};
 const result = { source: 'Isolated mocked API, built local UI; not production or physical device', views: [], dateChecks: [], errors: [] };
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 
+async function waitForCall(calls, predicate, startIndex = 0, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const match = calls.slice(startIndex).findLast(predicate);
+    if (match) return match;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.fail(`Timed out waiting for matching API call. Recent calls: ${JSON.stringify(calls.slice(-6))}`);
+}
+
 function analytics(from = date, to = date) {
   return {
     generatedAt: '2026-09-03T18:00:00.000Z', currency: 'VND',
@@ -69,7 +79,8 @@ try {
     await page.goto(`${base}/business-analytics`);
     await page.locator('.analytics-funds-heading span').waitFor();
     assert.deepEqual(calls.find(call => call.path === '/merchant/analytics').params, {});
-    assert.match(await page.locator('.analytics-date-button').getAttribute('aria-label'), /9\/3/);
+    assert.match(await page.locator('.analytics-preset.active').getAttribute('class'), /active/);
+    assert.equal(await page.locator('.analytics-date-button').count(), 0);
     for (const zoom of width === 1440 ? [1, 2] : [1]) {
       await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
       const measured = await page.evaluate(() => {
@@ -86,28 +97,36 @@ try {
     }
     await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
     if (locale === 'zh' && width === 390) {
-      await Promise.all([page.waitForResponse(response => response.url().includes('dateFrom=2026-08-28')), page.getByRole('button', { name: '近7天', exact: true }).click()]);
+      const sevenDayStart = calls.length;
+      await page.getByRole('button', { name: '近7天', exact: true }).click();
+      await waitForCall(calls, call => call.path === '/merchant/analytics' && call.params.dateFrom === '2026-08-28', sevenDayStart);
       assert.deepEqual(calls.filter(call => call.path === '/merchant/analytics').at(-1).params, { dateFrom: '2026-08-28', dateTo: date });
       await page.getByRole('button', { name: '自定义', exact: true }).click();
       await page.locator('input[type=date]').nth(0).fill('2026-09-01');
       await page.locator('input[type=date]').nth(1).fill('2026-09-01');
-      await Promise.all([page.waitForResponse(response => response.url().includes('dateFrom=2026-09-01')), page.getByRole('button', { name: '应用日期', exact: true }).click()]);
+      const customStart = calls.length;
+      await page.getByRole('button', { name: '应用日期', exact: true }).click();
+      await waitForCall(calls, call => call.path === '/merchant/analytics' && call.params.dateFrom === '2026-09-01', customStart);
       assert.deepEqual(calls.filter(call => call.path === '/merchant/analytics').at(-1).params, { dateFrom: '2026-09-01', dateTo: '2026-09-01' });
       await page.getByRole('button', { name: '今日', exact: true }).click();
       await page.locator('.analytics-funds-heading span').waitFor();
       assert.deepEqual(calls.filter(call => call.path === '/merchant/analytics').at(-1).params, {});
       result.dateChecks.push('Analytics: server opening-day default, 7-day anchor, custom date, Today reset');
     }
-    await Promise.all([page.waitForResponse(response => response.url().includes('/merchant/orders/summary')), page.goto(`${base}/orders`)]);
-    const dated = calls.filter(call => ['/merchant/orders', '/merchant/orders/summary'].includes(call.path));
-    assert.ok(dated.length >= 2);
-    assert.ok(dated.every(call => call.params.date === date), 'order list and summaries use server current business day');
-    assert.equal(await page.locator('.orders-desktop-view input[type=date]').inputValue(), date);
+    const orderStart = calls.length;
+    await page.goto(`${base}/orders`);
+    await waitForCall(calls, call => call.path === '/merchant/orders' && call.params.date === date, orderStart);
+    const dated = calls.slice(orderStart).filter(call => call.path === '/merchant/orders');
+    assert.ok(dated.length >= 1);
+    assert.ok(dated.every(call => call.params.date === date), 'order list uses the server current business day');
+    assert.equal(new URL(page.url()).searchParams.get('date'), date);
     await context.close();
   }
   const { context, page, calls } = await open('zh', 390, true);
   await page.goto(`${base}/orders`);
-  await page.getByText('Fixture business date unavailable', { exact: true }).filter({ visible: true }).waitFor();
+  const businessDayError = page.getByRole('alert');
+  await businessDayError.waitFor();
+  assert.match(await businessDayError.innerText(), /Fixture business date unavailable/);
   assert.equal(calls.filter(call => ['/merchant/orders', '/merchant/orders/summary'].includes(call.path)).length, 0, 'failed day lookup must not fetch guessed natural-day totals');
   result.dateChecks.push('Orders: midnight default aligned in all 18 cases; day lookup failure visible and no guessed-date requests');
   await context.close();

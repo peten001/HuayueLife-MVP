@@ -285,7 +285,9 @@ try {
     routerSource,
     /path: 'printing-center',[\s\S]*?meta: \{ roles: \['OWNER', 'MANAGER'] \}/,
   );
-  assert.equal((layoutSource.match(/\['\/printing-center'/g) ?? []).length, 2);
+  const navigationSource = await readFile(new URL('../src/composables/useMerchantNavigation.ts', import.meta.url), 'utf8');
+  assert.match(layoutSource, /useMerchantNavigation/);
+  assert.match(navigationSource, /path: '\/printing-center'.*allowed: staff.value\?\.role !== 'STAFF'/);
 
   console.log('merchant-admin printing status: PASS');
 } finally {

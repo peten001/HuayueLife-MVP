@@ -38,11 +38,11 @@ async function submit() {
 
 <template>
   <PageHeader :title="t('changePassword')" :description="t('changePasswordDescription')" />
-  <form class="card form-grid" @submit.prevent="submit">
-    <label class="span-2">{{ t('currentPassword') }}<input v-model="form.currentPassword" type="password" required minlength="8" /></label>
+  <form class="mx-panel mx-form mx-security-form" @submit.prevent="submit">
+    <label class="mx-form-section">{{ t('currentPassword') }}<input v-model="form.currentPassword" type="password" required minlength="8" /></label>
     <label>{{ t('newPassword') }}<input v-model="form.newPassword" type="password" required minlength="8" /></label>
     <label>{{ t('confirmPassword') }}<input v-model="form.confirmPassword" type="password" required minlength="8" /></label>
-    <div class="form-actions span-2">
+    <div class="mx-editor-actions">
       <span class="message">{{ message }}</span>
       <button :disabled="loading">{{ loading ? t('saving') : t('saveChanges') }}</button>
     </div>

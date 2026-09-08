@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { errorMessage } from '@/api/http';
 import {
   getMerchantOrderChat,
   listMerchantOrderChatMessages,
@@ -8,9 +7,10 @@ import {
   sendMerchantOrderChatMessage,
   type MerchantChatConversation,
 } from '@/api/order-chat';
+import MerchantIcon from '@/components/MerchantIcon.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n } from '@/i18n';
-import type { MerchantOrder, OrderChatMessage, OrderStatus } from '@/types/api';
+import type { MerchantOrder, OrderChatMessage } from '@/types/api';
 
 const props = defineProps<{
   order: MerchantOrder;
@@ -52,12 +52,10 @@ const showReadOnlyHint = computed(
   () => isFinalOrder.value || conversation.value?.status === 'CLOSED',
 );
 
-const participantName = computed(
-  () =>
-    conversation.value?.customer.nickname?.trim() ||
-    conversation.value?.customer.phone?.trim() ||
-    t('customer'),
-);
+const participantName = computed(() => {
+  const customer = conversation.value?.customer;
+  return customer?.nickname?.trim() || customer?.phone?.trim() || t('customer');
+});
 
 const quickReplies = [
   '您好，请问几位用餐？',
@@ -235,22 +233,26 @@ async function loadConversation(initial = false) {
 
     lastMessageId.value =
       loadedMessages[loadedMessages.length - 1]?.id ??
-      loadedConversation.lastMessageId ??
+      loadedConversation?.lastMessageId ??
       '';
 
-    const readConversation = await markMerchantOrderChatRead(orderId);
-    if (disposed || seq !== requestSeq) return;
-    conversation.value = readConversation;
-    const readAt = new Date().toISOString();
-    messages.value = messages.value.map((message) =>
-      message.senderType === 'CUSTOMER' && !message.readAt
-        ? { ...message, readAt }
-        : message,
-    );
-    emit('updated', readConversation);
+    if (loadedConversation) {
+      const readConversation = await markMerchantOrderChatRead(orderId);
+      if (disposed || seq !== requestSeq) return;
+      if (readConversation) {
+        conversation.value = readConversation;
+        const readAt = new Date().toISOString();
+        messages.value = messages.value.map((message) =>
+          message.senderType === 'CUSTOMER' && !message.readAt
+            ? { ...message, readAt }
+            : message,
+        );
+        emit('updated', readConversation);
+      }
+    }
     const nextLastMessageId =
       loadedMessages[loadedMessages.length - 1]?.id ??
-      loadedConversation.lastMessageId ??
+      loadedConversation?.lastMessageId ??
       '';
     if (initial) {
       await scrollToBottom();
@@ -265,7 +267,7 @@ async function loadConversation(initial = false) {
     startPolling();
   } catch (err) {
     if (disposed || seq !== requestSeq) return;
-    error.value = errorMessage(err);
+    error.value = t('chatLoadFailed');
   } finally {
     if (disposed || seq !== requestSeq) return;
     loading.value = false;
@@ -299,7 +301,7 @@ async function sendMessage() {
     }
     await scrollToBottom();
   } catch (err) {
-    error.value = errorMessage(err);
+    error.value = t('chatSendFailed');
   } finally {
     sending.value = false;
   }
@@ -319,124 +321,192 @@ function isMerchantMessage(message: OrderChatMessage) {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="close">
-    <section class="card modal-card order-chat-panel">
-      <header class="chat-header">
-        <div>
-          <h2>{{ t('orderChat') }} · #{{ props.order.orderNo }}</h2>
-          <p>
-            <OrderStatusBadge :status="props.order.status" />
-            <span class="chat-participant">{{ t('customer') }}：{{ participantName }}</span>
-          </p>
-        </div>
-        <button type="button" class="secondary small" @click="close">{{ t('close') }}</button>
-      </header>
+  <Teleport to="body">
+    <div class="chat-modal-backdrop" @click.self="close">
+      <section class="order-chat-panel" role="dialog" aria-modal="true" :aria-label="t('orderChat')">
+        <header class="chat-header">
+          <button type="button" class="chat-back" :aria-label="t('close')" @click="close">
+            <MerchantIcon name="back" />
+          </button>
+          <div class="chat-heading">
+            <h2>{{ t('orderChat') }}</h2>
+            <p>
+              <span>#{{ props.order.orderNo }}</span>
+              <i aria-hidden="true"></i>
+              <span class="chat-participant">{{ participantName }}</span>
+            </p>
+          </div>
+          <OrderStatusBadge class="chat-order-status" :status="props.order.status" />
+        </header>
 
-      <p v-if="error" class="message chat-error">{{ error }}</p>
+        <div class="chat-body">
+          <div class="chat-toolbar" aria-live="polite">
+            <span>{{ t('chatHistory') }}</span>
+            <small v-if="loading">{{ t('loadingMessages') }}</small>
+            <small v-else-if="refreshing">{{ t('chatRefreshing') }}</small>
+          </div>
 
-      <div class="chat-body">
-        <div class="chat-toolbar">
-          <span>{{ t('chatHistory') }}</span>
-          <small v-if="loading">{{ t('loadingMessages') }}</small>
-          <small v-else-if="refreshing">{{ t('chatRefreshing') }}</small>
-        </div>
+          <div v-if="error" class="chat-error" role="alert">
+            <span>{{ error }}</span>
+            <button type="button" @click="loadConversation(true)">{{ t('retry') }}</button>
+          </div>
 
-        <div ref="messageListRef" class="message-list" @scroll="handleMessageListScroll">
-          <p v-if="!loading && !messages.length" class="empty chat-empty">
-            {{ t('noMessages') }}
-          </p>
-          <template v-for="item in timelineItems" :key="item.key">
-            <div v-if="item.type === 'date'" class="date-divider">
-              <span class="date-divider-label">{{ item.label }}</span>
+          <div ref="messageListRef" class="message-list" @scroll="handleMessageListScroll">
+            <div v-if="!loading && !messages.length" class="chat-empty">
+              <span class="chat-empty-icon" aria-hidden="true"></span>
+              <strong>{{ t('noMessages') }}</strong>
+              <small>{{ t('chatEmptyHint') }}</small>
             </div>
-            <article v-else :class="['message-row', messageSide(item.message)]">
-              <div class="message-stack">
-                <small class="message-time">{{ formatMessageTime(item.message.createdAt) }}</small>
-                <div :class="['message-bubble', { self: isMerchantMessage(item.message) }]">
-                  <p class="message-content">{{ item.message.content }}</p>
-                  <small
-                    v-if="isMerchantMessage(item.message)"
-                    :class="['message-status', item.message.readAt ? 'read' : 'unread']"
-                    aria-hidden="true"
-                  >
-                    {{ item.message.readAt ? '✓✓' : '✓' }}
-                  </small>
-                </div>
+            <template v-for="item in timelineItems" :key="item.key">
+              <div v-if="item.type === 'date'" class="date-divider">
+                <span class="date-divider-label">{{ item.label }}</span>
               </div>
-            </article>
-          </template>
+              <article v-else :class="['message-row', messageSide(item.message)]">
+                <div class="message-stack">
+                  <small class="message-time">{{ formatMessageTime(item.message.createdAt) }}</small>
+                  <div :class="['message-bubble', { self: isMerchantMessage(item.message) }]">
+                    <p class="message-content">{{ item.message.content }}</p>
+                    <small
+                      v-if="isMerchantMessage(item.message)"
+                      :class="['message-status', item.message.readAt ? 'read' : 'unread']"
+                      aria-hidden="true"
+                    >
+                      {{ item.message.readAt ? '✓✓' : '✓' }}
+                    </small>
+                  </div>
+                </div>
+              </article>
+            </template>
+          </div>
+
+          <button
+            v-if="showNewMessagePrompt"
+            type="button"
+            class="new-message-prompt"
+            @click="handleNewMessagePrompt"
+          >
+            ↓ {{ t('newMessages') }}
+          </button>
+
+          <div class="chat-composer-shell">
+            <p v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</p>
+            <form v-else class="chat-form" @submit.prevent="sendMessage">
+              <div class="quick-replies" :aria-label="t('quickReply')">
+                <button
+                  v-for="reply in quickReplies"
+                  :key="reply"
+                  type="button"
+                  class="quick-reply"
+                  @click="draft = reply"
+                >
+                  {{ reply }}
+                </button>
+              </div>
+              <div class="chat-compose-row">
+                <textarea
+                  v-model="draft"
+                  rows="1"
+                  :disabled="!canSend || sending"
+                  :placeholder="t('messagePlaceholder')"
+                  @keydown.enter.exact.prevent="sendMessage"
+                />
+                <button
+                  type="submit"
+                  class="chat-send"
+                  :disabled="!canSend || sending || !draft.trim()"
+                >
+                  {{ sending ? t('sending') : t('sendMessage') }}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-
-        <button
-          v-if="showNewMessagePrompt"
-          type="button"
-          class="new-message-prompt"
-          @click="handleNewMessagePrompt"
-        >
-          ↓ 新消息
-        </button>
-
-        <p v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</p>
-
-        <form class="chat-form" @submit.prevent="sendMessage">
-          <div class="quick-replies">
-            <button
-              v-for="reply in quickReplies"
-              :key="reply"
-              type="button"
-              class="quick-reply"
-              @click="draft = reply"
-            >
-              {{ reply }}
-            </button>
-          </div>
-          <textarea
-            v-model="draft"
-            :disabled="!canSend || sending"
-            :placeholder="t('messagePlaceholder')"
-            @keydown.enter.exact.prevent="sendMessage"
-          />
-          <div class="chat-form-actions">
-            <small v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</small>
-            <button type="submit" :disabled="!canSend || sending || !draft.trim()">
-              {{ sending ? t('sending') : t('sendMessage') }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </section>
-  </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
+.chat-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(14 31 21 / 38%);
+  overscroll-behavior: none;
+}
+
 .order-chat-panel {
-  width: min(780px, 100%);
-  height: min(90vh, 920px);
+  width: min(680px, 100%);
+  height: min(82vh, 780px);
+  height: min(82dvh, 780px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
   overflow: hidden;
+  border: 1px solid rgb(213 226 217 / 92%);
+  border-radius: 24px;
+  background: #f4f8f5;
+  box-shadow: 0 28px 80px rgb(13 34 21 / 24%);
 }
 
 .chat-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.chat-header h2 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.chat-header p {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  margin: 8px 0 0;
-  color: #68707a;
+  min-height: 72px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e0e9e2;
+  background: rgb(255 255 255 / 94%);
+}
+
+.chat-back {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #173b2a;
+  background: transparent;
+}
+
+.chat-back:hover {
+  background: #edf4ef;
+}
+
+.chat-heading {
+  min-width: 0;
+}
+
+.chat-heading h2 {
+  margin: 0;
+  color: #163626;
+  font-size: 17px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.chat-heading p {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 4px 0 0;
+  color: #78877e;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.chat-heading p i {
+  width: 3px;
+  height: 3px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #a4aea8;
 }
 
 .chat-participant {
@@ -447,10 +517,10 @@ function isMerchantMessage(message: OrderChatMessage) {
 }
 
 .chat-body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
   min-height: 0;
 }
 
@@ -459,21 +529,22 @@ function isMerchantMessage(message: OrderChatMessage) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: #68707a;
-  font-size: 13px;
+  min-height: 36px;
+  padding: 0 22px;
+  color: #7a8980;
+  font-size: 12px;
 }
 
 .message-list {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
   min-height: 0;
-  padding: 12px;
+  padding: 10px 22px 18px;
   overflow: auto;
-  border: 1px solid #edf0f2;
-  border-radius: 14px;
-  background: #f9fbfa;
+  overscroll-behavior: contain;
+  background: #f4f8f5;
 }
 
 .date-divider {
@@ -499,8 +570,49 @@ function isMerchantMessage(message: OrderChatMessage) {
 }
 
 .chat-empty {
-  margin: 0;
-  padding: 20px;
+  display: grid;
+  flex: 1;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  min-height: 180px;
+  padding: 24px;
+  color: #7e8c83;
+  text-align: center;
+}
+
+.chat-empty-icon {
+  position: relative;
+  width: 44px;
+  height: 36px;
+  margin-bottom: 5px;
+  border: 1.5px solid #b9c9be;
+  border-radius: 15px;
+  background: #fff;
+}
+
+.chat-empty-icon::after {
+  position: absolute;
+  right: 7px;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1.5px solid #b9c9be;
+  border-bottom: 1.5px solid #b9c9be;
+  background: #fff;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.chat-empty strong {
+  color: #53665a;
+  font-size: 14px;
+}
+
+.chat-empty small {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .message-row {
@@ -518,7 +630,7 @@ function isMerchantMessage(message: OrderChatMessage) {
 
 .message-stack {
   display: flex;
-  max-width: 60%;
+  max-width: 72%;
   flex-direction: column;
   align-items: flex-start;
 }
@@ -542,18 +654,19 @@ function isMerchantMessage(message: OrderChatMessage) {
   height: auto;
   align-items: flex-end;
   gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid #e4ebe6;
-  border-radius: 14px;
+  padding: 9px 12px;
+  border: 1px solid #e0e8e2;
+  border-radius: 16px 16px 16px 5px;
   color: #183127;
   background: #fff;
-  box-shadow: 0 4px 12px rgb(31 45 36 / 5%);
+  box-shadow: 0 3px 10px rgb(31 45 36 / 4%);
   box-sizing: border-box;
 }
 
 .message-bubble.self {
-  border-color: #d9ecd9;
-  background: #eaf7ee;
+  border-color: #cfe5d3;
+  border-radius: 16px 16px 5px;
+  background: #e7f4ea;
 }
 
 .message-content {
@@ -587,39 +700,79 @@ function isMerchantMessage(message: OrderChatMessage) {
   color: #24a148;
 }
 
-.chat-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.chat-composer-shell {
+  flex: 0 0 auto;
+  padding: 10px 16px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid #dfe8e1;
+  background: rgb(255 255 255 / 96%);
 }
 
-.chat-form textarea {
-  min-height: 90px;
+.chat-form {
+  display: grid;
+  gap: 9px;
 }
 
 .quick-replies {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
+  margin: 0 -2px;
+  padding: 0 2px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.quick-replies::-webkit-scrollbar {
+  display: none;
 }
 
 .quick-reply {
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: #edf4ee;
-  color: #35553e;
+  flex: 0 0 auto;
+  min-height: 31px;
+  padding: 6px 10px;
+  border: 1px solid #dce8df;
+  border-radius: 999px;
+  background: #f6faf7;
+  color: #42604d;
   font-size: 12px;
   line-height: 1.2;
 }
 
-.chat-form-actions {
+.chat-compose-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-compose-row textarea {
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 104px;
+  flex: 1 1 auto;
+  resize: none;
+  padding: 11px 13px;
+  border: 1px solid #d8e3db;
+  border-radius: 14px;
+  color: #173426;
+  background: #f8faf9;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.chat-send {
+  flex: 0 0 auto;
+  min-width: 68px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-size: 13px;
 }
 
 .new-message-prompt {
+  position: absolute;
+  right: 18px;
+  bottom: 104px;
+  z-index: 2;
   align-self: center;
   padding: 6px 12px;
   border-radius: 999px;
@@ -630,35 +783,96 @@ function isMerchantMessage(message: OrderChatMessage) {
 }
 
 .chat-hint {
+  display: block;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
   color: #68707a;
+  background: #f3f6f4;
   font-size: 13px;
   line-height: 1.5;
+  text-align: center;
 }
 
 .chat-error {
-  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 22px 8px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  color: #9f3131;
+  background: #fff1f1;
+  font-size: 13px;
+}
+
+.chat-error button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 0;
+  color: #9f3131;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 760px) {
+  .chat-modal-backdrop {
+    display: block;
+    padding: 0;
+    background: #f4f8f5;
+  }
+
   .order-chat-panel {
-    width: min(100%, 680px);
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .chat-header {
+    min-height: 66px;
+    padding: max(7px, env(safe-area-inset-top)) 14px 7px;
+  }
+
+  .chat-heading h2 {
+    font-size: 16px;
+  }
+
+  .chat-order-status {
+    font-size: 11px;
+  }
+
+  .chat-toolbar {
+    min-height: 32px;
+    padding: 0 16px;
   }
 
   .message-list {
-    padding: 10px;
+    padding: 8px 16px 14px;
   }
 
   .message-stack {
-    max-width: 72%;
+    max-width: 82%;
   }
 
   .message-bubble {
     padding: 8px 10px;
   }
 
-  .chat-form-actions {
-    flex-direction: column;
-    align-items: stretch;
+  .chat-composer-shell {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .chat-error {
+    margin-right: 16px;
+    margin-left: 16px;
   }
 }
 </style>

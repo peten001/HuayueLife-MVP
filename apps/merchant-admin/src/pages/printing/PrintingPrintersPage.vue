@@ -740,12 +740,10 @@ onBeforeUnmount(() => {
         <svg viewBox="0 0 24 24"><path d="M5 7h14v12H5zM8 7V5h8v2m-8 5h8m-8 3h5" /></svg>
       </div>
       <strong>{{ p('noPrinters') }}</strong>
-      <p>{{ p('noPrintersHint') }}</p>
-      <button class="printing-button" type="button" @click="openCreate">{{ p('addPrinter') }}</button>
     </div>
 
-    <div v-else class="printing-printer-list">
-      <article v-for="row in rows" :key="row.id" class="printing-printer-row">
+    <div v-else class="printing-printer-list mx-printer-directory">
+      <article v-for="row in rows" :key="row.id" class="printing-printer-row mx-printer-device">
         <div class="printing-printer-row__identity">
           <div class="printing-printer-row__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M6 9h12v9H6zM8 9V5h8v4m-5 4h4m-5 3h6" /></svg>

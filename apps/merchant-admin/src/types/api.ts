@@ -927,6 +927,7 @@ export interface MerchantOrderChatConversation {
 export interface MerchantOrder {
   id: string;
   orderNo: string;
+  reportingBusinessDate?: string;
   merchantId: string;
   tableNoSnapshot?: string;
   orderType: OrderType;
@@ -1021,6 +1022,7 @@ export interface MerchantSettlementPage {
 export interface MerchantSettlementFilters {
   status?: 'COMPLETED' | 'CANCELLED';
   orderType?: OrderType;
+  paymentMethod?: PaymentMethod;
   date?: string;
   search?: string;
   page?: number;

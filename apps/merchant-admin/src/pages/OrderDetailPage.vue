@@ -2,14 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import OrderVoidAction from '@/components/OrderVoidAction.vue';
-import { getMerchantOrder, printMerchantOrder, runOrderAction } from '@/api/orders';
+import { getMerchantOrder, printMerchantOrder } from '@/api/orders';
+import { createManualOrderPrintJob, getPrintingPrinters, getPrintingRouting } from '@/api/printing';
 import { errorMessage } from '@/api/http';
 import { getPrinters } from '@/api/printers';
 import OrderChatPanel from '@/components/OrderChatPanel.vue';
-import PageHeader from '@/components/PageHeader.vue';
+import { merchantReturnTo } from '@/utils/merchant-view-context';
+import MerchantIcon from '@/components/MerchantIcon.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type { MerchantOrder, OrderStatus, OrderStatusLog, PrinterSetting } from '@/types/api';
+import type { PrintingPrinter } from '@/types/printing';
 import { getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature } from '@/utils/merchant-capabilities';
 import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
@@ -17,6 +20,7 @@ import { orderStatusLogActionPresentation } from '@/utils/order-status-log-prese
 
 const route = useRoute();
 const router = useRouter();
+const returnTo = computed(() => merchantReturnTo(route.query.returnTo));
 const canVoidOrders = getMerchantStaff()?.role === 'OWNER';
 const { locale, t } = useI18n();
 const merchant = getMerchantStaff()?.merchant ?? null;
@@ -24,45 +28,18 @@ const order = ref<MerchantOrder>();
 const printers = ref<PrinterSetting[]>([]);
 const selectedPrinterIds = ref<string[]>([]);
 const message = ref('');
-const operating = ref(false);
 const printing = ref(false);
+const taskCenterPrinter = ref<PrintingPrinter | null>(null);
 const chatOpen = ref(false);
 const legacyPrintingEnabled = ref(false);
+const taskCenterPrintingEnabled = ref(false);
 const chatEnabled = computed(() => canAccessMerchantFeature(merchant, 'chat'));
 const legacyPrinterEnabled = computed(() =>
   legacyPrintingEnabled.value && canAccessMerchantFeature(merchant, 'printers'),
 );
+const taskCenterPrintReady = computed(() => taskCenterPrintingEnabled.value && Boolean(taskCenterPrinter.value));
+const printReady = computed(() => taskCenterPrintReady.value || (legacyPrinterEnabled.value && selectedPrinterIds.value.length > 0));
 let timer: number | undefined;
-
-const actions = computed(() => {
-  if (!order.value) return [];
-  const rows: Array<{ action: Action; label: TranslationKey; className?: string }> = [];
-  if (order.value.status === 'PENDING_ACCEPTANCE') {
-    rows.push({ action: 'accept', label: 'acceptOrder' });
-    rows.push({ action: 'reject', label: 'rejectOrder', className: 'danger' });
-  }
-  if (order.value.status === 'ACCEPTED') {
-    rows.push({ action: 'start-preparing', label: 'startPreparing' });
-    rows.push({ action: 'reject', label: 'cancelOrder', className: 'danger' });
-  }
-  if (order.value.status === 'PREPARING') {
-    rows.push({ action: 'ready', label: 'markReady' });
-  }
-  if (order.value.status === 'READY') {
-    rows.push(
-      order.value.orderType === 'DELIVERY'
-        ? { action: 'start-delivery', label: 'startDelivery' }
-        : { action: 'complete', label: 'completeOrder' },
-    );
-  }
-  if (
-    order.value.status === 'DELIVERING' &&
-    order.value.orderType === 'DELIVERY'
-  ) {
-    rows.push({ action: 'complete', label: 'completeDeliveryOrder' });
-  }
-  return rows;
-});
 
 async function load() {
   try {
@@ -80,38 +57,16 @@ async function loadPrinters() {
     .map((printer) => printer.id);
 }
 
-async function execute(action: Action) {
-  if (!order.value || operating.value) return;
-  let payload: Record<string, unknown> | undefined;
-  if (action === 'reject') {
-    const reason = window.prompt(t('rejectReasonPrompt'));
-    if (reason === null) return;
-    payload = { reason: reason || undefined };
-  }
+async function loadTaskCenterPrinter() {
   try {
-    operating.value = true;
-    order.value = await runOrderAction(order.value.id, action, payload);
-    message.value = t('orderUpdated');
-  } catch (error) {
-    message.value = errorMessage(error);
-    await load();
-  } finally {
-    operating.value = false;
-  }
-}
-
-async function settle() {
-  if (!order.value || !confirm(t('settleConfirm'))) {
-    return;
-  }
-  try {
-    operating.value = true;
-    order.value = await runOrderAction(order.value.id, 'settle');
-    message.value = t('markedSettled');
-  } catch (error) {
-    message.value = errorMessage(error);
-  } finally {
-    operating.value = false;
+    const [routing, configured] = await Promise.all([getPrintingRouting(), getPrintingPrinters()]);
+    const enabled = configured.filter(printer => printer.enabled && !printer.deletedAt);
+    taskCenterPrinter.value = enabled.find(printer => printer.id === routing.checkoutDefaultPrinterId)
+      ?? enabled.find(printer => printer.purpose === 'FRONT_DESK')
+      ?? enabled[0]
+      ?? null;
+  } catch {
+    taskCenterPrinter.value = null;
   }
 }
 
@@ -180,6 +135,10 @@ function money(value: string) {
   return `${Number(value).toLocaleString()} ₫`;
 }
 
+function dateTime(value: string) {
+  return new Intl.DateTimeFormat(locale.value === 'vi' ? 'vi-VN' : locale.value === 'en' ? 'en-GB' : 'zh-CN', { timeZone: 'Asia/Ho_Chi_Minh', year:'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
+}
+
 function localLabel(labels: Record<'zh' | 'vi' | 'en', string>) {
   return labels[locale.value];
 }
@@ -235,18 +194,19 @@ function printerLabel(id?: string | null) {
 }
 
 async function printReceipt() {
-  if (!order.value || printing.value || !legacyPrinterEnabled.value) return;
-  if (!selectedPrinterIds.value.length) {
-    message.value = localLabel({ zh: '请选择打印机', vi: 'Vui lòng chọn máy in', en: 'Select at least one printer' });
-    return;
-  }
+  if (!order.value || printing.value || !printReady.value) return;
   try {
     printing.value = true;
-    const result = await printMerchantOrder(order.value.id, selectedPrinterIds.value);
-    message.value = result.failedCount
-      ? localLabel({ zh: `打印完成，${result.successCount} 台成功，${result.failedCount} 台失败`, vi: `Đã in: ${result.successCount} thành công, ${result.failedCount} lỗi`, en: `Print finished: ${result.successCount} succeeded, ${result.failedCount} failed` })
-      : localLabel({ zh: '打印任务已发送', vi: 'Đã gửi lệnh in', en: 'Print job sent' });
-    await load();
+    if (taskCenterPrintReady.value && taskCenterPrinter.value) {
+      await createManualOrderPrintJob(order.value.id, taskCenterPrinter.value.id, crypto.randomUUID());
+      message.value = localLabel({ zh: '打印任务已发送', vi: 'Đã gửi lệnh in', en: 'Print job sent' });
+    } else {
+      const result = await printMerchantOrder(order.value.id, selectedPrinterIds.value);
+      message.value = result.failedCount
+        ? localLabel({ zh: `打印完成，${result.successCount} 台成功，${result.failedCount} 台失败`, vi: `Đã in: ${result.successCount} thành công, ${result.failedCount} lỗi`, en: `Print finished: ${result.successCount} succeeded, ${result.failedCount} failed` })
+        : localLabel({ zh: '打印任务已发送', vi: 'Đã gửi lệnh in', en: 'Print job sent' });
+      await load();
+    }
   } catch (error) {
     message.value = errorMessage(error);
   } finally {
@@ -260,6 +220,10 @@ onMounted(async () => {
     load(),
   ]);
   legacyPrintingEnabled.value = featureState.legacyPrintingEnabled;
+  taskCenterPrintingEnabled.value = featureState.merchantPrintingEnabled;
+  if (taskCenterPrintingEnabled.value) {
+    await loadTaskCenterPrinter();
+  }
   if (legacyPrinterEnabled.value) {
     await loadPrinters().catch((error) => (message.value = errorMessage(error)));
   }
@@ -267,167 +231,51 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => window.clearInterval(timer));
 
-type Action =
-  | 'accept'
-  | 'reject'
-  | 'start-preparing'
-  | 'ready'
-  | 'start-delivery'
-  | 'complete';
 </script>
 
 <template>
-  <PageHeader
-    :title="order ? t('orderTitle', { orderNo: order.orderNo }) : t('orderDetail')"
-    :description="t('detailDescription')"
-  >
-    <OrderVoidAction v-if="canVoidOrders && order && ['COMPLETED', 'CANCELLED'].includes(order.status)" :target="`order:${order.id}`" mobile-align="start" @done="router.replace('/orders')" />
-    <RouterLink class="text-link" to="/orders">{{ t('backToOrders') }}</RouterLink>
-  </PageHeader>
-  <p class="message">{{ message }}</p>
-
-  <template v-if="order">
-    <section class="card order-operation">
-      <div>
-        <OrderStatusBadge :status="order.status" />
-        <span :class="['badge', order.settlementStatus === 'SETTLED' ? 'success' : 'warning-badge']">
-          {{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}
-        </span>
-      </div>
-      <div class="actions">
-        <button
-          v-for="item in actions"
-          :key="item.action"
-          :class="item.className"
-          :disabled="operating"
-          @click="execute(item.action)"
-        >
-          {{ t(item.label) }}
-        </button>
-        <button
-          v-if="chatEnabled"
-          type="button"
-          class="secondary chat-entry"
-          :class="{ 'chat-entry--unread': chatUnreadCount }"
-          @click="openChat"
-        >
-          <span>{{ t('openChat') }}</span>
-          <span v-if="chatUnreadCount" class="chat-unread-count" :title="chatUnreadLabel">
-            {{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}
-          </span>
-        </button>
-        <button
-          v-if="legacyPrinterEnabled"
-          type="button"
-          class="secondary"
-          :disabled="printing || !selectedPrinterIds.length"
-          @click="printReceipt"
-        >
-          {{ printButtonLabel }}
-        </button>
-        <button v-else type="button" class="secondary" disabled>
-          {{ localLabel({ zh: '打印执行端待接入', vi: 'Chờ kết nối bộ thực thi in', en: 'Print executor integration pending' }) }}
-        </button>
-        <button
-          v-if="order.settlementStatus === 'UNSETTLED'"
-          class="secondary"
-          :disabled="operating"
-          @click="settle"
-        >
-          {{ t('markSettled') }}
-        </button>
-      </div>
-    </section>
-
-    <section class="detail-grid">
-      <div class="card">
-        <h2>{{ t('orderInfo') }}</h2>
-        <dl class="detail-list">
-          <dt>{{ t('orderType') }}</dt><dd>{{ typeLabel() }}</dd>
-          <dt>{{ t('orderTime') }}</dt><dd>{{ new Date(order.createdAt).toLocaleString() }}</dd>
-          <dt v-if="order.orderType === 'DINE_IN'">{{ t('tableNumber') }}</dt>
-          <dd v-if="order.orderType === 'DINE_IN'">{{ order.tableNoSnapshot || order.table?.tableNo || '-' }}</dd>
-          <dt v-if="order.orderType !== 'DINE_IN'">{{ t('contact') }}</dt>
-          <dd v-if="order.orderType !== 'DINE_IN'">{{ order.contactName }} · {{ order.contactPhone }}</dd>
-          <dt v-if="order.orderType === 'DELIVERY'">{{ t('deliveryAddress') }}</dt>
-          <dd v-if="order.orderType === 'DELIVERY'">{{ order.deliveryAddress }}</dd>
-          <dt>{{ t('customerRemark') }}</dt><dd>{{ order.customerRemark || t('none') }}</dd>
-          <dt v-if="legacyPrinterEnabled">{{ localLabel({ zh: '打印状态', vi: 'Trạng thái in', en: 'Print Status' }) }}</dt>
-          <dd v-if="legacyPrinterEnabled">
-            {{ printStatusLabel() }}
-            <span v-if="printLogs[0]?.createdAt"> · {{ new Date(printLogs[0].createdAt).toLocaleString() }}</span>
-          </dd>
-          <dt v-if="legacyPrinterEnabled">{{ localLabel({ zh: '选择打印机', vi: 'Chọn máy in', en: 'Select Printers' }) }}</dt>
-          <dd v-if="legacyPrinterEnabled">
-            <label v-for="printer in printers" :key="printer.id" class="printer-check">
-              <input v-model="selectedPrinterIds" type="checkbox" :value="printer.id" />
-              {{ printer.name }} · {{ printer.ipAddress }}:{{ printer.port }}
-            </label>
-            <span v-if="!printers.length">-</span>
-          </dd>
-          <dt v-if="legacyPrinterEnabled && failedPrintLogs.length">{{ localLabel({ zh: '失败原因', vi: 'Lý do lỗi', en: 'Failure Reason' }) }}</dt>
-          <dd v-if="legacyPrinterEnabled && failedPrintLogs.length">
-            <p v-for="log in failedPrintLogs" :key="log.id" class="print-error-line">
-              {{ printerLabel(log.printerId) }}：{{ log.errorMessage || '-' }}
-            </p>
-          </dd>
-          <dt v-if="order.cancelReason">{{ t('cancelReason') }}</dt><dd v-if="order.cancelReason">{{ order.cancelReason }}</dd>
-        </dl>
-      </div>
-
-      <div class="card">
-        <h2>{{ t('amount') }}</h2>
-        <dl class="detail-list">
-          <dt>{{ t('itemAmount') }}</dt><dd>{{ money(order.itemAmountVnd) }}</dd>
-          <dt>{{ t('deliveryFee') }}</dt><dd>{{ money(order.deliveryFeeVnd) }}</dd>
-          <dt>{{ t('totalAmount') }}</dt><dd><strong>{{ money(order.totalAmountVnd) }}</strong></dd>
-        </dl>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>{{ t('itemDetails') }}</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>{{ t('product') }}</th><th>{{ t('unitPrice') }}</th><th>{{ t('quantity') }}</th><th>{{ t('subtotal') }}</th><th>{{ t('remark') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="item in order.items" :key="item.id">
-              <td>{{ item.productNameZhSnapshot }}</td>
-              <td>{{ money(item.unitPriceVnd) }}</td>
-              <td>{{ item.quantity }}</td>
-              <td>{{ money(item.subtotalVnd) }}</td>
-              <td>{{ item.remark || '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card status-log-card">
-      <h2>{{ t('statusLog') }}</h2>
-      <ol class="status-timeline">
-        <li v-for="row in statusTimeline" :key="row.log.id">
-          <span class="timeline-dot" />
-          <div>
-            <strong v-if="row.action">{{ t(row.action.labelKey, row.action.params) }}</strong>
-            <strong v-else>{{ statusLabel(row.log.fromStatus ?? undefined) }} → {{ statusLabel(row.log.toStatus) }}</strong>
-            <p>{{ row.log.remark || '-' }}</p>
-            <small>
-              {{ new Date(row.log.createdAt).toLocaleString() }}
-              · {{ row.log.operatorStaff?.displayName || operatorLabel(row.log.operatorType) }}
-            </small>
+  <div class="m-order-detail mx-detail">
+    <RouterLink class="m-back mx-order-detail-desktop-back" :to="returnTo"><MerchantIcon name="back" />{{ t('back') }}</RouterLink>
+    <header class="mx-heading mx-order-detail-heading"><RouterLink class="mx-order-detail-mobile-back" :to="returnTo" :aria-label="t('back')"><MerchantIcon name="back" /></RouterLink><div class="mx-order-detail-desktop-title"><h1>{{ t('orderDetail') }}</h1><p class="mx-detail-reference">{{ order?.orderNo || '—' }}</p></div><strong class="mx-order-detail-mobile-title">{{ order?.orderNo || '—' }}</strong><div class="mx-heading-actions"><OrderVoidAction v-if="order" :target="`order:${order.id}`" :allow-void="canVoidOrders && ['COMPLETED', 'CANCELLED'].includes(order.status)" :trigger-label="localLabel({zh:'更多订单操作',vi:'Thêm tùy chọn đơn hàng',en:'More order actions'})" :action-label="localLabel({zh:'删除订单',vi:'Xóa đơn',en:'Delete order'})" @done="router.replace(returnTo)"><template #trigger><MerchantIcon name="ellipsis" /><span>{{ localLabel({zh:'更多',vi:'Thêm',en:'More'}) }}</span></template><template #menu="{ closeMenu }"><p class="void-menu-sheet-title">{{ localLabel({zh:'订单操作',vi:'Thao tác đơn hàng',en:'Order actions'}) }}</p><button type="button" class="void-menu-action void-menu-print" :disabled="printing || !printReady" @click="closeMenu(); printReceipt()"><MerchantIcon name="print" /><span><strong>{{ localLabel({zh:'打印订单',vi:'In đơn',en:'Print order'}) }}</strong><small v-if="!printReady">{{ localLabel({zh:'打印服务未连接',vi:'Máy in chưa kết nối',en:'Printer not connected'}) }}</small></span></button><button type="button" class="void-menu-action void-menu-cancel" @click="closeMenu">{{ localLabel({zh:'取消',vi:'Hủy',en:'Cancel'}) }}</button></template></OrderVoidAction></div></header>
+    <p v-if="message" class="m-error" role="status">{{ message }} <button v-if="!order" type="button" class="secondary" @click="load">{{ t('query') }}</button></p>
+    <div v-if="!order && !message" class="mx-panel" role="status"><div v-for="n in 4" :key="n" class="mx-skeleton"><i></i><i></i><i></i></div></div>
+    <div v-if="order" class="mx-detail-grid">
+      <div class="mx-detail-main">
+        <section class="mx-panel mx-detail-facts">
+          <div class="mx-section-title"><h2>{{ t('orderInfo') }}</h2><MerchantIcon :name="order.orderType === 'DINE_IN' ? 'tables' : 'orders'" /></div>
+          <dl class="mx-facts mx-facts--grid mx-order-contact-facts">
+            <div v-if="order.orderType === 'DINE_IN'"><dt>{{ t('tableNumber') }}</dt><dd>{{ order.tableNoSnapshot || order.table?.tableNo || '—' }}</dd></div>
+            <div v-if="order.orderType !== 'DINE_IN'"><dt>{{ t('contact') }}</dt><dd>{{ order.contactName || t('none') }}</dd></div>
+            <div v-if="order.orderType !== 'DINE_IN' && order.contactPhone"><dt>{{ localLabel({zh:'电话',vi:'Điện thoại',en:'Phone'}) }}</dt><dd>{{ order.contactPhone }}</dd></div>
+            <div v-if="order.orderType === 'DELIVERY'" class="mx-span-full"><dt>{{ t('deliveryAddress') }}</dt><dd>{{ order.deliveryAddress }}</dd></div>
+          </dl>
+          <div v-if="order.customerRemark || order.cancelReason" class="mx-detail-notes">
+            <div v-if="order.customerRemark" class="mx-note"><span>{{ t('customerRemark') }}</span><strong>{{ order.customerRemark }}</strong></div>
+            <div v-if="order.cancelReason" class="mx-note mx-note--warning"><span>{{ t('cancelReason') }}</span><strong>{{ order.cancelReason }}</strong></div>
           </div>
-        </li>
-      </ol>
-    </section>
-  </template>
-
-  <OrderChatPanel
-    v-if="order && chatOpen && chatEnabled"
-    :order="order"
-    @close="closeChat"
-    @updated="applyChatConversation"
-  />
+          <div class="mx-detail-utility"><button v-if="chatEnabled" type="button" class="secondary chat-entry" :class="{'chat-entry--unread':chatUnreadCount}" @click="openChat"><span>{{ t('openChat') }}</span><span v-if="chatUnreadCount" class="chat-unread-count" :title="chatUnreadLabel">{{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}</span></button><small>{{ localLabel({zh:'每 5 秒自动更新',vi:'Tự cập nhật mỗi 5 giây',en:'Updates every 5 seconds'}) }}</small></div>
+        </section>
+        <section class="mx-panel mx-detail-items">
+          <div class="mx-section-title"><h2>{{ localLabel({zh:'菜品',vi:'Món ăn',en:'Items'}) }}</h2><span>{{ order.items.length }} {{ t('product') }}</span></div>
+          <div class="mx-item-head"><span>{{ t('product') }}</span><span>{{ t('unitPrice') }}</span><span>{{ t('quantity') }}</span><span>{{ t('subtotal') }}</span></div>
+          <div v-for="item in order.items" :key="item.id" class="mx-receipt-item"><div><strong>{{ item.productNameZhSnapshot }}</strong><small class="mx-mobile-unit">{{ money(item.unitPriceVnd) }}</small><small v-if="item.remark">{{ item.remark }}</small></div><span class="mx-desktop-unit">{{ money(item.unitPriceVnd) }}</span><span>×{{ item.quantity }}</span><b>{{ money(item.subtotalVnd) }}</b></div>
+          <p v-if="!order.items.length" class="m-empty">{{ localLabel({zh:'当前订单没有菜品',vi:'Đơn này không có món',en:'This order has no items'}) }}</p>
+        </section>
+        <section v-if="legacyPrinterEnabled" class="mx-panel mx-detail-printing">
+          <div class="mx-section-title"><h2>{{ localLabel({zh:'打印记录',vi:'Lịch sử in',en:'Printing record'}) }}</h2><span>{{ printStatusLabel() }}</span></div>
+          <p v-if="printLogs[0]?.createdAt" class="mx-detail-reference">{{ dateTime(printLogs[0].createdAt) }}</p>
+          <fieldset><legend>{{ localLabel({zh:'选择打印机',vi:'Chọn máy in',en:'Select printers'}) }}</legend><label v-for="printer in printers" :key="printer.id" class="printer-check"><input v-model="selectedPrinterIds" type="checkbox" :value="printer.id" />{{ printer.name }} · {{ printer.ipAddress }}:{{ printer.port }}</label></fieldset>
+          <p v-for="log in failedPrintLogs" :key="log.id" class="print-error-line">{{ printerLabel(log.printerId) }}：{{ log.errorMessage || '—' }}</p>
+          <button type="button" class="secondary" :disabled="printing || !selectedPrinterIds.length" @click="printReceipt">{{ printButtonLabel }}</button>
+        </section>
+      </div>
+      <aside class="mx-detail-aside">
+        <section class="mx-panel mx-order-summary"><div class="mx-order-summary-primary"><div class="mx-order-summary-amount"><span>{{ localLabel({zh:'订单金额',vi:'Giá trị đơn',en:'Order amount'}) }}</span><strong>{{ money(order.totalAmountVnd) }}</strong></div><div class="mx-detail-status"><OrderStatusBadge :status="order.status" /><span :class="['badge',order.settlementStatus === 'SETTLED' ? 'success' : 'warning-badge']">{{ order.settlementStatus === 'SETTLED' ? t('settled') : t('unsettled') }}</span></div></div><p class="mx-order-summary-meta">{{ typeLabel() }} · {{ dateTime(order.createdAt) }}</p><dl class="mx-order-costs"><div><dt>{{ localLabel({zh:'菜品',vi:'Món ăn',en:'Items'}) }}</dt><dd>{{ money(order.itemAmountVnd) }}</dd></div><div><dt>{{ localLabel({zh:'配送',vi:'Phí giao',en:'Delivery'}) }}</dt><dd>{{ money(order.deliveryFeeVnd) }}</dd></div></dl><small>{{ localLabel({zh:'最终实收以结账记录为准',vi:'Thực thu theo bản ghi thanh toán',en:'Final received amount follows settlement records'}) }}</small></section>
+        <details v-if="statusTimeline.length" class="mx-panel mx-detail-progress"><summary><span>{{ localLabel({zh:'订单进度',vi:'Tiến trình đơn',en:'Order progress'}) }}</span><small>{{ statusTimeline.length }} {{ localLabel({zh:'条记录',vi:'mục',en:'events'}) }} <b aria-hidden="true">›</b></small></summary><ol class="mx-timeline"><li v-for="row in statusTimeline" :key="row.log.id"><strong v-if="row.action">{{ t(row.action.labelKey,row.action.params) }}</strong><strong v-else>{{ statusLabel(row.log.fromStatus ?? undefined) }} → {{ statusLabel(row.log.toStatus) }}</strong><p v-if="row.log.remark">{{ row.log.remark }}</p><small>{{ dateTime(row.log.createdAt) }} · {{ row.log.operatorStaff?.displayName || operatorLabel(row.log.operatorType) }}</small></li></ol></details>
+      </aside>
+    </div>
+    <OrderChatPanel v-if="order && chatOpen && chatEnabled" :order="order" @close="closeChat" @updated="applyChatConversation" />
+  </div>
 </template>
 
 <style scoped>
@@ -444,13 +292,13 @@ type Action =
 
 .print-error-line {
   margin: 0 0 4px;
-  color: #b42318;
+  color: var(--m-danger);
 }
 
 .chat-entry--unread {
-  color: #b42318;
-  border: 1px solid #fecaca;
-  background: #fff7f7;
+  color: var(--m-danger);
+  border: 1px solid color-mix(in srgb, var(--m-danger) 28%, var(--m-line));
+  background: var(--m-danger-bg);
 }
 
 .chat-unread-count {
@@ -461,10 +309,93 @@ type Action =
   height: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  color: #fff;
-  background: #e5484d;
+  color: var(--m-surface);
+  background: var(--m-danger);
   font-size: 11px;
   font-weight: 800;
   line-height: 1;
+}
+
+.void-menu-sheet-title,
+.void-menu-cancel {
+  display: none;
+}
+
+.void-menu-print > span {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.void-menu-print strong {
+  font-weight: 600;
+}
+
+.void-menu-print small {
+  color: var(--m-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+@media (max-width: 760px) {
+  .mx-order-detail-heading {
+    z-index: 80;
+  }
+
+  .mx-order-detail-heading :deep(.void-menu[open])::before {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgb(18 34 25 / 42%);
+    content: "";
+  }
+
+  .mx-order-detail-heading :deep(.void-menu-panel) {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 61;
+    display: grid;
+    width: 100%;
+    padding: 8px 16px max(14px, env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+    background: var(--m-surface-solid);
+    box-shadow: 0 -14px 40px rgb(16 38 26 / 16%);
+  }
+
+  .void-menu-sheet-title {
+    display: block;
+    margin: 0;
+    padding: 10px 2px 8px;
+    color: var(--m-ink-strong);
+    font-size: 17px;
+    font-weight: 720;
+  }
+
+  .mx-order-detail-heading :deep(.void-menu-panel > button) {
+    min-height: 54px;
+    justify-content: flex-start;
+    padding: 10px 2px;
+    border: 0;
+    border-bottom: 1px solid var(--m-line-soft);
+    border-radius: 0;
+    background: transparent;
+    font-size: 14px;
+  }
+
+  .mx-order-detail-heading :deep(.void-menu-panel .void-button--danger) {
+    order: 2;
+    color: var(--m-danger);
+  }
+
+  .void-menu-print { order: 1; }
+
+  .void-menu-cancel {
+    display: flex;
+    order: 3;
+    justify-content: center !important;
+    border-bottom: 0 !important;
+    color: var(--m-accent) !important;
+    font-weight: 650;
+  }
 }
 </style>

@@ -7,8 +7,10 @@ import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
 import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
-import DashboardPage from '@/pages/DashboardPage.vue';
-import OrdersPage from '@/pages/OrdersPage.vue';
+import MerchantHomePage from '@/pages/MerchantHomePage.vue';
+import MerchantMorePage from '@/pages/MerchantMorePage.vue';
+import MerchantRecordsPage from '@/pages/MerchantRecordsPage.vue';
+import MerchantSettlementDetailPage from '@/pages/MerchantSettlementDetailPage.vue';
 import OrderDetailPage from '@/pages/OrderDetailPage.vue';
 import StaffPage from '@/pages/StaffPage.vue';
 import PlatformDashboardPage from '@/pages/PlatformDashboardPage.vue';
@@ -94,6 +96,11 @@ async function resolveMerchantSession() {
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    if (to.path === from.path) return false;
+    return { top: 0 };
+  },
   routes: [
     { path: '/login', component: LoginPage, meta: { guest: true, area: 'merchant' } },
     {
@@ -110,7 +117,7 @@ const router = createRouter({
         { path: '', redirect: '/dashboard' },
         {
           path: 'dashboard',
-          component: DashboardPage,
+          component: MerchantHomePage,
           meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
@@ -120,8 +127,23 @@ const router = createRouter({
         },
         {
           path: 'orders',
-          component: OrdersPage,
+          component: MerchantRecordsPage,
           meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },
+        },
+        {
+          path: 'settlements',
+          component: MerchantRecordsPage,
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },
+        },
+        {
+          path: 'settlements/:id',
+          component: MerchantSettlementDetailPage,
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'], feature: 'orders' },
+        },
+        {
+          path: 'more',
+          component: MerchantMorePage,
+          meta: { roles: ['OWNER', 'MANAGER', 'STAFF'] },
         },
         {
           path: 'orders/:id',

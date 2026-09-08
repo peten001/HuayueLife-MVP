@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import MerchantDialog from '@/components/MerchantDialog.vue';
+import MerchantIcon from '@/components/MerchantIcon.vue';
 import { errorMessage } from '@/api/http';
 import { useI18n } from '@/i18n';
 import {
@@ -35,12 +37,37 @@ const productMessage = ref('');
 const loading = ref(false);
 const uploading = ref(false);
 const showProductModal = ref(false);
+const mobileFiltersOpen = ref(false);
+const mobileSearchOpen = ref(false);
+const mobileSortOpen = ref(false);
 const productPendingDelete = ref<Product | null>(null);
 const deletingProduct = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const mobileSearchInput = ref<HTMLInputElement | null>(null);
 const deleteDialog = ref<HTMLElement | null>(null);
 const deleteCancelButton = ref<HTMLButtonElement | null>(null);
 const isMobileProductList = ref(false);
+const selectedProductId = ref('');
+const selectedProduct = computed(() => products.value.find(row => row.id === selectedProductId.value));
+const categoryEditor = ref<HTMLElement>();
+function word(zh: string, vi: string, en: string) { return ({ zh, vi, en })[locale.value]; }
+function productName(row: Product) { return locale.value === 'vi' && row.nameVi ? row.nameVi : locale.value === 'en' && row.nameEn ? row.nameEn : row.nameZh; }
+function secondaryProductName(row: Product) { return locale.value === 'zh' ? row.nameVi || pageCopy.value.missingVietnamese : row.nameZh; }
+function editSelectedProduct() { const row = selectedProduct.value; selectedProductId.value = ''; if (row) editProduct(row); }
+async function deleteSelectedProduct() { const row = selectedProduct.value; selectedProductId.value = ''; await nextTick(); if (row) void disableProductRow(row); }
+async function openMobileSearch() {
+  mobileSearchOpen.value = true;
+  await nextTick();
+  mobileSearchInput.value?.focus();
+}
+function closeMobileSearch() {
+  searchKeyword.value = '';
+  mobileSearchOpen.value = false;
+}
+function selectMobileSort(mode: ProductSortMode) {
+  selectedSortMode.value = mode;
+  mobileSortOpen.value = false;
+}
 let deleteTrigger: HTMLElement | null = null;
 let productListMedia: MediaQueryList | null = null;
 
@@ -291,6 +318,7 @@ const productsOffSaleCount = computed(
   () => products.value.filter((item) => item.status === 'OFF_SALE').length,
 );
 
+const failedPreviewUrl = ref('');
 const imagePreviewUrl = computed(() =>
   productForm.imageUrl ? resolveMediaUrl(productForm.imageUrl) : '',
 );
@@ -319,6 +347,13 @@ function setTab(tab: ManagementTab) {
     path: '/menu/products',
     query: tab === 'categories' ? { tab: 'categories' } : {},
   });
+}
+
+async function openCreateCategoryWorkspace() {
+  resetCategoryForm();
+  await router.replace({ path: '/menu/products', query: { tab: 'categories' } });
+  await nextTick();
+  categoryEditor.value?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function categoryName(category?: Category | null) {
@@ -361,7 +396,7 @@ function productImage(product: Product) {
   const source = thumbnailUrl && !failedListImageUrls.value.has(thumbnailUrl)
     ? thumbnailUrl
     : product.imageUrl;
-  return source ? resolveMediaUrl(source) : '';
+  return source && !failedListImageUrls.value.has(source.trim()) ? resolveMediaUrl(source) : '';
 }
 
 const failedListImageUrls = ref(new Set<string>());
@@ -369,10 +404,8 @@ const failedListImageUrls = ref(new Set<string>());
 function handleListImageError(product: Product) {
   const thumbnailUrl = product.menuThumbnailUrl?.trim();
   const originalUrl = product.imageUrl?.trim();
-  if (!thumbnailUrl || !originalUrl || thumbnailUrl === originalUrl) return;
-  if (!failedListImageUrls.value.has(thumbnailUrl)) {
-    failedListImageUrls.value = new Set([...failedListImageUrls.value, thumbnailUrl]);
-  }
+  const failed = thumbnailUrl && !failedListImageUrls.value.has(thumbnailUrl) ? thumbnailUrl : originalUrl;
+  if (failed) failedListImageUrls.value = new Set([...failedListImageUrls.value, failed]);
 }
 
 function resetCategoryForm() {
@@ -697,573 +730,62 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="menu-page">
-    <div class="menu-tabs">
-      <button
-        type="button"
-        :class="['menu-tab', activeTab === 'products' && 'is-active']"
-        @click="setTab('products')"
-      >
-        {{ pageCopy.productsTab }}
-      </button>
-      <button
-        type="button"
-        :class="['menu-tab', activeTab === 'categories' && 'is-active']"
-        @click="setTab('categories')"
-      >
-        {{ pageCopy.categoriesTab }}
-      </button>
-    </div>
-
-    <p v-if="pageMessage" class="page-message">{{ pageMessage }}</p>
-
-    <section v-if="activeTab === 'products'" class="products-dashboard">
-      <div class="products-sidebar">
-        <div class="card filter-card">
-          <div class="card-title">{{ pageCopy.filterTitle }}</div>
-
-          <label class="field">
-            <span class="field-label">{{ pageCopy.categoryFilterLabel }}</span>
-            <select v-model="selectedCategoryId">
-              <option value="all">{{ pageCopy.allCategories }}</option>
-              <option v-for="item in sortedCategories" :key="item.id" :value="item.id">
-                {{ categoryName(item) }}
-              </option>
-            </select>
-          </label>
-
-          <div class="field">
-            <span class="field-label">{{ pageCopy.statusFilterLabel }}</span>
-            <div class="status-filter-group">
-              <button
-                type="button"
-                :class="['status-filter', selectedStatus === 'ALL' && 'is-active']"
-                @click="selectedStatus = 'ALL'"
-              >
-                {{ pageCopy.allStatus }}
-              </button>
-              <button
-                type="button"
-                :class="['status-filter', 'is-success', selectedStatus === 'ON_SALE' && 'is-active']"
-                @click="selectedStatus = 'ON_SALE'"
-              >
-                {{ t('onSale') }}
-              </button>
-              <button
-                type="button"
-                :class="['status-filter', 'is-warning', selectedStatus === 'SOLD_OUT' && 'is-active']"
-                @click="selectedStatus = 'SOLD_OUT'"
-              >
-                {{ t('soldOut') }}
-              </button>
-              <button
-                type="button"
-                :class="['status-filter', 'is-neutral', selectedStatus === 'OFF_SALE' && 'is-active']"
-                @click="selectedStatus = 'OFF_SALE'"
-              >
-                {{ t('offSale') }}
-              </button>
-            </div>
-          </div>
-
-          <label class="field">
-            <span class="field-label">{{ pageCopy.sortLabel }}</span>
-            <select v-model="selectedSortMode">
-              <option
-                v-for="item in sortOptions"
-                :key="item.value"
-                :value="item.value"
-              >
-                {{ item.label }}
-              </option>
-            </select>
-          </label>
-        </div>
-
-        <div class="card stats-card">
-          <div class="card-title">{{ pageCopy.statsTitle }}</div>
-          <div class="stats-list">
-            <div v-for="item in statsRows" :key="item.key" class="stats-row">
-              <span :class="['stats-icon', `stats-icon--${item.tone}`]"></span>
-              <span class="stats-label">{{ item.label }}</span>
-              <strong class="stats-value">{{ item.value }}</strong>
-            </div>
+  <div class="menu-page mx-catalog-page">
+    <header v-if="!isMobileProductList || activeTab === 'categories'" class="mx-heading"><div><h1>{{ activeTab === 'products' ? word('菜品','Món','Menu') : word('菜品分类','Nhóm món','Categories') }}<span class="mx-count">{{ activeTab === 'products' ? products.length : categories.length }}</span></h1><p>{{ word('管理餐厅菜单、售价与供应状态','Quản lý thực đơn, giá bán và trạng thái món','Manage your menu, prices and availability') }}</p></div><div class="mx-heading-actions"><button v-if="activeTab === 'products'" type="button" class="primary-action mx-desktop-add-product" @click="openCreateProductModal"><MerchantIcon name="plus" />{{ pageCopy.addProductButton }}</button></div></header>
+    <nav class="mx-module-tabs" :class="{ 'mx-module-tabs--mobile-hidden': activeTab === 'products' }" :aria-label="word('菜品管理','Quản lý thực đơn','Menu management')"><button type="button" :aria-pressed="activeTab === 'products'" @click="setTab('products')">{{ word('菜品管理','Món','Dishes') }}</button><button type="button" :aria-pressed="activeTab === 'categories'" @click="setTab('categories')">{{ word('分类管理','Nhóm món','Categories') }}</button></nav>
+    <p v-if="pageMessage" class="page-message" role="status">{{ pageMessage }}</p>
+    <section v-if="activeTab === 'products'" class="mx-catalog-layout">
+      <aside v-if="!isMobileProductList" class="mx-catalog-rail">
+        <h2>{{ t('category') }}</h2>
+        <button type="button" :aria-pressed="selectedCategoryId === 'all'" @click="selectedCategoryId='all'"><span>{{ pageCopy.allCategories }}</span><b>{{ products.length }}</b></button>
+        <button v-for="category in sortedCategories" :key="category.id" type="button" :aria-pressed="selectedCategoryId === category.id" @click="selectedCategoryId=category.id"><span :title="categoryName(category)">{{ categoryName(category) }}</span><b>{{ products.filter(p=>p.categoryId===category.id).length }}</b></button>
+        <button type="button" class="mx-manage-category" @click="setTab('categories')"><MerchantIcon name="settings" />{{ pageCopy.categoriesTab }}</button>
+      </aside>
+      <section class="mx-catalog-content">
+        <div v-if="isMobileProductList" class="mx-mobile-menu-titlebar">
+          <h1 v-if="!mobileSearchOpen">{{ word('菜单','Thực đơn','Menu') }}</h1>
+          <label v-else class="mx-mobile-menu-search"><MerchantIcon name="search" /><input ref="mobileSearchInput" v-model="searchKeyword" type="search" :aria-label="pageCopy.searchPlaceholder" :placeholder="pageCopy.searchPlaceholder" @blur="!searchKeyword && (mobileSearchOpen=false)" /></label>
+          <div class="mx-mobile-menu-actions">
+            <button v-if="!mobileSearchOpen" type="button" :aria-label="pageCopy.searchPlaceholder" @click="openMobileSearch"><MerchantIcon name="search" /></button>
+            <button v-else type="button" class="mx-mobile-menu-search-close" :aria-label="word('关闭搜索','Đóng tìm kiếm','Close search')" @click="closeMobileSearch">×</button>
+            <button type="button" :aria-label="pageCopy.sortLabel" :aria-pressed="selectedSortMode !== 'DEFAULT'" @click="mobileSortOpen=true"><MerchantIcon name="sort" /></button>
           </div>
         </div>
-      </div>
-
-      <div class="card list-card">
-        <div class="list-toolbar">
-          <label class="search-box">
-            <input v-model="searchKeyword" :placeholder="pageCopy.searchPlaceholder" />
-          </label>
-          <button type="button" class="primary-action" @click="openCreateProductModal">
-            {{ pageCopy.addProductButton }}
-          </button>
+        <nav v-if="isMobileProductList" class="m-product-category-pills" :aria-label="t('category')"><button type="button" class="secondary" :aria-pressed="selectedCategoryId === 'all'" @click="selectedCategoryId='all'">{{ pageCopy.allCategories }}</button><button v-for="category in sortedCategories" :key="category.id" type="button" class="secondary" :aria-pressed="selectedCategoryId === category.id" @click="selectedCategoryId=category.id">{{ categoryName(category) }}</button><button type="button" class="secondary m-product-category-add" @click="openCreateCategoryWorkspace"><MerchantIcon name="plus" />{{ word('添加分类','Thêm nhóm','Add category') }}</button></nav>
+        <div v-if="!isMobileProductList" class="mx-catalog-toolbar"><label class="mx-search-field"><div><MerchantIcon name="search" /><input v-model="searchKeyword" type="search" :aria-label="pageCopy.searchPlaceholder" :placeholder="pageCopy.searchPlaceholder" /></div></label><label class="mx-sort"><span>{{ pageCopy.sortLabel }}</span><select v-model="selectedSortMode" :aria-label="pageCopy.sortLabel"><option v-for="item in sortOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label></div>
+        <div class="mx-catalog-status-tabs"><button v-for="(status,index) in (['ALL','ON_SALE','SOLD_OUT','OFF_SALE'] as const)" :key="status" type="button" :aria-pressed="selectedStatus === status" @click="selectedStatus=status">{{ status === 'ALL' ? pageCopy.allStatus : productStatusLabel(status) }}<span>{{ statsRows[index].value }}</span></button></div>
+        <p v-if="productMessage" class="section-message" role="status">{{ productMessage }}</p>
+        <div v-if="loading" role="status" :aria-label="word('加载菜品','Đang tải món','Loading menu')"><div v-for="n in 5" :key="n" class="mx-skeleton"><i></i><i></i><i></i></div></div>
+        <div v-else-if="!isMobileProductList" class="mx-catalog-table-wrap">
+          <table class="mx-catalog-table product-table"><colgroup><col class="product-column" /><col class="category-column" /><col class="price-column" /><col class="sort-column" /><col class="status-column" /><col class="actions-column" /></colgroup><thead><tr><th>{{ t('product') }}</th><th>{{ t('category') }}</th><th class="numeric-heading">{{ t('priceVnd') }}</th><th class="numeric-heading">{{ t('sortOrder') }}</th><th>{{ t('status') }}</th><th>{{ t('actions') }}</th></tr></thead><tbody><tr v-for="row in filteredProducts" :key="row.id"><td><button type="button" class="mx-product-identity" @click="selectedProductId=row.id"><span class="mx-product-thumb"><img v-if="productImage(row)" :src="productImage(row)" :alt="productName(row)" loading="lazy" decoding="async" @error="handleListImageError(row)" /><MerchantIcon v-else name="products" /></span><span><strong :title="productName(row)">{{ productName(row) }}</strong><small :title="[row.nameZh,row.nameVi,row.nameEn].filter(Boolean).join(' / ')">{{ secondaryProductName(row) }}</small></span></button></td><td><div class="mx-category-copy"><strong :title="categoryName(row.category)">{{ categoryName(row.category) }}</strong><small :title="[row.category?.nameZh,row.category?.nameVi,row.category?.nameEn].filter(Boolean).join(' / ')">{{ categorySecondaryName(row.category) }}</small></div></td><td class="numeric-cell"><strong>{{ productPrice(row) }}</strong><small v-if="row.unit?.trim()" class="mx-unit">{{ row.unit }}</small></td><td class="numeric-cell">{{ row.sortOrder }}</td><td><select class="mx-status-select" :class="productStatusClass(row.status)" :value="row.status" :aria-label="productName(row)+' '+t('status')" @change="setProductStatus(row, ($event.target as HTMLSelectElement).value as ProductStatus)"><option v-if="row.status==='DRAFT'" value="DRAFT" disabled>{{ productStatusLabel('DRAFT') }}</option><option value="ON_SALE">{{ t('onSale') }}</option><option value="SOLD_OUT">{{ t('soldOut') }}</option><option value="OFF_SALE">{{ t('offSale') }}</option></select></td><td><div class="mx-row-actions"><button type="button" class="text-action menu-row-action" :aria-label="t('edit')+' '+row.nameZh" @click="editProduct(row)">{{ t('edit') }}</button><button type="button" class="text-action danger menu-row-action" :aria-label="t('delete')+' '+row.nameZh" @click="disableProductRow(row)">{{ t('delete') }}</button></div></td></tr></tbody></table>
         </div>
-
-        <p v-if="productMessage" class="section-message">{{ productMessage }}</p>
-
-        <div v-if="!isMobileProductList" class="table-shell product-table-shell">
-          <table class="product-table">
-            <colgroup>
-              <col class="product-column" />
-              <col class="category-column" />
-              <col class="price-column" />
-              <col class="sort-column" />
-              <col class="status-column" />
-              <col class="actions-column" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col">{{ t('product') }}</th>
-                <th scope="col">{{ t('category') }}</th>
-                <th scope="col" class="numeric-heading">{{ t('priceVnd') }}</th>
-                <th scope="col" class="numeric-heading">{{ t('sortOrder') }}</th>
-                <th scope="col">{{ t('status') }}</th>
-                <th scope="col" class="actions-heading">{{ t('actions') }}</th>
-              </tr>
-            </thead>
-            <tbody v-if="filteredProducts.length">
-              <tr v-for="row in filteredProducts" :key="row.id">
-                <td>
-                  <div class="product-cell">
-                    <div class="product-thumb">
-                      <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" @error="handleListImageError(row)" />
-                      <span v-else>{{ pageCopy.noImage }}</span>
-                    </div>
-                    <div class="product-copy">
-                      <strong :title="row.nameZh">{{ row.nameZh }}</strong>
-                      <small :title="row.nameVi?.trim() || pageCopy.missingVietnamese">
-                        {{ row.nameVi?.trim() || pageCopy.missingVietnamese }}
-                      </small>
-                      <small v-if="row.nameEn?.trim()" :title="row.nameEn">English: {{ row.nameEn }}</small>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div class="category-copy">
-                    <strong :title="row.category?.nameZh || '—'">{{ row.category?.nameZh || '—' }}</strong>
-                    <small :title="categorySecondaryName(row.category)">
-                      {{ categorySecondaryName(row.category) }}
-                    </small>
-                    <small v-if="row.category?.nameEn?.trim()" :title="row.category.nameEn">
-                      English: {{ row.category.nameEn }}
-                    </small>
-                  </div>
-                </td>
-                <td class="numeric-cell">
-                  <div class="price-stack">
-                    <span>{{ productPrice(row) }}</span>
-                    <small v-if="row.unit?.trim()" :title="row.unit">{{ row.unit }}</small>
-                  </div>
-                </td>
-                <td class="numeric-cell">{{ row.sortOrder }}</td>
-                <td>
-                  <div class="status-stack">
-                    <span :class="['status-pill', productStatusClass(row.status)]">
-                      {{ productStatusLabel(row.status) }}
-                    </span>
-                    <div class="status-actions">
-                      <button
-                        v-if="row.status !== 'ON_SALE'"
-                        type="button"
-                        class="mini-chip success"
-                        @click="setProductStatus(row, 'ON_SALE')"
-                      >
-                        {{ t('onSale') }}
-                      </button>
-                      <button
-                        v-if="row.status !== 'SOLD_OUT'"
-                        type="button"
-                        class="mini-chip warning"
-                        @click="setProductStatus(row, 'SOLD_OUT')"
-                      >
-                        {{ t('soldOut') }}
-                      </button>
-                      <button
-                        v-if="row.status !== 'OFF_SALE'"
-                        type="button"
-                        class="mini-chip neutral"
-                        @click="setProductStatus(row, 'OFF_SALE')"
-                      >
-                        {{ t('offSale') }}
-                      </button>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div class="table-actions">
-                    <button
-                      type="button"
-                      class="text-action menu-row-action"
-                      :aria-label="`${t('edit')} ${row.nameZh}`"
-                      @click="editProduct(row)"
-                    >
-                      {{ t('edit') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="text-action danger menu-row-action"
-                      :aria-label="`${t('delete')} ${row.nameZh}`"
-                      @click="disableProductRow(row)"
-                    >
-                      {{ t('delete') }}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-            <tbody v-else>
-              <tr>
-                <td colspan="6">
-                  <div class="empty-state">
-                    <strong>{{ pageCopy.listTitle }}</strong>
-                    <p>{{ pageCopy.searchPlaceholder }}</p>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div v-else-if="filteredProducts.length" class="product-mobile-list">
-          <article v-for="row in filteredProducts" :key="row.id" class="product-mobile-card">
-            <div class="product-mobile-head">
-              <div class="product-thumb product-mobile-thumb">
-                <img v-if="productImage(row)" v-bind="{ src: productImage(row) }" :alt="row.nameZh" loading="lazy" decoding="async" @error="handleListImageError(row)" />
-                <span v-else>{{ pageCopy.noImage }}</span>
-              </div>
-              <div class="product-copy product-mobile-copy">
-                <strong :title="row.nameZh">{{ row.nameZh }}</strong>
-                <small :title="row.nameVi?.trim() || pageCopy.missingVietnamese">
-                  {{ row.nameVi?.trim() || pageCopy.missingVietnamese }}
-                </small>
-                <small v-if="row.nameEn?.trim()" :title="row.nameEn">English: {{ row.nameEn }}</small>
-              </div>
-              <span :class="['status-pill', productStatusClass(row.status)]">
-                {{ productStatusLabel(row.status) }}
-              </span>
-            </div>
-
-            <dl class="product-mobile-meta">
-              <div>
-                <dt>{{ t('category') }}</dt>
-                <dd :title="row.category?.nameZh || '—'">{{ row.category?.nameZh || '—' }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('priceVnd') }}</dt>
-                <dd class="numeric-cell price-stack">
-                  <span>{{ productPrice(row) }}</span>
-                  <small v-if="row.unit?.trim()" :title="row.unit">{{ row.unit }}</small>
-                </dd>
-              </div>
-              <div>
-                <dt>{{ t('sortOrder') }}</dt>
-                <dd class="numeric-cell">{{ row.sortOrder }}</dd>
-              </div>
-            </dl>
-
-            <div class="status-actions product-mobile-status-actions">
-              <button
-                v-if="row.status !== 'ON_SALE'"
-                type="button"
-                class="mini-chip success"
-                @click="setProductStatus(row, 'ON_SALE')"
-              >
-                {{ t('onSale') }}
-              </button>
-              <button
-                v-if="row.status !== 'SOLD_OUT'"
-                type="button"
-                class="mini-chip warning"
-                @click="setProductStatus(row, 'SOLD_OUT')"
-              >
-                {{ t('soldOut') }}
-              </button>
-              <button
-                v-if="row.status !== 'OFF_SALE'"
-                type="button"
-                class="mini-chip neutral"
-                @click="setProductStatus(row, 'OFF_SALE')"
-              >
-                {{ t('offSale') }}
-              </button>
-            </div>
-
-            <div class="product-mobile-actions">
-              <button
-                type="button"
-                class="text-action"
-                :aria-label="`${t('edit')} ${row.nameZh}`"
-                @click="editProduct(row)"
-              >
-                {{ t('edit') }}
-              </button>
-              <button
-                type="button"
-                class="text-action danger"
-                :aria-label="`${t('delete')} ${row.nameZh}`"
-                @click="disableProductRow(row)"
-              >
-                {{ t('delete') }}
-              </button>
-            </div>
-          </article>
-        </div>
-        <div v-else-if="isMobileProductList" class="product-mobile-empty empty-state">
-          <strong>{{ pageCopy.listTitle }}</strong>
-          <p>{{ pageCopy.searchPlaceholder }}</p>
-        </div>
-
-        <div class="table-footer">
-          <span>{{ pageCopy.totalLabel }} {{ filteredProducts.length }} {{ pageCopy.productCountText }}</span>
-        </div>
-      </div>
+        <div v-else class="mx-mobile-catalog"><button v-for="row in filteredProducts" :key="row.id" type="button" class="mx-mobile-product" :aria-label="[productName(row), productPrice(row), row.unit, productStatusLabel(row.status)].filter(Boolean).join(' ')" @click="selectedProductId=row.id"><span class="mx-product-thumb"><img v-if="productImage(row)" :src="productImage(row)" :alt="productName(row)" loading="lazy" decoding="async" @error="handleListImageError(row)" /><MerchantIcon v-else name="products" /></span><span class="mx-mobile-product-copy"><strong>{{ productName(row) }}</strong></span><span class="mx-mobile-product-price"><strong>{{ productPrice(row) }}</strong><small>{{ row.unit ? '/'+row.unit : '' }}</small></span></button></div>
+        <div v-if="!loading && !filteredProducts.length" class="m-empty"><MerchantIcon name="products" /><strong>{{ word('未找到菜品','Không tìm thấy món','No matching dishes') }}</strong><p>{{ pageCopy.searchPlaceholder }}</p></div>
+        <footer class="mx-catalog-footer">{{ pageCopy.totalLabel }} {{ filteredProducts.length }} {{ pageCopy.productCountText }}</footer>
+      </section>
     </section>
 
-    <section v-else class="category-dashboard">
-      <div class="card category-form-card">
-        <div class="card-head-block">
-          <h2>{{ pageCopy.categoryFormTitle }}</h2>
-          <p>{{ pageCopy.categoryFormDescription }}</p>
-        </div>
-
-        <form class="stack-form" @submit.prevent="saveCategory">
-          <label class="field">
-            <span class="field-label">
-              {{ t('chineseCategoryName') }}
-              <em>{{ t('required') }}</em>
-            </span>
-            <input
-              v-model="categoryForm.nameZh"
-              :placeholder="t('chineseCategoryName')"
-              required
-            />
-          </label>
-
-          <label class="field">
-            <span class="field-label">
-              {{ t('vietnameseCategoryName') }}
-              <em>{{ t('required') }}</em>
-            </span>
-            <input
-              v-model="categoryForm.nameVi"
-              :placeholder="t('vietnameseCategoryName')"
-              required
-            />
-          </label>
-
-          <label class="field">
-            <span class="field-label">英文名称（English，可选）</span>
-            <input v-model="categoryForm.nameEn" placeholder="English name" maxlength="80" />
-          </label>
-
-          <label class="field">
-            <span class="field-label">{{ t('sortOrder') }}</span>
-            <input v-model.number="categoryForm.sortOrder" type="number" min="0" />
-            <small class="field-hint">{{ pageCopy.categorySortHint }}</small>
-          </label>
-
-          <div class="stack-actions">
-            <button type="submit" class="primary-action block-action">
-              {{ categoryForm.id ? t('saveChanges') : pageCopy.addCategoryButton }}
-            </button>
-            <button
-              v-if="categoryForm.id"
-              type="button"
-              class="ghost-action block-action"
-              @click="resetCategoryForm"
-            >
-              {{ t('cancel') }}
-            </button>
-          </div>
-        </form>
-
-        <p v-if="categoryMessage" class="section-message">{{ categoryMessage }}</p>
-      </div>
-
-      <div class="card category-list-card">
-        <div class="card-head-block">
-          <h2>{{ pageCopy.categoryListTitle }}</h2>
-          <p>{{ pageCopy.categoryListHint }}</p>
-        </div>
-
-        <div class="table-shell">
-          <table class="category-table">
-            <thead>
-              <tr>
-                <th>{{ t('category') }}</th>
-                <th>{{ t('sortOrder') }}</th>
-                <th>{{ t('product') }}</th>
-                <th>{{ t('status') }}</th>
-                <th>{{ t('actions') }}</th>
-              </tr>
-            </thead>
-            <tbody v-if="sortedCategories.length">
-              <tr v-for="row in sortedCategories" :key="row.id">
-                <td>
-                  <div class="category-copy">
-                    <div class="category-title-row">
-                      <strong>{{ row.nameZh }}</strong>
-                      <span v-if="isSignatureCategory(row)" class="signature-category-badge">
-                        ⭐ {{ signatureCategoryLabel() }}
-                      </span>
-                    </div>
-                    <small>{{ row.nameVi?.trim() || pageCopy.missingVietnamese }}</small>
-                    <small v-if="row.nameEn?.trim()">English: {{ row.nameEn }}</small>
-                  </div>
-                </td>
-                <td class="numeric-cell">{{ row.sortOrder }}</td>
-                <td class="numeric-cell">{{ row._count?.products ?? 0 }}</td>
-                <td>
-                  <span :class="['status-pill', isCategoryEnabled(row) ? 'badge-success' : 'badge-neutral']">
-                    {{ isCategoryEnabled(row) ? t('enabled') : t('disabledStatus') }}
-                  </span>
-                </td>
-                <td>
-                  <div class="category-actions">
-                    <button type="button" class="text-action" @click="editCategory(row)">
-                      {{ t('edit') }}
-                    </button>
-                    <button
-                      v-if="!isSignatureCategory(row)"
-                      type="button"
-                      :class="['text-action', isCategoryEnabled(row) ? 'danger' : 'success']"
-                      @click="toggleCategoryRow(row)"
-                    >
-                      {{ getCategoryToggleLabel(row) }}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-            <tbody v-else>
-              <tr>
-                <td colspan="5">
-                  <div class="empty-state">
-                    <strong>{{ pageCopy.categoryListTitle }}</strong>
-                    <p>{{ pageCopy.categoryFormDescription }}</p>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <button v-if="activeTab === 'products'" type="button" class="mx-product-fab" :aria-label="pageCopy.addProductButton" @click="openCreateProductModal"><MerchantIcon name="plus" /></button>
+    <section v-else class="mx-category-workspace">
+      <div class="mx-category-directory"><article v-for="row in sortedCategories" :key="row.id" class="mx-category-card"><div class="mx-category-card-head"><span class="mx-category-symbol"><MerchantIcon name="products" /></span><div><h2>{{ categoryName(row) }}</h2><span :class="['status-pill',isCategoryEnabled(row) ? 'badge-success' : 'badge-neutral']">{{ isCategoryEnabled(row) ? t('enabled') : t('disabledStatus') }}</span><span v-if="isSignatureCategory(row)" class="signature-category-badge">{{ signatureCategoryLabel() }}</span></div><strong>{{ row._count?.products ?? products.filter(p=>p.categoryId===row.id).length }}<small>{{ t('product') }}</small></strong></div><dl class="mx-category-names"><div><dt>中文</dt><dd>{{ row.nameZh }}</dd></div><div><dt>Tiếng Việt</dt><dd>{{ row.nameVi || '—' }}</dd></div><div v-if="row.nameEn"><dt>English</dt><dd>{{ row.nameEn }}</dd></div></dl><footer><span>{{ t('sortOrder') }} {{ row.sortOrder }}</span><div><button type="button" class="secondary" @click="editCategory(row);categoryEditor?.scrollIntoView({block:'start',behavior:'auto'})">{{ t('edit') }}</button><button v-if="!isSignatureCategory(row)" type="button" :class="['secondary',isCategoryEnabled(row) && 'danger']" @click="toggleCategoryRow(row)">{{ getCategoryToggleLabel(row) }}</button></div></footer></article><div v-if="!sortedCategories.length" class="m-empty"><strong>{{ pageCopy.categoryListTitle }}</strong>{{ pageCopy.categoryFormDescription }}</div></div>
+      <aside ref="categoryEditor" class="mx-panel mx-category-editor"><div class="mx-section-title"><h2>{{ categoryForm.id ? t('edit') : pageCopy.addCategoryButton }}</h2><button v-if="categoryForm.id" type="button" class="secondary" @click="resetCategoryForm">{{ t('cancel') }}</button></div><p class="mx-detail-reference">{{ pageCopy.categoryFormDescription }}</p><form class="mx-form" @submit.prevent="saveCategory"><label>{{ t('chineseCategoryName') }} *<input v-model="categoryForm.nameZh" required /></label><label>{{ t('vietnameseCategoryName') }} *<input v-model="categoryForm.nameVi" required /></label><label>English<input v-model="categoryForm.nameEn" placeholder="English name" maxlength="80" /></label><label>{{ t('sortOrder') }}<input v-model.number="categoryForm.sortOrder" type="number" min="0" /><small>{{ pageCopy.categorySortHint }}</small></label><p v-if="categoryMessage" class="section-message" role="status">{{ categoryMessage }}</p><button type="submit" class="primary-action">{{ categoryForm.id ? t('saveChanges') : pageCopy.addCategoryButton }}</button></form></aside>
     </section>
 
-    <div v-if="showProductModal" class="dialog-backdrop" @click.self="closeProductModal">
-      <div class="dialog-card">
-        <div class="dialog-head">
-          <div>
-            <h3>{{ productModalTitle }}</h3>
-            <p>{{ t('productsDescription') }}</p>
-          </div>
-          <button type="button" class="dialog-close" @click="closeProductModal">×</button>
+    <MerchantDialog :open="mobileFiltersOpen" :title="pageCopy.filterTitle" @close="mobileFiltersOpen=false"><div class="mx-form"><label>{{ pageCopy.categoryFilterLabel }}<select v-model="selectedCategoryId"><option value="all">{{ pageCopy.allCategories }}</option><option v-for="item in sortedCategories" :key="item.id" :value="item.id">{{ categoryName(item) }}</option></select></label><label>{{ pageCopy.statusFilterLabel }}<select v-model="selectedStatus"><option value="ALL">{{ pageCopy.allStatus }}</option><option value="ON_SALE">{{ t('onSale') }}</option><option value="SOLD_OUT">{{ t('soldOut') }}</option><option value="OFF_SALE">{{ t('offSale') }}</option></select></label><label>{{ pageCopy.sortLabel }}<select v-model="selectedSortMode"><option v-for="item in sortOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><button type="button" @click="mobileFiltersOpen=false">{{ word('完成','Xong','Done') }}</button></div></MerchantDialog>
+    <MerchantDialog :open="mobileSortOpen" :title="pageCopy.sortLabel" @close="mobileSortOpen=false"><div class="mx-mobile-sort-options"><button v-for="item in sortOptions" :key="item.value" type="button" :aria-pressed="selectedSortMode === item.value" @click="selectMobileSort(item.value as ProductSortMode)"><span>{{ item.label }}</span><span v-if="selectedSortMode === item.value" aria-hidden="true">✓</span></button></div></MerchantDialog>
+    <MerchantDialog :open="!!selectedProduct" :title="word('菜品详情','Chi tiết món','Dish details')" variant="drawer" hide-header @close="selectedProductId=''"><template v-if="selectedProduct"><div class="mx-product-profile"><div class="mx-product-profile-image"><img v-if="productImage(selectedProduct)" :src="productImage(selectedProduct)" :alt="productName(selectedProduct)" @error="handleListImageError(selectedProduct)" /><MerchantIcon v-else name="products" /></div><div><span class="mx-detail-reference">{{ categoryName(selectedProduct.category) }}</span><h2>{{ productName(selectedProduct) }}</h2><strong>{{ productPrice(selectedProduct) }} ₫<small v-if="selectedProduct.unit"> / {{ selectedProduct.unit }}</small></strong></div><button type="button" class="mx-product-detail-back" @click="selectedProductId=''"><MerchantIcon name="back" />{{ word('返回','Quay lại','Back') }}</button></div><div class="mx-form-section"><h3>{{ word('基本信息','Thông tin cơ bản','Basic information') }}</h3><dl class="mx-facts"><div><dt>{{ t('chineseProductName') }}</dt><dd>{{ selectedProduct.nameZh }}</dd></div><div><dt>{{ t('vietnameseProductName') }}</dt><dd>{{ selectedProduct.nameVi || '—' }}</dd></div><div v-if="selectedProduct.nameEn"><dt>English</dt><dd>{{ selectedProduct.nameEn }}</dd></div><div><dt>{{ t('sortOrder') }}</dt><dd>{{ selectedProduct.sortOrder }}</dd></div><div v-if="selectedProduct.description"><dt>{{ t('remark') }}</dt><dd>{{ selectedProduct.description }}</dd></div></dl></div><div class="mx-product-detail-actions"><button v-for="status in (['ON_SALE','SOLD_OUT','OFF_SALE'] as const)" :key="status" type="button" class="secondary" :aria-pressed="selectedProduct.status===status" :disabled="selectedProduct.status===status" @click="setProductStatus(selectedProduct,status)">{{ productStatusLabel(status) }}</button><button type="button" @click="editSelectedProduct">{{ t('edit') }}</button><button type="button" class="danger" @click="deleteSelectedProduct">{{ t('delete') }}</button></div></template></MerchantDialog>
+    <MerchantDialog :open="showProductModal" :title="productModalTitle" variant="drawer" @close="closeProductModal">
+      <form class="mx-product-editor" @submit.prevent="saveProduct">
+        <div class="mx-editor-main">
+          <fieldset class="mx-form-section"><legend>{{ word('菜品信息','Thông tin món','Dish information') }}</legend><div class="mx-form"><label>{{ t('chineseProductName') }} *<input v-model="productForm.nameZh" required /></label><label>{{ t('vietnameseProductName') }} *<input v-model="productForm.nameVi" required /></label><label>English<input v-model="productForm.nameEn" placeholder="English name" maxlength="120" /></label><label>{{ t('category') }} *<select v-model="productForm.categoryId" required><option v-for="item in productFormCategories" :key="item.id" :value="item.id">{{ categoryName(item) }}</option></select></label></div></fieldset>
+          <fieldset class="mx-form-section"><legend>{{ word('售价与展示','Giá và hiển thị','Price and display') }}</legend><div class="mx-form mx-form--pair"><label>{{ t('priceVnd') }} *<input v-model.number="productForm.priceVnd" type="number" min="0" required /></label><label>{{ t('productUnit') }}<input v-model="productForm.unit" :placeholder="t('productUnitPlaceholder')" maxlength="32" /></label><label>{{ t('sortOrder') }}<input v-model.number="productForm.sortOrder" type="number" min="0" /></label></div></fieldset>
+          <fieldset class="mx-form-section"><legend>{{ t('imageUrl') }}</legend><div class="mx-form"><label>{{ t('imageUrl') }}<input v-model="productForm.imageUrl" :placeholder="t('imageUrl')" /><small>{{ pageCopy.imageHint }}</small></label><div class="mx-choice-row"><button type="button" class="secondary" :disabled="uploading" @click="openImagePicker">{{ productForm.imageUrl ? t('replaceImage') : t('uploadImage') }}</button><button type="button" class="secondary" :disabled="uploading || !productForm.imageUrl" @click="clearImage">{{ t('clearImage') }}</button></div><input ref="fileInput" class="hidden-file" type="file" accept="image/jpeg,image/png,image/webp" @change="onImageSelected" /></div></fieldset>
         </div>
-
-        <form class="dialog-form" @submit.prevent="saveProduct">
-          <div class="dialog-grid">
-            <label class="field">
-              <span class="field-label">
-                {{ t('category') }}
-                <em>{{ t('required') }}</em>
-              </span>
-              <select v-model="productForm.categoryId" required>
-                <option v-for="item in productFormCategories" :key="item.id" :value="item.id">
-                  {{ categoryName(item) }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span class="field-label">
-                {{ t('priceVnd') }}
-                <em>{{ t('required') }}</em>
-              </span>
-              <input v-model.number="productForm.priceVnd" type="number" min="0" required />
-            </label>
-
-            <label class="field">
-              <span class="field-label">
-                {{ t('chineseProductName') }}
-                <em>{{ t('required') }}</em>
-              </span>
-              <input v-model="productForm.nameZh" required />
-            </label>
-
-            <label class="field">
-              <span class="field-label">
-                {{ t('vietnameseProductName') }}
-                <em>{{ t('required') }}</em>
-              </span>
-              <input v-model="productForm.nameVi" required />
-            </label>
-
-            <label class="field">
-              <span class="field-label">英文名称（English，可选）</span>
-              <input v-model="productForm.nameEn" placeholder="English name" maxlength="120" />
-            </label>
-
-            <label class="field">
-              <span class="field-label">{{ t('productUnit') }}</span>
-              <input
-                v-model="productForm.unit"
-                :placeholder="t('productUnitPlaceholder')"
-                maxlength="32"
-              />
-            </label>
-
-            <label class="field">
-              <span class="field-label">{{ t('sortOrder') }}</span>
-              <input v-model.number="productForm.sortOrder" type="number" min="0" />
-            </label>
-
-            <label class="field field-span-2">
-              <span class="field-label">{{ t('imageUrl') }}</span>
-              <input v-model="productForm.imageUrl" :placeholder="t('imageUrl')" />
-              <small class="field-hint">{{ pageCopy.imageHint }}</small>
-            </label>
-
-            <div class="field field-span-2 image-upload-field">
-              <div class="image-upload-actions">
-                <button type="button" class="ghost-action" :disabled="uploading" @click="openImagePicker">
-                  {{ productForm.imageUrl ? t('replaceImage') : t('uploadImage') }}
-                </button>
-                <button type="button" class="ghost-action" :disabled="uploading || !productForm.imageUrl" @click="clearImage">
-                  {{ t('clearImage') }}
-                </button>
-              </div>
-              <input
-                ref="fileInput"
-                class="hidden-file"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                @change="onImageSelected"
-              />
-              <div class="image-preview-box">
-                <img v-if="imagePreviewUrl" v-bind="{ src: imagePreviewUrl }" :alt="pageCopy.imagePlaceholder" loading="lazy" decoding="async" />
-                <span v-else>{{ pageCopy.imagePlaceholder }}</span>
-              </div>
-            </div>
-
-          </div>
-
-          <p v-if="productMessage" class="section-message">{{ productMessage }}</p>
-
-          <div class="dialog-actions">
-            <button type="button" class="ghost-action" @click="closeProductModal">
-              {{ t('cancel') }}
-            </button>
-            <button type="submit" class="primary-action">
-              {{ productForm.id ? t('saveChanges') : t('addProduct') }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
+        <aside class="mx-editor-preview"><h3>{{ word('展示预览','Xem trước','Display preview') }}</h3><div class="mx-dish-preview-image"><img v-if="imagePreviewUrl && failedPreviewUrl!==imagePreviewUrl" :src="imagePreviewUrl" :alt="pageCopy.imagePlaceholder" @error="failedPreviewUrl=imagePreviewUrl" /><MerchantIcon v-else name="products" /></div><strong>{{ productForm.nameZh || word('菜品名称','Tên món','Dish name') }}</strong><span>{{ productForm.nameVi || '—' }}</span><b>{{ Number(productForm.priceVnd || 0).toLocaleString() }} ₫<small v-if="productForm.unit"> / {{ productForm.unit }}</small></b><p>{{ word('仅预览本次输入，保存后生效','Nội dung nhập chỉ có hiệu lực sau khi lưu','Preview of your input. Changes take effect after saving.') }}</p></aside>
+        <p v-if="productMessage" class="section-message" role="status">{{ productMessage }}</p>
+        <div class="mx-editor-actions"><button type="button" class="secondary" @click="closeProductModal">{{ t('cancel') }}</button><button type="submit" class="primary-action">{{ productForm.id ? t('saveChanges') : t('addProduct') }}</button></div>
+      </form>
+    </MerchantDialog>
     <div
       v-if="productPendingDelete"
       class="dialog-backdrop"
@@ -1296,1036 +818,29 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="loading" class="loading-mask"></div>
+
   </div>
 </template>
 
 <style scoped>
-/* finesse · register=product · A=incumbent-sage-green · B=compact-system-sans · C=filter-rail+fixed-table-to-cards · D=touch-feedback-only · E=real-menu-photography · SOUL=5 SPECTACLE=1 DENSITY=9 */
-.menu-page {
-  position: relative;
-  display: grid;
-  gap: 22px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: clip;
-}
-
-.delete-dialog {
-  max-width: 480px;
-}
-
-.delete-warning {
-  margin: 0;
-  color: #475569;
-  font-size: 14px;
-  line-height: 1.65;
-}
-
-.danger-action {
-  min-height: 44px;
-  border: 1px solid #b91c1c;
-  border-radius: 10px;
-  padding: 0 18px;
-  background: #b91c1c;
-  color: #fff;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.danger-action:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.danger-action:focus-visible {
-  outline: 3px solid rgba(185, 28, 28, 0.22);
-  outline-offset: 2px;
-}
-
-.menu-tabs {
-  display: inline-flex;
-  align-items: flex-end;
-  margin: 0 0 2px;
-  border-radius: 14px;
-  background: #eef5f0;
-  overflow: hidden;
-}
-
-.menu-tab {
-  width: 190px;
-  height: 56px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: #64748b;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.menu-tab.is-active {
-  background: #ffffff;
-  color: #15803d;
-  border-bottom-color: #16a34a;
-}
-
-.page-message,
-.section-message {
-  margin: 0;
-  color: #b45309;
-  font-size: 13px;
-}
-
-.products-dashboard,
-.category-dashboard {
-  display: grid;
-  gap: 20px;
-  align-items: start;
-}
-
-.products-dashboard {
-  grid-template-columns: minmax(216px, 240px) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.category-dashboard {
-  grid-template-columns: 360px minmax(0, 1fr);
-}
-
-.products-sidebar {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-
-.products-sidebar .filter-card,
-.products-sidebar .stats-card,
-.list-card {
-  padding: 18px;
-}
-
-.card {
-  border: 1px solid #edf1ef;
-  border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.filter-card,
-.stats-card,
-.category-form-card,
-.category-list-card,
-.list-card {
-  padding: 22px;
-}
-
-.card-title,
-.card-head-block h2 {
-  margin: 0;
-  color: #0f2a1d;
-  font-size: 20px;
-  font-weight: 800;
-}
-
-.card-head-block {
-  display: grid;
-  gap: 6px;
-}
-
-.card-head-block p {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.filter-card,
-.category-form-card {
-  display: grid;
-  gap: 16px;
-}
-
-.field {
-  display: grid;
-  gap: 8px;
-}
-
-.field-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.field-label em {
-  font-style: normal;
-  color: #dc2626;
-  font-size: 12px;
-}
-
-.field input,
-.field select,
-.field textarea,
-.search-box input {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  border: 1px solid #dbe3df;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #0f172a;
-  font-size: 14px;
-}
-
-.field input,
-.field select,
-.search-box input {
-  height: 44px;
-  padding: 0 12px;
-}
-
-.field textarea {
-  padding: 12px;
-  resize: vertical;
-}
-
-.field-hint {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.status-filter-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.status-filter {
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid #dbe3df;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.status-filter.is-active {
-  border-color: #16a34a;
-  background: #16a34a;
-  color: #ffffff;
-}
-
-.status-filter.is-warning:not(.is-active) {
-  border-color: #fdba74;
-  color: #c2410c;
-}
-
-.status-filter.is-neutral:not(.is-active) {
-  border-color: #cbd5e1;
-  color: #475569;
-}
-
-.stats-card {
-  display: grid;
-  gap: 16px;
-}
-
-.stats-list {
-  display: grid;
-  gap: 10px;
-}
-
-.stats-row {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-}
-
-.stats-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-}
-
-.stats-icon--green {
-  background: #dcfce7;
-}
-
-.stats-icon--emerald {
-  background: #bbf7d0;
-}
-
-.stats-icon--orange {
-  background: #ffedd5;
-}
-
-.stats-icon--slate {
-  background: #e2e8f0;
-}
-
-.stats-label {
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.stats-value {
-  color: #0f172a;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.list-card {
-  display: grid;
-  min-width: 0;
-  gap: 16px;
-}
-
-.list-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.search-box {
-  width: min(420px, 100%);
-}
-
-.primary-action,
-.ghost-action,
-.block-action,
-.text-action,
-.icon-action,
-.mini-chip {
-  cursor: pointer;
-  transition: 0.2s ease;
-}
-
-.primary-action {
-  height: 44px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 10px;
-  background: #16a34a;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.primary-action:focus-visible,
-.ghost-action:focus-visible,
-.status-filter:focus-visible,
-.mini-chip:focus-visible,
-.text-action:focus-visible {
-  outline: 3px solid rgba(22, 163, 74, 0.22);
-  outline-offset: 2px;
-}
-
-.ghost-action {
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid #dbe3df;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.block-action {
-  width: 100%;
-}
-
-.stack-form {
-  display: grid;
-  gap: 14px;
-}
-
-.stack-actions {
-  display: grid;
-  gap: 10px;
-}
-
-.table-shell {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.product-table-shell {
-  overflow-x: clip;
-}
-
-.product-table,
-.category-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.product-table {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  table-layout: fixed;
-}
-
-.product-table .product-column {
-  width: 26%;
-}
-
-.product-table .category-column {
-  width: 15%;
-}
-
-.product-table .price-column {
-  width: 14%;
-}
-
-.product-table .sort-column {
-  width: 7%;
-}
-
-.product-table .status-column {
-  width: 24%;
-}
-
-.product-table .actions-column {
-  width: 14%;
-}
-
-.category-table {
-  min-width: 700px;
-}
-
-.product-table thead th,
-.category-table thead th {
-  padding: 14px 12px;
-  border-bottom: 1px solid #e5ebe8;
-  background: #f8faf9;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 800;
-  text-align: left;
-}
-
-.product-table thead th {
-  padding: 11px 8px;
-}
-
-.product-table tbody td,
-.category-table tbody td {
-  padding: 14px 12px;
-  border-bottom: 1px solid #eef2f1;
-  color: #0f172a;
-  font-size: 14px;
-  vertical-align: middle;
-}
-
-.product-table tbody td {
-  min-width: 0;
-  overflow: hidden;
-  padding: 11px 8px;
-}
-
-.product-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.product-thumb {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
-  overflow: hidden;
-  border: 1px solid #e5ebe8;
-  border-radius: 10px;
-  background: #f8faf9;
-  color: #94a3b8;
-  font-size: 12px;
-  text-align: center;
-}
-
-.product-table .product-thumb {
-  width: 48px;
-  height: 48px;
-  flex-basis: 48px;
-}
-
-.product-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.product-copy,
-.category-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.product-copy strong,
-.category-copy strong {
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.product-copy small,
-.category-copy small {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.product-table .product-copy strong,
-.product-table .product-copy small,
-.product-table .category-copy strong,
-.product-table .category-copy small {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.numeric-heading,
-.numeric-cell {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.actions-heading {
-  text-align: center !important;
-}
-
-.numeric-cell {
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.price-stack {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-  min-width: 0;
-}
-
-.price-stack small {
-  max-width: 100%;
-  overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-}
-
-.status-stack {
-  display: grid;
-  gap: 6px;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: fit-content;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.badge-success {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.badge-warning {
-  background: #ffedd5;
-  color: #c2410c;
-}
-
-.badge-neutral {
-  background: #e2e8f0;
-  color: #475569;
-}
-
-.badge-muted {
-  background: #ede9fe;
-  color: #6d28d9;
-}
-
-.status-actions,
-.table-actions,
-.category-actions,
-.dialog-actions,
-.image-upload-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.product-table .status-actions {
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.mini-chip {
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.product-table .mini-chip {
-  padding: 0 6px;
-  font-size: 11px;
-}
-
-.mini-chip.success {
-  border-color: #86efac;
-  background: #f0fdf4;
-  color: #15803d;
-}
-
-.mini-chip.warning {
-  border-color: #fdba74;
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.mini-chip.neutral {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
-}
-
-.icon-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid #dbe3df;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 14px;
-}
-
-.icon-action.danger {
-  border-color: #fecaca;
-  color: #dc2626;
-}
-
-.product-table .table-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: stretch;
-  gap: 6px;
-}
-
-.menu-row-action {
-  width: 100%;
-  min-width: 0;
-  padding: 0 6px;
-  white-space: nowrap;
-}
-
-.product-mobile-list,
-.product-mobile-empty {
-  display: none;
-}
-
-.text-action {
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid #dbe3df;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.text-action.danger {
-  border-color: #fecaca;
-  color: #dc2626;
-}
-
-.text-action:hover:not(:disabled) {
-  border-color: #b8c8bf;
-  background: #f8faf9;
-}
-
-.text-action.danger:hover:not(:disabled) {
-  border-color: #fca5a5;
-  background: #fff7f7;
-}
-
-.text-action.success {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #15803d;
-}
-
-.category-title-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.signature-category-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border: 1px solid #bbf7d0;
-  border-radius: 999px;
-  background: #f0fdf4;
-  color: #15803d;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.empty-state {
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  min-height: 160px;
-  color: #64748b;
-  text-align: center;
-}
-
-.empty-state strong {
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.4);
-}
-
-.dialog-card {
-  width: min(920px, 100%);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-  padding: 24px;
-  border-radius: 20px;
-  background: #ffffff;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.2);
-}
-
-.dialog-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.dialog-head h3 {
-  margin: 0;
-  color: #0f2a1d;
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.dialog-head p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.dialog-close {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.dialog-form {
-  display: grid;
-  gap: 18px;
-  margin-top: 20px;
-}
-
-.dialog-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.field-span-2 {
-  grid-column: span 2;
-}
-
-.image-upload-field {
-  gap: 12px;
-}
-
-.hidden-file {
-  display: none;
-}
-
-.image-preview-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 160px;
-  height: 120px;
-  overflow: hidden;
-  border: 1px dashed #d8e2dc;
-  border-radius: 12px;
-  background: #f8faf9;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.image-preview-box img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.loading-mask {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(22, 163, 74, 0.85);
-  box-shadow: 0 0 0 10px rgba(22, 163, 74, 0.14);
-}
-
-@media (max-width: 1180px) {
-  .category-dashboard {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .products-dashboard {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .products-sidebar {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-    align-items: stretch;
-  }
-
-  .dialog-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .field-span-2 {
-    grid-column: auto;
-  }
-}
-
-@media (max-width: 768px) {
-  .status-filter,.dialog-close,.delete-dialog .ghost-action,.delete-dialog .danger-action{min-height:44px}
-  .dialog-close{width:44px;height:44px}
-  .menu-tab {
-    width: 160px;
-  }
-
-  .list-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .search-box {
-    width: 100%;
-  }
-
-  .products-dashboard,
-  .category-dashboard,
-  .products-sidebar,
-  .table-shell,
-  .list-card,
-  .category-list-card,
-  .category-form-card {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-  }
-
-  .products-sidebar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .filter-card,
-  .stats-card,
-  .category-form-card,
-  .category-list-card,
-  .list-card,
-  .dialog-card {
-    padding: 16px;
-  }
-
-  .list-card {
-    gap: 14px;
-    padding: 14px;
-  }
-
-  .product-table-shell {
-    display: none;
-  }
-
-  .product-mobile-list {
-    display: grid;
-    gap: 12px;
-  }
-
-  .product-mobile-empty {
-    display: grid;
-  }
-
-  .product-mobile-card {
-    display: grid;
-    min-width: 0;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid #e5ebe8;
-    border-radius: 14px;
-    background: #fbfdfb;
-  }
-
-  .product-mobile-head {
-    display: grid;
-    grid-template-columns: 58px minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  .product-mobile-thumb {
-    width: 58px;
-    height: 58px;
-    flex-basis: 58px;
-  }
-
-  .product-mobile-copy strong,
-  .product-mobile-copy small {
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .product-mobile-head .status-pill {
-    height: 22px;
-    padding: 0 8px;
-  }
-
-  .product-mobile-meta {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 8px;
-    margin: 0;
-    padding: 10px 0;
-    border-top: 1px solid #e8eee9;
-    border-bottom: 1px solid #e8eee9;
-  }
-
-  .product-mobile-meta>div {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-  }
-
-  .product-mobile-meta dt {
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  .product-mobile-meta dd {
-    min-width: 0;
-    margin: 0;
-    overflow: hidden;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 750;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .product-mobile-meta .price-stack {
-    display: grid;
-    justify-items: end;
-  }
-
-  .product-mobile-status-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .product-mobile-status-actions .mini-chip,
-  .product-mobile-actions .text-action {
-    width: 100%;
-    min-height: 44px;
-    white-space: nowrap;
-  }
-
-  .product-mobile-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-}
-
-@media (min-width: 560px) and (max-width: 768px) {
-  .product-mobile-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+/* finesse · register=product · catalog-directory, responsive detail drawer · SPECTACLE=1 */
+.menu-page{position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;width:100%;min-width:0}
+.section-message{margin:12px 0;color:var(--m-danger);font-size:13px;overflow-wrap:anywhere}
+.primary-action{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;background:var(--m-accent);color:var(--m-surface)}
+.status-pill,.signature-category-badge{display:inline-flex;align-items:center;justify-content:center;max-width:100%;width:fit-content;padding:4px 8px;border-radius:6px;font-size:12px;font-weight:600}
+.badge-success{background:var(--m-selected);color:var(--m-accent)}
+.badge-warning{background:var(--mx-gold-soft);color:var(--mx-warning)}
+.badge-neutral,.badge-muted{background:var(--m-soft);color:var(--m-muted)}
+.signature-category-badge{background:var(--mx-gold-soft);color:var(--mx-warning);margin-left:6px}
+.hidden-file{display:none}
+.numeric-cell{font-variant-numeric:tabular-nums}
+.dialog-backdrop{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;background:var(--mx-mask)}
+.dialog-card{width:min(480px,100%);max-height:calc(100dvh - 40px);overflow-y:auto;padding:24px;border-radius:16px;background:var(--m-surface);box-shadow:var(--mx-shadow)}
+.dialog-head{display:flex;align-items:start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.dialog-head>div{min-width:0}.dialog-head h3{margin:0;font-size:20px}.dialog-head p{margin:8px 0 0;color:var(--m-muted);overflow-wrap:anywhere}
+.dialog-close{display:grid;place-items:center;width:44px;min-height:44px;flex:none;padding:0;background:var(--m-soft);color:var(--m-ink);font-size:24px}
+.delete-warning{margin:0;font-size:14px;line-height:1.7;color:var(--m-muted)}
+.dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:12px;margin-top:24px}.dialog-actions button{min-height:44px}
+.ghost-action{background:var(--m-soft);color:var(--m-ink)}.danger-action{background:var(--m-danger);color:var(--m-surface)}
+@media(max-width:768px){.dialog-card{padding:20px}.dialog-actions button{flex:1}.primary-action{font-size:13px}}
 </style>

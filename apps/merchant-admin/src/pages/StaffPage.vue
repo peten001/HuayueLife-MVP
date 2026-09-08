@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import PageHeader from '@/components/PageHeader.vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import MerchantDialog from '@/components/MerchantDialog.vue';
+import MerchantIcon from '@/components/MerchantIcon.vue';
 import { errorMessage } from '@/api/http';
 import { useI18n } from '@/i18n';
 import {
@@ -20,7 +21,8 @@ type StaffForm = {
   role: Exclude<MerchantStaffRole, 'OWNER'>;
 };
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const word = (zh:string,vi:string,en:string) => locale.value === 'zh' ? zh : locale.value === 'vi' ? vi : en;
 const message = ref('');
 const staffList = ref<MerchantStaffListItem[]>([]);
 const busyId = ref('');
@@ -28,6 +30,7 @@ const showForm = ref(false);
 const editing = ref(false);
 const resetPasswordValue = ref('');
 const selectedStaff = ref<MerchantStaffListItem | null>(null);
+const openActionMenuId = ref('');
 const phonePattern = /^\+?\d{8,15}$/;
 
 const form = reactive<StaffForm>({
@@ -51,8 +54,32 @@ const selectedRoleOptions = computed(() => {
 });
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', onDocumentPointerDown);
   await refresh();
 });
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+});
+
+function closeActionMenus() {
+  openActionMenuId.value = '';
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  const target = event.target;
+  if (target instanceof Element && target.closest('.mx-action-menu')) return;
+  closeActionMenus();
+}
+
+function onActionMenuToggle(itemId: string, event: Event) {
+  const menu = event.currentTarget as HTMLDetailsElement;
+  if (menu.open) {
+    openActionMenuId.value = itemId;
+  } else if (openActionMenuId.value === itemId) {
+    openActionMenuId.value = '';
+  }
+}
 
 async function refresh() {
   try {
@@ -63,6 +90,7 @@ async function refresh() {
 }
 
 function openCreate() {
+  message.value = '';
   editing.value = false;
   selectedStaff.value = null;
   resetPasswordValue.value = '';
@@ -77,6 +105,8 @@ function openCreate() {
 }
 
 function openEdit(item: MerchantStaffListItem) {
+  closeActionMenus();
+  message.value = '';
   editing.value = true;
   selectedStaff.value = item;
   Object.assign(form, {
@@ -128,6 +158,7 @@ async function submit() {
 }
 
 async function onDisable(item: MerchantStaffListItem) {
+  closeActionMenus();
   if (!confirm(t('disableStaffConfirm', { name: item.displayName }))) return;
   busyId.value = item.id;
   try {
@@ -142,6 +173,7 @@ async function onDisable(item: MerchantStaffListItem) {
 }
 
 async function onResetPassword(item: MerchantStaffListItem) {
+  closeActionMenus();
   if (!confirm(t('resetStaffPasswordConfirm', { name: item.displayName }))) return;
   busyId.value = item.id;
   try {
@@ -175,141 +207,25 @@ function lastLoginLabel(item: MerchantStaffListItem) {
 </script>
 
 <template>
-  <PageHeader :title="t('staffManagement')">
-    <button @click="openCreate">{{ t('addStaff') }}</button>
-  </PageHeader>
-
-  <section class="card" v-if="resetPasswordValue">
-    <strong>{{ t('temporaryPassword') }}:</strong>
-    <code>{{ resetPasswordValue }}</code>
-    <button class="small secondary" type="button" @click="copyPassword">
-      {{ t('copyPassword') }}
-    </button>
-  </section>
-
-  <section class="card" v-if="showForm">
-    <h3>{{ editing ? t('editStaff') : t('addStaff') }}</h3>
-    <div class="form-grid">
-      <label>
-        {{ t('loginPhone') }}
-        <input
-          v-model="form.username"
-          :disabled="editing"
-          :placeholder="t('staffPhonePlaceholder')"
-          required
-          maxlength="15"
-          pattern="^\+?\d{8,15}$"
-          inputmode="tel"
-        />
-      </label>
-      <label>
-        {{ t('displayName') }}
-        <input v-model="form.displayName" required maxlength="64" />
-      </label>
-      <label>
-        {{ t('password') }}
-        <input v-model="form.password" :required="!editing" :disabled="editing" type="password" minlength="8" />
-      </label>
-      <label>
-        {{ t('role') }}
-        <select v-model="form.role">
-          <option v-for="option in selectedRoleOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-    </div>
-    <div class="form-actions">
-      <button type="button" @click="submit">{{ editing ? t('saveChanges') : t('createStaff') }}</button>
-      <button class="secondary" type="button" @click="closeForm">{{ t('cancel') }}</button>
-    </div>
-  </section>
-
-  <p class="message">{{ message }}</p>
-
-  <section class="card table-wrap staff-desktop-table">
-    <table>
-      <thead>
-        <tr>
-          <th>{{ t('username') }}</th>
-          <th>{{ t('displayName') }}</th>
-          <th>{{ t('role') }}</th>
-          <th>{{ t('status') }}</th>
-          <th>{{ t('lastLoginAt') }}</th>
-          <th>{{ t('createdAt') }}</th>
-          <th>{{ t('actions') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="item in staffList" :key="item.id">
-          <td>{{ item.username }}</td>
-          <td>{{ item.displayName }}</td>
-          <td>{{ roleLabel(item) }}</td>
-          <td>{{ statusLabel(item) }}</td>
-          <td>{{ lastLoginLabel(item) }}</td>
-          <td>{{ new Date(item.createdAt).toLocaleString() }}</td>
-          <td class="actions">
-            <template v-if="item.role !== 'OWNER'">
-              <button class="small secondary" @click="openEdit(item)">{{ t('edit') }}</button>
-              <button class="small danger" :disabled="busyId === item.id" @click="onDisable(item)">
-                {{ t('disable') }}
-              </button>
-              <button class="small" :disabled="busyId === item.id" @click="onResetPassword(item)">
-                {{ t('resetStaffPassword') }}
-              </button>
-            </template>
-            <span v-else>{{ t('none') }}</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section class="staff-mobile-list" :aria-label="t('staffManagement')">
-    <article v-for="item in staffList" :key="item.id" class="card staff-mobile-card">
-      <header>
-        <div><strong>{{ item.displayName }}</strong><span>{{ item.username }}</span></div>
-        <div class="staff-pills"><span class="staff-role">{{ roleLabel(item) }}</span><span class="staff-status" :class="{ 'is-active': item.status === 'ACTIVE' }">{{ statusLabel(item) }}</span></div>
-      </header>
-      <dl>
-        <div><dt>{{ t('lastLoginAt') }}</dt><dd>{{ lastLoginLabel(item) }}</dd></div>
-      </dl>
-      <footer v-if="item.role !== 'OWNER'" class="staff-mobile-actions">
-        <button class="secondary" type="button" @click="openEdit(item)">{{ t('edit') }}</button>
-        <button class="danger" type="button" :disabled="busyId === item.id" @click="onDisable(item)">{{ t('disable') }}</button>
-        <button type="button" :disabled="busyId === item.id" @click="onResetPassword(item)">{{ t('resetStaffPassword') }}</button>
-      </footer>
-    </article>
+  <section class="mx-staff">
+    <header class="mx-heading mx-management-heading"><div><h1>{{ t('staffManagement') }}</h1><p>{{ word('管理团队成员及后台访问权限','Quản lý đội ngũ và quyền truy cập','Manage your team and access') }}</p></div><button type="button" @click="openCreate"><MerchantIcon name="plus" />{{ t('addStaff') }}</button></header>
+    <p v-if="message" class="message" role="status">{{ message }}</p>
+    <section v-if="resetPasswordValue" class="mx-panel mx-password-result"><strong>{{ t('temporaryPassword') }}</strong><code>{{ resetPasswordValue }}</code><button class="secondary" type="button" @click="copyPassword">{{ t('copyPassword') }}</button></section>
+    <section class="mx-panel mx-team-directory">
+      <header class="mx-panel-heading"><h2>{{ word('团队成员','Thành viên','Team members') }}</h2><span>{{ staffList.filter(item=>item.status==='ACTIVE').length }} {{ word('位已启用','đang hoạt động','active') }}</span></header>
+      <article v-for="item in staffList" :key="item.id" class="mx-team-row">
+        <div class="mx-person"><span class="mx-avatar" aria-hidden="true">{{ item.displayName.slice(0,1) }}</span><div><strong>{{ item.displayName }}</strong><small>{{ item.username }}</small></div></div>
+        <div class="mx-team-role"><strong>{{ roleLabel(item) }}</strong><span :class="['mx-dot-status',{'is-active':item.status==='ACTIVE'}]">{{ statusLabel(item) }}</span></div>
+        <div class="mx-team-meta">
+          <dl class="mx-team-dates"><div><dt>{{ t('lastLoginAt') }}</dt><dd>{{ lastLoginLabel(item) }}</dd></div><div><dt>{{ t('createdAt') }}</dt><dd>{{ new Date(item.createdAt).toLocaleDateString() }}</dd></div></dl>
+          <div v-if="item.role!=='OWNER'" class="mx-team-actions"><details class="mx-action-menu" :open="openActionMenuId===item.id" @toggle="onActionMenuToggle(item.id,$event)"><summary role="button" aria-haspopup="menu" :aria-expanded="openActionMenuId===item.id" :aria-label="word('更多员工操作','Thao tác khác','More staff actions')"><MerchantIcon name="ellipsis" /></summary><div role="menu"><button type="button" class="secondary" role="menuitem" @click="openEdit(item)">{{ t('edit') }}</button><button type="button" class="secondary" role="menuitem" :disabled="busyId===item.id" @click="onResetPassword(item)">{{ t('resetStaffPassword') }}</button><button type="button" class="danger" role="menuitem" :disabled="busyId===item.id" @click="onDisable(item)">{{ t('disable') }}</button></div></details></div>
+          <span v-else class="mx-team-owner">{{ word('店主账户','Chủ cửa hàng','Owner account') }}</span>
+        </div>
+      </article>
+      <div v-if="!staffList.length" class="m-empty"><MerchantIcon name="staff" /><p>{{ word('暂无员工','Chưa có nhân viên','No team members') }}</p><button class="secondary" type="button" @click="openCreate">{{ t('addStaff') }}</button></div>
+    </section>
+    <MerchantDialog :open="showForm" :title="editing?t('editStaff'):t('addStaff')" @close="closeForm">
+      <form class="mx-form" @submit.prevent="submit"><p v-if="message" class="mx-form-error" role="alert">{{ message }}</p><div class="mx-form-section"><label>{{ t('displayName') }}<input v-model="form.displayName" required maxlength="64" autocomplete="name" /></label><label>{{ t('loginPhone') }}<input v-model="form.username" :disabled="editing" :placeholder="t('staffPhonePlaceholder')" required maxlength="15" pattern="^\+?\d{8,15}$" inputmode="tel" autocomplete="username" /></label><label v-if="!editing">{{ t('password') }}<input v-model="form.password" required type="password" minlength="8" autocomplete="new-password" /></label><label v-if="selectedRoleOptions.length">{{ t('role') }}<select v-model="form.role"><option v-for="option in selectedRoleOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></div><div class="mx-editor-actions"><button type="button" class="secondary" @click="closeForm">{{ t('cancel') }}</button><button type="submit">{{ editing?t('saveChanges'):t('createStaff') }}</button></div></form>
+    </MerchantDialog>
   </section>
 </template>
-
-<style scoped>
-.staff-mobile-list { display: none; }
-
-@media (max-width: 768px) {
-  :deep(.page-header) { align-items: center; flex-direction: row; gap: 10px; margin: 4px 0 12px; }
-  :deep(.page-header h1) { font-size: 22px; }
-  :deep(.page-header button) { min-height: 44px; padding: 9px 13px; white-space: nowrap; }
-  .form-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .form-actions { align-items: stretch; flex-direction: column; }
-  .form-actions button { min-height: 44px; }
-  .staff-desktop-table { display: none; }
-  .staff-mobile-list { display: grid; gap: 10px; }
-  .staff-mobile-card { display: grid; min-width: 0; gap: 12px; padding: 14px; border-radius: 14px; box-shadow: 0 3px 12px rgb(31 45 36 / 5%); }
-  .staff-mobile-card header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .staff-mobile-card header>div { display: grid; min-width: 0; gap: 3px; }
-  .staff-mobile-card header strong { overflow: hidden; color: #1f2d24; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-  .staff-mobile-card header>div:first-child span { overflow: hidden; color: #6d7b72; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-  .staff-pills { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 5px; }
-  .staff-role { padding: 5px 8px; border-radius: 999px; color: #315783; background: #eaf2fb; font-size: 11px; font-weight: 750; white-space: nowrap; }
-  .staff-status { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; color: #8a4f31; background: #fff0e6; font-size: 11px; font-weight: 750; white-space: nowrap; }
-  .staff-status.is-active { color: #17693c; background: #e5f5ec; }
-  .staff-mobile-card dl { display: grid; gap: 8px; margin: 0; padding: 10px 0; border-top: 1px solid #edf1ee; border-bottom: 1px solid #edf1ee; }
-  .staff-mobile-card dl div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
-  .staff-mobile-card dt { color: #6d7b72; font-size: 12px; }
-  .staff-mobile-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #26372d; font-size: 13px; font-weight: 650; text-align: right; }
-  .staff-mobile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .staff-mobile-actions button { min-width: 0; min-height: 44px; padding: 8px 9px; white-space: nowrap; }
-  .staff-mobile-actions button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-}
-</style>

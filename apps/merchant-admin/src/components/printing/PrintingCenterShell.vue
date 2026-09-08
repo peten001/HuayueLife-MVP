@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { errorMessage } from '@/api/http';
 import { getPrintingPrinters, getPrintingRules } from '@/api/printing';
 import { usePrintingI18n } from '@/i18n/printing';
-import { androidTerminalRelease } from '@/config/android-terminal-release';
 import type {
   PrintingFeatureState,
   PrintingPrinter,
@@ -19,9 +18,6 @@ import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 
 const { p } = usePrintingI18n();
 const route = useRoute();
-const helpOpen = ref(false);
-const helpButton = ref<HTMLButtonElement | null>(null);
-const helpDrawer = ref<HTMLElement | null>(null);
 const featureState = ref<PrintingFeatureState | null>(null);
 const printers = ref<PrintingPrinter[]>([]);
 const rules = ref<PrintingRule[]>([]);
@@ -117,24 +113,9 @@ function refreshPrintingState() {
   void loadFeatureState(false);
 }
 
-function openHelp() {
-  helpOpen.value = true;
-  void nextTick(() => helpDrawer.value?.querySelector<HTMLButtonElement>('button')?.focus());
-}
-
-function closeHelp() {
-  helpOpen.value = false;
-  void nextTick(() => helpButton.value?.focus());
-}
-
-function handleHelpKeydown(event: KeyboardEvent) {
-  if (helpOpen.value && event.key === 'Escape') closeHelp();
-}
-
 onMounted(() => {
   void loadFeatureState();
   window.addEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
-  window.addEventListener('keydown', handleHelpKeydown);
   statusClock = window.setInterval(() => {
     now.value = Date.now();
     if (document.visibilityState === 'visible') void loadFeatureState(false);
@@ -143,25 +124,18 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener(PRINTING_STATE_CHANGED_EVENT, refreshPrintingState);
-  window.removeEventListener('keydown', handleHelpKeydown);
   if (statusClock !== undefined) window.clearInterval(statusClock);
 });
 </script>
 
 <template>
   <section class="printing-center">
-    <header class="printing-center__header">
+    <header class="printing-center__header mx-management-heading">
       <div class="printing-center__title-block">
         <h1>{{ p('title') }}</h1>
         <p>{{ p('description') }}</p>
       </div>
       <div class="printing-center__header-actions">
-        <!-- legacy route retained for old links: to="/printing-center/android-terminal" -->
-        <a class="printing-center__download-link" v-bind="{ href: androidTerminalRelease.downloadUrl, download: androidTerminalRelease.fileName }">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
-          <span class="printing-center__download-label">{{ p('downloadMerchantApp') }}</span>
-          <span class="printing-center__download-short">{{ p('downloadAppShort') }}</span>
-        </a>
         <span
         :class="[
           'printing-center__capability-status',
@@ -169,13 +143,9 @@ onBeforeUnmount(() => {
             'printing-center__capability-status--enabled': platformPrintingEnabled,
           },
         ]"
-      >
+        >
           {{ p('printingService') }}：{{ platformCapabilityLabel }}
         </span>
-        <button ref="helpButton" class="printing-center__help-button" type="button" @click="openHelp">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.7 9a2.4 2.4 0 1 1 4.2 1.6c-.9.8-1.9 1.2-1.9 2.6m0 3h.01" /></svg>
-          {{ p('help') }}
-        </button>
       </div>
     </header>
 
@@ -184,73 +154,10 @@ onBeforeUnmount(() => {
       <strong>{{ p('printingEnabledHint') }}</strong>
     </div>
 
-    <section v-if="!featureLoading && !featureError" class="printing-status-grid" :aria-label="p('printingStatusSummary')">
-      <article class="printing-status-card">
-        <span>{{ p('printerCount') }}</span>
-        <strong :class="{ 'is-active': onlinePrinterCount > 0 }">{{ onlinePrinterCount }} {{ p('printerUnit') }}{{ p('onlineSuffix') }}</strong>
-        <small>{{ p('totalPrinters') }} {{ printers.length }} {{ p('printerUnit') }}</small>
-      </article>
-      <article class="printing-status-card">
-        <span>{{ p('automaticPrintTab') }}</span>
-        <strong :class="{ 'is-active': summary.automaticPrinting === 'ENABLED' }">{{ automaticPrintingLabel }}</strong>
-        <small>{{ summary.automaticPrinting === 'ENABLED' ? p('automaticSceneCount') : p('automaticPrintSetupHint') }}</small>
-      </article>
-      <article class="printing-status-card">
-        <span>{{ p('printStatusCard') }}</span>
-        <strong :class="{ 'is-active': summary.recentTerminalConnection === 'ONLINE' }">{{ recentTerminalLabel }}</strong>
-        <small>{{ p('recentThirtyMinutes') }}</small>
-      </article>
-      <article class="printing-status-card">
-        <span>{{ p('todayPrintCard') }}</span>
-        <strong>{{ p('todayPrintUnavailable') }}</strong>
-        <small>{{ p('todayPrintUnavailableHint') }}</small>
-      </article>
-    </section>
+    <details v-if="!featureLoading&&!featureError" class="mx-print-health"><summary><span>{{ p('printingStatusSummary') }}</span><strong>{{ onlinePrinterCount }} / {{ printers.length }} {{ p('printerUnit') }} · {{ automaticPrintingLabel }}</strong><span aria-hidden="true">⌄</span></summary><dl><div><dt>{{ p('printerCount') }}</dt><dd>{{ onlinePrinterCount }} {{ p('printerUnit') }}{{ p('onlineSuffix') }}</dd></div><div><dt>{{ p('automaticPrintTab') }}</dt><dd>{{ automaticPrintingLabel }}</dd></div><div><dt>{{ p('printStatusCard') }}</dt><dd>{{ recentTerminalLabel }}</dd></div><div><dt>{{ p('todayPrintCard') }}</dt><dd>{{ p('todayPrintUnavailable') }}</dd><small>{{ p('todayPrintUnavailableHint') }}</small></div></dl></details>
 
     <section v-if="!isAndroidTerminalPage && !featureLoading && !featureError && !platformPrintingEnabled" class="printing-platform-gate" role="alert">
       <strong>{{ p('printingNotEnabled') }}</strong><p>{{ p('printingNotEnabledHint') }}</p>
-    </section>
-
-    <section v-if="helpOpen" class="printing-help-backdrop" @click.self="closeHelp">
-      <aside ref="helpDrawer" class="printing-help-drawer" role="dialog" aria-modal="true" aria-labelledby="printing-help-title" tabindex="-1">
-        <header><div><span class="printing-help-kicker">{{ p('help') }}</span><h2 id="printing-help-title">{{ p('helpAndDiagnostics') }}</h2></div><button type="button" :aria-label="p('close')" @click="closeHelp">×</button></header>
-        <div class="printing-help-body">
-          <h3>{{ p('howToChoosePrinting') }}</h3>
-          <div class="printing-help-item"><strong>{{ p('usbPrinting') }}</strong><p>{{ p('helpUsb') }}</p></div>
-          <div class="printing-help-item"><strong>{{ p('lanPrinting') }}</strong><p>{{ p('helpLan') }}</p></div>
-          <div class="printing-help-item"><strong>{{ p('cloudPrinting') }}</strong><p>{{ p('helpCloud') }}</p></div>
-          <h3>{{ p('commonQuestions') }}</h3>
-          <div class="printing-help-item"><strong>{{ p('offlineQuestion') }}</strong><p>{{ p('offlineAnswer') }}</p></div>
-          <div class="printing-help-item"><strong>{{ p('usbAppQuestion') }}</strong><p>{{ p('usbAppAnswer') }}</p></div>
-          <div class="printing-help-item"><strong>{{ p('downloadWhereQuestion') }}</strong><p>{{ p('downloadWhereAnswer') }}</p></div>
-          <details v-if="featureState" class="printing-help-diagnostics"><summary><strong>{{ p('advancedDiagnostics') }}</strong><small>{{ p('advancedDiagnosticsHint') }}</small></summary><div class="printing-safety-gates__flags">
-        <span class="printing-gate">
-          {{ p('taskCenterRunning') }}
-          <b :class="featureState?.taskCenterEnabled ? 'is-active' : 'is-danger'">
-            {{ featureState?.taskCenterEnabled ? p('enabled') : p('disabled') }}
-          </b>
-        </span>
-        <span class="printing-gate">
-          {{ p('automaticTaskStatus') }}
-          <b :class="featureState?.automaticCreationEnabled ? 'is-danger' : 'is-safe'">
-            {{ featureState?.automaticCreationEnabled ? p('enabled') : p('disabled') }}
-          </b>
-        </span>
-        <span class="printing-gate">
-          {{ p('localExecutionStatus') }}
-          <b :class="featureState?.executionEnabled ? 'is-active' : 'is-safe'">
-            {{ featureState?.executionEnabled ? p('enabled') : p('disabled') }}
-          </b>
-        </span>
-        <span class="printing-gate">
-          {{ p('compatibilityChannelStatus') }}
-          <b :class="featureState?.lanPrintingEnabled ? 'is-active' : 'is-safe'">
-            {{ featureState?.lanPrintingEnabled ? p('enabled') : p('disabled') }}
-          </b>
-        </span>
-      </div></details>
-        </div>
-      </aside>
     </section>
 
     <section v-if="featureLoading" class="printing-platform-gate" role="status">
@@ -872,7 +779,7 @@ onBeforeUnmount(() => {
 .printing-toolbar { margin-bottom: 12px; }
 .printing-toolbar p { margin-top: 3px; }
 .printing-table th, .printing-table td { padding: 9px 8px; }
-.printing-empty-state { display: grid; justify-items: center; gap: 8px; min-height: 240px; padding: 38px 20px; border: 1px dashed #cfded3; border-radius: 12px; color: var(--printing-muted); background: #fbfdfb; text-align: center; }
+.printing-empty-state { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 180px; padding: 28px 20px; border: 1px dashed #cfded3; border-radius: 12px; color: var(--printing-muted); background: #fbfdfb; text-align: center; }
 .printing-empty-state strong { color: var(--printing-ink); font-size: 17px; }
 .printing-empty-state p { max-width: 34ch; margin: 0 0 6px; line-height: 1.5; }
 .printing-empty-state__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: var(--printing-green); background: var(--printing-green-soft); font-size: 24px; }
@@ -885,7 +792,7 @@ onBeforeUnmount(() => {
 .printing-printer-row__notice { grid-column: 1 / -1; min-width: 0; margin: -7px 0 0 44px; overflow-wrap: anywhere; }
 .printing-printer-row__icon, .printing-method-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; color: var(--printing-green); background: var(--printing-green-soft); font-size: 19px; }
 .printing-icon-button, .printing-modal__close { display: inline-grid; place-items: center; width: 44px; min-width: 44px; height: 44px; border: 0; color: #66756b; background: transparent; font-size: 20px; cursor: pointer; }
-.printing-modal--printer-flow { width: min(780px, 100%); max-height: min(720px, calc(100vh - 40px)); }
+.printing-modal--printer-flow { width: min(780px, 100%); max-height: min(720px, calc(100vh - 40px)); grid-template-rows: auto auto minmax(0, 1fr) auto; }
 .printing-modal__eyebrow, .printing-step-kicker { display: block; margin-bottom: 3px; color: var(--printing-green); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .printing-modal__header { padding: 14px 18px; }
 .printing-modal__header h2 { font-size: 18px; }
@@ -1031,10 +938,6 @@ onBeforeUnmount(() => {
   color: var(--printing-ink);
 }
 .printing-center__header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.printing-center__download-link, .printing-center__help-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid var(--printing-border); border-radius: 9px; color: var(--printing-green); background: #fff; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
-.printing-center__download-link:hover, .printing-center__download-link:focus-visible, .printing-center__help-button:hover, .printing-center__help-button:focus-visible { border-color: var(--printing-green); background: #eaf6ee; }
-.printing-center__download-link svg, .printing-center__help-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.printing-center__download-short { display: none; }
 .printing-center__capability-status { min-height: 30px; padding: 6px 10px; border-radius: 999px; color: #956100; background: #fff4d6; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .printing-center__capability-status--enabled { color: #16733a; background: #e9f6ed; }
 .printing-center__notice { border-color: #cfe7d6; color: #16733a; background: #eaf6ee; }
@@ -1046,32 +949,14 @@ onBeforeUnmount(() => {
 .printing-status-card strong { color: #956100; font-size: 20px; line-height: 1.35; }
 .printing-status-card strong.is-active { color: #16733a; }
 .printing-status-card small { color: #7c8981; font-size: 12px; }
-.printing-help-backdrop { position: fixed; z-index: 40; inset: 0; display: flex; justify-content: flex-end; background: rgba(18,45,29,.24); }
-.printing-help-drawer { width: min(440px, 100vw); height: 100%; overflow-y: auto; background: #fff; box-shadow: 0 12px 32px rgba(18,45,29,.12); }
-.printing-help-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px; border-bottom: 1px solid #e8eeea; }
-.printing-help-drawer > header h2 { margin: 3px 0 0; font-size: 22px; }
-.printing-help-drawer > header button { border: 0; color: #5f6f65; background: transparent; font-size: 26px; cursor: pointer; }
-.printing-help-kicker { color: var(--printing-green); font-size: 12px; font-weight: 600; }
-.printing-help-body { display: grid; gap: 18px; padding: 24px; }
-.printing-help-body h3 { margin: 0; font-size: 16px; }
-.printing-help-item { padding-bottom: 14px; border-bottom: 1px solid #e8eeea; }
-.printing-help-item strong { font-size: 14px; }
-.printing-help-item p { margin: 4px 0 0; color: var(--printing-muted); font-size: 13px; line-height: 1.65; }
-.printing-help-diagnostics { border: 1px solid var(--printing-border); border-radius: 10px; padding: 12px; }
-.printing-help-diagnostics summary { display: grid; gap: 3px; cursor: pointer; list-style-position: inside; }
-.printing-help-diagnostics summary small { margin-left: 20px; color: #7c8981; font-size: 12px; }
-.printing-help-diagnostics .printing-safety-gates__flags { margin-top: 12px; }
-@media (max-width: 760px) { .printing-center__header-actions { width: 100%; justify-content: stretch; } .printing-center__download-link, .printing-center__help-button { flex: 1; } .printing-center__download-label { display: none; } .printing-center__download-short { display: inline; } .printing-help-drawer > header, .printing-help-body { padding: 16px; } }
+@media (max-width: 760px) { .printing-center__header-actions { width: 100%; justify-content: stretch; } }
 @media (max-width: 768px) {
   .printing-center { gap: 9px; margin-top: 0; padding-bottom: max(4px, env(safe-area-inset-bottom)); }
   .printing-center__header { align-items: stretch; flex-direction: column; gap: 9px; }
   .printing-center__title-block h1 { font-size: 22px !important; line-height: 1.2 !important; }
   .printing-center__title-block p { display: -webkit-box; overflow: hidden; font-size: 12px !important; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .printing-center__header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 7px; }
-  .printing-center__download-link, .printing-center__help-button { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; white-space: nowrap; }
-  .printing-center__download-label { display: none; }
-  .printing-center__download-short { display: inline; }
-  .printing-center__capability-status { grid-column: 1 / -1; justify-content: center; min-height: 34px; overflow: hidden; text-overflow: ellipsis; }
+  .printing-center__header-actions { display: flex; width: 100%; }
+  .printing-center__capability-status { justify-content: center; min-height: 34px; overflow: hidden; text-overflow: ellipsis; }
   .printing-center__notice { min-height: 42px; padding: 9px 11px; font-size: 12px; }
   .printing-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
   .printing-status-card { min-height: 78px; padding: 9px 10px; }
@@ -1092,8 +977,6 @@ onBeforeUnmount(() => {
   .printing-printer-row>.printing-actions .printing-button { width: 100%; min-width: 0; min-height: 44px; padding: 7px 8px; white-space: nowrap; }
   .printing-printer-row__notice { margin-left: 0; }
   .printing-receipt-options { grid-template-columns: minmax(0, 1fr); }
-  .printing-help-drawer { padding-bottom: env(safe-area-inset-bottom); }
-  .printing-help-drawer>header, .printing-help-body { padding: 16px; }
   .printing-modal { min-height: 100dvh; max-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 }
 </style>

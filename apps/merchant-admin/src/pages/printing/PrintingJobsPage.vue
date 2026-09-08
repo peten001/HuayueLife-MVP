@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, reactive, ref } from 'vue';
 import { errorMessage } from '@/api/http';
+import MerchantDialog from '@/components/MerchantDialog.vue';
 import {
   cancelPrintingJob,
   getPrintingJob,
@@ -27,6 +28,7 @@ const rows = ref<PrintingJob[]>([]);
 const selected = ref<PrintingJob | null>(null);
 const loading = ref(false);
 const detailLoading = ref(false);
+let detailRequest = 0;
 const message = ref('');
 const success = ref(false);
 const actionLoading = ref(false);
@@ -116,17 +118,21 @@ async function load() {
 }
 
 async function openDetail(row: PrintingJob) {
+  const request = ++detailRequest;
   try {
     detailLoading.value = true;
-    selected.value = await getPrintingJob(row.id);
+    const detail = await getPrintingJob(row.id);
+    if (request === detailRequest) selected.value = detail;
   } catch (error) {
-    showError(error);
+    if (request === detailRequest) showError(error);
   } finally {
-    detailLoading.value = false;
+    if (request === detailRequest) detailLoading.value = false;
   }
 }
 
 function closeDetail() {
+  detailRequest++;
+  detailLoading.value = false;
   selected.value = null;
 }
 
@@ -293,44 +299,19 @@ onMounted(load);
 
     <p v-if="message" :class="['printing-message', { 'printing-message--success': success }]" role="status">{{ message }}</p>
 
-    <div class="printing-table-wrap">
-      <table class="printing-table">
-        <thead>
-          <tr>
-            <th>{{ p('createdAt') }}</th>
-            <th>{{ p('orderId') }}</th>
-            <th>{{ p('receiptType') }}</th>
-            <th>{{ p('printer') }}</th>
-            <th>{{ p('status') }}</th>
-            <th>{{ p('actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in rows" :key="row.id">
-            <td>{{ new Date(row.createdAt).toLocaleString() }}</td>
-            <td><strong>{{ orderReference(row) }}</strong></td>
-            <td>{{ receiptTypeLabel(row.receiptType) }}</td>
-            <td>{{ row.printer?.name || row.printerId }}</td>
-            <td><span :class="['printing-badge', statusClass(row)]">{{ statusLabel(row) }}</span><small v-if="recordHint(row)">{{ recordHint(row) }}</small></td>
-            <td>
-              <div class="printing-actions">
-                <button class="printing-button printing-button--secondary printing-button--small" type="button" @click="openDetail(row)">{{ p('view') }}</button>
-                <button v-if="canCancel(row)" class="printing-button printing-button--danger printing-button--small" type="button" @click="requestAction('cancel', row)">{{ p('cancelJob') }}</button>
-                <button v-if="canRetry(row)" class="printing-button printing-button--secondary printing-button--small" type="button" @click="requestAction('retry', row)">{{ p('retry') }}</button>
-                <button v-if="canReprint(row)" class="printing-button printing-button--secondary printing-button--small" type="button" @click="requestAction('reprint', row)">{{ p('reprint') }}</button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="!loading && !rows.length"><td class="printing-empty" colspan="6">{{ p('noData') }}</td></tr>
-          <tr v-if="loading"><td class="printing-empty" colspan="6">{{ p('loading') }}</td></tr>
-        </tbody>
-      </table>
+    <div class="mx-print-records">
+      <div v-if="loading" role="status"><div v-for="n in 4" :key="n" class="mx-skeleton"><i></i><i></i></div></div>
+      <div v-else-if="!rows.length" class="printing-empty-state"><strong>{{ p('noData') }}</strong></div>
+      <article v-for="row in loading?[]:rows" :key="row.id" class="mx-print-record">
+        <button type="button" class="mx-print-reference" @click="openDetail(row)"><strong>{{ orderReference(row) }}</strong><span>{{ new Date(row.createdAt).toLocaleString() }}</span><small>{{ receiptTypeLabel(row.receiptType) }} · {{ row.printer?.name || row.printerId }}</small></button>
+        <div class="mx-print-result"><span :class="['printing-badge',statusClass(row)]">{{ statusLabel(row) }}</span><small v-if="recordHint(row)">{{ recordHint(row) }}</small></div>
+        <div class="printing-actions"><button class="printing-button printing-button--secondary" type="button" @click="openDetail(row)">{{ p('view') }}</button><button v-if="canCancel(row)" class="printing-button printing-button--danger" type="button" @click="requestAction('cancel',row)">{{ p('cancelJob') }}</button><button v-if="canRetry(row)" class="printing-button printing-button--secondary" type="button" @click="requestAction('retry',row)">{{ p('retry') }}</button><button v-if="canReprint(row)" class="printing-button printing-button--secondary" type="button" @click="requestAction('reprint',row)">{{ p('reprint') }}</button></div>
+      </article>
     </div>
   </section>
 
-  <div v-if="selected || detailLoading" class="printing-modal-backdrop" @click.self="closeDetail">
-    <section class="printing-modal printing-modal--wide" role="dialog" aria-modal="true" aria-labelledby="printing-job-detail-title">
-      <header class="printing-modal__header"><h2 id="printing-job-detail-title">{{ p('detail') }}</h2></header>
+  <MerchantDialog :open="!!selected || detailLoading" :title="p('detail')" variant="drawer" @close="closeDetail">
+    <section class="mx-print-detail">
       <div class="printing-modal__body">
         <p v-if="detailLoading" class="printing-hint printing-field--full">{{ p('loading') }}</p>
         <template v-if="selected">
@@ -357,16 +338,15 @@ onMounted(load);
         <button v-if="selected && canReprint(selected)" class="printing-button" type="button" @click="requestAction('reprint', selected)">{{ p('reprint') }}</button>
       </footer>
     </section>
-  </div>
+  </MerchantDialog>
 
-  <div v-if="pendingAction" class="printing-modal-backdrop" @click.self="closePendingAction" @keydown.esc="closePendingAction">
-    <section class="printing-modal printing-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="printing-job-action-title" aria-describedby="printing-job-action-description">
-      <header class="printing-modal__header"><h2 id="printing-job-action-title">{{ actionTitle() }}</h2></header>
+  <MerchantDialog :open="!!pendingAction" :title="actionTitle()" aria-describedby="printing-job-action-description" @close="!actionLoading && closePendingAction()">
+    <section v-if="pendingAction" class="mx-print-detail" aria-describedby="printing-job-action-description">
       <div class="printing-modal__body"><p id="printing-job-action-description" class="printing-hint printing-field--full">{{ actionDescription() }}</p></div>
       <footer class="printing-modal__footer">
         <button class="printing-button printing-button--secondary" type="button" :disabled="actionLoading" @click="closePendingAction">{{ p('cancel') }}</button>
         <button ref="actionConfirmButton" :class="['printing-button', { 'printing-button--danger': pendingAction.type === 'cancel' }]" type="button" :disabled="actionLoading" @click="confirmPendingAction">{{ p('confirmAction') }}</button>
       </footer>
     </section>
-  </div>
+  </MerchantDialog>
 </template>
