@@ -52,6 +52,10 @@ html.merchant-workbench-root,
   outline: 3px solid color-mix(in srgb, var(--m-focus) 26%, transparent);
   outline-offset: 2px;
 }
+/* The main landmark is a programmatic skip-link target, not an interactive
+ * control. Mobile WebKit can focus it while a route is mounting and paints its
+ * native blue auto-outline across the full width of the records viewport. */
+.merchant-workbench .m-main:focus { outline: none; }
 .m-skip {
   position: fixed;
   top: -100px;

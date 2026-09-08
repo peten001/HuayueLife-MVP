@@ -165,7 +165,11 @@ try {
  pass('three languages and formal custom-date controls at 320px');
  try {
   const b=await webkit.launch({headless:true});const p=await b.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
-  await p.goto(base+'/dashboard');await expect(p.locator('[data-analytics-field="revenue"]')).toBeVisible();await p.locator('.analytics-preset').last().click();await expect(p.locator('.analytics-custom-dates')).toBeVisible();await p.screenshot({path:output+'/webkit-date-controls.png'});await b.close();evidence.webkit='PASS desktop WebKit emulation, not physical iPhone';
+  await p.goto(base+'/dashboard');await expect(p.locator('[data-analytics-field="revenue"]')).toBeVisible();await p.locator('.analytics-preset').last().click();await expect(p.locator('.analytics-custom-dates')).toBeVisible();await p.screenshot({path:output+'/webkit-date-controls.png'});
+  for(const path of ['/orders?date=2026-09-05','/settlements?date=2026-09-05']){
+   await p.goto(base+path);const main=p.locator('.m-main');await expect(main).toBeVisible();await main.evaluate(element=>element.focus());assert.equal(await main.evaluate(element=>getComputedStyle(element).outlineStyle),'none',`${path} main landmark must not expose WebKit's full-width blue focus line`);
+  }
+  await b.close();evidence.webkit='PASS desktop WebKit emulation, including records loading focus containment; not physical iPhone';
  }catch(error){evidence.webkit='NOT RUN: '+error.message.split('\n')[0];}
  assert.equal(evidence.errors.length,0);
 }finally{await browser.close();await writeFile(output+'/interactions.json',JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));}
