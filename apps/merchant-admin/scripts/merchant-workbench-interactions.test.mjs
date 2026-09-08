@@ -94,6 +94,16 @@ try {
  assert.equal(writes.length,0,'all analytics/records drilldowns are read-only');
  pass('order pagination, search, unread indicator and readonly navigation');
  await page.goto(base+'/menu/products');
+ const onSaleTab=page.locator('.mx-catalog-status-tabs button').filter({hasText:'上架'});
+ await onSaleTab.click();
+ const productStatusTabState=await onSaleTab.evaluate(element=>({
+  background:getComputedStyle(element).backgroundColor,
+  underlineHeight:getComputedStyle(element,'::after').height,
+  underlineColor:getComputedStyle(element,'::after').backgroundColor,
+ }));
+ assert.equal(productStatusTabState.background,'rgba(0, 0, 0, 0)','selected product status tab must not gain a filled background');
+ assert.equal(productStatusTabState.underlineHeight,'2px','selected product status tab must use a compact underline');
+ assert.notEqual(productStatusTabState.underlineColor,'rgba(0, 0, 0, 0)','selected product status underline must remain visible');
  const first=page.locator('.mx-mobile-product').first();
  await expect(first.locator('img')).toBeVisible();
  await expect.poll(()=>first.locator('img').evaluate(e=>e.complete&&e.naturalWidth>0)).toBe(true);

@@ -415,7 +415,14 @@
   font-size: 12px;
 }
 .m-main--management .mx-catalog-status-tabs button span { margin-left: 5px; color: var(--m-muted-2); font-size: 10px; }
-.m-main--management .mx-catalog-status-tabs button[aria-pressed="true"] { color: var(--m-accent); }
+.m-main--management .mx-catalog-status-tabs button:is(:hover, :active) {
+  background: transparent;
+  transform: none;
+}
+.m-main--management .mx-catalog-status-tabs button[aria-pressed="true"] {
+  color: var(--m-accent);
+  background: transparent;
+}
 .m-main--management .mx-catalog-status-tabs button[aria-pressed="true"]::after {
   position: absolute;
   right: 0;
