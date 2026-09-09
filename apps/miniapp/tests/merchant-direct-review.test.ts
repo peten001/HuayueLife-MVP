@@ -47,8 +47,13 @@ test('public review cards identify direct and post-visit reviews', async () => {
 });
 
 test('review copy does not use the removed completion-only prompt', async () => {
-  const i18n = await readFile(path.join(miniappRoot, 'src/i18n/index.ts'), 'utf8');
+  const [createPage, i18n] = await Promise.all([
+    readFile(path.join(miniappRoot, 'src/pages/review/create.vue'), 'utf8'),
+    readFile(path.join(miniappRoot, 'src/i18n/index.ts'), 'utf8'),
+  ]);
 
+  assert.doesNotMatch(createPage, /directReviewLimitHint/);
+  assert.doesNotMatch(i18n, /无需订单即可评价/);
   assert.match(i18n, /noReviewsHint: '还没有评价，来分享你的真实体验吧。'/);
   assert.match(i18n, /noReviewsHint: 'Chưa có đánh giá\. Hãy chia sẻ trải nghiệm của bạn\.'/);
   assert.match(i18n, /noReviewsHint: 'No reviews yet\. Share your experience\.'/);

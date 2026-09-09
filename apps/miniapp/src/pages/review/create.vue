@@ -369,8 +369,8 @@ async function submit() {
           />
         </view>
 
-        <text class="window-hint">
-          {{ isOrderReview ? t('reviewWindowHint') : t('directReviewLimitHint') }}
+        <text v-if="isOrderReview" class="window-hint">
+          {{ t('reviewWindowHint') }}
         </text>
 
         <view class="submit-bar">
