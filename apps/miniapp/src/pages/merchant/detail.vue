@@ -9,6 +9,7 @@ import {
   onUnload,
 } from '@dcloudio/uni-app';
 import WechatOneTapLogin from '@/components/WechatOneTapLogin.vue';
+import MerchantReviewCard from '@/components/MerchantReviewCard.vue';
 import { getMerchant } from '@/api/catalog';
 import {
   formatNumberCurrency,
@@ -53,6 +54,7 @@ const activeGalleryCategory = ref<GalleryKey | ''>('');
 const viewportWidth = ref(390);
 const signatureExpanded = ref(false);
 const hotExpanded = ref(false);
+const reviewStarLevels = [1, 2, 3, 4, 5] as const;
 const merchantNavStyle = ref<Record<string, string>>({});
 const failedMediaUrls = ref<Set<string>>(new Set());
 const { locale, t } = useI18n();
@@ -216,6 +218,17 @@ watch(flatGalleryMedia, (nextMedia, previousMedia) => {
 });
 const signatureDishes = computed(() => merchant.value?.signatureDishes ?? []);
 const hotRecommendations = computed(() => merchant.value?.hotRecommendations ?? []);
+const reviewPreview = computed(() => merchant.value?.reviews ?? {
+  summary: {
+    averageRating: null,
+    total: 0,
+    distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 },
+  },
+  recentReviews: [],
+});
+const reviewAverageLabel = computed(() =>
+  reviewPreview.value.summary.averageRating?.toFixed(1) ?? '—',
+);
 const signatureDefaultLimit = computed(() => (viewportWidth.value < 390 ? 6 : 8));
 const hotDefaultLimit = computed(() => (viewportWidth.value < 390 ? 3 : 4));
 const visibleSignatureDishes = computed(() => (
@@ -677,6 +690,13 @@ function previewGallery(imageUrl?: string | null) {
   uni.previewImage({ current, urls });
 }
 
+function openAllReviews() {
+  if (!merchant.value) return;
+  uni.navigateTo({
+    url: `/pages/review/list?merchantId=${merchant.value.id}`,
+  });
+}
+
 function hasCapability(code: string, fallbackValue: boolean) {
   if (!hasCapabilityRecords.value) return fallbackValue;
   return enabledCapabilityCodes.value.has(code);
@@ -920,6 +940,50 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </scroll-view>
       </view>
 
+      <view class="content-section reviews-section">
+        <view class="section-heading">
+          <text class="section-title">{{ t('customerReviews') }}</text>
+          <button
+            v-if="reviewPreview.summary.total"
+            class="section-more"
+            :aria-label="t('viewAllReviews')"
+            hover-class="is-pressed"
+            @tap="openAllReviews"
+          >
+            <text>{{ t('viewAllReviews') }}</text>
+            <text class="section-more-arrow">›</text>
+          </button>
+        </view>
+
+        <template v-if="reviewPreview.summary.total">
+          <view class="review-summary-row">
+            <text class="review-average">{{ reviewAverageLabel }}</text>
+            <view class="review-summary-copy">
+              <view class="review-stars" :aria-label="`${reviewAverageLabel} / 5`">
+                <text
+                  v-for="level in reviewStarLevels"
+                  :key="level"
+                  :class="['review-star', { active: level <= Math.round(reviewPreview.summary.averageRating ?? 0) }]"
+                >★</text>
+              </view>
+              <text class="review-total">{{ t('reviewCount', { count: reviewPreview.summary.total }) }}</text>
+            </view>
+          </view>
+          <MerchantReviewCard
+            v-for="review in reviewPreview.recentReviews"
+            :key="review.id"
+            :review="review"
+          />
+        </template>
+
+        <view v-else class="review-empty">
+          <text class="review-empty-stars">★★★★★</text>
+          <view class="review-empty-copy">
+            <text class="review-empty-title">{{ t('noReviews') }}</text>
+            <text class="review-empty-hint">{{ t('noReviewsHint') }}</text>
+          </view>
+        </view>
+      </view>
 
       <view v-if="displayAddress" class="address-card">
         <image class="address-pin" :src="uiIcons.mapPin" mode="aspectFit" />
@@ -2943,5 +3007,84 @@ function hasCapability(code: string, fallbackValue: boolean) {
   font-size: var(--type-label-size);
   font-weight: 700;
   line-height: 1.15;
+}
+
+.review-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  margin-top: 14rpx;
+  border-radius: 20rpx;
+  background: #fff7e8;
+}
+
+.review-average {
+  color: #9a6500;
+  font-size: 56rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.review-summary-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6rpx;
+}
+
+.review-stars {
+  display: flex;
+  gap: 3rpx;
+}
+
+.review-star {
+  color: #dbe2dc;
+  font-size: 25rpx;
+  line-height: 1;
+}
+
+.review-star.active {
+  color: #f4a62a;
+}
+
+.review-total {
+  color: #756649;
+  font-size: var(--type-meta-size);
+  line-height: 1.35;
+}
+
+.review-empty {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  margin-top: 14rpx;
+  border-radius: 20rpx;
+  background: var(--surface-soft);
+}
+
+.review-empty-stars {
+  flex: none;
+  color: #d8dfd9;
+  font-size: 22rpx;
+  letter-spacing: 2rpx;
+}
+
+.review-empty-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5rpx;
+}
+
+.review-empty-title {
+  color: var(--ink);
+  font-size: var(--type-label-size);
+  font-weight: 700;
+}
+
+.review-empty-hint {
+  color: var(--ink-3);
+  font-size: var(--type-meta-size);
+  line-height: 1.45;
 }
 </style>

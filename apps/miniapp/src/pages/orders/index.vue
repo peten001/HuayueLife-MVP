@@ -63,6 +63,10 @@ function openOrder(id: string) {
   uni.navigateTo({ url: `/pages/order/detail?id=${id}` });
 }
 
+function openReview(order: UserOrder) {
+  uni.navigateTo({ url: `/pages/review/create?orderId=${order.id}` });
+}
+
 function orderNow() {
   uni.switchTab({ url: '/pages/home/index' });
 }
@@ -142,9 +146,16 @@ onUnload(stopPolling);
           <text class="amount-label">{{ t('paidAmount') }}</text>
           <text class="amount">{{ Number(order.totalAmountVnd).toLocaleString() }} ₫</text>
         </view>
-        <button class="detail-button" @click.stop="openOrder(order.id)">
-          {{ t('viewDetails') }}
-        </button>
+        <view class="card-actions">
+          <button
+            v-if="order.status === 'COMPLETED' && (order.canReview || order.review)"
+            class="review-button"
+            @click.stop="openReview(order)"
+          >{{ order.review ? t('viewReview') : t('goReview') }}</button>
+          <button class="detail-button" @click.stop="openOrder(order.id)">
+            {{ t('viewDetails') }}
+          </button>
+        </view>
       </view>
     </view>
   </view>
@@ -371,8 +382,12 @@ onUnload(stopPolling);
 
 .detail-button {
   min-width: 150rpx;
+  min-height: 88rpx;
+  display: flex;
   margin: 0;
-  padding: 9rpx 22rpx;
+  padding: 0 22rpx;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 999rpx;
   color: #2e7d32;
@@ -380,5 +395,32 @@ onUnload(stopPolling);
   font-size: 22rpx;
   font-weight: 700;
   line-height: 1.5;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.review-button {
+  min-width: 138rpx;
+  min-height: 88rpx;
+  display: flex;
+  margin: 0;
+  padding: 0 22rpx;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999rpx;
+  color: #fff;
+  background: #2e7d32;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.review-button::after {
+  border: 0;
 }
 </style>

@@ -78,6 +78,9 @@ describe('OrdersService legacy printing gate', () => {
         ...createdOrder,
         pickupCode: 'A091',
         estimatedReadyAt: new Date('2026-07-24T08:30:00.000Z'),
+        review: null,
+        canReview: false,
+        reviewDeadlineAt: null,
       });
 
       expect(tx.order.create).toHaveBeenCalledTimes(1);
@@ -159,6 +162,9 @@ describe('OrdersService legacy printing gate', () => {
       ...createdOrder,
       pickupCode: 'A092',
       estimatedReadyAt: new Date('2026-07-24T09:30:00.000Z'),
+      review: null,
+      canReview: false,
+      reviewDeadlineAt: null,
     });
     expect(printers.printOrder).toHaveBeenCalledTimes(1);
   });

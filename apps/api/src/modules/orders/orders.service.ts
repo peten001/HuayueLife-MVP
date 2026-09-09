@@ -26,6 +26,7 @@ import {
   isInternalOrderStatusLogAction,
   toCustomerVisibleOrderStatusLogs,
 } from './order-status-log-visibility';
+import { isOrderReviewEligible, reviewDeadline } from '../reviews/review-policy';
 
 const REUSABLE_DINE_IN_CUSTOMER_ORDER_STATUSES = new Set<OrderStatus>([
   'PENDING_ACCEPTANCE',
@@ -720,6 +721,14 @@ export class OrdersService {
       orderNo: string;
       createdAt: Date;
       readyAt: Date | null;
+      status: OrderStatus;
+      completedAt: Date | null;
+      review?: {
+        id: bigint;
+        rating: number;
+        status: string;
+        createdAt: Date;
+      } | null;
       statusLogs?: ReadonlyArray<{
         toStatus: string;
         action: string | null;
@@ -728,18 +737,35 @@ export class OrdersService {
       }>;
     },
   >(order: T) {
+    const canReview = isOrderReviewEligible(order);
+    const reviewDeadlineAt = order.completedAt
+      ? reviewDeadline(order.completedAt).toISOString()
+      : null;
     const {
       createdByStaffId: _createdByStaffId,
       voidedAt: _voidedAt, voidedByStaffId: _voidedByStaffId,
       voidReason: _voidReason, voidReasonNote: _voidReasonNote, voidOperationId: _voidOperationId,
       ...withoutCreator
     } = order;
+    const withReview = {
+      ...withoutCreator,
+      review: order.review
+        ? {
+            id: order.review.id.toString(),
+            rating: order.review.rating,
+            status: order.review.status,
+            createdAt: order.review.createdAt,
+          }
+        : null,
+      canReview,
+      reviewDeadlineAt,
+    };
     if (!order.statusLogs) {
-      return withPickupFulfillmentFields(withoutCreator);
+      return withPickupFulfillmentFields(withReview);
     }
 
     return withPickupFulfillmentFields({
-      ...withoutCreator,
+      ...withReview,
       statusLogs: order.orderType === 'DINE_IN'
         ? toCustomerVisibleOrderStatusLogs(order.statusLogs)
         : order.statusLogs
@@ -772,6 +798,14 @@ export class OrdersService {
       select: { id: true, tableNo: true, tableName: true },
     },
     items: true,
+    review: {
+      select: {
+        id: true,
+        rating: true,
+        status: true,
+        createdAt: true,
+      },
+    },
   };
 
   private readonly orderDetailInclude = {

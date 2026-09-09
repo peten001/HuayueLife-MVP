@@ -36,6 +36,11 @@ const canConfirmReceived = computed(
     order.value?.orderType === 'DELIVERY' &&
     order.value.status === 'DELIVERING',
 );
+const canOpenReview = computed(() => Boolean(
+  order.value?.status === 'COMPLETED'
+  && (order.value.canReview || order.value.review),
+));
+const reviewActionLabel = computed(() => order.value?.review ? t('viewReview') : t('goReview'));
 const statusTone = computed(() => {
   if (order.value?.status === 'COMPLETED') return 'completed';
   if (order.value?.status === 'CANCELLED') return 'cancelled';
@@ -150,6 +155,13 @@ function openChat() {
   });
 }
 
+function openReview() {
+  if (!order.value || !canOpenReview.value) return;
+  uni.navigateTo({
+    url: `/pages/review/create?orderId=${order.value.id}`,
+  });
+}
+
 function serviceInfo() {
   if (!order.value) return '';
   if (order.value.orderType === 'DINE_IN') {
@@ -227,6 +239,9 @@ function serviceInfo() {
       </button>
       <button v-if="canConfirmReceived" class="action" :disabled="operating" @click="receive">
         {{ t('confirmReceived') }}
+      </button>
+      <button v-if="canOpenReview" class="action review-action" @click="openReview">
+        {{ reviewActionLabel }}
       </button>
     </template>
 
@@ -459,5 +474,9 @@ function serviceInfo() {
   border: 2rpx solid #e8bcbc;
   color: #b65f5f;
   background: #fff;
+}
+
+.review-action {
+  background: #2e7d32;
 }
 </style>

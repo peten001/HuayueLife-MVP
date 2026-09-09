@@ -3,7 +3,9 @@ import {
   BadRequestException,
   Injectable,
   GoneException,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Category, Merchant, OrderType, Prisma, PromotionTagScope } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -16,6 +18,7 @@ import {
   parseHomepageCategoryKeys,
   type HomepageCategoryKey,
 } from '../shared/homepage-category-keys';
+import { ReviewsService } from '../reviews/reviews.service';
 
 const PAGE_SIZE = 20;
 const SALES_ORDER_TYPES: OrderType[] = ['PICKUP', 'DELIVERY', 'DINE_IN'];
@@ -96,10 +99,14 @@ const OPERATIONAL_REGION_ALIASES: Record<'北江' | '北宁', string[]> = {
 
 @Injectable()
 export class PublicMerchantsService {
+  private readonly logger = new Logger(PublicMerchantsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchantCapabilities: MerchantCapabilitiesService,
     private readonly appConfig: AppConfigService,
+    @Optional()
+    private readonly reviews?: ReviewsService,
   ) {}
 
   async nearby(query: NearbyMerchantsQueryDto) {
@@ -219,7 +226,7 @@ export class PublicMerchantsService {
 
   async detail(id: bigint) {
     const merchant = await this.requirePublicMerchant(id);
-    const [categories, hotRecommendations, signatureDishes] = await Promise.all([
+    const [categories, hotRecommendations, signatureDishes, reviewPreview] = await Promise.all([
       this.prisma.category.findMany({
         where: {
           merchantId: id,
@@ -233,15 +240,19 @@ export class PublicMerchantsService {
       }),
       this.hotRecommendations(id),
       this.resolveSignatureDishes(merchant),
+      this.reviewPreview(id),
     ]);
-    return this.serializeMerchant(
-      merchant,
-      categories,
-      null,
-      hotRecommendations,
-      signatureDishes,
-      true,
-    );
+    return {
+      ...this.serializeMerchant(
+        merchant,
+        categories,
+        null,
+        hotRecommendations,
+        signatureDishes,
+        true,
+      ),
+      reviews: reviewPreview,
+    };
   }
 
   async menu(id: bigint, tableToken?: string) {
@@ -289,6 +300,18 @@ export class PublicMerchantsService {
       },
       categories: categoriesWithSales,
     };
+  }
+
+  private async reviewPreview(merchantId: bigint) {
+    if (!this.reviews) return emptyReviewPreview();
+    try {
+      return await this.reviews.previewForMerchant(merchantId);
+    } catch (error) {
+      this.logger.warn(
+        `Review preview unavailable merchant=${merchantId.toString()} error=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+      );
+      return emptyReviewPreview();
+    }
   }
 
   async product(id: bigint, tableToken?: string) {
@@ -845,6 +868,17 @@ function compareMerchantIds(left: bigint | string, right: bigint | string) {
   const rightId = BigInt(right);
   if (leftId === rightId) return 0;
   return leftId < rightId ? -1 : 1;
+}
+
+function emptyReviewPreview() {
+  return {
+    summary: {
+      averageRating: null,
+      total: 0,
+      distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 },
+    },
+    recentReviews: [],
+  };
 }
 
 type HomepageMerchantListItem = {

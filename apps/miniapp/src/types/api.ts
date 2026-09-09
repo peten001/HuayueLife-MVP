@@ -188,6 +188,50 @@ export interface MerchantDetail extends MerchantSummary {
     salesCount: number;
     hotRank: number;
   }>;
+  reviews?: MerchantReviewPreview;
+}
+
+export interface MerchantReviewSummary {
+  averageRating: number | null;
+  total: number;
+  distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
+}
+
+export interface MerchantReview {
+  id: string;
+  rating: number;
+  content?: string | null;
+  isAnonymous: boolean;
+  status: 'PUBLISHED' | 'HIDDEN';
+  createdAt: string;
+  orderType: OrderType;
+  author: {
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  };
+  images: Array<{
+    id: string;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+}
+
+export interface OwnMerchantReview extends MerchantReview {
+  orderNo?: string | null;
+}
+
+export interface MerchantReviewPreview {
+  summary: MerchantReviewSummary;
+  recentReviews: MerchantReview[];
+}
+
+export interface MerchantReviewPage {
+  merchant: MerchantLocalizedRef;
+  summary: MerchantReviewSummary;
+  items: MerchantReview[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export interface Product extends LocalizedFields {
@@ -374,4 +418,12 @@ export interface UserOrder {
   items: UserOrderItem[];
   statusLogs?: UserOrderStatusLog[];
   chatConversation?: UserOrderChatConversation | null;
+  canReview?: boolean;
+  reviewDeadlineAt?: string | null;
+  review?: {
+    id: string;
+    rating: number;
+    status: 'PUBLISHED' | 'HIDDEN';
+    createdAt: string;
+  } | null;
 }

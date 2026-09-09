@@ -2,7 +2,7 @@ import type { ApiResponse } from '@/types/api';
 import { translateApiError } from '@/i18n';
 import { clearToken, getToken } from '@/utils/storage';
 
-const API_BASE_URL =
+export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api/v1';
 const DEBUG_REQUESTS = true;
 let requestSeq = 0;

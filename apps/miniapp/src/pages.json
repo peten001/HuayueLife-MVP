@@ -86,6 +86,18 @@
       }
     },
     {
+      "path": "pages/review/create",
+      "style": {
+        "navigationBarTitleText": "评价商家"
+      }
+    },
+    {
+      "path": "pages/review/list",
+      "style": {
+        "navigationBarTitleText": "用户评价"
+      }
+    },
+    {
       "path": "pages/messages/index",
       "style": {
         "navigationBarTitleText": "消息"

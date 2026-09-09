@@ -58,7 +58,9 @@ describe('OrdersService printing outbox', () => {
       printJobs as never,
     );
 
-    await expect(service.confirmReceived(5n, 37n)).resolves.toEqual(completed);
+    await expect(service.confirmReceived(5n, 37n)).resolves.toEqual(
+      expect.objectContaining(completed),
+    );
 
     expect(printJobs.enqueueAutomaticTriggersForOrderTransition).toHaveBeenCalledWith(
       tx,

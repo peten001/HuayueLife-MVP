@@ -36,6 +36,8 @@ apps/miniapp/dist/build/mp-weixin
 - `scope.userLocation`：展示附近餐厅。
 - `getLocation`：获取当前位置。
 - `chooseLocation`：配送地址可选定位。
+- 用户主动选择相册或相机图片：用于发布真实订单评价中的图片。
+- 用户主动提交的评分、评价文字和图片：用于商家详情页公开展示；匿名评价不公开昵称和头像。
 
 需要在微信公众平台补充隐私保护指引，说明位置数据用途。用户拒绝定位后，首页按北宁或北江城市展示商家；配送地址可以手填并由商家电话确认。
 
@@ -59,6 +61,7 @@ TabBar 固定为：
 在微信公众平台的“开发管理 / 开发设置 / 服务器域名”中配置：
 
 - request 合法域名：`https://api.example.com`
+- uploadFile 合法域名：`https://api.example.com`
 
 要求：
 

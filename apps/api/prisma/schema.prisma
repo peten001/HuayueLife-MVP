@@ -99,6 +99,11 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+}
+
 enum SettlementStatus {
   UNSETTLED
   SETTLED
@@ -300,6 +305,7 @@ model User {
   orderChatConversations OrderChatConversation[]
   operatedStatusLogs     OrderStatusLog[]        @relation("UserStatusLogOperator")
   claimedMerchants       Merchant[]              @relation("MerchantOwnerUser")
+  merchantReviews        MerchantReview[]
 
   @@map("users")
 }
@@ -378,6 +384,7 @@ model Merchant {
   capabilities            MerchantCapability[]
   images                  MerchantImage[]
   signatureDishes         MerchantSignatureDish[]
+  reviews                 MerchantReview[]
 
   @@index([status])
   @@index([province, city, status])
@@ -789,6 +796,7 @@ model Order {
   printLogs              PrintLog[]
   printJobs              PrintJob[]
   printTriggerOutbox     PrintTriggerOutbox[]
+  review                 MerchantReview?
 
   @@unique([userId, idempotencyKey])
   @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
@@ -822,6 +830,41 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model MerchantReview {
+  id          BigInt       @id @default(autoincrement())
+  orderId     BigInt       @unique @map("order_id")
+  userId      BigInt       @map("user_id")
+  merchantId  BigInt       @map("merchant_id")
+  rating      Int
+  content     String?      @db.VarChar(1000)
+  isAnonymous Boolean      @default(false) @map("is_anonymous")
+  status      ReviewStatus @default(PUBLISHED)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  order    Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  merchant Merchant              @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  images   MerchantReviewImage[]
+
+  @@index([merchantId, status, createdAt])
+  @@index([userId, createdAt])
+  @@map("merchant_reviews")
+}
+
+model MerchantReviewImage {
+  id        BigInt   @id @default(autoincrement())
+  reviewId  BigInt   @map("review_id")
+  imageUrl  String   @map("image_url") @db.VarChar(500)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review MerchantReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, sortOrder])
+  @@map("merchant_review_images")
 }
 
 model OrderStatusLog {
