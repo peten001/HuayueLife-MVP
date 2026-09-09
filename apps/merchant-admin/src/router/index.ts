@@ -20,6 +20,7 @@ import PlatformMerchantsPage from '@/pages/PlatformMerchantsPage.vue';
 import PlatformBusinessTypesPage from '@/pages/PlatformBusinessTypesPage.vue';
 import PlatformPromotionTagsPage from '@/pages/PlatformPromotionTagsPage.vue';
 import PlatformOrdersPage from '@/pages/PlatformOrdersPage.vue';
+import PlatformReviewsPage from '@/pages/PlatformReviewsPage.vue';
 import PlatformRecommendationsPage from '@/pages/PlatformRecommendationsPage.vue';
 import PlatformUsersPage from '@/pages/PlatformUsersPage.vue';
 import PlatformSettingsPage from '@/pages/PlatformSettingsPage.vue';
@@ -245,6 +246,10 @@ const router = createRouter({
         {
           path: 'orders',
           component: PlatformOrdersPage,
+        },
+        {
+          path: 'reviews',
+          component: PlatformReviewsPage,
         },
         {
           path: 'recommendations',

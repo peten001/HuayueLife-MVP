@@ -37,10 +37,43 @@ describe('ReviewUploadsService', () => {
     await expect(service.stage(8n, 44n, image)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('binds a direct-review upload to a visible merchant and the current user', async () => {
+    const merchantFindFirst = jest.fn().mockResolvedValue(null);
+    const reviewFindUnique = jest.fn().mockResolvedValue(null);
+    const service = new ReviewUploadsService({
+      merchant: { findFirst: merchantFindFirst },
+      merchantReview: { findUnique: reviewFindUnique },
+    } as never);
+
+    await expect(service.stageDirect(8n, 4n, image)).rejects.toBeInstanceOf(NotFoundException);
+    expect(merchantFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 4n, status: 'ACTIVE', isVisibleOnClient: true },
+    }));
+    expect(reviewFindUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { directReviewKey: '8:4' },
+    }));
+  });
+
+  it('does not stage more images after the user has directly reviewed the merchant', async () => {
+    const service = new ReviewUploadsService({
+      merchant: { findFirst: jest.fn().mockResolvedValue({ id: 4n }) },
+      merchantReview: { findUnique: jest.fn().mockResolvedValue({ id: 91n }) },
+    } as never);
+
+    await expect(service.stageDirect(8n, 4n, image)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('rejects malformed staged-image tokens before resolving any file path', async () => {
     const service = new ReviewUploadsService({} as never);
 
     await expect(service.prepare(8n, 44n, ['../foreign-image']))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('keeps direct-review staged image tokens isolated by merchant', async () => {
+    const service = new ReviewUploadsService({} as never);
+
+    await expect(service.prepareDirect(8n, 4n, ['../foreign-image']))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 

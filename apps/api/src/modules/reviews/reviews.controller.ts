@@ -28,6 +28,22 @@ export class ReviewsController {
     return this.service.listPublic(BigInt(params.id), query.page);
   }
 
+  @Get('merchants/:id/reviews/me')
+  @UseGuards(JwtAuthGuard, UserAccountGuard)
+  getOwnDirect(@CurrentUser() user: AuthUser, @Param() params: IdParamDto) {
+    return this.service.getOwnDirect(BigInt(user.sub), BigInt(params.id));
+  }
+
+  @Post('merchants/:id/reviews')
+  @UseGuards(JwtAuthGuard, UserAccountGuard)
+  createDirect(
+    @CurrentUser() user: AuthUser,
+    @Param() params: IdParamDto,
+    @Body() dto: CreateReviewDto,
+  ) {
+    return this.service.createDirect(BigInt(user.sub), BigInt(params.id), dto);
+  }
+
   @Get('orders/:id/review')
   @UseGuards(JwtAuthGuard, UserAccountGuard)
   getOwn(@CurrentUser() user: AuthUser, @Param() params: IdParamDto) {

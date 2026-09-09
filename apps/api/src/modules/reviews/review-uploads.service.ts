@@ -74,6 +74,31 @@ export class ReviewUploadsService implements OnModuleInit {
     if (!order) throw new NotFoundException('Order not found');
     assertReviewEligible(order);
 
+    return this.stageFile(this.stagingDir(userId, orderId.toString()), file);
+  }
+
+  async stageDirect(userId: bigint, merchantId: bigint, file: ReviewUpload) {
+    const [merchant, existingReview] = await Promise.all([
+      this.prisma.merchant.findFirst({
+        where: {
+          id: merchantId,
+          status: 'ACTIVE',
+          isVisibleOnClient: true,
+        },
+        select: { id: true },
+      }),
+      this.prisma.merchantReview.findUnique({
+        where: { directReviewKey: this.directReviewKey(userId, merchantId) },
+        select: { id: true },
+      }),
+    ]);
+    if (!merchant) throw new NotFoundException('Merchant not found or unavailable');
+    if (existingReview) throw new BadRequestException('你已经直接评价过这家商家');
+
+    return this.stageFile(this.directStagingDir(userId, merchantId), file);
+  }
+
+  private async stageFile(targetDir: string, file: ReviewUpload) {
     const size = file.size ?? file.buffer.byteLength;
     if (size > MAX_REVIEW_IMAGE_SIZE) {
       throw new BadRequestException('评价图片不能超过 5MB');
@@ -98,7 +123,6 @@ export class ReviewUploadsService implements OnModuleInit {
       throw new BadRequestException('图片无法识别，请重新选择');
     }
 
-    const targetDir = this.stagingDir(userId, orderId);
     await mkdir(targetDir, { recursive: true });
     await this.removeExpiredStagingFiles(targetDir);
     const stagedFiles = (await readdir(targetDir, { withFileTypes: true }))
@@ -113,6 +137,20 @@ export class ReviewUploadsService implements OnModuleInit {
   }
 
   async prepare(userId: bigint, orderId: bigint, rawTokens: string[]) {
+    return this.prepareFromDirectory(
+      this.stagingDir(userId, orderId.toString()),
+      rawTokens,
+    );
+  }
+
+  async prepareDirect(userId: bigint, merchantId: bigint, rawTokens: string[]) {
+    return this.prepareFromDirectory(
+      this.directStagingDir(userId, merchantId),
+      rawTokens,
+    );
+  }
+
+  private async prepareFromDirectory(stagingDir: string, rawTokens: string[]) {
     if (!rawTokens.length) {
       return { urls: [], finalPaths: [], stagingDir: null } satisfies PreparedReviewImages;
     }
@@ -125,7 +163,6 @@ export class ReviewUploadsService implements OnModuleInit {
       throw new BadRequestException('评价图片凭证无效');
     }
 
-    const stagingDir = this.stagingDir(userId, orderId);
     const finalDir = join(process.cwd(), 'public', 'uploads', 'reviews');
     await mkdir(finalDir, { recursive: true });
     const prepared: PreparedReviewImages = { urls: [], finalPaths: [], stagingDir };
@@ -160,12 +197,20 @@ export class ReviewUploadsService implements OnModuleInit {
     );
   }
 
-  private stagingDir(userId: bigint, orderId: bigint) {
+  private stagingDir(userId: bigint, contextKey: string) {
     return join(
       this.stagingRoot(),
       userId.toString(),
-      orderId.toString(),
+      contextKey,
     );
+  }
+
+  private directStagingDir(userId: bigint, merchantId: bigint) {
+    return this.stagingDir(userId, `merchant-${merchantId.toString()}`);
+  }
+
+  private directReviewKey(userId: bigint, merchantId: bigint) {
+    return `${userId.toString()}:${merchantId.toString()}`;
   }
 
   private stagingRoot() {

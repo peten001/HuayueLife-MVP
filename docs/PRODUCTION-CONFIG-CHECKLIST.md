@@ -46,6 +46,11 @@ openssl rand -base64 48
 - [ ] 使用体验版真机完成首次登录和重复登录测试。
 - [ ] 已验证无效或过期 code 返回明确错误。
 - [ ] API 日志不包含 code、AppSecret 或 `session_key`。
+- [ ] `WECHAT_CONTENT_SECURITY_ENABLED=true`。
+- [ ] `WECHAT_CONTENT_SECURITY_CALLBACK_TOKEN` 使用独立随机值且未写入 Git。
+- [ ] `REVIEW_MEDIA_PUBLIC_BASE_URL` 是可公开访问评价图片的正式 HTTPS API 域名。
+- [ ] 微信内容安全消息推送 URL 指向 `/api/v1/wechat/content-security/callback`，使用 JSON 和明文模式。
+- [ ] 使用体验版分别验证正常文字、风险文字、正常图片和风险图片不会绕过审核状态。
 
 ## 5. 二维码入口
 

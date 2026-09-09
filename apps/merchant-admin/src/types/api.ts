@@ -1028,3 +1028,93 @@ export interface MerchantSettlementFilters {
   page?: number;
   pageSize?: number;
 }
+
+export type PlatformReviewStatus = 'PENDING_REVIEW' | 'PUBLISHED' | 'HIDDEN';
+export type PlatformReviewSource = 'ORDER' | 'DIRECT';
+export type PlatformReviewModerationCheckType =
+  | 'LOCAL_TEXT'
+  | 'WECHAT_TEXT'
+  | 'WECHAT_IMAGE';
+export type PlatformReviewModerationCheckStatus =
+  | 'PENDING'
+  | 'PASS'
+  | 'REVIEW'
+  | 'RISKY'
+  | 'ERROR';
+
+export interface PlatformReviewModerationCheck {
+  id: string;
+  imageId: string | null;
+  type: PlatformReviewModerationCheckType;
+  status: PlatformReviewModerationCheckStatus;
+  reasonCodes: string[];
+  providerLabel: number | null;
+  providerTraceId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformReviewModerationAction {
+  id: string;
+  action: 'PUBLISH' | 'HIDE' | 'RESTORE';
+  fromStatus: PlatformReviewStatus;
+  toStatus: PlatformReviewStatus;
+  actorUsername: string;
+  createdAt: string;
+}
+
+export interface PlatformReviewListItem {
+  id: string;
+  source: PlatformReviewSource;
+  rating: number;
+  content: string | null;
+  isAnonymous: boolean;
+  status: PlatformReviewStatus;
+  createdAt: string;
+  updatedAt: string;
+  merchant: {
+    id: string;
+    nameZh: string;
+    nameVi: string | null;
+    nameEn: string | null;
+  };
+  author: {
+    id: string;
+    nickname: string | null;
+    avatarUrl: string | null;
+  };
+  order: {
+    id: string;
+    orderNo: string;
+    orderType: OrderType;
+  } | null;
+  images: Array<{
+    id: string;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+  moderationChecks: PlatformReviewModerationCheck[];
+  moderationActions: PlatformReviewModerationAction[];
+}
+
+export interface PlatformReviewFilters {
+  status?: PlatformReviewStatus | '';
+  riskOnly?: boolean;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PlatformReviewsResponse {
+  items: PlatformReviewListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: {
+    pending: number;
+    published: number;
+    hidden: number;
+    risk: number;
+  };
+}

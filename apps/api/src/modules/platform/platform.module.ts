@@ -19,6 +19,8 @@ import { PlatformOrdersService } from './platform-orders.service';
 import { PlatformUsersController } from './platform-users.controller';
 import { PlatformUsersService } from './platform-users.service';
 import { PlatformSettingsController } from './platform-settings.controller';
+import { PlatformReviewsController } from './platform-reviews.controller';
+import { PlatformReviewsService } from './platform-reviews.service';
 import { AppConfigModule } from '../app-config/app-config.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { PrintingModule } from '../printing/printing.module';
@@ -35,6 +37,7 @@ import { PrintingModule } from '../printing/printing.module';
     PlatformOrdersController,
     PlatformUsersController,
     PlatformSettingsController,
+    PlatformReviewsController,
   ],
   providers: [
     JwtAuthGuard,
@@ -48,6 +51,7 @@ import { PrintingModule } from '../printing/printing.module';
     PlatformMerchantSignatureDishesService,
     PlatformOrdersService,
     PlatformUsersService,
+    PlatformReviewsService,
   ],
 })
 export class PlatformModule {}

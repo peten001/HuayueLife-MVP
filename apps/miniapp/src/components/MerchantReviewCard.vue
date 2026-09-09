@@ -95,7 +95,14 @@ function markImageFailed(imageId: string) {
       </button>
     </view>
 
-    <text class="review-order-type">{{ orderTypeLabel(review.orderType, locale) }} · {{ t('reviewOrderContext') }}</text>
+    <view class="review-source-row">
+      <text :class="['review-source-badge', { direct: review.source === 'DIRECT' }]">
+        {{ review.source === 'ORDER' ? t('reviewSourceOrder') : t('reviewSourceDirect') }}
+      </text>
+      <text v-if="review.orderType" class="review-order-type">
+        {{ orderTypeLabel(review.orderType, locale) }}
+      </text>
+    </view>
   </view>
 </template>
 
@@ -234,14 +241,36 @@ function markImageFailed(imageId: string) {
   font-size: 34rpx;
 }
 
+.review-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.review-source-badge,
 .review-order-type {
   display: inline-flex;
-  margin-top: 16rpx;
   padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  color: #667169;
-  background: #f2f6f3;
   font-size: 20rpx;
   line-height: 1.3;
+}
+
+.review-source-badge {
+  color: #8b5a00;
+  background: #fff3dd;
+  font-weight: 700;
+}
+
+.review-source-badge.direct {
+  color: #2e7d32;
+  background: #eaf7ee;
+}
+
+.review-order-type {
+  color: #667169;
+  background: #f2f6f3;
 }
 </style>

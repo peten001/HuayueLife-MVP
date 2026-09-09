@@ -13,6 +13,7 @@ const nav: Array<{ path: string; label: string; icon: string }> = [
   { path: '/platform/merchants', label: '商家管理', icon: '商' },
   { path: '/platform/recommendations', label: '首页推荐', icon: '首' },
   { path: '/platform/orders', label: '订单管理', icon: '单' },
+  { path: '/platform/reviews', label: '评价审核', icon: '评' },
   { path: '/platform/analytics', label: '营业数据', icon: '数' },
   { path: '/platform/users', label: '用户管理', icon: '客' },
   { path: '/platform/settings', label: '系统设置', icon: '设' },
@@ -38,6 +39,7 @@ const breadcrumb = computed(() => {
   if (path === '/platform/merchant-types') return ['系统设置', '商家类型配置'];
   if (path === '/platform/promotion-tags') return ['系统设置', '标签字典配置'];
   if (path === '/platform/orders') return ['订单管理', '订单管理'];
+  if (path === '/platform/reviews') return ['评价审核', '评价审核'];
   if (path === '/platform/analytics') return ['营业数据', '营业数据'];
   if (path === '/platform/recommendations') return ['首页推荐', '首页推荐'];
   if (path === '/platform/users') return ['用户管理', '用户管理'];

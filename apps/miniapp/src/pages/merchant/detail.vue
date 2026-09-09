@@ -310,7 +310,10 @@ onLoad((options) => {
   void loadMerchant();
 });
 
-onShow(() => favoriteGate.setActive(true));
+onShow(() => {
+  favoriteGate.setActive(true);
+  if (merchant.value) void refreshReviewPreview();
+});
 onHide(() => {
   favoriteGate.setActive(false);
   favoriteLoginUi.value?.close();
@@ -393,6 +396,21 @@ async function loadMerchant() {
     error.value = t('merchantLoadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function refreshReviewPreview() {
+  const activeMerchant = merchant.value;
+  if (!activeMerchant) return;
+  try {
+    const refreshedMerchant = await getMerchant(activeMerchant.id);
+    if (merchant.value?.id !== activeMerchant.id) return;
+    merchant.value = {
+      ...merchant.value,
+      reviews: refreshedMerchant.reviews,
+    };
+  } catch {
+    // Keep the already-rendered merchant detail when an optional review refresh fails.
   }
 }
 
@@ -697,6 +715,22 @@ function openAllReviews() {
   });
 }
 
+async function openReviewComposer() {
+  const activeMerchant = merchant.value;
+  if (!activeMerchant) return;
+
+  await auth.restoreSession();
+  if (!auth.user || !getToken()) {
+    const outcome = await favoriteLoginUi.value?.open();
+    if (outcome !== 'success') return;
+  }
+  if (merchant.value?.id !== activeMerchant.id) return;
+
+  uni.navigateTo({
+    url: `/pages/review/create?merchantId=${activeMerchant.id}`,
+  });
+}
+
 function hasCapability(code: string, fallbackValue: boolean) {
   if (!hasCapabilityRecords.value) return fallbackValue;
   return enabledCapabilityCodes.value.has(code);
@@ -944,14 +978,12 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <view class="section-heading">
           <text class="section-title">{{ t('customerReviews') }}</text>
           <button
-            v-if="reviewPreview.summary.total"
-            class="section-more"
-            :aria-label="t('viewAllReviews')"
+            class="write-review-action"
+            :aria-label="t('writeReview')"
             hover-class="is-pressed"
-            @tap="openAllReviews"
+            @tap="openReviewComposer"
           >
-            <text>{{ t('viewAllReviews') }}</text>
-            <text class="section-more-arrow">›</text>
+            <text>{{ t('writeReview') }}</text>
           </button>
         </view>
 
@@ -974,6 +1006,15 @@ function hasCapability(code: string, fallbackValue: boolean) {
             :key="review.id"
             :review="review"
           />
+          <button
+            class="review-all-action"
+            :aria-label="t('viewAllReviews')"
+            hover-class="is-pressed"
+            @tap="openAllReviews"
+          >
+            <text>{{ t('viewAllReviews') }}</text>
+            <text class="section-more-arrow">›</text>
+          </button>
         </template>
 
         <view v-else class="review-empty">
@@ -1050,7 +1091,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 <style scoped>
 /* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal
- * B=compact-system-sans · C=platform-classified-adaptive-gallery+claim-state-identity+four-column-facilities+delivery-priority-action-dock
+ * B=compact-system-sans · C=platform-classified-adaptive-gallery+claim-state-identity+four-column-facilities+direct-review-entry+delivery-priority-action-dock
  * D=feedback-only · E=existing-restaurant-photography · SOUL=6 SPECTACLE=2 DENSITY=9 */
 .page {
   --page-bg: #f6faf7;
@@ -1919,6 +1960,8 @@ function hasCapability(code: string, fallbackValue: boolean) {
   .bottom-action,
   .address-nav,
   .error-button,
+  .write-review-action,
+  .review-all-action,
   .actions button {
     transition: none;
   }
@@ -3007,6 +3050,57 @@ function hasCapability(code: string, fallbackValue: boolean) {
   font-size: var(--type-label-size);
   font-weight: 700;
   line-height: 1.15;
+}
+
+.write-review-action {
+  min-width: 150rpx;
+  min-height: 88rpx;
+  display: inline-flex;
+  flex: none;
+  margin: 0;
+  padding: 0 20rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border: 0;
+  border-radius: 999rpx;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  font-size: var(--type-label-size);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.review-all-action {
+  width: 100%;
+  min-height: 88rpx;
+  display: flex;
+  margin: 8rpx 0 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  border: 0;
+  border-radius: 18rpx;
+  color: var(--brand-deep);
+  background: var(--surface-soft);
+  font-size: var(--type-label-size);
+  font-weight: 700;
+  line-height: 1.2;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.write-review-action::after,
+.review-all-action::after {
+  border: 0;
+}
+
+.write-review-action.is-pressed,
+.review-all-action.is-pressed {
+  background: var(--loading);
+  transform: scale(.97);
 }
 
 .review-summary-row {

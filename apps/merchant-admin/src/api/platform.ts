@@ -27,6 +27,9 @@ import type {
   PlatformMerchantListItem,
   PlatformOrderFilters,
   PlatformOrdersResponse,
+  PlatformReviewFilters,
+  PlatformReviewListItem,
+  PlatformReviewsResponse,
   PlatformPromotionTag,
   PlatformPromotionTagDeleteResult,
   PlatformSettings,
@@ -243,6 +246,28 @@ export async function getPlatformOrders(filters: PlatformOrderFilters = {}) {
         Object.entries(filters).filter(([, value]) => value !== '' && value !== undefined),
       ),
     },
+  );
+  return response.data.data;
+}
+
+export async function getPlatformReviews(filters: PlatformReviewFilters = {}) {
+  const response = await platformHttp.get<ApiResponse<PlatformReviewsResponse>>(
+    '/platform/reviews',
+    {
+      params: Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== '' && value !== undefined),
+      ),
+    },
+  );
+  return response.data.data;
+}
+
+export async function moderatePlatformReview(
+  id: string,
+  action: 'hide' | 'publish' | 'restore',
+) {
+  const response = await platformHttp.post<ApiResponse<PlatformReviewListItem>>(
+    `/platform/reviews/${id}/${action}`,
   );
   return response.data.data;
 }

@@ -199,12 +199,13 @@ export interface MerchantReviewSummary {
 
 export interface MerchantReview {
   id: string;
+  source: 'ORDER' | 'DIRECT';
   rating: number;
   content?: string | null;
   isAnonymous: boolean;
-  status: 'PUBLISHED' | 'HIDDEN';
+  status: 'PENDING_REVIEW' | 'PUBLISHED' | 'HIDDEN';
   createdAt: string;
-  orderType: OrderType;
+  orderType: OrderType | null;
   author: {
     displayName?: string | null;
     avatarUrl?: string | null;
@@ -423,7 +424,7 @@ export interface UserOrder {
   review?: {
     id: string;
     rating: number;
-    status: 'PUBLISHED' | 'HIDDEN';
+    status: 'PENDING_REVIEW' | 'PUBLISHED' | 'HIDDEN';
     createdAt: string;
   } | null;
 }

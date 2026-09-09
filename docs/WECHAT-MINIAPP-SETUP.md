@@ -36,7 +36,7 @@ apps/miniapp/dist/build/mp-weixin
 - `scope.userLocation`：展示附近餐厅。
 - `getLocation`：获取当前位置。
 - `chooseLocation`：配送地址可选定位。
-- 用户主动选择相册或相机图片：用于发布真实订单评价中的图片。
+- 用户主动选择相册或相机图片：用于发布商家评价中的图片。
 - 用户主动提交的评分、评价文字和图片：用于商家详情页公开展示；匿名评价不公开昵称和头像。
 
 需要在微信公众平台补充隐私保护指引，说明位置数据用途。用户拒绝定位后，首页按北宁或北江城市展示商家；配送地址可以手填并由商家电话确认。
@@ -78,3 +78,32 @@ TabBar 固定为：
 开发环境支持 mock code 登录。`NODE_ENV=production` 时，API 会使用
 `WECHAT_APP_ID` 和 `WECHAT_APP_SECRET` 调用微信 `code2Session`，并拒绝
 mock code。正式提交微信审核前必须使用真实 AppID 在体验版完成登录验证。
+
+## 7. 评价内容安全
+
+评价文字和图片由 API 服务端送检，不在小程序端保存 AppSecret 或
+`access_token`。生产环境需要配置：
+
+```text
+WECHAT_CONTENT_SECURITY_ENABLED=true
+WECHAT_CONTENT_SECURITY_CALLBACK_TOKEN=<随机且保密的消息推送 Token>
+REVIEW_MEDIA_PUBLIC_BASE_URL=https://api.example.com
+```
+
+服务端使用微信评论场景（`scene=2`）：
+
+- 文字调用 `msgSecCheck`，返回 `review`、`risky` 或接口异常时进入待审核。
+- 图片调用 `mediaCheckAsync`，结果返回前保持待审核。
+- 本地敏感词或联系方式检测命中时保持待审核，不直接公开。
+- 只有本地检查、微信文字检查和全部微信图片检查均通过时才自动公开。
+
+在微信公众平台配置内容安全消息推送：
+
+- URL：`https://api.example.com/api/v1/wechat/content-security/callback`
+- Token：必须与 `WECHAT_CONTENT_SECURITY_CALLBACK_TOKEN` 完全一致。
+- 数据格式：JSON。
+- 消息加解密方式：明文模式。
+
+`REVIEW_MEDIA_PUBLIC_BASE_URL` 必须是微信服务器可以访问的 HTTPS 域名，
+并能通过 `/uploads/reviews/...` 访问评价图片。回调或微信检查不可用时，
+评价会保守地停留在待审核状态，由 Platform 后台处理，不会自动公开。

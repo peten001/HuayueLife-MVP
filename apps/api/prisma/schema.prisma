@@ -100,8 +100,34 @@ enum OrderStatus {
 }
 
 enum ReviewStatus {
+  PENDING_REVIEW
   PUBLISHED
   HIDDEN
+}
+
+enum ReviewSource {
+  ORDER
+  DIRECT
+}
+
+enum ReviewModerationCheckType {
+  LOCAL_TEXT
+  WECHAT_TEXT
+  WECHAT_IMAGE
+}
+
+enum ReviewModerationCheckStatus {
+  PENDING
+  PASS
+  REVIEW
+  RISKY
+  ERROR
+}
+
+enum ReviewModerationActionType {
+  PUBLISH
+  HIDE
+  RESTORE
 }
 
 enum SettlementStatus {
@@ -833,23 +859,28 @@ model OrderItem {
 }
 
 model MerchantReview {
-  id          BigInt       @id @default(autoincrement())
-  orderId     BigInt       @unique @map("order_id")
-  userId      BigInt       @map("user_id")
-  merchantId  BigInt       @map("merchant_id")
-  rating      Int
-  content     String?      @db.VarChar(1000)
-  isAnonymous Boolean      @default(false) @map("is_anonymous")
-  status      ReviewStatus @default(PUBLISHED)
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  id              BigInt       @id @default(autoincrement())
+  orderId         BigInt?      @unique @map("order_id")
+  userId          BigInt       @map("user_id")
+  merchantId      BigInt       @map("merchant_id")
+  source          ReviewSource @default(ORDER)
+  directReviewKey String?      @unique @map("direct_review_key") @db.VarChar(191)
+  rating          Int
+  content         String?      @db.VarChar(1000)
+  isAnonymous     Boolean      @default(false) @map("is_anonymous")
+  status          ReviewStatus @default(PUBLISHED)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
-  order    Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order    Order?                @relation(fields: [orderId], references: [id], onDelete: Restrict)
   user     User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   merchant Merchant              @relation(fields: [merchantId], references: [id], onDelete: Restrict)
   images   MerchantReviewImage[]
+  moderationChecks  MerchantReviewModerationCheck[]
+  moderationActions MerchantReviewModerationAction[]
 
   @@index([merchantId, status, createdAt])
+  @@index([merchantId, source, status, createdAt])
   @@index([userId, createdAt])
   @@map("merchant_reviews")
 }
@@ -861,10 +892,48 @@ model MerchantReviewImage {
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
 
-  review MerchantReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  review           MerchantReview                  @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  moderationChecks MerchantReviewModerationCheck[]
 
   @@index([reviewId, sortOrder])
   @@map("merchant_review_images")
+}
+
+model MerchantReviewModerationCheck {
+  id              BigInt                      @id @default(autoincrement())
+  reviewId        BigInt                      @map("review_id")
+  imageId         BigInt?                     @map("image_id")
+  type            ReviewModerationCheckType
+  status          ReviewModerationCheckStatus
+  reasonCodes     Json?                       @map("reason_codes")
+  providerLabel   Int?                        @map("provider_label")
+  providerTraceId String?                     @unique @map("provider_trace_id") @db.VarChar(120)
+  errorCode       String?                     @map("error_code") @db.VarChar(80)
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
+
+  review MerchantReview       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  image  MerchantReviewImage? @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, type, status])
+  @@index([status, createdAt])
+  @@index([imageId])
+  @@map("merchant_review_moderation_checks")
+}
+
+model MerchantReviewModerationAction {
+  id            BigInt                     @id @default(autoincrement())
+  reviewId      BigInt                     @map("review_id")
+  action        ReviewModerationActionType
+  fromStatus    ReviewStatus               @map("from_status")
+  toStatus      ReviewStatus               @map("to_status")
+  actorUsername String                     @map("actor_username") @db.VarChar(64)
+  createdAt     DateTime                   @default(now()) @map("created_at")
+
+  review MerchantReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, createdAt])
+  @@map("merchant_review_moderation_actions")
 }
 
 model OrderStatusLog {

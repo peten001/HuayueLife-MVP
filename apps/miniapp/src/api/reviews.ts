@@ -26,14 +26,34 @@ export const getOwnReview = (orderId: string) =>
 export const getMerchantReviews = (merchantId: string, page = 1) =>
   request<MerchantReviewPage>(`/merchants/${merchantId}/reviews?page=${page}`);
 
+export const createDirectReview = (merchantId: string, input: CreateReviewInput) =>
+  request<OwnMerchantReview>(`/merchants/${merchantId}/reviews`, {
+    method: 'POST',
+    data: input,
+  });
+
+export const getOwnDirectReview = (merchantId: string) =>
+  request<OwnMerchantReview | null>(`/merchants/${merchantId}/reviews/me`);
+
 export async function uploadReviewImage(orderId: string, filePath: string): Promise<string> {
+  return uploadReviewImageTo(`/orders/${orderId}/review-images`, filePath);
+}
+
+export async function uploadDirectReviewImage(
+  merchantId: string,
+  filePath: string,
+): Promise<string> {
+  return uploadReviewImageTo(`/merchants/${merchantId}/review-images`, filePath);
+}
+
+async function uploadReviewImageTo(path: string, filePath: string): Promise<string> {
   const { t } = useI18n();
   const token = getToken();
   if (!token) throw new Error(t('reviewLoginRequired'));
 
   return new Promise((resolve, reject) => {
     uni.uploadFile({
-      url: `${API_BASE_URL}/orders/${orderId}/review-images`,
+      url: `${API_BASE_URL}${path}`,
       filePath,
       name: 'file',
       header: { Authorization: `Bearer ${token}` },

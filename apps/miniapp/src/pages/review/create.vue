@@ -2,10 +2,14 @@
 import { computed, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import MerchantReviewCard from '@/components/MerchantReviewCard.vue';
+import { getMerchant } from '@/api/catalog';
 import { getOrder } from '@/api/orders';
 import {
+  createDirectReview,
   createReview,
+  getOwnDirectReview,
   getOwnReview,
+  uploadDirectReviewImage,
   uploadReviewImage,
 } from '@/api/reviews';
 import {
@@ -17,7 +21,7 @@ import {
   usePageTitle,
 } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
-import type { OwnMerchantReview, UserOrder } from '@/types/api';
+import type { MerchantDetail, OwnMerchantReview, UserOrder } from '@/types/api';
 
 type SelectedImage = {
   localPath: string;
@@ -27,7 +31,9 @@ type SelectedImage = {
 const auth = useAuthStore();
 const { t } = useI18n();
 const orderId = ref('');
+const merchantId = ref('');
 const order = ref<UserOrder>();
+const merchant = ref<MerchantDetail>();
 const existingReview = ref<OwnMerchantReview>();
 const reviewLoadFailed = ref(false);
 const rating = ref(0);
@@ -38,6 +44,17 @@ const loading = ref(true);
 const submitting = ref(false);
 const message = ref('');
 const starLevels = [1, 2, 3, 4, 5] as const;
+const isOrderReview = computed(() => Boolean(orderId.value));
+const canComposeReview = computed(() => (
+  isOrderReview.value
+    ? Boolean(order.value?.canReview)
+    : Boolean(merchant.value)
+));
+const reviewMerchantName = computed(() => {
+  if (order.value) return merchantName(order.value.merchant, locale.value);
+  if (merchant.value) return merchantName(merchant.value, locale.value);
+  return '';
+});
 
 const ratingLabel = computed(() => {
   if (rating.value === 1) return t('reviewRating1');
@@ -47,13 +64,19 @@ const ratingLabel = computed(() => {
   if (rating.value === 5) return t('reviewRating5');
   return t('reviewRatingRequired');
 });
-const existingReviewTitle = computed(() =>
-  existingReview.value?.status === 'HIDDEN' ? t('reviewHidden') : t('reviewSubmitted'),
-);
+const existingReviewTitle = computed(() => {
+  if (existingReview.value?.status === 'HIDDEN') return t('reviewHidden');
+  if (existingReview.value?.status === 'PENDING_REVIEW') return t('reviewPending');
+  return t('reviewSubmitted');
+});
 const existingReviewCopy = computed(() =>
   existingReview.value?.status === 'HIDDEN'
     ? t('reviewHiddenHint')
-    : t('reviewAlreadySubmitted'),
+    : existingReview.value?.status === 'PENDING_REVIEW'
+      ? t('reviewPendingHint')
+    : existingReview.value?.source === 'DIRECT'
+      ? t('directReviewAlreadySubmitted')
+      : t('reviewAlreadySubmitted'),
 );
 
 const orderItemSummary = computed(() => {
@@ -69,11 +92,12 @@ usePageTitle(() => existingReview.value ? t('viewReview') : t('reviewMerchant'))
 
 onLoad((options) => {
   orderId.value = String(options?.orderId ?? '');
+  merchantId.value = String(options?.merchantId ?? '');
   void load();
 });
 
 async function load() {
-  if (!orderId.value) {
+  if (!orderId.value && !merchantId.value) {
     message.value = t('reviewUnavailable');
     loading.value = false;
     return;
@@ -82,19 +106,31 @@ async function load() {
   message.value = '';
   reviewLoadFailed.value = false;
   existingReview.value = undefined;
+  order.value = undefined;
+  merchant.value = undefined;
   try {
     await auth.ensureLogin();
-    order.value = await getOrder(orderId.value);
-    if (order.value.review) {
-      try {
-        existingReview.value = await getOwnReview(orderId.value);
-      } catch (caught) {
-        reviewLoadFailed.value = true;
-        message.value = caught instanceof Error
-          ? translateApiError(caught.message)
-          : t('reviewLoadFailed');
+    if (orderId.value) {
+      order.value = await getOrder(orderId.value);
+      if (order.value.review) {
+        try {
+          existingReview.value = await getOwnReview(orderId.value);
+        } catch (caught) {
+          reviewLoadFailed.value = true;
+          message.value = caught instanceof Error
+            ? translateApiError(caught.message)
+            : t('reviewLoadFailed');
+        }
       }
+      return;
     }
+
+    const [loadedMerchant, ownDirectReview] = await Promise.all([
+      getMerchant(merchantId.value),
+      getOwnDirectReview(merchantId.value),
+    ]);
+    merchant.value = loadedMerchant;
+    existingReview.value = ownDirectReview ?? undefined;
   } catch (caught) {
     message.value = caught instanceof Error
       ? translateApiError(caught.message)
@@ -146,7 +182,7 @@ function handleAnonymousChange(event: Event) {
 }
 
 async function submit() {
-  if (!order.value || submitting.value) return;
+  if (!canComposeReview.value || submitting.value) return;
   if (!rating.value) {
     uni.showToast({ title: t('reviewRatingRequired'), icon: 'none' });
     return;
@@ -159,27 +195,39 @@ async function submit() {
     await auth.ensureLogin();
     const imageTokens = await Promise.all(images.value.map(async (image) => {
       if (image.remoteToken) return image.remoteToken;
-      const remoteToken = await uploadReviewImage(order.value!.id, image.localPath);
+      const remoteToken = order.value
+        ? await uploadReviewImage(order.value.id, image.localPath)
+        : await uploadDirectReviewImage(merchant.value!.id, image.localPath);
       image.remoteToken = remoteToken;
       return remoteToken;
     }));
-    existingReview.value = await createReview(order.value.id, {
+    const input = {
       rating: rating.value,
       content: content.value.trim() || undefined,
       isAnonymous: isAnonymous.value,
       imageTokens,
-    });
-    order.value = {
-      ...order.value,
-      canReview: false,
-      review: {
-        id: existingReview.value.id,
-        rating: existingReview.value.rating,
-        status: existingReview.value.status,
-        createdAt: existingReview.value.createdAt,
-      },
     };
-    uni.showToast({ title: t('reviewSubmitted'), icon: 'success' });
+    existingReview.value = order.value
+      ? await createReview(order.value.id, input)
+      : await createDirectReview(merchant.value!.id, input);
+    if (order.value) {
+      order.value = {
+        ...order.value,
+        canReview: false,
+        review: {
+          id: existingReview.value.id,
+          rating: existingReview.value.rating,
+          status: existingReview.value.status,
+          createdAt: existingReview.value.createdAt,
+        },
+      };
+    }
+    uni.showToast({
+      title: existingReview.value.status === 'PUBLISHED'
+        ? t('reviewSubmitted')
+        : t('reviewPending'),
+      icon: 'success',
+    });
   } catch (caught) {
     const errorMessage = caught instanceof Error
       ? translateApiError(caught.message)
@@ -197,24 +245,28 @@ async function submit() {
 </script>
 
 <template>
-  <view :class="['page', { 'has-submit-bar': order?.canReview && !existingReview }]">
+  <view :class="['page', { 'has-submit-bar': canComposeReview && !existingReview }]">
     <view v-if="loading" class="state-card">
       <view class="state-mark loading-mark" />
       <text class="state-title">{{ t('loading') }}</text>
     </view>
 
-    <view v-else-if="message && !order" class="state-card">
+    <view v-else-if="message && !order && !merchant" class="state-card">
       <view class="state-mark">!</view>
       <text class="state-title">{{ message }}</text>
       <button class="retry-button" @tap="load">{{ t('retry') }}</button>
     </view>
 
-    <template v-else-if="order">
+    <template v-else-if="order || merchant">
       <view class="review-intro">
-        <text class="intro-kicker">{{ t('reviewOrderContext') }}</text>
-        <text class="merchant-name">{{ merchantName(order.merchant, locale) }}</text>
-        <text class="order-items">{{ orderItemSummary }}</text>
-        <text class="review-hint">{{ t('reviewMerchantHint') }}</text>
+        <text class="intro-kicker">
+          {{ isOrderReview ? t('reviewSourceOrder') : t('reviewSourceDirect') }}
+        </text>
+        <text class="merchant-name">{{ reviewMerchantName }}</text>
+        <text v-if="orderItemSummary" class="order-items">{{ orderItemSummary }}</text>
+        <text class="review-hint">
+          {{ isOrderReview ? t('reviewMerchantHint') : t('directReviewMerchantHint') }}
+        </text>
       </view>
 
       <view v-if="message && !reviewLoadFailed" class="message">{{ message }}</view>
@@ -227,7 +279,7 @@ async function submit() {
 
       <view v-else-if="existingReview" class="existing-review">
         <view class="published-row">
-          <view class="published-check">{{ existingReview.status === 'HIDDEN' ? '!' : '✓' }}</view>
+          <view class="published-check">{{ existingReview.status === 'PUBLISHED' ? '✓' : '!' }}</view>
           <view>
             <text class="published-title">{{ existingReviewTitle }}</text>
             <text class="published-copy">{{ existingReviewCopy }}</text>
@@ -236,7 +288,7 @@ async function submit() {
         <MerchantReviewCard :review="existingReview" />
       </view>
 
-      <template v-else-if="order.canReview">
+      <template v-else-if="canComposeReview">
         <view class="rating-section">
           <text class="section-title">{{ t('reviewRating') }}</text>
           <view class="rating-stars" :aria-label="ratingLabel">
@@ -260,6 +312,7 @@ async function submit() {
           <textarea
             v-model="content"
             class="review-textarea"
+            :aria-label="t('reviewContent')"
             :placeholder="t('reviewContentPlaceholder')"
             :maxlength="1000"
             :disabled="submitting"
@@ -292,6 +345,7 @@ async function submit() {
             <button
               v-if="images.length < 6"
               class="photo-add"
+              :aria-label="t('reviewPhotos')"
               :disabled="submitting"
               @tap="chooseImages"
             >
@@ -308,13 +362,16 @@ async function submit() {
           </view>
           <switch
             :checked="isAnonymous"
+            :aria-label="t('anonymousReview')"
             color="#43A047"
             :disabled="submitting"
             @change="handleAnonymousChange"
           />
         </view>
 
-        <text class="window-hint">{{ t('reviewWindowHint') }}</text>
+        <text class="window-hint">
+          {{ isOrderReview ? t('reviewWindowHint') : t('directReviewLimitHint') }}
+        </text>
 
         <view class="submit-bar">
           <button class="submit-button" :disabled="submitting" @tap="submit">
@@ -333,6 +390,7 @@ async function submit() {
 </template>
 
 <style scoped>
+/* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal · B=compact-system-sans · C=single-column-review-form · D=feedback-only · E=real-user-reviews · SOUL=6 SPECTACLE=1 DENSITY=8 */
 .page {
   min-height: 100vh;
   padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
@@ -748,5 +806,15 @@ async function submit() {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-mark {
+    animation: none;
+  }
+
+  .rating-star {
+    transition: none;
+  }
 }
 </style>
