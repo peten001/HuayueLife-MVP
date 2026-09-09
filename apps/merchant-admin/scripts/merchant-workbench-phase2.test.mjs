@@ -76,6 +76,30 @@ try {
   await closeNative(); await expect(dish).toBeFocused();
   pass('product detail-to-edit hand-off does not leak a body scroll lock and restores the original row');
 
+  await page.setViewportSize({ width: 1440, height: 720 });
+  await page.goto(base + '/menu/products');
+  await page.locator('.mx-desktop-add-product').click();
+  const productDrawer = page.locator('dialog[open]');
+  const productDrawerFooter = productDrawer.locator('.m-dialog-footer');
+  await expect(productDrawerFooter.getByRole('button', { name: '新增菜品', exact: true })).toBeVisible();
+  const productDrawerGeometry = await productDrawer.evaluate((element) => {
+    const body = element.querySelector('.m-dialog-body');
+    const footer = element.querySelector('.m-dialog-footer');
+    const drawerRect = element.getBoundingClientRect();
+    const footerRect = footer?.getBoundingClientRect();
+    return {
+      bodyScrollable: body ? body.scrollHeight > body.clientHeight : false,
+      footerInsideDrawer: Boolean(footerRect && footerRect.top >= drawerRect.top && footerRect.bottom <= drawerRect.bottom),
+      footerInsideViewport: Boolean(footerRect && footerRect.top >= 0 && footerRect.bottom <= innerHeight),
+    };
+  });
+  assert.equal(productDrawerGeometry.bodyScrollable, true, 'desktop product drawer body must own the long-form scroll');
+  assert.equal(productDrawerGeometry.footerInsideDrawer, true, 'desktop product drawer actions must stay inside the drawer');
+  assert.equal(productDrawerGeometry.footerInsideViewport, true, 'desktop product save action must remain visible');
+  await closeNative();
+  await page.setViewportSize({ width: 390, height: 844 });
+  pass('desktop product create drawer keeps cancel and save actions visible');
+
   await page.goto(base + '/staff');
   await expect(page.locator('.mx-team-row')).toHaveCount(3);
   await page.locator('.mx-heading > button').click();
@@ -148,11 +172,15 @@ try {
   pass('populated printer directory and job ledger/detail at six widths, execution controls not triggered');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + '/more');
-  await expect(page.locator('.mx-more-row')).toHaveCount(5);
-  await expect(page.locator('.m-logout')).toHaveCount(0);
+  await expect(page.locator('.mx-more-row')).toHaveCount(6);
+  await expect(page.locator('.mx-more-logout')).toHaveCount(1);
   for (const width of [1440, 390, 320]) { await page.setViewportSize({ width, height: 900 }); await noOverflow('minimal more page ' + width); }
   await page.screenshot({ path: output + '/phase2-more-mobile.png' });
-  pass('More retains only language and four requested management destinations');
+  await page.locator('.mx-more-logout').click();
+  await expect(page).toHaveURL(base + '/login');
+  assert.equal(await page.evaluate(() => localStorage.getItem('huayue_merchant_token')), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem('huayue_merchant_staff')), null);
+  pass('More retains the requested management destinations and provides a working account logout');
   assert.deepEqual(writes, [base + '/__local/api/v1/merchant/tables/t0', base + '/__local/api/v1/merchant/staff/local-manager'], 'only two browser-intercepted save failures; no actual mutations or printer execution');
   assert.deepEqual(evidence.errors, [], 'no browser runtime errors');
   await context.close();

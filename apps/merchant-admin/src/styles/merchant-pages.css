@@ -1504,6 +1504,15 @@
   color: var(--m-ink);
   text-decoration: none;
 }
+.m-main--management button.mx-more-logout {
+  width: 100%;
+  border-radius: 0;
+  color: var(--m-danger);
+  background: transparent;
+  text-align: left;
+}
+.m-main--management .mx-more-logout .mx-more-icon { color: var(--m-danger); background: var(--m-danger-bg); }
+.m-main--management .mx-more-logout .mx-more-copy strong { color: var(--m-danger); }
 .m-main--management .mx-more-group > :last-child { border-bottom: 0; }
 .m-main--management .mx-more-icon {
   display: grid;
@@ -1524,6 +1533,7 @@
 .m-main--management .mx-more-language .language-switcher select { min-height: 38px; padding-block: 7px; font-size: 13px; }
 @media (hover:hover) and (pointer:fine) {
   .m-main--management a.mx-more-row:hover { background: var(--m-soft-2); }
+  .m-main--management button.mx-more-logout:hover { background: var(--m-danger-bg); }
 }
 
 .m-main--management :is(.mx-settings,.mx-tables,.mx-staff,.printing-center) { max-width: 1240px; margin-inline: auto; }

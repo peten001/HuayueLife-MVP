@@ -23,6 +23,7 @@ const paths: Record<string, string[]> = {
   records: ['M5 3h14v18H5z','M9 8h6','M9 12h6','M9 16h4'],
   user: ['M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8','M4 21v-3a8 8 0 0 1 16 0v3'],
   language: ['M2.5 12a9.5 9.5 0 1 0 19 0 9.5 9.5 0 0 0-19 0Z', 'M12 2.5c2.2 2.5 3.4 5.7 3.4 9.5S14.2 19 12 21.5C9.8 19 8.6 15.8 8.6 12S9.8 5 12 2.5Z', 'M3.2 9h17.6', 'M3.2 15h17.6'],
+  logout: ['M10 17l5-5-5-5', 'M15 12H3', 'M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6'],
 };
 </script>
 <template><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-for="(path, index) in paths[name] || paths.more" :key="index" :d="path" /></svg></template>
