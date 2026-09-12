@@ -1,7 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  MERCHANT_DISPLAY_IMAGE_SPEC_VERSION,
+  optimizeMerchantDisplayImage,
+} from '../../common/utils/merchant-display-image';
 
 type UploadedImage = {
   buffer: Buffer;
@@ -62,10 +66,21 @@ export class UploadsService {
       throw new BadRequestException(`Image file exceeds ${maxMb}MB`);
     }
 
-    const fileName = `${config.prefix}-${randomUUID()}${extension}`;
+    let outputBuffer = file.buffer;
+    let fileName = `${config.prefix}-${randomUUID()}${extension}`;
+    if (kind !== 'product') {
+      try {
+        const optimized = await optimizeMerchantDisplayImage(file.buffer);
+        outputBuffer = optimized.buffer;
+        const sourceHash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 24);
+        fileName = `${config.prefix}-${sourceHash}-display-${MERCHANT_DISPLAY_IMAGE_SPEC_VERSION}.webp`;
+      } catch {
+        throw new BadRequestException('Invalid image content');
+      }
+    }
     const targetDir = join(process.cwd(), ...config.dir);
     await mkdir(targetDir, { recursive: true });
-    await writeFile(join(targetDir, fileName), file.buffer);
+    await writeFile(join(targetDir, fileName), outputBuffer);
 
     return { url: `${config.urlBase}/${fileName}` };
   }

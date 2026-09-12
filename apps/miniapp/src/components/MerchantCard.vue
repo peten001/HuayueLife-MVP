@@ -52,6 +52,7 @@ const serviceTags = computed<ServiceTag[]>(() => {
       class="cover"
       :src="resolveMediaUrl(props.merchant.coverUrl)"
       mode="aspectFill"
+      lazy-load
     />
     <view v-else class="cover placeholder">{{ t('restaurant') }}</view>
     <view class="body">

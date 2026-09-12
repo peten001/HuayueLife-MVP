@@ -78,6 +78,7 @@ type PublicMerchantRow = Merchant & {
     nameVi: string | null;
     nameEn: string | null;
     imageUrl: string;
+    menuThumbnailUrl?: string | null;
     sortOrder: number;
   }>;
   hotRecommendations?: Array<{
@@ -86,6 +87,7 @@ type PublicMerchantRow = Merchant & {
     nameVi: string | null;
     nameEn: string | null;
     imageUrl: string | null;
+    menuThumbnailUrl?: string | null;
     priceVnd: bigint;
     salesCount: number;
     hotRank: number;
@@ -549,6 +551,7 @@ export class PublicMerchantsService {
         nameVi: item.nameVi,
         nameEn: item.nameEn,
         imageUrl: item.imageUrl,
+        menuThumbnailUrl: item.menuThumbnailUrl ?? null,
         sortOrder: item.sortOrder,
       })),
       hotRecommendations: (hotRecommendations ?? []).map((item) => ({
@@ -557,6 +560,7 @@ export class PublicMerchantsService {
         nameVi: item.nameVi,
         nameEn: item.nameEn,
         imageUrl: item.imageUrl,
+        menuThumbnailUrl: item.menuThumbnailUrl ?? null,
         priceVnd: item.priceVnd.toString(),
         salesCount: item.salesCount,
         hotRank: item.hotRank,
@@ -613,6 +617,7 @@ export class PublicMerchantsService {
             nameVi: true,
             nameEn: true,
             imageUrl: true,
+            menuThumbnailUrl: true,
             sortOrder: true,
           },
         },
@@ -668,6 +673,7 @@ export class PublicMerchantsService {
         nameVi: product.nameVi,
         nameEn: product.nameEn,
         imageUrl: product.imageUrl,
+        menuThumbnailUrl: product.menuThumbnailUrl,
         priceVnd: product.priceVnd,
         salesCount: salesByProductId.get(String(product.id)) ?? 0,
         hotRank: index + 1,

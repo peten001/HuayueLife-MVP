@@ -119,7 +119,8 @@ assert.doesNotMatch(detail, /\.gallery-category-button\.is-active \{[\s\S]{0,180
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*height: 2rpx;[\s\S]*background: var\(--brand\);/);
 assert.match(detail, /\.gallery-category-active-marker \{[\s\S]*bottom: 6rpx;[\s\S]*height: 2rpx;/);
 assert.doesNotMatch(detail, /hero-count|gallery-category-count/);
-assert.match(detail, /\.hero,[\s\S]*\.hero-image \{[\s\S]*height: 330rpx;/);
+assert.match(detail, /\.hero,[\s\S]*\.hero-image \{[\s\S]*height: 420rpx;/);
+assert.match(detail, /\.loading-hero \{\s*height: 420rpx;\s*border-radius: 22rpx;/);
 
 assert.match(
   detail,

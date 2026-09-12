@@ -33,6 +33,7 @@ const previousBrowsingCategory = ref('');
 const error = ref('');
 const notice = ref('');
 const orderingUnavailable = ref(false);
+const failedMenuImageUrls = ref<Set<string>>(new Set());
 const HOT_CATEGORY_ID = '__hot_recommendations__';
 const SEARCH_CATEGORY_ID = '__search_results__';
 const hasTable = computed(() => Boolean(tableToken.value && tableNo.value));
@@ -169,6 +170,19 @@ onLoad(async (options) => {
 
 function menuShareTitle() {
   return merchantName(menu.value?.merchant, locale.value) || '云桥 Life';
+}
+
+function productMenuImage(product: Product) {
+  const resolved = resolveMediaUrl(product.menuThumbnailUrl ?? undefined);
+  return resolved && !failedMenuImageUrls.value.has(resolved) ? resolved : '';
+}
+
+function handleProductImageError(product: Product) {
+  const resolved = resolveMediaUrl(product.menuThumbnailUrl ?? undefined);
+  if (!resolved) return;
+  const next = new Set(failedMenuImageUrls.value);
+  next.add(resolved);
+  failedMenuImageUrls.value = next;
 }
 
 function merchantDetailSharePath() {
@@ -547,10 +561,12 @@ function goHome() {
           >
             <view class="image-wrap">
               <image
-                v-if="resolveMediaUrl(product.imageUrl)"
+                v-if="productMenuImage(product)"
                 class="image"
-                :src="resolveMediaUrl(product.imageUrl)"
+                :src="productMenuImage(product)"
                 mode="aspectFill"
+                lazy-load
+                @error="handleProductImageError(product)"
               />
               <view v-else class="image placeholder">{{ t('imagePlaceholder') }}</view>
               <text v-if="product.status === 'SOLD_OUT'" class="sold-out-badge">

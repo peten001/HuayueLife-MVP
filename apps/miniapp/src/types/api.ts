@@ -176,6 +176,7 @@ export interface MerchantDetail extends MerchantSummary {
     nameVi?: string | null;
     nameEn?: string | null;
     imageUrl: string;
+    menuThumbnailUrl?: string | null;
     sortOrder: number;
   }>;
   hotRecommendations?: Array<{
@@ -184,6 +185,7 @@ export interface MerchantDetail extends MerchantSummary {
     nameVi?: string | null;
     nameEn?: string | null;
     imageUrl?: string | null;
+    menuThumbnailUrl?: string | null;
     priceVnd: string;
     salesCount: number;
     hotRank: number;
@@ -242,6 +244,7 @@ export interface Product extends LocalizedFields {
   nameEn?: string;
   description?: string;
   imageUrl?: string;
+  menuThumbnailUrl?: string | null;
   priceVnd: string;
   unit?: string | null;
   salesCount: number;

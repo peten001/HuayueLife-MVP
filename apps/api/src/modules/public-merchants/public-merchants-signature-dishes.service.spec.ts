@@ -74,6 +74,7 @@ describe('PublicMerchantsService signature dishes', () => {
         nameVi: 'Mon dac biet',
         nameEn: 'Signature Dish',
         imageUrl: '/uploads/merchants/signature.png',
+        menuThumbnailUrl: null,
         sortOrder: 2,
       },
     ]);
@@ -88,6 +89,7 @@ describe('PublicMerchantsService signature dishes', () => {
           nameVi: 'Món thực đơn',
           nameEn: 'Menu dish',
           imageUrl: null,
+          menuThumbnailUrl: '/uploads/product-thumbnails/12/signature.webp',
           sortOrder: 3,
         },
       ],
@@ -116,6 +118,7 @@ describe('PublicMerchantsService signature dishes', () => {
         nameVi: 'Món thực đơn',
         nameEn: 'Menu dish',
         imageUrl: '',
+        menuThumbnailUrl: '/uploads/product-thumbnails/12/signature.webp',
         sortOrder: 3,
       },
     ]);
@@ -127,6 +130,7 @@ describe('PublicMerchantsService signature dishes', () => {
           nameVi: 'Món thực đơn',
           nameEn: 'Menu dish',
           imageUrl: '',
+          menuThumbnailUrl: '/uploads/product-thumbnails/12/signature.webp',
           sortOrder: 3,
         },
       ]);
@@ -151,6 +155,7 @@ describe('PublicMerchantsService signature dishes', () => {
             nameVi: true,
             nameEn: true,
             imageUrl: true,
+            menuThumbnailUrl: true,
             sortOrder: true,
           },
         },

@@ -83,6 +83,7 @@ describe('PublicMerchantsService hot recommendations', () => {
     expect(result.map((item: any) => item.hotRank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(result[0].priceVnd).toBe(25_000n);
     expect(result[0].imageUrl).toBe('/dish-1.jpg');
+    expect(result[0].menuThumbnailUrl).toBe('/thumb-1.webp');
 
     const groupBy = ((service as any).prisma.orderItem.groupBy as jest.Mock).mock.calls[0][0];
     expect(groupBy.where).toMatchObject({

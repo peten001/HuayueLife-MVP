@@ -1,14 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import sharp = require('sharp');
+import {
+  MERCHANT_DISPLAY_IMAGE_SPEC_VERSION,
+  optimizeMerchantDisplayImage,
+} from '../../common/utils/merchant-display-image';
 
 export type UploadedImage = {
   buffer: Buffer;
   mimetype: string;
   originalname: string;
   size?: number;
+};
+
+export type SaveMerchantImageOptions = {
+  dryRun?: boolean;
+  rootDir?: string;
 };
 
 const MIME_TO_EXTENSION: Record<string, string> = {
@@ -80,29 +89,46 @@ export class PlatformUploadsService {
     }
   }
 
-  async saveMerchantImage(file: UploadedImage) {
-    const { extension, fileSize, mimeType } = this.validateMerchantImage(file);
+  async saveMerchantImage(file: UploadedImage, options: SaveMerchantImageOptions = {}) {
+    const { fileSize, mimeType } = this.validateMerchantImage(file);
+    const detectedMime = await this.detectMerchantImageMime(file.buffer);
+    if (detectedMime !== mimeType) {
+      throw new BadRequestException('Image content does not match file type');
+    }
 
-    const fileName = `merchant-${Date.now()}-${randomUUID().replace(/-/g, '')}${extension}`;
-    const targetDir = join(process.cwd(), 'public', 'uploads', 'merchants');
-    await mkdir(targetDir, { recursive: true });
-    await writeFile(join(targetDir, fileName), file.buffer);
+    let optimized;
+    try {
+      optimized = await optimizeMerchantDisplayImage(file.buffer);
+    } catch {
+      throw new BadRequestException('Invalid image content');
+    }
+    const sourceHash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 24);
+    const fileName = `merchant-${sourceHash}-display-${MERCHANT_DISPLAY_IMAGE_SPEC_VERSION}.webp`;
+    const targetDir = join(options.rootDir ?? process.cwd(), 'public', 'uploads', 'merchants');
+    if (!options.dryRun) {
+      await mkdir(targetDir, { recursive: true });
+      await writeFile(join(targetDir, fileName), optimized.buffer);
+    }
 
     return {
       imageUrl: `/uploads/merchants/${fileName}`,
       filename: fileName,
-      size: fileSize,
-      mimeType,
+      size: optimized.buffer.byteLength,
+      originalSize: fileSize,
+      mimeType: 'image/webp',
+      width: optimized.width,
+      height: optimized.height,
+      quality: optimized.quality,
     };
   }
 
-  async removeMerchantImage(imageUrl?: string | null) {
+  async removeMerchantImage(imageUrl?: string | null, rootDir = process.cwd()) {
     const normalizedUrl = String(imageUrl ?? '').trim();
     if (!normalizedUrl.startsWith('/uploads/merchants/')) {
       return;
     }
     const relativePath = normalize(normalizedUrl.replace(/^\//, ''));
-    const targetPath = join(process.cwd(), 'public', relativePath);
+    const targetPath = join(rootDir, 'public', relativePath);
     await rm(targetPath, { force: true });
   }
 }

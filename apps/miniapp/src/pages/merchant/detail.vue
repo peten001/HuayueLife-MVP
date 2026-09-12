@@ -41,6 +41,9 @@ import {
   type GalleryKey,
 } from './merchant-gallery-state';
 
+type SignatureDish = NonNullable<MerchantDetail['signatureDishes']>[number];
+type HotRecommendation = NonNullable<MerchantDetail['hotRecommendations']>[number];
+
 const cartStore = useCartStore();
 const appConfig = useAppConfigStore();
 const auth = useAuthStore();
@@ -465,6 +468,18 @@ function mediaAvailable(url?: string | null) {
   return Boolean(resolved && !failedMediaUrls.value.has(resolved));
 }
 
+function signatureDishImage(dish: SignatureDish) {
+  return resolveMediaUrl(
+    isClaimedMerchant.value
+      ? dish.menuThumbnailUrl ?? undefined
+      : dish.imageUrl,
+  );
+}
+
+function hotRecommendationImage(product: HotRecommendation) {
+  return resolveMediaUrl(product.menuThumbnailUrl ?? undefined);
+}
+
 function merchantShareTitle() {
   return merchantName(merchant.value, locale.value) || '云桥 Life';
 }
@@ -801,6 +816,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
               :src="media.url"
               mode="aspectFill"
               :aria-label="`${merchantName(merchant, locale)} ${media.globalIndex + 1}`"
+              lazy-load
               @tap="previewGallery(media.url)"
               @error="handleMediaError(media.url)"
             />
@@ -908,7 +924,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
         <view v-if="isClaimedMerchant" :class="['dish-grid', 'signature-grid', { 'is-narrow': viewportWidth < 390 }]">
           <view v-for="dish in visibleSignatureDishes" :key="dish.id" class="signature-card">
-            <image v-if="mediaAvailable(dish.imageUrl)" class="signature-image" :src="resolveMediaUrl(dish.imageUrl)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(dish.imageUrl)" />
+            <image v-if="mediaAvailable(signatureDishImage(dish))" class="signature-image" :src="signatureDishImage(dish)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(signatureDishImage(dish))" />
             <view v-else class="signature-image placeholder">
               <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
             </view>
@@ -918,7 +934,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <scroll-view v-else class="horizontal-scroll" scroll-x show-scrollbar="false">
           <view class="horizontal-list">
             <view v-for="dish in signatureDishes" :key="dish.id" class="signature-card">
-              <image v-if="mediaAvailable(dish.imageUrl)" class="signature-image" :src="resolveMediaUrl(dish.imageUrl)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(dish.imageUrl)" />
+              <image v-if="mediaAvailable(signatureDishImage(dish))" class="signature-image" :src="signatureDishImage(dish)" mode="aspectFill" :aria-label="`${t('signatureDishes')} · ${localizedName(dish, locale)}`" lazy-load @error="handleMediaError(signatureDishImage(dish))" />
               <view v-else class="signature-image placeholder">
                 <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
               </view>
@@ -939,7 +955,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <view v-if="isClaimedMerchant" :class="['dish-grid', 'hot-grid', { 'is-narrow': viewportWidth < 390 }]">
           <view v-for="product in visibleHotRecommendations" :key="product.id" class="hot-card">
             <view class="hot-image-wrap">
-              <image v-if="mediaAvailable(product.imageUrl)" class="hot-image" :src="resolveMediaUrl(product.imageUrl ?? undefined)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(product.imageUrl)" />
+              <image v-if="mediaAvailable(hotRecommendationImage(product))" class="hot-image" :src="hotRecommendationImage(product)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(hotRecommendationImage(product))" />
               <view v-else class="hot-image placeholder">
                 <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
               </view>
@@ -957,7 +973,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
           <view class="horizontal-list">
             <view v-for="product in hotRecommendations" :key="product.id" class="hot-card">
               <view class="hot-image-wrap">
-                <image v-if="mediaAvailable(product.imageUrl)" class="hot-image" :src="resolveMediaUrl(product.imageUrl ?? undefined)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(product.imageUrl)" />
+                <image v-if="mediaAvailable(hotRecommendationImage(product))" class="hot-image" :src="hotRecommendationImage(product)" mode="aspectFill" :aria-label="`${t('merchantHotRecommendations')} · ${localizedName(product, locale)}`" lazy-load @error="handleMediaError(hotRecommendationImage(product))" />
                 <view v-else class="hot-image placeholder">
                   <image class="placeholder-inline-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
                 </view>
@@ -1989,7 +2005,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 330rpx;
+  height: 420rpx;
   border-radius: 22rpx;
 }
 
@@ -2013,7 +2029,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero,
 .hero-image {
-  height: 330rpx;
+  height: 420rpx;
 }
 
 .hero {

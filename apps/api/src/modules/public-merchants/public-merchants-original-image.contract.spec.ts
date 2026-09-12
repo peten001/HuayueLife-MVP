@@ -64,17 +64,16 @@ describe('public and MiniApp original image contract', () => {
     });
   });
 
-  it('keeps MiniApp menu, product, signature and hot recommendation bindings on imageUrl', () => {
+  it('uses menu thumbnails for MiniApp cards while keeping product detail on the original image', () => {
     const miniappRoot = resolve(process.cwd(), '../miniapp/src');
-    const files = [
-      'pages/menu/index.vue',
-      'pages/product/detail.vue',
-      'pages/merchant/detail.vue',
-    ].map((file) => readFileSync(resolve(miniappRoot, file), 'utf8'));
-    const source = files.join('\n');
+    const menu = readFileSync(resolve(miniappRoot, 'pages/menu/index.vue'), 'utf8');
+    const productDetail = readFileSync(resolve(miniappRoot, 'pages/product/detail.vue'), 'utf8');
+    const merchantDetail = readFileSync(resolve(miniappRoot, 'pages/merchant/detail.vue'), 'utf8');
 
-    expect(source).toContain('product.imageUrl');
-    expect(source).toContain('dish.imageUrl');
-    expect(source).not.toContain('menuThumbnailUrl');
+    expect(menu).toContain('product.menuThumbnailUrl');
+    expect(menu).not.toContain('resolveMediaUrl(product.imageUrl)');
+    expect(merchantDetail).toContain('dish.menuThumbnailUrl');
+    expect(merchantDetail).toContain('product.menuThumbnailUrl');
+    expect(productDetail).toContain('resolveMediaUrl(product.imageUrl)');
   });
 });

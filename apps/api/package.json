@@ -17,6 +17,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
     "backfill:menu-thumbnails": "ts-node --transpile-only scripts/backfill-menu-thumbnails.ts",
+    "backfill:merchant-images": "ts-node --transpile-only scripts/backfill-merchant-display-images.ts",
     "backfill:signature-categories": "ts-node --transpile-only scripts/backfill-signature-categories.ts",
     "import:demo-merchant": "ts-node --transpile-only scripts/import-demo-merchant.ts",
     "import:demo-merchant:dry-run": "ts-node --transpile-only scripts/import-demo-merchant.ts --dry-run"
