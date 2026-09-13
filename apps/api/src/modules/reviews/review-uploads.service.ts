@@ -17,7 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp from 'sharp';
+import sharp = require('sharp');
 import { PrismaService } from '../../database/prisma.service';
 import { assertReviewEligible } from './review-policy';
 

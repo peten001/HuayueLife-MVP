@@ -28,6 +28,13 @@ type SelectedImage = {
   remoteToken?: string;
 };
 
+const MAX_REVIEW_IMAGE_BYTES = 5 * 1024 * 1024;
+const REVIEW_IMAGE_COMPRESSION_ATTEMPTS = [
+  { maxDimension: 2048, quality: 86 },
+  { maxDimension: 1800, quality: 78 },
+  { maxDimension: 1600, quality: 72 },
+] as const;
+
 const auth = useAuthStore();
 const { t } = useI18n();
 const orderId = ref('');
@@ -41,6 +48,7 @@ const content = ref('');
 const isAnonymous = ref(false);
 const images = ref<SelectedImage[]>([]);
 const loading = ref(true);
+const compressingImages = ref(false);
 const submitting = ref(false);
 const message = ref('');
 const starLevels = [1, 2, 3, 4, 5] as const;
@@ -147,7 +155,7 @@ function selectRating(value: number) {
 
 function chooseImages() {
   const remaining = 6 - images.value.length;
-  if (remaining <= 0 || submitting.value) return;
+  if (remaining <= 0 || submitting.value || compressingImages.value) return;
   uni.chooseImage({
     count: remaining,
     sizeType: ['compressed'],
@@ -156,11 +164,120 @@ function chooseImages() {
       const paths = Array.isArray(result.tempFilePaths)
         ? result.tempFilePaths.map(String)
         : [];
-      images.value = [
-        ...images.value,
-        ...paths.map((localPath) => ({ localPath })),
-      ].slice(0, 6);
+      void addCompressedImages(paths);
     },
+  });
+}
+
+async function addCompressedImages(paths: string[]) {
+  if (!paths.length) return;
+  compressingImages.value = true;
+  uni.showLoading({ title: t('compressingReviewImages'), mask: true });
+  const compressed: SelectedImage[] = [];
+  let failureMessage = '';
+  try {
+    for (const path of paths) {
+      try {
+        compressed.push({ localPath: await compressReviewImage(path) });
+      } catch (caught) {
+        failureMessage = caught instanceof Error
+          ? caught.message
+          : t('reviewImageCompressFailed');
+      }
+    }
+    images.value = [...images.value, ...compressed].slice(0, 6);
+  } finally {
+    uni.hideLoading();
+    compressingImages.value = false;
+  }
+  if (failureMessage) {
+    uni.showToast({ title: failureMessage, icon: 'none' });
+  }
+}
+
+async function compressReviewImage(localPath: string) {
+  const dimensions = await getImageDimensions(localPath);
+  let compressedPath = localPath;
+  for (const attempt of REVIEW_IMAGE_COMPRESSION_ATTEMPTS) {
+    const fitted = fitImageDimensions(
+      dimensions.width,
+      dimensions.height,
+      attempt.maxDimension,
+    );
+    compressedPath = await compressImage(
+      compressedPath,
+      fitted.width,
+      fitted.height,
+      attempt.quality,
+    );
+    if (await getFileSize(compressedPath) <= MAX_REVIEW_IMAGE_BYTES) {
+      return compressedPath;
+    }
+  }
+  throw new Error(t('reviewImageTooLarge'));
+}
+
+function fitImageDimensions(width: number, height: number, maxDimension: number) {
+  const longestEdge = Math.max(width, height);
+  if (!Number.isFinite(longestEdge) || longestEdge <= 0) {
+    throw new Error(t('reviewImageInvalid'));
+  }
+  const scale = Math.min(1, maxDimension / longestEdge);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    uni.getImageInfo({
+      src,
+      success(result) {
+        resolve({ width: Number(result.width), height: Number(result.height) });
+      },
+      fail() {
+        reject(new Error(t('reviewImageInvalid')));
+      },
+    });
+  });
+}
+
+function compressImage(
+  src: string,
+  compressedWidth: number,
+  compressedHeight: number,
+  quality: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    uni.compressImage({
+      src,
+      quality,
+      compressedWidth,
+      compressedHeight,
+      success(result) {
+        const tempFilePath = String(result.tempFilePath ?? '');
+        if (tempFilePath) resolve(tempFilePath);
+        else reject(new Error(t('reviewImageCompressFailed')));
+      },
+      fail() {
+        reject(new Error(t('reviewImageCompressFailed')));
+      },
+    });
+  });
+}
+
+function getFileSize(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    uni.getFileInfo({
+      filePath,
+      success(result) {
+        resolve(Number(result.size));
+      },
+      fail() {
+        reject(new Error(t('reviewImageCompressFailed')));
+      },
+    });
   });
 }
 
@@ -172,7 +289,7 @@ function previewSelectedImage(current: string) {
 }
 
 function removeImage(index: number) {
-  if (submitting.value) return;
+  if (submitting.value || compressingImages.value) return;
   images.value.splice(index, 1);
 }
 
@@ -182,7 +299,7 @@ function handleAnonymousChange(event: Event) {
 }
 
 async function submit() {
-  if (!canComposeReview.value || submitting.value) return;
+  if (!canComposeReview.value || submitting.value || compressingImages.value) return;
   if (!rating.value) {
     uni.showToast({ title: t('reviewRatingRequired'), icon: 'none' });
     return;
@@ -193,14 +310,18 @@ async function submit() {
   uni.showLoading({ title: t('submittingReview'), mask: true });
   try {
     await auth.ensureLogin();
-    const imageTokens = await Promise.all(images.value.map(async (image) => {
-      if (image.remoteToken) return image.remoteToken;
+    const imageTokens: string[] = [];
+    for (const image of images.value) {
+      if (image.remoteToken) {
+        imageTokens.push(image.remoteToken);
+        continue;
+      }
       const remoteToken = order.value
         ? await uploadReviewImage(order.value.id, image.localPath)
         : await uploadDirectReviewImage(merchant.value!.id, image.localPath);
       image.remoteToken = remoteToken;
-      return remoteToken;
-    }));
+      imageTokens.push(remoteToken);
+    }
     const input = {
       rating: rating.value,
       content: content.value.trim() || undefined,
@@ -232,9 +353,6 @@ async function submit() {
     const errorMessage = caught instanceof Error
       ? translateApiError(caught.message)
       : t('reviewSubmitFailed');
-    images.value.forEach((image) => {
-      delete image.remoteToken;
-    });
     await load();
     if (!existingReview.value) message.value = errorMessage;
   } finally {
@@ -339,6 +457,7 @@ async function submit() {
               <button
                 class="photo-remove"
                 :aria-label="t('removeReviewPhoto', { index: index + 1 })"
+                :disabled="submitting || compressingImages"
                 @tap="removeImage(index)"
               ><text class="photo-remove-glyph">×</text></button>
             </view>
@@ -346,7 +465,7 @@ async function submit() {
               v-if="images.length < 6"
               class="photo-add"
               :aria-label="t('reviewPhotos')"
-              :disabled="submitting"
+              :disabled="submitting || compressingImages"
               @tap="chooseImages"
             >
               <text class="photo-add-mark">＋</text>
@@ -364,7 +483,7 @@ async function submit() {
             :checked="isAnonymous"
             :aria-label="t('anonymousReview')"
             color="#43A047"
-            :disabled="submitting"
+            :disabled="submitting || compressingImages"
             @change="handleAnonymousChange"
           />
         </view>
@@ -374,8 +493,16 @@ async function submit() {
         </text>
 
         <view class="submit-bar">
-          <button class="submit-button" :disabled="submitting" @tap="submit">
-            {{ submitting ? t('submittingReview') : t('submitReview') }}
+          <button
+            class="submit-button"
+            :disabled="submitting || compressingImages"
+            @tap="submit"
+          >
+            {{ compressingImages
+              ? t('compressingReviewImages')
+              : submitting
+                ? t('submittingReview')
+                : t('submitReview') }}
           </button>
         </view>
       </template>
@@ -646,6 +773,10 @@ async function submit() {
   color: #2e7d32;
   font-size: 43rpx;
   line-height: 1;
+}
+
+.photo-add[disabled] {
+  opacity: .55;
 }
 
 .privacy-row {

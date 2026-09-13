@@ -29,6 +29,13 @@ test('review form supports direct and order-linked entry without weakening the o
   assert.match(createPage, /getOwnDirectReview\(merchantId\.value\)/);
   assert.match(createPage, /createDirectReview\(merchant\.value!\.id, input\)/);
   assert.match(createPage, /createReview\(order\.value\.id, input\)/);
+  assert.match(createPage, /uni\.compressImage\(/);
+  assert.match(createPage, /compressedWidth/);
+  assert.match(createPage, /MAX_REVIEW_IMAGE_BYTES = 5 \* 1024 \* 1024/);
+  assert.match(createPage, /for \(const image of images\.value\)/);
+  assert.doesNotMatch(createPage, /Promise\.all\(images\.value\.map/);
+  assert.match(createPage, /imageTokens\.push\(image\.remoteToken\)/);
+  assert.doesNotMatch(createPage, /delete image\.remoteToken/);
   assert.match(reviewApi, /\/merchants\/\$\{merchantId\}\/reviews/);
   assert.match(reviewApi, /\/orders\/\$\{orderId\}\/review-images/);
   assert.match(ordersPage, /\/pages\/review\/create\?orderId=\$\{order\.id\}/);
@@ -59,4 +66,7 @@ test('review copy does not use the removed completion-only prompt', async () => 
   assert.match(i18n, /noReviewsHint: 'No reviews yet\. Share your experience\.'/);
   assert.match(i18n, /reviewPending: '评价已提交审核'/);
   assert.match(i18n, /reviewPendingHint: '内容安全检查通过后会公开展示'/);
+  assert.match(i18n, /reviewPhotosHint: '最多 6 张，选择后自动压缩'/);
+  assert.match(i18n, /reviewPhotosHint: 'Tối đa 6 ảnh, tự động nén sau khi chọn'/);
+  assert.match(i18n, /reviewPhotosHint: 'Up to 6 photos, automatically compressed after selection'/);
 });

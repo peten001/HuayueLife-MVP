@@ -1,7 +1,16 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { access, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import sharp = require('sharp');
 import { ReviewUploadsService } from './review-uploads.service';
 
 const image = {
@@ -75,6 +84,47 @@ describe('ReviewUploadsService', () => {
 
     await expect(service.prepareDirect(8n, 4n, ['../foreign-image']))
       .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('stages a valid JPEG as a WebP review image', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'review-jpeg-'));
+    const cwd = jest.spyOn(process, 'cwd').mockReturnValue(root);
+    try {
+      const service = new ReviewUploadsService({
+        merchant: { findFirst: jest.fn().mockResolvedValue({ id: 4n }) },
+        merchantReview: { findUnique: jest.fn().mockResolvedValue(null) },
+      } as never);
+      const jpeg = await sharp({
+        create: {
+          width: 16,
+          height: 12,
+          channels: 3,
+          background: '#43A047',
+        },
+      }).jpeg().toBuffer();
+
+      const result = await service.stageDirect(8n, 4n, {
+        buffer: jpeg,
+        mimetype: 'image/jpeg',
+        originalname: 'review.jpg',
+        size: jpeg.byteLength,
+      });
+      const staged = await readFile(join(
+        root,
+        '.review-upload-staging',
+        '8',
+        'merchant-4',
+        `${result.token}.webp`,
+      ));
+      const metadata = await sharp(staged).metadata();
+
+      expect(metadata.format).toBe('webp');
+      expect(metadata.width).toBe(16);
+      expect(metadata.height).toBe(12);
+    } finally {
+      cwd.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('removes abandoned staged images after their 24-hour lifetime', async () => {
