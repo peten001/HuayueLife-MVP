@@ -12,6 +12,7 @@ const { t } = useI18n();
 const starLevels = [1, 2, 3, 4, 5] as const;
 const avatarFailed = ref(false);
 const failedImageIds = ref<Set<string>>(new Set());
+const thumbnailFallbackIds = ref<Set<string>>(new Set());
 const authorDisplayName = computed(() => {
   if (props.review.isAnonymous) return t('anonymousUser');
   return props.review.author.displayName?.trim() || t('wechatUser');
@@ -19,7 +20,8 @@ const authorDisplayName = computed(() => {
 const authorInitial = computed(() => Array.from(authorDisplayName.value)[0] ?? '?');
 const imageItems = computed(() => props.review.images.flatMap((image) => {
   const resolvedUrl = resolveMediaUrl(image.imageUrl);
-  return resolvedUrl ? [{ ...image, resolvedUrl }] : [];
+  const resolvedThumbnailUrl = resolveMediaUrl(image.thumbnailUrl ?? undefined) || resolvedUrl;
+  return resolvedUrl ? [{ ...image, resolvedUrl, resolvedThumbnailUrl }] : [];
 }));
 const dateLabel = computed(() => {
   const language = locale.value === 'vi' ? 'vi-VN' : locale.value === 'en' ? 'en-US' : 'zh-CN';
@@ -39,6 +41,17 @@ function previewImage(current: string) {
 
 function markImageFailed(imageId: string) {
   failedImageIds.value = new Set([...failedImageIds.value, imageId]);
+}
+
+function handleImageError(image: (typeof imageItems.value)[number]) {
+  if (
+    image.resolvedThumbnailUrl !== image.resolvedUrl
+    && !thumbnailFallbackIds.value.has(image.id)
+  ) {
+    thumbnailFallbackIds.value = new Set([...thumbnailFallbackIds.value, image.id]);
+    return;
+  }
+  markImageFailed(image.id);
 }
 </script>
 
@@ -83,10 +96,10 @@ function markImageFailed(imageId: string) {
         <image
           v-if="!failedImageIds.has(image.id)"
           class="review-image"
-          :src="image.resolvedUrl"
+          :src="thumbnailFallbackIds.has(image.id) ? image.resolvedUrl : image.resolvedThumbnailUrl"
           mode="aspectFill"
           lazy-load
-          @error="markImageFailed(image.id)"
+          @error="handleImageError(image)"
         />
         <view v-else class="review-image-fallback">
           <text class="review-image-fallback-mark">▧</text>

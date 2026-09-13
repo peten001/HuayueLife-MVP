@@ -49,7 +49,11 @@ test('public review cards identify direct and post-visit reviews', async () => {
   ]);
 
   assert.match(card, /review\.source === 'ORDER' \? t\('reviewSourceOrder'\) : t\('reviewSourceDirect'\)/);
+  assert.match(card, /resolveMediaUrl\(image\.thumbnailUrl \?\? undefined\) \|\| resolvedUrl/);
+  assert.match(card, /@tap="previewImage\(image\.resolvedUrl\)"/);
+  assert.match(card, /thumbnailFallbackIds\.has\(image\.id\) \? image\.resolvedUrl : image\.resolvedThumbnailUrl/);
   assert.match(types, /source: 'ORDER' \| 'DIRECT';/);
+  assert.match(types, /thumbnailUrl\?: string \| null;/);
   assert.match(types, /orderType: OrderType \| null;/);
 });
 

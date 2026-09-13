@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   utimes,
   writeFile,
@@ -86,7 +87,7 @@ describe('ReviewUploadsService', () => {
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('stages a valid JPEG as a WebP review image', async () => {
+  it('stages a valid JPEG as full and list-thumbnail WebP variants', async () => {
     const root = await mkdtemp(join(tmpdir(), 'review-jpeg-'));
     const cwd = jest.spyOn(process, 'cwd').mockReturnValue(root);
     try {
@@ -96,8 +97,8 @@ describe('ReviewUploadsService', () => {
       } as never);
       const jpeg = await sharp({
         create: {
-          width: 16,
-          height: 12,
+          width: 2400,
+          height: 1800,
           channels: 3,
           background: '#43A047',
         },
@@ -117,10 +118,31 @@ describe('ReviewUploadsService', () => {
         `${result.token}.webp`,
       ));
       const metadata = await sharp(staged).metadata();
+      const thumbnail = await readFile(join(
+        root,
+        '.review-upload-staging',
+        '8',
+        'merchant-4',
+        `${result.token}-thumb.webp`,
+      ));
+      const thumbnailMetadata = await sharp(thumbnail).metadata();
 
       expect(metadata.format).toBe('webp');
-      expect(metadata.width).toBe(16);
-      expect(metadata.height).toBe(12);
+      expect(metadata.width).toBe(1600);
+      expect(metadata.height).toBe(1200);
+      expect(thumbnailMetadata.format).toBe('webp');
+      expect(thumbnailMetadata.width).toBe(640);
+      expect(thumbnailMetadata.height).toBe(480);
+      expect(thumbnail.byteLength).toBeLessThan(staged.byteLength);
+      expect((await readdir(join(
+        root,
+        '.review-upload-staging',
+        '8',
+        'merchant-4',
+      ))).sort()).toEqual([
+        `${result.token}-thumb.webp`,
+        `${result.token}.webp`,
+      ]);
     } finally {
       cwd.mockRestore();
       await rm(root, { recursive: true, force: true });

@@ -17,8 +17,12 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp = require('sharp');
 import { PrismaService } from '../../database/prisma.service';
+import {
+  createReviewImageVariants,
+  createReviewThumbnail,
+  reviewThumbnailFileName,
+} from './review-image';
 import { assertReviewEligible } from './review-policy';
 
 export type ReviewUpload = {
@@ -33,6 +37,7 @@ const MAX_REVIEW_IMAGES = 6;
 const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const IMAGE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IMAGE_TOKEN_FILE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/i;
 
 export type PreparedReviewImages = {
   urls: string[];
@@ -107,32 +112,35 @@ export class ReviewUploadsService implements OnModuleInit {
       throw new BadRequestException('仅支持 JPG、PNG 或 WebP 图片');
     }
 
-    let output: Buffer;
-    try {
-      output = await sharp(file.buffer)
-        .rotate()
-        .resize({
-          width: 2048,
-          height: 2048,
-          fit: 'inside',
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 84 })
-        .toBuffer();
-    } catch {
-      throw new BadRequestException('图片无法识别，请重新选择');
-    }
-
     await mkdir(targetDir, { recursive: true });
     await this.removeExpiredStagingFiles(targetDir);
     const stagedFiles = (await readdir(targetDir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.webp'));
+      .filter((entry) => entry.isFile() && IMAGE_TOKEN_FILE_PATTERN.test(entry.name));
     if (stagedFiles.length >= MAX_REVIEW_IMAGES) {
       throw new BadRequestException('每条评价最多上传 6 张图片');
     }
 
+    let variants: Awaited<ReturnType<typeof createReviewImageVariants>>;
+    try {
+      variants = await createReviewImageVariants(file.buffer);
+    } catch {
+      throw new BadRequestException('图片无法识别，请重新选择');
+    }
+
     const token = randomUUID();
-    await writeFile(join(targetDir, `${token}.webp`), output);
+    const stagedPath = join(targetDir, `${token}.webp`);
+    const stagedThumbnailPath = join(targetDir, `${token}-thumb.webp`);
+    const writes = await Promise.allSettled([
+      writeFile(stagedPath, variants.full),
+      writeFile(stagedThumbnailPath, variants.thumbnail),
+    ]);
+    if (writes.some((result) => result.status === 'rejected')) {
+      await Promise.all([
+        rm(stagedPath, { force: true }).catch(() => undefined),
+        rm(stagedThumbnailPath, { force: true }).catch(() => undefined),
+      ]);
+      throw new BadRequestException('评价图片保存失败，请重新选择');
+    }
     return { token };
   }
 
@@ -172,11 +180,20 @@ export class ReviewUploadsService implements OnModuleInit {
         const stagedPath = join(stagingDir, `${token}.webp`);
         const stagedFile = await stat(stagedPath);
         if (!stagedFile.isFile()) throw new Error('not a file');
+        const stagedThumbnailPath = join(stagingDir, `${token}-thumb.webp`);
+        const stagedThumbnail = await stat(stagedThumbnailPath).catch(() => null);
 
         const fileName = `review-${randomUUID()}.webp`;
+        const thumbnailFileName = reviewThumbnailFileName(fileName);
         const finalPath = join(finalDir, fileName);
+        const finalThumbnailPath = join(finalDir, thumbnailFileName);
+        prepared.finalPaths.push(finalPath, finalThumbnailPath);
         await copyFile(stagedPath, finalPath);
-        prepared.finalPaths.push(finalPath);
+        if (stagedThumbnail?.isFile()) {
+          await copyFile(stagedThumbnailPath, finalThumbnailPath);
+        } else {
+          await writeFile(finalThumbnailPath, await createReviewThumbnail(stagedPath));
+        }
         prepared.urls.push(`/uploads/reviews/${fileName}`);
       }
       return prepared;

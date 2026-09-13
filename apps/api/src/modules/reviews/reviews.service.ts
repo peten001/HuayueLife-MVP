@@ -5,6 +5,7 @@ import { CreateReviewDto } from './dto/create-review.dto';
 import { assertReviewEligible } from './review-policy';
 import { ReviewContentModerationService } from './review-content-moderation.service';
 import { ReviewUploadsService } from './review-uploads.service';
+import { reviewThumbnailUrl } from './review-image';
 
 const PAGE_SIZE = 10;
 
@@ -331,6 +332,7 @@ export class ReviewsService {
       images: review.images.map((image) => ({
         id: image.id.toString(),
         imageUrl: image.imageUrl,
+        thumbnailUrl: reviewThumbnailUrl(image.imageUrl),
         sortOrder: image.sortOrder,
       })),
       ...(own ? { orderNo: orderNo ?? null } : {}),

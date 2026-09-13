@@ -332,6 +332,10 @@ describe('ReviewsService', () => {
     expect(result.items[0]).toEqual(expect.objectContaining({
       source: 'DIRECT',
       orderType: null,
+      images: [expect.objectContaining({
+        imageUrl: '/uploads/reviews/review-a.webp',
+        thumbnailUrl: '/uploads/reviews/review-a-thumb.webp',
+      })],
     }));
   });
 });

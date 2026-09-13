@@ -215,6 +215,7 @@ export interface MerchantReview {
   images: Array<{
     id: string;
     imageUrl: string;
+    thumbnailUrl?: string | null;
     sortOrder: number;
   }>;
 }
