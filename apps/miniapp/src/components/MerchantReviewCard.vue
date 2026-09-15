@@ -81,10 +81,7 @@ function handleImageError(image: (typeof imageItems.value)[number]) {
 
     <text v-if="review.content" class="review-content">{{ review.content }}</text>
 
-    <view
-      v-if="imageItems.length"
-      :class="['review-images', { single: imageItems.length === 1 }]"
-    >
+    <view v-if="imageItems.length" class="review-images">
       <button
         v-for="(image, index) in imageItems"
         :key="image.id"
@@ -204,11 +201,6 @@ function handleImageError(image: (typeof imageItems.value)[number]) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10rpx;
   margin-top: 18rpx;
-}
-
-.review-images.single {
-  width: 66%;
-  grid-template-columns: 1fr;
 }
 
 .review-image-button {

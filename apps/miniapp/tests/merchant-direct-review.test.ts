@@ -52,6 +52,9 @@ test('public review cards identify direct and post-visit reviews', async () => {
   assert.match(card, /resolveMediaUrl\(image\.thumbnailUrl \?\? undefined\) \|\| resolvedUrl/);
   assert.match(card, /@tap="previewImage\(image\.resolvedUrl\)"/);
   assert.match(card, /thumbnailFallbackIds\.has\(image\.id\) \? image\.resolvedUrl : image\.resolvedThumbnailUrl/);
+  assert.match(card, /v-if="imageItems\.length" class="review-images"/);
+  assert.doesNotMatch(card, /review-images\.single/);
+  assert.doesNotMatch(card, /imageItems\.length === 1/);
   assert.match(types, /source: 'ORDER' \| 'DIRECT';/);
   assert.match(types, /thumbnailUrl\?: string \| null;/);
   assert.match(types, /orderType: OrderType \| null;/);
