@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { locale, orderTypeLabel, useI18n } from '@/i18n';
+import { locale, useI18n } from '@/i18n';
 import type { MerchantReview } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
 
@@ -105,14 +105,6 @@ function handleImageError(image: (typeof imageItems.value)[number]) {
       </button>
     </view>
 
-    <view class="review-source-row">
-      <text :class="['review-source-badge', { direct: review.source === 'DIRECT' }]">
-        {{ review.source === 'ORDER' ? t('reviewSourceOrder') : t('reviewSourceDirect') }}
-      </text>
-      <text v-if="review.orderType" class="review-order-type">
-        {{ orderTypeLabel(review.orderType, locale) }}
-      </text>
-    </view>
   </view>
 </template>
 
@@ -246,36 +238,4 @@ function handleImageError(image: (typeof imageItems.value)[number]) {
   font-size: 34rpx;
 }
 
-.review-source-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10rpx;
-  margin-top: 16rpx;
-}
-
-.review-source-badge,
-.review-order-type {
-  display: inline-flex;
-  padding: 6rpx 12rpx;
-  border-radius: 999rpx;
-  font-size: 20rpx;
-  line-height: 1.3;
-}
-
-.review-source-badge {
-  color: #8b5a00;
-  background: #fff3dd;
-  font-weight: 700;
-}
-
-.review-source-badge.direct {
-  color: #2e7d32;
-  background: #eaf7ee;
-}
-
-.review-order-type {
-  color: #667169;
-  background: #f2f6f3;
-}
 </style>

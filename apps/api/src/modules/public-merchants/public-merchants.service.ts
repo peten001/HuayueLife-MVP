@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Category, Merchant, OrderType, Prisma, PromotionTagScope } from '@prisma/client';
+import { Category, Merchant, OrderType, Prisma, Product, PromotionTagScope } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { MerchantCapabilitiesService } from '../merchant-capabilities/merchant-capabilities.service';
@@ -652,8 +652,9 @@ export class PublicMerchantsService {
       index: number;
     }> = [];
     categories.forEach((category) => {
-      if (isHotRecommendationCategory(category.nameZh)) return;
+      if (isHotRecommendationCategory(category)) return;
       category.products.forEach((product) => {
+        if (isRiceProduct(product)) return;
         if ((salesByProductId.get(String(product.id)) ?? 0) > 0) {
           candidates.push({ product, index: candidates.length });
         }
@@ -734,8 +735,55 @@ function resolveDetailDisplayTags(
   ].slice(0, 8);
 }
 
-function isHotRecommendationCategory(nameZh: string) {
-  return ['米饭', '饮料', '饮品', '酒水'].some((keyword) => nameZh.includes(keyword));
+const HOT_RECOMMENDATION_CATEGORY_MARKERS = [
+  '米饭', '米飯', '饭类', '飯類', '主食', '饮料', '飲料', '饮品', '飲品',
+  '酒水', '茶饮', '茶飲', '咖啡', 'rice', 'com', 'xoi', 'do uong',
+  'nuoc uong', 'giai khat', 'beverage', 'beverages', 'drink', 'drinks',
+  'beer', 'wine',
+] as const;
+const RICE_PRODUCT_MARKERS = [
+  '米饭', '米飯', '白饭', '白飯', '炒饭', '炒飯', '盖饭', '蓋飯', '拌饭',
+  '拌飯', '糯米饭', '糯米飯', 'rice', 'com', 'xoi',
+] as const;
+
+function isHotRecommendationCategory(
+  category: Pick<Category, 'nameZh' | 'nameVi' | 'nameEn'>,
+) {
+  return [category.nameZh, category.nameVi, category.nameEn]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .some((value) => matchesHotRecommendationMarker(
+      value,
+      HOT_RECOMMENDATION_CATEGORY_MARKERS,
+    ));
+}
+
+function isRiceProduct(
+  product: Pick<Product, 'nameZh' | 'nameVi' | 'nameEn'>,
+) {
+  return [product.nameZh, product.nameVi, product.nameEn]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .some((value) => matchesHotRecommendationMarker(value, RICE_PRODUCT_MARKERS));
+}
+
+function matchesHotRecommendationMarker(
+  value: string,
+  markers: readonly string[],
+) {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .trim();
+  return markers.some((marker) => {
+    const normalizedMarker = marker
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLocaleLowerCase('en-US');
+    return /[\p{Script=Han}]/u.test(normalizedMarker)
+      ? normalized.includes(normalizedMarker)
+      : ` ${normalized} `.includes(` ${normalizedMarker} `);
+  });
 }
 
 function isClaimedMerchant(merchant: PublicMerchantRow) {

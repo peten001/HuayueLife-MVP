@@ -42,13 +42,14 @@ test('review form supports direct and order-linked entry without weakening the o
   assert.match(orderDetail, /\/pages\/review\/create\?orderId=\$\{order\.value\.id\}/);
 });
 
-test('public review cards identify direct and post-visit reviews', async () => {
+test('public review cards keep review source metadata out of the presentation', async () => {
   const [card, types] = await Promise.all([
     readFile(path.join(miniappRoot, 'src/components/MerchantReviewCard.vue'), 'utf8'),
     readFile(path.join(miniappRoot, 'src/types/api.ts'), 'utf8'),
   ]);
 
-  assert.match(card, /review\.source === 'ORDER' \? t\('reviewSourceOrder'\) : t\('reviewSourceDirect'\)/);
+  assert.doesNotMatch(card, /reviewSourceOrder|reviewSourceDirect|orderTypeLabel/);
+  assert.doesNotMatch(card, /review-source-row|review-source-badge|review-order-type/);
   assert.match(card, /resolveMediaUrl\(image\.thumbnailUrl \?\? undefined\) \|\| resolvedUrl/);
   assert.match(card, /@tap="previewImage\(image\.resolvedUrl\)"/);
   assert.match(card, /thumbnailFallbackIds\.has\(image\.id\) \? image\.resolvedUrl : image\.resolvedThumbnailUrl/);

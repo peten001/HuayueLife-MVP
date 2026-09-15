@@ -69,12 +69,35 @@ describe('PublicMerchantsService hot recommendations', () => {
       status: 'ON_SALE',
       productType: 'FOOD',
     }));
+    const riceInGenericCategory = {
+      ...products[0],
+      id: 97n,
+      nameZh: '米饭',
+      nameVi: 'Cơm trắng',
+      nameEn: 'Steamed rice',
+    };
+    const riceInOrdinaryCategory = {
+      ...products[0],
+      id: 98n,
+      nameZh: '打包米饭',
+      nameVi: null,
+      nameEn: null,
+    };
     const service = serviceWith(
       [
         { id: 1n, nameZh: '招牌菜', sortOrder: 0, products },
         { id: 2n, nameZh: '饮料', sortOrder: 1, products: [{ ...products[0], id: 99n }] },
+        { id: 3n, nameZh: '主食', sortOrder: 2, products: [riceInGenericCategory] },
+        { id: 4n, nameZh: '热炒', sortOrder: 3, products: [riceInOrdinaryCategory] },
       ],
-      products.map((product, index) => ({ productId: product.id, _sum: { quantity: index === 8 ? 0 : 5 } })),
+      [
+        ...products.map((product, index) => ({
+          productId: product.id,
+          _sum: { quantity: index === 8 ? 0 : 5 },
+        })),
+        { productId: riceInGenericCategory.id, _sum: { quantity: 100 } },
+        { productId: riceInOrdinaryCategory.id, _sum: { quantity: 99 } },
+      ],
     );
 
     const result = await (service as any).hotRecommendations(1n);
@@ -84,6 +107,8 @@ describe('PublicMerchantsService hot recommendations', () => {
     expect(result[0].priceVnd).toBe(25_000n);
     expect(result[0].imageUrl).toBe('/dish-1.jpg');
     expect(result[0].menuThumbnailUrl).toBe('/thumb-1.webp');
+    expect(result.map((item: any) => item.nameZh)).not.toContain('米饭');
+    expect(result.map((item: any) => item.nameZh)).not.toContain('打包米饭');
 
     const groupBy = ((service as any).prisma.orderItem.groupBy as jest.Mock).mock.calls[0][0];
     expect(groupBy.where).toMatchObject({
