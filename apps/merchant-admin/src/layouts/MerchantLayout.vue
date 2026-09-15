@@ -8,7 +8,7 @@ import { useMerchantNavigation } from '@/composables/useMerchantNavigation';
 import '@/styles/merchant-workbench.css';
 import '@/styles/merchant-pages.css';
 const route = useRoute();
-const { staff, mobile, desktop, active, word } = useMerchantNavigation();
+const { staff, mobile, desktop, active, word, logout } = useMerchantNavigation();
 const analyticsHome = computed(() =>
   ['OWNER', 'MANAGER'].includes(staff.value?.role ?? '')
   && ['/dashboard', '/business-analytics'].includes(route.path),
@@ -49,9 +49,9 @@ onBeforeUnmount(() => {
   <div class="merchant-workbench" :class="{ 'merchant-workbench--analytics': analyticsHome, 'merchant-workbench--more-area': moreManagementArea, 'merchant-workbench--more-hub': moreHub, 'merchant-workbench--management-child': managementChild, 'merchant-workbench--mobile-headerless': mobileHeaderless }">
     <a class="m-skip" href="#merchant-main">{{ word('跳到内容', 'Đến nội dung', 'Skip to content') }}</a>
     <header class="m-topbar" :class="{ 'm-topbar--analytics': homeStyleHeader }">
-      <RouterLink class="m-brand" :class="{ 'm-brand--analytics': homeStyleHeader }" to="/dashboard" :aria-label="homeStyleHeader ? 'YunQiao Merchant' : 'YunQiao'"><img :src="huayueLogo" alt="" /><strong v-if="homeStyleHeader" class="m-brand-wordmark">YunQiao Merchant</strong><strong v-else>YunQiao<span>{{ word('商家后台', 'Quản lý', 'Merchant') }}</span></strong></RouterLink>
+      <RouterLink class="m-brand" :class="{ 'm-brand--analytics': homeStyleHeader }" to="/dashboard" aria-label="YunQiao Merchant"><img :src="huayueLogo" alt="" /><strong class="m-brand-wordmark m-desktop-wordmark">YunQiao Merchant</strong><strong v-if="homeStyleHeader" class="m-brand-wordmark m-mobile-wordmark">YunQiao Merchant</strong><strong v-else class="m-mobile-wordmark">YunQiao<span>{{ word('商家后台', 'Quản lý', 'Merchant') }}</span></strong></RouterLink>
       <nav class="m-desktop-nav" :aria-label="word('主导航', 'Điều hướng', 'Main navigation')"><RouterLink v-for="entry in desktop" :key="entry.path" :to="entry.path" :class="{ active: active(entry.path) }" :aria-current="active(entry.path) ? 'page' : undefined"><MerchantIcon :name="entry.icon" />{{ entry.label }}</RouterLink></nav>
-      <div class="m-topbar-tools"><span v-if="!homeStyleHeader" class="m-store" :title="staff?.merchant.nameZh">{{ staff?.merchant.nameZh }}</span><LanguageSwitcher /><RouterLink v-if="!homeStyleHeader" class="m-account-link" to="/more" :aria-label="word('账号与设置', 'Tài khoản', 'Account')"><MerchantIcon name="staff" /></RouterLink></div>
+      <div class="m-topbar-tools"><span v-if="!homeStyleHeader" class="m-store" :title="staff?.merchant.nameZh">{{ staff?.merchant.nameZh }}</span><LanguageSwitcher /><button type="button" class="m-desktop-logout" :aria-label="word('退出账号', 'Đăng xuất', 'Log out')" :title="word('退出账号', 'Đăng xuất', 'Log out')" @click="logout"><MerchantIcon name="logout" /><span>{{ word('退出账号', 'Đăng xuất', 'Log out') }}</span></button><RouterLink v-if="!homeStyleHeader" class="m-account-link" to="/more" :aria-label="word('账号与设置', 'Tài khoản', 'Account')"><MerchantIcon name="staff" /></RouterLink></div>
     </header>
     <main id="merchant-main" class="m-main" :class="analyticsHome ? 'm-main--analytics' : 'm-main--management'" tabindex="-1">
       <header v-if="managementChild" class="m-subpage-header">
@@ -59,7 +59,6 @@ onBeforeUnmount(() => {
         <strong>{{ managementTitle }}</strong>
         <span aria-hidden="true" />
       </header>
-      <RouterLink v-if="managementChild" class="m-back" to="/more"><MerchantIcon name="back" />{{ word('更多', 'Thêm', 'More') }}</RouterLink>
       <RouterView :key="route.path" />
     </main>
     <nav class="m-bottom-nav" :style="{ gridTemplateColumns: 'repeat(' + mobile.length + ', minmax(0, 1fr))' }" :aria-label="word('主导航', 'Điều hướng', 'Main navigation')">

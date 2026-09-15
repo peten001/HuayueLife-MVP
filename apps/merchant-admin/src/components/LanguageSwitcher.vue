@@ -11,7 +11,7 @@ function changeLocale(event: Event) {
 <template>
   <label class="language-switcher">
     <span>{{ t('language') }}</span>
-    <select :value="locale" @change="changeLocale">
+    <select :value="locale" :aria-label="t('language')" @change="changeLocale">
       <option value="zh">{{ t('chinese') }}</option>
       <option value="vi">{{ t('vietnamese') }}</option>
       <option value="en">{{ t('english') }}</option>

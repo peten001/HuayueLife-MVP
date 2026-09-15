@@ -1,11 +1,12 @@
 import { computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from '@/i18n';
-import { getMerchantStaff } from '@/utils/storage';
+import { clearMerchantStaff, clearToken, getMerchantStaff } from '@/utils/storage';
 import { canAccessMerchantFeature, type MerchantFeature } from '@/utils/merchant-capabilities';
 
 export function useMerchantNavigation() {
   const route = useRoute();
+  const router = useRouter();
   const { locale } = useI18n();
   const staff = computed(() => { void route.fullPath; return getMerchantStaff(); });
   const word = (zh: string, vi: string, en: string) => ({ zh, vi, en })[locale.value];
@@ -21,11 +22,16 @@ export function useMerchantNavigation() {
     { path: '/more', icon: 'more', label: word('更多', 'Thêm', 'More'), group: 'more', allowed: true },
   ].filter(item => item.allowed && (!item.feature || canAccessMerchantFeature(staff.value?.merchant, item.feature as MerchantFeature))));
   const mobile = computed(() => entries.value.filter(item => ['home', 'products', 'orders', 'settlements', 'more'].includes(item.icon)));
-  const desktop = computed(() => entries.value.filter(item => ['home', 'products', 'orders', 'settlements', 'tables', 'more'].includes(item.icon)));
+  const desktop = computed(() => entries.value.filter(item => item.path !== '/more'));
+  async function logout() {
+    clearToken();
+    clearMerchantStaff();
+    await router.replace('/login');
+  }
   function active(path: string) {
     if (path === '/dashboard') return ['/dashboard', '/business-analytics'].includes(route.path);
     if (path === '/more') return !['/dashboard', '/business-analytics', '/menu/products', '/orders', '/settlements', '/tables'].some(prefix => route.path === prefix || route.path.startsWith(`${prefix}/`));
     return route.path === path || route.path.startsWith(`${path}/`);
   }
-  return { staff, entries, mobile, desktop, active, word };
+  return { staff, entries, mobile, desktop, active, word, logout };
 }

@@ -174,7 +174,7 @@ try {
   await page.goto(base + '/more');
   await expect(page.locator('.mx-more-row')).toHaveCount(6);
   await expect(page.locator('.mx-more-logout')).toHaveCount(1);
-  for (const width of [1440, 390, 320]) { await page.setViewportSize({ width, height: 900 }); await noOverflow('minimal more page ' + width); }
+  for (const width of [768, 390, 320]) { await page.setViewportSize({ width, height: 900 }); await noOverflow('minimal mobile more page ' + width); }
   await page.screenshot({ path: output + '/phase2-more-mobile.png' });
   await page.locator('.mx-more-logout').click();
   await expect(page).toHaveURL(base + '/login');

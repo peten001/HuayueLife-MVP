@@ -123,6 +123,8 @@ html.merchant-workbench-root,
   font-weight: 560;
   letter-spacing: .04em;
 }
+.m-desktop-wordmark,
+.m-desktop-logout { display: none; }
 .m-desktop-nav {
   display: flex;
   min-width: 0;
@@ -163,12 +165,27 @@ html.merchant-workbench-root,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.m-topbar-tools .language-switcher { position: relative; }
 .m-topbar-tools .language-switcher span { display: none; }
+.m-topbar-tools .language-switcher::after {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--m-ink);
+  border-bottom: 1.5px solid var(--m-ink);
+  content: '';
+  pointer-events: none;
+  transform: translateY(-70%) rotate(45deg);
+}
 .m-topbar-tools .language-switcher select {
-  width: 78px;
-  min-width: 78px;
-  min-height: 36px;
-  padding: 6px 26px 6px 9px;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 116px;
+  min-width: 116px;
+  min-height: 38px;
+  padding: 6px 28px 6px 12px;
   border-color: var(--m-line);
   border-radius: 9px;
   color: var(--m-ink);
@@ -411,9 +428,56 @@ html.merchant-workbench-root,
   .m-store { display: none; }
   .m-main--management { padding: 24px 22px 48px; }
 }
-@media (min-width: 769px) and (max-width: 1050px) {
+/* Desktop exposes each management destination once; More remains mobile-only. */
+@media (min-width: 769px) {
+  .merchant-workbench { --m-topbar-h: 58px; }
+  .m-topbar { gap: 16px; padding-inline: 22px; background: var(--m-bg); }
+  .m-brand { gap: 9px; }
+  .m-brand img { width: 34px; height: 34px; border-radius: 50%; }
+  .m-brand .m-desktop-wordmark { display: block; font-size: 17px; white-space: nowrap; }
+  .m-brand .m-mobile-wordmark,
+  .m-topbar-tools .m-store,
+  .m-topbar-tools .m-account-link { display: none; }
+  .merchant-workbench .m-topbar-tools { display: flex; flex: 0 0 auto; gap: 8px; }
+  .m-desktop-nav { flex: 0 1 auto; gap: 0; }
+  .m-desktop-nav a { gap: 5px; padding-inline: 8px; }
+  .m-desktop-logout {
+    display: inline-flex;
+    min-height: 38px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 9px;
+    color: var(--m-danger);
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 620;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .m-desktop-logout svg { width: 17px; height: 17px; }
+  .m-topbar-tools .language-switcher select { background-color: transparent; }
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 769px) {
+  .m-desktop-logout:hover { background: var(--m-danger-bg); }
+}
+@media (min-width: 769px) and (max-width: 1240px) {
+  .m-topbar { gap: 10px; padding-inline: 14px; }
   .m-desktop-nav a svg { display: none; }
-  .m-desktop-nav a { font-size: 12px; }
+  .m-desktop-nav a { padding-inline: 6px; font-size: 12px; }
+}
+@media (min-width: 769px) and (max-width: 880px) {
+  .m-brand .m-desktop-wordmark { display: none; }
+}
+@media (min-width: 769px) and (max-width: 960px) {
+  .m-topbar { gap: 8px; padding-inline: 12px; }
+  .m-desktop-nav a { padding-inline: 5px; }
+  .m-desktop-logout { width: 36px; padding-inline: 0; }
+  .m-desktop-logout span { display: none; }
 }
 @media (max-width: 768px) {
   .merchant-workbench { --m-topbar-h: 56px; --m-bottom-nav-h: 68px; font-size: 14px; }

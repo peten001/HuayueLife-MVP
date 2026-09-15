@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMerchantNavigation } from '@/composables/useMerchantNavigation';
 import MerchantIcon from '@/components/MerchantIcon.vue';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
-import { clearMerchantStaff, clearToken } from '@/utils/storage';
-const { entries, word } = useMerchantNavigation();
+const { entries, staff, word, logout } = useMerchantNavigation();
 const router = useRouter();
 const managementEntries = computed(() => entries.value.filter((entry) =>
   ['/merchant/profile', '/tables', '/printing-center', '/staff'].includes(entry.path),
 ));
-async function logout() {
-  clearToken();
-  clearMerchantStaff();
-  await router.replace('/login');
+let desktopViewport: MediaQueryList | undefined;
+function leaveDesktopMore() {
+  if (desktopViewport?.matches) void router.replace(staff.value?.role === 'STAFF' ? '/merchant/profile' : '/dashboard');
 }
+onMounted(() => {
+  desktopViewport = window.matchMedia('(min-width: 769px)');
+  desktopViewport.addEventListener('change', leaveDesktopMore);
+  leaveDesktopMore();
+});
+onBeforeUnmount(() => desktopViewport?.removeEventListener('change', leaveDesktopMore));
 </script>
 <template>
   <section class="merchant-more-page mx-more">
