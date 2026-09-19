@@ -55,6 +55,7 @@ describe('OrdersService printing outbox', () => {
       {} as never,
       {} as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
       printJobs as never,
     );
 

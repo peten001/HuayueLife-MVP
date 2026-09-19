@@ -400,6 +400,7 @@ model Merchant {
   printRules              PrintRule[]
   printJobs               PrintJob[]
   printTriggerOutbox      PrintTriggerOutbox[]
+  cashierPushSubscriptions CashierPushSubscription[]
   printingRouting         MerchantPrintingRouting?
   printerCategoryBindings PrinterCategoryBinding[]
   merchantTerminals       MerchantTerminal[]
@@ -610,6 +611,7 @@ model MerchantStaff {
   roundedOrders      Order[]            @relation("OrderRoundingStaff")
   createdPrintJobs   PrintJob[]         @relation("PrintJobCreatedBy")
   printingAuditLogs  PrintingAuditLog[] @relation("PrintingAuditActor")
+  cashierPushSubscriptions CashierPushSubscription[]
 
   @@unique([merchantId, username])
   @@index([merchantId, status])
@@ -822,6 +824,8 @@ model Order {
   printLogs              PrintLog[]
   printJobs              PrintJob[]
   printTriggerOutbox     PrintTriggerOutbox[]
+  cashierPushDeliveries  CashierPushDelivery[]
+  cashierPushEvent       CashierPushEvent?
   review                 MerchantReview?
 
   @@unique([userId, idempotencyKey])
@@ -835,6 +839,61 @@ model Order {
   @@index([tableSessionId])
   @@index([discountAppliedByStaffId])
   @@map("orders")
+}
+
+model CashierPushSubscription {
+  id           BigInt   @id @default(autoincrement())
+  merchantId   BigInt   @map("merchant_id")
+  staffId      BigInt   @map("staff_id")
+  endpointHash String   @unique @map("endpoint_hash") @db.Char(64)
+  endpoint     String   @db.Text
+  p256dh       String   @db.VarChar(255)
+  auth         String   @db.VarChar(255)
+  locale       String   @default("zh") @db.VarChar(8)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  merchant     Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  staff        MerchantStaff          @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  deliveries   CashierPushDelivery[]
+
+  @@index([merchantId])
+  @@index([staffId])
+  @@map("cashier_push_subscriptions")
+}
+
+model CashierPushDelivery {
+  id             BigInt    @id @default(autoincrement())
+  orderId        BigInt    @map("order_id")
+  subscriptionId BigInt    @map("subscription_id")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at")
+  leaseUntil     DateTime? @map("lease_until")
+  sentAt         DateTime? @map("sent_at")
+  resolvedAt     DateTime? @map("resolved_at")
+  lastError      String?   @map("last_error") @db.VarChar(120)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  order          Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  subscription   CashierPushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, subscriptionId])
+  @@index([sentAt, resolvedAt, nextAttemptAt])
+  @@index([subscriptionId])
+  @@map("cashier_push_deliveries")
+}
+
+model CashierPushEvent {
+  id          BigInt    @id @default(autoincrement())
+  orderId     BigInt    @unique @map("order_id")
+  leaseUntil  DateTime? @map("lease_until")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, createdAt])
+  @@map("cashier_push_events")
 }
 
 model OrderItem {

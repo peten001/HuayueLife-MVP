@@ -34,6 +34,8 @@ import CashierMobileNavigation from '@/components/shell/CashierMobileNavigation.
 import OrientationNotice from '@/components/shell/OrientationNotice.vue';
 import ToastRegion from '@/components/common/ToastRegion.vue';
 import NewOrderInbox from '@/features/inbox/NewOrderInbox.vue';
+import { pendingFulfillmentAlerts, unseenFulfillmentOrderIds } from '@/features/inbox/fulfillment-alerts';
+import OrderPushControl from '@/features/inbox/OrderPushControl.vue';
 import {
   cashierPresentationWorkspace,
   canonicalCashierRouteName,
@@ -60,6 +62,10 @@ const { enabled: soundEnabled, supported: soundSupported, lastError: soundError 
 const { availability: printingAvailability } = storeToRefs(printingStore);
 const loggingOut = ref(false);
 const inboxOpen = ref(false);
+const autoAlertOpen = ref(false);
+const pushControl = ref<InstanceType<typeof OrderPushControl> | null>(null);
+const alertedFulfillmentOrderIds = new Set<string>();
+let fulfillmentReminderTimer: number | undefined;
 const refreshingTables = ref(false);
 const cashierReady = ref(false);
 const mobileLayout = useMediaQuery('(max-width: 899px)');
@@ -98,6 +104,8 @@ const disabledTableCount = computed(() => tableCards.value.filter((table) => tab
 const tableAttentionCount = computed(() => tableCards.value.filter((table) => Number(table.currentSession?.pendingOrderCount || 0) > 0).length);
 const pickupAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'PICKUP').length);
 const deliveryAttentionCount = computed(() => pendingOrders.value.filter((order) => order.orderType === 'DELIVERY').length);
+const pendingFulfillmentOrders = computed(() => pendingFulfillmentAlerts(pendingOrders.value));
+const inboxOrders = computed(() => autoAlertOpen.value ? pendingFulfillmentOrders.value : pendingOrders.value);
 const plannedHoursRange = computed(() =>
   formatBusinessHoursRange(profile.value?.businessHours, t('shell.nextDay')),
 );
@@ -169,6 +177,7 @@ async function logout() {
   loggingOut.value = true;
   try {
     livePolling.stop();
+    await pushControl.value?.disable();
     ordersStore.clear();
     tablesStore.clear();
     catalogStore.clear();
@@ -193,13 +202,56 @@ async function openNewOrders() {
     await openInboxOrder(onlyOrder);
     return;
   }
+  autoAlertOpen.value = false;
   inboxOpen.value = true;
 }
 
 async function openInboxOrder(order: MerchantOrder) {
   inboxOpen.value = false;
+  autoAlertOpen.value = false;
+  scheduleFulfillmentReminder();
   await router.push(resolveCashierPresentationLocation(mobileV2Preview.value, resolveOrderLocation(order)));
 }
+
+function scheduleFulfillmentReminder() {
+  if (fulfillmentReminderTimer !== undefined) window.clearTimeout(fulfillmentReminderTimer);
+  if (!pendingFulfillmentOrders.value.length) return;
+  fulfillmentReminderTimer = window.setTimeout(() => {
+    if (pendingFulfillmentOrders.value.length && !inboxOpen.value) {
+      autoAlertOpen.value = true;
+      inboxOpen.value = true;
+    }
+    scheduleFulfillmentReminder();
+  }, 90_000);
+}
+
+function closeInbox() {
+  inboxOpen.value = false;
+  autoAlertOpen.value = false;
+  scheduleFulfillmentReminder();
+}
+
+watch(
+  () => [session.value?.merchant.id, pendingFulfillmentOrders.value] as const,
+  ([merchantId, orders], previous) => {
+    if (merchantId !== previous?.[0]) alertedFulfillmentOrderIds.clear();
+    if (!orders.length && autoAlertOpen.value) {
+      inboxOpen.value = false;
+      autoAlertOpen.value = false;
+    }
+    const currentIds = new Set(orders.map((order) => order.id));
+    for (const id of alertedFulfillmentOrderIds) {
+      if (!currentIds.has(id)) alertedFulfillmentOrderIds.delete(id);
+    }
+    const hasUnseen = unseenFulfillmentOrderIds(orders, alertedFulfillmentOrderIds).length > 0;
+    for (const order of orders) alertedFulfillmentOrderIds.add(order.id);
+    if (hasUnseen) {
+      autoAlertOpen.value = true;
+      inboxOpen.value = true;
+    }
+    scheduleFulfillmentReminder();
+  },
+);
 
 async function recoverData() {
   await Promise.allSettled([
@@ -321,6 +373,7 @@ onBeforeUnmount(() => {
   catalogPrefetch.stop();
   document.removeEventListener('visibilitychange', catalogPrefetch.handleVisibilityChange);
   networkStore.stop();
+  if (fulfillmentReminderTimer !== undefined) window.clearTimeout(fulfillmentReminderTimer);
   if (printingStatusTimer !== undefined) window.clearInterval(printingStatusTimer);
 });
 </script>
@@ -428,7 +481,8 @@ onBeforeUnmount(() => {
       @logout="logout"
       />
     </template>
-    <NewOrderInbox :open="inboxOpen" :orders="pendingOrders" @close="inboxOpen = false" @select="openInboxOrder" />
+    <NewOrderInbox :open="inboxOpen" :orders="inboxOrders" :auto="autoAlertOpen" @close="closeInbox" @select="openInboxOrder" />
+    <OrderPushControl v-if="!demoMode" ref="pushControl" />
     <ToastRegion />
   </div>
 </template>

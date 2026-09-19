@@ -35,6 +35,18 @@ server {
         try_files $uri =404;
     }
 
+    # The push worker must be a real JS file, not the SPA fallback, and should
+    # be revalidated on each release so Home Screen apps receive updates.
+    location = /cashier-push-sw.js {
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), geolocation=(), microphone=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'" always;
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        try_files $uri =404;
+    }
+
     location /assets/ {
         add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options "nosniff" always;

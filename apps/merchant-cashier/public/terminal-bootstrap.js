@@ -109,6 +109,13 @@
     brandImage.src = '/yunqiao-cashier-splash.png';
     brandImage.alt = '';
     brand.appendChild(brandImage);
+    var brandSpinner = document.createElement('span');
+    brandSpinner.className = 'cashier-boot__brand-spinner';
+    brand.appendChild(brandSpinner);
+    var brandLoading = document.createElement('span');
+    brandLoading.className = 'cashier-boot__brand-loading';
+    brandLoading.textContent = 'Loading...';
+    brand.appendChild(brandLoading);
     var card = document.createElement('section');
     card.className = 'cashier-boot__card';
     var spinner = document.createElement('span');

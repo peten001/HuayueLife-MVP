@@ -24,13 +24,19 @@ describe('Chromium 83 cashier compatibility contract', () => {
   it('ships a pre-Vue recovery surface and opt-in terminal diagnostics', () => {
     const html = readProjectFile('index.html');
     const bootstrap = readProjectFile('public/terminal-bootstrap.js');
+    const bootstrapStyles = readProjectFile('public/terminal-bootstrap.css');
 
     expect(html).toContain('id="cashier-boot"');
     expect(html).toContain('/yunqiao-cashier-splash.png');
+    expect(html).toContain('class="cashier-boot__brand-spinner"');
     expect(html).toContain('/terminal-bootstrap.js');
     expect(html).toContain('id="cashier-boot-retry"');
     expect(bootstrap).toContain('terminalDebug=1');
     expect(bootstrap).toContain('/yunqiao-cashier-splash.png');
+    expect(bootstrap).toContain("brandSpinner.className = 'cashier-boot__brand-spinner'");
+    expect(bootstrapStyles).toContain('animation: cashier-brand-spin 0.9s linear infinite');
+    expect(bootstrapStyles).toContain('-webkit-mask-image: linear-gradient');
+    expect(bootstrapStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.cashier-boot__brand-spinner/);
     expect(bootstrap).toContain("window.addEventListener('error'");
     expect(bootstrap).toContain("window.addEventListener('unhandledrejection'");
     expect(bootstrap).toContain('Vue Mounted:');

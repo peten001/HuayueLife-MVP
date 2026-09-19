@@ -96,6 +96,8 @@
 .new-order-inbox__group h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: #284032; font-size: 14px; }
 .new-order-inbox__group h3 b { margin-left: auto; border-radius: 999px; padding: 2px 8px; color: #fff; background: #ce553f; }
 .new-order-inbox__group > button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-top: 1px solid #edf1ee; color: #405248; background: transparent; text-align: left; }
+.new-order-inbox__footer { margin-top: 18px; text-align: right; }
+.new-order-inbox__footer button { min-height: 42px; border: 1px solid #dce5df; border-radius: 12px; padding: 0 16px; color: #315b42; background: #fff; font: inherit; font-weight: 700; }
 
 /* Dine-in keeps the mature table geometry. Business detail is route-owned,
    but uses the same fixed centre/right proportions as the original shell. */

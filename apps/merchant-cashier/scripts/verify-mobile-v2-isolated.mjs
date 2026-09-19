@@ -181,6 +181,14 @@ async function enterDemo(page, mobileLabel) {
   await page.getByTestId('enter-demo').click();
   await page.waitForURL((url) => url.pathname === '/tables');
   await page.getByTestId('table-grid').waitFor();
+  const alert = page.getByTestId('new-order-inbox');
+  await alert.waitFor({ state: 'visible' });
+  assert.ok(await alert.getByText(/到店自取|商家配送/).count(), 'pending pickup or delivery must auto-open the alert');
+  if (mobileLabel) {
+    await page.screenshot({ path: `${outputDirectory}/mobile-${mobileLabel}-00-new-order-alert.png`, animations: 'disabled' });
+  }
+  await page.locator('.new-order-inbox__footer button').click();
+  await alert.waitFor({ state: 'hidden' });
 }
 
 async function verifyEarlyMobileV2Boot(browser) {

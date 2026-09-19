@@ -42,7 +42,7 @@ describe('Order void / isolated MySQL transactions and HTTP contracts', () => {
     { automaticCreationEnabled: () => false } as never);
   const reports = new MerchantReportsService(prisma, { renderDailyReport: async () => ({ imageUrl: 'fixture://not-sent' }) } as never, {} as never);
   const publicMerchants = new PublicMerchantsService(prisma, {} as never, {} as never);
-  const customer = new OrdersService(prisma, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+  const customer = new OrdersService(prisma, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { enqueue: jest.fn() } as never);
   const merchantIds: bigint[] = [];
   let merchantId: bigint;
   let staffId: bigint;

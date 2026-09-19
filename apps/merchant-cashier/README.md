@@ -142,7 +142,7 @@ corepack pnpm --filter @huayue-life/merchant-cashier screenshots:real-api
 - 正式部署应使用独立、经确认的 HTTPS Origin，并为 Vue Router 配置回退到 `index.html`。
 - JS、CSS、图标和提示音优先随收银台同源发布；API 和媒体资源使用 `api.huayueyouxuan.com`。
 - Android RC 通过集中 BuildConfig 加载同一 Web 收银台；正式包必须在独立收银台部署、HTTPS 和资源 Host 验证完成后写入精确 Origin。
-- 本项目不依赖 PWA 或 Service Worker。
+- 仅新自取/配送订单的后台通知使用 Service Worker 和 Web Push；它不拦截页面、API 或打印请求，也不做离线缓存。前台弹窗仍由订单轮询驱动。
 
 ## 当前能力边界
 

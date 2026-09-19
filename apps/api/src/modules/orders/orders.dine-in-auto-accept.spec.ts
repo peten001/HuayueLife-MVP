@@ -52,6 +52,7 @@ describe('OrdersService dine-in auto acceptance', () => {
       enqueueAutomaticProductionTriggersForOrderDelta: jest.fn().mockResolvedValue([{ id: 801n }]),
       processAutomaticTriggerIds: jest.fn().mockResolvedValue([]),
     };
+    const cashierPush = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new OrdersService(
       prisma as never,
       {} as never,
@@ -61,6 +62,7 @@ describe('OrdersService dine-in auto acceptance', () => {
       { legacyPrintingEnabled: jest.fn(() => false) } as never,
       { assertValid: jest.fn().mockResolvedValue({ staffRole: null }) } as never,
       {} as never,
+      cashierPush as never,
       printJobs as never,
     );
     Object.defineProperty(service, 'validateAndPrice', {
@@ -78,11 +80,11 @@ describe('OrdersService dine-in auto acceptance', () => {
         totalAmountVnd: 3000n,
       }),
     });
-    return { service, tx, prisma, printJobs, storedOrder };
+    return { service, tx, prisma, printJobs, cashierPush, storedOrder };
   }
 
   it('creates a QR dine-in order as ACCEPTED with SYSTEM audit and one print event', async () => {
-    const { service, tx, printJobs } = buildService('DINE_IN');
+    const { service, tx, printJobs, cashierPush } = buildService('DINE_IN');
 
     await service.create(5n, 'dinein_123456', { orderType: 'DINE_IN' } as never);
 
@@ -109,12 +111,13 @@ describe('OrdersService dine-in auto acceptance', () => {
     expect(tx.order.create).toHaveBeenCalledTimes(1);
     expect(printJobs.enqueueAutomaticProductionTriggersForOrderDelta).toHaveBeenCalledTimes(1);
     expect(printJobs.processAutomaticTriggerIds).toHaveBeenCalledWith([801n]);
+    expect(cashierPush.enqueue).not.toHaveBeenCalled();
   });
 
   it.each(['PICKUP', 'DELIVERY'] as const)(
     'keeps %s customer orders pending acceptance',
     async (orderType) => {
-      const { service, tx, printJobs } = buildService(orderType);
+      const { service, tx, printJobs, cashierPush } = buildService(orderType);
 
       await service.create(5n, `pickup_${orderType.toLowerCase()}`, { orderType } as never);
 
@@ -126,6 +129,7 @@ describe('OrdersService dine-in auto acceptance', () => {
       expect(tx.order.create.mock.calls[0]?.[0].data).not.toHaveProperty('acceptedAt');
       expect(printJobs.enqueueAutomaticTriggersForOrderTransition).not.toHaveBeenCalled();
       expect(printJobs.enqueueAutomaticProductionTriggersForOrderDelta).not.toHaveBeenCalled();
+      expect(cashierPush.enqueue).toHaveBeenCalledWith(tx, 91n);
     },
   );
 

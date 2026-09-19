@@ -49,6 +49,7 @@ describe('OrdersService legacy printing gate', () => {
         printingFlags as never,
         creatorInvariant as never,
         {} as never,
+        { enqueue: jest.fn() } as never,
       );
       Object.defineProperty(service, 'validateAndPrice', {
         value: jest.fn().mockResolvedValue({
@@ -133,6 +134,7 @@ describe('OrdersService legacy printing gate', () => {
       { legacyPrintingEnabled: jest.fn(() => true) } as never,
       { assertValid: jest.fn().mockResolvedValue({ staffRole: null }) } as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
     );
     Object.defineProperty(service, 'validateAndPrice', {
       value: jest.fn().mockResolvedValue({

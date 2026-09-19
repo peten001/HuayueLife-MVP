@@ -79,6 +79,7 @@ describe('pickup fulfillment fields', () => {
       {} as never,
       {} as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
     );
     const merchantService = new MerchantOrdersService(
       merchantPrisma as never,

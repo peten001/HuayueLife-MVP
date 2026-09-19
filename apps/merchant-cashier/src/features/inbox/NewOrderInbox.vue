@@ -7,6 +7,7 @@ import type { MerchantOrder, OrderType } from '@/types';
 const props = defineProps<{
   open: boolean;
   orders: MerchantOrder[];
+  auto?: boolean;
 }>();
 
 defineEmits<{
@@ -66,6 +67,9 @@ const groups = computed(() => groupDefinitions.map((group) => ({
           </button>
         </section>
       </div>
+      <footer v-if="auto" class="new-order-inbox__footer">
+        <button type="button" @click="$emit('close')">{{ t('orderPush.remindLater') }}</button>
+      </footer>
     </section>
   </div>
 </template>

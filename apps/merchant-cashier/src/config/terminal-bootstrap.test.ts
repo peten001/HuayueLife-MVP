@@ -50,4 +50,20 @@ describe('pre-Vue terminal bootstrap', () => {
     expect(document.getElementById('mounted-vue-app')).not.toBeNull();
     expect(document.getElementById('cashier-boot')).toBeNull();
   });
+
+  it('recreates the same visible loading indicator when rebuilding the recovery surface', () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    const bootstrap = readFileSync(
+      resolve(process.cwd(), 'public/terminal-bootstrap.js'),
+      'utf8',
+    );
+    window.eval(bootstrap);
+
+    window.__cashierBoot?.fail('BOOT_TIMEOUT');
+
+    expect(document.querySelector('.cashier-boot__brand-spinner')).not.toBeNull();
+    expect(document.querySelector('.cashier-boot__brand-loading')?.textContent).toBe(
+      'Loading...',
+    );
+  });
 });

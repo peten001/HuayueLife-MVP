@@ -4,5 +4,6 @@ export * from './error';
 export * from './merchant';
 export * from './order-chat';
 export * from './orders';
+export * from './order-push';
 export * from './printing';
 export * from './tables';

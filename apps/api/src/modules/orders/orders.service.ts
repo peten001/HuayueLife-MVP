@@ -13,6 +13,7 @@ import { distanceKm, isMerchantOpen } from '../../common/utils/merchant-hours';
 import { PrismaService } from '../../database/prisma.service';
 import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import { AppConfigService } from '../app-config/app-config.service';
+import { CashierPushService } from '../cashier-push/cashier-push.service';
 import { CartService } from '../cart/cart.service';
 import { PrintersService } from '../printers/printers.service';
 import { PrintingFeatureFlagsService } from '../printing/services/printing-feature-flags.service';
@@ -49,6 +50,7 @@ export class OrdersService {
     private readonly printingFlags: PrintingFeatureFlagsService,
     private readonly creatorInvariant: OrderCreatorInvariantService,
     private readonly pendingCancellation: PendingOrderCancellationService,
+    private readonly cashierPush: CashierPushService,
     @Optional()
     @Inject(PrintJobsService)
     private readonly printJobs?: PrintJobsService,
@@ -364,6 +366,10 @@ export class OrdersService {
             })
           : [];
         shouldAutoPrint = true;
+
+        if (order.orderType === 'PICKUP' || order.orderType === 'DELIVERY') {
+          await this.cashierPush.enqueue(tx, order.id);
+        }
 
         await tx.cart.update({
           where: { id: preview.cartId },
