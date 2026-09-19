@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Languages, LogOut, Printer, UserRound } from '@lucide/vue';
+import { BellRing, ChevronDown, Languages, LogOut, Printer, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n, type Locale } from '@/i18n';
 import PwaInstallBanner from '@/components/pwa/PwaInstallBanner.vue';
@@ -9,10 +9,12 @@ const props = defineProps<{
   role?: string;
   loggingOut?: boolean;
   mobileNavigation?: boolean;
+  pushSettingsAvailable?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   logout: [];
+  openPushSettings: [];
 }>();
 
 const { t, locale, setLocale } = useI18n();
@@ -76,6 +78,11 @@ function openPrinterDevices() {
   }
 }
 
+function openPushSettings() {
+  open.value = false;
+  emit('openPushSettings');
+}
+
 onMounted(() => {
   printerDevicesAvailable.value = Boolean(merchantTerminalBridge()) || isMerchantTerminalWebView();
   document.addEventListener('pointerdown', closeOnOutside);
@@ -129,6 +136,15 @@ onBeforeUnmount(() => {
       >
         <Printer :size="17" aria-hidden="true" />
         <span>{{ t('account.printerDevices') }}</span>
+      </button>
+      <button
+        v-if="pushSettingsAvailable"
+        type="button"
+        data-testid="push-settings-entry"
+        @click="openPushSettings"
+      >
+        <BellRing :size="17" aria-hidden="true" />
+        <span>{{ t('orderPush.settings') }}</span>
       </button>
       <button type="button" :disabled="loggingOut" @click="$emit('logout')">
         <LogOut :size="17" aria-hidden="true" />

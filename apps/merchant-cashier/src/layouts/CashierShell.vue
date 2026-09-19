@@ -172,6 +172,10 @@ const mobileOperationalFilterAriaLabel = computed(() => {
   return '';
 });
 
+function openPushSettings() {
+  pushControl.value?.openSettings();
+}
+
 async function logout() {
   if (loggingOut.value) return;
   loggingOut.value = true;
@@ -392,6 +396,7 @@ onBeforeUnmount(() => {
       :workspace="mobileV2Workspace"
       :role="identity.role"
       :logging-out="loggingOut"
+      :push-settings-available="!demoMode"
       :total-table-count="tableCards.length"
       :available-table-count="availableTableCount"
       :in-use-table-count="inUseTableCount"
@@ -409,6 +414,7 @@ onBeforeUnmount(() => {
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
       @logout="logout"
+      @open-push-settings="openPushSettings"
       @open-new-orders="openNewOrders"
       @select-table-filter="selectTableFilter"
       @select-operational-filter="selectMobileOperationalFilter"
@@ -426,6 +432,7 @@ onBeforeUnmount(() => {
       :demo-mode="demoMode"
       :role="identity.role"
       :logging-out="loggingOut"
+      :push-settings-available="!demoMode"
       :table-attention-count="tableAttentionCount"
       :pickup-attention-count="pickupAttentionCount"
       :delivery-attention-count="deliveryAttentionCount"
@@ -433,6 +440,7 @@ onBeforeUnmount(() => {
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
       @logout="logout"
+      @open-push-settings="openPushSettings"
       />
 
       <CashierHeader
@@ -475,10 +483,12 @@ onBeforeUnmount(() => {
       :merchant-name="identity.merchantName"
       :role="identity.role"
       :logging-out="loggingOut"
+      :push-settings-available="!demoMode"
       :show-tables="capabilities.tables"
       :show-pickup="capabilities.pickup"
       :show-delivery="capabilities.delivery"
       @logout="logout"
+      @open-push-settings="openPushSettings"
       />
     </template>
     <NewOrderInbox :open="inboxOpen" :orders="inboxOrders" :auto="autoAlertOpen" @close="closeInbox" @select="openInboxOrder" />

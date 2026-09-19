@@ -34,6 +34,7 @@ const props = withDefaults(defineProps<{
   showTables?: boolean;
   showPickup?: boolean;
   showDelivery?: boolean;
+  pushSettingsAvailable?: boolean;
 }>(), {
   operationalFilters: () => [],
   activeOperationalFilter: 'ALL',
@@ -45,6 +46,7 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{
   logout: [];
+  openPushSettings: [];
   openNewOrders: [];
   selectTableFilter: [filter: 'ALL' | 'AVAILABLE' | 'IN_USE' | 'DISABLED'];
   selectOperationalFilter: [filter: string];
@@ -174,8 +176,10 @@ onBeforeUnmount(() => {
         :show-tables="showTables"
         :show-pickup="showPickup"
         :show-delivery="showDelivery"
+        :push-settings-available="pushSettingsAvailable"
         @close="drawerOpen = false"
         @logout="$emit('logout')"
+        @open-push-settings="$emit('openPushSettings')"
       />
     </Transition>
   </div>

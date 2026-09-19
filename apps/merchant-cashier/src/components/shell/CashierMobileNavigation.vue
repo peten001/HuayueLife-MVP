@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   merchantName?: string;
   role?: string;
   loggingOut?: boolean;
+  pushSettingsAvailable?: boolean;
 }>(), {
   showTables: true,
   showPickup: true,
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{
   logout: [];
+  openPushSettings: [];
 }>();
 
 const { t } = useI18n();
@@ -47,7 +49,9 @@ const routes = computed(() => allRoutes.filter((item) => {
       :merchant-name="merchantName"
       :role="role"
       :logging-out="loggingOut"
+      :push-settings-available="pushSettingsAvailable"
       @logout="$emit('logout')"
+      @open-push-settings="$emit('openPushSettings')"
     />
   </nav>
 </template>

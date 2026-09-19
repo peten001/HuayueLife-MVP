@@ -342,6 +342,7 @@ body.cashier-mobile-v2-preview-active #app {
   padding: 12px 10px;
 }
 .mobile-v2-drawer__navigation a,
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings,
 .mobile-v2-drawer__footer button {
   display: grid;
   width: 100%;
@@ -362,12 +363,17 @@ body.cashier-mobile-v2-preview-active #app {
   cursor: pointer;
 }
 .mobile-v2-drawer__navigation a + a { margin-top: 4px; }
-.mobile-v2-drawer__navigation a > svg:last-child { color: var(--mobile-v2-line-strong); }
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings { margin-top: 4px; }
+.mobile-v2-drawer__navigation a > svg:last-child,
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings > svg:last-child { color: var(--mobile-v2-line-strong); }
 .mobile-v2-drawer__navigation a:hover,
 .mobile-v2-drawer__navigation a:focus-visible,
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings:hover,
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings:focus-visible,
 .mobile-v2-drawer__navigation a.router-link-active { color: var(--mobile-v2-green-strong); background: var(--mobile-v2-green-soft); }
 .mobile-v2-drawer__navigation a.router-link-active > svg:last-child { color: var(--mobile-v2-green); }
 .mobile-v2-drawer__navigation a:focus-visible,
+.mobile-v2-drawer__navigation .mobile-v2-drawer__push-settings:focus-visible,
 .mobile-v2-drawer__close:focus-visible,
 .mobile-v2-drawer__language button:focus-visible,
 .mobile-v2-drawer__footer button:focus-visible { outline: 3px solid rgb(36 107 69 / 24%); outline-offset: -2px; }

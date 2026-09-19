@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n';
 const { locale, t } = useI18n();
 const push = useOrderPush(locale);
 const dismissed = ref(false);
+let openedManually = false;
 const messageKey = computed(() => ({
   'install-required': 'orderPush.installRequired',
   denied: 'orderPush.denied',
@@ -14,14 +15,24 @@ const messageKey = computed(() => ({
   error: 'orderPush.error',
 } as Record<string, string>)[push.state.value] || 'orderPush.description');
 
-onMounted(() => void push.refresh());
+onMounted(async () => {
+  await push.refresh();
+  if (push.state.value === 'enabled' && !openedManually) dismissed.value = true;
+});
 
 async function turnOn() {
   await push.enable();
-  if (push.state.value === 'enabled') dismissed.value = false;
+  if (push.state.value === 'enabled') {
+    dismissed.value = true;
+  }
 }
 
-defineExpose({ disable: push.disable });
+function openSettings() {
+  openedManually = true;
+  dismissed.value = false;
+}
+
+defineExpose({ disable: push.disable, openSettings });
 </script>
 
 <template>
@@ -51,7 +62,6 @@ defineExpose({ disable: push.disable });
       @click="push.disable"
     >{{ t('orderPush.disable') }}</button>
     <button
-      v-if="push.state.value !== 'enabled'"
       class="order-push-control__close"
       type="button"
       :aria-label="t('common.close')"
@@ -77,7 +87,7 @@ defineExpose({ disable: push.disable });
   background: #f6fff8;
   box-shadow: 0 14px 36px rgb(7 38 22 / 17%);
 }
-.order-push-control--enabled { width: auto; align-items: center; padding: 9px 12px; }
+.order-push-control--enabled { align-items: center; padding: 9px 12px; }
 .order-push-control__copy { display: grid; flex: 1; gap: 3px; font-size: 12px; line-height: 1.4; }
 .order-push-control__copy strong { font-size: 13px; }
 .order-push-control__action,
@@ -95,8 +105,20 @@ defineExpose({ disable: push.disable });
   font-weight: 700;
 }
 .order-push-control__secondary { color: #296143; background: #e7f5eb; }
-.order-push-control__close { flex: none; border: 0; color: #557363; background: transparent; }
+.order-push-control__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  color: #557363;
+  background: transparent;
+}
 @media (max-width: 899px) {
   .order-push-control { top: calc(72px + env(safe-area-inset-top)); right: 10px; width: min(350px, calc(100vw - 20px)); }
+  .order-push-control__close { width: 44px; height: 44px; }
 }
 </style>

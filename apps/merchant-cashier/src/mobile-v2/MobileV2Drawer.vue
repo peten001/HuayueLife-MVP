@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BellRing,
   Bike,
   Check,
   ChevronDown,
@@ -23,6 +24,7 @@ const props = withDefaults(defineProps<{
   showTables?: boolean;
   showPickup?: boolean;
   showDelivery?: boolean;
+  pushSettingsAvailable?: boolean;
 }>(), {
   showTables: true,
   showPickup: true,
@@ -32,6 +34,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   close: [];
   logout: [];
+  openPushSettings: [];
 }>();
 
 const { t, locale, localeName, setLocale } = useI18n();
@@ -72,6 +75,11 @@ function selectLanguage(nextLocale: Locale) {
 function logout() {
   emit('close');
   emit('logout');
+}
+
+function openPushSettings() {
+  emit('close');
+  emit('openPushSettings');
 }
 
 function destinationLocation(name: string) {
@@ -126,6 +134,18 @@ onBeforeUnmount(() => {
           <span>{{ destination.label }}</span>
           <ChevronRight :size="18" aria-hidden="true" />
         </RouterLink>
+
+        <button
+          v-if="pushSettingsAvailable"
+          type="button"
+          class="mobile-v2-drawer__push-settings"
+          data-testid="mobile-push-settings-entry"
+          @click="openPushSettings"
+        >
+          <BellRing :size="22" :stroke-width="1.9" aria-hidden="true" />
+          <span>{{ t('orderPush.settings') }}</span>
+          <ChevronRight :size="18" aria-hidden="true" />
+        </button>
 
         <section class="mobile-v2-drawer__language">
           <button

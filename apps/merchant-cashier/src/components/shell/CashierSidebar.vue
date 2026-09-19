@@ -11,6 +11,7 @@ defineProps<{
   demoMode?: boolean;
   role?: string;
   loggingOut?: boolean;
+  pushSettingsAvailable?: boolean;
   tableAttentionCount: number;
   pickupAttentionCount: number;
   deliveryAttentionCount: number;
@@ -21,6 +22,7 @@ defineProps<{
 
 defineEmits<{
   logout: [];
+  openPushSettings: [];
 }>();
 </script>
 
@@ -48,7 +50,9 @@ defineEmits<{
       :merchant-name="merchantName"
       :role="role"
       :logging-out="loggingOut"
+      :push-settings-available="pushSettingsAvailable"
       @logout="$emit('logout')"
+      @open-push-settings="$emit('openPushSettings')"
     />
   </aside>
 </template>

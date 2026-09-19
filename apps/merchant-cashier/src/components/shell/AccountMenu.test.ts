@@ -54,4 +54,15 @@ describe('AccountMenu merchant role identity', () => {
     );
     expect(warning.mock.calls.flat().join(' ')).not.toContain('UNEXPECTED_ROLE');
   });
+
+  it('opens notification settings from the account menu', async () => {
+    const wrapper = mount(AccountMenu, {
+      props: { role: 'STAFF', pushSettingsAvailable: true },
+    });
+    await wrapper.get('[data-testid="employee-menu-trigger"]').trigger('click');
+    await wrapper.get('[data-testid="push-settings-entry"]').trigger('click');
+
+    expect(wrapper.emitted('openPushSettings')).toHaveLength(1);
+    expect(wrapper.find('[data-testid="employee-menu-popover"]').exists()).toBe(false);
+  });
 });
