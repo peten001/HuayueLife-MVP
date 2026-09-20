@@ -1243,7 +1243,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 500rpx;
+  height: 460rpx;
   border-radius: 28rpx;
 }
 
@@ -1374,7 +1374,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero {
-  height: 500rpx;
+  height: 460rpx;
   overflow: hidden;
   border-radius: 28rpx;
   background: var(--brand-soft);
@@ -1383,7 +1383,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero-image {
   width: 100%;
-  height: 500rpx;
+  height: 460rpx;
   display: block;
 }
 
@@ -2010,7 +2010,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 500rpx;
+  height: 460rpx;
   border-radius: 22rpx;
 }
 
@@ -2034,7 +2034,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero,
 .hero-image {
-  height: 500rpx;
+  height: 460rpx;
 }
 
 .hero {
