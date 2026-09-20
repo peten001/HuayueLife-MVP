@@ -27,6 +27,7 @@ import { isFavorite, setFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { wgs84ToGcj02 } from '@/utils/coordinates';
 import { resolveMediaUrl } from '@/utils/media';
+import { isCurrentWechatTimelinePreview } from '@/utils/wechat-entry-mode';
 import { createMerchantFavoriteGate } from '@/utils/merchant-favorite-gate';
 import type { OneTapLoginUiOutcome } from '@/utils/one-tap-login-ui';
 import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
@@ -511,6 +512,10 @@ function handleToggleFavorite() {
 async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
   if (!merchant.value) return;
   if (!appConfig.platformOrderingEnabled) return;
+  if (isCurrentWechatTimelinePreview()) {
+    uni.showToast({ title: t('timelinePreviewOrderingHint'), icon: 'none' });
+    return;
+  }
   const merchantId = merchant.value.id;
   const url = `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}`;
   const nextContext = {
@@ -1238,7 +1243,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 420rpx;
+  height: 500rpx;
   border-radius: 28rpx;
 }
 
@@ -1369,7 +1374,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .hero {
-  height: 420rpx;
+  height: 500rpx;
   overflow: hidden;
   border-radius: 28rpx;
   background: var(--brand-soft);
@@ -1378,7 +1383,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero-image {
   width: 100%;
-  height: 420rpx;
+  height: 500rpx;
   display: block;
 }
 
@@ -2005,7 +2010,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 420rpx;
+  height: 500rpx;
   border-radius: 22rpx;
 }
 
@@ -2029,7 +2034,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 
 .hero,
 .hero-image {
-  height: 420rpx;
+  height: 500rpx;
 }
 
 .hero {
