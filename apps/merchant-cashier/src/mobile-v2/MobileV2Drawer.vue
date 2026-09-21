@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
           @click="openPushSettings"
         >
           <BellRing :size="22" :stroke-width="1.9" aria-hidden="true" />
-          <span>{{ t('orderPush.settings') }}</span>
+          <span>{{ t('orderPush.mobileSettings') }}</span>
           <ChevronRight :size="18" aria-hidden="true" />
         </button>
 

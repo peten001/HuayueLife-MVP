@@ -492,7 +492,7 @@ onBeforeUnmount(() => {
       />
     </template>
     <NewOrderInbox :open="inboxOpen" :orders="inboxOrders" :auto="autoAlertOpen" @close="closeInbox" @select="openInboxOrder" />
-    <OrderPushControl v-if="!demoMode" ref="pushControl" />
+    <OrderPushControl v-if="!demoMode" ref="pushControl" :mobile="mobileV2Presentation" />
     <ToastRegion />
   </div>
 </template>

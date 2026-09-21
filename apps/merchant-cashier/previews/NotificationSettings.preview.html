@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mobile notification settings states</title>
+  <!-- finesse · component preview: notification settings switch · register=product -->
+  <style>
+    :root {
+      --bg: #f3f6f1;
+      --surface: #fbfcfa;
+      --surface-raised: #f8faf7;
+      --line: #d7dfd7;
+      --line-strong: #b8c6bb;
+      --text: #172a1f;
+      --muted: #5f7066;
+      --green: #24764a;
+      --red: #ad443b;
+      --red-soft: #f8e7e4;
+      --amber: #96601f;
+      --amber-soft: #f8edda;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; padding: 24px 16px; background: var(--bg); }
+    main { width: min(520px, 100%); margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    main > p { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+    section { display: grid; gap: 10px; }
+    article { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; }
+    article > span { color: var(--muted); font-size: 12px; }
+    .row { display: grid; min-height: 72px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); }
+    .copy { display: grid; gap: 4px; }
+    .copy strong { font-size: 15px; }
+    .copy small { color: var(--muted); line-height: 1.35; }
+    button { position: relative; width: 52px; height: 32px; padding: 3px; border: 1px solid transparent; border-radius: 999px; outline: 2px solid transparent; outline-offset: 2px; background: var(--line-strong); cursor: pointer; }
+    button i { display: block; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); box-shadow: 0 5px 18px rgb(28 54 38 / 12%); }
+    button.is-on { background: var(--green); }
+    button.is-on i { transform: translateX(20px); }
+    button.is-hover { filter: brightness(.94); }
+    button.is-focus { outline: 3px solid rgb(36 118 74 / 28%); }
+    button.is-active i { transform: scale(.92); }
+    button.is-loading i { animation: pulse 800ms ease-in-out infinite alternate; }
+    button.is-error { background: var(--red); }
+    button:disabled { opacity: .52; cursor: not-allowed; }
+    .row.is-error { border-color: var(--red); background: var(--red-soft); }
+    .row.is-warning { border-color: var(--amber); background: var(--amber-soft); }
+    @keyframes pulse { from { opacity: .5; } to { opacity: 1; } }
+    @media (max-width: 380px) {
+      body { padding-inline: 12px; }
+      article { grid-template-columns: 64px minmax(0, 1fr); }
+    }
+    @media (prefers-reduced-motion: reduce) { button.is-loading i { animation: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>手机版通知设置</h1>
+    <p>仅用于开发验收，不进入生产页面。</p>
+    <section aria-label="通知开关八种状态">
+      <article><span>default</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>到店自取与商家配送通知已关闭</small></div><button aria-label="关闭"><i></i></button></div></article>
+      <article><span>hover</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>可点击开启</small></div><button class="is-hover" aria-label="悬停"><i></i></button></div></article>
+      <article><span>focus</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>键盘焦点清晰可见</small></div><button class="is-focus" aria-label="焦点"><i></i></button></div></article>
+      <article><span>active</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>按下时缩小圆点</small></div><button class="is-active" aria-label="按下"><i></i></button></div></article>
+      <article><span>disabled</span><div class="row is-warning"><div class="copy"><strong>新订单通知</strong><small>请先添加到主屏幕</small></div><button disabled aria-label="不可用"><i></i></button></div></article>
+      <article><span>loading</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>正在设置…</small></div><button class="is-loading" disabled aria-label="设置中"><i></i></button></div></article>
+      <article><span>error</span><div class="row is-error"><div class="copy"><strong>新订单通知</strong><small>设置失败，请检查网络后重试</small></div><button class="is-error" aria-label="重试"><i></i></button></div></article>
+      <article><span>success</span><div class="row"><div class="copy"><strong>新订单通知</strong><small>到店自取与商家配送通知已开启</small></div><button class="is-on" aria-label="开启"><i></i></button></div></article>
+    </section>
+  </main>
+</body>
+</html>

@@ -14,6 +14,7 @@ describe('MobileV2Drawer notification settings', () => {
       global: { stubs: { RouterLink: true } },
     });
 
+    expect(wrapper.get('[data-testid="mobile-push-settings-entry"]').text()).toBe('通知设置');
     await wrapper.get('[data-testid="mobile-push-settings-entry"]').trigger('click');
     expect(wrapper.emitted('close')).toHaveLength(1);
     expect(wrapper.emitted('openPushSettings')).toHaveLength(1);

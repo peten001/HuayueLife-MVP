@@ -66,6 +66,7 @@ describe('isolated Mobile V2 architecture', () => {
     expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(4);
     expect(shell).toContain("useMediaQuery('(max-width: 899px)')");
     expect(shell).toContain('mobileLayout.value && route.meta.mobileV2Enabled === true');
+    expect(shell).toContain(':mobile="mobileV2Presentation"');
     expect(shell).toContain('<template v-else>');
   });
 });
