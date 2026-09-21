@@ -704,67 +704,89 @@ function goHome() {
     </view>
     <template v-else>
     <view v-if="context" class="context">
-      <text class="merchant">{{ context.merchantName }}</text>
-      <text>{{ orderTypeLabel }}</text>
-      <text v-if="context.orderType === 'DINE_IN'">{{ t('tableLabel', { table: context.tableName || context.tableNo || '' }) }}</text>
+      <view class="context-main">
+        <text class="merchant">{{ context.merchantName }}</text>
+        <text v-if="context.orderType === 'DINE_IN'" class="context-table">
+          {{ t('tableLabel', { table: context.tableName || context.tableNo || '' }) }}
+        </text>
+      </view>
+      <text class="order-type">{{ orderTypeLabel }}</text>
     </view>
 
-    <view v-if="context?.orderType !== 'DINE_IN'" class="card form">
-      <label>
-        {{ t('contact') }}
-        <input
-          v-model="form.contactName"
-          class="contact-input"
-          :placeholder="t('contactPlaceholder')"
-          placeholder-style="color: #999999;"
-        />
-      </label>
-      <label>
-        {{ t('contactPhone') }}
-        <input
-          v-model="form.contactPhone"
-          class="contact-input"
-          type="text"
-          :placeholder="t('phonePlaceholder')"
-          placeholder-style="color: #999999;"
-          maxlength="16"
-        />
-      </label>
+    <view v-if="context?.orderType !== 'DINE_IN'" class="card form contact-card">
+      <view class="contact-grid">
+        <label class="contact-field contact-field-name">
+          {{ t('contact') }}
+          <input
+            v-model="form.contactName"
+            class="contact-input"
+            :placeholder="t('contactPlaceholder')"
+            placeholder-style="color: #999999;"
+          />
+        </label>
+        <label class="contact-field contact-field-phone">
+          {{ t('contactPhone') }}
+          <input
+            v-model="form.contactPhone"
+            class="contact-input"
+            type="text"
+            :placeholder="t('phonePlaceholder')"
+            placeholder-style="color: #999999;"
+            maxlength="16"
+          />
+        </label>
+      </view>
       <view v-if="contactCacheHint" class="hint">
         <text class="hint-label">{{ t('contactCacheHint') }}</text>
       </view>
     </view>
 
-    <view v-if="context?.orderType === 'DELIVERY'" class="card form">
-      <label>
-        {{ t('deliveryAddress') }}
-        <textarea
-          v-model="form.deliveryAddress"
-          :placeholder="checkoutText('请输入配送地址，如园区/公司/宿舍/门牌', 'Nhập địa chỉ giao hàng, ví dụ khu công nghiệp / công ty / ký túc xá / số nhà', 'Enter the delivery address, such as campus / company / dorm / street number')"
-          rows="3"
-        />
-      </label>
-      <button class="location" @click="chooseLocation">
-        <text class="button-label">
-          {{ checkoutText('选择配送位置', 'Chọn vị trí giao hàng', 'Choose delivery location') }}
-        </text>
-      </button>
-      <view class="hint">
+    <view v-if="context?.orderType === 'DELIVERY'" class="card form delivery-card">
+      <view class="section-heading">
+        <text class="section-title">{{ t('deliveryAddress') }}</text>
+        <button class="location" @click="chooseLocation">
+          <image
+            class="location-icon"
+            src="/static/merchant-detail-icons/map-pin-green.png"
+            mode="aspectFit"
+          />
+          <text class="location-label">
+            {{ checkoutText('地图选位置', 'Chọn trên bản đồ', 'Choose on map') }}
+          </text>
+        </button>
+      </view>
+      <textarea
+        v-model="form.deliveryAddress"
+        class="address-input"
+        :placeholder="checkoutText('请输入配送地址，如园区/公司/宿舍/门牌', 'Nhập địa chỉ giao hàng, ví dụ khu công nghiệp / công ty / ký túc xá / số nhà', 'Enter the delivery address, such as campus / company / dorm / street number')"
+        rows="2"
+      />
+      <view class="hint location-hint">
         <text class="hint-label">
           {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
         </text>
       </view>
     </view>
 
-    <view class="card form">
-      <label>{{ t('orderRemark') }}<textarea v-model="form.customerRemark" :placeholder="t('orderRemarkPlaceholder')" rows="3" /></label>
+    <view class="card form remark-card">
+      <label>
+        {{ t('orderRemark') }}
+        <textarea
+          v-model="form.customerRemark"
+          class="remark-input"
+          :placeholder="t('orderRemarkPlaceholder')"
+          rows="2"
+        />
+      </label>
     </view>
 
     <view v-if="preview" class="card totals">
-      <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="context?.orderType === 'DELIVERY'">
-        {{ t('deliveryFee') }}：{{ deliveryFeeDisplayText }}
-      </text>
+      <view class="totals-meta">
+        <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
+        <text v-if="context?.orderType === 'DELIVERY'">
+          {{ t('deliveryFee') }}：{{ deliveryFeeDisplayText }}
+        </text>
+      </view>
       <text class="total">
         {{ t('totalAmount') }}：{{ totalAmountDisplayText }}
       </text>
@@ -774,8 +796,10 @@ function goHome() {
     </view>
 
     <view v-else-if="cartStore.cart" class="card totals">
-      <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
-      <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：{{ checkoutText('商家确认', 'Cửa hàng xác nhận', 'Merchant confirms') }}</text>
+      <view class="totals-meta">
+        <text>{{ t('subtotal') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
+        <text v-if="context?.orderType === 'DELIVERY'">{{ t('deliveryFee') }}：{{ checkoutText('商家确认', 'Cửa hàng xác nhận', 'Merchant confirms') }}</text>
+      </view>
       <text class="total">{{ t('totalAmount') }}：{{ Number(subtotalAmountVnd).toLocaleString() }} ₫</text>
     </view>
 
@@ -795,7 +819,7 @@ function goHome() {
 <style scoped>
 .page {
   min-height: 100vh;
-  padding: 24rpx 24rpx calc(60rpx + env(safe-area-inset-bottom));
+  padding: 20rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
   color: #1f2d24;
   background: #f6faf7;
   box-sizing: border-box;
@@ -837,9 +861,9 @@ function goHome() {
 
 .context,
 .card {
-  padding: 30rpx;
-  margin-bottom: 20rpx;
-  border-radius: 28rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  border-radius: 24rpx;
   background: #fff;
 }
 
@@ -848,54 +872,113 @@ function goHome() {
 }
 
 .context {
-  display: grid;
-  gap: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
   color: rgb(255 255 255 / 86%);
   background: linear-gradient(135deg, #43a047, #2e7d32);
   box-shadow: 0 14rpx 36rpx rgb(46 125 50 / 15%);
 }
 
+.context-main {
+  min-width: 0;
+  display: grid;
+  gap: 4rpx;
+}
+
 .merchant {
+  overflow: hidden;
   color: #fff;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-table {
+  font-size: 23rpx;
+}
+
+.order-type {
+  flex: none;
+  padding: 10rpx 18rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.26);
+  border-radius: 999rpx;
+  color: #fff;
+  background: rgb(255 255 255 / 13%);
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .form {
   display: grid;
-  gap: 28rpx;
+  gap: 20rpx;
+}
+
+.contact-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+}
+
+.contact-field {
+  min-width: 0;
+}
+
+.contact-field-name {
+  flex: 0.82;
+}
+
+.contact-field-phone {
+  flex: 1.18;
 }
 
 label {
   display: grid;
-  gap: 14rpx;
+  gap: 10rpx;
   color: #1f2d24;
-  font-size: 29rpx;
+  font-size: 27rpx;
   font-weight: 700;
 }
 
 textarea {
+  width: 100%;
   padding: 19rpx 20rpx;
   border: 2rpx solid #eeeeee;
   border-radius: 18rpx;
   color: #1f2d24;
   background: #f8fbf8;
+  font-size: 28rpx;
   font-weight: 400;
+  line-height: 1.45;
   box-sizing: border-box;
+}
+
+.address-input {
+  height: 148rpx;
+  min-height: 148rpx;
+}
+
+.remark-input {
+  height: 116rpx;
+  min-height: 116rpx;
 }
 
 .contact-input {
   width: 100%;
-  height: 92rpx;
-  min-height: 92rpx;
-  padding: 0 24rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 0 20rpx;
   border: 1rpx solid #eeeeee;
   border-radius: 18rpx;
   color: #1f2d24;
   background: #fff;
-  font-size: 31rpx;
+  font-size: 29rpx;
   font-weight: 400;
-  line-height: 92rpx;
+  line-height: 88rpx;
   box-sizing: border-box;
 }
 
@@ -907,25 +990,65 @@ textarea:focus {
 .location,
 .secondary {
   margin: 0;
-  border: 0;
+  min-height: 88rpx;
+  border: 1rpx solid #cfe8d5;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 24rpx;
-  border-radius: 20rpx;
+  gap: 8rpx;
+  padding: 0 20rpx;
+  border-radius: 18rpx;
   color: #2e7d32;
   background: #eaf7ee;
-  font-size: 23rpx;
+  font-size: 24rpx;
   font-weight: 700;
   line-height: normal;
   box-sizing: border-box;
   text-align: center;
 }
 
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.section-title {
+  color: #1f2d24;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.location {
+  flex: none;
+}
+
+.location-icon {
+  width: 30rpx;
+  height: 30rpx;
+  flex: none;
+}
+
+.location-label {
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .location::after,
 .secondary::after,
 .submit::after {
   border: 0;
+}
+
+.location:active {
+  background: #dcefe1;
+  transform: scale(0.985);
+}
+
+.submit:active:not([disabled]) {
+  background: #246b2a;
+  transform: scale(0.992);
 }
 
 .hint,
@@ -940,17 +1063,42 @@ textarea:focus {
   text-align: center;
 }
 
+.location-hint {
+  justify-content: flex-start;
+  padding: 0 2rpx;
+  text-align: left;
+}
+
+.location-hint .hint-label {
+  text-align: left;
+}
+
 .totals {
-  display: grid;
-  gap: 14rpx;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20rpx;
   color: #5f6b62;
   font-size: 24rpx;
 }
 
+.totals-meta {
+  min-width: 0;
+  display: grid;
+  gap: 8rpx;
+}
+
 .total {
+  flex: none;
   color: #2e7d32;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.totals .warning {
+  width: 100%;
 }
 
 .warning,
@@ -970,7 +1118,7 @@ textarea:focus {
 .submit {
   width: 100%;
   min-height: 92rpx;
-  margin-top: 20rpx;
+  margin-top: 4rpx;
   border: 0;
   display: flex;
   align-items: center;
@@ -992,7 +1140,7 @@ textarea:focus {
 }
 
 .offline {
-  margin-top: 16rpx;
+  margin-top: 10rpx;
 }
 
 .button-label,
@@ -1003,5 +1151,16 @@ textarea:focus {
   width: 100%;
   line-height: 1.4;
   text-align: center;
+}
+
+@media (max-width: 340px) {
+  .contact-grid {
+    display: grid;
+  }
+
+  .totals {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>
