@@ -16,6 +16,8 @@ vi.mock('./http', () => ({
 import {
   listMerchantOrderChatMessages,
   sendMerchantOrderChatMessage,
+  sendMerchantOrderChatImage,
+  sendMerchantOrderChatLocation,
 } from './order-chat';
 import { resetDemoRepository } from '@/fixtures/repository';
 
@@ -41,6 +43,25 @@ describe('cashier order chat API routing', () => {
       '/merchant/orders/order%20%2F%201/chat/messages',
       expect.objectContaining({ query: { cursor: '42', limit: 50 } }),
     );
+  });
+
+  it('sends location coordinates and image bytes through the merchant chat endpoints', async () => {
+    mocks.requestApi.mockResolvedValue({ id: 'message-1' });
+    await sendMerchantOrderChatLocation('order / 1', 21.1862, 106.0763);
+    expect(mocks.requestApi).toHaveBeenCalledWith(
+      '/merchant/orders/order%20%2F%201/chat/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: { messageType: 'LOCATION', latitude: 21.1862, longitude: 106.0763 },
+      }),
+    );
+
+    const file = new File(['image'], 'test.jpg', { type: 'image/jpeg' });
+    await sendMerchantOrderChatImage('order / 1', file);
+    const imageCall = mocks.requestApi.mock.calls[1];
+    expect(imageCall?.[0]).toBe('/merchant/orders/order%20%2F%201/chat/images');
+    expect(imageCall?.[1]?.body).toBeInstanceOf(FormData);
+    expect((imageCall?.[1]?.body as FormData).get('file')).toBe(file);
   });
 
   it('keeps demo messages inside the demo branch without calling the real API', async () => {

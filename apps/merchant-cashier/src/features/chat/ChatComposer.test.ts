@@ -27,4 +27,13 @@ describe('ChatComposer focus controls', () => {
     await wrapper.get('form').trigger('submit');
     expect(wrapper.emitted('send')).toBeUndefined();
   });
+
+  it('offers image and location actions without submitting an empty text message', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const buttons = wrapper.findAll('button[type="button"]');
+    expect(buttons).toHaveLength(2);
+    await buttons[1]?.trigger('click');
+    expect(wrapper.emitted('location')).toHaveLength(1);
+    expect(wrapper.emitted('send')).toBeUndefined();
+  });
 });

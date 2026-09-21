@@ -39,8 +39,12 @@ export async function requestApi<T>(path: string, options: RequestOptions = {}):
     }
     let body: BodyInit | undefined;
     if (requestBody !== undefined) {
-      headers.set('Content-Type', 'application/json');
-      body = JSON.stringify(requestBody);
+      if (requestBody instanceof FormData) {
+        body = requestBody;
+      } else {
+        headers.set('Content-Type', 'application/json');
+        body = JSON.stringify(requestBody);
+      }
     }
 
     const response = await fetch(buildUrl(path, query), {

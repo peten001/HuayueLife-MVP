@@ -12,7 +12,7 @@
     "usingComponents": true,
     "permission": {
       "scope.userLocation": {
-        "desc": "用于展示北宁、北江附近的本地商家与服务"
+        "desc": "用于展示附近商家，以及由您主动在订单聊天中分享当前位置"
       }
     },
     "requiredPrivateInfos": [

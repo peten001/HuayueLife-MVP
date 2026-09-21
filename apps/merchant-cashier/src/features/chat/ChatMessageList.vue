@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import type { OrderChatMessage } from '@/api/order-chat';
 import { useI18n } from '@/i18n';
+import { resolveMediaUrl } from '@/domain/media';
 
 const props = defineProps<{
   messages: OrderChatMessage[];
@@ -19,6 +20,15 @@ const { locale, t } = useI18n();
 const listRef = ref<HTMLElement | null>(null);
 const nearBottom = ref(true);
 const showNewMessages = ref(false);
+const failedImageIds = ref<string[]>([]);
+
+function locationUrl(latitude: number, longitude: number) {
+  return `https://www.google.com/maps?q=${latitude},${longitude}`;
+}
+
+function openImage(url: string) {
+  window.open(resolveMediaUrl(url), '_blank', 'noopener,noreferrer');
+}
 
 type TimelineItem =
   | { type: 'date'; key: string; label: string }
@@ -159,7 +169,22 @@ defineExpose({ scrollToBottom });
           <div class="chat-message-list__stack">
             <time :datetime="item.message.createdAt">{{ formatTime(item.message.createdAt) }}</time>
             <div class="chat-message-list__bubble">
-              <p>{{ item.message.content }}</p>
+              <button
+                v-if="item.message.messageType === 'IMAGE' && item.message.mediaUrl && !failedImageIds.includes(item.message.id)"
+                type="button" class="chat-message-list__image" :aria-label="t('cashier.chat.image')"
+                @click="openImage(item.message.mediaUrl)"
+              >
+                <img :src="resolveMediaUrl(item.message.mediaUrl)" :alt="t('cashier.chat.image')" @error="failedImageIds.push(item.message.id)" />
+              </button>
+              <a
+                v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
+                class="chat-message-list__location"
+                :href="locationUrl(item.message.latitude, item.message.longitude)" target="_blank" rel="noopener noreferrer"
+              >
+                <span>⌖</span><strong>{{ t('cashier.chat.openLocation') }}</strong>
+                <small>{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</small>
+              </a>
+              <p v-else>{{ item.message.messageType === 'IMAGE' ? t('cashier.chat.imageFailed') : item.message.content }}</p>
               <span
                 v-if="item.message.senderType === 'MERCHANT'"
                 class="chat-message-list__receipt"
@@ -290,6 +315,12 @@ defineExpose({ scrollToBottom });
   background: #fff;
   box-shadow: 0 3px 10px rgb(33 61 45 / 5%);
 }
+
+.chat-message-list__image { padding: 0; border: 0; border-radius: 9px; overflow: hidden; background: transparent; cursor: zoom-in; }
+.chat-message-list__image img { display: block; width: min(250px, 48vw); height: 180px; object-fit: cover; }
+.chat-message-list__location { display: flex; min-width: 150px; flex-direction: column; gap: 3px; color: #1f2d24; text-decoration: none; }
+.chat-message-list__location span { color: var(--cashier-action-primary); font-size: 24px; line-height: 1; }
+.chat-message-list__location small { color: #65776a; font-size: 11px; }
 
 .chat-message-list__row--merchant .chat-message-list__bubble {
   border-color: #cae5d4;

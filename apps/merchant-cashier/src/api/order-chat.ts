@@ -16,6 +16,10 @@ export interface OrderChatMessage {
   senderType: 'CUSTOMER' | 'MERCHANT';
   senderId: string;
   content: string;
+  messageType?: 'TEXT' | 'IMAGE' | 'LOCATION';
+  mediaUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   readAt?: string | null;
   createdAt: string;
 }
@@ -105,6 +109,28 @@ export function sendMerchantOrderChatMessage(
   return requestApi<OrderChatMessage>(
     `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,
     { method: 'POST', body: { content }, signal: options.signal },
+  );
+}
+
+export function sendMerchantOrderChatLocation(orderId: string, latitude: number, longitude: number) {
+  if (isDemoSessionActive()) {
+    return Promise.resolve(createDemoChatMessage(orderId, '[位置]'));
+  }
+  return requestApi<OrderChatMessage>(
+    `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,
+    { method: 'POST', body: { messageType: 'LOCATION', latitude, longitude } },
+  );
+}
+
+export function sendMerchantOrderChatImage(orderId: string, file: File) {
+  if (isDemoSessionActive()) {
+    return Promise.resolve(createDemoChatMessage(orderId, '[图片]'));
+  }
+  const form = new FormData();
+  form.append('file', file);
+  return requestApi<OrderChatMessage>(
+    `/merchant/orders/${encodeURIComponent(orderId)}/chat/images`,
+    { method: 'POST', body: form },
   );
 }
 

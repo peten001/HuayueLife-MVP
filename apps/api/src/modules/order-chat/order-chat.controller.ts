@@ -1,12 +1,16 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Param,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StaffRole } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MerchantId } from '../../common/decorators/merchant-id.decorator';
@@ -57,6 +61,17 @@ export class OrderChatUserController {
     );
   }
 
+  @Post(':id/chat/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  sendImage(
+    @CurrentUser() user: AuthUser,
+    @Param() params: IdParamDto,
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; size?: number },
+  ) {
+    if (!file) throw new BadRequestException('Image file is required');
+    return this.service.sendCustomerImage(BigInt(user.sub), BigInt(params.id), file);
+  }
+
   @Post(':id/chat/read')
   markRead(@CurrentUser() user: AuthUser, @Param() params: IdParamDto) {
     return this.service.markCustomerRead(BigInt(user.sub), BigInt(params.id));
@@ -104,6 +119,18 @@ export class OrderChatMerchantController {
       BigInt(params.id),
       dto,
     );
+  }
+
+  @Post('orders/:id/chat/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  sendImage(
+    @MerchantId() merchantId: bigint,
+    @CurrentUser() staff: AuthUser,
+    @Param() params: IdParamDto,
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; size?: number },
+  ) {
+    if (!file) throw new BadRequestException('Image file is required');
+    return this.service.sendMerchantImage(merchantId, BigInt(staff.sub), BigInt(params.id), file);
   }
 
   @Post('orders/:id/chat/read')

@@ -100,6 +100,25 @@ export async function sendMerchantOrderChatMessage(
   return response.data.data;
 }
 
+export async function sendMerchantOrderChatLocation(
+  orderId: string, latitude: number, longitude: number,
+) {
+  const response = await http.post<ApiResponse<OrderChatMessage>>(
+    `/merchant/orders/${orderId}/chat/messages`,
+    { messageType: 'LOCATION', latitude, longitude },
+  );
+  return response.data.data;
+}
+
+export async function sendMerchantOrderChatImage(orderId: string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await http.post<ApiResponse<OrderChatMessage>>(
+    `/merchant/orders/${orderId}/chat/images`, form,
+  );
+  return response.data.data;
+}
+
 export async function markMerchantOrderChatRead(
   orderId: string,
 ): Promise<MerchantChatConversation | null> {

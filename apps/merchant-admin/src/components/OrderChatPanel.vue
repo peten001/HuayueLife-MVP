@@ -5,12 +5,15 @@ import {
   listMerchantOrderChatMessages,
   markMerchantOrderChatRead,
   sendMerchantOrderChatMessage,
+  sendMerchantOrderChatImage,
+  sendMerchantOrderChatLocation,
   type MerchantChatConversation,
 } from '@/api/order-chat';
 import MerchantIcon from '@/components/MerchantIcon.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder, OrderChatMessage } from '@/types/api';
+import { resolveMediaUrl } from '@/utils/media';
 
 const props = defineProps<{
   order: MerchantOrder;
@@ -29,6 +32,8 @@ const error = ref('');
 const draft = ref('');
 const conversation = ref<MerchantChatConversation | null>(null);
 const messages = ref<OrderChatMessage[]>([]);
+const failedImageIds = ref<string[]>([]);
+const imageInputRef = ref<HTMLInputElement | null>(null);
 const messageListRef = ref<HTMLElement | null>(null);
 const lastMessageId = ref('');
 
@@ -287,24 +292,77 @@ async function sendMessage() {
   try {
     const message = await sendMerchantOrderChatMessage(props.order.id, content);
     draft.value = '';
-    messages.value = mergeMessages(messages.value, [message]);
-    lastMessageId.value = message.id;
-    showNewMessagePrompt.value = false;
-    if (conversation.value) {
-      conversation.value = {
-        ...conversation.value,
-        lastMessage: message,
-        lastMessageId: message.id,
-        lastMessageAt: message.createdAt,
-      };
-      emit('updated', conversation.value);
-    }
-    await scrollToBottom();
+    await acceptSentMessage(message);
   } catch (err) {
     error.value = t('chatSendFailed');
   } finally {
     sending.value = false;
   }
+}
+
+async function acceptSentMessage(message: OrderChatMessage) {
+  messages.value = mergeMessages(messages.value, [message]);
+  lastMessageId.value = message.id;
+  showNewMessagePrompt.value = false;
+  if (conversation.value) {
+    conversation.value = {
+      ...conversation.value,
+      lastMessage: message,
+      lastMessageId: message.id,
+      lastMessageAt: message.createdAt,
+    };
+    emit('updated', conversation.value);
+  }
+  await scrollToBottom();
+}
+
+async function handleImageSelection(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file || disposed || !canSend.value || sending.value) return;
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    error.value = t(file.size > 5 * 1024 * 1024 ? 'imageTooLarge' : 'invalidImageType');
+    return;
+  }
+  const activeOrderId = props.order.id;
+  sending.value = true;
+  error.value = '';
+  try {
+    const message = await sendMerchantOrderChatImage(activeOrderId, file);
+    if (props.order.id === activeOrderId) await acceptSentMessage(message);
+  } catch {
+    error.value = t('chatSendFailed');
+  } finally {
+    sending.value = false;
+  }
+}
+
+async function sendLocation() {
+  if (!canSend.value || sending.value) return;
+  if (!navigator.geolocation) { error.value = t('chatLocationFailed'); return; }
+  const activeOrderId = props.order.id;
+  sending.value = true;
+  error.value = '';
+  try {
+    let point: GeolocationPosition;
+    try {
+      point = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }),
+      );
+    } catch { error.value = t('chatLocationFailed'); return; }
+    if (disposed || !canSend.value || props.order.id !== activeOrderId) return;
+    await acceptSentMessage(await sendMerchantOrderChatLocation(activeOrderId, point.coords.latitude, point.coords.longitude));
+  } catch { error.value = t('chatSendFailed'); }
+  finally { sending.value = false; }
+}
+
+function locationUrl(message: OrderChatMessage) {
+  return `https://www.google.com/maps?q=${message.latitude},${message.longitude}`;
+}
+
+function openImage(url: string) {
+  window.open(resolveMediaUrl(url), '_blank', 'noopener,noreferrer');
 }
 
 function close() {
@@ -365,7 +423,23 @@ function isMerchantMessage(message: OrderChatMessage) {
                 <div class="message-stack">
                   <small class="message-time">{{ formatMessageTime(item.message.createdAt) }}</small>
                   <div :class="['message-bubble', { self: isMerchantMessage(item.message) }]">
-                    <p class="message-content">{{ item.message.content }}</p>
+                    <button
+                      v-if="item.message.messageType === 'IMAGE' && item.message.mediaUrl && !failedImageIds.includes(item.message.id)"
+                      type="button" class="message-image-button"
+                      :aria-label="t('chatImage')"
+                      @click="openImage(item.message.mediaUrl)"
+                    >
+                      <img :src="resolveMediaUrl(item.message.mediaUrl)" :alt="t('chatImage')" @error="failedImageIds.push(item.message.id)" />
+                    </button>
+                    <a
+                      v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
+                      class="message-location" :href="locationUrl(item.message)" target="_blank" rel="noopener noreferrer"
+                    >
+                      <span class="message-location-icon">⌖</span>
+                      <strong>{{ t('chatOpenLocation') }}</strong>
+                      <small>{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</small>
+                    </a>
+                    <p v-else class="message-content">{{ item.message.messageType === 'IMAGE' ? t('chatImageFailed') : item.message.content }}</p>
                     <small
                       v-if="isMerchantMessage(item.message)"
                       :class="['message-status', item.message.readAt ? 'read' : 'unread']"
@@ -401,6 +475,11 @@ function isMerchantMessage(message: OrderChatMessage) {
                 >
                   {{ reply }}
                 </button>
+              </div>
+              <div class="chat-attachments">
+                <input ref="imageInputRef" class="chat-image-input" type="file" accept="image/jpeg,image/png,image/webp" @change="handleImageSelection" />
+                <button type="button" class="chat-attachment" :disabled="!canSend || sending" @click="imageInputRef?.click()">{{ t('chatImage') }}</button>
+                <button type="button" class="chat-attachment" :disabled="!canSend || sending" @click="sendLocation">{{ t('chatLocation') }}</button>
               </div>
               <div class="chat-compose-row">
                 <textarea
@@ -682,6 +761,12 @@ function isMerchantMessage(message: OrderChatMessage) {
   word-break: break-word;
 }
 
+.message-image-button { padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: zoom-in; overflow: hidden; }
+.message-image-button img { display: block; width: min(260px, 45vw); height: 190px; object-fit: cover; }
+.message-location { display: flex; min-width: 160px; flex-direction: column; gap: 3px; color: #1f2d24; text-decoration: none; }
+.message-location-icon { color: #2e7d32; font-size: 25px; line-height: 1; }
+.message-location small { color: #65776a; font-size: 11px; }
+
 .message-status {
   display: inline-flex;
   align-items: center;
@@ -742,6 +827,14 @@ function isMerchantMessage(message: OrderChatMessage) {
   align-items: flex-end;
   gap: 8px;
 }
+
+.chat-image-input { display: none; }
+.chat-attachments { display: flex; gap: 8px; }
+.chat-attachment { flex: none; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; color: #2e7d32; background: #eaf7ee; font: inherit; font-size: 12px; cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+.chat-attachment:focus-visible { outline-color: #2e7d32; }
+.chat-attachment:active:not(:disabled) { transform: translateY(1px); }
+.chat-attachment:disabled { opacity: .5; cursor: not-allowed; }
+@media (hover: hover) { .chat-attachment:hover:not(:disabled) { background: #d7efdd; } }
 
 .chat-compose-row textarea {
   width: auto;

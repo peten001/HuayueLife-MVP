@@ -33,6 +33,8 @@ const chatStore = useChatStore();
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
 const rootRef = ref<HTMLElement | null>(null);
 const draft = ref('');
+const mediaError = ref('');
+const locationPending = ref(false);
 const intersecting = ref(
   typeof window === 'undefined' || !('IntersectionObserver' in window),
 );
@@ -127,6 +129,35 @@ async function sendMessage(content: string) {
   }
 }
 
+async function sendImage(file: File) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    mediaError.value = t('cashier.chat.imageFailed');
+    return;
+  }
+  mediaError.value = '';
+  await chatStore.sendImage(props.order.id, file);
+}
+
+async function sendLocation() {
+  if (locationPending.value) return;
+  if (!navigator.geolocation) { mediaError.value = t('cashier.chat.locationFailed'); return; }
+  const activeOrderId = props.order.id;
+  locationPending.value = true;
+  mediaError.value = '';
+  try {
+    let point: GeolocationPosition;
+    try {
+      point = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }),
+      );
+    } catch { mediaError.value = t('cashier.chat.locationFailed'); return; }
+    if (props.order.id === activeOrderId && shouldActivate.value && !readOnly.value) {
+      await chatStore.sendLocation(activeOrderId, point.coords.latitude, point.coords.longitude);
+    }
+  } catch { mediaError.value = t('cashier.chat.sendError'); }
+  finally { locationPending.value = false; }
+}
+
 function blurComposer() {
   composerRef.value?.blur();
 }
@@ -161,6 +192,7 @@ function retry() {
         <span>{{ t(state.errorKey) }}</span>
         <button type="button" @click="retry">{{ t('cashier.chat.retry') }}</button>
       </div>
+      <div v-if="mediaError" class="order-chat-workspace__error" role="alert">{{ mediaError }}</div>
 
       <ChatMessageList
         :messages="state.messages"
@@ -179,8 +211,10 @@ function retry() {
         ref="composerRef"
         v-model="draft"
         :disabled="readOnly || !shouldActivate"
-        :sending="state.sending"
+        :sending="state.sending || locationPending"
         @send="sendMessage"
+        @image="sendImage"
+        @location="sendLocation"
       />
     </template>
   </section>

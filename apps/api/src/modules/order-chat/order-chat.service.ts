@@ -8,14 +8,22 @@ import {
   OrderChatConversation,
   OrderChatConversationStatus,
   OrderChatMessage,
+  OrderChatMessageType,
   OrderChatSenderType,
   OrderStatus,
   Prisma,
 } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
+import { optimizeMerchantDisplayImage } from '../../common/utils/merchant-display-image';
 import { ListMerchantChatConversationsQueryDto } from './dto/list-merchant-chat-conversations-query.dto';
 import { ListOrderChatMessagesQueryDto } from './dto/list-order-chat-messages-query.dto';
-import { SendOrderChatMessageDto } from './dto/send-order-chat-message.dto';
+import { ChatMessageInputType, SendOrderChatMessageDto } from './dto/send-order-chat-message.dto';
+
+type ChatImageUpload = { buffer: Buffer; mimetype: string; size?: number };
+const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 type ChatOrder = {
   id: bigint;
@@ -86,7 +94,7 @@ export class OrderChatService {
       const message = await this.createMessage(tx, conversation.id, order.id, {
         senderType: 'CUSTOMER',
         senderId: userId,
-        content: dto.content,
+        ...this.messageInput(dto),
       });
       await this.bumpUnread(tx, conversation, 'CUSTOMER', message);
       return message;
@@ -106,11 +114,100 @@ export class OrderChatService {
       const message = await this.createMessage(tx, conversation.id, order.id, {
         senderType: 'MERCHANT',
         senderId: staffId,
-        content: dto.content,
+        ...this.messageInput(dto),
       });
       await this.bumpUnread(tx, conversation, 'MERCHANT', message);
       return message;
     });
+  }
+
+  async sendCustomerImage(userId: bigint, orderId: bigint, file?: ChatImageUpload) {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await this.requireCustomerOrder(tx, userId, orderId);
+      this.ensureCanSend(order.status);
+    });
+    return this.sendImage(file, (mediaUrl) =>
+      this.prisma.$transaction(async (tx) => {
+        const order = await this.requireCustomerOrder(tx, userId, orderId);
+        this.ensureCanSend(order.status);
+        const conversation = await this.ensureConversation(tx, order);
+        const message = await this.createMessage(tx, conversation.id, order.id, {
+          senderType: 'CUSTOMER', senderId: userId,
+          content: '[图片]', messageType: 'IMAGE', mediaUrl,
+        });
+        await this.bumpUnread(tx, conversation, 'CUSTOMER', message);
+        return message;
+      }),
+    );
+  }
+
+  async sendMerchantImage(merchantId: bigint, staffId: bigint, orderId: bigint, file?: ChatImageUpload) {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+      this.ensureCanSend(order.status);
+    });
+    return this.sendImage(file, (mediaUrl) =>
+      this.prisma.$transaction(async (tx) => {
+        const order = await this.requireMerchantOrder(tx, merchantId, orderId);
+        this.ensureCanSend(order.status);
+        const conversation = await this.ensureConversation(tx, order);
+        const message = await this.createMessage(tx, conversation.id, order.id, {
+          senderType: 'MERCHANT', senderId: staffId,
+          content: '[图片]', messageType: 'IMAGE', mediaUrl,
+        });
+        await this.bumpUnread(tx, conversation, 'MERCHANT', message);
+        return message;
+      }),
+    );
+  }
+
+  private messageInput(dto: SendOrderChatMessageDto) {
+    if (dto.messageType === ChatMessageInputType.LOCATION) {
+      if (!Number.isFinite(dto.latitude) || !Number.isFinite(dto.longitude)
+        || (dto.latitude ?? 0) < -90 || (dto.latitude ?? 0) > 90
+        || (dto.longitude ?? 0) < -180 || (dto.longitude ?? 0) > 180) {
+        throw new BadRequestException('Invalid location');
+      }
+      return {
+        content: '[位置]', messageType: OrderChatMessageType.LOCATION,
+        latitude: dto.latitude, longitude: dto.longitude,
+      };
+    }
+    const content = dto.content?.trim();
+    if (!content) throw new BadRequestException('Message cannot be empty');
+    if (dto.latitude !== undefined || dto.longitude !== undefined) {
+      throw new BadRequestException('Location requires LOCATION message type');
+    }
+    return { content, messageType: OrderChatMessageType.TEXT };
+  }
+
+  private async sendImage<T>(
+    file: ChatImageUpload | undefined,
+    persist: (mediaUrl: string) => Promise<T>,
+  ): Promise<T> {
+    if (!file?.buffer || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      throw new BadRequestException('Invalid image type');
+    }
+    if (file.buffer.byteLength > CHAT_IMAGE_MAX_BYTES || (file.size ?? 0) > CHAT_IMAGE_MAX_BYTES) {
+      throw new BadRequestException('Image file exceeds 5MB');
+    }
+    let output: Buffer;
+    try {
+      output = (await optimizeMerchantDisplayImage(file.buffer)).buffer;
+    } catch {
+      throw new BadRequestException('Invalid image content');
+    }
+    const filename = `${randomUUID()}.webp`;
+    const directory = join(process.cwd(), 'uploads', 'chat');
+    const filePath = join(directory, filename);
+    await mkdir(directory, { recursive: true });
+    await writeFile(filePath, output);
+    try {
+      return await persist(`/uploads/chat/${filename}`);
+    } catch (error) {
+      await rm(filePath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async markCustomerRead(userId: bigint, orderId: bigint) {
@@ -264,6 +361,10 @@ export class OrderChatService {
       senderType: OrderChatSenderType;
       senderId: bigint;
       content: string;
+      messageType?: OrderChatMessageType;
+      mediaUrl?: string;
+      latitude?: number;
+      longitude?: number;
     },
   ) {
     const message = await tx.orderChatMessage.create({
@@ -273,6 +374,10 @@ export class OrderChatService {
         senderType: input.senderType,
         senderId: input.senderId,
         content: input.content,
+        messageType: input.messageType ?? 'TEXT',
+        mediaUrl: input.mediaUrl,
+        latitude: input.latitude,
+        longitude: input.longitude,
       },
     });
 

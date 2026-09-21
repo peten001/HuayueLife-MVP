@@ -5,6 +5,8 @@ import {
   listMerchantOrderChatMessages,
   markMerchantOrderChatRead,
   sendMerchantOrderChatMessage,
+  sendMerchantOrderChatImage,
+  sendMerchantOrderChatLocation,
   type MerchantOrderChat,
   type OrderChatMessage,
 } from '@/api/order-chat';
@@ -218,10 +220,24 @@ export const useChatStore = defineStore('cashier-chat', () => {
     const state = ensureState(orderId);
     const normalized = content.trim();
     if (!normalized || state.sending || isReadOnly(orderId)) return null;
+    return sendWith(orderId, () => sendMerchantOrderChatMessage(orderId, normalized));
+  }
+
+  function sendImage(orderId: string, file: File) {
+    return sendWith(orderId, () => sendMerchantOrderChatImage(orderId, file));
+  }
+
+  function sendLocation(orderId: string, latitude: number, longitude: number) {
+    return sendWith(orderId, () => sendMerchantOrderChatLocation(orderId, latitude, longitude));
+  }
+
+  async function sendWith(orderId: string, request: () => Promise<OrderChatMessage>) {
+    const state = ensureState(orderId);
+    if (state.sending || isReadOnly(orderId)) return null;
     state.sending = true;
     state.errorKey = '';
     try {
-      const message = await sendMerchantOrderChatMessage(orderId, normalized);
+      const message = await request();
       state.messages = mergeChatMessages(state.messages, [message]);
       if (state.conversation) {
         state.conversation = {
@@ -356,6 +372,8 @@ export const useChatStore = defineStore('cashier-chat', () => {
     refresh,
     loadNextPage,
     send,
+    sendImage,
+    sendLocation,
     clearError,
     clear,
   };

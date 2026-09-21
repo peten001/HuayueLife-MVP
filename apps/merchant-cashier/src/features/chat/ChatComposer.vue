@@ -9,11 +9,21 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   send: [content: string];
+  image: [file: File];
+  location: [];
 }>();
 
 const draft = defineModel<string>({ default: '' });
 const { t } = useI18n();
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+const imageInputRef = ref<HTMLInputElement | null>(null);
+
+function selectImage(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (file && !props.disabled && !props.sending) emit('image', file);
+}
 
 function submit() {
   const content = draft.value.trim();
@@ -34,6 +44,11 @@ defineExpose({ focus, blur });
 
 <template>
   <form class="chat-composer" @submit.prevent="submit">
+    <div class="chat-composer__attachments">
+      <input ref="imageInputRef" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="selectImage" />
+      <button type="button" :disabled="disabled || sending" @click="imageInputRef?.click()">{{ t('cashier.chat.image') }}</button>
+      <button type="button" :disabled="disabled || sending" @click="emit('location')">{{ t('cashier.chat.location') }}</button>
+    </div>
     <textarea
       ref="inputRef"
       v-model="draft"
@@ -60,6 +75,13 @@ defineExpose({ focus, blur });
   align-items: end;
   gap: 10px;
 }
+
+.chat-composer__attachments { grid-column: 1 / -1; display: flex; gap: 8px; }
+.chat-composer__attachments button { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; color: var(--cashier-action-primary); background: var(--cashier-green-soft); font: inherit; font-size: 13px; cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+.chat-composer__attachments button:focus-visible { outline-color: var(--cashier-action-primary); }
+.chat-composer__attachments button:active:not(:disabled) { transform: translateY(1px); }
+.chat-composer__attachments button:disabled { opacity: .5; cursor: not-allowed; }
+@media (hover: hover) { .chat-composer__attachments button:hover:not(:disabled) { background: var(--cashier-workspace-accent-border); } }
 
 .chat-composer__input {
   width: 100%;

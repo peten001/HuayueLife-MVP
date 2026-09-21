@@ -1,4 +1,6 @@
 import { request } from './http';
+import { API_BASE_URL } from './http';
+import { getToken } from '@/utils/storage';
 import type {
   OrderChatMessage,
   OrderStatus,
@@ -73,6 +75,38 @@ export const sendOrderChatMessage = (orderId: string, content: string) =>
     method: 'POST',
     data: { content },
   });
+
+export const sendOrderChatLocation = (orderId: string, latitude: number, longitude: number) =>
+  request<OrderChatMessage>(`/orders/${orderId}/chat/messages`, {
+    method: 'POST',
+    data: { messageType: 'LOCATION', latitude, longitude },
+  });
+
+export function sendOrderChatImage(orderId: string, filePath: string): Promise<OrderChatMessage> {
+  const token = getToken();
+  if (!token) return Promise.reject(new Error('请先登录'));
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE_URL}/orders/${orderId}/chat/images`,
+      filePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${token}` },
+      success(response) {
+        try {
+          const body = JSON.parse(response.data) as { data?: OrderChatMessage; message?: string | string[] };
+          if (response.statusCode >= 200 && response.statusCode < 300 && body.data) {
+            resolve(body.data);
+            return;
+          }
+          reject(new Error(Array.isArray(body.message) ? body.message.join('；') : body.message || '图片发送失败'));
+        } catch {
+          reject(new Error('图片发送失败'));
+        }
+      },
+      fail(error) { reject(new Error(error.errMsg || '图片发送失败')); },
+    });
+  });
+}
 
 export const markOrderChatRead = (orderId: string) =>
   request<UserChatConversation>(`/orders/${orderId}/chat/read`, {

@@ -371,6 +371,10 @@ export interface OrderChatMessage {
   senderType: OrderChatSenderType;
   senderId: string;
   content: string;
+  messageType?: 'TEXT' | 'IMAGE' | 'LOCATION';
+  mediaUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   readAt?: string | null;
   createdAt: string;
 }

@@ -10,6 +10,8 @@ const apiMocks = vi.hoisted(() => ({
   listMerchantOrderChatMessages: vi.fn(),
   markMerchantOrderChatRead: vi.fn(),
   sendMerchantOrderChatMessage: vi.fn(),
+  sendMerchantOrderChatImage: vi.fn(),
+  sendMerchantOrderChatLocation: vi.fn(),
 }));
 
 vi.mock('@/api/order-chat', () => apiMocks);
@@ -23,6 +25,8 @@ describe('cashier chat store', () => {
     apiMocks.listMerchantOrderChatMessages.mockReset();
     apiMocks.markMerchantOrderChatRead.mockReset();
     apiMocks.sendMerchantOrderChatMessage.mockReset();
+    apiMocks.sendMerchantOrderChatImage.mockReset();
+    apiMocks.sendMerchantOrderChatLocation.mockReset();
   });
 
   afterEach(() => {
@@ -107,6 +111,25 @@ describe('cashier chat store', () => {
     store.setOrderStatus('order-1', 'COMPLETED');
     expect(await store.send('order-1', 'blocked')).toBeNull();
     expect(apiMocks.sendMerchantOrderChatMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges image and location messages while preserving the order status gate', async () => {
+    const store = useChatStore();
+    const state = store.ensureState('order-1', 'ACCEPTED');
+    state.conversation = conversation('order-1', '1');
+    const image = { ...message('2', 'order-1', '[图片]', 'MERCHANT'), messageType: 'IMAGE' as const, mediaUrl: '/uploads/chat/test.webp' };
+    const location = { ...message('3', 'order-1', '[位置]', 'MERCHANT'), messageType: 'LOCATION' as const, latitude: 21.1862, longitude: 106.0763 };
+    apiMocks.sendMerchantOrderChatImage.mockResolvedValueOnce(image);
+    apiMocks.sendMerchantOrderChatLocation.mockResolvedValueOnce(location);
+
+    await store.sendImage('order-1', new File(['image'], 'test.jpg', { type: 'image/jpeg' }));
+    await store.sendLocation('order-1', 21.1862, 106.0763);
+    expect(state.messages.map((item) => item.messageType)).toEqual(['IMAGE', 'LOCATION']);
+    expect(state.conversation.lastMessageId).toBe('3');
+
+    store.setOrderStatus('order-1', 'COMPLETED');
+    expect(await store.sendLocation('order-1', 21, 106)).toBeNull();
+    expect(apiMocks.sendMerchantOrderChatLocation).toHaveBeenCalledTimes(1);
   });
 
   it('marks unread messages only while that order chat is active', async () => {

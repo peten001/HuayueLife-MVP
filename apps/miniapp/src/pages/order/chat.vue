@@ -7,10 +7,16 @@ import {
   listOrderChatMessages,
   markOrderChatRead,
   sendOrderChatMessage,
+  sendOrderChatImage,
+  sendOrderChatLocation,
   type UserChatConversation,
 } from '@/api/order-chat';
 import { useAuthStore } from '@/stores/auth';
 import type { OrderChatMessage } from '@/types/api';
+import { resolveMediaUrl } from '@/utils/media';
+import {
+  chatMediaLabel, chooseChatImage, getChatLocation, openChatLocation, previewChatImage,
+} from '@/utils/order-chat-media';
 
 const auth = useAuthStore();
 const { t, locale } = useI18n();
@@ -23,6 +29,7 @@ const error = ref('');
 const draft = ref('');
 const conversation = ref<UserChatConversation | null>(null);
 const messages = ref<OrderChatMessage[]>([]);
+const failedImageIds = ref<string[]>([]);
 const lastMessageId = ref('');
 const scrollIntoViewId = ref('');
 const showNewMessagePrompt = ref(false);
@@ -443,26 +450,75 @@ async function sendMessage() {
   try {
     const message = await sendOrderChatMessage(orderId.value, content);
     draft.value = '';
-    messages.value = mergeMessages(messages.value, [message]);
-    lastMessageId.value = message.id;
-    showNewMessagePrompt.value = false;
-    shouldStickToBottom.value = true;
-    if (conversation.value) {
-      conversation.value = {
-        ...conversation.value,
-        lastMessage: message,
-        lastMessageId: message.id,
-        lastMessageAt: message.createdAt,
-      };
-    }
-    scheduleScrollToBottom('send', true);
+    acceptSentMessage(message);
   } catch (caught) {
-    const message = caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
-    error.value = message;
-    uni.showToast({ title: message, icon: 'none' });
+    reportSendError(caught);
   } finally {
     sending.value = false;
   }
+}
+
+function acceptSentMessage(message: OrderChatMessage) {
+  messages.value = mergeMessages(messages.value, [message]);
+  lastMessageId.value = message.id;
+  showNewMessagePrompt.value = false;
+  shouldStickToBottom.value = true;
+  if (conversation.value) {
+    conversation.value = {
+      ...conversation.value,
+      lastMessage: message,
+      lastMessageId: message.id,
+      lastMessageAt: message.createdAt,
+    };
+  }
+  scheduleScrollToBottom('send', true);
+}
+
+function reportSendError(caught: unknown) {
+  const message = caught instanceof Error ? translateApiError(caught.message) : t('orderLoadError');
+  error.value = message;
+  uni.showToast({ title: message, icon: 'none' });
+}
+
+async function sendImage() {
+  if (!canSend.value || sending.value || !orderId.value) return;
+  const selected = await chooseChatImage();
+  if (!selected || disposed || !canSend.value || sending.value) return;
+  if (selected.size != null && selected.size > 5 * 1024 * 1024) {
+    reportSendError(new Error(chatMediaLabel(locale.value, 'imageTooLarge')));
+    return;
+  }
+  const activeOrderId = orderId.value;
+  sending.value = true;
+  error.value = '';
+  try {
+    const message = await sendOrderChatImage(activeOrderId, selected.path);
+    if (orderId.value === activeOrderId) acceptSentMessage(message);
+  } catch (caught) {
+    reportSendError(caught);
+  } finally {
+    sending.value = false;
+  }
+}
+
+async function sendLocation() {
+  if (!canSend.value || sending.value || !orderId.value) return;
+  const activeOrderId = orderId.value;
+  sending.value = true;
+  error.value = '';
+  try {
+    let point: { latitude: number; longitude: number };
+    try {
+      point = await getChatLocation();
+    } catch {
+      reportSendError(new Error(chatMediaLabel(locale.value, 'locationFailed')));
+      return;
+    }
+    if (disposed || !canSend.value || orderId.value !== activeOrderId) return;
+    acceptSentMessage(await sendOrderChatLocation(activeOrderId, point.latitude, point.longitude));
+  } catch (caught) {
+    reportSendError(caught);
+  } finally { sending.value = false; }
 }
 
 function updateOrderId(nextOrderId: string) {
@@ -567,7 +623,22 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
                   <text>{{ formatMessageTime(item.message.createdAt) }}</text>
                 </view>
                 <view :class="['message-body', { self: isOwnMessage(item.message) }]">
-                  <text class="message-content">{{ item.message.content }}</text>
+                  <image
+                    v-if="item.message.messageType === 'IMAGE' && item.message.mediaUrl && !failedImageIds.includes(item.message.id)"
+                    class="message-image" :src="resolveMediaUrl(item.message.mediaUrl)" mode="aspectFill"
+                    @tap.stop="previewChatImage(item.message.mediaUrl)"
+                    @error="failedImageIds.push(item.message.id)"
+                  />
+                  <view
+                    v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
+                    class="message-location" role="button" :aria-label="chatMediaLabel(locale, 'openLocation')"
+                    @tap.stop="openChatLocation(item.message.latitude, item.message.longitude)"
+                  >
+                    <text class="message-location-icon">⌖</text>
+                    <text>{{ chatMediaLabel(locale, 'openLocation') }}</text>
+                    <text class="message-coordinates">{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</text>
+                  </view>
+                  <text v-else class="message-content">{{ item.message.messageType === 'IMAGE' ? chatMediaLabel(locale, 'imageFailed') : item.message.content }}</text>
                   <text
                     v-if="isOwnMessage(item.message)"
                     :class="['message-status', item.message.readAt ? 'read' : 'unread']"
@@ -591,6 +662,10 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
 
         <view v-if="!readonly" class="composer">
+          <view class="composer-attachments">
+            <button class="attachment-button" :disabled="!canSend || sending" @tap.stop="sendImage">{{ chatMediaLabel(locale, 'image') }}</button>
+            <button class="attachment-button" :disabled="!canSend || sending" @tap.stop="sendLocation">{{ chatMediaLabel(locale, 'location') }}</button>
+          </view>
         <textarea
           v-model="draft"
           class="composer-input"
@@ -776,6 +851,11 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
   min-width: 0;
 }
 
+.message-image { width: 350rpx; height: 260rpx; border-radius: 12rpx; background: #eaf2ec; }
+.message-location { display: flex; flex-direction: column; gap: 5rpx; min-width: 265rpx; padding: 16rpx; color: #1f2d24; font-size: 25rpx; }
+.message-location-icon { color: #2e7d32; font-size: 38rpx; line-height: 1; }
+.message-coordinates { color: #65776a; font-size: 18rpx; }
+
 .message-status {
   display: inline-flex;
   align-items: center;
@@ -830,12 +910,18 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
   background: #f6faf7;
 }
 
+.composer-attachments { display: flex; gap: 4rpx; flex: none; }
+.attachment-button { min-width: 78rpx; height: 88rpx; margin: 0; padding: 0 5rpx; border: 0; border-radius: 14rpx; color: #2e7d32; background: #eaf7ee; font-size: 21rpx; line-height: 88rpx; }
+.attachment-button::after { border: 0; }
+.attachment-button[disabled] { opacity: .5; }
+.attachment-button:active:not([disabled]) { background: #d7efdd; }
+
 .composer-input {
   flex: 1;
   width: auto;
-  height: 80rpx;
-  max-height: 80rpx;
-  min-height: 80rpx;
+  height: 88rpx;
+  max-height: 88rpx;
+  min-height: 88rpx;
   padding: 16rpx 18rpx;
   border: 1rpx solid #dbe6de;
   border-radius: 18rpx;
@@ -850,7 +936,7 @@ usePageTitle(() => conversation.value ? `${t('orderChat')} · #${conversation.va
   flex: none;
   width: 120rpx;
   min-width: 120rpx;
-  height: 80rpx;
+  height: 88rpx;
   padding: 0 18rpx;
   border: 0;
   border-radius: 15px;
