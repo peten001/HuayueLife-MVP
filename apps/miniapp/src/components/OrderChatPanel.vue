@@ -12,8 +12,13 @@ import {
 } from '@/api/order-chat';
 import type { OrderChatMessage, UserOrder } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
+import OrderChatLocationPreview from '@/components/OrderChatLocationPreview.vue';
 import {
-  chatMediaLabel, chooseChatImage, getChatLocation, openChatLocation, previewChatImage,
+  chatMediaLabel,
+  chooseChatImage,
+  chooseChatLocation,
+  previewChatImage,
+  type ChatLocationSelection,
 } from '@/utils/order-chat-media';
 
 const props = defineProps<{
@@ -41,6 +46,10 @@ const showNewMessagePrompt = ref(false);
 const isNearBottom = ref(true);
 const keyboardHeight = ref(0);
 const viewportHeight = ref(getViewportHeight());
+const attachmentPanelOpen = ref(false);
+const pendingLocation = ref<ChatLocationSelection | null>(null);
+const selectingLocation = ref(false);
+const composerSafeAreaGapPx = getComposerSafeAreaGap();
 let timer: ReturnType<typeof setInterval> | undefined;
 let requestSeq = 0;
 let disposed = false;
@@ -69,11 +78,8 @@ const chatCardStyle = computed(() => ({
   height: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
   maxHeight: `${Math.max(0, viewportHeight.value - keyboardHeight.value)}px`,
   '--composer-bottom-gap': keyboardHeight.value > 0
-    ? '2rpx'
-    : 'calc(env(safe-area-inset-bottom) + 2rpx)',
-  '--message-list-bottom-gap': keyboardHeight.value > 0
-    ? '18rpx'
-    : 'calc(18rpx + env(safe-area-inset-bottom))',
+    ? '4rpx'
+    : `${composerSafeAreaGapPx}px`,
 }));
 
 function logChat(step: string, payload?: unknown) {
@@ -87,6 +93,15 @@ function getViewportHeight() {
   return info.windowHeight ?? 0;
 }
 
+function getComposerSafeAreaGap() {
+  const info = typeof uni.getWindowInfo === 'function'
+    ? uni.getWindowInfo()
+    : uni.getSystemInfoSync();
+  const screenHeight = info.screenHeight ?? info.windowHeight ?? 0;
+  const safeAreaBottom = info.safeArea?.bottom ?? screenHeight;
+  return Math.max(8, screenHeight - safeAreaBottom - 14);
+}
+
 watch(
   () => [props.visible, props.order.id],
   ([visible]) => {
@@ -96,6 +111,8 @@ watch(
       return;
     }
     updateKeyboardHeight(0);
+    attachmentPanelOpen.value = false;
+    pendingLocation.value = null;
     clearTimer();
   },
   { immediate: true },
@@ -305,6 +322,7 @@ function readKeyboardHeight(event: unknown) {
 }
 
 function handleComposerFocus(event: unknown) {
+  attachmentPanelOpen.value = false;
   updateKeyboardHeight(readKeyboardHeight(event) || keyboardHeight.value);
 }
 
@@ -468,6 +486,7 @@ async function acceptSentMessage(message: OrderChatMessage) {
 
 async function sendImage() {
   if (!canSend.value || sending.value) return;
+  attachmentPanelOpen.value = false;
   const selected = await chooseChatImage();
   if (!selected || disposed || !props.visible || !canSend.value || sending.value) return;
   if (selected.size != null && selected.size > 5 * 1024 * 1024) {
@@ -487,22 +506,49 @@ async function sendImage() {
   }
 }
 
-async function sendLocation() {
+function toggleAttachmentPanel() {
   if (!canSend.value || sending.value) return;
+  uni.hideKeyboard();
+  updateKeyboardHeight(0);
+  attachmentPanelOpen.value = !attachmentPanelOpen.value;
+  if (attachmentPanelOpen.value) scrollToBottom();
+}
+
+async function chooseLocationForChat() {
+  if (!canSend.value || sending.value) return;
+  attachmentPanelOpen.value = false;
+  selectingLocation.value = true;
+  error.value = '';
+  try {
+    pendingLocation.value = await chooseChatLocation();
+  } catch {
+    error.value = chatMediaLabel(locale.value, 'locationFailed');
+  } finally {
+    selectingLocation.value = false;
+  }
+}
+
+async function confirmSendLocation() {
+  if (!pendingLocation.value || !canSend.value || sending.value) return;
   const activeOrderId = props.order.id;
+  const point = pendingLocation.value;
   sending.value = true;
   error.value = '';
   try {
-    let point: { latitude: number; longitude: number };
-    try { point = await getChatLocation(); }
-    catch { error.value = chatMediaLabel(locale.value, 'locationFailed'); return; }
-    if (disposed || !props.visible || !canSend.value || props.order.id !== activeOrderId) return;
-    await acceptSentMessage(await sendOrderChatLocation(activeOrderId, point.latitude, point.longitude));
-  } catch (caught) { error.value = caught instanceof Error ? caught.message : t('orderLoadError'); }
-  finally { sending.value = false; }
+    const message = await sendOrderChatLocation(activeOrderId, point.latitude, point.longitude);
+    if (props.order.id !== activeOrderId || !props.visible) return;
+    pendingLocation.value = null;
+    await acceptSentMessage(message);
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : t('orderLoadError');
+  } finally {
+    sending.value = false;
+  }
 }
 
 function close() {
+  pendingLocation.value = null;
+  attachmentPanelOpen.value = false;
   emit('close');
 }
 
@@ -547,7 +593,7 @@ function messageSide(message: OrderChatMessage) {
               <text>{{ item.label }}</text>
             </view>
             <view v-else :id="`msg-${item.message.id}`" :class="['message-row', messageSide(item.message)]">
-              <view class="message-bubble">
+              <view :class="['message-bubble', { location: item.message.messageType === 'LOCATION' }]">
                 <view class="message-head">
                   <text>{{ formatMessageTime(item.message.createdAt) }}</text>
                 </view>
@@ -560,12 +606,14 @@ function messageSide(message: OrderChatMessage) {
                   />
                   <view
                     v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
-                    class="message-location" role="button" :aria-label="chatMediaLabel(locale, 'openLocation')"
-                    @tap.stop="openChatLocation(item.message.latitude, item.message.longitude)"
+                    class="message-location"
                   >
-                    <text class="message-location-icon">⌖</text>
-                    <text>{{ chatMediaLabel(locale, 'openLocation') }}</text>
-                    <text class="message-coordinates">{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</text>
+                    <OrderChatLocationPreview
+                      :latitude="item.message.latitude"
+                      :longitude="item.message.longitude"
+                      :locale="locale"
+                      compact
+                    />
                   </view>
                   <text v-else class="message-content">{{ item.message.messageType === 'IMAGE' ? chatMediaLabel(locale, 'imageFailed') : item.message.content }}</text>
                   <text
@@ -588,34 +636,85 @@ function messageSide(message: OrderChatMessage) {
 
         <text v-if="showReadOnlyHint" class="chat-hint">{{ t('chatClosedHint') }}</text>
 
-        <view class="composer">
-          <view class="composer-attachments">
-            <button class="attachment-button" :disabled="!canSend || sending" @click="sendImage">{{ chatMediaLabel(locale, 'image') }}</button>
-            <button class="attachment-button" :disabled="!canSend || sending" @click="sendLocation">{{ chatMediaLabel(locale, 'location') }}</button>
+        <view class="composer-dock">
+          <view class="composer">
+            <input
+              v-model="draft"
+              class="composer-input"
+              :disabled="!canSend || sending"
+              :placeholder="t('messagePlaceholder')"
+              :adjust-position="false"
+              :cursor-spacing="16"
+              placeholder-style="line-height: 88rpx; color: #8b9490;"
+              confirm-type="send"
+              confirm-hold="true"
+              @focus="handleComposerFocus"
+              @blur="handleComposerBlur"
+              @keyboardheightchange="handleKeyboardHeightChange"
+              @confirm="sendMessage"
+              maxlength="500"
+            />
+            <button
+              v-if="draft.trim()"
+              :class="['send-button', { disabled: !canSend || sending }]"
+              :disabled="!canSend || sending"
+              @click="sendMessage"
+            >
+              {{ sending ? t('sending') : t('sendMessage') }}
+            </button>
+            <view
+              v-else
+              :class="['more-button', { active: attachmentPanelOpen, disabled: !canSend || sending }]"
+              role="button"
+              :aria-label="chatMediaLabel(locale, 'more')"
+              @tap.stop="toggleAttachmentPanel"
+            >
+              <text class="more-symbol">＋</text>
+            </view>
           </view>
-          <textarea
-            v-model="draft"
-            class="composer-input"
-            :disabled="!canSend || sending"
-            :placeholder="t('messagePlaceholder')"
-            :auto-height="false"
-            :adjust-position="false"
-            :show-confirm-bar="false"
-            :cursor-spacing="16"
-            confirm-type="send"
-            @focus="handleComposerFocus"
-            @blur="handleComposerBlur"
-            @keyboardheightchange="handleKeyboardHeightChange"
-            @confirm="sendMessage"
-            maxlength="500"
+
+          <view v-if="attachmentPanelOpen" class="attachment-panel">
+            <view class="attachment-action" role="button" @tap.stop="sendImage">
+              <view class="attachment-icon photo-icon">
+                <view class="photo-sun" />
+                <view class="photo-mountain left" />
+                <view class="photo-mountain right" />
+              </view>
+              <text>{{ chatMediaLabel(locale, 'choosePhoto') }}</text>
+            </view>
+            <view class="attachment-action" role="button" @tap.stop="chooseLocationForChat">
+              <view class="attachment-icon">
+                <view class="pin-icon"><view class="pin-dot" /></view>
+              </view>
+              <text>{{ selectingLocation ? t('loading') : chatMediaLabel(locale, 'chooseLocation') }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="pendingLocation" class="location-confirm-mask" @tap="pendingLocation = null">
+        <view class="location-confirm-sheet" @tap.stop>
+          <view class="sheet-handle" aria-hidden="true" />
+          <view class="location-confirm-head">
+            <view>
+              <text class="location-confirm-title">{{ chatMediaLabel(locale, 'confirmLocation') }}</text>
+              <text class="location-confirm-subtitle">{{ pendingLocation.name || chatMediaLabel(locale, 'selectedLocation') }}</text>
+            </view>
+            <view class="location-confirm-close" role="button" @tap="pendingLocation = null">×</view>
+          </view>
+          <OrderChatLocationPreview
+            :latitude="pendingLocation.latitude"
+            :longitude="pendingLocation.longitude"
+            :locale="locale"
+            :title="pendingLocation.name"
+            :address="pendingLocation.address"
           />
-          <button
-            :class="['send-button', { disabled: !canSend || sending || !draft.trim() }]"
-            :disabled="!canSend || sending || !draft.trim()"
-            @click="sendMessage"
-          >
-            {{ sending ? t('sending') : t('sendMessage') }}
-          </button>
+          <view class="location-confirm-actions">
+            <button class="location-cancel-button" @tap="pendingLocation = null">{{ t('cancel') }}</button>
+            <button class="location-send-button" :disabled="sending" @tap="confirmSendLocation">
+              {{ chatMediaLabel(locale, 'sendLocation') }}
+            </button>
+          </view>
         </view>
       </view>
     </view>
@@ -634,10 +733,11 @@ function messageSide(message: OrderChatMessage) {
 }
 
 .chat-card {
+  position: relative;
   width: 100%;
   height: 88vh;
   max-height: 88vh;
-  padding: 20rpx 20rpx calc(18rpx + env(safe-area-inset-bottom));
+  padding: 20rpx 20rpx 0;
   border-radius: 28rpx 28rpx 0 0;
   background: #fff;
   box-shadow: 0 -16rpx 40rpx rgb(16 28 19 / 18%);
@@ -708,7 +808,7 @@ function messageSide(message: OrderChatMessage) {
 .message-list {
   flex: 1;
   min-height: 0;
-  padding: 6rpx 4rpx var(--message-list-bottom-gap, calc(18rpx + env(safe-area-inset-bottom)));
+  padding: 6rpx 4rpx 10rpx;
   border: 1rpx solid #edf0f2;
   border-radius: 18rpx;
   background: #f9fbfa;
@@ -767,6 +867,15 @@ function messageSide(message: OrderChatMessage) {
   border-bottom-left-radius: 6rpx;
 }
 
+.message-bubble.location {
+  padding: 0;
+  overflow: hidden;
+}
+
+.message-bubble.location .message-head {
+  padding: 8rpx 10rpx 4rpx;
+}
+
 .message-head {
   display: flex;
   justify-content: flex-end;
@@ -793,9 +902,7 @@ function messageSide(message: OrderChatMessage) {
 }
 
 .message-image { width: 350rpx; height: 260rpx; border-radius: 12rpx; background: #eaf2ec; }
-.message-location { display: flex; flex-direction: column; gap: 5rpx; min-width: 265rpx; padding: 16rpx; color: #1f2d24; font-size: 25rpx; }
-.message-location-icon { color: #2e7d32; font-size: 38rpx; line-height: 1; }
-.message-coordinates { color: #65776a; font-size: 18rpx; }
+.message-location { display: block; min-width: 390rpx; }
 
 .message-status {
   display: inline-flex;
@@ -841,21 +948,21 @@ function messageSide(message: OrderChatMessage) {
   line-height: 1.5;
 }
 
+.composer-dock {
+  flex: none;
+  margin: 0 -20rpx;
+  padding: 10rpx 20rpx var(--composer-bottom-gap, calc(env(safe-area-inset-bottom) + 8rpx));
+  border-top: 1rpx solid #e8eeea;
+  background: #f7f8f7;
+  box-shadow: 0 -8rpx 24rpx rgb(31 45 36 / 4%);
+}
+
 .composer {
   flex: none;
   display: flex;
-  align-items: flex-end;
-  gap: 12rpx;
-  padding-top: 6rpx;
-  padding-bottom: var(--composer-bottom-gap, calc(env(safe-area-inset-bottom) + 2rpx));
-  background: #fff;
+  align-items: center;
+  gap: 14rpx;
 }
-
-.composer-attachments { display: flex; gap: 4rpx; flex: none; }
-.attachment-button { min-width: 78rpx; height: 88rpx; margin: 0; padding: 0 5rpx; border: 0; border-radius: 14rpx; color: #2e7d32; background: #eaf7ee; font-size: 21rpx; line-height: 88rpx; }
-.attachment-button::after { border: 0; }
-.attachment-button[disabled] { opacity: .5; }
-.attachment-button:active:not([disabled]) { background: #d7efdd; }
 
 .composer-input {
   flex: 1;
@@ -863,13 +970,13 @@ function messageSide(message: OrderChatMessage) {
   height: 88rpx;
   max-height: 88rpx;
   min-height: 88rpx;
-  padding: 16rpx 18rpx;
+  padding: 0 18rpx;
   border: 1rpx solid #dbe6de;
-  border-radius: 18rpx;
+  border-radius: 16rpx;
   box-sizing: border-box;
   background: #fff;
   font-size: 26rpx;
-  line-height: 1.35;
+  line-height: 88rpx;
   overflow: hidden;
 }
 
@@ -889,4 +996,85 @@ function messageSide(message: OrderChatMessage) {
   opacity: .55;
   background: #9ccaa3;
 }
+
+.send-button::after { border: 0; }
+
+.more-button {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  border: 0;
+  color: #34463b;
+  background: transparent;
+  box-sizing: border-box;
+  transition: transform .18s ease, background-color .18s ease;
+}
+
+.more-button::before { position: absolute; inset: 10rpx; border: 3rpx solid #34463b; border-radius: 50%; background: #fff; content: ''; }
+.more-button.active { transform: rotate(45deg); }
+.more-button.active::before { background: #e6ece8; }
+.more-button.disabled { opacity: .4; }
+.more-symbol { position: relative; z-index: 1; font-size: 46rpx; font-weight: 300; line-height: 1; transform: translateY(-1rpx); }
+
+.attachment-panel {
+  display: flex;
+  gap: 38rpx;
+  min-height: 176rpx;
+  padding: 24rpx 14rpx 4rpx;
+  box-sizing: border-box;
+}
+
+.attachment-action {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10rpx;
+  min-width: 108rpx;
+  color: #526058;
+  font-size: 21rpx;
+}
+
+.attachment-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 104rpx;
+  height: 104rpx;
+  overflow: hidden;
+  border: 1rpx solid #e1e7e3;
+  border-radius: 22rpx;
+  background: #fff;
+}
+
+.attachment-action:active .attachment-icon { background: #edf2ee; }
+.photo-icon::before { position: absolute; width: 54rpx; height: 42rpx; border: 4rpx solid #263a2d; border-radius: 7rpx; content: ''; box-sizing: border-box; }
+.photo-sun { position: absolute; top: 34rpx; right: 30rpx; width: 9rpx; height: 9rpx; border-radius: 50%; background: #263a2d; }
+.photo-mountain { position: absolute; bottom: 34rpx; width: 25rpx; height: 4rpx; border-radius: 999rpx; background: #263a2d; transform-origin: left center; }
+.photo-mountain.left { left: 29rpx; transform: rotate(-45deg); }
+.photo-mountain.right { left: 45rpx; transform: rotate(40deg); }
+.pin-icon { position: relative; width: 34rpx; height: 34rpx; border: 5rpx solid #263a2d; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+.pin-dot { position: absolute; top: 50%; left: 50%; width: 9rpx; height: 9rpx; border-radius: 50%; background: #263a2d; transform: translate(-50%, -50%); }
+
+.location-confirm-mask { position: absolute; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: rgb(20 29 23 / 48%); }
+.location-confirm-sheet { width: 100%; padding: 28rpx 28rpx calc(24rpx + env(safe-area-inset-bottom)); border-radius: 30rpx 30rpx 0 0; background: #fff; box-shadow: 0 -18rpx 50rpx rgb(16 28 19 / 18%); box-sizing: border-box; }
+.sheet-handle { width: 70rpx; height: 7rpx; margin: -12rpx auto 22rpx; border-radius: 999rpx; background: #d4dcd6; }
+.location-confirm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; margin-bottom: 22rpx; }
+.location-confirm-title { display: block; color: #1f2d24; font-size: 31rpx; font-weight: 800; }
+.location-confirm-subtitle { display: block; max-width: 570rpx; margin-top: 7rpx; overflow: hidden; color: #738078; font-size: 22rpx; text-overflow: ellipsis; white-space: nowrap; }
+.location-confirm-close { display: flex; align-items: center; justify-content: center; width: 56rpx; height: 56rpx; border-radius: 50%; color: #657269; background: #f0f3f1; font-size: 38rpx; line-height: 1; }
+.location-confirm-actions { display: flex; gap: 16rpx; margin-top: 22rpx; }
+.location-cancel-button,
+.location-send-button { flex: 1; height: 88rpx; margin: 0; border: 0; border-radius: 16rpx; font-size: 25rpx; line-height: 88rpx; }
+.location-cancel-button::after,
+.location-send-button::after { border: 0; }
+.location-cancel-button { color: #3e4c43; background: #eef2ef; }
+.location-send-button { color: #fff; background: #2e7d32; }
+.location-cancel-button:active { background: #e0e7e2; }
+.location-send-button:active { background: #246a29; }
+.location-send-button[disabled] { opacity: .55; }
 </style>
