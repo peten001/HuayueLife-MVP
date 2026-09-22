@@ -114,7 +114,11 @@ export function sendMerchantOrderChatMessage(
 
 export function sendMerchantOrderChatLocation(orderId: string, latitude: number, longitude: number) {
   if (isDemoSessionActive()) {
-    return Promise.resolve(createDemoChatMessage(orderId, '[位置]'));
+    return Promise.resolve(createDemoChatMessage(orderId, '[位置]', {
+      messageType: 'LOCATION',
+      latitude,
+      longitude,
+    }));
   }
   return requestApi<OrderChatMessage>(
     `/merchant/orders/${encodeURIComponent(orderId)}/chat/messages`,

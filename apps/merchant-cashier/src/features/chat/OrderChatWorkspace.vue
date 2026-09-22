@@ -7,12 +7,14 @@ import {
   ref,
   watch,
 } from 'vue';
+import { X } from '@lucide/vue';
 import type { MerchantOrderChatConversation, MerchantOrder } from '@/types';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import { estimatedReadyAt, formatVietnamTime, pickupCode } from '@/domain';
 import { useI18n } from '@/i18n';
 import { useChatStore } from '@/stores/chat';
 import ChatComposer from './ChatComposer.vue';
+import ChatLocationPreview from './ChatLocationPreview.vue';
 import ChatMessageList from './ChatMessageList.vue';
 
 const props = withDefaults(defineProps<{
@@ -35,7 +37,8 @@ const messageListRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const rootRef = ref<HTMLElement | null>(null);
 const draft = ref('');
 const mediaError = ref('');
-const locationPending = ref(false);
+const locationResolving = ref(false);
+const pendingLocation = ref<{ latitude: number; longitude: number } | null>(null);
 const intersecting = ref(
   typeof window === 'undefined' || !('IntersectionObserver' in window),
 );
@@ -63,7 +66,10 @@ const compactDeliveryAddress = computed(() => props.order.deliveryAddress?.trim(
 watch(
   [() => props.order.id, shouldActivate],
   ([orderId, active], [previousOrderId] = ['', false]) => {
-    if (orderId !== previousOrderId) draft.value = '';
+    if (orderId !== previousOrderId) {
+      draft.value = '';
+      pendingLocation.value = null;
+    }
     syncActivation(orderId, active);
   },
   { immediate: true },
@@ -157,11 +163,11 @@ async function sendImage(file: File) {
   await chatStore.sendImage(props.order.id, file);
 }
 
-async function sendLocation() {
-  if (locationPending.value) return;
+async function requestLocation() {
+  if (locationResolving.value || state.value.sending) return;
   if (!navigator.geolocation) { mediaError.value = t('cashier.chat.locationFailed'); return; }
-  const activeOrderId = props.order.id;
-  locationPending.value = true;
+  const requestedOrderId = props.order.id;
+  locationResolving.value = true;
   mediaError.value = '';
   try {
     let point: GeolocationPosition;
@@ -170,11 +176,36 @@ async function sendLocation() {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }),
       );
     } catch { mediaError.value = t('cashier.chat.locationFailed'); return; }
-    if (props.order.id === activeOrderId && shouldActivate.value && !readOnly.value) {
-      await chatStore.sendLocation(activeOrderId, point.coords.latitude, point.coords.longitude);
+    if (props.order.id === requestedOrderId && shouldActivate.value && !readOnly.value) {
+      pendingLocation.value = {
+        latitude: point.coords.latitude,
+        longitude: point.coords.longitude,
+      };
+      blurComposer();
     }
-  } catch { mediaError.value = t('cashier.chat.sendError'); }
-  finally { locationPending.value = false; }
+  } catch { mediaError.value = t('cashier.chat.locationFailed'); }
+  finally { locationResolving.value = false; }
+}
+
+function cancelLocation() {
+  pendingLocation.value = null;
+}
+
+async function confirmLocation() {
+  const location = pendingLocation.value;
+  if (!location || state.value.sending || readOnly.value) return;
+  const orderId = props.order.id;
+  mediaError.value = '';
+  try {
+    await chatStore.sendLocation(orderId, location.latitude, location.longitude);
+    if (props.order.id === orderId) {
+      pendingLocation.value = null;
+      await nextTick();
+      await messageListRef.value?.scrollToBottom();
+    }
+  } catch {
+    mediaError.value = t('cashier.chat.sendError');
+  }
 }
 
 function blurComposer() {
@@ -231,14 +262,62 @@ function retry() {
         ref="composerRef"
         v-model="draft"
         :disabled="readOnly || !shouldActivate"
-        :sending="state.sending || locationPending"
+        :sending="state.sending || locationResolving"
         @send="sendMessage"
         @image="sendImage"
-        @location="sendLocation"
+        @location="requestLocation"
         @focus="handleComposerFocus"
         @blur="handleComposerBlur"
       />
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="pendingLocation"
+        class="location-confirm-backdrop"
+        role="presentation"
+        @click.self="cancelLocation"
+      >
+        <section
+          class="location-confirm-sheet"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="t('cashier.chat.confirmLocation')"
+        >
+          <span class="location-confirm-sheet__handle" aria-hidden="true" />
+          <header class="location-confirm-sheet__header">
+            <div>
+              <h3>{{ t('cashier.chat.confirmLocation') }}</h3>
+              <p>{{ t('cashier.chat.selectedLocation') }}</p>
+            </div>
+            <button type="button" :aria-label="t('common.cancel')" @click="cancelLocation">
+              <X :size="22" stroke-width="2" aria-hidden="true" />
+            </button>
+          </header>
+
+          <ChatLocationPreview
+            :latitude="pendingLocation.latitude"
+            :longitude="pendingLocation.longitude"
+            expanded
+            disabled
+          />
+
+          <div class="location-confirm-sheet__actions">
+            <button type="button" class="location-confirm-sheet__cancel" @click="cancelLocation">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="location-confirm-sheet__send"
+              :disabled="state.sending"
+              @click="confirmLocation"
+            >
+              {{ state.sending ? t('cashier.chat.sending') : t('cashier.chat.sendLocation') }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -303,6 +382,100 @@ function retry() {
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.location-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 37 27 / 42%);
+  overscroll-behavior: contain;
+}
+
+.location-confirm-sheet {
+  display: grid;
+  width: min(440px, 100%);
+  gap: 16px;
+  border: 1px solid #d9e4dc;
+  border-radius: 22px;
+  padding: 20px;
+  background: #f8fbf9;
+  box-shadow: 0 24px 70px rgb(17 49 30 / 25%);
+}
+
+.location-confirm-sheet__handle {
+  display: none;
+}
+
+.location-confirm-sheet__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.location-confirm-sheet__header h3,
+.location-confirm-sheet__header p {
+  margin: 0;
+}
+
+.location-confirm-sheet__header h3 {
+  color: #1f3528;
+  font-size: 18px;
+}
+
+.location-confirm-sheet__header p {
+  margin-top: 5px;
+  color: #6a786f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.location-confirm-sheet__header button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  color: #4d6155;
+  background: #eaf1ec;
+  cursor: pointer;
+}
+
+.location-confirm-sheet__actions {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 10px;
+}
+
+.location-confirm-sheet__actions button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.location-confirm-sheet__cancel {
+  color: #415549;
+  background: #e8efea;
+}
+
+.location-confirm-sheet__send {
+  color: #f7fbf8;
+  background: #217a48;
+}
+
+.location-confirm-sheet__send:disabled {
+  cursor: wait;
+  opacity: .62;
 }
 
 .order-chat-workspace--compact {
@@ -480,6 +653,32 @@ function retry() {
   .order-chat-workspace--compact :deep(.chat-composer__send) {
     height: 44px;
     min-height: 44px;
+  }
+
+  .location-confirm-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .location-confirm-sheet {
+    width: 100%;
+    gap: 14px;
+    border-width: 1px 0 0;
+    border-radius: 22px 22px 0 0;
+    padding: 8px 14px max(14px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .location-confirm-sheet__handle {
+    display: block;
+    width: 42px;
+    height: 4px;
+    justify-self: center;
+    border-radius: 999px;
+    background: #cbd7cf;
+  }
+
+  .location-confirm-sheet__header h3 {
+    font-size: 17px;
   }
 }
 </style>

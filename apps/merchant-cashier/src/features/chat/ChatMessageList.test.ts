@@ -27,6 +27,7 @@ describe('ChatMessageList attachments', () => {
     expect(wrapper.find('img').attributes('src')).toContain('/uploads/chat/test.webp');
     expect(wrapper.find('a[href^="https://www.google.com/maps?q="]').attributes('href'))
       .toBe('https://www.google.com/maps?q=21.1862,106.0763');
+    expect(wrapper.findAll('img[src^="https://tile.openstreetmap.org/"]')).toHaveLength(9);
     expect(wrapper.text()).toContain('21.18620, 106.07630');
   });
 

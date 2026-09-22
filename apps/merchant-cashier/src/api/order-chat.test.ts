@@ -75,6 +75,19 @@ describe('cashier order chat API routing', () => {
     expect(page.items.map((message) => message.content)).toContain('demo message');
   });
 
+  it('keeps demo location messages renderable as location cards', async () => {
+    mocks.demoActive = true;
+
+    const sent = await sendMerchantOrderChatLocation('demo-order', 21.1862, 106.0763);
+
+    expect(sent).toMatchObject({
+      messageType: 'LOCATION',
+      latitude: 21.1862,
+      longitude: 106.0763,
+    });
+    expect(mocks.requestApi).not.toHaveBeenCalled();
+  });
+
   it('clears demo chat messages and their sequence with the demo repository', async () => {
     mocks.demoActive = true;
     const first = await sendMerchantOrderChatMessage('demo-order', 'old session');

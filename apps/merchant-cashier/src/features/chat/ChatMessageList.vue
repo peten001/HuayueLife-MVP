@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { OrderChatMessage } from '@/api/order-chat';
 import { useI18n } from '@/i18n';
 import { resolveMediaUrl } from '@/domain/media';
+import ChatLocationPreview from './ChatLocationPreview.vue';
 
 const props = defineProps<{
   messages: OrderChatMessage[];
@@ -21,10 +22,6 @@ const listRef = ref<HTMLElement | null>(null);
 const nearBottom = ref(true);
 const showNewMessages = ref(false);
 const failedImageIds = ref<string[]>([]);
-
-function locationUrl(latitude: number, longitude: number) {
-  return `https://www.google.com/maps?q=${latitude},${longitude}`;
-}
 
 function openImage(url: string) {
   window.open(resolveMediaUrl(url), '_blank', 'noopener,noreferrer');
@@ -167,7 +164,12 @@ defineExpose({ scrollToBottom });
         >
           <div class="chat-message-list__stack">
             <time :datetime="item.message.createdAt">{{ formatTime(item.message.createdAt) }}</time>
-            <div class="chat-message-list__bubble">
+            <div
+              class="chat-message-list__bubble"
+              :class="{
+                'chat-message-list__bubble--location': item.message.messageType === 'LOCATION',
+              }"
+            >
               <button
                 v-if="item.message.messageType === 'IMAGE' && item.message.mediaUrl && !failedImageIds.includes(item.message.id)"
                 type="button" class="chat-message-list__image" :aria-label="t('cashier.chat.image')"
@@ -175,14 +177,11 @@ defineExpose({ scrollToBottom });
               >
                 <img :src="resolveMediaUrl(item.message.mediaUrl)" :alt="t('cashier.chat.image')" @error="failedImageIds.push(item.message.id)" />
               </button>
-              <a
+              <ChatLocationPreview
                 v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
-                class="chat-message-list__location"
-                :href="locationUrl(item.message.latitude, item.message.longitude)" target="_blank" rel="noopener noreferrer"
-              >
-                <span>⌖</span><strong>{{ t('cashier.chat.openLocation') }}</strong>
-                <small>{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</small>
-              </a>
+                :latitude="item.message.latitude"
+                :longitude="item.message.longitude"
+              />
               <p v-else>{{ item.message.messageType === 'IMAGE' ? t('cashier.chat.imageFailed') : item.message.content }}</p>
               <span
                 v-if="item.message.senderType === 'MERCHANT'"
@@ -317,9 +316,22 @@ defineExpose({ scrollToBottom });
 
 .chat-message-list__image { padding: 0; border: 0; border-radius: 9px; overflow: hidden; background: transparent; cursor: zoom-in; }
 .chat-message-list__image img { display: block; width: min(250px, 48vw); height: 180px; object-fit: cover; }
-.chat-message-list__location { display: flex; min-width: 150px; flex-direction: column; gap: 3px; color: #1f2d24; text-decoration: none; }
-.chat-message-list__location span { color: var(--cashier-action-primary); font-size: 24px; line-height: 1; }
-.chat-message-list__location small { color: #65776a; font-size: 11px; }
+.chat-message-list__bubble--location {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+.chat-message-list__bubble--location .chat-message-list__receipt {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 3;
+  border-radius: 999px;
+  padding: 2px 4px;
+  background: rgb(249 252 250 / 88%);
+}
 
 .chat-message-list__row--merchant .chat-message-list__bubble {
   border-color: #cae5d4;
@@ -393,29 +405,5 @@ defineExpose({ scrollToBottom });
     height: 146px;
   }
 
-  .chat-message-list__location {
-    display: grid;
-    min-width: 138px;
-    grid-template-columns: 30px minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    column-gap: 7px;
-    row-gap: 1px;
-  }
-
-  .chat-message-list__location span {
-    grid-row: 1 / 3;
-    align-self: center;
-    font-size: 23px;
-  }
-
-  .chat-message-list__location strong {
-    font-size: 14px;
-  }
-
-  .chat-message-list__location small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 </style>

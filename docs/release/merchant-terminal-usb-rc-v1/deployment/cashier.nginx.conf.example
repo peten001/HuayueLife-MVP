@@ -21,7 +21,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), geolocation=(), microphone=()" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com https://tile.openstreetmap.org; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
 
     location = /index.html {
         # Nginx does not inherit server-level add_header directives when a location
@@ -30,7 +30,7 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy "camera=(), geolocation=(), microphone=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com https://tile.openstreetmap.org; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         try_files $uri =404;
     }
@@ -52,7 +52,7 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy "camera=(), geolocation=(), microphone=()" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.huayueyouxuan.com https://tile.openstreetmap.org; connect-src 'self' https://api.huayueyouxuan.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         try_files $uri =404;
     }

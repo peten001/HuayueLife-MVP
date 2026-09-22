@@ -11,6 +11,7 @@ import {
 } from '@/api/order-chat';
 import MerchantIcon from '@/components/MerchantIcon.vue';
 import OrderStatusBadge from '@/components/OrderStatusBadge.vue';
+import OrderChatLocationPreview from '@/components/OrderChatLocationPreview.vue';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder, OrderChatMessage } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
@@ -28,6 +29,8 @@ const { t } = useI18n();
 const loading = ref(false);
 const refreshing = ref(false);
 const sending = ref(false);
+const locationResolving = ref(false);
+const pendingLocation = ref<{ latitude: number; longitude: number } | null>(null);
 const error = ref('');
 const draft = ref('');
 const conversation = ref<MerchantChatConversation | null>(null);
@@ -82,6 +85,7 @@ const isNearBottom = ref(true);
 watch(
   () => props.order.id,
   () => {
+    pendingLocation.value = null;
     void loadConversation(true);
   },
   { immediate: true },
@@ -338,11 +342,11 @@ async function handleImageSelection(event: Event) {
   }
 }
 
-async function sendLocation() {
-  if (!canSend.value || sending.value) return;
+async function requestLocation() {
+  if (!canSend.value || sending.value || locationResolving.value) return;
   if (!navigator.geolocation) { error.value = t('chatLocationFailed'); return; }
-  const activeOrderId = props.order.id;
-  sending.value = true;
+  const requestedOrderId = props.order.id;
+  locationResolving.value = true;
   error.value = '';
   try {
     let point: GeolocationPosition;
@@ -351,14 +355,40 @@ async function sendLocation() {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }),
       );
     } catch { error.value = t('chatLocationFailed'); return; }
-    if (disposed || !canSend.value || props.order.id !== activeOrderId) return;
-    await acceptSentMessage(await sendMerchantOrderChatLocation(activeOrderId, point.coords.latitude, point.coords.longitude));
-  } catch { error.value = t('chatSendFailed'); }
-  finally { sending.value = false; }
+    if (disposed || !canSend.value || props.order.id !== requestedOrderId) return;
+    pendingLocation.value = {
+      latitude: point.coords.latitude,
+      longitude: point.coords.longitude,
+    };
+  } catch { error.value = t('chatLocationFailed'); }
+  finally { locationResolving.value = false; }
 }
 
-function locationUrl(message: OrderChatMessage) {
-  return `https://www.google.com/maps?q=${message.latitude},${message.longitude}`;
+function cancelLocation() {
+  pendingLocation.value = null;
+}
+
+async function confirmLocation() {
+  const location = pendingLocation.value;
+  if (!location || !canSend.value || sending.value) return;
+  const activeOrderId = props.order.id;
+  sending.value = true;
+  error.value = '';
+  try {
+    const message = await sendMerchantOrderChatLocation(
+      activeOrderId,
+      location.latitude,
+      location.longitude,
+    );
+    if (!disposed && props.order.id === activeOrderId) {
+      pendingLocation.value = null;
+      await acceptSentMessage(message);
+    }
+  } catch {
+    error.value = t('chatSendFailed');
+  } finally {
+    sending.value = false;
+  }
 }
 
 function openImage(url: string) {
@@ -366,6 +396,7 @@ function openImage(url: string) {
 }
 
 function close() {
+  pendingLocation.value = null;
   emit('close');
 }
 
@@ -422,7 +453,10 @@ function isMerchantMessage(message: OrderChatMessage) {
               <article v-else :class="['message-row', messageSide(item.message)]">
                 <div class="message-stack">
                   <small class="message-time">{{ formatMessageTime(item.message.createdAt) }}</small>
-                  <div :class="['message-bubble', { self: isMerchantMessage(item.message) }]">
+                  <div :class="['message-bubble', {
+                    self: isMerchantMessage(item.message),
+                    location: item.message.messageType === 'LOCATION',
+                  }]">
                     <button
                       v-if="item.message.messageType === 'IMAGE' && item.message.mediaUrl && !failedImageIds.includes(item.message.id)"
                       type="button" class="message-image-button"
@@ -431,14 +465,11 @@ function isMerchantMessage(message: OrderChatMessage) {
                     >
                       <img :src="resolveMediaUrl(item.message.mediaUrl)" :alt="t('chatImage')" @error="failedImageIds.push(item.message.id)" />
                     </button>
-                    <a
+                    <OrderChatLocationPreview
                       v-else-if="item.message.messageType === 'LOCATION' && item.message.latitude != null && item.message.longitude != null"
-                      class="message-location" :href="locationUrl(item.message)" target="_blank" rel="noopener noreferrer"
-                    >
-                      <span class="message-location-icon">⌖</span>
-                      <strong>{{ t('chatOpenLocation') }}</strong>
-                      <small>{{ item.message.latitude.toFixed(5) }}, {{ item.message.longitude.toFixed(5) }}</small>
-                    </a>
+                      :latitude="item.message.latitude"
+                      :longitude="item.message.longitude"
+                    />
                     <p v-else class="message-content">{{ item.message.messageType === 'IMAGE' ? t('chatImageFailed') : item.message.content }}</p>
                     <small
                       v-if="isMerchantMessage(item.message)"
@@ -479,7 +510,7 @@ function isMerchantMessage(message: OrderChatMessage) {
               <div class="chat-attachments">
                 <input ref="imageInputRef" class="chat-image-input" type="file" accept="image/jpeg,image/png,image/webp" @change="handleImageSelection" />
                 <button type="button" class="chat-attachment" :disabled="!canSend || sending" @click="imageInputRef?.click()">{{ t('chatImage') }}</button>
-                <button type="button" class="chat-attachment" :disabled="!canSend || sending" @click="sendLocation">{{ t('chatLocation') }}</button>
+                <button type="button" class="chat-attachment" :disabled="!canSend || sending || locationResolving" @click="requestLocation">{{ t('chatLocation') }}</button>
               </div>
               <div class="chat-compose-row">
                 <textarea
@@ -499,6 +530,47 @@ function isMerchantMessage(message: OrderChatMessage) {
               </div>
             </form>
           </div>
+        </div>
+      </section>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="pendingLocation"
+      class="location-confirm-backdrop"
+      role="presentation"
+      @click.self="cancelLocation"
+    >
+      <section
+        class="location-confirm-sheet"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('chatConfirmLocation')"
+      >
+        <span class="location-confirm-handle" aria-hidden="true" />
+        <header class="location-confirm-header">
+          <div>
+            <h3>{{ t('chatConfirmLocation') }}</h3>
+            <p>{{ t('chatSelectedLocation') }}</p>
+          </div>
+          <button type="button" :aria-label="t('cancel')" @click="cancelLocation">
+            <MerchantIcon name="close" />
+          </button>
+        </header>
+        <OrderChatLocationPreview
+          :latitude="pendingLocation.latitude"
+          :longitude="pendingLocation.longitude"
+          expanded
+          disabled
+        />
+        <div class="location-confirm-actions">
+          <button type="button" class="location-confirm-cancel" @click="cancelLocation">
+            {{ t('cancel') }}
+          </button>
+          <button type="button" class="location-confirm-send" :disabled="sending" @click="confirmLocation">
+            {{ sending ? t('sending') : t('chatSendLocation') }}
+          </button>
         </div>
       </section>
     </div>
@@ -763,9 +835,22 @@ function isMerchantMessage(message: OrderChatMessage) {
 
 .message-image-button { padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: zoom-in; overflow: hidden; }
 .message-image-button img { display: block; width: min(260px, 45vw); height: 190px; object-fit: cover; }
-.message-location { display: flex; min-width: 160px; flex-direction: column; gap: 3px; color: #1f2d24; text-decoration: none; }
-.message-location-icon { color: #2e7d32; font-size: 25px; line-height: 1; }
-.message-location small { color: #65776a; font-size: 11px; }
+.message-bubble.location {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+.message-bubble.location .message-status {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 3;
+  border-radius: 999px;
+  padding: 2px 4px;
+  background: rgb(249 252 250 / 88%);
+}
 
 .message-status {
   display: inline-flex;
@@ -911,6 +996,53 @@ function isMerchantMessage(message: OrderChatMessage) {
   font-weight: 700;
 }
 
+.location-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(14 31 21 / 46%);
+  overscroll-behavior: contain;
+}
+
+.location-confirm-sheet {
+  display: grid;
+  width: min(460px, 100%);
+  gap: 16px;
+  border: 1px solid #d9e4dc;
+  border-radius: 22px;
+  padding: 20px;
+  background: #f8fbf9;
+  box-shadow: 0 24px 70px rgb(17 49 30 / 25%);
+}
+
+.location-confirm-handle { display: none; }
+.location-confirm-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.location-confirm-header h3,
+.location-confirm-header p { margin: 0; }
+.location-confirm-header h3 { color: #1f3528; font-size: 18px; }
+.location-confirm-header p { margin-top: 5px; color: #6a786f; font-size: 12px; line-height: 1.4; }
+
+.location-confirm-header button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  color: #4d6155;
+  background: #eaf1ec;
+}
+
+.location-confirm-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: 10px; }
+.location-confirm-actions button { min-height: 48px; border: 0; border-radius: 14px; font: inherit; font-size: 14px; font-weight: 800; }
+.location-confirm-cancel { color: #415549; background: #e8efea; }
+.location-confirm-send { color: #f7fbf8; background: #217a48; }
+.location-confirm-send:disabled { opacity: .62; }
+
 @media (max-width: 760px) {
   .chat-modal-backdrop {
     display: block;
@@ -966,6 +1098,28 @@ function isMerchantMessage(message: OrderChatMessage) {
   .chat-error {
     margin-right: 16px;
     margin-left: 16px;
+  }
+
+  .location-confirm-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .location-confirm-sheet {
+    width: 100%;
+    gap: 14px;
+    border-width: 1px 0 0;
+    border-radius: 22px 22px 0 0;
+    padding: 8px 14px max(14px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .location-confirm-handle {
+    display: block;
+    width: 42px;
+    height: 4px;
+    justify-self: center;
+    border-radius: 999px;
+    background: #cbd7cf;
   }
 }
 </style>
