@@ -19,6 +19,20 @@ describe('ChatComposer focus controls', () => {
     expect(document.activeElement).not.toBe(wrapper.get('textarea').element);
   });
 
+  it('marks the composer while the message input owns the software keyboard', async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    const input = wrapper.get('textarea');
+
+    await input.trigger('focus');
+    expect(wrapper.get('form').classes()).toContain('is-input-focused');
+
+    await input.trigger('blur');
+    expect(wrapper.get('form').classes()).not.toContain('is-input-focused');
+  });
+
   it('does not send empty content', async () => {
     const wrapper = mount(ChatComposer, {
       props: { disabled: false, sending: false },

@@ -19,6 +19,7 @@ const { t } = useI18n();
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const imageInputRef = ref<HTMLInputElement | null>(null);
 const attachmentsOpen = ref(false);
+const inputFocused = ref(false);
 const hasDraft = computed(() => Boolean(draft.value.trim()));
 
 function selectImage(event: Event) {
@@ -50,6 +51,15 @@ function submit() {
   emit('send', content);
 }
 
+function handleInputFocus() {
+  inputFocused.value = true;
+  attachmentsOpen.value = false;
+}
+
+function handleInputBlur() {
+  inputFocused.value = false;
+}
+
 function focus() {
   inputRef.value?.focus({ preventScroll: true });
 }
@@ -62,7 +72,7 @@ defineExpose({ focus, blur });
 </script>
 
 <template>
-  <form class="chat-composer" @submit.prevent="submit">
+  <form class="chat-composer" :class="{ 'is-input-focused': inputFocused }" @submit.prevent="submit">
     <div
       class="chat-composer__attachments"
       :class="{ 'is-open': attachmentsOpen }"
@@ -87,7 +97,8 @@ defineExpose({ focus, blur });
         enterkeyhint="send"
         :disabled="disabled || sending"
         :placeholder="t('cashier.chat.messagePlaceholder')"
-        @focus="attachmentsOpen = false"
+        @focus="handleInputFocus"
+        @blur="handleInputBlur"
         @keydown.enter.exact.prevent="submit"
       />
       <button

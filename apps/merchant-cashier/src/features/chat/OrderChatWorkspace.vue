@@ -394,16 +394,20 @@ function retry() {
   .order-chat-workspace--compact :deep(.chat-composer) {
     gap: 0;
     flex: 0 0 auto;
-    padding: 8px 10px max(8px, env(safe-area-inset-bottom, 0px));
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px));
     border-top: 1px solid #e4ebe6;
     background: var(--cashier-surface);
     box-shadow: 0 -5px 18px rgb(31 45 36 / 5%);
   }
 
+  .order-chat-workspace--compact :deep(.chat-composer.is-input-focused) {
+    padding-bottom: 6px;
+  }
+
   .order-chat-workspace--compact :deep(.chat-composer__input) {
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
   }
 
   .order-chat-workspace--compact :deep(.chat-composer__send) {
@@ -446,9 +450,9 @@ function retry() {
   }
 
   .order-chat-workspace--compact :deep(.chat-composer__input) {
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
   }
 
   .order-chat-workspace--compact :deep(.chat-composer__send) {
