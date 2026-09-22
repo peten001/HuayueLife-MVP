@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatItemPrice, formatVnd, formatVietnamDateFilter, formatVietnamDateFilterAria } from './format';
+import { formatItemPrice, formatVnd, formatVietnamCompactDateTime, formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamMonthDay } from './format';
 
 describe('history date filter formatting', () => {
   it('shows month/day while retaining a full accessible date', () => {
@@ -9,6 +9,14 @@ describe('history date filter formatting', () => {
     expect(formatVietnamDateFilterAria('2026-07-27', 'zh')).toBe('2026年7月27日');
     expect(formatVietnamDateFilterAria('2026-07-27', 'vi')).toBe('27/07/2026');
     expect(formatVietnamDateFilterAria('2026-07-27', 'en')).toBe('July 27, 2026');
+  });
+});
+
+describe('compact Vietnam date-time formatting', () => {
+  it('removes the year while retaining Vietnam-local month, day and time', () => {
+    expect(formatVietnamCompactDateTime('2026-09-21T15:05:00.000Z', 'zh')).toBe('09/21 22:05');
+    expect(formatVietnamCompactDateTime('2026-09-21T15:05:00.000Z', 'vi')).toBe('21/09 22:05');
+    expect(formatVietnamMonthDay('2026-09-21', 'en')).toBe('09/21');
   });
 });
 

@@ -82,6 +82,7 @@
 .workflow-item-list strong { overflow: hidden; text-overflow: ellipsis; }
 .workflow-item-list small { color: #79847e; }
 .workflow-item-list b { color: #25382c; white-space: nowrap; }
+.workflow-item-list__unit-price-compact { display: none; }
 
 /* New order inbox */
 .new-order-inbox { position: fixed; inset: 0; z-index: 110; display: grid; justify-items: end; }
@@ -233,24 +234,28 @@
 .fulfillment-customer__remark small { color: #7c887f; font-size: 10px; font-weight: 800; }
 .delivery-contact-panel { flex: 0 0 auto; }
 .delivery-contact-panel__header { align-items: flex-start !important; margin-bottom: 9px !important; }
-.delivery-contact-panel__header > div:first-child { display: grid; min-width: 0; gap: 3px; }
+.delivery-contact-panel__header > div:first-child { display: grid; width: 100%; min-width: 0; gap: 3px; }
 .delivery-contact-panel__header span { color: #718078; font-size: 10px; font-weight: 800; text-transform: uppercase; }
-.delivery-contact-panel__header strong { display: flex; min-width: 0; align-items: flex-start; gap: 7px; color: #263d2f; font-size: 14px; line-height: 1.4; }
-.delivery-contact-panel__header strong svg { flex: 0 0 auto; margin-top: 1px; }
-.delivery-contact-copy { display: inline-flex; min-height: 40px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; border: 1px solid #cfe0d5; border-radius: 9px; padding: 0 10px; color: #286343; background: #f2f8f4; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.delivery-contact-panel__address-row { display: flex; min-width: 0; align-items: flex-start; gap: 7px; }
+.delivery-contact-panel__address-row > svg { flex: 0 0 auto; margin-top: 1px; }
+.delivery-contact-panel__address-row > strong { min-width: 0; flex: 1 1 auto; color: #263d2f; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.delivery-contact-panel__address-row > .delivery-contact-copy { margin-left: auto; }
+.delivery-contact-copy { display: inline-flex; min-height: 40px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; border: 1px solid #cfe0d5; border-radius: 9px; padding: 0 10px; color: #286343; background: #f2f8f4; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 120ms ease; }
+.delivery-contact-copy:active { transform: scale(.97); }
+.delivery-contact-copy.is-copied { border-color: #24764a; color: #f8fbf8; background: #24764a; box-shadow: 0 5px 14px rgb(36 118 74 / 20%); }
 .delivery-contact-panel__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .delivery-contact-panel__facts p { display: flex; min-width: 0; align-items: flex-start; gap: 7px; margin: 0; color: #52635a; font-size: 12px; line-height: 1.35; }
 .delivery-contact-panel__facts p > span { display: grid; min-width: 0; gap: 2px; overflow-wrap: anywhere; }
-.delivery-contact-panel__facts .delivery-contact-panel__phone { flex-wrap: wrap; }
-.delivery-contact-panel__phone > span { flex: 0 1 auto; }
-.delivery-contact-panel__phone > .delivery-contact-copy--inline { margin-left: 0; }
+.delivery-contact-panel__facts .delivery-contact-panel__phone { flex-wrap: nowrap; }
+.delivery-contact-panel__phone > span { flex: 1 1 auto; }
+.delivery-contact-panel__phone > .delivery-contact-copy--inline { margin-left: auto; }
 .delivery-contact-panel__phone > svg { flex: 0 0 auto; }
 .delivery-contact-copy.is-disabled { border-color: #d9e0dc; color: #89958e; background: #f3f5f4; cursor: not-allowed; }
 .delivery-contact-panel__facts small { color: #7c887f; font-size: 9px; font-weight: 800; }
 .delivery-contact-panel__note { color: #75613f !important; }
 .delivery-contact-panel--compact { padding: 9px 10px; }
 .delivery-contact-panel--compact .delivery-contact-panel__header { margin-bottom: 6px !important; }
-.delivery-contact-panel--compact .delivery-contact-panel__header strong { font-size: 12px; }
+.delivery-contact-panel--compact .delivery-contact-panel__address-row > strong { font-size: 12px; }
 .delivery-contact-panel--compact .delivery-contact-panel__facts p { font-size: 11px; }
 .order-chat-workspace__delivery-context { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fulfillment-progress { flex: 0 0 auto; padding: 12px; }

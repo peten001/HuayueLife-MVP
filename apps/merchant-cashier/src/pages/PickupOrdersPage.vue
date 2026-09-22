@@ -234,7 +234,7 @@ function backToPickup() {
         <div class="fulfillment-main__body" :class="{ 'is-chat': activePane === 'chat' }">
           <template v-if="activePane === 'detail'">
             <LoadingState v-if="detailLoading" :label="t('orders.loading')" />
-            <PickupOrderDetail v-else-if="order" :order="order" />
+            <PickupOrderDetail v-else-if="order" :order="order" :compact-facts="mobileViewport || mobileV2Preview" />
             <EmptyState v-else :title="t('order.detailEmptyTitle')" :description="t('order.detailEmptyDescription')" />
           </template>
           <div v-if="order" v-show="activePane === 'chat'" class="fulfillment-chat-pane">

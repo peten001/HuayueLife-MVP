@@ -93,11 +93,16 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.text()).toContain('× 2');
     expect(wrapper.text()).toContain('单价 45,000 VND');
     expect(wrapper.text()).toContain('90,000 VND');
+    expect(wrapper.get('.workflow-item-list__unit-price-compact').text()).toBe('45,000');
+    expect(wrapper.get('.workflow-item-list__unit-price-compact').attributes('aria-label')).toBe('单价 45,000 VND');
+    expect(wrapper.get('.workflow-item-list__subtotal').text()).toBe('90,000 VND');
 
     setLocale('vi');
     await nextTick();
     expect(wrapper.text()).toContain('Phở bò');
     expect(wrapper.text()).toContain('Đơn giá 45.000 ₫');
+    expect(wrapper.get('.workflow-item-list__unit-price-compact').text()).toBe('45.000');
+    expect(wrapper.get('.workflow-item-list__unit-price-compact').attributes('aria-label')).toBe('Đơn giá 45.000 ₫');
   });
 
   it('collapses the internal ACCEPTED state into the user-visible preparing step', () => {
@@ -120,6 +125,27 @@ describe('cashier fulfilment V2 components', () => {
     expect(pickup.findAll('.fulfillment-facts > div')[1]?.text()).toContain('等待时长');
     expect(pickup.find('.order-items-section__heading').text()).toContain('菜品明细');
     expect(pickup.find('.order-items-section__heading').text()).toContain('3 份');
+  });
+
+  it('uses three localized compact pickup facts without a year in the mobile presentation', () => {
+    const localizedFacts = [
+      { locale: 'zh' as const, ready: '取餐09:30', waiting: '已等', ordered: '下单07/24 09:00' },
+      { locale: 'vi' as const, ready: 'Lấy09:30', waiting: 'Chờ', ordered: 'Đặt24/07 09:00' },
+      { locale: 'en' as const, ready: 'Pickup09:30', waiting: 'Wait', ordered: 'Order07/24 09:00' },
+    ];
+
+    for (const expected of localizedFacts) {
+      setLocale(expected.locale);
+      const pickup = mount(PickupOrderDetail, { props: { order, compactFacts: true } });
+      const facts = pickup.findAll('.fulfillment-facts > div');
+
+      expect(facts).toHaveLength(3);
+      expect(facts[0]?.text()).toBe(expected.ready);
+      expect(facts[1]?.text()).toContain(expected.waiting);
+      expect(facts[2]?.text()).toBe(expected.ordered);
+      expect(facts[2]?.text()).not.toContain('2026');
+      pickup.unmount();
+    }
   });
 
   it('uses the pickup code as the only primary detail heading', () => {
@@ -232,11 +258,16 @@ describe('cashier fulfilment V2 components', () => {
     await flushPromises();
 
     expect(writeText).toHaveBeenNthCalledWith(1, '12 Test Street, District 1');
+    expect(wrapper.get('[data-testid="copy-delivery-address"]').text()).toContain('已复制');
+    expect(wrapper.get('[data-testid="copy-delivery-address"]').classes()).toContain('is-copied');
+    expect(wrapper.get('[data-testid="copy-delivery-address"]').attributes('aria-label')).toBe('已复制');
+    expect(wrapper.find('.delivery-contact-panel__address-row').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'STRONG', 'BUTTON']);
     expect(wrapper.get('[data-testid="call-delivery-phone"]').text()).toContain('拨打电话');
     expect(wrapper.find('.delivery-contact-panel__phone').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'SPAN', 'A']);
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('aria-disabled')).toBe('true');
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('title')).toContain('不支持拨号');
     expect(useUiStore().toasts).toEqual([]);
+    wrapper.unmount();
   });
 
   it('keeps an error prompt when copying the delivery address fails', async () => {

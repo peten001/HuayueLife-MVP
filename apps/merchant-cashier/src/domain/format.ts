@@ -55,6 +55,34 @@ export function formatVietnamTime(
   }).format(date);
 }
 
+export function formatVietnamMonthDay(
+  value: string | Date | null | undefined,
+  locale: Locale = 'vi',
+) {
+  if (!value) return '--';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: cashierConfig.vietnamTimeZone,
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const read = (type: 'month' | 'day') => parts.find((part) => part.type === type)?.value || '';
+  return locale === 'vi'
+    ? `${read('day')}/${read('month')}`
+    : `${read('month')}/${read('day')}`;
+}
+
+export function formatVietnamCompactDateTime(
+  value: string | Date | null | undefined,
+  locale: Locale = 'vi',
+) {
+  if (!value) return '--';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return `${formatVietnamMonthDay(date, locale)} ${formatVietnamTime(date, locale)}`;
+}
+
 export function todayInVietnam(value = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: cashierConfig.vietnamTimeZone,

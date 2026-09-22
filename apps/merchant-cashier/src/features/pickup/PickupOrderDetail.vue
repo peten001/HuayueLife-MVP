@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { MessageSquareText, Phone, UserRound } from '@lucide/vue';
 import { computed } from 'vue';
-import { estimatedReadyAt, formatVietnamDateTime, formatVietnamTime, formatVnd, packingFeeVnd, pickupCode } from '@/domain';
+import { estimatedReadyAt, formatVietnamCompactDateTime, formatVietnamDateTime, formatVietnamTime, formatVnd, packingFeeVnd, pickupCode } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder } from '@/types';
 import OrderItemsSection from '@/features/fulfillment/OrderItemsSection.vue';
 import WaitDuration from '@/features/fulfillment/WaitDuration.vue';
 import FulfillmentProgressRail from '@/features/fulfillment/FulfillmentProgressRail.vue';
 
-const props = defineProps<{ order: MerchantOrder }>();
+const props = withDefaults(defineProps<{ order: MerchantOrder; compactFacts?: boolean }>(), {
+  compactFacts: false,
+});
 const { t, locale } = useI18n();
 const estimate = computed(() => estimatedReadyAt(props.order));
 const packingFee = computed(() => packingFeeVnd(props.order));
@@ -25,9 +27,9 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
       </div>
     </header>
     <dl class="fulfillment-facts">
-      <div><dt>{{ t('fulfillment.estimatedReady') }}</dt><dd>{{ estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }}</dd></div>
-      <div><dt>{{ t('fulfillment.waiting') }}</dt><dd><WaitDuration compact :created-at="order.createdAt" /></dd></div>
-      <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
+      <div><dt>{{ t(compactFacts ? 'fulfillment.estimatedReadyShort' : 'fulfillment.estimatedReady') }}</dt><dd>{{ estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }}</dd></div>
+      <div><dt>{{ t(compactFacts ? 'fulfillment.waitingShort' : 'fulfillment.waiting') }}</dt><dd><WaitDuration compact :dense="compactFacts" :created-at="order.createdAt" /></dd></div>
+      <div><dt>{{ t(compactFacts ? 'fulfillment.orderedShort' : 'order.createdAt') }}</dt><dd>{{ compactFacts ? formatVietnamCompactDateTime(order.createdAt, locale) : formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
     </dl>
     <FulfillmentProgressRail :order="order" show-current-status />
     <section class="workflow-section fulfillment-customer">

@@ -671,16 +671,23 @@ async function assertMobileNavigation(page) {
 }
 
 async function assertPhoneChatSafeArea(page) {
-  const send = page.locator('.chat-composer__send');
   const composer = page.locator('.chat-composer__input');
+  const more = page.locator('.chat-composer__more');
   const navigation = page.locator('.cashier-mobile-navigation:visible');
-  const sendBox = await requiredBox(send, 'phone chat send');
   const composerBox = await requiredBox(composer, 'phone chat composer');
+  const moreBox = await requiredBox(more, 'phone chat attachment toggle');
   const navigationBox = await requiredBox(navigation, 'phone bottom navigation');
   assert.ok(composerBox.height >= 44, `phone chat composer must meet 44px touch height, got ${composerBox.height}px`);
-  assert.ok(sendBox.height >= 44, `phone chat send must meet 44px touch height, got ${sendBox.height}px`);
+  assert.ok(moreBox.height >= 44 && moreBox.width >= 44, `phone chat attachment toggle must meet 44px touch size, got ${moreBox.width}x${moreBox.height}px`);
   assert.ok(composerBox.y >= 0, 'phone chat composer must remain inside the viewport');
-  assert.ok(sendBox.y + sendBox.height <= navigationBox.y + 1, 'phone chat controls must stay above bottom navigation');
+  assert.ok(moreBox.y + moreBox.height <= navigationBox.y + 1, 'phone chat controls must stay above bottom navigation');
+
+  await composer.fill('布局检查');
+  const send = page.locator('.chat-composer__send:visible');
+  const sendBox = await requiredBox(send, 'phone chat send');
+  assert.ok(sendBox.height >= 44, `phone chat send must meet 44px touch height, got ${sendBox.height}px`);
+  assert.ok(sendBox.y + sendBox.height <= navigationBox.y + 1, 'phone chat send must stay above bottom navigation');
+  await composer.fill('');
 }
 
 async function assertHistoryTwoColumn(page) {

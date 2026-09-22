@@ -35,7 +35,7 @@ const groups = computed(() => groupDefinitions.map((group) => ({
 <template>
   <div v-if="open" class="new-order-inbox" data-testid="new-order-inbox">
     <button class="new-order-inbox__scrim" type="button" :aria-label="t('common.dismiss')" @click="$emit('close')" />
-    <section class="new-order-inbox__panel" role="dialog" :aria-label="t('inbox.title')">
+    <section class="new-order-inbox__panel" role="dialog" aria-modal="true" :aria-label="t('inbox.title')">
       <header>
         <div>
           <span>{{ t('inbox.eyebrow') }}</span>

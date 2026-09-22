@@ -7,7 +7,7 @@ import PrintJobActions from '@/components/printing/PrintJobActions.vue';
 import OrderHistoryPage from './OrderHistoryPage.vue';
 
 const mocks = vi.hoisted(() => ({
-  route: { params: { orderId: 'settlement-1' } },
+  route: { params: { orderId: 'settlement-1' }, meta: { mobileV2Preview: true } },
   push: vi.fn(),
   getBusinessDaySummary: vi.fn(),
   printBusinessDaySummary: vi.fn(),
@@ -88,6 +88,35 @@ describe('OrderHistoryPage settlement printing', () => {
     expect(actions[0].props('tableSessionId')).toBe(expected.tableSessionId);
     expect(actions[0].props('orderId')).toBe(expected.orderId);
     expect(actions[0].props('compactMode')).toBe('inline');
+    wrapper.unmount();
+  });
+
+  it('uses compact labels and month-day time values in the mobile detail facts', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const settlement = settlementFixture({
+      kind: 'ORDER',
+      orderType: 'PICKUP',
+      tableSessionId: null,
+      orderIds: ['order-654'],
+    });
+    settlement.businessDate = '';
+    settlement.paymentMethod = null;
+    const orders = useOrdersStore();
+    orders.$patch({ selectedSettlement: settlement, historySettlements: [settlement] });
+    vi.spyOn(orders, 'selectSettlement').mockResolvedValue(settlement);
+    vi.spyOn(orders, 'fetchSettlements').mockResolvedValue([settlement]);
+
+    const wrapper = shallowMount(OrderHistoryPage, {
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    const facts = wrapper.get('.history-detail__facts').text();
+    expect(facts).toContain('时间08/29 09:00');
+    expect(facts).toContain('营业未记录');
+    expect(facts).toContain('支付未记录');
+    expect(facts).not.toContain('2026');
     wrapper.unmount();
   });
 });

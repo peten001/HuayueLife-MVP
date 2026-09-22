@@ -83,4 +83,39 @@ describe('cashier translation dictionaries', () => {
   it('keeps the Vietnamese date filter label complete for accessibility', () => {
     expect(viMessages['orders.filterDate']).toBe('Ngày đơn hàng');
   });
+
+  it('localizes every compact mobile label added for the current cashier refinement', () => {
+    expect([
+      zhMessages['settlement.timeLabelShort'],
+      zhMessages['settlement.businessDateLabelShort'],
+      zhMessages['settlement.paymentLabelShort'],
+      zhMessages['fulfillment.estimatedReadyShort'],
+      zhMessages['fulfillment.waitingShort'],
+      zhMessages['fulfillment.orderedShort'],
+      zhMessages['fulfillment.addressCopied'],
+      zhMessages['cashier.chat.more'],
+    ]).toEqual(['时间', '营业', '支付', '取餐', '已等', '下单', '已复制', '更多']);
+
+    expect([
+      viMessages['settlement.timeLabelShort'],
+      viMessages['settlement.businessDateLabelShort'],
+      viMessages['settlement.paymentLabelShort'],
+      viMessages['fulfillment.estimatedReadyShort'],
+      viMessages['fulfillment.waitingShort'],
+      viMessages['fulfillment.orderedShort'],
+      viMessages['fulfillment.addressCopied'],
+      viMessages['cashier.chat.more'],
+    ]).toEqual(['Giờ', 'Ngày', 'Trả', 'Lấy', 'Chờ', 'Đặt', 'Đã sao chép', 'Thêm']);
+
+    expect([
+      enMessages['settlement.timeLabelShort'],
+      enMessages['settlement.businessDateLabelShort'],
+      enMessages['settlement.paymentLabelShort'],
+      enMessages['fulfillment.estimatedReadyShort'],
+      enMessages['fulfillment.waitingShort'],
+      enMessages['fulfillment.orderedShort'],
+      enMessages['fulfillment.addressCopied'],
+      enMessages['cashier.chat.more'],
+    ]).toEqual(['Time', 'Date', 'Pay', 'Pickup', 'Wait', 'Order', 'Copied', 'More']);
+  });
 });

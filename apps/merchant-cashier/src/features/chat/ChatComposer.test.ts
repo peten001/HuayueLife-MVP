@@ -30,10 +30,24 @@ describe('ChatComposer focus controls', () => {
 
   it('offers image and location actions without submitting an empty text message', async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
-    const buttons = wrapper.findAll('button[type="button"]');
-    expect(buttons).toHaveLength(2);
-    await buttons[1]?.trigger('click');
+    const attachments = wrapper.findAll('.chat-composer__attachment');
+    expect(attachments).toHaveLength(2);
+    await attachments[1]?.trigger('click');
     expect(wrapper.emitted('location')).toHaveLength(1);
     expect(wrapper.emitted('send')).toBeUndefined();
+  });
+
+  it('uses one compact attachment toggle until a text draft is entered', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+
+    const more = wrapper.get('.chat-composer__more');
+    expect(more.attributes('aria-expanded')).toBe('false');
+    await more.trigger('click');
+    expect(more.attributes('aria-expanded')).toBe('true');
+    expect(wrapper.get('.chat-composer__attachments').classes()).toContain('is-open');
+
+    await wrapper.get('textarea').setValue('收到');
+    expect(wrapper.find('.chat-composer__more').exists()).toBe(false);
+    expect(wrapper.get('.chat-composer__send').classes()).not.toContain('is-empty');
   });
 });

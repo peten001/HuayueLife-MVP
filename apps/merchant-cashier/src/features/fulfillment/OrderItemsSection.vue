@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { formatVnd, resolveLocalizedOrderItemName } from '@/domain';
+import { formatItemPrice, formatVnd, resolveLocalizedOrderItemName } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder, OrderItem } from '@/types';
 
@@ -10,6 +10,19 @@ const totalQuantity = computed(() => props.order.items.reduce((sum, item) => sum
 
 function itemName(item: OrderItem) {
   return resolveLocalizedOrderItemName(item, locale.value, t('order.itemNameFallback'));
+}
+
+function unitPriceLabel(item: OrderItem) {
+  const price = item.unitPriceVnd
+    ? formatVnd(item.unitPriceVnd, locale.value)
+    : t('common.notAvailable');
+  return t('order.unitPriceValue', { price });
+}
+
+function compactUnitPrice(item: OrderItem) {
+  return item.unitPriceVnd
+    ? formatItemPrice(item.unitPriceVnd, locale.value)
+    : t('common.notAvailable');
 }
 </script>
 
@@ -22,12 +35,15 @@ function itemName(item: OrderItem) {
     <div v-if="order.items.length" class="workflow-item-list">
       <article v-for="item in order.items" :key="item.id">
         <div>
-          <strong>{{ itemName(item) }}</strong>
-          <small>{{ t('order.unitPriceValue', { price: item.unitPriceVnd ? formatVnd(item.unitPriceVnd, locale) : t('common.notAvailable') }) }}</small>
-          <small v-if="item.remark">{{ t('order.itemRemark', { remark: item.remark }) }}</small>
+          <strong class="workflow-item-list__name">{{ itemName(item) }}</strong>
+          <small class="workflow-item-list__unit-price">
+            <span class="workflow-item-list__unit-price-full">{{ unitPriceLabel(item) }}</span>
+            <span class="workflow-item-list__unit-price-compact" :aria-label="unitPriceLabel(item)">{{ compactUnitPrice(item) }}</span>
+          </small>
+          <small v-if="item.remark" class="workflow-item-list__remark">{{ t('order.itemRemark', { remark: item.remark }) }}</small>
         </div>
-        <span>{{ t('order.quantity', { count: item.quantity }) }}</span>
-        <b>{{ formatVnd(item.subtotalVnd, locale) }}</b>
+        <span class="workflow-item-list__quantity">{{ t('order.quantity', { count: item.quantity }) }}</span>
+        <b class="workflow-item-list__subtotal">{{ formatVnd(item.subtotalVnd, locale) }}</b>
       </article>
     </div>
     <p v-else class="workflow-empty-copy">{{ t('order.itemsEmpty') }}</p>

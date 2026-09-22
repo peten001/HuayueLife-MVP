@@ -40,6 +40,14 @@ describe('WaitDuration', () => {
     wrapper.unmount();
   });
 
+  it('uses the shortest value in dense mobile fact rows', () => {
+    const wrapper = mount(WaitDuration, {
+      props: { createdAt: '2026-08-15T12:40:00.000Z', dense: true },
+    });
+    expect(wrapper.text()).toBe('20分');
+    wrapper.unmount();
+  });
+
   it('renders a neutral value-only label when an end time is given', () => {
     const wrapper = mount(WaitDuration, {
       props: {

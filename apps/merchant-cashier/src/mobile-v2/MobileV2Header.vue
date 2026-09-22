@@ -33,10 +33,12 @@ const props = withDefaults(defineProps<{
   activeMainTab?: 'TABLES' | 'MENU';
   operationalFilters?: readonly MobileOperationalFilter[];
   activeOperationalFilter?: string;
+  detailMode?: boolean;
 }>(), {
   operationalFilters: () => [],
   activeOperationalFilter: 'ALL',
   activeMainTab: 'TABLES',
+  detailMode: false,
 });
 
 const emit = defineEmits<{
@@ -139,7 +141,7 @@ const tableFilters = computed(() => [
       </div>
     </div>
 
-    <div v-else-if="workspace === 'pickup' || workspace === 'delivery'" class="mobile-v2-header__controls">
+    <div v-else-if="(workspace === 'pickup' || workspace === 'delivery') && !detailMode" class="mobile-v2-header__controls">
       <div class="mobile-v2-filter-strip" :aria-label="title">
         <button v-for="item in operationalFilters" :key="item.value" type="button" :class="{ 'is-active': activeOperationalFilter === item.value }" :aria-pressed="activeOperationalFilter === item.value" @click="emit('selectOperationalFilter', item.value)">{{ item.label }}</button>
       </div>

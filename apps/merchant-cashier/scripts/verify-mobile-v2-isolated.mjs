@@ -263,8 +263,9 @@ async function verifyMobileAppShell(page, label) {
       editableFontSizes: editableControls.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
     };
   });
+  assert.match(signature.viewport, /width=390/, `${label}: V2 viewport must keep the approved 390px logical canvas`);
   assert.match(signature.viewport, /viewport-fit=cover/, `${label}: V2 viewport must cover the iPhone safe-area canvas`);
-  assert.match(signature.viewport, /maximum-scale=1/, `${label}: V2 viewport must prevent browser auto zoom`);
+  assert.doesNotMatch(signature.viewport, /maximum-scale=1/, `${label}: V2 viewport must not reintroduce the legacy maximum-scale rule`);
   assert.match(signature.viewport, /user-scalable=no/, `${label}: V2 viewport must keep the installed-app scale fixed`);
   assert.equal(signature.themeColor, '#fbfcfa', `${label}: V2 browser chrome must blend with the light app shell`);
   assert.equal(signature.statusBarStyle, 'default', `${label}: V2 iOS status icons must remain legible on the light app shell`);
@@ -331,9 +332,17 @@ async function verifyTableOverview(page, label) {
 async function verifyDrawerPolish(page, label) {
   const metrics = await page.locator('.mobile-v2-drawer__panel').evaluate((element) => {
     const rect = element.getBoundingClientRect();
-    return { width: rect.width, expectedWidth: Math.min(innerWidth * 0.8, 320), viewportWidth: innerWidth };
+    return {
+      width: rect.width,
+      logicalWidth: Number.parseFloat(getComputedStyle(element).width),
+      expectedLogicalWidth: Math.min(innerWidth * 0.8, 320),
+      viewportWidth: innerWidth,
+    };
   });
-  assert.ok(Math.abs(metrics.width - metrics.expectedWidth) <= 0.6, `${label}: drawer must preserve workspace context (${JSON.stringify(metrics)})`);
+  assert.ok(
+    Math.abs(metrics.logicalWidth - metrics.expectedLogicalWidth) <= 0.6,
+    `${label}: drawer must preserve workspace context (${JSON.stringify(metrics)})`,
+  );
   return metrics;
 }
 
@@ -361,15 +370,20 @@ async function verifyMenu(page, label) {
 
 async function verifySelectedMenuPolish(page, label) {
   const metrics = await page.evaluate(() => {
-    const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect();
-    const stepper = rect('.table-ordering-product__stepper');
-    const stepperButton = rect('.table-ordering-product__stepper button');
-    const stepperIcon = rect('.table-ordering-product__stepper button svg');
-    const addButton = rect('.table-ordering-product__add');
-    const addIcon = rect('.table-ordering-product__add svg');
-    const product = rect('.table-ordering-product');
-    const image = rect('.table-ordering-product__image');
-    const dockButton = rect('.table-ordering-mobile-v2-dock button');
+    const size = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return undefined;
+      const style = getComputedStyle(element);
+      return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height) };
+    };
+    const stepper = size('.table-ordering-product__stepper');
+    const stepperButton = size('.table-ordering-product__stepper button');
+    const stepperIcon = size('.table-ordering-product__stepper button svg');
+    const addButton = size('.table-ordering-product__add');
+    const addIcon = size('.table-ordering-product__add svg');
+    const product = size('.table-ordering-product');
+    const image = size('.table-ordering-product__image');
+    const dockButton = size('.table-ordering-mobile-v2-dock button');
     const output = document.querySelector('.table-ordering-product__stepper output');
     const selectedImage = document.querySelector('.table-ordering-product.is-selected .table-ordering-product__image img');
     return {

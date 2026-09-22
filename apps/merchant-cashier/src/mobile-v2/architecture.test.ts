@@ -44,6 +44,7 @@ describe('isolated Mobile V2 architecture', () => {
     const drawer = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Drawer.vue'), 'utf8');
     const header = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2Header.vue'), 'utf8');
     const frame = readFileSync(resolve(process.cwd(), 'src/mobile-v2/MobileV2PreviewFrame.vue'), 'utf8');
+    const styles = readFileSync(resolve(process.cwd(), 'src/mobile-v2/mobile-v2.css'), 'utf8');
     expect(drawer).toContain("name: 'pickup-orders'");
     expect(drawer).toContain("name: 'delivery-orders'");
     expect(drawer).toContain("name: 'order-history'");
@@ -57,12 +58,33 @@ describe('isolated Mobile V2 architecture', () => {
     expect(header).not.toContain('cashierV2.tablesTab');
     expect(header).not.toContain('cashierV2.menuTab');
     expect(header).not.toContain('Globe2');
+    expect(header).toContain("(workspace === 'pickup' || workspace === 'delivery') && !detailMode");
+    expect(frame).toContain('const fulfillmentDetailMode = computed(() => (');
+    expect(frame).toContain(':detail-mode="fulfillmentDetailMode"');
+    expect(frame).toContain('const mobileV2LogicalViewportWidth = 390;');
+    expect(frame).toContain('content: `width=${mobileV2LogicalViewportWidth}, user-scalable=no');
+    expect(frame).toContain('function syncMobileV2LogicalCanvas()');
+    expect(frame).toContain("window.visualViewport?.addEventListener('resize', scheduleMobileV2LogicalCanvasSync)");
+    expect(frame).not.toContain('width=device-width');
+    expect(styles).toContain('zoom: var(--mobile-v2-layout-scale);');
+    expect(styles).toContain('.fulfillment-main__topbar .mobile-workspace-back');
+    expect(styles).toMatch(/\.pickup-order-detail > \.fulfillment-facts\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.order-items-section \.workflow-item-list > article\s*\{[^}]*grid-template-columns:\s*minmax\(0, max-content\) auto auto minmax\(18px, 1fr\) auto;/s);
+    expect(styles).toMatch(/\.order-items-section \.workflow-item-list__unit-price\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;/s);
+    expect(styles).toMatch(/\.order-items-section \.workflow-item-list__quantity\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
+    expect(styles).toMatch(/\.order-items-section \.workflow-item-list > article > b\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;/s);
+    expect(styles).toMatch(/\.history-detail__identity\s*\{[^}]*flex-direction:\s*row;[^}]*flex-wrap:\s*nowrap;/s);
+    expect(styles).toMatch(/\.is-fulfillment-detail-mode \.fulfillment-main\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/s);
     expect(frame).not.toContain('MobileV2Navigation');
   });
 
   it('enables Mobile V2 only for canonical phone routes while retaining the old desktop shell', () => {
+    const index = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
     const router = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8');
     const shell = readFileSync(resolve(process.cwd(), 'src/layouts/CashierShell.vue'), 'utf8');
+    expect(index).toContain('const mobileV2LogicalViewportWidth = 390;');
+    expect(index).toContain('`width=${mobileV2LogicalViewportWidth}, user-scalable=no');
+    expect(index).not.toContain("'width=device-width, initial-scale=1, maximum-scale=1");
     expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(4);
     expect(shell).toContain("useMediaQuery('(max-width: 899px)')");
     expect(shell).toContain('mobileLayout.value && route.meta.mobileV2Enabled === true');

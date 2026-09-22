@@ -250,7 +250,7 @@ defineExpose({ scrollToBottom });
   border-radius: 999px;
   padding: 6px 12px;
   color: #356047;
-  background: #fff;
+  background: var(--cashier-surface);
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -312,7 +312,7 @@ defineExpose({ scrollToBottom });
   border-radius: 13px 13px 13px 4px;
   padding: 8px 11px;
   color: #203128;
-  background: #fff;
+  background: var(--cashier-surface);
   box-shadow: 0 3px 10px rgb(33 61 45 / 5%);
 }
 
@@ -355,15 +355,68 @@ defineExpose({ scrollToBottom });
 @media (max-width: 520px) {
   .chat-message-list-shell {
     min-height: 0;
+    gap: 0;
   }
 
   .chat-message-list {
     min-height: 44px;
-    padding: 8px;
+    gap: 7px;
+    padding: 8px 10px 10px;
+    border: 0;
+    border-radius: 0;
   }
 
   .chat-message-list__stack {
-    max-width: 86%;
+    max-width: 82%;
+  }
+
+  .chat-message-list__toolbar {
+    min-height: 24px;
+    padding: 3px 12px;
+  }
+
+  .chat-message-list__date {
+    margin: 2px 0;
+  }
+
+  .chat-message-list__bubble {
+    border-radius: 12px 12px 12px 4px;
+    padding: 7px 9px;
+    box-shadow: 0 2px 8px rgb(33 61 45 / 4%);
+  }
+
+  .chat-message-list__row--merchant .chat-message-list__bubble {
+    border-radius: 12px 12px 4px;
+  }
+
+  .chat-message-list__image img {
+    width: min(220px, 62vw);
+    height: 146px;
+  }
+
+  .chat-message-list__location {
+    display: grid;
+    min-width: 138px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 7px;
+    row-gap: 1px;
+  }
+
+  .chat-message-list__location span {
+    grid-row: 1 / 3;
+    align-self: center;
+    font-size: 23px;
+  }
+
+  .chat-message-list__location strong {
+    font-size: 14px;
+  }
+
+  .chat-message-list__location small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 </style>

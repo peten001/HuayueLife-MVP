@@ -1,5 +1,5 @@
 /* finesse · register=h5 · morph=A-app-shell · A=sage-neutral+yunqiao-green · B=capped-multilingual-system-sans
- * C=fixed-phone-composition+safe-area-pwa-shell+capped-controls+eight-row-menu · D=feedback-only-state-transitions · E=restaurant-pos-image-list
+ * C=fixed-390px-phone-composition+safe-area-pwa-shell+capped-controls+eight-row-menu · D=feedback-only-state-transitions · E=restaurant-pos-image-list
  * SOUL=6 SPECTACLE=1 DENSITY=9
  * THESIS: a calm, fast restaurant work surface that keeps one composition across phone widths.
  * OWN-WORLD: warm sage paper, soft ink, YunQiao green, compact controls, restrained depth.
@@ -1128,18 +1128,25 @@ body.cashier-mobile-v2-preview-active #app {
   .cashier-shell--mobile-v2-preview .table-overview-route.has-selection > .cashier-workspace__content--table-overview { visibility: hidden; }
   .cashier-shell--mobile-v2-preview .fulfillment-workspace,
   .cashier-shell--mobile-v2-preview .history-workspace { padding: 6px; }
+  .cashier-shell--mobile-v2-preview .is-fulfillment-detail-mode .fulfillment-workspace {
+    padding: 0;
+    background: var(--mobile-v2-surface);
+  }
+  .cashier-shell--mobile-v2-preview .is-fulfillment-detail-mode .fulfillment-main {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 
-@media (max-width: 390px) {
-  .mobile-v2-header { grid-template-columns: 44px minmax(0, 1fr) auto; padding-inline: 7px; }
-  .cashier-shell--mobile-v2-preview .mobile-v2-header__brand .cashier-brand__name { font-size: 13px; }
-  .mobile-v2-status { width: 25px; min-width: 25px; }
-  .mobile-v2-header__actions { gap: 1px; }
-  .mobile-v2-header__controls { gap: 5px; }
-  .mobile-v2-filter-strip button { padding-inline: 8px; font-size: 11px; }
-  .cashier-shell--mobile-v2-preview .table-grid { gap: 7px; }
-  .cashier-shell--mobile-v2-preview .table-card { min-height: 101px; padding: 10px; }
-}
+.mobile-v2-header { grid-template-columns: 44px minmax(0, 1fr) auto; padding-inline: 7px; }
+.cashier-shell--mobile-v2-preview .mobile-v2-header__brand .cashier-brand__name { font-size: 13px; }
+.mobile-v2-status { width: 25px; min-width: 25px; }
+.mobile-v2-header__actions { gap: 1px; }
+.mobile-v2-header__controls { gap: 5px; }
+.mobile-v2-filter-strip button { padding-inline: 8px; font-size: 11px; }
+.cashier-shell--mobile-v2-preview .table-grid { gap: 7px; }
+.cashier-shell--mobile-v2-preview .table-card { min-height: 101px; padding: 10px; }
 
 @media (min-width: 900px) {
   .mobile-v2-menu-search-target--mobile { display: none !important; }
@@ -1167,7 +1174,7 @@ body.cashier-mobile-v2-preview-active #app {
     --mobile-v2-phone-gap: clamp(7px, 2.051vw, 10px);
     --mobile-v2-control: clamp(44px, 11.282vw, 48px);
     --mobile-v2-control-compact: 44px;
-    --mobile-v2-row: clamp(78px, 20.5vw, 82px);
+    --mobile-v2-row: clamp(78px, 20.5vw, 80px);
     --mobile-v2-type-xs: clamp(11px, 2.821vw, 12px);
     --mobile-v2-type-sm: clamp(12px, 3.077vw, 13px);
     --mobile-v2-type-md: clamp(14px, 3.59vw, 15px);
@@ -1828,16 +1835,26 @@ body.cashier-mobile-v2-preview-active #app {
   .cashier-shell--mobile-v2-preview .fulfillment-order-card footer { color: var(--mobile-v2-muted); font-size: var(--mobile-v2-type-xs); }
   .cashier-shell--mobile-v2-preview .order-unread-badge { color: var(--mobile-v2-surface); background: var(--mobile-v2-red); }
   .cashier-shell--mobile-v2-preview .fulfillment-main__topbar {
-    gap: clamp(5px, 1.538vw, 7px);
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
     border-bottom-color: var(--mobile-v2-line);
-    padding: clamp(7px, 2.051vw, 10px);
+    padding: 6px 8px;
   }
-  .cashier-shell--mobile-v2-preview .mobile-workspace-back {
+  .cashier-shell--mobile-v2-preview .fulfillment-main__topbar .mobile-workspace-back {
+    width: var(--mobile-v2-control);
+    min-width: var(--mobile-v2-control);
     min-height: var(--mobile-v2-control);
+    align-self: center;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
     color: var(--mobile-v2-green-strong);
-    font-size: var(--mobile-v2-type-md);
+    font-size: 0;
   }
   .cashier-shell--mobile-v2-preview .fulfillment-pane-tabs {
+    min-width: 0;
+    flex: 1;
     gap: 4px;
     border-radius: var(--mobile-v2-radius-control);
     background: var(--mobile-v2-surface-muted);
@@ -1852,6 +1869,9 @@ body.cashier-mobile-v2-preview-active #app {
     color: var(--mobile-v2-green-strong);
     background: var(--mobile-v2-surface);
     box-shadow: 0 3px 10px rgb(28 54 38 / 7%);
+  }
+  .cashier-shell--mobile-v2-preview .fulfillment-page.pane-chat .fulfillment-main__body.is-chat {
+    padding: 0;
   }
   .cashier-shell--mobile-v2-preview .fulfillment-main__body { padding: var(--mobile-v2-phone-gutter) var(--mobile-v2-phone-gutter) var(--cashier-fulfillment-content-bottom-gap); }
   .cashier-shell--mobile-v2-preview .fulfillment-detail { gap: var(--mobile-v2-phone-gap); }
@@ -1869,10 +1889,149 @@ body.cashier-mobile-v2-preview-active #app {
     background: var(--mobile-v2-green);
   }
   .cashier-shell--mobile-v2-preview .fulfillment-facts > div { border-radius: var(--mobile-v2-radius-small); background: var(--mobile-v2-surface-muted); }
+  .cashier-shell--mobile-v2-preview .pickup-order-detail > .fulfillment-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .cashier-shell--mobile-v2-preview .pickup-order-detail > .fulfillment-facts > div {
+    display: grid;
+    min-width: 0;
+    grid-column: auto;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 3px;
+    padding: 7px 6px;
+  }
+  .cashier-shell--mobile-v2-preview .pickup-order-detail > .fulfillment-facts :where(dt, dd) {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__header { margin-bottom: 8px !important; }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__address-row {
+    align-items: flex-start;
+    gap: 7px;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__address-row > .delivery-contact-copy,
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__phone > .delivery-contact-copy {
+    min-height: var(--mobile-v2-control);
+    border-color: var(--mobile-v2-line-strong);
+    border-radius: var(--mobile-v2-radius-small);
+    color: var(--mobile-v2-green-strong);
+    background: var(--mobile-v2-green-wash);
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__address-row > .delivery-contact-copy.is-copied {
+    border-color: var(--mobile-v2-green);
+    color: var(--mobile-v2-surface);
+    background: var(--mobile-v2-green);
+    box-shadow: 0 5px 14px rgb(36 118 74 / 20%);
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__facts {
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.55fr);
+    gap: var(--mobile-v2-phone-gap);
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__customer,
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__phone {
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__customer > span,
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__phone > span {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-contact-panel__phone > .delivery-contact-copy--inline {
+    margin-left: auto;
+    padding: 0 9px;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-order-detail > .fulfillment-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--mobile-v2-phone-gap);
+  }
+  .cashier-shell--mobile-v2-preview .delivery-order-detail > .fulfillment-facts > div {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 4px;
+  }
+  .cashier-shell--mobile-v2-preview .delivery-order-detail > .fulfillment-facts :where(dt, dd) {
+    min-width: 0;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .fulfillment-progress > header {
+    display: none;
+  }
+  .cashier-shell--mobile-v2-preview .fulfillment-progress ol {
+    padding-block: 2px;
+  }
   .cashier-shell--mobile-v2-preview .fulfillment-progress li.is-current > span {
     color: var(--mobile-v2-surface);
     background: var(--mobile-v2-green);
     box-shadow: 0 0 0 4px var(--mobile-v2-focus);
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list > article {
+    grid-template-columns: minmax(0, max-content) auto auto minmax(18px, 1fr) auto;
+    column-gap: clamp(4px, 1.282vw, 6px);
+    row-gap: 4px;
+    padding-block: 8px;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list > article > div {
+    display: contents;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__name {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mobile-v2-text);
+    font-size: var(--mobile-v2-type-md);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__unit-price {
+    grid-column: 2;
+    grid-row: 1;
+    color: var(--mobile-v2-muted);
+    font-size: var(--mobile-v2-type-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__unit-price-full {
+    display: none;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__unit-price-compact {
+    display: inline;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__quantity {
+    grid-column: 3;
+    grid-row: 1;
+    color: var(--mobile-v2-text);
+    font-size: var(--mobile-v2-type-sm);
+    font-weight: 750;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list__remark {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mobile-v2-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .order-items-section .workflow-item-list > article > b {
+    grid-column: 5;
+    grid-row: 1;
+    color: var(--mobile-v2-money);
+    font-size: var(--mobile-v2-type-md);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
   }
   .cashier-shell--mobile-v2-preview .fulfillment-action-dock {
     gap: var(--mobile-v2-phone-gap);
@@ -1885,8 +2044,53 @@ body.cashier-mobile-v2-preview-active #app {
     border-radius: var(--mobile-v2-radius-control);
   }
 
-  .cashier-shell--mobile-v2-preview .history-toolbar { gap: var(--mobile-v2-phone-gap); }
-  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date,
+  .cashier-shell--mobile-v2-preview .history-toolbar { gap: clamp(7px, 2.051vw, 9px); }
+  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date {
+    grid-template-columns: minmax(0, .8fr) minmax(0, 1.35fr) var(--mobile-v2-control);
+    align-items: center;
+    gap: var(--mobile-v2-phone-gap);
+  }
+  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date .history-date-control {
+    grid-column: 1;
+    grid-row: 1;
+    height: var(--mobile-v2-control);
+    border: 1px solid var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-control);
+    background: var(--mobile-v2-surface-raised);
+    box-shadow: 0 1px 3px rgb(28 54 38 / 5%);
+  }
+  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date .summary-open-button {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    min-width: 0;
+    min-height: var(--mobile-v2-control);
+    height: var(--mobile-v2-control);
+    border: 1px solid var(--mobile-v2-line-strong);
+    border-radius: var(--mobile-v2-radius-control);
+    padding-inline: clamp(7px, 2.308vw, 10px);
+    color: var(--mobile-v2-green-strong);
+    background: var(--mobile-v2-green-wash);
+    box-shadow: 0 2px 7px rgb(28 54 38 / 7%);
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date .workflow-refresh-button {
+    grid-column: 3;
+    grid-row: 1;
+    width: var(--mobile-v2-control);
+    min-width: var(--mobile-v2-control);
+    height: var(--mobile-v2-control);
+    min-height: var(--mobile-v2-control);
+    border: 1px solid var(--mobile-v2-line);
+    border-radius: var(--mobile-v2-radius-control);
+    color: var(--mobile-v2-muted);
+    background: var(--mobile-v2-surface-raised);
+    box-shadow: 0 1px 3px rgb(28 54 38 / 5%);
+  }
+  .cashier-shell--mobile-v2-preview .history-mobile-filter-row--date :is(.history-date-control, .summary-open-button, .workflow-refresh-button):active {
+    background: var(--mobile-v2-surface-pressed);
+    transform: scale(.97);
+  }
   .cashier-shell--mobile-v2-preview .history-mobile-filter-row--selects { gap: var(--mobile-v2-phone-gap); }
   .cashier-shell--mobile-v2-preview .history-date-control,
   .cashier-shell--mobile-v2-preview .history-mobile-filter-row--selects select,
@@ -1917,12 +2121,78 @@ body.cashier-mobile-v2-preview-active #app {
   .cashier-shell--mobile-v2-preview .history-order-card__footer { font-size: var(--mobile-v2-type-xs); }
   .cashier-shell--mobile-v2-preview .history-detail { padding: var(--mobile-v2-phone-gutter); }
   .cashier-shell--mobile-v2-preview .history-detail__content { gap: clamp(12px, 3.59vw, 16px); }
-  .cashier-shell--mobile-v2-preview .history-detail__identity strong { color: var(--mobile-v2-text); font-size: var(--mobile-v2-type-lg); }
-  .cashier-shell--mobile-v2-preview .history-detail__facts { gap: clamp(8px, 2.564vw, 12px); }
+  .cashier-shell--mobile-v2-preview .history-detail__identity {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .cashier-shell--mobile-v2-preview .history-detail__identity strong {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: var(--mobile-v2-text);
+    font-size: var(--mobile-v2-type-lg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .history-detail__identity > span,
+  .cashier-shell--mobile-v2-preview .history-detail__identity .order-status-badge {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .history-detail__facts {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, .9fr) minmax(0, .9fr);
+    gap: 6px;
+  }
+  .cashier-shell--mobile-v2-preview .history-detail__facts > div {
+    min-width: 0;
+    overflow: hidden;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .cashier-shell--mobile-v2-preview .history-detail__facts dd {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .cashier-shell--mobile-v2-preview .history-detail .workflow-section {
     border-color: var(--mobile-v2-line);
     border-radius: var(--mobile-v2-radius-control);
     background: var(--mobile-v2-surface-raised);
+  }
+}
+
+/* The app owns one 390px logical canvas. Real phones scale it through the
+ * viewport meta; desktop preview surfaces use zoom so media-query reflow cannot
+ * produce a second composition. */
+html.cashier-mobile-v2-preview-active {
+  --mobile-v2-layout-scale: 1;
+  --mobile-v2-layout-height: 100dvh;
+}
+
+body.cashier-mobile-v2-preview-active {
+  width: 390px;
+  min-width: 390px;
+  height: var(--mobile-v2-layout-height);
+  min-height: var(--mobile-v2-layout-height);
+  zoom: var(--mobile-v2-layout-scale);
+}
+
+body.cashier-mobile-v2-preview-active #app,
+body.cashier-mobile-v2-preview-active .cashier-shell--mobile-v2-preview,
+body.cashier-mobile-v2-preview-active .mobile-v2-preview-frame {
+  width: 390px;
+  min-width: 390px;
+  height: var(--mobile-v2-layout-height);
+  min-height: var(--mobile-v2-layout-height);
+}
+
+@supports not (zoom: 1) {
+  body.cashier-mobile-v2-preview-active {
+    transform: scale(var(--mobile-v2-layout-scale));
+    transform-origin: top left;
   }
 }
 
@@ -2095,35 +2365,158 @@ body.cashier-mobile-v2-preview-active {
     box-shadow: inset 0 0 0 1px var(--mobile-v2-dialog-green);
   }
 
+  body.cashier-mobile-v2-preview-active .new-order-inbox {
+    align-items: end;
+    justify-items: center;
+    padding-top: max(56px, env(safe-area-inset-top, 0px));
+  }
   body.cashier-mobile-v2-preview-active .new-order-inbox__panel {
-    width: min(92vw, 420px);
-    padding: max(18px, env(safe-area-inset-top, 0px)) clamp(14px, 4.103vw, 18px) max(18px, env(safe-area-inset-bottom, 0px));
+    display: grid;
+    width: min(100%, 560px);
+    height: auto;
+    max-height: min(82dvh, 720px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid var(--mobile-v2-dialog-line);
+    border-bottom: 0;
+    border-radius: 22px 22px 0 0;
+    padding: 26px clamp(12px, 4.103vw, 18px) max(12px, env(safe-area-inset-bottom, 0px));
     color: var(--mobile-v2-dialog-text);
     background: var(--mobile-v2-dialog-bg);
-    box-shadow: -22px 0 60px rgb(15 35 22 / 24%);
-    animation: mobile-v2-inbox-enter 260ms cubic-bezier(.16, 1, .3, 1) both;
+    box-shadow: 0 -18px 48px rgb(15 35 22 / 20%);
+    animation: mobile-v2-sheet-enter 240ms cubic-bezier(.16, 1, .3, 1) both;
   }
-  body.cashier-mobile-v2-preview-active .new-order-inbox__panel h2,
-  body.cashier-mobile-v2-preview-active .new-order-inbox__group h3 { color: var(--mobile-v2-dialog-text); }
-  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header button,
-  body.cashier-mobile-v2-preview-active .new-order-inbox__group {
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel::before {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 38px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--mobile-v2-dialog-line-strong);
+    content: '';
+    transform: translateX(-50%);
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header {
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header span { display: none; }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel h2 {
+    min-width: 0;
+    margin: 0;
+    color: var(--mobile-v2-dialog-text);
+    font-size: clamp(18px, 5.128vw, 22px);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
     border-color: var(--mobile-v2-dialog-line);
-    background: var(--mobile-v2-dialog-bg);
+    border-radius: 13px;
+    color: var(--mobile-v2-dialog-text);
+    background: var(--mobile-v2-dialog-muted);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__groups {
+    min-height: 0;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 2px;
   }
   body.cashier-mobile-v2-preview-active .new-order-inbox__group {
-    border-radius: 16px;
-    box-shadow: 0 4px 16px rgb(28 54 38 / 6%);
+    overflow: hidden;
+    border-color: var(--mobile-v2-dialog-line);
+    border-radius: 14px;
+    padding: 0;
+    background: var(--mobile-v2-dialog-bg);
+    box-shadow: none;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group h3 {
+    min-height: 42px;
+    gap: 7px;
+    margin: 0;
+    border-bottom: 1px solid var(--mobile-v2-dialog-line);
+    padding: 0 12px;
+    color: var(--mobile-v2-dialog-text);
+    font-size: 13px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group h3 b {
+    display: grid;
+    min-width: 24px;
+    height: 24px;
+    place-items: center;
+    padding: 0 7px;
+    background: var(--mobile-v2-dialog-red);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button {
+    min-height: 58px;
+    padding: 0 12px;
+    color: var(--mobile-v2-dialog-text);
+    outline: 2px solid transparent;
+    outline-offset: -3px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button:first-of-type { border-top: 0; }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mobile-v2-dialog-secondary);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__footer {
+    margin-top: 10px;
+    border-top: 1px solid var(--mobile-v2-dialog-line);
+    padding-top: 10px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__footer button {
+    width: 100%;
+    min-height: 48px;
+    border-color: var(--mobile-v2-dialog-line-strong);
+    color: var(--mobile-v2-dialog-green-strong);
+    background: var(--mobile-v2-dialog-muted);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header button:focus-visible,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button:focus-visible,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__footer button:focus-visible {
+    outline-color: var(--mobile-v2-dialog-green);
+  }
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header button:active,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button:active,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__footer button:active {
+    transform: translateY(1px);
+  }
+}
+
+@media (hover: hover) and (max-width: 899px) {
+  body.cashier-mobile-v2-preview-active .new-order-inbox__panel > header button:hover,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__group > button:hover,
+  body.cashier-mobile-v2-preview-active .new-order-inbox__footer button:hover {
+    background: var(--mobile-v2-dialog-green-soft);
   }
 }
 
 @keyframes mobile-v2-sheet-enter {
   from { opacity: .01; transform: translateY(28px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes mobile-v2-inbox-enter {
-  from { opacity: .01; transform: translateX(28px); }
-  to { opacity: 1; transform: translateX(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {

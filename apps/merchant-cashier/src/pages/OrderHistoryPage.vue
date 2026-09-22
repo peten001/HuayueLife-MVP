@@ -3,7 +3,7 @@ import { ArrowLeft, CalendarDays, ChevronDown, ClipboardList, RefreshCw } from '
 import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
-import { formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVnd } from '@/domain';
+import { formatVietnamCompactDateTime, formatVietnamDateFilter, formatVietnamDateFilterAria, formatVietnamDateTime, formatVietnamMonthDay, formatVnd } from '@/domain';
 import { getBusinessDaySummary, messageFromApiError, printBusinessDaySummary } from '@/api';
 import { useI18n } from '@/i18n';
 import { useOrdersStore, useUiStore } from '@/stores';
@@ -103,7 +103,20 @@ function settlementContext(item: MerchantSettlement) {
 function paymentLabel(method: PaymentMethod | null) {
   if (method === 'CASH') return t('payment.cash');
   if (method === 'BANK_TRANSFER') return t('payment.bankTransfer');
-  return t('settlement.unrecorded');
+  return t(mobileV2Presentation.value ? 'settlement.unrecordedShort' : 'settlement.unrecorded');
+}
+
+function settlementDetailTime(value: string) {
+  return mobileV2Presentation.value
+    ? formatVietnamCompactDateTime(value, locale.value)
+    : formatVietnamDateTime(value, locale.value);
+}
+
+function settlementDetailBusinessDate(value: string | null | undefined) {
+  if (mobileV2Presentation.value) {
+    return value ? formatVietnamMonthDay(value, locale.value) : t('settlement.unrecordedShort');
+  }
+  return value || '';
 }
 
 function mergedSettlementItems(item: MerchantSettlement) {
@@ -313,9 +326,9 @@ onMounted(async () => {
             <OrderStatusBadge :status="settlement.status" />
           </header>
           <dl class="history-detail__facts">
-            <div><dt>{{ t('order.createdAt') }}</dt><dd>{{ formatVietnamDateTime(settlement.settledAt, locale) }}</dd></div>
-            <div><dt>{{ t('summary.businessDate') }}</dt><dd>{{ settlement.businessDate || (mobileV2Presentation ? t('settlement.unrecorded') : '') }}</dd></div>
-            <div><dt>{{ t('settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
+            <div><dt>{{ t(mobileV2Presentation ? 'settlement.timeLabelShort' : 'order.createdAt') }}</dt><dd>{{ settlementDetailTime(settlement.settledAt) }}</dd></div>
+            <div><dt>{{ t(mobileV2Presentation ? 'settlement.businessDateLabelShort' : 'summary.businessDate') }}</dt><dd>{{ settlementDetailBusinessDate(settlement.businessDate) }}</dd></div>
+            <div><dt>{{ t(mobileV2Presentation ? 'settlement.paymentLabelShort' : 'settlement.paymentLabel') }}</dt><dd>{{ paymentLabel(settlement.paymentMethod) }}</dd></div>
           </dl>
 
           <section class="workflow-section settlement-items-section">

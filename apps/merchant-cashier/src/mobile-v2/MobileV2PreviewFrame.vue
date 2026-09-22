@@ -62,17 +62,45 @@ const isolatedMenuMode = computed(() => (
 const isolatedTableDetailMode = computed(() => (
   mobileLayout.value && props.workspace === 'tables' && Boolean(route.params.tableId)
 ));
+const fulfillmentDetailMode = computed(() => (
+  mobileLayout.value
+  && (props.workspace === 'pickup' || props.workspace === 'delivery')
+  && Boolean(route.params.orderId)
+));
 const hideWorkspaceHeader = computed(() => isolatedMenuMode.value || isolatedTableDetailMode.value);
 const mobileV2RootClass = 'cashier-mobile-v2-preview-active';
+const mobileV2LogicalViewportWidth = 390;
+const mobileV2LayoutScaleProperty = '--mobile-v2-layout-scale';
+const mobileV2LayoutHeightProperty = '--mobile-v2-layout-height';
 const mobileV2MetaOverrides = [
   {
     selector: 'meta[name="viewport"]',
-    content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content',
+    content: `width=${mobileV2LogicalViewportWidth}, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content`,
   },
   { selector: 'meta[name="theme-color"]', content: '#fbfcfa' },
   { selector: 'meta[name="apple-mobile-web-app-status-bar-style"]', content: 'default' },
 ] as const;
 const previousMetaContent = new Map<HTMLMetaElement, string | null>();
+let layoutSyncFrame: number | null = null;
+
+function syncMobileV2LogicalCanvas() {
+  const viewportWidth = window.visualViewport?.width || window.innerWidth;
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const layoutScale = Math.max(0.5, viewportWidth / mobileV2LogicalViewportWidth);
+  document.documentElement.style.setProperty(mobileV2LayoutScaleProperty, String(layoutScale));
+  document.documentElement.style.setProperty(
+    mobileV2LayoutHeightProperty,
+    `${Math.max(1, viewportHeight / layoutScale)}px`,
+  );
+}
+
+function scheduleMobileV2LogicalCanvasSync() {
+  if (layoutSyncFrame !== null) window.cancelAnimationFrame(layoutSyncFrame);
+  layoutSyncFrame = window.requestAnimationFrame(() => {
+    layoutSyncFrame = null;
+    syncMobileV2LogicalCanvas();
+  });
+}
 
 function applyMobileV2AppShell() {
   document.documentElement.classList.add(mobileV2RootClass);
@@ -101,6 +129,8 @@ function restoreDocumentShell() {
     meta.removeAttribute('data-mobile-v2-original-content');
   }
   previousMetaContent.clear();
+  document.documentElement.style.removeProperty(mobileV2LayoutScaleProperty);
+  document.documentElement.style.removeProperty(mobileV2LayoutHeightProperty);
 }
 
 async function resetWorkspaceScroll() {
@@ -121,14 +151,21 @@ async function resetWorkspaceScroll() {
 watch(() => route.fullPath, () => {
   drawerOpen.value = false;
   void resetWorkspaceScroll();
+  scheduleMobileV2LogicalCanvasSync();
 });
 
 onMounted(() => {
   applyMobileV2AppShell();
+  window.addEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  window.visualViewport?.addEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  scheduleMobileV2LogicalCanvasSync();
   void resetWorkspaceScroll();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  window.visualViewport?.removeEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  if (layoutSyncFrame !== null) window.cancelAnimationFrame(layoutSyncFrame);
   restoreDocumentShell();
 });
 </script>
@@ -139,6 +176,7 @@ onBeforeUnmount(() => {
     :class="{
       'is-menu-mode': isolatedMenuMode,
       'is-table-detail-mode': isolatedTableDetailMode,
+      'is-fulfillment-detail-mode': fulfillmentDetailMode,
     }"
     data-testid="mobile-v2-preview-frame"
   >
@@ -158,6 +196,7 @@ onBeforeUnmount(() => {
       :active-main-tab="activeMainTab"
       :operational-filters="operationalFilters"
       :active-operational-filter="activeOperationalFilter"
+      :detail-mode="fulfillmentDetailMode"
       @open-navigation="drawerOpen = true"
       @open-new-orders="$emit('openNewOrders')"
       @select-table-filter="$emit('selectTableFilter', $event)"
