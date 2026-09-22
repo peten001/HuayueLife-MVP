@@ -65,6 +65,8 @@ describe('isolated Mobile V2 architecture', () => {
     expect(frame).toContain('content: `width=${mobileV2LogicalViewportWidth}, user-scalable=no');
     expect(frame).toContain('function syncMobileV2LogicalCanvas()');
     expect(frame).toContain('function restoreMobileV2DocumentOrigin()');
+    expect(frame).toContain('appliedLayoutHeight');
+    expect(frame).toContain('Math.abs(appliedLayoutHeight - layoutHeight) > 0.5');
     expect(frame).toContain("window.visualViewport?.addEventListener('resize', scheduleMobileV2LogicalCanvasSync)");
     expect(frame).toContain("window.visualViewport?.addEventListener('scroll', scheduleMobileV2LogicalCanvasSync)");
     expect(frame).toContain("document.addEventListener('focusin', handleMobileV2FocusIn)");

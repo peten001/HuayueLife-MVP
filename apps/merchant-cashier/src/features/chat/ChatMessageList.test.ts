@@ -29,4 +29,18 @@ describe('ChatMessageList attachments', () => {
       .toBe('https://www.google.com/maps?q=21.1862,106.0763');
     expect(wrapper.text()).toContain('21.18620, 106.07630');
   });
+
+  it('keeps background polling silent so the chat layout does not flash', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        messages: [message('1', 'Hello')],
+        loading: false,
+        refreshing: true,
+        hasMore: false,
+      },
+    });
+
+    expect(wrapper.find('.chat-message-list__toolbar').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Hello');
+  });
 });

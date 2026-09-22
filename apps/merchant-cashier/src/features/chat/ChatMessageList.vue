@@ -129,9 +129,8 @@ defineExpose({ scrollToBottom });
 
 <template>
   <div class="chat-message-list-shell">
-    <div v-if="loading || refreshing" class="chat-message-list__toolbar" aria-live="polite">
-      <span v-if="loading">{{ t('cashier.chat.loading') }}</span>
-      <span v-else>{{ t('cashier.chat.refreshing') }}</span>
+    <div v-if="loading" class="chat-message-list__toolbar" aria-live="polite">
+      <span>{{ t('cashier.chat.loading') }}</span>
     </div>
 
     <div

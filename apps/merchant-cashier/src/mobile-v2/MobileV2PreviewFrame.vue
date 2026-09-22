@@ -83,26 +83,32 @@ const mobileV2MetaOverrides = [
 const previousMetaContent = new Map<HTMLMetaElement, string | null>();
 let layoutSyncFrame: number | null = null;
 let focusCorrectionTimer: number | null = null;
+let appliedLayoutScale: number | null = null;
+let appliedLayoutHeight: number | null = null;
 
 function restoreMobileV2DocumentOrigin() {
   if (window.scrollX !== 0 || window.scrollY !== 0) {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }
-  document.documentElement.scrollTop = 0;
-  document.documentElement.scrollLeft = 0;
-  document.body.scrollTop = 0;
-  document.body.scrollLeft = 0;
+  if (document.documentElement.scrollTop !== 0) document.documentElement.scrollTop = 0;
+  if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
+  if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+  if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
 }
 
 function syncMobileV2LogicalCanvas() {
   const viewportWidth = window.visualViewport?.width || window.innerWidth;
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
   const layoutScale = Math.max(0.5, viewportWidth / mobileV2LogicalViewportWidth);
-  document.documentElement.style.setProperty(mobileV2LayoutScaleProperty, String(layoutScale));
-  document.documentElement.style.setProperty(
-    mobileV2LayoutHeightProperty,
-    `${Math.max(1, viewportHeight / layoutScale)}px`,
-  );
+  const layoutHeight = Math.max(1, viewportHeight / layoutScale);
+  if (appliedLayoutScale === null || Math.abs(appliedLayoutScale - layoutScale) > 0.0005) {
+    appliedLayoutScale = layoutScale;
+    document.documentElement.style.setProperty(mobileV2LayoutScaleProperty, String(layoutScale));
+  }
+  if (appliedLayoutHeight === null || Math.abs(appliedLayoutHeight - layoutHeight) > 0.5) {
+    appliedLayoutHeight = layoutHeight;
+    document.documentElement.style.setProperty(mobileV2LayoutHeightProperty, `${layoutHeight}px`);
+  }
   restoreMobileV2DocumentOrigin();
 }
 
@@ -154,6 +160,8 @@ function restoreDocumentShell() {
   previousMetaContent.clear();
   document.documentElement.style.removeProperty(mobileV2LayoutScaleProperty);
   document.documentElement.style.removeProperty(mobileV2LayoutHeightProperty);
+  appliedLayoutScale = null;
+  appliedLayoutHeight = null;
 }
 
 async function resetWorkspaceScroll() {
