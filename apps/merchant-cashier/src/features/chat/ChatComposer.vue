@@ -12,6 +12,8 @@ const emit = defineEmits<{
   send: [content: string];
   image: [file: File];
   location: [];
+  focus: [];
+  blur: [];
 }>();
 
 const draft = defineModel<string>({ default: '' });
@@ -51,13 +53,21 @@ function submit() {
   emit('send', content);
 }
 
+function handleEnter(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  event.preventDefault();
+  submit();
+}
+
 function handleInputFocus() {
   inputFocused.value = true;
   attachmentsOpen.value = false;
+  emit('focus');
 }
 
 function handleInputBlur() {
   inputFocused.value = false;
+  emit('blur');
 }
 
 function focus() {
@@ -95,14 +105,14 @@ defineExpose({ focus, blur });
         class="chat-composer__input"
         rows="1"
         enterkeyhint="send"
-        :disabled="disabled || sending"
+        inputmode="text"
+        :disabled="disabled"
         :placeholder="t('cashier.chat.messagePlaceholder')"
         @focus="handleInputFocus"
         @blur="handleInputBlur"
-        @keydown.enter.exact.prevent="submit"
+        @keydown.enter.exact="handleEnter"
       />
       <button
-        v-if="!hasDraft"
         class="chat-composer__more"
         :class="{ 'is-open': attachmentsOpen }"
         type="button"
@@ -294,14 +304,6 @@ defineExpose({ focus, blur });
   }
 
   .chat-composer__send {
-    min-width: 64px;
-    min-height: 44px;
-    border-radius: 11px;
-    padding: 0 14px;
-    font-size: 14px;
-  }
-
-  .chat-composer__send.is-empty {
     display: none;
   }
 

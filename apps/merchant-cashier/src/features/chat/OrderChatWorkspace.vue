@@ -31,6 +31,7 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 const chatStore = useChatStore();
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
+const messageListRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const rootRef = ref<HTMLElement | null>(null);
 const draft = ref('');
 const mediaError = ref('');
@@ -38,6 +39,7 @@ const locationPending = ref(false);
 const intersecting = ref(
   typeof window === 'undefined' || !('IntersectionObserver' in window),
 );
+const composerFocused = ref(false);
 let observer: IntersectionObserver | undefined;
 let activeOrderId = '';
 
@@ -85,6 +87,7 @@ watch(
 );
 
 onMounted(() => {
+  window.visualViewport?.addEventListener('resize', keepLatestMessageVisible);
   if (typeof IntersectionObserver === 'undefined' || !rootRef.value) {
     intersecting.value = true;
     return;
@@ -96,6 +99,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.visualViewport?.removeEventListener('resize', keepLatestMessageVisible);
   observer?.disconnect();
   if (activeOrderId) chatStore.deactivate(activeOrderId);
   activeOrderId = '';
@@ -125,8 +129,23 @@ async function sendMessage(content: string) {
     }
   } finally {
     await nextTick();
+    await messageListRef.value?.scrollToBottom();
     composerRef.value?.focus();
   }
+}
+
+function keepLatestMessageVisible() {
+  if (!composerFocused.value) return;
+  void messageListRef.value?.scrollToBottom();
+}
+
+async function handleComposerFocus() {
+  composerFocused.value = true;
+  await messageListRef.value?.scrollToBottom();
+}
+
+function handleComposerBlur() {
+  composerFocused.value = false;
 }
 
 async function sendImage(file: File) {
@@ -195,6 +214,7 @@ function retry() {
       <div v-if="mediaError" class="order-chat-workspace__error" role="alert">{{ mediaError }}</div>
 
       <ChatMessageList
+        ref="messageListRef"
         :messages="state.messages"
         :loading="state.loading"
         :refreshing="state.refreshing"
@@ -215,6 +235,8 @@ function retry() {
         @send="sendMessage"
         @image="sendImage"
         @location="sendLocation"
+        @focus="handleComposerFocus"
+        @blur="handleComposerBlur"
       />
     </template>
   </section>

@@ -28,9 +28,11 @@ describe('ChatComposer focus controls', () => {
 
     await input.trigger('focus');
     expect(wrapper.get('form').classes()).toContain('is-input-focused');
+    expect(wrapper.emitted('focus')).toHaveLength(1);
 
     await input.trigger('blur');
     expect(wrapper.get('form').classes()).not.toContain('is-input-focused');
+    expect(wrapper.emitted('blur')).toHaveLength(1);
   });
 
   it('does not send empty content', async () => {
@@ -51,7 +53,7 @@ describe('ChatComposer focus controls', () => {
     expect(wrapper.emitted('send')).toBeUndefined();
   });
 
-  it('uses one compact attachment toggle until a text draft is entered', async () => {
+  it('keeps the attachment toggle stable while text is entered', async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
 
     const more = wrapper.get('.chat-composer__more');
@@ -61,7 +63,24 @@ describe('ChatComposer focus controls', () => {
     expect(wrapper.get('.chat-composer__attachments').classes()).toContain('is-open');
 
     await wrapper.get('textarea').setValue('收到');
-    expect(wrapper.find('.chat-composer__more').exists()).toBe(false);
+    expect(wrapper.find('.chat-composer__more').exists()).toBe(true);
     expect(wrapper.get('.chat-composer__send').classes()).not.toContain('is-empty');
+  });
+
+  it('submits text from the keyboard send action', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const input = wrapper.get('textarea');
+
+    await input.setValue('键盘发送');
+    await input.trigger('keydown', { key: 'Enter' });
+
+    expect(wrapper.emitted('send')).toEqual([['键盘发送']]);
+  });
+
+  it('keeps the focused input enabled while a message request is pending', () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: true } });
+
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('.chat-composer__send').attributes('disabled')).toBeDefined();
   });
 });
