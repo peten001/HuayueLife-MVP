@@ -489,6 +489,35 @@ async function verifyMobileWorkflows(page, label) {
   await assertNoOverflow(page, `mobile-${label}-delivery-detail`);
   await page.screenshot({ path: `${outputDirectory}/mobile-${label}-11-delivery-detail.png`, animations: 'disabled' });
 
+  await page.getByRole('button', { name: /订单聊天/ }).click();
+  const chatInput = page.locator('.chat-composer__input');
+  await chatInput.waitFor();
+  await chatInput.focus();
+  await page.evaluate(() => {
+    window.scrollTo(0, 640);
+    window.visualViewport?.dispatchEvent(new Event('scroll'));
+  });
+  await page.waitForTimeout(360);
+  const chatFocus = await page.evaluate(() => {
+    const composer = document.querySelector('.chat-composer')?.getBoundingClientRect();
+    return {
+      bodyPosition: getComputedStyle(document.body).position,
+      documentScrollTop: document.documentElement.scrollTop,
+      bodyScrollTop: document.body.scrollTop,
+      windowScrollY: window.scrollY,
+      composerTop: composer?.top ?? -1,
+      composerBottom: composer?.bottom ?? -1,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  assert.equal(chatFocus.bodyPosition, 'fixed', `${label}: mobile app shell must pin the document while editing chat (${JSON.stringify(chatFocus)})`);
+  assert.equal(chatFocus.documentScrollTop, 0, `${label}: chat focus must not move the document root (${JSON.stringify(chatFocus)})`);
+  assert.equal(chatFocus.bodyScrollTop, 0, `${label}: chat focus must not move the document body (${JSON.stringify(chatFocus)})`);
+  assert.equal(chatFocus.windowScrollY, 0, `${label}: chat focus must not pan the app canvas (${JSON.stringify(chatFocus)})`);
+  assert.ok(chatFocus.composerTop >= -1 && chatFocus.composerBottom <= chatFocus.viewportHeight + 1, `${label}: chat composer must stay inside the visible app canvas (${JSON.stringify(chatFocus)})`);
+  signature.chatKeyboardAnchor = 'PINNED';
+  await page.screenshot({ path: `${outputDirectory}/mobile-${label}-11-chat-focus.png`, animations: 'disabled' });
+
   await navigateThroughDrawer(page, '订单记录', '/orders/history');
   const historyCard = page.locator('.history-queue__list button').first();
   await historyCard.waitFor();

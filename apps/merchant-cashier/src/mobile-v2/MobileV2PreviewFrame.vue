@@ -82,6 +82,17 @@ const mobileV2MetaOverrides = [
 ] as const;
 const previousMetaContent = new Map<HTMLMetaElement, string | null>();
 let layoutSyncFrame: number | null = null;
+let focusCorrectionTimer: number | null = null;
+
+function restoreMobileV2DocumentOrigin() {
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
+  document.documentElement.scrollTop = 0;
+  document.documentElement.scrollLeft = 0;
+  document.body.scrollTop = 0;
+  document.body.scrollLeft = 0;
+}
 
 function syncMobileV2LogicalCanvas() {
   const viewportWidth = window.visualViewport?.width || window.innerWidth;
@@ -92,6 +103,7 @@ function syncMobileV2LogicalCanvas() {
     mobileV2LayoutHeightProperty,
     `${Math.max(1, viewportHeight / layoutScale)}px`,
   );
+  restoreMobileV2DocumentOrigin();
 }
 
 function scheduleMobileV2LogicalCanvasSync() {
@@ -100,6 +112,17 @@ function scheduleMobileV2LogicalCanvasSync() {
     layoutSyncFrame = null;
     syncMobileV2LogicalCanvas();
   });
+}
+
+function handleMobileV2FocusIn(event: FocusEvent) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches('input, textarea, select, [contenteditable="true"]')) return;
+  scheduleMobileV2LogicalCanvasSync();
+  if (focusCorrectionTimer !== null) window.clearTimeout(focusCorrectionTimer);
+  focusCorrectionTimer = window.setTimeout(() => {
+    focusCorrectionTimer = null;
+    scheduleMobileV2LogicalCanvasSync();
+  }, 320);
 }
 
 function applyMobileV2AppShell() {
@@ -158,6 +181,8 @@ onMounted(() => {
   applyMobileV2AppShell();
   window.addEventListener('resize', scheduleMobileV2LogicalCanvasSync);
   window.visualViewport?.addEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  window.visualViewport?.addEventListener('scroll', scheduleMobileV2LogicalCanvasSync);
+  document.addEventListener('focusin', handleMobileV2FocusIn);
   scheduleMobileV2LogicalCanvasSync();
   void resetWorkspaceScroll();
 });
@@ -165,7 +190,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMobileV2LogicalCanvasSync);
   window.visualViewport?.removeEventListener('resize', scheduleMobileV2LogicalCanvasSync);
+  window.visualViewport?.removeEventListener('scroll', scheduleMobileV2LogicalCanvasSync);
+  document.removeEventListener('focusin', handleMobileV2FocusIn);
   if (layoutSyncFrame !== null) window.cancelAnimationFrame(layoutSyncFrame);
+  if (focusCorrectionTimer !== null) window.clearTimeout(focusCorrectionTimer);
   restoreDocumentShell();
 });
 </script>

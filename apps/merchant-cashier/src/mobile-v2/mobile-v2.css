@@ -2173,10 +2173,15 @@ html.cashier-mobile-v2-preview-active {
 }
 
 body.cashier-mobile-v2-preview-active {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 390px;
   min-width: 390px;
   height: var(--mobile-v2-layout-height);
   min-height: var(--mobile-v2-layout-height);
+  overflow: hidden;
+  overscroll-behavior: none;
   zoom: var(--mobile-v2-layout-scale);
 }
 

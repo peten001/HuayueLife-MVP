@@ -64,8 +64,12 @@ describe('isolated Mobile V2 architecture', () => {
     expect(frame).toContain('const mobileV2LogicalViewportWidth = 390;');
     expect(frame).toContain('content: `width=${mobileV2LogicalViewportWidth}, user-scalable=no');
     expect(frame).toContain('function syncMobileV2LogicalCanvas()');
+    expect(frame).toContain('function restoreMobileV2DocumentOrigin()');
     expect(frame).toContain("window.visualViewport?.addEventListener('resize', scheduleMobileV2LogicalCanvasSync)");
+    expect(frame).toContain("window.visualViewport?.addEventListener('scroll', scheduleMobileV2LogicalCanvasSync)");
+    expect(frame).toContain("document.addEventListener('focusin', handleMobileV2FocusIn)");
     expect(frame).not.toContain('width=device-width');
+    expect(styles).toMatch(/body\.cashier-mobile-v2-preview-active\s*\{[^}]*position:\s*fixed;[^}]*overflow:\s*hidden;/s);
     expect(styles).toContain('zoom: var(--mobile-v2-layout-scale);');
     expect(styles).toContain('.fulfillment-main__topbar .mobile-workspace-back');
     expect(styles).toMatch(/\.pickup-order-detail > \.fulfillment-facts\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
