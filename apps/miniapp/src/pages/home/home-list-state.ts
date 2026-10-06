@@ -1,4 +1,4 @@
-import type { MerchantSummary } from '@/types/api';
+import type { MerchantSummary, ExploreTopic } from '@/types/api';
 
 export type HomeRegionCode = 'Bac Giang' | 'Bac Ninh';
 export type HomeMerchantListMode = 'province' | 'nearby';
@@ -19,6 +19,8 @@ export type HomeMerchantListRequest = {
   latitude?: number;
   longitude?: number;
   homepageCategoryKey?: HomeCategoryKey;
+  exploreCategory?: string;
+  exploreTopic?: string;
   keyword?: string;
   serviceFilters: HomeServiceFilter[];
 };
@@ -33,6 +35,8 @@ export function merchantQueryForPage(
     lat?: number;
     lng?: number;
     homepageCategoryKey?: HomeCategoryKey;
+    exploreCategory?: string;
+    exploreTopic?: string;
     keyword?: string;
     serviceFilter?: HomeServiceFilter[];
   } = { page: targetPage };
@@ -47,6 +51,8 @@ export function merchantQueryForPage(
   if (request.homepageCategoryKey) {
     query.homepageCategoryKey = request.homepageCategoryKey;
   }
+  if (request.exploreCategory) query.exploreCategory = request.exploreCategory;
+  if (request.exploreTopic) query.exploreTopic = request.exploreTopic;
   if (keyword) {
     query.keyword = keyword;
   }
@@ -63,6 +69,8 @@ export function merchantQueryKey(request: HomeMerchantListRequest) {
     latitude: request.latitude ?? null,
     longitude: request.longitude ?? null,
     homepageCategoryKey: request.homepageCategoryKey ?? null,
+    exploreCategory: request.exploreCategory ?? null,
+    exploreTopic: request.exploreTopic ?? null,
     keyword: request.keyword ?? '',
     serviceFilters: [...request.serviceFilters].sort(),
   });
@@ -115,4 +123,13 @@ export function isCurrentLocationIntent(
 ) {
   return manualSequenceAtStart === currentManualSequence
     && locationIntent === currentLocationIntent;
+}
+
+/** Restricted topics must follow the selected business region, including before location resolves. */
+export function isExploreTopicInRegion(
+  topic: Pick<ExploreTopic, 'enabled' | 'regions'>,
+  regionCode?: string | null,
+) {
+  const region = regionCode === 'Bac Ninh' ? '北宁' : regionCode === 'Bac Giang' ? '北江' : undefined;
+  return topic.enabled && (!topic.regions.length || Boolean(region && topic.regions.includes(region)));
 }

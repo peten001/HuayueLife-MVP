@@ -1,14 +1,23 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
-import { onReachBottom, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
+import { onHide, onReachBottom, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
+import DiscoveryMerchantCard from '@/components/DiscoveryMerchantCard.vue';
+import HomeCategoryPager from '@/components/HomeCategoryPager.vue';
+import NetworkImage from '@/components/NetworkImage.vue';
+import { localizedName, merchantName } from '@/i18n';
+import { resolveMediaUrl } from '@/utils/media';
+import { discoveryPageUrl } from '@/utils/discovery-categories';
 import MerchantCard from '@/components/MerchantCard.vue';
-import { getNearbyMerchants } from '@/api/catalog';
+import { getNearbyMerchants, getExploreContent, getMerchant, getHomeRecommendations } from '@/api/catalog';
 import { cityOptions, useI18n, usePageTitle } from '@/i18n';
 import { useAppConfigStore } from '@/stores/app-config';
 import { useLocationStore } from '@/stores/location';
-import type { MerchantSummary } from '@/types/api';
+import type { MerchantSummary, ExploreCategory, ExploreTopic, HomeRecommendations, HomeRecommendation, HomeRecommendationScene } from '@/types/api';
+import { homeRecommendationContext, recommendationRefreshDelay, recommendationResponseIsCurrent } from './home-recommendation-state';
+import { resolveContentTemplate } from '@/utils/merchant-content-template';
 import {
   hasMoreMerchantPages,
+  isExploreTopicInRegion,
   isCurrentLocationIntent,
   isCurrentMerchantResponse,
   merchantQueryForPage,
@@ -43,6 +52,161 @@ const hasInitializedHome = ref(false);
 const manualCitySelectionSeq = ref(0);
 const locationIntentSeq = ref(0);
 const searchKeyword = ref('');
+const exploreCategories = ref<ExploreCategory[]>([]);
+const exploreTopics = ref<ExploreTopic[]>([]);
+const exploreError = ref(false);
+const exploreLoading = ref(false);
+const selectedExploreCategory = ref('');
+const selectedExploreTopic = ref('');
+const browseMode = ref<'featured' | 'nearby'>('featured');
+const failedSpotlightPhotos = ref<Set<string>>(new Set());
+const signaturePhotoCache = new Map<string, NonNullable<MerchantSummary['signatureDishes']>>();
+const recommendations = ref<HomeRecommendations | null>(null);
+const recommendationError = ref(false);
+const recommendationLoading = ref(false);
+let recommendationSequence = 0;
+let recommendationExpiry = 0;
+let recommendationTimer: ReturnType<typeof setTimeout> | undefined;
+let homeVisible = false;
+const spotlights = computed(() => searchKeyword.value.trim() ? [] : (recommendations.value?.spotlights ?? []).flatMap(item => {
+  const photo = item.photos.find(url => !failedSpotlightPhotos.value.has(url));
+  return photo ? [{ ...item, photo }] : [];
+}));
+const visibleScenes = computed(() => searchKeyword.value.trim() ? [] : (recommendations.value?.scenes ?? []).flatMap(item => {
+  const photo = item.photos.find(url => !failedSpotlightPhotos.value.has(url));
+  return photo ? [{ ...item, photo }] : [];
+}));
+
+function spotlightPhotoFailed(photo: string) {
+  failedSpotlightPhotos.value = new Set([...failedSpotlightPhotos.value, photo]);
+}
+function openRecommendedShop(merchant: MerchantSummary) {
+  if (!recommendationLoading.value) openMerchant(merchant);
+}
+function spotlightLabel(item: HomeRecommendation) {
+  return item.kind === 'COFFEE' ? t('homeCoffeeMoment') : t('homeFoodMoment');
+}
+function recommendationLabel(item: HomeRecommendation) {
+  const reason = item.reason === 'FEATURED' ? t('homeRecommendationFeatured')
+    : item.rating ? t('homeRecommendationRating', { rating: item.rating.averageRating.toFixed(1) })
+    : t('homeRecommendationCity');
+  const distance = item.merchant.distanceKm;
+  return distance === null ? reason : `${reason} · ${distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}`;
+}
+function sceneText(scene: HomeRecommendationScene, field: 'title' | 'subtitle') {
+  return scene[`${field}${locale.value === 'vi' ? 'Vi' : locale.value === 'en' ? 'En' : 'Zh'}`];
+}
+function clearRecommendationTimer() {
+  if (recommendationTimer) clearTimeout(recommendationTimer);
+  recommendationTimer = undefined;
+}
+function scheduleRecommendationRefresh(delay: number) {
+  clearRecommendationTimer();
+  if (homeVisible) recommendationTimer = setTimeout(() => { void loadRecommendations(true); }, delay);
+}
+async function loadRecommendations(force = false) {
+  const context = recommendationContext.value;
+  if (!homeVisible || !context || recommendationLoading.value) return;
+  if (!force && recommendations.value && Date.now() < recommendationExpiry) {
+    scheduleRecommendationRefresh(recommendationExpiry - Date.now());
+    return;
+  }
+  clearRecommendationTimer();
+  const seq = ++recommendationSequence;
+  const key = recommendationKey.value;
+  recommendationLoading.value = true;
+  // Keep card geometry stable during timed refresh; taps are disabled until fresh.
+  try {
+    const data = await getHomeRecommendations(context);
+    if (!recommendationResponseIsCurrent(seq, recommendationSequence, key, recommendationKey.value, homeVisible)) return;
+    if (data.region !== context.province) throw new Error('Recommendation region mismatch');
+    recommendations.value = data;
+    recommendationError.value = false;
+    failedSpotlightPhotos.value = new Set();
+    const delay = recommendationRefreshDelay(data);
+    recommendationExpiry = Date.now() + delay;
+    scheduleRecommendationRefresh(delay);
+  } catch {
+    if (!recommendationResponseIsCurrent(seq, recommendationSequence, key, recommendationKey.value, homeVisible)) return;
+    recommendations.value = null;
+    recommendationError.value = true;
+    scheduleRecommendationRefresh(60_000);
+  } finally {
+    if (recommendationResponseIsCurrent(seq, recommendationSequence, key, recommendationKey.value, homeVisible)) recommendationLoading.value = false;
+  }
+}
+
+// Nearby summaries on older servers omit signature dishes. Enrich at most two
+// featured restaurants without delaying the list, and guard against city changes.
+async function enrichInvitationPhotos(list: MerchantSummary[], seq: number, requestKey: string) {
+  const candidates = list.filter(item => resolveContentTemplate(item) === 'RESTAURANT' && !item.signatureDishes?.length && !item.images?.some(image => image.imageType === 'PRODUCT' && image.isVisible !== false)).slice(0, 2);
+  const results = await Promise.allSettled(candidates.map(async item => {
+    const dishes = signaturePhotoCache.get(item.id) ?? (await getMerchant(item.id)).signatureDishes ?? [];
+    signaturePhotoCache.set(item.id, dishes);
+    return { id: item.id, dishes };
+  }));
+  if (!isCurrentMerchantResponse(seq, requestKey, requestSeq.value, activeMerchantRequestKey.value)) return;
+  const dishesById = new Map(results.flatMap(result => result.status === 'fulfilled' ? [[result.value.id, result.value.dishes] as const] : []));
+  merchants.value = merchants.value.map(item => dishesById.has(item.id) ? { ...item, signatureDishes: dishesById.get(item.id) } : item);
+}
+
+const allCategories = computed(() => exploreCategories.value.filter(item => item.enabled && !item.navigationOnly));
+const discoverLabel = computed(() => locale.value === 'zh' ? '发现好去处' : locale.value === 'vi' ? 'Khám phá điểm đến' : 'Discover places');
+const canResetBrowseResults = computed(() => Boolean(searchKeyword.value.trim() || selectedCategory.value || selectedExploreCategory.value || selectedExploreTopic.value || activeFilters.value.length));
+let categoryRegionAtExit: string | null | undefined;
+async function loadExploreContent() {
+  if (exploreLoading.value) return;
+  exploreLoading.value = true;
+  try {
+    const content = await getExploreContent();
+    exploreCategories.value = content.categories;
+    exploreTopics.value = content.topics;
+    exploreError.value = false;
+    const categoryRemoved = selectedExploreCategory.value && !content.categories.some(item => item.enabled && item.code === selectedExploreCategory.value);
+    const topicRemoved = selectedExploreTopic.value && !content.topics.some(item => item.enabled && item.code === selectedExploreTopic.value && isExploreTopicInRegion(item, normalizedRegionCode.value));
+    if (categoryRemoved || topicRemoved) {
+      if (categoryRemoved) selectedExploreCategory.value = '';
+      if (topicRemoved) selectedExploreTopic.value = '';
+      void reloadMerchantListForActiveGeography();
+    }
+  } catch { exploreError.value = true; }
+  finally { exploreLoading.value = false; }
+}
+
+function chooseExploreCategory(category: ExploreCategory) {
+  if (category.navigationOnly) return;
+  categoryRegionAtExit = locationStore.browseProvince;
+  uni.navigateTo({ url: discoveryPageUrl(category, normalizedRegionCode.value) });
+}
+async function chooseBrowseMode(mode: 'featured' | 'nearby') {
+  browseMode.value = mode;
+  if (mode === 'nearby') {
+    await openNearbyMerchants();
+    return;
+  }
+  locationIntentSeq.value += 1;
+  const region = resolveRegionCode(locationStore.browseProvince ?? activeMerchantRequest.value?.regionCode ?? '');
+  if (region) await loadByRegionCode(region, { mode: 'province' });
+  else openCityPicker();
+}
+
+function openCityPicker() {
+  uni.pageScrollTo({ scrollTop: 0, duration: 200 });
+  cityMenuVisible.value = true;
+}
+
+async function browseLocalShops() {
+  searchKeyword.value = '';
+  clearSearchDebounce();
+  selectedCategory.value = '';
+  selectedExploreCategory.value = '';
+  selectedExploreTopic.value = '';
+  activeFilters.value = [];
+  filterDraft.value = [];
+  await chooseBrowseMode('featured');
+  if (!cityMenuVisible.value) scrollToMerchantList();
+}
+
 const selectedCategory = ref<ServiceCategoryKey | ''>('');
 const activeFilters = ref<FilterOption[]>([]);
 const filterDraft = ref<FilterOption[]>([]);
@@ -65,6 +229,22 @@ const merchantListMode = ref<
 const normalizedRegionCode = computed(() =>
   resolveRegionCode(displayProvinceForCurrentMode() ?? ''),
 );
+const recommendationContext = computed(() => homeRecommendationContext(
+  normalizedRegionCode.value,
+  locationStore.locationStatus === 'LOCATED_SUPPORTED' ? locationStore.locatedProvince : null,
+  locationStore.latitude,
+  locationStore.longitude,
+));
+const recommendationKey = computed(() => JSON.stringify(recommendationContext.value));
+watch(recommendationKey, () => {
+  recommendationSequence += 1;
+  recommendationLoading.value = false;
+  recommendationExpiry = 0;
+  recommendations.value = null;
+  recommendationError.value = false;
+  clearRecommendationTimer();
+  void loadRecommendations();
+}, { flush: 'sync' });
 const merchantPanelKey = computed(() =>
   `${merchantListMode.value}-${normalizedRegionCode.value || 'unsupported'}`,
 );
@@ -101,7 +281,9 @@ const foodCategories = computed<Array<{
 ]);
 
 const activeCategoryLabel = computed(() => {
-  if (!selectedCategory.value) return t('homeNearbyRestaurants');
+  if (selectedExploreTopic.value) return localizedName(exploreTopics.value.find(item => item.code === selectedExploreTopic.value) || {}, locale.value);
+  if (selectedExploreCategory.value) return localizedName(exploreCategories.value.find(item => item.code === selectedExploreCategory.value) || {}, locale.value);
+  if (!selectedCategory.value) return discoverLabel.value;
   return foodCategories.value.find((item) => item.key === selectedCategory.value)?.label || t('homeNearbyRestaurants');
 });
 
@@ -141,20 +323,47 @@ const hasLocationOutcome = computed(() => !['province', 'nearby'].includes(merch
 usePageTitle(() => t('homeTitle'));
 
 onShow(() => {
-  if (hasInitializedHome.value) return;
+  homeVisible = true;
+  void loadRecommendations(true);
+  void loadExploreContent();
+  if (hasInitializedHome.value) {
+    const nextRegion = locationStore.browseProvince;
+    if (categoryRegionAtExit !== undefined && nextRegion && nextRegion !== categoryRegionAtExit) {
+      browseMode.value = 'featured';
+      void loadByRegionCode(nextRegion, { mode: 'province' });
+    }
+    categoryRegionAtExit = undefined;
+    return;
+  }
   hasInitializedHome.value = true;
   void initializeHome();
 });
 
-watch(searchKeyword, () => {
+onHide(() => {
+  homeVisible = false;
+  recommendationSequence += 1;
+  recommendationLoading.value = false;
+  clearRecommendationTimer();
+});
+
+watch(searchKeyword, (keyword, previousKeyword) => {
   if (!hasInitializedHome.value) return;
+  // A new search covers merchants broadly; categories can refine it afterwards.
+  if (keyword.trim() && !previousKeyword.trim()) {
+    selectedCategory.value = '';
+    selectedExploreCategory.value = '';
+    selectedExploreTopic.value = '';
+  }
   clearSearchDebounce();
   searchDebounceTimer = setTimeout(() => {
     void reloadMerchantListForActiveGeography();
   }, 300);
-});
+}, { flush: 'sync' });
 
 onUnmounted(() => {
+  homeVisible = false;
+  recommendationSequence += 1;
+  clearRecommendationTimer();
   clearSearchDebounce();
   requestSeq.value += 1;
   locationIntentSeq.value += 1;
@@ -197,7 +406,7 @@ async function refreshHomeByCurrentLocation() {
       locationIntent,
       locationIntentSeq.value,
     )) return;
-    console.log('[home] region snapshot', snapshot);
+    if (import.meta.env.DEV) console.log('[home] region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
       await loadByRegionCode(snapshot.locatedProvince, {
@@ -281,6 +490,8 @@ async function loadByRegionCode(
     longitude?: number | null;
   },
 ) {
+  const topic = exploreTopics.value.find(item => item.code === selectedExploreTopic.value);
+  if (selectedExploreTopic.value && (!topic || !isExploreTopicInRegion(topic, regionCode))) selectedExploreTopic.value = '';
   merchantListMode.value = options?.mode ?? 'province';
   const latitude = normalizeCoordinateForQuery(options?.latitude);
   const longitude = normalizeCoordinateForQuery(options?.longitude);
@@ -288,6 +499,8 @@ async function loadByRegionCode(
     regionCode,
     mode: options?.mode ?? 'province',
     homepageCategoryKey: selectedCategory.value || undefined,
+    exploreCategory: selectedExploreCategory.value || undefined,
+    exploreTopic: selectedExploreTopic.value || undefined,
     keyword: normalizeKeyword(searchKeyword.value),
     serviceFilters: [...activeFilters.value],
   };
@@ -306,12 +519,12 @@ async function loadMerchantFirstPage(request: HomeMerchantListRequest) {
   activeMerchantRequest.value = request;
   activeMerchantRequestKey.value = requestKey;
   const query = merchantQueryForPage(request, 1);
-  console.log('[home] merchant query', query);
+  if (import.meta.env.DEV) console.log('[home] merchant query', query);
   try {
     const result = await getNearbyMerchants(query);
     const rawList = result.items ?? [];
-    console.log('[home] raw merchants', rawList);
-    console.log('[home] merchants raw count', rawList.length);
+    if (import.meta.env.DEV) console.log('[home] raw merchants', rawList);
+    if (import.meta.env.DEV) console.log('[home] merchants raw count', rawList.length);
     if (!isCurrentMerchantResponse(
       seq,
       requestKey,
@@ -327,6 +540,7 @@ async function loadMerchantFirstPage(request: HomeMerchantListRequest) {
     pageSize.value = result.pageSize;
     merchantListError.value = false;
     paginationExhausted.value = rawList.length === 0;
+    if (!request.keyword && !request.exploreCategory && !request.exploreTopic && !request.homepageCategoryKey && !request.serviceFilters.length) void enrichInvitationPhotos(rawList, seq, requestKey);
   } catch (error) {
     console.warn('[home] loadByRegionCode failed', error);
     if (!isCurrentMerchantResponse(
@@ -373,7 +587,7 @@ async function loadMoreMerchants() {
   loadingMore.value = true;
   loadMoreError.value = false;
   const query = merchantQueryForPage(request, nextPage);
-  console.log('[home] load more merchant query', query);
+  if (import.meta.env.DEV) console.log('[home] load more merchant query', query);
 
   try {
     const result = await getNearbyMerchants(query);
@@ -423,12 +637,14 @@ async function selectCityOption(option: CityMenuOption) {
   if (regionCode === 'Bac Giang' || regionCode === 'Bac Ninh') {
     manualCitySelectionSeq.value += 1;
     locationIntentSeq.value += 1;
+    browseMode.value = 'featured';
     locationStore.setBrowseProvince(regionCode);
     await loadByRegionCode(regionCode, { mode: 'province' });
   }
 }
 
 async function openNearbyMerchants() {
+  browseMode.value = 'nearby';
   locationStore.hydrateFromStorage();
   const manualSeqAtStart = manualCitySelectionSeq.value;
   const locationIntent = ++locationIntentSeq.value;
@@ -444,7 +660,7 @@ async function openNearbyMerchants() {
       locationIntent,
       locationIntentSeq.value,
     )) return;
-    console.log('[home] nearby region snapshot', snapshot);
+    if (import.meta.env.DEV) console.log('[home] nearby region snapshot', snapshot);
 
     if (snapshot.status === 'LOCATED_SUPPORTED' && snapshot.locatedProvince) {
       merchantListMode.value = 'nearby';
@@ -495,6 +711,8 @@ async function reloadMerchantListForActiveGeography() {
   const request: HomeMerchantListRequest = {
     ...currentRequest,
     homepageCategoryKey: selectedCategory.value || undefined,
+    exploreCategory: selectedExploreCategory.value || undefined,
+    exploreTopic: selectedExploreTopic.value || undefined,
     keyword: normalizeKeyword(searchKeyword.value),
     serviceFilters: [...activeFilters.value],
   };
@@ -523,7 +741,9 @@ function clearSearchDebounce() {
 
 function submitSearch() {
   clearSearchDebounce();
+  uni.hideKeyboard();
   void reloadMerchantListForActiveGeography();
+  scrollToMerchantList();
 }
 
 function emptyStateTitle() {
@@ -547,11 +767,11 @@ function emptyStateTitle() {
   }
   if (merchantListMode.value === 'nearby') {
     if (searchKeyword.value.trim()) return t('homeSearchEmpty');
-    if (selectedCategory.value) return t('homeCategoryJoinSoon');
+    if (selectedCategory.value || selectedExploreCategory.value || selectedExploreTopic.value) return t('homeEmptyHint');
     return t('homeNearbyProvinceEmptyTitle');
   }
   if (searchKeyword.value.trim()) return t('homeSearchEmpty');
-  if (selectedCategory.value) return t('homeCategoryJoinSoon');
+  if (selectedCategory.value || selectedExploreCategory.value || selectedExploreTopic.value) return t('homeEmptyHint');
   return t('homeProvinceEmptyTitle');
 }
 
@@ -575,7 +795,7 @@ function emptyStateCopy() {
     return '';
   }
   if (searchKeyword.value.trim()) return t('homeSearchEmptyHint');
-  if (selectedCategory.value) return t('homeEmptyHint');
+  if (selectedCategory.value || selectedExploreCategory.value || selectedExploreTopic.value) return t('homeBrowseOtherHint');
   return t('homeProvinceEmptyHint');
 }
 
@@ -592,8 +812,11 @@ function openMessages() {
 }
 
 function toggleCategory(categoryKey: ServiceCategoryKey) {
-  selectedCategory.value = selectedCategory.value === categoryKey ? '' : categoryKey;
-  void reloadMerchantListForActiveGeography();
+  const parent = allCategories.value.find(item => item.legacyKeys.includes(categoryKey));
+  if (parent) {
+    categoryRegionAtExit = locationStore.browseProvince;
+    uni.navigateTo({ url: discoveryPageUrl(parent, normalizedRegionCode.value, categoryKey) });
+  }
 }
 
 function normalizeCoordinateForQuery(value: number | null | undefined) {
@@ -624,8 +847,7 @@ function applyFilters() {
 }
 
 function clearSelectedCategory() {
-  if (!selectedCategory.value) return;
-  selectedCategory.value = '';
+  selectedCategory.value = ''; selectedExploreCategory.value = ''; selectedExploreTopic.value = '';
   void reloadMerchantListForActiveGeography();
 }
 
@@ -671,13 +893,13 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
     <view v-if="cityMenuVisible" class="city-dropdown-backdrop" @click="cityMenuVisible = false"></view>
     <view class="topbar">
       <view class="city-selector">
-        <view class="city" @click="toggleCityMenu">
+        <button class="city" :aria-label="uiCityDisplay" :aria-expanded="cityMenuVisible" @tap="toggleCityMenu">
           <text class="location-dot"></text>
           <text class="city-label">{{ uiCityDisplay }}</text>
           <text class="city-arrow">⌄</text>
-        </view>
+        </button>
         <view v-if="cityMenuVisible" class="city-dropdown">
-          <view
+          <button
             v-for="option in cityMenuOptions"
             :key="`${option.role}-${option.value}`"
             :class="[
@@ -687,11 +909,11 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
                 active: option.value === normalizedRegionCode,
               },
             ]"
-            @click="selectCityOption(option)"
+            @tap="selectCityOption(option)"
           >
             <text class="city-option-label">{{ option.label }}</text>
             <text v-if="option.role === 'region' && option.value === normalizedRegionCode" class="city-option-check">✓</text>
-          </view>
+          </button>
         </view>
       </view>
       <view class="search-box compact">
@@ -703,57 +925,58 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
           confirm-type="search"
           @confirm="submitSearch"
         />
-        <text v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">×</text>
+        <text v-if="searchKeyword" class="search-clear" role="button" :aria-label="t('homeClearSearch')" @click="searchKeyword = ''">×</text>
       </view>
-      <view class="bell-button" @click="openMessages">
-        <text class="bell-icon">🔔</text>
-      </view>
+      <button class="bell-button" :aria-label="t('messagesTitle')" @tap="openMessages"><text class="bell-icon" aria-hidden="true">🔔</text></button>
     </view>
 
-    <view :class="['banner', locale === 'vi' ? 'banner--vi' : '']">
-      <view class="banner-content">
-        <text class="banner-title">{{ t('homeBannerTitle') }}</text>
-        <text class="banner-copy">{{ t('homeBannerSubtitle') }}</text>
-        <button class="banner-action" @click="openNearbyMerchants">
-          {{ t('homeBannerAction') }}
-        </button>
-      </view>
-      <view class="food-visual" aria-hidden="true">
-        <view class="leaf leaf-one"></view>
-        <view class="leaf leaf-two"></view>
-        <view class="plate">
-          <!-- Brand decoration only. Not a functional icon. -->
-          <text class="food-mark">鲜</text>
+    <view v-if="!searchKeyword.trim()" class="outing-section">
+      <view class="outing-heading">
+        <view class="outing-heading-copy">
+          <text class="outing-kicker">{{ t('homeLifeBannerKicker') }}</text>
+          <text class="outing-title">{{ t('homeLifeBannerTitle') }}</text>
         </view>
-        <view class="steam steam-one"></view>
-        <view class="steam steam-two"></view>
+        <button class="outing-more" @tap="browseLocalShops"><text>{{ t('homeMorePlaces') }}</text><text aria-hidden="true">›</text></button>
       </view>
-    </view>
-
-    <view class="category-section">
-      <view class="category-grid">
-        <view
-          v-for="category in foodCategories"
-          :key="category.key"
-          :class="['category-item', selectedCategory === category.key ? 'active' : '']"
-          @click="toggleCategory(category.key)"
-        >
-          <view :class="['category-icon', `category-${category.tone}`]">
-            <text class="category-glyph">{{ category.icon }}</text>
+      <view v-if="spotlights.length" :class="['spotlight-grid', { 'spotlight-grid--single': spotlights.length === 1 }]">
+        <view v-for="(item, index) in spotlights" :key="item.merchant.id" :class="['spotlight-card', { 'spotlight-card--main': index === 0, 'recommendation-refreshing': recommendationLoading }]" role="button" :aria-disabled="recommendationLoading" :aria-label="merchantName(item.merchant, locale)" @tap="openRecommendedShop(item.merchant)">
+          <NetworkImage class="spotlight-photo" :src="resolveMediaUrl(item.photo)" variant="card" mode="aspectFill" @error="spotlightPhotoFailed(item.photo)" />
+          <view class="spotlight-shade" />
+          <text class="spotlight-tag">{{ spotlightLabel(item) }}</text>
+          <view class="spotlight-copy">
+            <text class="spotlight-name">{{ merchantName(item.merchant, locale) }}</text>
+            <text class="spotlight-reason">{{ recommendationLabel(item) }}</text>
+            <view class="spotlight-action"><text>{{ item.merchant.isOpen ? t('homeRecommendationVisit') : `${t('merchantClosed')} · ${t('homeRecommendationVisit')}` }}</text><text class="spotlight-arrow" aria-hidden="true">›</text></view>
           </view>
-          <text class="category-label">{{ category.label }}</text>
+        </view>
+      </view>
+      <button v-else-if="recommendationError" class="explore-error" @tap="loadRecommendations(true)">{{ t('homeRecommendationRetry') }}</button>
+      <text v-else class="outing-hint">{{ recommendationLoading ? t('loading') : t('homeLifeBannerSubtitle') }}</text>
+    </view>
+
+    <HomeCategoryPager v-if="allCategories.length" :categories="exploreCategories" @select="chooseExploreCategory" />
+
+    <view v-if="exploreLoading && !allCategories.length" class="explore-loading">{{ t('loading') }}</view>
+    <button v-else-if="exploreError" class="explore-error" @tap="loadExploreContent">{{ t('homeCategoriesRetry') }}</button>
+    <view v-if="visibleScenes.length" class="scene-section">
+      <view class="scene-heading-row"><text class="scene-heading">{{ t('homeSceneTitle') }}</text></view>
+      <view :class="['scene-grid', { 'scene-grid--single': visibleScenes.length === 1 }]">
+        <view v-for="scene in visibleScenes" :key="scene.code" :class="['scene-card', { 'recommendation-refreshing': recommendationLoading }]" role="button" :aria-disabled="recommendationLoading" :aria-label="`${sceneText(scene, 'title')} · ${merchantName(scene.merchant, locale)}`" @tap="openRecommendedShop(scene.merchant)">
+          <NetworkImage class="scene-image" :src="resolveMediaUrl(scene.photo)" variant="card" mode="aspectFill" :lazy-load="true" @error="spotlightPhotoFailed(scene.photo)" />
+          <view class="scene-copy">
+            <text class="scene-title">{{ sceneText(scene, 'title') }}</text>
+            <text class="scene-subtitle">{{ sceneText(scene, 'subtitle') }}</text>
+            <text class="scene-merchant">{{ merchantName(scene.merchant, locale) }}</text>
+          </view>
         </view>
       </view>
     </view>
-
-    <view id="nearby-restaurants" class="section-head">
-      <text class="section-title">{{ activeCategoryLabel }}</text>
-      <view class="section-actions">
-        <button v-if="selectedCategory" class="clear-button" @click="clearSelectedCategory">
-          {{ t('allMerchants') }}
-        </button>
-        <view :class="['section-action-chip', 'filter-chip', { active: isFilterActive }]" @click="openFilterSheet">
-          <text :class="['section-action-text', { strong: isFilterActive }]">{{ filterDisplayLabel }}</text>
+    <view id="nearby-restaurants" class="browse-controls">
+      <view class="section-head">
+        <text class="section-title">{{ activeCategoryLabel }}</text>
+        <view class="browse-toggle" role="tablist">
+          <button :class="{ active: browseMode === 'featured' }" role="tab" :aria-selected="browseMode === 'featured'" @tap="chooseBrowseMode('featured')"><text>{{ locale === 'zh' ? '逛精选' : locale === 'vi' ? 'Khám phá' : 'Explore' }}</text></button>
+          <button :class="{ active: browseMode === 'nearby' }" role="tab" :aria-selected="browseMode === 'nearby'" @tap="chooseBrowseMode('nearby')"><text>{{ locale === 'zh' ? '找附近' : locale === 'vi' ? 'Gần đây' : 'Nearby' }}</text></button>
         </view>
       </view>
     </view>
@@ -768,15 +991,11 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
       <view v-else-if="hasLocationOutcome || hasSuccessfulEmptyResult" class="empty">
         <text class="empty-title">{{ emptyStateTitle() }}</text>
         <text v-if="hasEmptyStateCopy()" class="empty-copy">{{ emptyStateCopy() }}</text>
+        <button v-if="hasLocationOutcome || !canResetBrowseResults" class="empty-action" @tap="openCityPicker">{{ t('homeChooseCityAction') }}</button>
+        <button v-else class="empty-action" @tap="browseLocalShops">{{ t('allMerchants') }}</button>
       </view>
-      <MerchantCard
-        v-for="merchant in merchants"
-        :key="merchant.id"
-        :merchant="merchant"
-        variant="compact"
-        :locale-class="locale"
-        @select="openMerchant"
-      />
+      <view v-if="browseMode === 'featured'" class="discovery-grid"><DiscoveryMerchantCard v-for="merchant in merchants" :key="merchant.id" :merchant="merchant" @select="openMerchant" /></view>
+      <template v-else><MerchantCard v-for="merchant in merchants" :key="merchant.id" :merchant="merchant" variant="compact" :locale-class="locale" hide-location-and-category @select="openMerchant" /></template>
       <view v-if="merchants.length && loadingMore" class="merchant-list-status">
         {{ t('homeLoadingMore') }}
       </view>
@@ -812,704 +1031,133 @@ function cityMenuOption(value: 'Bac Giang' | 'Bac Ninh'): CityMenuOption {
 </template>
 
 <style scoped>
+
+/* finesse · register=h5+product · shell=native-miniapp-discovery · SOUL=6 SPECTACLE=3 DENSITY=6
+ * User direction: vibrant 3D categories and genuine photo-led local commerce; preserve native header and green brand. */
 .page {
+  --explore-green: #2e7d32;
+  --explore-soft: #eaf7ee;
+  --explore-ink: #1f2d24;
+  --explore-muted: #66736b;
+  --explore-radius: 28rpx;
+  --home-surface: #fff;
+  --home-background: #f8f8f3;
+  --home-brand: #43a047;
+  --home-text-strong: #344a3c;
+  --home-text-secondary: #53675a;
+  --home-toggle: #edf2ef;
+  --home-toggle-text: #5c6b61;
+  --home-border: #eef2ef;
+  --home-shadow: rgb(31 45 36 / 14%);
+  --home-mask: rgba(15,29,20,.4);
+  --home-coffee: #fff7cf;
+  --home-massage: #e6f7f1;
+  --home-hotel: #e3f0ff;
+  --home-ktv: #efe6ff;
+  --home-beauty: #fff1dc;
+  --home-shop: #e2f8f5;
+  --home-fresh: #fde7f0;
+  --home-warm: #fff3df;
+  --home-warm-ink: #92632b;
+  --home-emoji-font: 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;
   min-height: 100vh;
   padding: 12rpx 24rpx calc(40rpx + env(safe-area-inset-bottom));
-  color: #1f2d24;
-  background: #f6faf7;
+  color: var(--explore-ink);
+  background: linear-gradient(180deg,#fff1cd 0,#fff8e9 500rpx,var(--home-background) 940rpx);
   box-sizing: border-box;
 }
-
-.topbar {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 0 0 8rpx;
-}
-
-.city-selector {
-  position: relative;
-  flex: none;
-}
-
-.city {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 12rpx;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #fff;
-  box-shadow: 0 6rpx 18rpx rgb(46 125 50 / 8%);
-  font-size: 15px;
-  font-weight: 700;
-  box-sizing: border-box;
-}
-
-.city-label {
-  max-width: 128rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page--vi .city {
-  min-width: 82px;
-  padding-right: 10rpx;
-}
-
-.location-dot {
-  width: 13rpx;
-  height: 13rpx;
-  border: 5rpx solid #43a047;
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-
-.city-arrow {
-  color: #7f9184;
-  font-size: 24rpx;
-}
-
-.city-dropdown-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 8;
-}
-
-.city-dropdown {
-  position: absolute;
-  top: calc(100% + 10rpx);
-  left: 0;
-  z-index: 12;
-  min-width: 260rpx;
-  overflow: hidden;
-  border: 1px solid #edf4ef;
-  border-radius: 18rpx;
-  background: #fff;
-  box-shadow: 0 18rpx 44rpx rgb(31 45 36 / 14%);
-}
-
-.city-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  min-height: 80rpx;
-  padding: 0 22rpx;
-  color: #455149;
-  font-size: 14px;
-  font-weight: 650;
-  box-sizing: border-box;
-}
-
-.city-option + .city-option {
-  border-top: 1px solid #eef4f0;
-}
-
-.city-option.current {
-  color: #2e7d32;
-  background: #f1f8f3;
-}
-
-.city-option.active {
-  color: #2e7d32;
-}
-
-.city-option-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.city-option-check {
-  flex: none;
-  color: #2e7d32;
-  font-size: 15px;
-  font-weight: 900;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  height: 36px;
-  padding: 0 14rpx;
-  border: 2rpx solid #f0f0f0;
-  border-radius: 18rpx;
-  background: #fff;
-  box-shadow: 0 8rpx 22rpx rgb(46 125 50 / 6%);
-  box-sizing: border-box;
-}
-
-.compact {
-  min-width: 0;
-  flex: 1;
-  margin-bottom: 0;
-}
-
-.search-icon {
-  position: relative;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border: 4rpx solid #43a047;
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-
-.search-icon::after {
-  position: absolute;
-  right: -9rpx;
-  bottom: -7rpx;
-  width: 12rpx;
-  height: 4rpx;
-  border-radius: 4rpx;
-  background: #43a047;
-  content: '';
-  transform: rotate(45deg);
-}
-
-.search-input {
-  min-width: 0;
-  height: 100%;
-  flex: 1;
-  color: #1f2d24;
-  font-size: 14px;
-}
-
-.page--vi .search-input {
-  font-size: 13px;
-}
-
-.search-clear {
-  display: grid;
-  width: 38rpx;
-  height: 38rpx;
-  place-items: center;
-  border-radius: 50%;
-  color: #fff;
-  background: #aab5ac;
-  font-size: 24rpx;
-  line-height: 1;
-}
-
-.bell-button {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: none;
-  place-items: center;
-  border-radius: 18rpx;
-  background: #fff;
-  box-shadow: 0 8rpx 22rpx rgb(46 125 50 / 6%);
-}
-
-.bell-icon {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.banner {
-  position: relative;
-  display: flex;
-  min-height: 228rpx;
-  align-items: center;
-  overflow: hidden;
-  padding: 14px 18px 14px 18px;
-  margin-bottom: 10px;
-  border-radius: 16px;
-  color: #fff;
-  background: #43a047;
-  box-shadow: 0 18rpx 42rpx rgb(46 125 50 / 16%);
-  box-sizing: border-box;
-}
-
-.banner-content {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  width: 64%;
-  min-height: 100%;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.banner-title {
-  display: block;
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.22;
-}
-
-.banner-copy {
-  display: block;
-  margin-top: 6px;
-  color: rgb(255 255 255 / 84%);
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.banner-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 16rpx;
-  margin: 10px 0 0;
-  border: 0;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 30px;
-}
-
-.page--vi .banner-title {
-  font-size: 19px;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.page--vi .banner-copy {
-  display: -webkit-box;
-  font-size: 12px;
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.banner--vi .banner-content {
-  width: 70%;
-}
-
-.page--vi .banner-action {
-  padding: 0 14rpx;
-  font-size: 12px;
-}
-
-.banner-action::after,
-.clear-button::after {
-  border: 0;
-}
-
-.food-visual {
-  position: absolute;
-  right: 18rpx;
-  top: 50%;
-  width: 168rpx;
-  height: 168rpx;
-  transform: translateY(-44%);
-}
-
-.plate {
-  position: absolute;
-  right: 14rpx;
-  bottom: 12rpx;
-  display: grid;
-  width: 110rpx;
-  height: 110rpx;
-  place-items: center;
-  border: 10rpx solid rgb(255 255 255 / 62%);
-  border-radius: 50%;
-  background: #ffb74d;
-  box-shadow: inset 0 0 0 8rpx rgb(255 255 255 / 24%);
-  box-sizing: border-box;
-}
-
-.food-mark {
-  display: grid;
-  width: 62rpx;
-  height: 62rpx;
-  place-items: center;
-  border-radius: 50%;
-  color: #2e7d32;
-  background: #fff8e7;
-  font-size: 30rpx;
-  font-weight: 800;
-}
-
-.leaf {
-  position: absolute;
-  z-index: 1;
-  width: 46rpx;
-  height: 86rpx;
-  border-radius: 100% 0 100% 0;
-  background: rgb(139 210 143 / 36%);
-}
-
-.leaf-one {
-  right: 146rpx;
-  bottom: 42rpx;
-  transform: rotate(-34deg);
-}
-
-.leaf-two {
-  right: 24rpx;
-  bottom: 146rpx;
-  transform: rotate(46deg);
-}
-
-.steam {
-  position: absolute;
-  z-index: 2;
-  top: 8rpx;
-  width: 30rpx;
-  height: 72rpx;
-  border-left: 6rpx solid rgb(255 255 255 / 60%);
-  border-radius: 50%;
-}
-
-.steam-one {
-  right: 90rpx;
-  transform: rotate(12deg);
-}
-
-.steam-two {
-  right: 54rpx;
-  top: 18rpx;
-  transform: rotate(-10deg);
-}
-
-.category-section {
-  padding: 12px 12px 10px;
-  margin-bottom: 14rpx;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 10rpx 28rpx rgb(46 125 50 / 6%);
-}
-
-.section-heading,
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14rpx;
-}
-
-.section-head {
-  scroll-margin-top: 20rpx;
-  margin-bottom: 8px;
-}
-
-.section-title {
-  display: block;
-  color: #1f2d24;
-  font-size: 20px;
-  font-weight: 800;
-}
-
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px 6px;
-}
-
-.category-item {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 3px 0 5px;
-  border-radius: 14px;
-  transition: all 0.2s ease;
-}
-
-.page--vi .category-item {
-  gap: 4px;
-}
-
-.category-item.active {
-  background: #f8fbf8;
-  box-shadow: inset 0 0 0 2rpx #d6ebdd;
-}
-
-.category-item.active .category-icon {
-  transform: translateY(-2rpx);
-  box-shadow: 0 8rpx 20rpx rgb(46 125 50 / 10%);
-}
-
-.category-icon {
-  display: flex;
-  width: 52px;
-  height: 52px;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  border-radius: 16px;
-  overflow: visible;
-  box-sizing: border-box;
-}
-
-.category-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  overflow: visible;
-  font-size: 32px;
-  line-height: 1;
-  transform: scale(1.08);
-  transform-origin: center;
-  flex: none;
-}
-
-.category-green {
-  color: #2e7d32;
-  background: #eaf7ee;
-}
-
-.category-orange {
-  color: #a65a00;
-  background: #fff1dc;
-}
-
-.category-mint {
-  color: #27836e;
-  background: #e6f7f1;
-}
-
-.category-yellow {
-  color: #8c6b00;
-  background: #fff7cf;
-}
-
-.category-rose {
-  color: #a23b6b;
-  background: #fde7f0;
-}
-
-.category-blue {
-  color: #2563a9;
-  background: #e3f0ff;
-}
-
-.category-teal {
-  color: #14786f;
-  background: #e2f8f5;
-}
-
-.category-violet {
-  color: #6d4bb3;
-  background: #efe6ff;
-}
-
-.category-label {
-  max-width: 100%;
-  overflow: hidden;
-  color: #48544b;
-  font-size: 12px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page--vi .category-label {
-  display: -webkit-box;
-  font-size: 11px;
-  line-height: 1.16;
-  text-overflow: clip;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.category-item.active .category-label {
-  color: #2e7d32;
-  font-weight: 700;
-}
-
-.empty {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  padding: 90rpx 30rpx;
-  border-radius: 28rpx;
-  color: #7d8b81;
-  background: #fff;
-  text-align: center;
-}
-
-.empty-title {
-  color: #445149;
-  font-size: 27rpx;
-  font-weight: 700;
-}
-
-.empty-copy {
-  margin-top: 10rpx;
-  color: #929d95;
-  font-size: 22rpx;
-  line-height: 1.6;
-}
-
-.empty-action {
-  display: inline-flex;
-  min-height: 88rpx;
-  align-items: center;
-  justify-content: center;
-  padding: 0 30rpx;
-  margin: 24rpx 0 0;
-  border: 0;
-  border-radius: 999rpx;
-  color: #f8fbf8;
-  background: #2e7d32;
-  font-size: 24rpx;
-  font-weight: 700;
-  line-height: 88rpx;
-}
-
-.empty-action::after,
-.merchant-list-retry::after {
-  border: 0;
-}
-
-.merchant-panel {
-  display: block;
-  min-height: 260rpx;
-}
-
-.merchant-list-status {
-  display: flex;
-  min-height: 72rpx;
-  align-items: center;
-  justify-content: center;
-  gap: 16rpx;
-  color: #7d8b81;
-  font-size: 24rpx;
-}
-
-.merchant-list-status.is-error {
-  color: #6f5d44;
-}
-
-.merchant-list-retry {
-  display: inline-flex;
-  min-height: 88rpx;
-  align-items: center;
-  justify-content: center;
-  padding: 0 22rpx;
-  margin: 0;
-  border: 0;
-  border-radius: 999rpx;
-  color: #2e7d32;
-  background: #eaf7ee;
-  font-size: 23rpx;
-  font-weight: 700;
-  line-height: 88rpx;
-}
-
-:deep(.merchant-card) {
-  margin-bottom: 10rpx;
-}
-
-.section-actions {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.section-action-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6rpx;
-  cursor: pointer;
-}
-
-.section-action-text {
-  color: #5f6f66;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.section-action-chip.active .section-action-text,
-.section-action-text.strong {
-  color: #2e7d32;
-}
-
-.sheet-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: flex-end;
-  background: rgb(17 24 39 / 24%);
-}
-
-.sheet-panel {
-  width: 100%;
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-  border-radius: 18px 18px 0 0;
-  background: #fff;
-  box-sizing: border-box;
-}
-
-.sheet-title {
-  display: block;
-  margin-bottom: 12px;
-  color: #1f2d24;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.sheet-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 4px;
-  border-bottom: 1px solid #eef2ef;
-  color: #455149;
-  font-size: 14px;
-}
-
-.sheet-option.active {
-  color: #2e7d32;
-  font-weight: 700;
-}
-
-.sheet-check {
-  color: #2e7d32;
-  font-size: 14px;
-}
-
-.sheet-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.sheet-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-height: 40px;
-  border: 0;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.sheet-button::after {
-  border: 0;
-}
-
-.sheet-button.secondary {
-  color: #617067;
-  background: #f3f6f4;
-}
-
-.sheet-button.primary {
-  color: #fff;
-  background: #43a047;
+button { box-sizing: border-box; }
+button::after { border: 0; }
+button:active, .city:active, .scene-card:active { opacity: .88; }
+button:focus-visible, [role=button]:focus-visible { outline: 2px solid var(--explore-green); outline-offset: 2px; }
+button[disabled] { opacity: .55; }
+.topbar { display: flex; align-items: center; gap: 10rpx; margin-bottom: 16rpx; }
+.city-selector { position: relative; flex: none; max-width: 34%; }
+.city { display: flex; align-items: center; gap: 8rpx; min-height: 44px; margin: 0; padding: 0 16rpx; border-radius: 44rpx; background: var(--home-surface); color: var(--explore-green); font-size: 28rpx; font-weight: 700; line-height: 1.4; box-sizing: border-box; }
+.city-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.location-dot { flex: none; width: 13rpx; height: 13rpx; border: 5rpx solid var(--home-brand); border-radius: 50%; box-sizing: border-box; }
+.city-arrow { flex: none; color: var(--explore-muted); font-size: 24rpx; }
+.city-dropdown-backdrop { position: fixed; inset: 0; z-index: 8; }
+.city-dropdown { position: absolute; top: calc(100% + 10rpx); left: 0; z-index: 12; min-width: 250rpx; overflow: hidden; border-radius: 20rpx; background: var(--home-surface); box-shadow: 0 12rpx 40rpx var(--home-shadow); }
+.city-option { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; width: 100%; min-height: 44px; margin: 0; padding: 16rpx 22rpx; border-radius: 0; background: var(--home-surface); font-size: 27rpx; line-height: 1.4; text-align: left; box-sizing: border-box; }
+.city-option + .city-option { border-top: 1rpx solid var(--home-border); }
+.city-option.current, .city-option.active { color: var(--explore-green); background: var(--explore-soft); }
+.city-option-label { min-width: 0; overflow-wrap: anywhere; }
+.city-option-check { flex: none; font-weight: 700; }
+.search-box { display: flex; align-items: center; gap: 14rpx; min-width: 0; height: 44px; flex: 1; padding: 0 18rpx; border: 2rpx solid var(--home-border); border-radius: 20rpx; background: var(--home-surface); box-sizing: border-box; }
+.search-icon { position: relative; flex: none; width: 30rpx; height: 30rpx; border: 4rpx solid var(--home-brand); border-radius: 50%; box-sizing: border-box; }
+.search-icon::after { position: absolute; right: -9rpx; bottom: -7rpx; width: 12rpx; height: 4rpx; border-radius: 4rpx; background: var(--home-brand); content: ''; transform: rotate(45deg); }
+.search-input { flex: 1; min-width: 0; height: 100%; font-size: 28rpx; color: var(--explore-ink); }
+.search-clear { display: flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; margin-right: -18rpx; color: var(--explore-muted); font-size: 34rpx; }
+.bell-button { display: flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; margin: 0; padding: 0; border-radius: 20rpx; background: var(--home-surface); }
+.bell-icon { font-size: 40rpx; line-height: 1; }
+.outing-section { margin: 8rpx 0 22rpx; }
+.outing-heading { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-bottom: 18rpx; }
+.outing-heading-copy { flex: 1; min-width: 0; }
+.outing-kicker { display: block; color: var(--home-warm-ink); font-size: 22rpx; font-weight: 600; line-height: 1.5; }
+.outing-title { display: block; margin-top: 4rpx; color: var(--explore-ink); font-size: 37rpx; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.outing-more { display: flex; flex: none; align-items: center; justify-content: center; gap: 8rpx; min-height: 44px; margin: 0; padding: 0 4rpx 0 12rpx; background: transparent; color: var(--explore-green); font-size: 23rpx; font-weight: 600; line-height: 1.3; }
+.outing-hint { display: block; padding: 18rpx 22rpx; border-radius: 20rpx; background: var(--home-warm); color: var(--home-text-secondary); font-size: 25rpx; line-height: 1.6; }
+.spotlight-grid { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); gap: 14rpx; }
+.spotlight-grid--single { grid-template-columns: minmax(0,1fr); }
+.spotlight-card { position: relative; height: 260rpx; min-width: 0; overflow: hidden; border-radius: 26rpx; background: var(--home-warm); }
+.spotlight-card:active { opacity: .88; }
+.recommendation-refreshing { opacity: .65; }
+.spotlight-photo, .spotlight-shade { position: absolute; inset: 0; width: 100%; height: 100%; }
+.spotlight-shade { background: linear-gradient(180deg,rgba(20,24,20,.1) 25%,rgba(20,24,20,.8) 100%); }
+.spotlight-tag { position: absolute; top: 16rpx; left: 16rpx; max-width: calc(100% - 32rpx); padding: 6rpx 13rpx; border-radius: 12rpx; background: #ffe4a8; color: #634318; font-size: 12px; font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
+.spotlight-copy { position: absolute; right: 18rpx; bottom: 14rpx; left: 18rpx; color: #fff; }
+.spotlight-name { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 29rpx; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.spotlight-card--main .spotlight-name { font-size: 34rpx; }
+.spotlight-reason { display: block; overflow: hidden; margin-top: 5rpx; color: #ffe4a8; font-size: 21rpx; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.spotlight-action { display: flex; align-items: center; justify-content: space-between; gap: 6rpx; margin-top: 6rpx; font-size: 12px; line-height: 1.4; }
+.spotlight-arrow { display: flex; align-items: center; justify-content: center; flex: none; width: 34rpx; height: 34rpx; border-radius: 50%; border: 1rpx solid rgba(255,255,255,.7); font-size: 27rpx; }
+.explore-loading, .explore-error { display: block; width: 100%; min-height: 44px; margin: 0 0 20rpx; padding: 20rpx; border-radius: 20rpx; background: var(--home-surface); color: var(--explore-muted); font-size: 24rpx; line-height: 1.5; text-align: left; box-sizing: border-box; }
+.scene-section { margin-bottom: 28rpx; }
+.scene-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-bottom: 16rpx; }
+.scene-heading { color: var(--explore-ink); font-size: 32rpx; font-weight: 700; line-height: 1.4; }
+.scene-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16rpx; }
+.scene-grid--single { grid-template-columns: minmax(0,1fr); }
+.scene-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: var(--explore-radius); background: var(--home-surface); }
+.scene-card:active { opacity: .88; }
+.scene-image { display: block; width: 100%; height: 224rpx; background: var(--home-warm); }
+.scene-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 16rpx 20rpx 20rpx; box-sizing: border-box; }
+.scene-title, .scene-subtitle { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.scene-title { color: var(--explore-ink); font-size: 30rpx; font-weight: 700; line-height: 1.35; }
+.scene-subtitle { margin-top: 8rpx; color: var(--explore-muted); font-size: 24rpx; line-height: 1.5; }
+.scene-merchant { display: block; overflow: hidden; margin-top: 12rpx; color: var(--explore-ink); font-size: 24rpx; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.scene-grid--single .scene-card { flex-direction: row; align-items: stretch; }
+.scene-grid--single .scene-copy { order: 0; justify-content: center; padding: 22rpx 24rpx; }
+.scene-grid--single .scene-image { order: 1; flex: none; width: 300rpx; height: auto; min-height: 240rpx; }
+.browse-controls { margin: 28rpx 0 22rpx; }
+.section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18rpx; min-height: 48px; margin: 0; }
+.section-title { flex: 1; min-width: 160rpx; font-size: 35rpx; line-height: 1.35; font-weight: 700; overflow-wrap: anywhere; }
+.browse-toggle { display: flex; flex: none; align-items: center; height: 48px; padding: 4rpx; overflow: hidden; border-radius: 48rpx; background: var(--home-toggle); box-sizing: border-box; }
+.browse-toggle button { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 138rpx; min-height: 44px; height: 100%; margin: 0; padding: 0 22rpx; border-radius: 44rpx; background: transparent; color: var(--home-toggle-text); font-size: 25rpx; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.browse-toggle button.active { background: var(--explore-green); color: var(--home-surface); }
+.discovery-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18rpx 16rpx; }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14rpx; min-height: 210rpx; padding: 36rpx 24rpx; border-radius: var(--explore-radius); background: var(--home-surface); color: var(--explore-muted); font-size: 28rpx; line-height: 1.5; text-align: center; }
+.empty-title { color: var(--home-text-strong); font-size: 29rpx; font-weight: 600; }
+.empty-copy { font-size: 25rpx; line-height: 1.6; }
+.empty-action, .merchant-list-retry { min-height: 44px; margin: 8rpx 0 0; padding: 10rpx 28rpx; border-radius: 44rpx; background: var(--explore-soft); color: var(--explore-green); font-size: 26rpx; font-weight: 600; line-height: 1.4; }
+.merchant-list-status { padding: 26rpx 0; color: var(--explore-muted); font-size: 25rpx; text-align: center; }
+.merchant-list-status.is-error { display: flex; flex-direction: column; align-items: center; }
+.sheet-mask { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; background: var(--home-mask); }
+.sheet-panel { width: 100%; max-height: 85vh; padding: 28rpx 28rpx calc(28rpx + env(safe-area-inset-bottom)); border-radius: 32rpx 32rpx 0 0; background: var(--home-surface); box-sizing: border-box; }
+.sheet-title { display: block; margin-bottom: 18rpx; font-size: 34rpx; font-weight: 700; }
+.sheet-option { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 16rpx; margin-top: 10rpx; border-radius: 18rpx; background: linear-gradient(180deg,#fff1cd 0,#fff8e9 500rpx,var(--home-background) 940rpx); color: var(--home-text-strong); font-size: 28rpx; box-sizing: border-box; }
+.sheet-option.active { background: var(--explore-soft); color: var(--explore-green); }
+.sheet-check { font-weight: 700; }
+.sheet-actions { display: flex; gap: 16rpx; margin-top: 24rpx; }
+.sheet-button { flex: 1; min-height: 44px; margin: 0; padding: 14rpx 24rpx; border-radius: 24rpx; font-size: 28rpx; line-height: 1.4; }
+.sheet-button.primary { background: var(--explore-green); color: var(--home-surface); }
+.sheet-button.secondary { background: var(--explore-soft); color: var(--explore-green); }
+.page--vi .category-label, .page--en .category-label { font-size: 23rpx; }
+.page--vi .outing-title, .page--en .outing-title { font-size: 32rpx; }
+.page--vi .search-input, .page--en .search-input { font-size: 26rpx; }
+@media (max-width: 360px) {
+  .outing-title, .page--vi .outing-title, .page--en .outing-title { font-size: 18px; }
+  .browse-toggle button { font-size: 12px; }
+  .section-title { font-size: 31rpx; }
 }
 </style>

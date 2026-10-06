@@ -1,3 +1,4 @@
+import { merchantContentTemplate } from '../explore/explore-content';
 import { effectiveOrderWhere } from '../orders/effective-order';
 import {
   BadRequestException,
@@ -191,6 +192,7 @@ type PlatformMerchantDetailResponse = {
     nameVi: string | null;
     nameEn: string | null;
     businessType: DictionaryRef | null;
+    contentTemplate: ReturnType<typeof merchantContentTemplate>;
     merchantMode: MerchantMode;
     claimStatus: MerchantClaimStatus;
     account: string;
@@ -590,6 +592,7 @@ export class PlatformMerchantsService {
         nameVi: merchant.nameVi,
         nameEn: merchant.nameEn,
         businessType: serializeDictionaryRef(merchant.businessType),
+        contentTemplate: merchantContentTemplate(merchant.businessType?.code, merchant.merchantType),
         merchantMode: merchant.merchantMode,
         claimStatus: merchant.claimStatus,
         account:
@@ -743,6 +746,7 @@ export class PlatformMerchantsService {
   }
 
   async createDisplayMerchant(dto: CreateDisplayMerchantDto) {
+    if (!dto.nameZh.trim()) throw new BadRequestException('请填写商家中文名称');
     await this.dictionaries.ensureDefaults();
     const businessTypeId = await this.resolveBusinessTypeId(dto.businessTypeId);
     const businessHours =
@@ -756,10 +760,12 @@ export class PlatformMerchantsService {
         .filter(([, enabled]) => enabled)
         .map(([code]) => code),
     );
-    const homepageCategoryKeys = businessTypeId
-      ? await this.homepageKeysForBusinessType(businessTypeId)
-      : [];
+    const homepageCategoryKeys = dto.homepageCategoryKeys !== undefined
+      ? parseHomepageCategoryKeys(dto.homepageCategoryKeys)
+      : businessTypeId ? await this.homepageKeysForBusinessType(businessTypeId) : [];
     const manualPopular = await this.hasPromotionTagCode(tagIds, 'HOT_FOOD');
+    const selectedType = businessTypeId ? await this.prisma.merchantBusinessType.findUnique({ where: { id: businessTypeId } }) : null;
+    const template = merchantContentTemplate(selectedType?.code, 'RESTAURANT');
 
     const merchant = await this.prisma.$transaction(async (tx) => {
       const created = await tx.merchant.create({
@@ -768,7 +774,7 @@ export class PlatformMerchantsService {
           nameZh: dto.nameZh.trim(),
           nameVi: dto.nameVi.trim(),
           nameEn: dto.nameEn.trim(),
-          merchantType: 'RESTAURANT',
+          merchantType: template === 'SERVICE' || template === 'GENERAL' ? 'SERVICE' : template === 'RETAIL' ? 'RETAIL' : 'RESTAURANT',
           merchantMode: normalizeMerchantMode(dto.merchantMode) ?? MerchantMode.DISPLAY,
           claimStatus: MerchantClaimStatus.UNCLAIMED,
           logoUrl: trimOrNull(dto.logoUrl),
@@ -2304,14 +2310,12 @@ export class PlatformMerchantsService {
   }
 
   private computeProfileCompletion(merchant: Merchant) {
-    const total = 11;
+    const total = 9;
     const missingFields: string[] = [];
 
     if (!merchant.nameZh?.trim() || merchant.nameZh.startsWith('新商户-')) {
       missingFields.push('chineseName');
     }
-    if (!merchant.nameVi?.trim()) missingFields.push('vietnameseName');
-    if (!merchant.nameEn?.trim()) missingFields.push('englishName');
     if (!merchant.businessTypeId) missingFields.push('businessType');
     if (!merchant.coverUrl?.trim()) {
       missingFields.push('coverUrl');

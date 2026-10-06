@@ -407,6 +407,7 @@ export interface PlatformPrintingSummary {
 
 export interface PlatformMerchantDetailResponse {
   merchant: {
+    contentTemplate?: 'RESTAURANT' | 'SERVICE' | 'RETAIL' | 'GENERAL';
     id: string;
     name: string;
     nameZh: string;

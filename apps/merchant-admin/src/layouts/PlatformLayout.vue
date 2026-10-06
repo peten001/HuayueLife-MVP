@@ -11,6 +11,7 @@ const profileOpen = ref(false);
 const nav: Array<{ path: string; label: string; icon: string }> = [
   { path: '/platform/dashboard', label: '总览', icon: '总' },
   { path: '/platform/merchants', label: '商家管理', icon: '商' },
+  { path: '/platform/explore', label: '生活分类与专题', icon: '逛' },
   { path: '/platform/recommendations', label: '首页推荐', icon: '首' },
   { path: '/platform/orders', label: '订单管理', icon: '单' },
   { path: '/platform/reviews', label: '评价审核', icon: '评' },
@@ -21,7 +22,7 @@ const nav: Array<{ path: string; label: string; icon: string }> = [
 const merchantEditSections: Array<{ key: string; label: string; danger?: boolean }> = [
   { key: 'profile', label: '商家资料' },
   { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '图库与招牌菜' },
+  { key: 'images', label: '图库与展示内容' },
   { key: 'tags', label: '标签与推荐' },
   { key: 'capabilities', label: '能力设置' },
   { key: 'account', label: '账号与状态' },
@@ -41,6 +42,7 @@ const breadcrumb = computed(() => {
   if (path === '/platform/orders') return ['订单管理', '订单管理'];
   if (path === '/platform/reviews') return ['评价审核', '评价审核'];
   if (path === '/platform/analytics') return ['营业数据', '营业数据'];
+  if (path === '/platform/explore') return ['首页内容', '生活分类与场景专题'];
   if (path === '/platform/recommendations') return ['首页推荐', '首页推荐'];
   if (path === '/platform/users') return ['用户管理', '用户管理'];
   if (path === '/platform/settings') return ['系统设置', '系统设置'];

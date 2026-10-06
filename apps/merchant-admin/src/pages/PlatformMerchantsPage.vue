@@ -23,6 +23,7 @@ import {
   updatePlatformMerchant,
   updatePlatformSettings,
 } from '@/api/platform';
+import { merchantCategoryOptions } from '@/utils/merchant-categories';
 import { useI18n, type TranslationKey } from '@/i18n';
 import type {
   MerchantClaimStatus,
@@ -53,7 +54,7 @@ const ORDERING_CAPABILITY_CODES = new Set([
   'zaloReportEnabled',
 ]);
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
@@ -67,6 +68,8 @@ const platformSettings = ref<PlatformSettings | null>(null);
 const loading = ref(false);
 const settingsSaving = ref(false);
 const message = ref('');
+const createdMerchantId = ref('');
+const savingMerchant = ref(false);
 const uploadingLogo = ref(false);
 const uploadingCover = ref(false);
 const logoFileInput = ref<HTMLInputElement | null>(null);
@@ -167,7 +170,7 @@ const selectableBusinessTypes = computed(() => {
   );
   return businessTypes.value.filter((item) => {
     const isParent = parentIds.has(item.id);
-    return item.enabled && !isParent && item.code !== 'FOOD_SERVICE';
+    return item.enabled && (item.code === 'FOOD_SERVICE' || !isParent);
   });
 });
 const enabledPromotionTags = computed(() =>
@@ -200,16 +203,8 @@ const importSelectedRowNumbers = computed(() =>
 const importHasAnyErrors = computed(() =>
   importErrorRows.value.length > 0 || Boolean(importResult.value?.failedRows.length),
 );
-const homepageCategoryOptions = computed(() => [
-  { value: 'popular_food', label: t('homepageCategoryPopular') },
-  { value: 'chinese_dining', label: t('homepageCategoryChinese') },
-  { value: 'noodles_snacks', label: t('homepageCategoryNoodles') },
-  { value: 'coffee_milk_tea', label: t('homepageCategoryDrinks') },
-  { value: 'flowers_gifts', label: t('homepageCategoryFlowers') },
-  { value: 'fresh_fruit', label: t('homepageCategoryFresh') },
-  { value: 'convenience_store', label: t('homepageCategoryConvenience') },
-  { value: 'vietnamese_food', label: t('homepageCategoryVietnamese') },
-]);
+const homepageCategoryOptions = computed(() => merchantCategoryOptions(locale.value));
+
 const cityOptions = computed(() =>
   Array.from(
     new Set(
@@ -354,12 +349,11 @@ async function loadMerchants() {
     if (capabilityResult.status === 'rejected') {
       warnings.push(`能力配置加载失败：${errorMessage(capabilityResult.reason)}`);
     }
-    if (!form.businessTypeId && selectableBusinessTypes.value[0]) {
-      form.businessTypeId = selectableBusinessTypes.value[0].id;
-    }
     message.value = warnings.join('；');
+    return merchantResult.status === 'fulfilled';
   } catch (error) {
     message.value = errorMessage(error);
+    return false;
   } finally {
     loading.value = false;
   }
@@ -391,12 +385,13 @@ async function togglePlatformOrdering() {
 
 function openCreate() {
   dialogMode.value = 'create';
+  createdMerchantId.value = '';
   editingId.value = '';
   createStep.value = 1;
   form.nameZh = '';
   form.nameVi = '';
   form.nameEn = '';
-  form.businessTypeId = selectableBusinessTypes.value[0]?.id ?? '';
+  form.businessTypeId = '';
   form.merchantMode = 'DISPLAY';
   form.contactPhone = '';
   form.contactName = '';
@@ -741,12 +736,16 @@ async function toggleBusinessStatus(item: PlatformMerchantListItem) {
 }
 
 function closeDialog() {
+  if (savingMerchant.value) return;
   dialogVisible.value = false;
 }
 
 async function submit() {
+  if (savingMerchant.value) return;
+  savingMerchant.value = true;
   message.value = '';
   try {
+    let successMessage = '';
     const latitude = parseOptionalCoordinate(form.latitude);
     const longitude = parseOptionalCoordinate(form.longitude);
     if (latitudeError.value) {
@@ -758,8 +757,8 @@ async function submit() {
       return;
     }
     if (dialogMode.value === 'create') {
-      if (!form.nameZh.trim() || !form.nameVi.trim() || !form.nameEn.trim()) {
-        message.value = '请完整填写中文名称、越南语名称和英文名称';
+      if (!form.nameZh.trim()) {
+        message.value = '请填写商家中文名称';
         return;
       }
       if (!form.businessTypeId) {
@@ -782,11 +781,12 @@ async function submit() {
         message.value = '请上传商家封面图片';
         return;
       }
-      await createPlatformDisplayMerchant({
+      const created = await createPlatformDisplayMerchant({
         nameZh: form.nameZh,
         nameVi: form.nameVi,
         nameEn: form.nameEn,
         businessTypeId: form.businessTypeId,
+        ...(form.homepageCategoryKeys.length ? { homepageCategoryKeys: [...form.homepageCategoryKeys] } : {}),
         contactPhone: form.contactPhone,
         contactName: form.contactName,
         province: form.province,
@@ -795,7 +795,8 @@ async function submit() {
         longitude,
         coverUrl: form.coverUrl,
       });
-      message.value = '展示型商家已创建，默认未开通商家后台账号';
+      createdMerchantId.value = created.id;
+      successMessage = '商家已添加，可继续完善门店环境和展示内容';
     } else {
       await updatePlatformMerchant(editingId.value, {
         nameZh: form.nameZh,
@@ -835,12 +836,17 @@ async function submit() {
         editingId.value,
         capabilityPayload,
       );
-      message.value = t('merchantUpdated');
+      successMessage = t('merchantUpdated');
     }
     dialogVisible.value = false;
-    await loadMerchants();
+    const reread = await loadMerchants();
+    message.value = reread
+      ? `${successMessage}${message.value ? `；${message.value}` : ''}`
+      : `资料已保存，但商家列表刷新失败：${message.value}`;
   } catch (error) {
     message.value = errorMessage(error);
+  } finally {
+    savingMerchant.value = false;
   }
 }
 
@@ -1135,6 +1141,7 @@ function toCsvLine(values: Array<string | number>) {
   </PageHeader>
 
   <p v-if="message" class="message">{{ message }}</p>
+  <p v-if="createdMerchantId" class="hint"><router-link :to="`/platform/merchants/${createdMerchantId}`">继续完善新商家的门店环境和展示内容 →</router-link></p>
 
   <section class="platform-metric-grid platform-merchant-summary-grid">
     <article class="card platform-metric-card">
@@ -1402,6 +1409,7 @@ function toCsvLine(values: Array<string | number>) {
   <div v-if="dialogVisible" class="modal-backdrop" @click.self="closeDialog">
     <form class="card modal-card form-grid" @submit.prevent="submit">
       <h2>{{ isEditing ? t('editMerchant') : '快速新增展示商家' }}</h2>
+      <p v-if="message" class="span-2 message" role="alert">{{ message }}</p>
       <input
         ref="coverFileInput"
         class="hidden-file-input"
@@ -1413,15 +1421,23 @@ function toCsvLine(values: Array<string | number>) {
         <strong>基础资料</strong>
       </div>
       <label>{{ t('chineseName') }}<input v-model="form.nameZh" required maxlength="120" /></label>
-      <label>越南语名称<input v-model="form.nameVi" required maxlength="120" /></label>
-      <label>英文名称<input v-model="form.nameEn" required maxlength="120" /></label>
+      <label>越南语名称（选填）<input v-model="form.nameVi" maxlength="120" /></label>
+      <label>英文名称（选填）<input v-model="form.nameEn" maxlength="120" /></label>
+      <p v-if="!isEditing" class="span-2 hint">其他语言名称未填写时，小程序使用中文名称。</p>
       <label>经营类型
         <select v-model="form.businessTypeId" required>
+          <option value="" disabled>请选择经营类型</option>
           <option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">
             {{ item.nameZh }}
           </option>
         </select>
       </label>
+      <fieldset class="span-2 merchant-category-fieldset">
+        <legend>商家分类（可多选）</legend>
+        <p class="hint">日料、泰国菜等可选择“餐饮美食”，再勾选实际菜系；商家会出现在对应分类列表中。</p>
+        <div class="merchant-category-options"><label v-for="option in homepageCategoryOptions" :key="option.value"><input v-model="form.homepageCategoryKeys" type="checkbox" :value="option.value" />{{ option.label }}</label></div>
+      </fieldset>
+      <p v-if="!isEditing" class="span-2 hint">选择实际经营类型，餐饮展示菜品，酒店展示房型，KTV 展示包厢，其他生活服务展示项目。</p>
       <label>{{ t('contactPhone') }}<input v-model="form.contactPhone" required maxlength="32" /></label>
       <label>联系人<input v-model="form.contactName" required maxlength="64" /></label>
       <div class="span-2 create-merchant-section-title">
@@ -1465,8 +1481,8 @@ function toCsvLine(values: Array<string | number>) {
       </div>
       <p v-if="!isEditing" class="span-2 hint">新商家默认不创建商家后台账号，认领状态为未认领。</p>
       <div class="form-actions span-2">
-        <button class="secondary" type="button" @click="closeDialog">{{ t('cancel') }}</button>
-        <button type="submit">{{ isEditing ? t('saveChanges') : '新增商家' }}</button>
+        <button class="secondary" type="button" :disabled="savingMerchant" @click="closeDialog">{{ t('cancel') }}</button>
+        <button type="submit" :disabled="savingMerchant">{{ savingMerchant ? '保存中...' : isEditing ? t('saveChanges') : '新增商家' }}</button>
       </div>
     </form>
   </div>
@@ -1661,6 +1677,10 @@ function toCsvLine(values: Array<string | number>) {
 </template>
 
 <style scoped>
+.merchant-category-fieldset { border: 1px solid #e4eae6; border-radius: 12px; padding: 12px 16px; }
+.merchant-category-options { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.merchant-category-options label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.merchant-category-options input { width: 16px; height: 16px; margin: 0; }
 :deep(.page-header) {
   margin-bottom: 8px;
 }

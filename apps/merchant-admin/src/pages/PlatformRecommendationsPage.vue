@@ -6,15 +6,7 @@ import { errorMessage } from '@/api/http';
 import { getPlatformMerchants, updatePlatformMerchant } from '@/api/platform';
 import type { PlatformMerchantListItem } from '@/types/api';
 
-type CategoryKey =
-  | 'popular_food'
-  | 'chinese_dining'
-  | 'noodles_snacks'
-  | 'coffee_milk_tea'
-  | 'flowers_gifts'
-  | 'fresh_fruit'
-  | 'convenience_store'
-  | 'vietnamese_food';
+import { merchantCategoryOptions, type MerchantCategoryKey as CategoryKey } from '@/utils/merchant-categories';
 
 const router = useRouter();
 const merchants = ref<PlatformMerchantListItem[]>([]);
@@ -39,31 +31,11 @@ const pickerFilters = reactive({
   city: '',
 });
 
-const categories: Array<{
-  key: CategoryKey;
-  title: string;
-  description: string;
-}> = [
-  { key: 'popular_food', title: '热门推荐', description: '由平台手动推荐' },
-  { key: 'chinese_dining', title: '中式正餐', description: '商家首页分类 chinese_dining' },
-  { key: 'noodles_snacks', title: '粉面小吃', description: '商家首页分类 noodles_snacks' },
-  { key: 'coffee_milk_tea', title: '咖啡奶茶', description: '商家首页分类 coffee_milk_tea' },
-  { key: 'flowers_gifts', title: '鲜花礼品', description: '商家首页分类 flowers_gifts' },
-  { key: 'fresh_fruit', title: '水果生鲜', description: '商家首页分类 fresh_fruit' },
-  { key: 'convenience_store', title: '便利超市', description: '商家首页分类 convenience_store' },
-  { key: 'vietnamese_food', title: '特色越餐', description: '商家首页分类 vietnamese_food' },
-];
-
-const categoryLabelMap: Record<CategoryKey, string> = {
-  popular_food: '热门推荐',
-  chinese_dining: '中式正餐',
-  noodles_snacks: '粉面小吃',
-  coffee_milk_tea: '咖啡奶茶',
-  flowers_gifts: '鲜花礼品',
-  fresh_fruit: '水果生鲜',
-  convenience_store: '便利超市',
-  vietnamese_food: '特色越餐',
-};
+const categories = merchantCategoryOptions().map(item => ({
+  key: item.value, title: item.label,
+  description: item.value === 'popular_food' ? '由平台手动推荐' : `归类到${item.label}的商家`,
+}));
+const categoryLabelMap = Object.fromEntries(categories.map(item => [item.key, item.title])) as Record<CategoryKey, string>;
 
 const cityOptions = computed(() =>
   Array.from(
@@ -181,7 +153,7 @@ function goMerchantDetail(id: string) {
 }
 
 function merchantInCategory(item: PlatformMerchantListItem, category: CategoryKey) {
-  if (category === 'popular_food') return Boolean(item.manualPopular);
+  if (category === 'popular_food') return Boolean(item.manualPopular || item.homepageCategoryKeys?.includes(category));
   return (item.homepageCategoryKeys ?? []).includes(category);
 }
 
@@ -277,7 +249,7 @@ function categoryTags(item: PlatformMerchantListItem) {
   <section>
     <PageHeader
       title="首页推荐"
-      description="管理小程序首页的热门推荐和分类入口"
+      description="管理商家分类与平台推荐商家"
     >
       <div class="platform-header-actions">
         <button class="secondary" :disabled="loading" @click="loadMerchants">刷新数据</button>
@@ -289,7 +261,7 @@ function categoryTags(item: PlatformMerchantListItem) {
       <div class="section-heading">
         <div>
           <h2>首页推荐规则</h2>
-          <p>仅管理当前系统已支持的热门推荐和 7 个首页分类。</p>
+          <p>管理已支持的商家分类与热门推荐。首页照片入口优先推荐当前城市营业、附近的商家，再按平台推荐和真实评分选择。</p>
         </div>
       </div>
       <div class="recommendation-info-grid">
@@ -326,7 +298,7 @@ function categoryTags(item: PlatformMerchantListItem) {
           <p>商家首页分类 vietnamese_food</p>
         </div>
       </div>
-      <p class="hint recommendation-tip">调整后将影响小程序首页商家分类展示。</p>
+      <p class="hint recommendation-tip">调整后将影响商家分类展示与平台推荐优先级。“生活灵感”按时段自动推荐，无需设置排期。</p>
     </section>
 
     <section class="platform-recommendation-summary-grid">

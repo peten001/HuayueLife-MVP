@@ -2,10 +2,16 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
 import { PublicMerchantsService } from './public-merchants.service';
+import { HomeRecommendationsQueryDto } from './dto/home-recommendations-query.dto';
 
 @Controller()
 export class PublicMerchantsController {
   constructor(private readonly service: PublicMerchantsService) {}
+
+  @Get('public/home-recommendations')
+  homeRecommendations(@Query() query: HomeRecommendationsQueryDto) {
+    return this.service.homeRecommendations(query);
+  }
 
   @Get('merchants/nearby')
   nearby(@Query() query: NearbyMerchantsQueryDto) {

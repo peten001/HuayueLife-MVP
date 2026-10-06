@@ -39,14 +39,14 @@ const displayTagsBlock = sliceBetween(
 assert.match(detail, /const visibleGalleryImages = computed\([\s\S]*item\.isVisible !== false/);
 assert.match(galleryBlock, /key: 'COVER'[\s\S]*key: 'STORE'[\s\S]*key: 'PRODUCT'[\s\S]*key: 'ENVIRONMENT'/);
 assert.match(galleryBlock, /resolveMediaUrl\(merchant\.value\?\.coverUrl\)/);
-assert.match(galleryBlock, /sortedGalleryUrls\('STORE', 3\)/);
-assert.match(galleryBlock, /sortedGalleryUrls\('PRODUCT', 6\)/);
-assert.match(galleryBlock, /sortedGalleryUrls\('ENVIRONMENT', 3\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('STORE'\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('PRODUCT'\)/);
+assert.match(galleryBlock, /sortedGalleryUrls\('ENVIRONMENT'\)/);
 assert.doesNotMatch(galleryBlock, /signatureDishes|hotRecommendations|MENU/);
 assert.doesNotMatch(galleryBlock, /isClaimedMerchant|isUnclaimedDisplayMerchant/);
 assert.match(galleryBlock, /categories\.filter\(\(category\) => category\.urls\.length > 0\)/);
 assert.doesNotMatch(galleryBlock, /urls\.length\s*(?:<|>=)\s*[136]/);
-assert.match(detail, /\.filter\(\(url, index, urls\) => urls\.indexOf\(url\) === index\)[\s\S]*\.slice\(0, limit\)/);
+assert.doesNotMatch(galleryBlock, /\.slice\(0, limit\)/);
 assert.doesNotMatch(detail, /displayHeroImages|environmentImages|previewEnvironment/);
 assert.doesNotMatch(detail, /class="thumbnail-scroll"/);
 

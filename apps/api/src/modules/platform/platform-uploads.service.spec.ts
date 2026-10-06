@@ -37,6 +37,9 @@ describe('PlatformUploadsService merchant image optimization', () => {
     expect(result.imageUrl).toMatch(/-display-v1-1440\.webp$/);
     expect(metadata.format).toBe('webp');
     expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBe(1440);
+    const cardPath = result.imageUrl.replace('-display-v1-1440.webp', '-card-v1-480.webp');
+    const card = await readFile(join(rootDir, 'public', cardPath.replace(/^\//, '')));
+    expect(await sharp(card).metadata()).toMatchObject({ format: 'webp', width: 480 });
   });
 
   it('supports dry-run sizing without writing a file', async () => {

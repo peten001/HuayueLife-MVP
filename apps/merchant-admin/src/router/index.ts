@@ -1,3 +1,4 @@
+import PlatformExplorePage from '@/pages/PlatformExplorePage.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 import MerchantLayout from '@/layouts/MerchantLayout.vue';
 import PlatformLayout from '@/layouts/PlatformLayout.vue';
@@ -250,6 +251,10 @@ const router = createRouter({
         {
           path: 'reviews',
           component: PlatformReviewsPage,
+        },
+        {
+          path: 'explore',
+          component: PlatformExplorePage,
         },
         {
           path: 'recommendations',

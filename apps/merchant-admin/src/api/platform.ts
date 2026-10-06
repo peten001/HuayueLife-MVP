@@ -44,6 +44,12 @@ const platformHttp = axios.create({
   timeout: 15000,
 });
 
+// Share the existing platform token, timeout and error handling with content editors.
+export async function exploreRequest<T = unknown>(method: 'get' | 'put' | 'post' | 'delete', url: string, data?: unknown): Promise<T> {
+  const response = await platformHttp.request<ApiResponse<T>>({ method, url, data });
+  return response.data.data;
+}
+
 platformHttp.interceptors.request.use((config) => {
   const token = getPlatformToken();
   if (token) {

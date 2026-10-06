@@ -4,7 +4,7 @@ import { clearToken, getToken } from '@/utils/storage';
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api/v1';
-const DEBUG_REQUESTS = true;
+const DEBUG_REQUESTS = import.meta.env.DEV;
 let requestSeq = 0;
 
 type RequestOptions = Omit<UniApp.RequestOptions, 'url' | 'method'> & {

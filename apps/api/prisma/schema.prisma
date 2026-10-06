@@ -18,6 +18,8 @@ enum MerchantType {
   FRUIT
   FLOWER
   CAKE
+  SERVICE
+  RETAIL
 }
 
 enum MerchantStatus {
@@ -417,6 +419,7 @@ model Merchant {
   capabilities            MerchantCapability[]
   images                  MerchantImage[]
   signatureDishes         MerchantSignatureDish[]
+  serviceItems            MerchantServiceItem[]
   reviews                 MerchantReview[]
 
   @@index([status])
@@ -585,6 +588,31 @@ model MerchantReportSetting {
   merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   @@map("merchant_report_settings")
+}
+
+// Display content only: never related to Product, Cart or OrderItem.
+model MerchantServiceItem {
+  id              BigInt   @id @default(autoincrement())
+  merchantId      BigInt   @map("merchant_id")
+  nameZh          String   @map("name_zh") @db.VarChar(120)
+  nameVi          String?  @map("name_vi") @db.VarChar(120)
+  nameEn          String?  @map("name_en") @db.VarChar(120)
+  descriptionZh   String?  @map("description_zh") @db.VarChar(500)
+  descriptionVi   String?  @map("description_vi") @db.VarChar(500)
+  descriptionEn   String?  @map("description_en") @db.VarChar(500)
+  imageUrl        String?  @map("image_url") @db.VarChar(500)
+  durationMinutes Int?     @map("duration_minutes")
+  priceMode       String   @default("INQUIRY") @map("price_mode") @db.VarChar(16)
+  amountVnd       BigInt?  @map("amount_vnd")
+  unit            String?  @db.VarChar(32)
+  sortOrder       Int      @default(0) @map("sort_order")
+  isVisible       Boolean  @default(true) @map("is_visible")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  merchant        Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, isVisible, sortOrder])
+  @@map("merchant_service_items")
 }
 
 model PlatformSetting {

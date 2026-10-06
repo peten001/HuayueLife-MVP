@@ -1,3 +1,5 @@
+import { ExploreService } from '../explore/explore.service';
+import { matchesExploreCategory, merchantContentTemplate } from '../explore/explore-content';
 import { effectiveOrderWhere } from '../orders/effective-order';
 import {
   BadRequestException,
@@ -19,6 +21,8 @@ import {
   type HomepageCategoryKey,
 } from '../shared/homepage-category-keys';
 import { ReviewsService } from '../reviews/reviews.service';
+import { HomeRecommendationsQueryDto } from './dto/home-recommendations-query.dto';
+import { buildHomeRecommendations, type RecommendationRating } from './home-recommendations';
 
 const PAGE_SIZE = 20;
 const SALES_ORDER_TYPES: OrderType[] = ['PICKUP', 'DELIVERY', 'DINE_IN'];
@@ -109,7 +113,37 @@ export class PublicMerchantsService {
     private readonly appConfig: AppConfigService,
     @Optional()
     private readonly reviews?: ReviewsService,
+    @Optional() private readonly explore?: ExploreService,
   ) {}
+
+  async homeRecommendations(query: HomeRecommendationsQueryDto) {
+    const region = resolveSelectedOperationalRegion(query);
+    const now = new Date();
+    const gps = Number.isFinite(query.lat) && Number.isFinite(query.lng);
+    if (!region) return buildHomeRecommendations([], null, false, now);
+    const rows = await this.prisma.merchant.findMany({
+      where: { status: 'ACTIVE', isVisibleOnClient: true, province: region },
+      include: {
+        businessType: true,
+        promotionTags: { where: { promotionTag: { enabled: true } }, include: { promotionTag: true } },
+        capabilities: { include: { capability: true } },
+        images: { where: { isVisible: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+        signatureDishes: { where: { isVisible: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], take: 4 },
+      },
+    });
+    let ratings = new Map<string, RecommendationRating>();
+    if (this.reviews) {
+      try { ratings = await this.reviews.ratingsForMerchants(rows.map(row => row.id)); }
+      catch { this.logger.warn('Home recommendation ratings unavailable; using location and platform tags'); }
+    }
+    return buildHomeRecommendations(rows.map(row => ({
+      merchant: {
+        ...this.serializeMerchant(row, [], gps ? resolveMerchantDistance(query.lat!, query.lng!, row.latitude, row.longitude) : null),
+        isOpen: isMerchantOpen(row, now),
+      },
+      rating: ratings.get(row.id.toString()) ?? null,
+    })), region, gps, now);
+  }
 
   async nearby(query: NearbyMerchantsQueryDto) {
     console.log('[public-merchants] nearby query', query);
@@ -173,10 +207,15 @@ export class PublicMerchantsService {
     }
 
     console.log('[public-merchants] raw merchants count', merchants.length);
+    if ((query.exploreCategory || query.exploreTopic) && !this.explore) throw new BadRequestException('生活分类配置暂不可用');
+    const exploreFilter = query.exploreCategory || query.exploreTopic
+      ? await this.explore!.resolveFilter(query.exploreCategory, query.exploreTopic, selectedOperationalRegion ?? undefined, Boolean(keyword))
+      : undefined;
     const hasUserLocation =
       Number.isFinite(query.lat)
       && Number.isFinite(query.lng);
     const results = merchants
+      .filter((merchant) => !exploreFilter?.promotionTagCode || merchant.promotionTags?.some((tag) => tag.promotionTag.code === exploreFilter.promotionTagCode))
       .map((merchant) =>
         this.serializeMerchant(
           merchant,
@@ -195,6 +234,8 @@ export class PublicMerchantsService {
         merchant,
         query.homepageCategoryKey,
       ))
+      .filter((merchant) => !exploreFilter?.category || matchesExploreCategory(merchant, exploreFilter.category))
+      .filter((merchant) => !exploreFilter?.topicCategory || matchesExploreCategory(merchant, exploreFilter.topicCategory))
       .filter((merchant) => matchesMerchantKeyword(merchant, query.keyword))
       .filter((merchant) => matchesServiceFilters(
         merchant,
@@ -228,7 +269,8 @@ export class PublicMerchantsService {
 
   async detail(id: bigint) {
     const merchant = await this.requirePublicMerchant(id);
-    const [categories, hotRecommendations, signatureDishes, reviewPreview] = await Promise.all([
+    const contentTemplate = merchantContentTemplate(merchant.businessType?.code, merchant.merchantType);
+    const [categories, hotRecommendations, signatureDishes, reviewPreview, serviceContent] = await Promise.all([
       this.prisma.category.findMany({
         where: {
           merchantId: id,
@@ -243,6 +285,7 @@ export class PublicMerchantsService {
       this.hotRecommendations(id),
       this.resolveSignatureDishes(merchant),
       this.reviewPreview(id),
+      contentTemplate !== 'RESTAURANT' && this.explore ? this.explore.listServices(id, true) : Promise.resolve({ items: [] }),
     ]);
     return {
       ...this.serializeMerchant(
@@ -254,6 +297,8 @@ export class PublicMerchantsService {
         true,
       ),
       reviews: reviewPreview,
+      contentTemplate,
+      serviceItems: serviceContent.items,
     };
   }
 
@@ -468,6 +513,7 @@ export class PublicMerchantsService {
       nameEn: merchant.nameEn,
       merchantMode: merchant.merchantMode,
       claimStatus: merchant.claimStatus,
+      contentTemplate: merchantContentTemplate(merchant.businessType?.code, merchant.merchantType),
       businessType: merchant.businessType
         ? {
             id: merchant.businessType.id.toString(),
@@ -817,7 +863,7 @@ function supportedOrderTypes(
 }
 
 function resolveSelectedOperationalRegion(
-  query: NearbyMerchantsQueryDto,
+  query: Pick<NearbyMerchantsQueryDto, 'province' | 'city'>,
 ): '北江' | '北宁' | null {
   const rawOperationalRegion = query.province ?? query.city;
   if (!rawOperationalRegion) return null;

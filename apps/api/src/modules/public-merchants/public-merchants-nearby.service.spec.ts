@@ -1,3 +1,4 @@
+import { DEFAULT_EXPLORE_CATEGORIES } from '../explore/explore-content';
 import 'reflect-metadata';
 import { PromotionTagScope } from '@prisma/client';
 import { NearbyMerchantsQueryDto } from './dto/nearby-merchants-query.dto';
@@ -26,7 +27,7 @@ function capability(code: string, isEnabled: boolean) {
   };
 }
 
-function promotionTag(code: string) {
+function promotionTag(code: string, scope: PromotionTagScope = PromotionTagScope.OPERATIONAL) {
   return {
     promotionTag: {
       id: BigInt(code.length),
@@ -36,7 +37,7 @@ function promotionTag(code: string) {
       nameEn: null,
       iconText: null,
       color: null,
-      scope: PromotionTagScope.OPERATIONAL,
+      scope,
       sortOrder: 0,
     },
   };
@@ -96,7 +97,7 @@ function nearbyQuery(overrides: Record<string, unknown>) {
   return Object.assign(new NearbyMerchantsQueryDto(), overrides);
 }
 
-function createService(rows: any[], platformOrderingEnabled = true) {
+function createService(rows: any[], platformOrderingEnabled = true, explore?: any, reviews?: any) {
   const findMany = jest.fn().mockImplementation(({ where }: { where: Record<string, unknown> }) => (
     Promise.resolve(rows.filter((row) => (
       row.status === where.status
@@ -120,9 +121,38 @@ function createService(rows: any[], platformOrderingEnabled = true) {
       )?.isEnabled)),
     } as never,
     { isPlatformOrderingEnabled: jest.fn(() => platformOrderingEnabled) } as never,
+    reviews, explore,
   );
   return { service, findMany };
 }
+
+describe('PublicMerchantsService automatic homepage recommendations', () => {
+  it('queries all active visible regional merchants, including coffee beyond page one and visible dish photos', async () => {
+    const rows = Array.from({ length: 25 }, (_, i) => merchant(i + 1, { businessType: { id: 1n, code: 'CHINESE_RESTAURANT', nameZh: '中式正餐' }, coverUrl: '/dish.jpg', businessHours: OPEN_ALL_DAY }));
+    rows.push(merchant(26, { businessType: { id: 2n, code: 'COFFEE_TEA', nameZh: '咖啡茶饮' }, coverUrl: '/coffee.jpg', businessHours: OPEN_ALL_DAY }));
+    rows.push(merchant(27, { isVisibleOnClient: false }), merchant(28, { status: 'SUSPENDED' }), merchant(29, { province: '北宁' }));
+    const ratingsForMerchants = jest.fn().mockResolvedValue(new Map([['25', { averageRating: 4.9, total: 10 }]]));
+    const { service, findMany } = createService(rows, true, undefined, { ratingsForMerchants });
+    const result = await service.homeRecommendations({ province: '北江' });
+    expect(result.spotlights.map(item => item.merchant.id)).toEqual([25n, 26n]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', isVisibleOnClient: true, province: '北江' }, include: expect.objectContaining({ signatureDishes: expect.objectContaining({ where: { isVisible: true } }), images: expect.objectContaining({ where: { isVisible: true } }), promotionTags: expect.objectContaining({ where: { promotionTag: { enabled: true } } }) }) }));
+    expect(findMany.mock.calls[0][0].take).toBeUndefined();
+    expect(ratingsForMerchants.mock.calls[0][0]).toHaveLength(26);
+    expect(result.spotlights[0].rating).toEqual({ averageRating: 4.9, total: 10 });
+    expect(result.locationMode).toBe('CITY');
+  });
+
+  it('does not query globally before a city is resolved', async () => {
+    const { service, findMany } = createService([]);
+    expect(await service.homeRecommendations({})).toMatchObject({ locationMode: 'REGION_REQUIRED', spotlights: [], scenes: [] });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps honest null ratings if the review aggregation is temporarily unavailable', async () => {
+    const { service } = createService([merchant(1, { businessType: { id: 2n, code: 'COFFEE_TEA', nameZh: '咖啡茶饮' }, coverUrl: '/coffee.jpg', businessHours: OPEN_ALL_DAY })], true, undefined, { ratingsForMerchants: jest.fn().mockRejectedValue(new Error('offline')) });
+    expect((await service.homeRecommendations({ province: 'Bac Giang', lat: 21, lng: 106 })).spotlights[0]).toMatchObject({ rating: null, reason: 'NEARBY', merchant: { distanceKm: 0 } });
+  });
+});
 
 describe('PublicMerchantsService homepage query, ordering and pagination', () => {
   it('filters the complete regional set by homepage category before pagination', async () => {
@@ -388,4 +418,39 @@ describe('PublicMerchantsService homepage query, ordering and pagination', () =>
     await expect(service.nearby(nearbyQuery({ province: '北江', page: 1 })))
       .rejects.toThrow('database offline');
   });
+});
+
+describe('Explore V1 public filtering', () => {
+  const type = (code: string) => ({ id: 2n, code, nameZh: code, nameVi: null, nameEn: null });
+  it('filters all industry candidates before total and pagination, preserving server order', async () => {
+    const rows = Array.from({ length: 45 }, (_, index) => merchant(index + 1, { businessType: type(index % 2 ? 'HOTEL' : 'MASSAGE_SPA') }));
+    const explore = { resolveFilter: jest.fn().mockResolvedValue({ category: DEFAULT_EXPLORE_CATEGORIES[2] }) };
+    const { service } = createService(rows, true, explore);
+    const first = await service.nearby(nearbyQuery({ province: '北江', exploreCategory: 'massage', page: 1 }));
+    const second = await service.nearby(nearbyQuery({ province: '北江', exploreCategory: 'massage', page: 2 }));
+    expect(first.total).toBe(23); expect(first.items).toHaveLength(20); expect(second.items.map(item => item.id)).toEqual([41n,43n,45n]);
+  });
+  it('filters SCENE tags before the operational-only public summary is serialized', async () => {
+    const scene = promotionTag('RELAX', PromotionTagScope.SCENE);
+    const rows = [merchant(1, { businessType: type('MASSAGE_SPA'), promotionTags: [scene] }), merchant(2, { businessType: type('MASSAGE_SPA') })];
+    const explore = { resolveFilter: jest.fn().mockResolvedValue({ topicCategory: DEFAULT_EXPLORE_CATEGORIES[2], promotionTagCode: 'RELAX' }) };
+    const { service } = createService(rows, true, explore);
+    const result = await service.nearby(nearbyQuery({ province: '北江', exploreTopic: 'after-work' }));
+    expect(result.items.map(item => item.id)).toEqual([1n]); expect(result.total).toBe(1);
+  });
+  it('passes global search context without adding a province and propagates content errors', async () => {
+    const explore = { resolveFilter: jest.fn().mockResolvedValue({ category: DEFAULT_EXPLORE_CATEGORIES[3] }) };
+    const { service, findMany } = createService([merchant(1, { businessType: type('HOTEL') })], true, explore);
+    await service.nearby(nearbyQuery({ keyword: '测试', exploreCategory: 'hotel' }));
+    expect(findMany.mock.calls[0][0].where).not.toHaveProperty('province');
+    expect(explore.resolveFilter).toHaveBeenCalledWith('hotel', undefined, undefined, true);
+    explore.resolveFilter.mockRejectedValue(new Error('config offline'));
+    await expect(service.nearby(nearbyQuery({ province: '北江', exploreCategory: 'hotel' }))).rejects.toThrow('config offline');
+  });
+  it('rejects configured filtering when its provider is absent instead of returning unfiltered results', async () => {
+    const { service } = createService([merchant(1)]);
+    await expect(service.nearby(nearbyQuery({ province: '北江', exploreCategory: 'hotel' })))
+      .rejects.toThrow('生活分类配置暂不可用');
+  });
+
 });

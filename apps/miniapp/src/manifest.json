@@ -1,14 +1,18 @@
 {
   "name": "HuayueLife-MVP",
   "appid": "",
-  "description": "面向北宁/北江华人的本地商家信息与服务工具",
+  "description": "连接在越南的华人，发现身边的本地生活好去处",
   "versionName": "1.0.0",
   "versionCode": "100",
   "mp-weixin": {
     "appid": "wxeef78cf708a37be8",
     "setting": {
-      "urlCheck": false
+      "urlCheck": true,
+      "minified": true,
+      "minifyWXML": true,
+      "minifyWXSS": true
     },
+    "lazyCodeLoading": "requiredComponents",
     "usingComponents": true,
     "permission": {
       "scope.userLocation": {

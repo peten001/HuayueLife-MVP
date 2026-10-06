@@ -267,6 +267,21 @@ export class ReviewsService {
     };
   }
 
+  /** Same publication/voided-order policy as detail ratings, in one grouped query. */
+  async ratingsForMerchants(merchantIds: bigint[]) {
+    if (!merchantIds.length) return new Map<string, { averageRating: number; total: number }>();
+    const grouped = await this.prisma.merchantReview.groupBy({
+      by: ['merchantId'],
+      where: { ...this.publicReviewWhere(0n), merchantId: { in: merchantIds } },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    return new Map(grouped.flatMap(item => item._avg.rating === null || !item._count._all ? [] : [[
+      item.merchantId.toString(),
+      { averageRating: item._avg.rating, total: item._count._all },
+    ] as const]));
+  }
+
   private async summary(merchantId: bigint) {
     const where = this.publicReviewWhere(merchantId);
     const [aggregate, grouped] = await Promise.all([

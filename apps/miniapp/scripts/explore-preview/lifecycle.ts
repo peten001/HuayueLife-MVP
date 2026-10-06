@@ -1,0 +1,10 @@
+import { onMounted, onUnmounted } from 'vue';
+export const onShow = (fn: () => void) => onMounted(fn);
+export const onLoad = (fn: (options: Record<string, string>) => void) => onMounted(() => fn(Object.fromEntries(new URLSearchParams(location.search))));
+export const onHide = (_fn: unknown) => {};
+export const onUnload = (fn: () => void) => onUnmounted(fn);
+export const onReachBottom = (fn: () => void) => { (window as any).reachBottom = fn; };
+export const onPullDownRefresh = (fn: () => void) => { (window as any).pullDownRefresh = fn; };
+export const onShareAppMessage = (_fn: unknown) => {};
+export const onShareTimeline = (_fn: unknown) => {};
+export const onLaunch = (_fn: unknown) => {};

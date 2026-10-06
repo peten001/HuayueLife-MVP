@@ -13,6 +13,8 @@ import {
   ValidateIf,
 } from 'class-validator';
 
+import { HOMEPAGE_CATEGORY_KEYS } from '../../shared/homepage-category-keys';
+
 const MERCHANT_MODES = ['DISPLAY', 'MANAGED', 'DISPLAY_ONLY', 'PRODUCT_DISPLAY', 'ONLINE_ORDER', 'QR_ORDER'] as const;
 const MERCHANT_STATUSES = ['PENDING', 'ACTIVE', 'DISABLED'] as const;
 
@@ -32,6 +34,11 @@ export class CreateDisplayMerchantDto {
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   businessTypeId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsIn(HOMEPAGE_CATEGORY_KEYS, { each: true })
+  homepageCategoryKeys?: string[];
 
   @IsOptional()
   @IsIn(MERCHANT_MODES)

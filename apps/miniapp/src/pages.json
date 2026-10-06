@@ -7,6 +7,13 @@
       }
     },
     {
+      "path": "pages/discovery/index",
+      "style": {
+        "navigationBarTitleText": "生活分类",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       "path": "pages/orders/index",
       "style": {
         "navigationBarTitleText": "我的订单"
@@ -105,26 +112,34 @@
     }
   ],
   "tabBar": {
-    "color": "#999999",
-    "selectedColor": "#43A047",
+    "color": "#66736B",
+    "selectedColor": "#2E7D32",
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
       {
         "pagePath": "pages/home/index",
-        "text": "首页"
+        "text": "首页",
+        "iconPath": "static/tabbar-icons/home-normal.png",
+        "selectedIconPath": "static/tabbar-icons/home-active.png"
       },
       {
         "pagePath": "pages/favorites/index",
-        "text": "收藏"
+        "text": "收藏",
+        "iconPath": "static/tabbar-icons/favorites-normal.png",
+        "selectedIconPath": "static/tabbar-icons/favorites-active.png"
       },
       {
         "pagePath": "pages/messages/index",
-        "text": "消息"
+        "text": "消息",
+        "iconPath": "static/tabbar-icons/messages-normal.png",
+        "selectedIconPath": "static/tabbar-icons/messages-active.png"
       },
       {
         "pagePath": "pages/profile/index",
-        "text": "我的"
+        "text": "我的",
+        "iconPath": "static/tabbar-icons/profile-normal.png",
+        "selectedIconPath": "static/tabbar-icons/profile-active.png"
       }
     ]
   },

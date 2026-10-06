@@ -1,60 +1,56 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { merchantName, orderTypeLabel, useI18n } from '@/i18n';
+import { computed, ref, watch } from 'vue';
+import { localizedName, merchantName, useI18n } from '@/i18n';
 import type { MerchantSummary } from '@/types/api';
 import { resolveMediaUrl } from '@/utils/media';
+import { resolveContentTemplate } from '@/utils/merchant-content-template';
+import { merchantServiceBadges } from '@/utils/merchant-discovery';
+import NetworkImage from './NetworkImage.vue';
 
 const props = withDefaults(
   defineProps<{
     merchant: MerchantSummary;
-    variant?: 'default' | 'compact';
+    variant?: 'default' | 'compact' | 'browse';
     localeClass?: string;
+    hideLocationAndCategory?: boolean;
   }>(),
   {
     variant: 'default',
     localeClass: 'zh',
+    hideLocationAndCategory: false,
   },
 );
 defineEmits<{ select: [merchant: MerchantSummary] }>();
 
 const { locale, t } = useI18n();
 const title = computed(() => merchantName(props.merchant));
-type ServiceTag = {
-  key: string;
-  label: string;
-};
-const canShowScanOrderTag = computed(() =>
-  props.merchant.qrOrderEnabled ??
-  props.merchant.supportedOrderTypes.includes('DINE_IN'),
-);
-const serviceTags = computed<ServiceTag[]>(() => {
-  const tags: ServiceTag[] = props.merchant.supportedOrderTypes.map((type) => ({
-    key: type,
-    label: orderTypeLabel(type, locale.value),
-  }));
-  if (canShowScanOrderTag.value) {
-    tags.push({
-      key: 'SCAN_TO_ORDER',
-      label: t('inStoreScanOrder'),
-    });
-  }
-  return tags;
-});
+const coverUrl = computed(() => resolveMediaUrl(props.merchant.coverUrl || props.merchant.logoUrl));
+const imageFailed = ref(false);
+watch(coverUrl, () => { imageFailed.value = false; });
+const industryLabel = computed(() => props.merchant.businessType ? localizedName(props.merchant.businessType, locale.value) : '');
+const serviceTags = computed(() => merchantServiceBadges(props.merchant, resolveContentTemplate(props.merchant) === 'RESTAURANT')
+  .map(badge => ({ key: badge.code, label: t(badge.labelKey) }))
+  .filter(tag => tag.label));
 </script>
 
 <template>
   <view
     :class="['merchant-card', `merchant-card--${props.variant}`, `merchant-card--${props.localeClass}`]"
+    role="button"
+    :aria-label="title"
     @click="$emit('select', props.merchant)"
   >
-    <image
-      v-if="resolveMediaUrl(props.merchant.coverUrl)"
+    <NetworkImage
+      v-if="coverUrl && !imageFailed"
       class="cover"
-      :src="resolveMediaUrl(props.merchant.coverUrl)"
+      :src="coverUrl"
+      variant="card"
       mode="aspectFill"
-      lazy-load
+      :lazy-load="true"
+      @error="imageFailed = true"
     />
-    <view v-else class="cover placeholder">{{ t('restaurant') }}</view>
+    <!-- i18n-check-allow avatar-initial: use the current localized merchant name. -->
+    <view v-else class="cover placeholder">{{ title.slice(0, 1) }}</view>
     <view class="body">
       <view class="row">
         <text class="name">{{ title }}</text>
@@ -62,17 +58,18 @@ const serviceTags = computed<ServiceTag[]>(() => {
           {{ props.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
         </text>
       </view>
-      <text class="address">{{ props.merchant.addressDetail }}</text>
+      <text v-if="props.variant !== 'browse' && !props.hideLocationAndCategory && industryLabel" class="industry">{{ industryLabel }}</text>
+      <text v-if="!props.hideLocationAndCategory" class="address">{{ props.merchant.addressDetail }}</text>
       <view v-if="props.merchant.distanceKm !== null" class="distance-row">
         <text>{{ props.merchant.distanceKm }} km</text>
       </view>
       <view v-if="serviceTags.length" class="tags">
         <view
-          v-for="(tag, index) in serviceTags"
+          v-for="tag in serviceTags"
           :key="tag.key"
-          :class="['tag', { 'tag--truncate': index === serviceTags.length - 1 }]"
+          class="tag"
         >
-          <text :class="['tag-text', { 'tag-text--truncate': index === serviceTags.length - 1 }]">
+          <text class="tag-text">
             {{ tag.label }}
           </text>
         </view>
@@ -91,22 +88,24 @@ const serviceTags = computed<ServiceTag[]>(() => {
   background: #fff;
   box-shadow: 0 10rpx 24rpx rgb(46 125 50 / 6%);
 }
+.merchant-card:active { opacity: .88; }
 .cover { width: 164rpx; height: 164rpx; flex: none; border-radius: 16rpx; }
 .body { min-width: 0; flex: 1; }
 .placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #2f9e44;
+  color: #2e7d32;
   background: #eaf7ed;
   font-weight: 700;
 }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 10rpx; }
-.name { font-size: 30rpx; font-weight: 700; }
+.name { min-width: 0; flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 30rpx; font-weight: 700; }
+.industry { display: block; margin-top: 6rpx; color: #53675a; font-size: 23rpx; line-height: 1.5; }
 .status { flex: none; font-size: 22rpx; }
 .open { color: #18854b; }
-.closed { color: #888; }
-.address { display: block; margin: 10rpx 0 12rpx; overflow: hidden; color: #777; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
+.closed { color: #66736b; }
+.address { display: block; margin: 10rpx 0 12rpx; overflow: hidden; color: #66736b; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
 .distance-row {
   margin-bottom: 10rpx;
   color: #666;
@@ -116,41 +115,30 @@ const serviceTags = computed<ServiceTag[]>(() => {
   width: 100%;
   min-width: 0;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 8rpx;
-  overflow: hidden;
   background: transparent;
 }
 .tag {
   flex: 0 0 auto;
   width: auto;
-  max-width: none;
+  max-width: 100%;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  color: #2f9e44;
+  color: #2e7d32;
   background: #eaf7ed;
   font-size: 20rpx;
 }
-.tag--truncate {
-  flex: 0 1 auto;
-  width: auto;
-  max-width: 220rpx;
-  overflow: hidden;
-}
 .tag-text {
-  white-space: nowrap;
-}
-.tag-text--truncate {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 .merchant-card--compact {
@@ -215,7 +203,14 @@ const serviceTags = computed<ServiceTag[]>(() => {
   gap: 4rpx;
 }
 
-.merchant-card--compact .tag--truncate {
-  max-width: 160rpx;
-}
+.merchant-card--browse { align-items: flex-start; gap: 16rpx; padding: 16rpx 14rpx; margin-bottom: 12rpx; border-radius: 24rpx; box-shadow: none; }
+.merchant-card--browse .cover { width: 164rpx; height: 164rpx; border-radius: 18rpx; }
+.merchant-card--browse .row { align-items: flex-start; }
+.merchant-card--browse .tags { flex-wrap: wrap; gap: 8rpx; margin-top: 12rpx; }
+.merchant-card--browse { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; }
+.merchant-card--browse .name { font-size: 32rpx; font-weight: 600; line-height: 1.4; letter-spacing: 0; }
+.merchant-card--browse .address { margin: 10rpx 0 0; font-size: 23rpx; line-height: 1.5; color: #737d76; }
+.merchant-card--browse .status { margin-top: 4rpx; font-size: 20rpx; font-weight: 400; line-height: 1.5; }
+.merchant-card--browse .tag { font-size: 21rpx; font-weight: 400; padding: 4rpx 10rpx; }
+@media (max-width: 360px) { .merchant-card--browse .cover { width: 148rpx; height: 148rpx; } .merchant-card--browse .status { font-size: 11px; } }
 </style>

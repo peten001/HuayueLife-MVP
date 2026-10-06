@@ -10,6 +10,8 @@ import {
 } from '@dcloudio/uni-app';
 import WechatOneTapLogin from '@/components/WechatOneTapLogin.vue';
 import MerchantReviewCard from '@/components/MerchantReviewCard.vue';
+import MerchantGalleryTabs from '@/components/MerchantGalleryTabs.vue';
+import NetworkImage from '@/components/NetworkImage.vue';
 import { getMerchant } from '@/api/catalog';
 import {
   formatNumberCurrency,
@@ -26,6 +28,7 @@ import type { MerchantDetail } from '@/types/api';
 import { isFavorite, setFavorite } from '@/utils/favorites';
 import { addMerchantBrowsingHistory } from '@/utils/browsing-history';
 import { wgs84ToGcj02 } from '@/utils/coordinates';
+import { resolveContentTemplate } from '@/utils/merchant-content-template';
 import { resolveMediaUrl } from '@/utils/media';
 import { isCurrentWechatTimelinePreview } from '@/utils/wechat-entry-mode';
 import { createMerchantFavoriteGate } from '@/utils/merchant-favorite-gate';
@@ -33,9 +36,15 @@ import type { OneTapLoginUiOutcome } from '@/utils/one-tap-login-ui';
 import { resolveMerchantOrderingVisibility } from '@/utils/merchant-ordering-visibility';
 import { getToken } from '@/utils/storage';
 import {
+  buildMerchantGalleryCategories,
   firstGalleryIndexForCategory,
   flattenGalleryMedia,
   galleryCategoryForIndex,
+  galleryImageUrls,
+  galleryIndexAfterChange,
+  galleryIndexAfterSwipe,
+  shouldLoadGalleryImage,
+  galleryPhotoPosition,
   normalizeGalleryIndex,
   reconcileGalleryIndex,
   type GalleryCategory,
@@ -50,6 +59,28 @@ const appConfig = useAppConfigStore();
 const auth = useAuthStore();
 const merchant = ref<MerchantDetail | null>(null);
 const merchantId = ref('');
+const isRestaurantTemplate = computed(() => resolveContentTemplate(merchant.value) === 'RESTAURANT');
+const descriptionExpanded = ref(false);
+const serviceItems = computed(() => (merchant.value?.serviceItems ?? []).filter(item => item.isVisible !== false));
+const serviceSectionTitle = computed(() => {
+  const code = merchant.value?.businessType?.code;
+  if (code === 'HOTEL') return locale.value === 'zh' ? '房型展示' : locale.value === 'vi' ? 'Loại phòng' : 'Room types';
+  if (code === 'KTV') return locale.value === 'zh' ? '包厢展示' : locale.value === 'vi' ? 'Phòng karaoke' : 'Karaoke rooms';
+  if (resolveContentTemplate(merchant.value) === 'RETAIL') return locale.value === 'zh' ? '商品展示' : locale.value === 'vi' ? 'Sản phẩm' : 'Products';
+  return locale.value === 'zh' ? '服务项目' : locale.value === 'vi' ? 'Dịch vụ' : 'Services';
+});
+const environmentLabel = computed(() => locale.value === 'zh' ? '门店环境' : locale.value === 'vi' ? 'Không gian cửa hàng' : 'Store environment');
+const inquiryLabel = computed(() => locale.value === 'zh' ? '咨询价格' : locale.value === 'vi' ? 'Hỏi giá' : 'Ask price');
+const phoneConsultLabel = computed(() => locale.value === 'zh' ? '电话咨询' : locale.value === 'vi' ? 'Gọi tư vấn' : 'Call us');
+const environmentImages = computed(() => [...sortedGalleryUrls('STORE'), ...sortedGalleryUrls('ENVIRONMENT')].filter((url, index, urls) => urls.indexOf(url) === index && mediaAvailable(url)));
+function servicePriceLabel(item: NonNullable<MerchantDetail['serviceItems']>[number]) {
+  if (item.priceMode === 'INQUIRY' || item.amountVnd == null) return inquiryLabel.value;
+  const amount = formatNumberCurrency(item.amountVnd);
+  const price = item.priceMode !== 'FROM' ? amount : locale.value === 'en' ? `From ${amount}` : `${amount}${locale.value === 'zh' ? ' 起' : ' trở lên'}`;
+  return `${price}${item.unit ? ` / ${item.unit}` : ''}`;
+}
+function previewServiceImage(url?: string | null) { const current = resolveMediaUrl(url ?? undefined); if (current && mediaAvailable(current)) uni.previewImage({ current, urls: [current] }); }
+
 const error = ref('');
 const errorRetryable = ref(true);
 const loading = ref(true);
@@ -129,8 +160,8 @@ const orderingVisibility = computed(() =>
     supportedOrderTypes: merchant.value?.supportedOrderTypes ?? [],
   }),
 );
-const canOpenPickup = computed(() => orderingVisibility.value.pickupCtaVisible);
-const canOpenDelivery = computed(() => orderingVisibility.value.deliveryCtaVisible);
+const canOpenPickup = computed(() => isRestaurantTemplate.value && orderingVisibility.value.pickupCtaVisible);
+const canOpenDelivery = computed(() => isRestaurantTemplate.value && orderingVisibility.value.deliveryCtaVisible);
 const hasBottomCta = computed(() => canOpenPickup.value || canOpenDelivery.value);
 const displayAddress = computed(() => {
   if (!merchant.value) return '';
@@ -186,30 +217,36 @@ const visibleGalleryImages = computed(() =>
     ? (merchant.value?.images ?? []).filter((item) => item.isVisible !== false)
     : [],
 );
-function sortedGalleryUrls(imageType: string, limit: number) {
-  return visibleGalleryImages.value
-    .filter((item) => item.imageType === imageType)
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))
-    .map((item) => resolveMediaUrl(item.imageUrl))
+function sortedGalleryUrls(imageType: string) {
+  return galleryImageUrls(visibleGalleryImages.value, imageType)
+    .map((url) => resolveMediaUrl(url))
     .filter((url): url is string => Boolean(url))
-    .filter((url, index, urls) => urls.indexOf(url) === index)
-    .slice(0, limit);
+    .filter((url, index, urls) => urls.indexOf(url) === index);
 }
 
 const galleryCategories = computed<GalleryCategory[]>(() => {
   if (!canShowGallery.value) return [];
   const cover = resolveMediaUrl(merchant.value?.coverUrl);
-  const categories: GalleryCategory[] = [
-    { key: 'COVER', label: t('galleryCover'), urls: cover ? [cover] : [] },
-    { key: 'STORE', label: t('galleryStore'), urls: sortedGalleryUrls('STORE', 3) },
-    { key: 'PRODUCT', label: t('galleryProduct'), urls: sortedGalleryUrls('PRODUCT', 6) },
-    { key: 'ENVIRONMENT', label: t('galleryEnvironment'), urls: sortedGalleryUrls('ENVIRONMENT', 3) },
-  ];
-  return categories.filter((category) => category.urls.length > 0);
+  return buildMerchantGalleryCategories({
+    restaurant: isRestaurantTemplate.value,
+    cover,
+    store: sortedGalleryUrls('STORE'),
+    products: sortedGalleryUrls('PRODUCT'),
+    environment: sortedGalleryUrls('ENVIRONMENT'),
+    services: serviceItems.value.map(item => resolveMediaUrl(item.imageUrl ?? undefined)).filter((url): url is string => Boolean(url)),
+    labels: {
+      COVER: t('galleryCover'),
+      STORE: t('galleryStore'),
+      PRODUCT: t('galleryProduct'),
+      ENVIRONMENT: isRestaurantTemplate.value ? t('galleryEnvironment') : environmentLabel.value,
+      SERVICE: serviceSectionTitle.value,
+    },
+  });
 });
 
 const flatGalleryMedia = computed(() => flattenGalleryMedia(galleryCategories.value));
 const heroImages = computed(() => flatGalleryMedia.value.map((item) => item.url));
+const activePhotoPosition = computed(() => galleryPhotoPosition(flatGalleryMedia.value, activeHeroIndex.value));
 
 watch(flatGalleryMedia, (nextMedia, previousMedia) => {
   const nextIndex = reconcileGalleryIndex(
@@ -290,13 +327,13 @@ const serviceCapabilities = computed(() => {
     '/static/merchant-detail-icons/wifi-green.png',
     t('freeWifi'),
   );
-  if (orderingVisibility.value.pickupFacilityVisible) {
+  if (isRestaurantTemplate.value && orderingVisibility.value.pickupFacilityVisible) {
     items.push({ code: 'pickupEnabled', icon: uiIcons.pickup, label: t('supportsPickup') });
   }
-  if (orderingVisibility.value.deliveryFacilityVisible) {
+  if (isRestaurantTemplate.value && orderingVisibility.value.deliveryFacilityVisible) {
     items.push({ code: 'deliveryEnabled', icon: uiIcons.delivery, label: t('supportsDelivery') });
   }
-  if (orderingVisibility.value.qrFacilityVisible) {
+  if (isRestaurantTemplate.value && orderingVisibility.value.qrFacilityVisible) {
     items.push({
       code: 'qrOrderEnabled',
       icon: '/static/merchant-detail-icons/qr-code-green.png',
@@ -383,6 +420,7 @@ async function loadMerchant() {
     activeHeroIndex.value = nextHeroIndex;
     activeGalleryCategory.value = galleryCategoryForIndex(nextGalleryMedia, nextHeroIndex);
     signatureExpanded.value = false;
+    descriptionExpanded.value = false;
     hotExpanded.value = false;
     favoriteState.value = isFavorite(merchant.value.id);
     addMerchantBrowsingHistory(merchant.value);
@@ -433,9 +471,8 @@ function appendDictionaryCapability(
   });
 }
 
-function handleHeroChange(event: { detail?: { current?: number } }) {
-  const current = Number(event.detail?.current ?? 0);
-  const nextIndex = normalizeGalleryIndex(current, flatGalleryMedia.value.length);
+function handleHeroChange(event: { detail?: { current?: number; source?: string } }) {
+  const nextIndex = galleryIndexAfterChange(activeHeroIndex.value, flatGalleryMedia.value.length, event.detail ?? {});
   activeHeroIndex.value = nextIndex;
   activeGalleryCategory.value = galleryCategoryForIndex(flatGalleryMedia.value, nextIndex);
 }
@@ -445,6 +482,12 @@ function selectGalleryCategory(key: GalleryKey) {
   if (categoryIndex < 0) return;
   activeGalleryCategory.value = key;
   activeHeroIndex.value = categoryIndex;
+}
+
+function swipeGalleryCategoryRow(direction: -1 | 1) {
+  const nextIndex = galleryIndexAfterSwipe(activeHeroIndex.value, flatGalleryMedia.value.length, direction);
+  activeHeroIndex.value = nextIndex;
+  activeGalleryCategory.value = galleryCategoryForIndex(flatGalleryMedia.value, nextIndex);
 }
 
 function handleBack() {
@@ -510,6 +553,7 @@ function handleToggleFavorite() {
 }
 
 async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
+  if (!isRestaurantTemplate.value) return;
   if (!merchant.value) return;
   if (!appConfig.platformOrderingEnabled) return;
   if (isCurrentWechatTimelinePreview()) {
@@ -758,7 +802,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 </script>
 
 <template>
-  <view :class="['page', { 'has-order-actions': hasBottomCta }]">
+  <view :class="['page', { 'has-order-actions': hasBottomCta, 'service-template': !isRestaurantTemplate }]">
     <WechatOneTapLogin ref="favoriteLoginUi" :show-success-toast="false" />
     <view class="merchant-nav" :style="merchantNavStyle">
       <view class="merchant-nav-row">
@@ -815,19 +859,20 @@ function hasCapability(code: string, fallbackValue: boolean) {
           @change="handleHeroChange"
         >
           <swiper-item v-for="media in flatGalleryMedia" :key="media.stableKey">
-            <image
-              v-if="mediaAvailable(media.url)"
-              class="hero-image"
-              :src="media.url"
-              mode="aspectFill"
-              :aria-label="`${merchantName(merchant, locale)} ${media.globalIndex + 1}`"
-              lazy-load
-              @tap="previewGallery(media.url)"
-              @error="handleMediaError(media.url)"
-            />
-            <view v-else class="hero-image placeholder">
-              <view class="placeholder-mark">
-                <image class="placeholder-hero-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+            <view class="hero-slide">
+              <NetworkImage
+                v-if="mediaAvailable(media.url) && shouldLoadGalleryImage(media.globalIndex, activeHeroIndex, flatGalleryMedia.length)"
+                class="hero-image"
+                :src="media.url"
+                mode="aspectFill"
+                :aria-label="`${merchantName(merchant, locale)} ${media.globalIndex + 1}`"
+                @tap="previewGallery(media.url)"
+                @error="handleMediaError(media.url)"
+              />
+              <view v-else class="hero-image placeholder">
+                <view class="placeholder-mark">
+                  <image class="placeholder-hero-icon" :src="uiIcons.merchantProfile" mode="aspectFit" />
+                </view>
               </view>
             </view>
           </swiper-item>
@@ -838,29 +883,22 @@ function hasCapability(code: string, fallbackValue: boolean) {
           </view>
         </view>
 
-        <scroll-view
-          v-if="galleryCategories.length"
-          class="gallery-category-scroll"
-          scroll-x
-          show-scrollbar="false"
-          role="tablist"
-          :aria-label="t('galleryCategories')"
-        >
-          <view class="gallery-category-list">
-            <button
-              v-for="category in galleryCategories"
-              :key="category.key"
-              :class="['gallery-category-button', { 'is-active': activeGalleryCategory === category.key }]"
-              role="tab"
-              :aria-selected="activeGalleryCategory === category.key"
-              hover-class="is-pressed"
-              @tap="selectGalleryCategory(category.key)"
-            >
-              <text class="gallery-category-label">{{ category.label }}</text>
-              <text v-if="activeGalleryCategory === category.key" class="gallery-category-active-marker" aria-hidden="true" />
-            </button>
-          </view>
-        </scroll-view>
+        <!-- Only the labels cover the swiper; the empty right side remains native swipe space. -->
+        <view v-if="galleryCategories.length" class="gallery-category-panel">
+          <MerchantGalleryTabs
+            :categories="galleryCategories"
+            :active-category="activeGalleryCategory"
+            :wide-labels="locale !== 'zh'"
+            :label="t('galleryCategories')"
+            @select="selectGalleryCategory"
+            @swipe="swipeGalleryCategoryRow"
+          />
+        </view>
+
+        <view v-if="activePhotoPosition.total > 1" class="gallery-photo-position">
+          <text>{{ activePhotoPosition.current }} / {{ activePhotoPosition.total }}</text>
+        </view>
+
       </view>
 
       <view class="merchant-overview">
@@ -907,11 +945,16 @@ function hasCapability(code: string, fallbackValue: boolean) {
           </view>
           <text class="section-title">{{ t('merchantIntro') }}</text>
         </view>
-        <text class="description">{{ displayDescription }}</text>
+        <text :class="['description', { 'is-collapsible': displayDescription.length > 100, expanded: descriptionExpanded }]">{{ displayDescription }}</text>
+        <button v-if="displayDescription.length > 100" class="intro-toggle" :aria-expanded="descriptionExpanded" @tap="descriptionExpanded = !descriptionExpanded">{{ descriptionExpanded ? t('collapse') : t('viewMore') }}</button>
       </view>
-
+      <view v-if="displayAddress" class="address-card">
+        <image class="address-pin" :src="uiIcons.mapPin" mode="aspectFit" />
+        <view class="address-copy"><text class="address-text">{{ displayAddress }}</text><text v-if="merchant.distanceKm !== null" class="address-distance">{{ merchant.distanceKm }} km</text></view>
+        <button v-if="canNavigate" class="address-nav" @tap="handleAddressTap"><image :src="uiIcons.navigation" mode="aspectFit" /><text>{{ t('mapNavigation') }}</text></button>
+      </view>
       <view v-if="serviceCapabilities.length" class="content-section facility-section">
-        <view class="facility-grid">
+        <view :class="['facility-grid', { 'is-wide-labels': locale !== 'zh' }]">
           <view v-for="service in serviceCapabilities" :key="service.code" class="facility-item">
             <image class="facility-icon" :src="service.icon" mode="aspectFit" />
             <text class="facility-label">{{ service.label }}</text>
@@ -919,9 +962,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
       </view>
 
-      <view v-if="signatureDishes.length" class="content-section featured-section">
+      <view v-if="isRestaurantTemplate && signatureDishes.length" class="content-section featured-section">
         <view class="section-heading">
-          <text class="section-title">{{ locale === 'zh' ? `⭐ ${t('signatureDishes')}` : t('signatureDishes') }}</text>
+          <text class="section-title">{{ t('signatureDishes') }}</text>
           <button v-if="hasSignatureOverflow" class="section-more" :aria-expanded="signatureExpanded" hover-class="is-pressed" @tap="signatureExpanded = !signatureExpanded">
             <text>{{ signatureExpanded ? t('collapse') : t('viewMore') }}</text>
             <text :class="['section-more-arrow', { 'is-expanded': signatureExpanded }]">›</text>
@@ -949,7 +992,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </scroll-view>
       </view>
 
-      <view v-if="hotRecommendations.length" class="content-section featured-section">
+      <view v-if="isRestaurantTemplate && hotRecommendations.length" class="content-section featured-section">
         <view class="section-heading">
           <text class="section-title">{{ locale === 'zh' ? `🔥 ${t('merchantHotRecommendations')}` : t('merchantHotRecommendations') }}</text>
           <button v-if="hasHotOverflow" class="section-more" :aria-expanded="hotExpanded" hover-class="is-pressed" @tap="hotExpanded = !hotExpanded">
@@ -995,7 +1038,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </scroll-view>
       </view>
 
-      <view class="content-section reviews-section">
+      <view v-if="isRestaurantTemplate" class="content-section reviews-section">
         <view class="section-heading">
           <text class="section-title">{{ t('customerReviews') }}</text>
           <button
@@ -1047,15 +1090,23 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </view>
       </view>
 
-      <view v-if="displayAddress" class="address-card">
-        <image class="address-pin" :src="uiIcons.mapPin" mode="aspectFit" />
-        <view class="address-copy">
-          <text class="address-label">{{ t('merchantAddress') }}</text>
-          <text class="address-text">{{ displayAddress }}</text>
-          <text v-if="merchant.distanceKm !== null" class="address-distance">{{ merchant.distanceKm }} km</text>
+      <view v-if="!isRestaurantTemplate && serviceItems.length" class="content-section service-content-section">
+        <view class="section-heading"><text class="section-title">{{ serviceSectionTitle }}</text></view>
+        <view class="service-items">
+          <view v-for="item in serviceItems" :key="item.id" class="service-item">
+            <NetworkImage v-if="mediaAvailable(item.imageUrl)" class="service-item-image" :src="resolveMediaUrl(item.imageUrl ?? undefined)" variant="card" mode="aspectFill" :lazy-load="true" @error="handleMediaError(item.imageUrl)" @tap="previewServiceImage(item.imageUrl)" />
+            <view v-else class="service-item-image service-image-placeholder"><image :src="uiIcons.merchantProfile" mode="aspectFit" /></view>
+            <view class="service-item-copy"><text class="service-item-name">{{ localizedName(item, locale) }}</text><text v-if="item.durationMinutes" class="service-item-spec">{{ item.durationMinutes }} {{ locale === 'zh' ? '分钟' : locale === 'vi' ? 'phút' : 'min' }}</text><text v-if="localizedText(item, locale)" class="service-item-spec">{{ localizedText(item, locale) }}</text></view>
+            <button v-if="item.priceMode === 'INQUIRY' || item.amountVnd == null" class="service-price-button" :disabled="!canPhone" @tap="handlePhoneTap">{{ inquiryLabel }}</button>
+            <text v-else class="service-price-label">{{ servicePriceLabel(item) }}</text>
+          </view>
         </view>
+        <text v-if="!canPhone" class="service-phone-missing">{{ t('merchantPhoneMissing') }}</text>
       </view>
-
+      <view v-if="!isRestaurantTemplate && environmentImages.length" class="content-section service-environment">
+        <view class="section-heading"><text class="section-title">{{ environmentLabel }}</text><button class="section-more" @tap="previewGallery(environmentImages[0])">{{ t('viewMore') }} ›</button></view>
+        <scroll-view class="environment-scroll" scroll-x><view class="environment-images"><NetworkImage v-for="url in environmentImages" :key="url" class="environment-photo" :src="url" variant="card" mode="aspectFill" :lazy-load="true" @error="handleMediaError(url)" @tap="previewGallery(url)" /></view></scroll-view>
+      </view>
       <view v-if="showClaimCta" class="claim-card">
         <view class="claim-copy">
           <text class="claim-title">{{ t('merchantClaimTitle') }}</text>
@@ -1070,21 +1121,22 @@ function hasCapability(code: string, fallbackValue: boolean) {
         </button>
       </view>
 
-      <view :class="['sticky-actions', { 'has-order-ctas': hasBottomCta }]">
+      <view :class="['sticky-actions', { 'has-order-ctas': hasBottomCta, 'has-phone-cta': !isRestaurantTemplate }]">
         <view class="sticky-tools">
-          <button v-if="canPhone" class="bottom-action" hover-class="is-pressed" @tap="handlePhoneTap">
+          <button v-if="isRestaurantTemplate && canPhone" class="bottom-action" hover-class="is-pressed" @tap="handlePhoneTap">
             <image class="bottom-action-icon" :src="uiIcons.phone" mode="aspectFit" />
-            <text>{{ t('phone') }}</text>
+            <text>{{ locale === 'zh' ? '电话' : locale === 'vi' ? 'Gọi' : 'Call' }}</text>
           </button>
           <button v-if="canNavigate" class="bottom-action" hover-class="is-pressed" @tap="handleAddressTap">
             <image class="bottom-action-icon" :src="uiIcons.navigation" mode="aspectFit" />
             <text>{{ t('mapNavigation') }}</text>
           </button>
-          <button :class="['bottom-action', { 'is-favorite': favoriteState }]" :aria-pressed="favoriteState" hover-class="is-pressed" @tap="handleToggleFavorite">
+          <button :class="['bottom-action', 'favorite-action', { 'is-favorite': favoriteState }]" :aria-pressed="favoriteState" hover-class="is-pressed" @tap="handleToggleFavorite">
             <image class="bottom-action-icon" :src="favoriteState ? uiIcons.heartActive : uiIcons.heartGreen" mode="aspectFit" />
             <text>{{ favoriteLabel }}</text>
           </button>
         </view>
+        <button v-if="!isRestaurantTemplate" class="phone-consult-button" :disabled="!canPhone" @tap="handlePhoneTap"><image :src="uiIcons.phone" mode="aspectFit" /><text>{{ canPhone ? phoneConsultLabel : t('merchantPhoneMissing') }}</text></button>
         <view v-if="hasBottomCta" class="sticky-orders">
           <button
             v-if="canOpenPickup"
@@ -1243,7 +1295,7 @@ function hasCapability(code: string, fallbackValue: boolean) {
 }
 
 .loading-hero {
-  height: 460rpx;
+  height: 584rpx;
   border-radius: 28rpx;
 }
 
@@ -1462,44 +1514,9 @@ function hasCapability(code: string, fallbackValue: boolean) {
   box-sizing: border-box;
 }
 
-.gallery-category-scroll {
-  width: 100%;
-  padding: 10rpx 18rpx 6rpx;
-  white-space: nowrap;
-  background: var(--surface);
-  box-sizing: border-box;
-}
 
-.gallery-category-list {
-  display: flex;
-  width: max-content;
-  gap: 10rpx;
-}
 
-.gallery-category-button {
-  position: relative;
-  min-width: 132rpx;
-  min-height: 88rpx;
-  display: inline-flex;
-  padding: 0 20rpx;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  border: 2rpx solid var(--line);
-  border-radius: 18rpx;
-  color: var(--ink-2);
-  background: var(--surface-soft);
-  font-size: 23rpx;
-  font-weight: 700;
-  line-height: 1.2;
-  box-sizing: border-box;
-}
 
-.gallery-category-button.is-active {
-  border-color: var(--brand);
-  color: var(--brand-deep);
-  background: var(--brand-soft);
-}
 
 .thumbnail-list {
   display: flex;
@@ -2858,77 +2875,13 @@ function hasCapability(code: string, fallbackValue: boolean) {
   }
 }
 
-/* V3.3: Platform-classified gallery controls stay inside the image for every merchant state. */
-.gallery-category-scroll {
-  position: absolute;
-  right: 16rpx;
-  bottom: 0;
-  left: 16rpx;
-  z-index: 3;
-  width: auto;
-  padding: 20rpx 12rpx 1rpx;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0 0 22rpx 22rpx;
-  background: linear-gradient(180deg, rgb(16 34 23 / 0%) 0%, rgb(16 34 23 / 68%) 38%, rgb(16 34 23 / 82%) 100%);
-  box-shadow: none;
-  white-space: nowrap;
-  box-sizing: border-box;
-}
+/* Gallery controls are styled by Explore V1 below. */
 
-.gallery-category-list {
-  display: inline-flex;
-  min-width: max-content;
-  gap: 5rpx;
-}
 
-.gallery-category-button {
-  min-width: 118rpx;
-  min-height: 88rpx;
-  padding: 0 14rpx;
-  gap: 6rpx;
-  border: 1rpx solid transparent;
-  border-radius: 14rpx;
-  color: rgb(248 255 249 / 78%);
-  outline: none;
-  background: transparent;
-  box-shadow: none;
-  font-size: 21rpx;
-  font-weight: 750;
-}
 
-.gallery-category-button.is-active {
-  border-color: transparent;
-  color: var(--on-brand);
-  background: transparent;
-}
 
-.gallery-category-label {
-  display: inline-flex;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1rpx solid transparent;
-  border-radius: 11rpx;
-  line-height: 1.2;
-}
 
-.gallery-category-button.is-active .gallery-category-label {
-  padding: 4rpx 14rpx;
-  border-color: rgb(144 211 151 / 34%);
-  background: rgb(18 39 27 / 42%);
-  transform: translateY(2rpx);
-}
 
-.gallery-category-active-marker {
-  position: absolute;
-  right: 28rpx;
-  bottom: 6rpx;
-  left: 28rpx;
-  height: 2rpx;
-  border-radius: 2rpx;
-  background: var(--brand);
-}
 
 .section-heading {
   min-height: 88rpx;
@@ -3202,4 +3155,108 @@ function hasCapability(code: string, fallbackValue: boolean) {
   font-size: var(--type-meta-size);
   line-height: 1.45;
 }
+
+/* Keep the established photo-led merchant page across all industries. */
+.page {
+  --brand: #43a047;
+  --brand-deep: #2e7d32;
+  --ink: #1f2d24;
+  --ink-3: #667169;
+  --page-bg: #f6faf7;
+  --surface: #fff;
+  --surface-soft: #f3f8f5;
+  padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+  background: var(--surface);
+}
+.hero-shell {
+  position: relative;
+  margin: 12rpx 16rpx 0;
+  padding: 0;
+  border-radius: 28rpx;
+  overflow: hidden;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+.hero {
+  width: 100%;
+  height: 584rpx;
+  min-height: 0;
+  max-height: none;
+  border-radius: 0;
+  background: #fff;
+}
+.hero-image { flex: none; width: 100%; height: 500rpx; min-height: 0; max-height: none; border-radius: 0; }
+.hero.placeholder { height: 460rpx; }
+.hero-slide { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; }
+.gallery-category-panel {
+  position: absolute;
+  left: 18rpx;
+  bottom: 0;
+  z-index: 1;
+  display: inline-flex;
+  width: auto;
+  max-width: calc(100% - 36rpx);
+  height: 84rpx;
+  padding: 8rpx 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+.gallery-photo-position {
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+  z-index: 2;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: rgb(0 0 0 / 48%);
+  color: #fff;
+  font-size: 24rpx;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.merchant-overview { margin: 0; padding: 20rpx 20rpx 18rpx; background: transparent; border-radius: 0; box-shadow: none; }
+.identity-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 12rpx; }
+.title { font-size: 42rpx; line-height: 1.3; letter-spacing: 0; }
+.merchant-logo { width: 78rpx; height: 78rpx; border-radius: 16rpx; }
+.identity-badges { margin: 0; gap: 8rpx; flex-wrap: wrap; }
+.claim-badge, .status { padding: 7rpx 14rpx; border-radius: 999rpx; font-size: 24rpx; line-height: 1.35; }
+.claim-badge { background: #eaf7ee; border: 1rpx solid #daeee0; color: var(--brand-deep); }
+.status.open { background: #eaf7ee; color: var(--brand-deep); }
+.status.closed { background: #f2f3f2; color: var(--ink-3); }
+.meta-row { gap: 8rpx; margin-top: 12rpx; }
+.tag, .meta-type { padding: 5rpx 10rpx; font-size: 24rpx; line-height: 1.4; border: 1rpx solid #e4eee7; border-radius: 999rpx; background: #f1f8f2; color: var(--brand-deep); }
+.meta-type { border-color: var(--brand-deep); background: var(--brand-deep); color: #fff; }
+.summary-line { margin-top: 10rpx; font-size: 26rpx; line-height: 1.5; }
+.intro-card { display: block; margin: 0 20rpx 12rpx; padding: 18rpx 20rpx; background: #fff9eb; border: 0; border-radius: 22rpx; box-shadow: none; }
+.intro-heading { display: flex; align-items: center; gap: 10rpx; margin-bottom: 8rpx; }
+.intro-icon-shell { width: 44rpx; height: 44rpx; border-radius: 12rpx; }
+.intro-icon { width: 28rpx; height: 28rpx; }
+.description { display: block; min-width: 0; margin: 0; color: #765c2d; font-size: 27rpx; line-height: 1.7; white-space: pre-wrap; }
+.description.is-collapsible { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.description.expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.intro-toggle { min-height: 88rpx; min-width: 88rpx; width: fit-content; margin: 4rpx 0 0 auto; padding: 18rpx 0 0 18rpx; background: transparent; color: var(--brand-deep); font-size: 24rpx; line-height: 1.5; }
+.address-card { display: flex; align-items: center; gap: 12rpx; margin: 8rpx 20rpx 0; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.address-pin { flex: none; width: 32rpx; height: 32rpx; }
+.address-copy { flex: 1; min-width: 0; }
+.address-text { font-size: 26rpx; line-height: 1.5; word-break: break-word; }
+.address-nav { display: flex; align-items: center; gap: 8rpx; flex: none; min-height: 88rpx; max-width: 210rpx; padding: 12rpx 18rpx; border: 1rpx solid #e8eeeb; border-radius: 44rpx; background: #fff; color: var(--brand-deep); font-size: 24rpx; line-height: 1.4; white-space: normal; }
+.address-nav image { width: 30rpx; height: 30rpx; flex-shrink: 0; }
+.content-section { margin: 28rpx 20rpx 0; padding: 0; border: 0; background: transparent; border-radius: 0; box-shadow: none; }
+.facility-section { margin: 14rpx 20rpx 0; }
+.facility-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8rpx; margin: 0; }
+.facility-grid.is-wide-labels { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8rpx; }
+.facility-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6rpx; width: auto; height: auto; min-width: 0; min-height: 112rpx; padding: 12rpx 6rpx; border-radius: 12rpx; background: #f6faf7; }
+.facility-icon { flex: none; width: 34rpx; height: 34rpx; border-radius: 0; background: transparent; }
+.facility-label, .facility-grid.is-wide-labels .facility-label { display: block; min-height: 0; font-size: 24rpx; line-height: 1.4; white-space: normal; overflow: visible; -webkit-line-clamp: unset; }
+.section-heading { margin-bottom: 14rpx; }
+.section-title { font-size: 34rpx; line-height: 1.4; font-weight: 700; }
+.section-more { font-size: 24rpx; color: var(--ink-3); min-height: 88rpx; margin: -10rpx 0; padding: 12rpx 0; }
+.featured-section .section-heading { align-items: center; }
+.dish-grid .signature-image, .hot-card .hot-image { border-radius: 18rpx; }
+.signature-name, .hot-name { font-size: 25rpx; line-height: 1.4; }
+.service-items{border:1rpx solid #edf2ef;border-radius:20rpx;padding:0 14rpx;background:#fff}.service-item{display:flex;align-items:center;gap:16rpx;padding:14rpx 0;border-bottom:1rpx solid #edf2ef}.service-item:last-child{border:0}.service-item-image{width:148rpx;height:108rpx;flex:none;border-radius:14rpx;background:#f3f8f5}.service-image-placeholder{display:flex;align-items:center;justify-content:center}.service-image-placeholder image{width:42rpx;height:42rpx}.service-item-copy{flex:1;min-width:0}.service-item-name{display:block;font-size:28rpx;line-height:1.4;font-weight:600;word-break:break-word}.service-item-spec{display:block;color:#727a76;font-size:23rpx;line-height:1.5;word-break:break-word}.service-price-button{flex:none;max-width:192rpx;min-width:128rpx;min-height:88rpx;margin:0;padding:16rpx 14rpx;background:#eaf7ee;color:var(--brand-deep);font-size:24rpx;line-height:1.4;border-radius:14rpx;white-space:normal;word-break:break-word}.service-price-button[disabled]{opacity:.55}.service-price-label{flex:none;max-width:192rpx;color:var(--brand-deep);font-size:27rpx;font-weight:600;line-height:1.5;overflow-wrap:anywhere}.service-phone-missing{display:block;font-size:23rpx;color:#727a76;padding:12rpx 0}.environment-scroll{width:100%;white-space:nowrap}.environment-images{display:flex;gap:14rpx}.environment-images .environment-photo{flex:none;width:236rpx;height:140rpx;border-radius:18rpx;background:#f3f8f5}
+.claim-card{margin:24rpx 28rpx 0;padding:12rpx 16rpx;gap:12rpx;background:#f0f9f4;border:1rpx solid #e7f2eb;border-radius:16rpx;box-shadow:none}.claim-title{font-size:24rpx;line-height:1.4}.claim-description{display:none}.claim-action{min-height:76rpx;min-width:120rpx;padding:10rpx;color:var(--brand-deep);background:transparent;font-size:24rpx;line-height:1.4;white-space:normal}.sticky-actions{box-shadow:none;padding:12rpx 20rpx calc(12rpx + env(safe-area-inset-bottom))}.sticky-actions.has-phone-cta .sticky-tools{flex:0 0 240rpx}.phone-consult-button{flex:1;display:flex;align-items:center;justify-content:center;gap:16rpx;min-height:88rpx;margin:0;padding:14rpx 20rpx;border-radius:18rpx;background:var(--brand-deep);color:#fff;font-size:28rpx;line-height:1.4;word-break:break-word}.phone-consult-button image{width:34rpx;height:34rpx;filter:brightness(0) invert(1)}.phone-consult-button[disabled]{background:#edf2ef;color:#727a76}.sticky-orders .primary{background:var(--brand-deep);border-radius:16rpx;font-size:25rpx;white-space:normal}.sticky-orders .primary.pickup{background:#eaf7ee;color:var(--brand-deep)}.service-template .sticky-actions .bottom-action{min-width:100rpx}.service-template .favorite-action{order:-1}
 </style>

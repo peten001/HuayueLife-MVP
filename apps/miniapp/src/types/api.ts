@@ -81,6 +81,7 @@ export interface UserProfile {
 }
 
 export interface MerchantSummary extends LocalizedFields {
+  contentTemplate?: 'RESTAURANT' | 'SERVICE' | 'RETAIL' | 'GENERAL';
   id: string;
   nameZh: string;
   nameVi?: string;
@@ -141,6 +142,15 @@ export interface MerchantSummary extends LocalizedFields {
     nameEn?: string | null;
     isEnabled: boolean;
   }>;
+  signatureDishes?: Array<{
+    id: string;
+    nameZh: string;
+    nameVi?: string | null;
+    nameEn?: string | null;
+    imageUrl: string;
+    menuThumbnailUrl?: string | null;
+    sortOrder: number;
+  }>;
   images?: Array<{
     id: string;
     imageType: string;
@@ -153,7 +163,37 @@ export interface MerchantSummary extends LocalizedFields {
   }>;
 }
 
+export interface HomeRecommendation {
+  kind: 'FOOD' | 'COFFEE' | 'NOODLES' | 'MASSAGE' | 'KTV';
+  merchant: MerchantSummary;
+  photos: string[];
+  rating: { averageRating: number; total: number } | null;
+  reason: 'FEATURED' | 'RATING' | 'NEARBY' | 'CITY';
+}
+
+export interface HomeRecommendationScene extends HomeRecommendation {
+  code: string;
+  titleZh: string;
+  titleVi: string;
+  titleEn: string;
+  subtitleZh: string;
+  subtitleVi: string;
+  subtitleEn: string;
+}
+
+export interface HomeRecommendations {
+  region: string | null;
+  locationMode: 'GPS' | 'CITY' | 'REGION_REQUIRED';
+  timeZone: string;
+  generatedAt: string;
+  refreshAfterSeconds: number;
+  period: { code: string; nameZh: string; nameVi: string; nameEn: string; endsAt: string };
+  spotlights: HomeRecommendation[];
+  scenes: HomeRecommendationScene[];
+}
+
 export interface MerchantDetail extends MerchantSummary {
+  serviceItems?: MerchantServiceItem[];
   logoUrl?: string;
   contactPhone: string;
   province: string;
@@ -169,15 +209,6 @@ export interface MerchantDetail extends MerchantSummary {
     nameEn?: string | null;
     iconText?: string | null;
     color?: string | null;
-  }>;
-  signatureDishes?: Array<{
-    id: string;
-    nameZh: string;
-    nameVi?: string | null;
-    nameEn?: string | null;
-    imageUrl: string;
-    menuThumbnailUrl?: string | null;
-    sortOrder: number;
   }>;
   hotRecommendations?: Array<{
     id: string;
@@ -435,4 +466,18 @@ export interface UserOrder {
     status: 'PENDING_REVIEW' | 'PUBLISHED' | 'HIDDEN';
     createdAt: string;
   } | null;
+}
+
+export interface ExploreCategory {
+  code: string; nameZh: string; nameVi?: string; nameEn?: string; iconKey: string;
+  sortOrder: number; enabled: boolean; businessTypeCodes: string[]; legacyKeys: string[]; navigationOnly?: boolean;
+}
+export interface ExploreTopic {
+  code: string; nameZh: string; nameVi?: string; nameEn?: string;
+  subtitleZh?: string; subtitleVi?: string; subtitleEn?: string; imageUrl?: string;
+  regions: string[]; categoryCode?: string; promotionTagCode?: string; sortOrder: number; enabled: boolean;
+}
+export interface MerchantServiceItem extends LocalizedFields {
+  id: string; nameZh: string; imageUrl?: string | null; durationMinutes?: number | null;
+  priceMode: 'INQUIRY' | 'FIXED' | 'FROM'; amountVnd?: string | null; unit?: string | null; sortOrder: number; isVisible?: boolean;
 }

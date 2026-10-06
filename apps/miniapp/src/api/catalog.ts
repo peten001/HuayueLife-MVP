@@ -1,12 +1,22 @@
 import type {
   MenuResponse,
+  ExploreCategory,
+  ExploreTopic,
   AppConfig,
   MerchantDetail,
   MerchantSummary,
+  HomeRecommendations,
   Product,
   QrResolveResponse,
 } from '@/types/api';
 import { request } from './http';
+
+export const getExploreContent = () => request<{ categories: ExploreCategory[]; topics: ExploreTopic[] }>('/public/explore');
+
+export function getHomeRecommendations(params: { province: '北江' | '北宁'; lat?: number; lng?: number }) {
+  const query = Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
+  return request<HomeRecommendations>(`/public/home-recommendations?${query}`);
+}
 
 export const getAppConfig = () => request<AppConfig>('/public/app-config');
 
@@ -18,6 +28,8 @@ export function getNearbyMerchants(params: {
   city?: string;
   province?: string;
   businessTypeId?: string;
+  exploreCategory?: string;
+  exploreTopic?: string;
   promotionTag?: string;
   homepageCategoryKey?: string;
   keyword?: string;

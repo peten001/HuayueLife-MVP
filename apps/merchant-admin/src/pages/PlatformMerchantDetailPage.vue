@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import PlatformMerchantServiceItemsSection from '@/components/PlatformMerchantServiceItemsSection.vue';
 import PlatformMerchantSignatureDishesSection from '@/components/PlatformMerchantSignatureDishesSection.vue';
 import { errorMessage } from '@/api/http';
 import {
@@ -38,7 +39,9 @@ import type {
   PlatformPromotionTag,
   PlatformSettings,
 } from '@/types/api';
+import { merchantCategoryOptions } from '@/utils/merchant-categories';
 import { resolveMediaUrl } from '@/utils/media';
+import { uploadMerchantImageBatch } from '@/utils/merchant-image-batch';
 
 type EditorSection =
   | 'profile'
@@ -66,6 +69,7 @@ const activeSection = ref<EditorSection>('profile');
 const loading = ref(false);
 const saving = ref(false);
 const uploadingImage = ref(false);
+const imageUploadProgress = ref<{ completed: number; total: number } | null>(null);
 const imageSavingId = ref<string | null>(null);
 const message = ref('');
 const messageIsSuccess = computed(() =>
@@ -147,11 +151,13 @@ const ORDERING_CAPABILITY_CODES = new Set([
 const businessHoursSchedule = ref<BusinessDaySchedule[]>(createDefaultBusinessHoursSchedule());
 const businessHoursMessage = ref('');
 
+const homepageCategoryOptions = merchantCategoryOptions();
 const profileForm = reactive({
   nameZh: '',
   nameVi: '',
   nameEn: '',
   businessTypeId: '',
+  homepageCategoryKeys: [] as string[],
   merchantMode: 'DISPLAY',
   contactPhone: '',
   contactName: '',
@@ -176,6 +182,7 @@ const profileFormSnapshot = reactive({
   nameVi: '',
   nameEn: '',
   businessTypeId: '',
+  homepageCategoryKeys: [] as string[],
   contactPhone: '',
   contactName: '',
   province: '',
@@ -203,40 +210,44 @@ const CONTENT_IMAGE_SECTION_CONFIG: Array<{
   title: string;
   description: string;
   guidance: string;
-  displayLimit?: number;
+  showInGallery?: boolean;
 }> = [
   {
     type: 'STORE',
     title: '门店外观',
     description: '小程序顶部图库：门店外观',
-    guidance: '建议 1～3 张，按排序值从小到大展示。',
-    displayLimit: 3,
+    guidance: '可多选上传，不限张数；单张不超过 5MB，按排序值展示。',
+    showInGallery: true,
   },
   {
     type: 'PRODUCT',
     title: '菜品',
     description: '小程序顶部图库：菜品',
-    guidance: '建议 3～6 张，按排序值从小到大展示。',
-    displayLimit: 6,
+    guidance: '可多选上传，不限张数；单张不超过 5MB，按排序值展示。',
+    showInGallery: true,
   },
   {
     type: 'ENVIRONMENT',
     title: '用餐环境',
     description: '小程序顶部图库：用餐环境',
-    guidance: '建议 1～3 张，按排序值从小到大展示。',
-    displayLimit: 3,
+    guidance: '可多选上传，不限张数；单张不超过 5MB，按排序值展示。',
+    showInGallery: true,
   },
   {
     type: 'MENU',
     title: '菜单',
     description: '当前商家详情顶部图库不展示 MENU；数据保留供后续功能使用。',
-    guidance: '继续支持上传、排序、显示与隐藏。',
+    guidance: '可多选上传，不限张数；单张不超过 5MB，可排序、显示与隐藏。',
   },
 ];
 const RESERVED_PROMOTION_TAG_CODES = new Set(['HOT_FOOD']);
 
 const merchantId = computed(() => String(route.params.id ?? ''));
 const merchant = computed(() => detail.value?.merchant);
+const hasServiceContent = computed(() => {
+  if (merchant.value?.contentTemplate) return merchant.value.contentTemplate !== 'RESTAURANT';
+  return Boolean(merchant.value?.businessType?.code) && !['FOOD_SERVICE', 'CHINESE_RESTAURANT', 'NOODLE_SNACK', 'VIETNAMESE_FOOD', 'COFFEE_TEA', 'RESTAURANT', 'CAKE'].includes(merchant.value?.businessType?.code ?? '');
+});
 const usesMenuSignatureCategory = computed(() =>
   merchant.value?.merchantMode === 'MANAGED'
   && merchant.value?.claimStatus === 'CLAIMED',
@@ -246,7 +257,7 @@ const currentAccountPhone = computed(() => merchant.value?.account ?? '');
 const sections: Array<{ key: EditorSection; label: string; danger?: boolean }> = [
   { key: 'profile', label: '商家资料' },
   { key: 'businessHours', label: '营业时间' },
-  { key: 'images', label: '图库与招牌菜' },
+  { key: 'images', label: '图库与展示内容' },
   { key: 'tags', label: '标签与推荐' },
   { key: 'capabilities', label: '能力设置' },
   { key: 'account', label: '账号与状态' },
@@ -390,7 +401,7 @@ const selectableBusinessTypes = computed(() => {
       .map((item) => item.parentId)
       .filter((value): value is string => Boolean(value)),
   );
-  return businessTypes.value.filter((item) => item.enabled && !parentIds.has(item.id) && item.code !== 'FOOD_SERVICE');
+  return businessTypes.value.filter((item) => item.enabled && (item.code === 'FOOD_SERVICE' || !parentIds.has(item.id)));
 });
 const coverImage = computed(() =>
   merchant.value?.images.find((image) => image.imageType === 'COVER' && image.isVisible),
@@ -404,13 +415,20 @@ const contentImages = computed(() =>
     .sort((left, right) => left.sortOrder - right.sortOrder || Number(left.id) - Number(right.id)),
 );
 const contentImageSections = computed(() =>
-  CONTENT_IMAGE_SECTION_CONFIG.map((section) => {
+  CONTENT_IMAGE_SECTION_CONFIG
+    .filter(section => !hasServiceContent.value || ['STORE', 'ENVIRONMENT'].includes(section.type) || contentImages.value.some(image => image.imageType === section.type))
+    .map((original) => {
+    const section = !hasServiceContent.value ? original : {
+      ...original,
+      title: original.type === 'ENVIRONMENT' ? '门店环境' : original.type === 'PRODUCT' ? '其他展示图' : original.type === 'MENU' ? '资料图' : original.title,
+      guidance: ['PRODUCT', 'MENU'].includes(original.type) ? '此类图片保留供后台维护；前台服务内容请在下方添加展示项目。' : original.guidance,
+      showInGallery: ['STORE', 'ENVIRONMENT'].includes(original.type),
+    };
     const images = contentImages.value.filter((image) => image.imageType === section.type);
     const visibleImages = images.filter((image) => image.isVisible);
     const visibleCount = visibleImages.length;
     const frontendImagePositions = Object.fromEntries(
       visibleImages
-        .slice(0, section.displayLimit ?? visibleImages.length)
         .map((image, index) => [image.id, index + 1]),
     ) as Record<string, number>;
     return {
@@ -418,9 +436,6 @@ const contentImageSections = computed(() =>
       images,
       visibleCount,
       frontendImagePositions,
-      limitNotice: section.displayLimit && visibleCount > section.displayLimit
-        ? `当前有 ${visibleCount} 张展示中，小程序顶部最多展示前 ${section.displayLimit} 张；其余数据不会删除。`
-        : '',
     };
   }),
 );
@@ -505,8 +520,6 @@ const profileRisks = computed(() => {
     risks.push('缺少经纬度');
   }
   if (!item.coverUrl?.trim()) risks.push('缺少封面图片');
-  if (!item.nameVi?.trim()) risks.push('缺少越南语名称');
-  if (!item.nameEn?.trim()) risks.push('缺少英文名称');
   if (!item.phone?.trim()) risks.push('缺少联系电话');
   if (!item.contactName?.trim()) risks.push('缺少联系人');
   if (!(item.province || item.city)?.trim()) risks.push('缺少省份');
@@ -530,6 +543,7 @@ const profileChanged = computed(() => (
     || profileForm.nameVi !== profileFormSnapshot.nameVi
     || profileForm.nameEn !== profileFormSnapshot.nameEn
     || profileForm.businessTypeId !== profileFormSnapshot.businessTypeId
+    || [...profileForm.homepageCategoryKeys].sort().join('|') !== [...profileFormSnapshot.homepageCategoryKeys].sort().join('|')
     || profileForm.contactPhone !== profileFormSnapshot.contactPhone
     || profileForm.contactName !== profileFormSnapshot.contactName
     || profileForm.province !== profileFormSnapshot.province
@@ -656,6 +670,7 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
   profileForm.nameVi = item.nameVi ?? '';
   profileForm.nameEn = item.nameEn ?? '';
   profileForm.businessTypeId = item.businessType?.id ?? '';
+  profileForm.homepageCategoryKeys = [...(item.homepageCategoryKeys ?? [])];
   profileForm.merchantMode = item.merchantMode;
   profileForm.contactPhone = item.phone ?? '';
   profileForm.contactName = item.contactName ?? '';
@@ -679,6 +694,7 @@ function assignForms(nextDetail: PlatformMerchantDetailResponse) {
     nameVi: profileForm.nameVi,
     nameEn: profileForm.nameEn,
     businessTypeId: profileForm.businessTypeId,
+    homepageCategoryKeys: [...profileForm.homepageCategoryKeys],
     contactPhone: profileForm.contactPhone,
     contactName: profileForm.contactName,
     province: profileForm.province,
@@ -849,35 +865,39 @@ function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
-function openImagePicker(type: PlatformMerchantImage['imageType']) {
+async function openImagePicker(type: PlatformMerchantImage['imageType']) {
   imageUploadIntent.value = type === 'LOGO' || type === 'COVER'
     ? { mode: 'PRIMARY', imageType: type }
     : { mode: 'CREATE', imageType: type };
   imageUploadTarget.value = type;
+  await nextTick();
   imageFileInput.value?.click();
 }
 
-function openImageReplacement(image: PlatformMerchantImage) {
+async function openImageReplacement(image: PlatformMerchantImage) {
   imageUploadIntent.value = {
     mode: 'REPLACE',
     imageType: image.imageType,
     imageId: image.id,
   };
   imageUploadTarget.value = image.imageType;
+  await nextTick();
   imageFileInput.value?.click();
 }
 
 async function onImageSelected(event: Event) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = Array.from(input.files ?? []);
+  const file = files[0];
   const intent = imageUploadIntent.value;
+  const targetMerchantId = merchantId.value;
   if (!file) return;
   if (!intent) {
     imageMessage.value = '请选择要上传的图片类型';
     input.value = '';
     return;
   }
-  const validation = validateUploadImage(file);
+  const validation = intent.mode === 'CREATE' ? '' : validateUploadImage(file);
   if (validation) {
     imageMessage.value = validation;
     input.value = '';
@@ -910,13 +930,23 @@ async function onImageSelected(event: Event) {
       cleanupSucceeded = result.storageCleanupSucceeded;
       successMessage = '图库图片已替换，分类、排序和展示状态保持不变';
     } else {
-      await uploadPlatformMerchantContentImage(
-        merchantId.value,
-        intent.imageType as 'STORE' | 'PRODUCT' | 'ENVIRONMENT' | 'MENU',
-        file,
-      );
-      successMessage = '商家图库图片已添加';
+      const result = await uploadMerchantImageBatch(files, {
+        validate: validateUploadImage,
+        upload: selected => uploadPlatformMerchantContentImage(
+          targetMerchantId,
+          intent.imageType as 'STORE' | 'PRODUCT' | 'ENVIRONMENT' | 'MENU',
+          selected,
+        ),
+        errorMessage,
+        progress: (completed, total) => { imageUploadProgress.value = { completed, total }; },
+      });
+      successMessage = result.uploaded ? `已添加 ${result.uploaded} 张图库图片` : '没有图片上传成功';
+      if (result.errors.length) {
+        successMessage += `；${result.errors.length} 张失败：${result.errors.slice(0, 5).join('；')}`;
+        if (result.errors.length > 5) successMessage += `；另有 ${result.errors.length - 5} 张失败`;
+      }
     }
+    if (merchantId.value !== targetMerchantId) return;
     await refreshDetailPreservingDraft();
     imageMessage.value = cleanupSucceeded
       ? successMessage
@@ -925,6 +955,7 @@ async function onImageSelected(event: Event) {
     imageMessage.value = errorMessage(error);
   } finally {
     uploadingImage.value = false;
+    imageUploadProgress.value = null;
     input.value = '';
     imageUploadTarget.value = null;
     imageUploadIntent.value = null;
@@ -992,8 +1023,8 @@ function moveMerchantImage(image: PlatformMerchantImage, direction: -1 | 1) {
 }
 
 function validatePageDraft() {
-  if (!profileForm.nameZh.trim() || !profileForm.nameVi.trim() || !profileForm.nameEn.trim()) {
-    return '请完整填写中文名称、越南语名称和英文名称';
+  if (!profileForm.nameZh.trim()) {
+    return '请填写商家中文名称';
   }
   if (!profileForm.businessTypeId) return '请选择经营类型';
   if (!profileForm.contactPhone.trim() || !profileForm.contactName.trim()) {
@@ -1024,6 +1055,7 @@ function profilePayload() {
     nameVi: profileForm.nameVi || undefined,
     nameEn: profileForm.nameEn || undefined,
     businessTypeId: profileForm.businessTypeId || null,
+    homepageCategoryKeys: [...profileForm.homepageCategoryKeys],
     contactPhone: profileForm.contactPhone,
     contactName: profileForm.contactName || undefined,
     province: profileForm.province || undefined,
@@ -1570,8 +1602,9 @@ function backToList() {
           </header>
           <form class="editor-form-grid" @submit.prevent="saveAllChanges">
             <label><span>中文名称 <b>*</b></span><input v-model="profileForm.nameZh" required maxlength="120" /></label>
-            <label><span>越南语名称 <b>*</b></span><input v-model="profileForm.nameVi" required maxlength="120" /></label>
-            <label><span>英文名称 <b>*</b></span><input v-model="profileForm.nameEn" required maxlength="120" /></label>
+            <label><span>越南语名称（选填）</span><input v-model="profileForm.nameVi" maxlength="120" /></label>
+            <label><span>英文名称（选填）</span><input v-model="profileForm.nameEn" maxlength="120" /></label>
+            <fieldset class="merchant-category-fieldset"><legend>商家分类（可多选）</legend><p class="editor-helper">日料、泰国菜等可选择“餐饮美食”，再勾选实际菜系；保存后出现在对应分类列表中。</p><div class="merchant-category-options"><label v-for="option in homepageCategoryOptions" :key="option.value"><input v-model="profileForm.homepageCategoryKeys" type="checkbox" :value="option.value" />{{ option.label }}</label></div></fieldset>
             <label><span>经营类型</span><select v-model="profileForm.businessTypeId"><option value="">未设置</option><option v-for="item in selectableBusinessTypes" :key="item.id" :value="item.id">{{ item.nameZh }}</option></select></label>
             <label><span>联系电话 <b>*</b></span><input v-model="profileForm.contactPhone" required maxlength="32" /></label>
             <label><span>联系人 <b>*</b></span><input v-model="profileForm.contactName" required maxlength="64" /></label>
@@ -1653,7 +1686,7 @@ function backToList() {
             <div><h2>商家图库</h2><p>图片按用途分类归档；分类、排序和展示状态决定小程序中的位置。</p></div>
           </header>
           <p v-if="imageMessage" :class="['message', 'image-local-message', { 'is-success': imageMessageIsSuccess }]" role="status" aria-live="polite">{{ imageMessage }}</p>
-          <input ref="imageFileInput" class="hidden-file-input" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
+          <input ref="imageFileInput" class="hidden-file-input" type="file" :multiple="imageUploadIntent?.mode === 'CREATE'" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" @change="onImageSelected" />
           <div class="gallery-primary">
             <article class="gallery-primary-item">
               <div class="gallery-primary-media">
@@ -1697,20 +1730,19 @@ function backToList() {
               <div class="gallery-classification-head">
                 <div class="gallery-classification-title">
                   <strong>{{ section.title }}</strong>
-                  <span class="gallery-count">{{ section.visibleCount }} 张展示中<template v-if="section.displayLimit"> · 前台最多 {{ section.displayLimit }} 张</template></span>
+                  <span class="gallery-count">{{ section.visibleCount }} 张已开启展示</span>
                   <small>{{ section.guidance }}</small>
                 </div>
                 <button class="small secondary" type="button" :disabled="uploadingImage" @click="openImagePicker(section.type)">
-                  {{ uploadingImage && imageUploadIntent?.mode === 'CREATE' && imageUploadTarget === section.type ? '上传中…' : '上传' }}
+                  {{ uploadingImage && imageUploadIntent?.mode === 'CREATE' && imageUploadTarget === section.type ? `上传中 ${imageUploadProgress?.completed ?? 0}/${imageUploadProgress?.total ?? 0}` : '上传图片' }}
                 </button>
               </div>
-              <p v-if="section.limitNotice" class="editor-inline-warning">{{ section.limitNotice }}</p>
               <div v-if="section.images.length" class="gallery-thumbs">
                 <article v-for="image in section.images" :key="image.id" class="gallery-thumb" :class="{ 'is-hidden': !image.isVisible }">
                   <div class="gallery-thumb-media">
                     <img :src="resolveMediaUrl(image.imageUrl)" :alt="image.titleZh || image.imageType" />
-                    <span v-if="image.isVisible && section.displayLimit" :class="['gallery-position', { 'is-over-limit': !section.frontendImagePositions[image.id] }]">
-                      {{ section.frontendImagePositions[image.id] ? `前台第 ${section.frontendImagePositions[image.id]} 张` : '超出顶部图库展示上限' }}
+                    <span v-if="image.isVisible && section.showInGallery" class="gallery-position">
+                      {{ `前台第 ${section.frontendImagePositions[image.id]} 张` }}
                     </span>
                   </div>
                   <div class="gallery-thumb-controls">
@@ -1736,7 +1768,8 @@ function backToList() {
         </section>
 
         <section id="merchant-section-signatureDishes" class="editor-section editor-section--child">
-          <PlatformMerchantSignatureDishesSection
+          <PlatformMerchantServiceItemsSection v-if="hasServiceContent" :merchant-id="merchantId" :business-type-code="merchant?.businessType?.code" />
+          <PlatformMerchantSignatureDishesSection v-else
             :merchant-id="merchantId"
             :uses-menu-signature-category="usesMenuSignatureCategory"
           />
@@ -2111,6 +2144,10 @@ function backToList() {
 </template>
 
 <style scoped>
+.merchant-category-fieldset { grid-column: 1 / -1; border: 1px solid #e4eae6; border-radius: 12px; padding: 12px 16px; }
+.merchant-category-options { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.merchant-category-options label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.merchant-category-options input { width: 16px; height: 16px; margin: 0; }
 .merchant-editor-header {
   position: sticky;
   top: 0;
@@ -3057,10 +3094,6 @@ function backToList() {
   color: #ffffff;
   font-size: 11px;
   font-weight: 600;
-}
-
-.gallery-position.is-over-limit {
-  background: rgb(180 110 30 / 90%);
 }
 
 .gallery-thumb-controls {

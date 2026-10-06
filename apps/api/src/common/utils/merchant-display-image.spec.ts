@@ -3,9 +3,18 @@ import {
   MERCHANT_DISPLAY_IMAGE_MAX_DIMENSION,
   isCurrentMerchantDisplayImageUrl,
   optimizeMerchantDisplayImage,
+  optimizeMerchantCardImage,
+  merchantCardImageUrl,
 } from './merchant-display-image';
 
 describe('merchant display image optimization', () => {
+  it('adds a smaller card copy while retaining the larger gallery image URL', async () => {
+    const source = await sharp({ create: { width: 1440, height: 960, channels: 3, background: '#997766' } }).webp().toBuffer();
+    const card = await optimizeMerchantCardImage(source);
+    expect(await sharp(card).metadata()).toMatchObject({ format: 'webp', width: 480, height: 320 });
+    expect(merchantCardImageUrl('/uploads/merchants/merchant-a-display-v1-1440.webp')).toBe('/uploads/merchants/merchant-a-card-v1-480.webp');
+    expect(await sharp(source).metadata()).toMatchObject({ width: 1440 });
+  });
   it('creates a clear bounded WebP for MiniApp merchant galleries', async () => {
     const original = await sharp({
       create: {

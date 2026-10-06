@@ -269,12 +269,14 @@ test('19 favorite icon source and selected-state binding are unchanged', () => {
   assert.match(detail, /:aria-pressed="favoriteState"/);
 });
 
-test('20 sticky action and ordering layout remain unchanged', () => {
+test('20 sticky actions retain restaurant order gates alongside service consultation', () => {
   const detail = fs.readFileSync(
     path.join(miniappRoot, 'src/pages/merchant/detail.vue'),
     'utf8',
   );
-  assert.match(detail, /<view :class="\['sticky-actions', \{ 'has-order-ctas': hasBottomCta \}\]">/);
+  assert.match(detail, /<view :class="\['sticky-actions', \{ 'has-order-ctas': hasBottomCta, 'has-phone-cta': !isRestaurantTemplate \}\]">/);
+  assert.match(detail, /const canOpenPickup = computed\(\(\) => isRestaurantTemplate\.value && orderingVisibility\.value\.pickupCtaVisible\)/);
+  assert.match(detail, /const canOpenDelivery = computed\(\(\) => isRestaurantTemplate\.value && orderingVisibility\.value\.deliveryCtaVisible\)/);
   assert.match(detail, /<view v-if="hasBottomCta" class="sticky-orders">/);
   assert.match(detail, /\.sticky-orders \.pickup \{[\s\S]*background: var\(--brand-soft\);/);
   assert.match(detail, /\.sticky-orders \.delivery \{[\s\S]*background: var\(--brand-deep\);/);

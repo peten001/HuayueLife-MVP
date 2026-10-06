@@ -4,6 +4,18 @@ export const MERCHANT_DISPLAY_IMAGE_SPEC_VERSION = 'v1-1440';
 export const MERCHANT_DISPLAY_IMAGE_MAX_DIMENSION = 1440;
 export const MERCHANT_DISPLAY_IMAGE_DEFAULT_QUALITY = 82;
 export const MERCHANT_DISPLAY_IMAGE_SOFT_TARGET_BYTES = 320 * 1024;
+export const MERCHANT_CARD_IMAGE_SUFFIX = '-card-v1-480.webp';
+
+export function merchantCardImageUrl(displayUrl: string) {
+  return displayUrl.replace(/-display-v1-1440\.webp$/, MERCHANT_CARD_IMAGE_SUFFIX);
+}
+
+export async function optimizeMerchantCardImage(input: Buffer) {
+  return sharp(input, { failOn: 'error' }).rotate()
+    .resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 76, alphaQuality: 90, effort: 4, smartSubsample: true })
+    .toBuffer();
+}
 
 const ENCODE_ATTEMPTS = [
   { maxDimension: 1440, quality: 82 },

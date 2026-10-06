@@ -6,6 +6,8 @@ import sharp = require('sharp');
 import {
   MERCHANT_DISPLAY_IMAGE_SPEC_VERSION,
   optimizeMerchantDisplayImage,
+  merchantCardImageUrl,
+  optimizeMerchantCardImage,
 } from '../../common/utils/merchant-display-image';
 
 export type UploadedImage = {
@@ -104,10 +106,14 @@ export class PlatformUploadsService {
     }
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 24);
     const fileName = `merchant-${sourceHash}-display-${MERCHANT_DISPLAY_IMAGE_SPEC_VERSION}.webp`;
+    const cardImage = await optimizeMerchantCardImage(optimized.buffer);
     const targetDir = join(options.rootDir ?? process.cwd(), 'public', 'uploads', 'merchants');
     if (!options.dryRun) {
       await mkdir(targetDir, { recursive: true });
-      await writeFile(join(targetDir, fileName), optimized.buffer);
+      await Promise.all([
+        writeFile(join(targetDir, fileName), optimized.buffer),
+        writeFile(join(targetDir, merchantCardImageUrl(fileName)), cardImage),
+      ]);
     }
 
     return {

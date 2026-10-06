@@ -9,6 +9,7 @@ import {
   IsString,
   Max,
   MaxLength,
+  Matches,
   Min,
 } from 'class-validator';
 import {
@@ -22,7 +23,7 @@ import {
  * Public discovery accepts these legacy query names for compatibility, but the
  * values are interpreted only as operational-region filters.
  */
-const OPERATIONAL_REGION_QUERY_VALUES = [
+export const OPERATIONAL_REGION_QUERY_VALUES = [
   '北江',
   '北宁',
   'Bac Giang',
@@ -94,6 +95,12 @@ export class NearbyMerchantsQueryDto {
   @IsOptional()
   @IsIn(HOMEPAGE_CATEGORY_KEYS)
   homepageCategoryKey?: HomepageCategoryKey;
+
+  @IsOptional() @Matches(/^[a-z][a-z0-9_-]{0,47}$/)
+  exploreCategory?: string;
+
+  @IsOptional() @Matches(/^[a-z][a-z0-9_-]{0,47}$/)
+  exploreTopic?: string;
 
   @IsOptional()
   @Transform(({ value }) => String(value ?? '').trim())
