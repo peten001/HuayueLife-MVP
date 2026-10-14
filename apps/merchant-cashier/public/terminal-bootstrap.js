@@ -106,9 +106,16 @@
     brand.className = 'cashier-boot__brand';
     brand.setAttribute('aria-hidden', 'true');
     var brandImage = document.createElement('img');
-    brandImage.src = '/yunqiao-cashier-splash.png';
+    var kds = document.documentElement.getAttribute('data-terminal-kind') === 'kds';
+    brandImage.src = kds ? '/yunqiao-cashier-mark.png' : '/yunqiao-cashier-splash.png';
     brandImage.alt = '';
     brand.appendChild(brandImage);
+    if (kds) {
+      var name = document.createElement('strong');
+      name.className = 'kds-boot-name';
+      name.textContent = 'YunQiao KDS';
+      brand.appendChild(name);
+    }
     var brandSpinner = document.createElement('span');
     brandSpinner.className = 'cashier-boot__brand-spinner';
     brand.appendChild(brandSpinner);
@@ -123,7 +130,8 @@
     spinner.setAttribute('aria-hidden', 'true');
     var title = document.createElement('strong');
     title.className = 'cashier-boot__title';
-    title.textContent = '正在打开 Web 收银台';
+    title.textContent = document.documentElement.getAttribute('data-terminal-kind') === 'kds'
+      ? '正在打开 YunQiao KDS' : '正在打开 Web 收银台';
     var message = document.createElement('span');
     message.id = 'cashier-boot-message';
     message.className = 'cashier-boot__message';

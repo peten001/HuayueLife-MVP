@@ -3,7 +3,7 @@ import { cashierConfig } from '@/config';
 </script>
 
 <template>
-  <div class="cashier-brand" data-testid="cashier-brand" aria-label="YunQiao Cashier">
+  <div class="cashier-brand" data-testid="cashier-brand" :aria-label="cashierConfig.brandName">
     <span class="cashier-brand__logo" aria-hidden="true">
       <img src="/yunqiao-cashier-mark.png" alt="" width="48" height="48" />
     </span>

@@ -421,6 +421,9 @@ model Merchant {
   signatureDishes         MerchantSignatureDish[]
   serviceItems            MerchantServiceItem[]
   reviews                 MerchantReview[]
+  kdsSetting              KdsSetting?
+  kdsTasks                KdsTask[]
+  kdsOperations           KdsOperation[]
 
   @@index([status])
   @@index([province, city, status])
@@ -831,6 +834,7 @@ model Order {
   settlementStatus         SettlementStatus @default(UNSETTLED) @map("settlement_status")
   acceptedAt               DateTime?        @map("accepted_at")
   readyAt                  DateTime?        @map("ready_at")
+  kdsPackedAt              DateTime?        @map("kds_packed_at")
   completedAt              DateTime?        @map("completed_at")
   businessDate             DateTime?        @map("business_date") @db.Date
   paymentMethod            PaymentMethod?   @map("payment_method")
@@ -861,6 +865,7 @@ model Order {
   cashierPushDeliveries  CashierPushDelivery[]
   cashierPushEvent       CashierPushEvent?
   review                 MerchantReview?
+  kdsTasks               KdsTask[]
 
   @@unique([userId, idempotencyKey])
   @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
@@ -949,6 +954,65 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+// Kitchen history survives OrderItem deletion and financial completion.
+// orderItemId is intentionally a logical reference, never a cascading FK.
+model KdsSetting {
+  merchantId     BigInt   @id @map("merchant_id")
+  enabled        Boolean @default(false)
+  activatedAt    DateTime? @map("activated_at")
+  timeoutMinutes Int @default(15) @map("timeout_minutes")
+  stations       Json
+  categoryRoutes Json @map("category_routes")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  merchant       Merchant @relation(fields: [merchantId], references: [id])
+  @@map("kds_settings")
+}
+
+model KdsTask {
+  id                BigInt @id @default(autoincrement())
+  merchantId        BigInt @map("merchant_id")
+  orderId           BigInt @map("order_id")
+  orderItemId       BigInt @map("order_item_id")
+  productId         BigInt? @map("product_id")
+  categoryId        BigInt? @map("category_id")
+  dishName          String @map("dish_name") @db.VarChar(120)
+  unit              String @default("份") @db.VarChar(32)
+  remark            String? @db.VarChar(200)
+  station           String @db.VarChar(40)
+  quantity          Int
+  madeQuantity      Int @default(0) @map("made_quantity")
+  servedQuantity    Int @default(0) @map("served_quantity")
+  cancelledQuantity Int @default(0) @map("cancelled_quantity")
+  version           Int @default(1)
+  startedAt         DateTime? @map("started_at")
+  urgentAt          DateTime? @map("urgent_at")
+  resolvedAt        DateTime? @map("resolved_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  merchant          Merchant @relation(fields: [merchantId], references: [id])
+  order             Order @relation(fields: [orderId], references: [id])
+  @@unique([merchantId, orderItemId])
+  @@index([merchantId, resolvedAt, createdAt])
+  @@index([orderId])
+  @@map("kds_tasks")
+}
+
+model KdsOperation {
+  id           String @id @db.VarChar(36)
+  merchantId   BigInt @map("merchant_id")
+  staffId      BigInt? @map("staff_id")
+  requestKey   String @map("request_key") @db.VarChar(80)
+  payloadHash  String @map("payload_hash") @db.Char(64)
+  kind         String @db.VarChar(16)
+  lines        Json
+  reversedAt   DateTime? @map("reversed_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  merchant     Merchant @relation(fields: [merchantId], references: [id])
+  @@unique([merchantId, requestKey])
+  @@index([merchantId, createdAt])
+  @@map("kds_operations")
 }
 
 model MerchantReview {

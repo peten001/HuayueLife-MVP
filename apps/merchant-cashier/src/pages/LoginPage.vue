@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useI18n, type Locale } from '@/i18n';
 import { useAuthStore } from '@/stores';
 import CashierBrand from '@/components/shell/CashierBrand.vue';
+import { isKdsTerminal, loginDestination } from '@/config/terminal';
 
 const route = useRoute();
 const router = useRouter();
@@ -17,7 +18,7 @@ const loading = ref(false);
 const errorText = ref(route.query.expired === '1' ? t('error.unauthorized') : '');
 
 function requestedRedirect() {
-  return typeof route.query.redirect === 'string' ? route.query.redirect : '/tables';
+  return loginDestination(route.query.redirect);
 }
 
 async function submit() {
@@ -54,7 +55,7 @@ function changeLocale(event: Event) {
     <section class="auth-card">
       <header class="auth-card__header">
         <div>
-          <h2>{{ t('auth.loginTitle') }}</h2>
+          <h2>{{ t(isKdsTerminal ? 'auth.kdsLoginTitle' : 'auth.loginTitle') }}</h2>
         </div>
         <label class="auth-language">
           <Languages :size="17" aria-hidden="true" />
@@ -66,7 +67,7 @@ function changeLocale(event: Event) {
         </label>
       </header>
 
-      <p class="auth-card__description">{{ t('auth.loginDescription') }}</p>
+      <p class="auth-card__description">{{ t(isKdsTerminal ? 'auth.kdsLoginDescription' : 'auth.loginDescription') }}</p>
 
       <form class="auth-form" @submit.prevent="submit">
         <label>

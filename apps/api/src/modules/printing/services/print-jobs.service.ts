@@ -1,4 +1,5 @@
 import { lockEffectivePrintTarget } from '../../orders/effective-order';
+import { kdsEnabled, syncKdsOrder } from '../../kds/kds-sync';
 import {
   BadRequestException,
   ConflictException,
@@ -491,6 +492,15 @@ export class PrintJobsService {
     tx: Prisma.TransactionClient,
     input: EnqueueAutomaticTriggerInput,
   ) {
+    const result = await this.enqueuePrintingTriggersForOrderTransition(tx, input);
+    await syncKdsOrder(tx, input.merchantId, input.orderId);
+    return result;
+  }
+
+  private async enqueuePrintingTriggersForOrderTransition(
+    tx: Prisma.TransactionClient,
+    input: EnqueueAutomaticTriggerInput,
+  ) {
     if (!this.automaticTriggeringEnabled()) return [];
     if (!(await this.merchantAutomaticCreationEnabled(input.merchantId, tx))) return [];
     const merchant = await tx.merchant.findUnique({
@@ -588,6 +598,18 @@ export class PrintJobsService {
     tx: Prisma.TransactionClient,
     input: EnqueueAutomaticProductionTriggerInput,
   ) {
+    const result = await this.enqueuePrintingProductionTriggersForOrderDelta(tx, input);
+    if (await kdsEnabled(tx, input.merchantId)) {
+      if (!result.length) await this.markProductionItemsNotified(tx, input.merchantId, input.orderId, input.itemDeltas);
+      await syncKdsOrder(tx, input.merchantId, input.orderId);
+    }
+    return result;
+  }
+
+  private async enqueuePrintingProductionTriggersForOrderDelta(
+    tx: Prisma.TransactionClient,
+    input: EnqueueAutomaticProductionTriggerInput,
+  ) {
     if (!this.automaticTriggeringEnabled()) return [];
     if (!(await this.merchantAutomaticCreationEnabled(input.merchantId, tx))) return [];
     const merchant = await tx.merchant.findUnique({
@@ -608,7 +630,7 @@ export class PrintJobsService {
     merchantId: bigint,
     tableSessionId: bigint,
   ): Promise<ProductionNotificationState> {
-    const [merchant, session, destinationCount] = await Promise.all([
+    const [merchant, session, destinationCount, kitchen] = await Promise.all([
       this.prisma.merchant.findUnique({
         where: { id: merchantId },
         select: { status: true, printingEnabled: true },
@@ -653,6 +675,7 @@ export class PrintJobsService {
           },
         },
       }),
+      kdsEnabled(this.prisma, merchantId),
     ]);
     if (!session) {
       throw new NotFoundException({
@@ -668,21 +691,19 @@ export class PrintJobsService {
       ),
     }));
     const pendingItemQuantity = pendingByOrder.reduce((sum, order) => sum + order.quantity, 0);
-    const unavailable = !this.flags.taskCenterEnabled()
-      || merchant?.status !== 'ACTIVE'
-      || !merchant.printingEnabled
-      || session.status !== 'OPEN';
+    const unavailable = merchant?.status !== 'ACTIVE' || session.status !== 'OPEN'
+      || (!kitchen && (!this.flags.taskCenterEnabled() || !merchant.printingEnabled));
     return {
       status: unavailable
         ? 'UNAVAILABLE'
         : pendingItemQuantity === 0
           ? 'UP_TO_DATE'
-          : destinationCount === 0
+          : destinationCount === 0 && !kitchen
             ? 'UNCONFIGURED'
             : 'READY',
       pendingItemQuantity,
       pendingOrderCount: pendingByOrder.filter((order) => order.quantity > 0).length,
-      configuredDestinationCount: destinationCount,
+      configuredDestinationCount: destinationCount + (kitchen ? 1 : 0),
     };
   }
 
@@ -692,8 +713,11 @@ export class PrintJobsService {
     createdByStaffId: bigint;
     requestKey: string;
   }) {
-    this.flags.assertTaskCenterEnabled();
-    await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    const kitchen = await kdsEnabled(this.prisma, input.merchantId);
+    if (!kitchen) {
+      this.flags.assertTaskCenterEnabled();
+      await this.settings.assertMerchantPrintingEnabled(input.merchantId);
+    }
     await this.requireOwnedStaff(
       this.prisma,
       input.merchantId,
@@ -761,8 +785,10 @@ export class PrintJobsService {
         };
       }
 
-      const rules = await this.productionRules(tx, input.merchantId, false);
-      if (rules.length === 0) {
+      const printMerchant = kitchen ? await tx.merchant.findUnique({ where: { id: input.merchantId }, select: { printingEnabled: true } }) : null;
+      const rules = kitchen && (!this.flags.taskCenterEnabled() || !printMerchant?.printingEnabled)
+        ? [] : await this.productionRules(tx, input.merchantId, false);
+      if (rules.length === 0 && !kitchen) {
         throw new BadRequestException({
           code: PRINTING_ERROR_CODES.CONFIG_INVALID,
           message: '请先配置并启用厨房或吧台打印机',
@@ -840,7 +866,7 @@ export class PrintJobsService {
           },
           select: { id: true },
         });
-        const triggers = await this.enqueueProductionTriggerRecords(tx, {
+        const triggers = rules.length ? await this.enqueueProductionTriggerRecords(tx, {
           merchantId: input.merchantId,
           orderId,
           orderStatusLogId: log.id,
@@ -850,7 +876,11 @@ export class PrintJobsService {
           rules,
           source: 'MANUAL',
           createdByStaffId: input.createdByStaffId,
-        });
+        }) : [];
+        if (kitchen) {
+          if (!rules.length) await this.markProductionItemsNotified(tx, input.merchantId, orderId, printDeltaItems);
+          await syncKdsOrder(tx, input.merchantId, orderId);
+        }
         triggerIds.push(...triggers.map(({ id }) => id));
       }
       return {

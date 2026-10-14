@@ -7,6 +7,7 @@ import {
   resolveCashierWorkspaceCapabilities,
 } from '@/domain';
 import { useAuthStore } from '@/stores/auth';
+import { isKdsTerminal } from '@/config/terminal';
 import {
   canonicalCashierRouteName,
   resolveCashierPresentationLocation,
@@ -24,7 +25,13 @@ declare module 'vue-router' {
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
+  routes: isKdsTerminal ? [
+    { path: '/login', name: 'login', component: () => import('@/pages/LoginPage.vue'), meta: { guestOnly: true } },
+    { path: '/change-password', name: 'change-password', component: () => import('@/pages/ChangePasswordPage.vue'), meta: { requiresAuth: true } },
+    { path: '/', name: 'kds', component: () => import('@/pages/KdsPage.vue'), meta: { requiresAuth: true } },
+    { path: '/kds', redirect: '/' },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
+  ] : [
     {
       path: '/login',
       name: 'login',
@@ -36,6 +43,12 @@ const router = createRouter({
       name: 'change-password',
       component: () => import('@/pages/ChangePasswordPage.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/kds',
+      name: 'kds',
+      component: () => import.meta.env.DEV ? import('@/pages/KdsPage.vue') : import('@/pages/KdsEntryPage.vue'),
+      meta: { requiresAuth: import.meta.env.DEV },
     },
     {
       path: '/',
@@ -125,7 +138,7 @@ router.beforeEach(async (to) => {
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return auth.mustChangePassword
       ? { name: 'change-password' }
-      : { name: 'tables' };
+      : { name: isKdsTerminal ? 'kds' : 'tables' };
   }
 
   if (
@@ -141,7 +154,7 @@ router.beforeEach(async (to) => {
     !auth.mustChangePassword &&
     to.name === 'change-password'
   ) {
-    return { name: 'tables' };
+    return { name: isKdsTerminal ? 'kds' : 'tables' };
   }
 
   if (auth.isAuthenticated && !auth.mustChangePassword) {

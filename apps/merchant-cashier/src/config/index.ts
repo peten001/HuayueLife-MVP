@@ -1,3 +1,5 @@
+import { isKdsTerminal } from './terminal';
+
 const DEFAULT_API_BASE_URL = import.meta.env.PROD
   ? 'https://api.huayueyouxuan.com/api/v1'
   : 'http://localhost:3001/api/v1';
@@ -7,7 +9,7 @@ function withoutTrailingSlash(value: string) {
 }
 
 export const cashierConfig = Object.freeze({
-  brandName: 'YunQiao Cashier',
+  brandName: isKdsTerminal ? 'YunQiao KDS' : 'YunQiao Cashier',
   apiBaseUrl: withoutTrailingSlash(
     import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL,
   ),
@@ -21,14 +23,15 @@ export const cashierConfig = Object.freeze({
   demoLabel: 'DEMO · 演示数据 / Dữ liệu demo / Demo data',
 });
 
+const storagePrefix = isKdsTerminal ? 'yunqiao_kds' : 'yunqiao_cashier';
 export const cashierStorageKeys = Object.freeze({
-  accessToken: 'yunqiao_cashier_access_token',
-  staffSession: 'yunqiao_cashier_staff_session',
-  locale: 'yunqiao_cashier_locale',
-  pendingOrderSnapshotPrefix: 'yunqiao_cashier_pending_orders',
-  soundEnabled: 'yunqiao_cashier_sound_enabled',
-  printRequestKeys: 'yunqiao_cashier_print_request_keys',
-  pwaInstallPromptDismissedUntil: 'yunqiao_cashier_pwa_install_prompt_dismissed_until',
+  accessToken: `${storagePrefix}_access_token`,
+  staffSession: `${storagePrefix}_staff_session`,
+  locale: `${storagePrefix}_locale`,
+  pendingOrderSnapshotPrefix: `${storagePrefix}_pending_orders`,
+  soundEnabled: `${storagePrefix}_sound_enabled`,
+  printRequestKeys: `${storagePrefix}_print_request_keys`,
+  pwaInstallPromptDismissedUntil: `${storagePrefix}_pwa_install_prompt_dismissed_until`,
 });
 
 export const CASHIER_UNAUTHORIZED_EVENT = 'yunqiao-cashier:unauthorized';

@@ -30,6 +30,7 @@ import { TablesModule } from './modules/tables/tables.module';
 import { AppConfigModule } from './modules/app-config/app-config.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { CashierPushModule } from './modules/cashier-push/cashier-push.module';
+import { KdsModule } from './modules/kds/kds.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { CashierPushModule } from './modules/cashier-push/cashier-push.module';
     ProductsModule,
     OrdersModule,
     CashierPushModule,
+    KdsModule,
     OrderChatModule,
     TablesModule,
     TableSessionsModule,

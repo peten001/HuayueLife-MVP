@@ -1,4 +1,5 @@
 import { effectiveOrderWhere, lockEffectivePrintTarget } from '../orders/effective-order';
+import { kdsEnabled, syncKdsOrder } from '../kds/kds-sync';
 import {
   BadRequestException,
   ConflictException,
@@ -699,6 +700,7 @@ export class MerchantOrdersService {
         // Clear it atomically so refresh/checkout/printing cannot reuse a
         // discount or rounding amount calculated from an older bill total.
         await this.clearSessionAdjustment(tx, session.id);
+        if (orderId) await syncKdsOrder(tx, merchantId, orderId);
         return {
           orderId,
           sessionId: session.id,
@@ -1294,6 +1296,9 @@ export class MerchantOrdersService {
         }
       }
 
+      for (const kitchenOrderId of new Set([...touchedOrderIds, ...(positiveOrderId ? [positiveOrderId] : [])])) {
+        await syncKdsOrder(tx, merchantId, kitchenOrderId);
+      }
       await this.clearSessionAdjustment(tx, sessionId);
       let after = await this.canonicalState.buildLockedWithClient(
         tx,
@@ -1505,6 +1510,16 @@ export class MerchantOrdersService {
       }
 
       const rule = this.resolveRule(action, order.orderType, order.status);
+      const kitchenSetting = order.orderType !== 'DINE_IN' && ['READY', 'START_DELIVERY', 'COMPLETE'].includes(action)
+        ? await kdsEnabled(tx, merchantId) : null;
+      const kitchenTracked = kitchenSetting && (order.createdAt >= (kitchenSetting.activatedAt ?? new Date()) ||
+        await tx.kdsTask.count({ where: { merchantId, orderId: id } }) > 0);
+      if (kitchenTracked) {
+        await tx.$queryRaw`SELECT id FROM orders WHERE id = ${id} AND merchant_id = ${merchantId} FOR UPDATE`;
+        await syncKdsOrder(tx, merchantId, id);
+        const packed = await tx.order.findUnique({ where: { id }, select: { kdsPackedAt: true } });
+        if (!packed?.kdsPackedAt) throw new ConflictException('请先在 KDS 完成所有档口制作并传菜');
+      }
       if (order.status !== rule.from) {
         throw new ConflictException(
           `订单当前状态为 ${order.status}，不能执行此操作`,
@@ -2102,6 +2117,7 @@ export class MerchantOrdersService {
       // Emptying a raw order never releases a DINE_IN table. Only the explicit
       // release-empty endpoint may close the still-open zero-item session.
       await this.clearSessionAdjustment(tx, orderRef.tableSessionId);
+      await syncKdsOrder(tx, merchantId, orderId);
 
       return { orderId, sessionId: orderRef.tableSessionId };
     });
@@ -2621,11 +2637,12 @@ export class MerchantOrdersService {
     return TRANSITIONS[action];
   }
 
-  private requireOrder(
+  private async requireOrder(
     tx: Prisma.TransactionClient,
     merchantId: bigint,
     id: bigint,
   ) {
+    await syncKdsOrder(tx, merchantId, id);
     return tx.order.findFirstOrThrow({
       where: effectiveOrderWhere({ id, merchantId }),
       include: this.detailInclude,

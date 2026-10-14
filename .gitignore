@@ -1,5 +1,6 @@
 node_modules/
 dist/
+apps/merchant-cashier/dist-kds/
 .env
 .env.local
 .env.*.local
