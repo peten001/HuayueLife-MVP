@@ -14,6 +14,7 @@ export interface KdsOrder {
 export interface KdsTask {
   id: string; orderId: string; orderItemId: string; productId: string | null;
   menuThumbnailUrl?: string | null;
+  dishNameVi?: string | null; dishNameEn?: string | null;
   dishName: string; unit: string; remark: string | null; station: string; quantity: number;
   madeQuantity: number; servedQuantity: number; cancelledQuantity: number;
   version: number; startedAt: string | null; urgentAt: string | null; createdAt: string;
@@ -22,7 +23,7 @@ export interface KdsTask {
 export interface KdsLine { taskId: string; version: number; quantity: number }
 export interface KdsOperation {
   id: string; staffId: string | null; kind: string; reversedAt: string | null; createdAt: string;
-  lines: { taskId: string; orderId: string; dishName: string; unit?: string; quantity: number; reason?: string; removedMade?: number; removedServed?: number; station?: string; orderNo?: string; tableNo?: string | null; orderType?: string }[];
+  lines: { taskId: string; orderId: string; dishName: string; dishNameVi?: string | null; dishNameEn?: string | null; unit?: string; quantity: number; reason?: string; removedMade?: number; removedServed?: number; station?: string; orderNo?: string; tableNo?: string | null; orderType?: string }[];
 }
 export interface KdsBoard {
   settings: KdsSettings; tasks: KdsTask[]; operations: KdsOperation[];

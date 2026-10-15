@@ -13,6 +13,7 @@ import KdsDetailRow from '@/features/kds/KdsDetailRow.vue';
 import CashierMerchantPanel from '@/components/shell/CashierMerchantPanel.vue';
 import { formatBusinessHoursRange, isWithinBusinessHours, resolveMerchantImageCandidates } from '@/domain/merchant';
 import { resolveMediaUrl } from '@/domain/media';
+import { resolveLocalizedOrderItemName } from '@/domain/localized-order-item';
 import { createKdsClock, kitchenWaitMinutes } from '@/features/kds/kds-clock';
 import { kdsRequestKey, kdsText, type KdsTextKey } from '@/features/kds/kds-text';
 import type { KdsBoard, KdsLine, KdsOperation, KdsOrderType, KdsSettings, KdsTask } from '@/features/kds/kds-types';
@@ -60,6 +61,9 @@ let soundObserved = false;
 const writeDisabled = computed(() => busy.value || Boolean(uncertainMutation.value) || !connected.value || !board.value?.settings.enabled);
 const canConfigure = computed(() => ['OWNER', 'MANAGER'].includes(auth.role ?? '') || auth.demoMode);
 const typeLabel = (orderType: KdsOrderType, short = false) => t(orderType === 'DINE_IN' ? 'dine' : orderType === 'PICKUP' ? short ? 'shortPickup' : 'pickup' : short ? 'shortDelivery' : 'delivery');
+const dishName = (dish: Pick<KdsTask, 'dishName' | 'dishNameVi' | 'dishNameEn'>) => resolveLocalizedOrderItemName({
+  productNameZhSnapshot: dish.dishName, productNameVi: dish.dishNameVi, productNameEn: dish.dishNameEn,
+}, locale.value, dish.dishName);
 function tableLabel(tableNo: string | null | undefined) { return locale.value === 'zh' ? `${tableNo ?? '—'} ${t('table')}` : `${t('table')} ${tableNo ?? '—'}`; }
 function orderLabel(task: KdsTask) { return task.order.orderType === 'DINE_IN' ? tableLabel(task.order.tableNo) : `#${task.order.pickupCode ?? task.order.orderNo}`; }
 const waitMinutes = (task: KdsTask) => kitchenWaitMinutes(task.createdAt, kitchenNow.value);
@@ -67,7 +71,7 @@ const overdue = (task: KdsTask) => waitMinutes(task) >= (board.value?.settings.t
 const scopeTasks = computed(() => (board.value?.tasks ?? []).filter(task => (!station.value || task.station === station.value) &&
   (!type.value || task.order.orderType === type.value)));
 function matchesSearch(task: KdsTask) {
-  return !search.value.trim() || [task.dishName, task.remark, task.order.customerRemark, task.order.tableNo, task.order.orderNo, task.order.pickupCode]
+  return !search.value.trim() || [task.dishName, task.dishNameVi, task.dishNameEn, task.remark, task.order.customerRemark, task.order.tableNo, task.order.orderNo, task.order.pickupCode]
     .some(value => value?.toLowerCase().includes(search.value.trim().toLowerCase()));
 }
 const tasks = computed(() => scopeTasks.value.filter(matchesSearch));
@@ -130,7 +134,7 @@ function lineMatches(line: KdsOperation['lines'][number]) {
   const task = board.value?.tasks.find(row => row.id === line.taskId);
   return (!station.value || (line.station ?? task?.station) === station.value) &&
     (!type.value || lineOrderType(line) === type.value) &&
-    (!search.value.trim() || [line.dishName, line.orderNo, line.tableNo].some(value => value?.toLowerCase().includes(search.value.trim().toLowerCase())));
+    (!search.value.trim() || [line.dishName, line.dishNameVi, line.dishNameEn, line.orderNo, line.tableNo].some(value => value?.toLowerCase().includes(search.value.trim().toLowerCase())));
 }
 const recordLanes = computed(() => {
   const operations = (board.value?.operations ?? []).filter(op => mode.value === 'returns' ? op.kind === 'RETURN'
@@ -364,7 +368,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
                 <span v-if="isAddition(group.visibleTasks)" class="warning">{{ t('added') }}</span></div>
               <div class="kds-order-columns">{{ t('remainingTotal') }}</div>
               <div class="kds-order-dishes"><p v-for="task in group.visibleTasks" :key="task.id" :class="{ 'kds-dish-finished': !pendingQuantity(task) }">
-                <span>{{ task.dishName }}<small v-if="task.remark">{{ task.remark }}</small></span>
+                <span>{{ dishName(task) }}<small v-if="task.remark">{{ task.remark }}</small></span>
                 <b>{{ pendingQuantity(task) }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</b></p></div>
               <footer>{{ t('pending') }} {{ group.quantity }} {{ tasksUnit(group.pendingTasks) }}<small>{{ station || t('allStations') }}</small></footer>
             </button>
@@ -374,7 +378,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           <div v-if="!cards.length" class="kds-empty">{{ t('noTasks') }}</div>
           <div v-else class="kds-grid">
             <button v-for="card in pageCards" :key="card.key" class="kds-card" :class="{ selected: selected === card.key, overdue: card.tasks.some(overdue) }" @click="choose(card.key)">
-              <strong>{{ card.name }}</strong><p v-if="card.remark">{{ card.remark }}</p>
+              <strong>{{ dishName(card.tasks[0]!) }}</strong><p v-if="card.remark">{{ card.remark }}</p>
               <div class="kds-badges"><span v-for="orderType in (['DINE_IN', 'PICKUP', 'DELIVERY'] as const)" v-show="badgeCount(card.tasks, orderType) > 0" :key="orderType" :class="orderType">{{ typeLabel(orderType, true) }} {{ badgeCount(card.tasks, orderType) }}</span><span v-if="isAddition(card.tasks)" class="warning">{{ t('added') }}</span><span v-if="card.tasks.some(task => task.urgentAt)" class="warning">{{ t('urge') }}</span></div>
               <div class="kds-card-total"><small>{{ card.station }}</small><b>{{ card.quantity }} {{ displayUnit(card.unit) }}</b></div>
             </button>
@@ -389,7 +393,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
                   :aria-label="`${typeLabel(group.order.orderType)} · ${orderLabel(group.servingTasks[0]!)} · ${t('serving')} ${group.servingQuantity}`"
                   :aria-pressed="selectedServingKey === group.key" @click="chooseServingOrder(group.key)">
                   <strong>{{ orderLabel(group.servingTasks[0]!) }}</strong>
-                  <p v-for="task in group.servingTasks" :key="task.id"><span>{{ task.dishName }}<small v-if="task.remark">{{ task.remark }}</small></span><b>{{ servingQuantity(task) }} {{ displayUnit(task.unit) }}</b></p>
+                  <p v-for="task in group.servingTasks" :key="task.id"><span>{{ dishName(task) }}<small v-if="task.remark">{{ task.remark }}</small></span><b>{{ servingQuantity(task) }} {{ displayUnit(task.unit) }}</b></p>
                   <footer>{{ t('serving') }} {{ group.servingQuantity }} {{ tasksUnit(group.servingTasks) }}</footer>
                 </button>
                 <div v-if="!lane.groups.length" class="kds-lane-empty">{{ t('emptyServing') }}</div>
@@ -404,7 +408,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <div class="kds-progress-grid">
                 <button v-for="group in lane.groups" :key="group.id" class="kds-order-card" :class="{ selected: selectedOrderId === group.id }" @click="selectedOrderId = group.id">
                   <strong>{{ orderLabel(group.tasks[0]!) }}</strong><span>{{ kitchenStatus(group.tasks) }}</span>
-                  <p v-for="task in group.tasks.filter(row => row.quantity > 0)" :key="task.id"><span>{{ task.dishName }}</span><b>{{ task.madeQuantity }} / {{ task.quantity }}</b></p>
+                  <p v-for="task in group.tasks.filter(row => row.quantity > 0)" :key="task.id"><span>{{ dishName(task) }}</span><b>{{ task.madeQuantity }} / {{ task.quantity }}</b></p>
                   <footer>{{ group.allMade ? kitchenStatus(group.tasks) : `${t('missing')} ${group.missing.length}` }}</footer>
                 </button>
                 <div v-if="!lane.groups.length" class="kds-lane-empty">{{ t('noTasks') }}</div>
@@ -419,7 +423,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <header class="kds-lane-title"><h2>{{ lane.orderType ? typeLabel(lane.orderType) : t('otherRecords') }}</h2><b>{{ lane.records.length }}</b></header>
               <div class="kds-records"><article v-for="operation in lane.records" :key="operation.id">
                 <header><strong>{{ operationLabel(operation) }}</strong><time :datetime="operation.createdAt" :title="new Date(operation.createdAt).toLocaleString(locale, { timeZone: 'Asia/Ho_Chi_Minh' })">{{ recordTime(operation.createdAt) }}</time></header>
-                <p v-for="(line, index) in operation.lines" :key="index"><span><strong>{{ line.dishName }}</strong><small>{{ recordOrderLabel(line) }}</small><small v-if="line.removedMade">{{ t('returnedMade') }} {{ line.removedMade }}</small><small v-if="line.reason">{{ line.reason }}</small></span><b>{{ line.quantity }} {{ displayUnit(line.unit) }}</b></p>
+                <p v-for="(line, index) in operation.lines" :key="index"><span><strong>{{ dishName(line) }}</strong><small>{{ recordOrderLabel(line) }}</small><small v-if="line.removedMade">{{ t('returnedMade') }} {{ line.removedMade }}</small><small v-if="line.reason">{{ line.reason }}</small></span><b>{{ line.quantity }} {{ displayUnit(line.unit) }}</b></p>
               </article><div v-if="!lane.records.length" class="kds-lane-empty">{{ t('emptyRecords') }}</div></div>
             </section>
           </div>
@@ -428,7 +432,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
       <aside v-if="mode !== 'records' && mode !== 'returns'" class="kds-detail">
         <template v-if="selectedKitchenOrder && mode === 'orderBump'">
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in selectedKitchenOrder.visibleTasks" :key="task.id" :title="task.dishName"
+            <KdsDetailRow v-for="task in selectedKitchenOrder.visibleTasks" :key="task.id" :title="dishName(task)"
               :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
               <template #badges><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span></template>
               <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</template>
@@ -437,9 +441,9 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
                 <p v-if="selectedKitchenOrder.orders.length > 1" class="kds-original-order">#{{ task.order.orderNo }}</p>
               </template>
               <template v-if="canMakeKitchenTask(task)" #controls>
-                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishMake')" :aria-label="`${t('dishMake')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareDish(task)">{{ t('quickMake') }}</button>
+                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishMake')" :aria-label="`${t('dishMake')} ${dishName(task)} · ${orderLabel(task)}`" @click="prepareDish(task)">{{ t('quickMake') }}</button>
                 <KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="pendingQuantity(task)"
-                  :disabled="writeDisabled" :label="`${task.dishName} · ${orderLabel(task)} ${t('quantity')}`"
+                  :disabled="writeDisabled" :label="`${dishName(task)} · ${orderLabel(task)} ${t('quantity')}`"
                   @update:model-value="quantityChanged(task, $event)" />
               </template>
             </KdsDetailRow>
@@ -456,16 +460,16 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <template v-else-if="selectedServingOrder && mode === 'serving'">
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in selectedServingOrder.servingTasks" :key="task.id" class="kds-serving-detail-card"
-              :title="task.dishName" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
+              :title="dishName(task)" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
               <template #progress><span class="kds-serving-count">{{ t('serving') }} <b>{{ servingQuantity(task) }} {{ displayUnit(task.unit) }}</b></span></template>
               <template #notes>
                 <p v-if="task.remark || task.order.customerRemark" class="kds-dish-remark">{{ [task.remark, task.order.customerRemark].filter(Boolean).join(' · ') }}</p>
                 <p v-if="selectedServingOrder.orders.length > 1" class="kds-original-order">#{{ task.order.orderNo }}</p>
               </template>
               <template #controls>
-                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishServe')" :aria-label="`${t('dishServe')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareServe(task)">{{ t('quickServe') }}</button>
+                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishServe')" :aria-label="`${t('dishServe')} ${dishName(task)} · ${orderLabel(task)}`" @click="prepareServe(task)">{{ t('quickServe') }}</button>
                 <KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="servingQuantity(task)" :disabled="writeDisabled"
-                  :label="`${task.dishName} · ${orderLabel(task)} ${t('serveQuantity')}`" @update:model-value="servingQuantityChanged(task, $event)" />
+                  :label="`${dishName(task)} · ${orderLabel(task)} ${t('serveQuantity')}`" @update:model-value="servingQuantityChanged(task, $event)" />
               </template>
             </KdsDetailRow>
           </div>
@@ -476,7 +480,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         </template>
         <template v-else-if="selectedOrder && mode === 'orders'">
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="task.dishName" :menu-thumbnail-url="task.menuThumbnailUrl">
+            <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="dishName(task)" :menu-thumbnail-url="task.menuThumbnailUrl">
               <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} · {{ t('passed') }} {{ task.servedQuantity }}</template>
               <template #notes><p v-if="task.remark" class="kds-dish-remark">{{ task.remark }}</p></template>
             </KdsDetailRow>
@@ -484,7 +488,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           </div>
         </template>
         <template v-else-if="selectedCard && mode === 'dishBump'">
-          <h2>{{ selectedCard.name }} <span>{{ selectedCard.quantity }} {{ displayUnit(selectedCard.unit) }}</span></h2><p v-if="selectedCard.remark">{{ selectedCard.remark }}</p>
+          <h2>{{ dishName(selectedCard.tasks[0]!) }} <span>{{ selectedCard.quantity }} {{ displayUnit(selectedCard.unit) }}</span></h2><p v-if="selectedCard.remark">{{ selectedCard.remark }}</p>
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in detailTasks" :key="task.id" :title="`${typeLabel(task.order.orderType)} · ${orderLabel(task)}`" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
               <template #badges><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span></template>

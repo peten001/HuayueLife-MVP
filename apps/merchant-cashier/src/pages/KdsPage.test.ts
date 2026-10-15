@@ -6,6 +6,7 @@ import type { KdsBoard, KdsLine } from '@/features/kds/kds-types';
 import { getKdsBoard, runKdsAction, saveKdsSettings } from '@/api/kds';
 import { CashierApiError } from '@/api/error';
 import { setLocale } from '@/i18n';
+import { kdsText } from '@/features/kds/kds-text';
 
 const testAuth = vi.hoisted(() => ({ role: 'OWNER', profile: null as null | {
   nameZh: string; nameVi: string; coverUrl: string; businessHours: Record<string, string[]>;
@@ -33,6 +34,40 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it.each(['vi','en'] as const)('switches dish names and searches in %s across preparation, summary, serving, progress and records', async language => {
+    const first=data.tasks[0]!;
+    const translated={dishNameVi:'Thịt heo xào ớt',dishNameEn:'Pepper pork'};
+    data.tasks.filter(task=>task.productId===first.productId).forEach(task=>Object.assign(task,translated));
+    first.madeQuantity=1;
+    data.operations=[{id:'translated-record',staffId:'1',kind:'MAKE',reversedAt:null,createdAt:data.serverTime,
+      lines:[{taskId:first.id,orderId:first.orderId,dishName:first.dishName,...translated,quantity:1,orderType:'DINE_IN',tableNo:'01'}]}];
+    await open(); await wrapper.get('.kds-order-card').trigger('click');
+    await wrapper.get('.kds-detail-card input').setValue('1');
+    setLocale(language); await flushPromises();
+    const name=language==='vi'?translated.dishNameVi:translated.dishNameEn;
+    expect(wrapper.get('.kds-order-card').text()).toContain(name);
+    expect(wrapper.get('.kds-detail-card strong').text()).toBe(name);
+    expect((wrapper.get('.kds-detail-card input').element as HTMLInputElement).value).toBe('1');
+    expect(wrapper.get('.kds-detail').text()).toContain('烤牛肉串'); // Missing translation falls back to the snapshot.
+    expect(runKdsAction).not.toHaveBeenCalled();
+    await button(kdsText(language,'dishBump')); await wrapper.get('.kds-card').trigger('click');
+    expect(wrapper.get('.kds-card > strong').text()).toBe(name);
+    expect(wrapper.get('.kds-detail h2').text()).toContain(name);
+    await button(kdsText(language,'serving')); await wrapper.get('.kds-serving-card').trigger('click');
+    expect(wrapper.get('.kds-serving-card').text()).toContain(name);
+    expect(wrapper.get('.kds-detail-card strong').text()).toBe(name);
+    await button(kdsText(language,'orders')); await wrapper.get('.kds-order-card').trigger('click');
+    expect(wrapper.get('.kds-order-card').text()).toContain(name);
+    expect(wrapper.get('.kds-detail-card strong').text()).toBe(name);
+    await button(kdsText(language,'records'));
+    expect(wrapper.get('.kds-records').text()).toContain(name);
+    await wrapper.get('.kds-search input').setValue(name);
+    expect(wrapper.findAll('.kds-records article')).toHaveLength(1);
+    await button(kdsText(language,'orderBump'));
+    expect(wrapper.findAll('.kds-order-card')).toHaveLength(4);
+    setLocale('zh'); await flushPromises();
+    expect(wrapper.get('.kds-order-card').text()).toContain(first.dishName);
+  });
   it('uses compressed dish images in preparation, serving and read-only details without repeated table or station headings', async () => {
     const first = data.tasks[0]!;
     first.menuThumbnailUrl = 'https://example.test/uploads/product-thumbnails/kds-menu.webp';

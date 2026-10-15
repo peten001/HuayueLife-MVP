@@ -56,19 +56,36 @@ export class KdsService {
       this.prisma.kdsOperation.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: 200 }),
       this.prisma.category.findMany({ where: { merchantId }, select: { id: true, nameZh: true }, orderBy: { sortOrder: 'asc' } }),
     ]);
-    const productIds = [...new Set(tasks.flatMap(task => task.productId === null ? [] : [task.productId]))];
+    const visibleTaskIds = new Set(tasks.map(task => task.id.toString()));
+    const historyTaskIds = [...new Set(operations.flatMap(operation => Array.isArray(operation.lines)
+      ? operation.lines.flatMap(line => line && typeof line === 'object' && !Array.isArray(line) &&
+        typeof line.taskId === 'string' && /^\d+$/.test(line.taskId) && !visibleTaskIds.has(line.taskId) ? [line.taskId] : []) : []))];
+    // Recent records may refer to tasks outside the active board; keep their original IDs and snapshots.
+    const historyTasks = historyTaskIds.length ? await this.prisma.kdsTask.findMany({
+      where: { merchantId, id: { in: historyTaskIds.map(id => BigInt(id)) } }, select: { id: true, productId: true },
+    }) : [];
+    const taskProducts = new Map([...tasks, ...historyTasks].map(task => [task.id.toString(), task.productId]));
+    const productIds = [...new Set([...taskProducts.values()].flatMap(id => id === null ? [] : [id]))];
     // Read existing compressed menu images in one merchant-scoped query; never fall back to originals.
     const products = productIds.length ? await this.prisma.product.findMany({
       where: { merchantId, id: { in: productIds }, deletedAt: null },
-      select: { id: true, menuThumbnailUrl: true },
+      select: { id: true, menuThumbnailUrl: true, nameVi: true, nameEn: true },
     }) : [];
-    const thumbnails = new Map(products.map(product => [product.id, product.menuThumbnailUrl]));
+    const productDisplay = new Map(products.map(product => [product.id, product]));
+    const translatedNames = (productId: bigint | null | undefined) => {
+      const product = productId == null ? undefined : productDisplay.get(productId);
+      return { dishNameVi: product?.nameVi ?? null, dishNameEn: product?.nameEn ?? null };
+    };
     return {
       settings: settings ?? { enabled: false, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
-      tasks: tasks.map(task => ({ ...task, menuThumbnailUrl: task.productId === null ? null : thumbnails.get(task.productId) ?? null, order: {
+      tasks: tasks.map(task => ({ ...task, ...translatedNames(task.productId),
+        menuThumbnailUrl: task.productId === null ? null : productDisplay.get(task.productId)?.menuThumbnailUrl ?? null, order: {
         ...task.order, tableNo: task.order.table?.tableNo ?? task.order.tableNoSnapshot,
         pickupCode: task.order.orderType === 'PICKUP' ? task.order.orderNo.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase() : null,
-      } })), operations, categories, serverTime: new Date(),
+      } })), operations: operations.map(operation => ({ ...operation, lines: Array.isArray(operation.lines)
+        ? operation.lines.map(line => line && typeof line === 'object' && !Array.isArray(line)
+          ? { ...line, ...translatedNames(taskProducts.get(String(line.taskId))) } : line) : operation.lines,
+      })), categories, serverTime: new Date(),
     };
   }
 

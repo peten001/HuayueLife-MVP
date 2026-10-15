@@ -4,7 +4,7 @@ import { KdsService } from './kds.service';
 describe('KDS board menu thumbnails', () => {
   const thumbnail = '/uploads/product-thumbnails/21/dish-menu.webp';
   const task = (id: bigint, productId: bigint | null) => ({
-    id, productId, order: { orderType: 'DINE_IN', table: { tableNo: '01' }, tableNoSnapshot: '01' },
+    id, productId, dishName: '原始中文菜名', order: { orderType: 'DINE_IN', table: { tableNo: '01' }, tableNoSnapshot: '01' },
   });
   function setup(tasks: ReturnType<typeof task>[]) {
     const prisma = {
@@ -14,7 +14,8 @@ describe('KDS board menu thumbnails', () => {
       kdsOperation: { findMany: jest.fn().mockResolvedValue([]) },
       category: { findMany: jest.fn().mockResolvedValue([]) },
       product: { findMany: jest.fn().mockResolvedValue([
-        { id: 21n, menuThumbnailUrl: thumbnail }, { id: 22n, menuThumbnailUrl: null },
+        { id: 21n, menuThumbnailUrl: thumbnail, nameVi: 'Thịt xào', nameEn: 'Stir-fried pork' },
+        { id: 22n, menuThumbnailUrl: null, nameVi: null, nameEn: null },
       ]) },
       $transaction: jest.fn(),
     };
@@ -28,10 +29,12 @@ describe('KDS board menu thumbnails', () => {
     expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.product.findMany).toHaveBeenCalledWith({
       where: { merchantId: 9n, id: { in: [21n, 22n, 23n] }, deletedAt: null },
-      select: { id: true, menuThumbnailUrl: true },
+      select: { id: true, menuThumbnailUrl: true, nameVi: true, nameEn: true },
     });
     expect(board.tasks.map(row => row.menuThumbnailUrl)).toEqual([thumbnail, thumbnail, null, null, null]);
     expect(board.tasks[0].order.tableNo).toBe('01');
+    expect(board.tasks[0]).toMatchObject({dishName:'原始中文菜名',dishNameVi:'Thịt xào',dishNameEn:'Stir-fried pork'});
+    expect(board.tasks.slice(2).every(row => row.dishNameVi === null && row.dishNameEn === null)).toBe(true);
     expect(board.tasks.every(row => !('imageUrl' in row))).toBe(true);
   });
 
@@ -39,5 +42,27 @@ describe('KDS board menu thumbnails', () => {
     const { service, prisma } = setup([task(1n, null)]);
     expect((await service.board(9n)).tasks[0].menuThumbnailUrl).toBeNull();
     expect(prisma.product.findMany).not.toHaveBeenCalled();
+  });
+
+  it('localizes recent records outside the active board by task ID while preserving historical Chinese snapshots', async () => {
+    const {service,prisma}=setup([task(1n,21n)]);
+    prisma.kdsTask.findMany.mockResolvedValueOnce([task(1n,21n)]).mockResolvedValueOnce([
+      {id:90n,productId:21n},
+    ]);
+    const lines=[{taskId:'1',dishName:'当前单中文',quantity:1},{taskId:'90',dishName:'历史单中文',quantity:2},
+      {taskId:'95',dishName:'已删除菜品',quantity:1},{taskId:'legacy-id',dishName:'旧记录',quantity:1}];
+    prisma.kdsOperation.findMany.mockResolvedValue([{id:'history',lines}]);
+    const board=await service.board(9n);
+    expect(prisma.kdsTask.findMany).toHaveBeenNthCalledWith(2,{
+      where:{merchantId:9n,id:{in:[90n,95n]}},select:{id:true,productId:true},
+    });
+    expect(board.operations[0].lines).toEqual([
+      {...lines[0],dishNameVi:'Thịt xào',dishNameEn:'Stir-fried pork'},
+      {...lines[1],dishNameVi:'Thịt xào',dishNameEn:'Stir-fried pork'},
+      {...lines[2],dishNameVi:null,dishNameEn:null},
+      {...lines[3],dishNameVi:null,dishNameEn:null},
+    ]);
+    expect(lines[1].dishName).toBe('历史单中文');
+    expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
   });
 });
