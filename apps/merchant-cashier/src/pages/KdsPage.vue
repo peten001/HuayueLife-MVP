@@ -24,6 +24,8 @@ const { locale, setLocale, t: commonText } = useI18n();
 const t = (key: KdsTextKey) => kdsText(locale.value, key);
 const board = ref<KdsBoard | null>(null);
 const menu = ['orderBump', 'dishBump', 'serving', 'orders', 'returns', 'records'] as const;
+const servingEnabled = computed(() => board.value?.settings.servingEnabled !== false);
+const visibleMenu = computed(() => menu.filter(item => item !== 'serving' || servingEnabled.value));
 const mode = ref<typeof menu[number]>('orderBump');
 const station = ref('');
 const type = ref<KdsOrderType | ''>('');
@@ -44,6 +46,7 @@ const kitchenClock = createKdsClock();
 const kitchenNow = ref<number | null>(null);
 const settingsOpen = ref(false);
 const draftSettings = ref<KdsSettings | null>(null);
+const originalServingEnabled = ref(true);
 const draftStationNames = ref('');
 type KitchenMutation = { action: 'MAKE' | 'SERVE' | 'UNDO'; lines: KdsLine[]; requestKey: string; operationId?: string };
 const confirm = ref<KitchenMutation | null>(null);
@@ -157,12 +160,13 @@ function recordTime(value: string) {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value));
 }
 function canServe(task: KdsTask) {
-  return servingQuantity(task) > 0 && task.order.status !== 'CANCELLED' &&
+  return servingEnabled.value && servingQuantity(task) > 0 && task.order.status !== 'CANCELLED' &&
     (task.order.orderType === 'DINE_IN' || !['READY', 'DELIVERING', 'COMPLETED'].includes(task.order.status));
 }
 function kitchenStatus(rows: KdsTask[]) {
   if (rows[0]?.order.status === 'CANCELLED') return t('statusCancelled');
   if (!orderKitchenProgress(rows).allMade) return t('making');
+  if (!servingEnabled.value) return t('kitchenDone');
   return rows.every(task => task.servedQuantity >= task.quantity) ? t('served') : t('serving');
 }
 function isAddition(cardTasks: KdsTask[]) {
@@ -227,6 +231,7 @@ function choose(key: string) { selected.value = key; quantities.value = {}; }
 function chooseKitchenOrder(key: string) { selectedKitchenKey.value = key; quantities.value = {}; }
 function chooseServingOrder(key: string) { selectedServingKey.value = key; quantities.value = {}; }
 function changeMode(next: typeof menu[number]) {
+  if (next === 'serving' && !servingEnabled.value) return;
   mode.value = next; selected.value = ''; selectedOrderId.value = ''; selectedKitchenKey.value = ''; selectedServingKey.value = ''; quantities.value = {}; page.value = 0;
 }
 function quantityChanged(task: KdsTask, value: number) {
@@ -260,6 +265,7 @@ function serveOrder(all: boolean) {
   if (lines.length) void execute({ action: 'SERVE', lines, requestKey: kdsRequestKey() });
 }
 async function viewServingOrder(key: string) {
+  if (!servingEnabled.value) return;
   // The explicit table shortcut must remain visible even if the old dish search matches an unmade item.
   search.value = ''; await nextTick();
   changeMode('serving'); selectedServingKey.value = key;
@@ -285,6 +291,8 @@ function retryMutation() { if (uncertainMutation.value) void execute(uncertainMu
 function openSettings() {
   if (busy.value) return;
   draftSettings.value = canConfigure.value && board.value ? JSON.parse(JSON.stringify(board.value.settings)) as KdsSettings : null;
+  if (draftSettings.value) draftSettings.value.servingEnabled ??= true;
+  originalServingEnabled.value = draftSettings.value?.servingEnabled ?? true;
   draftStationNames.value = draftSettings.value?.stations.join(', ') ?? '';
   settingsOpen.value = true;
 }
@@ -292,7 +300,9 @@ async function saveSettings() {
   if (!canConfigure.value || !draftSettings.value || busy.value || uncertainMutation.value || !connected.value) return;
   busy.value = true; error.value = '';
   try {
-    const settings = { enabled: draftSettings.value.enabled, timeoutMinutes: draftSettings.value.timeoutMinutes,
+    const settings = { enabled: draftSettings.value.enabled,
+      ...(draftSettings.value.servingEnabled !== originalServingEnabled.value ? { servingEnabled: draftSettings.value.servingEnabled } : {}),
+      timeoutMinutes: draftSettings.value.timeoutMinutes,
       stations: draftStations.value, categoryRoutes: draftSettings.value.categoryRoutes.filter(route => route.station) };
     await saveKdsSettings(settings); settingsOpen.value = false; showNotice(t('updated'));
   } catch (caught) { error.value = messageFromApiError(caught); }
@@ -318,6 +328,7 @@ async function fullscreen() {
 function badgeCount(cardTasks: KdsTask[], orderType: KdsOrderType) { return cardTasks.filter(task => task.order.orderType === orderType).reduce((sum, task) => sum + pendingQuantity(task), 0); }
 watch([station, type, search], () => { page.value = 0; quantities.value = {}; selected.value = ''; selectedOrderId.value = ''; selectedKitchenKey.value = ''; selectedServingKey.value = ''; });
 watch(pageCount, value => { page.value = Math.min(page.value, value - 1); });
+watch(servingEnabled, enabled => { if (!enabled && mode.value === 'serving') changeMode('orderBump'); });
 onMounted(async () => {
   await refresh();
   poll = setInterval(() => { now.value = Date.now(); kitchenNow.value = kitchenClock.now(); void refresh(); }, 5000);
@@ -348,7 +359,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
     </div>
     <div v-else-if="notice" class="kds-notice" role="status">{{ notice }}</div>
     <div class="kds-body">
-      <nav class="kds-nav" :aria-label="'KDS'"><button v-for="item in menu" :key="item" :class="{ active: mode === item }" :aria-label="t(item)" :aria-pressed="mode === item" @click="changeMode(item)"><span class="kds-nav-label">{{ t(item) }}</span></button></nav>
+      <nav class="kds-nav" :aria-label="'KDS'"><button v-for="item in visibleMenu" :key="item" :class="{ active: mode === item }" :aria-label="t(item)" :aria-pressed="mode === item" @click="changeMode(item)"><span class="kds-nav-label">{{ t(item) }}</span></button></nav>
       <main class="kds-workspace" :aria-label="t(mode)">
         <div v-if="loading" class="kds-empty">{{ t('loading') }}</div>
         <div v-else-if="!board" class="kds-empty">{{ error || t('loading') }}<button @click="refresh">{{ t('refresh') }}</button></div>
@@ -452,7 +463,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
             <p v-if="!selectedKitchenOrder.quantity">{{ t('stationDone') }}</p>
             <small v-if="!selectedKitchenOrder.quantity" class="kds-scope-note">{{ selectedKitchenOrder.allMade ? t('allStationsDone') : t('otherStationsPending') }}</small>
             <div class="kds-detail-summary"><p>{{ t('thisBatch') }}：<strong>{{ batchQuantity }} {{ tasksUnit(detailTasks) }}</strong></p>
-              <button class="kds-progress-link" :disabled="busy || !selectedKitchenOrder.visibleTasks.some(canServe)" @click="viewServingOrder(selectedKitchenOrder.key)">{{ t('serving') }}</button></div>
+              <button v-if="servingEnabled" class="kds-progress-link" :disabled="busy || !selectedKitchenOrder.visibleTasks.some(canServe)" @click="viewServingOrder(selectedKitchenOrder.key)">{{ t('serving') }}</button></div>
             <div><button :disabled="writeDisabled || !selectedKitchenOrder.quantity" @click="prepare(true)">{{ t(selectedKitchenOrder.order.orderType === 'DINE_IN' ? 'wholeTable' : 'wholeOrder') }}</button>
               <button class="kds-primary" :disabled="writeDisabled || !batchQuantity" @click="prepare(false)">{{ t('partialMake') }}</button></div>
           </div>
@@ -481,7 +492,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <template v-else-if="selectedOrder && mode === 'orders'">
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="dishName(task)" :menu-thumbnail-url="task.menuThumbnailUrl">
-              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} · {{ t('passed') }} {{ task.servedQuantity }}</template>
+              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }}<template v-if="servingEnabled"> · {{ t('passed') }} {{ task.servedQuantity }}</template></template>
               <template #notes><p v-if="task.remark" class="kds-dish-remark">{{ task.remark }}</p></template>
             </KdsDetailRow>
             <div v-if="selectedOrder.order.customerRemark" class="kds-order-note">{{ selectedOrder.order.customerRemark }}</div>
@@ -502,7 +513,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <div v-else class="kds-detail-empty"><ChefHat :size="46" /><p>{{ t(mode === 'serving' ? 'selectServingOrder' : mode === 'orderBump' || mode === 'orders' ? 'selectOrder' : 'selectDish') }}</p></div>
       </aside>
     </div>
-    <footer class="kds-bottom"><div class="kds-stats"><span>{{ t('making') }} <b>{{ totalPending }}</b> {{ totalUnit }}</span><span>{{ t('serving') }} <b>{{ totalServing }}</b> {{ totalUnit }}</span><span>{{ t('timeout') }} <b class="kds-orange">{{ overdueOrders }}</b></span></div><div v-if="mode === 'orderBump' || mode === 'dishBump'" class="kds-pagination"><button :disabled="page === 0" @click="page--"><ChevronLeft :size="20" />{{ t('previous') }}</button><span>{{ page + 1 }} / {{ pageCount }}</span><button :disabled="page + 1 >= pageCount" @click="page++">{{ t('next') }}<ChevronRight :size="20" /></button></div><button v-if="mode === 'orderBump' || mode === 'dishBump'" :disabled="!lastMake || writeDisabled" @click="confirm = { action: 'UNDO', lines: [], operationId: lastMake!.id, requestKey: kdsRequestKey() }">{{ t('undo') }}</button></footer>
+    <footer class="kds-bottom"><div class="kds-stats"><span>{{ t('making') }} <b>{{ totalPending }}</b> {{ totalUnit }}</span><span v-if="servingEnabled">{{ t('serving') }} <b>{{ totalServing }}</b> {{ totalUnit }}</span><span>{{ t('timeout') }} <b class="kds-orange">{{ overdueOrders }}</b></span></div><div v-if="mode === 'orderBump' || mode === 'dishBump'" class="kds-pagination"><button :disabled="page === 0" @click="page--"><ChevronLeft :size="20" />{{ t('previous') }}</button><span>{{ page + 1 }} / {{ pageCount }}</span><button :disabled="page + 1 >= pageCount" @click="page++">{{ t('next') }}<ChevronRight :size="20" /></button></div><button v-if="mode === 'orderBump' || mode === 'dishBump'" :disabled="!lastMake || writeDisabled" @click="confirm = { action: 'UNDO', lines: [], operationId: lastMake!.id, requestKey: kdsRequestKey() }">{{ t('undo') }}</button></footer>
     <div v-if="confirm" class="kds-overlay" @keydown.esc="!busy && (confirm = null)"><section class="kds-dialog" role="dialog" aria-modal="true" :aria-label="t('undo')"><header><h2>{{ t('undo') }}</h2><button :disabled="busy" :aria-label="t('cancel')" @click="confirm = null"><X :size="22" /></button></header><footer><button :disabled="busy" @click="confirm = null">{{ t('cancel') }}</button><button class="kds-primary" :disabled="busy || !connected" @click="submit">{{ busy ? '…' : t('confirm') }}</button></footer></section></div>
     <div v-if="settingsOpen" class="kds-overlay">
       <section class="kds-dialog kds-settings-dialog" role="dialog" aria-modal="true" :aria-label="t('settings')">
@@ -516,6 +527,8 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         </div>
         <div v-if="canConfigure && draftSettings" class="kds-settings-fields">
           <label class="kds-checkbox"><input v-model="draftSettings.enabled" type="checkbox" />{{ t('enabled') }}</label>
+          <label class="kds-checkbox"><input v-model="draftSettings.servingEnabled" type="checkbox" />{{ t('servingEnabled') }}</label>
+          <small>{{ t('servingSettingHint') }}</small>
           <label>{{ t('timeoutSetting') }}<input v-model.number="draftSettings.timeoutMinutes" type="number" min="1" max="180" /></label>
           <label>{{ t('stations') }}<input v-model="draftStationNames" /></label>
           <h3>{{ t('routes') }}</h3>

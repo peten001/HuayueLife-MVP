@@ -17,6 +17,42 @@ export async function kdsEnabled(tx: Prisma.TransactionClient, merchantId: bigin
   return settings?.enabled ? settings : null;
 }
 
+/** Same order lock as syncKdsOrder; completion must include all items and stations. */
+export async function finishKdsOrder(tx: Prisma.TransactionClient, merchantId: bigint, orderId: bigint,
+  context: { staffId?: bigint; requestKey?: string; withoutServing?: boolean } = {}) {
+  const order = await tx.order.findFirst({ where: { id: orderId, merchantId, voidedAt: null }, include: { items: true } });
+  if (!order || order.orderType === 'DINE_IN' || order.kdsPackedAt || !['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) return;
+  const tasks = await tx.kdsTask.findMany({ where: { merchantId, orderId, quantity: { gt: 0 } } });
+  if (!order.items.length || order.items.some(item => {
+    const task = tasks.find(row => row.orderItemId === item.id);
+    return !task || task.quantity !== item.quantity || task.madeQuantity !== item.quantity || task.servedQuantity !== item.quantity;
+  })) return;
+  const now = new Date();
+  await tx.order.update({ where: { id: orderId }, data: { status: 'READY', readyAt: now, kdsPackedAt: now } });
+  await tx.orderStatusLog.create({ data: { orderId, fromStatus: order.status, toStatus: 'READY',
+    operatorType: context.staffId ? 'MERCHANT_STAFF' : 'SYSTEM', operatorStaffId: context.staffId,
+    action: context.withoutServing ? 'KDS_MADE' : 'KDS_SERVED', requestKey: context.requestKey,
+    remark: context.withoutServing ? '所有档口制作完成，免传菜直接出餐' : '所有档口菜品制作并传出，厨房出餐完成',
+  } });
+}
+
+async function releaseMadeWithoutServing(tx: Prisma.TransactionClient, merchantId: bigint, orderId: bigint) {
+  const tasks = await tx.kdsTask.findMany({ where: { merchantId, orderId, resolvedAt: null } });
+  for (const task of tasks.filter(row => row.madeQuantity > row.servedQuantity)) {
+    const updated = await tx.kdsTask.updateMany({ where: { id: task.id, merchantId, version: task.version }, data: {
+      servedQuantity: task.madeQuantity, resolvedAt: task.madeQuantity === task.quantity ? new Date() : null,
+      version: { increment: 1 },
+    } });
+    if (updated.count !== 1) throw new ConflictException('厨房任务已变化，请刷新重试');
+    const lines = [{ taskId: task.id.toString(), orderId: orderId.toString(), dishName: task.dishName,
+      unit: task.unit, station: task.station, quantity: task.madeQuantity - task.servedQuantity,
+      reason: '传菜已关闭，已制作菜品直接出餐' }];
+    // Audit an automatic policy transition, not a fabricated manual SERVE operation.
+    await tx.kdsOperation.create({ data: { id: randomUUID(), merchantId,
+      requestKey: `auto-out:${task.id}:${task.version}`, payloadHash: kdsHash(lines), kind: 'AUTO_OUT', lines } });
+  }
+}
+
 /** Caller holds the order lock. Tasks and source deltas commit together. */
 export async function syncKdsOrder(
   tx: Prisma.TransactionClient, merchantId: bigint, orderId: bigint,
@@ -111,5 +147,9 @@ export async function syncKdsOrder(
         action: 'KDS_PACKING_INVALIDATED', remark: '菜品数量变化，需要重新核对打包',
       } });
     }
+  }
+  if (!cancelled && settings.servingEnabled === false) {
+    await releaseMadeWithoutServing(tx, merchantId, orderId);
+    await finishKdsOrder(tx, merchantId, orderId, { withoutServing: true });
   }
 }

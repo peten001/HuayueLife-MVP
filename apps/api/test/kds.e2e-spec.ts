@@ -15,7 +15,7 @@ describe('KDS real MySQL workflow', () => {
   let productId: bigint, barProductId: bigint, categoryId: bigint, barCategoryId: bigint;
   let token: string, otherToken: string, staffToken: string;
   let count = 0;
-  const settings = () => ({ enabled: true, timeoutMinutes: 15, stations: ['热厨', '吧台'],
+  const settings = (servingEnabled = true) => ({ enabled: true, servingEnabled, timeoutMinutes: 15, stations: ['热厨', '吧台'],
     categoryRoutes: [{ categoryId: barCategoryId.toString(), station: '吧台' }] });
   const call = (method: 'get' | 'post' | 'patch', path: string, data?: object, access = token) => {
     const req = request(app.getHttpServer())[method](`/api/v1${path}`).set('Authorization', `Bearer ${access}`);
@@ -278,6 +278,112 @@ describe('KDS real MySQL workflow', () => {
     await call('patch', '/merchant/kds/settings', settings()).expect(200);
     const done = await task(row.id); expect(done.madeQuantity).toBe(1); expect(done.servedQuantity).toBe(1);
     expect((await board()).operations.some((op: { kind: string }) => op.kind === 'HANDOFF')).toBe(true);
+  });
+
+  it('disables serving for the whole merchant, releases existing prepared quantities and keeps partial make/undo working', async () => {
+    const row=await order('DINE_IN',3); const original=await task(row.id);
+    await action(original,1).expect(201);
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    let current=await task(row.id);
+    expect(current.madeQuantity).toBe(1);expect(current.servedQuantity).toBe(1);
+    await action(current,1,'SERVE').expect(409);
+    await action(original,1).expect(409);
+    const made=await action(current,1,'MAKE').expect(201);
+    current=await task(row.id);expect(current.madeQuantity).toBe(2);expect(current.servedQuantity).toBe(2);
+    await call('post','/merchant/kds/undo',{operationId:made.body.data.operationId,requestKey:randomUUID()}).expect(201);
+    current=await task(row.id);expect(current.madeQuantity).toBe(1);expect(current.servedQuantity).toBe(1);
+    // Older clients changing another setting must not silently turn serving back on.
+    const {servingEnabled: omitted,...legacySettings}=settings();
+    expect(omitted).toBe(true);
+    await call('patch','/merchant/kds/settings',legacySettings).expect(200);
+    expect((await board()).settings.servingEnabled).toBe(false);
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+    current=await task(row.id);expect(current.servedQuantity).toBe(1);
+    await action(current,1).expect(201);
+    current=await task(row.id);expect(current.madeQuantity).toBe(2);expect(current.servedQuantity).toBe(1);
+    await action(current,1,'SERVE').expect(201);
+  });
+
+  it.each(['PICKUP','DELIVERY'] as const)('reaches READY after every station is made with serving off and retains the cashier %s handoff', async type => {
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    const row=await order(type,2,2,true);
+    await call('post',`/merchant/orders/${row.id}/ready`,{}).expect(409);
+    let main=await task(row.id);
+    await action(main,1).expect(201);expect((await task(row.id)).order.status).toBe('PREPARING');
+    main=await task(row.id);await action(main,1).expect(201);
+    expect((await task(row.id)).order.kdsPackedAt).toBeNull();
+    const drink=await task(row.id,barProductId);await action(drink,1).expect(201);
+    const ready=await task(row.id);expect(ready.order.status).toBe('READY');expect(ready.order.kdsPackedAt).not.toBeNull();
+    if(type==='DELIVERY')await call('post',`/merchant/orders/${row.id}/start-delivery`,{}).expect(201);
+    await call('post',`/merchant/orders/${row.id}/cashier-complete`,{paymentMethod:'CASH'}).expect(201);
+    expect((await prisma.order.findUniqueOrThrow({where:{id:row.id}})).status).toBe('COMPLETED');
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+  });
+
+  it('turns a previously made pickup into READY when serving is turned off, and does not queue it again on re-enable', async () => {
+    const row=await order('PICKUP',1);await action(await task(row.id),1).expect(201);
+    expect((await task(row.id)).order.status).toBe('PREPARING');
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    expect((await task(row.id)).order.status).toBe('READY');
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+    const current=await task(row.id);expect(current.servedQuantity).toBe(1);expect(current.order.status).toBe('READY');
+  });
+
+  it('serializes a serving toggle with an in-flight make without losing or duplicating finished portions', async () => {
+    const row=await order('DINE_IN',3);const current=await task(row.id);const key=randomUUID();
+    const results=await Promise.all([action(current,1,'MAKE',key),call('patch','/merchant/kds/settings',settings(false))]);
+    expect(results.map(r=>r.status)).toEqual([201,200]);
+    const after=await task(row.id);expect(after.madeQuantity).toBe(1);expect(after.servedQuantity).toBe(1);
+    await action(current,1,'MAKE',key).expect(201);expect((await task(row.id)).madeQuantity).toBe(1);
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+  });
+
+  it('keeps dine-in returns and added portions usable without serving', async () => {
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    const row=await order('DINE_IN',3);await action(await task(row.id),1).expect(201);
+    await call('post',`/merchant/orders/${row.id}/items/${row.items[0]!.id}/return`,{
+      requestKey:randomUUID(),expectedQuantity:3,returnQuantity:2,
+    }).expect(201);
+    let current=await task(row.id);expect(current.quantity).toBe(1);expect(current.servedQuantity).toBe(1);
+    await prisma.orderItem.update({where:{id:row.items[0]!.id},data:{quantity:2,productionNotifiedQuantity:2}});
+    current=await task(row.id);expect(current.madeQuantity).toBe(1);expect(current.servedQuantity).toBe(1);
+    expect(current.order.status).toBe('PREPARING');expect(current.order.kdsPackedAt).toBeNull();
+    await action(current,1).expect(201);expect((await task(row.id)).servedQuantity).toBe(2);
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+  });
+
+  it('reopens only newly added pickup quantities and keeps cashier completion usable with serving off', async () => {
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    const row=await order('PICKUP',1);await action(await task(row.id),1).expect(201);
+    expect((await task(row.id)).order.status).toBe('READY');
+    await prisma.orderItem.update({where:{id:row.items[0]!.id},data:{quantity:2,productionNotifiedQuantity:2}});
+    const current=await task(row.id);expect(current.madeQuantity).toBe(1);expect(current.servedQuantity).toBe(1);
+    expect(current.order.status).toBe('PREPARING');expect(current.order.kdsPackedAt).toBeNull();
+    await action(current,1).expect(201);expect((await task(row.id)).order.status).toBe('READY');
+    await call('post',`/merchant/orders/${row.id}/cashier-complete`,{paymentMethod:'CASH'}).expect(201);
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+  });
+
+  it('can resolve an already successful serving retry after disabling while refusing new serving writes', async () => {
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+    const row=await order('DINE_IN',3);await action(await task(row.id),1).expect(201);
+    const current=await task(row.id);const key=randomUUID();await action(current,1,'SERVE',key).expect(201);
+    await call('patch','/merchant/kds/settings',settings(false)).expect(200);
+    const retry=await action(current,1,'SERVE',key).expect(201);expect(retry.body.data.replay).toBe(true);
+    await action(await task(row.id),1,'SERVE').expect(409);
+    expect((await task(row.id)).servedQuantity).toBe(1);
+    await call('patch','/merchant/kds/settings',settings()).expect(200);
+  });
+
+  it('defaults a new merchant to serving enabled and refuses invalid or unauthorized switch changes', async () => {
+    const created=await call('patch','/merchant/kds/settings',{
+      enabled:true,timeoutMinutes:15,stations:['热厨'],categoryRoutes:[],
+    },otherToken).expect(200);
+    expect(created.body.data.servingEnabled).toBe(true);
+    await call('patch','/merchant/kds/settings',{...settings(),servingEnabled:null}).expect(400);
+    await call('patch','/merchant/kds/settings',{...settings(),servingEnabled:'false'}).expect(400);
+    await call('patch','/merchant/kds/settings',settings(false),staffToken).expect(403);
+    expect((await board()).settings.servingEnabled).toBe(true);
   });
 
   afterAll(async () => {

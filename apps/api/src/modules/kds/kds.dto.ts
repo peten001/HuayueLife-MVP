@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt,
-  IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
+  IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { IsPositiveBigIntString } from '../../common/validators/is-positive-bigint-string.validator';
 
@@ -11,6 +11,7 @@ export class KdsRouteDto {
 }
 export class KdsSettingsDto {
   @IsBoolean() enabled!: boolean;
+  @ValidateIf((_object, value) => value !== undefined) @IsBoolean() servingEnabled?: boolean;
   @IsInt() @Min(1) @Max(180) timeoutMinutes!: number;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20) @ArrayUnique()
   @IsString({ each: true }) @MinLength(1, { each: true }) @MaxLength(40, { each: true }) stations!: string[];

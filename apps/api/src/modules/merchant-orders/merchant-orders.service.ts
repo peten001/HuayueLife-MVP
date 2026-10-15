@@ -1518,7 +1518,8 @@ export class MerchantOrdersService {
         await tx.$queryRaw`SELECT id FROM orders WHERE id = ${id} AND merchant_id = ${merchantId} FOR UPDATE`;
         await syncKdsOrder(tx, merchantId, id);
         const packed = await tx.order.findUnique({ where: { id }, select: { kdsPackedAt: true } });
-        if (!packed?.kdsPackedAt) throw new ConflictException('请先在 KDS 完成所有档口制作并传菜');
+        if (!packed?.kdsPackedAt) throw new ConflictException(kitchenSetting.servingEnabled === false
+          ? '请先在 KDS 完成所有档口制作' : '请先在 KDS 完成所有档口制作并传菜');
       }
       if (order.status !== rule.from) {
         throw new ConflictException(

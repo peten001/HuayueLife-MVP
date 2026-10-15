@@ -1,5 +1,10 @@
 import { applyKitchenAction, reconcileKitchenQuantity } from './kds-domain';
 describe('KDS portion accounting', () => {
+  it('makes and releases only the finished portions when serving is disabled', () => {
+    expect(applyKitchenAction({quantity:3,madeQuantity:0,servedQuantity:0},'MAKE',2,false)).toEqual({madeQuantity:2,servedQuantity:2});
+    expect(() => applyKitchenAction({quantity:3,madeQuantity:2,servedQuantity:2},'SERVE',1,false)).toThrow('未开启传菜');
+    expect(() => applyKitchenAction({quantity:3,madeQuantity:2,servedQuantity:2},'MAKE',2,false)).toThrow();
+  });
   it('makes two of three without completing the last portion', () => {
     expect(applyKitchenAction({ quantity: 3, madeQuantity: 0, servedQuantity: 0 }, 'MAKE', 2)).toEqual({ madeQuantity: 2, servedQuantity: 0 });
   });

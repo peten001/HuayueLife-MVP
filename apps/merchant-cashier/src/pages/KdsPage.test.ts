@@ -18,6 +18,7 @@ let wrapper: VueWrapper;
 let data: KdsBoard;
 beforeEach(() => {
   vi.mocked(runKdsAction).mockReset().mockResolvedValue({ operationId: 'made', replay: false });
+  vi.mocked(saveKdsSettings).mockReset();
   testAuth.role = 'OWNER';
   testAuth.profile = null;
   data = demoKds.board();
@@ -34,6 +35,52 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it('persists the serving switch, hides every active serving control while off and keeps making available', async () => {
+    data.tasks[0]!.madeQuantity=1;
+    vi.mocked(saveKdsSettings).mockImplementation(async settings => {data.settings={...settings};return settings;});
+    await open();await wrapper.get('.kds-order-card').trigger('click');
+    expect(wrapper.get('.kds-nav').text()).toContain('待传菜');
+    await wrapper.get('button[aria-label="厨显设置"]').trigger('click');
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    const serving=wrapper.findAll('.kds-settings-fields label').find(label=>label.text()==='启用传菜')!;
+    expect((serving.get('input').element as HTMLInputElement).checked).toBe(true);
+    await serving.get('input').setValue(false);await button('保存设置');
+    expect(saveKdsSettings).toHaveBeenCalledWith(expect.objectContaining({enabled:true,servingEnabled:false}));
+    expect(wrapper.get('.kds-nav').text()).not.toContain('待传菜');
+    expect(wrapper.find('.kds-progress-link').exists()).toBe(false);
+    expect(wrapper.get('.kds-stats').text()).not.toContain('待传菜');
+    expect(wrapper.findAll('.kds-detail-card button').some(button=>button.text()==='划完')).toBe(true);
+    await wrapper.get('button[aria-label="单菜划完 烤羊肉串 · 01 桌"]').trigger('click');await flushPromises();
+    expect(runKdsAction).toHaveBeenCalledWith('MAKE',expect.any(Array),expect.any(String));
+    await button('订单进度');await wrapper.get('.kds-order-card').trigger('click');
+    expect(wrapper.get('.kds-detail').text()).not.toContain('已传出');
+    await wrapper.get('button[aria-label="厨显设置"]').trigger('click');
+    const on=wrapper.findAll('.kds-settings-fields label').find(label=>label.text()==='启用传菜')!;
+    await on.get('input').setValue(true);await button('保存设置');
+    expect(wrapper.get('.kds-nav').text()).toContain('待传菜');
+  });
+  it('leaves serving safely if another screen disables it, while staff cannot change the merchant switch', async () => {
+    data.tasks[0]!.madeQuantity=1;testAuth.role='STAFF';
+    await open();await button('待传菜');await wrapper.get('.kds-serving-card').trigger('click');
+    data.settings.servingEnabled=false;
+    await wrapper.get('button[aria-label="刷新"]').trigger('click');await flushPromises();
+    expect(wrapper.get('.kds-nav button[aria-label="标准划菜"]').attributes('aria-pressed')).toBe('true');
+    expect(wrapper.find('.kds-serving-detail-card').exists()).toBe(false);
+    expect(wrapper.find('button[aria-label="待传菜"]').exists()).toBe(false);
+    await wrapper.get('button[aria-label="厨显设置"]').trigger('click');
+    expect(wrapper.find('.kds-settings-fields').exists()).toBe(false);
+    expect(saveKdsSettings).not.toHaveBeenCalled();
+  });
+  it('does not overwrite another device serving change when saving an untouched switch from an older settings form', async () => {
+    vi.mocked(saveKdsSettings).mockImplementation(async settings => { data.settings={...data.settings,...settings};return data.settings; });
+    await open();await wrapper.get('button[aria-label="厨显设置"]').trigger('click');
+    data.settings.servingEnabled=false;
+    await wrapper.get('button[aria-label="刷新"]').trigger('click');await flushPromises();
+    await button('保存设置');
+    expect(vi.mocked(saveKdsSettings).mock.calls[0]![0]).not.toHaveProperty('servingEnabled');
+    expect(data.settings.servingEnabled).toBe(false);
+    expect(wrapper.find('button[aria-label="待传菜"]').exists()).toBe(false);
+  });
   it.each(['vi','en'] as const)('switches dish names and searches in %s across preparation, summary, serving, progress and records', async language => {
     const first=data.tasks[0]!;
     const translated={dishNameVi:'Thịt heo xào ớt',dishNameEn:'Pepper pork'};

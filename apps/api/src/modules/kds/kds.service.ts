@@ -4,12 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { applyKitchenAction } from './kds-domain';
 import { KdsActionDto, KdsPackDto, KdsSettingsDto, KdsUndoDto } from './kds.dto';
-import { DEFAULT_KDS_STATIONS, kdsEnabled, kdsHash, syncKdsOrder } from './kds-sync';
+import { DEFAULT_KDS_STATIONS, finishKdsOrder, kdsEnabled, kdsHash, syncKdsOrder } from './kds-sync';
 
 type OperationLine = {
   taskId: string; orderId: string; dishName: string; quantity: number;
   beforeMade: number; beforeServed: number; beforeStarted: string | null; afterVersion: number;
   station: string; unit: string; orderNo?: string; tableNo?: string | null; orderType?: string;
+  autoServed?: boolean;
 };
 
 @Injectable()
@@ -77,7 +78,7 @@ export class KdsService {
       return { dishNameVi: product?.nameVi ?? null, dishNameEn: product?.nameEn ?? null };
     };
     return {
-      settings: settings ?? { enabled: false, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
+      settings: settings ?? { enabled: false, servingEnabled: true, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
       tasks: tasks.map(task => ({ ...task, ...translatedNames(task.productId),
         menuThumbnailUrl: task.productId === null ? null : productDisplay.get(task.productId)?.menuThumbnailUrl ?? null, order: {
         ...task.order, tableNo: task.order.table?.tableNo ?? task.order.tableNoSnapshot,
@@ -90,7 +91,6 @@ export class KdsService {
   }
 
   async settings(merchantId: bigint, dto: KdsSettingsDto) {
-    await this.assertMerchantActive(this.prisma, merchantId);
     const stations = dto.stations.map(station => station.trim());
     if (stations.some(station => !station) || new Set(stations).size !== stations.length ||
       dto.categoryRoutes.some(route => !stations.includes(route.station))) {
@@ -100,23 +100,36 @@ export class KdsService {
     if (new Set(dto.categoryRoutes.map(route => route.categoryId)).size !== categoryIds.length) {
       throw new BadRequestException('每个分类只能关联一个档口');
     }
-    const count = await this.prisma.category.count({ where: { merchantId, id: { in: categoryIds } } });
-    if (count !== categoryIds.length) throw new BadRequestException('菜品分类不属于当前门店');
-    const previous = await this.prisma.kdsSetting.findUnique({ where: { merchantId }, select: { enabled: true } });
-    return this.prisma.kdsSetting.upsert({ where: { merchantId },
-      create: { merchantId, ...dto, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue, activatedAt: dto.enabled ? new Date() : null },
-      update: { ...dto, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue,
-        ...(dto.enabled && !previous?.enabled ? { activatedAt: new Date() } : {}),
-        ...(dto.enabled ? {} : { enabled: false }) },
+    return this.transaction(async tx => {
+      await this.assertMerchantActive(tx, merchantId);
+      await this.lockSettings(tx, merchantId);
+      const count = await tx.category.count({ where: { merchantId, id: { in: categoryIds } } });
+      if (count !== categoryIds.length) throw new BadRequestException('菜品分类不属于当前门店');
+      const previous = await tx.kdsSetting.findUnique({ where: { merchantId }, select: { enabled: true } });
+      const settings = await tx.kdsSetting.upsert({ where: { merchantId },
+        create: { merchantId, ...dto, servingEnabled: dto.servingEnabled ?? true, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue, activatedAt: dto.enabled ? new Date() : null },
+        update: { ...dto, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue,
+          ...(dto.enabled && !previous?.enabled ? { activatedAt: new Date() } : {}),
+          ...(dto.enabled ? {} : { enabled: false }) },
+      });
+      if (settings.enabled && settings.servingEnabled === false) {
+        const active = await tx.order.findMany({ where: { merchantId, voidedAt: null, status: { in: ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERING'] } }, select: { id: true } });
+        const outstanding = await tx.kdsTask.findMany({ where: { merchantId, resolvedAt: null }, select: { orderId: true } });
+        const ids = [...new Set([...active.map(order => order.id), ...outstanding.map(task => task.orderId)])];
+        await this.lockOrders(tx, merchantId, ids);
+        for (const id of ids) await syncKdsOrder(tx, merchantId, id);
+      }
+      return settings;
     });
   }
 
   async action(merchantId: bigint, staffId: bigint, dto: KdsActionDto) {
     if (new Set(dto.lines.map(line => line.taskId)).size !== dto.lines.length) throw new BadRequestException('同一任务不能重复提交');
     return this.transaction(async tx => {
-      await this.requireEnabled(tx, merchantId);
+      const settings = await this.requireEnabled(tx, merchantId);
       const replay = await this.replay(tx, merchantId, staffId, dto.requestKey, dto);
       if (replay) return replay;
+      if (dto.action === 'SERVE' && settings.servingEnabled === false) throw new ConflictException('当前门店未开启传菜');
       const found = await tx.kdsTask.findMany({ where: { merchantId, id: { in: dto.lines.map(line => BigInt(line.taskId)) } } });
       if (found.length !== dto.lines.length) throw new NotFoundException('厨房任务不存在');
       await this.lockOrders(tx, merchantId, found.map(task => task.orderId));
@@ -129,14 +142,16 @@ export class KdsService {
         if (task.order.orderType !== 'DINE_IN' && ['READY', 'DELIVERING', 'COMPLETED'].includes(task.order.status)) {
           throw new ConflictException('订单已进入交付阶段，不能修改制作进度');
         }
-        const next = applyKitchenAction(task, dto.action, line.quantity);
+        const next = applyKitchenAction(task, dto.action, line.quantity, settings.servingEnabled);
         if (['START', 'URGE'].includes(dto.action) && task.quantity === task.madeQuantity) throw new ConflictException('菜品已经做好');
         await this.updateTask(tx, task, {
           ...next, startedAt: ['START', 'MAKE'].includes(dto.action) ? task.startedAt ?? new Date() : task.startedAt,
           ...(dto.action === 'URGE' ? { urgentAt: new Date() } : {}),
           resolvedAt: next.servedQuantity === task.quantity ? new Date() : null,
         });
-        lines.push(this.operationLine(task, line.quantity));
+        lines.push({ ...this.operationLine(task, line.quantity),
+          ...(dto.action === 'MAKE' && settings.servingEnabled === false ? { autoServed: true } : {}),
+        });
         if (['START', 'MAKE'].includes(dto.action) && task.order.status === 'ACCEPTED') {
           const updated = await tx.order.updateMany({ where: { id: task.orderId, merchantId, status: 'ACCEPTED' }, data: { status: 'PREPARING' } });
           if (updated.count) await tx.orderStatusLog.create({ data: {
@@ -145,22 +160,9 @@ export class KdsService {
           } });
         }
       }
-      if (dto.action === 'SERVE') {
+      if (dto.action === 'SERVE' || (dto.action === 'MAKE' && settings.servingEnabled === false)) {
         for (const orderId of new Set(found.map(task => task.orderId))) {
-          const order = await tx.order.findFirstOrThrow({ where: { id: orderId, merchantId }, include: { items: true } });
-          if (order.orderType === 'DINE_IN' || order.kdsPackedAt) continue;
-          const tasks = await tx.kdsTask.findMany({ where: { merchantId, orderId, quantity: { gt: 0 } } });
-          const allServed = order.items.length > 0 && order.items.every(item => {
-            const task = tasks.find(row => row.orderItemId === item.id);
-            return task && task.quantity === item.quantity && task.madeQuantity === item.quantity && task.servedQuantity === item.quantity;
-          });
-          if (!allServed) continue;
-          const now = new Date();
-          // Keep the existing handoff marker so cashier pickup/delivery gates remain compatible.
-          await tx.order.update({ where: { id: orderId }, data: { status: 'READY', readyAt: now, kdsPackedAt: now } });
-          await tx.orderStatusLog.create({ data: { orderId, fromStatus: order.status, toStatus: 'READY',
-            operatorType: 'MERCHANT_STAFF', operatorStaffId: staffId, action: 'KDS_SERVED', requestKey: dto.requestKey,
-            remark: '所有档口菜品制作并传出，厨房出餐完成' } });
+          await finishKdsOrder(tx, merchantId, orderId, { staffId, requestKey: dto.requestKey, withoutServing: settings.servingEnabled === false });
         }
       }
       return this.record(tx, merchantId, staffId, dto.requestKey, dto.action, dto, lines);
@@ -198,11 +200,12 @@ export class KdsService {
 
   async undo(merchantId: bigint, staffId: bigint, dto: KdsUndoDto) {
     return this.transaction(async tx => {
-      await this.requireEnabled(tx, merchantId);
+      const settings = await this.requireEnabled(tx, merchantId);
       const replay = await this.replay(tx, merchantId, staffId, dto.requestKey, dto);
       if (replay) return replay;
       const operation = await tx.kdsOperation.findFirst({ where: { id: dto.operationId, merchantId, staffId } });
       if (!operation || !['MAKE', 'SERVE'].includes(operation.kind) || operation.reversedAt) throw new ConflictException('该操作不能撤销');
+      if (operation.kind === 'SERVE' && settings.servingEnabled === false) throw new ConflictException('当前门店未开启传菜');
       const lines = operation.lines as unknown as OperationLine[];
       await this.lockOrders(tx, merchantId, lines.map(line => BigInt(line.orderId)));
       for (const id of new Set(lines.map(line => line.orderId))) await syncKdsOrder(tx, merchantId, BigInt(id));
@@ -230,7 +233,14 @@ export class KdsService {
   }
   private async requireEnabled(tx: Prisma.TransactionClient, id: bigint) {
     await this.assertMerchantActive(tx, id);
-    if (!(await kdsEnabled(tx, id))) throw new ConflictException('请先由店主或经理开启 KDS');
+    await this.lockSettings(tx, id);
+    const settings = await kdsEnabled(tx, id);
+    if (!settings) throw new ConflictException('请先由店主或经理开启 KDS');
+    return settings;
+  }
+  private async lockSettings(tx: Prisma.TransactionClient, merchantId: bigint) {
+    // All KDS writes take the settings lock before order locks, so another screen cannot race a policy change.
+    await tx.$queryRaw`SELECT merchant_id FROM kds_settings WHERE merchant_id = ${merchantId} FOR UPDATE`;
   }
   private async assertMerchantActive(tx: Prisma.TransactionClient, merchantId: bigint) {
     if (!await tx.merchant.count({ where: { id: merchantId, status: 'ACTIVE' } })) throw new ForbiddenException('当前商家已停用');

@@ -2,6 +2,7 @@ export type KdsAction = 'START' | 'MAKE' | 'SERVE' | 'URGE';
 export type KdsOrderType = 'DINE_IN' | 'PICKUP' | 'DELIVERY';
 export interface KdsSettings {
   enabled: boolean; timeoutMinutes: number; stations: string[];
+  servingEnabled?: boolean;
   categoryRoutes: { categoryId: string; station: string }[];
 }
 export interface KdsOrder {
