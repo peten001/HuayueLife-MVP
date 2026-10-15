@@ -427,22 +427,20 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
       </main>
       <aside v-if="mode !== 'records' && mode !== 'returns'" class="kds-detail">
         <template v-if="selectedKitchenOrder && mode === 'orderBump'">
-          <h2>{{ typeLabel(selectedKitchenOrder.order.orderType) }} · {{ orderLabel(selectedKitchenOrder.visibleTasks[0]!) }}</h2>
-          <p class="kds-scope-note">{{ station || t('allStations') }} · {{ t('scopeHint') }}</p>
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in selectedKitchenOrder.visibleTasks" :key="task.id" :title="task.dishName"
-              :selected="(quantities[task.id] ?? 0) > 0">
+              :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
               <template #badges><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span></template>
-              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} {{ displayUnit(task.unit) }}<small>{{ task.station }}</small></template>
+              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</template>
               <template #notes>
                 <p v-if="task.remark || task.order.customerRemark" class="kds-dish-remark">{{ [task.remark, task.order.customerRemark].filter(Boolean).join(' · ') }}</p>
                 <p v-if="selectedKitchenOrder.orders.length > 1" class="kds-original-order">#{{ task.order.orderNo }}</p>
               </template>
               <template v-if="canMakeKitchenTask(task)" #controls>
+                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishMake')" :aria-label="`${t('dishMake')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareDish(task)">{{ t('quickMake') }}</button>
                 <KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="pendingQuantity(task)"
                   :disabled="writeDisabled" :label="`${task.dishName} · ${orderLabel(task)} ${t('quantity')}`"
                   @update:model-value="quantityChanged(task, $event)" />
-                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishMake')" :aria-label="`${t('dishMake')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareDish(task)">{{ t('quickMake') }}</button>
               </template>
             </KdsDetailRow>
           </div>
@@ -456,20 +454,18 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           </div>
         </template>
         <template v-else-if="selectedServingOrder && mode === 'serving'">
-          <h2>{{ typeLabel(selectedServingOrder.order.orderType) }} · {{ orderLabel(selectedServingOrder.servingTasks[0]!) }}</h2>
-          <p class="kds-scope-note">{{ station || t('allStations') }} · {{ t('servingHint') }}</p>
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in selectedServingOrder.servingTasks" :key="task.id" class="kds-serving-detail-card"
-              :title="task.dishName" :selected="(quantities[task.id] ?? 0) > 0">
-              <template #progress><span class="kds-serving-count">{{ t('serving') }} <b>{{ servingQuantity(task) }} {{ displayUnit(task.unit) }}</b></span><small>{{ task.station }}</small></template>
+              :title="task.dishName" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
+              <template #progress><span class="kds-serving-count">{{ t('serving') }} <b>{{ servingQuantity(task) }} {{ displayUnit(task.unit) }}</b></span></template>
               <template #notes>
                 <p v-if="task.remark || task.order.customerRemark" class="kds-dish-remark">{{ [task.remark, task.order.customerRemark].filter(Boolean).join(' · ') }}</p>
                 <p v-if="selectedServingOrder.orders.length > 1" class="kds-original-order">#{{ task.order.orderNo }}</p>
               </template>
               <template #controls>
+                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishServe')" :aria-label="`${t('dishServe')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareServe(task)">{{ t('quickServe') }}</button>
                 <KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="servingQuantity(task)" :disabled="writeDisabled"
                   :label="`${task.dishName} · ${orderLabel(task)} ${t('serveQuantity')}`" @update:model-value="servingQuantityChanged(task, $event)" />
-                <button class="kds-dish-make" :disabled="writeDisabled" :title="t('dishServe')" :aria-label="`${t('dishServe')} ${task.dishName} · ${orderLabel(task)}`" @click="prepareServe(task)">{{ t('quickServe') }}</button>
               </template>
             </KdsDetailRow>
           </div>
@@ -479,11 +475,9 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           </div>
         </template>
         <template v-else-if="selectedOrder && mode === 'orders'">
-          <h2>{{ typeLabel(selectedOrder.order.orderType) }} · {{ orderLabel(selectedOrder.tasks[0]!) }}</h2>
-          <p>{{ kitchenStatus(selectedOrder.tasks) }}</p>
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="task.dishName">
-              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} · {{ t('passed') }} {{ task.servedQuantity }}<small>{{ task.station }}</small></template>
+            <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="task.dishName" :menu-thumbnail-url="task.menuThumbnailUrl">
+              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} · {{ t('passed') }} {{ task.servedQuantity }}</template>
               <template #notes><p v-if="task.remark" class="kds-dish-remark">{{ task.remark }}</p></template>
             </KdsDetailRow>
             <div v-if="selectedOrder.order.customerRemark" class="kds-order-note">{{ selectedOrder.order.customerRemark }}</div>
@@ -492,7 +486,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <template v-else-if="selectedCard && mode === 'dishBump'">
           <h2>{{ selectedCard.name }} <span>{{ selectedCard.quantity }} {{ displayUnit(selectedCard.unit) }}</span></h2><p v-if="selectedCard.remark">{{ selectedCard.remark }}</p>
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in detailTasks" :key="task.id" :title="`${typeLabel(task.order.orderType)} · ${orderLabel(task)}`" :selected="(quantities[task.id] ?? 0) > 0">
+            <KdsDetailRow v-for="task in detailTasks" :key="task.id" :title="`${typeLabel(task.order.orderType)} · ${orderLabel(task)}`" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
               <template #badges><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span></template>
               <template #progress><span class="kds-pending-count">{{ t('pending') }} <b>{{ pendingQuantity(task) }} {{ displayUnit(task.unit) }}</b></span><small>{{ t('wait') }} {{ waitMinutes(task) }} {{ t('minutes') }}</small></template>
               <template #notes><p v-if="task.order.customerRemark" class="kds-dish-remark">{{ task.order.customerRemark }}</p></template>

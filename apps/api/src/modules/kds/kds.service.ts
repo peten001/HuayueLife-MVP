@@ -56,9 +56,16 @@ export class KdsService {
       this.prisma.kdsOperation.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: 200 }),
       this.prisma.category.findMany({ where: { merchantId }, select: { id: true, nameZh: true }, orderBy: { sortOrder: 'asc' } }),
     ]);
+    const productIds = [...new Set(tasks.flatMap(task => task.productId === null ? [] : [task.productId]))];
+    // Read existing compressed menu images in one merchant-scoped query; never fall back to originals.
+    const products = productIds.length ? await this.prisma.product.findMany({
+      where: { merchantId, id: { in: productIds }, deletedAt: null },
+      select: { id: true, menuThumbnailUrl: true },
+    }) : [];
+    const thumbnails = new Map(products.map(product => [product.id, product.menuThumbnailUrl]));
     return {
       settings: settings ?? { enabled: false, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
-      tasks: tasks.map(task => ({ ...task, order: {
+      tasks: tasks.map(task => ({ ...task, menuThumbnailUrl: task.productId === null ? null : thumbnails.get(task.productId) ?? null, order: {
         ...task.order, tableNo: task.order.table?.tableNo ?? task.order.tableNoSnapshot,
         pickupCode: task.order.orderType === 'PICKUP' ? task.order.orderNo.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase() : null,
       } })), operations, categories, serverTime: new Date(),

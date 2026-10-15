@@ -33,6 +33,23 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it('uses compressed dish images in preparation, serving and read-only details without repeated table or station headings', async () => {
+    const first = data.tasks[0]!;
+    first.menuThumbnailUrl = 'https://example.test/uploads/product-thumbnails/kds-menu.webp';
+    first.madeQuantity = 1;
+    await open(); await wrapper.get('.kds-order-card').trigger('click');
+    const details = () => wrapper.get('.kds-detail');
+    expect(details().find('h2').exists()).toBe(false);
+    expect(details().find('.kds-scope-note').exists()).toBe(false);
+    expect(details().get('.kds-detail-thumbnail img').attributes('src')).toBe(first.menuThumbnailUrl);
+    await button('待传菜'); await wrapper.get('.kds-serving-card').trigger('click');
+    expect(details().find('h2').exists()).toBe(false);
+    expect(details().get('.kds-detail-thumbnail img').attributes('src')).toBe(first.menuThumbnailUrl);
+    await button('订单进度'); await wrapper.get('.kds-order-card').trigger('click');
+    expect(details().find('h2').exists()).toBe(false);
+    expect(details().get('.kds-detail-thumbnail img').attributes('src')).toBe(first.menuThumbnailUrl);
+    expect(details().findAll('button,input')).toHaveLength(0);
+  });
   it('uses the cashier merchant profile and Vietnam date across midnight and language changes', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-13T18:05:00Z'));
     testAuth.profile = { nameZh: '川味测试门店', nameVi: 'Quán thử nghiệm', coverUrl: 'https://example.test/store.jpg',
@@ -200,7 +217,7 @@ describe('KDS operational controls', () => {
     await button('订单进度');
     await wrapper.get('[data-order-type="PICKUP"] .kds-order-card').trigger('click');
     expect(wrapper.get('.kds-detail').text()).toContain('茶饮');
-    expect(wrapper.get('.kds-detail').text()).toContain('制作中');
+    expect(wrapper.get('[data-order-type="PICKUP"] .kds-order-card.selected').text()).toContain('制作中');
     expect(wrapper.get('.kds-detail').findAll('button,input')).toHaveLength(0);
   });
   it('serves prepared pickup portions immediately and waits for the rest of the order', async () => {
@@ -311,7 +328,8 @@ describe('KDS operational controls', () => {
     await wrapper.findAll('.kds-bump-orders .kds-order-card').find(card => card.text().includes('01 桌'))!.trigger('click');
     await wrapper.get('.kds-detail-summary button').trigger('click');
     expect(wrapper.get('.kds-nav button[aria-label="待传菜"]').attributes('aria-pressed')).toBe('true');
-    expect(wrapper.get('.kds-detail h2').text()).toContain('01 桌');
+    expect(wrapper.find('.kds-detail h2').exists()).toBe(false);
+    expect(wrapper.get('.kds-serving-card.selected').text()).toContain('01 桌');
     expect(wrapper.get('.kds-serving-count').text()).toBe('待传菜 2 份');
     expect((wrapper.get('.kds-search input').element as HTMLInputElement).value).toBe('');
   });

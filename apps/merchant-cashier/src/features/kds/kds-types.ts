@@ -13,6 +13,7 @@ export interface KdsOrder {
 }
 export interface KdsTask {
   id: string; orderId: string; orderItemId: string; productId: string | null;
+  menuThumbnailUrl?: string | null;
   dishName: string; unit: string; remark: string | null; station: string; quantity: number;
   madeQuantity: number; servedQuantity: number; cancelledQuantity: number;
   version: number; startedAt: string | null; urgentAt: string | null; createdAt: string;
