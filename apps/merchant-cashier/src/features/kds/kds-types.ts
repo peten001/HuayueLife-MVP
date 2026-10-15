@@ -28,5 +28,5 @@ export interface KdsOperation {
 }
 export interface KdsBoard {
   settings: KdsSettings; tasks: KdsTask[]; operations: KdsOperation[];
-  categories: { id: string; nameZh: string }[]; serverTime: string;
+  categories: { id: string; nameZh: string; nameVi?: string | null; nameEn?: string | null }[]; serverTime: string;
 }

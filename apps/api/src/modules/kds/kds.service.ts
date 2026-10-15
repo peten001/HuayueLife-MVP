@@ -55,7 +55,7 @@ export class KdsService {
         } } },
       }),
       this.prisma.kdsOperation.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: 200 }),
-      this.prisma.category.findMany({ where: { merchantId }, select: { id: true, nameZh: true }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.category.findMany({ where: { merchantId }, select: { id: true, nameZh: true, nameVi: true, nameEn: true }, orderBy: { sortOrder: 'asc' } }),
     ]);
     const visibleTaskIds = new Set(tasks.map(task => task.id.toString()));
     const historyTaskIds = [...new Set(operations.flatMap(operation => Array.isArray(operation.lines)

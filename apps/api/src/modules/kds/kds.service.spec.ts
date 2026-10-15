@@ -44,6 +44,15 @@ describe('KDS board menu thumbnails', () => {
     expect(prisma.product.findMany).not.toHaveBeenCalled();
   });
 
+  it('returns existing category translations scoped to the current merchant', async () => {
+    const { service, prisma } = setup([]);
+    const categories = [{ id: 11n, nameZh: '热菜', nameVi: 'Món nóng', nameEn: 'Hot dishes' }];
+    prisma.category.findMany.mockResolvedValue(categories);
+    expect((await service.board(9n)).categories).toEqual(categories);
+    expect(prisma.category.findMany).toHaveBeenCalledWith({ where: { merchantId: 9n },
+      select: { id: true, nameZh: true, nameVi: true, nameEn: true }, orderBy: { sortOrder: 'asc' } });
+  });
+
   it('localizes recent records outside the active board by task ID while preserving historical Chinese snapshots', async () => {
     const {service,prisma}=setup([task(1n,21n)]);
     prisma.kdsTask.findMany.mockResolvedValueOnce([task(1n,21n)]).mockResolvedValueOnce([

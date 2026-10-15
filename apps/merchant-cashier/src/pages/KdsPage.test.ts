@@ -35,6 +35,57 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it.each(['vi', 'en'] as const)('localizes station selectors, cards and settings in %s without changing filters, selected quantities or stored routing', async language => {
+    data.categories=[{id:'11',nameZh:'热菜',nameVi:'Món nóng',nameEn:'Hot dishes'}, {id:'12',nameZh:'自定义分类'}];
+    data.settings.categoryRoutes=[{categoryId:'11',station:'烧烤档'}];
+    data.tasks[0]!.unit='串';
+    await open();
+    await wrapper.get('.kds-station-select').setValue('烧烤档');
+    await wrapper.get('.kds-order-card').trigger('click');
+    await wrapper.get('.kds-detail-card input').setValue('1');
+    setLocale(language);await flushPromises();
+    const label=language==='vi'?'Quầy nướng':'Grill';
+    const selector=wrapper.get('.kds-station-select');
+    expect(selector.get('option:checked').text()).toBe(label);
+    expect((selector.element as HTMLSelectElement).value).toBe('烧烤档');
+    expect(selector.attributes('title')).toBe(label);
+    expect(wrapper.get('.kds-order-card footer small').text()).toBe(label);
+    expect(wrapper.get('.kds-detail-card').text()).toContain(language==='vi'?'xiên':'skewers');
+    expect((wrapper.get('.kds-detail-card input').element as HTMLInputElement).value).toBe('1');
+    expect(runKdsAction).not.toHaveBeenCalled();
+    await button(kdsText(language,'dishBump'));
+    expect(wrapper.get('.kds-card-total small').text()).toBe(label);
+    await wrapper.get(`button[aria-label="${kdsText(language,'settings')}"]`).trigger('click');
+    const dialog=wrapper.get('.kds-dialog');
+    expect(dialog.text()).toContain(language==='vi'?'Món nóng':'Hot dishes');
+    expect(dialog.text()).toContain('自定义分类');
+    expect((dialog.get('.kds-settings-fields input:not([type])').element as HTMLInputElement).value).not.toContain('热厨');
+    expect(dialog.get('.kds-settings-fields select option:checked').text()).toBe(label);
+    await button(kdsText(language,'save'));
+    expect(saveKdsSettings).toHaveBeenCalledWith(expect.objectContaining({stations:data.settings.stations,categoryRoutes:data.settings.categoryRoutes}));
+  });
+  it('updates an already-visible operation failure when the language changes and preserves its retry key', async () => {
+    vi.mocked(runKdsAction).mockRejectedValue(new CashierApiError({message:'厨房任务已由其他设备更新，请刷新',status:503,code:'SERVICE_UNAVAILABLE'}));
+    await open();await wrapper.get('.kds-order-card').trigger('click');await button('整桌划菜');
+    expect(wrapper.get('[role=alert]').text()).toContain('厨房任务已由其他设备更新');
+    const original=vi.mocked(runKdsAction).mock.calls[0];
+    setLocale('vi');await flushPromises();
+    expect(wrapper.get('[role=alert]').text()).toContain('Thiết bị khác');
+    expect(wrapper.get('[role=alert]').text()).not.toContain('厨房任务');
+    await button(kdsText('vi','retry'));
+    expect(vi.mocked(runKdsAction).mock.calls[1]).toEqual(original);
+    setLocale('en');await flushPromises();
+    expect(wrapper.get('[role=alert]').text()).toContain('Another device updated');
+  });
+  it('translates system return reasons and units without rewriting customer notes', async () => {
+    const task=data.tasks[0]!;
+    data.operations=[{id:'return',staffId:'1',kind:'RETURN',reversedAt:null,createdAt:data.serverTime,
+      lines:['订单数量调整','顾客要求不放香菜'].map(reason=>({taskId:task.id,orderId:task.orderId,dishName:task.dishName,quantity:1,unit:'碗',reason,orderType:'DINE_IN',tableNo:'01'}))}];
+    await open();await button('退菜动态');setLocale('en');await flushPromises();
+    expect(wrapper.get('.kds-records').text()).toContain('Order quantity adjusted');
+    expect(wrapper.get('.kds-records').text()).toContain('bowls');
+    expect(wrapper.get('.kds-records').text()).toContain('顾客要求不放香菜');
+  });
   it('persists the serving switch, hides every active serving control while off and keeps making available', async () => {
     data.tasks[0]!.madeQuantity=1;
     vi.mocked(saveKdsSettings).mockImplementation(async settings => {data.settings={...settings};return settings;});

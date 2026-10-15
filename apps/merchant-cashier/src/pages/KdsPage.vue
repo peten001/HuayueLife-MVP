@@ -2,12 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ChefHat, ChevronLeft, ChevronRight, Clock, Languages, LogOut, Maximize, RefreshCw, Search, Settings, Volume2, VolumeX, X } from '@lucide/vue';
 import { getKdsBoard, runKdsAction, saveKdsSettings, undoKdsOperation } from '@/api/kds';
-import { isMutationOutcomeUncertain, messageFromApiError } from '@/api/error';
+import { apiErrorTranslationKey, isMutationOutcomeUncertain, messageFromApiError } from '@/api/error';
 import { useAuthStore } from '@/stores/auth';
 import { useSoundStore } from '@/stores/sound';
 import { useI18n, type Locale } from '@/i18n';
 import { isKdsTerminal } from '@/config/terminal';
 import { canMakeKitchenTask, groupKitchenOrders, groupKitchenTasks, orderKitchenProgress, pendingQuantity, servingQuantity } from '@/features/kds/kds-domain';
+import { kdsKnownSystemMessage, kdsStationInput, kdsStationLabel, kdsSystemMessage, kdsUnitLabel } from '@/features/kds/kds-localized';
 import KdsQuantityStepper from '@/features/kds/KdsQuantityStepper.vue';
 import KdsDetailRow from '@/features/kds/KdsDetailRow.vue';
 import CashierMerchantPanel from '@/components/shell/CashierMerchantPanel.vue';
@@ -39,8 +40,8 @@ const page = ref(0);
 const busy = ref(false);
 const loading = ref(true);
 const connected = ref(true);
-const error = ref('');
-const notice = ref('');
+const error = ref<unknown>(null);
+const notice = ref<KdsTextKey | null>(null);
 const now = ref(Date.now());
 const kitchenClock = createKdsClock();
 const kitchenNow = ref<number | null>(null);
@@ -51,7 +52,7 @@ const draftStationNames = ref('');
 type KitchenMutation = { action: 'MAKE' | 'SERVE' | 'UNDO'; lines: KdsLine[]; requestKey: string; operationId?: string };
 const confirm = ref<KitchenMutation | null>(null);
 const uncertainMutation = ref<KitchenMutation | null>(null);
-const mutationError = ref('');
+const mutationError = ref<unknown>(null);
 let poll: ReturnType<typeof setInterval>;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -98,7 +99,18 @@ const detailTasks = computed(() => mode.value === 'orderBump' ? selectedKitchenO
 const batchQuantity = computed(() => detailTasks.value.reduce((sum, task) => sum + (quantities.value[task.id] ?? 0), 0));
 const totalPending = computed(() => mode.value === 'orderBump' ? orderCards.value.reduce((sum, group) => sum + group.quantity, 0)
   : tasks.value.filter(canMakeKitchenTask).reduce((sum, task) => sum + pendingQuantity(task), 0));
-const displayUnit = (unit?: string) => !unit || unit === '份' ? t('unit') : unit;
+const displayUnit = (unit?: string) => kdsUnitLabel(locale.value, unit);
+const stationLabel = (name: string, siblings = board.value?.settings.stations ?? []) => kdsStationLabel(locale.value, name, siblings);
+const categoryLabel = (category: KdsBoard['categories'][number]) => resolveLocalizedOrderItemName({
+  productNameZh: category.nameZh, productNameVi: category.nameVi, productNameEn: category.nameEn,
+}, locale.value, category.nameZh);
+function errorLabel(value: unknown) {
+  if (!value) return '';
+  const message = messageFromApiError(value);
+  return kdsKnownSystemMessage(locale.value, message) ?? (locale.value === 'zh' ? message : commonText(apiErrorTranslationKey(value)));
+}
+const errorText = computed(() => errorLabel(error.value));
+const mutationErrorText = computed(() => errorLabel(mutationError.value));
 const totalUnit = computed(() => {
   const units = [...new Set(tasks.value.filter(task => task.quantity > 0).map(task => task.unit))];
   return units.length > 1 ? '' : displayUnit(units[0]);
@@ -194,10 +206,15 @@ const businessHoursLabel = computed(() => {
 });
 const draftStations = computed(() => draftStationNames.value.split(/[,，]/).map(value => value.trim()).filter(Boolean));
 
-function showNotice(message: string) {
+const localizedDraftStationNames = computed({
+  get: () => draftStationNames.value.split(/[,，]/).map(name => stationLabel(name.trim(), draftStations.value)).join(', '),
+  set: (value: string) => { draftStationNames.value = kdsStationInput(locale.value, value, draftStations.value); },
+});
+
+function showNotice(message: KdsTextKey) {
   clearTimeout(noticeTimer);
   notice.value = message;
-  noticeTimer = setTimeout(() => { notice.value = ''; }, 3000);
+  noticeTimer = setTimeout(() => { notice.value = null; }, 3000);
 }
 
 async function refresh() {
@@ -219,9 +236,9 @@ async function refresh() {
     kitchenNow.value = kitchenClock.now();
     board.value = result;
     connected.value = true;
-    if (!confirm.value) error.value = '';
+    if (!confirm.value) error.value = null;
   } catch (caught) {
-    if (mounted) { connected.value = false; error.value = messageFromApiError(caught); }
+    if (mounted) { connected.value = false; error.value = caught; }
   } finally {
     loading.value = false; refreshing = false;
     if (refreshQueued && mounted) { refreshQueued = false; void refresh(); }
@@ -272,14 +289,14 @@ async function viewServingOrder(key: string) {
 }
 async function execute(pending: KitchenMutation) {
   if (busy.value || !connected.value || !board.value?.settings.enabled) return;
-  busy.value = true; error.value = ''; mutationError.value = ''; notice.value = '';
+  busy.value = true; error.value = null; mutationError.value = null; notice.value = null;
   mutationEpoch++;
   try {
     if (pending.action === 'UNDO') await undoKdsOperation(pending.operationId!, pending.requestKey);
     else await runKdsAction(pending.action, pending.lines, pending.requestKey);
     confirm.value = null; uncertainMutation.value = null; quantities.value = {};
   } catch (caught) {
-    mutationError.value = messageFromApiError(caught);
+    mutationError.value = caught;
     // Keep a frozen payload/key until an uncertain write is conclusively replayed.
     uncertainMutation.value = isMutationOutcomeUncertain(caught) ? pending : null;
     confirm.value = null;
@@ -298,14 +315,14 @@ function openSettings() {
 }
 async function saveSettings() {
   if (!canConfigure.value || !draftSettings.value || busy.value || uncertainMutation.value || !connected.value) return;
-  busy.value = true; error.value = '';
+  busy.value = true; error.value = null;
   try {
     const settings = { enabled: draftSettings.value.enabled,
       ...(draftSettings.value.servingEnabled !== originalServingEnabled.value ? { servingEnabled: draftSettings.value.servingEnabled } : {}),
       timeoutMinutes: draftSettings.value.timeoutMinutes,
       stations: draftStations.value, categoryRoutes: draftSettings.value.categoryRoutes.filter(route => route.station) };
-    await saveKdsSettings(settings); settingsOpen.value = false; showNotice(t('updated'));
-  } catch (caught) { error.value = messageFromApiError(caught); }
+    await saveKdsSettings(settings); settingsOpen.value = false; showNotice('updated');
+  } catch (caught) { error.value = caught; }
   finally { busy.value = false; }
   await refresh();
 }
@@ -341,7 +358,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
     <header class="kds-top">
       <CashierMerchantPanel :merchant-name="merchantName" :merchant-image-urls="merchantImages"
         :business-open="businessOpen" :business-hours-label="businessHoursLabel" :demo-mode="auth.demoMode" />
-      <select v-model="station" class="kds-station-select" :aria-label="t('stationSelect')" :title="station || t('allStations')"><option value="">{{ t('allStations') }}</option><option v-for="name in board?.settings.stations" :key="name">{{ name }}</option></select>
+      <select v-model="station" class="kds-station-select" :aria-label="t('stationSelect')" :title="station ? stationLabel(station) : t('allStations')"><option value="">{{ t('allStations') }}</option><option v-for="name in board?.settings.stations" :key="name" :value="name">{{ stationLabel(name) }}</option></select>
       <div class="kds-types" role="group" :aria-label="t('orders')"><button v-for="option in (['', 'DINE_IN', 'DELIVERY', 'PICKUP'] as const)" :key="option" :class="{ active: type === option }" @click="type = option">{{ option ? typeLabel(option) : t('all') }}</button></div>
       <label class="kds-search"><Search :size="20" /><input v-model="search" :placeholder="t('search')" /></label>
       <div class="kds-tools">
@@ -354,15 +371,15 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
       </div>
     </header>
     <div v-if="!connected || error || mutationError || uncertainMutation" class="kds-alert" role="alert">
-      {{ !connected ? t('disconnected') : mutationError || error }} <span v-if="!connected">{{ error }}</span>
+      {{ !connected ? t('disconnected') : mutationErrorText || errorText }} <span v-if="!connected">{{ errorText }}</span>
       <template v-if="uncertainMutation"><span>{{ t('requestPending') }}</span><button :disabled="busy || !connected" @click="retryMutation">{{ t('retry') }}</button></template>
     </div>
-    <div v-else-if="notice" class="kds-notice" role="status">{{ notice }}</div>
+    <div v-else-if="notice" class="kds-notice" role="status">{{ t(notice) }}</div>
     <div class="kds-body">
       <nav class="kds-nav" :aria-label="'KDS'"><button v-for="item in visibleMenu" :key="item" :class="{ active: mode === item }" :aria-label="t(item)" :aria-pressed="mode === item" @click="changeMode(item)"><span class="kds-nav-label">{{ t(item) }}</span></button></nav>
       <main class="kds-workspace" :aria-label="t(mode)">
         <div v-if="loading" class="kds-empty">{{ t('loading') }}</div>
-        <div v-else-if="!board" class="kds-empty">{{ error || t('loading') }}<button @click="refresh">{{ t('refresh') }}</button></div>
+        <div v-else-if="!board" class="kds-empty">{{ errorText || t('loading') }}<button @click="refresh">{{ t('refresh') }}</button></div>
         <div v-else-if="!board.settings.enabled" class="kds-empty"><ChefHat :size="48" /><p>{{ t('disabled') }}</p></div>
         <template v-else-if="mode === 'orderBump'">
           <div v-if="!orderCards.length" class="kds-empty">{{ t('noTasks') }}</div>
@@ -381,7 +398,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <div class="kds-order-dishes"><p v-for="task in group.visibleTasks" :key="task.id" :class="{ 'kds-dish-finished': !pendingQuantity(task) }">
                 <span>{{ dishName(task) }}<small v-if="task.remark">{{ task.remark }}</small></span>
                 <b>{{ pendingQuantity(task) }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</b></p></div>
-              <footer>{{ t('pending') }} {{ group.quantity }} {{ tasksUnit(group.pendingTasks) }}<small>{{ station || t('allStations') }}</small></footer>
+              <footer>{{ t('pending') }} {{ group.quantity }} {{ tasksUnit(group.pendingTasks) }}<small>{{ station ? stationLabel(station) : t('allStations') }}</small></footer>
             </button>
           </div>
         </template>
@@ -391,7 +408,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
             <button v-for="card in pageCards" :key="card.key" class="kds-card" :class="{ selected: selected === card.key, overdue: card.tasks.some(overdue) }" @click="choose(card.key)">
               <strong>{{ dishName(card.tasks[0]!) }}</strong><p v-if="card.remark">{{ card.remark }}</p>
               <div class="kds-badges"><span v-for="orderType in (['DINE_IN', 'PICKUP', 'DELIVERY'] as const)" v-show="badgeCount(card.tasks, orderType) > 0" :key="orderType" :class="orderType">{{ typeLabel(orderType, true) }} {{ badgeCount(card.tasks, orderType) }}</span><span v-if="isAddition(card.tasks)" class="warning">{{ t('added') }}</span><span v-if="card.tasks.some(task => task.urgentAt)" class="warning">{{ t('urge') }}</span></div>
-              <div class="kds-card-total"><small>{{ card.station }}</small><b>{{ card.quantity }} {{ displayUnit(card.unit) }}</b></div>
+              <div class="kds-card-total"><small>{{ stationLabel(card.station) }}</small><b>{{ card.quantity }} {{ displayUnit(card.unit) }}</b></div>
             </button>
           </div>
         </template>
@@ -434,7 +451,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <header class="kds-lane-title"><h2>{{ lane.orderType ? typeLabel(lane.orderType) : t('otherRecords') }}</h2><b>{{ lane.records.length }}</b></header>
               <div class="kds-records"><article v-for="operation in lane.records" :key="operation.id">
                 <header><strong>{{ operationLabel(operation) }}</strong><time :datetime="operation.createdAt" :title="new Date(operation.createdAt).toLocaleString(locale, { timeZone: 'Asia/Ho_Chi_Minh' })">{{ recordTime(operation.createdAt) }}</time></header>
-                <p v-for="(line, index) in operation.lines" :key="index"><span><strong>{{ dishName(line) }}</strong><small>{{ recordOrderLabel(line) }}</small><small v-if="line.removedMade">{{ t('returnedMade') }} {{ line.removedMade }}</small><small v-if="line.reason">{{ line.reason }}</small></span><b>{{ line.quantity }} {{ displayUnit(line.unit) }}</b></p>
+                <p v-for="(line, index) in operation.lines" :key="index"><span><strong>{{ dishName(line) }}</strong><small>{{ recordOrderLabel(line) }}</small><small v-if="line.removedMade">{{ t('returnedMade') }} {{ line.removedMade }}</small><small v-if="line.reason">{{ kdsSystemMessage(locale, line.reason) }}</small></span><b>{{ line.quantity }} {{ displayUnit(line.unit) }}</b></p>
               </article><div v-if="!lane.records.length" class="kds-lane-empty">{{ t('emptyRecords') }}</div></div>
             </section>
           </div>
@@ -530,16 +547,16 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
           <label class="kds-checkbox"><input v-model="draftSettings.servingEnabled" type="checkbox" />{{ t('servingEnabled') }}</label>
           <small>{{ t('servingSettingHint') }}</small>
           <label>{{ t('timeoutSetting') }}<input v-model.number="draftSettings.timeoutMinutes" type="number" min="1" max="180" /></label>
-          <label>{{ t('stations') }}<input v-model="draftStationNames" /></label>
+          <label>{{ t('stations') }}<input v-model="localizedDraftStationNames" /></label>
           <h3>{{ t('routes') }}</h3>
-          <label v-for="category in board?.categories" :key="category.id">{{ category.nameZh }}
+          <label v-for="category in board?.categories" :key="category.id">{{ categoryLabel(category) }}
             <select :value="draftSettings.categoryRoutes.find(route => route.categoryId === category.id)?.station ?? ''" @change="routeStation(category.id, ($event.target as HTMLSelectElement).value)">
-              <option value="">{{ t('defaultStation') }}</option><option v-for="name in draftStations" :key="name">{{ name }}</option>
+              <option value="">{{ t('defaultStation') }}</option><option v-for="name in draftStations" :key="name" :value="name">{{ stationLabel(name, draftStations) }}</option>
             </select>
           </label>
           <small>{{ t('routeHelp') }}</small><small>{{ t('activationHelp') }}</small>
         </div>
-        <p v-if="error" role="alert" class="kds-dialog-error">{{ error }}</p>
+        <p v-if="error" role="alert" class="kds-dialog-error">{{ errorText }}</p>
         </div>
         <footer>
           <button :disabled="busy" @click="settingsOpen = false">{{ canConfigure ? t('cancel') : t('close') }}</button>
