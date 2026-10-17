@@ -1149,10 +1149,24 @@ export class MerchantOrdersService {
       const touchedOrderIds = new Set<bigint>();
       for (const change of negative) {
         let remaining = change.removeQuantity;
-        for (const raw of change.line.rawItems) {
-          if (remaining <= 0) break;
-          if (!['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(raw.orderStatus)) continue;
-          const decrease = Math.min(remaining, raw.quantity);
+        const adjustableItems = change.line.rawItems.filter(raw =>
+          ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY'].includes(raw.orderStatus));
+        const decreases = new Map<bigint, number>();
+        // A merged dish can span several orders, each with both reported and
+        // unreported portions. Consume all unreported portions before recalling
+        // anything the kitchen received; sorting whole rows is insufficient.
+        for (const reported of [false, true]) {
+          for (const raw of adjustableItems) {
+            if (remaining <= 0) break;
+            const notified = Math.max(0, Math.min(raw.quantity, raw.productionNotifiedQuantity));
+            const available = reported ? notified : raw.quantity - notified;
+            const decrease = Math.min(remaining, available);
+            decreases.set(raw.itemId, (decreases.get(raw.itemId) ?? 0) + decrease);
+            remaining -= decrease;
+          }
+        }
+        for (const raw of adjustableItems) {
+          const decrease = decreases.get(raw.itemId) ?? 0;
           const targetQuantity = raw.quantity - decrease;
           const afterSubtotalVnd = raw.unitPriceVnd * BigInt(targetQuantity);
           if (decrease === 0) continue;
@@ -1198,7 +1212,6 @@ export class MerchantOrdersService {
             },
           });
           touchedOrderIds.add(raw.orderId);
-          remaining -= decrease;
         }
         if (remaining > 0) {
           throw new ConflictException({

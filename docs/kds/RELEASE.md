@@ -1,5 +1,13 @@
 # KDS 发布说明
 
+## 2026-10-17 未发送菜品删减不产生厨房退菜
+
+用户已明确授权提交、推送和部署，候选版本 `kds-unsent-returns-20261017-v3`。修复整桌同菜跨原订单分配时误扣已发送份数的问题，全部来源的未发送数量优先扣减；只在实际减少已入厨房任务的数量时形成 KDS RETURN，收银修改审计及有效数量计费继续保留。通知失败会与厨房任务创建同事务回滚，不将失败的下发视为已发送。
+
+发布仅复制当前 API 完整运行产物到新目录，替换 `merchant-orders/merchant-orders.service` 和 `table-sessions/dine-in-canonical-state.service` 的 JS／映射／声明共六个文件；其他运行代码与现有依赖不变。原有 1313 项 API 单测通过，补充后相关 44 项单测、39 项隔离 MySQL 全流程、全仓类型检查与构建通过。无数据库、配置、依赖或页面资源变更，不操作 uploads，不在生产创建样本或执行删菜／退菜／划菜。
+
+候选目录 `/opt/huayue-api-releases/kds-unsent-returns-20261017-v3/apps/api/dist`，备份及发布凭证 `/opt/backups/yunqiao-kds-unsent-returns-20261017-v3`。先校验已推送提交、源码树及六个文件的校验值，备份旧 API 与私有配置；验证候选语法及模块加载后原子切换 API 编译目录，并重启原 PM2 服务。验证健康、鉴权、现有 KDS 与桌账只读接口，且收银／KDS 页面指针及资源校验值不变，再生成成功凭证。失败仅恢复兼容退菜数据的当前 API 指针并重启，不恢复营业数据库。
+
 ## 2026-10-17 退菜订单制作完成后退出看板
 
 **已上线**：代码提交 `a38ade42fe51e73ad8a4c41db2cf3e3935fbdb12`，源码树 `7e03cc9c448e8e148296035fa4c4c8498c5b00f9`，版本 `kds-return-queue-20261017-v2`。服务器全部 28 个新文件校验通过，服务器和本机外网各验证 13 个入口／JS／CSS 文件；健康 200、未登录看板 401。API／依赖／收银仍指向 `kds-returns-20261017-v1`，API 配置及运行代码、收银首页校验值未变，API online、重启次数保持 8、unstable_restarts=0。没有迁移、API 重启或生产订单写入。旧 KDS 归档 1,904,599 bytes、SHA-256 `826337203003e8dfbad773e95647cb8a968942c9204b283662ce01be86cc13b6`，逐文件校验通过；保留 92 个旧哈希资源。服务器 `DEPLOYMENT_PASS.json` 与本机 `PUBLIC_PASS.json` 均为 PASS。

@@ -54,6 +54,7 @@ export type DineInCanonicalItemRow = {
   remark: string | null;
   unitPriceVnd: bigint;
   quantity: number;
+  productionNotifiedQuantity: number;
   returnedQuantity?: number;
   subtotalVnd: bigint;
   createdAt: Date;
@@ -100,6 +101,7 @@ export type DineInCanonicalLineInternal = {
     orderId: bigint;
     orderStatus: OrderStatus;
     quantity: number;
+    productionNotifiedQuantity: number;
     unitPriceVnd: bigint;
     createdAt: Date;
   }>;
@@ -193,6 +195,7 @@ export class DineInCanonicalStateService {
                 remark: true,
                 unitPriceVnd: true,
                 quantity: true,
+                productionNotifiedQuantity: true,
                 returnedQuantity: true,
                 subtotalVnd: true,
                 createdAt: true,
@@ -238,6 +241,7 @@ export class DineInCanonicalStateService {
         remark: item.remark,
         unitPriceVnd: item.unitPriceVnd,
         quantity: item.quantity,
+        productionNotifiedQuantity: item.productionNotifiedQuantity,
         returnedQuantity: item.returnedQuantity,
         subtotalVnd: item.subtotalVnd,
         createdAt: item.createdAt,
@@ -315,13 +319,14 @@ export class DineInCanonicalStateService {
       remark: string | null;
       unit_price_vnd: bigint;
       quantity: number;
+      production_notified_quantity: number;
       returned_quantity: number;
       subtotal_vnd: bigint;
       created_at: Date;
     }>>`
       SELECT oi.id, oi.order_id, oi.product_id,
              oi.product_name_zh_snapshot,
-             oi.remark, oi.unit_price_vnd, oi.quantity, oi.returned_quantity, oi.subtotal_vnd,
+             oi.remark, oi.unit_price_vnd, oi.quantity, oi.production_notified_quantity, oi.returned_quantity, oi.subtotal_vnd,
              oi.created_at
       FROM order_items oi
       INNER JOIN orders o ON o.id = oi.order_id
@@ -399,6 +404,7 @@ export class DineInCanonicalStateService {
           remark: item.remark,
           unitPriceVnd: item.unit_price_vnd,
           quantity: item.quantity,
+          productionNotifiedQuantity: item.production_notified_quantity,
           returnedQuantity: item.returned_quantity,
           subtotalVnd: item.subtotal_vnd,
           createdAt: item.created_at,
@@ -474,6 +480,7 @@ export class DineInCanonicalStateService {
         orderId: item.orderId,
         orderStatus: order.status,
         quantity: item.quantity,
+        productionNotifiedQuantity: item.productionNotifiedQuantity,
         unitPriceVnd: item.unitPriceVnd,
         createdAt: item.createdAt,
       });

@@ -27,6 +27,20 @@ describe('DineInCanonicalStateService builder', () => {
     })]);
   });
 
+  it('keeps each source notification quantity for allocation without exposing it in the public bill', () => {
+    const input = source();
+    input.items[0]!.productionNotifiedQuantity = 1;
+    input.orders.push(order(42n, 'ACCEPTED', 3n));
+    input.items.push(item(72n, 42n, { quantity: 3, productionNotifiedQuantity: 1, subtotalVnd: 36_000n }));
+    const state = service.build(input);
+    expect(state.items[0]?.rawItems).toEqual([
+      expect.objectContaining({ itemId: 71n, quantity: 1, productionNotifiedQuantity: 1 }),
+      expect.objectContaining({ itemId: 72n, quantity: 3, productionNotifiedQuantity: 1 }),
+    ]);
+    expect(service.toPublicState(state).items[0]).not.toHaveProperty('rawItems');
+    expect(state.totals.payableAmountVnd).toBe('48000');
+  });
+
   it('merges multiple staff add orders with the same semantic line', () => {
     const input = source();
     input.orders.push(order(42n, 'ACCEPTED', 3n));
@@ -291,6 +305,7 @@ function item(id: bigint, orderId: bigint, overrides: Partial<DineInCanonicalSou
     remark: null,
     unitPriceVnd: 12_000n,
     quantity: 1,
+    productionNotifiedQuantity: 0,
     subtotalVnd: 12_000n,
     createdAt: new Date(Date.UTC(2026, 7, 30, 0, 0, Number(id))),
     ...overrides,

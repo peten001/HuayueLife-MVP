@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { OrderType } from '@prisma/client';
@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import request = require('supertest');
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
+import * as kdsSync from '../src/modules/kds/kds-sync';
 
 describe('KDS real MySQL workflow', () => {
   let app: INestApplication;
@@ -84,6 +85,103 @@ describe('KDS real MySQL workflow', () => {
     const replay = await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: key }).expect(201);
     expect(replay.body.data.idempotentReplay).toBe(true);
     expect(await prisma.printTriggerOutbox.count({ where: { merchantId } })).toBe(0);
+  });
+  async function reconcileDish(row: { tableSessionId: bigint | null }, quantity: number, key = randomUUID()) {
+    const path = `/merchant/table-sessions/${row.tableSessionId}/canonical-state`;
+    const state = (await call('get', path).expect(200)).body.data;
+    const payload = { requestKey: key, baseRevision: state.revision,
+      desiredItems: state.items.map((line: { lineKey: string; productId: string; quantity: number }) => ({
+        lineKey: line.lineKey, desiredQuantity: line.productId === productId.toString() ? quantity : line.quantity,
+      })) };
+    await call('post', `${path}/reconcile`, payload).expect(201);
+    await call('post', `${path}/reconcile`, payload).expect(201);
+    return (await call('get', path).expect(200)).body.data;
+  }
+  it.each(['single-item', 'canonical'])('does not create kitchen returns for unreported edits through %s', async path => {
+    const row = await order('DINE_IN', 3, 0, true);
+    const beforeReturns = await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } });
+    if (path === 'canonical') {
+      await reconcileDish(row, 2);
+      await reconcileDish(row, 0);
+    } else {
+      const url = `/merchant/orders/${row.id}/items/${row.items[0]!.id}/return`;
+      for (const expectedQuantity of [3, 2]) {
+        const payload = { requestKey: randomUUID(), expectedQuantity, returnQuantity: expectedQuantity === 3 ? 1 : 2 };
+        await call('post', url, payload).expect(201);
+        await call('post', url, payload).expect(201);
+      }
+    }
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: row.items[0]!.id } })).toMatchObject({ quantity: 0, returnedQuantity: 3, productionNotifiedQuantity: 0 });
+    expect((await board()).tasks.filter((task: { orderId: string }) => task.orderId === row.id.toString())).toEqual([]);
+    await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(201);
+    expect(await task(row.id)).toBeUndefined();
+    expect((await task(row.id, barProductId)).quantity).toBe(1);
+    expect(await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } })).toBe(beforeReturns);
+    expect(await prisma.printTriggerOutbox.count({ where: { merchantId, orderId: row.id } })).toBe(0);
+  });
+  it('rolls back a failed kitchen dispatch and creates no kitchen return when the cashier then edits', async () => {
+    const row = await order('DINE_IN', 3, 0, true);
+    const original = kdsSync.syncKdsOrder;
+    const sync = jest.spyOn(kdsSync, 'syncKdsOrder').mockImplementationOnce(async (...args) => {
+      await original(...args);
+      throw new ConflictException('simulated dispatch failure after task creation');
+    });
+    try {
+      await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(409);
+    } finally { sync.mockRestore(); }
+    expect(await prisma.kdsTask.count({ where: { orderId: row.id } })).toBe(0);
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: row.items[0]!.id } })).toMatchObject({ productionNotifiedQuantity: 0 });
+    expect(await prisma.orderStatusLog.count({ where: { orderId: row.id, action: 'TABLE_SESSION_PRODUCTION_NOTIFIED' } })).toBe(0);
+    const beforeReturns = await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } });
+    await reconcileDish(row, 1);
+    await reconcileDish(row, 0);
+    expect(await task(row.id)).toBeUndefined();
+    expect(await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } })).toBe(beforeReturns);
+  });
+  it('does not create a kitchen cancellation when an entirely unreported table is cleared', async () => {
+    const row = await order('DINE_IN', 2, 0);
+    const beforeReturns = await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } });
+    const state = await reconcileDish(row, 0);
+    expect(state).toMatchObject({ sessionStatus: 'CLOSED', totals: { payableAmountVnd: '0' } });
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: 'CANCELLED' });
+    expect((await board()).tasks.some((task: { orderId: string }) => task.orderId === row.id.toString())).toBe(false);
+    expect(await prisma.kdsTask.count({ where: { orderId: row.id } })).toBe(0);
+    expect(await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } })).toBe(beforeReturns);
+    const history = (await call('get', `/merchant/settlements/session:${row.tableSessionId}`).expect(200)).body.data;
+    expect(history.items).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 2, subtotalVnd: '0' })]);
+  });
+  it('reduces unreported additions on the same item before returning any reported portions', async () => {
+    const row = await order('DINE_IN', 5, 3, true);
+    const original = await task(row.id);
+    await action(original, 2).expect(201);
+    await reconcileDish(row, 3);
+    expect(await task(row.id)).toMatchObject({ quantity: 3, madeQuantity: 2, cancelledQuantity: 0 });
+    await reconcileDish(row, 2);
+    expect(await task(row.id)).toMatchObject({ quantity: 2, madeQuantity: 2, cancelledQuantity: 1, returnedMadeQuantity: 0 });
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: row.items[0]!.id } })).toMatchObject({ quantity: 2, returnedQuantity: 3, productionNotifiedQuantity: 2 });
+  });
+  it('consumes unreported quantities across every merged source before issuing kitchen returns', async () => {
+    const first = await order('DINE_IN', 3, 2);
+    const added = await order('DINE_IN', 3, 1);
+    const other = await order('DINE_IN', 2, 2);
+    await prisma.order.update({ where: { id: added.id }, data: { tableId: first.tableId,
+      tableSessionId: first.tableSessionId, tableNoSnapshot: first.tableNoSnapshot } });
+    const original = await task(first.id);
+    await action(original, 1).expect(201);
+    const beforeReturns = await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } });
+    await reconcileDish(first, 3);
+    expect(await task(first.id)).toMatchObject({ quantity: 2, madeQuantity: 1, cancelledQuantity: 0 });
+    expect(await task(added.id)).toMatchObject({ quantity: 1, cancelledQuantity: 0 });
+    expect(await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } })).toBe(beforeReturns);
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: first.items[0]!.id } })).toMatchObject({ quantity: 2, returnedQuantity: 1 });
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: added.items[0]!.id } })).toMatchObject({ quantity: 1, returnedQuantity: 2 });
+    await reconcileDish(first, 1);
+    // Keep the existing ACCEPTED-before-PREPARING allocation once all
+    // unreported portions are gone; do not reset already-made portions.
+    expect(await task(first.id)).toMatchObject({ quantity: 1, madeQuantity: 1, cancelledQuantity: 1, returnedMadeQuantity: 0 });
+    expect(await task(added.id)).toMatchObject({ quantity: 0, cancelledQuantity: 1 });
+    expect(await task(other.id)).toMatchObject({ quantity: 2, cancelledQuantity: 0 });
+    expect(await prisma.kdsOperation.count({ where: { merchantId, kind: 'RETURN' } })).toBe(beforeReturns + 2);
   });
   it('makes 2 of 3, preserves the second table, and replays an identical request once', async () => {
     const first = await order(); const second = await order('DINE_IN', 2);

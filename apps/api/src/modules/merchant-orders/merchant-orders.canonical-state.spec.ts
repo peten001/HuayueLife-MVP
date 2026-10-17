@@ -59,6 +59,35 @@ describe('MerchantOrdersService canonical reconcile', () => {
     else expect(harness.tx.orderItem.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ quantity: 10 }) }));
   });
 
+  it('allocates an unsent decrease across partially reported sources, writing each row once', async () => {
+    const harness = buildHarness({ baseQuantity: 6, desiredQuantity: 3, afterQuantity: 3 });
+    const line = harness.before.items[0]!;
+    line.rawItems = [
+      { ...line.rawItems[0]!, quantity: 3, productionNotifiedQuantity: 2 },
+      { ...line.rawItems[0]!, itemId: 72n, orderId: 42n, quantity: 3, productionNotifiedQuantity: 1 },
+    ];
+    await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+    expect(harness.tx.orderItem.update).toHaveBeenCalledTimes(2);
+    expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
+      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n, returnedQuantity: { increment: 1 } },
+    });
+    expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
+      where: { id: 72n }, data: { quantity: 1, subtotalVnd: 12_000n, returnedQuantity: { increment: 2 } },
+    });
+  });
+
+  it('records one cashier adjustment when one decrease spans unsent and reported portions of the same source', async () => {
+    const harness = buildHarness({ baseQuantity: 5, desiredQuantity: 2, afterQuantity: 2 });
+    harness.before.items[0]!.rawItems[0]!.productionNotifiedQuantity = 3;
+    await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
+    expect(harness.tx.orderItem.update).toHaveBeenCalledTimes(1);
+    expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
+      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n, returnedQuantity: { increment: 3 } },
+    });
+    const returns = harness.tx.orderStatusLog.create.mock.calls.filter(([arg]) => arg.data.action === 'ORDER_ITEM_RETURNED');
+    expect(returns).toEqual([[expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ beforeQuantity: 5, afterQuantity: 2, delta: -3 }) }) })]]);
+  });
+
   it('closes and releases the OPEN session when the last item changes 1 to 0', async () => {
     const harness = buildHarness({ desiredQuantity: 0, afterQuantity: 0, aggregateCount: 0 });
     const result = await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
@@ -315,7 +344,7 @@ function state(quantity: number, lockedQuantity: number, blockers: string[], emp
       lockedQuantity, adjustableQuantity: quantity - lockedQuantity,
       subtotalVnd: (BigInt(quantity) * 12_000n).toString(), adjustability: lockedQuantity === quantity ? 'LOCKED' : 'RETURN',
       sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
-      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
+      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, productionNotifiedQuantity: 0, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
     }],
     totals: { originalAmountVnd: (BigInt(quantity) * 12_000n).toString(), discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: (BigInt(quantity) * 12_000n).toString() },
     blockers, generatedAt: '2026-08-30T00:00:00.000Z',
