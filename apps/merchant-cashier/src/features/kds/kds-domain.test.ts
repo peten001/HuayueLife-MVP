@@ -15,7 +15,7 @@ describe('KDS order ownership and aggregate grouping', () => {
       { ...task, id: 'order-remark', order: { ...task.order, customerRemark: '过敏：花生' } }];
     expect(groupKitchenTasks(modified)).toHaveLength(4);
   });
-  it('retains partial, full and already-made returns in summary without counting them as extra work', () => {
+  it('retains partial, full and already-made returns only while the table still has preparation work', () => {
     const first = demoKds.board().tasks[0]!;
     const partial = { ...first, quantity: 2, madeQuantity: 1, cancelledQuantity: 1 };
     const full = { ...first, id: 'full', quantity: 0, madeQuantity: 0, cancelledQuantity: 3,
@@ -24,9 +24,9 @@ describe('KDS order ownership and aggregate grouping', () => {
     const group = groupKitchenTasks([partial, full, made])[0]!;
     expect(group.tasks.map(task => task.id)).toEqual([partial.id, full.id, made.id]);
     expect(group).toMatchObject({ quantity: 1, returnedQuantity: 6, fullyReturned: false });
-    expect(groupKitchenTasks([full])[0]).toMatchObject({ quantity: 0, returnedQuantity: 3, fullyReturned: true });
+    expect(groupKitchenTasks([full, made])).toEqual([]);
     // A cancelled order must never become actionable just because it has return evidence.
-    expect(groupKitchenTasks([{ ...full, quantity: 1 }])[0]!.quantity).toBe(0);
+    expect(groupKitchenTasks([{ ...full, quantity: 1 }])).toEqual([]);
   });
   it('sorts waiting work before return-only groups and leaves completed dishes without returns out', () => {
     const first = demoKds.board().tasks[0]!;
@@ -34,6 +34,39 @@ describe('KDS order ownership and aggregate grouping', () => {
     const waiting = { ...first, id: 'waiting', dishName: '另一道菜' };
     const completed = { ...first, id: 'completed', dishName: '完成菜', madeQuantity: first.quantity };
     expect(groupKitchenTasks([full, waiting, completed]).map(group => group.tasks[0]!.id)).toEqual(['waiting', 'full']);
+    expect(groupKitchenTasks([full, { ...waiting, madeQuantity: waiting.quantity }, completed])).toEqual([]);
+  });
+  it('removes a finished table from a shared dish while another table keeps cooking', () => {
+    const [first, second] = demoKds.board().tasks;
+    const completedReturn = { ...first!, madeQuantity: first!.quantity, cancelledQuantity: 1 };
+    const group = groupKitchenTasks([completedReturn, second!])[0]!;
+    expect(group.tasks.map(task => task.id)).toEqual([second!.id]);
+    expect(group.returnedQuantity).toBe(0);
+    expect(group.quantity).toBe(second!.quantity);
+  });
+  it('uses the full station scope for return searches, so searching does not create or hide preparation work', () => {
+    const first = demoKds.board().tasks[0]!;
+    const returned = { ...first, quantity: 0, cancelledQuantity: 2 };
+    const waiting = { ...first, id: 'waiting', dishName: '另一道菜' };
+    expect(groupKitchenTasks([returned], [returned, waiting])).toHaveLength(1);
+    expect(groupKitchenTasks([returned], [returned, { ...waiting, madeQuantity: waiting.quantity }])).toEqual([]);
+  });
+  it('clears a completed station even when another station on the table is still cooking', () => {
+    const first = demoKds.board().tasks[0]!;
+    const completed = { ...first, madeQuantity: first.quantity, cancelledQuantity: 1 };
+    const waiting = { ...first, id: 'other-station', station: '吧台' };
+    expect(groupKitchenTasks([completed], [completed])).toEqual([]);
+    expect(groupKitchenTasks([completed, waiting])).toHaveLength(2);
+  });
+  it('does not keep a previous visit return visible when the same table number has new work', () => {
+    const first = demoKds.board().tasks[0]!;
+    const returned = { ...first, quantity: 0, cancelledQuantity: 3 };
+    const nextVisit = { ...first, id: 'new-visit', orderId: 'new-order',
+      order: { ...first.order, id: 'new-order', tableSessionId: 'new-session' } };
+    const groups = groupKitchenTasks([returned, nextVisit]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.tasks.map(task => task.id)).toEqual(['new-visit']);
+    expect(groups[0]!.returnedQuantity).toBe(0);
   });
   it('requires every ordered item, including items on another station, before packing', () => {
     const task = demoKds.board().tasks.find(task => task.order.orderType === 'PICKUP')!;

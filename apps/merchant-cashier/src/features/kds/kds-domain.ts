@@ -38,11 +38,13 @@ export function groupKitchenOrders(allTasks: KdsTask[], scopeTasks: KdsTask[]): 
 export function dishGroupKey(task: KdsTask) {
   return JSON.stringify([task.station, task.productId, task.dishName, task.unit, task.remark?.trim() ?? '', task.order.customerRemark?.trim() ?? '']);
 }
-export function groupKitchenTasks(tasks: KdsTask[]) {
+export function groupKitchenTasks(tasks: KdsTask[], scopeTasks: KdsTask[] = tasks) {
+  const activeOrderKeys = new Set(scopeTasks.filter(canMakeKitchenTask).map(kitchenOrderKey));
   const groups = new Map<string, { key: string; name: string; unit: string; remark: string; station: string; tasks: KdsTask[]; quantity: number; returnedQuantity: number; fullyReturned: boolean }>();
   for (const task of tasks) {
-    // Return evidence stays visible even after the remaining work is finished.
-    // Only actionable portions contribute to the preparation queue.
+    // Keep return evidence while this table/order still has work in the station scope.
+    // Completed orders remain available in progress/history, outside preparation queues.
+    if (!activeOrderKeys.has(kitchenOrderKey(task))) continue;
     if (!canMakeKitchenTask(task) && task.cancelledQuantity <= 0) continue;
     const key = dishGroupKey(task);
     const group = groups.get(key) ?? { key, name: task.dishName, unit: task.unit,

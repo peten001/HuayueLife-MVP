@@ -79,15 +79,15 @@ function matchesSearch(task: KdsTask) {
     .some(value => value?.toLowerCase().includes(search.value.trim().toLowerCase()));
 }
 const tasks = computed(() => scopeTasks.value.filter(matchesSearch));
-const cards = computed(() => groupKitchenTasks(tasks.value));
+const cards = computed(() => groupKitchenTasks(tasks.value, scopeTasks.value));
 const pageCards = computed(() => cards.value.slice(page.value * 9, (page.value + 1) * 9));
 const selectedCard = computed(() => cards.value.find(card => card.key === selected.value));
 // Search locates the whole table/order card; it does not hide its other dishes.
 const kitchenOrders = computed(() => groupKitchenOrders(board.value?.tasks ?? [], scopeTasks.value)
   .filter(group => group.visibleTasks.some(matchesSearch)));
-const orderCards = computed(() => kitchenOrders.value.filter(group => group.quantity > 0 || group.visibleTasks.some(task => task.cancelledQuantity > 0)));
+const orderCards = computed(() => kitchenOrders.value.filter(group => group.quantity > 0));
 const pageOrderCards = computed(() => orderCards.value.slice(page.value * 6, (page.value + 1) * 6));
-const selectedKitchenOrder = computed(() => kitchenOrders.value.find(group => group.key === selectedKitchenKey.value));
+const selectedKitchenOrder = computed(() => orderCards.value.find(group => group.key === selectedKitchenKey.value));
 const servingCards = computed(() => groupKitchenOrders(board.value?.tasks ?? [], scopeTasks.value).map(group => {
   const servingTasks = group.visibleTasks.filter(canServe);
   return { ...group, servingTasks, servingQuantity: servingTasks.reduce((sum, task) => sum + servingQuantity(task), 0) };
