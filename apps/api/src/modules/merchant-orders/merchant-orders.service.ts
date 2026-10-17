@@ -1,5 +1,6 @@
 import { effectiveOrderWhere, lockEffectivePrintTarget } from '../orders/effective-order';
 import { kdsEnabled, syncKdsOrder } from '../kds/kds-sync';
+import { assertKdsCheckoutComplete, lockKdsSettings } from '../kds/kds-checkout';
 import {
   BadRequestException,
   ConflictException,
@@ -97,6 +98,8 @@ type LockedOrderItemRow = {
   product_name_zh_snapshot: string;
   unit_price_vnd: bigint;
   quantity: number;
+  production_notified_quantity: number;
+  returned_quantity: number;
   subtotal_vnd: bigint;
 };
 
@@ -1147,6 +1150,7 @@ export class MerchantOrdersService {
       }
 
       const touchedOrderIds = new Set<bigint>();
+      const returnedOrderIds = new Set<bigint>();
       for (const change of negative) {
         let remaining = change.removeQuantity;
         const adjustableItems = change.line.rawItems.filter(raw =>
@@ -1170,7 +1174,10 @@ export class MerchantOrdersService {
           const targetQuantity = raw.quantity - decrease;
           const afterSubtotalVnd = raw.unitPriceVnd * BigInt(targetQuantity);
           if (decrease === 0) continue;
-          if (targetQuantity === 0 && raw.orderStatus === 'PENDING_ACCEPTANCE') await tx.orderItem.delete({ where: { id: raw.itemId } });
+          const returned = raw.orderStatus === 'PENDING_ACCEPTANCE' ? 0
+            : Math.max(0, Math.min(raw.quantity, raw.productionNotifiedQuantity) - targetQuantity);
+          if (returned > 0) returnedOrderIds.add(raw.orderId);
+          if (targetQuantity === 0 && !returned && !raw.returnedQuantity) await tx.orderItem.delete({ where: { id: raw.itemId } });
           else {
             await tx.orderItem.updateMany({
               where: {
@@ -1182,7 +1189,7 @@ export class MerchantOrdersService {
             await tx.orderItem.update({
               where: { id: raw.itemId },
               data: { quantity: targetQuantity, subtotalVnd: afterSubtotalVnd,
-                ...(raw.orderStatus !== 'PENDING_ACCEPTANCE' ? { returnedQuantity: { increment: decrease } } : {}) },
+                ...(returned > 0 ? { returnedQuantity: { increment: returned } } : {}) },
             });
           }
           await tx.orderStatusLog.create({
@@ -1192,9 +1199,7 @@ export class MerchantOrdersService {
               toStatus: raw.orderStatus,
               operatorType: OperatorType.MERCHANT_STAFF,
               operatorStaffId: staffId,
-              action: raw.orderStatus === 'PENDING_ACCEPTANCE'
-                ? 'ORDER_ITEM_DECREASED'
-                : 'ORDER_ITEM_RETURNED',
+              action: returned > 0 ? 'ORDER_ITEM_RETURNED' : 'ORDER_ITEM_DECREASED',
               metadata: {
                 canonicalRequestKey: dto.requestKey,
                 lineKey: change.line.lineKey,
@@ -1202,13 +1207,13 @@ export class MerchantOrdersService {
                 beforeQuantity: raw.quantity,
                 afterQuantity: targetQuantity,
                 delta: -decrease,
+                returnedQuantity: returned,
+                decreasedQuantity: decrease - returned,
                 unitPriceVnd: raw.unitPriceVnd.toString(),
                 tableSessionAutoClosed: false,
                 tableReleased: false,
               },
-              remark: raw.orderStatus === 'PENDING_ACCEPTANCE'
-                ? '整桌目标态减少未接单菜品'
-                : '整桌目标态退菜',
+              remark: returned > 0 ? '整桌目标态退菜' : '整桌目标态减少未通知厨房菜品',
             },
           });
           touchedOrderIds.add(raw.orderId);
@@ -1256,7 +1261,7 @@ export class MerchantOrdersService {
             itemAmountVnd,
             totalAmountVnd,
             internalAudit: {
-              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              action: returnedOrderIds.has(orderId) ? 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN' : 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_DECREASE',
               metadata: {
                 visibility: 'INTERNAL',
                 cancelKind: 'DINE_IN_CANONICAL_REBALANCE',
@@ -1278,7 +1283,7 @@ export class MerchantOrdersService {
             data: {
               status: 'CANCELLED',
               cancelledAt: new Date(),
-              cancelReason: '整桌目标态退空订单，订单已自动取消',
+              cancelReason: returnedOrderIds.has(orderId) ? '整桌目标态退空订单，订单已自动取消' : '未通知厨房菜品已清空，订单已自动取消',
               itemAmountVnd,
               totalAmountVnd,
             },
@@ -1296,7 +1301,7 @@ export class MerchantOrdersService {
               toStatus: 'CANCELLED',
               operatorType: OperatorType.MERCHANT_STAFF,
               operatorStaffId: staffId,
-              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              action: returnedOrderIds.has(orderId) ? 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN' : 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_DECREASE',
               metadata: {
                 visibility: 'INTERNAL',
                 cancelKind: 'DINE_IN_CANONICAL_REBALANCE',
@@ -1305,7 +1310,7 @@ export class MerchantOrdersService {
                 tableSessionAutoClosed: false,
                 tableReleased: false,
               },
-              remark: '订单退空，订单已自动取消，桌台保持用餐中',
+              remark: returnedOrderIds.has(orderId) ? '订单退空，订单已自动取消，桌台保持用餐中' : '未通知菜品已清空，订单已自动取消，桌台保持用餐中',
             },
           });
         }
@@ -1509,6 +1514,7 @@ export class MerchantOrdersService {
     paymentMethod?: PaymentMethod,
   ) {
     const transitioned = await this.prisma.$transaction(async (tx) => {
+      if (['READY', 'START_DELIVERY', 'COMPLETE'].includes(action)) await lockKdsSettings(tx, merchantId);
       const order = await tx.order.findFirst({
         where: effectiveOrderWhere({ id, merchantId }),
         select: {
@@ -1525,6 +1531,13 @@ export class MerchantOrdersService {
       }
 
       const rule = this.resolveRule(action, order.orderType, order.status);
+      if (action === 'COMPLETE' && order.orderType === 'DINE_IN') {
+        const settings = await kdsEnabled(tx, merchantId);
+        if (settings) {
+          await tx.$queryRaw`SELECT id FROM orders WHERE id = ${id} AND merchant_id = ${merchantId} FOR UPDATE`;
+          await assertKdsCheckoutComplete(tx, merchantId, [id], settings);
+        }
+      }
       const kitchenSetting = order.orderType !== 'DINE_IN' && ['READY', 'START_DELIVERY', 'COMPLETE'].includes(action)
         ? await kdsEnabled(tx, merchantId) : null;
       const kitchenTracked = kitchenSetting && (order.createdAt >= (kitchenSetting.activatedAt ?? new Date()) ||
@@ -1890,7 +1903,7 @@ export class MerchantOrdersService {
       const priorRequest = priorRequestRows[0];
       if (priorRequest) {
         if (
-          priorRequest.action !== expectedAction ||
+          (priorRequest.action !== expectedAction && !(input.kind === 'RETURN' && priorRequest.action === 'ORDER_ITEM_DECREASED')) ||
           !this.metadataMatchesAdjustment(
             this.parseJsonValue(priorRequest.metadata),
             {
@@ -1938,7 +1951,7 @@ export class MerchantOrdersService {
       const itemRows = await tx.$queryRaw<LockedOrderItemRow[]>`
         SELECT oi.id, oi.order_id, oi.product_id,
                oi.product_name_zh_snapshot, oi.unit_price_vnd,
-               oi.quantity, oi.subtotal_vnd
+               oi.quantity, oi.production_notified_quantity, oi.returned_quantity, oi.subtotal_vnd
         FROM order_items oi
         INNER JOIN orders o ON o.id = oi.order_id
         WHERE o.table_session_id = ${orderRef.tableSessionId}
@@ -1975,7 +1988,10 @@ export class MerchantOrdersService {
 
       const afterItemAmountVnd =
         item.unit_price_vnd * BigInt(input.targetQuantity);
-      if (input.targetQuantity === 0 && input.kind === 'DECREASE') {
+      const removedQuantity = item.quantity - input.targetQuantity;
+      const returned = input.kind === 'RETURN'
+        ? Math.max(0, Math.min(item.quantity, item.production_notified_quantity) - input.targetQuantity) : 0;
+      if (input.targetQuantity === 0 && !returned && !item.returned_quantity) {
         await tx.orderItem.delete({ where: { id: itemId } });
       } else {
         await tx.orderItem.updateMany({
@@ -1990,7 +2006,7 @@ export class MerchantOrdersService {
           data: {
             quantity: input.targetQuantity,
             subtotalVnd: afterItemAmountVnd,
-            ...(input.kind === 'RETURN' ? { returnedQuantity: { increment: item.quantity - input.targetQuantity } } : {}),
+            ...(returned > 0 ? { returnedQuantity: { increment: returned } } : {}),
           },
         });
       }
@@ -2042,7 +2058,7 @@ export class MerchantOrdersService {
           toStatus: order.status,
           operatorType: OperatorType.MERCHANT_STAFF,
           operatorStaffId: staffId,
-          action: expectedAction,
+          action: returned > 0 ? 'ORDER_ITEM_RETURNED' : 'ORDER_ITEM_DECREASED',
           requestKey: input.requestKey,
           metadata: {
             orderItemId: itemId.toString(),
@@ -2051,9 +2067,10 @@ export class MerchantOrdersService {
             beforeQuantity: item.quantity,
             afterQuantity: input.targetQuantity,
             delta: input.targetQuantity - item.quantity,
-            ...(input.kind === 'RETURN'
-              ? { returnedQuantity: item.quantity - input.targetQuantity }
-              : { decreasedQuantity: item.quantity - input.targetQuantity }),
+            adjustmentKind: input.kind,
+            adjustedQuantity: removedQuantity,
+            returnedQuantity: returned,
+            decreasedQuantity: removedQuantity - returned,
             unitPriceVnd: item.unit_price_vnd.toString(),
             beforeItemAmountVnd: item.subtotal_vnd.toString(),
             afterItemAmountVnd: afterItemAmountVnd.toString(),
@@ -2070,7 +2087,7 @@ export class MerchantOrdersService {
             actorRole: creator.staffRole,
           },
           remark:
-            input.kind === 'DECREASE' ? '商家减少未接单菜品' : '商家退菜',
+            returned > 0 ? '商家退菜' : '商家减少未通知厨房菜品',
         },
       });
 
@@ -2096,7 +2113,7 @@ export class MerchantOrdersService {
             data: {
               status: 'CANCELLED',
               cancelledAt,
-              cancelReason: '商家退空订单全部菜品，订单已自动取消',
+              cancelReason: returned > 0 ? '商家退空订单全部菜品，订单已自动取消' : '商家清空未通知厨房菜品，订单已自动取消',
               itemAmountVnd: afterOrderItemAmountVnd,
               totalAmountVnd: afterOrderAmountVnd,
             },
@@ -2115,7 +2132,7 @@ export class MerchantOrdersService {
               toStatus: 'CANCELLED',
               operatorType: OperatorType.MERCHANT_STAFF,
               operatorStaffId: staffId,
-              action: 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN',
+              action: returned > 0 ? 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_RETURN' : 'ORDER_AUTO_CANCELLED_EMPTY_AFTER_DECREASE',
               metadata: {
                 merchantId: merchantId.toString(),
                 orderId: orderId.toString(),
@@ -2125,7 +2142,7 @@ export class MerchantOrdersService {
                 tableReleased: false,
                 effectiveQuantityAfterAdjustment,
               },
-              remark: '订单退空，订单已自动取消，桌台保持用餐中',
+              remark: returned > 0 ? '订单退空，订单已自动取消，桌台保持用餐中' : '未通知菜品已清空，订单已自动取消，桌台保持用餐中',
             },
           });
         }
@@ -2313,7 +2330,9 @@ export class MerchantOrdersService {
       value.actorId === input.staffId.toString() &&
       value.beforeQuantity === input.expectedQuantity &&
       value.afterQuantity === input.targetQuantity &&
-      (input.kind === 'RETURN'
+      (value.adjustmentKind !== undefined
+        ? value.adjustmentKind === input.kind && value.adjustedQuantity === changedQuantity
+        : input.kind === 'RETURN'
         ? value.returnedQuantity === changedQuantity
         : value.decreasedQuantity === changedQuantity)
     );

@@ -171,7 +171,7 @@ function state(quantity: number): DineInCanonicalStateInternal {
     revision: `dcs2:sha256:${quantity.toString().padStart(64, '0')}`,
     items: quantity ? [{
       lineKey: `dline:sha256:${'1'.repeat(64)}`, productId: '31', productNameZh: '鱼香茄子', productNameVi: null, productNameEn: null,
-      remark: '', optionSignature: '', activeSince: '2026-08-30T00:00:01.000Z', displayOrderKey: '2026-08-30T00:00:01.000Z:71:line', unitPriceVnd: '12000', quantity, lockedQuantity: 0, adjustableQuantity: quantity,
+      remark: '', optionSignature: '', activeSince: '2026-08-30T00:00:01.000Z', displayOrderKey: '2026-08-30T00:00:01.000Z:71:line', unitPriceVnd: '12000', quantity, lockedQuantity: 0, unnotifiedQuantity: 0, adjustableQuantity: quantity,
       subtotalVnd: (BigInt(quantity) * 12_000n).toString(), adjustability: 'RETURN', sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
       rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, productionNotifiedQuantity: 0, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
     }] : [],

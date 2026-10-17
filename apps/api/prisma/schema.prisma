@@ -963,7 +963,7 @@ model OrderItem {
 model KdsSetting {
   merchantId     BigInt   @id @map("merchant_id")
   enabled        Boolean @default(false)
-  servingEnabled Boolean @default(true) @map("serving_enabled")
+  servingEnabled Boolean @default(false) @map("serving_enabled")
   activatedAt    DateTime? @map("activated_at")
   timeoutMinutes Int @default(15) @map("timeout_minutes")
   stations       Json

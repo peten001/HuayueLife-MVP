@@ -1,5 +1,7 @@
 # 华越优选 HuayueLife-MVP
 
+2026-10-17 未通知改单与 KDS 结账门禁（已授权发布，切换待核验）：用户要求未通知厨房前的删减在收银／结账打印恢复普通改单方式，并增加厨房完成后才能结账的流程；已明确只调整新商家及未配置商家的默认值，保留现有手动开启的配置。退菜累计只包含实际减少的已通知份数，未通知全删且无历史真实退菜时删除原行；旧真实退菜、原通知／制作／传菜历史继续保留，普通减菜审计不标为退菜。Canonical 公共行新增 unnotifiedQuantity，收银即时预览也先消耗未通知量，不闪现退菜；结账打印继续仅按有效量生成。KDS 关闭时按原流程直接结账；开启 KDS 须全部有效菜品、全部档口制作完成，开启传菜还须全部传完，未报厨／加菜亦会阻止结账。覆盖整桌新旧结账与旧单笔 COMPLETE／cashier-complete，成功请求重试不重收。设置行锁在订单／桌台锁前建立，使用默认关闭的幂等插入保护未配置门店，避免 merchant 行排他锁与原报厨／打印 FK 锁反转。新增 20261017120000_kds_serving_default_off 仅修改 serving_enabled 默认 false，不更新已有商家；KDS 及前端未配置默认均关闭。1316 项 API、645 项前端、48 项独立 MySQL 流程、全仓类型／构建及前端 lint 通过。用户已明确授权提交、推送和部署，候选 kds-checkout-20261017-v4；成功以部署凭证为准，不自动改写历史退菜数据。详见 docs/kds/RETURNED_DISHES.md、KDS_V1.md 及 RELEASE.md。
+
 2026-10-17 未发厨房减菜修复已上线：代码提交 3158dc4d98783e8a62320b178bfc1c3f955eb68e，源码树 fdaefac8f092baf6a21ab042ef04d2dd186a1258，API 指向 kds-unsent-returns-20261017-v3。只改变 merchant-orders.service 与 dine-in-canonical-state.service 两项 JS 运行代码，其余运行代码、依赖、配置、收银及 KDS 页面保持原版；无迁移。旧完整 API 归档 843,966 bytes、逐文件校验通过。API 一次重启后 online、重启计数 9、unstable_restarts=0；现有看板 46 项任务与 439 条操作明细及一份桌账只读校验通过，三语、退菜字段、压缩图保持。外网 API 健康 200、未认证看板 401，收银 43 个及 KDS 13 个原页面资源 SHA-256 一致。未创建生产样本或执行删菜／退菜／通知测试。凭证 /opt/backups/yunqiao-kds-unsent-returns-20261017-v3，服务器及本机外网均为 PASS。
 
 2026-10-17 未发厨房减菜发布授权：用户明确要求提交、推送、部署。候选 `kds-unsent-returns-20261017-v3` 仅更新 API 的 merchant-orders.service 与 dine-in-canonical-state.service 及对应编译映射／声明；无需迁移、依赖、收银或 KDS 页面发布。先保留当前完整 API 编译产物、配置及运行指针，再验证候选并切换后台；线上只做现有数据读取、健康、鉴权及页面资源检查，不执行测试删菜／退菜／通知。实际发布状态见 docs/kds/RELEASE.md。

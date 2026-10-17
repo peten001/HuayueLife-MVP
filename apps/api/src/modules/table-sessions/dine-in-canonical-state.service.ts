@@ -89,6 +89,7 @@ export type DineInCanonicalLineInternal = {
   quantity: number;
   returnedQuantity?: number;
   lockedQuantity: number;
+  unnotifiedQuantity: number;
   adjustableQuantity: number;
   subtotalVnd: string;
   adjustability: DineInCanonicalAdjustability;
@@ -102,6 +103,7 @@ export type DineInCanonicalLineInternal = {
     orderStatus: OrderStatus;
     quantity: number;
     productionNotifiedQuantity: number;
+    returnedQuantity?: number;
     unitPriceVnd: bigint;
     createdAt: Date;
   }>;
@@ -462,6 +464,7 @@ export class DineInCanonicalStateService {
         quantity: 0,
         returnedQuantity: 0,
         lockedQuantity: 0,
+        unnotifiedQuantity: 0,
         adjustableQuantity: 0,
         subtotalVnd: '0',
         adjustability: 'LOCKED' as const,
@@ -472,7 +475,10 @@ export class DineInCanonicalStateService {
       current.returnedQuantity = (current.returnedQuantity ?? 0) + (item.returnedQuantity ?? 0);
       current.subtotalVnd = (BigInt(current.subtotalVnd) + item.subtotalVnd).toString();
       if (locked) current.lockedQuantity += item.quantity;
-      else current.adjustableQuantity += item.quantity;
+      else {
+        current.adjustableQuantity += item.quantity;
+        current.unnotifiedQuantity += Math.max(0, item.quantity - item.productionNotifiedQuantity);
+      }
       if (order.createdByStaffId) current.sourceSummary.staffQuantity += item.quantity;
       else current.sourceSummary.qrQuantity += item.quantity;
       current.rawItems.push({
@@ -481,6 +487,7 @@ export class DineInCanonicalStateService {
         orderStatus: order.status,
         quantity: item.quantity,
         productionNotifiedQuantity: item.productionNotifiedQuantity,
+        returnedQuantity: item.returnedQuantity ?? 0,
         unitPriceVnd: item.unitPriceVnd,
         createdAt: item.createdAt,
       });

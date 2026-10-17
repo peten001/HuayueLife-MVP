@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { applyKitchenAction } from './kds-domain';
 import { KdsActionDto, KdsPackDto, KdsSettingsDto, KdsUndoDto } from './kds.dto';
 import { DEFAULT_KDS_STATIONS, finishKdsOrder, kdsEnabled, kdsHash, syncKdsOrder } from './kds-sync';
+import { lockKdsSettings } from './kds-checkout';
 
 type OperationLine = {
   taskId: string; orderId: string; dishName: string; quantity: number;
@@ -78,7 +79,7 @@ export class KdsService {
       return { dishNameVi: product?.nameVi ?? null, dishNameEn: product?.nameEn ?? null };
     };
     return {
-      settings: settings ?? { enabled: false, servingEnabled: true, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
+      settings: settings ?? { enabled: false, servingEnabled: false, timeoutMinutes: 15, stations: DEFAULT_KDS_STATIONS, categoryRoutes: [] },
       tasks: tasks.map(task => ({ ...task, ...translatedNames(task.productId),
         menuThumbnailUrl: task.productId === null ? null : productDisplay.get(task.productId)?.menuThumbnailUrl ?? null, order: {
         ...task.order, tableNo: task.order.table?.tableNo ?? task.order.tableNoSnapshot,
@@ -107,7 +108,7 @@ export class KdsService {
       if (count !== categoryIds.length) throw new BadRequestException('菜品分类不属于当前门店');
       const previous = await tx.kdsSetting.findUnique({ where: { merchantId }, select: { enabled: true } });
       const settings = await tx.kdsSetting.upsert({ where: { merchantId },
-        create: { merchantId, ...dto, servingEnabled: dto.servingEnabled ?? true, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue, activatedAt: dto.enabled ? new Date() : null },
+        create: { merchantId, ...dto, servingEnabled: dto.servingEnabled ?? false, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue, activatedAt: dto.enabled ? new Date() : null },
         update: { ...dto, stations, categoryRoutes: dto.categoryRoutes as unknown as Prisma.InputJsonValue,
           ...(dto.enabled && !previous?.enabled ? { activatedAt: new Date() } : {}),
           ...(dto.enabled ? {} : { enabled: false }) },
@@ -239,8 +240,7 @@ export class KdsService {
     return settings;
   }
   private async lockSettings(tx: Prisma.TransactionClient, merchantId: bigint) {
-    // All KDS writes take the settings lock before order locks, so another screen cannot race a policy change.
-    await tx.$queryRaw`SELECT merchant_id FROM kds_settings WHERE merchant_id = ${merchantId} FOR UPDATE`;
+    await lockKdsSettings(tx, merchantId);
   }
   private async assertMerchantActive(tx: Prisma.TransactionClient, merchantId: bigint) {
     if (!await tx.merchant.count({ where: { id: merchantId, status: 'ACTIVE' } })) throw new ForbiddenException('当前商家已停用');

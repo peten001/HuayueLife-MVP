@@ -69,10 +69,10 @@ describe('MerchantOrdersService canonical reconcile', () => {
     await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
     expect(harness.tx.orderItem.update).toHaveBeenCalledTimes(2);
     expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
-      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n, returnedQuantity: { increment: 1 } },
+      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n },
     });
     expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
-      where: { id: 72n }, data: { quantity: 1, subtotalVnd: 12_000n, returnedQuantity: { increment: 2 } },
+      where: { id: 72n }, data: { quantity: 1, subtotalVnd: 12_000n },
     });
   });
 
@@ -82,7 +82,7 @@ describe('MerchantOrdersService canonical reconcile', () => {
     await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
     expect(harness.tx.orderItem.update).toHaveBeenCalledTimes(1);
     expect(harness.tx.orderItem.update).toHaveBeenCalledWith({
-      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n, returnedQuantity: { increment: 3 } },
+      where: { id: 71n }, data: { quantity: 2, subtotalVnd: 24_000n, returnedQuantity: { increment: 1 } },
     });
     const returns = harness.tx.orderStatusLog.create.mock.calls.filter(([arg]) => arg.data.action === 'ORDER_ITEM_RETURNED');
     expect(returns).toEqual([[expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ beforeQuantity: 5, afterQuantity: 2, delta: -3 }) }) })]]);
@@ -341,10 +341,10 @@ function state(quantity: number, lockedQuantity: number, blockers: string[], emp
     items: empty ? [] : [{
       lineKey, productId: '31', productNameZh: '鱼香茄子', productNameVi: null, productNameEn: null,
       remark: '', optionSignature: '', activeSince: '2026-08-30T00:00:01.000Z', displayOrderKey: '2026-08-30T00:00:01.000Z:71:line', unitPriceVnd: '12000', quantity,
-      lockedQuantity, adjustableQuantity: quantity - lockedQuantity,
+      lockedQuantity, unnotifiedQuantity: 0, adjustableQuantity: quantity - lockedQuantity,
       subtotalVnd: (BigInt(quantity) * 12_000n).toString(), adjustability: lockedQuantity === quantity ? 'LOCKED' : 'RETURN',
       sourceSummary: { staffQuantity: quantity, qrQuantity: 0 },
-      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, productionNotifiedQuantity: 0, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
+      rawItems: [{ itemId: 71n, orderId: 41n, orderStatus: 'ACCEPTED', quantity, productionNotifiedQuantity: quantity, unitPriceVnd: 12_000n, createdAt: new Date('2026-08-30T00:00:01.000Z') }],
     }],
     totals: { originalAmountVnd: (BigInt(quantity) * 12_000n).toString(), discountPayableRateBps: null, discountAmountVnd: '0', roundingAmountVnd: '0', payableAmountVnd: (BigInt(quantity) * 12_000n).toString() },
     blockers, generatedAt: '2026-08-30T00:00:00.000Z',

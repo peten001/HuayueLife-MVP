@@ -35,6 +35,16 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it('leaves a new or unconfigured merchant serving switch off', async () => {
+    data.settings.enabled = false;
+    delete data.settings.servingEnabled;
+    data.tasks = [];
+    await open();
+    expect(wrapper.get('.kds-nav').text()).not.toContain('待传菜');
+    await wrapper.get('button[aria-label="厨显设置"]').trigger('click');
+    const serving = wrapper.findAll('.kds-settings-fields label').find(label => label.text() === '启用传菜')!;
+    expect((serving.get('input').element as HTMLInputElement).checked).toBe(false);
+  });
   it('opens an empty preparation queue when every effective portion is already made, while retaining full order progress', async () => {
     const first = data.tasks[0]!;
     const partial = { ...first, quantity: 5, madeQuantity: 5, servedQuantity: 5, cancelledQuantity: 2 };

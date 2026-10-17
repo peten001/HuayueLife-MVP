@@ -11,6 +11,8 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { toMerchantVisibleOrderStatusLog } from '../orders/order-status-log-visibility';
 import { PrintJobsService } from '../printing/services/print-jobs.service';
+import { assertKdsCheckoutComplete, lockKdsSettings } from '../kds/kds-checkout';
+import { kdsEnabled } from '../kds/kds-sync';
 import { resolveBusinessDate } from '../../common/utils/merchant-hours';
 import { businessDateSnapshotValue } from '../merchant-orders/business-day-accounting';
 import {
@@ -471,6 +473,8 @@ export class TableSessionsService {
         })
       : null;
     const result = await this.prisma.$transaction(async (tx) => {
+      await lockKdsSettings(tx, merchantId);
+      const kitchenSettings = await kdsEnabled(tx, merchantId);
       const sessionRef = await this.requireOwnedSessionRef(tx, merchantId, sessionId);
       await this.lockTableRow(tx, merchantId, sessionRef.tableId);
 
@@ -593,6 +597,9 @@ export class TableSessionsService {
           message: '桌账包含无法结账的订单状态，请刷新后重试。',
         });
       }
+
+      await assertKdsCheckoutComplete(tx, merchantId, sessionOrders
+        .filter(order => ['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)).map(order => order.id), kitchenSettings);
 
       const itemAmountVnd = sessionOrders
         .filter((order) => BILLABLE_ORDER_STATUSES.includes(order.status))

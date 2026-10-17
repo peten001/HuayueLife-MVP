@@ -36,6 +36,8 @@ export function apiErrorTranslationKey(
     return 'table.closeConflict';
   }
   if (error.code.startsWith('TABLE_TRANSFER_')) return 'tableTransfer.failed';
+  if (error.code === 'KDS_CHECKOUT_MAKING_REQUIRED') return 'table.kitchenMakingRequired';
+  if (error.code === 'KDS_CHECKOUT_SERVING_REQUIRED') return 'table.kitchenServingRequired';
   const itemAdjustmentKey = ITEM_ADJUSTMENT_ERROR_KEYS[error.code];
   if (itemAdjustmentKey) return itemAdjustmentKey;
   if (error.code === 'NETWORK_ERROR') return 'error.network';

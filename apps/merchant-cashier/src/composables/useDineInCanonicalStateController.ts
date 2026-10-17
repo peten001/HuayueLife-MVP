@@ -57,11 +57,12 @@ export function useDineInCanonicalStateController(options: {
       const override = desiredOverrides.value.get(`line:${line.lineKey}`);
       const quantity = override?.desiredQuantity ?? line.quantity;
       const returnedQuantity = (line.returnedQuantity ?? 0)
-        + (line.adjustability === 'RETURN' ? Math.max(0, line.quantity - quantity) : 0);
+        + (line.adjustability === 'RETURN' ? Math.max(0, line.quantity - quantity - (line.unnotifiedQuantity ?? 0)) : 0);
       return {
         ...line,
         quantity,
         returnedQuantity,
+        unnotifiedQuantity: Math.max(0, (line.unnotifiedQuantity ?? 0) + quantity - line.quantity),
         adjustableQuantity: Math.max(0, quantity - line.lockedQuantity),
         subtotalVnd: (BigInt(line.unitPriceVnd) * BigInt(quantity)).toString(),
       };
@@ -87,6 +88,7 @@ export function useDineInCanonicalStateController(options: {
         unitPriceVnd: product.priceVnd,
         quantity: override.desiredQuantity,
         returnedQuantity: 0,
+        unnotifiedQuantity: override.desiredQuantity,
         lockedQuantity: 0,
         adjustableQuantity: override.desiredQuantity,
         subtotalVnd: (BigInt(product.priceVnd) * BigInt(override.desiredQuantity)).toString(),

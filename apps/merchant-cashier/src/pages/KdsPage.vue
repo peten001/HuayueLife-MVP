@@ -25,7 +25,7 @@ const { locale, setLocale, t: commonText } = useI18n();
 const t = (key: KdsTextKey) => kdsText(locale.value, key);
 const board = ref<KdsBoard | null>(null);
 const menu = ['orderBump', 'dishBump', 'serving', 'orders', 'returns', 'records'] as const;
-const servingEnabled = computed(() => board.value?.settings.servingEnabled !== false);
+const servingEnabled = computed(() => board.value?.settings.enabled === true && board.value.settings.servingEnabled === true);
 const visibleMenu = computed(() => menu.filter(item => item !== 'serving' || servingEnabled.value));
 const mode = ref<typeof menu[number]>('orderBump');
 const station = ref('');
@@ -47,7 +47,7 @@ const kitchenClock = createKdsClock();
 const kitchenNow = ref<number | null>(null);
 const settingsOpen = ref(false);
 const draftSettings = ref<KdsSettings | null>(null);
-const originalServingEnabled = ref(true);
+const originalServingEnabled = ref(false);
 const draftStationNames = ref('');
 type KitchenMutation = { action: 'MAKE' | 'SERVE' | 'UNDO'; lines: KdsLine[]; requestKey: string; operationId?: string };
 const confirm = ref<KitchenMutation | null>(null);
@@ -322,8 +322,8 @@ function retryMutation() { if (uncertainMutation.value) void execute(uncertainMu
 function openSettings() {
   if (busy.value) return;
   draftSettings.value = canConfigure.value && board.value ? JSON.parse(JSON.stringify(board.value.settings)) as KdsSettings : null;
-  if (draftSettings.value) draftSettings.value.servingEnabled ??= true;
-  originalServingEnabled.value = draftSettings.value?.servingEnabled ?? true;
+  if (draftSettings.value) draftSettings.value.servingEnabled ??= false;
+  originalServingEnabled.value = draftSettings.value?.servingEnabled ?? false;
   draftStationNames.value = draftSettings.value?.stations.join(', ') ?? '';
   settingsOpen.value = true;
 }

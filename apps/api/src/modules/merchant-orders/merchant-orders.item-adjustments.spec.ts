@@ -500,6 +500,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
             product_name_zh_snapshot: '鱼香茄子',
             unit_price_vnd: 6000n,
             quantity: itemQuantity,
+            production_notified_quantity: status === 'PENDING_ACCEPTANCE' ? 0 : itemQuantity,
+            returned_quantity: 0,
             subtotal_vnd: 12000n,
           },
           ...Array.from({ length: options?.otherItemCount ?? 0 }, (_, index) => ({

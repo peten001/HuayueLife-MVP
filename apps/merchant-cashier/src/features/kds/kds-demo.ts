@@ -52,7 +52,7 @@ function record(kind: string, lines: KdsLine[], key: string) {
 export const demoKds = {
   board,
   settings(settings: KdsSettings) {
-    board(); state!.settings = { ...settings, servingEnabled: settings.servingEnabled ?? state!.settings.servingEnabled ?? true };
+    board(); state!.settings = { ...settings, servingEnabled: settings.servingEnabled ?? state!.settings.servingEnabled ?? false };
     if (state!.settings.servingEnabled === false) {
       state!.tasks.filter(task => task.madeQuantity > task.servedQuantity).forEach(task => { task.servedQuantity = task.madeQuantity; task.version++; });
       finishOrders();

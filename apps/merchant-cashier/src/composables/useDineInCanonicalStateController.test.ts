@@ -74,6 +74,28 @@ describe('useDineInCanonicalStateController', () => {
     expect(controller.presentedState.value!.returnedItems).toHaveLength(1);
     expect(apiMocks.reconcileDineInCanonicalState.mock.calls[0]![1].desiredItems).toEqual([{ lineKey: initial.items[0]!.lineKey, desiredQuantity: 0 }]);
   });
+  it('does not show returns while removing unreported quantities, including a full removal', async () => {
+    const initial = state(2);
+    initial.items[0]!.unnotifiedQuantity = 2;
+    apiMocks.getDineInCanonicalState.mockResolvedValue(initial);
+    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(state(0));
+    const controller = createController(); await controller.load(true);
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.items[0]).toMatchObject({ quantity: 1, returnedQuantity: 0, unnotifiedQuantity: 1 });
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.items).toEqual([]);
+    expect(controller.presentedState.value!.returnedItems).toEqual([]);
+    await controller.flush();
+  });
+  it('previews only the notified portion as a return when a decrease spans both kinds', async () => {
+    const initial = state(3); initial.items[0]!.unnotifiedQuantity = 2;
+    apiMocks.getDineInCanonicalState.mockResolvedValue(initial);
+    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(state(0));
+    const controller = createController(); await controller.load(true);
+    for (let i = 0; i < 3; i++) controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.returnedItems).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 1 })]);
+    await controller.flush();
+  });
   it('does not turn a draft decrease into a return or lose existing read-only returns', async () => {
     const initial = state(1);
     initial.items[0]!.adjustability = 'DECREASE';

@@ -97,6 +97,7 @@ export interface DineInCanonicalLine {
   quantity: number;
   returnedQuantity?: number;
   lockedQuantity: number;
+  unnotifiedQuantity?: number;
   adjustableQuantity: number;
   subtotalVnd: string;
   adjustability: 'DECREASE' | 'RETURN' | 'LOCKED';
