@@ -60,6 +60,7 @@ const mobileV2Presentation = computed(() => (
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);
 const checkoutConfirmOpen = ref(false);
+const checkoutErrorKey = ref('');
 const adjustmentOpen = ref(false);
 const settlementAdjustmentLoading = ref(false);
 const productionNotificationLoading = ref(false);
@@ -514,19 +515,20 @@ async function syncRouteSelection() {
 
 async function checkout(paymentMethod: PaymentMethod) {
   if (writeDisabled.value || checkingOut.value || !session.value) return;
-  if (!(await reconcilePendingOrderingMutations())) return;
-  if (!retainedCheckout.value) {
-    const exact = await canonicalController.load(true);
-    if (!exact || exact.items.length === 0 || exact.blockers.length > 0) return;
-    retainedCheckout.value = {
-      sessionId: session.value.id,
-      paymentMethod,
-      expectedRevision: exact.revision,
-      requestKey: createMutationKey('checkout'),
-    };
-  }
-  const intent = retainedCheckout.value;
+  checkoutErrorKey.value = '';
   try {
+    if (!(await reconcilePendingOrderingMutations())) return;
+    if (!retainedCheckout.value) {
+      const exact = await canonicalController.load(true);
+      if (!exact || exact.items.length === 0 || exact.blockers.length > 0) return;
+      retainedCheckout.value = {
+        sessionId: session.value.id,
+        paymentMethod,
+        expectedRevision: exact.revision,
+        requestKey: createMutationKey('checkout'),
+      };
+    }
+    const intent = retainedCheckout.value;
     const result = await tablesStore.checkoutSelectedSession(intent.paymentMethod, {
       expectedRevision: intent.expectedRevision,
       requestKey: intent.requestKey,
@@ -540,7 +542,9 @@ async function checkout(paymentMethod: PaymentMethod) {
     await router.replace(resolveCashierPresentationLocation(mobileV2PreviewRoute.value, '/tables'));
   } catch (caught) {
     if (isDefinitiveMutationRejection(caught)) retainedCheckout.value = null;
-    uiStore.pushToast(t(apiErrorTranslationKey(caught, 'table.checkoutFailed')), 'error');
+    checkoutErrorKey.value = isMutationOutcomeUncertain(caught)
+      ? 'mutation.outcomeUncertain'
+      : apiErrorTranslationKey(caught, 'table.checkoutFailed');
     if (!isMutationOutcomeUncertain(caught)) await canonicalController.load(true).catch(() => undefined);
   }
 }
@@ -674,6 +678,7 @@ function backToTables() {
 
 onBeforeRouteUpdate((to) => guardMutationNavigation(to));
 onBeforeRouteLeave((to) => guardMutationNavigation(to));
+watch(checkoutConfirmOpen, () => { checkoutErrorKey.value = ''; });
 watch(() => [route.params.tableId, route.query.order, tableCards.value.length], () => void syncRouteSelection(), { immediate: true });
 watch(activeMainTab, (tab, previousTab) => {
   if (tab === 'MENU' && previousTab !== 'MENU') beginCurrentMenuSelectionRound();
@@ -775,7 +780,7 @@ onBeforeUnmount(() => {
     </aside>
 
     <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value || retainedInitialBatch)" :loading="canonicalController.syncing.value || initialBatchSyncing" :disabled="writeDisabled" @retry="retryUncertainOrderingMutation" />
-    <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" :show-description="!mobileV2Presentation" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
+    <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" :error="checkoutErrorKey ? t(checkoutErrorKey) : ''" :show-description="!mobileV2Presentation" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
     <SettlementAdjustmentDialog v-if="session" :open="adjustmentOpen" :item-amount-vnd="presentedCanonicalState?.totals.originalAmountVnd || '0'" :discount-payable-rate-bps="presentedCanonicalState?.totals.discountPayableRateBps ?? null" :discount-amount-vnd="presentedCanonicalState?.totals.discountAmountVnd || '0'" :rounding-enabled="BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n" :loading="settlementAdjustmentLoading" @cancel="adjustmentOpen = false" @confirm="saveSettlementAdjustment" />
     <TableTransferDialog :open="transferOpen" :source-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :targets="transferTargets" :loading="transferLoading" :error="transferError" @cancel="cancelTransfer" @confirm="confirmTransfer" />
   </section>

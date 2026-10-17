@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Banknote, Landmark, X } from '@lucide/vue';
+import { CircleAlert, Banknote, Landmark, X } from '@lucide/vue';
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { formatVnd } from '@/domain';
 import { useI18n } from '@/i18n';
@@ -84,9 +84,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </label>
       </fieldset>
 
-      <p v-if="error" class="payment-dialog__error" role="alert">{{ error }}</p>
-
       <footer>
+        <p v-if="error" class="payment-dialog__error" role="alert">
+          <CircleAlert :size="18" aria-hidden="true" />
+          <span>{{ error }}</span>
+        </p>
         <button type="button" class="secondary-action" :disabled="loading" @click="cancel">{{ t('common.cancel') }}</button>
         <button type="button" class="primary-action" :disabled="loading || !selected" @click="confirm">
           {{ loading ? t('payment.confirming') : t('payment.confirm') }}
@@ -129,7 +131,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 }
 .payment-dialog__close:hover:not(:disabled) { color: var(--cashier-white); background: var(--cashier-white-alpha-14); }
 .payment-dialog:focus { outline: none; }
-.payment-dialog__error { margin: 12px 0 0; color: #ff7a84; font-size: 13px; text-align: center; }
+.payment-dialog__error {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 122 132 / 30%);
+  border-radius: 10px;
+  color: #ffbac0;
+  background: rgb(255 122 132 / 10%);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.payment-dialog__error svg { flex-shrink: 0; margin-top: 2px; }
 .payment-dialog__amount {
   display: flex;
   align-items: center;

@@ -2325,6 +2325,11 @@ body.cashier-mobile-v2-preview-active {
   body.cashier-mobile-v2-preview-active .payment-dialog footer {
     background: var(--mobile-v2-dialog-bg);
   }
+  body.cashier-mobile-v2-preview-active .payment-dialog .payment-dialog__error {
+    border-color: rgb(169 44 54 / 22%);
+    color: #a92c36;
+    background: #fff0f1;
+  }
   body.cashier-mobile-v2-preview-active .payment-dialog footer .primary-action,
   body.cashier-mobile-v2-preview-active .settlement-adjustment-dialog__confirm,
   body.cashier-mobile-v2-preview-active .table-transfer-dialog > footer .primary-action,

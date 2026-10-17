@@ -53,6 +53,18 @@ describe('CheckoutPaymentDialog', () => {
     wrapper.unmount();
   });
 
+  it('keeps a rejected payment choice while showing the error in the action footer', async () => {
+    const wrapper = mountDialog();
+    await wrapper.get('input[value="CASH"]').setValue(true);
+    await wrapper.get('footer .primary-action').trigger('click');
+    await wrapper.setProps({ error: '请先传完全部菜品，再结账。' });
+
+    expect(wrapper.get('footer [role="alert"]').text()).toBe('请先传完全部菜品，再结账。');
+    expect((wrapper.get('input[value="CASH"]').element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.get('footer .primary-action').attributes('disabled')).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it('keeps the dark settlement structure with a dedicated cancel action', () => {
     const wrapper = mountDialog();
     const cancel = wrapper.get('footer .secondary-action');
