@@ -1,5 +1,7 @@
 # 华越优选 HuayueLife-MVP
 
+2026-10-17 结账弹窗提示修复已上线：代码 24c2bfd0d49501eed7b1aee3e41cdb7a70237600，版本 kds-checkout-dialog-20261017-v5，仅切换收银静态目录。653 项测试与类型／lint／构建通过，实际桌面和手机越南语提示验证通过。服务器验证 58 个构建文件，本机外网和服务器均校验 43 个入口／JS／CSS。旧收银归档 2,208,707 bytes、逐文件校验通过，保留 163 个旧哈希资源；API／依赖／KDS、后台重启计数 10、私有配置均未变，无迁移或生产订单写入。健康 200、未认证看板 401；备份 /opt/backups/yunqiao-kds-checkout-dialog-20261017-v5，DEPLOYMENT_PASS.json 与 PUBLIC_PASS.json 均 PASS。
+
 2026-10-17 结账拦截提示修复（沿用本轮已授权上线范围）：堂食 KDS 划菜／传菜门禁原本只触发页面 toast，被结账遮罩挡住；现将错误传入结账弹窗，在底部确认操作区内持久显示，保留支付选择并支持重试，关闭／重开清除旧错误。错误使用翻译键，三语即时切换；手机浅色与桌面深色提示均核对，网络结果不确定时保留原请求键防止重复收款。653 项收银测试、类型、lint、生产构建通过，截图位于会话 outputs/kds-checkout-dialog/。发布 kds-checkout-dialog-20261017-v5 仅更新收银静态页；API／KDS／门店开关／数据库与结账规则不改，不执行生产结账测试。实际发布状态以部署凭证为准。
 
 2026-10-17 普通改单与 KDS 结账门禁已上线：代码 c2b1243aa798f79577bbb4173763c324cccf1119，源码树 076264b0f4703e9da13d21677b1f8448207d359e，版本 kds-checkout-20261017-v4。API／独立 Prisma 依赖／收银／KDS 均已切换；完整数据库备份 59,156,481 bytes、gzip 校验通过，SHA-256 b02f9b40caa88cc5facf9b173fe77201a0a2648614038c020ed85b9b8b552205。唯一迁移只改传菜默认 false，原 2 家门店配置逐字段保持（KDS 开启 2 家、传菜开启 0 家），新／未配置门店两项默认关闭。API 一次重启后 online、restartCount=10、unstable_restarts=0，原配置不变。现有看板 72 项任务、461 条操作明细及桌账新契约通过；服务器和本机外网各校验收银 43 个、KDS 13 个资源，健康 200、未认证看板 401。未创建生产测试订单或改写历史退菜；旧记录不会自动清除。备份 /opt/backups/yunqiao-kds-checkout-20261017-v4，DEPLOYMENT_PASS.json 与 PUBLIC_PASS.json 均 PASS。
