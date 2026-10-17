@@ -2,6 +2,8 @@
 
 ## 2026-10-17 退菜保留与跨页面同步
 
+**已上线**：代码提交 `dc220fd73b22d10dc5076c6061b3b1260b601a64`，源码树 `f49d58591643a4b6c6075f2d0eea739fa0d1768b`。API／依赖、收银与独立 KDS 均指向下述候选版本目录，服务器 `DEPLOYMENT_PASS.json` 与本机 `PUBLIC_PASS.json` 均为 PASS。数据库备份 58,014,994 bytes，SHA-256 `583bb5b97b5e91ba11e5d7ed4762e2e66caee587e714cf783c7854d700ca694d`，gzip 校验通过；迁移完成并核对三列的默认零和非空属性。服务器及本机外网分别校验收银 43 个、KDS 13 个文件，健康 200、无凭据看板 401。受保护看板的退菜字段、压缩菜图、翻译及 364 条操作明细核对通过，现有桌账包含只读 returnedItems；没有执行生产订单写操作。API 一次重启、online、unstable_restarts=0，原配置未变化，uploads 保留。此次重新验证 631 项前端、1313 项 API、33 项隔离 MySQL 流程及全项目类型／构建、lint 和正式域名两套静态构建。
+
 用户完成本地验收后授权提交、推送及上线。候选版本 `kds-returns-20261017-v1` 同步发布 API、收银静态页及独立 KDS，支持部分退菜数量、全退删除线、完整订单保留退菜记录、有效金额结账，以及汇总／标准／收银一致展示。
 
 数据库迁移 `20261016090000_retain_returned_dishes` 仅新增默认零的 `order_items.returned_quantity`、`kds_tasks.returned_made_quantity` 和 `returned_served_quantity`。先验证旧迁移校验值及完整备份，再应用该唯一迁移。采用新的 API 依赖副本更新 Prisma Client，旧依赖与版本保留；运行产物仅替换本次涉及的厨房同步、订单、结算、桌账及打印快照模块，不覆盖其他运行代码或 uploads。
