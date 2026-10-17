@@ -372,7 +372,6 @@ describe('KDS real MySQL workflow', () => {
       await action(await task(row.id), 1).expect(201);
       const pack = { orderId: row.id.toString(), requestKey: randomUUID(), itemsChecked: true, utensilsChecked: true, remarksChecked: true };
       await call('post', '/merchant/kds/pack', pack).expect(409);
-      await call('post', `/merchant/orders/${row.id}/ready`, {}).expect(409);
       await action(await task(row.id, barProductId), 1).expect(201);
       await call('post', '/merchant/kds/pack', { ...pack, utensilsChecked: false }).expect(400);
       await call('post', '/merchant/kds/pack', pack).expect(201);
@@ -391,7 +390,6 @@ describe('KDS real MySQL workflow', () => {
     expect((await task(row.id)).order.status).toBe('PREPARING');
     expect((await task(row.id)).order.kdsPackedAt).toBeNull();
     await action(await task(row.id), 2, 'SERVE').expect(409);
-    await call('post', `/merchant/orders/${row.id}/ready`, {}).expect(409);
     await action(await task(row.id), 1, 'SERVE').expect(201);
     await action(await task(row.id, barProductId), 1).expect(201);
     expect((await task(row.id)).order.status).toBe('PREPARING');
@@ -494,7 +492,6 @@ describe('KDS real MySQL workflow', () => {
   it.each(['PICKUP','DELIVERY'] as const)('reaches READY after every station is made with serving off and retains the cashier %s handoff', async type => {
     await call('patch','/merchant/kds/settings',settings(false)).expect(200);
     const row=await order(type,2,2,true);
-    await call('post',`/merchant/orders/${row.id}/ready`,{}).expect(409);
     let main=await task(row.id);
     await action(main,1).expect(201);expect((await task(row.id)).order.status).toBe('PREPARING');
     main=await task(row.id);await action(main,1).expect(201);
@@ -569,30 +566,28 @@ describe('KDS real MySQL workflow', () => {
     if (code) expect(response.body.code).toBe(code);
     if (expected === 201) await call('post', `/merchant/table-sessions/${row.tableSessionId}/checkout`, payload).expect(201);
   }
-  it.each([false, true])('gates checkout on all stations and effective quantities, serving=%s', async serving => {
-    await call('patch', '/merchant/kds/settings', settings(serving)).expect(200);
+  it.each([false, true].flatMap(serving => ['unreported', 'unmade', 'partially-made', 'other-station', 'unserved', 'partially-served']
+    .map(stage => ({ serving, stage }))))('allows checkout with KDS on, serving=$serving, stage=$stage', async ({ serving, stage }) => {
+    await call('patch', '/merchant/kds/settings', settings()).expect(200);
     try {
       const row = await order('DINE_IN', 2, 0, true);
-      await checkout(row, 409, 'KDS_CHECKOUT_MAKING_REQUIRED');
-      expect(await prisma.orderStatusLog.count({ where: { orderId: row.id, action: 'TABLE_SESSION_CHECKOUT' } })).toBe(0);
-      expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: row.tableSessionId! } })).status).toBe('OPEN');
-      expect(await prisma.printTriggerOutbox.count({ where: { orderId: row.id } })).toBe(0);
-      await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(201);
-      await action(await task(row.id), 1).expect(201);
-      await checkout(row, 409, 'KDS_CHECKOUT_MAKING_REQUIRED');
-      await action(await task(row.id), 1).expect(201);
-      await checkout(row, 409, 'KDS_CHECKOUT_MAKING_REQUIRED'); // bar still unfinished
-      await action(await task(row.id, barProductId), 1).expect(201);
-      if (serving) {
-        await checkout(row, 409, 'KDS_CHECKOUT_SERVING_REQUIRED');
-        await action(await task(row.id), 1, 'SERVE').expect(201);
-        await checkout(row, 409, 'KDS_CHECKOUT_SERVING_REQUIRED');
-        await action(await task(row.id), 1, 'SERVE').expect(201);
-        await action(await task(row.id, barProductId), 1, 'SERVE').expect(201);
+      if (stage !== 'unreported') {
+        await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(201);
+        if (stage === 'partially-made') await action(await task(row.id), 1).expect(201);
+        if (['other-station', 'unserved', 'partially-served'].includes(stage)) await action(await task(row.id), 2).expect(201);
+        if (['unserved', 'partially-served'].includes(stage)) await action(await task(row.id, barProductId), 1).expect(201);
+        if (stage === 'partially-served') await action(await task(row.id), 1, 'SERVE').expect(201);
       }
+      await call('patch', '/merchant/kds/settings', settings(serving)).expect(200);
+      const before = await prisma.kdsTask.findMany({ where: { orderId: row.id }, orderBy: { id: 'asc' } });
+      const operations = await prisma.kdsOperation.count({ where: { merchantId } });
       await checkout(row);
       expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: row.tableSessionId! } })).status).toBe('CLOSED');
       expect(await prisma.orderStatusLog.count({ where: { orderId: row.id, action: 'TABLE_SESSION_CHECKOUT' } })).toBe(1);
+      expect(await prisma.kdsTask.findMany({ where: { orderId: row.id }, orderBy: { id: 'asc' } })).toEqual(before);
+      expect(await prisma.kdsOperation.count({ where: { merchantId } })).toBe(operations);
+      const receipt = await app.get(ReceiptSnapshotService).fromTableSession(merchantId, row.tableSessionId!);
+      expect(receipt.items.reduce((sum, item) => sum + item.lineTotal, 0)).toBe(30000);
     } finally { await call('patch', '/merchant/kds/settings', settings()).expect(200); }
   });
   it.each([false, true])('allows ordinary checkout while KDS is disabled, regardless of stored serving=%s', async serving => {
@@ -603,19 +598,19 @@ describe('KDS real MySQL workflow', () => {
       expect(await prisma.kdsTask.count({ where: { orderId: row.id } })).toBe(0);
     } finally { await call('patch', '/merchant/kds/settings', settings()).expect(200); }
   });
-  it('does not let legacy single-order completion bypass making and serving checks', async () => {
-    const row = await order('DINE_IN', 1, 0);
-    await prisma.order.update({ where: { id: row.id }, data: { status: 'READY' } });
-    await call('post', `/merchant/orders/${row.id}/complete`, {}).expect(409);
-    await call('post', `/merchant/orders/${row.id}/cashier-complete`, { paymentMethod: 'CASH' }).expect(409);
-    await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(201);
-    await action(await task(row.id), 1).expect(201);
-    const blocked = await call('post', `/merchant/orders/${row.id}/complete`, {}).expect(409);
-    expect(blocked.body.code).toBe('KDS_CHECKOUT_SERVING_REQUIRED');
-    await action(await task(row.id), 1, 'SERVE').expect(201);
-    await call('post', `/merchant/orders/${row.id}/cashier-complete`, { paymentMethod: 'CASH' }).expect(201);
+  it.each((['DINE_IN', 'PICKUP', 'DELIVERY'] as const).flatMap(type => ['complete', 'cashier-complete']
+    .map(endpoint => ({ type, endpoint }))))('allows the ordinary $type flow through $endpoint without kitchen completion', async ({ type, endpoint }) => {
+    const row = await order(type, 1, 0);
+    await call('post', `/merchant/orders/${row.id}/start-preparing`, {}).expect(201);
+    await call('post', `/merchant/orders/${row.id}/ready`, {}).expect(201);
+    if (type === 'DELIVERY') await call('post', `/merchant/orders/${row.id}/start-delivery`, {}).expect(201);
+    const before = await prisma.kdsTask.findMany({ where: { orderId: row.id }, orderBy: { id: 'asc' } });
+    expect(before.every(item => item.madeQuantity === 0 && item.servedQuantity === 0)).toBe(true);
+    await call('post', `/merchant/orders/${row.id}/${endpoint}`, { paymentMethod: 'CASH' }).expect(201);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: row.id } })).status).toBe('COMPLETED');
+    expect(await prisma.kdsTask.findMany({ where: { orderId: row.id }, orderBy: { id: 'asc' } })).toEqual(before);
   });
-  it('rechecks additions and ignores fully returned portions at checkout', async () => {
+  it('bills new unreported additions and excludes fully returned portions without a kitchen gate', async () => {
     await call('patch', '/merchant/kds/settings', settings(false)).expect(200);
     try {
       const row = await order('DINE_IN', 3);
@@ -625,10 +620,6 @@ describe('KDS real MySQL workflow', () => {
       let state = (await call('get', path).expect(200)).body.data;
       await call('post', path + '/reconcile', { requestKey: randomUUID(), baseRevision: state.revision,
         desiredItems: [{ productId: productId.toString(), desiredQuantity: 1 }] }).expect(201);
-      await checkout(row, 409, 'KDS_CHECKOUT_MAKING_REQUIRED');
-      await call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }).expect(201);
-      const current = (await board()).tasks.find((task: { orderId: string; quantity: number }) => task.orderId === row.id.toString() && task.quantity > 0);
-      await action(current, 1).expect(201);
       await checkout(row);
       state = (await call('get', path).expect(200)).body.data;
       expect(state.returnedItems).toEqual([expect.objectContaining({ returnedQuantity: 3 })]);
@@ -636,7 +627,7 @@ describe('KDS real MySQL workflow', () => {
       expect(receipt.items).toEqual([expect.objectContaining({ quantity: 1, lineTotal: 10000 })]);
     } finally { await call('patch', '/merchant/kds/settings', settings()).expect(200); }
   });
-  it('serializes making with checkout without settling unfinished dishes or charging twice', async () => {
+  it('allows concurrent making and checkout without charging twice', async () => {
     await call('patch', '/merchant/kds/settings', settings(false)).expect(200);
     try {
       const row = await order('DINE_IN', 1);
@@ -667,7 +658,7 @@ describe('KDS real MySQL workflow', () => {
     expect((await board()).settings.servingEnabled).toBe(true);
   });
 
-  it('serializes disabling KDS with checkout using the committed merchant policy', async () => {
+  it('allows checkout while KDS settings change concurrently', async () => {
     const row = await order('DINE_IN', 1, 0);
     const state = (await call('get', `/merchant/table-sessions/${row.tableSessionId}/canonical-state`).expect(200)).body.data;
     const payload = { expectedRevision: state.revision, requestKey: randomUUID(), paymentMethod: 'CASH' };
@@ -677,25 +668,33 @@ describe('KDS real MySQL workflow', () => {
         call('post', `/merchant/table-sessions/${row.tableSessionId}/checkout`, payload),
       ]);
       expect(disabled.status).toBe(200);
-      expect([201, 409]).toContain(paid.status);
-      if (paid.status === 409) {
-        expect(paid.body.code).toBe('KDS_CHECKOUT_MAKING_REQUIRED');
-        await checkout(row);
-      }
+      expect(paid.status).toBe(201);
+      await call('post', `/merchant/table-sessions/${row.tableSessionId}/checkout`, payload).expect(201);
       expect(await prisma.orderStatusLog.count({ where: { orderId: row.id, action: 'TABLE_SESSION_CHECKOUT' } })).toBe(1);
     } finally { await call('patch', '/merchant/kds/settings', settings()).expect(200); }
   });
-  it('keeps concurrent reporting and checkout free of lock inversion and never settles unmade food', async () => {
+  it('allows checkout alongside reporting without deadlock or manufactured kitchen progress', async () => {
     const row = await order('DINE_IN', 2, 0);
     const [notified, paid] = await Promise.all([
       call('post', `/merchant/table-sessions/${row.tableSessionId}/production-notifications`, { requestKey: randomUUID() }),
       call('post', `/merchant/table-sessions/${row.tableSessionId}/checkout`, { paymentMethod: 'CASH' }),
     ]);
-    expect(notified.status).toBe(201);
-    expect(paid.status).toBe(409);
-    expect(paid.body.code).toBe('KDS_CHECKOUT_MAKING_REQUIRED');
-    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: row.tableSessionId! } })).status).toBe('OPEN');
-    expect((await task(row.id)).quantity).toBe(2);
+    expect([201, 409]).toContain(notified.status);
+    expect(paid.status).toBe(201);
+    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: row.tableSessionId! } })).status).toBe('CLOSED');
+    const tasks = await prisma.kdsTask.findMany({ where: { orderId: row.id } });
+    expect(tasks.every(item => item.madeQuantity === 0 && item.servedQuantity === 0)).toBe(true);
+    if (notified.status === 201) expect(tasks.map(item => item.quantity)).toEqual([2]);
+  });
+
+  it('keeps reported dine-in kitchen work actionable after payment without reopening the bill', async () => {
+    const row = await order('DINE_IN', 2);
+    await checkout(row);
+    expect((await task(row.id)).madeQuantity).toBe(0);
+    await action(await task(row.id), 2).expect(201);
+    await action(await task(row.id), 2, 'SERVE').expect(201);
+    expect((await prisma.tableSession.findUniqueOrThrow({ where: { id: row.tableSessionId! } })).status).toBe('CLOSED');
+    expect(await prisma.orderStatusLog.count({ where: { orderId: row.id, action: 'TABLE_SESSION_CHECKOUT' } })).toBe(1);
   });
 
   afterAll(async () => {

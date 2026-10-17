@@ -1,6 +1,5 @@
 import { effectiveOrderWhere, lockEffectivePrintTarget } from '../orders/effective-order';
-import { kdsEnabled, syncKdsOrder } from '../kds/kds-sync';
-import { assertKdsCheckoutComplete, lockKdsSettings } from '../kds/kds-checkout';
+import { syncKdsOrder } from '../kds/kds-sync';
 import {
   BadRequestException,
   ConflictException,
@@ -1514,7 +1513,6 @@ export class MerchantOrdersService {
     paymentMethod?: PaymentMethod,
   ) {
     const transitioned = await this.prisma.$transaction(async (tx) => {
-      if (['READY', 'START_DELIVERY', 'COMPLETE'].includes(action)) await lockKdsSettings(tx, merchantId);
       const order = await tx.order.findFirst({
         where: effectiveOrderWhere({ id, merchantId }),
         select: {
@@ -1531,24 +1529,6 @@ export class MerchantOrdersService {
       }
 
       const rule = this.resolveRule(action, order.orderType, order.status);
-      if (action === 'COMPLETE' && order.orderType === 'DINE_IN') {
-        const settings = await kdsEnabled(tx, merchantId);
-        if (settings) {
-          await tx.$queryRaw`SELECT id FROM orders WHERE id = ${id} AND merchant_id = ${merchantId} FOR UPDATE`;
-          await assertKdsCheckoutComplete(tx, merchantId, [id], settings);
-        }
-      }
-      const kitchenSetting = order.orderType !== 'DINE_IN' && ['READY', 'START_DELIVERY', 'COMPLETE'].includes(action)
-        ? await kdsEnabled(tx, merchantId) : null;
-      const kitchenTracked = kitchenSetting && (order.createdAt >= (kitchenSetting.activatedAt ?? new Date()) ||
-        await tx.kdsTask.count({ where: { merchantId, orderId: id } }) > 0);
-      if (kitchenTracked) {
-        await tx.$queryRaw`SELECT id FROM orders WHERE id = ${id} AND merchant_id = ${merchantId} FOR UPDATE`;
-        await syncKdsOrder(tx, merchantId, id);
-        const packed = await tx.order.findUnique({ where: { id }, select: { kdsPackedAt: true } });
-        if (!packed?.kdsPackedAt) throw new ConflictException(kitchenSetting.servingEnabled === false
-          ? '请先在 KDS 完成所有档口制作' : '请先在 KDS 完成所有档口制作并传菜');
-      }
       if (order.status !== rule.from) {
         throw new ConflictException(
           `订单当前状态为 ${order.status}，不能执行此操作`,
