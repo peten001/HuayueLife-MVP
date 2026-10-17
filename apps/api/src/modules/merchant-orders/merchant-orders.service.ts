@@ -573,7 +573,7 @@ export class MerchantOrdersService {
           });
           for (const item of pricedItems) {
             const existing = existingItems.find((candidate) =>
-              candidate.productId === item.product.id
+              candidate.quantity > 0 && candidate.productId === item.product.id
               && candidate.unitPriceVnd === item.product.price_vnd
               && normalizeCanonicalText(candidate.remark) === normalizeCanonicalText(item.remark),
             );
@@ -1155,7 +1155,8 @@ export class MerchantOrdersService {
           const decrease = Math.min(remaining, raw.quantity);
           const targetQuantity = raw.quantity - decrease;
           const afterSubtotalVnd = raw.unitPriceVnd * BigInt(targetQuantity);
-          if (targetQuantity === 0) await tx.orderItem.delete({ where: { id: raw.itemId } });
+          if (decrease === 0) continue;
+          if (targetQuantity === 0 && raw.orderStatus === 'PENDING_ACCEPTANCE') await tx.orderItem.delete({ where: { id: raw.itemId } });
           else {
             await tx.orderItem.updateMany({
               where: {
@@ -1166,7 +1167,8 @@ export class MerchantOrdersService {
             });
             await tx.orderItem.update({
               where: { id: raw.itemId },
-              data: { quantity: targetQuantity, subtotalVnd: afterSubtotalVnd },
+              data: { quantity: targetQuantity, subtotalVnd: afterSubtotalVnd,
+                ...(raw.orderStatus !== 'PENDING_ACCEPTANCE' ? { returnedQuantity: { increment: decrease } } : {}) },
             });
           }
           await tx.orderStatusLog.create({
@@ -1219,7 +1221,7 @@ export class MerchantOrdersService {
           });
         }
         const aggregate = await tx.orderItem.aggregate({
-          where: { orderId },
+          where: { orderId, quantity: { gt: 0 } },
           _sum: { subtotalVnd: true },
           _count: { id: true },
         });
@@ -1960,7 +1962,7 @@ export class MerchantOrdersService {
 
       const afterItemAmountVnd =
         item.unit_price_vnd * BigInt(input.targetQuantity);
-      if (input.targetQuantity === 0) {
+      if (input.targetQuantity === 0 && input.kind === 'DECREASE') {
         await tx.orderItem.delete({ where: { id: itemId } });
       } else {
         await tx.orderItem.updateMany({
@@ -1975,6 +1977,7 @@ export class MerchantOrdersService {
           data: {
             quantity: input.targetQuantity,
             subtotalVnd: afterItemAmountVnd,
+            ...(input.kind === 'RETURN' ? { returnedQuantity: { increment: item.quantity - input.targetQuantity } } : {}),
           },
         });
       }

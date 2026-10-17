@@ -1,4 +1,6 @@
 export const zhMessages = {
+  'itemReturn.full': '已退菜 × {count}',
+  'itemReturn.partial': '原点 {original} · 已退 {returned} · 有效 {quantity}',
   'shell.merchantFallback': '当前商家',
   'shell.staffFallback': '商家员工',
   'shell.networkOnline': '网络正常',
@@ -636,6 +638,8 @@ export const zhMessages = {
 export type TranslationKey = keyof typeof zhMessages;
 
 export const viMessages: Record<TranslationKey, string> = {
+  'itemReturn.full': 'Đã hủy × {count}',
+  'itemReturn.partial': 'Đã gọi {original} · Đã hủy {returned} · Còn lại {quantity}',
   'shell.merchantFallback': 'Cửa hàng hiện tại',
   'shell.staffFallback': 'Nhân viên',
   'shell.networkOnline': 'Mạng bình thường',
@@ -1271,6 +1275,8 @@ export const viMessages: Record<TranslationKey, string> = {
 };
 
 export const enMessages: Record<TranslationKey, string> = {
+  'itemReturn.full': 'Returned × {count}',
+  'itemReturn.partial': 'Ordered {original} · Returned {returned} · Active {quantity}',
   'shell.merchantFallback': 'Current merchant',
   'shell.staffFallback': 'Merchant staff',
   'shell.networkOnline': 'Network online',

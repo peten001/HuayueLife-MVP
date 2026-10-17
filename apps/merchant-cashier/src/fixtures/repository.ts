@@ -228,11 +228,12 @@ export const demoRepository = {
         if (removeQuantity <= 0) break;
         const removed = Math.min(removeQuantity, item.quantity);
         item.quantity -= removed;
+        if (order.status !== 'PENDING_ACCEPTANCE') item.returnedQuantity = (item.returnedQuantity ?? 0) + removed;
         item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
         removeQuantity -= removed;
-        if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
+        if (item.quantity === 0 && order.status === 'PENDING_ACCEPTANCE') order.items = order.items.filter((candidate) => candidate.id !== item.id);
         recalculateDemoOrder(order);
-        if (!order.items.length) {
+        if (order.items.every(item => item.quantity === 0)) {
           order.status = 'CANCELLED';
           order.cancelledAt = order.updatedAt;
           order.cancelReason = 'Demo canonical order automatically cancelled after final item removal';
@@ -495,10 +496,10 @@ export const demoRepository = {
     }
     clearDemoSessionRounding();
     item.quantity -= input.returnQuantity;
+    item.returnedQuantity = (item.returnedQuantity ?? 0) + input.returnQuantity;
     item.subtotalVnd = (BigInt(item.unitPriceVnd ?? 0) * BigInt(item.quantity)).toString();
-    if (item.quantity === 0) order.items = order.items.filter((candidate) => candidate.id !== item.id);
     recalculateDemoOrder(order);
-    if (!order.items.length) {
+    if (order.items.every(item => item.quantity === 0)) {
       order.status = 'CANCELLED';
       order.cancelledAt = order.updatedAt;
       order.cancelReason = 'Demo order automatically cancelled after its final item was returned';
@@ -520,12 +521,13 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
   const detail = buildSessionDetail(sessionId);
   const grouped = new Map<string, DineInCanonicalLine>();
   const billableOrders = tableOrders(sessionId).filter((order) =>
-    ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERING', 'COMPLETED'].includes(order.status),
+    ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERING', 'COMPLETED'].includes(order.status)
+      || order.items.some(item => item.quantity === 0 && item.returnedQuantity),
   );
   for (const order of billableOrders) {
     for (const item of order.items) {
       const remark = normalizeDemoText(item.remark);
-      const lineKey = demoCanonicalLineKey(item, remark);
+      const lineKey = item.quantity === 0 && item.returnedQuantity ? `returned:${item.id}` : demoCanonicalLineKey(item, remark);
       const product = item.productId
         ? demoMenuProducts.find((candidate) => candidate.id === item.productId)
         : undefined;
@@ -542,6 +544,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
         displayOrderKey: `${order.createdAt}:${item.id}:${lineKey}`,
         unitPriceVnd: item.unitPriceVnd ?? '0',
         quantity: 0,
+        returnedQuantity: 0,
         lockedQuantity: 0,
         adjustableQuantity: 0,
         subtotalVnd: '0',
@@ -549,6 +552,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
         sourceSummary: { staffQuantity: 0, qrQuantity: 0 },
       } satisfies DineInCanonicalLine;
       current.quantity += item.quantity;
+      current.returnedQuantity = (current.returnedQuantity ?? 0) + (item.returnedQuantity ?? 0);
       current.subtotalVnd = (BigInt(current.subtotalVnd) + BigInt(item.subtotalVnd)).toString();
       if (locked) current.lockedQuantity += item.quantity;
       else current.adjustableQuantity += item.quantity;
@@ -557,7 +561,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
       grouped.set(lineKey, current);
     }
   }
-  const items = [...grouped.values()]
+  const allLines = [...grouped.values()]
     .map((line) => ({
       ...line,
       adjustability: line.adjustableQuantity === 0
@@ -569,6 +573,8 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
     }))
     .sort((left, right) => left.activeSince.localeCompare(right.activeSince)
       || left.displayOrderKey.localeCompare(right.displayOrderKey));
+  const items = allLines.filter(line => line.quantity > 0);
+  const returnedItems = allLines.filter(line => line.quantity === 0 && line.returnedQuantity);
   const originalAmountVnd = items.reduce((sum, item) => sum + BigInt(item.subtotalVnd), 0n);
   const amounts = previewSettlementAdjustment({
     itemAmountVnd: originalAmountVnd,
@@ -605,6 +611,7 @@ function buildDemoCanonicalState(sessionId: string): DineInCanonicalState {
     sessionStatus: detail.status,
     revision: `demo-dcs2:${demoHash(JSON.stringify(revisionSource))}`,
     items,
+    returnedItems,
     totals: {
       originalAmountVnd: originalAmountVnd.toString(),
       discountPayableRateBps: sessionId === 'demo-session-1' ? sessionDiscountPayableRateBps : null,
@@ -846,7 +853,7 @@ function applyDemoOrderSettlement(
 function buildSessionDetail(sessionId = 'demo-session-1'): TableSessionDetail {
   return {
     ...buildSessionSummary(sessionId),
-    orders: tableOrders(sessionId).map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productId: item.productId, productNameZhSnapshot: item.productNameZhSnapshot, productNameViSnapshot: item.productNameViSnapshot, productNameEnSnapshot: item.productNameEnSnapshot, productNameZh: item.productNameZh, productNameVi: item.productNameVi, productNameEn: item.productNameEn, quantity: item.quantity, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
+    orders: tableOrders(sessionId).map((order) => ({ id: order.id, orderNo: order.orderNo, createdByStaffId: order.createdByStaffId, status: order.status, createdAt: order.createdAt, itemAmountVnd: order.itemAmountVnd, deliveryFeeVnd: order.deliveryFeeVnd, totalAmountVnd: order.totalAmountVnd, tableNoSnapshot: order.tableNoSnapshot, items: order.items.map((item) => ({ id: item.id, productId: item.productId, productNameZhSnapshot: item.productNameZhSnapshot, productNameViSnapshot: item.productNameViSnapshot, productNameEnSnapshot: item.productNameEnSnapshot, productNameZh: item.productNameZh, productNameVi: item.productNameVi, productNameEn: item.productNameEn, quantity: item.quantity, returnedQuantity: item.returnedQuantity ?? 0, unitPriceVnd: item.unitPriceVnd ?? '0', subtotalVnd: item.subtotalVnd })) })),
   };
 }
 
@@ -864,6 +871,7 @@ function demoItem(item: MerchantOrder['items'][number]): MerchantSettlementItem 
     imageUrl: item.imageUrlSnapshot ?? null,
     unitPriceVnd: item.unitPriceVnd ?? '0',
     quantity: item.quantity,
+    returnedQuantity: item.returnedQuantity ?? 0,
     subtotalVnd: item.subtotalVnd,
     remark: item.remark ?? null,
   };
@@ -894,19 +902,21 @@ function buildDemoSettlements(orders: MerchantOrder[]): MerchantSettlement[] {
   const settlements: MerchantSettlement[] = [];
   for (const [sessionId, group] of sessions) {
     const completed = group.filter((order) => order.status === 'COMPLETED');
-    if (!completed.length) continue;
+    const returnedItems = group.filter(order => order.status === 'CANCELLED')
+      .flatMap(order => order.items.filter(item => item.quantity === 0 && item.returnedQuantity));
+    if (!completed.length && !returnedItems.length) continue;
     const originalAmountVnd = completed.reduce(
       (sum, order) => sum + BigInt(order.totalAmountVnd),
       0n,
     );
     const roundingAmountVnd = BigInt(completed[0]?.roundingAmountVnd ?? '0');
-    const representative = completed[0]!;
+    const representative = completed[0] ?? group[0]!;
     const settledAt = representative.completedAt ?? representative.updatedAt;
     settlements.push({
       settlementId: `session:${sessionId}`,
       kind: 'TABLE_SESSION',
       orderType: 'DINE_IN',
-      status: 'COMPLETED',
+      status: completed.length ? 'COMPLETED' : 'CANCELLED',
       businessDate: representative.businessDate ?? '',
       settledAt,
       tableSessionId: sessionId,
@@ -917,7 +927,7 @@ function buildDemoSettlements(orders: MerchantOrder[]): MerchantSettlement[] {
       orderCount: completed.length,
       itemQuantity: completed.flatMap((order) => order.items)
         .reduce((sum, item) => sum + item.quantity, 0),
-      items: completed.flatMap((order) => order.items.map(demoItem)),
+      items: [...completed.flatMap((order) => order.items.map(demoItem)), ...returnedItems.map(demoItem)],
       originalAmountVnd: originalAmountVnd.toString(),
       discountAmountVnd: '0',
       roundingAmountVnd: roundingAmountVnd.toString(),

@@ -1,5 +1,17 @@
 # KDS 发布说明
 
+## 2026-10-17 退菜保留与跨页面同步
+
+用户完成本地验收后授权提交、推送及上线。候选版本 `kds-returns-20261017-v1` 同步发布 API、收银静态页及独立 KDS，支持部分退菜数量、全退删除线、完整订单保留退菜记录、有效金额结账，以及汇总／标准／收银一致展示。
+
+数据库迁移 `20261016090000_retain_returned_dishes` 仅新增默认零的 `order_items.returned_quantity`、`kds_tasks.returned_made_quantity` 和 `returned_served_quantity`。先验证旧迁移校验值及完整备份，再应用该唯一迁移。采用新的 API 依赖副本更新 Prisma Client，旧依赖与版本保留；运行产物仅替换本次涉及的厨房同步、订单、结算、桌账及打印快照模块，不覆盖其他运行代码或 uploads。
+
+发布目录与备份：`/opt/huayue-api-releases/kds-returns-20261017-v1`、`/var/www/huayue-cashier-releases/kds-returns-20261017-v1`、`/var/www/huayue-kds-releases/kds-returns-20261017-v1`、`/opt/backups/yunqiao-kds-returns-20261017-v1`。构建及归档关联已推送的提交、源码树和文件校验值；静态目录保留旧哈希资源，API 健康及受保护只读接口通过后再切换页面。
+
+新退菜记录产生后不得自动回退到硬删除原菜品的旧业务实现；保留新增列，不做逆向迁移或恢复数据库覆盖营业数据。发布失败优先保留兼容退菜数据的新 API，修复或重试页面切换；故障期间只允许在确认没有新退菜记录后回退旧 API。线上仅做健康、鉴权、现有订单及资源的只读核对，不创建测试订单、执行退菜或划菜，不导入本地验收样本。
+
+本地已通过 631 项前端与 33 项隔离 MySQL 流程；API 全量、工作区类型与构建、正式域名的两套静态构建在本次发布时再次核对。实际部署结果以服务器 DEPLOYMENT_PASS.json 为准。
+
 ## 2026-10-15 三语遗漏补齐
 
 版本 `kds-locale-audit-20261015-v4`：补齐预置档口、分类、标准单位、系统原因和错误的三语显示。仅替换 API `kds.service` 的编译产物以读取分类既有译名，然后更新 KDS 静态版本；无依赖或数据库变更。候选版本复制当前线上 API，只覆盖该服务三项文件，保留其他运行代码；收银静态版本保持 v3。原 API／依赖／KDS 指针、源提交和文件校验值保存在 `/opt/backups/yunqiao-kds-locale-audit-20261015-v4`。健康、受保护看板分类译名／菜图／菜名及公网资源核对后确认成功；失败恢复原 API 与 KDS，不操作生产订单或门店设置。

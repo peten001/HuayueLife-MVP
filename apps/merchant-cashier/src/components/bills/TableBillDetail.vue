@@ -6,6 +6,7 @@ import { useI18n } from '@/i18n';
 import type { DineInCanonicalLine, DineInCanonicalState, TableCardView, TableSessionDetail } from '@/types';
 import DineInActionDock from '@/features/dine-in/DineInActionDock.vue';
 import MobileV2BillActionDock from '@/mobile-v2/MobileV2BillActionDock.vue';
+import DishReturnStatus from '@/components/orders/DishReturnStatus.vue';
 
 const props = defineProps<{
   table?: TableCardView | null;
@@ -45,7 +46,8 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale } = useI18n();
-const canonicalLines = computed(() => props.canonicalState?.items ?? []);
+const canonicalLines = computed(() => [...(props.canonicalState?.items ?? []), ...(props.canonicalState?.returnedItems ?? [])]
+  .sort((a, b) => a.displayOrderKey.localeCompare(b.displayOrderKey)));
 const totals = computed(() => props.canonicalState?.totals ?? {
   originalAmountVnd: props.session?.originalAmountVnd || props.session?.totalAmountVnd || '0',
   discountPayableRateBps: props.session?.discountPayableRateBps ?? null,
@@ -117,6 +119,7 @@ function decreaseDisabled(line: DineInCanonicalLine) {
 function increaseDisabled(line: DineInCanonicalLine) {
   return Boolean(
     (props.itemActionsDisabled ?? props.actionsDisabled)
+    || line.quantity === 0
     || !line.productId
     || (props.orderableProductIds && !props.orderableProductIds.has(line.productId)),
   );
@@ -177,16 +180,18 @@ function priceCanExpand(line: DineInCanonicalLine) {
     <section class="detail-section table-bill-content table-bill-shell__body" data-testid="right-panel-body">
       <div v-if="canonicalLines.length" class="table-bill-scroll" data-testid="table-bill-scroll">
         <div class="table-item-summary-list" data-testid="table-item-summary">
-          <article v-for="entry in canonicalLines" :key="entry.lineKey" class="table-item-summary-row canonical-table-item-row" :class="{ 'table-item-summary-row--extended-price': priceCanExpand(entry) }" :data-product-id="entry.productId" :data-line-key="entry.lineKey">
+          <article v-for="entry in canonicalLines" :key="entry.lineKey" class="table-item-summary-row canonical-table-item-row" :class="{ 'table-item-summary-row--extended-price': priceCanExpand(entry), 'dish-fully-returned': entry.quantity === 0 && entry.returnedQuantity }" :data-product-id="entry.productId" :data-line-key="entry.lineKey">
             <div class="table-item-summary-row__name">
               <strong :title="canonicalName(entry)">{{ canonicalName(entry) }}</strong>
               <small v-if="entry.remark">{{ entry.remark }}</small>
+              <DishReturnStatus :quantity="entry.quantity" :returned-quantity="entry.returnedQuantity" />
             </div>
-            <div class="committed-item-stepper" :class="{ 'committed-item-stepper--wide-quantity': entry.quantity >= 100 }" :aria-label="t('ordering.quantityFor', { name: canonicalName(entry) })">
+            <div v-if="entry.quantity > 0" class="committed-item-stepper" :class="{ 'committed-item-stepper--wide-quantity': entry.quantity >= 100 }" :aria-label="t('ordering.quantityFor', { name: canonicalName(entry) })">
               <button type="button" data-testid="decrease-canonical-line" :aria-label="`${t('itemAdjustment.decrease')} ${canonicalName(entry)}`" :disabled="decreaseDisabled(entry)" :title="decreaseDisabled(entry) ? t('itemAdjustment.unavailable') : t('itemAdjustment.decrease')" @click="emit('decreaseLine', entry)"><Minus :size="16" aria-hidden="true" /></button>
               <output>{{ entry.quantity }}</output>
               <button type="button" data-testid="increase-canonical-line" :aria-label="`${t('ordering.increaseQuantity')} ${canonicalName(entry)}`" :disabled="increaseDisabled(entry)" :title="increaseDisabled(entry) ? t('ordering.historicalProductUnavailable') : t('ordering.increaseQuantity')" @click="emit('increaseLine', entry)"><Plus :size="16" aria-hidden="true" /></button>
             </div>
+            <span v-else class="returned-item-quantity">× {{ entry.returnedQuantity }}</span>
             <b class="table-item-summary-row__item-price">{{ formatItemPrice(entry.subtotalVnd, locale) }}</b>
           </article>
         </div>
@@ -253,5 +258,7 @@ function priceCanExpand(line: DineInCanonicalLine) {
 .canonical-table-item-row .table-item-summary-row__name { grid-column: 1 !important; }
 .canonical-table-item-row .committed-item-stepper { grid-column: 2 !important; }
 .canonical-table-item-row .table-item-summary-row__item-price { grid-column: 3 !important; }
+.dish-fully-returned .table-item-summary-row__name strong { text-decoration: line-through; color: var(--cashier-shell-muted); }
+.returned-item-quantity { grid-column: 2; text-align: center; color: var(--cashier-shell-muted); }
 @media (max-width: 430px) { .canonical-table-item-row { grid-template-columns: minmax(0, 1fr) 104px auto !important; } }
 </style>

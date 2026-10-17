@@ -612,7 +612,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
         }),
       ).resolves.toEqual({ order: orderResult, session: sessionResult });
 
-      expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
+      expect(tx.orderItem.delete).not.toHaveBeenCalled();
+      expect(tx.orderItem.update).toHaveBeenCalledWith({ where: { id: 71n }, data: { quantity: 0, subtotalVnd: 0n, returnedQuantity: { increment: 2 } } });
       expect(tx.order.updateMany).toHaveBeenCalledWith({
         where: effectiveOrderWhere({
           id: 41n,
@@ -657,7 +658,8 @@ describe('MerchantOrdersService table ordering and item adjustments', () => {
       returnQuantity: 1,
     });
 
-    expect(tx.orderItem.delete).toHaveBeenCalledWith({ where: { id: 71n } });
+    expect(tx.orderItem.delete).not.toHaveBeenCalled();
+      expect(tx.orderItem.update).toHaveBeenCalledWith({ where: { id: 71n }, data: { quantity: 0, subtotalVnd: 0n, returnedQuantity: { increment: 1 } } });
     expect(tx.order.updateMany).toHaveBeenCalledWith({
       where: effectiveOrderWhere({
         id: 41n,

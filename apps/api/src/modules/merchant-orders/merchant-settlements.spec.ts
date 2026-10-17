@@ -19,6 +19,18 @@ const identityDateResolver = (at: Date) =>
   at.toISOString().slice(0, 10);
 
 describe('Merchant Settlement View canonical builder', () => {
+  it('includes a fully returned cancelled child in the complete session without adding revenue or billable portions', () => {
+    const rows = session415Fixture();
+    const original = rows[0]!;
+    const returned = { ...original, id: 999n, status: 'CANCELLED' as const, totalAmountVnd: 0n,
+      items: [{ ...original.items![0]!, id: 999n, quantity: 0, returnedQuantity: 3, subtotalVnd: 0n }] };
+    const result = buildMerchantSettlements([...rows, returned], identityDateResolver)[0]!;
+    expect(result.finalReceivableVnd).toBe('300000');
+    expect(result.itemQuantity).toBe(4);
+    expect(result.orderCount).toBe(3);
+    expect(result.items.find(item => item.id === '999')).toMatchObject({ quantity: 0, returnedQuantity: 3, subtotalVnd: '0' });
+    expect(result.sourceOrders.find(order => order.id === '999')?.status).toBe('CANCELLED');
+  });
   it('groups 3 child orders of one closed session into exactly 1 settlement', () => {
     const settlements = buildMerchantSettlements(
       session415Fixture(),

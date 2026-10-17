@@ -35,6 +35,74 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it.each(['zh', 'vi', 'en'] as const)('shows the same return evidence in standard, summary and progress in %s, while making only active portions', async language => {
+    const first = data.tasks[0]!;
+    const partial = { ...first, quantity: 2, madeQuantity: 1, cancelledQuantity: 1, returnedMadeQuantity: 1,
+      dishNameVi: 'Món thử', dishNameEn: 'Test dish' };
+    const full = { ...partial, id: 'full', orderItemId: 'full-item', quantity: 0, madeQuantity: 0, cancelledQuantity: 3,
+      returnedMadeQuantity: 2, orderId: 'full-order', order: { ...first.order, id: 'full-order', tableSessionId: 'full-session', tableNo: '02', status: 'CANCELLED' } };
+    data.tasks = [partial, full];
+    setLocale(language);
+    await open();
+    const expected = `${kdsText(language, 'original')} 3 · ${kdsText(language, 'returned')} 1 · ${kdsText(language, 'effective')} 2`;
+    for (const mode of ['orderBump', 'dishBump', 'orders'] as const) {
+      await button(kdsText(language, mode));
+      await wrapper.get(mode === 'dishBump' ? '.kds-card' : '.kds-order-card').trigger('click');
+      expect(wrapper.get('.kds-detail').text()).toContain(expected);
+      if (mode === 'dishBump') {
+        expect(wrapper.findAll('.kds-card')).toHaveLength(1);
+        expect(wrapper.get('.kds-card-total').text()).toContain('1');
+        const retired = wrapper.get('.kds-detail-card--returned');
+        expect(retired.text()).toContain(`${kdsText(language, 'returned')} 3`);
+        expect(retired.get('.kds-return-title').text()).toBe(language === 'vi' ? 'Món thử' : language === 'en' ? 'Test dish' : first.dishName);
+        expect(retired.find('button,input').exists()).toBe(false);
+      }
+    }
+    await button(kdsText(language, 'dishBump')); await wrapper.get('.kds-card').trigger('click');
+    await button(kdsText(language, 'allMake'));
+    expect(runKdsAction).toHaveBeenCalledWith('MAKE', [{ taskId: first.id, version: first.version, quantity: 1 }], expect.any(String));
+  });
+  it.each(['orderBump', 'dishBump', 'serving'] as const)('updates selected quantities after a cashier return in %s and keeps the full-return row read-only', async mode => {
+    const first = data.tasks[0]!;
+    data.tasks = [{ ...first, madeQuantity: mode === 'serving' ? 3 : 0 }];
+    await open(); await button(kdsText('zh', mode));
+    await wrapper.get(mode === 'dishBump' ? '.kds-card' : '.kds-order-card').trigger('click');
+    await wrapper.get('.kds-detail-card input').setValue('3');
+    Object.assign(data.tasks[0]!, { quantity: 2, cancelledQuantity: 1, version: 2, ...(mode === 'serving' ? { madeQuantity: 2 } : {}) });
+    await wrapper.get('button[aria-label="刷新"]').trigger('click'); await flushPromises();
+    expect((wrapper.get('.kds-detail-card input').element as HTMLInputElement).value).toBe('2');
+    if (mode !== 'serving') expect(wrapper.get('.kds-detail').text()).toContain('原点 3 · 已退菜 1 · 有效 2');
+    Object.assign(data.tasks[0]!, { quantity: 0, madeQuantity: 0, servedQuantity: 0, cancelledQuantity: 3, version: 3 });
+    await wrapper.get('button[aria-label="刷新"]').trigger('click'); await flushPromises();
+    if (mode === 'serving') {
+      expect(wrapper.find('.kds-serving-card').exists()).toBe(false);
+      expect(wrapper.find('.kds-detail-card input').exists()).toBe(false);
+    } else {
+      expect(wrapper.get('.kds-detail-card--returned').text()).toContain('原点 3 · 已退菜 3 · 有效 0');
+      expect(wrapper.find('.kds-detail-card input').exists()).toBe(false);
+      expect(wrapper.get('.kds-detail-actions .kds-primary').attributes('disabled')).toBeDefined();
+      expect(wrapper.get('.kds-detail-actions > div:last-child > button').attributes('disabled')).toBeDefined();
+      if (mode === 'dishBump') expect(wrapper.get('.kds-card').classes()).toContain('kds-dish-returned');
+    }
+    expect(wrapper.get('.kds-stats').text()).toContain('制作中 0');
+    expect(runKdsAction).not.toHaveBeenCalled();
+  });
+  it('keeps fully returned dishes visible and struck through, with no make controls in standard and progress views', async () => {
+    const first = data.tasks[0]!;
+    const returned = { ...first, id: 'returned-task', orderItemId: 'returned-item', dishName: '已退测试菜',
+      quantity: 0, madeQuantity: 0, servedQuantity: 0, cancelledQuantity: 2, returnedMadeQuantity: 1 };
+    data.tasks = [first, returned];
+    await open();
+    await wrapper.get('.kds-order-card').trigger('click');
+    expect(wrapper.get('.kds-dish-returned').text()).toContain('已退测试菜');
+    expect(wrapper.get('.kds-detail-card--returned').text()).toContain('原点 2 · 已退菜 2 · 有效 0');
+    expect(wrapper.get('.kds-detail-card--returned').find('button').exists()).toBe(false);
+    expect(wrapper.get('.kds-detail-card--returned').text()).toContain('涉及已制作 1');
+    await button('订单进度');
+    await wrapper.get('.kds-order-card').trigger('click');
+    expect(wrapper.get('.kds-detail-card--returned').text()).toContain('已退测试菜');
+    expect(runKdsAction).not.toHaveBeenCalled();
+  });
   it.each(['vi', 'en'] as const)('localizes station selectors, cards and settings in %s without changing filters, selected quantities or stored routing', async language => {
     data.categories=[{id:'11',nameZh:'热菜',nameVi:'Món nóng',nameEn:'Hot dishes'}, {id:'12',nameZh:'自定义分类'}];
     data.settings.categoryRoutes=[{categoryId:'11',station:'烧烤档'}];

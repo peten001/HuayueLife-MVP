@@ -53,6 +53,7 @@ export type SettlementItemRow = {
   imageUrlSnapshot: string | null;
   unitPriceVnd: bigint | number;
   quantity: number;
+  returnedQuantity?: number;
   subtotalVnd: bigint | number;
   remark: string | null;
   product?: {
@@ -108,6 +109,7 @@ export interface MerchantSettlementItem {
   imageUrl: string | null;
   unitPriceVnd: string;
   quantity: number;
+  returnedQuantity?: number;
   subtotalVnd: string;
   remark: string | null;
 }
@@ -225,6 +227,7 @@ function serializeItems(orders: SettlementOrderRow[]): {
         unitPriceVnd:
           item.unitPriceVnd == null ? '0' : asBigInt(item.unitPriceVnd).toString(),
         quantity: item.quantity,
+        returnedQuantity: item.returnedQuantity ?? 0,
         subtotalVnd: asBigInt(item.subtotalVnd).toString(),
         remark: item.remark,
       });
@@ -325,7 +328,9 @@ function buildTableSessionSettlement(
   const session = orders[0]?.tableSession ?? null;
   if (!session) return null;
   const completedOrders = orders.filter((order) => order.status === 'COMPLETED');
-  if (!completedOrders.length) return null;
+  const retainedReturns = orders.flatMap(order => order.status === 'CANCELLED'
+    ? (order.items ?? []).filter(item => item.quantity === 0 && (item.returnedQuantity ?? 0) > 0) : []);
+  if (!completedOrders.length && !retainedReturns.length) return null;
 
   const originalAmountVnd = completedOrders.reduce(
     (sum, order) => sum + asBigInt(order.totalAmountVnd),
@@ -336,15 +341,17 @@ function buildTableSessionSettlement(
   const finalReceivableVnd =
     originalAmountVnd - discountAmountVnd - roundingAmountVnd;
   const settledAt = sessionSettledAt(session, completedOrders);
-  const representative = completedOrders[0]!;
-  const { items, itemQuantity } = serializeItems(completedOrders);
+  const representative = completedOrders[0] ?? orders[0]!;
+  const { items, itemQuantity } = serializeItems([
+    ...completedOrders, { ...representative, items: retainedReturns },
+  ]);
   const firstOrder = orders[0]!;
 
   return {
     settlementId: `session:${sessionId}`,
     kind: 'TABLE_SESSION',
     orderType: 'DINE_IN',
-    status: 'COMPLETED',
+    status: completedOrders.length ? 'COMPLETED' : 'CANCELLED',
     businessDate: resolveOrderBusinessDateWithResolver(representative, resolver),
     businessStartedAt: (session.openedAt ?? representative.createdAt).toISOString(),
     settledAt: settledAt.toISOString(),

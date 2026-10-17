@@ -154,15 +154,84 @@ describe('KDS real MySQL workflow', () => {
     await action(item, 2).expect(201);
     expect((await task(row.id)).madeQuantity).toBe(2);
   });
-  it('keeps history after deleting an order item and invalidates its stale batch', async () => {
+  it('retains a fully returned original item, prepared quantities and history, invalidating its stale batch', async () => {
     const row = await order(); const item = await task(row.id);
     await action(item, 2).expect(201);
     await call('post', `/merchant/orders/${row.id}/items/${row.items[0]!.id}/return`, { requestKey: randomUUID(), expectedQuantity: 3, returnQuantity: 3 }).expect(201);
     const returned = await task(row.id); expect(returned.quantity).toBe(0); expect(returned.cancelledQuantity).toBe(3);
-    expect(await prisma.orderItem.count({ where: { id: row.items[0]!.id } })).toBe(0);
+    expect(await prisma.orderItem.findUnique({ where: { id: row.items[0]!.id } })).toMatchObject({ quantity: 0, returnedQuantity: 3, subtotalVnd: 0n });
+    expect(returned.returnedMadeQuantity).toBe(2);
+    const state = (await call('get', `/merchant/table-sessions/${row.tableSessionId}/canonical-state`).expect(200)).body.data;
+    expect(state.items).toHaveLength(0);
+    expect(state.returnedItems).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 3 })]);
+    expect(state.totals.payableAmountVnd).toBe('0');
     const operations = (await board()).operations.filter((op: { kind: string }) => op.kind === 'RETURN');
     expect(operations.some((op: { lines: { taskId: string; removedMade: number }[] }) => op.lines.some(line => line.taskId === item.id && line.removedMade === 2))).toBe(true);
     await action(item, 1).expect(409);
+  });
+  it('partially returns unmade portions, replays once, preserves make/serve history, then returns the rest', async () => {
+    const row = await order('DINE_IN', 3, 3, true);
+    const original = await task(row.id);
+    await action(original, 2).expect(201);
+    await action(await task(row.id), 1, 'SERVE').expect(201);
+    const path = `/merchant/orders/${row.id}/items/${row.items[0]!.id}/return`;
+    const payload = { requestKey: randomUUID(), expectedQuantity: 3, returnQuantity: 1 };
+    await call('post', path, payload).expect(201);
+    await call('post', path, payload).expect(201);
+    expect(await task(row.id)).toMatchObject({ quantity: 2, madeQuantity: 2, servedQuantity: 1, cancelledQuantity: 1, returnedMadeQuantity: 0 });
+    expect(await prisma.order.findUnique({ where: { id: row.id } })).toMatchObject({ itemAmountVnd: 30000n });
+    await call('post', path, { requestKey: randomUUID(), expectedQuantity: 3, returnQuantity: 1 }).expect(409);
+    await call('post', path, { requestKey: randomUUID(), expectedQuantity: 2, returnQuantity: 2 }).expect(201);
+    expect(await task(row.id)).toMatchObject({ quantity: 0, cancelledQuantity: 3, returnedMadeQuantity: 2, returnedServedQuantity: 1 });
+    expect(await prisma.order.findUnique({ where: { id: row.id } })).toMatchObject({ status: 'PREPARING', itemAmountVnd: 10000n });
+    const state = (await call('get', `/merchant/table-sessions/${row.tableSessionId}/canonical-state`).expect(200)).body.data;
+    expect(state.items).toHaveLength(1);
+    expect(state.returnedItems).toHaveLength(1);
+    expect(state.totals.payableAmountVnd).toBe('10000');
+    await call('post', path, { requestKey: randomUUID(), expectedQuantity: 0, returnQuantity: 1 }).expect(400);
+  });
+  it('retains returned rows through canonical reconcile, reordering and checkout without billing them', async () => {
+    const row = await order('DINE_IN', 3, 3, true);
+    await action(await task(row.id), 2).expect(201);
+    const path = `/merchant/table-sessions/${row.tableSessionId}/canonical-state`;
+    let state = (await call('get', path).expect(200)).body.data;
+    const desiredItems = state.items.map((line: { lineKey: string; quantity: number; productId: string }) => ({ lineKey: line.lineKey, desiredQuantity: line.productId === productId.toString() ? 2 : line.quantity }));
+    const partial = { requestKey: randomUUID(), baseRevision: state.revision, desiredItems };
+    await call('post', `${path}/reconcile`, partial).expect(201);
+    await call('post', `${path}/reconcile`, partial).expect(201);
+    state = (await call('get', path).expect(200)).body.data;
+    expect(state.items.find((line: { productId: string }) => line.productId === productId.toString())).toMatchObject({ quantity: 2, returnedQuantity: 1 });
+    expect(state.totals.payableAmountVnd).toBe('30000');
+    await call('post', `${path}/reconcile`, { requestKey: randomUUID(), baseRevision: state.revision,
+      desiredItems: state.items.map((line: { lineKey: string; quantity: number; productId: string }) => ({ lineKey: line.lineKey, desiredQuantity: line.productId === productId.toString() ? 0 : line.quantity })) }).expect(201);
+    state = (await call('get', path).expect(200)).body.data;
+    expect(state.returnedItems).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 3 })]);
+    expect(state.totals.payableAmountVnd).toBe('10000');
+    await call('post', `${path}/reconcile`, { requestKey: randomUUID(), baseRevision: state.revision,
+      desiredItems: [...state.items.map((line: { lineKey: string; quantity: number }) => ({ lineKey: line.lineKey, desiredQuantity: line.quantity })),
+        { productId: productId.toString(), desiredQuantity: 1 }] }).expect(201);
+    const rows = await prisma.orderItem.findMany({ where: { orderId: row.id, productId } });
+    expect(rows).toHaveLength(2);
+    expect(rows.find(item => item.id === row.items[0]!.id)).toMatchObject({ quantity: 0, returnedQuantity: 3 });
+    expect(rows.find(item => item.id !== row.items[0]!.id)).toMatchObject({ quantity: 1, returnedQuantity: 0 });
+    state = (await call('get', path).expect(200)).body.data;
+    await call('post', `/merchant/table-sessions/${row.tableSessionId}/checkout`, {
+      paymentMethod: 'CASH', expectedRevision: state.revision, requestKey: randomUUID(),
+    }).expect(201);
+    const history = (await call('get', `/merchant/settlements/session:${row.tableSessionId}`).expect(200)).body.data;
+    expect(history.finalReceivableVnd).toBe('20000');
+    expect(history.items).toEqual(expect.arrayContaining([expect.objectContaining({ quantity: 0, returnedQuantity: 3, subtotalVnd: '0' })]));
+  });
+  it('keeps an all-returned canonical session in complete order history after auto-release', async () => {
+    const row = await order('DINE_IN', 2);
+    const path = `/merchant/table-sessions/${row.tableSessionId}/canonical-state`;
+    const state = (await call('get', path).expect(200)).body.data;
+    const reply = await call('post', `${path}/reconcile`, { requestKey: randomUUID(), baseRevision: state.revision,
+      desiredItems: state.items.map((line: { lineKey: string }) => ({ lineKey: line.lineKey, desiredQuantity: 0 })) }).expect(201);
+    expect(reply.body.data).toMatchObject({ sessionStatus: 'CLOSED', releasedBecause: 'EMPTY_AFTER_RECONCILE', totals: { payableAmountVnd: '0' } });
+    const history = (await call('get', `/merchant/settlements/session:${row.tableSessionId}`).expect(200)).body.data;
+    expect(history).toMatchObject({ status: 'CANCELLED', finalReceivableVnd: '0', itemQuantity: 0 });
+    expect(history.items).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 2 })]);
   });
   it('serves only made dine-in portions and blocks undo after a later serving action', async () => {
     const row = await order(); const made = await action(await task(row.id), 2).expect(201);

@@ -77,7 +77,7 @@ export class ReceiptSnapshotService {
 
     const categoryIdSet = categoryIds ? new Set(categoryIds) : null;
     const items = order.items.filter(
-      (item) => !categoryIdSet || (item.product?.categoryId && categoryIdSet.has(item.product.categoryId)),
+      (item) => item.quantity > 0 && (!categoryIdSet || (item.product?.categoryId && categoryIdSet.has(item.product.categoryId))),
     );
     if (categoryIdSet && items.length === 0) {
       throw new BadRequestException({
@@ -271,7 +271,7 @@ export class ReceiptSnapshotService {
     const finalReceivable = total - commercialDiscountAmount - roundingAmount;
     const tableItems = aggregateReceiptItems(
       session.orders.flatMap((order) =>
-        order.items.map((item) => ({
+        order.items.filter(item => item.quantity > 0).map((item) => ({
           name: item.productNameZhSnapshot,
           nameVi: item.product?.nameVi ?? undefined,
           quantity: item.quantity,

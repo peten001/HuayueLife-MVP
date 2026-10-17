@@ -18,6 +18,7 @@ export interface KdsTask {
   dishNameVi?: string | null; dishNameEn?: string | null;
   dishName: string; unit: string; remark: string | null; station: string; quantity: number;
   madeQuantity: number; servedQuantity: number; cancelledQuantity: number;
+  returnedMadeQuantity?: number; returnedServedQuantity?: number;
   version: number; startedAt: string | null; urgentAt: string | null; createdAt: string;
   order: KdsOrder;
 }

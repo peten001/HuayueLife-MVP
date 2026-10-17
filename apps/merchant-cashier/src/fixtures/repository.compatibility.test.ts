@@ -95,7 +95,7 @@ describe('fixture repository WebView compatibility', () => {
       status: 'CANCELLED',
       itemAmountVnd: '0',
       totalAmountVnd: '0',
-      items: [],
+      items: expect.arrayContaining([expect.objectContaining({ quantity: 0, returnedQuantity: item.quantity, subtotalVnd: '0' })]),
     }));
     expect(result.session).toEqual(expect.objectContaining({
       status: 'OPEN',
@@ -134,7 +134,7 @@ describe('fixture repository WebView compatibility', () => {
     expect(first.order).toEqual(expect.objectContaining({
       status: 'CANCELLED',
       settlementStatus: 'UNSETTLED',
-      items: [],
+      items: expect.arrayContaining([expect.objectContaining({ quantity: 0, returnedQuantity: lastItem.quantity, subtotalVnd: '0' })]),
     }));
     expect(first.session).toEqual(expect.objectContaining({
       status: 'CLOSED',
@@ -171,7 +171,7 @@ describe('fixture repository WebView compatibility', () => {
     expect(returned.order).toEqual(expect.objectContaining({
       status: 'CANCELLED',
       settlementStatus: 'UNSETTLED',
-      items: [],
+      items: expect.arrayContaining([expect.objectContaining({ quantity: 0, returnedQuantity: item.quantity, subtotalVnd: '0' })]),
     }));
     expect(returned.session).toEqual(expect.objectContaining({
       id: opened.session.id,

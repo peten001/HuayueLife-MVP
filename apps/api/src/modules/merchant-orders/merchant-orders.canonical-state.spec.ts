@@ -97,7 +97,8 @@ describe('MerchantOrdersService canonical reconcile', () => {
 
     const result = await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
 
-    expect(harness.tx.orderItem.delete).toHaveBeenCalledTimes(2);
+    expect(harness.tx.orderItem.delete).not.toHaveBeenCalled();
+    expect(harness.tx.orderItem.update).toHaveBeenCalledTimes(2);
     expect(harness.tx.order.updateMany).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({ sessionStatus: 'CLOSED', releasedBecause: 'EMPTY_AFTER_RECONCILE' });
   });
@@ -136,7 +137,8 @@ describe('MerchantOrdersService canonical reconcile', () => {
       .mockResolvedValueOnce([product(32n)]);
     await harness.service.reconcileDineInCanonicalState(7n, 3n, 51n, harness.dto);
     expect(harness.tx.order.create).toHaveBeenCalled();
-    expect(harness.tx.orderItem.delete).toHaveBeenCalled();
+    expect(harness.tx.orderItem.delete).not.toHaveBeenCalled();
+    expect(harness.tx.orderItem.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ quantity: 0, returnedQuantity: { increment: 1 } }) }));
   });
 
   it('rejects a stale revision with zero writes and latestState', async () => {

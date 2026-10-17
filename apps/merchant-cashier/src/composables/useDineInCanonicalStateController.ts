@@ -52,16 +52,24 @@ export function useDineInCanonicalStateController(options: {
   const presentedState = computed<DineInCanonicalState | null>(() => {
     const state = canonicalState.value;
     if (!state) return null;
+    const returnedItems = [...(state.returnedItems ?? [])];
     const lines = state.items.map((line) => {
       const override = desiredOverrides.value.get(`line:${line.lineKey}`);
       const quantity = override?.desiredQuantity ?? line.quantity;
+      const returnedQuantity = (line.returnedQuantity ?? 0)
+        + (line.adjustability === 'RETURN' ? Math.max(0, line.quantity - quantity) : 0);
       return {
         ...line,
         quantity,
+        returnedQuantity,
         adjustableQuantity: Math.max(0, quantity - line.lockedQuantity),
         subtotalVnd: (BigInt(line.unitPriceVnd) * BigInt(quantity)).toString(),
       };
-    }).filter((line) => line.quantity > 0);
+    }).filter((line) => {
+      if (line.quantity > 0) return true;
+      if (line.returnedQuantity > 0) returnedItems.push({ ...line, adjustability: 'LOCKED' });
+      return false;
+    });
     for (const override of desiredOverrides.value.values()) {
       if (!override.productId || override.desiredQuantity <= 0) continue;
       const product = options.products().find((candidate) => candidate.id === override.productId);
@@ -78,6 +86,7 @@ export function useDineInCanonicalStateController(options: {
         displayOrderKey: `local:${Date.now()}:${override.productId}`,
         unitPriceVnd: product.priceVnd,
         quantity: override.desiredQuantity,
+        returnedQuantity: 0,
         lockedQuantity: 0,
         adjustableQuantity: override.desiredQuantity,
         subtotalVnd: (BigInt(product.priceVnd) * BigInt(override.desiredQuantity)).toString(),
@@ -90,6 +99,7 @@ export function useDineInCanonicalStateController(options: {
     return {
       ...state,
       items: lines,
+      returnedItems,
       totals: dirty
         ? {
             originalAmountVnd,

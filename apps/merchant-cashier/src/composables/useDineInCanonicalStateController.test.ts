@@ -55,6 +55,51 @@ describe('useDineInCanonicalStateController', () => {
     expect(apiMocks.reconcileDineInCanonicalState).toHaveBeenCalledTimes(1);
     expect(apiMocks.reconcileDineInCanonicalState.mock.calls[0]?.[1].desiredItems).toContainEqual(expect.objectContaining({ desiredQuantity: 11 }));
   });
+  it('keeps cumulative returns and the original count stable during immediate partial and full return previews', async () => {
+    const initial = state(2);
+    initial.items[0]!.returnedQuantity = 1;
+    const final = state(0);
+    final.returnedItems = [{ ...initial.items[0]!, quantity: 0, returnedQuantity: 3, subtotalVnd: '0', adjustability: 'LOCKED' }];
+    apiMocks.getDineInCanonicalState.mockResolvedValue(initial);
+    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(final);
+    const controller = createController();
+    await controller.load(true);
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.items[0]).toMatchObject({ quantity: 1, returnedQuantity: 2 });
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.items).toEqual([]);
+    expect(controller.presentedState.value!.returnedItems).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 3, subtotalVnd: '0', adjustability: 'LOCKED' })]);
+    expect(controller.presentedState.value!.totals.payableAmountVnd).toBe('0');
+    await controller.flush();
+    expect(controller.presentedState.value!.returnedItems).toHaveLength(1);
+    expect(apiMocks.reconcileDineInCanonicalState.mock.calls[0]![1].desiredItems).toEqual([{ lineKey: initial.items[0]!.lineKey, desiredQuantity: 0 }]);
+  });
+  it('does not turn a draft decrease into a return or lose existing read-only returns', async () => {
+    const initial = state(1);
+    initial.items[0]!.adjustability = 'DECREASE';
+    initial.returnedItems = [{ ...initial.items[0]!, lineKey: 'returned:old', quantity: 0, returnedQuantity: 2, subtotalVnd: '0', adjustability: 'LOCKED' }];
+    apiMocks.getDineInCanonicalState.mockResolvedValue(initial);
+    apiMocks.reconcileDineInCanonicalState.mockResolvedValue(state(0));
+    const controller = createController();
+    await controller.load(true);
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.items).toEqual([]);
+    expect(controller.presentedState.value!.returnedItems).toEqual(initial.returnedItems);
+    await controller.flush();
+  });
+  it('restores the committed return quantities after a rejected full return', async () => {
+    const initial = state(1);
+    initial.items[0]!.returnedQuantity = 2;
+    apiMocks.getDineInCanonicalState.mockResolvedValue(initial);
+    apiMocks.reconcileDineInCanonicalState.mockRejectedValue(new CashierApiError({ message: 'rejected', status: 400, code: 'INVALID_ITEM_QUANTITY' }));
+    const controller = createController();
+    await controller.load(true);
+    controller.decreaseLine(controller.presentedState.value!.items[0]!);
+    expect(controller.presentedState.value!.returnedItems?.[0]!.returnedQuantity).toBe(3);
+    await controller.flush();
+    expect(controller.presentedState.value!.items[0]).toMatchObject({ quantity: 1, returnedQuantity: 2 });
+    expect(controller.presentedState.value!.returnedItems).toEqual([]);
+  });
 
   it('adopts the server auto-closed state when the last item changes 1 to 0', async () => {
     apiMocks.getDineInCanonicalState.mockResolvedValue(state(1));

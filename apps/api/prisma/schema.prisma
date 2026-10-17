@@ -943,6 +943,8 @@ model OrderItem {
   imageUrlSnapshot      String?  @map("image_url_snapshot") @db.VarChar(500)
   unitPriceVnd          BigInt   @map("unit_price_vnd")
   quantity              Int
+  // quantity/subtotal stay billable; returned portions remain on the original row.
+  returnedQuantity      Int @default(0) @map("returned_quantity")
   productionNotifiedQuantity Int @default(0) @map("production_notified_quantity")
   subtotalVnd           BigInt   @map("subtotal_vnd")
   remark                String?  @db.VarChar(200)
@@ -986,6 +988,8 @@ model KdsTask {
   madeQuantity      Int @default(0) @map("made_quantity")
   servedQuantity    Int @default(0) @map("served_quantity")
   cancelledQuantity Int @default(0) @map("cancelled_quantity")
+  returnedMadeQuantity Int @default(0) @map("returned_made_quantity")
+  returnedServedQuantity Int @default(0) @map("returned_served_quantity")
   version           Int @default(1)
   startedAt         DateTime? @map("started_at")
   urgentAt          DateTime? @map("urgent_at")

@@ -19,6 +19,19 @@ const session: TableSessionDetail = {
 
 describe('TableBillDetail canonical-state UI', () => {
   afterEach(() => setLocale('zh'));
+  it('shows partial quantities and a struck-through full return without action buttons', async () => {
+    const state = canonical();
+    state.items[0]!.returnedQuantity = 1;
+    state.returnedItems = [{ ...state.items[0]!, lineKey: 'returned:71', quantity: 0, returnedQuantity: 3, subtotalVnd: '0' }];
+    const wrapper = mountDetail({ canonicalState: state });
+    expect(wrapper.text()).toContain('原点 3 · 已退 1 · 有效 2');
+    const returned = wrapper.get('.dish-fully-returned');
+    expect(returned.text()).toContain('已退菜 × 3');
+    expect(returned.find('button').exists()).toBe(false);
+    await setLocale('vi');
+    expect(returned.text()).toContain('Đã hủy × 3');
+    expect(wrapper.text()).toContain('Đã gọi 3 · Đã hủy 1 · Còn lại 2');
+  });
 
   it('renders only dish, quantity and price without raw order state labels', () => {
     const wrapper = mountDetail();

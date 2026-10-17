@@ -161,6 +161,7 @@ export class MerchantSettlementsService {
             imageUrlSnapshot: true,
             unitPriceVnd: true,
             quantity: true,
+            returnedQuantity: true,
             subtotalVnd: true,
             remark: true,
             product: {

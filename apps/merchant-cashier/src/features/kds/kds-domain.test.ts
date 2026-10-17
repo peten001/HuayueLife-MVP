@@ -15,6 +15,26 @@ describe('KDS order ownership and aggregate grouping', () => {
       { ...task, id: 'order-remark', order: { ...task.order, customerRemark: '过敏：花生' } }];
     expect(groupKitchenTasks(modified)).toHaveLength(4);
   });
+  it('retains partial, full and already-made returns in summary without counting them as extra work', () => {
+    const first = demoKds.board().tasks[0]!;
+    const partial = { ...first, quantity: 2, madeQuantity: 1, cancelledQuantity: 1 };
+    const full = { ...first, id: 'full', quantity: 0, madeQuantity: 0, cancelledQuantity: 3,
+      order: { ...first.order, status: 'CANCELLED' } };
+    const made = { ...first, id: 'made', quantity: 1, madeQuantity: 1, cancelledQuantity: 2 };
+    const group = groupKitchenTasks([partial, full, made])[0]!;
+    expect(group.tasks.map(task => task.id)).toEqual([partial.id, full.id, made.id]);
+    expect(group).toMatchObject({ quantity: 1, returnedQuantity: 6, fullyReturned: false });
+    expect(groupKitchenTasks([full])[0]).toMatchObject({ quantity: 0, returnedQuantity: 3, fullyReturned: true });
+    // A cancelled order must never become actionable just because it has return evidence.
+    expect(groupKitchenTasks([{ ...full, quantity: 1 }])[0]!.quantity).toBe(0);
+  });
+  it('sorts waiting work before return-only groups and leaves completed dishes without returns out', () => {
+    const first = demoKds.board().tasks[0]!;
+    const full = { ...first, id: 'full', quantity: 0, cancelledQuantity: 3, urgentAt: first.createdAt };
+    const waiting = { ...first, id: 'waiting', dishName: '另一道菜' };
+    const completed = { ...first, id: 'completed', dishName: '完成菜', madeQuantity: first.quantity };
+    expect(groupKitchenTasks([full, waiting, completed]).map(group => group.tasks[0]!.id)).toEqual(['waiting', 'full']);
+  });
   it('requires every ordered item, including items on another station, before packing', () => {
     const task = demoKds.board().tasks.find(task => task.order.orderType === 'PICKUP')!;
     const complete = { ...task, madeQuantity: task.quantity };

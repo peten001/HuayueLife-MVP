@@ -13,6 +13,7 @@ import ErrorState from '@/components/common/ErrorState.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import OrderStatusBadge from '@/components/common/OrderStatusBadge.vue';
 import PrintJobActions from '@/components/printing/PrintJobActions.vue';
+import DishReturnStatus from '@/components/orders/DishReturnStatus.vue';
 import BusinessDaySummaryDialog from '@/components/reports/BusinessDaySummaryDialog.vue';
 import { resolveCashierPresentationLocation } from '@/mobile-v2/navigation';
 import { useMediaQuery } from '@/composables';
@@ -127,6 +128,7 @@ function mergedSettlementItems(item: MerchantSettlement) {
     productNameEn: string | null;
     unitPriceVnd: string;
     quantity: number;
+    returnedQuantity: number;
     subtotalVnd: string;
     remark: string | null;
   }> = [];
@@ -136,10 +138,12 @@ function mergedSettlementItems(item: MerchantSettlement) {
       row.productNameZh,
       row.unitPriceVnd,
       row.remark ?? '',
+      row.quantity === 0 && row.returnedQuantity ? `returned:${row.id}` : 'active',
     ].join('\u0000');
     const current = merged.find((entry) => entry.key === key);
     if (current) {
       current.quantity += row.quantity;
+      current.returnedQuantity += row.returnedQuantity ?? 0;
       current.subtotalVnd = String(
         BigInt(current.subtotalVnd) + BigInt(row.subtotalVnd),
       );
@@ -151,6 +155,7 @@ function mergedSettlementItems(item: MerchantSettlement) {
         productNameEn: row.productNameEn,
         unitPriceVnd: row.unitPriceVnd,
         quantity: row.quantity,
+        returnedQuantity: row.returnedQuantity ?? 0,
         subtotalVnd: row.subtotalVnd,
         remark: row.remark,
       });
@@ -334,12 +339,13 @@ onMounted(async () => {
           <section class="workflow-section settlement-items-section">
             <h3>{{ t('order.itemsTitle') }}</h3>
             <ul class="settlement-item-list">
-              <li v-for="row in mergedSettlementItems(settlement)" :key="row.key" class="settlement-item-row">
+              <li v-for="row in mergedSettlementItems(settlement)" :key="row.key" class="settlement-item-row" :class="{ 'dish-fully-returned': row.quantity === 0 && row.returnedQuantity }">
                 <div class="settlement-item-row__name">
                   <span>{{ dishName(row) }}</span>
+                  <DishReturnStatus :quantity="row.quantity" :returned-quantity="row.returnedQuantity" />
                   <small v-if="row.remark">{{ row.remark }}</small>
                 </div>
-                <span class="settlement-item-row__qty">× {{ row.quantity }}</span>
+                <span class="settlement-item-row__qty">× {{ row.quantity || row.returnedQuantity }}</span>
                 <span class="settlement-item-row__amount">{{ formatVnd(row.subtotalVnd, locale) }}</span>
               </li>
             </ul>
@@ -397,6 +403,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.dish-fully-returned .settlement-item-row__name > span { text-decoration: line-through; opacity: .6; }
 .summary-open-button{display:inline-flex;min-height:44px;align-items:center;justify-content:center;gap:7px;border:1px solid var(--cashier-border);border-radius:11px;padding:0 13px;background:var(--cashier-surface);color:var(--cashier-action-primary);font:inherit;font-size:13px;font-weight:800;white-space:nowrap;cursor:pointer}
 .summary-open-button:focus-visible{outline:3px solid var(--cashier-green-alpha-35);outline-offset:2px}
 @media(max-width:700px){.summary-open-button{width:100%}}

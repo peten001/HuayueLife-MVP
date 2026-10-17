@@ -23,7 +23,8 @@ export async function finishKdsOrder(tx: Prisma.TransactionClient, merchantId: b
   const order = await tx.order.findFirst({ where: { id: orderId, merchantId, voidedAt: null }, include: { items: true } });
   if (!order || order.orderType === 'DINE_IN' || order.kdsPackedAt || !['ACCEPTED', 'PREPARING', 'READY'].includes(order.status)) return;
   const tasks = await tx.kdsTask.findMany({ where: { merchantId, orderId, quantity: { gt: 0 } } });
-  if (!order.items.length || order.items.some(item => {
+  const billableItems = order.items.filter(item => item.quantity > 0);
+  if (!billableItems.length || billableItems.some(item => {
     const task = tasks.find(row => row.orderItemId === item.id);
     return !task || task.quantity !== item.quantity || task.madeQuantity !== item.quantity || task.servedQuantity !== item.quantity;
   })) return;
@@ -108,6 +109,8 @@ export async function syncKdsOrder(
       data: {
         quantity: target, madeQuantity: next.madeQuantity, servedQuantity: next.servedQuantity,
         cancelledQuantity: { increment: next.cancelled }, version: { increment: 1 },
+        returnedMadeQuantity: { increment: next.removedMade },
+        returnedServedQuantity: { increment: next.removedServed },
         resolvedAt: next.servedQuantity === target ? new Date() : null,
       },
     });

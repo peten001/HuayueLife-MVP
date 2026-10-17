@@ -295,7 +295,7 @@ describe('ReceiptSnapshotService validation', () => {
     );
   });
 
-  it('queries order data with both order and merchant scope', async () => {
+  it('queries merchant-scoped data and excludes fully returned portions from printable payable items', async () => {
     prisma.order.findFirst.mockResolvedValue({
       id: 37n,
       merchantId,
@@ -321,6 +321,7 @@ describe('ReceiptSnapshotService validation', () => {
           subtotalVnd: 1000n,
           remark: null,
         },
+        { productNameZhSnapshot: '已退菜', quantity: 0, returnedQuantity: 2, unitPriceVnd: 1000n, subtotalVnd: 0n, remark: null },
       ],
       itemAmountVnd: 1000n,
       totalAmountVnd: 1000n,
@@ -330,7 +331,9 @@ describe('ReceiptSnapshotService validation', () => {
       customerRemark: null,
     });
 
-    await service.fromOrder(merchantId, 37n);
+    const snapshot = await service.fromOrder(merchantId, 37n);
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.totals.subtotal).toBe(1000);
 
     expect(prisma.order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 37n, merchantId } }),

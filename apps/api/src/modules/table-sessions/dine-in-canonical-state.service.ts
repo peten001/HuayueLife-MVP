@@ -54,6 +54,7 @@ export type DineInCanonicalItemRow = {
   remark: string | null;
   unitPriceVnd: bigint;
   quantity: number;
+  returnedQuantity?: number;
   subtotalVnd: bigint;
   createdAt: Date;
 };
@@ -85,6 +86,7 @@ export type DineInCanonicalLineInternal = {
   displayOrderKey: string;
   unitPriceVnd: string;
   quantity: number;
+  returnedQuantity?: number;
   lockedQuantity: number;
   adjustableQuantity: number;
   subtotalVnd: string;
@@ -113,6 +115,7 @@ export type DineInCanonicalStateInternal = {
   sessionStatus: string;
   revision: string;
   items: DineInCanonicalLineInternal[];
+  returnedItems?: DineInCanonicalLineInternal[];
   totals: {
     originalAmountVnd: string;
     discountPayableRateBps: number | null;
@@ -190,6 +193,7 @@ export class DineInCanonicalStateService {
                 remark: true,
                 unitPriceVnd: true,
                 quantity: true,
+                returnedQuantity: true,
                 subtotalVnd: true,
                 createdAt: true,
               },
@@ -234,6 +238,7 @@ export class DineInCanonicalStateService {
         remark: item.remark,
         unitPriceVnd: item.unitPriceVnd,
         quantity: item.quantity,
+        returnedQuantity: item.returnedQuantity,
         subtotalVnd: item.subtotalVnd,
         createdAt: item.createdAt,
       }))),
@@ -310,12 +315,13 @@ export class DineInCanonicalStateService {
       remark: string | null;
       unit_price_vnd: bigint;
       quantity: number;
+      returned_quantity: number;
       subtotal_vnd: bigint;
       created_at: Date;
     }>>`
       SELECT oi.id, oi.order_id, oi.product_id,
              oi.product_name_zh_snapshot,
-             oi.remark, oi.unit_price_vnd, oi.quantity, oi.subtotal_vnd,
+             oi.remark, oi.unit_price_vnd, oi.quantity, oi.returned_quantity, oi.subtotal_vnd,
              oi.created_at
       FROM order_items oi
       INNER JOIN orders o ON o.id = oi.order_id
@@ -393,6 +399,7 @@ export class DineInCanonicalStateService {
           remark: item.remark,
           unitPriceVnd: item.unit_price_vnd,
           quantity: item.quantity,
+          returnedQuantity: item.returned_quantity,
           subtotalVnd: item.subtotal_vnd,
           createdAt: item.created_at,
         };
@@ -416,19 +423,24 @@ export class DineInCanonicalStateService {
 
     for (const item of source.items) {
       const order = ordersById.get(item.orderId);
-      if (!order || order.orderType !== 'DINE_IN' || !DINE_IN_CANONICAL_BILLABLE_STATUSES.has(order.status)) continue;
+      const fullyReturned = item.quantity === 0 && (item.returnedQuantity ?? 0) > 0;
+      if (!order || order.orderType !== 'DINE_IN' ||
+        (!DINE_IN_CANONICAL_BILLABLE_STATUSES.has(order.status) && !(fullyReturned && order.status === 'CANCELLED'))) continue;
+      if (item.quantity === 0 && !fullyReturned) continue;
       const remark = normalizeCanonicalText(item.remark);
       const optionSignature = '';
       const identity = item.productId
         ? `product:${item.productId.toString()}`
         : `historical:${normalizeCanonicalText(item.productNameZhSnapshot).toLocaleLowerCase('zh-Hans-CN')}`;
-      const lineKey = canonicalLineKey({
+      const activeLineKey = canonicalLineKey({
         sessionId: source.session.id,
         identity,
         remark,
         unitPriceVnd: item.unitPriceVnd,
         optionSignature,
       });
+      // Fully returned source rows never merge into or resurrect a new order of the same dish.
+      const lineKey = fullyReturned ? `returned:${item.id}` : activeLineKey;
       const locked = order.status === 'COMPLETED' || order.status === 'DELIVERING';
       const current = grouped.get(lineKey) ?? {
         lineKey,
@@ -442,6 +454,7 @@ export class DineInCanonicalStateService {
         displayOrderKey: '',
         unitPriceVnd: item.unitPriceVnd.toString(),
         quantity: 0,
+        returnedQuantity: 0,
         lockedQuantity: 0,
         adjustableQuantity: 0,
         subtotalVnd: '0',
@@ -450,6 +463,7 @@ export class DineInCanonicalStateService {
         rawItems: [],
       };
       current.quantity += item.quantity;
+      current.returnedQuantity = (current.returnedQuantity ?? 0) + (item.returnedQuantity ?? 0);
       current.subtotalVnd = (BigInt(current.subtotalVnd) + item.subtotalVnd).toString();
       if (locked) current.lockedQuantity += item.quantity;
       else current.adjustableQuantity += item.quantity;
@@ -466,7 +480,7 @@ export class DineInCanonicalStateService {
       grouped.set(lineKey, current);
     }
 
-    const items = [...grouped.values()]
+    const allLines = [...grouped.values()]
       .map((line) => {
         const rawItems = [...line.rawItems].sort(compareRawItems);
         const epoch = resolveCurrentActiveEpoch(line, source);
@@ -475,11 +489,13 @@ export class DineInCanonicalStateService {
           ...line,
           activeSince,
           displayOrderKey: `${activeSince}:${epoch.eventKey}:${line.lineKey}`,
-          adjustability: resolveAdjustability(rawItems),
+          adjustability: line.quantity === 0 ? 'LOCKED' as const : resolveAdjustability(rawItems),
           rawItems,
         };
       })
       .sort(compareCanonicalLinesByActivation);
+    const items = allLines.filter(line => line.quantity > 0);
+    const returnedItems = allLines.filter(line => line.quantity === 0 && (line.returnedQuantity ?? 0) > 0);
     const originalAmountVnd = items.reduce(
       (sum, item) => sum + BigInt(item.subtotalVnd),
       0n,
@@ -531,6 +547,7 @@ export class DineInCanonicalStateService {
           remark: normalizeCanonicalText(item.remark),
           unitPriceVnd: item.unitPriceVnd.toString(),
           quantity: item.quantity,
+          returnedQuantity: item.returnedQuantity ?? 0,
           subtotalVnd: item.subtotalVnd.toString(),
           createdAt: item.createdAt.toISOString(),
         })),
@@ -545,6 +562,7 @@ export class DineInCanonicalStateService {
       sessionStatus: source.session.status,
       revision: `dcs2:sha256:${sha256(stableStringify(revisionPayload))}`,
       items,
+      returnedItems,
       totals: {
         originalAmountVnd: originalAmountVnd.toString(),
         discountPayableRateBps: settlement.discountPayableRateBps,
@@ -562,6 +580,7 @@ export class DineInCanonicalStateService {
     return {
       ...publicState,
       items: state.items.map(({ rawItems: _rawItems, ...item }) => item),
+      returnedItems: (state.returnedItems ?? []).map(({ rawItems: _rawItems, ...item }) => item),
     };
   }
 

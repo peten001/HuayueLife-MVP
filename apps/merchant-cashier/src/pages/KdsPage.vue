@@ -85,7 +85,7 @@ const selectedCard = computed(() => cards.value.find(card => card.key === select
 // Search locates the whole table/order card; it does not hide its other dishes.
 const kitchenOrders = computed(() => groupKitchenOrders(board.value?.tasks ?? [], scopeTasks.value)
   .filter(group => group.visibleTasks.some(matchesSearch)));
-const orderCards = computed(() => kitchenOrders.value.filter(group => group.quantity > 0));
+const orderCards = computed(() => kitchenOrders.value.filter(group => group.quantity > 0 || group.visibleTasks.some(task => task.cancelledQuantity > 0)));
 const pageOrderCards = computed(() => orderCards.value.slice(page.value * 6, (page.value + 1) * 6));
 const selectedKitchenOrder = computed(() => kitchenOrders.value.find(group => group.key === selectedKitchenKey.value));
 const servingCards = computed(() => groupKitchenOrders(board.value?.tasks ?? [], scopeTasks.value).map(group => {
@@ -95,7 +95,7 @@ const servingCards = computed(() => groupKitchenOrders(board.value?.tasks ?? [],
 const selectedServingOrder = computed(() => servingCards.value.find(group => group.key === selectedServingKey.value));
 const serveBatchQuantity = computed(() => selectedServingOrder.value?.servingTasks.reduce((sum, task) => sum + (quantities.value[task.id] ?? 0), 0) ?? 0);
 
-const detailTasks = computed(() => mode.value === 'orderBump' ? selectedKitchenOrder.value?.pendingTasks ?? [] : selectedCard.value?.tasks ?? []);
+const detailTasks = computed(() => mode.value === 'orderBump' ? selectedKitchenOrder.value?.pendingTasks ?? [] : selectedCard.value?.tasks.filter(canMakeKitchenTask) ?? []);
 const batchQuantity = computed(() => detailTasks.value.reduce((sum, task) => sum + (quantities.value[task.id] ?? 0), 0));
 const totalPending = computed(() => mode.value === 'orderBump' ? orderCards.value.reduce((sum, group) => sum + group.quantity, 0)
   : tasks.value.filter(canMakeKitchenTask).reduce((sum, task) => sum + pendingQuantity(task), 0));
@@ -130,7 +130,7 @@ const orderGroups = computed(() => {
   return [...ids].map(id => {
     const allTasks = board.value!.tasks.filter(task => task.orderId === id);
     return { id, tasks: allTasks, order: allTasks[0]!.order, ...orderKitchenProgress(allTasks) };
-  }).filter(group => group.tasks.some(task => task.quantity > 0));
+  }).filter(group => group.tasks.some(task => task.quantity > 0 || task.cancelledQuantity > 0));
 });
 const selectedOrder = computed(() => orderGroups.value.find(group => group.id === selectedOrderId.value));
 const orderTypes = ['DINE_IN', 'DELIVERY', 'PICKUP'] as const;
@@ -180,6 +180,12 @@ function kitchenStatus(rows: KdsTask[]) {
   if (!orderKitchenProgress(rows).allMade) return t('making');
   if (!servingEnabled.value) return t('kitchenDone');
   return rows.every(task => task.servedQuantity >= task.quantity) ? t('served') : t('serving');
+}
+function returnLabel(task: KdsTask, history = true) {
+  if (!task.cancelledQuantity) return undefined;
+  return `${t('original')} ${task.quantity + task.cancelledQuantity} · ${t('returned')} ${task.cancelledQuantity} · ${t('effective')} ${task.quantity}`
+    + (history && task.returnedMadeQuantity ? ` · ${t('returnedMade')} ${task.returnedMadeQuantity}` : '')
+    + (history && servingEnabled.value && task.returnedServedQuantity ? ` · ${t('returnedServed')} ${task.returnedServedQuantity}` : '');
 }
 function isAddition(cardTasks: KdsTask[]) {
   if (kitchenNow.value === null) return false;
@@ -235,6 +241,14 @@ async function refresh() {
     kitchenClock.synchronize(result.serverTime);
     kitchenNow.value = kitchenClock.now();
     board.value = result;
+    // A cashier return or another screen's bump may reduce an already selected batch.
+    const currentTasks = new Map(result.tasks.map(task => [task.id, task]));
+    quantities.value = Object.fromEntries(Object.entries(quantities.value).flatMap(([id, quantity]) => {
+      const task = currentTasks.get(id);
+      const maximum = task && (mode.value === 'serving' ? canServe(task) : canMakeKitchenTask(task))
+        ? mode.value === 'serving' ? servingQuantity(task) : pendingQuantity(task) : 0;
+      return maximum > 0 ? [[id, Math.min(quantity, maximum)]] : [];
+    }));
     connected.value = true;
     if (!confirm.value) error.value = null;
   } catch (caught) {
@@ -342,7 +356,7 @@ async function fullscreen() {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
   catch { /* Browsers without full-screen support keep the normal kitchen view. */ }
 }
-function badgeCount(cardTasks: KdsTask[], orderType: KdsOrderType) { return cardTasks.filter(task => task.order.orderType === orderType).reduce((sum, task) => sum + pendingQuantity(task), 0); }
+function badgeCount(cardTasks: KdsTask[], orderType: KdsOrderType) { return cardTasks.filter(task => task.order.orderType === orderType && canMakeKitchenTask(task)).reduce((sum, task) => sum + pendingQuantity(task), 0); }
 watch([station, type, search], () => { page.value = 0; quantities.value = {}; selected.value = ''; selectedOrderId.value = ''; selectedKitchenKey.value = ''; selectedServingKey.value = ''; });
 watch(pageCount, value => { page.value = Math.min(page.value, value - 1); });
 watch(servingEnabled, enabled => { if (!enabled && mode.value === 'serving') changeMode('orderBump'); });
@@ -390,14 +404,15 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               :aria-pressed="selectedKitchenKey === group.key"
               @click="chooseKitchenOrder(group.key)">
               <header><strong>{{ typeLabel(group.order.orderType) }} · {{ orderLabel(group.visibleTasks[0]!) }}</strong>
-                <small>{{ t('wait') }} {{ waitMinutes(group.pendingTasks[0]!) }} {{ t('minutes') }}</small></header>
+                <small v-if="group.pendingTasks.length">{{ t('wait') }} {{ waitMinutes(group.pendingTasks[0]!) }} {{ t('minutes') }}</small></header>
               <div class="kds-badges"><span v-if="group.pendingTasks.some(task => task.urgentAt)" class="warning">{{ t('urge') }}</span>
                 <span v-if="group.pendingTasks.some(overdue)" class="warning">{{ t('timeout') }}</span>
                 <span v-if="isAddition(group.visibleTasks)" class="warning">{{ t('added') }}</span></div>
               <div class="kds-order-columns">{{ t('remainingTotal') }}</div>
-              <div class="kds-order-dishes"><p v-for="task in group.visibleTasks" :key="task.id" :class="{ 'kds-dish-finished': !pendingQuantity(task) }">
-                <span>{{ dishName(task) }}<small v-if="task.remark">{{ task.remark }}</small></span>
-                <b>{{ pendingQuantity(task) }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</b></p></div>
+              <div class="kds-order-dishes"><p v-for="task in group.visibleTasks" :key="task.id" :class="{ 'kds-dish-finished': !pendingQuantity(task), 'kds-dish-returned': task.quantity === 0 && task.cancelledQuantity > 0 }">
+                <span><strong class="kds-dish-title">{{ dishName(task) }}</strong><small v-if="task.remark">{{ task.remark }}</small><small v-if="task.cancelledQuantity" class="kds-return-note">{{ returnLabel(task, false) }}</small></span>
+                <b v-if="task.quantity === 0 && task.cancelledQuantity">× {{ task.cancelledQuantity }} {{ displayUnit(task.unit) }}</b>
+                <b v-else>{{ pendingQuantity(task) }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</b></p></div>
               <footer>{{ t('pending') }} {{ group.quantity }} {{ tasksUnit(group.pendingTasks) }}<small>{{ station ? stationLabel(station) : t('allStations') }}</small></footer>
             </button>
           </div>
@@ -405,9 +420,10 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <template v-else-if="mode === 'dishBump'">
           <div v-if="!cards.length" class="kds-empty">{{ t('noTasks') }}</div>
           <div v-else class="kds-grid">
-            <button v-for="card in pageCards" :key="card.key" class="kds-card" :class="{ selected: selected === card.key, overdue: card.tasks.some(overdue) }" @click="choose(card.key)">
-              <strong>{{ dishName(card.tasks[0]!) }}</strong><p v-if="card.remark">{{ card.remark }}</p>
+            <button v-for="card in pageCards" :key="card.key" class="kds-card" :class="{ selected: selected === card.key, overdue: card.tasks.some(overdue), 'kds-dish-returned': card.fullyReturned }" @click="choose(card.key)">
+              <strong class="kds-dish-title">{{ dishName(card.tasks[0]!) }}</strong><p v-if="card.remark">{{ card.remark }}</p>
               <div class="kds-badges"><span v-for="orderType in (['DINE_IN', 'PICKUP', 'DELIVERY'] as const)" v-show="badgeCount(card.tasks, orderType) > 0" :key="orderType" :class="orderType">{{ typeLabel(orderType, true) }} {{ badgeCount(card.tasks, orderType) }}</span><span v-if="isAddition(card.tasks)" class="warning">{{ t('added') }}</span><span v-if="card.tasks.some(task => task.urgentAt)" class="warning">{{ t('urge') }}</span></div>
+              <small v-if="card.returnedQuantity" class="kds-return-note">{{ t('returned') }} {{ card.returnedQuantity }} {{ displayUnit(card.unit) }}</small>
               <div class="kds-card-total"><small>{{ stationLabel(card.station) }}</small><b>{{ card.quantity }} {{ displayUnit(card.unit) }}</b></div>
             </button>
           </div>
@@ -436,7 +452,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <div class="kds-progress-grid">
                 <button v-for="group in lane.groups" :key="group.id" class="kds-order-card" :class="{ selected: selectedOrderId === group.id }" @click="selectedOrderId = group.id">
                   <strong>{{ orderLabel(group.tasks[0]!) }}</strong><span>{{ kitchenStatus(group.tasks) }}</span>
-                  <p v-for="task in group.tasks.filter(row => row.quantity > 0)" :key="task.id"><span>{{ dishName(task) }}</span><b>{{ task.madeQuantity }} / {{ task.quantity }}</b></p>
+                  <p v-for="task in group.tasks" :key="task.id" :class="{ 'kds-dish-returned': task.quantity === 0 && task.cancelledQuantity > 0 }"><span><strong class="kds-dish-title">{{ dishName(task) }}</strong><small v-if="task.cancelledQuantity" class="kds-return-note">{{ returnLabel(task, false) }}</small></span><b v-if="task.quantity === 0 && task.cancelledQuantity">× {{ task.cancelledQuantity }}</b><b v-else>{{ task.madeQuantity }} / {{ task.quantity }}</b></p>
                   <footer>{{ group.allMade ? kitchenStatus(group.tasks) : `${t('missing')} ${group.missing.length}` }}</footer>
                 </button>
                 <div v-if="!lane.groups.length" class="kds-lane-empty">{{ t('noTasks') }}</div>
@@ -461,9 +477,10 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         <template v-if="selectedKitchenOrder && mode === 'orderBump'">
           <div class="kds-detail-scroll">
             <KdsDetailRow v-for="task in selectedKitchenOrder.visibleTasks" :key="task.id" :title="dishName(task)"
-              :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
+              :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0"
+              :returned="task.quantity === 0 && task.cancelledQuantity > 0" :return-label="returnLabel(task)">
               <template #badges><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span></template>
-              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</template>
+              <template #progress><template v-if="task.quantity === 0 && task.cancelledQuantity">{{ t('returned') }} {{ task.cancelledQuantity }} {{ displayUnit(task.unit) }}</template><template v-else>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }} {{ displayUnit(task.unit) }}</template></template>
               <template #notes>
                 <p v-if="task.remark || task.order.customerRemark" class="kds-dish-remark">{{ [task.remark, task.order.customerRemark].filter(Boolean).join(' · ') }}</p>
                 <p v-if="selectedKitchenOrder.orders.length > 1" class="kds-original-order">#{{ task.order.orderNo }}</p>
@@ -508,24 +525,27 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
         </template>
         <template v-else-if="selectedOrder && mode === 'orders'">
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in selectedOrder.tasks.filter(row => row.quantity > 0)" :key="task.id" :title="dishName(task)" :menu-thumbnail-url="task.menuThumbnailUrl">
-              <template #progress>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }}<template v-if="servingEnabled"> · {{ t('passed') }} {{ task.servedQuantity }}</template></template>
+            <KdsDetailRow v-for="task in selectedOrder.tasks" :key="task.id" :title="dishName(task)" :menu-thumbnail-url="task.menuThumbnailUrl"
+              :returned="task.quantity === 0 && task.cancelledQuantity > 0" :return-label="returnLabel(task)">
+              <template #progress><template v-if="task.quantity === 0 && task.cancelledQuantity">{{ t('returned') }} {{ task.cancelledQuantity }} {{ displayUnit(task.unit) }}</template><template v-else>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }}<template v-if="servingEnabled"> · {{ t('passed') }} {{ task.servedQuantity }}</template></template></template>
               <template #notes><p v-if="task.remark" class="kds-dish-remark">{{ task.remark }}</p></template>
             </KdsDetailRow>
             <div v-if="selectedOrder.order.customerRemark" class="kds-order-note">{{ selectedOrder.order.customerRemark }}</div>
           </div>
         </template>
         <template v-else-if="selectedCard && mode === 'dishBump'">
-          <h2>{{ dishName(selectedCard.tasks[0]!) }} <span>{{ selectedCard.quantity }} {{ displayUnit(selectedCard.unit) }}</span></h2><p v-if="selectedCard.remark">{{ selectedCard.remark }}</p>
+          <h2 :class="{ 'kds-dish-returned': selectedCard.fullyReturned }"><strong class="kds-dish-title">{{ dishName(selectedCard.tasks[0]!) }}</strong><span>{{ selectedCard.quantity }} {{ displayUnit(selectedCard.unit) }}</span></h2><p v-if="selectedCard.remark">{{ selectedCard.remark }}</p>
           <div class="kds-detail-scroll">
-            <KdsDetailRow v-for="task in detailTasks" :key="task.id" :title="`${typeLabel(task.order.orderType)} · ${orderLabel(task)}`" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0">
+            <KdsDetailRow v-for="task in selectedCard.tasks" :key="task.id" :title="`${typeLabel(task.order.orderType)} · ${orderLabel(task)}`" :menu-thumbnail-url="task.menuThumbnailUrl" :selected="(quantities[task.id] ?? 0) > 0"
+              :returned="task.quantity === 0 && task.cancelledQuantity > 0" :return-label="returnLabel(task)">
+              <template v-if="task.quantity === 0 && task.cancelledQuantity" #title><strong class="kds-summary-order">{{ typeLabel(task.order.orderType) }} · {{ orderLabel(task) }}</strong><small class="kds-return-title">{{ dishName(task) }}</small></template>
               <template #badges><span v-if="overdue(task)" class="kds-warning">{{ t('timeout') }}</span><span v-if="task.urgentAt" class="kds-warning">{{ t('urge') }}</span></template>
-              <template #progress><span class="kds-pending-count">{{ t('pending') }} <b>{{ pendingQuantity(task) }} {{ displayUnit(task.unit) }}</b></span><small>{{ t('wait') }} {{ waitMinutes(task) }} {{ t('minutes') }}</small></template>
+              <template #progress><template v-if="task.quantity === 0 && task.cancelledQuantity">{{ t('returned') }} {{ task.cancelledQuantity }} {{ displayUnit(task.unit) }}</template><template v-else><span class="kds-pending-count">{{ t('pending') }} <b>{{ canMakeKitchenTask(task) ? pendingQuantity(task) : 0 }} {{ displayUnit(task.unit) }}</b></span><small>{{ t('done') }} {{ task.madeQuantity }} / {{ task.quantity }}</small><small v-if="canMakeKitchenTask(task)">{{ t('wait') }} {{ waitMinutes(task) }} {{ t('minutes') }}</small></template></template>
               <template #notes><p v-if="task.order.customerRemark" class="kds-dish-remark">{{ task.order.customerRemark }}</p></template>
-              <template #controls><KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="pendingQuantity(task)" :disabled="writeDisabled" :label="`${orderLabel(task)} ${t('quantity')}`" @update:model-value="quantityChanged(task, $event)" /></template>
+              <template v-if="canMakeKitchenTask(task)" #controls><KdsQuantityStepper :model-value="quantities[task.id] ?? 0" :max="pendingQuantity(task)" :disabled="writeDisabled" :label="`${orderLabel(task)} ${t('quantity')}`" @update:model-value="quantityChanged(task, $event)" /></template>
             </KdsDetailRow>
           </div>
-          <div class="kds-detail-actions"><p>{{ t('thisBatch') }}：<strong>{{ batchQuantity }} {{ displayUnit(selectedCard.unit) }}</strong></p><div><button :disabled="writeDisabled" @click="prepare(true)">{{ t('allMake') }}</button><button class="kds-primary" :disabled="writeDisabled || batchQuantity === 0" @click="prepare(false)">{{ t('partialMake') }}</button></div></div>
+          <div class="kds-detail-actions"><p>{{ t('thisBatch') }}：<strong>{{ batchQuantity }} {{ displayUnit(selectedCard.unit) }}</strong></p><div><button :disabled="writeDisabled || !selectedCard.quantity" @click="prepare(true)">{{ t('allMake') }}</button><button class="kds-primary" :disabled="writeDisabled || batchQuantity === 0" @click="prepare(false)">{{ t('partialMake') }}</button></div></div>
         </template>
         <div v-else class="kds-detail-empty"><ChefHat :size="46" /><p>{{ t(mode === 'serving' ? 'selectServingOrder' : mode === 'orderBump' || mode === 'orders' ? 'selectOrder' : 'selectDish') }}</p></div>
       </aside>

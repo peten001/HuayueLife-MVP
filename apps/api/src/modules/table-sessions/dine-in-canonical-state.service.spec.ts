@@ -6,6 +6,18 @@ import {
 
 describe('DineInCanonicalStateService builder', () => {
   const service = new DineInCanonicalStateService({} as never);
+  it('keeps full returns outside billable targets and does not merge them into a new order of the same dish', () => {
+    const input = source();
+    input.items[0] = { ...input.items[0]!, quantity: 0, returnedQuantity: 3, subtotalVnd: 0n };
+    input.orders[0]!.status = 'CANCELLED';
+    input.orders.push(order(42n, 'ACCEPTED', 3n));
+    input.items.push(item(72n, 42n, { quantity: 2, returnedQuantity: 1, subtotalVnd: 24000n }));
+    const state = service.build(input);
+    expect(state.items).toEqual([expect.objectContaining({ quantity: 2, returnedQuantity: 1 })]);
+    expect(state.returnedItems).toEqual([expect.objectContaining({ quantity: 0, returnedQuantity: 3, subtotalVnd: '0' })]);
+    expect(state.totals.payableAmountVnd).toBe('24000');
+    expect(service.toPublicState(state).returnedItems[0]).not.toHaveProperty('rawItems');
+  });
 
   it('builds one staff order', () => {
     const state = service.build(source());

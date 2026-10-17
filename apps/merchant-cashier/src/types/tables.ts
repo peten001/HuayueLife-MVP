@@ -50,6 +50,7 @@ export interface TableSessionOrderItem {
   productNameVi?: string | null;
   productNameEn?: string | null;
   quantity: number;
+  returnedQuantity?: number;
   unitPriceVnd: string;
   subtotalVnd: string;
   remark?: string | null;
@@ -94,6 +95,7 @@ export interface DineInCanonicalLine {
   displayOrderKey: string;
   unitPriceVnd: string;
   quantity: number;
+  returnedQuantity?: number;
   lockedQuantity: number;
   adjustableQuantity: number;
   subtotalVnd: string;
@@ -113,6 +115,7 @@ export interface DineInCanonicalState {
   sessionStatus: TableSessionStatus;
   revision: string;
   items: DineInCanonicalLine[];
+  returnedItems?: DineInCanonicalLine[];
   totals: {
     originalAmountVnd: string;
     discountPayableRateBps: number | null;

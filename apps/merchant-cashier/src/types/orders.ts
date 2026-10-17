@@ -31,6 +31,7 @@ export interface OrderItem {
   imageUrlSnapshot?: string | null;
   unitPriceVnd?: string;
   quantity: number;
+  returnedQuantity?: number;
   subtotalVnd: string;
   remark?: string | null;
 }
@@ -169,6 +170,7 @@ export interface MerchantSettlementItem {
   imageUrl: string | null;
   unitPriceVnd: string;
   quantity: number;
+  returnedQuantity?: number;
   subtotalVnd: string;
   remark: string | null;
 }

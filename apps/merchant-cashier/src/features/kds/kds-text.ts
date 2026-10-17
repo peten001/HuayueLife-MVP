@@ -1,5 +1,7 @@
 import type { Locale } from '@/i18n';
 const text = {
+  returned: ['已退菜', 'Đã hủy', 'Returned'], original: ['原点', 'Đã gọi', 'Ordered'],
+  effective: ['有效', 'Còn lại', 'Active'], returnedServed: ['涉及已传菜', 'Có món đã phục vụ', 'Includes served dishes'],
   orderBump: ['标准划菜', 'Gạch món chuẩn', 'Standard bump'],
   dishBump: ['汇总划菜', 'Gạch món tổng hợp', 'Summary bump'], orders: ['订单进度', 'Tiến độ đơn', 'Order progress'],
   returns: ['退菜动态', 'Món trả lại', 'Returns'], records: ['划菜记录', 'Lịch sử gạch món', 'Kitchen log'],
