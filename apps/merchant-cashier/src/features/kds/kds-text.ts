@@ -4,7 +4,7 @@ const text = {
   effective: ['有效', 'Còn lại', 'Active'], returnedServed: ['涉及已传菜', 'Có món đã phục vụ', 'Includes served dishes'],
   orderBump: ['标准划菜', 'Gạch món chuẩn', 'Standard bump'],
   dishBump: ['汇总划菜', 'Gạch món tổng hợp', 'Summary bump'], orders: ['订单进度', 'Tiến độ đơn', 'Order progress'],
-  returns: ['退菜动态', 'Món trả lại', 'Returns'], records: ['划菜记录', 'Lịch sử gạch món', 'Kitchen log'],
+  returns: ['退菜记录', 'Lịch sử trả món', 'Return history'], records: ['划菜记录', 'Lịch sử gạch món', 'Kitchen log'],
   all: ['全部', 'Tất cả', 'All'], dine: ['堂食', 'Tại bàn', 'Dine in'], pickup: ['到店自取', 'Tự đến lấy', 'Pickup'],
   delivery: ['商家配送', 'Quán giao hàng', 'Merchant delivery'], shortPickup: ['自取', 'Tự lấy', 'Pickup'], shortDelivery: ['配送', 'Giao hàng', 'Delivery'],
   search: ['搜索菜品 / 桌号 / 单号', 'Tìm món, bàn, đơn', 'Dish, table, order'],

@@ -80,7 +80,8 @@ function matchesSearch(task: KdsTask) {
 }
 const tasks = computed(() => scopeTasks.value.filter(matchesSearch));
 const cards = computed(() => groupKitchenTasks(tasks.value, scopeTasks.value));
-const pageCards = computed(() => cards.value.slice(page.value * 9, (page.value + 1) * 9));
+const summaryPageSize = 24;
+const pageCards = computed(() => cards.value.slice(page.value * summaryPageSize, (page.value + 1) * summaryPageSize));
 const selectedCard = computed(() => cards.value.find(card => card.key === selected.value));
 // Search locates the whole table/order card; it does not hide its other dishes.
 const kitchenOrders = computed(() => groupKitchenOrders(board.value?.tasks ?? [], scopeTasks.value)
@@ -120,7 +121,7 @@ function tasksUnit(rows: KdsTask[]) {
   return units.length === 1 ? displayUnit(units[0]) : '';
 }
 const pageCount = computed(() => mode.value === 'orderBump' ? Math.max(1, Math.ceil(orderCards.value.length / 6))
-  : mode.value === 'dishBump' ? Math.max(1, Math.ceil(cards.value.length / 9)) : 1);
+  : mode.value === 'dishBump' ? Math.max(1, Math.ceil(cards.value.length / summaryPageSize)) : 1);
 const totalServing = computed(() => mode.value === 'serving' ? servingCards.value.reduce((sum, group) => sum + group.servingQuantity, 0)
   : tasks.value.filter(canServe).reduce((sum, task) => sum + servingQuantity(task), 0));
 const overdueOrders = computed(() => new Set(tasks.value.filter(overdue).map(task => task.orderId)).size);

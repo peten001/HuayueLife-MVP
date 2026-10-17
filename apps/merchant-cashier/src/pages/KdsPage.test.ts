@@ -35,6 +35,31 @@ async function button(text: string) {
   await found.trigger('click'); await flushPromises();
 }
 describe('KDS operational controls', () => {
+  it.each(['zh', 'vi', 'en'] as const)('names the returned-dish page as history in %s', async language => {
+    setLocale(language);
+    await open();
+    const label = language === 'zh' ? '退菜记录' : language === 'vi' ? 'Lịch sử trả món' : 'Return history';
+    expect(wrapper.get(`.kds-nav button[aria-label="${label}"]`).text()).toBe(label);
+    await button(label);
+    expect(wrapper.get('.kds-workspace').attributes('aria-label')).toBe(label);
+  });
+  it('shows 24 summary dishes per page and keeps the remaining dishes reachable', async () => {
+    const first = data.tasks[0]!;
+    data.tasks = Array.from({ length: 29 }, (_, index) => ({ ...first, id: `dish-${index}`, orderItemId: `item-${index}`,
+      productId: `product-${index}`, dishName: `汇总菜品 ${index + 1}`, remark: null, quantity: 1 }));
+    await open(); await button('汇总划菜');
+    expect(wrapper.findAll('.kds-card')).toHaveLength(24);
+    expect(wrapper.get('.kds-pagination > span').text()).toBe('1 / 2');
+    await button('下一页');
+    expect(wrapper.findAll('.kds-card')).toHaveLength(5);
+    expect(wrapper.get('.kds-pagination > span').text()).toBe('2 / 2');
+    await wrapper.get('.kds-card').trigger('click');
+    expect(wrapper.get('.kds-detail-card').text()).toContain('01 桌');
+    await wrapper.get('.kds-search input').setValue('汇总菜品 29'); await flushPromises();
+    expect(wrapper.findAll('.kds-card')).toHaveLength(1);
+    expect(wrapper.get('.kds-card').text()).toContain('汇总菜品 29');
+    expect(wrapper.get('.kds-pagination > span').text()).toBe('1 / 1');
+  });
   it('leaves a new or unconfigured merchant serving switch off', async () => {
     data.settings.enabled = false;
     delete data.settings.servingEnabled;
@@ -221,7 +246,7 @@ describe('KDS operational controls', () => {
     const task=data.tasks[0]!;
     data.operations=[{id:'return',staffId:'1',kind:'RETURN',reversedAt:null,createdAt:data.serverTime,
       lines:['订单数量调整','顾客要求不放香菜'].map(reason=>({taskId:task.id,orderId:task.orderId,dishName:task.dishName,quantity:1,unit:'碗',reason,orderType:'DINE_IN',tableNo:'01'}))}];
-    await open();await button('退菜动态');setLocale('en');await flushPromises();
+    await open();await button('退菜记录');setLocale('en');await flushPromises();
     expect(wrapper.get('.kds-records').text()).toContain('Order quantity adjusted');
     expect(wrapper.get('.kds-records').text()).toContain('bowls');
     expect(wrapper.get('.kds-records').text()).toContain('顾客要求不放香菜');
