@@ -1,6 +1,6 @@
 # 华越优选 HuayueLife-MVP
 
-2026-10-19 配送地址入口文案定稿（已授权提交、推送、部署，待核验）：按用户要求将“Google 地图搜索”改为“Google 导航”，中英越提示同步；点击继续使用 Google Maps 地址搜索，让用户补全或修正地址后自行导航，不恢复直接导航参数。提交本轮完整地址入口及修订，推送 GitHub 后仅发布收银静态页 delivery-map-label-20261019-v3；最终提交、线上版本与验证以实际记录为准。
+2026-10-19 配送地址入口文案定稿已提交、推送并上线：入口按用户要求显示“Google 导航”，中英越提示同步，点击继续进入 Google Maps 地址搜索，方便手动补全或修正地址后再导航；未恢复 destination 或 dir_action 参数。完整地址入口与本轮修订已提交至 GitHub main，代码 6c855873870d4f48a6287fc5e0291294d27683f0，本地与 GitHub 源码树核对一致。657 项收银测试、类型、lint、生产构建、15 组三语／多尺寸及 5 组不完整地址检查通过。线上收银版本 delivery-map-label-20261019-v3，服务器和本机外网各验证 59 个构建文件、配送深链及手机／电脑登录页。旧版完整归档 3,103,951 bytes，SHA-256 452e98629ffb34cabf342786b52f4229edf0ff14afa53f9f21232147bc924a1c，逐文件校验通过，保留 252 个旧哈希资源。API／依赖指针、运行代码、KDS 与配置不变，API online，重启次数 11，健康 200、未认证 KDS 401；无迁移或生产订单写入。备份 /opt/backups/yunqiao-delivery-map-label-20261019-v3，DEPLOYMENT_PASS.json 与 PUBLIC_PASS.json 均 PASS。用户刷新或重开收银页后可验收新文案。
 
 2026-10-19 配送地址地图搜索修订已上线（待用户真机验证）：用户反馈后改为点击配送地址仅进入 Google Maps 地址搜索，方便地址不完整时手动修正。链接使用 search/?api=1&query=，保留原配送地址作为搜索词，不携带 destination 或 dir_action 导航参数；中英越提示同步地图搜索，使用搜索图标，复制和空地址处理保留。657 项收银测试、类型、lint、生产构建、15 组三语／多尺寸浏览器检查及 5 组不完整地址检查通过。收银目录已切换至 delivery-address-search-20261019-v2，服务器与外网各核对 59 个构建文件及配送深链，线上手机／电脑登录页检查通过。旧收银完整备份 2,817,284 bytes，SHA-256 8ab1f2fa436af5f1e153648434d91f4a50271356aabb23186a01a8f54ac66009，逐文件验证通过，保留 222 个旧哈希资源。API／依赖指针、运行代码、KDS 与配置保持，API online，重启次数仍为 11，健康 200、未认证 KDS 401；无迁移或生产订单写入。未提交或推送 Git，源码快照与补丁通过 SHA-256 关联制品。备份 /opt/backups/yunqiao-delivery-address-search-20261019-v2，DEPLOYMENT_PASS.json 与 PUBLIC_PASS.json 均 PASS；手机搜索界面由用户继续验收。
 
