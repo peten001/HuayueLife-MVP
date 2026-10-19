@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "release": "reservation-tables-20261019-v4",
+  "sourceCommit": "2a1f2f8da6e590522abf7f30e3e9631581461942",
+  "verifiedFiles": {
+    "cashier": 71
+  },
+  "publicHealth": 200,
+  "unauthenticatedReservationAndKitchen": 401
+}

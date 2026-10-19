@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "release": "reservation-tables-20261019-v4",
+  "sourceCommit": "2a1f2f8da6e590522abf7f30e3e9631581461942",
+  "sourceTree": "d76909171d94d68d5e612291da7b37ea4e0b6bf5",
+  "targets": {
+    "apiDist": "/opt/huayue-api-releases/reservation-tables-20261019-v4/runtime/apps/api/dist",
+    "dependencies": "/opt/huayue-api-releases/reservation-tables-20261019-v4/runtime/apps/api/node_modules",
+    "cashier": "/var/www/huayue-cashier-releases/reservation-tables-20261019-v4",
+    "kds": "/var/www/huayue-kds-releases/arrival-reservations-20261019-v1",
+    "admin": "/var/www/huayue-admin-releases/arrival-reservations-20261019-v1"
+  },
+  "web": {
+    "cashier": {
+      "files": 71,
+      "status": "PASS"
+    }
+  },
+  "api": {
+    "status": "PASS",
+    "sourceCommit": "2a1f2f8da6e590522abf7f30e3e9631581461942",
+    "checks": {
+      "authenticatedReadPaths": [
+        "/merchant/reservations",
+        "/merchant/orders",
+        "/merchant/table-sessions/open",
+        "/merchant/kds",
+        "/merchant/profile",
+        "/merchants/4",
+        "/merchants/4/menu"
+      ],
+      "unauthenticatedReservationAndKitchen": 401,
+      "merchantId": "4",
+      "newServiceFields": "PASS"
+    },
+    "processBeforeActivation": {
+      "status": "online",
+      "pid": 1767710,
+      "restartCount": 14,
+      "unstableRestarts": 0,
+      "cwd": "/opt/HuayueLife-MVP/apps/api",
+      "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+    },
+    "process": {
+      "status": "online",
+      "pid": 1836682,
+      "restartCount": 15,
+      "unstableRestarts": 0,
+      "cwd": "/opt/HuayueLife-MVP/apps/api",
+      "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+    },
+    "priorAutomaticRollback": false
+  },
+  "databaseBackup": {
+    "bytes": 61252530,
+    "uncompressedBytes": 762485771,
+    "sha256": "445654d6b5ad82bea5eeeaa016e8368717c0920a4717c5a6d0f6d4ba4830106c",
+    "gzipIntegrity": "PASS"
+  },
+  "migration": "20261019173000_reservation_assigned_table",
+  "preservedAssetCounts": {
+    "cashier": 401
+  },
+  "configsAndUploadsUnchanged": true,
+  "existingServiceKitchenPrintingSettingsUnchanged": true,
+  "productionTestOrdersCreated": false,
+  "miniappUploaded": false,
+  "timestamp": "2026-10-19T12:40:27Z"
+}
