@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Copy, Home, Phone, PhoneCall, UserRound } from '@lucide/vue';
+import { Check, Copy, Home, Phone, PhoneCall, Search, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from '@/i18n';
 import { copyPlainText } from '@/domain';
@@ -14,6 +14,10 @@ const props = withDefaults(defineProps<{
 });
 const { t } = useI18n();
 const uiStore = useUiStore();
+const deliveryAddress = computed(() => props.order.deliveryAddress?.trim() || '');
+const addressSearchUrl = computed(() => deliveryAddress.value
+  ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(deliveryAddress.value)}`
+  : '');
 const addressCopied = ref(false);
 let copiedResetTimer: ReturnType<typeof setTimeout> | undefined;
 const isDialSupported = computed(() => {
@@ -22,7 +26,7 @@ const isDialSupported = computed(() => {
 });
 
 async function copyAddress() {
-  const copied = await copyPlainText(props.order.deliveryAddress || '');
+  const copied = await copyPlainText(deliveryAddress.value);
   if (!copied) {
     addressCopied.value = false;
     uiStore.pushToast(t('fulfillment.addressCopyFailed'), 'error');
@@ -50,10 +54,25 @@ onBeforeUnmount(() => {
       <div>
         <span>{{ t('fulfillment.deliveryAddress') }}</span>
         <div class="delivery-contact-panel__address-row">
-          <Home :size="17" aria-hidden="true" />
-          <strong>{{ order.deliveryAddress || t('order.deliveryAddressMissing') }}</strong>
+          <a
+            v-if="addressSearchUrl"
+            :href="addressSearchUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="delivery-contact-panel__navigation"
+            :aria-label="`${t('fulfillment.searchGoogleMaps')} · ${deliveryAddress}`"
+            data-testid="search-delivery-address"
+          >
+            <Home :size="17" aria-hidden="true" />
+            <strong>{{ deliveryAddress }}</strong>
+            <span class="delivery-contact-panel__navigation-hint"><Search :size="14" aria-hidden="true" />{{ t('fulfillment.searchGoogleMaps') }}</span>
+          </a>
+          <template v-else>
+            <Home :size="17" aria-hidden="true" />
+            <strong>{{ t('order.deliveryAddressMissing') }}</strong>
+          </template>
           <button
-            v-if="order.deliveryAddress"
+            v-if="deliveryAddress"
             type="button"
             class="delivery-contact-copy delivery-contact-copy--address"
             :class="{ 'is-copied': addressCopied }"
