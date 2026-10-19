@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Bike, History, LayoutGrid, ShoppingBag } from '@lucide/vue';
+import { Bike, CalendarClock, History, LayoutGrid, ShoppingBag } from '@lucide/vue';
+import { useReservationsStore } from '@/stores/reservations';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 
@@ -13,8 +14,10 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const reservations = useReservationsStore();
 
 const allItems = [
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock, countKey: 'reservations' },
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid, countKey: 'tables' },
   { to: '/pickup', labelKey: 'nav.pickup', icon: ShoppingBag, countKey: 'pickup' },
   { to: '/delivery', labelKey: 'nav.delivery', icon: Bike, countKey: 'delivery' },
@@ -29,6 +32,7 @@ const items = computed(() => allItems.filter((item) => {
 }));
 
 function badge(item: (typeof allItems)[number]) {
+  if (item.countKey === 'reservations') return reservations.pending.length;
   if (item.countKey === 'tables') return props.tableAttentionCount || 0;
   if (item.countKey === 'pickup') return props.pickupAttentionCount || 0;
   if (item.countKey === 'delivery') return props.deliveryAttentionCount || 0;

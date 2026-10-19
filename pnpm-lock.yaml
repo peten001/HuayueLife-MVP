@@ -156,6 +156,9 @@ importers:
 
   apps/merchant-cashier:
     dependencies:
+      '@huayue-life/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@lucide/vue':
         specifier: ^1.24.0
         version: 1.24.0(vue@3.5.35(typescript@5.6.3))
@@ -220,6 +223,9 @@ importers:
 
   apps/miniapp:
     dependencies:
+      '@huayue-life/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@dcloudio/uni-app':
         specifier: 3.0.0-4080420251103001
         version: 3.0.0-4080420251103001(@dcloudio/types@3.4.19)(postcss@8.5.15)(rollup@4.61.1)(ts-node@10.9.2(@types/node@22.19.20)(typescript@5.6.3))(vue@3.4.21(typescript@5.6.3))

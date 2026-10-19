@@ -11,6 +11,7 @@
     "check:wechat-quality": "node ./scripts/check-wechat-quality.mjs"
   },
   "dependencies": {
+    "@huayue-life/shared": "workspace:*",
     "@dcloudio/uni-app": "3.0.0-4080420251103001",
     "@dcloudio/uni-components": "3.0.0-4080420251103001",
     "@dcloudio/uni-mp-weixin": "3.0.0-4080420251103001",

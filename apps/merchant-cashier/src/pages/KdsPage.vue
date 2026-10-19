@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatReservationTime, reservationText } from '@huayue-life/shared';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ChefHat, ChevronLeft, ChevronRight, Clock, Languages, LogOut, Maximize, RefreshCw, Search, Settings, Volume2, VolumeX, X } from '@lucide/vue';
 import { getKdsBoard, runKdsAction, saveKdsSettings, undoKdsOperation } from '@/api/kds';
@@ -407,6 +408,7 @@ onBeforeUnmount(() => { mounted = false; clearInterval(poll); clearTimeout(notic
               <header><strong>{{ typeLabel(group.order.orderType) }} · {{ orderLabel(group.visibleTasks[0]!) }}</strong>
                 <small v-if="group.pendingTasks.length">{{ t('wait') }} {{ waitMinutes(group.pendingTasks[0]!) }} {{ t('minutes') }}</small></header>
               <div class="kds-badges"><span v-if="group.pendingTasks.some(task => task.urgentAt)" class="warning">{{ t('urge') }}</span>
+                <span v-if="group.order.isReservation" class="warning">{{ reservationText('pickupTime', locale) }} {{ formatReservationTime(group.order.scheduledFor, locale) }}</span>
                 <span v-if="group.pendingTasks.some(overdue)" class="warning">{{ t('timeout') }}</span>
                 <span v-if="isAddition(group.visibleTasks)" class="warning">{{ t('added') }}</span></div>
               <div class="kds-order-columns">{{ t('remainingTotal') }}</div>

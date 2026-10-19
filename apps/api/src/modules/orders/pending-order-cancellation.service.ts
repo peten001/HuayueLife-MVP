@@ -57,6 +57,7 @@ export class PendingOrderCancellationService {
         status: 'CANCELLED',
         cancelledAt: new Date(),
         cancelReason: input.reason,
+        proposedScheduledFor: null,
         itemAmountVnd: input.itemAmountVnd,
         totalAmountVnd: input.totalAmountVnd,
       },

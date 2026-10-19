@@ -6,7 +6,7 @@ self.addEventListener('push', (event) => {
   } catch {
     payload = {};
   }
-  const path = typeof payload.path === 'string' && /^\/(pickup|delivery)\/\d+$/.test(payload.path)
+  const path = typeof payload.path === 'string' && /^(\/(pickup|delivery)\/\d+|\/reservations\?reservationId=\d+)$/.test(payload.path)
     ? payload.path : '/tables';
   event.waitUntil(self.registration.showNotification(
     typeof payload.title === 'string' ? payload.title : 'YunQiao · 新订单',

@@ -8,6 +8,7 @@ type OrderFulfillmentSource = {
   orderNo: string;
   createdAt: Date;
   readyAt: Date | null;
+  scheduledFor?: Date | null;
 };
 
 export type PickupFulfillmentFields = {
@@ -30,7 +31,9 @@ export function pickupFulfillmentFields(
     pickupCode: normalizedOrderNo.slice(-4).toUpperCase(),
     estimatedReadyAt: order.readyAt
       ? new Date(order.readyAt.getTime())
-      : new Date(order.createdAt.getTime() + PICKUP_ESTIMATE_MS),
+      : order.scheduledFor
+        ? new Date(order.scheduledFor.getTime())
+        : new Date(order.createdAt.getTime() + PICKUP_ESTIMATE_MS),
   };
 }
 

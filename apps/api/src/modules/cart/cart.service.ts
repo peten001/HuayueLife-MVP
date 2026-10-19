@@ -151,6 +151,26 @@ export class CartService {
       },
     });
     if (!merchant) throw new BadRequestException('商家当前不可用');
+    if (input.reservation && (merchant.merchantMode !== 'MANAGED' || merchant.claimStatus !== 'CLAIMED')) {
+      throw new BadRequestException('商家当前未开启预约到店');
+    }
+
+    if (input.reservation && input.orderType === 'DELIVERY') {
+      throw new BadRequestException('配送订单不支持到店预约');
+    }
+    if (input.reservation && input.tableToken) {
+      throw new BadRequestException('预约到店不能绑定桌码');
+    }
+    if (input.reservation && input.orderType === 'DINE_IN') {
+      if (merchant.merchantMode !== 'MANAGED' || merchant.claimStatus !== 'CLAIMED'
+        || !merchant.dineInEnabled || !merchant.dineInReservationEnabled) {
+        throw new BadRequestException('商家当前未开启预约到店用餐');
+      }
+      return { merchantId, orderType: input.orderType, tableId: null };
+    }
+    if (input.reservation && input.orderType === 'PICKUP' && !merchant.pickupReservationEnabled) {
+      throw new BadRequestException('商家当前未开启预约打包自取');
+    }
 
     if (input.orderType === 'DINE_IN') {
       if (!input.tableToken) {

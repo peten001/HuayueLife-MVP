@@ -63,7 +63,9 @@ async function clear() {
 function checkout() {
   if (!appConfig.platformOrderingEnabled) return;
   if (!cartStore.cart?.items.length) return;
-  uni.navigateTo({ url: '/pages/checkout/index' });
+  uni.navigateTo({ url: cartStore.context?.reservation
+    ? `/pages/reservation/create?merchantId=${cartStore.context.merchantId}&kind=${cartStore.context.orderType}`
+    : '/pages/checkout/index' });
 }
 
 function goHome() {

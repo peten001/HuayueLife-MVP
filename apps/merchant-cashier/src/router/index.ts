@@ -55,6 +55,7 @@ const router = createRouter({
       component: () => import('@/layouts/CashierShell.vue'),
       meta: { requiresAuth: true },
       children: [
+        { path: 'reservations', name: 'reservations', component: () => import('@/pages/ReservationsPage.vue') },
         {
           path: '',
           redirect: '/tables',

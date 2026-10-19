@@ -20,13 +20,14 @@ const section = ref('hours');
 const coverFailed = ref(false);
 const word = (zh:string,vi:string,en:string) => locale.value === 'zh' ? zh : locale.value === 'vi' ? vi : en;
 const sections = computed(()=>[
+ {key:'reservations',label:word('到店预约','Đặt trước tại cửa hàng','Reservations'),description:word('打包自取与到店用餐','Mang về và đặt bàn','Pickup and dine-in'),icon:'calendar'},
  {key:'hours',label:hoursCopy.value.title,description:word('每周营业时段','Giờ mở cửa hàng tuần','Weekly opening hours'),icon:'calendar'},
  {key:'delivery',label:word('配送设置','Giao hàng','Delivery'),description:word('范围、起送价和费用','Phạm vi, tối thiểu và phí','Range, minimum and fee'),icon:'orders'},
  {key:'notice',label:word('商家公告','Thông báo','Store notice'),description:word('顾客可见的店铺说明','Thông tin khách hàng nhìn thấy','Customer-facing message'),icon:'records'},
  {key:'profile',label:word('店铺资料','Thông tin cửa hàng','Store profile'),description:word('名称、联系和地址','Tên, liên hệ và địa chỉ','Name, contact and address'),icon:'store'},
  {key:'security',label:word('账户安全','Bảo mật','Security'),description:word('修改当前登录密码','Đổi mật khẩu đăng nhập','Change sign-in password'),icon:'user'}
 ]);
-const form = reactive({ notice: '', minimumDeliveryAmountVnd: 0, deliveryFeeVnd: 0, deliveryRadiusKm: 0 });
+const form = reactive({ notice: '', minimumDeliveryAmountVnd: 0, deliveryFeeVnd: 0, deliveryRadiusKm: 0, pickupReservationEnabled: true, dineInReservationEnabled: true });
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' });
 const schedule = ref<DaySchedule[]>(keys.map((key) => ({ key, enabled: true, intervals: [{ start: '09:00', end: '14:00' }, { start: '17:00', end: '22:00' }] })));
 const message = ref(''); const saving = ref(false); const passwordSaving = ref(false); const dirty = ref(false); const copyOpen = ref(false); const copySource = ref<WeekdayKey>('monday'); const copyTarget = ref<WeekdayKey>('tuesday');
@@ -45,7 +46,7 @@ const hoursCopy = computed(() => locale.value === 'vi' ? {
   title: '营业时间', weekday: '星期', state: '营业状态', segments: '营业时段', rest: '休息（不营业）', start: '开始', end: '结束', add: '添加时段', remove: '删除时段', nextDay: '→ 次日', needSegment: '请至少添加一个营业时段', sameTime: '开始时间和结束时间不能相同', overlap: '营业时段不能重叠，包括相邻星期的跨天时段。', lastSegment: '如需当天休息，请关闭营业状态。', openState: '营业状态', segment: '时段',
 });
 
-onMounted(async () => { try { const p = await getProfile(); profile.value = p; Object.assign(form, { notice: p.notice ?? '', minimumDeliveryAmountVnd: Number(p.minimumDeliveryAmountVnd), deliveryFeeVnd: Number(p.deliveryFeeVnd), deliveryRadiusKm: Number(p.deliveryRadiusKm) }); schedule.value = parseHours(p.businessHours); } catch (e) { message.value = errorMessage(e); } });
+onMounted(async () => { try { const p = await getProfile(); profile.value = p; Object.assign(form, { notice: p.notice ?? '', pickupReservationEnabled: p.pickupReservationEnabled, dineInReservationEnabled: p.dineInReservationEnabled, minimumDeliveryAmountVnd: Number(p.minimumDeliveryAmountVnd), deliveryFeeVnd: Number(p.deliveryFeeVnd), deliveryRadiusKm: Number(p.deliveryRadiusKm) }); schedule.value = parseHours(p.businessHours); } catch (e) { message.value = errorMessage(e); } });
 function parseHours(raw: Record<string, string[]> | undefined) { return keys.map((key) => { const values = raw?.[key] ?? []; const intervals = values.map(parseRange).filter(Boolean) as Interval[]; return { key, enabled: intervals.length > 0, intervals: intervals.length ? intervals : [{ start: '09:00', end: '22:00' }] }; }); }
 function parseRange(value: string): Interval | null { const [start, end] = value.split('-'); return start && end ? { start, end } : null; }
 function minutes(value: string) { const [h, m] = value.split(':').map(Number); return h * 60 + m; }
@@ -68,6 +69,8 @@ async function save() {
   try {
     await updateProfile({
       notice: form.notice,
+      pickupReservationEnabled: form.pickupReservationEnabled,
+      dineInReservationEnabled: form.dineInReservationEnabled,
       minimumDeliveryAmountVnd: form.minimumDeliveryAmountVnd,
       deliveryFeeVnd: form.deliveryFeeVnd,
       deliveryRadiusKm: form.deliveryRadiusKm,
@@ -118,6 +121,7 @@ async function changePassword() {
     <p v-if="message" class="message" role="status">{{ message }}</p>
     <div class="mx-settings-layout"><nav class="mx-settings-nav" :aria-label="word('设置分类','Mục thiết lập','Settings sections')"><button v-for="tab in sections" :key="tab.key" type="button" :aria-pressed="section===tab.key" @click="section=tab.key"><span class="mx-settings-nav-icon"><MerchantIcon :name="tab.icon" /></span><span class="mx-settings-nav-copy"><strong>{{ tab.label }}</strong><small>{{ tab.description }}</small></span><span class="mx-settings-nav-chevron" aria-hidden="true">›</span></button></nav>
     <div class="mx-settings-content">
+      <section v-show="section==='reservations'" class="mx-panel reservation-settings"><header class="mx-panel-heading"><div><h2>{{ word('到店预约','Đặt trước tại cửa hàng','Reservations') }}</h2><p>{{ word('顾客提交后由商家确认，不按营业时段或容量限制预约。','Cửa hàng xác nhận sau khi khách gửi, không giới hạn theo giờ mở cửa hoặc sức chứa.','The store confirms each request. No booking limits by opening hours or capacity.') }}</p></div></header><label class="reservation-setting-row"><span><strong>{{ word('预约打包自取','Đặt món mang về','Pickup reservations') }}</strong><small>{{ word('需同时开启到店自取服务','Cần bật dịch vụ mang về','Requires pickup service to be enabled') }}</small></span><input v-model="form.pickupReservationEnabled" type="checkbox" :disabled="!canSaveSettings" @change="dirty=true" /></label><label class="reservation-setting-row"><span><strong>{{ word('预约到店用餐','Đặt bàn','Dine-in reservations') }}</strong><small>{{ word('需同时开启堂食服务；入座后再开台','Cần bật ăn tại chỗ; mở hóa đơn bàn khi khách vào bàn','Requires dine-in service; a table bill opens when guests are seated') }}</small></span><input v-model="form.dineInReservationEnabled" type="checkbox" :disabled="!canSaveSettings" @change="dirty=true" /></label></section>
       <section v-show="section==='hours'" class="mx-panel hours-card"><header class="mx-panel-heading"><div><h2>{{ hoursCopy.title }}</h2><p>{{ hoursCopy.description }}</p></div></header>        <div class="hours-table">
           <div class="hours-head"><span>{{ hoursCopy.weekday }}</span><span>{{ hoursCopy.state }}</span><span>{{ hoursCopy.segments }}</span></div>
           <div v-for="day in schedule" :key="day.key" class="hours-row">

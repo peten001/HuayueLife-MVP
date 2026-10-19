@@ -15,6 +15,8 @@ import {
   resolveMediaUrl,
 } from '@/domain';
 import { resolveOrderLocation } from '@/domain/order-location';
+import ReservationAttention from '@/features/inbox/ReservationAttention.vue';
+import { useReservationsStore } from '@/stores/reservations';
 import {
   useAuthStore,
   useCatalogStore,
@@ -49,6 +51,7 @@ const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const ordersStore = useOrdersStore();
+const reservationsStore = useReservationsStore();
 const printingStore = usePrintingStore();
 const tablesStore = useTablesStore();
 const networkStore = useNetworkStore();
@@ -77,6 +80,7 @@ const catalogPrefetch = createCatalogPrefetchCoordinator({
 const livePolling = usePollingTask(async () => {
   await Promise.allSettled([
     ordersStore.refreshLiveOrders(),
+    reservationsStore.load(),
     tablesStore.fetchTables(),
   ]);
 }, {
@@ -305,6 +309,7 @@ async function refreshTables() {
 }
 
 watch(isAuthenticated, async (authenticated) => {
+  if (!authenticated) reservationsStore.reset();
   if (!authenticated && !loggingOut.value) {
     livePolling.stop();
     ordersStore.clear();
@@ -353,6 +358,7 @@ watch(
 );
 
 onMounted(async () => {
+  void reservationsStore.load();
   networkStore.start();
   await bootstrapCashier({
     loadTables: () => tablesStore.fetchTables(),
@@ -420,6 +426,7 @@ onBeforeUnmount(() => {
       @select-operational-filter="selectMobileOperationalFilter"
       @refresh-tables="refreshTables"
     >
+      <ReservationAttention />
       <RouterView />
     </MobileV2PreviewFrame>
 
@@ -476,6 +483,7 @@ onBeforeUnmount(() => {
 
       <main class="cashier-shell__route cashier-shell__route--workflow">
         <OrientationNotice v-if="showOrientationNotice" />
+        <ReservationAttention />
         <RouterView />
       </main>
 

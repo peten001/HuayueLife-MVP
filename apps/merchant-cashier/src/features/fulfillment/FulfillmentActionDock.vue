@@ -25,6 +25,7 @@ const { t } = useI18n();
 const action = computed(() => nextFulfillmentAction(props.order));
 const labelKey = computed(() => {
   if (action.value === 'accept') return 'order.action.accept';
+  if (action.value === 'start-preparing') return 'order.action.startPreparing';
   if (action.value === 'finish-preparing') return 'order.action.markReady';
   if (action.value === 'start-delivery') return 'order.action.startDelivery';
   if (action.value === 'complete' && props.order.orderType === 'PICKUP') return 'order.action.confirmPickup';

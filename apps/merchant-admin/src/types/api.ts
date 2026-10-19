@@ -87,6 +87,8 @@ export interface MerchantProfile {
   reportFeatureEnabled?: boolean;
   dineInEnabled: boolean;
   pickupEnabled: boolean;
+  pickupReservationEnabled: boolean;
+  dineInReservationEnabled: boolean;
   deliveryEnabled: boolean;
   capabilities?: MerchantCapabilityValue[];
   homepageCategoryKeys: string[];
@@ -114,6 +116,8 @@ export interface UpdateMerchantProfilePayload {
   deliveryRadiusKm?: number;
   dineInEnabled?: boolean;
   pickupEnabled?: boolean;
+  pickupReservationEnabled?: boolean;
+  dineInReservationEnabled?: boolean;
   deliveryEnabled?: boolean;
   homepageCategoryKeys?: string[];
 }

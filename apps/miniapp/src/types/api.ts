@@ -119,6 +119,8 @@ export interface MerchantSummary extends LocalizedFields {
   deliveryRadiusKm: string;
   dineInEnabled?: boolean;
   pickupEnabled?: boolean;
+  pickupReservationEnabled?: boolean;
+  dineInReservationEnabled?: boolean;
   deliveryEnabled?: boolean;
   qrOrderEnabled?: boolean;
   homepageCategoryKeys?: string[];
@@ -345,6 +347,7 @@ export interface Cart {
 }
 
 export interface CartContext {
+  reservation?: boolean;
   merchantId: string;
   merchantName: string;
   orderType: OrderType;
@@ -422,6 +425,11 @@ export interface UserOrderChatConversation {
 }
 
 export interface UserOrder {
+  isReservation?: boolean;
+  scheduledFor?: string | null;
+  proposedScheduledFor?: string | null;
+  pickupCode?: string;
+  estimatedReadyAt?: string;
   id: string;
   orderNo: string;
   orderType: OrderType;

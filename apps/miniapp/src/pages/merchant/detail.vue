@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { reservationText } from '@huayue-life/shared';
 import { computed, ref, watch } from 'vue';
 import {
   onHide,
@@ -161,8 +162,13 @@ const orderingVisibility = computed(() =>
   }),
 );
 const canOpenPickup = computed(() => isRestaurantTemplate.value && orderingVisibility.value.pickupCtaVisible);
+const canReservePickup = computed(() => canOpenPickup.value && merchant.value?.pickupReservationEnabled === true);
+const canReserveDineIn = computed(() => isRestaurantTemplate.value && appConfig.platformOrderingEnabled && merchant.value?.dineInReservationEnabled === true);
+const canReserve = computed(() => canReservePickup.value || canReserveDineIn.value);
+const reservationSheetOpen = ref(false);
+const rt = (key: Parameters<typeof reservationText>[0]) => reservationText(key, locale.value);
 const canOpenDelivery = computed(() => isRestaurantTemplate.value && orderingVisibility.value.deliveryCtaVisible);
-const hasBottomCta = computed(() => canOpenPickup.value || canOpenDelivery.value);
+const hasBottomCta = computed(() => canReserve.value || canOpenDelivery.value);
 const displayAddress = computed(() => {
   if (!merchant.value) return '';
   if (locale.value === 'vi') {
@@ -552,7 +558,17 @@ function handleToggleFavorite() {
   });
 }
 
-async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
+function openReservation() {
+  if (canReservePickup.value && canReserveDineIn.value) reservationSheetOpen.value = true;
+  else void chooseReservation(canReserveDineIn.value ? 'DINE_IN' : 'PICKUP');
+}
+
+async function chooseReservation(kind: 'DINE_IN' | 'PICKUP') {
+  reservationSheetOpen.value = false;
+  await openMenu(kind);
+}
+
+async function openMenu(orderType: 'PICKUP' | 'DELIVERY' | 'DINE_IN') {
   if (!isRestaurantTemplate.value) return;
   if (!merchant.value) return;
   if (!appConfig.platformOrderingEnabled) return;
@@ -561,11 +577,15 @@ async function openMenu(orderType: 'PICKUP' | 'DELIVERY') {
     return;
   }
   const merchantId = merchant.value.id;
-  const url = `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}`;
+  const reservation = orderType !== 'DELIVERY';
+  const url = orderType === 'DINE_IN'
+    ? `/pages/reservation/create?merchantId=${merchantId}&kind=DINE_IN`
+    : `/pages/menu/index?merchantId=${merchantId}&orderType=${orderType}${reservation ? '&reservation=1' : ''}`;
   const nextContext = {
     merchantId,
     merchantName: merchantName(merchant.value, locale.value),
     orderType,
+    reservation,
   };
   console.log('[merchant/detail] tap open menu', {
     merchantId,
@@ -1139,17 +1159,17 @@ function hasCapability(code: string, fallbackValue: boolean) {
         <button v-if="!isRestaurantTemplate" class="phone-consult-button" :disabled="!canPhone" @tap="handlePhoneTap"><image :src="uiIcons.phone" mode="aspectFit" /><text>{{ canPhone ? phoneConsultLabel : t('merchantPhoneMissing') }}</text></button>
         <view v-if="hasBottomCta" class="sticky-orders">
           <button
-            v-if="canOpenPickup"
+            v-if="canReserve"
             class="primary pickup"
             hover-class="is-pressed"
-            @tap="openMenu('PICKUP')"
+            @tap="openReservation"
           >
             <image class="order-action-icon" :src="uiIcons.pickup" mode="aspectFit" />
-            <text>{{ t('pickup') }}</text>
+            <text>{{ rt('arrival') }}</text>
           </button>
           <button
             v-if="canOpenDelivery"
-            :class="['primary', 'delivery', { 'is-solo': !canOpenPickup }]"
+            :class="['primary', 'delivery', { 'is-solo': !canReserve }]"
             hover-class="is-pressed"
             @tap="openMenu('DELIVERY')"
           >
@@ -1158,11 +1178,29 @@ function hasCapability(code: string, fallbackValue: boolean) {
           </button>
         </view>
       </view>
+      <view v-if="reservationSheetOpen" class="reservation-mask" @tap="reservationSheetOpen = false">
+        <view class="reservation-sheet" @tap.stop>
+          <view class="reservation-sheet-head"><text>{{ rt('chooseWay') }}</text><button @tap="reservationSheetOpen = false">{{ rt('close') }}</button></view>
+          <button v-if="canReservePickup" class="reservation-choice" @tap="chooseReservation('PICKUP')">
+            <image :src="uiIcons.pickup" mode="aspectFit" /><view><text class="reservation-choice-title">{{ rt('pickup') }}</text><text class="reservation-choice-hint">{{ rt('pickupHint') }}</text></view><text>›</text>
+          </button>
+          <button v-if="canReserveDineIn" class="reservation-choice" @tap="chooseReservation('DINE_IN')">
+            <image :src="uiIcons.merchantProfile" mode="aspectFit" /><view><text class="reservation-choice-title">{{ rt('dineIn') }}</text><text class="reservation-choice-hint">{{ rt('dineInHint') }}</text></view><text>›</text>
+          </button>
+          <text class="reservation-sheet-note">{{ rt('pendingHint') }}</text>
+        </view>
+      </view>
     </template>
   </view>
 </template>
 
 <style scoped>
+.reservation-mask{position:fixed;top:0;right:0;bottom:0;left:0;z-index:40;display:flex;align-items:flex-end;background:rgba(31,45,36,.4)}
+.reservation-sheet{width:100%;padding:32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));border-radius:36rpx 36rpx 0 0;background:#fff;box-sizing:border-box}
+.reservation-sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24rpx;font-size:34rpx;font-weight:700}
+.reservation-sheet-head button{margin:0;padding:12rpx;background:transparent;color:#666;font-size:26rpx;line-height:1.5}
+.reservation-choice{display:flex;align-items:center;gap:24rpx;width:100%;margin:16rpx 0;padding:28rpx 24rpx;text-align:left;background:#f6faf7;border-radius:28rpx;line-height:1.5;color:#1f2d24}
+.reservation-choice image{width:52rpx;height:52rpx;flex-shrink:0}.reservation-choice view{flex:1;min-width:0}.reservation-choice-title{display:block;font-size:32rpx;font-weight:700}.reservation-choice-hint{display:block;margin-top:6rpx;font-size:25rpx;color:#666;white-space:normal}.reservation-sheet-note{display:block;margin-top:24rpx;font-size:24rpx;color:#666}.reservation-choice::after,.reservation-sheet-head button::after{border:0}
 /* finesse · register=h5 · morph=D-commerce-stack · A=forest-green+warm-signal
  * B=compact-system-sans · C=platform-classified-adaptive-gallery+claim-state-identity+four-column-facilities+direct-review-entry+delivery-priority-action-dock
  * D=feedback-only · E=existing-restaurant-photography · SOUL=6 SPECTACLE=2 DENSITY=9 */

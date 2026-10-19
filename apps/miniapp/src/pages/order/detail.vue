@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { formatReservationTime, reservationText, type ReservationTextKey } from '@huayue-life/shared';
+import ReservationTimeChange from '@/components/ReservationTimeChange.vue';
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
 import { getOrderChat } from '@/api/order-chat';
 import { cancelOrder, confirmReceived, getOrder } from '@/api/orders';
@@ -27,6 +29,8 @@ const operating = ref(false);
 const message = ref('');
 let timer: ReturnType<typeof setInterval> | undefined;
 const { t } = useI18n();
+const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
+const pickupReservationStatus = computed(() => order.value?.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : order.value?.status === 'ACCEPTED' ? 'CONFIRMED' : order.value?.status ?? 'PENDING');
 
 const canCancel = computed(
   () => order.value?.status === 'PENDING_ACCEPTANCE',
@@ -181,9 +185,12 @@ function serviceInfo() {
 
     <template v-if="order">
       <view :class="['status-card', `status-${statusTone}`]">
-        <text class="status">{{ orderStatusLabel(order.status, locale) }}</text>
-        <text class="status-copy">{{ t('orderStatusUpdated') }}</text>
+        <text class="status">{{ order.isReservation ? rt(pickupReservationStatus as ReservationTextKey) : orderStatusLabel(order.status, locale) }}</text>
+        <text class="status-copy">{{ order.isReservation ? rt(order.status === 'PENDING_ACCEPTANCE' ? 'pendingDetail' : order.status === 'ACCEPTED' ? 'confirmedDetail' : order.status === 'PREPARING' ? 'preparingHint' : order.status === 'READY' ? 'readyHint' : 'payAtStore') : t('orderStatusUpdated') }}</text>
       </view>
+
+      <ReservationTimeChange v-if="order.isReservation && order.proposedScheduledFor && ['PENDING_ACCEPTANCE', 'ACCEPTED'].includes(order.status)" kind="PICKUP" :id="order.id" :proposed="order.proposedScheduledFor" @updated="load()" />
+      <view v-if="order.isReservation" class="card"><view class="card-title">{{ rt('pickup') }}</view><view class="info-row"><text>{{ rt('pickupTime') }}</text><text>{{ formatReservationTime(order.scheduledFor, locale) }}</text></view><text class="log-copy">{{ rt('vietnamTime') }}</text><view v-if="order.pickupCode" class="info-row"><text>{{ locale === 'zh' ? '取餐码' : locale === 'vi' ? 'Mã lấy món' : 'Pickup code' }}</text><text class="pickup-code">{{ order.pickupCode }}</text></view><text class="log-copy">{{ rt('payAtStore') }}</text></view>
 
       <button class="chat-entry" @click="openChat">
         <text>{{ t('contactMerchant') }}</text>
@@ -249,6 +256,7 @@ function serviceInfo() {
 </template>
 
 <style scoped>
+.pickup-code{font-size:44rpx;font-weight:800;letter-spacing:6rpx;color:#2e7d32}
 .page {
   min-height: 100vh;
   padding: 24rpx 24rpx calc(60rpx + env(safe-area-inset-bottom));

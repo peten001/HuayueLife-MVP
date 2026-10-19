@@ -1521,6 +1521,8 @@ export class MerchantOrdersService {
           orderType: true,
           createdAt: true,
           businessDate: true,
+          isReservation: true,
+          proposedScheduledFor: true,
           merchant: { select: { businessHours: true } },
         },
       });
@@ -1529,6 +1531,9 @@ export class MerchantOrdersService {
       }
 
       const rule = this.resolveRule(action, order.orderType, order.status);
+      if (order.isReservation && action === 'START_PREPARING' && order.proposedScheduledFor) {
+        throw new ConflictException('预约时间变更待用户确认，请先联系用户处理');
+      }
       if (order.status !== rule.from) {
         throw new ConflictException(
           `订单当前状态为 ${order.status}，不能执行此操作`,
@@ -1554,6 +1559,7 @@ export class MerchantOrdersService {
             : undefined,
         paymentMethod: rule.to === 'COMPLETED' ? paymentMethod : undefined,
         cancelledAt: rule.to === 'CANCELLED' ? now : undefined,
+        proposedScheduledFor: rule.to === 'CANCELLED' ? null : undefined,
         cancelReason:
           rule.to === 'CANCELLED'
             ? reason?.trim() || '商家拒绝订单'
@@ -1581,13 +1587,14 @@ export class MerchantOrdersService {
         },
       });
       const printTriggers =
-        rule.to === 'ACCEPTED' || rule.to === 'COMPLETED'
+        (rule.to === 'ACCEPTED' && !order.isReservation) || rule.to === 'COMPLETED'
+          || (rule.to === 'PREPARING' && order.isReservation)
           ? await this.printJobs.enqueueAutomaticTriggersForOrderTransition(tx, {
               merchantId,
               orderId: id,
               orderStatusLogId: statusLog.id,
               orderType: order.orderType,
-              status: rule.to,
+              status: rule.to === 'PREPARING' ? 'ACCEPTED' : rule.to as 'ACCEPTED' | 'COMPLETED',
             })
           : [];
 

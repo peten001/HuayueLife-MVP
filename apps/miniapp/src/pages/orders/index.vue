@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onHide, onShow, onUnload } from '@dcloudio/uni-app';
+import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app';
+import { reservationText, type ArrivalReservation, type ReservationTextKey } from '@huayue-life/shared';
+import { getDiningReservations } from '@/api/reservations';
+import ArrivalReservationCard from '@/components/ArrivalReservationCard.vue';
 import { getOrders } from '@/api/orders';
 import {
   locale,
@@ -18,6 +21,23 @@ type Filter = 'ALL' | 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 
 const auth = useAuthStore();
 const orders = ref<UserOrder[]>([]);
+const diningReservations = ref<ArrivalReservation[]>([]);
+const activeTab = ref<'orders' | 'reservations'>('orders');
+const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
+onLoad(options => { if (options?.tab === 'reservations') activeTab.value = 'reservations'; });
+const reservations = computed<ArrivalReservation[]>(() => [
+  ...diningReservations.value,
+  ...orders.value.filter(order => order.isReservation && order.orderType === 'PICKUP').map(order => ({
+    ...order, kind: 'PICKUP' as const, reservationNo: order.orderNo, orderId: order.id, guestCount: null,
+    scheduledFor: order.scheduledFor ?? null,
+    status: (order.status === 'PENDING_ACCEPTANCE' ? 'PENDING' : order.status === 'ACCEPTED' ? 'CONFIRMED' : order.status) as ArrivalReservation['status'],
+    merchant: { id: order.merchant?.id ?? '', nameZh: order.merchant?.nameZh ?? order.merchantName ?? '' },
+    table: null,
+  })),
+].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+function openReservation(reservation: ArrivalReservation) {
+  uni.navigateTo({ url: reservation.kind === 'PICKUP' ? `/pages/order/detail?id=${reservation.id}` : `/pages/reservation/detail?id=${reservation.id}` });
+}
 const filter = ref<Filter>('ALL');
 const loading = ref(false);
 const message = ref('');
@@ -50,7 +70,9 @@ async function load(showLoading = false) {
   if (showLoading) loading.value = true;
   try {
     await auth.ensureLogin();
-    orders.value = await getOrders();
+    const [nextOrders, nextReservations] = await Promise.all([getOrders(), getDiningReservations()]);
+    orders.value = nextOrders;
+    diningReservations.value = nextReservations;
     message.value = '';
   } catch (caught) {
     message.value = caught instanceof Error ? caught.message : t('orderLoadError');
@@ -92,6 +114,14 @@ onUnload(stopPolling);
       <text class="page-subtitle">{{ t('ordersSubtitle') }}</text>
     </view>
 
+    <view class="arrival-tabs"><button :class="{ selected: activeTab === 'orders' }" @tap="activeTab = 'orders'">{{ rt('orders') }}</button><button :class="{ selected: activeTab === 'reservations' }" @tap="activeTab = 'reservations'">{{ rt('mine') }}</button></view>
+    <view v-if="activeTab === 'reservations'">
+      <view v-if="message" class="message">{{ message }}<button @tap="load(true)">{{ rt('retry') }}</button></view>
+      <view v-if="loading" class="empty">{{ rt('loading') }}</view>
+      <view v-else-if="!reservations.length" class="empty"><text class="empty-title">{{ rt('empty') }}</text><text class="empty-copy">{{ rt('emptyHint') }}</text><button class="order-now" @tap="orderNow">{{ t('orderNow') }}</button></view>
+      <ArrivalReservationCard v-for="reservation in reservations" :key="`${reservation.kind}:${reservation.id}`" :reservation="reservation" @open="openReservation(reservation)" />
+    </view>
+    <template v-else>
     <view class="filters">
       <button
         v-for="item in filterOptions"
@@ -158,10 +188,12 @@ onUnload(stopPolling);
         </view>
       </view>
     </view>
+    </template>
   </view>
 </template>
 
 <style scoped>
+.arrival-tabs{display:flex;gap:12rpx;margin-bottom:28rpx;padding:8rpx;border-radius:24rpx;background:#eaf0eb}.arrival-tabs button{flex:1;min-width:0;min-height:88rpx;margin:0;padding:20rpx 12rpx;border-radius:18rpx;background:transparent;color:#666;font-size:28rpx;line-height:1.6;white-space:normal}.arrival-tabs button::after{border:0}.arrival-tabs .selected{background:#fff;color:#2e7d32;font-weight:700}
 .page {
   min-height: 100vh;
   padding: 28rpx 24rpx calc(60rpx + env(safe-area-inset-bottom));

@@ -66,6 +66,8 @@ export async function syncKdsOrder(
     include: { items: { include: { product: { select: { categoryId: true, unit: true } } } } },
   });
   if (!order) return;
+  // Reservation confirmation does not authorize the kitchen to start cooking.
+  if (order.isReservation && order.orderType === 'PICKUP' && order.status === 'ACCEPTED') return;
   const existing = await tx.kdsTask.findMany({ where: { merchantId, orderId } });
   if (!existing.length && (order.voidedAt || order.status === 'CANCELLED' ||
     (['READY', 'DELIVERING', 'COMPLETED'].includes(order.status) && order.createdAt < (settings.activatedAt ?? new Date())))) return;

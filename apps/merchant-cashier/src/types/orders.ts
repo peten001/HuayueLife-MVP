@@ -79,6 +79,9 @@ export interface MerchantOrder {
   customerRemark?: string | null;
   /** Stable collection code returned by the API for pickup orders. */
   pickupCode?: string | null;
+  isReservation?: boolean;
+  scheduledFor?: string | null;
+  proposedScheduledFor?: string | null;
   /** Server-owned system estimate; it is not a payment or settlement field. */
   estimatedReadyAt?: string | null;
   itemAmountVnd: string;

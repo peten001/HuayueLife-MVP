@@ -52,6 +52,7 @@ export class KdsService {
           id: true, orderNo: true, orderType: true, status: true, tableNoSnapshot: true, tableSessionId: true,
           table: { select: { tableNo: true } }, customerRemark: true, createdAt: true,
           kdsPackedAt: true,
+          scheduledFor: true, isReservation: true,
           items: { select: { id: true, quantity: true, productNameZhSnapshot: true } },
         } } },
       }),

@@ -9,6 +9,8 @@ export interface KdsOrder {
   id: string; orderNo: string; orderType: KdsOrderType; status: string;
   tableNo: string | null; customerRemark: string | null; createdAt: string;
   tableSessionId?: string | null;
+  isReservation?: boolean;
+  scheduledFor?: string | null;
   kdsPackedAt: string | null; pickupCode: string | null;
   items: { id: string; quantity: number; productNameZhSnapshot: string }[];
 }

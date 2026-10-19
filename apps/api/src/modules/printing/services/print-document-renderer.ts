@@ -217,6 +217,11 @@ function orderCustomerHeaderBlocksV3(
   if (display.orderTime !== false) {
     blocks.push(rowV3('时间 / Thời gian', formatBillTime(order.createdAt)));
   }
+  if (order.isReservation) {
+    blocks.push(textV3('预约打包自取 / Đặt món mang về', 'CENTER', true, 'NORMAL', 'FIT'));
+    blocks.push(rowV3('取餐码 / Mã lấy món', order.pickupCode ?? ''));
+    blocks.push(rowV3('预约取餐 / Giờ lấy món', order.scheduledFor ? formatBillTime(order.scheduledFor) : '尽快 / Sớm nhất'));
+  }
   return blocks;
 }
 
@@ -568,6 +573,10 @@ function customerBlocks(
     if (display.orderNumber) orderBlocks.push(row('订单 / Đơn', order.orderNo, true));
     if (display.tableNumber && order.tableName) orderBlocks.push(row('桌台 / Bàn', order.tableName));
     orderBlocks.push(row('类型 / Loại', orderType(order.orderType)));
+    if (order.isReservation) {
+      orderBlocks.push(row('取餐码 / Mã lấy món', order.pickupCode ?? '', true));
+      orderBlocks.push(row('预约取餐 / Giờ lấy món', order.scheduledFor ? formatTime(order.scheduledFor) : '尽快 / Sớm nhất', true));
+    }
     if (order.guestCount !== undefined) {
       orderBlocks.push(row('人数 / Số khách', String(order.guestCount)));
     }

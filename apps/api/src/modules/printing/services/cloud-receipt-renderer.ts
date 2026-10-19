@@ -95,6 +95,10 @@ export function receiptLines(document: ReceiptDocument) {
     lines.push(`订单 / Đơn: ${order.orderNo}`);
     if (order.tableName) lines.push(`桌台 / Bàn: ${order.tableName}`);
     lines.push(`类型 / Loại: ${orderType(order.orderType)}`);
+    if (order.isReservation) {
+      lines.push(`取餐码 / Mã lấy món: ${order.pickupCode ?? ''}`);
+      lines.push(`预约取餐 / Giờ lấy món: ${order.scheduledFor ? formatTime(order.scheduledFor) : '尽快 / Sớm nhất'}`);
+    }
     if (order.guestCount !== undefined) {
       lines.push(`人数 / Số khách: ${order.guestCount}`);
     }

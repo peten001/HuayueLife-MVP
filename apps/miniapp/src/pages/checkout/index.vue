@@ -372,6 +372,10 @@ async function bootstrapCheckout() {
       }
       await authStore.ensureLogin();
       await cartStore.load();
+      if (context.value?.reservation) {
+        uni.redirectTo({ url: `/pages/reservation/create?merchantId=${context.value.merchantId}&kind=${context.value.orderType}` });
+        return;
+      }
       const cachedContact = getLastContactInfo();
       form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
       form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';

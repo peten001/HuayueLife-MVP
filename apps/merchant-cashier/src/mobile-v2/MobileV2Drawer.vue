@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   BellRing,
+  CalendarClock,
   Bike,
   Check,
   ChevronDown,
@@ -50,6 +51,7 @@ const roleLabel = computed(() => t(`auth.role.${normalizedRole.value.toLowerCase
 const roleAccountLabel = computed(() => t(`auth.roleAccount.${normalizedRole.value.toLowerCase()}`));
 const previewRoute = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
 const destinations = computed(() => [
+  { name: 'reservations', label: t('nav.reservations'), icon: CalendarClock },
   ...(props.showTables ? [{ name: 'tables', label: t('nav.tables'), icon: LayoutGrid }] : []),
   ...(props.showPickup ? [{ name: 'pickup-orders', label: t('nav.pickup'), icon: ShoppingBag }] : []),
   ...(props.showDelivery ? [{ name: 'delivery-orders', label: t('nav.delivery'), icon: Bike }] : []),

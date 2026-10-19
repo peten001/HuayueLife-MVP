@@ -10,6 +10,7 @@ function contextQuery(context: CartContext) {
   return [
     `merchantId=${encodeURIComponent(context.merchantId)}`,
     `orderType=${encodeURIComponent(context.orderType)}`,
+    context.reservation ? 'reservation=true' : '',
     context.tableToken
       ? `tableToken=${encodeURIComponent(context.tableToken)}`
       : '',
@@ -32,6 +33,7 @@ export const addCartItem = (
     data: {
       merchantId: context.merchantId,
       orderType: context.orderType,
+      reservation: context.reservation,
       tableToken: context.tableToken,
       productId,
       quantity,
@@ -55,6 +57,9 @@ export const clearCart = (context: CartContext) =>
   request<Cart>(`/cart?${contextQuery(context)}`, { method: 'DELETE' });
 
 export interface OrderRequest {
+  reservation?: boolean;
+  scheduledFor?: string;
+  expectedAmountVnd?: string;
   merchantId: string;
   orderType: CartContext['orderType'];
   tableToken?: string;

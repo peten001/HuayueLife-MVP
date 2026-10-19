@@ -31,6 +31,7 @@ import { AppConfigModule } from './modules/app-config/app-config.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { CashierPushModule } from './modules/cashier-push/cashier-push.module';
 import { KdsModule } from './modules/kds/kds.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { KdsModule } from './modules/kds/kds.module';
     PrintingModule,
     QrModule,
     ReviewsModule,
+    ReservationsModule,
   ],
   providers: [
     {

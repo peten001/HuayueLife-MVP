@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { reservationText } from '@huayue-life/shared';
 import { onLoad, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import { getMenu } from '@/api/catalog';
 import CartBar from '@/components/CartBar.vue';
@@ -24,6 +25,7 @@ const cartStore = useCartStore();
 const menu = ref<MenuResponse | null>(null);
 const merchantId = ref('');
 const orderType = ref<OrderType>('PICKUP');
+const reservation = ref(false);
 const tableNo = ref('');
 const tableName = ref('');
 const tableToken = ref('');
@@ -125,6 +127,7 @@ onLoad(async (options) => {
 
   merchantId.value = String(options?.merchantId ?? '');
   orderType.value = (String(options?.orderType ?? 'PICKUP') as OrderType);
+  reservation.value = orderType.value === 'PICKUP' || String(options?.reservation ?? '') === '1';
   tableNo.value = decodeURIComponent(String(options?.tableNo ?? ''));
   tableName.value = decodeURIComponent(String(options?.tableName ?? ''));
   tableToken.value = String(options?.tableToken ?? '');
@@ -288,6 +291,7 @@ function buildContext(loadedMenu?: MenuResponse): CartContext {
     merchantId: merchantId.value,
     merchantName: loadedMenu ? merchantName(loadedMenu.merchant, locale.value) : fallbackMerchantName,
     orderType: orderType.value,
+    reservation: reservation.value || undefined,
   };
   if (orderType.value === 'DINE_IN') {
     context.tableToken = tableToken.value || undefined;
@@ -404,7 +408,7 @@ function openProduct(product: Product) {
   uni.navigateTo({
     url:
       `/pages/product/detail?id=${product.id}` +
-      `&merchantId=${merchantId.value}&orderType=${orderType.value}${tableQuery}`,
+      `&merchantId=${merchantId.value}&orderType=${orderType.value}${tableQuery}${reservation.value ? '&reservation=1' : ''}`,
   });
 }
 
@@ -505,7 +509,7 @@ function goHome() {
             <text :class="['status', menu.merchant.isOpen ? 'open' : 'closed']">
               {{ menu.merchant.isOpen ? t('merchantOpen') : t('merchantClosed') }}
             </text>
-            <text class="service-tag">{{ orderTypeLabel(orderType, locale) }}</text>
+            <text class="service-tag">{{ reservation ? reservationText(orderType === 'DINE_IN' ? 'dineIn' : 'pickup', locale) : orderTypeLabel(orderType, locale) }}</text>
             <text class="service-tag">{{ t('browseMenu') }}</text>
             <text v-if="hasTable" class="service-tag table-tag">
               {{ t('currentTable') }}：{{ tableName || tableNo }}

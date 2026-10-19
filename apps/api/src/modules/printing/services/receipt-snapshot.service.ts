@@ -106,6 +106,10 @@ export class ReceiptSnapshotService {
           order.table?.tableName ?? order.table?.tableNo ?? order.tableNoSnapshot ?? undefined,
         createdAt: order.createdAt.toISOString(),
         completedAt: order.completedAt?.toISOString(),
+        ...(order.isReservation ? { isReservation: true,
+          scheduledFor: order.scheduledFor?.toISOString(),
+          pickupCode: order.orderNo.replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase(),
+        } : {}),
       },
       items: items.map((item) => ({
         name: item.productNameZhSnapshot,

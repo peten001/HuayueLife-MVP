@@ -1,6 +1,7 @@
 import { OrderType } from '@prisma/client';
 import {
   IsEnum,
+  IsBoolean,
   IsInt,
   IsNumberString,
   IsOptional,
@@ -13,6 +14,10 @@ import {
 } from 'class-validator';
 
 export class AddCartItemDto {
+  @IsOptional()
+  @IsBoolean()
+  reservation?: boolean;
+
   @IsNumberString({ no_symbols: true })
   merchantId: string;
 

@@ -30,5 +30,6 @@ import { MerchantDineInCanonicalController } from './merchant-dine-in-canonical.
     MerchantAnalyticsService,
     MerchantSettlementsService,
   ],
+  exports: [MerchantOrdersService],
 })
 export class MerchantOrdersModule {}

@@ -2,6 +2,8 @@ import { OrderType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsBoolean,
+  IsISO8601,
   IsNumber,
   IsNumberString,
   IsOptional,
@@ -14,6 +16,18 @@ import {
 } from 'class-validator';
 
 export class OrderRequestDto {
+  @IsOptional()
+  @IsBoolean()
+  reservation?: boolean;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  scheduledFor?: string;
+
+  @IsOptional()
+  @IsNumberString({ no_symbols: true })
+  expectedAmountVnd?: string;
+
   @IsNumberString({ no_symbols: true })
   merchantId: string;
 

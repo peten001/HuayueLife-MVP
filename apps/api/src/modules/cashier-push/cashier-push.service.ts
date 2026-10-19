@@ -78,6 +78,11 @@ export class CashierPushService {
     await tx.cashierPushEvent.create({ data: { orderId } });
   }
 
+  async enqueueReservation(tx: Prisma.TransactionClient, reservationId: bigint) {
+    if (!this.enabled) return;
+    await tx.cashierPushEvent.create({ data: { reservationId } });
+  }
+
   @Interval(5_000)
   async dispatch() {
     if (!this.enabled || this.running) return;
@@ -97,6 +102,7 @@ export class CashierPushService {
         take: 20,
         include: {
           order: { select: { id: true, merchantId: true, orderNo: true, orderType: true, status: true } },
+          reservation: { select: { id: true, merchantId: true, reservationNo: true, status: true } },
           subscription: true,
         },
       });
@@ -135,6 +141,7 @@ export class CashierPushService {
       take: 40,
       include: {
         order: { select: { id: true, merchantId: true, status: true, orderType: true } },
+        reservation: { select: { id: true, merchantId: true, status: true } },
       },
     });
     for (const event of events) {
@@ -148,15 +155,18 @@ export class CashierPushService {
       });
       if (!claimed.count) continue;
       try {
-        if (event.order.status === 'PENDING_ACCEPTANCE'
-          && (event.order.orderType === 'PICKUP' || event.order.orderType === 'DELIVERY')) {
+        const pendingOrder = event.order?.status === 'PENDING_ACCEPTANCE'
+          && (event.order.orderType === 'PICKUP' || event.order.orderType === 'DELIVERY');
+        const pendingReservation = event.reservation?.status === 'PENDING';
+        if (pendingOrder || pendingReservation) {
+          const merchantId = event.order?.merchantId ?? event.reservation!.merchantId;
           const subscriptions = await this.prisma.cashierPushSubscription.findMany({
-            where: { merchantId: event.order.merchantId },
+            where: { merchantId },
             select: { id: true },
           });
           if (subscriptions.length) {
             await this.prisma.cashierPushDelivery.createMany({
-              data: subscriptions.map(({ id }) => ({ orderId: event.orderId, subscriptionId: id })),
+              data: subscriptions.map(({ id }) => ({ orderId: event.orderId, reservationId: event.reservationId, subscriptionId: id })),
               skipDuplicates: true,
             });
           }
@@ -207,13 +217,15 @@ export class CashierPushService {
   private async sendOne(delivery: Prisma.CashierPushDeliveryGetPayload<{
     include: {
       order: { select: { id: true; merchantId: true; orderNo: true; orderType: true; status: true } };
+      reservation: { select: { id: true; merchantId: true; reservationNo: true; status: true } };
       subscription: true;
     };
   }>) {
-    const { order, subscription } = delivery;
-    if (order.merchantId !== subscription.merchantId
-      || order.status !== 'PENDING_ACCEPTANCE'
-      || (order.orderType !== 'PICKUP' && order.orderType !== 'DELIVERY')) {
+    const { order, reservation, subscription } = delivery;
+    const source = order ?? reservation;
+    const pending = order ? order.status === 'PENDING_ACCEPTANCE'
+      && (order.orderType === 'PICKUP' || order.orderType === 'DELIVERY') : reservation?.status === 'PENDING';
+    if (!source || source.merchantId !== subscription.merchantId || !pending) {
       await this.prisma.cashierPushDelivery.update({
         where: { id: delivery.id },
         data: { resolvedAt: new Date(), leaseUntil: null },
@@ -233,22 +245,24 @@ export class CashierPushService {
       await this.prisma.cashierPushSubscription.deleteMany({ where: { id: subscription.id } });
       return;
     }
-    const isPickup = order.orderType === 'PICKUP';
-    const label = subscription.locale === 'vi'
+    const isPickup = order?.orderType === 'PICKUP';
+    const label = reservation
+      ? subscription.locale === 'vi' ? 'Đặt bàn mới' : subscription.locale === 'en' ? 'New dine-in reservation' : '新的到店用餐预约'
+      : subscription.locale === 'vi'
       ? isPickup ? 'Đơn mang về mới' : 'Đơn giao hàng mới'
       : subscription.locale === 'en'
         ? isPickup ? 'New pickup order' : 'New delivery order'
         : isPickup ? '新的到店自取订单' : '新的商家配送订单';
-    const path = `/${isPickup ? 'pickup' : 'delivery'}/${order.id.toString()}`;
+    const path = reservation ? `/reservations?reservationId=${reservation.id}` : `/${isPickup ? 'pickup' : 'delivery'}/${source.id}`;
     try {
       await webpush.sendNotification({
         endpoint: subscription.endpoint,
         keys: { p256dh: subscription.p256dh, auth: subscription.auth },
       }, JSON.stringify({
         title: label,
-        body: `#${order.orderNo}`,
+        body: `#${order?.orderNo ?? reservation!.reservationNo}`,
         path,
-        tag: `cashier-order-${order.id.toString()}`,
+        tag: `cashier-${reservation ? 'reservation' : 'order'}-${source.id}`,
       }), { TTL: 3600, urgency: 'high', timeout: PUSH_TIMEOUT_MS });
       await this.prisma.cashierPushDelivery.update({
         where: { id: delivery.id },
@@ -270,7 +284,7 @@ export class CashierPushService {
           nextAttemptAt: new Date(Date.now() + Math.min(15 * 60_000, 15_000 * 2 ** attempts)),
         },
       });
-      this.logger.warn(`Cashier push retry order=${order.id} attempt=${attempts} status=${status || 'NETWORK'}`);
+      this.logger.warn(`Cashier push retry source=${source.id} attempt=${attempts} status=${status || 'NETWORK'}`);
     }
   }
 

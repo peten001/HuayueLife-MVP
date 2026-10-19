@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { MessageSquareText, Phone, UserRound } from '@lucide/vue';
 import { computed } from 'vue';
+import { formatReservationTime, reservationText } from '@huayue-life/shared';
 import { estimatedReadyAt, formatVietnamCompactDateTime, formatVietnamDateTime, formatVietnamTime, formatVnd, packingFeeVnd, pickupCode } from '@/domain';
 import { useI18n } from '@/i18n';
 import type { MerchantOrder } from '@/types';
@@ -27,6 +28,7 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
       </div>
     </header>
     <dl class="fulfillment-facts">
+      <div v-if="order.isReservation"><dt>{{ reservationText('pickupTime', locale) }}</dt><dd>{{ formatReservationTime(order.scheduledFor, locale) }}</dd></div>
       <div><dt>{{ t(compactFacts ? 'fulfillment.estimatedReadyShort' : 'fulfillment.estimatedReady') }}</dt><dd>{{ estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }}</dd></div>
       <div><dt>{{ t(compactFacts ? 'fulfillment.waitingShort' : 'fulfillment.waiting') }}</dt><dd><WaitDuration compact :dense="compactFacts" :created-at="order.createdAt" /></dd></div>
       <div><dt>{{ t(compactFacts ? 'fulfillment.orderedShort' : 'order.createdAt') }}</dt><dd>{{ compactFacts ? formatVietnamCompactDateTime(order.createdAt, locale) : formatVietnamDateTime(order.createdAt, locale) }}</dd></div>

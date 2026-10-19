@@ -109,6 +109,18 @@
       "style": {
         "navigationBarTitleText": "消息"
       }
+    },
+    {
+      "path": "pages/reservation/create",
+      "style": {
+        "navigationBarTitleText": "预约到店"
+      }
+    },
+    {
+      "path": "pages/reservation/detail",
+      "style": {
+        "navigationBarTitleText": "预约详情"
+      }
     }
   ],
   "tabBar": {

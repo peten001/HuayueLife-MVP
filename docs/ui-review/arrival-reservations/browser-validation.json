@@ -1,0 +1,70 @@
+{
+  "flows": [
+    {
+      "name": "dine-in preselection, preserved draft and submission",
+      "pass": true
+    },
+    {
+      "name": "scheduled pickup with code and pending confirmation",
+      "pass": true
+    },
+    {
+      "name": "merchant confirmation, seating and customer continuation",
+      "pass": true
+    },
+    {
+      "name": "rescheduling requires consent, then explicit preparation",
+      "pass": true
+    },
+    {
+      "name": "ambiguous network outcome recovers the original reservation after reopening",
+      "pass": true
+    }
+  ],
+  "layouts": [
+    {
+      "label": "miniapp-320-en",
+      "width": 320,
+      "scroll": 320,
+      "pass": true
+    },
+    {
+      "label": "miniapp-375-vi",
+      "width": 375,
+      "scroll": 375,
+      "pass": true
+    },
+    {
+      "label": "miniapp-390-zh",
+      "width": 390,
+      "scroll": 390,
+      "pass": true
+    },
+    {
+      "label": "cashier-1366-zh",
+      "width": 1366,
+      "scroll": 1366,
+      "pass": true
+    },
+    {
+      "label": "cashier-1280-en",
+      "width": 1280,
+      "scroll": 1280,
+      "pass": true
+    },
+    {
+      "label": "cashier-768-vi",
+      "width": 768,
+      "scroll": 768,
+      "pass": true
+    },
+    {
+      "label": "cashier-375-vi",
+      "width": 375,
+      "scroll": 375,
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

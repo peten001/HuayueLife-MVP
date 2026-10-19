@@ -125,6 +125,14 @@ export class UpdateMerchantProfileDto {
   @IsBoolean()
   pickupEnabled?: boolean;
 
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  pickupReservationEnabled?: boolean;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  dineInReservationEnabled?: boolean;
+
   @IsOptional()
   @IsBoolean()
   deliveryEnabled?: boolean;

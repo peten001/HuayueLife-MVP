@@ -28,6 +28,7 @@ import {
   toCustomerVisibleOrderStatusLogs,
 } from './order-status-log-visibility';
 import { isOrderReviewEligible, reviewDeadline } from '../reviews/review-policy';
+import { parseReservationTime } from '../reservations/reservation-policy';
 
 const REUSABLE_DINE_IN_CUSTOMER_ORDER_STATUSES = new Set<OrderStatus>([
   'PENDING_ACCEPTANCE',
@@ -326,6 +327,8 @@ export class OrdersService {
               merchantId: preview.merchant.id, tableId: preview.table?.id,
               tableSessionId: tableSession?.id, tableNoSnapshot: preview.table?.tableNo,
               orderType: dto.orderType,
+              isReservation: dto.reservation === true,
+              scheduledFor: dto.scheduledFor ? parseReservationTime(dto.scheduledFor) : undefined,
               contactName: dto.contactName, contactPhone: dto.contactPhone,
               deliveryAddress: dto.orderType === 'DELIVERY' ? dto.deliveryAddress : undefined,
               deliveryLatitude: dto.orderType === 'DELIVERY' ? dto.deliveryLatitude : undefined,
@@ -515,6 +518,15 @@ export class OrdersService {
     userId: bigint,
     dto: OrderRequestDto,
   ) {
+    if (dto.reservation && dto.orderType !== 'PICKUP') {
+      throw new BadRequestException('堂食预约请使用预约到店用餐入口');
+    }
+    if (dto.scheduledFor && !dto.reservation) {
+      throw new BadRequestException('预约时间仅适用于预约订单');
+    }
+    if (dto.scheduledFor) parseReservationTime(dto.scheduledFor);
+    if (dto.reservation && !dto.contactName?.trim()) throw new BadRequestException('请填写联系人姓名');
+    if (dto.reservation && !/^\+?\d{8,15}$/.test(dto.contactPhone?.trim() ?? '')) throw new BadRequestException('请填写正确的联系电话');
     const context = await this.cartService.resolveContext(tx, dto);
     const merchant = await tx.merchant.findUnique({
       where: { id: context.merchantId },
@@ -522,8 +534,15 @@ export class OrdersService {
     if (!merchant || merchant.status !== 'ACTIVE') {
       throw new BadRequestException('商家当前不可用');
     }
-    if (!isMerchantOpen(merchant)) {
-      throw new BadRequestException('商家当前不在营业时间');
+    if (!dto.reservation && !isMerchantOpen(merchant)) {
+      const seatedReservation = dto.orderType === 'DINE_IN' && context.tableId
+        ? await tx.diningReservation.findFirst({
+            where: { merchantId: merchant.id, status: 'SEATED',
+              tableSession: { tableId: context.tableId, status: 'OPEN' } },
+            select: { id: true },
+          })
+        : null;
+      if (!seatedReservation) throw new BadRequestException('商家当前不在营业时间');
     }
 
     const cart = await this.cartService.findActiveCart(tx, userId, context);
@@ -571,6 +590,9 @@ export class OrdersService {
       0n,
     );
     const deliveryPricing = this.resolveDeliveryPricing(merchant, dto);
+    if (dto.reservation && (dto.expectedAmountVnd === undefined || BigInt(dto.expectedAmountVnd) !== itemAmountVnd)) {
+      throw new ConflictException('餐品价格已变化，请刷新后重新确认');
+    }
     console.log('[orders] delivery range check', {
       orderType: dto.orderType,
       distanceKm: deliveryPricing.distanceKm,

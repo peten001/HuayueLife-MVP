@@ -38,6 +38,47 @@ describe('CashierPushService', () => {
     expect(create).toHaveBeenCalledWith({ data: { orderId: 77n } });
   });
 
+  it('queues a dining reservation event without creating a financial order', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 1n });
+    const service = new CashierPushService({} as never);
+    await service.enqueueReservation({ cashierPushEvent: { create } } as never, 81n);
+    expect(create).toHaveBeenCalledWith({ data: { reservationId: 81n } });
+  });
+
+  it.each(['zh', 'en', 'vi'])('delivers a pending dining reservation to its own active merchant in %s', async locale => {
+    const update = jest.fn().mockResolvedValue({});
+    const service = new CashierPushService({
+      cashierPushEvent: { findMany: jest.fn().mockResolvedValue([]) },
+      cashierPushDelivery: {
+        findMany: jest.fn().mockResolvedValue([{ id: 1n, attempts: 0, order: null,
+          reservation: { id: 81n, merchantId: 11n, reservationNo: 'YY81', status: 'PENDING' },
+          subscription: { id: 9n, merchantId: 11n, staffId: 21n, locale, endpoint: 'https://web.push.apple.com/X', p256dh: 'a', auth: 'b' },
+        }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }), update,
+      },
+      merchantStaff: { findFirst: jest.fn().mockResolvedValue({ id: 21n }) },
+    } as never);
+    await service.dispatch();
+    expect(webpush.sendNotification).toHaveBeenCalledWith(expect.anything(),
+      expect.stringContaining('"path":"/reservations?reservationId=81"'), expect.anything());
+    const payload = JSON.parse((webpush.sendNotification as jest.Mock).mock.calls[0][1]);
+    expect(payload.title).toBe(locale === 'zh' ? '新的到店用餐预约' : locale === 'vi' ? 'Đặt bàn mới' : 'New dine-in reservation');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ sentAt: expect.any(Date) }) }));
+  });
+
+  it.each(['CONFIRMED', 'CANCELLED', 'SEATED'])('does not push an already handled dining reservation (%s)', async status => {
+    const update = jest.fn();
+    const service = new CashierPushService({
+      cashierPushEvent: { findMany: jest.fn().mockResolvedValue([]) },
+      cashierPushDelivery: { findMany: jest.fn().mockResolvedValue([{ id: 1n, order: null,
+        reservation: { id: 81n, merchantId: 11n, status }, subscription: { id: 9n, merchantId: 11n } }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }), update },
+    } as never);
+    await service.dispatch();
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ resolvedAt: expect.any(Date) }) }));
+  });
+
   it('accepts a merchant-scoped Apple endpoint and rejects private endpoints', async () => {
     const upsert = jest.fn().mockResolvedValue({});
     const service = new CashierPushService({ cashierPushSubscription: { upsert } } as never);

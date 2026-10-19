@@ -1,4 +1,5 @@
 import { ref, watchEffect } from 'vue';
+import { reservationErrorText } from '@huayue-life/shared';
 import type { LocalizedFields, LocalizedTranslationMap } from '@/types/api';
 import type { Locale } from '@/utils/storage';
 import { getLocale, setLocale as saveLocale } from '@/utils/storage';
@@ -58,7 +59,7 @@ const zh = {
   privateRooms: '有包间',
   airConditioned: '空调环境',
   freeWifi: '免费 Wi-Fi',
-  supportsPickup: '到店自取',
+  supportsPickup: '打包自取',
   supportsDelivery: '商家配送',
   supportsQrOrder: '支持扫码点餐',
   back: '返回',
@@ -167,7 +168,7 @@ const zh = {
   allMerchants: '全部商家',
   scanOrder: '扫码点餐',
   inStoreScanOrder: '到店扫码点餐',
-  inStoreScanOrderDialogContent: '本店支持到店扫码点餐。\n到店入座后，请扫描桌台二维码进行点餐。\n如需打包带走，请选择“到店自取”。',
+  inStoreScanOrderDialogContent: '本店支持到店扫码点餐。\n到店入座后，请扫描桌台二维码进行点餐。\n如需提前安排到店，请选择“预约到店”。',
   scanSubtitle: '扫描桌面二维码进入餐厅菜单',
   locationByDistance: '按距离排序',
   locationByCity: '按城市展示',
@@ -191,7 +192,7 @@ const zh = {
   openMenu: '查看菜单',
   restaurant: '餐厅',
   dineIn: '堂食',
-  pickup: '到店自取',
+  pickup: '打包自取',
   delivery: '商家配送',
   browseMenu: '浏览菜单',
   merchantOpen: '营业中',
@@ -384,7 +385,7 @@ const zh = {
   cancel: '取消',
   cartContextSwitchCancelled: '已取消切换，继续查看当前内容',
   contextDineIn: '堂食 · {table}',
-  contextPickup: '到店自取',
+  contextPickup: '打包自取',
   contextDelivery: '商家配送',
   merchantName: '商家名称',
   tableNo: '桌号',
@@ -671,7 +672,7 @@ const vi: typeof zh = {
   allMerchants: 'Tất cả cửa hàng',
   scanOrder: 'Quét mã đặt món',
   inStoreScanOrder: 'Quét mã gọi món tại quán',
-  inStoreScanOrderDialogContent: 'Nhà hàng hỗ trợ gọi món bằng mã QR tại quán.\nSau khi ngồi vào bàn, vui lòng quét mã QR trên bàn để gọi món.\nNếu muốn mang đi, vui lòng chọn Tự đến lấy.',
+  inStoreScanOrderDialogContent: 'Nhà hàng hỗ trợ gọi món bằng mã QR tại quán.\nSau khi ngồi vào bàn, vui lòng quét mã QR trên bàn để gọi món.\nĐể hẹn giờ đến, vui lòng chọn Đặt trước tại cửa hàng.',
   scanSubtitle: 'Quét mã QR trên bàn để vào thực đơn',
   locationByDistance: 'Sắp xếp theo khoảng cách',
   locationByCity: 'Hiển thị theo thành phố',
@@ -1174,7 +1175,7 @@ const en: typeof zh = {
   allMerchants: 'All merchants',
   scanOrder: 'Scan to Order',
   inStoreScanOrder: 'Scan to Order In-store',
-  inStoreScanOrderDialogContent: 'This restaurant supports in-store scan-to-order.\nAfter you are seated, please scan the table QR code to order.\nFor takeaway pickup, please choose Pickup.',
+  inStoreScanOrderDialogContent: 'This restaurant supports in-store scan-to-order.\nAfter you are seated, please scan the table QR code to order.\nTo arrange your visit in advance, choose Reserve a visit.',
   scanSubtitle: 'Scan the QR code on the table to open the menu',
   locationByDistance: 'Sorted by distance',
   locationByCity: 'Shown by city',
@@ -1966,6 +1967,8 @@ export function translateApiError(raw: unknown) {
   if (typeof raw !== 'string') {
     return t('requestFailed');
   }
+  const reservationMessage = reservationErrorText(raw, locale.value);
+  if (reservationMessage !== raw) return reservationMessage;
   if (raw.includes('Network Error')) return t('networkRequestFailed');
   if (raw.includes('网络请求失败')) return t('networkRequestFailed');
   if (raw.includes('请检查网络后重试')) return t('checkNetworkRetry');

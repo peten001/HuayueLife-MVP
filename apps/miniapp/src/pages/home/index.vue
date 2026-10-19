@@ -295,7 +295,7 @@ const filterOptions = computed<Array<{ value: FilterOption; label: string }>>(()
   return [
     ...base,
     { value: 'DINE_IN', label: locale.value === 'zh' ? '支持堂食' : locale.value === 'vi' ? 'Ăn tại chỗ' : 'Dine in' },
-    { value: 'PICKUP', label: locale.value === 'zh' ? '支持到店自取' : locale.value === 'vi' ? 'Tự lấy' : 'Pickup' },
+    { value: 'PICKUP', label: locale.value === 'zh' ? '支持打包自取' : locale.value === 'vi' ? 'Tự lấy' : 'Pickup' },
     { value: 'DELIVERY', label: locale.value === 'zh' ? '支持商家配送' : locale.value === 'vi' ? 'Giao bởi quán' : 'Delivery' },
   ];
 });

@@ -1,0 +1,7 @@
+{
+  "pass": true,
+  "existingOrderPreserved": true,
+  "existingServiceFlagsPreserved": true,
+  "existingPushEventsAndDeliveriesPreserved": true,
+  "newReservationTableEmpty": true
+}

@@ -6,7 +6,7 @@ import CashierMobileNavigation from './CashierMobileNavigation.vue';
 describe('CashierMobileNavigation V5', () => {
   afterEach(() => setLocale('zh'));
 
-  it('keeps the three fulfillment routes and reuses the account avatar as the fourth My item', async () => {
+  it('exposes reservations alongside fulfillment routes and the account item', async () => {
     const wrapper = mount(CashierMobileNavigation, {
       props: {
         merchantName: '演示餐厅',
@@ -24,8 +24,9 @@ describe('CashierMobileNavigation V5', () => {
     });
 
     const items = wrapper.findAll('.cashier-mobile-navigation > *');
-    expect(items).toHaveLength(4);
-    expect(items.slice(0, 3).map((item) => item.text().trim())).toEqual([
+    expect(items).toHaveLength(5);
+    expect(items.slice(0, 4).map((item) => item.text().trim())).toEqual([
+      '到店预约',
       '桌台总览',
       '到店自取',
       '商家配送',

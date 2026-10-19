@@ -23,6 +23,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@huayue-life/shared": "workspace:*",
     "@lucide/vue": "^1.24.0",
     "pinyin-pro": "^3.27.0",
     "pinia": "^2.2.7",

@@ -22,6 +22,9 @@ export interface ReceiptDocument {
     guestCount?: number;
     createdAt: string;
     completedAt?: string;
+    isReservation?: boolean;
+    scheduledFor?: string;
+    pickupCode?: string;
   };
   tableSession?: {
     id: string;
@@ -180,6 +183,9 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
         'guestCount',
         'createdAt',
         'completedAt',
+        'isReservation',
+        'scheduledFor',
+        'pickupCode',
       ]) ||
       !/^\d+$/.test(document.order.id) ||
       !isBoundedText(document.order.orderNo, 1, 32) ||
@@ -190,6 +196,9 @@ export function assertReceiptDocument(value: unknown): asserts value is ReceiptD
         (!Number.isSafeInteger(document.order.guestCount) ||
           document.order.guestCount < 0)) ||
       Number.isNaN(Date.parse(document.order.createdAt)) ||
+      (document.order.isReservation !== undefined && typeof document.order.isReservation !== 'boolean') ||
+      (document.order.scheduledFor !== undefined && Number.isNaN(Date.parse(document.order.scheduledFor))) ||
+      (document.order.pickupCode !== undefined && !isBoundedText(document.order.pickupCode, 1, 16)) ||
       (document.order.completedAt !== undefined &&
         Number.isNaN(Date.parse(document.order.completedAt))))
   ) {

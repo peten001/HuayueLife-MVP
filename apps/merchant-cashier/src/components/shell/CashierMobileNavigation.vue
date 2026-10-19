@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bike, LayoutGrid, ShoppingBag } from '@lucide/vue';
+import { Bike, CalendarClock, LayoutGrid, ShoppingBag } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 import AccountMenu from './AccountMenu.vue';
@@ -25,6 +25,7 @@ defineEmits<{
 
 const { t } = useI18n();
 const allRoutes = [
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid },
   { to: '/pickup', labelKey: 'nav.pickup', icon: ShoppingBag },
   { to: '/delivery', labelKey: 'nav.delivery', icon: Bike },
@@ -55,3 +56,6 @@ const routes = computed(() => allRoutes.filter((item) => {
     />
   </nav>
 </template>
+<style scoped>
+@media(max-width:899px){.cashier-mobile-navigation{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}}
+</style>

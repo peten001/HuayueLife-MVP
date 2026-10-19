@@ -1,0 +1,11 @@
+import { onMounted, onUnmounted } from 'vue';
+export const hideCallbacks: Array<() => void> = [];
+export const onLoad = (fn: (options: Record<string, string>) => void) => onMounted(() => fn(Object.fromEntries(new URLSearchParams(location.search))));
+export const onShow = (fn: () => void) => onMounted(fn);
+export const onHide = (fn: () => void) => { hideCallbacks.push(fn); };
+export const onUnload = (fn: () => void) => onUnmounted(fn);
+export const onShareAppMessage = (_fn: unknown) => {};
+export const onShareTimeline = (_fn: unknown) => {};
+export const onLaunch = (_fn: unknown) => {};
+export const onReachBottom = (_fn: unknown) => {};
+export const onPullDownRefresh = (_fn: unknown) => {};

@@ -340,6 +340,7 @@ model User {
   operatedStatusLogs     OrderStatusLog[]        @relation("UserStatusLogOperator")
   claimedMerchants       Merchant[]              @relation("MerchantOwnerUser")
   merchantReviews        MerchantReview[]
+  diningReservations     DiningReservation[]
 
   @@map("users")
 }
@@ -378,6 +379,8 @@ model Merchant {
   deliveryRadiusKm         Decimal             @default(0) @map("delivery_radius_km") @db.Decimal(5, 2)
   dineInEnabled            Boolean             @default(true) @map("dine_in_enabled")
   pickupEnabled            Boolean             @default(true) @map("pickup_enabled")
+  pickupReservationEnabled Boolean             @default(true) @map("pickup_reservation_enabled")
+  dineInReservationEnabled Boolean             @default(true) @map("dine_in_reservation_enabled")
   deliveryEnabled          Boolean             @default(false) @map("delivery_enabled")
   isVisibleOnClient        Boolean             @default(true) @map("is_visible_on_client")
   reportFeatureEnabled     Boolean             @default(false) @map("report_feature_enabled")
@@ -400,6 +403,7 @@ model Merchant {
   tableSessions           TableSession[]
   carts                   Cart[]
   orders                  Order[]
+  diningReservations      DiningReservation[]
   orderChatConversations  OrderChatConversation[]
   printerSettings         PrinterSetting[]
   printLogs               PrintLog[]
@@ -754,6 +758,7 @@ model TableSession {
   merchant           Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   table              DiningTable          @relation(fields: [tableId], references: [id], onDelete: Cascade)
   orders             Order[]
+  diningReservations DiningReservation[]
   printJobs          PrintJob[]
   printTriggerOutbox PrintTriggerOutbox[]
 
@@ -814,6 +819,9 @@ model Order {
   tableSessionId           BigInt?          @map("table_session_id")
   tableNoSnapshot          String?          @map("table_no_snapshot") @db.VarChar(32)
   orderType                OrderType        @map("order_type")
+  isReservation            Boolean          @default(false) @map("is_reservation")
+  scheduledFor             DateTime?        @map("scheduled_for")
+  proposedScheduledFor     DateTime?        @map("proposed_scheduled_for")
   status                   OrderStatus      @default(PENDING_ACCEPTANCE)
   contactName              String?          @map("contact_name") @db.VarChar(64)
   contactPhone             String?          @map("contact_phone") @db.VarChar(32)
@@ -865,11 +873,13 @@ model Order {
   cashierPushDeliveries  CashierPushDelivery[]
   cashierPushEvent       CashierPushEvent?
   review                 MerchantReview?
+  diningReservation      DiningReservation?
   kdsTasks               KdsTask[]
 
   @@unique([userId, idempotencyKey])
   @@unique([merchantId, createdByStaffId, idempotencyKey], map: "uq_orders_staff_idempotency")
   @@index([merchantId, status, createdAt])
+  @@index([merchantId, isReservation, scheduledFor])
   @@index([merchantId, businessDate, status])
   @@index([merchantId, voidedAt, businessDate], map: "ix_orders_effective_date")
   @@index([merchantId, voidOperationId], map: "ix_orders_void_operation")
@@ -903,7 +913,8 @@ model CashierPushSubscription {
 
 model CashierPushDelivery {
   id             BigInt    @id @default(autoincrement())
-  orderId        BigInt    @map("order_id")
+  orderId        BigInt?   @map("order_id")
+  reservationId  BigInt?   @map("reservation_id")
   subscriptionId BigInt    @map("subscription_id")
   attempts       Int       @default(0)
   nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at")
@@ -913,10 +924,12 @@ model CashierPushDelivery {
   lastError      String?   @map("last_error") @db.VarChar(120)
   createdAt      DateTime  @default(now()) @map("created_at")
 
-  order          Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order          Order?                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reservation    DiningReservation?      @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   subscription   CashierPushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@unique([orderId, subscriptionId])
+  @@unique([reservationId, subscriptionId])
   @@index([sentAt, resolvedAt, nextAttemptAt])
   @@index([subscriptionId])
   @@map("cashier_push_deliveries")
@@ -924,15 +937,64 @@ model CashierPushDelivery {
 
 model CashierPushEvent {
   id          BigInt    @id @default(autoincrement())
-  orderId     BigInt    @unique @map("order_id")
+  orderId     BigInt?   @unique @map("order_id")
+  reservationId BigInt? @unique @map("reservation_id")
   leaseUntil  DateTime? @map("lease_until")
   processedAt DateTime? @map("processed_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reservation DiningReservation? @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
   @@index([processedAt, createdAt])
   @@map("cashier_push_events")
+}
+
+enum DiningReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  CANCELLED
+  NO_SHOW
+}
+
+model DiningReservation {
+  id                   BigInt @id @default(autoincrement())
+  reservationNo        String @unique @map("reservation_no") @db.VarChar(32)
+  userId               BigInt @map("user_id")
+  merchantId           BigInt @map("merchant_id")
+  idempotencyKey       String @map("idempotency_key") @db.VarChar(64)
+  status               DiningReservationStatus @default(PENDING)
+  scheduledFor         DateTime @map("scheduled_for")
+  proposedScheduledFor DateTime? @map("proposed_scheduled_for")
+  guestCount           Int @map("guest_count")
+  contactName          String @map("contact_name") @db.VarChar(64)
+  contactPhone         String @map("contact_phone") @db.VarChar(32)
+  customerRemark       String? @map("customer_remark") @db.VarChar(500)
+  items                Json
+  itemAmountVnd        BigInt @default(0) @map("item_amount_vnd")
+  audit                Json
+  confirmedAt          DateTime? @map("confirmed_at")
+  seatedAt             DateTime? @map("seated_at")
+  cancelledAt          DateTime? @map("cancelled_at")
+  cancelReason         String? @map("cancel_reason") @db.VarChar(255)
+  orderId              BigInt? @unique @map("order_id")
+  tableSessionId       BigInt? @map("table_session_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user             User @relation(fields: [userId], references: [id])
+  merchant         Merchant @relation(fields: [merchantId], references: [id])
+  order            Order? @relation(fields: [orderId], references: [id])
+  tableSession     TableSession? @relation(fields: [tableSessionId], references: [id])
+  pushEvent        CashierPushEvent?
+  pushDeliveries   CashierPushDelivery[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([merchantId, status, scheduledFor])
+  @@index([userId, createdAt])
+  @@index([tableSessionId])
+  @@map("dining_reservations")
 }
 
 model OrderItem {

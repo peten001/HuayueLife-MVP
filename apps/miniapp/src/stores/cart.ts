@@ -19,6 +19,7 @@ function normalizeContext(context: CartContext): CartContext {
     merchantId: context.merchantId,
     merchantName: context.merchantName || '',
     orderType: context.orderType,
+    reservation: context.orderType === 'PICKUP' || context.reservation === true || undefined,
   };
   if (context.orderType === 'DINE_IN') {
     next.tableToken = context.tableToken?.trim() || undefined;
@@ -48,7 +49,8 @@ function sameContext(a: CartContext | null, b: CartContext) {
   if (!a) return false;
   const left = normalizeContext(a);
   const right = normalizeContext(b);
-  if (left.merchantId !== right.merchantId || left.orderType !== right.orderType) {
+  if (left.merchantId !== right.merchantId || left.orderType !== right.orderType
+    || Boolean(left.reservation) !== Boolean(right.reservation)) {
     return false;
   }
   if (left.orderType !== 'DINE_IN') return true;

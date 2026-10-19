@@ -546,6 +546,8 @@ export class PublicMerchantsService {
       deliveryRadiusKm: merchant.deliveryRadiusKm.toString(),
       dineInEnabled,
       pickupEnabled,
+      pickupReservationEnabled: claimedMerchant && pickupEnabled && merchant.pickupReservationEnabled === true,
+      dineInReservationEnabled: claimedMerchant && dineInEnabled && merchant.dineInReservationEnabled === true,
       deliveryEnabled,
       qrOrderEnabled: effectiveQrOrderEnabled,
       homepageCategoryKeys: parseHomepageCategoryKeys(
