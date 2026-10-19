@@ -1,0 +1,47 @@
+{
+  "deployment": {
+    "status": "PASS",
+    "release": "arrival-nav-20261019-v2",
+    "activeTarget": "/var/www/huayue-cashier-releases/arrival-nav-20261019-v2",
+    "previousTarget": "/var/www/huayue-cashier-releases/arrival-reservations-20261019-v1",
+    "http": {
+      "resourceCount": 68,
+      "apiHealth": 200,
+      "unauthenticatedKds": 401,
+      "cashierDeepLink": "PASS",
+      "kdsEntryUnchanged": "PASS"
+    },
+    "verifiedFiles": 68,
+    "preservedAssetCount": 321,
+    "previousBackupBytes": 3700857,
+    "previousBackupSha256": "b7c56ce9593ccbbd76c340470f0e7cfb664840807fbac25f554c7966cad670ea",
+    "apiProcess": {
+      "status": "online",
+      "pid": 1767710,
+      "restartCount": 14,
+      "unstableRestarts": 0
+    },
+    "apiKdsConfigUnchanged": true,
+    "sourceState": "committed and pushed source with SHA-256 manifests",
+    "sourceCommit": "5e4292d83a46bf30d8c9c2a2a4ce5fdcf45a61ee",
+    "databaseMigrations": false,
+    "productionBusinessWrites": false,
+    "serverTimestamp": "2026-10-19T08:08:44Z"
+  },
+  "publicVerification": {
+    "status": "PASS",
+    "release": "arrival-nav-20261019-v2",
+    "verifiedPublicFiles": 68,
+    "navigationOrder": [
+      "tables",
+      "reservations",
+      "pickup",
+      "delivery",
+      "history"
+    ],
+    "targetedNavigationTests": 2,
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "build": "PASS"
+  }
+}
