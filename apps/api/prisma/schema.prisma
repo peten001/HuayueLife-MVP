@@ -723,6 +723,7 @@ model DiningTable {
   carts         Cart[]
   orders        Order[]
   tableSessions TableSession[]
+  assignedReservations DiningReservation[] @relation("AssignedReservationTable")
 
   @@unique([merchantId, tableNo])
   @@index([merchantId, status])
@@ -980,6 +981,9 @@ model DiningReservation {
   cancelReason         String? @map("cancel_reason") @db.VarChar(255)
   orderId              BigInt? @unique @map("order_id")
   tableSessionId       BigInt? @map("table_session_id")
+  assignedTableId      BigInt? @map("assigned_table_id")
+  assignedTableNo      String? @map("assigned_table_no") @db.VarChar(32)
+  assignedTableName    String? @map("assigned_table_name") @db.VarChar(64)
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -987,6 +991,7 @@ model DiningReservation {
   merchant         Merchant @relation(fields: [merchantId], references: [id])
   order            Order? @relation(fields: [orderId], references: [id])
   tableSession     TableSession? @relation(fields: [tableSessionId], references: [id])
+  assignedTable    DiningTable? @relation("AssignedReservationTable", fields: [assignedTableId], references: [id], onDelete: SetNull)
   pushEvent        CashierPushEvent?
   pushDeliveries   CashierPushDelivery[]
 
@@ -994,6 +999,7 @@ model DiningReservation {
   @@index([merchantId, status, scheduledFor])
   @@index([userId, createdAt])
   @@index([tableSessionId])
+  @@index([assignedTableId, status, scheduledFor])
   @@map("dining_reservations")
 }
 

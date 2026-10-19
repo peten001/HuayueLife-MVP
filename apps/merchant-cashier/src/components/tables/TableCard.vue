@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Clock3, ReceiptText } from '@lucide/vue';
 import { computed } from 'vue';
+import { formatReservationTime, reservationText, type ArrivalReservation } from '@huayue-life/shared';
 import { formatVnd } from '@/domain';
 import { useI18n } from '@/i18n';
 import { elapsedDuration, type CashierTableView } from '@/components/common/view-models';
@@ -8,6 +9,7 @@ import { elapsedDuration, type CashierTableView } from '@/components/common/view
 const props = defineProps<{
   table: CashierTableView;
   selected?: boolean;
+  reservations?: ArrivalReservation[];
 }>();
 
 defineEmits<{
@@ -15,6 +17,8 @@ defineEmits<{
 }>();
 
 const { t, locale } = useI18n();
+const nextReservation = computed(() => props.reservations?.[0]);
+const rt = (key: 'plannedVisits' | 'people') => reservationText(key, locale.value);
 const status = computed(() => props.table.operationalStatus ?? (
   props.table.status === 'DISABLED' ? 'DISABLED' : props.table.currentSession ? 'IN_USE' : 'AVAILABLE'
 ));
@@ -42,7 +46,7 @@ const durationLabel = computed(() => {
     class="table-card"
     :class="[
       `table-card--${status.toLowerCase().replace(/_/g, '-')}`,
-      { 'table-card--selected': selected },
+      { 'table-card--selected': selected, 'table-card--planned': Boolean(nextReservation) },
     ]"
     :data-testid="`table-card-${table.id}`"
     :data-status="status"
@@ -70,5 +74,13 @@ const durationLabel = computed(() => {
     <span v-else-if="disabled" class="table-card__disabled-hint">
       {{ t('table.disabledHint') }}
     </span>
+    <span v-if="nextReservation" class="table-card__reservation" data-testid="table-reservation-hint">
+      <strong>{{ rt('plannedVisits') }} · {{ formatReservationTime(nextReservation.scheduledFor, locale) }}</strong>
+      <span>{{ nextReservation.contactName }} · {{ nextReservation.guestCount }} {{ rt('people') }}<span v-if="(reservations?.length ?? 0) > 1"> · +{{ reservations!.length - 1 }}</span></span>
+    </span>
   </button>
 </template>
+
+<style scoped>
+.table-card.table-card--planned{grid-template-rows:none;align-content:start;height:auto;max-height:none}.table-card__reservation{display:grid;gap:4px;width:100%;min-width:0;margin-top:2px;padding-top:9px;border-top:1px solid #d2dfd5;color:#52684e;font-size:11px;line-height:1.55;text-align:left;white-space:normal;overflow-wrap:anywhere}.table-card__reservation>strong{color:#397244;font-size:11px;font-weight:700}.table-card__reservation>span{color:#64766a}
+</style>

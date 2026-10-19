@@ -18,6 +18,8 @@ import {
 import { resolveOrderLocation } from '@/domain/order-location';
 import ReservationAttention from '@/features/inbox/ReservationAttention.vue';
 import { useReservationsStore } from '@/stores/reservations';
+import { reservationText } from '@huayue-life/shared';
+import { RESERVATION_FILTERS } from '@/domain/reservation-queue';
 import {
   useAuthStore,
   useCatalogStore,
@@ -139,12 +141,16 @@ const activeMainTab = computed<'TABLES' | 'MENU'>(() =>
 const currentTableLabel = computed(() =>
   selectedSessionDetail.value?.tableNo || selectedTable.value?.tableNo || '',
 );
-const mobileOperationalContext = computed<'pickup' | 'delivery' | undefined>(() => {
+const mobileOperationalContext = computed<'pickup' | 'delivery' | 'reservation' | undefined>(() => {
+  if (currentCanonicalRouteName.value === 'reservations') return 'reservation';
   if (currentCanonicalRouteName.value === 'pickup-orders') return 'pickup';
   if (currentCanonicalRouteName.value === 'delivery-orders') return 'delivery';
   return undefined;
 });
 const mobileOperationalFilters = computed(() => {
+  if (mobileOperationalContext.value === 'reservation') {
+    return RESERVATION_FILTERS.map(item => ({ value: item.value, label: reservationText(item.key, locale.value) }));
+  }
   if (mobileOperationalContext.value === 'pickup') {
     return PICKUP_FILTERS.map(item => ({ value: item.value, label: t(item.key) }));
   }
@@ -164,9 +170,10 @@ const activeMobileOperationalFilter = computed(() => {
   return typeof requested === 'string'
     && mobileOperationalFilters.value.some((item) => item.value === requested)
     ? requested
-    : 'ALL';
+    : mobileOperationalContext.value === 'reservation' ? (router.currentRoute.value.query.reservationId ? 'ALL' : 'ACTIVE') : 'ALL';
 });
 const mobileOperationalFilterAriaLabel = computed(() => {
+  if (mobileOperationalContext.value === 'reservation') return reservationText('merchantTitle', locale.value);
   if (mobileOperationalContext.value === 'pickup') return t('nav.pickup');
   if (mobileOperationalContext.value === 'delivery') return t('nav.delivery');
   return '';
@@ -284,7 +291,8 @@ async function selectMobileOperationalFilter(filter: string) {
   if (!mobileOperationalFilters.value.some((item) => item.value === filter)) return;
   const current = router.currentRoute.value;
   const query = { ...current.query };
-  if (filter === 'ALL') delete query.status;
+  if (mobileOperationalContext.value === 'reservation') { delete query.reservationId; query.status = filter; }
+  else if (filter === 'ALL') delete query.status;
   else query.status = filter;
   await router.replace({ path: current.path, query });
 }

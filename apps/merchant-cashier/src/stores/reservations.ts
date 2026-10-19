@@ -7,10 +7,12 @@ import { useI18n } from '@/i18n';
 import { useUiStore } from './ui';
 import { useSoundStore } from './sound';
 import { pickupPreparationDue } from '@/domain/pickup-queue';
+import { reservationsByTable } from '@/domain/reservation-queue';
 
 export const useReservationsStore = defineStore('cashier-reservations', () => {
   const arrivals = ref<ArrivalReservation[]>([]);
   const reservations = computed(() => arrivals.value.filter(row => row.kind === 'DINE_IN'));
+  const byTable = computed(() => reservationsByTable(reservations.value));
   const loading = ref(false);
   const error = ref('');
   const actionId = ref('');
@@ -70,5 +72,5 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
     } finally { if (mutationGeneration === generation) actionId.value = ''; }
   }
   function reset() { generation += 1; arrivals.value = []; error.value = ''; actionId.value = ''; inFlight = null; loading.value = false; seen.clear(); merchantSnapshot = ''; }
-  return { reservations, loading, error, actionId, serverNow, pending, pickupDue, load, act, reset };
+  return { reservations, byTable, loading, error, actionId, serverNow, pending, pickupDue, load, act, reset };
 });

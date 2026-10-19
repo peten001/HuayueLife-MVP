@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import type { ArrivalReservation } from '@huayue-life/shared';
 import { describe, expect, it } from 'vitest';
 import type { TableCardView } from '@/types';
 import TableCard from './TableCard.vue';
@@ -59,6 +60,19 @@ describe('TableCard disabled-table recovery', () => {
     expect(wrapper.find('.table-card__meta').exists()).toBe(false);
     expect(wrapper.find('.table-card__amount').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('—');
+  });
+
+  it('shows a planned visit without changing an available table to occupied', async () => {
+    const wrapper = mount(TableCard, { props: {
+      table: { ...disabledTable(null), status: 'ACTIVE', operationalStatus: 'AVAILABLE' },
+      reservations: [{ id: 'r1', kind: 'DINE_IN', status: 'CONFIRMED', scheduledFor: '2026-10-20T12:00:00Z', contactName: '王先生', guestCount: 4 } as ArrivalReservation],
+    } });
+    expect(wrapper.attributes('data-status')).toBe('AVAILABLE');
+    expect(wrapper.get('[data-testid="table-reservation-hint"]').text()).toContain('19:00');
+    expect(wrapper.text()).toContain('王先生');
+    expect(wrapper.find('.table-card__amount').exists()).toBe(false);
+    await wrapper.trigger('click');
+    expect(wrapper.emitted('select')).toEqual([['table-1']]);
   });
 
   it('shows only real occupied-session duration, order, dish and amount data', () => {

@@ -157,6 +157,56 @@ describe('arrival reservations: isolated MySQL end-to-end', () => {
     expect(seats.map(response => response.status).sort()).toEqual([201, 409]);
     expect(await prisma.tableSession.count({ where: { tableId: table.id, status: 'OPEN' } })).toBe(1);
   });
+  it('plans a future visit on an occupied table, keeps both parties independent, and seats on a different free table', async () => {
+    const table = await newTable(); const replacement = await newTable();
+    const first = (await dining()).body.data;
+    await action(first.id, 'CONFIRM').expect(201);
+    const seatedFirst = (await action(first.id, 'SEAT', { tableId: table.id.toString() }).expect(201)).body.data;
+    const second = (await dining({ contactName: '后续预约', scheduledFor: future(180) })).body.data;
+    const beforeOrders = await prisma.order.count({ where: { merchantId } });
+    const beforeSessions = await prisma.tableSession.count({ where: { merchantId } });
+    const confirmed = (await action(second.id, 'CONFIRM', { tableId: table.id.toString() }).expect(201)).body.data;
+    expect(confirmed.assignedTable).toEqual({ id: table.id.toString(), tableNo: table.tableNo, tableName: null });
+    expect(confirmed.table).toBeNull(); expect(confirmed.tableSessionId).toBeNull();
+    expect(JSON.stringify(confirmed)).not.toContain('qrToken');
+    expect(await prisma.order.count({ where: { merchantId } })).toBe(beforeOrders);
+    expect(await prisma.tableSession.count({ where: { merchantId } })).toBe(beforeSessions);
+    const customer = (await call('get', `/reservations/${second.id}`).expect(200)).body.data;
+    expect(customer.assignedTable.tableNo).toBe(table.tableNo);
+    await action(second.id, 'SEAT', { tableId: table.id.toString() }).expect(409);
+    const moved = (await action(second.id, 'SEAT', { tableId: replacement.id.toString() }).expect(201)).body.data;
+    expect(moved.table.id).toBe(replacement.id.toString());
+    expect(moved.assignedTable.tableNo).toBe(replacement.tableNo);
+    expect(moved.tableSessionId).not.toBe(seatedFirst.tableSessionId);
+    const firstAfter = (await call('get', `/reservations/${first.id}`).expect(200)).body.data;
+    expect(firstAfter.tableSessionId).toBe(seatedFirst.tableSessionId);
+    expect(firstAfter.status).toBe('SEATED');
+  });
+
+  it('assigns only owned active tables and can change or clear a plan after confirmation', async () => {
+    const row = (await dining()).body.data;
+    const foreign = await prisma.diningTable.create({ data: { merchantId: otherMerchantId, tableNo: `F${randomBytes(5).toString('hex')}`, qrToken: randomBytes(32).toString('hex') } });
+    const disabled = await prisma.diningTable.create({ data: { merchantId, tableNo: `D${randomBytes(5).toString('hex')}`, qrToken: randomBytes(32).toString('hex'), status: 'DISABLED' } });
+    await action(row.id, 'CONFIRM', { tableId: foreign.id.toString() }).expect(400);
+    await action(row.id, 'CONFIRM', { tableId: '0' }).expect(400);
+    await action(row.id, 'CONFIRM', { tableId: disabled.id.toString() }).expect(400);
+    await action(row.id, 'ASSIGN_TABLE').expect(409);
+    const table = await newTable(); const other = await newTable();
+    await action(row.id, 'CONFIRM', { tableId: table.id.toString() }).expect(201);
+    expect((await action(row.id, 'CONFIRM').expect(201)).body.data.assignedTable.id).toBe(table.id.toString());
+    await action(row.id, 'CONFIRM', { tableId: other.id.toString() }).expect(409);
+    await action(row.id, 'ASSIGN_TABLE', { tableId: other.id.toString() }, 'DINE_IN', otherStaffToken).expect(404);
+    expect((await action(row.id, 'ASSIGN_TABLE', { tableId: other.id.toString() }).expect(201)).body.data.assignedTable.id).toBe(other.id.toString());
+    expect((await action(row.id, 'ASSIGN_TABLE').expect(201)).body.data.assignedTable).toBeNull();
+  });
+
+  it('serializes concurrent confirmations and keeps the winning table snapshot on retries', async () => {
+    const row = (await dining()).body.data; const one = await newTable(); const two = await newTable();
+    const results = await Promise.all([action(row.id, 'CONFIRM', { tableId: one.id.toString() }), action(row.id, 'CONFIRM', { tableId: two.id.toString() })]);
+    expect(results.map(result => result.status).sort()).toEqual([201, 409]);
+    const winner = results.find(result => result.status === 201)!.body.data;
+    expect((await action(row.id, 'CONFIRM').expect(201)).body.data.assignedTable).toEqual(winner.assignedTable);
+  });
   it('creates a future pickup while closed, holds kitchen work until start, and retains pickup time on its receipt', async () => {
     await addItem('PICKUP').expect(201);
     const time = future(240);

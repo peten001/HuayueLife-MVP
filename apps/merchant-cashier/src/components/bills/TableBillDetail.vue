@@ -7,10 +7,13 @@ import type { DineInCanonicalLine, DineInCanonicalState, TableCardView, TableSes
 import DineInActionDock from '@/features/dine-in/DineInActionDock.vue';
 import MobileV2BillActionDock from '@/mobile-v2/MobileV2BillActionDock.vue';
 import DishReturnStatus from '@/components/orders/DishReturnStatus.vue';
+import TableReservationList from '@/components/tables/TableReservationList.vue';
+import type { ArrivalReservation } from '@huayue-life/shared';
 
 const props = defineProps<{
   table?: TableCardView | null;
   session?: TableSessionDetail | null;
+  reservations?: ArrivalReservation[];
   canonicalState?: DineInCanonicalState | null;
   checkingOut?: boolean;
   checkoutDisabled?: boolean;
@@ -177,7 +180,8 @@ function priceCanExpand(line: DineInCanonicalLine) {
       <div v-else class="table-detail-header__line table-detail-header__line--passive"><h3>{{ t('table.detailEmptyTitle') }}</h3></div>
     </header>
 
-    <section class="detail-section table-bill-content table-bill-shell__body" data-testid="right-panel-body">
+    <section class="detail-section table-bill-content table-bill-shell__body" :class="{ 'has-reservations': reservations?.length }" data-testid="right-panel-body">
+      <TableReservationList v-if="reservations?.length" :reservations="reservations" />
       <div v-if="canonicalLines.length" class="table-bill-scroll" data-testid="table-bill-scroll">
         <div class="table-item-summary-list" data-testid="table-item-summary">
           <article v-for="entry in canonicalLines" :key="entry.lineKey" class="table-item-summary-row canonical-table-item-row" :class="{ 'table-item-summary-row--extended-price': priceCanExpand(entry), 'dish-fully-returned': entry.quantity === 0 && entry.returnedQuantity }" :data-product-id="entry.productId" :data-line-key="entry.lineKey">
@@ -260,5 +264,8 @@ function priceCanExpand(line: DineInCanonicalLine) {
 .canonical-table-item-row .table-item-summary-row__item-price { grid-column: 3 !important; }
 .dish-fully-returned .table-item-summary-row__name strong { text-decoration: line-through; color: var(--cashier-shell-muted); }
 .returned-item-quantity { grid-column: 2; text-align: center; color: var(--cashier-shell-muted); }
+.table-bill-shell__body.has-reservations { display: flex; flex-direction: column; }
+.table-bill-shell__body.has-reservations .table-bill-scroll { height: auto; flex: 1; min-height: 0; }
+.table-bill-shell__body.has-reservations .table-bill-empty-canvas { flex: 1; min-height: 110px; }
 @media (max-width: 430px) { .canonical-table-item-row { grid-template-columns: minmax(0, 1fr) 104px auto !important; } }
 </style>

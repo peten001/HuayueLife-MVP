@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "apiUnitTests": 1352,
+  "cashierUnitTests": 677,
+  "isolatedMysqlHttpTests": 19,
+  "existingReservationsPreservedOnUpgrade": 46,
+  "unchangedUpgradeTableHashes": 7,
+  "browserFlows": 6,
+  "responsiveLayouts": 26,
+  "pageErrors": 0,
+  "workspaceTypecheck": "PASS",
+  "workspaceBuild": "PASS",
+  "miniappWeixinBuild": "PASS",
+  "cashierLint": "PASS",
+  "miniappI18n": "PASS",
+  "wechatQualityGuard": "PASS",
+  "productionDataUsed": false,
+  "wechatNativeValidation": "Pending user experience-version upload"
+}

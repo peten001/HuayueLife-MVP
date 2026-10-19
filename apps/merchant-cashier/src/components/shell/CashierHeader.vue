@@ -41,7 +41,7 @@ const props = defineProps<{
   showMainTabs?: boolean;
   activeMainTab?: 'TABLES' | 'MENU';
   currentTableLabel?: string;
-  mobileOperationalContext?: 'pickup' | 'delivery';
+  mobileOperationalContext?: 'pickup' | 'delivery' | 'reservation';
   mobileOperationalFilters?: readonly MobileOperationalFilter[];
   activeMobileOperationalFilter?: string;
   mobileOperationalFilterAriaLabel?: string;
@@ -122,7 +122,7 @@ const mobileTableStats = computed(() => [
   { key: 'in-use', filter: 'IN_USE' as const, label: t('table.status.inUse'), value: props.inUseTableCount },
   { key: 'available', filter: 'AVAILABLE' as const, label: t('table.status.available'), value: props.availableTableCount },
 ]);
-const mobileHeaderContext = computed<'tables' | 'menu' | 'pickup' | 'delivery' | 'status'>(() => {
+const mobileHeaderContext = computed<'tables' | 'menu' | 'pickup' | 'delivery' | 'reservation' | 'status'>(() => {
   if (props.showMainTabs) return props.activeMainTab === 'MENU' ? 'menu' : 'tables';
   return props.mobileOperationalContext || 'status';
 });

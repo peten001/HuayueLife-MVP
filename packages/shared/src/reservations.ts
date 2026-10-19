@@ -31,6 +31,7 @@ export interface ArrivalReservation {
     contactPhone?: string; addressDetail?: string; addressZh?: string | null;
     addressVi?: string | null; addressEn?: string | null; latitude?: string; longitude?: string };
   table?: { id: string; tableNo: string; tableName?: string | null; qrToken?: string } | null;
+  assignedTable?: { id: string | null; tableNo: string; tableName?: string | null } | null;
 }
 
 const copy = {
@@ -65,6 +66,18 @@ const copy = {
   remarkPlaceholder: ['口味、座位需求等，可选填', 'Khẩu vị, yêu cầu chỗ ngồi… (không bắt buộc)', 'Dietary or seating requests (optional)'],
   preselected: ['预选餐品', 'Món đã chọn trước', 'Preselected dishes'],
   selectDishes: ['提前选菜', 'Chọn món trước', 'Choose dishes ahead'],
+  assignedTable: ['安排桌台', 'Bàn được xếp', 'Assigned table'],
+  tablePending: ['桌台待安排', 'Chưa xếp bàn', 'Table to be assigned'],
+  assignTable: ['安排／调整桌台', 'Xếp hoặc đổi bàn', 'Assign or change table'],
+  tableNumber: ['桌台号', 'Số bàn', 'Table number'],
+  assignmentHint: ['桌号会同步给顾客，到店后再确认入座', 'Số bàn được gửi cho khách; xác nhận vào bàn khi khách đến', 'The table number is shared with the guest; seat them when they arrive'],
+  plannedVisits: ['后续预约', 'Lịch đặt bàn', 'Planned reservations'],
+  plannedOnly: ['仅为接待安排，不占用当前桌账', 'Chỉ là kế hoạch đón khách, không chiếm hóa đơn hiện tại', 'A seating plan; the current table bill stays independent'],
+  occupiedPlanHint: ['此桌正在用餐，可安排后续预约；客人到店时需等候或换到空桌', 'Bàn đang có khách; có thể xếp lịch sau. Khi khách đến, chờ bàn trống hoặc đổi bàn', 'This table is in use. Plan a later visit; wait or choose a free table on arrival'],
+  viewReservation: ['查看预约', 'Xem đặt bàn', 'View reservation'],
+  openReservedTableTitle: ['此桌已有预约安排', 'Bàn này có lịch đặt trước', 'This table has planned reservations'],
+  openReservedTableHint: ['如接待预约客人，请返回预约页确认入座。接待其他客人可继续开台，原预约保留，请留意到店时间。', 'Nếu đón khách đặt bàn, hãy xác nhận vào bàn tại trang đặt trước. Có thể mở bàn cho khách khác; lịch đặt vẫn được giữ. Vui lòng lưu ý giờ hẹn.', 'For reserved guests, seat them from their reservation. You can open a bill for other guests; the reservation stays in place. Keep the arrival time in mind.'],
+  openAnyway: ['继续开台点菜', 'Tiếp tục mở bàn gọi món', 'Open table and order'],
   editDishes: ['修改餐品', 'Sửa món đã chọn', 'Edit dishes'],
   seatsOnly: ['仅预约座位，到店后扫码点餐', 'Chỉ đặt bàn, quét mã gọi món khi đến', 'Reserve seats, scan the table code to order on arrival'],
   cookOnArrival: ['预选餐品将在到店确认后安排制作', 'Món chọn trước được chế biến sau khi bạn đến và xác nhận', 'Preselected dishes are prepared after you arrive and confirm'],
@@ -166,6 +179,7 @@ const errorCopy: Record<string, readonly [string, string]> = {
   '订单已开始制作，不能调整预约时间': ['Đơn đã bắt đầu chế biến, không thể đổi giờ', 'Preparation started. The appointment time cannot be changed'],
   '请选择入座桌台': ['Vui lòng chọn bàn', 'Choose a table for the guests'],
   '请先确认预约，再安排入座': ['Xác nhận đặt trước trước khi xếp bàn', 'Confirm the reservation before seating guests'],
+  '请先确认预约，再安排桌台': ['Xác nhận đặt trước trước khi chọn bàn', 'Confirm the reservation before assigning a table'],
   '预约时间变更待用户确认，请先联系用户处理': ['Đang chờ khách đồng ý đổi giờ. Vui lòng liên hệ khách', 'The time change awaits customer consent. Contact the customer first'],
   '桌台不存在或已停用': ['Bàn không tồn tại hoặc đã tắt', 'The table is unavailable or disabled'],
   '预选菜价格或供应状态已变化，请与顾客重新确认后预约': ['Giá hoặc tình trạng món đã thay đổi. Xác nhận lại với khách trước khi đặt lại', 'Preselected dishes changed. Reconfirm with the customer before rebooking'],

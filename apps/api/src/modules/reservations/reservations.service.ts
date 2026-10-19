@@ -168,9 +168,33 @@ export class ReservationsService {
     if (dto.action === 'PROPOSE_TIME') return this.proposeTime(merchantId, staffId, kind, id, dto);
     if (dto.action === 'SEAT') return this.seat(merchantId, staffId, id, dto.tableId);
     return this.prisma.$transaction(async tx => {
+      const assigning = dto.action === 'CONFIRM' || dto.action === 'ASSIGN_TABLE';
+      const targetTableId = assigning && dto.tableId ? BigInt(dto.tableId) : null;
+      // Follow the same lock order as seating. A planned table does not open a session.
+      if (targetTableId !== null) await tx.$queryRaw`SELECT id FROM dining_tables WHERE id = ${targetTableId} AND merchant_id = ${merchantId} FOR UPDATE`;
       await this.lockDining(tx, id);
       const row = await tx.diningReservation.findFirst({ where: { id, merchantId }, include: diningInclude });
       if (!row) throw new NotFoundException('预约不存在');
+      if (dto.action === 'ASSIGN_TABLE' && row.status !== 'CONFIRMED') {
+        throw new ConflictException('请先确认预约，再安排桌台');
+      }
+      if (dto.action === 'CONFIRM' && row.status === 'CONFIRMED') {
+        if (targetTableId !== null && row.assignedTableId !== targetTableId) throw new ConflictException('预约状态已变化，请刷新后重试');
+        return this.serializeDining(row);
+      }
+      const table = targetTableId !== null
+        ? await tx.diningTable.findFirst({ where: { id: targetTableId, merchantId, status: 'ACTIVE' } }) : null;
+      if (targetTableId !== null && !table) throw new BadRequestException('桌台不存在或已停用');
+      const assignment = assigning ? {
+        assignedTableId: table?.id ?? null,
+        assignedTableNo: table?.tableNo ?? null,
+        assignedTableName: table?.tableName ?? null,
+      } : {};
+      if (dto.action === 'ASSIGN_TABLE') {
+        return this.serializeDining(await tx.diningReservation.update({ where: { id }, data: {
+          ...assignment, audit: this.audit(row, 'ASSIGNED_TABLE', { staffId: staffId.toString(), tableId: dto.tableId ?? '', tableNo: table?.tableNo ?? '' }),
+        }, include: diningInclude }));
+      }
       const target = dto.action === 'CONFIRM' ? 'CONFIRMED' : dto.action === 'NO_SHOW' ? 'NO_SHOW' : 'CANCELLED';
       if (row.status === target) return this.serializeDining(row);
       if (dto.action === 'CONFIRM' && row.proposedScheduledFor) {
@@ -183,9 +207,10 @@ export class ReservationsService {
       if (dto.action === 'NO_SHOW' && row.scheduledFor > new Date()) throw new ConflictException('预约时间尚未到，不能标记未到店');
       return this.serializeDining(await tx.diningReservation.update({ where: { id }, data: {
         status: target, confirmedAt: target === 'CONFIRMED' ? new Date() : undefined,
+        ...assignment,
         cancelledAt: target === 'CANCELLED' ? new Date() : undefined,
         cancelReason: target === 'CANCELLED' ? dto.reason?.trim() || '商家取消预约' : undefined,
-        proposedScheduledFor: null, audit: this.audit(row, dto.action, { staffId: staffId.toString(), reason: dto.reason ?? '' }),
+        proposedScheduledFor: null, audit: this.audit(row, dto.action, { staffId: staffId.toString(), reason: dto.reason ?? '', ...(assigning ? { tableId: dto.tableId ?? '', tableNo: table?.tableNo ?? '' } : {}) }),
       }, include: diningInclude }));
     });
   }
@@ -289,6 +314,7 @@ export class ReservationsService {
       }
       return this.serializeDining(await tx.diningReservation.update({ where: { id }, data: {
         status: 'SEATED', seatedAt: new Date(), tableSessionId: session.id, orderId,
+        assignedTableId: table.id, assignedTableNo: table.tableNo, assignedTableName: table.tableName,
         audit: this.audit(row, 'SEATED', { staffId: staffId.toString(), tableId: targetTableId, tableSessionId: session.id.toString() }),
       }, include: diningInclude }));
     });
@@ -315,6 +341,9 @@ export class ReservationsService {
         id: row.tableSession.tableId, tableNo: row.tableSession.table.tableNo,
         tableName: row.tableSession.table.tableName,
         qrToken: row.tableSession.status === 'OPEN' && !row.tableSession.voidedAt ? row.tableSession.table.qrToken : undefined,
+      } : null,
+      assignedTable: row.assignedTableNo ? {
+        id: row.assignedTableId, tableNo: row.assignedTableNo, tableName: row.assignedTableName,
       } : null,
       // The full table session is internal and must not expose other customers' orders.
       tableSession: undefined,

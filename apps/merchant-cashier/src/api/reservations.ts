@@ -3,7 +3,7 @@ import { requestApi } from './http';
 import { isDemoSessionActive } from '@/fixtures';
 
 export interface ReservationAction {
-  action: 'CONFIRM' | 'CANCEL' | 'NO_SHOW' | 'SEAT' | 'PROPOSE_TIME';
+  action: 'CONFIRM' | 'CANCEL' | 'NO_SHOW' | 'SEAT' | 'PROPOSE_TIME' | 'ASSIGN_TABLE';
   tableId?: string;
   scheduledFor?: string;
   reason?: string;

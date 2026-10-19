@@ -17,6 +17,9 @@ import { useI18n } from '@/i18n';
 import { useAuthStore, useCatalogStore, useNetworkStore, useOrdersStore, useTablesStore, useUiStore } from '@/stores';
 import type { CreateMerchantTableOrderInput, PaymentMethod, TableSessionOrder, TransferTableSessionInput } from '@/types';
 import { networkWritesDisabled } from '@/layouts/network-write-guard';
+import { formatReservationTime, reservationText, type ReservationTextKey } from '@huayue-life/shared';
+import { useReservationsStore } from '@/stores/reservations';
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue';
 import LoadingState from '@/components/common/LoadingState.vue';
 import ErrorState from '@/components/common/ErrorState.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -43,13 +46,21 @@ const props = withDefaults(defineProps<{
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
 const authStore = useAuthStore();
 const networkStore = useNetworkStore();
 const ordersStore = useOrdersStore();
 const tablesStore = useTablesStore();
 const uiStore = useUiStore();
 const catalogStore = useCatalogStore();
+const reservationsStore = useReservationsStore();
+const plannedReservations = computed(() => reservationsStore.byTable[selectedTableId.value] ?? []);
+const openingWarning = ref<{ tableId: string; productId: string } | null>(null);
+const reservationCheckInProgress = ref(false);
+const acknowledgedPlan = ref('');
+const planKey = computed(() => `${selectedTableId.value}:${plannedReservations.value.map(row => `${row.id}/${row.scheduledFor}/${row.proposedScheduledFor}`).join(',')}`);
+const openingWarningDescription = computed(() => `${plannedReservations.value.slice(0, 3).map(row => `${formatReservationTime(row.scheduledFor, locale.value)} · ${row.contactName} · ${row.guestCount} ${rt('people')}`).join(' · ')}. ${rt('openReservedTableHint')}`);
 const isMobile = useMediaQuery('(max-width: 899px)');
 const mobileV2PreviewRoute = computed(() => import.meta.env.DEV && route.meta.mobileV2Preview === true);
 const mobileV2Presentation = computed(() => (
@@ -151,7 +162,7 @@ const unresolvedMutation = computed(() => (
 ));
 const unfinishedMutation = computed(() => unresolvedMutation.value || orderingMutationPending.value);
 const transferTargets = computed(() => tableCards.value.filter((table) => table.id !== selectedTableId.value && table.status === 'ACTIVE' && table.operationalStatus === 'AVAILABLE' && !table.currentSession));
-const topOrderingDialogOpen = computed(() => Boolean(checkoutConfirmOpen.value || adjustmentOpen.value || transferOpen.value || canonicalController.uncertainBatch.value || retainedInitialBatch.value));
+const topOrderingDialogOpen = computed(() => Boolean(openingWarning.value || checkoutConfirmOpen.value || adjustmentOpen.value || transferOpen.value || canonicalController.uncertainBatch.value || retainedInitialBatch.value));
 const activeStatus = computed(() => route.query.status === 'AVAILABLE' || route.query.status === 'IN_USE' ? route.query.status : 'ALL');
 const availableTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'AVAILABLE').length);
 const inUseTableCount = computed(() => tableCards.value.filter((table) => table.operationalStatus === 'IN_USE').length);
@@ -222,7 +233,20 @@ async function reconcilePendingOrderingMutations() {
 }
 
 async function addMenuProduct(productId: string) {
-  if (writeDisabled.value || orderingMutationLocked.value) return;
+  if (writeDisabled.value || orderingMutationLocked.value || reservationCheckInProgress.value || openingWarning.value) return;
+  // All menu entry points converge here. Before the first dish opens a bill,
+  // show planned visits without merging a reservation into a walk-in bill.
+  if (!session.value && !pendingInitialItems.value.size && !authStore.demoMode) {
+    const tableId = selectedTableId.value;
+    reservationCheckInProgress.value = true;
+    try { await reservationsStore.load(); }
+    finally { reservationCheckInProgress.value = false; }
+    if (tableId !== selectedTableId.value || session.value || activeMainTab.value !== 'MENU' || writeDisabled.value) return;
+    if (plannedReservations.value.length && acknowledgedPlan.value !== planKey.value) {
+      openingWarning.value = { tableId, productId };
+      return;
+    }
+  }
   if (!session.value) {
     pendingInitialTableId.value ||= selectedTableId.value;
     const next = new Map(pendingInitialItems.value);
@@ -249,6 +273,19 @@ async function addMenuProduct(productId: string) {
     await refreshAdjustmentContext(true);
   }
 }
+
+function confirmOpeningReservedTable() {
+  const pending = openingWarning.value;
+  openingWarning.value = null;
+  if (!pending || pending.tableId !== selectedTableId.value || session.value) return;
+  acknowledgedPlan.value = planKey.value;
+  void addMenuProduct(pending.productId);
+}
+
+watch(() => [selectedTableId.value, session.value?.id] as const, () => {
+  openingWarning.value = null;
+  acknowledgedPlan.value = '';
+});
 
 function decreaseMenuProduct(productId: string) {
   if (writeDisabled.value || orderingMutationLocked.value) return;
@@ -426,7 +463,7 @@ async function saveSettlementAdjustment(input: { discountPayableRateBps: number 
 
 async function refresh(showToast = true) {
   try {
-    await Promise.all([tablesStore.fetchTables({ force: true }), ordersStore.refreshLiveOrders({ force: true })]);
+    await Promise.all([tablesStore.fetchTables({ force: true }), ordersStore.refreshLiveOrders({ force: true }), reservationsStore.load()]);
     if (session.value) await canonicalController.load(true);
   } catch {
     if (showToast && tableCards.value.length) uiStore.pushToast(t('error.refreshFailed'), 'error');
@@ -745,7 +782,7 @@ onBeforeUnmount(() => {
       <div v-show="activeMainTab === 'TABLES'" class="table-main-pane table-main-pane--tables">
         <LoadingState v-if="loading && !tableCards.length" :label="t('table.loading')" />
         <ErrorState v-else-if="errorKey && !tableCards.length" :title="t('error.title')" :description="t(errorKey)" :retry-label="t('common.retry')" @retry="refresh(false)" />
-        <TableGrid v-else :tables="filteredTables" :selected-table-id="selectedTableId" @select="selectTable" />
+        <TableGrid v-else :tables="filteredTables" :selected-table-id="selectedTableId" :reservations-by-table="reservationsStore.byTable" @select="selectTable" />
       </div>
 
       <div v-show="activeMainTab === 'MENU'" class="table-main-pane table-main-pane--menu">
@@ -758,7 +795,7 @@ onBeforeUnmount(() => {
           :table-label="session?.tableNo || selectedTable.tableNo || t('table.numberFallback')"
           :table-secondary-label="session?.tableName || selectedTable.tableName || ''"
           :session-id="session?.id || ''"
-          :disabled="writeDisabled || resettingMenuSelection || openingCurrentOrder"
+          :disabled="writeDisabled || resettingMenuSelection || openingCurrentOrder || reservationCheckInProgress"
           :top-dialog-open="topOrderingDialogOpen"
           :product-quantities="currentMenuSelectionQuantities"
           :mutation-locked="orderingMutationLocked"
@@ -776,12 +813,18 @@ onBeforeUnmount(() => {
     <aside class="table-route-detail" :class="{ 'table-route-detail--open': Boolean(routeTableId) && activeMainTab === 'TABLES' }" data-testid="table-route-detail">
       <button v-if="selectedTableId && !mobileV2Presentation && !isMobile" type="button" class="table-route-detail__back" :aria-label="t('fulfillment.backToTables')" @click="backToTables"><ArrowLeft :size="20" aria-hidden="true" /></button>
       <LoadingState v-if="detailLoading && !selectedSessionDetail" :label="t('table.loading')" />
-      <TableBillDetail v-else :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.discountAmountVnd || '0') > 0n || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :mobile-v2-presentation="mobileV2Presentation" @back="backToTables" @add-items="replaceMainTab('MENU')" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
+      <TableBillDetail v-else :reservations="plannedReservations" :table="selectedTable" :session="session" :canonical-state="presentedCanonicalState" :checkout-disabled="!canCheckout" :checking-out="checkingOut" :notification-loading="productionNotificationLoading" :actions-disabled="writeDisabled || orderingMutationPending || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :item-actions-disabled="writeDisabled || orderingMutationLocked || settlementAdjustmentLoading || productionNotificationLoading" :orderable-product-ids="orderableProductIds" :adjustment-applied="Boolean(presentedCanonicalState?.totals.discountPayableRateBps != null || BigInt(presentedCanonicalState?.totals.discountAmountVnd || '0') > 0n || BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n)" :transfer-disabled="!session || !transferTargets.length" :mobile-v2-presentation="mobileV2Presentation" @back="backToTables" @add-items="replaceMainTab('MENU')" @notify-production="notifyProduction" @decrease-line="canonicalController.decreaseLine" @increase-line="canonicalController.increaseLine" @transfer="openTransfer" @checkout="openCheckout" @adjustment="openSettlementAdjustment" />
     </aside>
 
+    <ConfirmDialog class="reservation-opening-warning" :open="Boolean(openingWarning)" :title="rt('openReservedTableTitle')" :description="openingWarningDescription" :cancel-label="rt('close')" :confirm-label="rt('openAnyway')" :confirm-disabled="writeDisabled" @cancel="openingWarning = null" @confirm="confirmOpeningReservedTable" />
     <PendingDecreaseRecovery :open="Boolean(canonicalController.uncertainBatch.value || retainedInitialBatch)" :loading="canonicalController.syncing.value || initialBatchSyncing" :disabled="writeDisabled" @retry="retryUncertainOrderingMutation" />
     <CheckoutPaymentDialog :open="checkoutConfirmOpen" :amount-vnd="presentedCanonicalState?.totals.payableAmountVnd || '0'" :loading="checkingOut" :error="checkoutErrorKey ? t(checkoutErrorKey) : ''" :show-description="!mobileV2Presentation" @cancel="checkoutConfirmOpen = false" @confirm="checkout" />
     <SettlementAdjustmentDialog v-if="session" :open="adjustmentOpen" :item-amount-vnd="presentedCanonicalState?.totals.originalAmountVnd || '0'" :discount-payable-rate-bps="presentedCanonicalState?.totals.discountPayableRateBps ?? null" :discount-amount-vnd="presentedCanonicalState?.totals.discountAmountVnd || '0'" :rounding-enabled="BigInt(presentedCanonicalState?.totals.roundingAmountVnd || '0') > 0n" :loading="settlementAdjustmentLoading" @cancel="adjustmentOpen = false" @confirm="saveSettlementAdjustment" />
     <TableTransferDialog :open="transferOpen" :source-label="session?.tableNo || selectedTable?.tableNo || t('table.numberFallback')" :targets="transferTargets" :loading="transferLoading" :error="transferError" @cancel="cancelTransfer" @confirm="confirmTransfer" />
   </section>
 </template>
+
+<style scoped>
+.reservation-opening-warning :deep(.confirm-dialog) { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.reservation-opening-warning :deep(.confirm-dialog p) { overflow-wrap: anywhere; }
+</style>

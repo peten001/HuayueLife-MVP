@@ -45,8 +45,8 @@ export class ReservationParamsDto {
 }
 
 export class ReservationActionDto {
-  @IsIn(['CONFIRM', 'CANCEL', 'NO_SHOW', 'SEAT', 'PROPOSE_TIME'])
-  action: 'CONFIRM' | 'CANCEL' | 'NO_SHOW' | 'SEAT' | 'PROPOSE_TIME';
+  @IsIn(['CONFIRM', 'CANCEL', 'NO_SHOW', 'SEAT', 'PROPOSE_TIME', 'ASSIGN_TABLE'])
+  action: 'CONFIRM' | 'CANCEL' | 'NO_SHOW' | 'SEAT' | 'PROPOSE_TIME' | 'ASSIGN_TABLE';
 
   @IsOptional()
   @IsNumberString({ no_symbols: true })

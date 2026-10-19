@@ -10,16 +10,22 @@ mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.ARRIVAL_BROWSER_CHANNEL || 'chrome', headless: true });
 const layoutsOnly = process.argv.includes('--layouts-only');
 const previous = layoutsOnly && existsSync(resolve(output,'browser-validation.json')) ? JSON.parse(readFileSync(resolve(output,'browser-validation.json'),'utf8')) : null;
-const report = { flows: previous?.flows ?? [], layouts: [], errors: [] };
+const report = { flows: previous?.flows ?? [], layouts: previous?.layouts?.filter(item => item.label.startsWith('pickup-')) ?? [], errors: [] };
 const miniUrl = (page, options = {}) => `http://127.0.0.1:34121/?${new URLSearchParams({ page, merchantId: config.merchantId, width: '390', locale: 'zh', ...options })}`;
 const tomorrow = new Date(Date.now() + 7 * 3600000 + 86400000).toISOString().slice(0, 10);
-const errorCollector = page => page.on('pageerror', error => report.errors.push(error.message));
+const errorCollector = page => (page.setDefaultTimeout(15000), page.on('pageerror', error => report.errors.push(error.message)));
 async function dismissInbox(page) {
   const inbox = page.locator('[data-testid="new-order-inbox"]');
   await inbox.waitFor({state:'visible',timeout:1200}).catch(() => undefined);
   if (await inbox.isVisible()) await inbox.locator('.new-order-inbox__panel header button').click();
 }
 async function capture(page, filename) {
+  console.log(`Capture: ${filename}`);
+  if (await page.locator('.reservation-modal, .confirm-dialog').first().isVisible()) {
+    await page.screenshot({ path: resolve(output, filename), fullPage: true });
+    return;
+  }
+  await dismissInbox(page);
   const pushClose = page.locator('.order-push-control__close');
   if (await pushClose.isVisible()) await pushClose.click();
   for (const toast of await page.locator('.cashier-toast button').all()) await toast.click().catch(() => undefined);
@@ -36,6 +42,7 @@ try {
   if (!layoutsOnly) {
   const tableResponse = await fetch('http://127.0.0.1:34120/api/v1/merchant/tables', { method:'POST', headers: {Authorization:`Bearer ${config.staffToken}`,'Content-Type':'application/json'}, body:JSON.stringify({tableNo:`UI${Date.now()}`,tableName:'预约验收空闲桌'}) });
   assert(tableResponse.ok, 'Create a disposable test table before the seating flow');
+  const diningTable = (await tableResponse.json()).data;
   const customer = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mini = await customer.newPage(); errorCollector(mini);
   await mini.goto(miniUrl('merchant'));
@@ -98,8 +105,25 @@ try {
   await cashier.locator('.reservation-list-card').first().waitFor();
   await dismissInbox(cashier);
   await cashier.locator(`[data-reservation-key="DINE_IN:${diningId}"]`).click();
-  await cashier.locator('.reservation-detail-panel').getByRole('button', { name: '确认预约', exact: true }).click();
+  await cashier.getByRole('button', { name: '确认预约', exact: true }).click();
+  await cashier.locator('.reservation-modal select option').nth(1).waitFor({state:'attached'});
+  await cashier.locator('.reservation-modal select').selectOption(diningTable.id);
+  const assignedTableId = await cashier.locator('.reservation-modal select').inputValue();
+  const assignedLabel = await cashier.locator('.reservation-modal select option:checked').innerText();
+  const assignedTableNo = assignedLabel.split(' · ')[0];
+  await cashier.getByRole('button', {name:'确认操作',exact:true}).click();
   await cashier.locator('.reservation-detail-panel .status-badge').filter({ hasText: '预约已确认' }).waitFor();
+  await mini.goto(miniUrl('reservation', {id:diningId}));
+  await mini.locator('.assigned-table-number').waitFor();
+  assert.equal((await mini.locator('.assigned-table-number').innerText()).trim(), assignedTableNo);
+  assert.equal(await mini.getByRole('button', {name:'继续点餐',exact:true}).count(),0);
+  await capture(mini,'14-miniapp-assigned-table.png');
+  await cashier.goto(`http://127.0.0.1:34122/tables/${assignedTableId}`);
+  await cashier.locator(`[data-testid="table-card-${assignedTableId}"] [data-testid="table-reservation-hint"]`).waitFor();
+  assert.equal(await cashier.locator(`[data-testid="table-card-${assignedTableId}"]`).getAttribute('data-status'),'AVAILABLE');
+  await cashier.locator('[data-testid="table-planned-visits"]').waitFor();
+  await capture(cashier,'15-table-planned-reservation.png');
+  await cashier.locator('[data-testid="table-planned-visits"] a').filter({hasText:'张先生'}).click();
   await cashier.getByRole('button', { name: '确认入座', exact: true }).click();
   await cashier.locator('.reservation-modal select option').nth(1).waitFor({ state: 'attached' });
   await cashier.locator('.reservation-modal select').selectOption({ index: 1 });
@@ -110,6 +134,41 @@ try {
   await mini.getByRole('button', { name: '继续点餐', exact: true }).waitFor();
   await capture(mini, '09-miniapp-dining-seated.png');
   report.flows.push({ name: 'merchant confirmation, seating and customer continuation', pass: true });
+
+  const localApi = async (path, body, token = config.staffToken) => {
+    const response = await fetch(`http://127.0.0.1:34120/api/v1${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) });
+    assert(response.ok, `Isolated API ${path}: ${response.status}`);
+    return (await response.json()).data;
+  };
+  const walkInTable = await localApi('/merchant/tables', {tableNo:`W${Date.now()}`,tableName:'开台预约提醒验收'});
+  const planned = await localApi('/reservations', { merchantId: config.merchantId, scheduledFor: new Date(Date.now()+7200000).toISOString(), guestCount: 6, contactName: '后续预约客人', contactPhone: '0901234567', withCart: false }, config.userToken);
+  await localApi(`/merchant/reservations/DINE_IN/${planned.id}/actions`, { action: 'CONFIRM', tableId: walkInTable.id });
+  await cashier.goto(`http://127.0.0.1:34122/tables/${walkInTable.id}?view=menu`);
+  await dismissInbox(cashier);
+  await cashier.locator('.table-ordering-product').first().click();
+  await cashier.getByRole('alertdialog', {name:'此桌已有预约安排'}).waitFor();
+  assert((await cashier.getByRole('alertdialog').innerText()).includes('后续预约客人'));
+  await capture(cashier,'16-reserved-table-opening-warning.png');
+  await cashier.getByRole('button', {name:'继续开台点菜',exact:true}).click();
+  await cashier.getByRole('alertdialog').waitFor({state:'detached'});
+  await cashier.locator('.table-ordering-product.is-selected').first().waitFor();
+  await cashier.waitForResponse(response => response.url().includes(`/merchant/tables/${walkInTable.id}/orders`) && response.ok());
+  await cashier.goto(`http://127.0.0.1:34122/tables/${walkInTable.id}`);
+  await cashier.locator(`[data-testid="table-card-${walkInTable.id}"][data-status="IN_USE"]`).waitFor();
+  assert((await cashier.locator(`[data-testid="table-card-${walkInTable.id}"]`).innerText()).includes('后续预约客人'));
+  const overflowedTableCards = await cashier.locator('.table-card--planned').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+2).map(card=>card.dataset.testid));
+  assert.deepEqual(overflowedTableCards, [], 'Planned visits must stay inside occupied table cards');
+  await capture(cashier,'17-occupied-table-with-future-reservation.png');
+  const stillPlanned = await fetch(`http://127.0.0.1:34120/api/v1/reservations/${planned.id}`, {headers:{Authorization:`Bearer ${config.userToken}`}}).then(response=>response.json());
+  assert.equal(stillPlanned.data.status,'CONFIRMED');
+  assert.equal(stillPlanned.data.tableSessionId,null);
+  await cashier.goto(`http://127.0.0.1:34122/reservations?reservationId=${planned.id}`);
+  await dismissInbox(cashier);
+  await cashier.getByRole('button',{name:'确认入座',exact:true}).click();
+  await cashier.locator('.reservation-modal select option').nth(1).waitFor({state:'attached'});
+  assert.equal(await cashier.locator(`.reservation-modal select option[value="${walkInTable.id}"]`).count(),0);
+  await cashier.locator('.reservation-modal header button').click();
+  report.flows.push({name:'reserved free table prompts before walk-in ordering; occupied table keeps its reservation and rejects merging guests',pass:true});
 
   assert.equal(await cashier.locator('[data-reservation-key^="PICKUP:"]').count(), 0);
   assert.equal(await cashier.locator('.reservation-controls select').count(), 0);
@@ -153,6 +212,7 @@ try {
   assert((await mini.locator('body').innerText()).includes('20:30'));
   await cashier.goto(`http://127.0.0.1:34122/pickup/${pickupId}`);
   await cashier.getByRole('button', { name: '开始制作', exact: true }).waitFor();
+  await dismissInbox(cashier);
   assert(await cashier.getByRole('button', { name: '开始制作', exact: true }).isEnabled());
   await cashier.getByRole('button', { name: '开始制作', exact: true }).click();
   await cashier.locator('.fulfillment-progress .status-badge').filter({hasText:'制作中'}).waitFor();
@@ -184,6 +244,10 @@ try {
   await recoveryContext.close();
 
   }
+  const customerReservationsResponse = await fetch('http://127.0.0.1:34120/api/v1/reservations', {headers:{Authorization:`Bearer ${config.userToken}`}});
+  assert(customerReservationsResponse.ok);
+  const assignedExample = (await customerReservationsResponse.json()).data.find(row=>row.status==='CONFIRMED' && row.assignedTable);
+  assert(assignedExample, 'A real assigned reservation is available for responsive review');
   for (const [width, locale] of [[320, 'en'], [375, 'vi'], [390, 'zh']]) {
     const context = await browser.newContext({ viewport: { width, height: 844 } });
     const page = await context.newPage(); errorCollector(page);
@@ -191,6 +255,10 @@ try {
     await page.locator('.reservation-card').first().waitFor();
     await noOverflow(page, `miniapp-${width}-${locale}`);
     await capture(page, `11-miniapp-dine-in-${width}-${locale}.png`);
+    await page.goto(miniUrl('reservation', { id: assignedExample.id, width: String(width), locale }));
+    await page.locator('.assigned-table-number').waitFor();
+    await noOverflow(page, `miniapp-assigned-${width}-${locale}`);
+    await capture(page, `21-miniapp-assigned-${width}-${locale}.png`);
     await context.close();
   }
   for (const [width, locale] of [[1366, 'zh'], [1280, 'en'], [768, 'vi'], [375, 'vi']]) {
@@ -206,6 +274,24 @@ try {
     await dismissInbox(page);
     await noOverflow(page, `cashier-${width}-${locale}`);
     await capture(page, `12-cashier-reservations-${width}-${locale}.png`);
+    if (width < 900) {
+      await page.locator('.reservation-list-card').first().click();
+      await page.locator('.reservation-detail-panel').waitFor();
+      await noOverflow(page, `cashier-detail-${width}-${locale}`);
+      await capture(page, `18-reservation-detail-${width}-${locale}.png`);
+    }
+    await page.goto('http://127.0.0.1:34122/tables');
+    const plannedCard = page.locator('.table-card--planned').first();
+    await plannedCard.waitFor();
+    await dismissInbox(page);
+    const overflowingPlans = await page.locator('.table-card--planned').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+2).map(card=>card.dataset.testid));
+    assert.deepEqual(overflowingPlans, [], 'Table reservation hints fit on all screen sizes');
+    await noOverflow(page, `table-plans-${width}-${locale}`);
+    await capture(page, `19-table-plans-${width}-${locale}.png`);
+    await plannedCard.click();
+    await page.locator('[data-testid="table-planned-visits"]').waitFor();
+    await noOverflow(page, `table-plan-detail-${width}-${locale}`);
+    await capture(page, `20-table-plan-detail-${width}-${locale}.png`);
     await context.close();
   }
   assert.deepEqual(report.errors, []);

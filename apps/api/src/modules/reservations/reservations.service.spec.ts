@@ -116,6 +116,36 @@ describe('ReservationsService', () => {
     h.set({ status: 'CONFIRMED' });
     await expect(h.service.cancelUser(2n, 11n)).rejects.toThrow(ConflictException);
   });
+  it('shares the planned table without a QR, a live bill or kitchen work', async () => {
+    const h = setup();
+    const result = await h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'CONFIRM', tableId: '6' });
+    expect(result).toMatchObject({ assignedTable: { id: 6n, tableNo: 'A6', tableName: null } });
+    expect(result.table).toBeNull();
+    expect(JSON.stringify(result, (_key, value) => typeof value === 'bigint' ? value.toString() : value)).not.toContain('qrToken');
+    expect(h.tx.diningTable.findFirst).toHaveBeenCalledWith({ where: { id: 6n, merchantId: 3n, status: 'ACTIVE' } });
+    expect(h.tx.order.create).not.toHaveBeenCalled();
+    expect(h.tables.getOrCreateOpenSession).not.toHaveBeenCalled();
+    await h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'CONFIRM' });
+    expect(h.row().assignedTableId).toBe(6n);
+    expect(h.tx.diningReservation.update).toHaveBeenCalledTimes(1);
+  });
+  it('allows staff to change or clear a confirmed plan without opening a table', async () => {
+    const h = setup(); h.set({ status: 'CONFIRMED' });
+    expect(await h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'ASSIGN_TABLE', tableId: '6' })).toMatchObject({ assignedTable: { tableNo: 'A6' } });
+    expect(await h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'ASSIGN_TABLE' })).toMatchObject({ assignedTable: null });
+    expect(h.tables.getOrCreateOpenSession).not.toHaveBeenCalled();
+    expect(h.tx.order.create).not.toHaveBeenCalled();
+  });
+  it.each(['PENDING', 'SEATED', 'CANCELLED', 'NO_SHOW', 'COMPLETED'])('does not assign a table to %s reservations', async status => {
+    const h = setup(); h.set({ status });
+    await expect(h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'ASSIGN_TABLE', tableId: '6' })).rejects.toThrow(ConflictException);
+    expect(h.tx.diningReservation.update).not.toHaveBeenCalled();
+  });
+  it('does not assign an unavailable or foreign table', async () => {
+    const h = setup(); h.tx.diningTable.findFirst.mockResolvedValue(null);
+    await expect(h.service.merchantAction(3n, 5n, 'DINE_IN', 11n, { action: 'CONFIRM', tableId: '99' })).rejects.toThrow(BadRequestException);
+    expect(h.tx.diningReservation.update).not.toHaveBeenCalled();
+  });
   it('keeps the original time while staff proposes a change', async () => {
     const h = setup(); const original = h.row().scheduledFor;
     const next = new Date(Date.now() + 3600000).toISOString();

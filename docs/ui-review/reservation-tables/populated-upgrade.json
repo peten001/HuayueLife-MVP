@@ -1,0 +1,14 @@
+{
+  "pass": true,
+  "existingReservationsPreserved": 46,
+  "unchangedTableHashes": {
+    "orders": "abaf39c9a76146d1ac559a31d28a9db681a7670b9bae43721d6d51446f0c3fbb",
+    "order_items": "5ee6f4ee74bf434f2a28e78138c127b7a28a71997eb13d48b396fa416ef9bfc5",
+    "table_sessions": "6ac8fb866c95ca45b53f260c5bf0a50c03d41a994fff8a3a7b1f6d5a015782db",
+    "merchants": "363c05bd6d9d9858cba465a819115b244c7d1fe111cdeeb5fa5719afecf4a4c1",
+    "cashier_push_events": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cashier_push_deliveries": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dining_reservations": "284d18397dca0734e3ea2454dcf441028c82fb42e0a6e69e005e857f932942f2"
+  },
+  "newAssignmentDefaultsNull": true
+}
