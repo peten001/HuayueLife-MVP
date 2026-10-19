@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
 const config = JSON.parse(readFileSync('/tmp/huayue-arrival-preview.json', 'utf8'));
-const output = resolve('..', '..', 'docs', 'ui-review', 'arrival-reservations');
+const output = process.env.ARRIVAL_REVIEW_OUTPUT ? resolve(process.env.ARRIVAL_REVIEW_OUTPUT) : resolve('..', '..', 'docs', 'ui-review', 'arrival-reservations');
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.ARRIVAL_BROWSER_CHANNEL || 'chrome', headless: true });
 const layoutsOnly = process.argv.includes('--layouts-only');
@@ -91,7 +91,7 @@ try {
   await merchant.addInitScript(config => {
     localStorage.setItem('yunqiao_cashier_access_token', config.staffToken);
     localStorage.setItem('yunqiao_cashier_staff_session', JSON.stringify(config.staffSession));
-    localStorage.setItem('yunqiao_cashier_locale', 'zh');
+    if (!localStorage.getItem('yunqiao_cashier_locale')) localStorage.setItem('yunqiao_cashier_locale', 'zh');
   }, config);
   const cashier = await merchant.newPage(); errorCollector(cashier);
   await cashier.goto('http://127.0.0.1:34122/reservations');
@@ -111,13 +111,40 @@ try {
   await capture(mini, '09-miniapp-dining-seated.png');
   report.flows.push({ name: 'merchant confirmation, seating and customer continuation', pass: true });
 
-  await cashier.locator(`[data-reservation-key="PICKUP:${pickupId}"]`).click();
-  await cashier.locator('.reservation-detail-panel').getByRole('button', { name: '确认预约', exact: true }).click();
-  await cashier.locator('.reservation-detail-panel .status-badge').filter({ hasText: '预约已确认' }).waitFor();
-  await cashier.getByRole('button', { name: '建议改约时间', exact: true }).click();
-  await cashier.locator('.reservation-modal input[type=datetime-local]').fill(`${tomorrow}T20:30`);
-  await cashier.getByRole('button', { name: '确认操作', exact: true }).click();
-  await cashier.locator('.change-notice').waitFor();
+  assert.equal(await cashier.locator('[data-reservation-key^="PICKUP:"]').count(), 0);
+  assert.equal(await cashier.locator('.reservation-controls select').count(), 0);
+  await cashier.goto(`http://127.0.0.1:34122/pickup/${pickupId}`);
+  await cashier.getByRole('button', { name: '接单', exact: true }).waitFor();
+  await dismissInbox(cashier);
+  await cashier.getByRole('button', { name: '接单', exact: true }).click();
+  await cashier.locator('.fulfillment-progress .status-badge').filter({ hasText: '待备餐' }).waitFor();
+  await cashier.getByRole('button', { name: '调整取餐时间', exact: true }).click();
+  await cashier.locator('.pickup-time-form input[type=datetime-local]').fill(`${tomorrow}T20:30`);
+  await cashier.locator('.pickup-time-form').getByRole('button', { name: '确认操作', exact: true }).click();
+  await cashier.locator('.pickup-time-notice').waitFor();
+  assert(await cashier.getByRole('button', { name: '开始制作', exact: true }).isDisabled());
+  for (const [width, locale] of [[1366, 'zh'], [375, 'vi'], [390, 'en']]) {
+    await cashier.setViewportSize({ width, height: 900 });
+    await cashier.evaluate(locale => localStorage.setItem('yunqiao_cashier_locale', locale), locale);
+    await cashier.goto(`http://127.0.0.1:34122/pickup/${pickupId}`);
+    await cashier.locator('.pickup-time-notice').waitFor();
+    await dismissInbox(cashier);
+    await cashier.locator('.pickup-reservation-controls header button').click();
+    await cashier.locator('.pickup-time-form input').waitFor();
+    assert((await cashier.locator('.fulfillment-facts').innerText()).toLowerCase().includes({zh:'取餐时间',vi:'Giờ lấy món',en:'Pickup time'}[locale].toLowerCase()), 'The requested language is actually rendered');
+    const clippedFacts = await cashier.locator('.fulfillment-facts dd').evaluateAll(elements => elements.filter(element => element.scrollWidth > element.clientWidth + 1).length);
+    assert.equal(clippedFacts, 0, 'Pickup date and time must not be clipped in detail');
+    assert(await cashier.locator('.fulfillment-facts dd').first().evaluate(element => element.clientHeight <= 28), 'Pickup date and time stay on one readable line');
+    await noOverflow(cashier, `pickup-detail-${width}-${locale}`);
+    await capture(cashier, `13-pickup-channel-${width}-${locale}.png`);
+    await cashier.goto('http://127.0.0.1:34122/pickup');
+    await cashier.locator(`[data-testid="pickup-order-${pickupId}"]`).waitFor();
+    const clippedTimes = await cashier.locator('.pickup-order-card--scheduled .fulfillment-order-card__timing span').evaluateAll(elements => elements.filter(element => element.scrollWidth > element.clientWidth + 1).length);
+    assert.equal(clippedTimes, 0, 'Pickup times must remain fully readable');
+    await noOverflow(cashier, `pickup-list-${width}-${locale}`);
+  }
+  await cashier.setViewportSize({width:1366,height:900});
+  await cashier.evaluate(() => localStorage.setItem('yunqiao_cashier_locale', 'zh'));
   await mini.goto(miniUrl('order', { id: pickupId }));
   await mini.locator('.time-change').waitFor();
   await capture(mini, '10-miniapp-time-change-consent.png');
@@ -126,7 +153,10 @@ try {
   assert((await mini.locator('body').innerText()).includes('20:30'));
   await cashier.goto(`http://127.0.0.1:34122/pickup/${pickupId}`);
   await cashier.getByRole('button', { name: '开始制作', exact: true }).waitFor();
-  report.flows.push({ name: 'rescheduling requires consent, then explicit preparation', pass: true });
+  assert(await cashier.getByRole('button', { name: '开始制作', exact: true }).isEnabled());
+  await cashier.getByRole('button', { name: '开始制作', exact: true }).click();
+  await cashier.locator('.fulfillment-progress .status-badge').filter({hasText:'制作中'}).waitFor();
+  report.flows.push({ name: 'pickup handled only in pickup channel, rescheduling requires consent before explicit preparation', pass: true });
 
   const recoveryContext = await browser.newContext({ viewport: { width:390, height:844 } });
   const recovery = await recoveryContext.newPage(); errorCollector(recovery);

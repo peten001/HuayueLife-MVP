@@ -7,6 +7,7 @@ import { cashierConfig } from '@/config';
 import { useMediaQuery, usePollingTask } from '@/composables';
 import {
   cashierWorkspaceEnabled,
+  PICKUP_FILTERS,
   firstEnabledCashierWorkspace,
   formatBusinessHoursRange,
   isWithinBusinessHours,
@@ -145,12 +146,7 @@ const mobileOperationalContext = computed<'pickup' | 'delivery' | undefined>(() 
 });
 const mobileOperationalFilters = computed(() => {
   if (mobileOperationalContext.value === 'pickup') {
-    return [
-      { value: 'ALL', label: t('fulfillment.pickupAll') },
-      { value: 'PENDING_ACCEPTANCE', label: t('fulfillment.pickupPending') },
-      { value: 'PREPARING', label: t('fulfillment.pickupPreparing') },
-      { value: 'READY', label: t('fulfillment.pickupReadyShort') },
-    ];
+    return PICKUP_FILTERS.map(item => ({ value: item.value, label: t(item.key) }));
   }
   if (mobileOperationalContext.value === 'delivery') {
     return [

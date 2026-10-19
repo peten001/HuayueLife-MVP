@@ -21,7 +21,7 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
 </script>
 
 <template>
-  <article class="fulfillment-detail pickup-order-detail">
+  <article class="fulfillment-detail pickup-order-detail" :class="{ 'pickup-order-detail--reservation': order.isReservation }">
     <header class="fulfillment-detail__header">
       <div>
         <h2>{{ t('fulfillment.pickupCode') }} <strong>{{ pickupCode(order) || t('common.notAvailable') }}</strong></h2>
@@ -29,11 +29,12 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
     </header>
     <dl class="fulfillment-facts">
       <div v-if="order.isReservation"><dt>{{ reservationText('pickupTime', locale) }}</dt><dd>{{ formatReservationTime(order.scheduledFor, locale) }}</dd></div>
-      <div><dt>{{ t(compactFacts ? 'fulfillment.estimatedReadyShort' : 'fulfillment.estimatedReady') }}</dt><dd>{{ estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }}</dd></div>
-      <div><dt>{{ t(compactFacts ? 'fulfillment.waitingShort' : 'fulfillment.waiting') }}</dt><dd><WaitDuration compact :dense="compactFacts" :created-at="order.createdAt" /></dd></div>
+      <div v-if="!order.isReservation"><dt>{{ t(compactFacts ? 'fulfillment.estimatedReadyShort' : 'fulfillment.estimatedReady') }}</dt><dd>{{ estimate ? formatVietnamTime(estimate, locale) : t('common.notAvailable') }}</dd></div>
+      <div v-if="!order.isReservation || ['PREPARING', 'READY'].includes(order.status)"><dt>{{ t(compactFacts ? 'fulfillment.waitingShort' : 'fulfillment.waiting') }}</dt><dd><WaitDuration compact :dense="compactFacts" :created-at="order.createdAt" /></dd></div>
       <div><dt>{{ t(compactFacts ? 'fulfillment.orderedShort' : 'order.createdAt') }}</dt><dd>{{ compactFacts ? formatVietnamCompactDateTime(order.createdAt, locale) : formatVietnamDateTime(order.createdAt, locale) }}</dd></div>
     </dl>
     <FulfillmentProgressRail :order="order" show-current-status />
+    <slot name="reservation-controls" />
     <section class="workflow-section fulfillment-customer">
       <header><h3>{{ t('order.customerInfo') }}</h3></header>
       <p><UserRound :size="17" aria-hidden="true" />{{ order.contactName || t('order.customerFallback') }}</p>
@@ -65,3 +66,7 @@ const payableAmount = computed(() => props.order.payableAmountVnd || props.order
     </dl>
   </article>
 </template>
+
+<style scoped>
+.pickup-order-detail.pickup-order-detail--reservation .fulfillment-facts{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}.pickup-order-detail.pickup-order-detail--reservation .fulfillment-facts>div{display:flex;flex-wrap:wrap}.pickup-order-detail.pickup-order-detail--reservation .fulfillment-facts dt{flex:none}.pickup-order-detail.pickup-order-detail--reservation .fulfillment-facts dd{white-space:nowrap;flex-shrink:0;overflow:visible}
+</style>

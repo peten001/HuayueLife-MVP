@@ -29,13 +29,24 @@ describe('reservation store', () => {
       row({ id: '4', kind: 'PICKUP', status: 'CONFIRMED', scheduledFor: null }),
       row({ id: '5', kind: 'PICKUP', status: 'PENDING', scheduledFor: null }),
     ]));
-    const store = useReservationsStore(); await store.load(); expect(store.due.map(item => item.id)).toEqual(['2', '4']);
+    const store = useReservationsStore(); await store.load(); expect(store.pickupDue.map(item => item.id)).toEqual(['2', '4']);
+    expect(store.reservations).toEqual([]);
+    expect(store.pending).toEqual([]);
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
   it('does not let a stale poll overwrite a committed confirmation', async () => {
     const old = deferred<ReturnType<typeof response>>(); mocks.list.mockReturnValueOnce(old.promise).mockResolvedValue(response([row({ status: 'CONFIRMED' })]));
     mocks.update.mockResolvedValue(row({ status: 'CONFIRMED' }));
     const store = useReservationsStore(); const poll = store.load(); await store.act(row(), { action: 'CONFIRM' });
     old.resolve(response([row()])); await poll; expect(store.reservations[0].status).toBe('CONFIRMED');
+  });
+  it('keeps pickup requests out of dining lists and pending badges when IDs overlap', async () => {
+    mocks.list.mockResolvedValue(response([row(), row({ kind: 'PICKUP' }), row({ id: '2', kind: 'PICKUP', status: 'CONFIRMED' })]));
+    const store = useReservationsStore(); await store.load();
+    expect(store.reservations.map(item => item.kind)).toEqual(['DINE_IN']);
+    expect(store.pending).toHaveLength(1);
+    expect(store.pickupDue.map(item => item.id)).toEqual(['2']);
+    expect(mocks.sound).toHaveBeenCalledWith(['1'], 'reservations:3');
   });
   it('discards responses after logout or switching merchants', async () => {
     const old = deferred<ReturnType<typeof response>>(); mocks.list.mockReturnValue(old.promise);

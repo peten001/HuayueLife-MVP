@@ -9,13 +9,12 @@ import { listDiningTables, listOpenTableSessions } from '@/api/tables';
 import type { ReservationAction } from '@/api/reservations';
 import type { DiningTable } from '@/types';
 
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 const rt = (key: ReservationTextKey) => reservationText(key, locale.value);
 const store = useReservationsStore();
 const route = useRoute();
 const router = useRouter();
-const filter = ref<'active' | 'history' | 'all' | 'due'>('active');
-const kind = ref<'all' | 'DINE_IN' | 'PICKUP'>('all');
+const filter = ref<'active' | 'history' | 'all'>('active');
 const selectedKey = ref('');
 const mobileDetail = ref(false);
 function selectRow(row: ArrivalReservation) { selectedKey.value = keyFor(row); mobileDetail.value = true; }
@@ -26,8 +25,6 @@ const ended = (row: ArrivalReservation) => ['COMPLETED', 'CANCELLED', 'NO_SHOW']
 const rows = computed(() => store.reservations.filter(row => {
   if (filter.value === 'active' && ended(row)) return false;
   if (filter.value === 'history' && !ended(row)) return false;
-  if (filter.value === 'due' && !store.due.some(candidate => keyFor(candidate) === keyFor(row))) return false;
-  if (kind.value !== 'all' && row.kind !== kind.value) return false;
   if (date.value && vietnamDateTimeParts(new Date(row.scheduledFor ?? row.createdAt).getTime()).date !== date.value) return false;
   const text = `${row.reservationNo} ${row.contactName ?? ''} ${row.contactPhone ?? ''}`.toLowerCase();
   return !query.value || text.includes(query.value.toLowerCase().trim());
@@ -47,7 +44,10 @@ let returnFocus: HTMLElement | null = null;
 const dialogTitle = computed(() => rt(dialog.value === 'SEAT' ? 'seat' : dialog.value === 'PROPOSE_TIME' ? 'reschedule' : dialog.value === 'NO_SHOW' ? 'noShow' : 'cancel'));
 
 onMounted(() => { void store.load(); });
-watch(() => route.query.view, value => { if (value === 'due') filter.value = 'due'; }, { immediate: true });
+// Keep old preparation-reminder links in the pickup channel.
+watch(() => route.query.view, value => {
+  if (value === 'due') void router.replace({ path: '/pickup', query: { status: 'DUE' } });
+}, { immediate: true });
 watch(() => route.query.reservationId, value => {
   if (typeof value === 'string') { selectedKey.value = `DINE_IN:${value}`; filter.value = 'all'; mobileDetail.value = true; }
 }, { immediate: true });
@@ -113,27 +113,27 @@ function itemName(item: ArrivalReservation['items'][number]) {
 <template>
   <section class="reservations-workspace" :class="{ 'show-reservation-detail': mobileDetail }">
     <button v-if="mobileDetail" class="mobile-reservation-back" @click="mobileDetail = false"><ArrowLeft :size="18" />{{ rt('backToList') }}</button>
-    <header class="reservation-page-heading"><div><h1><CalendarClock :size="26" />{{ rt('merchantTitle') }}</h1><p>{{ rt('merchantHint') }} · {{ rt('vietnamTime') }}</p></div><button class="refresh-button" :disabled="store.loading" @click="store.load"><RefreshCw :size="17" />{{ rt('retry') }}</button></header>
-    <div class="reservation-summary"><button @click="filter = 'active'"><strong>{{ pendingRows }}</strong>{{ rt('PENDING') }}</button><button class="due-summary" @click="filter = 'due'"><strong>{{ store.due.length }}</strong>{{ rt('due') }}</button></div>
-    <div class="reservation-controls"><div class="reservation-filters"><button v-for="option in (['active', 'history', 'all'] as const)" :key="option" :class="{ selected: filter === option }" @click="filter = option">{{ rt(option) }}</button></div><select v-model="kind" :aria-label="rt('chooseWay')"><option value="all">{{ rt('all') }}</option><option value="DINE_IN">{{ rt('dineIn') }}</option><option value="PICKUP">{{ rt('pickup') }}</option></select><input v-model="date" type="date" :aria-label="rt('date')" /><input v-model="query" type="search" :aria-label="rt('contactPhone')" :placeholder="rt('contactPhone')" /></div>
+    <header class="reservation-page-heading"><div><h1><CalendarClock :size="26" />{{ rt('merchantTitle') }}</h1><p>{{ t('reservations.diningHint') }} · {{ rt('vietnamTime') }}</p></div><button class="refresh-button" :disabled="store.loading" @click="store.load"><RefreshCw :size="17" />{{ rt('retry') }}</button></header>
+    <div class="reservation-summary"><button @click="filter = 'active'"><strong>{{ pendingRows }}</strong>{{ rt('PENDING') }}</button></div>
+    <div class="reservation-controls"><div class="reservation-filters"><button v-for="option in (['active', 'history', 'all'] as const)" :key="option" :class="{ selected: filter === option }" @click="filter = option">{{ rt(option) }}</button></div><input v-model="date" type="date" :aria-label="rt('date')" /><input v-model="query" type="search" :aria-label="rt('contactPhone')" :placeholder="rt('contactPhone')" /></div>
     <div v-if="store.error || (!dialog && actionError)" role="alert" class="reservation-error">{{ actionError || store.error }}<button @click="store.load">{{ rt('retry') }}</button></div>
     <div v-if="store.loading && !store.reservations.length" class="reservation-state">{{ rt('loading') }}</div>
     <div v-else-if="!rows.length" class="reservation-state"><CalendarClock :size="36" /><h2>{{ rt('empty') }}</h2></div>
     <div v-else class="reservation-columns">
-      <div class="reservation-list"><button v-for="row in rows" :key="keyFor(row)" :data-reservation-key="keyFor(row)" class="reservation-list-card" :class="{ selected: selected && keyFor(selected) === keyFor(row) }" @click="selectRow(row)"><span class="list-card-heading"><strong>{{ formatReservationTime(row.scheduledFor, locale) }}</strong><span class="status-badge">{{ rt(row.status) }}</span></span><span class="list-card-meta">{{ rt(row.kind === 'DINE_IN' ? 'dineIn' : 'pickup') }}<span v-if="row.guestCount"> · {{ row.guestCount }} {{ rt('people') }}</span></span><span class="list-card-contact">{{ row.contactName }} · {{ row.contactPhone }}<ChevronRight :size="17" /></span><span v-if="row.proposedScheduledFor" class="change-label">{{ rt('changeProposed') }}</span><span v-if="store.due.some(candidate => keyFor(candidate) === keyFor(row))" class="due-label">{{ rt('due') }}</span></button></div>
+      <div class="reservation-list"><button v-for="row in rows" :key="keyFor(row)" :data-reservation-key="keyFor(row)" class="reservation-list-card" :class="{ selected: selected && keyFor(selected) === keyFor(row) }" @click="selectRow(row)"><span class="list-card-heading"><strong>{{ formatReservationTime(row.scheduledFor, locale) }}</strong><span class="status-badge">{{ rt(row.status) }}</span></span><span class="list-card-meta">{{ rt('dineIn') }}<span v-if="row.guestCount"> · {{ row.guestCount }} {{ rt('people') }}</span></span><span class="list-card-contact">{{ row.contactName }} · {{ row.contactPhone }}<ChevronRight :size="17" /></span><span v-if="row.proposedScheduledFor" class="change-label">{{ rt('changeProposed') }}</span></button></div>
       <article v-if="selected" class="reservation-detail-panel">
-        <div class="detail-panel-heading"><div><span class="eyebrow">{{ rt(selected.kind === 'DINE_IN' ? 'dineIn' : 'pickup') }}</span><h2>{{ formatReservationTime(selected.scheduledFor, locale) }}</h2></div><span class="status-badge">{{ rt(selected.status) }}</span></div>
+        <div class="detail-panel-heading"><div><span class="eyebrow">{{ rt('dineIn') }}</span><h2>{{ formatReservationTime(selected.scheduledFor, locale) }}</h2></div><span class="status-badge">{{ rt(selected.status) }}</span></div>
         <div v-if="selected.proposedScheduledFor" class="change-notice"><strong>{{ rt('changeProposed') }} · {{ formatReservationTime(selected.proposedScheduledFor, locale) }}</strong><p>{{ rt('changeHint') }}</p></div>
         <dl class="reservation-facts"><div v-if="selected.guestCount"><dt><Users :size="16" />{{ rt('guests') }}</dt><dd>{{ selected.guestCount }} {{ rt('people') }}</dd></div><div><dt>{{ rt('contactName') }}</dt><dd>{{ selected.contactName }}</dd></div><div><dt>{{ rt('contactPhone') }}</dt><dd><a :href="`tel:${selected.contactPhone}`">{{ selected.contactPhone }}</a></dd></div><div v-if="selected.table"><dt>{{ rt('selectTable') }}</dt><dd>{{ selected.table.tableName || selected.table.tableNo }}</dd></div><div v-if="selected.customerRemark"><dt>{{ rt('remark') }}</dt><dd>{{ selected.customerRemark }}</dd></div><div v-if="selected.cancelReason"><dt>{{ rt('reason') }}</dt><dd>{{ selected.cancelReason }}</dd></div></dl>
-        <div class="preorder-section"><h3>{{ rt('preselected') }}</h3><p v-if="!selected.items.length" class="muted">{{ rt('seatsOnly') }}</p><div v-for="(item, index) in selected.items" :key="index" class="reservation-item"><div><span>{{ itemName(item) }} × {{ item.quantity }}</span><small v-if="item.remark">{{ item.remark }}</small></div><strong>{{ Number(item.subtotalVnd).toLocaleString() }} ₫</strong></div><p v-if="selected.kind === 'DINE_IN' && selected.items.length" class="muted">{{ rt('cookOnArrival') }}</p><div v-if="selected.items.length" class="reservation-total"><span>{{ rt('amount') }}</span><strong>{{ Number(selected.itemAmountVnd).toLocaleString() }} ₫</strong></div></div>
+        <div class="preorder-section"><h3>{{ rt('preselected') }}</h3><p v-if="!selected.items.length" class="muted">{{ rt('seatsOnly') }}</p><div v-for="(item, index) in selected.items" :key="index" class="reservation-item"><div><span>{{ itemName(item) }} × {{ item.quantity }}</span><small v-if="item.remark">{{ item.remark }}</small></div><strong>{{ Number(item.subtotalVnd).toLocaleString() }} ₫</strong></div><p v-if="selected.items.length" class="muted">{{ rt('cookOnArrival') }}</p><div v-if="selected.items.length" class="reservation-total"><span>{{ rt('amount') }}</span><strong>{{ Number(selected.itemAmountVnd).toLocaleString() }} ₫</strong></div></div>
         <p class="reservation-id">{{ selected.reservationNo }}</p>
         <footer class="reservation-actions">
           <button v-if="selected.status === 'PENDING'" class="primary" :disabled="!!store.actionId" @click="confirm(selected)">{{ rt('confirm') }}</button>
-          <button v-if="selected.kind === 'DINE_IN' && selected.status === 'CONFIRMED'" class="primary" :disabled="!!store.actionId || !!selected.proposedScheduledFor" @click="openDialog(selected, 'SEAT')">{{ rt('seat') }}</button>
+          <button v-if="selected.status === 'CONFIRMED'" class="primary" :disabled="!!store.actionId || !!selected.proposedScheduledFor" @click="openDialog(selected, 'SEAT')">{{ rt('seat') }}</button>
           <button v-if="['PENDING', 'CONFIRMED'].includes(selected.status)" :disabled="!!store.actionId" @click="openDialog(selected, 'PROPOSE_TIME')">{{ rt('reschedule') }}</button>
           <button v-if="['PENDING', 'CONFIRMED'].includes(selected.status)" :disabled="!!store.actionId" @click="openDialog(selected, 'CANCEL')">{{ rt(selected.status === 'PENDING' ? 'reject' : 'cancel') }}</button>
-          <button v-if="selected.kind === 'DINE_IN' && selected.status === 'CONFIRMED' && new Date(selected.scheduledFor!).getTime() <= store.serverNow" :disabled="!!store.actionId" @click="openDialog(selected, 'NO_SHOW')">{{ rt('noShow') }}</button>
-          <button v-if="selected.kind === 'PICKUP'" class="primary" @click="router.push(`/pickup/${selected.orderId}`)">{{ rt('viewOrder') }}</button>
+          <button v-if="selected.status === 'CONFIRMED' && new Date(selected.scheduledFor!).getTime() <= store.serverNow" :disabled="!!store.actionId" @click="openDialog(selected, 'NO_SHOW')">{{ rt('noShow') }}</button>
+
           <button v-if="selected.table" class="primary" @click="router.push(`/tables/${selected.table.id}`)">{{ rt('viewTableBill') }}</button>
         </footer>
       </article>

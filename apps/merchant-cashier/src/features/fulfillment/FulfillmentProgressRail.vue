@@ -9,14 +9,17 @@ const props = defineProps<{ order: MerchantOrder; showCurrentStatus?: boolean }>
 const { t } = useI18n();
 const pickupSteps: OrderStatus[] = ['PENDING_ACCEPTANCE', 'PREPARING', 'READY', 'COMPLETED'];
 const deliverySteps: OrderStatus[] = ['PENDING_ACCEPTANCE', 'PREPARING', 'READY', 'DELIVERING', 'COMPLETED'];
-const steps = computed(() => props.order.orderType === 'DELIVERY' ? deliverySteps : pickupSteps);
-const visibleStatus = computed<OrderStatus>(() => props.order.status === 'ACCEPTED'
+const scheduledPickup = computed(() => props.order.orderType === 'PICKUP' && props.order.isReservation);
+const steps = computed(() => props.order.orderType === 'DELIVERY' ? deliverySteps
+  : scheduledPickup.value ? ['PENDING_ACCEPTANCE', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED'] as OrderStatus[] : pickupSteps);
+const visibleStatus = computed<OrderStatus>(() => props.order.status === 'ACCEPTED' && !scheduledPickup.value
   ? 'PREPARING'
   : props.order.status);
 const currentIndex = computed(() => visibleStatus.value === 'CANCELLED' ? -1 : steps.value.indexOf(visibleStatus.value));
 
 function label(status: OrderStatus) {
   if (status === 'PENDING_ACCEPTANCE') return t('order.status.pendingAcceptance');
+  if (status === 'ACCEPTED') return t('fulfillment.pickupConfirmed');
   if (status === 'PREPARING') return t('order.status.preparing');
   if (status === 'READY') return props.order.orderType === 'PICKUP' ? t('fulfillment.pickupReady') : t('fulfillment.deliveryReady');
   if (status === 'DELIVERING') return t('order.status.delivering');
@@ -28,7 +31,7 @@ function label(status: OrderStatus) {
   <section class="workflow-section fulfillment-progress">
     <header>
       <h3>{{ t('fulfillment.progress') }}</h3>
-      <OrderStatusBadge v-if="showCurrentStatus" :status="order.status" />
+      <OrderStatusBadge v-if="showCurrentStatus" :status="order.status" :label="scheduledPickup && order.status === 'ACCEPTED' ? t('fulfillment.pickupConfirmed') : undefined" />
     </header>
     <p v-if="order.status === 'CANCELLED'" class="fulfillment-progress__cancelled">{{ t('order.status.cancelled') }}</p>
     <ol v-else>

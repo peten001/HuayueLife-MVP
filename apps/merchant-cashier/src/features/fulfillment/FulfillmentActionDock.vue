@@ -55,7 +55,8 @@ const icon = computed(() => {
       v-if="action"
       type="button"
       class="primary-action"
-      :disabled="loading || disabled"
+      :disabled="loading || disabled || (action === 'start-preparing' && !!order.proposedScheduledFor)"
+      :title="action === 'start-preparing' && order.proposedScheduledFor ? t('fulfillment.pickupTimePending') : undefined"
       @click="$emit('action', action)"
     >
       <component :is="icon" :size="20" aria-hidden="true" />

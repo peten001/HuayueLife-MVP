@@ -6,9 +6,11 @@ import { useAuthStore } from './auth';
 import { useI18n } from '@/i18n';
 import { useUiStore } from './ui';
 import { useSoundStore } from './sound';
+import { pickupPreparationDue } from '@/domain/pickup-queue';
 
 export const useReservationsStore = defineStore('cashier-reservations', () => {
-  const reservations = ref<ArrivalReservation[]>([]);
+  const arrivals = ref<ArrivalReservation[]>([]);
+  const reservations = computed(() => arrivals.value.filter(row => row.kind === 'DINE_IN'));
   const loading = ref(false);
   const error = ref('');
   const actionId = ref('');
@@ -18,8 +20,8 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
   let merchantSnapshot = '';
   let seen = new Set<string>();
   const pending = computed(() => reservations.value.filter(row => row.status === 'PENDING'));
-  const due = computed(() => reservations.value.filter(row => row.kind === 'PICKUP' && row.status === 'CONFIRMED'
-    && (!row.scheduledFor || new Date(row.scheduledFor).getTime() - 30 * 60_000 <= serverNow.value)));
+  const pickupDue = computed(() => arrivals.value.filter(row => row.kind === 'PICKUP' && row.status === 'CONFIRMED'
+    && pickupPreparationDue(row.scheduledFor, serverNow.value)));
   function load() {
     if (inFlight) return inFlight;
     const auth = useAuthStore();
@@ -30,7 +32,7 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
     const request = listReservations().then(result => {
       if (currentGeneration !== generation || useAuthStore().merchant?.id !== merchantId) return;
       if (merchantSnapshot !== merchantId) { seen = new Set(); merchantSnapshot = merchantId; }
-      reservations.value = result.reservations;
+      arrivals.value = result.reservations;
       serverNow.value = new Date(result.serverTime).getTime();
       error.value = '';
       const pendingDining = result.reservations.filter(row => row.kind === 'DINE_IN' && row.status === 'PENDING');
@@ -59,7 +61,7 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
     try {
       const result = await updateReservation(row.kind, row.id, input);
       if (mutationGeneration !== generation || useAuthStore().merchant?.id !== merchantId) return;
-      reservations.value = reservations.value.map(candidate => candidate.kind === row.kind && candidate.id === row.id ? result : candidate);
+      arrivals.value = arrivals.value.map(candidate => candidate.kind === row.kind && candidate.id === row.id ? result : candidate);
       await load();
       return result;
     } catch (caught) {
@@ -67,6 +69,6 @@ export const useReservationsStore = defineStore('cashier-reservations', () => {
       throw caught;
     } finally { if (mutationGeneration === generation) actionId.value = ''; }
   }
-  function reset() { generation += 1; reservations.value = []; error.value = ''; actionId.value = ''; inFlight = null; loading.value = false; seen.clear(); merchantSnapshot = ''; }
-  return { reservations, loading, error, actionId, serverNow, pending, due, load, act, reset };
+  function reset() { generation += 1; arrivals.value = []; error.value = ''; actionId.value = ''; inFlight = null; loading.value = false; seen.clear(); merchantSnapshot = ''; }
+  return { reservations, loading, error, actionId, serverNow, pending, pickupDue, load, act, reset };
 });

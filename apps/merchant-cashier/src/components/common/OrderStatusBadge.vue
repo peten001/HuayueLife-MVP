@@ -5,6 +5,7 @@ import type { CashierOrderStatus } from './view-models';
 
 const props = defineProps<{
   status?: CashierOrderStatus;
+  label?: string;
 }>();
 
 const { t } = useI18n();
@@ -19,7 +20,7 @@ const label = computed(() => {
     COMPLETED: 'order.status.completed',
     CANCELLED: 'order.status.cancelled',
   };
-  return t(props.status ? keys[props.status] : 'order.status.unknown');
+  return props.label || t(props.status ? keys[props.status] : 'order.status.unknown');
 });
 
 const tone = computed(() => props.status?.toLowerCase().split('_').join('-') ?? 'unknown');
