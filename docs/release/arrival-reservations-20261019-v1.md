@@ -24,4 +24,19 @@
 
 ## 实际结果
 
-待发布完成后登记，当前尚不代表成功上线。服务器凭证目录计划为 `/opt/backups/yunqiao-arrival-reservations-20261019-v1`。
+**服务端及商家端发布成功，小程序等待用户手动上传体验版。**
+
+- 源码提交：`69ce2e7a680ce6a452b172c9b275c432de3348a1`，已同步 GitHub main；完整源码树为 `f3ed77f771408db7fbcb9d173befa77df4b105fd`。
+- 数据库备份：60,883,151 bytes；解压后 757,919,818 bytes；SHA-256 `1c73c9979cbe29f750c9c0f392c4355b1da02110f6624e8ba64ff91b7b60cfe0`，gzip 完整性通过。
+- 唯一迁移 `20261019160000_arrival_reservations` 已完成；旧迁移校验值全部一致，历史订单保持非预约。原服务、KDS、打印设置及配置、图片保持。
+- API 和独立 Linux 原生运行依赖已切换至 `/opt/huayue-api-releases/arrival-reservations-20261019-v1/runtime`。canonical cwd、执行路径和原环境配置保持，PM2 已保存；最终 online、restartCount=14、unstable_restarts=0。
+- 收银、KDS、商家后台分别切换至对应 `/var/www/huayue-*-releases/arrival-reservations-20261019-v1`；服务器和本机外网各核对 68／28／15 个发布文件。分别保留旧哈希资源 283／123／13 个。
+- 已认证只读接口覆盖预约、订单、开桌账、KDS、店铺配置；公共门店详情和菜单通过，新预约能力字段正常。健康 200，未认证预约与厨房接口 401。
+- 三个站点 390／1366 宽度共 6 组真实线上登录页面检查通过，未产生页面错误或水平溢出。该检查不代替登录后的预约联合验收。
+- 未创建生产测试订单、执行收款或更改门店开关；小程序未上传。微信真机、体验版两类预约、锁屏推送和实际打印仍等待人工验收。
+
+服务器凭证目录：`/opt/backups/yunqiao-arrival-reservations-20261019-v1`。`DEPLOYMENT_PASS.json`、`PUBLIC_PASS.json`、`BROWSER_PASS.json` 均为 PASS；脱敏结果见 [production-validation.json](../ui-review/arrival-reservations/production-validation.json)。旧 API、依赖和三个网页目录均已完整归档并逐文件校验，原发布目录保留。
+
+发布检查中有一次自动回退：商家接口已通过，但公共接口检查误选了未公开展示的门店 2，正确返回 404。验收对象改为公开门店 4，并在切换前先核对公共详情／菜单后重发成功。数据库未回滚，没有为修复验收而修改商家可见性或其他业务数据。
+
+用户在微信开发者工具打开 `apps/miniapp`；项目配置已指向 `dist/build/mp-weixin/`，构建连接生产 API。上传体验版后验收打包自取与到店用餐，并在收银／KDS 中完成确认、改约、入座或开始制作的联动。

@@ -1,0 +1,153 @@
+{
+  "deployment": {
+    "status": "PASS",
+    "release": "arrival-reservations-20261019-v1",
+    "sourceCommit": "69ce2e7a680ce6a452b172c9b275c432de3348a1",
+    "sourceTree": "f3ed77f771408db7fbcb9d173befa77df4b105fd",
+    "targets": {
+      "apiDist": "/opt/huayue-api-releases/arrival-reservations-20261019-v1/runtime/apps/api/dist",
+      "dependencies": "/opt/huayue-api-releases/arrival-reservations-20261019-v1/runtime/apps/api/node_modules",
+      "cashier": "/var/www/huayue-cashier-releases/arrival-reservations-20261019-v1",
+      "kds": "/var/www/huayue-kds-releases/arrival-reservations-20261019-v1",
+      "admin": "/var/www/huayue-admin-releases/arrival-reservations-20261019-v1"
+    },
+    "web": {
+      "cashier": {
+        "files": 68,
+        "status": "PASS"
+      },
+      "kds": {
+        "files": 28,
+        "status": "PASS"
+      },
+      "admin": {
+        "files": 15,
+        "status": "PASS"
+      }
+    },
+    "api": {
+      "status": "PASS",
+      "sourceCommit": "69ce2e7a680ce6a452b172c9b275c432de3348a1",
+      "checks": {
+        "authenticatedReadPaths": [
+          "/merchant/reservations",
+          "/merchant/orders",
+          "/merchant/table-sessions/open",
+          "/merchant/kds",
+          "/merchant/profile",
+          "/merchants/4",
+          "/merchants/4/menu"
+        ],
+        "unauthenticatedReservationAndKitchen": 401,
+        "merchantId": "4",
+        "newServiceFields": "PASS"
+      },
+      "processBeforeActivation": {
+        "status": "online",
+        "pid": 1767405,
+        "restartCount": 13,
+        "unstableRestarts": 0,
+        "cwd": "/opt/HuayueLife-MVP/apps/api",
+        "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+      },
+      "process": {
+        "status": "online",
+        "pid": 1767710,
+        "restartCount": 14,
+        "unstableRestarts": 0,
+        "cwd": "/opt/HuayueLife-MVP/apps/api",
+        "exec": "/opt/HuayueLife-MVP/apps/api/dist/src/main.js"
+      },
+      "priorAutomaticRollback": true
+    },
+    "databaseBackup": {
+      "bytes": 60883151,
+      "uncompressedBytes": 757919818,
+      "sha256": "1c73c9979cbe29f750c9c0f392c4355b1da02110f6624e8ba64ff91b7b60cfe0",
+      "gzipIntegrity": "PASS"
+    },
+    "migration": "20261019160000_arrival_reservations",
+    "preservedAssetCounts": {
+      "cashier": 283,
+      "kds": 123,
+      "admin": 13
+    },
+    "configsAndUploadsUnchanged": true,
+    "existingServiceKitchenPrintingSettingsUnchanged": true,
+    "productionTestOrdersCreated": false,
+    "miniappUploaded": false,
+    "timestamp": "2026-10-19T07:57:56Z"
+  },
+  "externalVerification": {
+    "status": "PASS",
+    "release": "arrival-reservations-20261019-v1",
+    "sourceCommit": "69ce2e7a680ce6a452b172c9b275c432de3348a1",
+    "verifiedFiles": {
+      "cashier": 68,
+      "kds": 28,
+      "admin": 15
+    },
+    "publicHealth": 200,
+    "unauthenticatedReservationAndKitchen": 401
+  },
+  "browserVerification": {
+    "status": "PASS",
+    "cases": [
+      {
+        "name": "cashier",
+        "width": 390,
+        "status": 200,
+        "url": "https://cashier.huayueyouxuan.com/login?redirect=/reservations",
+        "title": "YunQiao Cashier",
+        "scroll": 390,
+        "textLength": 76
+      },
+      {
+        "name": "cashier",
+        "width": 1366,
+        "status": 200,
+        "url": "https://cashier.huayueyouxuan.com/login?redirect=/reservations",
+        "title": "YunQiao Cashier",
+        "scroll": 1366,
+        "textLength": 76
+      },
+      {
+        "name": "admin",
+        "width": 390,
+        "status": 200,
+        "url": "https://admin.huayueyouxuan.com/login",
+        "title": "\u4e91\u6865 Life \u5546\u5bb6\u540e\u53f0",
+        "scroll": 390,
+        "textLength": 63
+      },
+      {
+        "name": "admin",
+        "width": 1366,
+        "status": 200,
+        "url": "https://admin.huayueyouxuan.com/login",
+        "title": "\u4e91\u6865 Life \u5546\u5bb6\u540e\u53f0",
+        "scroll": 1366,
+        "textLength": 68
+      },
+      {
+        "name": "kds",
+        "width": 390,
+        "status": 200,
+        "url": "https://kds.huayueyouxuan.com/login?redirect=/",
+        "title": "YunQiao KDS",
+        "scroll": 390,
+        "textLength": 79
+      },
+      {
+        "name": "kds",
+        "width": 1366,
+        "status": 200,
+        "url": "https://kds.huayueyouxuan.com/login?redirect=/",
+        "title": "YunQiao KDS",
+        "scroll": 1366,
+        "textLength": 79
+      }
+    ],
+    "errors": []
+  }
+}

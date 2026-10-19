@@ -1,6 +1,6 @@
 {
   "date": "2026-10-19",
-  "status": "LOCAL_READY",
+  "status": "SERVER_DEPLOYED_WECHAT_PENDING",
   "apiUnitTests": 1344,
   "cashierTests": 668,
   "isolatedMysqlHttpTests": 16,
@@ -18,8 +18,11 @@
   "miniappBuildSha256": "1faaff0347750e982bcd496a1af3fa4c323894dfc04676166aa8f1d51e812ec9",
   "miniappBuildFiles": 223,
   "nativeWeChatAcceptance": "NOT_RUN",
-  "productionDeployed": false,
-  "gitCommitted": false,
-  "gitPushed": false,
-  "wechatUploaded": false
+  "productionDeployed": true,
+  "gitCommitted": true,
+  "gitPushed": true,
+  "wechatUploaded": false,
+  "productionSourceCommit": "69ce2e7a680ce6a452b172c9b275c432de3348a1",
+  "productionRelease": "arrival-reservations-20261019-v1",
+  "productionReport": "production-validation.json"
 }
