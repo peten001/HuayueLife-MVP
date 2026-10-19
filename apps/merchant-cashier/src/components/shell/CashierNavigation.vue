@@ -17,8 +17,8 @@ const { t } = useI18n();
 const reservations = useReservationsStore();
 
 const allItems = [
-  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock, countKey: 'reservations' },
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid, countKey: 'tables' },
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock, countKey: 'reservations' },
   { to: '/pickup', labelKey: 'nav.pickup', icon: ShoppingBag, countKey: 'pickup' },
   { to: '/delivery', labelKey: 'nav.delivery', icon: Bike, countKey: 'delivery' },
   { to: '/orders/history', labelKey: 'nav.history', icon: History, countKey: 'history' },

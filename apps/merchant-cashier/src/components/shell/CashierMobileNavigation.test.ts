@@ -26,8 +26,8 @@ describe('CashierMobileNavigation V5', () => {
     const items = wrapper.findAll('.cashier-mobile-navigation > *');
     expect(items).toHaveLength(5);
     expect(items.slice(0, 4).map((item) => item.text().trim())).toEqual([
-      '到店预约',
       '桌台总览',
+      '到店预约',
       '到店自取',
       '商家配送',
     ]);

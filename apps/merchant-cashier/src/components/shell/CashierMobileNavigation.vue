@@ -25,8 +25,8 @@ defineEmits<{
 
 const { t } = useI18n();
 const allRoutes = [
-  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/tables', labelKey: 'nav.tables', icon: LayoutGrid },
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/pickup', labelKey: 'nav.pickup', icon: ShoppingBag },
   { to: '/delivery', labelKey: 'nav.delivery', icon: Bike },
 ] as const;
