@@ -1,6 +1,6 @@
 # 配送收餐点：腾讯卫星地图与 Google 坐标搜索
 
-2026-10-20，分支 `codex/delivery-satellite-location`。用户已明确授权整合此前改动提交、推送并部署收银静态页；小程序由用户手动上传。实际发布状态见文末记录。
+2026-10-20，分支 `codex/delivery-satellite-location`。此前改动已整合提交并推送 GitHub main，代码 `adc439ed555f5f2111cf85ff0ca3df01557eadb2`；收银静态版本 `delivery-coordinate-20261020-v1` 已上线。小程序已本地重建，由用户手动上传。下方保留早前验证过程，当前发布结果见文末。
 
 ## 顾客与商家行为
 
@@ -60,3 +60,12 @@
 用户暂时无法获取 Google Maps Key，明确取消尚未完成的小程序内嵌 Google 网页选址。已删除新增网页工作区、Google web-view 页面、回填路由和协议代码；未新增 Google SDK、Key 或微信业务域名依赖。结算页唯一地图入口继续打开腾讯卫星选点。商家的 Google 坐标搜索使用官方 Maps URL，无需 API Key。
 
 本轮重新运行 707 项收银测试、9 项选点与结算脚本流程、全项目类型检查及构建、收银 lint，均通过；无新生产业务操作。小程序 canonical 类型检查、`build:mp-weixin`、国际化检查、微信质量 6 项守卫全部通过，已重新打开微信工具，未代为上传。收银上线状态见后续发布报告。
+
+### 发布结果
+
+- 代码 `adc439ed555f5f2111cf85ff0ca3df01557eadb2` 已推送 GitHub main；Google 网页选址试验不在发布源码中。
+- 收银 `delivery-coordinate-20261020-v1` 已上线，服务器和外网各核对 71 个文件，线上手机与电脑配送空状态通过，手机无横向溢出、页面无运行错误。当前无配送订单，未创建生产验收订单；坐标搜索与复制由真实组件测试覆盖，手机地图 App 跳转由用户验证。
+- 原收银完整备份 4,586,830 bytes，SHA-256 `7b36e1a0e4c3b181e261dff6b9c4956c7424f1f3a7dc8ccf212578f3fca7ba9f`，逐文件验证通过，保留 439 个旧哈希资源。API、依赖、KDS、商家后台和配置保持；API 重启计数 15，健康 200。
+- canonical 小程序已重新构建并打开微信工具，未上传。腾讯北江卫星影像覆盖限制仍存在；没有 Google Key 也可使用收银侧的官方 Google Maps 坐标搜索链接。
+
+发布记录：[配送地图整合发布](release/delivery-coordinate-20261020-v1.md)。
