@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import CashierHeader from './CashierHeader.vue';
 
 function mountHeader(overrides: Partial<InstanceType<typeof CashierHeader>['$props']> = {}) {
@@ -27,20 +27,11 @@ function mountHeader(overrides: Partial<InstanceType<typeof CashierHeader>['$pro
   });
 }
 
-function useMobileViewport() {
-  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
-    matches: true,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }));
-}
-
 describe('CashierHeader main table and menu tabs', () => {
   let wrapper: ReturnType<typeof mountHeader> | null = null;
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
-    vi.unstubAllGlobals();
   });
 
   it('replaces the former KPI region with exactly one main tab group', async () => {
@@ -62,97 +53,6 @@ describe('CashierHeader main table and menu tabs', () => {
 
     expect(wrapper.findAll('[data-testid="cashier-primary-tabs"]')).toHaveLength(1);
     expect(wrapper.get('[data-testid="cashier-toolbar-menu-search"]').attributes('style') || '').not.toContain('display: none');
-  });
-
-  it('keeps the mobile table route to three filters and three operational statuses only', async () => {
-    useMobileViewport();
-    wrapper = mountHeader();
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.findAll('[data-testid="cashier-mobile-table-filters"] button')).toHaveLength(3);
-    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('全部15');
-    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('用餐中1');
-    expect(wrapper.get('[data-testid="cashier-mobile-table-filters"]').text()).toContain('空闲13');
-    expect(wrapper.find('[data-testid="cashier-mobile-ordering-toolbar"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
-    const shell = wrapper.get('[data-testid="cashier-topbar"]');
-    expect(shell.attributes('data-mobile-unified-shell')).toBe('true');
-    expect(shell.attributes('data-mobile-header-context')).toBe('tables');
-    expect(shell.get('[data-testid="cashier-mobile-table-filters"]').attributes('data-mobile-business-context')).toBe('tables');
-    expect(shell.findAll('[data-status-role]')).toHaveLength(3);
-    expect(shell.findAll('[data-status-role]').map((item) => item.attributes('data-status-role'))).toEqual([
-      'network',
-      'sound',
-      'printer',
-    ]);
-  });
-
-  it('exposes only the menu search, readonly table context and three device statuses on mobile', async () => {
-    useMobileViewport();
-    wrapper = mountHeader({ activeMainTab: 'MENU', currentTableLabel: 'A03' });
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.findAll('[data-testid="cashier-mobile-ordering-toolbar"]')).toHaveLength(1);
-    expect(wrapper.findAll('[data-testid="cashier-mobile-menu-search"]')).toHaveLength(1);
-    const currentTable = wrapper.get('[data-testid="cashier-mobile-current-table"]');
-    expect(currentTable.element.tagName).toBe('OUTPUT');
-    expect(currentTable.attributes('tabindex')).toBeUndefined();
-    expect(currentTable.find('svg').exists()).toBe(false);
-    expect(currentTable.text()).toContain('桌台 A03');
-    expect(wrapper.find('[data-testid="cashier-mobile-table-filters"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="top-network-status"]').text()).toContain('网络');
-    expect(wrapper.get('[data-testid="top-sound-status"]').text()).toContain('声音');
-    expect(wrapper.get('[data-testid="top-print-status"]').text()).toContain('打印');
-    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
-    expect(wrapper.get('[data-testid="cashier-topbar"]').attributes('data-mobile-header-context')).toBe('menu');
-
-    const styles = readFileSync(resolve(process.cwd(), 'src/styles/cashier-v2-phase1.css'), 'utf8');
-    const mobileV8 = styles.slice(styles.indexOf('/* Mobile unified header shell V8 FINAL:'));
-    expect(mobileV8).toMatch(/\.cashier-header\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 132px;[^}]*padding:\s*4px;[^}]*border-radius:\s*10px;/s);
-    expect(mobileV8).toMatch(/:root\.cashier-standalone \.cashier-header \.cashier-top-status\s*\{[^}]*repeat\(3,\s*44px\);[^}]*width:\s*132px;/s);
-    expect(mobileV8).toMatch(/\.cashier-header \.cashier-mobile-route-filters,[\s\S]*?background:\s*transparent;/s);
-  });
-
-  it('moves delivery filters into one scrolling mobile header group', async () => {
-    useMobileViewport();
-    wrapper = mountHeader({
-      showMainTabs: false,
-      showTableMetrics: false,
-      mobileOperationalContext: 'delivery',
-      activeMobileOperationalFilter: 'READY',
-      mobileOperationalFilters: [
-        { value: 'ALL', label: '全部' },
-        { value: 'PENDING_ACCEPTANCE', label: '待接单' },
-        { value: 'PREPARING', label: '制作中' },
-        { value: 'READY', label: '待配送' },
-        { value: 'DELIVERING', label: '配送中' },
-      ],
-    });
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.findAll('[data-testid="cashier-mobile-delivery-filters"] button')).toHaveLength(5);
-    expect(wrapper.get('[data-testid="mobile-delivery-filter-ready"]').attributes('aria-pressed')).toBe('true');
-    expect(wrapper.find('[data-testid="top-new-orders"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-fullscreen"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="top-clock"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="top-status"]').element.children).toHaveLength(3);
-    expect(wrapper.get('[data-testid="cashier-topbar"]').attributes('data-mobile-header-context')).toBe('delivery');
-
-    await wrapper.get('[data-testid="mobile-delivery-filter-delivering"]').trigger('click');
-    expect(wrapper.emitted('selectMobileOperationalFilter')).toEqual([['DELIVERING']]);
-  });
-
-  it('uses the topbar itself as the single mobile shell without route-specific outer containers', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/shell/CashierHeader.vue'), 'utf8');
-    expect(source.match(/data-testid="cashier-topbar"/g)).toHaveLength(1);
-    expect(source).toContain(':data-mobile-unified-shell="mobileViewport ? \'true\' : undefined"');
-    expect(source).not.toContain('UnifiedMobileHeaderShell');
-    expect(source).not.toContain('MobileHeaderBusinessArea');
-    expect(source).not.toContain('MobileHeaderStatusGrid');
   });
 
   it('keeps the content-level table page free of a duplicate main tab instance', () => {

@@ -136,7 +136,7 @@ try {
         await spaNavigate(page, route);
         await page.waitForURL((url) => url.pathname === route);
         await page.locator('.cashier-shell').waitFor();
-        assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(), 0, `${label} ${route}: formal route must keep the old UI`);
+        assert.equal(await page.getByTestId('mobile-v2-preview-frame').count(), 0, `${label} ${route}: desktop route must use the current desktop workspace`);
         assert.equal(await page.locator('body.cashier-mobile-v2-preview-active').count(), 0, `${label} ${route}: preview body marker leaked to formal UI`);
         assert.equal(await page.locator('html.cashier-mobile-v2-preview-active').count(), 0, `${label} ${route}: preview root marker leaked to formal UI`);
         assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), '#010911', `${label} ${route}: formal theme color changed`);
@@ -148,7 +148,7 @@ try {
       await spaNavigate(page, '/tables');
       await page.waitForURL((url) => url.pathname === '/tables');
       await page.getByTestId('table-grid').waitFor();
-      await page.screenshot({ path: `${outputDirectory}/desktop-${label}-old-tables.png`, animations: 'disabled' });
+      await page.screenshot({ path: `${outputDirectory}/desktop-${label}-current-tables.png`, animations: 'disabled' });
       results.desktop[label] = { viewport, formalRoutes: 'OLD_UI', overflow: 'NONE' };
     } finally {
       await context.close();

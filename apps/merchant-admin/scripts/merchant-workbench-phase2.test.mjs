@@ -121,12 +121,12 @@ try {
 
   await page.goto(base + '/merchant/profile');
   await expect(page.locator('.hours-row')).toHaveCount(7);
-  await page.locator('.mx-settings-nav button').nth(2).click();
+  await page.locator('.mx-settings-nav').getByRole('button', { name: /商家公告/ }).click();
   const notice = page.locator('textarea:visible'); const original = await notice.inputValue();
   await notice.fill(original + '\n本地未保存草稿');
-  await page.locator('.mx-settings-nav button').first().click();
+  await page.locator('.mx-settings-nav').getByRole('button', { name: /营业时间/ }).click();
   await expect(page.locator('.interval b').first()).toBeVisible();
-  await page.locator('.mx-settings-nav button').nth(2).click();
+  await page.locator('.mx-settings-nav').getByRole('button', { name: /商家公告/ }).click();
   await expect(notice).toHaveValue(original + '\n本地未保存草稿');
   await notice.fill(original); await noOverflow('settings unsaved draft');
   pass('settings navigation preserves unsaved fields and overnight time indicators');

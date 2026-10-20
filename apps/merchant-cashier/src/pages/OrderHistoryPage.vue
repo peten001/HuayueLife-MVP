@@ -47,7 +47,7 @@ const sourceOrdersOpen = ref(false);
 let routeSequence = 0;
 const mobileV2Preview = computed(() => route?.meta?.mobileV2Preview === true);
 const mobileV2Presentation = computed(() => (
-  mobileV2Preview.value || (mobileViewport.value && route?.meta?.mobileV2Enabled === true)
+  mobileV2Preview.value || mobileViewport.value
 ));
 
 const dateFilterLabel = computed(() => formatVietnamDateFilter(date.value, locale.value));

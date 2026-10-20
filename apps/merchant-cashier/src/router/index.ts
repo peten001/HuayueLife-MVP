@@ -1,12 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { markTerminalStep, reportTerminalError } from '@/diagnostics/terminal-debug';
+import { getMerchantOrder } from '@/api';
+import { normalizeRouteId, resolveLegacyOrderLocation } from '@/domain/order-location';
 import {
   cashierWorkspaceEnabled,
   firstEnabledCashierWorkspace,
   resolveCashierWorkspaceCapabilities,
 } from '@/domain';
 import { useAuthStore } from '@/stores/auth';
+import { useOrdersStore } from '@/stores/orders';
 import { isKdsTerminal } from '@/config/terminal';
 import {
   canonicalCashierRouteName,
@@ -19,7 +22,7 @@ declare module 'vue-router' {
     requiresAuth?: boolean;
     guestOnly?: boolean;
     mobileV2Preview?: boolean;
-    mobileV2Enabled?: boolean;
+    cashierWorkspace?: boolean;
   }
 }
 
@@ -51,11 +54,26 @@ const router = createRouter({
       meta: { requiresAuth: import.meta.env.DEV },
     },
     {
-      path: '/',
-      component: () => import('@/layouts/CashierShell.vue'),
+      path: '/orders/new',
+      name: 'legacy-new-orders',
+      component: null,
+      children: [],
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/orders/active',
+      name: 'legacy-active-orders',
+      component: null,
+      children: [],
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/',
+      name: 'cashier-workspace',
+      component: () => import('@/layouts/CashierShell.vue'),
+      meta: { requiresAuth: true, cashierWorkspace: true },
       children: [
-        { path: 'reservations', name: 'reservations', component: () => import('@/pages/ReservationsPage.vue'), meta: { mobileV2Enabled: true } },
+        { path: 'reservations', name: 'reservations', component: () => import('@/pages/ReservationsPage.vue') },
         {
           path: '',
           redirect: '/tables',
@@ -64,37 +82,21 @@ const router = createRouter({
           path: 'tables/:tableId?',
           name: 'tables',
           component: () => import('@/pages/TableOverviewPage.vue'),
-          meta: { mobileV2Enabled: true },
         },
         {
           path: 'pickup/:orderId?',
           name: 'pickup-orders',
           component: () => import('@/pages/PickupOrdersPage.vue'),
-          meta: { mobileV2Enabled: true },
         },
         {
           path: 'delivery/:orderId?',
           name: 'delivery-orders',
           component: () => import('@/pages/DeliveryOrdersPage.vue'),
-          meta: { mobileV2Enabled: true },
-        },
-        {
-          path: 'orders/new',
-          name: 'legacy-new-orders',
-          component: () => import('@/pages/LegacyOrderRedirectPage.vue'),
-          props: { collection: 'pending' },
-        },
-        {
-          path: 'orders/active',
-          name: 'legacy-active-orders',
-          component: () => import('@/pages/LegacyOrderRedirectPage.vue'),
-          props: { collection: 'active' },
         },
         {
           path: 'orders/history/:orderId?',
           name: 'order-history',
           component: () => import('@/pages/OrderHistoryPage.vue'),
-          meta: { mobileV2Enabled: true },
         },
         ...mobileV2PreviewRoutes,
       ],
@@ -159,6 +161,17 @@ router.beforeEach(async (to) => {
   }
 
   if (auth.isAuthenticated && !auth.mustChangePassword) {
+    // Resolve old bookmarks before mounting any workspace or navigation.
+    // This also runs when only the bookmark's order query changes.
+    if (to.name === 'legacy-new-orders' || to.name === 'legacy-active-orders') {
+      const orders = useOrdersStore();
+      return resolveLegacyOrderLocation({
+        collection: to.name === 'legacy-new-orders' ? 'pending' : 'active',
+        orderId: normalizeRouteId(to.query.order) || normalizeRouteId(to.query.orderId),
+        loadOrder: getMerchantOrder,
+        loadCollection: () => to.name === 'legacy-new-orders' ? orders.fetchPending() : orders.fetchActive(),
+      });
+    }
     const capabilities = resolveCashierWorkspaceCapabilities(auth.profile, auth.merchant);
     if (!cashierWorkspaceEnabled(canonicalCashierRouteName(to.name), capabilities)) {
       return resolveCashierPresentationLocation(
@@ -173,7 +186,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to, _from, failure) => {
   if (failure) return;
-  if (to.meta.mobileV2Enabled !== true && to.meta.mobileV2Preview !== true) {
+  if (to.meta.cashierWorkspace !== true && to.meta.mobileV2Preview !== true) {
     restoreEarlyMobileV2Shell();
   }
   markTerminalStep('ROUTE_RESOLVED', {

@@ -1,0 +1,327 @@
+{
+  "source": "Browser-only isolated samples; no production and no printer execution",
+  "checks": [
+    "homepage reuses the full production Business Analytics structure and controls",
+    "table create/bill/settings-to-edit dialogs restore scroll and focus, no cashier action",
+    "product detail-to-edit hand-off does not leak a body scroll lock and restores the original row",
+    "desktop product create drawer keeps cancel and save actions visible",
+    "staff create validation, immutable login in edit, and outside-click menu dismissal",
+    "settings navigation preserves unsaved fields and overnight time indicators",
+    "void archive row drills into preserved financial and actor evidence, no deletion",
+    "populated printer directory and job ledger/detail at six widths, execution controls not triggered",
+    "More retains the requested management destinations and provides a working account logout"
+  ],
+  "views": [
+    {
+      "name": "formal analytics custom dates",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": []
+    },
+    {
+      "name": "table create",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "table bill",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "staff invalid create",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "settings unsaved draft",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": []
+    },
+    {
+      "name": "void audit drawer",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 1440",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 1440",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "dialog": [
+        {
+          "width": 880,
+          "scroll": 880,
+          "left": 280,
+          "right": 1160
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 1440",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 1440",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "dialog": [
+        {
+          "width": 860,
+          "scroll": 860,
+          "left": 580,
+          "right": 1440
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 1280",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 1280",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "dialog": [
+        {
+          "width": 880,
+          "scroll": 880,
+          "left": 200,
+          "right": 1080
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 1280",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 1280",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "dialog": [
+        {
+          "width": 860,
+          "scroll": 860,
+          "left": 420,
+          "right": 1280
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 1024",
+      "width": 1024,
+      "scrollWidth": 1024,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 1024",
+      "width": 1024,
+      "scrollWidth": 1024,
+      "dialog": [
+        {
+          "width": 880,
+          "scroll": 880,
+          "left": 72,
+          "right": 952
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 1024",
+      "width": 1024,
+      "scrollWidth": 1024,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 1024",
+      "width": 1024,
+      "scrollWidth": 1024,
+      "dialog": [
+        {
+          "width": 860,
+          "scroll": 860,
+          "left": 164,
+          "right": 1024
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 768",
+      "width": 768,
+      "scrollWidth": 768,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 768",
+      "width": 768,
+      "scrollWidth": 768,
+      "dialog": [
+        {
+          "width": 720,
+          "scroll": 720,
+          "left": 24,
+          "right": 744
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 768",
+      "width": 768,
+      "scrollWidth": 768,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 768",
+      "width": 768,
+      "scrollWidth": 768,
+      "dialog": [
+        {
+          "width": 768,
+          "scroll": 768,
+          "left": 0,
+          "right": 768
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 390",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 390",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 390",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 390",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": [
+        {
+          "width": 390,
+          "scroll": 390,
+          "left": 0,
+          "right": 390
+        }
+      ]
+    },
+    {
+      "name": "populated printer directory 320",
+      "width": 320,
+      "scrollWidth": 320,
+      "dialog": []
+    },
+    {
+      "name": "printer instructions 320",
+      "width": 320,
+      "scrollWidth": 320,
+      "dialog": [
+        {
+          "width": 320,
+          "scroll": 320,
+          "left": 0,
+          "right": 320
+        }
+      ]
+    },
+    {
+      "name": "populated printing ledger 320",
+      "width": 320,
+      "scrollWidth": 320,
+      "dialog": []
+    },
+    {
+      "name": "print failure detail 320",
+      "width": 320,
+      "scrollWidth": 320,
+      "dialog": [
+        {
+          "width": 320,
+          "scroll": 320,
+          "left": 0,
+          "right": 320
+        }
+      ]
+    },
+    {
+      "name": "minimal mobile more page 768",
+      "width": 768,
+      "scrollWidth": 768,
+      "dialog": []
+    },
+    {
+      "name": "minimal mobile more page 390",
+      "width": 390,
+      "scrollWidth": 390,
+      "dialog": []
+    },
+    {
+      "name": "minimal mobile more page 320",
+      "width": 320,
+      "scrollWidth": 320,
+      "dialog": []
+    }
+  ],
+  "errors": []
+}

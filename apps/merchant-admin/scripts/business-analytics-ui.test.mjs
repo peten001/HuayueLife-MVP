@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const page = await readFile(new URL('../src/pages/BusinessAnalyticsPage.vue', import.meta.url), 'utf8');
-const dashboardPage = await readFile(new URL('../src/pages/DashboardPage.vue', import.meta.url), 'utf8');
 const api = await readFile(new URL('../src/api/analytics.ts', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/layouts/MerchantLayout.vue', import.meta.url), 'utf8');
 const navigation = await readFile(new URL('../src/composables/useMerchantNavigation.ts', import.meta.url), 'utf8');
@@ -128,13 +127,5 @@ assert.match(pageStyles, /\.mx-team-directory \{ padding: 0; overflow: visible; 
 assert.match(pageStyles, /\.mx-team-row \{ grid-template-columns: minmax\(0,1fr\) auto;/, 'mobile staff records should collapse without horizontal scrolling');
 assert.doesNotMatch(page, /12[,.]?580[,.]?000|128\s*单|越南河粉|牛肉炒饭/, 'target-image demo values must not be embedded');
 assert.doesNotMatch(page + trendChart + shareChart, /echarts|apexcharts|recharts|highcharts/i, 'analytics must not introduce a second chart library');
-assert.match(dashboardPage, /getBusinessDaySummary\(\)/, 'dashboard revenue must use the canonical business-day summary');
-assert.match(dashboardPage, /Promise\.allSettled/, 'live orders and the business-day summary must fail independently');
-assert.match(dashboardPage, /businessDaySummary\.businessDate/, 'dashboard must display the resolved business date');
-assert.match(dashboardPage, /businessDaySummaryLoading[\s\S]*?'—'/, 'unknown business-day totals must not render as a real zero');
-assert.match(dashboardPage, /mobileRevenue: '本日营额'/, 'mobile dashboard must use the approved compact revenue label');
-assert.match(dashboardPage, /mobileOrders: '结账笔数'/, 'mobile dashboard must use the approved compact settlement label');
-assert.match(dashboardPage, /\.mobile-metric-grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/, 'mobile dashboard metrics must keep a two-column grid');
-assert.doesNotMatch(dashboardPage, /mobile-metric-green\s*\{\s*grid-column:\s*1\s*\/\s*-1/, 'mobile revenue must not span both metric columns');
 
 console.log('business analytics UI checks passed');

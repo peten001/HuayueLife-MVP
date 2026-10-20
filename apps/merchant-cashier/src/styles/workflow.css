@@ -442,7 +442,6 @@
     --cashier-fulfillment-action-dock-height: calc(70px + max(8px, env(safe-area-inset-bottom, 0px)));
   }
   .cashier-shell--workflow { grid-template-columns: minmax(0, 1fr); }
-  .cashier-shell--workflow .cashier-header { grid-column: 1; }
   .cashier-shell--workflow .cashier-shell__route--workflow { grid-column: 1; grid-row: 2; }
   .workflow-page-header { min-height: 64px; padding: 8px 12px; }
   .workflow-page-header p { display: none; }

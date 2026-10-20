@@ -87,17 +87,20 @@ describe('isolated Mobile V2 architecture', () => {
     expect(frame).not.toContain('MobileV2Navigation');
   });
 
-  it('enables Mobile V2 only for canonical phone routes while retaining the old desktop shell', () => {
+  it('uses the current phone shell by default while retaining the current desktop presentation', () => {
     const index = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
     const router = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8');
     const shell = readFileSync(resolve(process.cwd(), 'src/layouts/CashierShell.vue'), 'utf8');
     expect(index).toContain('const mobileV2LogicalViewportWidth = 390;');
     expect(index).toContain('`width=${mobileV2LogicalViewportWidth}, user-scalable=no');
     expect(index).not.toContain("'width=device-width, initial-scale=1, maximum-scale=1");
-    expect(router.match(/meta: \{ mobileV2Enabled: true \}/g)).toHaveLength(5);
-    expect(index).toContain('tables|reservations|pickup|delivery|orders\\/history');
+    expect(router).not.toContain('mobileV2Enabled');
+    expect(router).toContain('cashierWorkspace: true');
+    expect(index).toContain("document.documentElement.dataset.terminalKind !== 'kds'");
+    expect(index).not.toContain('tables|reservations|pickup|delivery');
     expect(shell).toContain("useMediaQuery('(max-width: 899px)')");
-    expect(shell).toContain('mobileLayout.value && route.meta.mobileV2Enabled === true');
+    expect(shell).toContain('mobileV2Preview.value || mobileLayout.value');
+    expect(shell).not.toContain('CashierMobileNavigation');
     expect(shell).toContain(':mobile="mobileV2Presentation"');
     expect(shell).toContain('<template v-else>');
   });

@@ -194,7 +194,6 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
 }
-:global(.merchant-sidebar + .content) { background: #f9f9f9; }
 .printing-center { margin-top: -14px; }
 .printing-center__title-block h1 { font-size: 34px !important; line-height: 1.12 !important; }
 .printing-center__title-block p { font-size: 17px !important; }

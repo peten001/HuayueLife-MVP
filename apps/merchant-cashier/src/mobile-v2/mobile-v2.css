@@ -256,24 +256,6 @@ body.cashier-mobile-v2-preview-active #app {
 }
 .mobile-v2-filter-strip button > b { margin-left: 5px; color: inherit; font-variant-numeric: tabular-nums; }
 .mobile-v2-filter-strip button.is-active { border-color: #a9c3af; color: var(--mobile-v2-green-strong); background: var(--mobile-v2-green-soft); }
-.mobile-v2-menu-search-target {
-  min-width: 0;
-  flex: 1;
-}
-.mobile-v2-menu-search-target--desktop { display: none !important; }
-.cashier-shell--mobile-v2-preview .mobile-v2-menu-search-target .table-ordering-search {
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid var(--mobile-v2-line);
-  border-radius: 11px;
-  color: var(--mobile-v2-muted);
-  background: #fff;
-}
-.cashier-shell--mobile-v2-preview .mobile-v2-menu-search-target .table-ordering-search input {
-  min-height: 42px;
-  color: var(--mobile-v2-text);
-  font-size: 16px;
-}
 
 .mobile-v2-drawer {
   position: fixed;
@@ -1153,8 +1135,6 @@ body.cashier-mobile-v2-preview-active #app {
 .cashier-shell--mobile-v2-preview .table-card { min-height: 101px; padding: 10px; }
 
 @media (min-width: 900px) {
-  .mobile-v2-menu-search-target--mobile { display: none !important; }
-  .mobile-v2-menu-search-target--desktop { display: block !important; }
 }
 
 @supports (height: 100svh) {

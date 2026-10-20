@@ -30,12 +30,26 @@ describe('cashier order routes', () => {
     expect(router.resolve({ name: 'order-history' }).fullPath).toBe('/orders/history');
   });
 
-  it('marks the four canonical cashier workspaces for phone-only Mobile V2 presentation', () => {
-    expect(router.resolve({ name: 'tables' }).meta.mobileV2Enabled).toBe(true);
-    expect(router.resolve({ name: 'pickup-orders' }).meta.mobileV2Enabled).toBe(true);
-    expect(router.resolve({ name: 'delivery-orders' }).meta.mobileV2Enabled).toBe(true);
-    expect(router.resolve({ name: 'order-history' }).meta.mobileV2Enabled).toBe(true);
-    expect(router.resolve({ name: 'legacy-new-orders' }).meta.mobileV2Enabled).not.toBe(true);
+  it('inherits the current shell for all existing and future cashier workspaces without opt-in flags', () => {
+    for (const name of ['tables', 'reservations', 'pickup-orders', 'delivery-orders', 'order-history']) {
+      expect(router.resolve({ name }).meta.cashierWorkspace).toBe(true);
+    }
+    const remove = router.addRoute('cashier-workspace', {
+      path: 'future-workspace', name: 'future-workspace', component: { template: '<div />' },
+    });
+    try {
+      expect(router.resolve('/future-workspace').meta.cashierWorkspace).toBe(true);
+    } finally { remove(); }
+    expect(router.resolve({ name: 'login' }).meta.cashierWorkspace).not.toBe(true);
+  });
+
+  it('keeps every authenticated business route inside the current workspace', () => {
+    const standalone = new Set(['login', 'change-password', 'kds', 'legacy-new-orders', 'legacy-active-orders']);
+    for (const record of router.getRoutes()) {
+      if (!record.name || standalone.has(String(record.name))) continue;
+      const route = router.resolve({ name: record.name });
+      if (route.meta.requiresAuth) expect(route.meta.cashierWorkspace, route.path).toBe(true);
+    }
   });
 
   it('keeps development-only Mobile V2 routes isolated from canonical routes', () => {
@@ -52,8 +66,14 @@ describe('cashier order routes', () => {
     expect(router.resolve({ name: 'pickup-orders' }).fullPath).toBe('/pickup');
   });
 
-  it('uses executable legacy routes instead of static redirects', () => {
+  it('resolves old bookmarks before mounting any cashier page or shell', () => {
     expect(router.resolve('/orders/new?order=new-1').name).toBe('legacy-new-orders');
     expect(router.resolve('/orders/active?order=delivery-1').name).toBe('legacy-active-orders');
+    for (const path of ['/orders/new', '/orders/active']) {
+      const route = router.resolve(path);
+      expect(route.meta.requiresAuth).toBe(true);
+      expect(route.matched).toHaveLength(1);
+      expect(route.matched[0].components?.default).toBeFalsy();
+    }
   });
 });

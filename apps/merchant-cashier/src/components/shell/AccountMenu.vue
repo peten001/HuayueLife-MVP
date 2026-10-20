@@ -8,7 +8,6 @@ const props = defineProps<{
   merchantName?: string;
   role?: string;
   loggingOut?: boolean;
-  mobileNavigation?: boolean;
   pushSettingsAvailable?: boolean;
 }>();
 
@@ -110,7 +109,6 @@ onBeforeUnmount(() => {
         <strong data-testid="account-role-label">{{ roleLabel }}</strong>
         <small data-testid="account-role-account-label">{{ roleAccountLabel }}</small>
       </span>
-      <span v-if="mobileNavigation" class="account-menu__mobile-label">{{ t('nav.my') }}</span>
       <ChevronDown :size="16" aria-hidden="true" />
     </button>
 

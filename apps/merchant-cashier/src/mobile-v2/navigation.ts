@@ -13,7 +13,7 @@ export const mobileV2PreviewRouteNames = {
   history: 'mobile-v2-preview-history',
 } as const;
 
-export type CashierPresentationWorkspace = keyof typeof mobileV2PreviewRouteNames;
+export type CashierPresentationWorkspace = keyof typeof mobileV2PreviewRouteNames | 'general';
 
 const canonicalRouteNameByPreviewRoute = new Map<RouteRecordNameGeneric, string>([
   [mobileV2PreviewRouteNames.tables, 'tables'],

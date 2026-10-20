@@ -1,0 +1,822 @@
+{
+  "source": "Local isolated UI samples, not production or physical-device acceptance",
+  "views": [
+    {
+      "width": 1440,
+      "path": "/dashboard",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/orders",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/settlements",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/orders/o0",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/menu/products",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/tables",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/merchant/profile",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/staff",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/printing-center/printers",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/printing-center/rules",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/printing-center/templates",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/printing-center/jobs",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/more",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/menu/products?tab=categories",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/merchant/profile/change-password",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "path": "/printing-center/android-terminal",
+      "viewport": 1440,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/dashboard",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/orders",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/settlements",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/orders/o0",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/menu/products",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/tables",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/merchant/profile",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/staff",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/printing-center/printers",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/printing-center/rules",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/printing-center/templates",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/printing-center/jobs",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/more",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/menu/products?tab=categories",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/merchant/profile/change-password",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1280,
+      "path": "/printing-center/android-terminal",
+      "viewport": 1280,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/dashboard",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/orders",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/settlements",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/orders/o0",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/menu/products",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/tables",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/merchant/profile",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/staff",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/printing-center/printers",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/printing-center/rules",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/printing-center/templates",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/printing-center/jobs",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/more",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/menu/products?tab=categories",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/merchant/profile/change-password",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "path": "/printing-center/android-terminal",
+      "viewport": 1024,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/dashboard",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/orders",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/settlements",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/orders/o0",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/menu/products",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/tables",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/merchant/profile",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/staff",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/printing-center/printers",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/printing-center/rules",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/printing-center/templates",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/printing-center/jobs",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/more",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/menu/products?tab=categories",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/merchant/profile/change-password",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "path": "/printing-center/android-terminal",
+      "viewport": 768,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/dashboard",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/orders",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/settlements",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/orders/o0",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/menu/products",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/tables",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/merchant/profile",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/staff",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/printing-center/printers",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/printing-center/rules",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/printing-center/templates",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/printing-center/jobs",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/more",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/menu/products?tab=categories",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/merchant/profile/change-password",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "path": "/printing-center/android-terminal",
+      "viewport": 390,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/dashboard",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/orders",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/settlements",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/orders/o0",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/menu/products",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/tables",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/merchant/profile",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/staff",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/printing-center/printers",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/printing-center/rules",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/printing-center/templates",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/printing-center/jobs",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/more",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/menu/products?tab=categories",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/merchant/profile/change-password",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "path": "/printing-center/android-terminal",
+      "viewport": 320,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/dashboard",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/orders",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/settlements",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/orders/o0",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/menu/products",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/tables",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/merchant/profile",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/staff",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/printing-center/printers",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/printing-center/rules",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/printing-center/templates",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/printing-center/jobs",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/more",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/menu/products?tab=categories",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/merchant/profile/change-password",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "path": "/printing-center/android-terminal",
+      "viewport": 375,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/dashboard",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/orders",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/settlements",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/settlements/order%3Ao0",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/orders/o0",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/menu/products",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/tables",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/merchant/profile",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/staff",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/printing-center/printers",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/printing-center/rules",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/printing-center/templates",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/printing-center/jobs",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/more",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/menu/products?tab=categories",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/merchant/profile/change-password",
+      "viewport": 414,
+      "overflow": []
+    },
+    {
+      "width": 414,
+      "path": "/printing-center/android-terminal",
+      "viewport": 414,
+      "overflow": []
+    }
+  ],
+  "errors": []
+}

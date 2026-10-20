@@ -56,6 +56,7 @@ const title = computed(() => t({
   pickup: 'nav.pickup',
   delivery: 'nav.delivery',
   history: 'nav.history',
+  general: 'cashierV2.mainTabs',
 }[props.workspace]));
 const networkStatus = computed(() => {
   if (!props.online) return { tone: 'danger', label: t('network.offline'), icon: WifiOff } as const;
@@ -121,18 +122,6 @@ const tableFilters = computed(() => [
     </div>
 
     <div v-if="workspace === 'tables'" class="mobile-v2-header__controls">
-      <div
-        v-show="activeMainTab === 'MENU'"
-        id="cashier-mobile-menu-search"
-        class="mobile-v2-menu-search-target mobile-v2-menu-search-target--mobile"
-        data-testid="cashier-mobile-menu-search"
-      />
-      <div
-        v-show="activeMainTab === 'MENU'"
-        id="cashier-toolbar-menu-search"
-        class="mobile-v2-menu-search-target mobile-v2-menu-search-target--desktop"
-        data-testid="cashier-toolbar-menu-search"
-      />
       <div v-if="activeMainTab === 'TABLES'" class="mobile-v2-table-filter-row">
         <div class="mobile-v2-filter-strip" :aria-label="t('stats.title')">
           <button v-for="item in tableFilters" :key="item.value" type="button" :class="{ 'is-active': activeTableFilter === item.value }" :aria-pressed="activeTableFilter === item.value" @click="emit('selectTableFilter', item.value)">

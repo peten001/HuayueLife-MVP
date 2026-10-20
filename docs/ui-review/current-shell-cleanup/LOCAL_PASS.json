@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "source": "isolated local UI fixtures and guarded loopback reservation API",
+  "cashierTests": 722,
+  "adminPackageTests": "PASS",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "cashierLint": "PASS",
+  "adminScopedLint": "PASS",
+  "independentKdsBuild": "PASS",
+  "canonicalMiniappArtifactsUnchanged": true,
+  "shellEntryCases": {
+    "cashier": 56,
+    "merchant": 30,
+    "pageErrors": 0
+  },
+  "cashierMobileWidths": [
+    375,
+    390,
+    430
+  ],
+  "cashierDesktopWidths": [
+    1024,
+    1280,
+    1440
+  ],
+  "merchantPageWidthCases": 136,
+  "merchantLanguageCases": 64,
+  "merchantDesktopNavigationCases": 54,
+  "merchantInteractionFlows": 19,
+  "merchantPhase2LayoutCases": 33,
+  "reservationFlows": 5,
+  "reservationMobileCases": 7,
+  "reservationDesktopCases": 3,
+  "externalMapTilesIsolated": true,
+  "webkit": "not run: browser runtime unavailable",
+  "physicalIphone": "not run",
+  "apiSourceChanged": false,
+  "miniappSourceChanged": false,
+  "productionDataUsed": false,
+  "deployed": false,
+  "designDetector": {
+    "reportedP0": 1,
+    "verifiedFalsePositive": "Vue huayueLogo binding resolves to imported PNG; file exists and screenshot renders correctly"
+  }
+}

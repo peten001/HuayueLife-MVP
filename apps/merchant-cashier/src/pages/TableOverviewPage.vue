@@ -66,7 +66,7 @@ const mobileV2PreviewRoute = computed(() => import.meta.env.DEV && route.meta.mo
 const mobileV2Presentation = computed(() => (
   props.mobileV2Presentation
   || mobileV2PreviewRoute.value
-  || (isMobile.value && route.meta.mobileV2Enabled === true)
+  || isMobile.value
 ));
 const { online, apiReachable } = storeToRefs(networkStore);
 const { tableCards, selectedTableId, selectedTable, selectedSessionDetail, loading, detailLoading, checkingOut, errorKey } = storeToRefs(tablesStore);

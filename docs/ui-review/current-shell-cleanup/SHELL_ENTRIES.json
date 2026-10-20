@@ -1,0 +1,466 @@
+{
+  "source": "Loopback isolated fixtures only",
+  "cashier": [
+    {
+      "width": 320,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 320,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 320,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 320,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 320,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 320,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 320,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 320,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 390,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 390,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 390,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 390,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 390,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 390,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 390,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 390,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 768,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 768,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 768,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 768,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 768,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 768,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 768,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 768,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 899,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 899,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 899,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 899,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 899,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 899,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 899,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 899,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 900,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 900,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 900,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 900,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 900,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 900,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 900,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 900,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 1280,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 1280,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 1280,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 1280,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 1280,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 1280,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 1280,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 1280,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    },
+    {
+      "width": 1440,
+      "requested": "/tables",
+      "destination": "/tables"
+    },
+    {
+      "width": 1440,
+      "requested": "/reservations",
+      "destination": "/reservations"
+    },
+    {
+      "width": 1440,
+      "requested": "/pickup",
+      "destination": "/pickup"
+    },
+    {
+      "width": 1440,
+      "requested": "/delivery",
+      "destination": "/delivery"
+    },
+    {
+      "width": 1440,
+      "requested": "/orders/history",
+      "destination": "/orders/history"
+    },
+    {
+      "width": 1440,
+      "requested": "/orders/new",
+      "destination": "/pickup/demo-order-1004"
+    },
+    {
+      "width": 1440,
+      "requested": "/orders/active",
+      "destination": "/tables/demo-table-1"
+    },
+    {
+      "width": 1440,
+      "requested": "new unregistered workspace",
+      "destination": "/shell-inheritance-test"
+    }
+  ],
+  "merchant": [
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/printers",
+      "destination": "/printing-center/printers"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/business-settings",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/profile/change-password",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/reports",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/menu/categories",
+      "destination": "/menu/products"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/settings/android-terminal",
+      "destination": "/printing-center/android-terminal"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": false,
+      "requested": "/forbidden",
+      "destination": "/forbidden"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/printers",
+      "destination": "/printing-center/printers"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/business-settings",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/profile/change-password",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/reports",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/menu/categories",
+      "destination": "/menu/products"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/settings/android-terminal",
+      "destination": "/printing-center/android-terminal"
+    },
+    {
+      "width": 390,
+      "legacyPrintingEnabled": true,
+      "requested": "/forbidden",
+      "destination": "/forbidden"
+    },
+    {
+      "width": 390,
+      "role": "STAFF",
+      "permissionDeniedInCurrentShell": true
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/printers",
+      "destination": "/printing-center/printers"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/business-settings",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/merchant/profile/change-password",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/reports",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/menu/categories",
+      "destination": "/menu/products"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/settings/android-terminal",
+      "destination": "/printing-center/android-terminal"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": false,
+      "requested": "/forbidden",
+      "destination": "/forbidden"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/printers",
+      "destination": "/printing-center/printers"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/business-settings",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/merchant/profile/change-password",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/reports",
+      "destination": "/merchant/profile"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/menu/categories",
+      "destination": "/menu/products"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/settings/android-terminal",
+      "destination": "/printing-center/android-terminal"
+    },
+    {
+      "width": 1280,
+      "legacyPrintingEnabled": true,
+      "requested": "/forbidden",
+      "destination": "/forbidden"
+    },
+    {
+      "width": 1280,
+      "role": "STAFF",
+      "permissionDeniedInCurrentShell": true
+    }
+  ],
+  "errors": []
+}

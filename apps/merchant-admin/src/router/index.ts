@@ -4,7 +4,6 @@ import MerchantLayout from '@/layouts/MerchantLayout.vue';
 import PlatformLayout from '@/layouts/PlatformLayout.vue';
 import LoginPage from '@/pages/LoginPage.vue';
 import PlatformLoginPage from '@/pages/PlatformLoginPage.vue';
-import MerchantProfilePage from '@/pages/MerchantProfilePage.vue';
 import BusinessSettingsPage from '@/pages/BusinessSettingsPage.vue';
 import ProductsPage from '@/pages/ProductsPage.vue';
 import TablesPage from '@/pages/TablesPage.vue';
@@ -44,7 +43,6 @@ import {
   canAccessMerchantFeature,
   type MerchantFeature,
 } from '@/utils/merchant-capabilities';
-import { resolvePrintingFeatureState } from '@/utils/printing-feature-state';
 import { resolveCachedMerchantSession } from './merchant-session-cache';
 
 type RouteRole = MerchantStaffRole;
@@ -56,7 +54,6 @@ interface RouteMeta {
   area?: RouteArea;
   roles?: RouteRole[];
   feature?: MerchantFeature;
-  legacyPrintingRoute?: boolean;
 }
 
 async function resolveMerchantSession() {
@@ -110,13 +107,13 @@ const router = createRouter({
       component: PlatformLoginPage,
       meta: { guest: true, area: 'platform' },
     },
-    { path: '/forbidden', component: ForbiddenPage, meta: { auth: true, area: 'merchant' } },
     {
       path: '/',
       component: MerchantLayout,
       meta: { auth: true, area: 'merchant' },
       children: [
         { path: '', redirect: '/dashboard' },
+        { path: 'forbidden', component: ForbiddenPage },
         {
           path: 'dashboard',
           component: MerchantHomePage,
@@ -176,8 +173,8 @@ const router = createRouter({
         },
         {
           path: 'merchant/printers',
-          component: MerchantProfilePage,
-          meta: { roles: ['OWNER', 'MANAGER'], legacyPrintingRoute: true },
+          redirect: '/printing-center/printers',
+          meta: { roles: ['OWNER', 'MANAGER'] },
         },
         {
           path: 'printing-center',
@@ -293,15 +290,6 @@ router.beforeEach(async (to) => {
       if (!role) return '/login';
       if (meta.roles?.length && !meta.roles.includes(role)) {
         return '/forbidden';
-      }
-      if (meta.legacyPrintingRoute) {
-        const state = await resolvePrintingFeatureState();
-        return state.legacyPrintingEnabled
-          ? '/merchant/profile'
-          : {
-              path: '/printing-center/printers',
-              query: { from: 'legacy' },
-            };
       }
       if (meta.feature && !canAccessMerchantFeature(session?.merchant, meta.feature)) {
         window.alert('当前商家未开通此功能');

@@ -107,7 +107,7 @@ const visiblePageProducts = computed(() => {
   const start = (currentPage.value - 1) * DESKTOP_PAGE_SIZE;
   return filteredProducts.value.slice(start, start + DESKTOP_PAGE_SIZE);
 });
-const mobileV2Menu = computed(() => Boolean(props.mobileV2Presentation && props.embedded));
+const mobileV2Menu = computed(() => Boolean((props.mobileV2Presentation || mobileOrderingLayout.value) && props.embedded));
 const mobileTableContext = computed(() => [props.tableLabel, props.tableSecondaryLabel]
   .map((value) => value?.trim())
   .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
@@ -523,7 +523,7 @@ function setProductCardRef(element: Element | null, index: number) {
             <span>{{ t('ordering.tableContext', { table: tableLabel }) }}</span>
             <h2>{{ t('ordering.title') }}</h2>
           </div>
-          <Teleport v-if="embedded && mobileOrderingLayout" to="#cashier-mobile-menu-search">
+          <Teleport to="#cashier-toolbar-menu-search" :disabled="!embedded">
             <label class="table-ordering-search" data-testid="table-ordering-search">
               <Search :size="18" aria-hidden="true" />
               <input
@@ -541,42 +541,6 @@ function setProductCardRef(element: Element | null, index: number) {
               <kbd>{{ t('ordering.searchShortcut') }}</kbd>
             </label>
           </Teleport>
-          <Teleport v-else to="#cashier-toolbar-menu-search" :disabled="!embedded">
-            <label class="table-ordering-search" data-testid="table-ordering-search">
-              <Search :size="18" aria-hidden="true" />
-              <input
-                ref="searchInput"
-                v-model="query"
-                type="search"
-                :placeholder="t('ordering.searchPlaceholder')"
-                :aria-label="t('ordering.searchLabel')"
-                :aria-activedescendant="activeResultIndex >= 0 ? `ordering-product-${visiblePageProducts[activeResultIndex]?.id}` : undefined"
-                autocomplete="off"
-                @focus="startNextSearch"
-                @click="startNextSearch"
-                @keydown.stop="onKeydown"
-              />
-              <kbd>{{ t('ordering.searchShortcut') }}</kbd>
-            </label>
-          </Teleport>
-          <nav
-            v-if="embedded && mobileOrderingLayout"
-            class="table-ordering-category-strip"
-            :aria-label="t('ordering.categories')"
-            data-testid="table-ordering-category-strip"
-          >
-            <button type="button" :class="{ 'is-active': activeCategoryId === 'ALL' }" :aria-pressed="activeCategoryId === 'ALL'" @click="activeCategoryId = 'ALL'">
-              {{ t('common.all') }}
-            </button>
-            <button
-              v-for="category in activeCategories"
-              :key="`mobile-strip-${category.id}`"
-              type="button"
-              :class="{ 'is-active': activeCategoryId === category.id }"
-              :aria-pressed="activeCategoryId === category.id"
-              @click="selectCategory(category.id, $event)"
-            >{{ categoryName(category) }}</button>
-          </nav>
           <button
             v-if="!embedded"
             type="button"

@@ -408,7 +408,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     expect(wrapper.get('.table-ordering-product img').attributes()).toHaveProperty('hidden');
   });
 
-  it('keeps the mobile search and category strip outside the product scroller', async () => {
+  it('uses the current mobile menu without an opt-in prop and keeps categories outside the scroller', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
@@ -416,7 +416,7 @@ describe('TableOrderingWorkspace shared-controller UI', () => {
     await flushPromises();
     const header = wrapper.get('.table-ordering-header');
     const scroller = wrapper.get('[data-testid="table-ordering-products-scroller"]');
-    expect(header.find('[data-testid="table-ordering-search"]').exists()).toBe(true);
+    expect(header.find('.table-ordering-mobile-v2-search-trigger').exists()).toBe(true);
     expect(header.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(true);
     expect(scroller.find('[data-testid="table-ordering-category-strip"]').exists()).toBe(false);
   });
