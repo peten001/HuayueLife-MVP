@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "name": "cashier",
+      "width": 390,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/reservations",
+      "title": "YunQiao Cashier",
+      "scroll": 390,
+      "textLength": 76
+    },
+    {
+      "name": "cashier",
+      "width": 1366,
+      "url": "https://cashier.huayueyouxuan.com/login?redirect=/reservations",
+      "title": "YunQiao Cashier",
+      "scroll": 1366,
+      "textLength": 76
+    },
+    {
+      "name": "admin",
+      "width": 390,
+      "url": "https://admin.huayueyouxuan.com/login",
+      "title": "云桥 Life 商家后台",
+      "scroll": 390,
+      "textLength": 63
+    },
+    {
+      "name": "admin",
+      "width": 1366,
+      "url": "https://admin.huayueyouxuan.com/login",
+      "title": "云桥 Life 商家后台",
+      "scroll": 1366,
+      "textLength": 68
+    },
+    {
+      "name": "admin-ip",
+      "width": 390,
+      "url": "http://43.161.202.113/login",
+      "title": "云桥 Life 商家后台",
+      "scroll": 390,
+      "textLength": 63
+    },
+    {
+      "name": "admin-ip",
+      "width": 1366,
+      "url": "http://43.161.202.113/login",
+      "title": "云桥 Life 商家后台",
+      "scroll": 1366,
+      "textLength": 68
+    }
+  ],
+  "errors": []
+}

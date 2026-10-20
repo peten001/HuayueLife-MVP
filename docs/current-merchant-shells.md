@@ -1,6 +1,6 @@
 # 收银与商家后台：只保留现行外壳
 
-2026-10-20，本地实现与验证完成；用户已明确授权提交、推送和上线，正在执行静态页面发布。实际发布结果以后续凭证为准。
+2026-10-20，已提交、推送并上线。代码 `b9315d60c11ba7b8e2aabf99206b8128d4e0ab74`，收银与后台版本 `current-merchant-shells-20261020-v2`，详见 [发布记录](release/current-merchant-shells-20261020-v2.md)。
 
 ## 当前有效界面
 
@@ -44,4 +44,6 @@
 - 预约隔离真实 API 的 5 项流程、7 组手机列表／详情／聊天、3 组电脑布局通过，包含确认桌号与消息收发；未使用生产数据。
 - 设计检查将 MerchantLayout 的 Vue `:src="huayueLogo"` 变量误当成本地路径。已核对其导入的实际 PNG 文件与浏览器截图正常；其余仅为既有组件缺少设计 stamp 提示，没有为消除提示改动现有品牌或图表。
 
-证据见 [验收结果](ui-review/current-shell-cleanup/LOCAL_PASS.json)。本轮没有 API、数据库或小程序源码变更。发布时只需更新收银与商家后台静态制品。
+证据见 [验收结果](ui-review/current-shell-cleanup/LOCAL_PASS.json)。本轮仅发布收银与商家后台静态制品，没有 API、数据库或小程序源码变更。服务器及外网各校验 83 个文件，手机／电脑和后台 IP 入口 6 组检查通过。API 未重启，KDS 保持，小程序无需重传。
+
+后台正式域名使用 `/var/www/huayue-admin-current`；历史 `/var/www/huayue-admin` 和 IP 入口对应的 `/opt/HuayueLife-MVP/apps/merchant-admin/dist` 已统一指向同一新版本。后续发布须先核对 Nginx 实际 root，并将域名当前首页哈希与目录首页哈希比对通过，不能仅凭历史别名判定线上版本。兼容旧哈希资源仅供已打开的页面平稳过渡，新入口和现行路由没有旧布局回退。

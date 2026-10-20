@@ -1,0 +1,78 @@
+{
+  "status": "PASS",
+  "release": "current-merchant-shells-20261020-v2",
+  "sites": {
+    "cashier": {
+      "target": "/var/www/huayue-cashier-releases/current-merchant-shells-20261020-v2",
+      "previousTarget": "/var/www/huayue-cashier-releases/reservation-mobile-v2-20261020-v1",
+      "candidateFiles": 68,
+      "backupBytes": 5500298,
+      "backupSha256": "36de40991ccdf89fb2d66c6bf28c93c8bf0d3a59deedecda5010b748036d85f1",
+      "preservedAssetCount": 572
+    },
+    "admin": {
+      "target": "/var/www/huayue-admin-releases/current-merchant-shells-20261020-v2",
+      "previousTarget": "/var/www/huayue-admin-releases/arrival-reservations-20261019-v1",
+      "candidateFiles": 15,
+      "backupBytes": 3486697,
+      "backupSha256": "a38618104add0177312d793ce4a6e84604b051fe06c6799dcf509b44cf3dda68",
+      "preservedAssetCount": 21
+    }
+  },
+  "http": {
+    "sites": [
+      {
+        "site": "cashier",
+        "resourceCount": 68,
+        "deepLinks": [
+          "/reservations",
+          "/orders/new",
+          "/orders/active"
+        ],
+        "apiCors": "PASS"
+      },
+      {
+        "site": "admin",
+        "resourceCount": 15,
+        "deepLinks": [
+          "/dashboard",
+          "/merchant/printers",
+          "/forbidden"
+        ],
+        "apiCors": "PASS"
+      }
+    ],
+    "apiHealth": 200,
+    "unauthenticatedKds": 401,
+    "kdsEntryUnchanged": true,
+    "adminIpEntry": "PASS"
+  },
+  "apiProcess": {
+    "status": "online",
+    "pid": 2041787,
+    "restartCount": 17,
+    "unstableRestarts": 0
+  },
+  "apiKdsConfigUnchanged": true,
+  "sourceCommit": "b9315d60c11ba7b8e2aabf99206b8128d4e0ab74",
+  "databaseMigrations": false,
+  "productionBusinessWrites": false,
+  "serverTimestamp": "2026-10-20T08:53:41Z",
+  "aliases": {
+    "admin-compat": {
+      "pointer": "/var/www/huayue-admin",
+      "target": "/var/www/huayue-admin-releases/current-merchant-shells-20261020-v2",
+      "previousTarget": "/var/www/huayue-admin-releases/20260803-143818-merchant-admin-6bfa253",
+      "backupBytes": 2612275,
+      "backupSha256": "0e2373218542f5789b66a4d1db9c3ff8254087ee7ea1f55abdd413cdeaf584e7"
+    },
+    "admin-ip": {
+      "pointer": "/opt/HuayueLife-MVP/apps/merchant-admin/dist",
+      "target": "/var/www/huayue-admin-releases/current-merchant-shells-20261020-v2",
+      "previousTarget": "/var/www/huayue-admin-releases/20260922-135556-order-chat-location-53e2d78/dist",
+      "backupBytes": 2744482,
+      "backupSha256": "84271e25dae691f20fbb679d0d7264c3ceb74c1e256e91d8724db747eeff044a"
+    }
+  },
+  "priorAttempt": "v1 rolled back after verifying that an inactive historical admin alias did not serve the public domain; v2 verifies live domain hashes before switching"
+}

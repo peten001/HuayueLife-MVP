@@ -1,0 +1,497 @@
+{
+  "status": "PASS",
+  "release": "current-merchant-shells-20261020-v2",
+  "resourceCounts": {
+    "cashier": 68,
+    "admin": 15
+  },
+  "checks": [
+    {
+      "url": "https://cashier.huayueyouxuan.com/apple-touch-icon.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "7838e7901ac8f7af1e289f314683a10e2c222f5bc384af8348b8c2b8b0d29d81"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/CashierShell-D5AHdv27.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e8c8183b8779b9246aabe897137b8787a04308f62d0354e883a36e5c1043730a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/CashierShell-D7pJD4MN.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "45cc12b841901701deb89a2081a1f5a8ead84386ec125408ec2d51ec370fddb7"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ChangePasswordPage-B7qvgVDC.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "45947fc30070c1bbf692f82c5c4a09e21c9feb435052c729dbb21c8e11b62398"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DeliveryOrdersPage-kh3l5RtW.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "cbc2aa125b5920bf68a7669b76c1a6852c796df7a6a84a95ff5bf573ef22a70e"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DishReturnStatus-B4PKqXiN.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "a2049785a64a585363bd33efeebe2287fdc148f3bcb17bd7b8c4505208930f05"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/DishReturnStatus-czoCA31-.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e108e9526c53033ce4885c16dd47f45c4951b9b4f7b059a9eb07e4c1f3964765"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ErrorState.vue_vue_type_script_setup_true_lang-DLlcMw49.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "eb0b9cb256c3d7ce6f0a8110935097821ce6bf6dcba0a2c9cbbc8c1ebd9c47d1"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/FulfillmentActionDock-DgavnWng.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "96d66dc6e70f970e1ba9182f7775a9a9aff5a1eb5bf4c9c284508aea0e414146"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/FulfillmentActionDock.vue_vue_type_script_setup_true_lang-CCkObbjl.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "17331b44ed2a4b613a1716d09268ba1b549a23e19e05f788e30df67077780c91"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/KdsEntryPage-BWa7R76k.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "7096c01633fa522071e60af7c802093c8ff02540a175d02e46d7965233ab92e7"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/LoginPage-C2sf9NlD.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "2071e106d5fca637d1ba20a38e5dddb4e413c8a5f640531b61c21a1cdb9318a2"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/MobileV2PreviewFrame-Ch5KDL2x.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "162ac020b84853a7e8c0b9b3105a0e59b6556084ca69f86dce08a82659ccb0e4"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/MobileV2PreviewFrame-qpVnxJMb.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "bfdca7cd6b19cbe73c6046d569f047c23b616924840e32943ec11bf4e568add3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderChatWorkspace-BNIRf4F6.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "b6b98231cc8fada0debda5750efe43f7c8c29eb7eba8099a21e905f56be0ebf9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderChatWorkspace-E42Wl-kV.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "0f8e9d683ad5fd6ea23ebcab6084bbce14a06fa5662f2f25ae406905445b055a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderHistoryPage-BFA1Mb8E.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "1530479b75ff6d8791efa15f8f9c589278b427bbea0580bdc8f7b42f9a50b1b3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderHistoryPage-BcscdF0J.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "a01e26f80244953576d0b8c2c9a56e9e60ec269fca828028f0f22ef72c3ebcea"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/OrderStatusBadge.vue_vue_type_script_setup_true_lang-RY2fBB0D.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "594e79fb48abc4a0f59c3dd943e8b74e1004aa3806b435fbbdda068e909b26da"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/PickupOrdersPage-CL4-kKED.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f0ba0368ca66084f0e1f91d5d86a36b8f352a73c3c6bc8eec98330a5d18941c5"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/PickupOrdersPage-CfQMa0Ly.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "09d9c8a39f2a45d14e78815f0f690f567dbae02a5a38b2bc9230518bfe8a8018"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ReservationsPage-CIBl3yRj.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "254eb3c3f6c7dbebb7e0e98a4f78142b91e04d81cd62bbdd47bf40e7b84147d4"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/ReservationsPage-GzQKUD4g.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "03217c2506adc5f69f9c72f90c4d35d5bcefc53e263a81fceeef3ef2fdbd35e4"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/SettlementAdjustmentDialog-BRFZGIG9.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "534c29592f81f04b13930f61510ca9020fe892adf37bf02dd6084fc8d8de57fb"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/SettlementAdjustmentDialog-ClUDsQ_l.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "1ea37d077dbd0766be3810d1bb27c70b8b5e93b6bb725b13fdcd11d593d3fb15"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/TableOverviewPage-3T5INE8e.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "dc3c671bdf838bbd5170934bfb47236a35e0bc5400e51e3632e904745a889f01"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/TableOverviewPage-Blg_7c5r.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "fde2b38b8120865546751ec0f55f09bbff9c456e7cb5fca066aef259fcac4d77"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/_plugin-vue_export-helper-BL8EhJvV.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f48417c24087fc33593189d4535e2ddfd4b92aaa90c34f90f0c3c417e29d6790"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/calendar-clock-BrNNGY3V.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "06136afd14e124d376d68289ef1ffc2a8fbfe48a25aa9446b45f514cdf709ff9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/check-ChE_-HDJ.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "87c469abf6b967453fa12ff054dd8453d8efba4682bd6801dcc22076319581d3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/chevron-down-Dn-6By34.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d73416818f9e5d52d64d78b331bff70fa335c66bbf57992e24f6701797de39d1"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/chevron-right-DnMhvBqZ.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "dfac8c989fdc6453941ed16b7bcef30e51ad684819f5e55338a8ed26bdaf8c3d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/circle-alert-DbkZvo8u.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f4106fa665aa8fd50a000fcc186019f5ed9e937a61fff554c5b2e7cb84aa61a4"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/createLucideIcon-fdyusGAY.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f3bd5f3c91b75244c3c11ade26ec2dd1472264046e748316b374b5958d983d9c"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/house-B1xCXale.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "4b9bca29d80e16c770f960862ad4f0c5ae330ff0fa0a51097d33406120494152"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/index-BN7-w_AM.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "6ebb8b1ec945122b9e6bf8be71adec53a3142a096780a1f1f9a68a6655b79cc3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/index-DjLEm9gZ.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d48d93e566f4e593ff7831ccdeb3e6ea11143ccb6013c91cfbdf18ff47be4aed"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/languages-b50bWZFr.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "3c0b5da0e420b59cbbdd5a3f5a516087d51dff917a41ee36cf8b8d11c584f28d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/lock-keyhole-YhmCYVBW.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "a0430ca764a203293ec64f2d7864d86f8a6c4742e86f4bf7a636fcda275b1ec0"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/network-write-guard-1xuegaFr.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e75afd1eb2fb512cfb0a9f708ac7f9fccaef28dc68dfe3efbc2efdf9e6c3f4f0"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/printing-ByyeI3Ol.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "3c521d47ac96a9386b94a3f6e176d50501ce4e4e1835d62c4199792416b14cdd"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/reservations-CMSJfmWb.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "80544526d8b81e243dd0a6e929c63e9a75716fb5bf1b8e0d9da021dcfd7d3544"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/reservations-khTlG0Be.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "fe5216d4014bfeba8bd6df8d269a1cac2081b0df2304120b31cd4dfdc233420a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/search-KKi0fsIg.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "c68a82f425ed6fa659346a472eb2ad216ee689ede471ea53a0ada340e86b107a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/tables-Bs9Kp-qi.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d27af9050ad7ccd3324e49a99aabefb410c6a45152c58618914612f09faa9ddb"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/tables-jzo_fLbC.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e7277cbff9728e8d8ad9d2b2bcedab151663cba35df2ad568ace174f58cf0e1a"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/terminal-CAWtrihp.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "ba0abb4271816bff65cc47e8b96869449a09a45e41448a962335af009cfaa7d3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/usePwaInstall-CSKWq4LS.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "c81cd76e8c2e2a61783316d875c1d0fbf0aabf9815f073b7cc3ba374dc9deecc"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/user-round-CBnr6RxB.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5e51195f342d1c1b3831b027029be60574db73ced1d6ea9994f8e851d1e77122"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/assets/yunqiao-cashier-mark-DQV65aIg.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "08a1eaa1d13c07171b6b321955a0f0d88eecdedf0b7bac336414ae0d048de355"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/cashier-push-sw.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "9410f89b260c2bcf85555672b37ee1c3e4803b6770af02bc5f1836df423a4ef9"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/apple-touch-icon-180.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e1a704e01c60ec0a64e09fd3aa898c877b345f4938a7eb32b92cff67e2448fde"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/apple-touch-icon-yunqiao-cashier-v2-180.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "7838e7901ac8f7af1e289f314683a10e2c222f5bc384af8348b8c2b8b0d29d81"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-144.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "b70e8c923afadc1fec9e5ee8022cda2a40e9fd4f19c8e2a145d935b8ca1b02fb"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-192.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "fe901938b8ecb88d2e901fbdf56f8b14e0ceafdc41251b288c895d4069cf8f2c"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-256.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "ed6db85105b63a3c5a5e031582293c6673bafa1d5a2fa923cba52ec50ca31977"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-512-maskable.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "6756fbda1bbab6e79fe82f7f86b60e388033dbc12b94d309036d4a447ab0f7e5"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-512.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e8326a60f3edaca57e4f0c55444ac35fddad06866cd040c6310147c8a16e5d58"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/icons/icon-96.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "071d03e26ccf9ae6f563c170a2698891d658876511b99a2d3249f7bc4ac6aeed"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/index.html?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5304acc4b12ea58bc37a9cced7176f57fe744bea365b18ac397e987f625918a3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/kds.webmanifest?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "86a53789f27b4dbdf84b095b3759b752a7baccc4bcb7a9f0cc26627ae23f3a43"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/manifest.webmanifest?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5aed66ba829b6660ca8ec18689ac0efa7bd9f19d33eeab0f372f19b5043e081d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/terminal-bootstrap.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e713618fdea85ddf58c24f4d78926cca8d73357698ac731f713c18db7e6a5476"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/terminal-bootstrap.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "3f83874acec3cefe4ee890035209a8716440c1c0620ebac190a4e592a6bee212"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-cashier-mark.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "b37cbb13daa5d2f1e78d1d6c90c69559449d4956f19b439f78bb6e56a63bcb22"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-cashier-splash.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "200f8ac08c57357d70647ea8f0bdeac5f6907f4a76770019efa8f1f0fe953a16"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-logo.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "2dc85ade78838f51f032ca54bf80f9f53804f00624686b02fba31227f89c806d"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/yunqiao-mark.svg?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "7d56ab8a9dc2a1dbe0e2f60400529fea7a57448420c7cace97a2f714f314cc05"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/reservations?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5304acc4b12ea58bc37a9cced7176f57fe744bea365b18ac397e987f625918a3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/orders/new?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5304acc4b12ea58bc37a9cced7176f57fe744bea365b18ac397e987f625918a3"
+    },
+    {
+      "url": "https://cashier.huayueyouxuan.com/orders/active?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "5304acc4b12ea58bc37a9cced7176f57fe744bea365b18ac397e987f625918a3"
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/merchant/me",
+      "status": 401,
+      "sha256": null
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/apple-touch-icon.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d349ade0ccdc25c0243d305fb4acdd8cdd37bc171e74424c73d00ed5494855f2"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/assets/BusinessAnalyticsPage-CxvFJzmO.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "e55c1de8dcaec8e9fd0af187f4f6f9eacf1945508c865275ddfdce3a46dc84c8"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/assets/BusinessAnalyticsPage-cF9DuYx-.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "b04df2f8ccde7996320e8bbcbee67cef7a899138ea8c3e07009c22de365d9822"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/assets/huayue-miniapp-logo-D0_oBQKB.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "abd0f974a19513b612cff66bd0dba6b03cb5d43759466775732b5e4244b31254"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/assets/index-COqnUUWu.js?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "31baa554f56e809a8a80f3fe2d4569e2f051465c71015bea8a91c047d4f58d5f"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/assets/index-Cb_oo-2T.css?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "7c98288692888d66f0ffa5bbf625bd9b24c37969657fcc7ed0fe2a7a9c522e25"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/favicon.ico?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "0f3b7b1d68e8f20c141c53499ecbf509eb6f9c8c4194bfa9e5404eb155d19881"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/favicon.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "2dc85ade78838f51f032ca54bf80f9f53804f00624686b02fba31227f89c806d"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/icon-512.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d349ade0ccdc25c0243d305fb4acdd8cdd37bc171e74424c73d00ed5494855f2"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/icons/icon-192.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "b50f1bbad9572e64f21d9c70dec36dddd82b5094bb40727b547a9619a18db474"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/icons/icon-512.png?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "d349ade0ccdc25c0243d305fb4acdd8cdd37bc171e74424c73d00ed5494855f2"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/index.html?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/manifest.webmanifest?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "a96b61af1abbb8d48b7bc3e14bc7e05c0c604e34c15f5dc592d9488d124b8592"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/new-order.wav?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "43378d4f143aea22f1c0bbfbf18285ec27c6a5c8ad4f79decdf3aae651d4c894"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/order-sound-enabled.wav?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "43378d4f143aea22f1c0bbfbf18285ec27c6a5c8ad4f79decdf3aae651d4c894"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/dashboard?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/merchant/printers?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/forbidden?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/merchant/me",
+      "status": 401,
+      "sha256": null
+    },
+    {
+      "url": "https://admin.huayueyouxuan.com/api/v1/merchant/me",
+      "status": 401,
+      "sha256": null
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/health",
+      "status": 200,
+      "sha256": null
+    },
+    {
+      "url": "https://api.huayueyouxuan.com/api/v1/merchant/kds",
+      "status": 401,
+      "sha256": null
+    },
+    {
+      "url": "https://kds.huayueyouxuan.com/?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "baccc5eb239a293687fcb8946f625fbb43f86f6cd6d0b9d7bd3c84d85b8051ab"
+    },
+    {
+      "url": "http://43.161.202.113/?verify=current-merchant-shells-20261020-v2",
+      "status": 200,
+      "sha256": "f2f6ac912f60b832ca915fad85013262a8efeb1d33f9bd2e6929cfbe86dd8809"
+    },
+    {
+      "url": "http://43.161.202.113/api/v1/merchant/me",
+      "status": 401,
+      "sha256": null
+    }
+  ],
+  "authenticatedFunctionalFlows": "validated with isolated local API; no production writes",
+  "userDeviceVerification": "pending refresh on user devices"
+}

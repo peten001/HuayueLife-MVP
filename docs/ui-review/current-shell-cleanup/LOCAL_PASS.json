@@ -38,9 +38,18 @@
   "apiSourceChanged": false,
   "miniappSourceChanged": false,
   "productionDataUsed": false,
-  "deployed": false,
+  "deployed": true,
   "designDetector": {
     "reportedP0": 1,
     "verifiedFalsePositive": "Vue huayueLogo binding resolves to imported PNG; file exists and screenshot renders correctly"
+  },
+  "release": "current-merchant-shells-20261020-v2",
+  "sourceCommit": "b9315d60c11ba7b8e2aabf99206b8128d4e0ab74",
+  "productionPublicChecks": {
+    "cashierFiles": 68,
+    "adminFiles": 15,
+    "browserEntryCases": 6,
+    "pageErrors": 0,
+    "apiRestartCountUnchanged": 17
   }
 }
