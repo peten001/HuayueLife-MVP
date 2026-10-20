@@ -16,7 +16,7 @@
     "usingComponents": true,
     "permission": {
       "scope.userLocation": {
-        "desc": "用于展示附近商家，以及由您主动在订单聊天中分享当前位置"
+        "desc": "用于展示附近商家、选择收餐点及主动分享订单位置"
       }
     },
     "requiredPrivateInfos": [

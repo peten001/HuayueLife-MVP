@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, Copy, Home, Phone, PhoneCall, Search, UserRound } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref } from 'vue';
+import { googleMapsDeliverySearchUrl, stripDeliveryGpsSuffix } from '@huayue-life/shared';
 import { useI18n } from '@/i18n';
 import { copyPlainText } from '@/domain';
 import { useUiStore } from '@/stores';
@@ -15,9 +16,8 @@ const props = withDefaults(defineProps<{
 const { t } = useI18n();
 const uiStore = useUiStore();
 const deliveryAddress = computed(() => props.order.deliveryAddress?.trim() || '');
-const addressSearchUrl = computed(() => deliveryAddress.value
-  ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(deliveryAddress.value)}`
-  : '');
+const deliveryAddressText = computed(() => stripDeliveryGpsSuffix(deliveryAddress.value));
+const addressSearchUrl = computed(() => googleMapsDeliverySearchUrl(deliveryAddress.value));
 const addressCopied = ref(false);
 let copiedResetTimer: ReturnType<typeof setTimeout> | undefined;
 const isDialSupported = computed(() => {
@@ -26,7 +26,8 @@ const isDialSupported = computed(() => {
 });
 
 async function copyAddress() {
-  const copied = await copyPlainText(deliveryAddress.value);
+  if (!deliveryAddressText.value) return;
+  const copied = await copyPlainText(deliveryAddressText.value);
   if (!copied) {
     addressCopied.value = false;
     uiStore.pushToast(t('fulfillment.addressCopyFailed'), 'error');
@@ -69,10 +70,10 @@ onBeforeUnmount(() => {
           </a>
           <template v-else>
             <Home :size="17" aria-hidden="true" />
-            <strong>{{ t('order.deliveryAddressMissing') }}</strong>
+            <strong>{{ deliveryAddress || t('order.deliveryAddressMissing') }}</strong>
           </template>
           <button
-            v-if="deliveryAddress"
+            v-if="deliveryAddressText"
             type="button"
             class="delivery-contact-copy delivery-contact-copy--address"
             :class="{ 'is-copied': addressCopied }"

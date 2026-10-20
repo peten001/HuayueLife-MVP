@@ -1,3 +1,5 @@
+import { gcj02OffsetRegion } from './china-coordinate-region';
+
 export type Coordinate = {
   latitude: number;
   longitude: number;
@@ -17,6 +19,25 @@ function isValidCoordinate(latitude: number, longitude: number) {
     longitude <= 180 &&
     !(latitude === 0 && longitude === 0)
   );
+}
+
+function pointInRing(longitude: number, latitude: number, ring: number[][]) {
+  let inside = false;
+  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
+    const [x, y] = ring[current];
+    const [previousX, previousY] = ring[previous];
+    if ((y > latitude) !== (previousY > latitude)
+      && longitude < ((previousX - x) * (latitude - y)) / (previousY - y) + x) inside = !inside;
+  }
+  return inside;
+}
+
+// A rectangular China bounding box includes Vietnam. Use the land geometry so
+// Bac Ninh, Bac Giang and other overseas points never receive an artificial offset.
+function usesGcj02Offset(latitude: number, longitude: number) {
+  if (longitude < 72 || longitude > 136 || latitude < 18 || latitude > 54) return false;
+  return gcj02OffsetRegion.some((polygon) => pointInRing(longitude, latitude, polygon[0])
+    && !polygon.slice(1).some((hole) => pointInRing(longitude, latitude, hole)));
 }
 
 function transformLatitude(x: number, y: number) {
@@ -76,7 +97,7 @@ function transformLongitude(x: number, y: number) {
 }
 
 // Merchant coordinates remain stored as WGS84 in DB/API.
-// Only convert them to GCJ-02 immediately before calling uni.openLocation.
+// Only convert at the native Tencent map boundary; overseas points stay WGS84.
 export function wgs84ToGcj02(
   latitude: number,
   longitude: number,
@@ -84,7 +105,7 @@ export function wgs84ToGcj02(
   const lat = Number(latitude);
   const lon = Number(longitude);
 
-  if (!isValidCoordinate(lat, lon)) {
+  if (!isValidCoordinate(lat, lon) || !usesGcj02Offset(lat, lon)) {
     return {
       latitude: lat,
       longitude: lon,
@@ -109,4 +130,22 @@ export function wgs84ToGcj02(
     latitude: Number((lat + deltaLat).toFixed(7)),
     longitude: Number((lon + deltaLon).toFixed(7)),
   };
+}
+
+
+/** Inverse at confirmation time. Never repeatedly convert cached WGS84 points. */
+export function gcj02ToWgs84(latitude: number, longitude: number): Coordinate {
+  const point = { latitude: Number(latitude), longitude: Number(longitude) };
+  if (!isValidCoordinate(point.latitude, point.longitude) || !usesGcj02Offset(point.latitude, point.longitude)) return point;
+  let wgsLatitude = point.latitude;
+  let wgsLongitude = point.longitude;
+  for (let iteration = 0; iteration < 12; iteration++) {
+    const projected = wgs84ToGcj02(wgsLatitude, wgsLongitude);
+    const latitudeError = projected.latitude - point.latitude;
+    const longitudeError = projected.longitude - point.longitude;
+    wgsLatitude -= latitudeError;
+    wgsLongitude -= longitudeError;
+    if (Math.max(Math.abs(latitudeError), Math.abs(longitudeError)) < 0.0000001) break;
+  }
+  return { latitude: Number(wgsLatitude.toFixed(7)), longitude: Number(wgsLongitude.toFixed(7)) };
 }

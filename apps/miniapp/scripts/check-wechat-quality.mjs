@@ -26,6 +26,7 @@ const media = await Promise.all((await filesIn(root))
   .filter(file => mediaExtensions.has(path.extname(file).toLowerCase()))
   .map(async file => ({ file: path.relative(root, file), bytes: (await fs.stat(file)).size })));
 const mediaBytes = media.reduce((sum, item) => sum + item.bytes, 0);
+const locationDescription = app.permission?.['scope.userLocation']?.desc?.trim() || '';
 const checks = {
   JS_COMPRESS_OPEN: setting.minified === true,
   WXML_COMPRESS_OPEN: setting.minifyWXML === true,
@@ -33,10 +34,12 @@ const checks = {
   LAZYCODE_LOADING_OPEN: app.lazyCodeLoading === 'requiredComponents',
   // The installed DevTools checker uses a strict less-than comparison.
   IMAGE_AND_AUDIO_LIMIT: mediaBytes < 200 * 1024,
+  LOCATION_PERMISSION_DESCRIPTION_LIMIT: locationDescription.length > 0 && [...locationDescription].length <= 30,
 };
 console.log(JSON.stringify({
   checks, mediaBytes, mediaKiB: Number((mediaBytes / 1024).toFixed(2)),
   mediaFiles: media.length, mediaLimitBytes: 200 * 1024,
+  locationDescriptionLength: [...locationDescription].length,
 }, null, 2));
 if (Object.values(checks).some(passed => !passed)) {
   if (!checks.IMAGE_AND_AUDIO_LIMIT) {

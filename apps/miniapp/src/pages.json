@@ -81,6 +81,13 @@
       }
     },
     {
+      "path": "pages/checkout/delivery-location",
+      "style": {
+        "navigationBarTitleText": "选择收餐位置",
+        "disableScroll": true
+      }
+    },
+    {
       "path": "pages/order/detail",
       "style": {
         "navigationBarTitleText": "订单详情"

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { deliveryAddressWithCoordinate, formatDeliveryCoordinate, normalizeDeliveryCoordinate, stripDeliveryGpsSuffix } from '@huayue-life/shared';
+import { gcj02ToWgs84 } from '@/utils/coordinates';
+import { chooseDeliveryLocation, deliveryLocationText } from '@/utils/delivery-location';
 import { onShow as onPageShow } from '@dcloudio/uni-app';
 import { createOrder, previewOrder, type OrderRequest } from '@/api/cart';
 import { getMerchant } from '@/api/catalog';
@@ -18,6 +21,8 @@ const locationStore = useLocationStore();
 const preview = ref<OrderPreview | null>(null);
 const loading = ref(false);
 const submitting = ref(false);
+const selectingLocation = ref(false);
+let checkoutInitialized = false;
 const message = ref('');
 const locationLabel = ref('');
 const contactCacheHint = ref(false);
@@ -37,6 +42,9 @@ const form = reactive({
 });
 
 const context = computed(() => cartStore.context);
+const deliveryCoordinate = computed(() => normalizeDeliveryCoordinate(form.deliveryLatitude, form.deliveryLongitude));
+const deliveryCoordinateLabel = computed(() => deliveryCoordinate.value ? formatDeliveryCoordinate(deliveryCoordinate.value) : '');
+const deliveryAddressLimit = computed(() => 255 - (deliveryCoordinate.value ? `\nGPS: ${deliveryCoordinateLabel.value}`.length : 0));
 const subtotalAmountVnd = computed(() => preview.value?.itemAmountVnd ?? cartStore.cart?.itemAmountVnd ?? '0');
 const deliveryFeeDisplayText = computed(() => {
   if (context.value?.orderType !== 'DELIVERY') return '';
@@ -100,7 +108,10 @@ function buildOrderRequest(): OrderRequest {
   if (!context.value) throw new Error(t('missingCartContext'));
   const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
   const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
-  const deliveryAddress = form.deliveryAddress.trim();
+  const deliveryAddress = context.value.orderType === 'DELIVERY'
+    ? deliveryAddressWithCoordinate(form.deliveryAddress, deliveryCoordinate.value)
+    : form.deliveryAddress.trim();
+  if (deliveryAddress.length > 255) throw new Error(deliveryLocationText(locale.value, 'addressTooLong'));
   const contactPhone = form.contactPhone.trim();
   const contactName = form.contactName.trim();
   const customerRemark = form.customerRemark.trim();
@@ -150,7 +161,6 @@ async function refreshPreview() {
   message.value = '';
   try {
     const nextPayload = buildOrderRequest();
-    console.log('[checkout] preview payload', nextPayload);
     const nextPreview = await previewOrder(nextPayload);
     preview.value = nextPreview;
     if (context.value?.orderType === 'DELIVERY' && hasValidDeliveryLocation()) {
@@ -177,72 +187,42 @@ async function refreshPreview() {
 }
 
 async function chooseLocation() {
+  if (selectingLocation.value) return;
+  selectingLocation.value = true;
   try {
-    const result = await new Promise<UniApp.ChooseLocationSuccess>((resolve, reject) => {
-      uni.chooseLocation({ success: resolve, fail: reject });
+    const fallbackCoordinate = normalizeDeliveryCoordinate(locationStore.latitude, locationStore.longitude)
+      ?? normalizeDeliveryCoordinate(merchantDetail.value?.latitude, merchantDetail.value?.longitude)
+      ?? { latitude: 21.281, longitude: 106.197 };
+    const selected = await chooseDeliveryLocation({
+      address: form.deliveryAddress,
+      coordinate: deliveryCoordinate.value,
+      fallbackCoordinate,
     });
-    console.log('[checkout] chooseLocation result', result);
-    const latitude = Number(result.latitude);
-    const longitude = Number(result.longitude);
-    console.log('[checkout] lat lng parsed', latitude, longitude, typeof latitude, typeof longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      uni.showToast({
-        title: checkoutText(
-          '定位信息无效，请重新选择配送位置',
-          'Vị trí không hợp lệ, vui lòng chọn lại địa điểm giao hàng',
-          'Invalid location. Please choose the delivery location again',
-        ),
-        icon: 'none',
-      });
-      locationLabel.value = t('locationUnconfirmed');
-      preview.value = null;
-      return;
-    }
-    const currentAddressBeforeSet = form.deliveryAddress;
-    const mapAddressText = resolveMapAddressText(result);
-    const fallbackRegionText = getFallbackRegionText();
-    const selectedAddressText = mapAddressText || fallbackRegionText;
-    console.log('[checkout] mapAddressText', mapAddressText);
-    console.log('[checkout] fallbackRegionText', fallbackRegionText);
-    console.log('[checkout] final selectedAddressText', selectedAddressText);
-    console.log('[checkout] deliveryAddress before set', currentAddressBeforeSet);
-    form.deliveryLatitude = latitude;
-    form.deliveryLongitude = longitude;
-    if (selectedAddressText) {
-      form.deliveryAddress = selectedAddressText;
-    }
-    console.log('[checkout] deliveryAddress after set', form.deliveryAddress);
-    console.log('[checkout] form location after set', form.deliveryLatitude, form.deliveryLongitude, typeof form.deliveryLatitude, typeof form.deliveryLongitude);
-    if (mapAddressText) {
-      locationLabel.value = checkoutText(
-        '已选择配送位置，可补充门牌/楼栋',
-        'Đã chọn vị trí giao hàng, có thể bổ sung số nhà / tòa nhà',
-        'Delivery location selected. You can add building or room details',
-      );
-    } else if (fallbackRegionText) {
-      locationLabel.value = checkoutText(
-        '已获取当前位置，请补充门牌/楼栋等详细信息',
-        'Đã lấy vị trí hiện tại, vui lòng bổ sung số nhà / tòa nhà và thông tin chi tiết',
-        'Current location captured. Please add building and address details',
-      );
-    } else {
-      locationLabel.value = checkoutText(
-        '已获取当前位置，请补充详细配送地址',
-        'Đã lấy vị trí hiện tại, vui lòng bổ sung địa chỉ giao hàng chi tiết',
-        'Current location captured. Please add a detailed delivery address',
-      );
-    }
-    setLastContactInfo({
-      contactName: form.contactName.trim(),
-      contactPhone: form.contactPhone.trim(),
-      deliveryAddress: form.deliveryAddress.trim(),
-      deliveryLatitude: form.deliveryLatitude ?? undefined,
-      deliveryLongitude: form.deliveryLongitude ?? undefined,
-    });
+    if (!selected) return;
+    const coordinate = normalizeDeliveryCoordinate(selected.coordinate.latitude, selected.coordinate.longitude);
+    if (!coordinate || selected.coordinateSystem !== 'WGS84') throw new Error(deliveryLocationText(locale.value, 'readFailed'));
+    form.deliveryLatitude = coordinate.latitude;
+    form.deliveryLongitude = coordinate.longitude;
+    form.deliveryAddress = stripDeliveryGpsSuffix(selected.address) || getFallbackRegionText();
+    locationLabel.value = deliveryLocationText(locale.value, 'selected');
+    saveContactInfo();
     schedulePreview();
   } catch {
-    locationLabel.value = t('locationUnconfirmed');
+    uni.showToast({ title: deliveryLocationText(locale.value, 'chooseFailed'), icon: 'none' });
+  } finally {
+    selectingLocation.value = false;
   }
+}
+
+function saveContactInfo() {
+  setLastContactInfo({
+    contactName: form.contactName.trim(),
+    contactPhone: form.contactPhone.trim(),
+    deliveryAddress: stripDeliveryGpsSuffix(form.deliveryAddress),
+    deliveryLatitude: deliveryCoordinate.value?.latitude,
+    deliveryLongitude: deliveryCoordinate.value?.longitude,
+    deliveryCoordinateSystem: 'WGS84',
+  });
 }
 
 async function submit() {
@@ -288,25 +268,6 @@ async function doSubmit() {
   message.value = '';
   try {
     const orderRequest = buildOrderRequest();
-    const deliveryLatitude = normalizeCoordinate(form.deliveryLatitude);
-    const deliveryLongitude = normalizeCoordinate(form.deliveryLongitude);
-    const deliveryInRange =
-      context.value?.orderType === 'DELIVERY' &&
-      deliveryLatitude !== null &&
-      deliveryLongitude !== null
-        ? getDeliveryRangeState(deliveryLatitude, deliveryLongitude) === 'within'
-        : null;
-    const deliveryWarning = getDeliverySubmissionWarning();
-    console.log('[checkout] delivery range status before submit', {
-      deliveryAddress: form.deliveryAddress,
-      deliveryLatitude: form.deliveryLatitude,
-      deliveryLongitude: form.deliveryLongitude,
-      deliveryInRange,
-      deliveryWarning,
-      deliveryFee: preview.value?.deliveryFeeVnd ?? null,
-      totalAmount: preview.value?.totalAmountVnd ?? null,
-    });
-    console.log('[checkout] submit payload', JSON.stringify(orderRequest));
 
     try {
       console.log('[checkout] preview before submit start');
@@ -341,14 +302,7 @@ async function doSubmit() {
 
     console.log('[checkout] create order start');
     const order = await createOrder(orderRequest, idempotencyKey);
-    console.log('[checkout] create order success', order);
-    setLastContactInfo({
-      contactName: form.contactName.trim(),
-      contactPhone: form.contactPhone.trim(),
-      deliveryAddress: form.deliveryAddress.trim(),
-      deliveryLatitude: normalizeCoordinate(form.deliveryLatitude) ?? undefined,
-      deliveryLongitude: normalizeCoordinate(form.deliveryLongitude) ?? undefined,
-    });
+    saveContactInfo();
     cartStore.resetAfterOrder();
     showSuccess(order);
   } catch (caught) {
@@ -376,23 +330,20 @@ async function bootstrapCheckout() {
         uni.redirectTo({ url: `/pages/reservation/create?merchantId=${context.value.merchantId}&kind=${context.value.orderType}` });
         return;
       }
-      const cachedContact = getLastContactInfo();
-      form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
-      form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';
-      form.deliveryAddress = cachedContact?.deliveryAddress?.trim() || '';
-      form.deliveryLatitude = normalizeCoordinate(cachedContact?.deliveryLatitude);
-      form.deliveryLongitude = normalizeCoordinate(cachedContact?.deliveryLongitude);
-      contactCacheHint.value = Boolean(
-        cachedContact?.contactName ||
-          cachedContact?.contactPhone ||
-          cachedContact?.deliveryAddress,
-      );
-      locationLabel.value =
-        getInitialLocationLabel(
-          form.deliveryAddress.trim(),
-          form.deliveryLatitude ?? null,
-          form.deliveryLongitude ?? null,
-        );
+      if (!checkoutInitialized) {
+        const cachedContact = getLastContactInfo();
+        form.contactName = cachedContact?.contactName?.trim() || authStore.user?.nickname || '';
+        form.contactPhone = cachedContact?.contactPhone?.trim() || authStore.user?.phone || '';
+        form.deliveryAddress = stripDeliveryGpsSuffix(cachedContact?.deliveryAddress || '');
+        const cachedCoordinate = normalizeDeliveryCoordinate(cachedContact?.deliveryLatitude, cachedContact?.deliveryLongitude);
+        const coordinate = cachedCoordinate && cachedContact?.deliveryCoordinateSystem !== 'WGS84'
+          ? gcj02ToWgs84(cachedCoordinate.latitude, cachedCoordinate.longitude) : cachedCoordinate;
+        form.deliveryLatitude = coordinate?.latitude ?? null;
+        form.deliveryLongitude = coordinate?.longitude ?? null;
+        contactCacheHint.value = Boolean(cachedContact?.contactName || cachedContact?.contactPhone || cachedContact?.deliveryAddress);
+        locationLabel.value = getInitialLocationLabel(form.deliveryAddress, form.deliveryLatitude, form.deliveryLongitude);
+        checkoutInitialized = true;
+      }
 
       if (context.value?.orderType === 'DELIVERY' && context.value.merchantId) {
         try {
@@ -454,21 +405,6 @@ function requiresContactPhone() {
   return context.value?.orderType === 'DELIVERY' || context.value?.orderType === 'PICKUP';
 }
 
-function resolveMapAddressText(result: UniApp.ChooseLocationSuccess) {
-  const location = result as unknown as Record<string, unknown>;
-  const formattedAddress = stringField(location.formattedAddress);
-  if (formattedAddress) return formattedAddress;
-
-  const address = stringField(location.address);
-  const addressName = stringField(location.addressName);
-  const name = stringField(location.name);
-  if (address && name && !address.includes(name)) return `${address} ${name}`.trim();
-  if (address) return address;
-  if (addressName && name && !addressName.includes(name)) return `${addressName} ${name}`.trim();
-  if (addressName) return addressName;
-  if (name) return name;
-  return '';
-}
 
 function getFallbackRegionText() {
   const currentCityLabel =
@@ -748,7 +684,7 @@ function goHome() {
     <view v-if="context?.orderType === 'DELIVERY'" class="card form delivery-card">
       <view class="section-heading">
         <text class="section-title">{{ t('deliveryAddress') }}</text>
-        <button class="location" @click="chooseLocation">
+        <button class="location" :disabled="selectingLocation" @click="chooseLocation()">
           <image
             class="location-icon"
             src="/static/merchant-detail-icons/map-pin-green.png"
@@ -759,12 +695,16 @@ function goHome() {
           </text>
         </button>
       </view>
-      <textarea
-        v-model="form.deliveryAddress"
-        class="address-input"
-        :placeholder="checkoutText('请输入配送地址，如园区/公司/宿舍/门牌', 'Nhập địa chỉ giao hàng, ví dụ khu công nghiệp / công ty / ký túc xá / số nhà', 'Enter the delivery address, such as campus / company / dorm / street number')"
-        rows="2"
-      />
+      <view class="delivery-address-field">
+        <textarea
+          v-model="form.deliveryAddress"
+          class="address-input"
+          :maxlength="deliveryAddressLimit"
+          :placeholder="checkoutText('请输入配送地址，如园区/公司/宿舍/门牌', 'Nhập địa chỉ giao hàng, ví dụ khu công nghiệp / công ty / ký túc xá / số nhà', 'Enter the delivery address, such as campus / company / dorm / street number')"
+          rows="2"
+        />
+        <view v-if="deliveryCoordinateLabel" class="delivery-address-coordinate"><text>{{ deliveryLocationText(locale, 'coordinate') }}</text><text user-select>{{ deliveryCoordinateLabel }}</text></view>
+      </view>
       <view class="hint location-hint">
         <text class="hint-label">
           {{ locationLabel || checkoutText('地址不完整时，商家会电话联系你确认', 'Khi địa chỉ chưa đầy đủ, cửa hàng sẽ gọi điện xác nhận', 'If the address is incomplete, the merchant will confirm by phone') }}
@@ -960,6 +900,11 @@ textarea {
   line-height: 1.45;
   box-sizing: border-box;
 }
+
+.delivery-address-field { overflow: hidden; border: 2rpx solid var(--hy-border); border-radius: 24rpx; background: var(--hy-page); }
+.delivery-address-field .address-input { border: 0; background: transparent; }
+.delivery-address-coordinate { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; padding: 0 20rpx 18rpx; color: var(--hy-primary-strong); font-size: 23rpx; line-height: 1.5; }
+.delivery-address-coordinate text:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 
 .address-input {
   height: 148rpx;

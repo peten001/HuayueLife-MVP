@@ -9,6 +9,7 @@ export interface LastContactInfo {
   deliveryAddress?: string;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
+  deliveryCoordinateSystem?: 'WGS84';
 }
 
 export interface LocalUserProfile {

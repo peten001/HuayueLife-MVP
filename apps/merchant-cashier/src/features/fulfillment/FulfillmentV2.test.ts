@@ -275,12 +275,43 @@ describe('cashier fulfilment V2 components', () => {
     expect(wrapper.get('[data-testid="copy-delivery-address"]').text()).toContain('已复制');
     expect(wrapper.get('[data-testid="copy-delivery-address"]').classes()).toContain('is-copied');
     expect(wrapper.get('[data-testid="copy-delivery-address"]').attributes('aria-label')).toBe('已复制');
-    expect(wrapper.find('.delivery-contact-panel__address-row').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['A', 'BUTTON']);
+    expect(wrapper.find('[data-testid="search-delivery-address"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('12 Test Street, District 1');
     expect(wrapper.get('[data-testid="call-delivery-phone"]').text()).toContain('拨打电话');
     expect(wrapper.find('.delivery-contact-panel__phone').findAll(':scope > *').map((node) => node.element.tagName)).toEqual(['svg', 'SPAN', 'A']);
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('aria-disabled')).toBe('true');
     expect(wrapper.get('[data-testid="call-delivery-phone"]').attributes('title')).toContain('不支持拨号');
     expect(useUiStore().toasts).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it.each([false, true])('searches only GPS and copies only address text (compact: %s)', async (compact) => {
+    const deliveryAddress = '园区北门 12 号\nCổng bắc, tòa nhà 3\nGPS: 21.2810000, 106.1970000';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const wrapper = mount(DeliveryContactPanel, {
+      props: { order: { ...order, orderType: 'DELIVERY', deliveryAddress }, compact },
+      global: { plugins: [createPinia()] },
+    });
+    const link = wrapper.get('[data-testid="search-delivery-address"]');
+    const url = new URL(link.attributes('href') || '');
+    expect(url.pathname).toBe('/maps/search/');
+    expect([...url.searchParams]).toEqual([['api', '1'], ['query', '21.2810000, 106.1970000']]);
+    expect(link.attributes('target')).toBe('_blank');
+    expect(link.text()).toContain('Google 导航');
+    await wrapper.get('[data-testid="copy-delivery-address"]').trigger('click');
+    await flushPromises();
+    expect(writeText).toHaveBeenCalledWith('园区北门 12 号\nCổng bắc, tòa nhà 3');
+    wrapper.unmount();
+  });
+
+  it('keeps coordinate-only orders searchable and does not offer an empty address copy', () => {
+    const wrapper = mount(DeliveryContactPanel, {
+      props: { order: { ...order, orderType: 'DELIVERY', deliveryAddress: 'GPS: 21.2810000, 106.1970000' } },
+      global: { plugins: [createPinia()] },
+    });
+    expect(new URL(wrapper.get('[data-testid="search-delivery-address"]').attributes('href') || '').searchParams.get('query')).toBe('21.2810000, 106.1970000');
+    expect(wrapper.find('[data-testid="copy-delivery-address"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
